@@ -259,6 +259,11 @@ final class SyncableSettingsTests: XCTestCase {
     /// The registry table is pinned: `key` IS the UserDefaults raw key, the
     /// Data-valued theme snapshots are excluded, and the feature gates are not
     /// synced.
+    ///
+    /// M3-3 adds exactly one member, `PhiPinnedTabScope` — the mirror of a SwiftData row
+    /// rather than a preference of its own. It is the only member whose `read` answers nil on
+    /// an unset key, because "the account has never published a scope" is not the same
+    /// statement as "the scope is `.profile`".
     func testStarterRegistryContents() {
         let keys = SyncableSettings.all.map(\.key)
 
@@ -275,6 +280,7 @@ final class SyncableSettingsTests: XCTestCase {
                 "PhiUserAppearanceChoice",
                 "PhiCurrentThemeId",
                 "PhiSelectionTintEnabled",
+                "PhiPinnedTabScope",
             ]
         )
         XCTAssertEqual(Set(keys).count, keys.count, "no duplicate keys")
@@ -430,5 +436,96 @@ final class SyncableSettingsTests: XCTestCase {
         let next = SyncableSettings.snapshot(defaults, now: 300, settings: probeRegistry)
         XCTAssertEqual(next.values[probeKey]?.updatedAtMs, 200)
         XCTAssertEqual(SyncableSettings.merge(local: next, remote: merged), merged)
+    }
+
+    // MARK: - pinned-tab scope mirror (M3-3 §7.1)
+
+    /// CASE 8.1 — the mirror key is an ordinary synced setting and round-trips.
+    ///
+    /// 参数顺序是 `(值, defaults)`，值是生成的 protobuf 结构体（`stringValue` 属性 /
+    /// `OneOf_V.stringValue` case），不是手写枚举：两种写法都编译不过，这条用例把它钉住。
+    func testPinnedTabScopeSettingRoundTripsAndIsRegistered() {
+        let setting = PinnedTabScopeMirror.pinnedTabScope
+
+        setting.write(stringValue("space", at: 42), defaults)
+
+        XCTAssertEqual(setting.read(defaults)?.stringValue, "space")
+        XCTAssertEqual(setting.key, "PhiPinnedTabScope")
+        XCTAssertTrue(SyncableSettings.all.contains { $0.key == "PhiPinnedTabScope" },
+                      "the mirror key has to be in the registry the engine walks")
+    }
+
+    /// CASE 8.2 — a scope this build does not know is dropped silently, and the drop leaves
+    /// both sidecars standing so the local value is re-pushed instead of being marked synced.
+    func testPinnedTabScopeSettingDropsAnUnknownScopeAndLeavesTheSidecarsAlone() {
+        let setting = PinnedTabScopeMirror.pinnedTabScope
+        let registry = [setting]
+        SyncableSettings.apply(fromMap([setting.key: stringValue("space", at: 10)]),
+                               to: defaults, settings: registry)
+        let timestampBefore = sidecarTimestamp(setting.key)
+        let valueBefore = defaults.data(forKey: SyncableSettings.valueKey(for: setting.key))
+
+        SyncableSettings.apply(fromMap([setting.key: stringValue("galaxy", at: 20)]),
+                               to: defaults, settings: registry)
+
+        XCTAssertEqual(setting.read(defaults)?.stringValue, "space")
+        XCTAssertEqual(timestampBefore, 10)
+        XCTAssertEqual(sidecarTimestamp(setting.key), timestampBefore)
+        XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: setting.key)),
+                       valueBefore)
+    }
+
+    /// CASE 8.3 — reseed, case one: the mirror key is missing, so it is written from the row
+    /// together with both sidecars. Writing the sidecars is what makes the seed "already
+    /// reconciled" rather than a fresh local edit the next snapshot would stamp with `now`.
+    func testReseedSeedsTheMissingMirrorKeyTogetherWithBothSidecars() {
+        let key = PinnedTabScopeMirror.pinnedTabScope.key
+
+        let outcome = PinnedTabScopeMirror.reseed(rowValue: .space, into: defaults)
+
+        XCTAssertEqual(outcome, .seeded)
+        XCTAssertEqual(defaults.string(forKey: key), "space")
+        XCTAssertNotNil(defaults.object(forKey: SyncableSettings.timestampKey(for: key)),
+                        "the timestamp sidecar has to be written, not cleared")
+        XCTAssertNotNil(defaults.data(forKey: SyncableSettings.valueKey(for: key)),
+                        "the value sidecar has to be written, not cleared")
+        let entity = SyncableSettings.snapshot(defaults, now: 999,
+                                               settings: [PinnedTabScopeMirror.pinnedTabScope])
+        XCTAssertNotEqual(entity.values[key]?.updatedAtMs, 999,
+                          "a seed must not be read back as a local edit stamped with now")
+    }
+
+    /// CASE 8.4 — reseed, case two: the key disagrees with the row. The account's value is
+    /// authoritative, so the key is left alone and the caller is told to re-run the local
+    /// migration towards the MIRROR value, not the row's.
+    func testReseedKeepsTheMirrorKeyAndAsksForAMigrationWhenItDisagreesWithTheRow() {
+        let key = PinnedTabScopeMirror.pinnedTabScope.key
+        defaults.set("profile", forKey: key)
+        defaults.set(NSNumber(value: Int64(42)), forKey: SyncableSettings.timestampKey(for: key))
+
+        let outcome = PinnedTabScopeMirror.reseed(rowValue: .space, into: defaults)
+
+        XCTAssertEqual(outcome, .runLocalMigration(to: .profile))
+        XCTAssertEqual(defaults.string(forKey: key), "profile")
+        XCTAssertEqual(sidecarTimestamp(key), 42)
+    }
+
+    /// CASE 8.5 — reseed, case three: key and row agree, so nothing is written at all and the
+    /// sidecars keep the values they had. Clearing them would let a machine that has been
+    /// offline for two weeks publish this key stamped `now` and roll the account-level scope
+    /// back, dragging every device through a full pin migration.
+    func testReseedWritesNothingWhenTheMirrorKeyAlreadyMatchesTheRow() {
+        let key = PinnedTabScopeMirror.pinnedTabScope.key
+        let markerValue = Data([0xAB, 0xCD])
+        defaults.set("space", forKey: key)
+        defaults.set(NSNumber(value: Int64(7)), forKey: SyncableSettings.timestampKey(for: key))
+        defaults.set(markerValue, forKey: SyncableSettings.valueKey(for: key))
+
+        let outcome = PinnedTabScopeMirror.reseed(rowValue: .space, into: defaults)
+
+        XCTAssertEqual(outcome, .noop)
+        XCTAssertEqual(defaults.string(forKey: key), "space")
+        XCTAssertEqual(sidecarTimestamp(key), 7)
+        XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: key)), markerValue)
     }
 }

@@ -122,6 +122,14 @@ extension LocalStore {
             let settings = try self.browserDataSettings(in: context, createIfNeeded: true)
             settings?.pinnedTabScopeRawValue = newScope.rawValue
         }
+        // 本地 → 镜像（§7.1 第 2 步）。只在**成功路径**上写：键与行必须同生同死，写失败时
+        // 行没变，键也不许变。
+        //
+        // 这是全仓库**唯一**一处刻意让 sidecar 落后于键值的地方——它是一次真实的用户（或
+        // 远端落地之后的重放）操作，下一轮 `SyncableSettings.snapshot` 本来就该把它判成本地
+        // 变更、盖上 `now` 发出去。远端落地那条路上值相同、sidecar 已由 `apply` 记下同一份
+        // signature，于是那一次重写不会被判成本地变更，链路收敛。
+        UserDefaults.standard.set(newScope.rawValue, forKey: PinnedTabScopeMirror.key)
     }
 
     func pinnedTabScope(in context: ModelContext) throws -> PinnedTabScope {
@@ -745,6 +753,11 @@ extension LocalStore {
             model.layout = source.layout
             model.lastSeen = candidate.lastSeen
             model.icon = source.icon
+            // 内容编辑戳必须跟着搬过来（R-M3-3-26 加的这一列，迁移路径当时没跟上）。不搬的
+            // 话用户切一次作用域，本机每一条 pin 的比较戳就从「上次真实编辑」塌回
+            // `createdDate`，于是它们在下一轮全部输给对端任意一次旧编辑——一次作用域切换变成
+            // 一次账户级的内容回滚。
+            model.contentUpdatedDate = source.contentUpdatedDate
             model.pinLineageId = candidate.lineageId
             try applyPinnedTabOwner(owner, to: model, in: context)
             context.insert(model)

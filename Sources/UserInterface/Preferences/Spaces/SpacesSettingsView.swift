@@ -99,6 +99,29 @@ struct SpacesSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
             syncThemeControls()
         }
+        // The pinned-tab scope picker is bound to a `@State` that only its own handler
+        // writes, so a scope arriving from another device leaves this pane showing the old
+        // value. The user would then pick that stale value again, and the account would take
+        // it as a fresh local change and roll every device back.
+        //
+        // 读的是**镜像键**（账户刚落地的那个值），不是 `store.pinnedTabScope()`：跑迁移的是
+        // 协调器在同一条通知上的观察者，而那是一次异步写，这一跳的时候行还没追上。行是最终
+        // 会追上去的那一端，而镜像键此刻就是权威值，也正是这个选择器不许再当作本机变更发回
+        // 去的那个值。迁移失败时行留在旧作用域，`onAppear` 下次开面板会按行摆正。
+        //
+        // `.receive(on:)` 因为 `SyncableSettings.apply` 跑在引擎线程上：`@State` 只能在主
+        // 线程写。
+        .onReceive(
+            NotificationCenter.default
+                .publisher(for: .phiSyncedSettingsDidApply)
+                .receive(on: DispatchQueue.main)
+        ) { note in
+            let applied = note.userInfo?[SyncableSettings.appliedKeysUserInfoKey] as? [String] ?? []
+            guard applied.contains(PinnedTabScopeMirror.key),
+                  let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
+                  let scope = PinnedTabScope(rawValue: raw) else { return }
+            pinnedTabScope = scope
+        }
     }
 
     /// Every Space the list manages, in the manager's published order.

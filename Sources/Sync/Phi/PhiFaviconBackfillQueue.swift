@@ -151,6 +151,13 @@ final class PhiFaviconBackfillQueue {
     static let maxBytes = 65_536
     /// **一行**的总预算（两步 + 那次重试），**计入 `failed`**。
     static let perItemTimeout: TimeInterval = 5
+    /// 第 1 步（本机历史查询）自己的子预算，**必须严格小于 `perItemTimeout`**。
+    ///
+    /// 一次本地查询用不了一秒。给它整份 5 s 的话，一个系统性变慢的 bridge 会把第 2 步饿到
+    /// **恰好零**——预算用完时 `withDeadline` 连请求都不发，那一行就这么失败掉，而且不会
+    /// 重新排队。那种故障在日志上只表现为 `from_network=0`，看起来与「本机历史里什么都有」
+    /// 一模一样。
+    static let historyLookupTimeout: TimeInterval = 1
     /// 最多跟几跳重定向。
     static let maxRedirects = 3
     /// 队列本身的深度上限。越过之后新来的行**直接丢**——回填是尽力而为的装饰，而一条无界
@@ -243,9 +250,13 @@ final class PhiFaviconBackfillQueue {
     /// `nonisolated` 且**同步返回**，所以退出账户那条主线程路径上不需要等一次 actor hop；
     /// 真正的清理（丢掉未完成项、取消在飞的请求）排一次主 actor 跃迁再做——它不需要同步，
     /// 挡住后续工作的是那一位标志，不是这次清理。
+    /// **强捕获 `self`，不是 `[weak self]`。** 退出账户那条路上协调器在调完 `shutdown()`
+    /// 之后两句就把引擎丢掉，而引擎是这个队列唯一的强持有者；没有轮次在飞时队列会在这个
+    /// 任务拿到执行机会**之前**就析构，于是 `invalidateAndCancel()` 一次都不跑，那个
+    /// ephemeral 会话连同它的连接池一起漏掉。任务立刻结束，所以没有循环引用可担心。
     nonisolated func stop() {
         stopSignal.stop()
-        Task { @MainActor [weak self] in self?.discardAndCancel() }
+        Task { @MainActor [self] in self.discardAndCancel() }
     }
 
     /// 本轮新落地的书签行排进队尾。**文件夹一概不收**：它们带的是占位 URL
@@ -380,9 +391,16 @@ final class PhiFaviconBackfillQueue {
         // 第 1 步：Chromium 的 favicon 服务。它只对本 Profile 真正访问过的 URL 有货，所以
         // 大多数新落地的行在这里拿不到东西——但拿得到的那些一个网络请求都不用发。
         //
-        // **也套截止时间**：生产实现是一个包着 bridge 回调的 continuation，回调丢了的话这里
-        // 会永远挂着，而挂着的是引擎那条串行轮次队列——此后每一轮同步都排在它后面。
-        let historical = (try? await withDeadline(deadline) {
+        // **套两层截止时间**：一层是这一行的总预算，另一层是第 1 步自己的子预算，取较小的
+        // 那个。子预算保证一个慢 bridge 饿不死第 2 步；总预算保证一行不会超支。
+        //
+        // 这两层都只是**报时**——真正让子任务回来的是取图器那一侧对取消的反应
+        // （`PhiFaviconFetcher.chromiumFavicon` 的 `withTaskCancellationHandler`）。一个任务组
+        // 在它的子任务返回之前不会解开，所以一个不理会取消的第 1 步会把 `drainOnce()` 连同
+        // 引擎那条串行轮次队列一起钉死，套多少层截止时间都没用。
+        let historyDeadline = Deadline(seconds: min(Self.historyLookupTimeout,
+                                                    Self.perItemTimeout))
+        let historical = (try? await withDeadline(historyDeadline) {
             await fetcher.chromiumFavicon(profileId: profileId, pageURL: pageURL)
         }) ?? nil
         if let data = historical, accepts(data) {
@@ -480,13 +498,81 @@ final class PhiFaviconFetcher: PhiFaviconFetching {
         session.invalidateAndCancel()
     }
 
+    /// **必须对取消有反应**，否则给它套截止时间是没有意义的：一个任务组在它的子任务返回
+    /// 之前不会解开，所以一个挂在裸 `withCheckedContinuation` 里的子任务会把
+    /// `withDeadline` 连同 `drainOnce()` 一起钉死——而 `drainOnce()` 正被引擎那条串行轮次
+    /// 队列 await 着。丢了回调的 bridge 于是会永久停掉这台机器的同步，`stop()` 也够不着它
+    /// （那一位标志只在行与行之间被读到）。
+    ///
+    /// `withTaskCancellationHandler` 加一个只结账一次的信箱：回调与取消谁先到谁算数，晚到
+    /// 的那个被忽略而不是把 continuation resume 第二次。
     func chromiumFavicon(profileId: String, pageURL: URL) async -> Data? {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return nil }
         let urlString = pageURL.absoluteString
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
-            bridge.getFaviconForURL(urlString, profileId: profileId) { data in
-                continuation.resume(returning: data)
+        let box = ContinuationBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
+                box.arm(continuation)
+                bridge.getFaviconForURL(urlString, profileId: profileId) { data in
+                    box.settle(with: data)
+                }
             }
+        } onCancel: {
+            box.settle(with: nil)
+        }
+    }
+
+    /// 恰好 resume 一次的信箱。
+    ///
+    /// 三个事件可能以任意顺序到达，而且来自不同线程：装上 continuation（`arm`）、bridge 的
+    /// 回调、取消处理器。取消处理器甚至可能跑在 `operation` 之前——任务在进入
+    /// `withTaskCancellationHandler` 时就已经被取消的话就是这样——所以先到的结果要能被记下来
+    /// 等 `arm` 来结账，而不是丢掉（那会把挂死换成另一种挂死）。
+    private final class ContinuationBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Data?, Never>?
+        private var settled = false
+        private var earlyResult: Data?
+        private var hasEarlyResult = false
+
+        /// 装上 continuation；结果已经先到了就当场结账。
+        func arm(_ continuation: CheckedContinuation<Data?, Never>) {
+            lock.lock()
+            guard !settled else {
+                lock.unlock()
+                return
+            }
+            if hasEarlyResult {
+                let result = earlyResult
+                settled = true
+                hasEarlyResult = false
+                earlyResult = nil
+                lock.unlock()
+                continuation.resume(returning: result)
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+        }
+
+        /// 第一个到达的事件结账，后到的一律忽略。
+        func settle(with data: Data?) {
+            lock.lock()
+            guard !settled else {
+                lock.unlock()
+                return
+            }
+            guard let continuation else {
+                // continuation 还没装上：记下来，`arm` 时结账。
+                hasEarlyResult = true
+                earlyResult = data
+                lock.unlock()
+                return
+            }
+            settled = true
+            self.continuation = nil
+            lock.unlock()
+            continuation.resume(returning: data)
         }
     }
 

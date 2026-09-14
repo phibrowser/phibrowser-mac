@@ -275,12 +275,18 @@ struct OwnedKindRegistration {
     /// 一份信封字节里那条实体的归属引用（书签是父 / Space，pin 是 owner）。切片的拓扑序
     /// 与 tombstone 的反拓扑序都从它算深度。
     let owners: (Data) -> [String]
-    /// §7.4 的「本机主动解除拆分」：把基线字节里的拆分伙伴清空，并**给清空后的那个值盖上
-    /// 本轮的 `now`**（第二个参数）。第三个参数是轮首那份身份翻译表，与 `snapshot` /
+    /// §7.4 的「本机主动解除拆分」：把一批基线字节里的拆分伙伴清空，并**给清空后的那个值
+    /// 盖上本轮的 `now`**（第二个参数）。第三个参数是轮首那份身份翻译表，与 `snapshot` /
     /// `tombstones` 收的是同一份——这条 kind 要拿它把基线的身份对回本机行。
     ///
-    /// nil = 这条 kind 没有这个概念（书签），**或者这一条根本不是一次解除**，两种情形下
-    /// 调用方都原样沿用基线。
+    /// **成员本身是可选的**：`nil` = 这条 kind 没有拆分伙伴这个概念（书签），调用方连
+    /// main actor 那一跳与整个循环都跳过。
+    ///
+    /// **收一批、回一批**，不是一条一条问：它触本机（要读本轮那份行快照），所以是
+    /// `@MainActor`，而 `doctoredOwnedTable` 要遍历这条 kind 的**每一条**游标——逐条问就是
+    /// 每条游标一次 actor 跃迁，书签账户上那是每轮几千次主线程跳转。收进来的是引擎按通用
+    /// 规则筛过的候选（没有 `pendingPartnerLineage`、有基线），交回去的只有真的被改写的那几
+    /// 条；不在返回值里的身份原样沿用基线。
     ///
     /// **时间戳必须在这里盖。** 盖戳函数（`PinKind.stamp`）分不出「表副本刚刚抹掉了一个真实
     /// 的伙伴」与「这条 pin 从来就没有伙伴」——两种情形到它手上都是「空投影对空基线」，于是
@@ -293,7 +299,10 @@ struct OwnedKindRegistration {
     /// （带着伙伴）与基线（空）签名不同，于是那个字段每轮重盖一次 `now`、每轮重发一次，
     /// 两台设备互相看不出变化又各自重发，**每一条拆分 pin 每一轮都在发**，还吃掉 250 条的
     /// 发布预算。判据因此是「本机那一行还挂不挂着这条链接」，不是「游标有没有在等伙伴」。
-    let clearedSplitPartner: (Data, Int64, OwnedOwnerMaps) -> Data?
+    ///
+    /// 判据要读本轮那份本机行快照，所以它**触本机**，与下面那一组同属 main actor。
+    let clearedSplitPartners: (@MainActor ([String: Data], Int64, OwnedOwnerMaps)
+        -> [String: Data])?
 
     // MARK: 触本机的（main actor）
 
@@ -2841,8 +2850,8 @@ actor PhiSyncEngine {
         // 时钟只读一次：`now()` 在测试里可以按读推进，两次读会让表副本的戳与快照的戳不同，
         // 而这两个值必须是同一个时刻。
         let roundNow = now()
-        let snapshot = await registration.snapshot(
-            doctoredOwnedTable(registration, table, maps: maps, now: roundNow), maps, roundNow)
+        let doctored = await doctoredOwnedTable(registration, table, maps: maps, now: roundNow)
+        let snapshot = await registration.snapshot(doctored, maps, roundNow)
         counters.excludedUnmappedOwner +=
             snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
         // §7.3 / §11.2：作用域不一致时发布半边整段跳过，而那个跳过在**每一种轮次**里都会
@@ -3131,19 +3140,30 @@ actor PhiSyncEngine {
     /// §7.4 的「本机主动解除拆分」。**只改喂给 `snapshot` 的那一份副本**。
     ///
     /// `now` 是**本轮那一个**时刻，与喂给 `snapshot` 的是同一个值：清空后的那个值就盖它，
-    /// 于是一次真正的解除以「现在」出门并赢下对端手上那条链接（见 `clearedSplitPartner`）。
+    /// 于是一次真正的解除以「现在」出门并赢下对端手上那条链接（见 `clearedSplitPartners`）。
     ///
     /// `maps` 与 `snapshot` 收的是同一份：注册项要拿它把基线的身份对回本机行，才分得出
     /// 「本机已经解除」与「两半都还链着」——后者**不能**被清，否则它每轮重发一次。
+    ///
+    /// **一条 kind 一轮一跳。** 候选的筛选（通用规则：没有 `pendingPartnerLineage`、有基线）
+    /// 留在这里，整批交给注册项在 main actor 上过一遍；没有这个概念的 kind（`nil`）连这一跳
+    /// 与整个循环都不走。逐条问的写法是每条游标一次 actor 跃迁，而这个循环遍历的是这条 kind
+    /// 的**每一条**游标。
     private func doctoredOwnedTable(_ registration: OwnedKindRegistration,
                                     _ table: PhiOwnedItemTable,
                                     maps: OwnedOwnerMaps,
-                                    now: Int64) -> PhiOwnedItemTable {
-        var doctored = table
+                                    now: Int64) async -> PhiOwnedItemTable {
+        guard let clear = registration.clearedSplitPartners else { return table }
+        var candidates: [String: Data] = [:]
         for (identity, cursor) in table.cursors {
-            guard cursor.pendingPartnerLineage == nil, let bytes = cursor.reconciled,
-                  let cleared = registration.clearedSplitPartner(bytes, now, maps)
-            else { continue }
+            guard cursor.pendingPartnerLineage == nil, let bytes = cursor.reconciled else {
+                continue
+            }
+            candidates[identity] = bytes
+        }
+        guard !candidates.isEmpty else { return table }
+        var doctored = table
+        for (identity, cleared) in await clear(candidates, now, maps) {
             doctored.cursors[identity]?.reconciled = cleared
         }
         return doctored
@@ -3674,8 +3694,9 @@ extension OwnedKindRegistration {
                       let entity = BookmarkKind.entity(from: envelope) else { return [] }
                 return BookmarkKind.ownerUuids(of: entity)
             },
-            // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换。
-            clearedSplitPartner: { _, _, _ in nil },
+            // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换：`nil` 让那一段连 main
+            // actor 那一跳与整个循环都不走。
+            clearedSplitPartners: nil,
             beginRound: { state.reload(try access.allBookmarks()) },
             // §5.1 的索引种子：游标键 ∪ **本机全部非 nil 的 `syncId`**——问的是
             // `allSyncIds()` 而不是快照，于是孤儿根下面那些行的 tombstone 也路由得到。
@@ -4193,12 +4214,15 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
 /// （§6.7：pin 完全不走 §6——身份是 `(lineage, owner)` 推导出来的，本机行上没有一列
 /// 要写回，所以既没有铸造也没有配对表）。
 ///
-/// **不隔离**，与 `BookmarkSyncRoundState` 同款。写只发生在一处：`beginRound` 那个
-/// `@MainActor` 闭包里的 `reload`。读多在 main actor 上，但 §7.4 的表副本是引擎 actor 上的
-/// 同步代码（`doctoredOwnedTable`），它也要读一次。两者之间有严格的先行关系：一轮在
-/// `roundQueue` 上串行，`beginOwnedRound()` **await 到 `beginRound()` 返回**之后这一轮才往下
-/// 走，而表副本发生在那之后的发布段——中间那次 actor 跃迁就是内存屏障。写口保持
-/// `private(set)`，于是这条不变量在类型上就守住了。
+/// **`@MainActor`，与 `BookmarkSyncRoundState` 同款。** 两个访问协议都是 main actor 的，注册项
+/// 里每一个触本机的闭包也都是，所以这份轮内状态只在 main actor 上被读写——包括 §7.4 的表副本
+/// 那一路：`clearedSplitPartners` 因此也是 `@MainActor`，由 `doctoredOwnedTable` 每轮跳一次。
+///
+/// 隔离**不能**为了省那一跳而摘掉。今天它只有 `reload` 一个写者，串行的轮次确实排除了竞争，
+/// 但那是一条靠人读代码才成立的不变量：编译器看不见一个只经不透明闭包捕获跨越隔离域的对象，
+/// 于是「摘掉 `@MainActor`」把一条编译期保证换成了没有任何东西检查的运行期保证——而 Task 6b
+/// 正要往这个类里加轮中写者（A11 的重铸）。
+@MainActor
 final class PinSyncRoundState {
     /// 轮首那一次 `allPins()`：当前作用域内、非休眠的全部行。
     private(set) var locals: [PhiLocalPin] = []
@@ -4282,6 +4306,21 @@ func pinClientTag(for identity: String) -> String {
 /// 对端收到的值与它手上那条相等，`plan` 因此产不出任何 step，它的 `reconciled` 也就永不刷新,
 /// 于是它下一轮同样重发——**两台设备把每一条拆分 pin 每一轮都发一遍**，还吃掉每轮 250 条的
 /// 发布预算，真正的改动被挤出去。
+/// §7.4 的表副本，pin 这一批。**一轮一跳**：引擎把这条 kind 的全部候选（通用规则已经筛过）
+/// 一次交进来，返回的只有真的被改写的那几条，不在返回值里的身份原样沿用基线。
+@MainActor
+func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: OwnedOwnerMaps,
+                             state: PinSyncRoundState) -> [String: Data] {
+    var out: [String: Data] = [:]
+    for (identity, bytes) in baselines {
+        guard let cleared = clearedPinSplitPartner(bytes, now: now, maps: maps, state: state)
+        else { continue }
+        out[identity] = cleared
+    }
+    return out
+}
+
+@MainActor
 func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
                             state: PinSyncRoundState) -> Data? {
     guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
@@ -4355,8 +4394,8 @@ extension OwnedKindRegistration {
                       let entity = PinKind.entity(from: envelope) else { return [] }
                 return PinKind.ownerUuids(of: entity)
             },
-            clearedSplitPartner: { bytes, now, maps in
-                clearedPinSplitPartner(bytes, now: now, maps: maps, state: state)
+            clearedSplitPartners: { baselines, now, maps in
+                clearedPinSplitPartners(baselines, now: now, maps: maps, state: state)
             },
             beginRound: {
                 state.reload(try access.allPins(),

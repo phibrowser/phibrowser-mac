@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Phi is counting the Spaces in your account. This can take up to two minutes." : {
+      "comment" : "Pairing wizard - loading page progress detail"
+    },
     "—" : {
       "comment" : "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)"
     },

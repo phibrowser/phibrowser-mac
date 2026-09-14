@@ -46,6 +46,16 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         PhiSyncEntity.bookmarkClientTag(uuid)
     }
 
+    /// 预览侧的小工具。预览只认 Space 形状的载荷，所以这里只要 Space 的 tag 与密文；
+    /// 书签那一条用上面既有的 `bookmarkTag(_:)`。
+    private func spaceHash(_ uuid: String) -> String {
+        PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
+    }
+
+    private func spaceCiphertext(_ uuid: String, name: String = "Work") throws -> Data {
+        try PhiEntityCodec.encrypt(envelope(spacePayload(uuid: uuid, name: name)), key: key)
+    }
+
     private func space(_ spaceId: String) -> PhiLocalSpace {
         PhiLocalSpace(spaceId: spaceId, profileId: "Default", name: "S", colorHex: "#3A6FF8",
                       iconName: "emoji:1F4BC", sortOrder: 0,
@@ -2435,5 +2445,138 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                         "③ 那个 Space 的整批落地没有被 `rowAlreadyMapped` 拒掉")
         XCTAssertNotNil(table.cursors["x2"]?.reconciled)
         XCTAssertEqual(counters?.adopted, 1, "④ 只认领了一条")
+    }
+
+    // MARK: - CASE 11.1 – 11.5：预览的页预算与截止时间
+
+    // 预览与正式拉取共用 `maxPullPages = 64` 时，一页 500 条、上限 32 000 条实体要横跨
+    // 全部 kind，并且 tombstone 也算在里面（M5 之前永不回收）。两种新 kind 之后，一个
+    // 普通账户的书签与 pin 就能把这 64 页吃完，于是配对向导会在数清账户里有几个 Space
+    // 之前先被截断。所以预览有它自己的页预算与自己的截止时间。
+
+    /// CASE 11.1 — 默认页预算就是 400。
+    ///
+    /// 防的是什么：每个 `makeEngine` 都显式传 `previewMaxPages` 的用例永远测不到**默认
+    /// 值**——把默认写成 64 的实现照样全绿，而线上走的正是那个默认值。所以这一条**不经
+    /// `makeEngine`**：直接构造一台不传这个参数的引擎，让它自己跑到预算耗尽。
+    func testTheDefaultPreviewPageBudgetIsFourHundredPages() async throws {
+        XCTAssertEqual(PhiSyncEngine.defaultPreviewMaxPages, 400)
+
+        let client = FakePhiSyncClient()
+        client.keepReportingChangesRemaining = true        // 永远还有下一页
+        client.seed(tagHash: spaceHash("su-1"),
+                    ciphertext: try spaceCiphertext("su-1"), version: 3)
+        let clock = Clock()                                // advancePerRead = 0 ⇒ 期限不参与
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   spaceAccess: makeSpaceAccess(), spaceStore: makeSpaceStore(),
+                                   ownedKinds: [], now: { clock.read() })
+
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(let error) = result else { return XCTFail("expected failure") }
+        XCTAssertEqual(error, .truncated)
+        // 那台不传参数的引擎真的走到了 400 页才停：默认实参与 `defaultPreviewMaxPages` 同源。
+        XCTAssertEqual(client.getUpdatesCalls.count, 400)
+        let stats = await engine.lastPreviewStatsForTesting
+        XCTAssertEqual(stats.pages, 400)
+    }
+
+    /// CASE 11.2 — 第 65 页仍然继续。
+    ///
+    /// 防的是什么：按 64 页停的实现必须让这条红。
+    func testThePreviewKeepsPagingPastTheSixtyFourthPage() async throws {
+        let client = FakePhiSyncClient()
+        // 前 65 页都报 `changesRemaining == true`，第 66 页才收尾。这里用的是倒计时
+        // `pageBudgetExhaustsAfter` 而不是 `keepReportingChangesRemaining`：后者永不收尾，
+        // 结果只能是 `.truncated`，而这一条要断言的恰恰是 `.success`。
+        client.pageBudgetExhaustsAfter = 65
+        client.seed(tagHash: spaceHash("su-1"),
+                    ciphertext: try spaceCiphertext("su-1"), version: 3)
+        let engine = makeEngine(client: client)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result else { return XCTFail("expected success") }
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 64, "64 页不是预览的预算")
+        XCTAssertEqual(summaries.map(\.syncUuid), ["su-1"])
+    }
+
+    /// CASE 11.3 — 超出页预算返回 `.truncated`，两个计数经一条独立的只读接缝暴露。
+    ///
+    /// 防的是什么：没有这两个数字，一次线上截断在日志里与一次网络失败无法区分。但它们
+    /// **不能挂在 `.truncated` 上**：给那个 case 加载荷会同时改坏 `PhiSyncEngineSpaceTests`
+    /// 与 `PairingWizardViewModelTests` 里既有的断言，以及 `PairingWizardViewModel` 的两处
+    /// `case .truncated:`。做成只读接缝，既有代码一行不动。
+    func testAnExhaustedPreviewPageBudgetExposesItsPageAndEntityCounts() async throws {
+        let client = FakePhiSyncClient.alwaysMorePages(key: key)
+        client.seed(tagHash: spaceHash("su-1"),
+                    ciphertext: try spaceCiphertext("su-1"), version: 3)
+        let engine = makeEngine(client: client, previewMaxPages: 3)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(let error) = result else { return XCTFail("expected failure") }
+        XCTAssertEqual(error, .truncated)
+        XCTAssertEqual(client.getUpdatesCalls.count, 3)
+        let stats = await engine.lastPreviewStatsForTesting
+        XCTAssertEqual(stats.pages, 3)
+        XCTAssertGreaterThan(stats.entities, 0, "数过的实体条数，不是摘要条数")
+    }
+
+    /// CASE 11.4 — 截止时间是 120 s，超期报 `.timedOut` 而不是 `.truncated`。
+    ///
+    /// 期限判在轮体里、判在页边界上：`serialized(_:)` 把轮体放进一个非结构化 `Task {}`，
+    /// 向导那一侧取消不掉它，所以没有这条守卫，一次抖动的网络会一直占着 round 队列。
+    func testThePreviewDeadlineIsTwoMinutesAndReportsTimedOut() async throws {
+        XCTAssertEqual(PhiSyncEngine.previewDeadlineMs, 120_000)
+
+        let clock = Clock()
+        clock.advancePerRead = 30_000                      // 每读一次推进 30 s
+        let client = FakePhiSyncClient()
+        client.pageBudgetExhaustsAfter = 1_000             // 永远 changesRemaining == true
+        client.seed(tagHash: spaceHash("su-1"),
+                    ciphertext: try spaceCiphertext("su-1"), version: 3)
+        let engine = makeEngine(client: client, clock: clock)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(let error) = result else { return XCTFail("expected failure") }
+        XCTAssertEqual(error, .timedOut, "`.truncated` 是页预算用尽，期限是另一回事")
+        // 120 s / 30 s ⇒ 三页之后就超了；断言留一页余量，免得多一次 `now()` 读取就红。
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 0)
+        XCTAssertLessThanOrEqual(client.getUpdatesCalls.count, 4,
+                                 "期限必须远在 400 页预算之前把分页停下来")
+    }
+
+    /// CASE 11.5 — 预览仍然跳过 tombstone 与非 Space kind，一条都不物化。
+    ///
+    /// 这是**既有行为**（解密前 `guard !entity.deleted`；构造摘要前 `guard case .space`），
+    /// 这里只是把它钉住：预览是只读的，Task 6 那条按 kind 泛型分发的路径**绝不能**从预览
+    /// 走到——否则一次配对预览就会往本机写书签。
+    func testThePreviewSkipsTombstonesAndNonSpaceKindsAndMaterialisesNothing() async throws {
+        let bookmarkAccess = FakeBookmarkAccess(rows: [])
+        let bookmarkStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteTombstone(tag: PhiSyncEntity.spaceClientTag("su-dead"), version: 2,
+                            entityId: "srv-dead"),
+            remoteEntity(envelope(bookmarkPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                         version: 3, entityId: "srv-b1", key: key),
+            remoteEntity(envelope(spacePayload(uuid: "su-live", name: "Work")),
+                         tag: PhiSyncEntity.spaceClientTag("su-live"),
+                         version: 4, entityId: "srv-live", key: key),
+        ])]
+        let engine = makeEngine(client: client, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(bookmarkAccess, bookmarkStore)])
+
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(summaries.map(\.syncUuid), ["su-live"], "tombstone 与书签都不在列表里")
+        XCTAssertEqual(summaries.first?.name, "Work")
+        // 一条都不物化：本机不被读、不被写，归属游标表连载入都没有，零 commit。
+        XCTAssertTrue(bookmarkAccess.calls.isEmpty, "预览不碰本机书签")
+        XCTAssertTrue(bookmarkStore.hadRecordsSeen.isEmpty, "预览不载入归属游标表")
+        XCTAssertTrue(bookmarkStore.table.cursors.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty, "预览零 commit")
+        let stats = await engine.lastPreviewStatsForTesting
+        XCTAssertEqual(stats.pages, 1)
+        XCTAssertEqual(stats.entities, 3, "数的是页里的实体总数，过滤在它之后")
     }
 }

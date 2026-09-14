@@ -440,6 +440,19 @@ actor PhiSyncEngine {
     /// 一次预览要走过整个账户的书签与 pin 才能数清账户里有几个 Space。
     private let previewMaxPages: Int
 
+    /// 上一条的默认值，**与 init 的默认实参同源**。拉取的 64 页 × 每页 500 条 = 32 000 条
+    /// 实体，横跨全部 kind 并且把 tombstone 也算进去（M5 之前永不回收）；书签与 pin 落地
+    /// 之后，一个普通账户就能在数清 Space 之前把它吃完，于是配对向导拿到的是一次
+    /// `.truncated`。预览的预算因此单独放大到 400 页；真正封顶这次预览的是
+    /// `previewDeadlineMs`，页预算只是兜底。
+    static let defaultPreviewMaxPages = 400
+
+    /// 最近一次预览的页数与实体数（§9.1）。成功、截断、超期三条路径都写它。
+    /// 只有这两个数字：没有它们，一次线上截断在日志里与一次网络失败无法区分，而
+    /// `PhiSpacePreviewError.truncated` **不带载荷**（给它加 associated value 会同时改坏
+    /// 向导与两个测试文件里既有的 `case .truncated`），所以计数走这条独立的只读接缝。
+    private var lastPreviewStats: (pages: Int, entities: Int) = (0, 0)
+
     /// label -> (`client_tag_hash` -> 身份)。**随学随加**：每当一条带密文的实体被解密并
     /// 归位，它的身份立刻插进它那条 kind 的索引，同一次 drain 的后续页就能路由它的
     /// tombstone。每轮开头从游标表与本机身份重建，轮内只增不减。
@@ -600,7 +613,7 @@ actor PhiSyncEngine {
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
          ownedKinds: [OwnedKindRegistration] = [],
-         previewMaxPages: Int = 400,
+         previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.domainKeys = domainKeys
         self.client = client
@@ -683,11 +696,16 @@ actor PhiSyncEngine {
     /// 向导那一侧的赛跑管不住这一轮：`serialized(_:)` 把轮体放进一个**非结构化**
     /// `Task {}`，它既不继承取消，`await task.value`（非 throwing Task）也不会因为
     /// 调用方被取消而提前返回。所以没有这个预算，一次抖动的网络会让预览按
-    /// 「64 页 × URLSession 每请求 60 s」跑下去，并且一直占着 round 队列，把设置
-    /// 同步一起拖住。向导侧仍然有自己的硬期限（见
+    /// 「`previewMaxPages` 页 × URLSession 每请求 60 s」跑下去，并且一直占着 round
+    /// 队列，把设置同步一起拖住。向导侧仍然有自己的硬期限（见
     /// `PairingWizardViewModel.loadAccountSpaces`），两者取值相同：那一条保证**界面**
     /// 不卡，这一条保证**工作**真的停下来。
-    static let previewDeadlineMs: Int64 = 45_000
+    ///
+    /// **它才是真正封顶一次预览的那个数**：`defaultPreviewMaxPages` 放大到 400 页之后，
+    /// 一个慢账户会先撞上期限、而不是先撞上页预算。120 s 是「大账户也数得完」与「卡住的
+    /// 网络不会一直占着 round 队列」之间的取值；向导的加载页为此有一条明说要等多久的
+    /// 进度文案。
+    static let previewDeadlineMs: Int64 = 120_000
 
     /// The gate edge itself. Runs as a queued round; never call it directly.
     private func applySpaceGate(_ enabled: Bool) {
@@ -950,12 +968,17 @@ actor PhiSyncEngine {
         var marker: Data?
         var more = true
         do {
-            while more, pages < Self.maxPullPages {
+            // 预算是**预览自己的**那一个，不是拉取的 `maxPullPages`：后者 64 页 × 500 条
+            // 要横跨全部 kind、并且把 tombstone 一起数进去，书签与 pin 落地之后它在一个
+            // 普通账户上就不够用了（§5.8）。
+            while more, pages < previewMaxPages {
                 // §4.5 的期限，判在**发下一页之前**。这是唯一能真正停下这次预览的地方
                 // （见 `previewDeadlineMs`）；判在页边界上，所以最坏还要等当前这一页的
                 // `URLSession` 超时，但分页不会再往下走，round 队列也随之让开。
                 guard now() - startedAt < Self.previewDeadlineMs else {
-                    AppLogWarn("[phi-sync] space preview: pages=\(pages) error=deadline")
+                    lastPreviewStats = (pages, entities)
+                    AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
+                               + "error=deadline")
                     box.result = .failure(.timedOut)
                     return
                 }
@@ -1003,7 +1026,10 @@ actor PhiSyncEngine {
         guard !more else {
             // **不返回部分结果**：Account 列缺一条，用户就可能把一个账户里已经存在的
             // Space 选成「Add as new」，铸出第二条实体——而那正是这个向导要消灭的状态。
-            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=truncated")
+            // 计数走 `lastPreviewStats`，**不挂在 `.truncated` 上**：那个 case 不带载荷。
+            lastPreviewStats = (pages, entities)
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
+                       + "error=truncated")
             box.result = .failure(.truncated)
             return
         }
@@ -1021,6 +1047,7 @@ actor PhiSyncEngine {
                 overlayOpacityLightMilli: entity.overlayOpacityLight.intValue,
                 overlayOpacityDarkMilli: entity.overlayOpacityDark.intValue)
         }.sorted { $0.syncUuid < $1.syncUuid }   // 顺序确定，便于测试与两机对照
+        lastPreviewStats = (pages, entities)
         // §9.1 第一条。R12：只有计数。
         AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                    + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
@@ -5017,5 +5044,12 @@ extension PhiSyncEngine {
 
     /// 最近一轮每条注册 kind 的计数行（§11.2），按 `label` 索引。
     var lastOwnedRoundCountersForTesting: [String: OwnedRoundCounters] { ownedCounters }
+
+    /// 最近一次预览翻过几页、数过几条实体（§5.8）。成功、截断、超期三条路径都写它。
+    ///
+    /// **这是一条独立的只读接缝，不是 `.truncated` 的载荷**：给那个 case 加 associated
+    /// value 会同时改坏向导里的两处 `case .truncated:` 与两个测试文件里既有的断言，而
+    /// 它们要表达的东西一个字都没变。
+    var lastPreviewStatsForTesting: (pages: Int, entities: Int) { lastPreviewStats }
 }
 #endif

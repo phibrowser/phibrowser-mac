@@ -154,7 +154,7 @@ final class PairingWizardViewModel: ObservableObject {
          previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>,
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace],
          themeDisplayName: @escaping (String) -> String?,
-         loadDeadline: Duration = .seconds(45)) {
+         loadDeadline: Duration = .seconds(120)) {
         self.keyLayer = keyLayer
         self.previewAccountSpaces = previewAccountSpaces
         self.pairableLocalSpaces = pairableLocalSpaces
@@ -435,10 +435,12 @@ final class PairingWizardViewModel: ObservableObject {
                                        accountProfileNames: accountNames)
     }
 
-    /// §4.5 的 45 s 期限 + §4.6 的错误映射，一处。`URLSession` 默认每请求 60 s，而
-    /// 预览是一次**分页**拉取，不设期限就可能让加载页停几分钟。R12：具体错误只进日志。
+    /// §4.5 的期限 + §4.6 的错误映射，一处。`URLSession` 默认每请求 60 s，而预览是一次
+    /// **分页**拉取，不设期限就可能让加载页停几分钟。R12：具体错误只进日志。
     ///
-    /// **期限一共两道，取值相同，职责不同**：这一道保证**界面**不卡（无论底下那一轮
+    /// **期限一共两道，取值相同，职责不同**（M3-3 §5.8 把两者一起从 45 s 抬到 120 s：
+    /// 书签与 pin 之后，一次预览要走过整个账户才数得清有几个 Space；加载页为此有一条
+    /// 明说要等多久的进度文案）：这一道保证**界面**不卡（无论底下那一轮
     /// 怎么样，到点就返回），`PhiSyncEngine.previewDeadlineMs` 那一道保证**工作**真的
     /// 停下来（轮体自己不再往下翻页，round 队列随之让开）。少了任何一道都不够：这一道
     /// 管不了引擎队列，那一道管不了单次请求的 60 s。

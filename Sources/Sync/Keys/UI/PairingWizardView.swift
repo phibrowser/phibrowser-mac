@@ -55,6 +55,9 @@ struct PairingWizardView: View {
         case .loading:
             statusPage(message: NSLocalizedString("Loading your account…",
                                                   comment: "Pairing wizard - loading page"),
+                       detail: NSLocalizedString(
+                           "Phi is counting the Spaces in your account. This can take up to two minutes.",
+                           comment: "Pairing wizard - loading page progress detail"),
                        showsProgress: true)
         case .profiles(let locals, let remotes):
             ScrollView(.vertical) {
@@ -98,10 +101,21 @@ struct PairingWizardView: View {
         }
     }
 
-    private func statusPage(message: String?, showsProgress: Bool) -> some View {
+    /// `detail` 是加载页那条进度文案：预览的期限是 `PhiSyncEngine.previewDeadlineMs`
+    /// = 120 s，而 `.loading` 这一页既没有 Retry 按钮、窗口也没有关闭键。一个长达两分钟、
+    /// 不说自己在干什么也不说要等多久的加载页，用户唯一合理的反应是强退——强退掉的是一次
+    /// **配对**，下一次进来还要从头再等一遍。
+    ///
+    /// 其余三个状态页不传它（默认 nil），渲染逐字不变。
+    private func statusPage(message: String?, detail: String? = nil,
+                            showsProgress: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if let message {
                 Text(message).font(.body).themedForeground(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let detail {
+                Text(detail).font(.callout).themedForeground(.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if showsProgress { ProgressView() }

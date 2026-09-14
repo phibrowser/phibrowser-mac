@@ -2688,16 +2688,59 @@ actor PhiSyncEngine {
             cursor.version = max(cursor.version, item.version)
             table.cursors[item.identity] = cursor
         }
+        // §5.6 的 L2 支：游标带 `deletedAtMs` 时到达的**存活**实体，判据是**版本**。
+        //
+        // **这道闸必须在 `plan` 之前。** `plan` 不看这条身份自己的 `deletedAtMs`，一条重放的
+        // 旧版本照样会让它产出 `.move` / `.update`，把用户明确删掉的那一行搬回来；闸放在
+        // `plan` 之后就来不及了。
+        //
+        // 服务端对每个 `entity_id` 只保存一行、且只下发最新版本，所以一个**比那条 tombstone
+        // 更新**的存活版本按定义是删除之后发生的事（R-M3-3-23 的合法复活）；版本不新于它的
+        // 那一条是一次删除**之前**版本的重放——整类型重放、门开边沿的回放、设置侧 `.unusable`
+        // 的 marker 回退都产得出它，而那条实体的字段戳当然比本机刚写的 tombstone 早，按时间戳
+        // 判的实现会让一条用户明确删掉的行自己回来。
+        var arrivals = batch.arrivals
+        var resurrecting: Set<String> = []
+        var replayedAfterDelete = 0
+        if arrivals.contains(where: { table.cursors[$0.identity]?.deletedAtMs != nil }) {
+            var kept: [(identity: String, payload: Data, entityId: String, version: Int64)] = []
+            for item in arrivals {
+                guard var cursor = table.cursors[item.identity],
+                      cursor.deletedAtMs != nil else {
+                    kept.append(item)
+                    continue
+                }
+                // A6 在这里同样成立：收割先于判定，两支都收。判据比的是收割**之前**那个版本。
+                let known = cursor.version
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(known, item.version)
+                table.cursors[item.identity] = cursor
+                guard item.version > known else {
+                    replayedAfterDelete += 1
+                    continue
+                }
+                resurrecting.insert(item.identity)
+                kept.append(item)
+            }
+            arrivals = kept
+        }
+        counters.supersededByDelete += replayedAfterDelete
+        ownedCounters[registration.label] = counters
         var parked: [String: ParkedOwnedItem] = [:]
         for (identity, cursor) in table.cursors {
             guard let payload = cursor.pendingApply else { continue }
             parked[identity] = ParkedOwnedItem(payload: payload,
                                                pendingOwnerUuid: cursor.pendingOwnerUuid)
         }
-        guard !batch.arrivals.isEmpty || !tombstoned.isEmpty || !parked.isEmpty else { return }
+        guard !arrivals.isEmpty || !tombstoned.isEmpty || !parked.isEmpty else {
+            // 被 L2 丢掉的那些实体的收割**必须落盘**：共享 marker 已经推过那一页，这一条
+            // 版本再也不会被投递第二次，而本机那条待发的 tombstone 还要拿它去提交。
+            if replayedAfterDelete > 0 { writeOwnedTable(registration, table) }
+            return
+        }
 
         let output = await registration.plan(
-            OwnedPlanInput(arrivals: batch.arrivals.map {
+            OwnedPlanInput(arrivals: arrivals.map {
                                (payload: $0.payload, entityId: $0.entityId, version: $0.version)
                            },
                            parked: parked, table: table, maps: maps, tombstoned: tombstoned))
@@ -2745,6 +2788,13 @@ actor PhiSyncEngine {
                 // §4.5：`server` **永远是 remote，不是 merged**。把合并结果写进去，下一轮
                 // 就会把一个服务端从没见过的字节当成服务端的现状。
                 if let server = output.serverBytes[identity] { cursor.server = server }
+                // §5.6 的 L2 支后半：一次合法的复活**落地之后**才清 `deletedAtMs`。不清的
+                // 话，§4.2 第 3b 条每一轮都会看见「有 `deletedAtMs` + 有活行」而再复活发布
+                // 一次，每轮换来一次 `.conflict` 加一次限定重发。
+                if resurrecting.contains(identity), cursor.deletedAtMs != nil {
+                    cursor.deletedAtMs = nil
+                    counters.resurrected += 1
+                }
             }
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
@@ -2787,6 +2837,18 @@ actor PhiSyncEngine {
             guard var cursor = table.cursors[identity] else { continue }
             cursor.pendingDelete = false
             cursor.deleteDecidedAtMs = 0
+            table.cursors[identity] = cursor
+        }
+        // §7.4 的另一半（spec item 16 的后半）：伙伴那一条身份**本轮没有实体到达**，所以它
+        // 不在 `landed` 里；落地却在同一个事务里替它链上了反方向，于是它游标上那一位也要
+        // 跟着清。只写到达的那一侧，反方向要等下一次本地变化才被发现，中间那段时间两台机器
+        // 对同一对 pin 的显示不一致。
+        for (identity, waiting) in outcome.pendingPartnerLineages
+        where !outcome.landed.contains(identity) {
+            guard var cursor = table.cursors[identity] else { continue }
+            let updated: String? = waiting.isEmpty ? nil : waiting
+            guard cursor.pendingPartnerLineage != updated else { continue }
+            cursor.pendingPartnerLineage = updated
             table.cursors[identity] = cursor
         }
         if spaceTableChanged { writeSpaceTable(spaceTable) }
@@ -3639,6 +3701,22 @@ final class BookmarkSyncRoundState {
         }
     }
 
+    /// 把本轮**真的被删掉**的那些行从轮内投影里拿掉。
+    ///
+    /// 与 `notePersistedClaims` 同一条纪律（改的是内存里那份投影，不是再读一次库），方向
+    /// 相反。不拿掉的话，同一轮的**发布段**仍然看得见那一行：它的游标此刻是「有
+    /// `deletedAtMs`、没有 `reconciled`」，而 §4.2 第 3b 条对「有 `deletedAtMs` + 有活行」的
+    /// 回答是**复活并重新发布**——一次远端删除会被同一轮的发布段原地撤销掉，对端下一轮收到
+    /// 的是一条它刚刚删过的书签又回来了（CASE 6b.8）。
+    func noteDeletedRows(_ guids: Set<String>) {
+        guard !guids.isEmpty else { return }
+        for guid in guids {
+            if let syncId = rowByGuid[guid]?.syncId { identityToGuid.removeValue(forKey: syncId) }
+            rowByGuid.removeValue(forKey: guid)
+        }
+        locals.removeAll { guids.contains($0.guid) }
+    }
+
     func reload(_ rows: [PhiLocalBookmark]) {
         locals = rows
         identityToGuid = [:]
@@ -3940,6 +4018,26 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
     }
 
+    // §6.1 / CASE 6b.13：配对表指着的那条行**已经带着另一个账户身份** ⇒ 这次认领不成立。
+    //
+    // 真 store 在这里抛 `rowAlreadyMapped`（`LocalStore+Bookmark.swift` 的
+    // `node.syncId == nil || node.syncId == syncId`），而那是一个**批次级**的拒绝：同一个
+    // Space 这一轮其余每一条本来该落地的实体会跟着回滚，而它们与这次重复配对毫无关系。所以
+    // 在组批之前就把这一条降级成一次 create——本机多出一条新行，账户上那条身份因此有了持有
+    // 者，下一轮的差分不会为它发 tombstone。覆盖写是三条路里最坏的那一条：旧身份在本机瞬间
+    // 失去对应行，差分对此的回答是删掉账户上那条真实存在的书签。
+    var downgradedClaims: Set<String> = []
+    for index in planned.indices where planned[index].step.kind == .claim {
+        let identity = planned[index].step.identity
+        guard let guid = guidOf[identity], let holder = state.rowByGuid[guid]?.syncId,
+              holder != identity else { continue }
+        planned[index].step.kind = .create
+        guidOf.removeValue(forKey: identity)
+        downgradedClaims.insert(identity)
+        AppLogWarn("[phi-sync] a bookmark claim targets a row that already carries another "
+                   + "identity; creating a row instead uuid=\(String(identity.prefix(8)))")
+    }
+
     // §4.6 的**物理行**判据（`refuses(_:baseline:)` 够不着它——那一个比的是游标基线，而这条
     // 身份本机可能根本没有基线）。落地会把一条书签行原地变成文件夹，它的 URL 随即失去意义；
     // 反方向则让一个文件夹变成书签，**它的孩子当场失去父**。
@@ -4110,7 +4208,10 @@ private func landBookmarks(_ input: OwnedLandingInput,
         case .claim:
             emit(.claim(guid: entry.guid, syncId: identity), in: entry.group.spaceId)
         case .create:
-            if state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
+            // 被降级的那条认领**不走这一支**：它的配对表条目还在（`state.pairs` 是轮内共享
+            // 状态，落地这一侧不许改写它），但那条行已经属于别的身份了。
+            if !downgradedClaims.contains(identity),
+               state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
                 // 本机已经有这条身份的行：一次重放 / 一次认领，不是一次新建。
                 emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
                            inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),
@@ -4194,6 +4295,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
     }
     outcome.parked.subtract(outcome.landed)
     outcome.refused.subtract(outcome.landed)
+    // 本轮真的被删掉的那些行立刻退出轮内投影，于是同一轮的发布段不会把它们复活（CASE 6b.8）。
+    state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
     return outcome
 }
 
@@ -4247,6 +4350,37 @@ final class PinSyncRoundState {
         self.accountScope = accountScope
     }
 
+    /// 本轮真的被删掉的那些行立刻从轮内投影里消失。理由与
+    /// `BookmarkSyncRoundState.noteDeletedRows` 逐字相同：留着它，同一轮的发布段会按 §4.2
+    /// 第 3b 条把一条刚被远端删掉的 pin 复活发回账户。
+    func noteDeletedRows(_ guids: Set<String>) {
+        guard !guids.isEmpty else { return }
+        for guid in guids { rowByGuid.removeValue(forKey: guid) }
+        locals.removeAll { guids.contains($0.guid) }
+    }
+
+    /// 把本轮**真的写下去**的那些拆分链接折回轮内投影。
+    ///
+    /// 与 `BookmarkSyncRoundState.notePersistedClaims` 同一条纪律：一轮至多一次 fetch，这里
+    /// 改的是内存里那份投影而不是再读一次库。不折回去，同一轮的发布段读到的还是「这一行没有
+    /// 伙伴」，而 §7.4 的表副本恰好把「基线里有伙伴 ∧ 本机行没有链接」判成**一次本机解除**
+    /// ——于是这台机器刚刚接收下来的那条链接会在同一轮里被当成解除重新发回账户，把对端好好
+    /// 的拆分对拆散，而这台机器只是接收了它。
+    func noteSplitPartnerWrites(linked: [String: String], cleared: Set<String>) {
+        guard !linked.isEmpty || !cleared.isEmpty else { return }
+        for index in locals.indices {
+            let guid = locals[index].guid
+            if let partner = linked[guid] {
+                locals[index].splitPartnerLineageId = partner
+            } else if cleared.contains(guid) {
+                locals[index].splitPartnerLineageId = nil
+            } else {
+                continue
+            }
+            rowByGuid[guid] = locals[index]
+        }
+    }
+
     /// 这条账户身份的本机行**还挂着**拆分链接没有（§7.4 的表副本判据）。
     ///
     /// 判据精确到**身份**而不是 lineage：一条 lineage 在 N 个 owner 下是 N 条行，其中一条
@@ -4285,6 +4419,20 @@ func pinClientTag(for identity: String) -> String {
                                       ownerKey: halves.ownerKey)
 }
 
+/// §7.4 的表副本，pin 这一批。**一轮一跳**：引擎把这条 kind 的全部候选（通用规则已经筛过）
+/// 一次交进来，返回的只有真的被改写的那几条，不在返回值里的身份原样沿用基线。
+@MainActor
+func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: OwnedOwnerMaps,
+                             state: PinSyncRoundState) -> [String: Data] {
+    var out: [String: Data] = [:]
+    for (identity, bytes) in baselines {
+        guard let cleared = clearedPinSplitPartner(bytes, now: now, maps: maps, state: state)
+        else { continue }
+        out[identity] = cleared
+    }
+    return out
+}
+
 /// §7.4：把一份基线字节里的拆分伙伴清空，交给 `doctoredOwnedTable` 当表副本用。
 ///
 /// **取值清空、时间戳盖本轮的 `now`**。`PinKind.stamp` 的重盖判据是字段的**签名**（取值，
@@ -4306,20 +4454,6 @@ func pinClientTag(for identity: String) -> String {
 /// 对端收到的值与它手上那条相等，`plan` 因此产不出任何 step，它的 `reconciled` 也就永不刷新,
 /// 于是它下一轮同样重发——**两台设备把每一条拆分 pin 每一轮都发一遍**，还吃掉每轮 250 条的
 /// 发布预算，真正的改动被挤出去。
-/// §7.4 的表副本，pin 这一批。**一轮一跳**：引擎把这条 kind 的全部候选（通用规则已经筛过）
-/// 一次交进来，返回的只有真的被改写的那几条，不在返回值里的身份原样沿用基线。
-@MainActor
-func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: OwnedOwnerMaps,
-                             state: PinSyncRoundState) -> [String: Data] {
-    var out: [String: Data] = [:]
-    for (identity, bytes) in baselines {
-        guard let cleared = clearedPinSplitPartner(bytes, now: now, maps: maps, state: state)
-        else { continue }
-        out[identity] = cleared
-    }
-    return out
-}
-
 @MainActor
 func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
                             state: PinSyncRoundState) -> Data? {
@@ -4622,7 +4756,12 @@ private func landPins(_ input: OwnedLandingInput,
         let identity = item.identity
         if let payload = item.step.payload { payloadOf[identity] = payload }
         if let rank = item.step.newRank { rankOf[identity] = rank }
-        touchedOwners.insert(item.ownerKey)
+        // **纯内容更新不碰这个 owner 的次序。** rank 变了的时候 `plan` 会另发一条 `.move`
+        // （`moved` 的判据里就有 rank），所以只带 `.update` 的那条身份按定义没有位置变化；
+        // 把它的 owner 算进「被触及」，一次改名或一次拆分链接的落地会顺手为整组兄弟发一份
+        // 完整的稠密置换，同一批里于是混进一堆与这次落地无关的 `.move`。书签那一侧对同一类
+        // 步骤同样不重排（`landBookmarks` 只在 create 与提升时 `touched`）。
+        if item.step.kind != .update { touchedOwners.insert(item.ownerKey) }
 
         if item.step.kind == .delete {
             deletedIdentities.insert(identity)
@@ -4724,6 +4863,9 @@ private func landPins(_ input: OwnedLandingInput,
     // 就把 lineage 交给 store（它在同一个事务里写两个方向），不存在就不写本地链接，并把
     // 那条 lineage 记进游标的 `pendingPartnerLineage`：没有这一半，下一次快照会判出「这个
     // 字段变了」并把 `""` 发出去，**把对端好好的拆分对拆散**，而这台机器只是接收了它。
+    var reverseLinks: [PinApplyOp] = []
+    var linkedPartners: [String: String] = [:]
+    var clearedPartners: Set<String> = []
     for item in planned where item.step.kind != .delete {
         guard let entity = item.entity, let guid = guidOf[item.identity],
               !outcome.parked.contains(item.identity) else { continue }
@@ -4739,21 +4881,42 @@ private func landPins(_ input: OwnedLandingInput,
             // 一次 `applyPinSplitPartnerBody` 并盖一遍 `updatedDate`。
             if state.rowByGuid[guid]?.splitPartnerLineageId != nil {
                 fields.splitPartnerLineageId = .some(nil)
+                clearedPartners.insert(guid)
             }
             outcome.pendingPartnerLineages[item.identity] = ""
         } else {
-            let resolved = projected.values.contains {
+            let partnerRow = projected.values.first {
                 $0.guid != guid && ownerOfGuid[$0.guid] == item.ownerKey
                     && PinKind.lineageKey($0.lineageId) == partner
             }
             fields.splitPartnerLineageId = .some(partner)
+            linkedPartners[guid] = partner
             // 伙伴还没有本地行 ⇒ 这一条是半落地的那一半，记下它在等谁。
-            outcome.pendingPartnerLineages[item.identity] = resolved ? "" : partner
+            outcome.pendingPartnerLineages[item.identity] = partnerRow == nil ? partner : ""
+            // §7.4 的另一半：拆分对是**双向**的，而伙伴那一半的实体这一轮没有到达——它上一轮
+            // 就落了地，只是那时这一条还不在本机，于是它的游标记下了 `pendingPartnerLineage`。
+            // 反方向那一步必须**在同一个事务里**补上：只写到达的这一侧，另一侧要等下一次本地
+            // 变化才被发现，中间那段时间两台机器对同一对 pin 的显示不一致。
+            let thisLineage = PinKind.lineageKey(pinIdentityHalves(item.identity).lineage)
+            if let partnerRow {
+                let partnerIdentity = PinKind.lineageKey(partnerRow.lineageId) + ":"
+                    + item.ownerKey
+                if input.table.cursors[partnerIdentity]?.pendingPartnerLineage == thisLineage,
+                   PinKind.lineageKey(partnerRow.splitPartnerLineageId ?? "") != thisLineage {
+                    reverseLinks.append(.update(
+                        guid: partnerRow.guid,
+                        fields: PinFieldPatch(splitPartnerLineageId: .some(thisLineage))))
+                    linkedPartners[partnerRow.guid] = thisLineage
+                    outcome.pendingPartnerLineages[partnerIdentity] = ""
+                }
+            }
         }
         guard fields.title != nil || fields.url != nil || fields.splitPartnerLineageId != nil
         else { continue }
         ops.append(.update(guid: guid, fields: fields))
     }
+    // 反方向那几条也是第二相，跟在到达的那一侧后面进同一批。
+    ops.append(contentsOf: reverseLinks)
 
     // 第三相：删除。
     for item in planned where item.step.kind == .delete {
@@ -4776,6 +4939,8 @@ private func landPins(_ input: OwnedLandingInput,
             LocalStoreWriteError.rowNotInActiveScope, LocalStoreWriteError.noCandidateSurvived {
         // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远不会好。
         outcome.refused.formUnion(identities)
+        // 一条 op 都没落，伙伴那几位当然也没写成——同停放那一支，交回空的那张表。
+        outcome.pendingPartnerLineages = [:]
         return outcome
     } catch {
         // 导入锁（`.spaceImporting`）与其余一切瞬时失败：**停放**，下一轮重试。
@@ -4785,6 +4950,9 @@ private func landPins(_ input: OwnedLandingInput,
     }
     // 事务提交了，重铸这才真的发生过。
     outcome.relineaged = relineaged
+    // 同一个事务里写下去的拆分链接立刻折回轮内投影，于是同一轮的发布段不会把这台机器刚刚
+    // **接收**下来的那条链接当成一次本机解除再发回账户（§7.4）。
+    state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners)
 
     // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply` 收尾
     // 会自己重建一次缓存，所以这个读者此刻答的是新世界。
@@ -4806,6 +4974,8 @@ private func landPins(_ input: OwnedLandingInput,
     }
     outcome.parked.subtract(outcome.landed)
     outcome.refused.subtract(outcome.landed)
+    // 本轮真的被删掉的那些行立刻退出轮内投影，理由同 `landBookmarks`（CASE 6b.8）。
+    state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
     return outcome
 }
 

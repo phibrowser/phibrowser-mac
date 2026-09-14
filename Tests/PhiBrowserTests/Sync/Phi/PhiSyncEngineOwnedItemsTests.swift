@@ -1502,6 +1502,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNil(table.cursors["b1"]?.reconciled)
         XCTAssertTrue(bookmarkCommits(client).filter(\.deleted).isEmpty,
                       "远端已经删掉的实体不该再收到本机的一条 tombstone")
+        // CASE 6b.3 的另一半：什么都不删，所以落地段连一次事务都不该开。
+        XCTAssertEqual(applyCallCount(access), 0, "本机没有这条行 ⇒ 一次 `apply` 都不发生")
     }
 
     /// T6-I2 — 一次认领与一次移动共用同一个父时，兄弟们的 index 不许撞上。
@@ -1871,5 +1873,557 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         let stamp = landed?.contentUpdatedDate
         XCTAssertEqual(stamp, Date(timeIntervalSince1970: 5),
                        "落地的是实体的内容戳，不是 nil、也不是落地时刻")
+    }
+
+    // MARK: - CASE 6b.1 – 6b.13：tombstone 的落地（§5.6 T1–T4 / R-M3-3-17 / L1 / L2）
+
+    /// 行 fixture 的 `createdDate` 默认是 1_000 **秒**，而 `bookmarkPayload` 的 `createdAtMs`
+    /// 默认是 1_000 **毫秒**，差一千倍。`created_at_ms` 是个裸值、不参与盖戳，所以两边不对齐
+    /// 时投影与基线**永远**不同，任何「这一轮零 commit」的断言都会因为一个与被测代码无关的
+    /// 理由变红。本段每一条基线载荷都显式传这个值。
+    private static let rowCreatedAtMs: Int64 = 1_000_000
+
+    /// 一条与 `PhiLocalBookmark.fixture` 逐字段对齐的基线载荷。
+    private func alignedPayload(uuid: String,
+                                spaceUuid: String = "su-1",
+                                parentUuid: String = "",
+                                rank: String = "V",
+                                isFolder: Bool = false,
+                                title: String = "T",
+                                url: String = "https://e.example") -> Phi_PhiBookmarkEntity {
+        bookmarkPayload(uuid: uuid, spaceUuid: spaceUuid, parentUuid: parentUuid, rank: rank,
+                        isFolder: isFolder, title: title, url: url,
+                        createdAtMs: Self.rowCreatedAtMs)
+    }
+
+    private func moveIndex(_ ops: [BookmarkApplyOp]) -> Int? {
+        ops.firstIndex { if case .move = $0 { return true } else { return false } }
+    }
+
+    private func deleteGuids(_ ops: [BookmarkApplyOp]) -> [String] {
+        ops.compactMap { if case .delete(let guid) = $0 { return guid } else { return nil } }
+    }
+
+    /// CASE 6b.1（T1）— 三张索引都反查不到这个 hash ⇒ 整条忽略、**不建游标**、记一条 info。
+    ///
+    /// 防的是什么：为一个不认识的 hash 建游标，等于给本机凭空添一条「我删过这个」的记忆。
+    /// 那条记忆此后会挡掉这条身份的每一次到达（§4.2 第 3 条与 L2 的版本判据都读它），而本机
+    /// 从来就没有过这一行。§11.4 的失败模式表把这一行单列出来。
+    func testATombstoneNoIndexRecognisesBuildsNoCursorAtAll() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"))
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteTombstone(tag: bookmarkTag("never-published"), version: 9),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let spaceTable = await engine.spaceTableForTesting
+        XCTAssertEqual(Set(table.cursors.keys), ["b1"],
+                       "认不出的 hash 不许在归属游标表里长出第二条")
+        XCTAssertTrue(spaceTable.cursors.isEmpty, "Space 那张表也不许为它建一条")
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.tombstones, 0, "没有落地的 tombstone 不计数")
+    }
+
+    /// CASE 6b.2（T2）— 反查到身份、本机有行 ⇒ 真删该行，游标写 `deletedAtMs`。
+    ///
+    /// 时刻取的是**测试自己那个 `Clock`** 的当前值：引擎是 actor，没有也不该有
+    /// `nowForTesting`。
+    func testARemoteTombstoneDeletesTheRowAndStampsItWithThisRoundsClock() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)])]
+        let clock = Clock()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                clock: clock, ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let stamp = table.cursors["b1"]?.deletedAtMs
+        let clockNow = clock.nowMs
+        XCTAssertTrue(access.rows.isEmpty, "远端删除真的把那一行删掉了")
+        XCTAssertEqual(stamp, clockNow, "定案的时刻是本轮那个时钟读到的值")
+        XCTAssertNil(table.cursors["b1"]?.reconciled, "两份基线一起清")
+        XCTAssertNil(table.cursors["b1"]?.server)
+        XCTAssertFalse(table.cursors["b1"]?.pendingTombstone ?? true)
+    }
+
+    /// CASE 6b.4（T4）— 该行所在 Space 正在被导入 ⇒ **停放**这次删除。
+    ///
+    /// 防的是什么：导入会成批写入同一个 Space，此刻删掉一条行，导入器可能正拿着它的父做插入
+    /// 位置计算。
+    func testAnImportLockParksARemoteTombstoneInsteadOfDeletingMidImport() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        access.importingSpaceIds = ["space-a"]
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(access.rows.map(\.guid), ["G1"], "导入中途一行都不删")
+        XCTAssertTrue(table.cursors["b1"]?.pendingTombstone ?? false, "停放成工作集的一员")
+        XCTAssertNil(table.cursors["b1"]?.deletedAtMs, "没删成就不算删了")
+    }
+
+    /// CASE 6b.5 — 停放的 tombstone 在导入结束后的第一轮兑现。
+    ///
+    /// 防的是什么：不兑现的话 T4 的停放就变成静默丢弃——共享 marker 早已推过那一页，那条
+    /// tombstone 此后再也不会被服务端重发。
+    func testAParkedTombstoneIsHonouredOnTheFirstRoundAfterTheImport() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        access.importingSpaceIds = ["space-a"]
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)], marker: "m1"),
+            page([], marker: "m2"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        // 第二轮的脚本页是空的：这次删除只能从表里那个 `pendingTombstone` 工作集来。
+        access.importingSpaceIds = []
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertTrue(access.rows.isEmpty, "导入结束后的第一轮真的删掉了它")
+        XCTAssertNotNil(table.cursors["b1"]?.deletedAtMs)
+        XCTAssertFalse(table.cursors["b1"]?.pendingTombstone ?? true, "兑现之后清掉停放位")
+    }
+
+    /// CASE 6b.6（R-M3-3-17）— 远端文件夹 tombstone：先提升后代，再删文件夹。
+    ///
+    /// 防的是什么：**绝不依赖 SwiftData 的 `.cascade`**——它会把孩子一起销毁，而差分随后把
+    /// 这场销毁当成本机删除发回去，账户上那些孩子在每一台设备上都消失。
+    func testARemoteFolderTombstoneLiftsItsDescendantsBeforeDeletingTheFolder() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "F1", syncId: "folder", spaceId: "s-1", index: 0, isFolder: true,
+                     url: URL(string: "https://bookmark.phi/folder")!),
+            .fixture(guid: "C1", syncId: "child", spaceId: "s-1", parentGuid: "F1", index: 0),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["folder"] = publishedCursor(
+            alignedPayload(uuid: "folder", isFolder: true, url: "https://bookmark.phi/folder"),
+            entityId: "srv-folder", version: 3)
+        store.table.cursors["child"] = publishedCursor(
+            alignedPayload(uuid: "child", parentUuid: "folder"),
+            entityId: "srv-child", version: 4)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("folder"), version: 9)])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let ops = access.lastAppliedOps
+        XCTAssertEqual(access.rows.map(\.guid), ["C1"], "① 文件夹没了，孩子还在")
+        XCTAssertNil(access.rows.first?.parentGuid, "② 孩子被提到 Space 根")
+        XCTAssertNil(table.cursors["child"]?.deletedAtMs, "③ 孩子不是被删的那一条")
+        let lift = moveIndex(ops)
+        let removal = ops.firstIndex { if case .delete = $0 { return true } else { return false } }
+        XCTAssertNotNil(lift, "④ 提升必须真的进了这一批 ops")
+        XCTAssertNotNil(removal)
+        if let lift, let removal { XCTAssertLessThan(lift, removal, "④ 先提升、后删") }
+        XCTAssertEqual(applyCallCount(access), 1, "⑤ 三步在同一个事务里")
+    }
+
+    /// CASE 6b.6b — 提升集合是「那个文件夹下的**全部本机后代**」，不是「有游标的那些」。
+    ///
+    /// 防的是什么：按游标表算提升集合的实现只会看见带身份的那一条，另一条随 `.cascade`
+    /// **一起被销毁**——那是一条用户刚建、还没来得及同步的书签，本机从此没有它、账户上也
+    /// 从来没有过，**没有任何一侧能把它找回来**。
+    ///
+    /// 本轮的发布一律被服务端拒掉（`forceInvalidMessage`），于是 §6.4 的「提交被接受之后才
+    /// 把铸出来的身份写回本机行」不会发生：这条用例要断言的是**提升**不铸身份，而不是发布
+    /// 不铸身份（后者是 CASE 6.14）。
+    func testTheLiftSetIsEveryLocalDescendantIncludingRowsWithNoIdentityYet() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "F1", syncId: "folder", spaceId: "s-1", index: 0, isFolder: true,
+                     url: URL(string: "https://bookmark.phi/folder")!),
+            .fixture(guid: "C1", syncId: "child", spaceId: "s-1", parentGuid: "F1", index: 0),
+            // 纯本机：用户刚建的一条，从没上过账户。
+            .fixture(guid: "C2", spaceId: "s-1", parentGuid: "F1", index: 1,
+                     title: "fresh", url: URL(string: "https://fresh.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["folder"] = publishedCursor(
+            alignedPayload(uuid: "folder", isFolder: true, url: "https://bookmark.phi/folder"),
+            entityId: "srv-folder", version: 3)
+        store.table.cursors["child"] = publishedCursor(
+            alignedPayload(uuid: "child", parentUuid: "folder"),
+            entityId: "srv-child", version: 4)
+        let client = FakePhiSyncClient()
+        client.forceInvalidMessage = true
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("folder"), version: 9)])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let survivors = access.rows.sorted { $0.guid < $1.guid }
+        XCTAssertEqual(survivors.map(\.guid), ["C1", "C2"], "两条后代都活下来，文件夹最后删")
+        XCTAssertTrue(survivors.allSatisfy { $0.parentGuid == nil }, "两条都被提到 Space 根")
+        XCTAssertNil(survivors.first { $0.guid == "C2" }?.syncId, "提升不铸身份")
+    }
+
+    /// CASE 6b.7 — 带自己 tombstone 的后代不被提升。
+    ///
+    /// 防的是什么：把它也提升一次再删，中间那次 `move` 会被本地写路径看成一次真实的位置变化。
+    func testADescendantCarryingItsOwnTombstoneIsDeletedRatherThanLifted() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "F1", syncId: "folder", spaceId: "s-1", index: 0, isFolder: true,
+                     url: URL(string: "https://bookmark.phi/folder")!),
+            .fixture(guid: "C1", syncId: "child", spaceId: "s-1", parentGuid: "F1", index: 0),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["folder"] = publishedCursor(
+            alignedPayload(uuid: "folder", isFolder: true, url: "https://bookmark.phi/folder"),
+            entityId: "srv-folder", version: 3)
+        store.table.cursors["child"] = publishedCursor(
+            alignedPayload(uuid: "child", parentUuid: "folder"),
+            entityId: "srv-child", version: 4)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteTombstone(tag: bookmarkTag("folder"), version: 9, entityId: "srv-folder"),
+            remoteTombstone(tag: bookmarkTag("child"), version: 10, entityId: "srv-child"),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let ops = access.lastAppliedOps
+        XCTAssertNil(moveIndex(ops), "该消失的后代不提升")
+        XCTAssertEqual(deleteGuids(ops), ["C1", "F1"], "delete 相内子先于父")
+        XCTAssertTrue(access.rows.isEmpty)
+    }
+
+    /// CASE 6b.8 — 远端删掉的行在差分跑之前就写上 `deletedAtMs`。
+    ///
+    /// 防的是什么：差分的三条判据（有 `reconciled`、没有 `deletedAtMs`、本机找不到这条身份）
+    /// 在删行之后同时成立；不提前定稿，一次**远端**删除会被改写成一次**本机**删除再发回去。
+    /// 而只断「没有 tombstone commit」还不够：同一轮的发布段读的是轮首那份行快照，被删的那
+    /// 一行仍然在里面，于是 §4.2 第 3b 条会拿「有 `deletedAtMs` + 有活行」把它**复活**发回
+    /// 账户——两条路都通向「一次远端删除自己撤销了自己」，所以断的是**整轮零 commit**。
+    func testARowDeletedByARemoteTombstoneCommitsNothingInTheSameRound() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(bookmarkCommits(client).count, 0,
+                       "远端删除既不被改写成本机删除发回去，也不被同一轮的发布段复活")
+        XCTAssertNotNil(table.cursors["b1"]?.deletedAtMs)
+    }
+
+    /// CASE 6b.9（R-M3-3-7）— 每一条离开「活着」的路径都写 `deletedAtMs`。
+    ///
+    /// 防的是什么：漏掉任何一条，那条游标会停在「有 `reconciled`、无 `deletedAtMs`、本机无
+    /// 行」上——也就是差分每一轮都重新为它发一条 tombstone，而 §3.6 的 30 天丢弃永远收不走它。
+    func testEveryPathOutOfBeingAliveStampsDeletedAtMs() async throws {
+        // ① 本机 tombstone 被服务端接受。
+        let acceptedAccess = FakeBookmarkAccess()          // 本机已经没有这一行
+        let acceptedStore = MemoryOwnedItemStore()
+        acceptedStore.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                            entityId: "srv-b1", version: 3)
+        let acceptedClient = FakePhiSyncClient()
+        let accepted = makeEngine(client: acceptedClient, access: makeSpaceAccess(),
+                                  store: makeSpaceStore(),
+                                  ownedKinds: [bookmarkKind(acceptedAccess, acceptedStore)])
+        await accepted.setSpaceSyncEnabled(true)
+        await accepted.pullOnce()
+        let acceptedTable = await accepted.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(bookmarkCommits(acceptedClient).filter(\.deleted).count, 1,
+                       "① 差分确实发了一条本机 tombstone")
+        XCTAssertNotNil(acceptedTable.cursors["b1"]?.deletedAtMs, "① `.applied` 那一支要定案")
+
+        // ② 入站 tombstone 落地。
+        let inboundAccess = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let inboundStore = MemoryOwnedItemStore()
+        inboundStore.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                           entityId: "srv-b1", version: 3)
+        let inboundClient = FakePhiSyncClient()
+        inboundClient.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)])]
+        let inbound = makeEngine(client: inboundClient, access: makeSpaceAccess(),
+                                 store: makeSpaceStore(),
+                                 ownedKinds: [bookmarkKind(inboundAccess, inboundStore)])
+        await inbound.setSpaceSyncEnabled(true)
+        await inbound.pullOnce()
+        let inboundTable = await inbound.ownedTableForTesting("bookmarks")
+        XCTAssertNotNil(inboundTable.cursors["b1"]?.deletedAtMs, "② 入站落地那一支要定案")
+
+        // ③ `pendingDelete` 连续三轮被 `INVALID_MESSAGE` 拒绝之后的放弃支。
+        let refusedAccess = FakeBookmarkAccess()
+        let refusedStore = MemoryOwnedItemStore()
+        refusedStore.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                           entityId: "srv-b1", version: 3)
+        let refusedClient = FakePhiSyncClient()
+        refusedClient.refuseCommitsForTagHashes = [bookmarkHash("b1")]
+        let refused = makeEngine(client: refusedClient, access: makeSpaceAccess(),
+                                 store: makeSpaceStore(),
+                                 ownedKinds: [bookmarkKind(refusedAccess, refusedStore)])
+        await refused.setSpaceSyncEnabled(true)
+        for _ in 0..<3 { await refused.pullOnce() }
+        let refusedTable = await refused.ownedTableForTesting("bookmarks")
+        XCTAssertFalse(refusedTable.cursors["b1"]?.pendingDelete ?? true, "③ 三轮之后就地收尾")
+        XCTAssertNotNil(refusedTable.cursors["b1"]?.deletedAtMs, "③ 放弃支同样定案")
+    }
+
+    /// CASE 6b.10（L1 的引擎接线）— 引擎真的把 A9 的三个合取项喂进了 `OwnedItemPlanContext`。
+    ///
+    /// 防的是什么：引擎不把 `deletedSubtree` 与 `liveLocalParents` 填进去，那三个合取项永远
+    /// 判不成立，A9 形同不存在——纯函数层的用例全绿，线上却一次也不触发。
+    func testAnInboundMoveOutOfADeletedSubtreeCancelsTheLocalDelete() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "FS", syncId: "b-survivor", spaceId: "s-1", index: 0, isFolder: true,
+                     url: URL(string: "https://bookmark.phi/folder")!),
+            .fixture(guid: "GC", syncId: "b-child", spaceId: "s-1", index: 1),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b-survivor"] = publishedCursor(
+            alignedPayload(uuid: "b-survivor", isFolder: true,
+                           url: "https://bookmark.phi/folder"),
+            entityId: "srv-survivor", version: 2)
+        // 差分上一轮已经为它作出删除决定，时刻是 1_000。
+        store.table.cursors["b-child"] = pendingDeleteCursor(
+            decidedAtMs: 1_000, entityId: "srv-child", version: 4,
+            reconciled: baselineBytes(alignedPayload(uuid: "b-child")))
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            // location 戳 2000 **严格晚于** 删除决定（1_000），父是一条活的本机文件夹。
+            remoteEntity(envelope(bookmarkPayload(uuid: "b-child", parentUuid: "b-survivor",
+                                                  rank: "W", locationStamp: 2_000,
+                                                  rankStamp: 2_000,
+                                                  createdAtMs: Self.rowCreatedAtMs)),
+                         tag: bookmarkTag("b-child"), version: 30, entityId: "srv-child",
+                         key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertFalse(table.cursors["b-child"]?.pendingDelete ?? true, "A9 取消了这次删除")
+        XCTAssertEqual(access.rows.first { $0.guid == "GC" }?.parentGuid, "FS",
+                       "那条行被移到活着的那个父下面")
+    }
+
+    /// CASE 6b.11（L2）— 复活按**版本**判，两种 kind 各一次。
+    ///
+    /// 防的是什么：按时间戳判的实现会被一条重放的旧实体复活掉——服务端在 marker 回退后会重发
+    /// 旧版本，而那条实体的字段戳当然比本机刚写的 tombstone 早，于是一条用户明确删掉的行自己
+    /// 回来了。A4 说这条适用于 pin，并**防御性地**适用于书签，所以两种 kind 都要测。
+    func testResurrectionIsDecidedByVersionForBothKinds() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess()
+        let store = MemoryOwnedItemStore()
+        var bookmarkCursor = ownedCursor(entityId: "srv-b1", version: 42, ownerUuid: "su-1")
+        bookmarkCursor.deletedAtMs = 900
+        store.table.cursors["b1"] = bookmarkCursor
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        var pinCursor = ownedCursor(entityId: "srv-p1", version: 42, ownerUuid: "pu-1")
+        pinCursor.deletedAtMs = 900
+        pinStore.table.cursors["lx:pu-1"] = pinCursor
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            // 轮 1：两条都是**旧**版本的重放。
+            page([
+                remoteEntity(envelope(alignedPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                             version: 41, entityId: "srv-b1", key: key),
+                remoteEntity(envelope(pinPayload(lineage: "lx")), tag: pinTag("lx"),
+                             version: 41, entityId: "srv-p1", key: key),
+            ], marker: "m1"),
+            // 轮 2：两条都比那条 tombstone **更新**。
+            page([
+                remoteEntity(envelope(alignedPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                             version: 43, entityId: "srv-b1", key: key),
+                remoteEntity(envelope(pinPayload(lineage: "lx")), tag: pinTag("lx"),
+                             version: 43, entityId: "srv-p1", key: key),
+            ], marker: "m2"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store),
+                                             pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var bookmarkTable = await engine.ownedTableForTesting("bookmarks")
+        var pinTable = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(bookmarkTable.cursors["b1"]?.deletedAtMs, 900,
+                       "旧版本重放 ⇒ 丢弃，`deletedAtMs` 原样留着")
+        XCTAssertEqual(pinTable.cursors["lx:pu-1"]?.deletedAtMs, 900)
+        XCTAssertTrue(access.rows.isEmpty, "一条重放的旧实体不许建行")
+        XCTAssertTrue(pinAccess.rows.isEmpty)
+
+        await engine.pullOnce()
+
+        bookmarkTable = await engine.ownedTableForTesting("bookmarks")
+        pinTable = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting
+        XCTAssertNil(bookmarkTable.cursors["b1"]?.deletedAtMs, "更新的版本 ⇒ 合法复活")
+        XCTAssertNil(pinTable.cursors["lx:pu-1"]?.deletedAtMs)
+        XCTAssertEqual(counters["bookmarks"]?.resurrected, 1)
+        XCTAssertEqual(counters["pins"]?.resurrected, 1)
+    }
+
+    /// CASE 6b.12（spec item 16 的后半）— 伙伴到达后由**落地**在同一个事务里链两个方向。
+    ///
+    /// 防的是什么：拆分对是**双向**的；只写到达的那一侧，另一侧要等下一轮本地变化才被发现，
+    /// 中间那段时间两台机器对同一对 pin 的显示不一致。这条在引擎层而不是 `plan` 里：它要为
+    /// 一条本轮没到达的身份补一步，还要改一条游标，两样都在 `plan` 的输出形状之外。
+    ///
+    /// ③「`reconcilePinnedSplitPartners` 零调用」在这里是**结构性**的：那个函数是
+    /// `BrowserState` 上的活动窗口启发式，同步落地的唯一接缝 `PhiPinnedTabLocalAccess` 上
+    /// 根本没有它——②「这一批里只有 `.update`」就是它在假件这一侧的可观测形态。
+    func testAnArrivingHalfLinksBothDirectionsOfTheSplitPairInOneBatch() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let created = Date(timeIntervalSince1970: 1)
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
+            .fixture(lineageId: "LA", guid: "pa", index: 0, createdDate: created),
+            .fixture(lineageId: "LB", guid: "pb", index: 1, createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        // `la` 上一轮就落了地，那时 `lb` 还不在本机，于是它记下了自己在等谁。
+        var waiting = publishedPinCursor(pinPayload(lineage: "la", rank: "V"),
+                                         entityId: "srv-pa")
+        waiting.pendingPartnerLineage = "lb"
+        pinStore.table.cursors["la:pu-1"] = waiting
+        pinStore.table.cursors["lb:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lb", rank: "W"), entityId: "srv-pb")
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lb", rank: "W", splitPartner: "la",
+                                             contentStamp: 500)),
+                         tag: pinTag("lb"), version: 9, entityId: "srv-pb", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let ops = pinAccess.lastAppliedOps
+        var linkOf: [String: String?] = [:]
+        for op in ops {
+            guard case .update(let guid, let fields) = op,
+                  let partner = fields.splitPartnerLineageId else { continue }
+            linkOf[guid] = partner
+        }
+        XCTAssertEqual(ops.count, 2, "② 这一批里只有两条 `.update`，没有别的 op")
+        XCTAssertTrue(ops.allSatisfy { if case .update = $0 { return true } else { return false } },
+                      "② 一条 `.move` / `.relineage` 都不许混进来")
+        XCTAssertEqual(linkOf["pa"], "lb", "① `la` 指向 `lb`")
+        XCTAssertEqual(linkOf["pb"], "la", "① `lb` 指向 `la`")
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertNil(table.cursors["la:pu-1"]?.pendingPartnerLineage,
+                     "④ 伙伴到齐了，那一位跟着清")
+        // 这台机器只是**接收**了这条链接：同一轮的发布段绝不许把它读成一次本机解除。
+        // （§7.4 的表副本判据是「本机那一行还挂不挂着这条链接」，而那一行是落地在本轮中途
+        // 写的，轮首那份投影不会自己变新。）
+        let released = pinCommits(client).compactMap(committedPin)
+            .filter { $0.splitPartnerUuid.stringValue.isEmpty }
+        XCTAssertTrue(released.isEmpty, "不许在同一轮里把刚接收下来的链接当成解除发回账户")
+    }
+
+    /// CASE 6b.13 — 同一轮里第二条身份配到一条已被认领的行。
+    ///
+    /// 防的是什么：第二条也认领同一行的话，那行的 `syncId` 被改写成第二条的身份，**第一条
+    /// 身份在账户上从此没有持有者**，下一轮差分为它发一条 tombstone，把账户上一条真实的书签
+    /// 删掉。③ 是另一半：把 `rowAlreadyMapped` 这个拒绝当成批次级失败，会让一次正常的重复
+    /// 配对拖垮整个 Space 这一轮的落地。
+    func testASecondIdentityPairingToAClaimedRowTakesTheCreatePath() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            // 一条本机未同步行，两条入站实体按 §6.1 的匹配键（URL）都配得上它。
+            .fixture(guid: "GX", spaceId: "s-1", index: 0, title: "X",
+                     url: URL(string: "https://x.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(alignedPayload(uuid: "x1", rank: "V", title: "X",
+                                                 url: "https://x.example")),
+                         tag: bookmarkTag("x1"), version: 30, entityId: "srv-x1", key: key),
+            remoteEntity(envelope(alignedPayload(uuid: "x2", rank: "W", title: "X",
+                                                 url: "https://x.example")),
+                         tag: bookmarkTag("x2"), version: 31, entityId: "srv-x2", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        let claimed = access.rows.first { $0.guid == "GX" }?.syncId
+        XCTAssertEqual(claimed, "x1", "① 第一条正常认领，那行写上它的身份")
+        XCTAssertEqual(access.rows.count, 2, "② 第二条走 create 路径，本机多出一条新行")
+        XCTAssertEqual(access.rows.first { $0.guid != "GX" }?.syncId, "x2")
+        XCTAssertNotNil(table.cursors["x1"]?.reconciled,
+                        "③ 那个 Space 的整批落地没有被 `rowAlreadyMapped` 拒掉")
+        XCTAssertNotNil(table.cursors["x2"]?.reconciled)
+        XCTAssertEqual(counters?.adopted, 1, "④ 只认领了一条")
     }
 }

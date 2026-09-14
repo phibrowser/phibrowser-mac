@@ -446,10 +446,22 @@ enum SyncableOwnedItems {
     /// **`pendingApply != nil` 不是第四条判据**（A7）：对一条有基线的游标来说它的含义是
     /// 「这一行落地过，一个更新的远端版本正在等」，那是一次**删除对编辑**的冲突，本机的
     /// 删除赢——产出 tombstone 并在同一步清掉 `pendingApply`。
+    ///
+    /// `pendingClaims` 是第六条排除，也是「还没认领上」与「认领不上」之间那道界线
+    /// （R-exec-9）：里面装的是**本轮 §6 的认领真的配上了、但那次 `syncId` 写回没能落盘**的
+    /// 身份（导入锁拒了那一批）。那条本机行离认领只差一次成功的写回，而它此刻还没有
+    /// `syncId`，于是第三条判据（「本机确实没有这一行了」）对它成立——不排除它，这一轮就会
+    /// 把一条两边都同意它存在的账户实体删掉，下一轮本机那一行再铸一个新身份重新建一条，
+    /// 对端看到的是一次删除加一次毫无关系的新建。
+    ///
+    /// **绝不能退化成「`pendingApply != nil` 就排除」**：一条认领**配不上**的停放游标
+    /// （用户在重试窗口里改了那一行或把它删了）正是该被 tombstone 的那一类，靠 `pendingApply`
+    /// 一刀切会把它永久留在账户上，而没有任何设备还能删掉它。
     static func tombstones<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                              table: PhiOwnedItemTable, resolve: OwnerResolver,
                                              scope: PinnedTabScope?,
-                                             nowMs: Int64) -> OwnedItemTombstoneResult {
+                                             nowMs: Int64,
+                                             pendingClaims: Set<String> = []) -> OwnedItemTombstoneResult {
         var liveIdentities: Set<String> = []
         for local in locals {
             if let identity = K.identity(of: local, resolve: resolve, scope: scope) {
@@ -463,6 +475,8 @@ enum SyncableOwnedItems {
             guard cursor.reconciled != nil else { continue }
             guard cursor.deletedAtMs == nil else { continue }
             guard !liveIdentities.contains(identity) else { continue }
+            // 本轮认领已经配上、只差一次成功的写回（R-exec-9）。
+            guard !pendingClaims.contains(identity) else { continue }
             // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
             // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
             // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，

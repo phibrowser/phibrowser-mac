@@ -2854,6 +2854,7 @@ actor PhiSyncEngine {
             guard !isStopped else { return }
             for (item, outcome) in zip(sent, outcomes) {
                 applyOwnedCommitOutcome(outcome, for: item, registration: registration,
+                                        owner: snapshot.ownerUuids[item.identity],
                                         table: &table, counters: &counters,
                                         conflicted: &conflicted)
                 if case .applied = outcome, item.payload != nil,
@@ -2872,13 +2873,17 @@ actor PhiSyncEngine {
         //
         // 留着游标之后，那几条身份走的是正常的收敛路径：`pendingApply` 让 §4.2 第 3 条把它们
         // 排除在快照之外（不会重复发布），停放项在下一轮由 §6 的规则 (i) 认领回那条仍然
-        // 未认领的本机行；真的认领不上时，下一轮的差分判它「本机没有这一行」并发一条
-        // tombstone——那是**正确的清理**，不是危险。
+        // 未认领的本机行；真的认领不上时（用户在重试窗口里改了那一行、或把它删了），下一轮的
+        // 差分判它「本机没有这一行」并发一条 tombstone——那是**正确的清理**，不是危险。
+        //
+        // **那条后路只有在游标带着归属时才走得通**：`SyncableOwnedItems.tombstones` 在
+        // `ownerUuid == nil` 上保守地放弃，所以这里再钉一次。
         if !appliedMinted.isEmpty {
             let persisted = await registration.claimIdentities(appliedMinted)
             for identity in appliedMinted.keys where !persisted.contains(identity) {
                 guard var cursor = table.cursors[identity] else { continue }
                 cursor.pendingApply = cursor.reconciled
+                if cursor.ownerUuid == nil { cursor.ownerUuid = snapshot.ownerUuids[identity] }
                 table.cursors[identity] = cursor
             }
         }
@@ -2898,6 +2903,7 @@ actor PhiSyncEngine {
         _ outcome: PhiCommitOutcome,
         for item: (identity: String, entry: PhiCommitEntry, payload: Data?),
         registration: OwnedKindRegistration,
+        owner: String?,
         table: inout PhiOwnedItemTable,
         counters: inout OwnedRoundCounters,
         conflicted: inout Set<String>
@@ -2927,6 +2933,12 @@ actor PhiSyncEngine {
                 // 每一条实体都不成立。
                 cursor.reconciled = payload
                 cursor.server = payload
+                // A12：**一条本轮刚建出来的游标也要带上归属**。它是 §4.7 差分的前置条件
+                // （`tombstones` 在 `ownerUuid == nil` 上保守地放弃），而发布段那次归属刷新
+                // 跑在提交循环**之前**、只碰已经存在的游标。少了这一行，一条为铸出来的身份
+                // 新建的游标永远 `ownerUuid == nil`：账户上那条实体此后既没有本地行认领它，
+                // 也永远发不出它的 tombstone。
+                if let owner { cursor.ownerUuid = owner }
                 if cursor.deletedAtMs != nil {
                     cursor.deletedAtMs = nil        // §4.2 规则 3b 的复活
                     counters.resurrected += 1

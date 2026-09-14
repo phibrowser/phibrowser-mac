@@ -27,6 +27,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         }
         stores.removeAll()
         await settleAsyncWork()
+        clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }

@@ -14,6 +14,9 @@ final class PinnedTabScopeTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
 
     override func tearDownWithError() throws {
+        // 这个类驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在 hosted
+        // 测试里那就是 Phi 自己的偏好域。
+        clearPinnedTabScopeMirrorDefaults()
         cancellables.removeAll()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -770,6 +773,50 @@ final class PinnedTabScopeTests: XCTestCase {
         let row = try XCTUnwrap(migrated.first)
         XCTAssertEqual(row.contentUpdatedDate, edited)
         XCTAssertEqual(row.createdDate, created)
+    }
+
+    /// CASE 8.9 — merging two copies keeps the LATER content edit stamp, not whichever copy
+    /// happened to sort first.
+    ///
+    /// 只有内容签名相等的副本才会合并，所以合出来那一行的内容取谁都一样；它们各自的编辑戳
+    /// 却可以不同。只取第一个集合那一份的话，两台把集合排成不同顺序的机器会为同一份内容发布
+    /// 不同的比较戳，下一轮互相盖来盖去。取最大值与顺序无关，`lastSeen` 早就是这么取的。
+    func testMergingCopiesKeepsTheLatestContentEditTimestamp() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "shared-pin",
+            lineageId: "shared-lineage",
+            profile: fixture.defaultProfile,
+            title: "Shared",
+            url: "https://shared.example"
+        )
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let early = Date(timeIntervalSince1970: 1_000_000)
+        let late = Date(timeIntervalSince1970: 3_000_000)
+        let inSpaceA = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first)
+        let inSpaceB = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-b").first)
+        inSpaceA.contentUpdatedDate = early
+        inSpaceB.contentUpdatedDate = late
+        try XCTUnwrap(store.getMainContext()).save()
+
+        try await store.changePinnedTabScope(
+            to: .profile,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let merged = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        XCTAssertEqual(merged.map(\.pinLineageId), ["shared-lineage"])
+        XCTAssertEqual(try XCTUnwrap(merged.first).contentUpdatedDate, late)
     }
 
     // MARK: - Fixtures

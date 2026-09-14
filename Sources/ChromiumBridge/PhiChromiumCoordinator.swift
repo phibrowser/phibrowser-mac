@@ -324,14 +324,20 @@ import SwiftUI
         //
         // 落在设备密钥那条 guard **之后**：读不到设备密钥的那种会话里引擎根本建不起来，一次
         // pin 迁移也就无从被任何一轮观察到；下次挂载账户时照样重播。
-        switch PinnedTabScopeMirror.reseed(rowValue: account.localStorage.pinnedTabScope(),
+        // `pinnedTabScopeIfReadable()`，不是 `pinnedTabScope()`：后者在库根本没打开时答
+        // `.profile`，而那个失败默认值一旦被当成行播种出去，就在一个从没发布过作用域的账户
+        // 上把 `.profile` 定成了账户取值。
+        let localStore = account.localStorage
+        switch PinnedTabScopeMirror.reseed(rowValue: localStore.pinnedTabScopeIfReadable(),
                                            into: defaults) {
         case .noop, .seeded:
             break
+        case .rowUnavailable:
+            AppLogWarn("[phi-sync] pinned-tab scope mirror not reseeded: the local store is not readable")
         case .runLocalMigration(let scope):
             // 键权威：账户的值已经落地过，只是行没追上（App 在 `apply` 与迁移之间被杀，或
             // 迁移抛错）。§11.4 指望的就是这条重试路径。
-            applyAccountPinnedTabScope(scope)
+            applyAccountPinnedTabScope(scope, store: localStore)
         }
 
         let domainKeys = PhiDomainKeyManager(api: stack.api, keyManager: stack.manager)
@@ -463,7 +469,12 @@ import SwiftUI
             guard applied.contains(PinnedTabScopeMirror.key),
                   let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
                   let scope = PinnedTabScope(rawValue: raw) else { return }
-            MainActor.assumeIsolated { self?.applyAccountPinnedTabScope(scope) }
+            // 这一侧的 store 必须在**触发时**取：这个观察者活得和引擎一样久，而落地随时
+            // 可能发生。挂载那一侧则传它正在建的那个账户的 store，不走单例。
+            MainActor.assumeIsolated {
+                guard let store = AccountController.shared.account?.localStorage else { return }
+                self?.applyAccountPinnedTabScope(scope, store: store)
+            }
         }
     }
 
@@ -481,9 +492,8 @@ import SwiftUI
     /// 失败只记一条元数据日志：镜像键**保持**已落地的新值（它是账户的值），本机行仍是旧作用
     /// 域，于是下一轮仍 `scope_mismatch`，而这次迁移会在下一次落地或下次挂载账户时重试。
     @MainActor
-    private func applyAccountPinnedTabScope(_ scope: PinnedTabScope) {
-        guard let store = AccountController.shared.account?.localStorage,
-              store.pinnedTabScope() != scope else { return }
+    private func applyAccountPinnedTabScope(_ scope: PinnedTabScope, store: LocalStore) {
+        guard store.pinnedTabScope() != scope else { return }
         let preferredSpaceId = SpaceManager.shared.activeSpaceId
         let preferredProfileId = preferredSpaceId.flatMap { spaceId in
             SpaceManager.shared.spaces.first(where: { $0.spaceId == spaceId })?.profileId

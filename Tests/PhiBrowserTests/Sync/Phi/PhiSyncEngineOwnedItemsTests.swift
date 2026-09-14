@@ -1213,6 +1213,78 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                        "也不许把第二个身份发上账户")
     }
 
+    /// T6-N3 的脚手架：一条**停放着、等认领**的游标，加上那条还没被认领的本机行。
+    ///
+    /// 直接预置游标而不是跑一整轮，是因为这两条用例要断言的是**纯 push 轮**的行为，而跑轮 1
+    /// 就得先跑一次 pull。`phi.sync.entityId` 预置成非空让 `pushSettings` 在它自己那道
+    /// 「服务端有一份我读不出来的基线」守卫上提前返回：于是这一轮既不发设置提交、也不触发
+    /// 它的首次 pull，是一次真正没有落地段的轮次。
+    private func parkedClaimFixture(url: URL = URL(string: "https://b.example")!)
+        -> (access: FakeBookmarkAccess, store: MemoryOwnedItemStore,
+            spaceStore: MemorySpaceStore, spaceAccess: FakePhiSpaceAccess) {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GB", spaceId: "s-1", title: "B", url: url),
+        ])
+        let store = MemoryOwnedItemStore()
+        var cursor = publishedCursor(bookmarkPayload(uuid: "bpark", title: "B",
+                                                     url: "https://b.example"),
+                                     entityId: "srv-bpark", version: 7)
+        cursor.pendingApply = cursor.reconciled
+        store.table.cursors["bpark"] = cursor
+        defaults.set("srv-settings", forKey: PhiSyncEngine.entityIdStateKey)
+        return (access, store, makeSpaceStore(), spaceAccess)
+    }
+
+    /// T6-N3 — 一次**纯 push 轮**也要先重试停放项（R-exec-10）。
+    ///
+    /// 防的是什么：豁免与「本轮不铸新身份」都从本轮的认领配对表算出来，而那张表过去只有落地段
+    /// 会写。用户在重试窗口里改一次设置，去抖动的观察者就会跑一次没有落地段的轮次：那一轮
+    /// 把还没认领的本机行又铸一个身份发上账户，同时把原来那条身份 tombstone 掉——对端看到的
+    /// 是一次删除加一次毫无关系的新建，而任何对端在这期间对原实体做的编辑就此丢失。
+    func testAPushOnlyRoundRetriesTheParkedClaimInsteadOfDeletingTheEntity() async throws {
+        let fixture = parkedClaimFixture()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(client: client, access: fixture.spaceAccess,
+                                store: fixture.spaceStore,
+                                ownedKinds: [bookmarkKind(fixture.access, fixture.store)])
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pushLocalSettings()
+
+        XCTAssertTrue(bookmarkCommits(client).isEmpty,
+                      "既不为那条身份发 tombstone，也不为那条行铸第二个身份")
+        XCTAssertEqual(fixture.access.rows.first { $0.guid == "GB" }?.syncId, "bpark",
+                       "导入锁已经不在了，这一轮就该把身份写回本机行")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["bpark"]?.pendingApply, "写回成功之后解除停放")
+        XCTAssertNil(table.cursors["bpark"]?.deletedAtMs)
+    }
+
+    /// T6-N3 的另一半：认领**配不上**时，纯 push 轮的结论与 pull 轮逐字相同——tombstone
+    /// 那条身份，并为那条本机行铸一个新的。
+    func testAPushOnlyRoundStillTombstonesAnUnclaimableParkedIdentity() async throws {
+        let fixture = parkedClaimFixture(url: URL(string: "https://b-edited.example")!)
+        let client = FakePhiSyncClient()
+        // 账户上那条实体真的在，否则假服务端会用 INVALID_MESSAGE 掀掉整批，后面那条铸造
+        // 提交就不会被记下来。
+        client.seed(tagHash: bookmarkHash("bpark"), ciphertext: Data(), version: 7,
+                    entityId: "srv-bpark")
+        let engine = makeEngine(client: client, access: fixture.spaceAccess,
+                                store: fixture.spaceStore,
+                                ownedKinds: [bookmarkKind(fixture.access, fixture.store)])
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pushLocalSettings()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.filter(\.deleted).map(\.clientTagHash), [bookmarkHash("bpark")],
+                       "配不上的那条身份照样被清理掉")
+        XCTAssertEqual(commits.filter { !$0.deleted }.count, 1,
+                       "那条本机行铸一个新身份，正好一条")
+        XCTAssertNotEqual(fixture.access.rows.first { $0.guid == "GB" }?.syncId, "bpark")
+    }
+
     /// T6-N1 的轮 1：两个 Space、其中一个正在导入，于是被锁那一条的身份写不回本机行。
     /// 返回那条**留在游标表里、本机行却没有认领**的身份。
     private func runFailedWriteBackRound()

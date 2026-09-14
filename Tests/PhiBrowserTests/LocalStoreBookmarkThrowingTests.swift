@@ -18,6 +18,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {
+        // 这个类里有用例驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在
+        // hosted 测试里那就是 Phi 自己的偏好域。
+        clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }

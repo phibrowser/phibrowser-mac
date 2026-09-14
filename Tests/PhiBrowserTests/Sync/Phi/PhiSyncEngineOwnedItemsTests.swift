@@ -3087,4 +3087,153 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(bookmarkCommits(client).count, 0, "③ 退休之后一条 commit 都没发")
         XCTAssertFalse(applied, "④ 退休之后没有任何落地")
     }
+
+    // MARK: - CASE 9b.1 – 9b.3：生命周期（pin 半边）
+
+    /// CASE 9b.1 — 复活按 **update** 发，沿用 tombstone 那条实体与版本。
+    ///
+    /// 作用域来回切一次，身份会原样回来（R-M3-3-23）：`migratePinnedTabs` 对 lineage 是确定
+    /// 性的，Profile → Space → Profile 之后 `(LX, pu-1)` 重新出现。中间那一程里它被差分判成
+    /// 「本机没有这一行」而发过 tombstone，于是游标带着 `deletedAtMs`——但 `entityId` 与
+    /// `version` 按 R-M3-3-7 一并保留。
+    ///
+    /// 防的是什么：用 `baseVersion == 0` 发 create 会被服务端按版本不匹配拒掉，这条 pin 此后
+    /// 每一轮都重试同一个必然失败的提交。
+    func testAResurrectedPinPublishesAsAnUpdateOverTheTombstonedVersion() async throws {
+        let spaceAccess = makeSpaceAccess()
+        // `createdDate` 与 `pinPayload` 的 `createdAtMs`（1_000 **毫秒**）对齐：fixture 的
+        // 默认值是 1_000 **秒**，差一千倍，对不齐时投影与基线永远不同。
+        let created = Date(timeIntervalSince1970: 1)
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
+            .fixture(lineageId: "LX", guid: "px", index: 0, createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        // 一条**已定案删除**的游标：服务端接受过那条 tombstone，所以两份基线都清了、
+        // `deletedAtMs` 写下了，而 `entityId` / `version` 原样留着（R-M3-3-7）。
+        var tombstoned = PhiOwnedItemCursor()
+        tombstoned.entityId = "e-lx"
+        tombstoned.version = 42
+        tombstoned.deletedAtMs = 900
+        tombstoned.ownerUuid = "pu-1"
+        pinStore.table.cursors["lx:pu-1"] = tombstoned
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = pinCommits(client)
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(commits.count, 1, "本轮只有这一条该出门")
+        XCTAssertEqual(commits.first?.entityId, "e-lx", "① 沿用 tombstone 那条实体")
+        XCTAssertEqual(commits.first?.baseVersion, 42, "② 沿用它的版本，不是 0")
+        XCTAssertEqual(commits.first?.deleted, false, "③ 是一条存活的 update，不是 tombstone")
+        XCTAssertEqual(counters?.resurrected, 1)
+        XCTAssertNil(table.cursors["lx:pu-1"]?.deletedAtMs,
+                     "④ 复活被服务端接受之后才清 `deletedAtMs`，否则 §4.2 第 3b 条每轮再复活一次")
+    }
+
+    /// CASE 9b.2 — pin 的 purge 级联走的是 Task 9a 那一条通用规则：两条判据都成立才删游标，
+    /// 命中 (a) 但**还有活行认领**时不删。
+    ///
+    /// **与 brief 的 Expected 有一处对不上，未断言，留待裁定。** brief 写的是「`ownerUuid`
+    /// 改写成新 Space 的 syncUuid」，而 pin 的**身份本身**就带着 owner
+    /// （`PinKind.identity(of local:)` = `<lineageKey>:<eligibilityOwner>`），且引擎里每一个
+    /// `cursor.ownerUuid` 的写入方都取 `snapshot.ownerUuids[identity]` = 同一个
+    /// `eligibilityOwner`——所以一条 pin 游标的 `ownerUuid` 与它自己的键的后半段**永远相等**，
+    /// 改写成 `su-2` 会让它与键矛盾。一条换了 Space 的 pin 按 §7.2 是「旧身份 tombstone + 新
+    /// 身份 create」，而发出那条 tombstone 的前提正是**旧游标还在**——所以这里断言的是「不
+    /// 删」，把 `ownerUuid` 留给差分去用。
+    ///
+    /// 防的是什么：删掉 `lx:su-1` 的游标，账户上那条实体从此没有任何设备发得出它的
+    /// tombstone，永久孤儿；而 `ly:su-1` 那条本机一条行都没有，留着它就是 §4.7 的差分下一轮
+    /// 拿来盲发 tombstone 的那类孤儿。
+    func testThePinRetentionCascadeKeepsACursorWhoseLineageStillHasALiveRow() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
+        let spaceStore = makeSpaceStore()
+        spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
+        let created = Date(timeIntervalSince1970: 1)
+        // Space 作用域：行的 owner 就是它所在 Space 的 syncUuid。`LX` 现在坐在 `space-b`
+        // 里（身份因此已经是 `lx:su-2`）；`LY` 本机一条行都没有。
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "px", spaceId: "space-b", index: 0,
+                     createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = ownedCursor(entityId: "srv-lx", version: 1,
+                                                        ownerUuid: "su-1")
+        pinStore.table.cursors["ly:su-1"] = ownedCursor(entityId: "srv-ly", version: 1,
+                                                        ownerUuid: "su-1")
+
+        let engine = makeEngine(client: FakePhiSyncClient(), access: spaceAccess,
+                                store: spaceStore, ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.runRetentionSweep()
+
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertNotNil(table.cursors["lx:su-1"],
+                        "① 本机还有这条 lineage 的活行 ⇒ 判据 (b) 不成立，游标不许删")
+        XCTAssertNil(table.cursors["ly:su-1"],
+                     "② 一条活行都没有认领它 ⇒ 两条判据都成立，游标删掉")
+        XCTAssertNotNil(pinStore.table.cursors["lx:su-1"], "③ 落了盘")
+        XCTAssertNil(pinStore.table.cursors["ly:su-1"])
+    }
+
+    /// CASE 9b.3（T6b-1）— 同 rank 的两条 pin 按 **`pin_uuid`**（归一后的 lineage）破平手，
+    /// **不按本机 guid**。
+    ///
+    /// 防的是什么：用本机 guid 破平手是**设备相关**的——`guid` 是每台设备各铸的，所以两台
+    /// 机器对同一对 pin 排出相反的顺序，各自把自己那份 rank 发回账户，于是它们**互相覆盖、
+    /// 永不收敛**：每一轮各发一条 commit，用户看到两台机器上的 pin 顺序不停对调。spec §2.4
+    /// 指定 `pin_uuid` 正是因为它是唯一两端都认得的键。
+    ///
+    /// 两台设备跑在同一个 `defaults` suite 上：假 client 的 `scriptedPages` 是每个 client
+    /// 自己的、按次序弹出，与 marker 无关，所以第一台留下的 marker 影响不到第二台。
+    func testEqualRanksBreakTheTieOnPinUuidNotTheDeviceLocalGuid() async throws {
+        /// 一台设备落地一轮，交回「lineage -> 落地之后那一行的 index」。
+        func land(guidForLA: String, guidForLB: String) async -> [String: Int] {
+            let created = Date(timeIntervalSince1970: 1)
+            let access = FakePinAccess(scope: .profile, account: .profile, rows: [
+                .fixture(lineageId: "LA", guid: guidForLA, index: 0, createdDate: created),
+                .fixture(lineageId: "LB", guid: guidForLB, index: 1, createdDate: created),
+            ])
+            let store = MemoryOwnedItemStore()
+            // 基线 rank 各不相同，入站的那一份把两条都改成**同一个** rank ⇒ `plan` 为两条
+            // 都产出 `.move`，于是这个 owner 进 `touchedOwners`、整组走一次稠密置换。
+            store.table.cursors["la:pu-1"] = publishedPinCursor(
+                pinPayload(lineage: "la", rank: "V"), entityId: "srv-la")
+            store.table.cursors["lb:pu-1"] = publishedPinCursor(
+                pinPayload(lineage: "lb", rank: "W"), entityId: "srv-lb")
+            let client = FakePhiSyncClient()
+            client.scriptedPages = [page([
+                remoteEntity(envelope(pinPayload(lineage: "la", rank: "K", rankStamp: 500)),
+                             tag: pinTag("la"), version: 10, entityId: "srv-la", key: key),
+                remoteEntity(envelope(pinPayload(lineage: "lb", rank: "K", rankStamp: 500)),
+                             tag: pinTag("lb"), version: 11, entityId: "srv-lb", key: key),
+            ])]
+
+            let engine = makeEngine(client: client, access: makeSpaceAccess(),
+                                    store: makeSpaceStore(),
+                                    ownedKinds: [pinKind(access, store)])
+            await engine.setSpaceSyncEnabled(true)
+            await engine.pullOnce()
+
+            var out: [String: Int] = [:]
+            for row in access.rows { out[row.lineageId] = row.index }
+            return out
+        }
+
+        // 第一台：本机 guid 顺序与 lineage 顺序**一致**。
+        let deviceA = await land(guidForLA: "p-1", guidForLB: "p-2")
+        // 第二台：同一对 pin，本机 guid 顺序**相反**。
+        let deviceB = await land(guidForLA: "p-9", guidForLB: "p-0")
+
+        XCTAssertEqual(deviceA["LA"], 0, "① 按 `pin_uuid` 排：la < lb")
+        XCTAssertEqual(deviceA["LB"], 1)
+        XCTAssertEqual(deviceB["LA"], 0, "② guid 顺序相反，算出来的次序必须一模一样")
+        XCTAssertEqual(deviceB["LB"], 1)
+        XCTAssertEqual(deviceA, deviceB, "③ 两台设备对同一对 pin 收敛到同一个次序")
+    }
 }

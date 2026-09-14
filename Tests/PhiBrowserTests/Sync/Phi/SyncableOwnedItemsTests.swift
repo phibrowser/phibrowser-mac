@@ -989,6 +989,33 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(updated?.deleteDecidedAtMs, 1_000)
     }
 
+    /// R-exec-9 — 「还没认领上」与「认领不上」是两件事。
+    ///
+    /// 防的是什么：一条身份本轮已经被 §6 的规则 (i) 配上了一条本机行，只是那次 `syncId` 写回
+    /// 被导入锁拒了。它此刻还没有 `syncId`，所以第三条判据（「本机确实没有这一行了」）对它
+    /// 成立——不排除它，这一轮就会把一条两边都同意它存在的账户实体删掉，而本机那一行下一轮
+    /// 再铸一个新身份重新建一条，对端看到的是一次删除加一次毫无关系的新建。
+    ///
+    /// 反过来，一条认领**配不上**的停放游标（用户在重试窗口里改了那一行）必须照常被删掉：
+    /// 靠 `pendingApply` 一刀切排除，会把它永久留在账户上，而没有任何设备还能删掉它。
+    func testAParkedCursorIsExemptOnlyWhileItsClaimIsStillPending() {
+        var table = PhiOwnedItemTable()
+        for identity in ["claimed", "unclaimable"] {
+            var cursor = landedCursor(bookmarkPayload(uuid: identity))
+            cursor.pendingApply = baselineBytes(bookmarkPayload(uuid: identity))
+            table.cursors[identity] = cursor
+        }
+
+        let result = SyncableOwnedItems.tombstones(BookmarkKind.self, locals: [], table: table,
+                                                   resolve: resolve, scope: nil, nowMs: 5_000,
+                                                   pendingClaims: ["claimed"])
+
+        let identities = result.identities
+        let exempt = result.cursorUpdates["claimed"]
+        XCTAssertEqual(identities, ["unclaimable"])
+        XCTAssertNil(exempt, "被豁免的那条游标一个字段都不许动")
+    }
+
     /// M4 — 游标的 `ownerUuid` 还没被刷新过 ⇒ 不发 tombstone。
     ///
     /// 防的是什么：引擎每轮要为表里的每一条游标刷新这个字段；nil 说明那条前置条件没成立，

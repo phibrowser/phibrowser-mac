@@ -3515,9 +3515,14 @@ extension OwnedKindRegistration {
                 // 排除。用快照当判据，它们会被逐条判成「本机没有」而各发一条 tombstone，
                 // 把账户上一整棵真实存在的子树删掉，而本机那些行还在原地。
                 let live = try access.allSyncIds()
+                // R-exec-9：本轮 §6 的认领配上了、但 `syncId` 的写回还没落盘的那些身份不进
+                // 删除集。**配上了**是判据，`pendingApply` 不是：一条认领**配不上**的停放
+                // 游标正是该被差分清理掉的那一类。认领成功写回的那些身份此刻已经在
+                // `allSyncIds()` 里，所以整张配对表交进去与「只交没写回去的那几条」等价。
                 return SyncableOwnedItems.tombstones(
                     BookmarkKind.self, locals: live.map(PhiLocalBookmark.identityOnly),
-                    table: table, resolve: maps.resolver, scope: nil, nowMs: now)
+                    table: table, resolve: maps.resolver, scope: nil, nowMs: now,
+                    pendingClaims: Set(state.pairs.keys))
             },
             plan: { input in bookmarkPlan(input, state: state) },
             land: { input in await landBookmarks(input, access: access, state: state) },

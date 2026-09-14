@@ -1213,6 +1213,75 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                        "也不许把第二个身份发上账户")
     }
 
+    /// T6-N1 的轮 1：两个 Space、其中一个正在导入，于是被锁那一条的身份写不回本机行。
+    /// 返回那条**留在游标表里、本机行却没有认领**的身份。
+    private func runFailedWriteBackRound()
+        async -> (engine: PhiSyncEngine, client: FakePhiSyncClient,
+                  access: FakeBookmarkAccess, store: MemoryOwnedItemStore, orphan: String) {
+        let spaceAccess = makeSpaceAccess(["s-a": "su-a", "s-b": "su-b"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GA", spaceId: "s-a", index: 0, title: "A",
+                     url: URL(string: "https://a.example")!),
+            .fixture(guid: "GB", spaceId: "s-b", index: 0, title: "B",
+                     url: URL(string: "https://b.example")!),
+        ])
+        access.importingSpaceIds = ["s-b"]
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let claimed = access.rows.first { $0.guid == "GA" }?.syncId
+        let orphan = table.cursors.keys.first { $0 != claimed } ?? ""
+        return (engine, client, access, store, orphan)
+    }
+
+    /// T6-N1 — 写不回去的那条游标必须带着归属，否则「下一轮差分把它删掉」这条后路走不通。
+    ///
+    /// 防的是什么：`SyncableOwnedItems.tombstones` 在 `ownerUuid == nil` 上保守地放弃，而发布段
+    /// 那次归属刷新跑在提交循环**之前**、只碰已经存在的游标。所以一条为铸出来的身份新建的游标
+    /// 若不在 `.applied` 那一刻就钉上归属，它此后永远 `ownerUuid == nil`——账户上那条实体既没有
+    /// 本地行认领它，也**永远发不出它的 tombstone**，每个对端都把它物化成一条谁都删不掉的
+    /// 重复书签。用户在重试窗口里改一次那条书签的 URL 就够了：认领从此配不上它。
+    func testAnUnclaimedMintedIdentityCarriesItsOwnerAndIsEventuallyTombstoned() async throws {
+        let round1 = await runFailedWriteBackRound()
+        let engine = round1.engine
+        var table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertFalse(round1.orphan.isEmpty)
+        XCTAssertEqual(table.cursors[round1.orphan]?.ownerUuid, "su-b",
+                       "铸出来的身份在提交被接受的那一刻就要钉上归属")
+        XCTAssertNotNil(table.cursors[round1.orphan]?.pendingApply)
+
+        // 用户在重试窗口里改了那条书签的 URL ⇒ §6 的按位配对再也认不出它。
+        if let index = round1.access.rows.firstIndex(where: { $0.guid == "GB" }) {
+            round1.access.rows[index].url = URL(string: "https://b-edited.example")!
+        }
+        round1.access.importingSpaceIds = []
+        await engine.pullOnce()
+
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors[round1.orphan]?.ownerUuid, "su-b", "归属不许被刷成 nil")
+        let tombstoned = Set(bookmarkCommits(round1.client).filter(\.deleted)
+            .map(\.clientTagHash))
+        XCTAssertTrue(tombstoned.contains(bookmarkHash(round1.orphan)),
+                      "认领不上的那条身份要被差分清理掉，不许变成永久孤儿")
+    }
+
+    /// T6-N1 的另一半：用户干脆把那条本机行删了。账户上那条实体同样必须能被清理掉。
+    func testAnUnclaimedMintedIdentityIsTombstonedWhenItsRowIsDeletedLocally() async throws {
+        let round1 = await runFailedWriteBackRound()
+        round1.access.rows.removeAll { $0.guid == "GB" }
+        round1.access.importingSpaceIds = []
+        await round1.engine.pullOnce()
+
+        let tombstoned = Set(bookmarkCommits(round1.client).filter(\.deleted)
+            .map(\.clientTagHash))
+        XCTAssertTrue(tombstoned.contains(bookmarkHash(round1.orphan)))
+    }
+
     /// T6-I1 / §5.6 T3 — 反查到身份、本机没有行的 tombstone 照样把游标定案。
     ///
     /// 防的是什么：不写 `deletedAtMs`，那条游标永远停在「活着」的状态，§3.6 那个按

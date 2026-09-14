@@ -1780,16 +1780,25 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// **取值之外还断时间戳**：一条沿用基线戳的空串与对端手上那条 `("<伙伴>", t_基线)` 戳
     /// 相同，LWW 按序列化字节破平手，空串是对方的前缀、**输掉**平手——解除在对端从来不生效，
     /// 而只断取值的用例对这个缺陷是绿的。
+    ///
+    /// **第三种形状（③）是反方向的那一半**：一对两半都链好的拆分 pin，它的游标同样没有
+    /// `pendingPartnerLineage`。表副本若把它也清掉，投影与基线每轮都不同、每轮重发一次，
+    /// 而对端合并出来的值与它手上那条相等、产不出任何 step，于是它也每轮重发——两台设备
+    /// 把每一条拆分 pin 永远发下去，还吃掉每轮 250 条的发布预算。
     func testALocalSplitReleaseSendsAnEmptyPartnerWhileAHalfLandedPairKeepsTheBaseline() async throws {
         let spaceAccess = makeSpaceAccess()
-        // 两条本机行的 `splitPartnerLineageId` 都是 nil。①的标题与基线不同，于是它这一轮
-        // 确实出门，投影出来的 `split_partner_uuid` 才观察得到。
+        // ①②两条本机行的 `splitPartnerLineageId` 都是 nil；①的标题与基线不同，于是它这一轮
+        // 确实出门，投影出来的 `split_partner_uuid` 才观察得到。③那一对互相链着。
         let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
             .fixture(lineageId: "LA", guid: "pa", index: 0, title: "A"),
             .fixture(lineageId: "LC", guid: "pc", index: 1, title: "T"),
+            .fixture(lineageId: "LE", guid: "pe", index: 2, title: "T",
+                     splitPartnerLineageId: "lf"),
+            .fixture(lineageId: "LF", guid: "pf", index: 3, title: "T",
+                     splitPartnerLineageId: "le"),
         ])
         let pinStore = MemoryOwnedItemStore()
-        // ① 确实在等伙伴。两条基线的字段戳都是 100。
+        // ① 确实在等伙伴。四条基线的字段戳都是 100。
         var waiting = publishedPinCursor(pinPayload(lineage: "la", rank: "V",
                                                     splitPartner: "lb"))
         waiting.pendingPartnerLineage = "lb"
@@ -1797,6 +1806,11 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         // ② 伙伴早就到过，是用户刚刚主动解除的。
         pinStore.table.cursors["lc:pu-1"] = publishedPinCursor(
             pinPayload(lineage: "lc", rank: "W", splitPartner: "ld"), entityId: "srv-p2")
+        // ③ 两半都链好了：基线带着伙伴，游标没有 `pendingPartnerLineage`，本机两行互相指着。
+        pinStore.table.cursors["le:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "le", rank: "X", splitPartner: "lf"), entityId: "srv-p3")
+        pinStore.table.cursors["lf:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lf", rank: "Y", splitPartner: "le"), entityId: "srv-p4")
         let client = FakePhiSyncClient()
         let clock = Clock()
 
@@ -1820,6 +1834,10 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(releasedHalf?.splitPartnerUuid.updatedAtMs, clock.nowMs,
                        "解除盖的是本轮的 now，否则它在对端的 LWW 平手里输给那条旧链接")
         XCTAssertGreaterThan(releasedHalf?.splitPartnerUuid.updatedAtMs ?? 0, baselineStamp)
+        XCTAssertNil(commits.first { $0.clientTagHash == pinHash("le") },
+                     "两半都链好的拆分对没有任何变化，表副本不许把它改写成一次编辑")
+        XCTAssertNil(commits.first { $0.clientTagHash == pinHash("lf") })
+        XCTAssertEqual(commits.count, 2, "本轮只有①②该出门")
     }
 
     /// CASE 5b.6（R-exec-5）— 远端 pin 落地时带上内容戳。

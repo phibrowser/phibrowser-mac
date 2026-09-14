@@ -633,6 +633,42 @@ final class PinnedTabScopeTests: XCTestCase {
         )
     }
 
+    /// CASE 8.6 — a scope migration carries `contentUpdatedDate` across.
+    ///
+    /// 迁移过去只复制 `createdDate`，把 `contentUpdatedDate` 丢在原行上。丢掉的后果是：用户
+    /// 切一次作用域，本机每一条 pin 的比较戳从「上次真实编辑」塌回 `createdDate`，于是它们
+    /// 在下一轮全部输给对端任意一次旧编辑——一次作用域切换变成一次账户级的内容回滚。
+    func testScopeMigrationCarriesTheContentEditTimestampToTheMigratedRow() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let edited = Date(timeIntervalSince1970: 2_000_000)
+        let source = try insertPinnedTab(
+            in: store,
+            guid: "edited-pin",
+            lineageId: "edited-lineage",
+            profile: fixture.defaultProfile,
+            title: "Edited",
+            url: "https://edited.example"
+        )
+        source.createdDate = created
+        source.contentUpdatedDate = edited
+        try XCTUnwrap(store.getMainContext()).save()
+
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let migrated = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        XCTAssertEqual(migrated.map(\.pinLineageId), ["edited-lineage"])
+        let row = try XCTUnwrap(migrated.first)
+        XCTAssertEqual(row.contentUpdatedDate, edited)
+        XCTAssertEqual(row.createdDate, created)
+    }
+
     // MARK: - Fixtures
 
     private struct Fixture {

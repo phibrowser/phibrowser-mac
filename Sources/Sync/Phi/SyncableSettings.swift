@@ -103,7 +103,14 @@ enum SyncableSettings {
     ///   superseded dual-bool encoding of `layoutMode`; syncing both encodings
     ///   would let them disagree. They are still *read* as `layoutMode`'s
     ///   fallback, exactly as `loadLayoutMode()` does.
-    static let all: [SyncableSetting] = generalBools + [layoutMode, autoPictureInPictureMode] + themeSettings
+    ///
+    /// M3-3 adds one member and changes nothing else about this path: the pinned-tab scope,
+    /// which is not a preference at all locally but a SwiftData row. It rides here as a
+    /// mirror preference; `PinnedTabScopeMirror` owns the key, both closures and the
+    /// mount-time reseed that keeps the mirror and the row together.
+    static let all: [SyncableSetting] = generalBools
+        + [layoutMode, autoPictureInPictureMode, PinnedTabScopeMirror.pinnedTabScope]
+        + themeSettings
 
     // MARK: General (Bool)
 

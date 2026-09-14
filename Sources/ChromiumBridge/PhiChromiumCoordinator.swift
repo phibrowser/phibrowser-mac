@@ -110,6 +110,11 @@ import SwiftUI
     /// and the profile mapping picture is exactly as ambiguous as during a join. That is the
     /// state the gate exists to prevent.
     private var phiSpacePairingObserver: NSObjectProtocol?
+    /// `.phiSyncedSettingsDidApply` token for the pinned-tab scope (M3-3 §7.1 step 4).
+    /// Registered and removed with the observers above: a surviving observer would keep
+    /// running pin migrations against the previous account's store, and a rebuild would
+    /// register a second copy that migrates twice per landed value.
+    private var phiPinnedTabScopeObserver: NSObjectProtocol?
     /// The last value handed to `PhiSyncEngine.setSpaceSyncEnabled` for the CURRENT engine, or
     /// nil when nothing has been handed to it yet. The observer above fires once per refresh
     /// round forever, and a redundant `setSpaceSyncEnabled` still queues a `.spaceGate` round
@@ -309,6 +314,25 @@ import SwiftUI
             AppLogInfo("[phi-sync] dropped the previous account's settings cursor")
         }
 
+        // M3-3 §7.1 第 3 步：挂载账户时重新播种 pin 作用域的镜像键（R-M3-3-8）。这里正是
+        // 「`LocalStore` 已打开、引擎尚未启动」的那一点，而 `reseed` 是个纯函数，所以协调器
+        // 只负责按它的结论决定跑不跑迁移。
+        //
+        // 镜像键住在 `UserDefaults.standard`、按账户**不**分域，而作用域那一行每账户一份，
+        // 所以上面那次游标重置清不掉它——跨账户串扰恰恰是 `reseed` 的情形二要处理的。
+        //
+        // 落在设备密钥那条 guard **之后**：读不到设备密钥的那种会话里引擎根本建不起来，一次
+        // pin 迁移也就无从被任何一轮观察到；下次挂载账户时照样重播。
+        switch PinnedTabScopeMirror.reseed(rowValue: account.localStorage.pinnedTabScope(),
+                                           into: defaults) {
+        case .noop, .seeded:
+            break
+        case .runLocalMigration(let scope):
+            // 键权威：账户的值已经落地过，只是行没追上（App 在 `apply` 与迁移之间被杀，或
+            // 迁移抛错）。§11.4 指望的就是这条重试路径。
+            applyAccountPinnedTabScope(scope)
+        }
+
         let domainKeys = PhiDomainKeyManager(api: stack.api, keyManager: stack.manager)
         let client = PhiSyncHTTPClient(
             tokenProvider: { AuthManager.shared.getAccessTokenSyncly() },
@@ -417,6 +441,61 @@ import SwiftUI
             forName: .phiProfileAutoCreateDidRun, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
+        }
+
+        // M3-3 §7.1 第 4 步：镜像 → 本地。`SyncableSettings.apply` 把落地的 key 数组放在
+        // `userInfo` 里；含 pin 作用域那个 key 就按刚落地的值跑一次**既有的**本地迁移。
+        //
+        // 这条通知存在的理由与本用法逐字吻合：它是给「在启动时把值缓存在内存里、此后只写
+        // 不读」的组件用的（既有消费者是 `ThemeManager`）。作用域的消费者是一张 SwiftData
+        // 行，同一类问题。
+        //
+        // `queue: .main` 而不是 `nil`：`apply` 跑在引擎自己的线程上（`PhiSyncEngine` 是
+        // 一个 actor），而下面每一步都是主 actor 的。
+        phiPinnedTabScopeObserver = NotificationCenter.default.addObserver(
+            forName: .phiSyncedSettingsDidApply, object: nil, queue: .main
+        ) { [weak self] notification in
+            let applied = notification.userInfo?[SyncableSettings.appliedKeysUserInfoKey]
+                as? [String] ?? []
+            // `UserDefaults.standard` 就地读，而不是捕获上面那个同名局部变量：它不是
+            // `Sendable`，捕获进这个 `@Sendable` 闭包会多出一条并发告警，而两者指的是同一个域。
+            guard applied.contains(PinnedTabScopeMirror.key),
+                  let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
+                  let scope = PinnedTabScope(rawValue: raw) else { return }
+            MainActor.assumeIsolated { self?.applyAccountPinnedTabScope(scope) }
+        }
+    }
+
+    /// Runs the existing local pinned-tab scope migration towards an account value that has
+    /// just landed (§7.1 step 4) or that a mount-time reseed found the row lagging behind
+    /// (§7.1 step 3).
+    ///
+    /// **两个 preferred 参数必须传**，与设置面板那条路径逐字一致：`sourceCollections` 把
+    /// `isPreferred` 的集合排在前面，`mergeCandidates` 拿第一个集合的行当 `candidate.source`
+    /// ——它的标题 / URL / 顺序成为合并后的那一行。都传 nil 的话，同一次作用域变更在「本机
+    /// 操作」与「远端落地」两条路上会产出不同的 pin 集合与顺序。设置面板在活动 Space 为 nil
+    /// 时退到它自己的选中项，那是面板私有的 `@State`，在这里没有对应物，所以这条路径就以
+    /// `activeSpaceId` 为准（都为 nil 时迁移退到设备无关的 `sortKey` 序，仍然是确定的）。
+    ///
+    /// 失败只记一条元数据日志：镜像键**保持**已落地的新值（它是账户的值），本机行仍是旧作用
+    /// 域，于是下一轮仍 `scope_mismatch`，而这次迁移会在下一次落地或下次挂载账户时重试。
+    @MainActor
+    private func applyAccountPinnedTabScope(_ scope: PinnedTabScope) {
+        guard let store = AccountController.shared.account?.localStorage,
+              store.pinnedTabScope() != scope else { return }
+        let preferredSpaceId = SpaceManager.shared.activeSpaceId
+        let preferredProfileId = preferredSpaceId.flatMap { spaceId in
+            SpaceManager.shared.spaces.first(where: { $0.spaceId == spaceId })?.profileId
+        }
+        Task { @MainActor in
+            do {
+                try await store.changePinnedTabScope(to: scope,
+                                                     preferredProfileId: preferredProfileId,
+                                                     preferredSpaceId: preferredSpaceId)
+                AppLogInfo("[phi-sync] pinned-tab scope migrated to \(scope.rawValue)")
+            } catch {
+                AppLogError("[phi-sync] pinned-tab scope migration failed (\(PhiSyncLog.describe(error)))")
+            }
         }
     }
 
@@ -670,7 +749,6 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSpacePairingObserver = nil
         }
-        // M3-3 Task 8: remove the synced-scope observer here.
         // §5.7 的两条归属项订阅。留着不清的订阅会在账户注销之后继续把 Round 排给一个已经
         // 退休的引擎——`shutdown()` 让那些轮次一个字节都不写，但每一次都还是一次完整的排队
         // 与唤醒，而下一个账户挂上来的时候这两条订阅指的仍是上一个账户的 `LocalStore`。
@@ -681,6 +759,10 @@ import SwiftUI
         // 两个 label 描述的是下面正要丢掉的那个引擎的注册清单，跟着它一起清。
         phiBookmarkKindLabel = nil
         phiPinKindLabel = nil
+        if let observer = phiPinnedTabScopeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiPinnedTabScopeObserver = nil
+        }
         // The memo describes the engine being dropped below; the next one loads its own
         // persisted gate state and must be told again.
         lastSpaceGateEnabled = nil

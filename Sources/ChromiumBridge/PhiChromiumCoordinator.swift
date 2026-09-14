@@ -487,7 +487,16 @@ import SwiftUI
     /// ——它的标题 / URL / 顺序成为合并后的那一行。都传 nil 的话，同一次作用域变更在「本机
     /// 操作」与「远端落地」两条路上会产出不同的 pin 集合与顺序。设置面板在活动 Space 为 nil
     /// 时退到它自己的选中项，那是面板私有的 `@State`，在这里没有对应物，所以这条路径就以
-    /// `activeSpaceId` 为准（都为 nil 时迁移退到设备无关的 `sortKey` 序，仍然是确定的）。
+    /// `activeSpaceId` 为准。
+    ///
+    /// **`activeSpaceId` 为 nil 时合并顺序是设备相关的，不是「设备无关但确定」。**
+    /// `isPreferred` 于是对每个 owner 都为假，tie-break 落回 `PinnedTabOwner.sortKey`，而那是
+    /// `"\(profileId ?? "")\0\(spaceId ?? "")"` ——拿的是**本机的** profile / Space id，本机
+    /// Space id 每台机器一份（`syncUuid(forSpaceId:)` / `localSpaceId(forSyncUuid:)` 存在的全部
+    /// 理由就是这个）。两台机器因此会把同一次账户级作用域变更合成不同的行顺序、并带过不同的
+    /// 非签名字段。暴露的是**挂载时**那条重播：它跑在启动期的 `buildPhiSyncEngine` 里，那时
+    /// 很可能一个 Space 都还没激活；落地观察者那条几乎不暴露。把挂载时的重播推迟到有活动
+    /// Space 之后是一条待裁定的改法（迁移本来就是 §11.4 的重试路径，跳过一次挂载不损失什么）。
     ///
     /// 失败只记一条元数据日志：镜像键**保持**已落地的新值（它是账户的值），本机行仍是旧作用
     /// 域，于是下一轮仍 `scope_mismatch`，而这次迁移会在下一次落地或下次挂载账户时重试。

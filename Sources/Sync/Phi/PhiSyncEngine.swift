@@ -5209,7 +5209,14 @@ private func landPins(_ input: OwnedLandingInput,
             .sorted { lhs, rhs in
                 switch (rankByGuid[lhs.guid], rankByGuid[rhs.guid]) {
                 case let (left?, right?):
-                    return left == right ? lhs.guid < rhs.guid : left < right
+                    // §2.4：rank 平手**按 `pin_uuid`（= 归一后的 lineage）破，绝不按本机
+                    // `guid`**。`guid` 是每台设备各铸的，两台机器于是对同一对同 rank 的 pin
+                    // 排出相反的次序，各自把自己那份 rank 发回账户——它们互相覆盖、**永不
+                    // 收敛**，每一轮各发一条 commit，用户看到两台机器上的 pin 顺序不停对调。
+                    // `pin_uuid` 是这一对里唯一两端都认得的键。
+                    return left == right
+                        ? PinKind.lineageKey(lhs.lineageId) < PinKind.lineageKey(rhs.lineageId)
+                        : left < right
                 // **没有 rank 的排在后面**：那是一条从没发布过、这一轮也没被碰过的本机行，
                 // 把它排到前面会让每一次落地都顺手重排一遍与本轮无关的行。
                 case (nil, _?): return false

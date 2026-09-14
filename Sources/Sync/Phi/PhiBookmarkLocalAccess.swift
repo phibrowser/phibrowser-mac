@@ -157,9 +157,14 @@ struct BookmarkApplyBatch {
 /// 写方法一律 `async throws`：非抛出签名表达不了「基线只能在行真的落了之后才写」
 /// （§5.6）。
 ///
+/// **精化 `PhiFaviconWriting`**（§8.2 / Task 10）：图标回填要的那个窄写入口挂在那条协议
+/// 上，于是回填队列只认「能写 favicon 的东西」，够不着快照、差分与 `apply`。favicon 刻意
+/// 不做成 `BookmarkApplyOp` 的一个 case——它不在快照里，不该经过三相排序、不该与同步落地
+/// 共用事务、也不该让 §5.7 的值快照去重多认一个字段。
+///
 /// 生产实现是本文件末尾的 `AccountPhiBookmarkAccess`。
 @MainActor
-protocol PhiBookmarkLocalAccess: AnyObject {
+protocol PhiBookmarkLocalAccess: PhiFaviconWriting {
     /// **一次** fetch 带关系预取，**每轮至多算一次**，结果交给快照 / 差分 / index 投影
     /// 三个消费者复用。
     ///
@@ -331,6 +336,16 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
         // 快照跟不上」，而不是「没落地」。此后三个读者在下一次成功的 `allBookmarks()` 之前
         // 一律无效（见协议上的契约）。
         try rebuildCache()
+    }
+
+    /// 回填专用的窄写入口（§8.2 / Task 10）。一轮的若干条**合成一次**后台写。
+    ///
+    /// **不碰任何缓存**：`favicon` 不是 `PhiLocalBookmark` 的字段，这次写改不了本轮那份
+    /// 快照的任何一个取值，所以它对差分、对 §5.7 的值快照去重、对游标全都不可见——正是
+    /// 「回填不触发推送」那条要求的实现方式。
+    func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
+        try await account.localStorage.updateTabFaviconsThrowing(
+            writes.map { (guid: $0.guid, favicon: $0.data) })
     }
 
     /// 一次批量写（§9.2）。逐条一个事务在一棵上千条的树上是上千个事务。

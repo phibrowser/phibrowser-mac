@@ -374,10 +374,16 @@ import SwiftUI
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)
         lastSpaceGateEnabled = nil
+        // M3-3 §8.2：图标回填队列。它是 `@MainActor`，而引擎是一个非 MainActor 的 actor，
+        // 所以只能在这里造好再传进去。写入口收的是书签 access——回填只处理书签行。
+        let faviconBackfill = PhiFaviconBackfillQueue(fetcher: PhiFaviconFetcher(),
+                                                      access: bookmarkAccess,
+                                                      logSink: PhiFaviconAppLogSink())
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
-                                      ownedKinds: ownedKinds)
+                                      ownedKinds: ownedKinds,
+                                      faviconBackfill: faviconBackfill)
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in

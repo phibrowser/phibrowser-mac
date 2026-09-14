@@ -541,6 +541,31 @@ extension LocalStore {
         }
     }
     
+    /// 一轮图标回填的若干条**合成一次**后台写（Phi sync M3-3 §8.2 / Task 10）。
+    ///
+    /// 与上面那条 `updateTabFavicon(_:favicon:)` 的区别有两处，两处都是必须的：
+    ///  1. **一个事务**。逐条调那一条是 N 次 `performBackgroundWrite`，一轮 20 条就是 20 次
+    ///     写事务，而这些字节全是同一轮回填的产物。
+    ///  2. **会抛**。那一条是 fire-and-forget 的，调用方看不出写成没成；回填队列要据此把
+    ///     这一批记成成功还是失败。
+    ///
+    /// 与被写行完全相同的字节跳过（不写 `updatedDate`），于是一次重复回填不会在 UI 上
+    /// 制造一批假的「刚刚更新」。
+    func updateTabFaviconsThrowing(_ writes: [(guid: String, favicon: Data)]) async throws {
+        guard !writes.isEmpty else { return }
+        try await performBackgroundWriteAndWaitThrowing { context in
+            for write in writes {
+                let guid = write.guid
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                guard let tab = try context.fetch(descriptor).first else { continue }
+                if tab.favicon == write.favicon { continue }
+                tab.favicon = write.favicon
+                tab.updatedDate = Date()
+            }
+        }
+    }
+
     func deleteTab(_ tab: TabDataModel) {
         let guid = tab.guid
         performBackgroundWrite { context in

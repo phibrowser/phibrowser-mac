@@ -2843,8 +2843,15 @@ actor PhiSyncEngine {
         // 不在 `landed` 里；落地却在同一个事务里替它链上了反方向，于是它游标上那一位也要
         // 跟着清。只写到达的那一侧，反方向要等下一次本地变化才被发现，中间那段时间两台机器
         // 对同一对 pin 的显示不一致。
+        //
+        // **四个集合一个都不能少。** `landed` 那一半由上面那个循环负责；`parked` 与 `refused`
+        // 则是**落地后复核没过**或整批算错了的那些身份——这一轮对它们的本机状态没有把握，
+        // 而这一位的含义恰恰是「本机那一行还挂不挂着伙伴」。清掉一条其实没落地的身份的
+        // `pendingPartnerLineage`，下一轮的表副本就会把它的基线判成一次本机解除，把对端好好
+        // 的拆分对拆散——正是 §7.4 要防的那件事，只是换了一条到达路径。
         for (identity, waiting) in outcome.pendingPartnerLineages
-        where !outcome.landed.contains(identity) {
+        where !outcome.landed.contains(identity) && !outcome.parked.contains(identity)
+            && !outcome.refused.contains(identity) {
             guard var cursor = table.cursors[identity] else { continue }
             let updated: String? = waiting.isEmpty ? nil : waiting
             guard cursor.pendingPartnerLineage != updated else { continue }
@@ -4018,25 +4025,19 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
     }
 
-    // §6.1 / CASE 6b.13：配对表指着的那条行**已经带着另一个账户身份** ⇒ 这次认领不成立。
+    // §6.1 / CASE 6b.13：**这里没有「配对表指着一条已被认领的行」的降级支，因为那个状态到不
+    // 了这里。** 一条 `.claim` step 只在 `context.pairs[身份] != nil` 时产出，而那张配对表来自
+    // `SyncableOwnedItems.adopt`——它的 `localChildren` 只收 `syncId == nil` 的行，且组内按位
+    // 一对一配（两条同键的入站实体对一条本机行只配得上第一条，第二条落进 `leftOver` 并走
+    // create）。`bookmarkPlan` 在返回前把那批配对并进 `state.pairs`，所以 `guidOf` 对每一条
+    // `.claim` 都解析自 `state.pairs`；而 `state.rowByGuid` 由 `reload` 与
+    // `notePersistedClaims` 与 `state.locals` 同步维护，`plan` 与这里之间没有任何东西改过它。
     //
-    // 真 store 在这里抛 `rowAlreadyMapped`（`LocalStore+Bookmark.swift` 的
-    // `node.syncId == nil || node.syncId == syncId`），而那是一个**批次级**的拒绝：同一个
-    // Space 这一轮其余每一条本来该落地的实体会跟着回滚，而它们与这次重复配对毫无关系。所以
-    // 在组批之前就把这一条降级成一次 create——本机多出一条新行，账户上那条身份因此有了持有
-    // 者，下一轮的差分不会为它发 tombstone。覆盖写是三条路里最坏的那一条：旧身份在本机瞬间
-    // 失去对应行，差分对此的回答是删掉账户上那条真实存在的书签。
-    var downgradedClaims: Set<String> = []
-    for index in planned.indices where planned[index].step.kind == .claim {
-        let identity = planned[index].step.identity
-        guard let guid = guidOf[identity], let holder = state.rowByGuid[guid]?.syncId,
-              holder != identity else { continue }
-        planned[index].step.kind = .create
-        guidOf.removeValue(forKey: identity)
-        downgradedClaims.insert(identity)
-        AppLogWarn("[phi-sync] a bookmark claim targets a row that already carries another "
-                   + "identity; creating a row instead uuid=\(String(identity.prefix(8)))")
-    }
+    // 真 store 那道 `rowAlreadyMapped`（`LocalStore+Bookmark.swift` 的
+    // `node.syncId == nil || node.syncId == syncId`，R-M3-3-14 要求的「静默结果必须变成抛错」）
+    // 因此是**深度防御**：`FakeBookmarkAccess` 照着它抛，于是配对那一侧真出了回归时，
+    // CASE 6b.13 会以一次整批拒收（`outcome.refused`）当场变红，而不是静默改写一条行的身份。
+    // 在这里再写一条自愈分支只会是永远跑不到的死代码。
 
     // §4.6 的**物理行**判据（`refuses(_:baseline:)` 够不着它——那一个比的是游标基线，而这条
     // 身份本机可能根本没有基线）。落地会把一条书签行原地变成文件夹，它的 URL 随即失去意义；
@@ -4208,10 +4209,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         case .claim:
             emit(.claim(guid: entry.guid, syncId: identity), in: entry.group.spaceId)
         case .create:
-            // 被降级的那条认领**不走这一支**：它的配对表条目还在（`state.pairs` 是轮内共享
-            // 状态，落地这一侧不许改写它），但那条行已经属于别的身份了。
-            if !downgradedClaims.contains(identity),
-               state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
+            if state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
                 // 本机已经有这条身份的行：一次重放 / 一次认领，不是一次新建。
                 emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
                            inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),

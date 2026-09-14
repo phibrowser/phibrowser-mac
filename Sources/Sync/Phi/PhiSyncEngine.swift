@@ -276,15 +276,24 @@ struct OwnedKindRegistration {
     /// 与 tombstone 的反拓扑序都从它算深度。
     let owners: (Data) -> [String]
     /// §7.4 的「本机主动解除拆分」：把基线字节里的拆分伙伴清空，并**给清空后的那个值盖上
-    /// 本轮的 `now`**（第二个参数）。nil = 这条 kind 没有这个概念（书签），调用方原样沿用
-    /// 基线。
+    /// 本轮的 `now`**（第二个参数）。第三个参数是轮首那份身份翻译表，与 `snapshot` /
+    /// `tombstones` 收的是同一份——这条 kind 要拿它把基线的身份对回本机行。
+    ///
+    /// nil = 这条 kind 没有这个概念（书签），**或者这一条根本不是一次解除**，两种情形下
+    /// 调用方都原样沿用基线。
     ///
     /// **时间戳必须在这里盖。** 盖戳函数（`PinKind.stamp`）分不出「表副本刚刚抹掉了一个真实
     /// 的伙伴」与「这条 pin 从来就没有伙伴」——两种情形到它手上都是「空投影对空基线」，于是
     /// 它按签名相等沿用基线的戳。发出去的 `("", t_基线)` 与对端手上的 `("<伙伴>", t_基线)`
     /// 戳相同，LWW 按字节序破平手，空串**输**，对端于是永远保留那条链接：用户每解除一次、
     /// 每同步一次又被拼回去，正是 §7.4 要防的那件事。
-    let clearedSplitPartner: (Data, Int64) -> Data?
+    ///
+    /// **反过来，「不是解除的那些一个字节都不许动」同样是硬要求。** 一对两半都链好的拆分
+    /// pin 的游标也没有 `pendingPartnerLineage`（伙伴早就落地了），清掉它的基线会让投影
+    /// （带着伙伴）与基线（空）签名不同，于是那个字段每轮重盖一次 `now`、每轮重发一次，
+    /// 两台设备互相看不出变化又各自重发，**每一条拆分 pin 每一轮都在发**，还吃掉 250 条的
+    /// 发布预算。判据因此是「本机那一行还挂不挂着这条链接」，不是「游标有没有在等伙伴」。
+    let clearedSplitPartner: (Data, Int64, OwnedOwnerMaps) -> Data?
 
     // MARK: 触本机的（main actor）
 
@@ -2833,7 +2842,7 @@ actor PhiSyncEngine {
         // 而这两个值必须是同一个时刻。
         let roundNow = now()
         let snapshot = await registration.snapshot(
-            doctoredOwnedTable(registration, table, now: roundNow), maps, roundNow)
+            doctoredOwnedTable(registration, table, maps: maps, now: roundNow), maps, roundNow)
         counters.excludedUnmappedOwner +=
             snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
         // §7.3 / §11.2：作用域不一致时发布半边整段跳过，而那个跳过在**每一种轮次**里都会
@@ -3123,13 +3132,18 @@ actor PhiSyncEngine {
     ///
     /// `now` 是**本轮那一个**时刻，与喂给 `snapshot` 的是同一个值：清空后的那个值就盖它，
     /// 于是一次真正的解除以「现在」出门并赢下对端手上那条链接（见 `clearedSplitPartner`）。
+    ///
+    /// `maps` 与 `snapshot` 收的是同一份：注册项要拿它把基线的身份对回本机行，才分得出
+    /// 「本机已经解除」与「两半都还链着」——后者**不能**被清，否则它每轮重发一次。
     private func doctoredOwnedTable(_ registration: OwnedKindRegistration,
                                     _ table: PhiOwnedItemTable,
+                                    maps: OwnedOwnerMaps,
                                     now: Int64) -> PhiOwnedItemTable {
         var doctored = table
         for (identity, cursor) in table.cursors {
             guard cursor.pendingPartnerLineage == nil, let bytes = cursor.reconciled,
-                  let cleared = registration.clearedSplitPartner(bytes, now) else { continue }
+                  let cleared = registration.clearedSplitPartner(bytes, now, maps)
+            else { continue }
             doctored.cursors[identity]?.reconciled = cleared
         }
         return doctored
@@ -3661,7 +3675,7 @@ extension OwnedKindRegistration {
                 return BookmarkKind.ownerUuids(of: entity)
             },
             // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换。
-            clearedSplitPartner: { _, _ in nil },
+            clearedSplitPartner: { _, _, _ in nil },
             beginRound: { state.reload(try access.allBookmarks()) },
             // §5.1 的索引种子：游标键 ∪ **本机全部非 nil 的 `syncId`**——问的是
             // `allSyncIds()` 而不是快照，于是孤儿根下面那些行的 tombstone 也路由得到。
@@ -4178,7 +4192,13 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
 /// 一轮 pin 同步的轮内状态。形状照 `BookmarkSyncRoundState`，**少了认领配对那一半**
 /// （§6.7：pin 完全不走 §6——身份是 `(lineage, owner)` 推导出来的，本机行上没有一列
 /// 要写回，所以既没有铸造也没有配对表）。
-@MainActor
+///
+/// **不隔离**，与 `BookmarkSyncRoundState` 同款。写只发生在一处：`beginRound` 那个
+/// `@MainActor` 闭包里的 `reload`。读多在 main actor 上，但 §7.4 的表副本是引擎 actor 上的
+/// 同步代码（`doctoredOwnedTable`），它也要读一次。两者之间有严格的先行关系：一轮在
+/// `roundQueue` 上串行，`beginOwnedRound()` **await 到 `beginRound()` 返回**之后这一轮才往下
+/// 走，而表副本发生在那之后的发布段——中间那次 actor 跃迁就是内存屏障。写口保持
+/// `private(set)`，于是这条不变量在类型上就守住了。
 final class PinSyncRoundState {
     /// 轮首那一次 `allPins()`：当前作用域内、非休眠的全部行。
     private(set) var locals: [PhiLocalPin] = []
@@ -4201,6 +4221,22 @@ final class PinSyncRoundState {
         for row in rows { rowByGuid[row.guid] = row }
         self.localScope = localScope
         self.accountScope = accountScope
+    }
+
+    /// 这条账户身份的本机行**还挂着**拆分链接没有（§7.4 的表副本判据）。
+    ///
+    /// 判据精确到**身份**而不是 lineage：一条 lineage 在 N 个 owner 下是 N 条行，其中一条
+    /// 被解除、另一条还链着是完全合法的状态，按 lineage 判会让那次解除永远发不出去。
+    ///
+    /// 只扫还挂着链接的那些行——拆分 pin 在任何一个账户上都是少数。
+    func stillCarriesSplitLink(_ identity: String, maps: OwnedOwnerMaps) -> Bool {
+        let resolve = maps.resolver
+        for row in locals where row.splitPartnerLineageId != nil {
+            if PinKind.identity(of: row, resolve: resolve, scope: localScope) == identity {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -4237,12 +4273,24 @@ func pinClientTag(for identity: String) -> String {
 /// 盖戳只能在这里做：`stamp` 分不出「表副本刚抹掉一个真实的伙伴」与「这条 pin 从来没有
 /// 伙伴」——两者到它手上都是空投影对空基线。
 ///
-/// nil = 这份字节不是一条 pin、或者它本来就没有伙伴——两种情形下调用方都原样沿用基线，
-/// 于是「从来没有伙伴」的那一类一个字节都不会被动。
-func clearedPinSplitPartner(_ bytes: Data, now: Int64) -> Data? {
+/// nil = 这份字节不是一条 pin、它本来就没有伙伴、或者**本机那一行还挂着这条链接**——三种
+/// 情形下调用方都原样沿用基线，于是只有真正的解除会被改写。
+///
+/// 最后那一条是必需的，而且它才是常见的那一类：一对**两半都链好**的拆分 pin，它的游标同样
+/// 没有 `pendingPartnerLineage`（伙伴早就落地了）。清掉它的基线之后，投影（带着伙伴）与基线
+/// （空）签名不同 ⇒ `restamped` 每轮盖一次 `now` ⇒ 与真表比每轮都「有变化」⇒ 每轮重发。
+/// 对端收到的值与它手上那条相等，`plan` 因此产不出任何 step，它的 `reconciled` 也就永不刷新,
+/// 于是它下一轮同样重发——**两台设备把每一条拆分 pin 每一轮都发一遍**，还吃掉每轮 250 条的
+/// 发布预算，真正的改动被挤出去。
+func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
+                            state: PinSyncRoundState) -> Data? {
     guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
           var entity = PinKind.entity(from: envelope),
           !entity.splitPartnerUuid.stringValue.isEmpty else { return nil }
+    // 本机那一行还挂着链接 ⇒ 这不是一次解除，一个字节都不动。
+    guard !state.stillCarriesSplitLink(PinKind.identity(of: entity), maps: maps) else {
+        return nil
+    }
     var cleared = Phi_PhiSettingValue()
     cleared.stringValue = ""
     cleared.updatedAtMs = now
@@ -4307,7 +4355,9 @@ extension OwnedKindRegistration {
                       let entity = PinKind.entity(from: envelope) else { return [] }
                 return PinKind.ownerUuids(of: entity)
             },
-            clearedSplitPartner: clearedPinSplitPartner(_:now:),
+            clearedSplitPartner: { bytes, now, maps in
+                clearedPinSplitPartner(bytes, now: now, maps: maps, state: state)
+            },
             beginRound: {
                 state.reload(try access.allPins(),
                              localScope: access.currentScope(),

@@ -88,7 +88,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
         preview: (() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>)? = nil,
-        loadDeadline: Duration = .seconds(45)
+        loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline
     ) async throws -> (PairingWizardViewModel, SyncKeyController, LedgerSpaceMappingStore, FakeAPI) {
         let api = FakeAPI()
         let manager = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
@@ -373,6 +373,21 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(wizard.step, .profiles)
     }
 
+    /// 两道期限**取值相同**是一条既有不变式，`PhiSyncEngine.previewDeadlineMs` 与
+    /// `PairingWizardViewModel.loadAccountSpaces` 的注释各写了一遍。M3-3 §5.8 把它们一起
+    /// 从 45 s 抬到 120 s：书签与 pin 之后，一次预览要走过整个账户才数得清有几个 Space。
+    ///
+    /// 防的是什么：只抬一边。界面在 45 s 放弃、而被放弃的那一轮预览还会在 round 队列上
+    /// 翻页到 120 s，正是这条不变式要防的状态；加载页那句「最多两分钟」也会变成一句界面
+    /// 根本不会兑现的承诺。**上面的辅助函数每次都显式传 `loadDeadline`，所以线上那个默认
+    /// 值只有这一条用例看得见。**
+    func testTheWizardsLoadDeadlineIsTwoMinutesAndMatchesTheEngines() {
+        XCTAssertEqual(PairingWizardViewModel.defaultLoadDeadline, .seconds(120))
+        XCTAssertEqual(PairingWizardViewModel.defaultLoadDeadline,
+                       .milliseconds(PhiSyncEngine.previewDeadlineMs),
+                       "两道期限取值相同")
+    }
+
     /// §4.5 的期限必须真的**让加载页停下来**，不是只改变报什么。
     ///
     /// 注入的预览刻意做成**取消不掉**的——一个非结构化 `Task` 加上
@@ -402,6 +417,45 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(message, PairingWizardStrings.previewTimedOut)
         XCTAssertEqual(resume, .reload, "Retry 重跑 start()")
+    }
+
+    /// profile 那一半失败时，加载页**不等预览**就报错。
+    ///
+    /// 防的是什么：两次加载并发发起，而预览最长要走 120 s。先 `await` 预览再看 profile
+    /// 的结果，等于让一台连不上 profile 端点的机器对着一个没有 Retry 按钮、也没有关闭键
+    /// 的加载页停两分钟，然后才看到那句它在第二秒就已经知道的话。
+    ///
+    /// 被丢下的那一轮预览**取消不掉**（同 `PreviewRace` 的注释），所以这里断言的是
+    /// 「预览还停在那里的时候，`phase` 已经是 `.error`」——不是 `start()` 的返回时刻。
+    func testAFailedProfileLoadReportsItsErrorWithoutWaitingForThePreview() async throws {
+        let hold = PreviewHold()
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work")], accountSpaces: [],
+            preview: { await hold.enter(); return .success([]) })
+        api.listProfilesError = KeyAPIError.http(500, "boom")
+
+        let run = Task { await wizard.start(controller: controller) }
+        var spins = 0
+        while await hold.calls == 0, spins < 10_000 { spins += 1; await Task.yield() }
+        let entered = await hold.calls
+        XCTAssertEqual(entered, 1, "预览已经发出去并停在那里")
+        spins = 0
+        while case .loading = wizard.phase, spins < 10_000 { spins += 1; await Task.yield() }
+
+        // 预览一直被按着，而界面已经报完错了。
+        guard case .error(_, let resume) = wizard.phase else {
+            return XCTFail("expected .error while the preview is still parked")
+        }
+        XCTAssertEqual(resume, .reload, "Retry 重跑 start()")
+        let stillParked = await hold.calls
+        XCTAssertEqual(stillParked, 1, "那一轮预览还没回来")
+        XCTAssertTrue(store.map.isEmpty, "Space 映射零写入")
+
+        await hold.release()
+        await run.value
+        guard case .error = wizard.phase else {
+            return XCTFail("被丢下的那一轮预览回来之后也不许改写 phase")
+        }
     }
 
     /// `reloadAllowed` 对 `.loading` **故意**放行，所以两趟 `start()` 交叠是设计内的

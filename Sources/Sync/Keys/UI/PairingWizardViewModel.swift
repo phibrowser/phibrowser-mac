@@ -128,6 +128,17 @@ final class PairingWizardViewModel: ObservableObject {
     private let themeDisplayName: (String) -> String?
     private let loadDeadline: Duration
 
+    /// 上一条的默认值，**与 init 的默认实参同源**，并且**与
+    /// `PhiSyncEngine.previewDeadlineMs` 逐字相等**——两道期限取值相同是一条不变式
+    /// （见 `loadAccountSpaces`），只抬一边会让界面在引擎还在翻页时就放弃，而被放弃的那
+    /// 一轮预览继续占着 round 队列。落成 `static` 是为了让用例钉得住它：默认实参本身读不到。
+    ///
+    /// `nonisolated` 不是装饰：**默认实参在非隔离的上下文里求值**，而这个类型是
+    /// `@MainActor`，少了它下面那行默认实参在 Swift 6 语言模式里直接是个错误。
+    /// `Duration` 是 `Sendable` 的不可变值，跨隔离读它安全。
+    nonisolated static let defaultLoadDeadline: Duration =
+        .milliseconds(PhiSyncEngine.previewDeadlineMs)
+
     /// `start()` 的世代号。`AppModalPairingHost.reloadAllowed` 对 `.loading` **故意**
     /// 放行（一次卡住的加载要有第二次机会），所以两趟 `start()` 交叠是设计内的常态，
     /// 不是异常——`reloadPresented()` 直接调 `start()`，绕过 `retry()` 的
@@ -154,7 +165,7 @@ final class PairingWizardViewModel: ObservableObject {
          previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>,
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace],
          themeDisplayName: @escaping (String) -> String?,
-         loadDeadline: Duration = .seconds(120)) {
+         loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline) {
         self.keyLayer = keyLayer
         self.previewAccountSpaces = previewAccountSpaces
         self.pairableLocalSpaces = pairableLocalSpaces
@@ -193,20 +204,34 @@ final class PairingWizardViewModel: ObservableObject {
         async let profileLoad: Void = keyLayer.startPairing(controller: controller)
         async let spaceLoad = loadAccountSpaces()
         await profileLoad
-        let spaces = await spaceLoad
 
-        // 两次 await 之后的**第一件事**：确认自己还是最新的那一趟。往下一个字节都不写
+        // 每一次 await 之后的**第一件事**：确认自己还是最新的那一趟。往下一个字节都不写
         // （见 `loadGeneration`）。
         guard generation == loadGeneration else {
             AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
             return
         }
 
+        // profile 那一半失败就**立刻**报错，不再等预览。预览最长要走
+        // `PhiSyncEngine.previewDeadlineMs` = 120 s，而这一页已经注定进不了 `.profiles`：
+        // 让用户对着加载页再等两分钟，换来的还是同一句话。
+        //
+        // `async let spaceLoad` 在离开作用域时被隐式取消并等待，于是这个 `Task` 还会活到
+        // 那一轮预览自己结束为止——但**界面此刻已经切到 `.error`**（`phase` 是
+        // `@Published`），没有任何调用方在等 `start()` 的返回值（两个调用点都是
+        // `Task { await viewModel.start(…) }`）。取消本身对那一轮预览是空操作（同
+        // `PreviewRace` 的注释），丢弃它无害：§4.3 保证它一个字节都不持久化。
         guard case .pairingProfiles(let locals, let remotes) = keyLayer.phase else {
             let message: String
             if case .error(let existing) = keyLayer.phase { message = existing }
             else { message = PairingWizardStrings.profileLoadFailed }
             phase = .error(message: message, resume: .reload)
+            return
+        }
+
+        let spaces = await spaceLoad
+        guard generation == loadGeneration else {
+            AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
             return
         }
         switch spaces {

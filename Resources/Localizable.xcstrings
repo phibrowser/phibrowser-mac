@@ -1622,6 +1622,9 @@
     "Phi could not start Time Machine restore: %@" : {
       "comment" : "Help menu - Time Machine restore launch failure body"
     },
+    "Phi is counting the Spaces in your account. This can take up to two minutes." : {
+      "comment" : "Pairing wizard - loading page progress detail"
+    },
     "Phi is not your default browser" : {
       "comment" : "Account settings - Status text when Phi is not the default browser"
     },

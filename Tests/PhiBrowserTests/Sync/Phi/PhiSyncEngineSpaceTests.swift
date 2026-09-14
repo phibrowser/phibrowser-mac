@@ -2071,7 +2071,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     /// §4.5 的期限判在**轮体里**，不是只判在向导里。向导那一侧取消不掉这一轮
     /// （`serialized(_:)` 把它放进一个非结构化 `Task {}`），所以没有这条守卫，一次抖动
-    /// 的网络会让预览按「64 页 × 每请求 60 s」一直跑下去，并且一直占着 round 队列。
+    /// 的网络会让预览按「`previewMaxPages` 页 × 每请求 60 s」一直跑下去，并且一直占着
+    /// round 队列。**页预算从 64 抬到 400 之后这一条更重要，不是更不重要**：真正封顶
+    /// 一次预览的是期限。
     func testThePreviewStopsPagingOnceItsOwnDeadlineHasPassed() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -2081,16 +2083,16 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         client.seed(tagHash: spaceHash("sync-1"),
                     ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
         let clock = Clock()
-        clock.advancePerRead = 20_000              // 每读一次推进 20 s
+        clock.advancePerRead = 50_000              // 每读一次推进 50 s
         let engine = makeEngine(access: access, store: store, client: client, clock: clock)
 
         let result = await engine.previewAccountSpaces()
         guard case .failure(let error) = result else { return XCTFail("expected failure") }
         XCTAssertEqual(error, .timedOut, "`.truncated` 是页预算用尽，期限是另一回事")
-        // 45 s / 20 s ⇒ 两页之后就超了；断言留一页余量，免得多一次 `now()` 读取就红。
+        // 120 s / 50 s ⇒ 两页之后就超了；断言留一页余量，免得多一次 `now()` 读取就红。
         XCTAssertGreaterThan(client.getUpdatesCalls.count, 0)
         XCTAssertLessThanOrEqual(client.getUpdatesCalls.count, 3,
-                                 "期限必须远在 64 页预算之前把分页停下来")
+                                 "期限必须远在 400 页的页预算之前把分页停下来")
     }
 
     /// 13. 页预算用尽 ⇒ `.truncated`，**没有部分结果**。

@@ -207,6 +207,14 @@ struct OwnedLandingOutcome {
     var pendingPartnerLineages: [String: String] = [:]
     /// §7.2 / A11 的变体重铸本轮改了几行（`relineaged` 计数）。书签恒为 0。
     var relineaged = 0
+    /// §8.2 / Task 10：本轮由落地**新建**出来、并且通过了落地后复核的那些本机行。
+    ///
+    /// 判据是「新建」而不是「读一次本机的 `favicon` 列」：同步载荷里根本没有 favicon 这个
+    /// 字段，所以一条由落地新建的行**按构造**没有图标；认领 / 更新命中的是本机早就有的行，
+    /// 它们自己的图标不该被一次回填盖掉。于是回填的投喂源不需要任何新的本机读。
+    ///
+    /// pin 那一侧恒空——回填只处理书签行。
+    var createdRows: [PhiLocalBookmark] = []
 }
 
 /// 一次停放项重试的结果（§3 / R-exec-10）。
@@ -436,6 +444,17 @@ actor PhiSyncEngine {
     /// 下面每一个归属分支都在它为空时整段跳过，所以 M3-1 / M3-2 的行为逐字节不变。
     private let ownedKinds: [OwnedKindRegistration]
 
+    /// §8.2 / Task 10：图标回填队列。nil = 这个引擎不回填（设置-only 的构建与绝大多数
+    /// 用例）。
+    ///
+    /// **它对同步状态完全不可见**：favicon 不在快照里，回填那次写在 §5.7 的值快照去重那里
+    /// 就被吃掉，所以它不碰游标、不写基线、不触发推送。引擎与它的关系只有两条——每轮末尾
+    /// 投喂一次，`shutdown()` 时停。
+    private let faviconBackfill: PhiFaviconBackfillQueue?
+
+    /// 本轮新落地、要回填图标的行。**每轮清零**（`run`），轮末一次交给队列。
+    private var faviconCandidatesThisRound: [PhiLocalBookmark] = []
+
     /// §5.8：配对预览的分页预算。它与拉取的 `maxPullPages` 分开，因为两种 kind 之后
     /// 一次预览要走过整个账户的书签与 pin 才能数清账户里有几个 Space。
     private let previewMaxPages: Int
@@ -563,7 +582,12 @@ actor PhiSyncEngine {
     /// account has mounted and claiming its cursor or its settings.
     ///
     /// Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
-    nonisolated func shutdown() { stopSignal.stop() }
+    nonisolated func shutdown() {
+        stopSignal.stop()
+        // §8.2 / Task 10：回填与引擎同生命周期。它自己的退休位也住在一个锁盒子里，所以这
+        // 一跳是同步的——退出账户那条主线程路径上等不起一次 actor hop。
+        faviconBackfill?.stop()
+    }
 
     /// 结果的一次性信箱（§4.3）。`final class` 而不是 `inout`：它要跨 `Task` 边界。
     final class PreviewBox {
@@ -614,6 +638,7 @@ actor PhiSyncEngine {
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
          ownedKinds: [OwnedKindRegistration] = [],
+         faviconBackfill: PhiFaviconBackfillQueue? = nil,
          previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.domainKeys = domainKeys
@@ -624,6 +649,7 @@ actor PhiSyncEngine {
         self.spaceAccess = spaceAccess
         self.spaceStore = spaceStore
         self.ownedKinds = ownedKinds
+        self.faviconBackfill = faviconBackfill
         self.previewMaxPages = previewMaxPages
         self.now = now
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
@@ -898,6 +924,9 @@ actor PhiSyncEngine {
         ownedMapsThisRound = nil
         ownedTables = [:]
         ownedMustRepublish = [:]
+        // §8.2 / Task 10：投喂源也是**每轮**的。上一轮没来得及交出去的行由队列自己留着，
+        // 这里清的只是本轮的收集篮。
+        faviconCandidatesThisRound = []
         // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
         // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
         // and none of them re-lists the account's profiles.
@@ -940,6 +969,21 @@ actor PhiSyncEngine {
         }
         await logSpaceRound()
         logOwnedRounds()
+        await runFaviconBackfill()
+    }
+
+    /// §8.2 / Task 10：每轮末尾的一趟图标回填。
+    ///
+    /// 放在计数落定之后，因为它**不是同步的一部分**：它不碰游标、不写基线、不触发推送，
+    /// 一次失败在 §11.2 的计数行里不该留下任何痕迹。队列自己有界（每轮 20 条），所以本轮
+    /// 交进去多少与本轮真的取多少是两件事——排不上的行留到下一轮，而下一轮即使一条新行都
+    /// 没有也照样排空一次。
+    private func runFaviconBackfill() async {
+        guard let queue = faviconBackfill, !isStopped else { return }
+        let rows = faviconCandidatesThisRound
+        faviconCandidatesThisRound = []
+        if !rows.isEmpty { await queue.enqueue(rows) }
+        _ = await queue.drainOnce()
     }
 
     // MARK: - 配对向导的只读账户预览（§4）
@@ -2824,6 +2868,8 @@ actor PhiSyncEngine {
         guard !isStopped else { return }
         // §7.2 / A11 的变体重铸跑在落地那一批里，所以它的条数跟着落地结果回来。
         counters.relineaged += outcome.relineaged
+        // §8.2 / Task 10：本轮新建出来的行攒进收集篮，轮末一次交给回填队列。
+        faviconCandidatesThisRound.append(contentsOf: outcome.createdRows)
 
         var spaceTable = loadSpaceTable()
         var spaceTableChanged = false
@@ -4258,6 +4304,9 @@ private func landBookmarks(_ input: OwnedLandingInput,
     // 下面那趟置换。漏掉这一条，一次纯改名或一次认领会把同一个父下的兄弟们重新编号，而它
     // 自己留着旧 index——两条行撞在同一个 index 上，那个文件夹的顺序此后随 fetch 而变。
     var indexed: Set<String> = []
+    // §8.2 / Task 10：本轮真的**新建**出来的那些行，落地后复核通过的会跟着 outcome 交给
+    // 图标回填队列。
+    var createdRowsByIdentity: [String: PhiLocalBookmark] = [:]
     func emit(_ op: BookmarkApplyOp, in spaceId: String) {
         opsBySpace[spaceId, default: []].append(op)
     }
@@ -4282,6 +4331,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
             } else if var row = projected[entry.guid] {
                 row.index = indexOf[entry.guid] ?? 0
                 emit(.create(row), in: entry.group.spaceId)
+                createdRowsByIdentity[identity] = row
                 indexed.insert(entry.guid)
             }
         case .move:
@@ -4348,6 +4398,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
             }
             guard known else { outcome.parked.insert(identity); continue }
             outcome.landed.insert(identity)
+            // §8.2 / Task 10：这一条是本轮**新建**出来的 ⇒ 它按构造没有图标，交给回填队列。
+            if let created = createdRowsByIdentity[identity] { outcome.createdRows.append(created) }
             if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
         }
     }

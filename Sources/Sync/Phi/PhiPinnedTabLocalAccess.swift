@@ -92,9 +92,12 @@ struct PinApplyBatch {
 
 /// 引擎读写本机 pin 的**唯一**接缝。isolation 与抛出约定同 `PhiBookmarkLocalAccess`。
 ///
+/// **精化 `PhiFaviconWriting`**（§8.2 / Task 10）：理由与 `PhiBookmarkLocalAccess` 上那段
+/// 逐字相同——图标回填只需要一个窄写入口，不该经过 `PinApplyOp`。
+///
 /// 生产实现是本文件末尾的 `AccountPhiPinnedTabAccess`。
 @MainActor
-protocol PhiPinnedTabLocalAccess: AnyObject {
+protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// 本机 SwiftData 单例行上的作用域。
     func currentScope() -> PinnedTabScope
 
@@ -256,6 +259,15 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         // 快照跟不上」，而不是「没落地」。此后两个读者在下一次成功的 `allPins()` 之前一律
         // 无效（见协议上的契约）。
         try rebuildCache()
+    }
+
+    /// 回填专用的窄写入口（§8.2 / Task 10）。一轮的若干条**合成一次**后台写。
+    ///
+    /// **不碰任何缓存**：`favicon` 不是 `PhiLocalPin` 的字段，这次写改不了本轮那份快照的
+    /// 任何一个取值，所以它对差分与游标全都不可见。
+    func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
+        try await store.updateTabFaviconsThrowing(
+            writes.map { (guid: $0.guid, favicon: $0.data) })
     }
 
     /// 作用域迁移。两个 `preferred` 参数与 UI 路径逐字一致（§7.1）：

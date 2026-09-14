@@ -150,6 +150,25 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         for op in batch.ops { land(op) }
     }
 
+    /// Task 10 的回填写入口收到的（行，字节）对，**按到达顺序摊平**。
+    private(set) var faviconWrites: [(guid: String, data: Data)] = []
+    /// `setFavicon` 被调了几次。光看摊平的条数看不出「整轮一次写回」，而那正是 CASE 10.11
+    /// 要的不变量。
+    private(set) var faviconWriteCalls = 0
+    /// 下一次 `setFavicon` 抛错，然后清零。**一条都不写。**
+    var failSetFaviconOnce = false
+
+    /// **不进 `calls`**：`Call` 是同步落地那条路的调用记录，回填刻意不走那条路，把它记进去
+    /// 会让「`.apply` 零次」那条断言读起来像是在数另一件事。
+    func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
+        faviconWriteCalls += 1
+        if failSetFaviconOnce {
+            failSetFaviconOnce = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        faviconWrites.append(contentsOf: writes)
+    }
+
     func clearAllSyncIds() async throws {
         calls.append(.clearAllSyncIds)
         if failClearSyncIds { throw LocalStoreWriteError.storeUnavailable }
@@ -284,6 +303,20 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
         // 到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
         snapshotIsLoaded = true
         for op in batch.ops { land(op) }
+    }
+
+    /// Task 10 的回填写入口。语义与 `FakeBookmarkAccess` 上那一条逐字相同。
+    private(set) var faviconWrites: [(guid: String, data: Data)] = []
+    private(set) var faviconWriteCalls = 0
+    var failSetFaviconOnce = false
+
+    func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
+        faviconWriteCalls += 1
+        if failSetFaviconOnce {
+            failSetFaviconOnce = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        faviconWrites.append(contentsOf: writes)
     }
 
     func changeScope(to scope: PinnedTabScope,

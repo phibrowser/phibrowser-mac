@@ -131,6 +131,13 @@ final class PinnedTabScopeTests: XCTestCase {
     ///
     /// 3 条 lineage × 2 个 Space（`Default` 名下的 `space-a` / `space-b`）= 6 条新行，与现场
     /// 那六个替身同一个规模。
+    ///
+    /// **这是一条 characterisation 用例，不是探针。** 它钉的是「迁移之后这个上下文仍然可
+    /// 写」这条不变量，但**不能证明**它在修复之前会红：现场那六个替身是在迁移的 save 成功
+    /// 之后大约 100 秒才开始让每一次 save 失败的，而是什么把它们从 SwiftData 的待插集合推
+    /// 进 Core Data 上下文的，调查（§6）没能定位。第二次写里那一下 `profile.tabs` 是按那个
+    /// 方向做的**尽力一击**——读这条关系会把 inverse 那一侧展开，理论上正是替身现形的时刻
+    /// ——但在触发条件被确认之前，它仍然只是尽力，不是证明。
     func testASecondWriteStillCommitsAfterAProfileToSpaceMigration() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)
@@ -168,6 +175,14 @@ final class PinnedTabScopeTests: XCTestCase {
         )
         let targetGuid = target.guid
         try await store.performBackgroundWriteAndWaitThrowing { context in
+            // 先把 `ProfileModel.tabs` 展开一次。那正是 `model.profile = …` 写进去的 inverse
+            // 那一侧，也是替身（如果有）唯一的藏身处；读它会强制这个上下文把那一侧物化。
+            // 修复之后这一下什么也读不出来，save 照常提交。
+            let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+            for profile in profiles {
+                XCTAssertTrue(profile.tabs.allSatisfy { !$0.guid.isEmpty },
+                              "inverse 那一侧没有必填列为空的替身")
+            }
             let descriptor = FetchDescriptor<TabDataModel>(
                 predicate: #Predicate<TabDataModel> { $0.guid == targetGuid }
             )
@@ -179,8 +194,9 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertEqual(store.getTab(by: targetGuid)?.title, "After migration",
                        "第二次写必须真的落盘")
 
-        // 载荷②：一条必填列为空的行都没有。替身的签名就是六个必填列全 nil，`guid` 是其中
-        // 之一，所以空 guid 是它落盘之后唯一看得见的痕迹。
+        // ②是**兜底，不是载荷**：按调查的结论，替身在两种结局下都到不了盘上——save 失败
+        // 什么都不写，save 成功说明当时根本没有替身。留着它是因为「空 guid 落了盘」这件事
+        // 一旦真的发生，这里是唯一会喊出来的地方。真正的载荷是①。
         XCTAssertTrue(store.getAllTabs().allSatisfy { !$0.guid.isEmpty },
                       "没有任何一条必填列为空的 TabDataModel 替身")
     }
@@ -933,9 +949,9 @@ final class PinnedTabScopeTests: XCTestCase {
             updatedDate: Date()
         )
         pinned.type = TabDataType.pinnedTab.rawValue
-        pinned.profile = profile
         pinned.profileId = "Default"
         context.insert(pinned)
+        pinned.profile = profile
         try context.save()
     }
 
@@ -995,11 +1011,11 @@ final class PinnedTabScopeTests: XCTestCase {
             updatedDate: Date()
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profile.profileId
         model.pinLineageId = lineageId
         model.splitPartnerGuid = splitPartnerGuid
         context.insert(model)
+        model.profile = profile
         try context.save()
         return model
     }

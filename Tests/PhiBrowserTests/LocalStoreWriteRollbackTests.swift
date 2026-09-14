@@ -36,6 +36,15 @@ final class LocalStoreWriteRollbackTests: XCTestCase {
     /// 坏写的形状照现场那一个：给一个**还没 insert** 的 `TabDataModel` 写 `profile`。
     /// `ProfileModel.tabs` 是那一笔的 inverse，SwiftData 只能为它现造一个六个必填列全空的
     /// 替身登记进上下文，save 于是整批校验失败（NSCocoaErrorDomain 1560）。
+    ///
+    /// **这是一条 characterisation 用例，不是探针。** 它钉的是「上一次写失败之后下一次写
+    /// 照样落盘」这条不变量。它**不能保证**在修复之前会红：那要求①那次 save 真的失败，而
+    /// 替身什么时候被物化进 Core Data 上下文，调查（§6）没能定位——现场那一批是在迁移的
+    /// save 成功之后约 100 秒才开始发作的。①成功时这条用例照样绿，只是那一轮没有验到
+    /// rollback。
+    ///
+    /// 唯一在这里的**载荷**是②那条断言。下面「空 guid 一条都没有」那一条是兜底：按调查的
+    /// 结论替身在两种结局下都到不了盘上，所以它不可能变红，留着只为万一真的发生时有人喊。
     func testAFailedWriteDoesNotPoisonTheNextWrite() async throws {
         let store = try makeStore()
 

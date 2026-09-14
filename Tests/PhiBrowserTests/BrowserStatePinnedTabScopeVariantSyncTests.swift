@@ -341,11 +341,11 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
             updatedDate: Date()
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profile.profileId
         model.pinLineageId = lineageId
         model.splitPartnerGuid = splitPartnerGuid
         context.insert(model)
+        model.profile = profile
         try context.save()
     }
 

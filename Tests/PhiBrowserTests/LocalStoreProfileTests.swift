@@ -52,13 +52,13 @@ final class LocalStoreProfileTests: XCTestCase {
 
         let defaultPinned = makeTab(guid: "default-pinned", title: "Default", url: "https://default.example")
         defaultPinned.dataType = TabDataType.pinnedTab
-        defaultPinned.profile = defaultProfile
         context.insert(defaultPinned)
+        defaultPinned.profile = defaultProfile
 
         let workPinned = makeTab(guid: "work-pinned", title: "Work", url: "https://work.example")
         workPinned.dataType = TabDataType.pinnedTab
-        workPinned.profile = workProfile
         context.insert(workPinned)
+        workPinned.profile = workProfile
 
         try context.save()
 
@@ -94,26 +94,26 @@ final class LocalStoreProfileTests: XCTestCase {
         context.insert(workProfile)
 
         let defaultRoot = makeFolder(guid: "root-default", title: "Bookmarks")
-        defaultRoot.profile = defaultProfile
-        defaultProfile.bookmarkRoot = defaultRoot
         context.insert(defaultRoot)
+        defaultProfile.bookmarkRoot = defaultRoot
+        defaultRoot.profile = defaultProfile
 
         let workRoot = makeFolder(guid: "root-work", title: "Bookmarks")
-        workRoot.profile = workProfile
-        workProfile.bookmarkRoot = workRoot
         context.insert(workRoot)
+        workProfile.bookmarkRoot = workRoot
+        workRoot.profile = workProfile
 
         let defaultBookmark = makeTab(guid: "bookmark-default", title: "Default Bookmark", url: "https://default.example")
         defaultBookmark.dataType = TabDataType.bookmark
-        defaultBookmark.parent = defaultRoot
-        defaultBookmark.profile = defaultProfile
         context.insert(defaultBookmark)
+        defaultBookmark.profile = defaultProfile
+        defaultBookmark.parent = defaultRoot
 
         let workBookmark = makeTab(guid: "bookmark-work", title: "Work Bookmark", url: "https://work.example")
         workBookmark.dataType = TabDataType.bookmark
-        workBookmark.parent = workRoot
-        workBookmark.profile = workProfile
         context.insert(workBookmark)
+        workBookmark.profile = workProfile
+        workBookmark.parent = workRoot
 
         try context.save()
 
@@ -232,8 +232,8 @@ final class LocalStoreProfileTests: XCTestCase {
 
         let pinnedModel = makeTab(guid: "pinned-guid", title: "Pinned", url: "https://163.com")
         pinnedModel.dataType = TabDataType.pinnedTab
-        pinnedModel.profile = profile
         context.insert(pinnedModel)
+        pinnedModel.profile = profile
         try context.save()
 
         let state = BrowserState(windowId: 7, localStore: store, profileId: "Default")
@@ -269,8 +269,8 @@ final class LocalStoreProfileTests: XCTestCase {
         context.insert(profile)
         let pinnedModel = makeTab(guid: "github-pinned", title: "GitHub", url: "https://github.com")
         pinnedModel.dataType = TabDataType.pinnedTab
-        pinnedModel.profile = profile
         context.insert(pinnedModel)
+        pinnedModel.profile = profile
         try context.save()
 
         let state = BrowserState(windowId: 7, localStore: store, profileId: "Default")
@@ -305,35 +305,35 @@ final class LocalStoreProfileTests: XCTestCase {
         context.insert(profile)
 
         let root = makeFolder(guid: "root", title: "Bookmarks")
-        root.profile = profile
         root.profileId = "Default"
-        profile.bookmarkRoot = root
         context.insert(root)
+        profile.bookmarkRoot = root
+        root.profile = profile
 
         let pinned = makeTab(guid: "pinned", title: "Pinned", url: "https://pinned.example")
         pinned.dataType = TabDataType.pinnedTab
-        pinned.profile = profile
         pinned.profileId = "Default"
         context.insert(pinned)
+        pinned.profile = profile
 
         let bookmark = makeTab(guid: "bookmark", title: "Bookmark", url: "https://bookmark.example")
         bookmark.dataType = TabDataType.bookmark
-        bookmark.profile = profile
         bookmark.profileId = "Default"
-        bookmark.parent = root
         context.insert(bookmark)
+        bookmark.parent = root
+        bookmark.profile = profile
 
         let folder = makeFolder(guid: "folder", title: "Folder")
-        folder.profile = profile
         folder.profileId = "Default"
-        folder.parent = root
         context.insert(folder)
+        folder.parent = root
+        folder.profile = profile
 
         let normal = makeTab(guid: "normal", title: "Normal", url: "https://normal.example")
         normal.dataType = TabDataType.tab
-        normal.profile = profile
         normal.profileId = "Default"
         context.insert(normal)
+        normal.profile = profile
         try context.save()
 
         let seenAt = Date(timeIntervalSince1970: 1_800_123_456)

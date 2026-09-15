@@ -3836,6 +3836,79 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(pinAccess.rows.count, 1, "⑥ 载荷：本机那一行自始至终没被碰过")
     }
 
+    /// CASE 9b.4h（R-exec-13 / F-PK-4）— 对端的一次更新把身份收割回来 ⇒ 连败计数清零，
+    /// **后来那一次损坏重新拿到完整的三次机会**。
+    ///
+    /// 防的是什么：连败计数记的是「补键这条通路连着失败了几轮」。一条被入站 harvest 收割回
+    /// 身份的游标此刻根本不需要补键——它已经有 id 了；旧账留着，这条身份**下一次**丢掉 id
+    /// （一次 `.invalidMessage`、或者 NOT_MY_BIRTHDAY 之后的 reset）时三次机会里已经用掉了
+    /// 两次，于是它一轮就放弃，而那一轮的失败与很久以前那两次毫无关系。差别正好在提交条数
+    /// 上：不清零 ⇒ 第二段只试一次（总共四条）。
+    ///
+    /// 脚本分四段，每段的意图写在下面的注释里；第二段那条入站实体**与基线逐字相同**，于是
+    /// `plan` 一条 step 都不产、落地什么都不改——这一段要隔离的就是 harvest 本身。
+    func testAHarvestedEntityIdClearsTheRekeyStrikes() async throws {
+        let created = Date(timeIntervalSince1970: 1)
+        let original = PhiLocalPin.fixture(lineageId: "LX", guid: "px", spaceId: "space-a",
+                                           index: 0, createdDate: created)
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [original])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "", version: 0, owner: "su-1")
+        let client = FakePhiSyncClient()
+        client.refuseCommitsForTagHashes = [pinHash("lx", owner: "su-1")]
+        let arrival = page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "su-1")),
+                         tag: pinTag("lx", owner: "su-1"), version: 10, entityId: "srv-lx",
+                         key: key),
+        ])
+        // 八轮：2 段一 + 1 段二 + 1 段三 + 3 段四 + 1 收尾。
+        client.scriptedPages = [page([]), page([]), arrival] + Array(repeating: page([]), count: 5)
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+
+        // 段一：补键连着被拒两轮 ⇒ 两条提交、两次连败。
+        await engine.pullOnce()
+        await engine.pullOnce()
+        var table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(pinCommits(client).count, 2, "① 两轮各试一次")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.rekeyRejectRounds, 2, "② 两次连败")
+
+        // 段二：对端的一次更新到达 ⇒ harvest 把身份收割回来。
+        await engine.pullOnce()
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.entityId, "srv-lx", "③ 身份回来了")
+        XCTAssertNil(table.cursors["lx:su-1"]?.rekeyRejectRounds, "④ 连败计数跟着清零")
+        XCTAssertEqual(pinCommits(client).count, 2,
+                       "⑤ 这一轮不发：有 id 了不必补键，内容也与基线相同")
+
+        // 段三：**后来那一次损坏**。用户改了标题 ⇒ 一次普通的内容发布，被服务端判非法 ⇒
+        // 身份又没了（`applyOwnedCommitOutcome` 的 `.invalidMessage` 活体支）。这一条不是
+        // 补键，所以它自己不该记一次连败。
+        pinAccess.rows[0].title = "改过的标题"
+        await engine.pullOnce()
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(pinCommits(client).count, 3, "⑥ 内容发布出门一次")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.entityId, "", "⑦ 被判非法 ⇒ 身份又没了")
+        XCTAssertNil(table.cursors["lx:su-1"]?.rekeyRejectRounds,
+                     "⑧ 普通内容发布被拒**不**记补键的账")
+        // 标题改回去：此后快照字节与基线相等，于是补键成了唯一还会发东西的通路——段四数的
+        // 才是补键自己的次数。
+        pinAccess.rows[0] = original
+
+        // 段四：完整的三次机会，然后放弃。
+        for _ in 0..<4 { await engine.pullOnce() }
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(pinCommits(client).count, 6,
+                       "⑨ 3 + 3：损坏之后又试满三次（不清零的话这里只会多一条，总共四条）")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.rekeyRejectRounds, 3, "⑩ 三次之后才放弃")
+        XCTAssertNotNil(table.cursors["lx:su-1"]?.reconciled, "⑪ 放弃仍然不动基线")
+        XCTAssertEqual(pinAccess.rows.count, 1)
+    }
+
     /// CASE 9b.4c（R-exec-12 / §11.2）— **纯 push 轮**：没有任何入站，于是 `plan` 与落地都
     /// 不跑，`pinSnapshot` 那一处复查是这一轮唯一能看见作用域移动的地方。
     ///

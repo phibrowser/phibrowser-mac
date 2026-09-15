@@ -3287,6 +3287,23 @@ actor PhiSyncEngine {
             cursor.pendingPartnerLineage = updated
             table.cursors[identity] = cursor
         }
+        // 本轮**没有任何东西要落地**、但合并结果与基线仍然不同的那些身份：只差时间戳
+        // （`OwnedItemPlan.rebaselined`）。不写的话，本机基线永远停在那个更旧的戳上，而一条
+        // 后到的、取值不同却更旧的实体会拿它去比并**赢下**，把账户上更新的那个值覆盖掉。
+        //
+        // **这不是「没落地就写基线」的例外**（§4.5）：走到这里的身份按定义没有任何东西要
+        // 落地——本机那一行的取值与合并结果逐字相同，`plan` 因此一条 step 都没产出。三个
+        // 排除是深度防御：这一轮被停放 / 拒收 / 落地过的身份各有自己的写回路径。
+        for (identity, bytes) in output.plan.rebaselined {
+            guard var cursor = table.cursors[identity], cursor.reconciled != nil,
+                  cursor.pendingApply == nil, !cursor.pendingTombstone,
+                  !outcome.landed.contains(identity), !outcome.parked.contains(identity),
+                  !outcome.refused.contains(identity) else { continue }
+            cursor.reconciled = bytes
+            // §4.5：`server` 永远是**拉到的那条远端实体**，不是合并结果。
+            if let server = output.serverBytes[identity] { cursor.server = server }
+            table.cursors[identity] = cursor
+        }
         if spaceTableChanged { writeSpaceTable(spaceTable) }
         ownedCounters[registration.label] = counters
         writeOwnedTable(registration, table)

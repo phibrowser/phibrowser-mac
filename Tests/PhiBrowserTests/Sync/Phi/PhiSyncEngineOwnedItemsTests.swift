@@ -4148,3 +4148,54 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertNotNil(table.cursors["lx:su-1"]?.deletedAtMs)
     }
 }
+
+// MARK: - 外部评审回归：取值相同、戳更新的入站实体
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    private func baselineTitle(_ bytes: Data?) -> Phi_PhiSettingValue? {
+        guard let bytes, let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+              let entity = BookmarkKind.entity(from: envelope) else { return nil }
+        return entity.title
+    }
+
+    /// 对端把标题改成 B 又改回 A：落地什么都不用做，**基线仍然要吃下那个更新的戳**，
+    /// 否则下一条更旧的实体会凭一个过期的比较基准赢下账户上更新的那个值。
+    func testASameValueUpdateStillMovesTheBaselineForwardSoALaterOlderEditLoses() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "A"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "A"),
+                                                    entityId: "srv-b1", version: 7)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            // ① A@300：与本机取值相同、戳更新。
+            oneEntityPage(bookmarkPayload(uuid: "b1", title: "A", contentStamp: 300,
+                                          createdAtMs: Self.rowCreatedAtMs),
+                          uuid: "b1", version: 42, entityId: "srv-b1"),
+            // ② 随后一条更旧的 B@200（重放 / 第三台设备 / marker 回退都产得出）。
+            oneEntityPage(bookmarkPayload(uuid: "b1", title: "B", contentStamp: 200,
+                                          createdAtMs: Self.rowCreatedAtMs),
+                          uuid: "b1", version: 43, entityId: "srv-b1"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(baselineTitle(table.cursors["b1"]?.reconciled)?.updatedAtMs, 300,
+                       "① 基线吃下那个更新的戳")
+        XCTAssertEqual(applyCallCount(access), 0, "① 落地那一侧什么都不用做，不产空补丁")
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "G1" }?.title, "A",
+                       "② 更旧的 B@200 输给账户上那条 A@300，本机那一行一个字不动")
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(baselineTitle(table.cursors["b1"]?.reconciled)?.stringValue, "A")
+    }
+}

@@ -145,6 +145,17 @@ struct OwnedItemPlan {
     /// 一次作用域不一致轮会把本轮到达的每一条远端删除**永久**丢掉——版本已经收割、游标看上去
     /// 健康、marker 早已推过那一页，于是那条 pin 在本机永远不死，而账户上它早就没了。
     var parkedTombstones: Set<String> = []
+    /// 身份 -> 要写进 `reconciled` 的新字节，**而这条身份本轮一个 step 都没有**。
+    ///
+    /// LWW 比的是 `(值, 戳)` 这一对，所以一条**取值没变、戳更新**的入站实体照样要被吃下：
+    /// 对端把标题从 A 改成 B 再改回 A，账户上那条是 `A@300`，而本机基线还停在 `A@100`。
+    /// 落地那一侧确实什么都不用做（那一行已经是 A，产一条空补丁是错的），但基线**必须**跟上
+    /// ——不跟上的话，一条后到的 `B@200`（重放、第三台设备、marker 回退都产得出）会拿 200 去
+    /// 比 100 而**赢下**，把账户上更新的那个 A 覆盖掉，两台机器从此不同。
+    ///
+    /// 这一位不破坏「apply → 基线」的次序（§4.5）：走到这里的身份按定义没有任何东西要落地，
+    /// 合并结果与基线在**取值**上逐字相同，差的只是时间戳。
+    var rebaselined: [String: Data] = [:]
 }
 
 /// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
@@ -719,6 +730,7 @@ enum SyncableOwnedItems {
         var supersededByDelete = 0
         var cancelledDeletes: Set<String> = []
         var mustRepublish: Set<String> = []
+        var rebaselined: [String: Data] = [:]
         var landedIdentities: Set<String> = []
 
         for item in ordered {
@@ -846,9 +858,18 @@ enum SyncableOwnedItems {
             // 标题盖回账户——对端的编辑被销毁，且没有任何计数动一下。
             //
             // 判据是**内容签名**而不是整条实体：对端一次纯重盖戳不该产出一条空补丁。
-            if K.contentSignature(of: merged) != K.contentSignature(of: baseline) {
+            let contentChanged = K.contentSignature(of: merged)
+                != K.contentSignature(of: baseline)
+            if contentChanged {
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
                                                 newParentUuid: nil, newRank: nil, payload: payload))
+            }
+            // 一条 step 都没有、而合并结果与基线仍然不同 ⇒ 只差时间戳，基线照样要跟上
+            // （见 `OwnedItemPlan.rebaselined`）。判据是「本轮没有任何东西要落地」，所以它
+            // 必须排在上面两条之后。
+            if !moved, !contentChanged, let payload,
+               payload != table.cursors[identity]?.reconciled {
+                rebaselined[identity] = payload
             }
         }
 
@@ -887,7 +908,7 @@ enum SyncableOwnedItems {
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
-                             mustRepublish: mustRepublish)
+                             mustRepublish: mustRepublish, rebaselined: rebaselined)
     }
 
     // MARK: - 认领（§6 的规则 (i)）

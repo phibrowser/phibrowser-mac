@@ -2376,3 +2376,57 @@ extension PinKindTests {
         XCTAssertTrue(plan.parkedTombstones.isEmpty)
     }
 }
+
+// MARK: - 外部评审回归：取值相同、戳更新的入站实体（§4.3 的 LWW 比的是一对值）
+
+extension SyncableOwnedItemsTests {
+
+    private func bookmarkEntity(_ bytes: Data?) -> Phi_PhiBookmarkEntity? {
+        guard let bytes, let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else {
+            return nil
+        }
+        return BookmarkKind.entity(from: envelope)
+    }
+
+    /// 对端把标题改成 B 又改回 A：取值与本机相同、戳是新的 ⇒ **零 step，但基线要跟上**。
+    ///
+    /// 防的是什么：基线停在旧戳上，一条后到的 `B@200`（重放、第三台设备、marker 回退都产得
+    /// 出）会拿 200 去比 100 而赢下，把账户上更新的那个 A 覆盖掉——两台机器从此不同，而没有
+    /// 任何一条日志或计数会动。
+    func testASameValueUpdateWithANewerStampStillMovesTheBaselineForward() {
+        let baseline = bookmarkPayload(uuid: "b1", title: "A")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline)
+
+        let plan = planned([arrival(bookmarkPayload(uuid: "b1", title: "A", contentStamp: 300))],
+                           table: table)
+
+        XCTAssertTrue(plan.steps.isEmpty, "① 取值没变 ⇒ 不产出一条空补丁")
+        let refreshed = bookmarkEntity(plan.rebaselined["b1"])
+        XCTAssertEqual(refreshed?.title.stringValue, "A")
+        XCTAssertEqual(refreshed?.title.updatedAtMs, 300, "② 基线吃下那个更新的戳")
+
+        // ③ 吃下之后，一条更旧的 `B@200` 再也赢不了。
+        var refreshedTable = PhiOwnedItemTable()
+        refreshedTable.cursors["b1"] = ownedCursor(reconciled: plan.rebaselined["b1"],
+                                                   entityId: "srv-1", version: 1,
+                                                   ownerUuid: "su-1")
+
+        let late = planned([arrival(bookmarkPayload(uuid: "b1", title: "B", contentStamp: 200))],
+                           table: refreshedTable)
+
+        XCTAssertTrue(late.steps.isEmpty, "③ B@200 输给账户上那条 A@300")
+    }
+
+    /// 反方向：入站实体与基线**逐字节相同** ⇒ 连基线都不用重写。
+    func testAnIdenticalInboundEntityRewritesNothingAtAll() {
+        let baseline = bookmarkPayload(uuid: "b1", title: "A")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline)
+
+        let plan = planned([arrival(baseline)], table: table)
+
+        XCTAssertTrue(plan.steps.isEmpty)
+        XCTAssertTrue(plan.rebaselined.isEmpty, "一个字节都没变，没什么要写")
+    }
+}

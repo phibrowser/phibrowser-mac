@@ -2959,6 +2959,27 @@ actor PhiSyncEngine {
         writeOwnedTable(registration, table)
     }
 
+    /// A6 的收割**唯一的写入点**：入站那一侧每一处「把服务端三元组写进游标」都走这里。
+    ///
+    /// 三件事绑在一起，而第三件是 F-PK-4：收到一个非空 entity id 就把 R-exec-13 的连败计数
+    /// 清零，与 `applyOwnedCommitOutcome` 的 `.applied` 支逐字同款。**理由是那个计数的含义**
+    /// ——「补键这条通路连着失败了几轮」——而一条被对端的更新收割回身份的游标此刻根本不需要
+    /// 补键：它已经有 id 了。留着旧账的后果是延迟很久才现形的那一种：这条身份哪天再一次
+    /// 丢掉 id（一次 `.invalidMessage`、一次 NOT_MY_BIRTHDAY 之后的 reset），三次机会里已经
+    /// 用掉了两次，于是它一轮就放弃，而那一轮的失败与很久以前那两次毫无关系。
+    ///
+    /// `entityId` 为空**什么都不写**（A6 的老规矩）：服务端偶尔在一条更新里不回 id，写进去会
+    /// 把这条身份降级成「从没在账户上出现过」，下一轮以 `baseVersion == 0` 盲写覆盖。
+    /// 版本取 `max`，不是直接赋值——同一轮里同一条身份可以被收割不止一次（分页、停放重试）。
+    private func harvestTriple(into cursor: inout PhiOwnedItemCursor,
+                               entityId: String, version: Int64) {
+        if !entityId.isEmpty {
+            cursor.entityId = entityId
+            cursor.rekeyRejectRounds = nil
+        }
+        cursor.version = max(cursor.version, version)
+    }
+
     /// 一条 kind 的入站落地段。**apply → 基线，顺序即不变量**（§4.5）。
     private func applyOwnedKind(_ registration: OwnedKindRegistration,
                                 batch: OwnedPullBatch, maps: OwnedOwnerMaps) async {
@@ -2989,8 +3010,7 @@ actor PhiSyncEngine {
                 (entityId: item.entityId.isEmpty ? (previous?.entityId ?? "") : item.entityId,
                  version: max(item.version, previous?.version ?? 0))
             guard var cursor = table.cursors[item.identity] else { continue }
-            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
-            cursor.version = max(cursor.version, item.version)
+            harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
             table.cursors[item.identity] = cursor
         }
         // §5.6 的 L2 支：游标带 `deletedAtMs` 时到达的**存活**实体，判据是**版本**。
@@ -3017,8 +3037,7 @@ actor PhiSyncEngine {
                 }
                 // A6 在这里同样成立：收割先于判定，两支都收。判据比的是收割**之前**那个版本。
                 let known = cursor.version
-                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
-                cursor.version = max(known, item.version)
+                harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
                 table.cursors[item.identity] = cursor
                 guard item.version > known else {
                     replayedAfterDelete += 1
@@ -3065,8 +3084,8 @@ actor PhiSyncEngine {
         // 游标，会让一个持续发畸形载荷的对端每一轮把本机的游标表撑大一圈。
         for (identity, harvested) in output.plan.harvest {
             guard var cursor = table.cursors[identity] else { continue }
-            if !harvested.entityId.isEmpty { cursor.entityId = harvested.entityId }
-            cursor.version = max(cursor.version, harvested.version)
+            harvestTriple(into: &cursor, entityId: harvested.entityId,
+                          version: harvested.version)
             table.cursors[identity] = cursor
         }
 
@@ -3082,8 +3101,7 @@ actor PhiSyncEngine {
             guard let triple = output.plan.harvest[identity] ?? tombstoneTriples[identity] else {
                 return
             }
-            if !triple.entityId.isEmpty { cursor.entityId = triple.entityId }
-            cursor.version = max(cursor.version, triple.version)
+            harvestTriple(into: &cursor, entityId: triple.entityId, version: triple.version)
         }
 
         let outcome = await registration.land(

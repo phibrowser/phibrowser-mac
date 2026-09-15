@@ -137,6 +137,14 @@ struct OwnedItemPlan {
     /// 于是快照算出来的字节就是基线本身。不显式排进发布队列，本机赢下的那个值**永远**到不了
     /// 账户，而两台机器都认为自己收敛了。
     var mustRepublish: Set<String> = []
+    /// **本轮一条 step 都产不出、因此要连同存活实体一起停放的 tombstone 身份**（§7.3 的
+    /// 作用域不一致）。调用方把它们写成游标的 `pendingTombstone`，下一轮的工作集照常带上。
+    ///
+    /// 它与 `parked` 是同一件事的两半：那一支把入站的**存活**实体全部塞进 `parked`，而
+    /// tombstone 没有载荷可停（§2.5：它只有 tag hash），所以只能在这里报出身份。少了这半边，
+    /// 一次作用域不一致轮会把本轮到达的每一条远端删除**永久**丢掉——版本已经收割、游标看上去
+    /// 健康、marker 早已推过那一页，于是那条 pin 在本机永远不死，而账户上它早就没了。
+    var parkedTombstones: Set<String> = []
 }
 
 /// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
@@ -593,6 +601,12 @@ enum SyncableOwnedItems {
         }
 
         // §7.3：作用域不一致 ⇒ 零 step，入站实体**全部**停放，等作用域收敛。
+        //
+        // **tombstone 与存活实体一起停**（spec §12.1 第 15 条：「本轮到达的 pin 实体全部进
+        // `pendingApply`，tombstone 进 `pendingTombstone`」）。它们没有载荷可以塞进 `parked`
+        // ——一条 tombstone 只有 tag hash（§2.5）——所以走 `parkedTombstones` 这条身份通道。
+        // 只停存活实体的写法会把本轮到达的每一条远端删除永久丢掉：marker 早已推过那一页，
+        // 服务端不会再发第二次。
         if context.scopeMismatch {
             var parkedOut = parked
             for item in arrivals {
@@ -602,7 +616,8 @@ enum SyncableOwnedItems {
                     payload: payload, pendingOwnerUuid: K.ownerUuids(of: item.entity).first)
             }
             return OwnedItemPlan(steps: [], parked: parkedOut, refused: 0, lifted: 0,
-                                 supersededByDelete: 0, cancelledDeletes: [], harvest: harvest)
+                                 supersededByDelete: 0, cancelledDeletes: [], harvest: harvest,
+                                 parkedTombstones: context.tombstonedIdentities)
         }
 
         // 1. 工作集 = 停放项（按 uuid 字典序，设备无关）∪ 本轮到达，到达项覆盖同身份的

@@ -4098,3 +4098,53 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertNotNil(table.cursors["b-doomed"]?.deletedAtMs)
     }
 }
+
+// MARK: - 外部评审回归：作用域不一致轮里的 tombstone
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// spec §12.1 第 15 条的后半句（「tombstone 进 `pendingTombstone`」）的引擎接线。
+    ///
+    /// 防的是什么：`plan` 在作用域不一致时一条 step 都不产出，于是落地段看不见这条身份，
+    /// 而 `pendingTombstone` 的两个写入点（`outcome.parked` 与本轮的落地）都要求它先出现在
+    /// step 里。那条远端删除因此被静默丢掉：三元组已经收割、游标看上去健康、marker 早已推过
+    /// 那一页——本机那条 pin 永远不死，账户上它早就没了。
+    func testAScopeMismatchRoundKeepsAnInboundPinTombstoneUntilTheScopesAgree() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        // 本机是 Space 作用域、账户说 Profile ⇒ §7.3 的不一致轮。
+        let pinAccess = FakePinAccess(scope: .space, account: .profile, rows: [
+            .fixture(lineageId: "LX", guid: "P1", spaceId: "space-a", profileId: "Default",
+                     createdDate: Date(timeIntervalSince1970: 1_000)),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1", createdAtMs: 1_000_000),
+            entityId: "srv-lx", version: 5, owner: "su-1")
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteTombstone(tag: pinTag("lx", owner: "su-1"), version: 12, entityId: "srv-lx"),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("pins")
+        XCTAssertNotNil(pinAccess.rows.first { $0.guid == "P1" },
+                        "前提：不一致轮一条都不落地")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.pendingTombstone, true,
+                       "① 那条远端删除留在游标上，等作用域收敛")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.version, 12, "② 三元组照收（A6）")
+
+        // 作用域收敛之后的第一轮：那次删除照常发生，靠的全是游标上留下的那一位。
+        pinAccess.account = .space
+        await engine.pullOnce()
+
+        XCTAssertNil(pinAccess.rows.first { $0.guid == "P1" },
+                     "③ 收敛后的第一轮把那次远端删除放下去")
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.pendingTombstone, false)
+        XCTAssertNotNil(table.cursors["lx:su-1"]?.deletedAtMs)
+    }
+}

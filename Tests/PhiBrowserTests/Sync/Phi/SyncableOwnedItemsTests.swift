@@ -2337,3 +2337,42 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(plan.mustRepublish.isEmpty, "远端整条赢 ⇒ 没有任何东西要发回账户")
     }
 }
+
+// MARK: - 外部评审回归：作用域不一致轮里的 tombstone（§7.3 / spec §12.1 第 15 条）
+
+extension PinKindTests {
+
+    /// 作用域不一致 ⇒ 存活实体进 `parked`，**tombstone 进 `parkedTombstones`**。
+    ///
+    /// 防的是什么：只停存活实体的写法把本轮到达的每一条远端删除**永久**丢掉——tombstone 没有
+    /// 载荷可以塞进 `parked`（§2.5：它只有 tag hash），而共享 marker 早已推过那一页，服务端
+    /// 不会再发第二次。表现是那条 pin 在本机永远不死、账户上它早就没了，而版本已经收割、
+    /// 每一个计数器都健康。
+    func testAScopeMismatchParksInboundTombstonesInsteadOfDroppingThem() {
+        var mismatched = OwnedItemPlanContext()
+        mismatched.localScope = .space
+        mismatched.accountScope = .profile
+        mismatched.tombstonedIdentities = ["lx:pu-1"]
+
+        let plan = planned([arrival(pinPayload(lineage: "ly", ownerKey: "pu-1"))],
+                           context: mismatched)
+
+        XCTAssertTrue(plan.steps.isEmpty, "① 作用域不一致 ⇒ 零 step")
+        XCTAssertEqual(Set(plan.parked.keys), ["ly:pu-1"], "② 存活实体照旧进 parked")
+        XCTAssertEqual(plan.parkedTombstones, ["lx:pu-1"],
+                       "③ 那条远端删除也要留下来，否则它再也不会被投递")
+    }
+
+    /// 作用域一致的那一轮**不该**有任何 `parkedTombstones`：tombstone 走正常的第三相。
+    func testAnAgreeingScopeRoundEmitsDeleteStepsRatherThanParkingTombstones() {
+        var agreed = OwnedItemPlanContext()
+        agreed.localScope = .profile
+        agreed.accountScope = .profile
+        agreed.tombstonedIdentities = ["lx:pu-1"]
+
+        let plan = planned([], context: agreed)
+
+        XCTAssertEqual(plan.steps.map(\.kind), [.delete])
+        XCTAssertTrue(plan.parkedTombstones.isEmpty)
+    }
+}

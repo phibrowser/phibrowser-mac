@@ -4040,3 +4040,61 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertEqual(sent?.title.stringValue, "本机新标题")
     }
 }
+
+// MARK: - 外部评审回归：中途失败的多页拉取
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// 一次多页拉取在第 2 页抛错：第 1 页的实体**已经被 marker 永久消费掉了**。
+    ///
+    /// 防的是什么：共享 marker 一页一页落盘，而路由解出来的那一批活在这一轮的局部变量里。
+    /// 抛错把它们带走之后，服务端只会从推进过的 marker 之后发货——页 1 上那条 create 与那条
+    /// tombstone **再也不会被投递**：那条书签在本机永远不出现，那次远端删除在本机永远不发生，
+    /// 而每一个计数器都是健康值。
+    func testAPullInterruptedAfterTheMarkerMovedKeepsWhatTheEarlierPagesDelivered() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GD", syncId: "b-doomed", spaceId: "s-1", index: 0),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b-doomed"] = publishedCursor(alignedPayload(uuid: "b-doomed"),
+                                                          entityId: "srv-doomed", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([
+                remoteEntity(envelope(alignedPayload(uuid: "b-new", title: "对端建的")),
+                             tag: bookmarkTag("b-new"), version: 30, entityId: "srv-new",
+                             key: key),
+                remoteTombstone(tag: bookmarkTag("b-doomed"), version: 31,
+                                entityId: "srv-doomed"),
+            ], marker: "31", changesRemaining: true),
+        ]
+        client.getUpdatesErrorAfterPages = (pages: 1, error: PhiSyncProtocolError.http(500))
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls.count, 2, "前提：页 1 到货、页 2 抛错")
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                        "前提：页 1 的 marker 推进是持久的——这正是问题所在")
+        var table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNotNil(table.cursors["b-new"]?.pendingApply, "① 存活实体停放，不是丢掉")
+        XCTAssertEqual(table.cursors["b-new"]?.entityId, "srv-new", "① 三元组照收（A6）")
+        XCTAssertEqual(table.cursors["b-new"]?.pendingOwnerUuid, "su-1")
+        XCTAssertEqual(table.cursors["b-doomed"]?.pendingTombstone, true,
+                       "② 远端 tombstone 同样要留下来")
+        XCTAssertEqual(table.cursors["b-doomed"]?.version, 31, "② tombstone 的版本也收割了")
+
+        // 下一轮服务端一条都不再发（marker 早已推过那一页），全靠游标上留下的那两笔。
+        await engine.pullOnce()
+
+        XCTAssertNotNil(access.rows.first { $0.syncId == "b-new" }, "③ 那条 create 最终落了地")
+        XCTAssertNil(access.rows.first { $0.guid == "GD" }, "③ 那次远端删除最终也发生了")
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["b-new"]?.pendingApply, "落地之后才解除停放")
+        XCTAssertEqual(table.cursors["b-doomed"]?.pendingTombstone, false)
+        XCTAssertNotNil(table.cursors["b-doomed"]?.deletedAtMs)
+    }
+}

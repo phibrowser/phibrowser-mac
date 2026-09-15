@@ -26384,6 +26384,54 @@
             "state" : "new",
             "value" : "Neither the article nor a webpage copy could be captured."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章和网页副本都无法获取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文章內容和網頁副本都無法擷取。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記事もWebページのコピーも取得できませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기사도 웹페이지 사본도 가져오지 못했어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni l'article ni une copie de la page web n'ont pu être récupérés."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weder der Artikel noch eine Webseitenkopie konnten erfasst werden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch het artikel, noch een webpaginakopie kon worden vastgelegd."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo capturar ni el artículo ni una copia de la página web."
+          }
         }
       }
     },
@@ -26396,6 +26444,54 @@
             "state" : "new",
             "value" : "The page closed before it could be saved."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此网页在存储完成前就已关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網頁在儲存完成前已關閉。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存が完了する前にページが閉じられました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장이 끝나기 전에 페이지가 닫혔어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page s'est fermée avant d'avoir pu être enregistrée."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Seite wurde geschlossen, bevor sie gesichert werden konnte."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De pagina werd gesloten voordat deze kon worden bewaard."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página se cerró antes de que pudiera guardarse."
+          }
         }
       }
     },
@@ -26407,6 +26503,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "The page took too long to read."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取此网页耗时过长。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取這個網頁的時間過久。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページの読み取りに時間がかかりすぎました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지를 읽는 데 시간이 너무 오래 걸렸어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lecture de la page a pris trop de temps."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Lesen der Seite hat zu lange gedauert."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het lezen van de pagina duurde te lang."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página tardó demasiado en leerse."
           }
         }
       }
@@ -27259,6 +27403,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Preparing Reader View…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备阅读模式…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備閱讀模式…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リーダー表示を準備中…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽기 모드를 준비하고 있어요…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Préparation du mode Lecture…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesemodus wird vorbereitet …"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reader-weergave wordt voorbereid…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparando el Lector…"
           }
         }
       }
@@ -40823,6 +41015,54 @@
             "state" : "translated",
             "value" : "Sorry for the interruption. A few details about what happened before the crash can help us understand the issue and make Phi more reliable."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "很抱歉打断了你的使用。简单说说崩溃前发生了什么，可以帮助我们了解问题，让 Phi 更可靠。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "很抱歉造成中斷。提供一些當機前發生的細節，可以幫助我們瞭解問題，讓 Phi 更加可靠。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ご迷惑をおかけして申し訳ありません。クラッシュ前に何が起きていたかを少しお知らせいただくと、問題の把握とPhiの信頼性向上に役立ちます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "불편을 드려 죄송해요. 종료되기 전에 어떤 일이 있었는지 간단히 알려 주시면 문제를 파악하고 Phi를 더 안정적으로 만드는 데 도움이 돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nous sommes désolés pour cette interruption. Quelques détails sur ce qui s'est passé avant le plantage peuvent nous aider à comprendre le problème et à rendre Phi plus fiable."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entschuldige die Unterbrechung. Ein paar Details dazu, was vor dem Absturz passiert ist, können uns helfen, das Problem zu verstehen und Phi zuverlässiger zu machen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sorry voor de onderbreking. Een paar details over wat er vóór de crash gebeurde, kunnen ons helpen het probleem te begrijpen en Phi betrouwbaarder te maken."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sentimos la interrupción. Algunos detalles sobre lo que ocurrió antes del fallo pueden ayudarnos a entender el problema y a hacer que Phi sea más fiable."
+          }
         }
       }
     },
@@ -40833,6 +41073,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not Now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以后"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍後再說"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今はしない"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "나중에"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas maintenant"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt nicht"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet nu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora no"
           }
         }
       }
@@ -40845,6 +41133,54 @@
             "state" : "translated",
             "value" : "Send Feedback"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送反馈"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送意見回饋"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フィードバックを送信"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "피드백 보내기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer des commentaires"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback senden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stuur feedback"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar comentarios"
+          }
         }
       }
     },
@@ -40855,6 +41191,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi quit unexpectedly last time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 上次意外退出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 上次意外結束"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回、Phiが予期せず終了しました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지난번에 Phi가 예기치 않게 종료됐어요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi a quitté de manière inattendue la dernière fois"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi wurde beim letzten Mal unerwartet beendet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi is de vorige keer onverwacht gestopt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi se cerró inesperadamente la última vez"
           }
         }
       }
@@ -52555,49 +52939,49 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当标签页的页面从内存中卸载时，调暗其图标。"
+            "value" : "在页面已从内存中卸载的标签页图标周围显示虚线边框。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "當標籤頁的網頁從記憶體中卸載時，調暗其圖示。"
+            "value" : "當分頁的網頁已從記憶體卸載時，在分頁圖示周圍顯示虛線外框。"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ページがメモリから解放されたタブのアイコンを淡色表示します。"
+            "value" : "ページがメモリから解放されたタブのアイコンの周囲に破線の枠を表示します。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "페이지가 메모리에서 해제된 탭의 아이콘을 흐리게 표시해요."
+            "value" : "페이지가 메모리에서 해제된 탭의 아이콘 주위에 점선 테두리를 표시해요."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atténue les icônes des onglets dont les pages sont déchargées de la mémoire."
+            "value" : "Affiche un contour en pointillés autour des icônes des onglets dont les pages sont déchargées de la mémoire."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dunkelt Symbole von Tabs ab, deren Seiten aus dem Speicher entladen wurden."
+            "value" : "Zeigt eine gestrichelte Umrandung um Tab-Symbole an, wenn ihre Seiten aus dem Speicher entladen wurden."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tabbladsymbolen worden gedimd wanneer hun pagina's uit het geheugen zijn verwijderd."
+            "value" : "Toon een onderbroken rand rond de symbolen van tabbladen waarvan de pagina's uit het geheugen zijn ontladen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atenúa los iconos de las pestañas cuando sus páginas se liberan de la memoria."
+            "value" : "Muestra un contorno discontinuo alrededor de los iconos de las pestañas cuando sus páginas se descargan de la memoria."
           }
         }
       }
@@ -52614,49 +52998,49 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "调暗已卸载标签页的图标"
+            "value" : "为已卸载的标签页显示指示灯"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "調暗已卸載標籤頁的圖示"
+            "value" : "為已卸載的分頁顯示指示燈"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解放されたタブのアイコンを淡色表示"
+            "value" : "メモリから解放されたタブのインジケーターを表示"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "메모리에서 해제된 탭 아이콘 흐리게 표시"
+            "value" : "메모리에서 해제된 탭 표시기 보기"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atténuer les icônes des onglets déchargés"
+            "value" : "Afficher les indicateurs d'onglets déchargés"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Symbole entladener Tabs abdunkeln"
+            "value" : "Indikatoren für entladene Tabs anzeigen"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dim symbolen van niet-geladen tabbladen"
+            "value" : "Toon indicatoren voor ontladen tabbladen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atenuar los iconos de las pestañas liberadas de la memoria"
+            "value" : "Mostrar indicadores de pestañas descargadas"
           }
         }
       }

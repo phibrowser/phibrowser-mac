@@ -3790,6 +3790,50 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                        "③ 认回的是账户上那一行原本的 id，不是一条新实体")
         XCTAssertGreaterThan(table.cursors["lx:su-1"]?.version ?? 0, 0, "④ 版本也补上了")
         XCTAssertNotNil(table.cursors["lx:su-1"]?.reconciled)
+        XCTAssertNil(table.cursors["lx:su-1"]?.rekeyRejectRounds, "⑤ 补成了 ⇒ 连败计数清零")
+    }
+
+    /// CASE 9b.4g（R-exec-13 / F-PK-2）— 补键**连续三轮被拒**之后不再重新武装：恰好三次
+    /// 提交，之后一条都不发。
+    ///
+    /// 防的是什么：补键是发布段里唯一一条「快照字节与基线相等也照发」的通路。服务端始终判
+    /// 非法时（那条 tag 在账户上真的不存在、或者服务端侧另有原因），没有放弃的实现会把它变成
+    /// 一条每 60 s 一次、永远不会好的提交——M3-2 §5.1 给 tombstone 定的三次放弃规则针对的是
+    /// 同一件事。
+    ///
+    /// 放弃的**动作**与 tombstone 那一条相反，断言④⑤钉的就是这点：本机那一行还在，所以
+    /// `reconciled` 与 `deletedAtMs` 一个字都不许动——放弃只关掉这条自愈通路。
+    func testAGivenUpReKeyStopsCommittingAfterThreeRejections() async throws {
+        let created = Date(timeIntervalSince1970: 1)
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "px", spaceId: "space-a", index: 0,
+                     createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "", version: 0, owner: "su-1")
+        let client = FakePhiSyncClient()
+        // 这条 tag 的每一次提交都答 INVALID_MESSAGE，账户侧一个字节都不动。
+        client.refuseCommitsForTagHashes = [pinHash("lx", owner: "su-1")]
+        // 五轮，每轮一页空的：`stored` 是空的，不能让任何一轮回退到它去读。
+        client.scriptedPages = Array(repeating: page([]), count: 5)
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        for _ in 0..<5 { await engine.pullOnce() }
+
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(pinCommits(client).count, 3,
+                       "① 三轮之后不再重新武装——第四、第五轮一条都不发")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.rekeyRejectRounds, 3, "② 放弃记在游标上")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.entityId, "", "③ 仍然没有 id，补键确实没成")
+        XCTAssertNotNil(table.cursors["lx:su-1"]?.reconciled,
+                        "④ 放弃**不动基线**：本机那一行还在，它不是一次删除")
+        XCTAssertNil(table.cursors["lx:su-1"]?.deletedAtMs,
+                     "⑤ 也不写 `deletedAtMs`——与 tombstone 那一条的放弃方向相反")
+        XCTAssertEqual(pinAccess.rows.count, 1, "⑥ 载荷：本机那一行自始至终没被碰过")
     }
 
     /// CASE 9b.4c（R-exec-12 / §11.2）— **纯 push 轮**：没有任何入站，于是 `plan` 与落地都

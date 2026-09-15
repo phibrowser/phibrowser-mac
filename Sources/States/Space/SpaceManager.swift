@@ -5488,6 +5488,15 @@ final class SpaceManager: ObservableObject {
                         DispatchQueue.main.async { [weak slot] in
                             slot?.activate(spaceId: targetSpaceId, animated: false)
                         }
+                    } else if !sameProfile, sourceState.travelBackAllowed,
+                              let sidebar = sourceState.carriedConversationSidebar(for: tab) {
+                        Task { @MainActor in
+                            do {
+                                try await sourceState.moveCarriedConversation([tab], to: targetState, sidebar: sidebar)
+                            } catch {
+                                AppLogWarn("[SpaceManager] conversation transfer failed; source Tab retained")
+                            }
+                        }
                     } else {
                         targetState.createTab(url, focusAfterCreate: true)
                         if sourceState.isKioskWindow {
@@ -5647,6 +5656,17 @@ final class SpaceManager: ObservableObject {
                     }
                 } else {
                     for (offset, unit) in movingUnits.enumerated() {
+                        if sourceState.travelBackAllowed,
+                           let sidebar = unit.tabs.compactMap({ sourceState.carriedConversationSidebar(for: $0) }).first {
+                            Task { @MainActor in
+                                do {
+                                    try await sourceState.moveCarriedConversation(unit.tabs, to: targetState, sidebar: sidebar)
+                                } catch {
+                                    AppLogWarn("[SpaceManager] conversation transfer failed; source Tabs retained")
+                                }
+                            }
+                            continue
+                        }
                         switch unit {
                         case .tab(let tab):
                             targetState.createTab(tab.url, focusAfterCreate: offset == movingUnits.count - 1)

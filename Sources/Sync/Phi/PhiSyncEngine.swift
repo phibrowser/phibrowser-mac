@@ -3238,6 +3238,17 @@ actor PhiSyncEngine {
             cursor.pendingOwnerUuid = item.pendingOwnerUuid
             table.cursors[identity] = cursor
         }
+        // §7.3 的另一半：作用域不一致轮里那批**没有载荷可停**的 tombstone（`plan` 一条 step
+        // 都产不出，所以它们既不在 `outcome.parked` 里也不在 `plan.parked` 里）。不记下来的
+        // 话，那条远端删除就此消失——三元组已经收割、游标看上去健康、marker 早已推过那一页，
+        // 于是那条 pin 在本机永远不死，而账户上它早就没了（`pendingTombstone` 存在的全部
+        // 理由就是这个）。
+        for identity in output.plan.parkedTombstones {
+            var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            harvestServerTriple(into: &cursor, identity)
+            cursor.pendingTombstone = true
+            table.cursors[identity] = cursor
+        }
         // 落地被导入锁挡住的那一组（§4.9 第 3 条 / §5.6 T4）。同上，这一支也**新建**游标。
         for identity in outcome.parked {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()

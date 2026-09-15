@@ -76,6 +76,10 @@ import SwiftUI
     /// timestamps (`<key>.phiSyncTs` / `.phiSyncVal`) are what actually suppress the echo of
     /// its own remote apply; the debounce only coalesces bursts of local edits.
     private var phiSyncPushCancellable: AnyCancellable?
+    /// Value snapshot of the registered synced preferences at the last accepted change, so the
+    /// subscription above can tell a real local edit from the engine writing its own
+    /// `phi.sync.*` cursor into the same domain. Lives and dies with the subscription.
+    private var phiSyncedSettingsSignature: Data?
     /// Periodic GetUpdates.
     private var phiSyncPullTimer: Timer?
     /// `NSApplication.didBecomeActiveNotification` token for the foreground pull. `AppController`
@@ -599,15 +603,33 @@ import SwiftUI
             Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
         }
 
+        // The value snapshot this subscription dedupes against starts at what the domain holds
+        // right now: the login pull below is what reconciles this device with the account, not
+        // a synthetic "everything just changed" edge.
+        phiSyncedSettingsSignature = SyncableSettings.valueSignature(UserDefaults.standard)
         phiSyncPushCancellable = NotificationCenter.default
             .publisher(for: UserDefaults.didChangeNotification)
             .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                // The notification does not say which key changed, and the engine's own
-                // remote apply writes the same domain — `handleLocalDefaultsChange()` is the
-                // entry point that returns early while a remote apply is in flight and
-                // commits nothing when the snapshot still matches what the server holds.
-                Task { @MainActor in await self?.phiSyncEngine?.handleLocalDefaultsChange() }
+                // The notification does not say which key changed, and the engine writes this
+                // same domain on every single round — `phi.sync.marker` / `phi.sync.version`
+                // through `writeState`, plus the `<key>.phiSync*` sidecars. So the trigger
+                // must compare the registered preferences' VALUES and fire only on a real
+                // change; `handleLocalDefaultsChange()` alone is not enough of a guard,
+                // because a round that commits nothing still writes a marker and would re-arm
+                // this subscription 2 s later. With M3-3's owned-item CONFLICT retry pulling
+                // INSIDE the round, that pair is a 2.5 s commit loop (Mac B 2026-09-14).
+                //
+                // Dropping a signal is safe: the 60 s pull timer below runs `pull(thenPush:)`,
+                // so a local edit this filter mistakes for an echo is picked up within the
+                // minute rather than lost.
+                Task { @MainActor in
+                    guard let self else { return }
+                    let signature = SyncableSettings.valueSignature(UserDefaults.standard)
+                    guard signature != self.phiSyncedSettingsSignature else { return }
+                    self.phiSyncedSettingsSignature = signature
+                    await self.phiSyncEngine?.handleLocalDefaultsChange()
+                }
             }
 
         // `.common`, not the default mode: `Timer.scheduledTimer` registers in `.default`
@@ -779,6 +801,9 @@ import SwiftUI
     private func stopPhiSync() {
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
+        // Dropped with the subscription: the next account's preferences are a different
+        // domain's worth of values, and a stale signature would swallow its first edit.
+        phiSyncedSettingsSignature = nil
         phiSyncPullTimer?.invalidate()
         phiSyncPullTimer = nil
         if let observer = phiSyncForegroundObserver {

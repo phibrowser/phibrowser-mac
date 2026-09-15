@@ -563,3 +563,64 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: key)), markerValue)
     }
 }
+
+// MARK: - valueSignature：去抖动推送触发器的去重判据
+
+/// The `UserDefaults.didChangeNotification` subscription in `PhiChromiumCoordinator` cannot
+/// see WHICH key changed, and the sync engine writes the very same domain on every round
+/// (`phi.sync.marker` / `phi.sync.version` through `writeState`, plus the `<key>.phiSync*`
+/// sidecars). `valueSignature` is what keeps the engine's own bookkeeping from re-arming a
+/// push: it walks the registry and reads values, so nothing outside the registered
+/// preferences can move it.
+extension SyncableSettingsTests {
+
+    /// The engine's own state keys move nothing. Without this the owned-item CONFLICT retry's
+    /// in-round pull re-enters the push 2 s later, which is the 2.5 s commit loop seen on
+    /// Mac B on 2026-09-14.
+    func testTheEngineOwnStateKeysDoNotMoveTheValueSignature() {
+        defaults.set(true, forKey: probeKey)
+        let before = SyncableSettings.valueSignature(defaults, settings: probeRegistry)
+
+        defaults.set(Data("marker-2".utf8), forKey: PhiSyncEngine.markerStateKey)
+        defaults.set(NSNumber(value: Int64(42)), forKey: PhiSyncEngine.versionStateKey)
+        defaults.set("srv-1", forKey: PhiSyncEngine.entityIdStateKey)
+
+        XCTAssertEqual(SyncableSettings.valueSignature(defaults, settings: probeRegistry), before)
+    }
+
+    /// Neither do the sidecars `snapshot` stamps next to each registered key — they are the
+    /// engine's change-detection memory, not the preference.
+    func testTheSyncSidecarsDoNotMoveTheValueSignature() {
+        defaults.set(true, forKey: probeKey)
+        let before = SyncableSettings.valueSignature(defaults, settings: probeRegistry)
+
+        defaults.set(NSNumber(value: Int64(9_000)),
+                     forKey: SyncableSettings.timestampKey(for: probeKey))
+        defaults.set(Data([0x01]), forKey: SyncableSettings.valueKey(for: probeKey))
+
+        XCTAssertEqual(SyncableSettings.valueSignature(defaults, settings: probeRegistry), before)
+    }
+
+    /// A real edit to a registered preference does move it — the other half of the contract,
+    /// without which the filter would simply switch the push trigger off.
+    func testARegisteredPreferenceEditMovesTheValueSignature() {
+        defaults.set(false, forKey: probeKey)
+        let before = SyncableSettings.valueSignature(defaults, settings: probeRegistry)
+
+        defaults.set(true, forKey: probeKey)
+
+        XCTAssertNotEqual(SyncableSettings.valueSignature(defaults, settings: probeRegistry),
+                          before)
+    }
+
+    /// Reading it stamps nothing: it rides on a notification, and a signature that wrote
+    /// sidecars would itself post one.
+    func testReadingTheValueSignatureWritesNothing() {
+        defaults.set(true, forKey: probeKey)
+
+        _ = SyncableSettings.valueSignature(defaults, settings: probeRegistry)
+
+        XCTAssertNil(sidecarTimestamp(probeKey))
+        XCTAssertNil(defaults.data(forKey: SyncableSettings.valueKey(for: probeKey)))
+    }
+}

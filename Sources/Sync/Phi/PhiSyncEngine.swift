@@ -1604,7 +1604,7 @@ actor PhiSyncEngine {
             if spaceLive {
                 flushSpaceObservations(batch)
                 flushOwnedObservations(ownedBatches)
-                parkUndeliveredOwnedEntities(ownedBatches)
+                parkUndeliveredOwnedEntities(ownedBatches, reason: "pull-interrupted")
                 // ...and what it did NOT persist has to invalidate the drain. A round that
                 // threw mid-way consumed its pages — the marker moved past them — while
                 // everything the routing decoded from them (`batch.decoded` /
@@ -2936,7 +2936,13 @@ actor PhiSyncEngine {
     /// **`ownedReadFailed` 不挡这一趟**：R-exec-3 关的是该 kind 的快照、差分与发布（出站
     /// 半边），而这里写的全是入站记账——本机行读不出来，一点也不会让这批已经收下的字节更
     /// 不值得留着。
-    private func parkUndeliveredOwnedEntities(_ batches: [String: OwnedPullBatch]) {
+    ///
+    /// **第二个调用点是 `applyOwnedKind` 的 `ownedReadFailed` 提前返回**：那一支的触发条件
+    /// 不同（轮首那次本机读抛了），但被消费掉的东西与后果逐字相同。R-exec-3 关的是这条 kind
+    /// 的**出站**半边（快照、差分、发布）——「本机行读不出来」一点也不会让这一批已经收下的
+    /// 字节更不值得留着。
+    private func parkUndeliveredOwnedEntities(_ batches: [String: OwnedPullBatch],
+                                              reason: String) {
         guard !isStopped, spaceStore != nil else { return }
         for registration in ownedKinds {
             guard let batch = batches[registration.label],
@@ -2961,9 +2967,9 @@ actor PhiSyncEngine {
                 }
                 table.cursors[item.identity] = cursor
             }
-            AppLogWarn("[phi-sync] a pull was interrupted after the marker moved kind="
-                       + "\(registration.label) parked=\(batch.arrivals.count) "
-                       + "tombstones=\(batch.tombstones.count)")
+            AppLogWarn("[phi-sync] parking what the shared marker already consumed kind="
+                       + "\(registration.label) reason=\(reason) "
+                       + "parked=\(batch.arrivals.count) tombstones=\(batch.tombstones.count)")
             writeOwnedTable(registration, table)
         }
     }
@@ -3049,7 +3055,14 @@ actor PhiSyncEngine {
         counters.unreadable += batch.unreadable
         counters.tombstones += batch.tombstones.count
         ownedCounters[registration.label] = counters
-        guard !ownedReadFailed.contains(registration.label) else { return }
+        // R-exec-3：轮首那次本机读抛了 ⇒ 这条 kind 的快照、差分与发布整段不跑。**但入站
+        // 这一批不能跟着蒸发**：共享 marker 已经一页一页推过它们，服务端不会再发第二次，
+        // 就地返回等于把那条 create 与那条远端删除永久丢掉（与一次中途失败的 pull 同一种
+        // 损失，只是触发条件不同）。走同一条持久通路把它们停下来，下一轮读得出来时照常落地。
+        guard !ownedReadFailed.contains(registration.label) else {
+            parkUndeliveredOwnedEntities([registration.label: batch], reason: "local-read-failed")
+            return
+        }
 
         var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
         // 工作集 = 本轮到达的 tombstone ∪ 表里全部 `pendingTombstone` 的游标（§5.6）。
@@ -3304,6 +3317,23 @@ actor PhiSyncEngine {
             if let server = output.serverBytes[identity] { cursor.server = server }
             table.cursors[identity] = cursor
         }
+        // 本机赢下了字段、却一个 step 都没产出的那些身份（一条更旧的远端值输给了本机手上
+        // 这一份，取值与基线相同所以没什么要落地）。它们不进 `landed`，上面两个循环都不会
+        // 替它们刷新 `server`——不刷的话，发布段那条**持久**判据（`server != reconciled`）
+        // 看不见这次分歧，而账户上那一份确实不是本机手上这一份。
+        //
+        // 只写 `server`：它记的是「账户手上是什么」，这一轮刚拉到，与「本机落地了什么」
+        // （`reconciled`，§4.5 要求它排在落地之后）是两件事。
+        for identity in output.mustRepublish where !outcome.landed.contains(identity) {
+            guard var cursor = table.cursors[identity], cursor.reconciled != nil,
+                  cursor.pendingApply == nil, !cursor.pendingTombstone,
+                  !outcome.parked.contains(identity), !outcome.refused.contains(identity),
+                  let server = output.serverBytes[identity], cursor.server != server else {
+                continue
+            }
+            cursor.server = server
+            table.cursors[identity] = cursor
+        }
         if spaceTableChanged { writeSpaceTable(spaceTable) }
         ownedCounters[registration.label] = counters
         writeOwnedTable(registration, table)
@@ -3455,7 +3485,30 @@ actor PhiSyncEngine {
                        + "kind=\(registration.label) count=\(unkeyed.count); "
                        + "republishing them to re-key through the client tag")
         }
+        // §6.2 的「本机赢了字段就要发布出去」**必须是持久的需求，不是轮内记忆**。
+        // `ownedMustRepublish` 每轮清零（`run(_:)`），而这条需求跨得过一轮的概率一点都不低：
+        // 那条身份可能排不进这一轮 250 条的切片（§5.3），或者这一轮在落地与发布之间停了
+        // （退休、sign-out、进程退出）。一旦丢掉就再也回不来——落地之后本机那一行与
+        // `reconciled` 逐字相等，字节差分永远不会再为它说话，而账户永远停在旧值上。
+        //
+        // 游标上已经durable地记着同一件事：`server` 是**账户手上**那一份（§4.5：永远是拉到
+        // 的远端字节，不是合并结果），`reconciled` 是**本机落地**的那一份。两者不同 ⇒ 账户
+        // 还没有这条实体的当前值。
+        //
+        // **`server == nil` 不算**：那是「本机不知道账户手上是什么」（NOT_MY_BIRTHDAY 之后
+        // 的 reset、§9.1 的收尾），由上面 `unkeyed` 那条补键通路处理——而它带着 R-exec-13 的
+        // 三次放弃。把 nil 也读成「不同」会绕过那个放弃计数，让一条服务端每轮都拒的实体永远
+        // 重发。
+        let pending = Set(table.cursors.filter {
+            $0.value.reconciled != nil && $0.value.server != nil
+                && $0.value.server != $0.value.reconciled
+                && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
+                && !$0.value.pendingDelete
+        }.keys)
+        // 轮内那一份留着当**优化**：它覆盖游标还来不及记下分歧的那一类（本轮由停放项落地的
+        // 合并——那一轮没有到达实体，`server` 因此没有刷新过）。
         let republish = (ownedMustRepublish[registration.label] ?? []).union(unkeyed)
+            .union(pending)
         // §5.3 / §6.4 的尽力而为的推迟：某个归属在**本轮的 pull 里收到过本 kind 的实体**时，
         // 该归属下**本轮新铸身份**的行不进这一轮的切片；它们在第一个没有该归属实体到达的
         // 轮次里提交。这只是把加入期「本机先铸、对端的同一条随后才到」的窗口压窄——§6 的

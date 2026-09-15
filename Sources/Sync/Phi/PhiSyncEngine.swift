@@ -3499,11 +3499,17 @@ actor PhiSyncEngine {
         // 的 reset、§9.1 的收尾），由上面 `unkeyed` 那条补键通路处理——而它带着 R-exec-13 的
         // 三次放弃。把 nil 也读成「不同」会绕过那个放弃计数，让一条服务端每轮都拒的实体永远
         // 重发。
+        //
+        // **`pendingTombstone` 同样不算**（F-CX-4）：那条游标上停着一次**远端删除**，等的只是
+        // 一次落得下去的落地。这时把它排进发布切片，提交带的 `baseVersion` 正是从那条
+        // tombstone 上收割来的版本——服务端于是接受，账户上那条实体**原地复活**，而下一轮那条
+        // 停放的 tombstone 一落地，本机这一行就没了：账户多一条没有任何设备认领的实体，用户
+        // 在别的设备上看见一条自己刚删掉的书签又回来了。
         let pending = Set(table.cursors.filter {
             $0.value.reconciled != nil && $0.value.server != nil
                 && $0.value.server != $0.value.reconciled
                 && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
-                && !$0.value.pendingDelete
+                && !$0.value.pendingDelete && !$0.value.pendingTombstone
         }.keys)
         // 轮内那一份留着当**优化**：它覆盖游标还来不及记下分歧的那一类（本轮由停放项落地的
         // 合并——那一轮没有到达实体，`server` 因此没有刷新过）。
@@ -3524,6 +3530,11 @@ actor PhiSyncEngine {
         var liveCandidates: [String] = []
         for (identity, bytes) in snapshot.entities {
             guard table.cursors[identity]?.pendingDelete != true else { continue }
+            // **停着一条远端 tombstone 的身份一律不发**（F-CX-4）。§4.2 第 3 条已经把
+            // `pendingTombstone` 的游标挡在快照之外，但那张快照是**适配层**算的，而这道闸
+            // 守的是发布这一侧的同一件事：那条游标上等着的是一次删除，任何发出去的更新都会
+            // 带着收割来的版本被服务端接受，把那条实体原地复活。判据与 `pending` 那一条同源。
+            guard table.cursors[identity]?.pendingTombstone != true else { continue }
             if snapshot.minted[identity] != nil,
                let owner = snapshot.ownerUuids[identity], deferredOwners.contains(owner) {
                 continue

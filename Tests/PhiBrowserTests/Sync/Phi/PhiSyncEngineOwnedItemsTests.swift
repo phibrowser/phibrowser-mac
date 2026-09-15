@@ -4352,3 +4352,101 @@ extension PhiSyncEngineOwnedItemsTests {
                        "③ 被接受之后两份基线合一，需求就此消失（不然它每轮都重发）")
     }
 }
+
+// MARK: - 评审回归 F-CX-4：停着远端删除的身份一条都不发
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// F-CX-4 ① — 游标上停着一条远端 tombstone，同时 `server != reconciled`（这条身份早些时候
+    /// 赢过一个字段）⇒ **不进发布切片**。
+    ///
+    /// 防的是什么：发出去的那条更新带的 `baseVersion` 正是从那条 tombstone 上收割来的版本，
+    /// 服务端于是接受——账户上那条实体原地复活，而下一轮那条停放的 tombstone 一落地，本机这
+    /// 一行就没了：账户多一条没有任何设备认领的实体，用户在别的设备上看见一条自己刚删掉的
+    /// 书签又回来了。
+    ///
+    /// **两道闸同时守着这件事**：§4.2 第 3 条让这条身份根本不进快照（适配层算的），而
+    /// `liveCandidates` 与持久重发集各自再挡一次（引擎算的）。这条用例钉的是结果，无论哪一道
+    /// 闸在起作用。
+    func testACursorWaitingToLandARemoteTombstoneIsNeverPublished() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        // 导入锁：这一轮那条 tombstone 落不下去，于是它在游标上停着。
+        access.importingSpaceIds = ["space-a"]
+        let store = MemoryOwnedItemStore()
+        // 早些时候的一次合并里本机赢过字段：账户手上那一份与本机落地的那一份不同，
+        // 于是这条身份带着一个**持久**的重发需求走进这一轮。
+        var cursor = publishedCursor(alignedPayload(uuid: "b1"), entityId: "srv-b1", version: 3)
+        cursor.server = baselineBytes(alignedPayload(uuid: "b1", title: "账户上的旧标题"))
+        store.table.cursors["b1"] = cursor
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")],
+                 marker: "500"),
+            page([], marker: "500"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.pendingTombstone, true, "前提：那条删除停着")
+        XCTAssertNotEqual(table.cursors["b1"]?.server, table.cursors["b1"]?.reconciled,
+                          "前提：持久重发需求确实成立")
+        XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty,
+                      "① 一条存活实体都不发——发出去就是把它复活")
+
+        // ② 导入结束后的第一轮照常兑现那条删除。
+        access.importingSpaceIds = []
+        await engine.pullOnce()
+
+        let settled = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertTrue(access.rows.isEmpty, "② 那次远端删除最终还是发生了")
+        XCTAssertNotNil(settled.cursors["b1"]?.deletedAtMs)
+        XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty,
+                      "② 两轮加起来也没有任何一条存活实体出门")
+    }
+
+    /// F-CX-4 ② — 同一道闸的另一半：本机在停放窗口里**改了那一行**。
+    ///
+    /// 这一支不经持久重发集，走的是「快照字节与基线不等」那条普通差分——同样必须被挡住，
+    /// 理由与 ① 逐字相同。
+    func testALocalEditIsNotPublishedWhileARemoteTombstoneIsParked() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            // 本机那一行的标题与基线不同 = 一次还没发布的本机编辑。
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a", title: "本机新标题",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        access.importingSpaceIds = ["space-a"]
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "旧标题"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")],
+                 marker: "500"),
+            page([], marker: "500"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.pendingTombstone, true, "前提：那条删除停着")
+        XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty,
+                      "① 那次本机编辑这一轮一个字都不发")
+
+        access.importingSpaceIds = []
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.rows.isEmpty, "② 下一轮那条删除照常落地")
+        XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty)
+    }
+}

@@ -5595,15 +5595,35 @@ private func landPins(_ input: OwnedLandingInput,
 
     /// 账户级 ownerKey -> 本机那一侧的两个字段（§7.2 的表反过来读）。
     func localOwner(_ ownerKey: String) -> (spaceId: String?, profileId: String?)? {
-        if ownerKey == OwnedOwnerMaps.appOwnerKey { return (nil, nil) }
+        // **归属的形状必须与本机当前作用域相符，不符就是「反推不出本机形状」。**
+        //
+        // 三种形状与三种作用域一一对应（§7.2 的表）：App 归属只在 App 作用域下有本机形状，
+        // Space 归属只在 Space 作用域下有，Profile 归属只在 Profile 作用域下有。不带这三条
+        // 守卫的话，一条**账户上还没跟着改过来的旧形状实体**照样交得出一对字段，而
+        // `applyPinSyncBatchBody` 会把缺掉的那一半按 `?? defaultSpaceId` 补齐、
+        // `applyCurrentPinnedTabOwner` 再按**当前**作用域盖一次归属——于是一条 Profile 归属
+        // 的实体在 Space 作用域下落成了**默认 Space 里**的一行，正正压在那个 Space 本来就
+        // 有的同 lineage 行旁边（Mac B 2026-09-14 23:49）。引擎那一侧的投影还以为它落在
+        // profile 归属上，两边从此对不上：落地后复核按 profile 归属问「本机有这条身份吗」，
+        // 答案永远是「没有」，这条身份于是每一轮都重新落地一次、每一轮都再多一行。
+        //
+        // **停放而不是拒收**：账户作用域收敛之后对端会用新形状重发，那时它自己就好了。
+        if ownerKey == OwnedOwnerMaps.appOwnerKey {
+            guard scope == .app else { return nil }
+            return (nil, nil)
+        }
         if let spaceId = resolve.localSpaceId(ownerKey) {
+            guard scope == .space else { return nil }
             // 一条 Space 作用域的行两个字段都非 nil；profile 取同 Space 的既有行，没有就
             // 落到默认 profile（与书签落地同一条兜底）。
             let profileId = state.locals.first { $0.spaceId == spaceId }?.profileId
                 ?? LocalStore.defaultProfileId
             return (spaceId, profileId)
         }
-        if let profileId = resolve.localProfileId(ownerKey) { return (nil, profileId) }
+        if let profileId = resolve.localProfileId(ownerKey) {
+            guard scope == .profile else { return nil }
+            return (nil, profileId)
+        }
         return nil
     }
 
@@ -5669,6 +5689,30 @@ private func landPins(_ input: OwnedLandingInput,
         if guidOf[identity] == nil {
             // 归属反推不出本机形状 ⇒ 停放，等那个 Space / profile 的映射到位。
             guard let owner = localOwner(item.ownerKey) else {
+                outcome.parked.insert(identity)
+                continue
+            }
+            // §7：身份是 `(lineage, owner)` 这一对，**一条身份一行**——而落地真正写进去的
+            // 是本机那一侧的 owner。这里再按**本机 owner** 问一次「这条 lineage 已经有行了
+            // 吗」，问的与上面 `guidOf` 那一问**不是同一件事**：`guidOf` 走的是
+            // `PinKind.identity(of local:)`，它把本机行的归属**正向**解析成账户 uuid，解析
+            // 不出来（Space 映射还没到）或解析出**另一种形状**（账户上那条实体还是 Profile
+            // 归属，而本机已经迁到 Space 作用域）时，它给出的身份与入站那一条永不相等，于是
+            // 这一支会在一条**本来就在的行旁边**再建一遍。Mac B 2026-09-14 23:49 的第二、
+            // 第三条重复行就是这么来的：迁移刚在 default Space 建好的 `c0020f0d` 行还在，
+            // 一条 Profile 归属的旧实体照样落了下来，`spaceId` 走 `.create` 的默认值回落到
+            // 默认 Space，正正压在它旁边。
+            //
+            // **停放而不是拒收**：这一类里有可以自己好起来的一种（Space 映射晚到一轮），
+            // 停放让它下一轮以 `.update` 落在那条既有行上；拒收会把它永久丢掉。
+            let landingLineage = PinKind.lineageKey(pinIdentityHalves(identity).lineage)
+            let landingOwnerKey = owner.spaceId ?? owner.profileId ?? OwnedOwnerMaps.appOwnerKey
+            let ownerAlreadyHasLineage = projected.values.contains { row in
+                PinKind.lineageKey(row.lineageId) == landingLineage
+                    && (row.spaceId ?? row.profileId ?? OwnedOwnerMaps.appOwnerKey)
+                        == landingOwnerKey
+            }
+            guard !ownerAlreadyHasLineage else {
                 outcome.parked.insert(identity)
                 continue
             }
@@ -5742,6 +5786,18 @@ private func landPins(_ input: OwnedLandingInput,
             continue
         }
         if created.contains(item.identity), var row = projected[guid] {
+            // **一条身份最多产出一条 `.create`，哪怕它在计划里有两条 step。**
+            //
+            // `plan` 对一条**有基线**的身份同时产出 `.move` 与 `.update`（位置与内容是
+            // 两条步骤，见那里的注释），而 `created` 与 `guidOf` 都是**按身份**记的：上面
+            // 那趟循环只铸一个 guid、只 `insert` 一次。这一趟却是**按 step** 走的，不挡的话
+            // 两条 step 各自把同一行 append 一遍，`applyPinSyncBatchBody` 于是拿同一个 guid
+            // 调两次 `createPinnedTabBody`——库里多出一条**与前一条 guid 完全相同**的 pin 行。
+            // 那不是一次可以靠 A11 收拾的变体：两行共享 guid，此后任何按 guid 定位的写
+            // （`.move` / `.update` / `.delete`）都只碰得到其中一条，而侧栏那本按
+            // `guidInLocalDB` 建的字典会在重复键上直接 trap（Mac B 2026-09-14 23:49 那次
+            // 崩溃，`PinnedTabViewController.swift:601`）。
+            guard createdPinsByIdentity[item.identity] == nil else { continue }
             row.index = indexOf[guid] ?? 0
             projected[guid] = row
             ops.append(.create(row))

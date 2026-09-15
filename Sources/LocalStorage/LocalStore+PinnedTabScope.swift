@@ -301,7 +301,12 @@ extension LocalStore {
         let allPinned = try context.fetch(FetchDescriptor<TabDataModel>(
             predicate: #Predicate { $0.type == pinnedRaw }
         ))
-        let rowsByGuid = Dictionary(uniqueKeysWithValues: allPinned.map { ($0.guid, $0) })
+        // `uniquingKeysWith` 而不是 `uniqueKeysWithValues`：`guid` 在 schema 上没有唯一
+        // 约束，所以一条重复行（见 `healDuplicatePinnedTabRowsBody`）会让后者直接 trap，
+        // 而这里跑在一次**写**事务里——一次崩溃换一次拆分伙伴反查，不划算。留第一条，与
+        // 别处按 guid 定位的读法（`pinnedTabRow(with:in:)`）同一个判据。
+        let rowsByGuid = Dictionary(allPinned.map { ($0.guid, $0) },
+                                    uniquingKeysWith: { first, _ in first })
         let sourceSignature = pinnedTabVariantSignature(for: source, rowsByGuid: rowsByGuid)
         let exactVariants = lineageMatches.filter {
             pinnedTabVariantSignature(for: $0, rowsByGuid: rowsByGuid) == sourceSignature
@@ -540,9 +545,11 @@ extension LocalStore {
             sourceRows: sourceRows,
             in: context
         )
-        let lineageByGuid = Dictionary(
-            uniqueKeysWithValues: sourceRows.map { ($0.guid, $0.pinLineageId ?? $0.guid) }
-        )
+        // 留第一条，理由同 `activePinnedTab(resolving:…)`：`guid` 在 schema 上不唯一，
+        // 一条重复行会让 `uniqueKeysWithValues` 在**作用域迁移中途** trap。两条共享 guid
+        // 的行按构造 lineage 也相同，所以取哪一条的值都一样。
+        let lineageByGuid = Dictionary(sourceRows.map { ($0.guid, $0.pinLineageId ?? $0.guid) },
+                                       uniquingKeysWith: { first, _ in first })
 
         for owner in targetOwners.sorted(by: { $0.sortKey < $1.sortKey }) {
             let collections = sourceCollections(
@@ -883,6 +890,114 @@ extension LocalStore {
         return PinSyncFetch(active: active, nonDormant: nonDormant)
     }
 
+    /// 启动时跑一次的自愈：把库里**已经存在**的重复 pin 行折叠掉。
+    ///
+    /// 两类，各有一条判据：
+    ///
+    /// 1. **共享 guid 的行。** `TabDataModelSchemaV9` 上 `guid` 不是唯一列，所以一次算错
+    ///    的落地能把同一个 guid 写进两条行（Mac B 2026-09-14 23:49：`landPins` 对一条
+    ///    带两条 step 的身份发了两遍 `.create`）。这一类**必须**在库这一层收拾：同步层每
+    ///    一种修复手段（A11 的折叠、`.delete`、`.move`）都按 guid 定位，而按 guid 定位只
+    ///    取得到其中一条；侧栏那本按 `guidInLocalDB` 建的字典则直接在重复键上 trap。
+    /// 2. **同一条身份的精确重复。** 身份是 `(lineage, owner)`（§7.2），判据与 A11 的
+    ///    ① 折叠逐字同源：只折叠**变体签名相同**的副本。内容分歧的变体不动——A11 给它们
+    ///    各铸一条新 lineage，那是用户看得见的两个固定标签页，删掉就是销毁数据。
+    ///
+    /// 幸存者判据固定且与 fetch 次序无关：`index` 最小的留下，平手取建得最早的，再平手
+    /// 按这一批的枚举次序。休眠行只参与第 ① 类——它们是作用域迁移留下的本地备份，不进
+    /// 快照也不参与差分，按身份折叠它们等于把备份和它的活动行并掉。
+    ///
+    /// **不重编号。** index 留下的空洞是无害的（每一个读者都按 index 排序、每一个写者都
+    /// 会重新稠密化），而在这里跨 owner 重编号要先知道当前作用域，风险远大于收益。
+    ///
+    /// R12：日志只有两个条数，没有任何 guid、标题或网址。
+    func healDuplicatePinnedTabRows() {
+        performBackgroundWrite { context in
+            do {
+                _ = try self.healDuplicatePinnedTabRowsBody(in: context)
+            } catch {
+                AppLogError("[LocalStore] Pinned-tab duplicate self-heal failed: \(error)")
+            }
+        }
+    }
+
+    /// 事务体。分出来是为了让用例能在一个已知形状的库上直接驱动它。
+    @discardableResult
+    func healDuplicatePinnedTabRowsBody(
+        in context: ModelContext
+    ) throws -> (sharedGuid: Int, sharedIdentity: Int) {
+        let pinnedRaw = TabDataType.pinnedTab.rawValue
+        var descriptor = FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
+        )
+        // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
+        descriptor.relationshipKeyPathsForPrefetching = [\.profile]
+        let rows = try context.fetch(descriptor)
+        guard rows.count > 1 else { return (0, 0) }
+
+        /// 组内定序：幸存者排第一。
+        func ordered(_ group: [(offset: Int, row: TabDataModel)])
+            -> [(offset: Int, row: TabDataModel)] {
+            group.sorted {
+                if $0.row.index != $1.row.index { return $0.row.index < $1.row.index }
+                if $0.row.createdDate != $1.row.createdDate {
+                    return $0.row.createdDate < $1.row.createdDate
+                }
+                return $0.offset < $1.offset
+            }
+        }
+
+        // ① 共享 guid。**组键的遍历次序固定**，于是同一批行每次跑出同一个结果。
+        var byGuid: [String: [(offset: Int, row: TabDataModel)]] = [:]
+        for (offset, row) in rows.enumerated() {
+            byGuid[row.guid, default: []].append((offset: offset, row: row))
+        }
+        var sharedGuid = 0
+        var survivors: [(offset: Int, row: TabDataModel)] = []
+        var doomed: [TabDataModel] = []
+        for key in byGuid.keys.sorted() {
+            let group = ordered(byGuid[key] ?? [])
+            guard let keeper = group.first else { continue }
+            survivors.append(keeper)
+            guard group.count > 1 else { continue }
+            sharedGuid += group.count - 1
+            // 拆分伙伴的反向链接不用清：那个 guid 还在，它指着幸存的那一条。
+            doomed.append(contentsOf: group.dropFirst().map(\.row))
+        }
+
+        // ② 同身份的精确重复，只看**幸存下来且非休眠**的那些行。
+        let rowsByGuid = Dictionary(rows.map { ($0.guid, $0) },
+                                    uniquingKeysWith: { first, _ in first })
+        var byIdentity: [String: [(offset: Int, row: TabDataModel)]] = [:]
+        for entry in survivors where !entry.row.isPinnedTabDormant {
+            let lineage = (entry.row.pinLineageId ?? entry.row.guid).lowercased()
+            let owner = entry.row.spaceId ?? entry.row.profileId ?? "app"
+            byIdentity[lineage + "\u{0}" + owner, default: []].append(entry)
+        }
+        var sharedIdentity = 0
+        for key in byIdentity.keys.sorted() {
+            let group = ordered(byIdentity[key] ?? [])
+            guard group.count > 1, let keeper = group.first else { continue }
+            let keeperSignature = pinnedTabVariantSignature(for: keeper.row,
+                                                            rowsByGuid: rowsByGuid)
+            for entry in group.dropFirst()
+            where pinnedTabVariantSignature(for: entry.row, rowsByGuid: rowsByGuid)
+                == keeperSignature {
+                sharedIdentity += 1
+                // 这一条的 guid 是随它一起消失的，所以指着它的伙伴链接必须先断开——
+                // 留着的话幸存者那一侧指向一条不存在的 guid。
+                try clearSplitPartnerBackReferenceBody(of: entry.row, in: context)
+                doomed.append(entry.row)
+            }
+        }
+
+        guard !doomed.isEmpty else { return (0, 0) }
+        for row in doomed { context.delete(row) }
+        AppLogWarn("[LocalStore] pins: startup self-heal collapsed \(sharedGuid) row(s) "
+                   + "sharing a guid and \(sharedIdentity) exact duplicate row(s) of one identity")
+        return (sharedGuid: sharedGuid, sharedIdentity: sharedIdentity)
+    }
+
     /// 给同 owner 内的同 lineage 变体重铸 `pinLineageId`（§7.2 / A11）。
     ///
     /// 「变宽」方向的迁移会在同一个 owner 下留下两条共享 lineage 的活动行（内容分歧的
@@ -975,6 +1090,22 @@ extension LocalStore {
                              source: Int,
                              contentUpdatedDate: Date? = nil,
                              in context: ModelContext) throws {
+        // **guid 是一条 pin 行的物理主键，一条都不许重。**
+        //
+        // schema 没有替它建唯一约束（`TabDataModelSchemaV9` 上 `guid` 是普通一列），所以
+        // 一次带着已有 guid 的 create 在 store 这一层是成功的——它只是安静地多出一条行。
+        // 后果不是「多一条 pin」那么轻：`.move` / `.update` / `.delete` 三种操作都按 guid
+        // 取**第一条**匹配行，于是另一条此后既改不动也删不掉；侧栏那本按 `guidInLocalDB`
+        // 建的字典则在重复键上直接 trap（Mac B 2026-09-14 23:49，
+        // `PinnedTabViewController.swift:601`）。
+        //
+        // 拒收而不是去重：走到这里说明调用方算错了（同步落地那一支已经在
+        // `landPins` 里按身份收敛过一次）。`rowAlreadyMapped` 正是引擎那条「这一批算错了
+        // ⇒ 整批拒收」的分支认得的错误，于是一个字都不会落库。
+        if try pinnedTabRow(with: guid, in: context) != nil {
+            AppLogWarn("[LocalStore] Refused a pinned-tab create on an existing guid")
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
         let scope = try pinnedTabScope(in: context)
         var activePins = try pinnedTabs(
             profileId: profileId,

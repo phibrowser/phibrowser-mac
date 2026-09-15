@@ -649,8 +649,18 @@ class PinnedTabViewController: NSViewController {
         // `splits`, and `pinnedTabs`. Snapshot rebuilds fire on every
         // `$pinnedTabs` / `$splits` / `$focusingTab` emission, so the
         // savings compound during normal interaction.
-        let pinnedByDB: [String: Tab] = Dictionary(uniqueKeysWithValues:
-            sourcePinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } }
+        // `uniquingKeysWith:` rather than `uniqueKeysWithValues:`. `guidInLocalDB` comes
+        // from a store column with no uniqueness constraint, so two pinned rows can end
+        // up sharing one guid after a bad write; `uniqueKeysWithValues:` traps on the
+        // duplicate key and takes the whole app down while the sidebar is merely
+        // redrawing (Mac B, 2026-09-14 23:49). Keep the first: iteration follows
+        // `pinnedTabs` order, the same "first row wins" rule every guid-addressed
+        // reader in the store already uses. The store repairs such rows on its own
+        // (`LocalStore.healDuplicatePinnedTabRows()`); this keeps the window up until
+        // it does.
+        let pinnedByDB: [String: Tab] = Dictionary(
+            sourcePinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },
+            uniquingKeysWith: { first, _ in first }
         )
         let liveByDB: [String: Tab] = Dictionary(
             state.tabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },

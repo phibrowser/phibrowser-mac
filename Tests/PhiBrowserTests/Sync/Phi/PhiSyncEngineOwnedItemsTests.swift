@@ -4564,3 +4564,118 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty)
     }
 }
+
+// MARK: - 2026-09-15 提交风暴：收敛（R-exec-16）与冲突重试（R-exec-17）
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// 一台设备：**自己的** defaults suite（marker 与 `phi.sync.*` 游标都是按设备的）、自己的
+    /// 本机行、自己的游标文件，与另一台共享同一台假服务端。
+    ///
+    /// 两条行的 `syncId` 相同（同一条账户实体），`guid` 不同（本机身份按设备铸），
+    /// `contentUpdatedDate` 相同（内容一个字都没差过），**只有 `createdDate` 差 11 分钟**
+    /// ——就是现场那条 "Google" 书签的形状：两台机器在配对之前各自建过它。
+    private func makeCreationStampDevice(
+        _ name: String, client: FakePhiSyncClient, createdAtMs: Int64
+    ) -> (engine: PhiSyncEngine, access: FakeBookmarkAccess, suite: String) {
+        let suite = "PhiSyncEngineOwnedItemsTests.\(name).\(UUID().uuidString)"
+        let deviceDefaults = UserDefaults(suiteName: suite)!
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G-\(name)", syncId: "b1", spaceId: "s-1",
+                     createdDate: Date(timeIntervalSince1970: TimeInterval(createdAtMs) / 1000),
+                     contentUpdatedDate: Date(timeIntervalSince1970: 1)),
+        ])
+        let store = MemoryOwnedItemStore()
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: deviceDefaults, deviceKeyId: "dev-\(name)",
+                                   settings: [], spaceAccess: makeSpaceAccess(),
+                                   spaceStore: makeSpaceStore(),
+                                   ownedKinds: [bookmarkKind(access, store)],
+                                   now: { 1_700_000_000_000 })
+        return (engine, access, suite)
+    }
+
+    /// CASE 17.1 — 两台设备对同一条书签的创建时刻不一致 ⇒ **各发一次，然后彻底安静**。
+    ///
+    /// 防的是什么：`created_at_ms` 用 min() 合并、而本机存不下这个合并结果
+    /// （`BookmarkFieldPatch` 只写四个内容字段），所以落地永远 `applied=0`、两份基线却照样
+    /// 推进。出站投影若继续宣称本机那一列的值，戳大的那台每轮看见「投影 ≠ reconciled」而
+    /// 重发，戳小的那台每轮看见「server ≠ reconciled」而重发——**一条 176 字节的书签每分钟
+    /// 两条 commit，永远**（Mac A/B 2026-09-14）。修复前这条用例每多跑一轮就多一条 commit。
+    func testTwoDevicesDisagreeingOnACreationDatePublishOnceEachAndThenGoQuiet() async throws {
+        let earlier: Int64 = 1_789_370_308_853
+        let later: Int64 = 1_789_370_985_148          // 晚 11 分钟
+        let client = FakePhiSyncClient()
+        // 戳**大**的那台先发：账户于是先拿到 later，再被 earlier 那台按 min 覆盖一次。
+        let deviceB = makeCreationStampDevice("B", client: client, createdAtMs: later)
+        let deviceA = makeCreationStampDevice("A", client: client, createdAtMs: earlier)
+        defer {
+            UserDefaults.standard.removePersistentDomain(forName: deviceB.suite)
+            UserDefaults.standard.removePersistentDomain(forName: deviceA.suite)
+        }
+        await deviceB.engine.setSpaceSyncEnabled(true)
+        await deviceA.engine.setSpaceSyncEnabled(true)
+
+        // 第一轮各一次：B 首发（账户上还没有这一条），A 拉到之后按 min 重发一次。
+        await deviceB.engine.pullOnce()
+        await deviceA.engine.pullOnce()
+        let afterFirstExchange = bookmarkCommits(client).count
+
+        // 再跑四轮交替。收敛之后这四轮**一条都不该发**。
+        for _ in 0..<2 {
+            await deviceB.engine.pullOnce()
+            await deviceA.engine.pullOnce()
+        }
+
+        XCTAssertEqual(afterFirstExchange, 2, "① 一台一次首发，不多不少")
+        XCTAssertEqual(bookmarkCommits(client).count, 2, "② 此后每一轮零 commit")
+        // ③ 两台机器的本机创建日期各自保持不变（这个字段本来就落不了地），而账户上那一份
+        //    收敛到较早的那个——两侧从此对同一串字节没有异议。
+        let rowB = deviceB.access.rows.first { $0.syncId == "b1" }
+        let rowA = deviceA.access.rows.first { $0.syncId == "b1" }
+        XCTAssertEqual(rowB?.createdDate, Date(timeIntervalSince1970: TimeInterval(later) / 1000))
+        XCTAssertEqual(rowA?.createdDate, Date(timeIntervalSince1970: TimeInterval(earlier) / 1000))
+        let published = bookmarkCommits(client).compactMap { committedBookmark($0)?.createdAtMs }
+        XCTAssertEqual(published.last, earlier, "④ 账户手上那一份是较早的那个戳")
+    }
+
+    /// CASE 17.2 — 一次 `.conflict` 之后，那一次限定重发带的是**服务端**那个 `base_version`。
+    ///
+    /// 防的是什么：`.conflict` 那一支过去把响应里的 `server_version` 直接丢掉，而紧接着的
+    /// 那次 pull 在服务端这一行没有新版本可派时什么都不改——重试于是原样带着同一个过期版本
+    /// 再撞一次，整轮以两条 commit 静悄悄收场（`.conflict` 不记任何日志）。配上那次轮内 pull
+    /// 写 `phi.sync.marker` 又去触发 defaults 观察者，就是现场那个 2.5 s 的热循环。
+    func testAConflictRetryCarriesTheServerVersionFromTheConflictResponse() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "新标题",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let store = MemoryOwnedItemStore()
+        // 本机游标停在 version 1，服务端那一行已经到 9——这一次提交注定冲突。
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "旧标题"),
+                                                    entityId: "srv-b1", version: 1)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(alignedPayload(uuid: "b1", title: "旧标题")), key: key),
+                    version: 9, entityId: "srv-b1")
+        // **本轮每一次 pull 都交回空手**：marker 的水位已经越过服务端手上的每一个版本，
+        // 所以冲突之后那次轮内 pull 什么都改不了——游标的 `version` 只可能来自冲突响应本身，
+        // 这条用例才问得出它到底有没有被收下。
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 2, "① 一次提交 + 一次限定重发")
+        XCTAssertEqual(commits.first?.baseVersion, 1, "② 第一次带的是本机游标那个版本")
+        XCTAssertEqual(commits.last?.baseVersion, 9, "③ 重试带的是冲突响应交回来的那个")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertGreaterThan(table.cursors["b1"]?.version ?? 0, 9,
+                             "④ 重试因此被服务端接受，而不是第二次冲突")
+    }
+}

@@ -236,6 +236,13 @@ enum PinKind: OwnedItemKind {
             out.splitPartnerUuid.updatedAtMs = now
             return out
         }
+        // R-exec-16，与 `BookmarkKind.stamp` 逐字同款同理由：`created_at_ms` 与 `source` 的
+        // 合并规则不是 LWW，而 `PinFieldPatch` 只写得了三个内容字段，所以一次「只有
+        // `created_at_ms` 变了」的合并产出零条本机 op、却照样推进两份基线。投影不自己先合
+        // 一次，两台设备就会对同一条 pin 每轮互相重发到永远。
+        out.createdAtMs = mergedCreatedAtMs(out.createdAtMs, baseline.createdAtMs)
+        // `source` 写一次定终身（§2.1）：基线上有就照抄，绝不拿本机那一列去覆盖。
+        if baseline.source != 0 { out.source = baseline.source }
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
         out.title.updatedAtMs = restamped(out.title, baseline.title, now)
         out.url.updatedAtMs = restamped(out.url, baseline.url, now)
@@ -268,8 +275,7 @@ enum PinKind: OwnedItemKind {
         // NOT last-writer-wins：非零的一侧赢；两侧都非零且不同时取较小者（同书签）。
         merged.source = mergedSource(local.source, remote.source)
         // NOT last-writer-wins：最早的创建时刻才是真的那一个。
-        let created = [local.createdAtMs, remote.createdAtMs].filter { $0 > 0 }
-        merged.createdAtMs = created.min() ?? 0
+        merged.createdAtMs = mergedCreatedAtMs(local.createdAtMs, remote.createdAtMs)
         return merged
     }
 
@@ -515,6 +521,12 @@ enum PinKind: OwnedItemKind {
         if left == 0 { return right }
         if right == 0 { return left }
         return min(left, right)
+    }
+
+    /// `created_at_ms` 的合并：非零的一侧赢，两侧都非零取较早的那一个。**`merge` 与 `stamp`
+    /// 共用这一个实现**（R4 / R-exec-16），理由见 `BookmarkKind` 上同名函数。
+    private static func mergedCreatedAtMs(_ left: Int64, _ right: Int64) -> Int64 {
+        [left, right].filter { $0 > 0 }.min() ?? 0
     }
 
     private static func string(_ value: String) -> Phi_PhiSettingValue {

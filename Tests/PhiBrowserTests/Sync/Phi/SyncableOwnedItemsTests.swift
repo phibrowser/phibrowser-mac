@@ -2430,3 +2430,108 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(plan.rebaselined.isEmpty, "一个字节都没变，没什么要写")
     }
 }
+
+// MARK: - R-exec-16：本机落不了地的那两个字段（`created_at_ms` / `source`）
+
+/// 两台设备对同一条书签的创建时刻不一致时，出站投影必须**自己先与基线合并**。
+///
+/// 防的是什么：`created_at_ms` 用 min() 合并，而 `BookmarkFieldPatch` 写不了它——一次「只有
+/// 创建时刻变了」的合并产出零条本机 op，落地却照样推进两份基线。投影若继续宣称本机那一列
+/// 的值，戳大的那台每轮看见「投影 ≠ reconciled」而重发、戳小的那台每轮看见
+/// 「server ≠ reconciled」而重发，两台机器把一条 176 字节的书签**永远**发下去
+/// （Mac A/B 2026-09-14 的提交风暴）。
+extension SyncableOwnedItemsTests {
+
+    /// A 手上那个戳，与 B 手上那个（晚 11 分钟）——现场那两个值。
+    private static var earlierCreatedAtMs: Int64 { 1_789_370_308_853 }
+    private static var laterCreatedAtMs: Int64 { 1_789_370_985_148 }
+
+    private func date(fromMilliseconds ms: Int64) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+    }
+
+    /// 一台设备此刻的出站投影：`project` + 拿它自己那条基线盖戳，与
+    /// `PhiSyncEngine.bookmarkLocalProjections` 逐字同构。
+    private func projection(of row: PhiLocalBookmark,
+                            baseline: Phi_PhiBookmarkEntity) throws -> Phi_PhiBookmarkEntity {
+        let projected = try XCTUnwrap(BookmarkKind.project(row, resolve: resolve, scope: nil,
+                                                           parentIdentity: nil))
+        return BookmarkKind.stamp(projected, baseline: baseline, local: row,
+                                  rank: BookmarkKind.rank(of: baseline), now: 9_000)
+    }
+
+    /// CASE 16.1 — 两台设备的投影都取 min，且**逐字节相同**。
+    func testTwoDevicesProjectTheSameEarliestCreationStamp() throws {
+        let earlier = Self.earlierCreatedAtMs
+        let later = Self.laterCreatedAtMs
+        // 同一条书签的两条本机行：除创建时刻外逐字段相同。
+        let rowA = PhiLocalBookmark.fixture(guid: "GA", syncId: "b1", spaceId: "space-a",
+                                            createdDate: date(fromMilliseconds: earlier))
+        let rowB = PhiLocalBookmark.fixture(guid: "GB", syncId: "b1", spaceId: "space-a",
+                                            createdDate: date(fromMilliseconds: later))
+        // 每台机器刚落地了对端那一份：基线是合并结果，带的是**对端**那个创建时刻。
+        let baselineA = bookmarkPayload(uuid: "b1", createdAtMs: later)
+        let baselineB = bookmarkPayload(uuid: "b1", createdAtMs: earlier)
+
+        let projectedA = try projection(of: rowA, baseline: baselineA)
+        let projectedB = try projection(of: rowB, baseline: baselineB)
+
+        XCTAssertEqual(projectedA.createdAtMs, earlier, "① 戳小的那台仍然发自己那个")
+        XCTAssertEqual(projectedB.createdAtMs, earlier, "② 戳大的那台改发基线那个，不再重申")
+        XCTAssertEqual(try projectedA.serializedData(), try projectedB.serializedData(),
+                       "③ 两台机器对同一条书签算出同一串字节")
+    }
+
+    /// CASE 16.2 — 投影是 `merge` 的不动点：合并它与账户手上那一份，得回它自己。
+    ///
+    /// 这正是「不再重发」的充要条件：落地写下的 `reconciled` 就是合并结果，下一轮的投影与它
+    /// 逐字节相同 ⇒ 字节差为零 ⇒ 不进发布切片。
+    func testAProjectionIsAFixedPointOfTheMerge() throws {
+        let earlier = Self.earlierCreatedAtMs
+        let later = Self.laterCreatedAtMs
+        let rowB = PhiLocalBookmark.fixture(guid: "GB", syncId: "b1", spaceId: "space-a",
+                                            createdDate: date(fromMilliseconds: later))
+        // 账户上那一份来自对端，带的是较早那个戳。
+        let account = bookmarkPayload(uuid: "b1", createdAtMs: earlier)
+
+        let projected = try projection(of: rowB, baseline: account)
+        let merged = BookmarkKind.merge(local: projected, remote: account)
+
+        XCTAssertEqual(merged, projected, "合并不再改动投影，于是没有任何东西要重发")
+        XCTAssertEqual(merged.createdAtMs, earlier)
+    }
+
+    /// CASE 16.3 — `source` 写一次定终身：基线上有就照抄，本机那一列不再去覆盖它。
+    func testABaselineSourceIsNeverOverwrittenByTheLocalColumn() throws {
+        let row = PhiLocalBookmark.fixture(guid: "GA", syncId: "b1", spaceId: "space-a",
+                                           source: 7,
+                                           createdDate: date(fromMilliseconds: 1_000))
+        let account = bookmarkPayload(uuid: "b1", source: 3, createdAtMs: 1_000)
+
+        let projected = try projection(of: row, baseline: account)
+        let merged = BookmarkKind.merge(local: projected, remote: account)
+
+        XCTAssertEqual(projected.source, 3, "① 账户上那个赢")
+        XCTAssertEqual(merged, projected, "② 于是合并同样是不动点")
+    }
+
+    /// CASE 16.4 — pin 侧逐字同款（`PinFieldPatch` 同样写不了这两个字段）。
+    func testAPinProjectionConvergesOnTheEarliestCreationStampToo() throws {
+        let earlier = Self.earlierCreatedAtMs
+        let later = Self.laterCreatedAtMs
+        let row = PhiLocalPin.fixture(lineageId: "LX", guid: "px", profileId: "Default",
+                                      source: 7,
+                                      createdDate: date(fromMilliseconds: later))
+        let account = pinPayload(lineage: "lx", source: 3, createdAtMs: earlier)
+
+        let projected = try XCTUnwrap(PinKind.project(row, resolve: resolve, scope: nil,
+                                                      parentIdentity: nil))
+        let stamped = PinKind.stamp(projected, baseline: account, local: row,
+                                    rank: PinKind.rank(of: account), now: 9_000)
+        let merged = PinKind.merge(local: stamped, remote: account)
+
+        XCTAssertEqual(stamped.createdAtMs, earlier)
+        XCTAssertEqual(stamped.source, 3)
+        XCTAssertEqual(merged, stamped, "同书签：投影是合并的不动点")
+    }
+}

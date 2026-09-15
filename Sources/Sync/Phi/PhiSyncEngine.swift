@@ -3746,10 +3746,24 @@ actor PhiSyncEngine {
                 cursor.rekeyRejectRounds = nil
                 counters.pushed += 1
             }
-        case .conflict:
-            // **不写任何基线，也不写回游标本身**：当成 `.applied` 处理会记下一条服务端从未
-            // 接受的基线并静默丢掉本机的编辑；而把一条默认初始化的游标写回去，会为一个服务端
-            // 从没接受过的身份长出一条空游标（P5 的同一族缺陷）。
+        case .conflict(let serverVersion):
+            // **不写任何基线**：当成 `.applied` 处理会记下一条服务端从未接受的基线并静默丢掉
+            // 本机的编辑。
+            //
+            // R-exec-17：**唯独响应带回来的 `server_version` 要收下**。紧接着那一次限定重发
+            // （`publishOwnedKind` 末尾的「一次 pull + 一次重发」）用的是游标里的
+            // `version` 当 `base_version`，而中间那次 pull 在服务端这一行没有新版本可派时
+            // 什么都不会改——于是重试原样带着**同一个**过期版本再撞一次，`.conflict` 这一支
+            // 又不记任何日志，整轮悄悄地以两条 commit 收场。Mac B 2026-09-14 那次 2.5 s
+            // 的提交风暴，放大器就是这个。
+            //
+            // **`existing != nil` 是硬条件**：游标本来不存在时写回去，等于为一个服务端从没
+            // 接受过的身份长出一条空游标（P5 的同一族缺陷）。版本只准往前走（`max` 语义）：
+            // 一个比本机还旧的服务端版本是坏对端，退回去只会让下一次提交更旧。
+            if let serverVersion, existing != nil, serverVersion > cursor.version {
+                cursor.version = serverVersion
+                table.cursors[item.identity] = cursor
+            }
             conflicted.insert(item.identity)
             return
         case .invalidMessage:

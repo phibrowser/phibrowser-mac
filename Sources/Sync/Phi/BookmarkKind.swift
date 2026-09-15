@@ -139,6 +139,9 @@ enum BookmarkKind: OwnedItemKind {
     /// 过对端任何一次真实操作），内容字段盖 **`contentUpdatedDate ?? createdDate`**——一条
     /// 几年前建的、从没人动过的本机书签若以 `now` 首发，它会在被对端那条同 (路径, URL) 的
     /// 实体认领时赢下对端上周做的改名。
+    ///
+    /// **有基线那一支还要先把 `created_at_ms` 与 `source` 这两个字段的合并做掉**
+    /// （R-exec-16）——见下面 `mergedCreatedAtMs` 与 `source` 那两行的注释。
     static func stamp(_ projected: Phi_PhiBookmarkEntity, baseline: Phi_PhiBookmarkEntity?,
                       local: PhiLocalBookmark, rank: String, now: Int64) -> Phi_PhiBookmarkEntity {
         var out = projected
@@ -155,6 +158,22 @@ enum BookmarkKind: OwnedItemKind {
             out.secondaryTitle.updatedAtMs = contentStamp
             return out
         }
+
+        // R-exec-16：`created_at_ms` 与 `source` 是两个**本机落不了地**的字段——它们的合并
+        // 规则不是 LWW，而 `BookmarkFieldPatch` 只写得了四个内容字段，所以一次「只有
+        // `created_at_ms` 变了」的合并产出零条本机 op（`applied=0`），落地却照样把两份基线
+        // 都推进（`PhiSyncEngine` 的 `reconciled` / `server`）。出站投影若继续宣称本机那一
+        // 列的值，两台机器就此**永不收敛**：戳大的那台每轮看见「投影 ≠ reconciled」而重发，
+        // 戳小的那台每轮看见「server ≠ reconciled」而重发（Mac A/B 2026-09-14 的 commit
+        // storm，一条 176 字节的书签每分钟两条 commit，永远）。
+        //
+        // 修法是把合并挪到投影这一侧：投影自己先与基线合一次，于是它**等于** `merge` 的
+        // 输出，字节差归零、两台机器对这两个字段逐字节相同，而本机那一行一个字都不用写。
+        out.createdAtMs = mergedCreatedAtMs(out.createdAtMs, baseline.createdAtMs)
+        // `source` 是**写一次定终身**的来源标记（§2.1）：基线上已经有一个就照抄，绝不拿本机
+        // 那一列去覆盖。它与 `created_at_ms` 同一个形状（非 LWW、无本地列可写），少了这一行
+        // 它会在两台机器第一次对来源不一致时复现同一个重发环。
+        if baseline.source != 0 { out.source = baseline.source }
 
         // 子孙的 `space_uuid` **永不重发**（R-M3-3-18）：照抄基线那一份。本机跨 Space 移动
         // 一个文件夹时 `moveBookmarks` 会重打整棵子树的 `spaceId`，若这里发新值，四十个
@@ -221,8 +240,7 @@ enum BookmarkKind: OwnedItemKind {
         // NOT last-writer-wins：非零的一侧赢；两侧都非零且不同时取较小者。
         merged.source = mergedSource(local.source, remote.source)
         // NOT last-writer-wins：最早的创建时刻才是真的那一个。
-        let created = [local.createdAtMs, remote.createdAtMs].filter { $0 > 0 }
-        merged.createdAtMs = created.min() ?? 0
+        merged.createdAtMs = mergedCreatedAtMs(local.createdAtMs, remote.createdAtMs)
         return merged
     }
 
@@ -303,6 +321,15 @@ enum BookmarkKind: OwnedItemKind {
         if left == 0 { return right }
         if right == 0 { return left }
         return min(left, right)
+    }
+
+    /// `created_at_ms` 的合并：非零的一侧赢，两侧都非零取**较早**的那一个。
+    ///
+    /// **`merge` 与 `stamp` 共用这一个实现**（R4 单一实现点 / R-exec-16）。两处分叉出来的
+    /// 正是那条永不收敛的重发环：投影算出 X、合并算出 Y，落地把 Y 写进 `reconciled`，下一轮
+    /// 投影又算回 X，每一轮一条 commit，两台机器各一条，永远。
+    private static func mergedCreatedAtMs(_ left: Int64, _ right: Int64) -> Int64 {
+        [left, right].filter { $0 > 0 }.min() ?? 0
     }
 
     /// 一个**账户级**身份该有的形状。

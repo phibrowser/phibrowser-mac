@@ -286,6 +286,39 @@ enum SyncableSettings {
         return entity
     }
 
+    /// The registered preferences' VALUES right now, as one comparable blob. Read-only: it
+    /// stamps no sidecar and writes nothing, so it is safe to call from a notification sink.
+    ///
+    /// This is the value-snapshot dedupe for the debounced
+    /// `UserDefaults.didChangeNotification` push trigger
+    /// (`PhiChromiumCoordinator.startPhiSyncIfReady()`), and the reason it exists is that the
+    /// notification does not say WHICH key changed. The engine writes the same preference
+    /// domain on every round — `phi.sync.marker` / `phi.sync.version` through `writeState`,
+    /// and the two `<key>.phiSync*` sidecars — so a raw subscription treats the engine's own
+    /// bookkeeping as a local edit. That was harmless only while a `.localChange` round could
+    /// not itself pull; M3-3's owned-item CONFLICT retry pulls inside the round, which turned
+    /// the pair into a 2.5 s hot loop (Mac B 2026-09-14): conflict -> in-round pull -> marker
+    /// write -> 2 s debounce -> another push -> the same conflict.
+    ///
+    /// Neither the `phi.sync.*` state keys nor the sidecars are in here: it walks the REGISTRY
+    /// and asks each setting for its own value, so only a real preference change moves it.
+    /// Keys the registry drops (``SyncableSetting.read`` returning nil) contribute their name
+    /// and nothing else, which keeps "the key went away" distinguishable from "the key is
+    /// empty".
+    static func valueSignature(
+        _ defaults: UserDefaults,
+        settings: [SyncableSetting] = SyncableSettings.all
+    ) -> Data {
+        var out = Data()
+        for setting in settings {
+            out.append(Data(setting.key.utf8))
+            out.append(0)
+            if let value = setting.read(defaults) { out.append(signature(of: value)) }
+            out.append(0)
+        }
+        return out
+    }
+
     // MARK: - Merge
 
     /// Field-level last-writer-wins over the union of both sides' keys.

@@ -4199,3 +4199,156 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertEqual(baselineTitle(table.cursors["b1"]?.reconciled)?.stringValue, "A")
     }
 }
+
+// MARK: - 评审回归 F-CX-2 / F-CX-3
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// F-CX-2 — 轮首那次本机读抛了，而共享 marker 已经推过这一页。
+    ///
+    /// 防的是什么：就地返回等于把这一页上的 create 与远端删除**永久**丢掉——服务端只从推进
+    /// 过的 marker 之后发货，那条书签在本机永远不出现、那次删除永远不发生，而每一个计数器
+    /// 都是健康值。R-exec-3 关的是这条 kind 的出站半边，不是「可以把已经收下的字节扔掉」。
+    func testAFailedLocalReadStillKeepsWhatTheMarkerAlreadyConsumed() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GD", syncId: "b-doomed", spaceId: "s-1", index: 0),
+        ])
+        access.readError = LocalStoreWriteError.storeUnavailable
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b-doomed"] = publishedCursor(alignedPayload(uuid: "b-doomed"),
+                                                          entityId: "srv-doomed", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(alignedPayload(uuid: "b-new", title: "对端建的")),
+                         tag: bookmarkTag("b-new"), version: 30, entityId: "srv-new", key: key),
+            remoteTombstone(tag: bookmarkTag("b-doomed"), version: 31, entityId: "srv-doomed"),
+        ], marker: "500")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("bookmarks")
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.localReadFailed, 1, "前提：这一轮的本机读真的抛了")
+        XCTAssertEqual(applyCallCount(access), 0, "前提：落地段整段没跑")
+        XCTAssertNotNil(table.cursors["b-new"]?.pendingApply, "① 存活实体停放，不是丢掉")
+        XCTAssertEqual(table.cursors["b-new"]?.entityId, "srv-new", "① 三元组照收（A6）")
+        XCTAssertEqual(table.cursors["b-doomed"]?.pendingTombstone, true,
+                       "② 远端 tombstone 同样留下来")
+        XCTAssertEqual(table.cursors["b-doomed"]?.version, 31)
+
+        // 读恢复之后的第一轮（服务端一条都不再发）把它们放下去。
+        access.readError = nil
+        await engine.pullOnce()
+
+        XCTAssertNotNil(access.rows.first { $0.syncId == "b-new" }, "③ 那条 create 最终落了地")
+        XCTAssertNil(access.rows.first { $0.guid == "GD" }, "③ 那次远端删除最终也发生了")
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["b-new"]?.pendingApply)
+        XCTAssertEqual(table.cursors["b-doomed"]?.pendingTombstone, false)
+    }
+
+    /// F-CX-3 ① — 本机赢下字段的那条实体**排不进这一轮 250 条的切片**，下一轮照样发出去。
+    ///
+    /// 防的是什么：把「要重发」记在轮内那个集合里，这条需求随轮次一起消失，而落地之后本机
+    /// 那一行与 `reconciled` 逐字相等——字节差分永远不会再为它说话，账户永远停在旧值上。
+    /// 游标上 `server != reconciled` 持久地记着同一件事。
+    func testALocallyWonMergeThatMissesThePublishSliceGoesOutOnALaterRound() async throws {
+        let alphabet = Array("123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        func fillerRank(_ index: Int) -> String {
+            "V" + String(alphabet[index / alphabet.count]) + String(alphabet[index % alphabet.count])
+        }
+        let spaceAccess = makeSpaceAccess()
+        // ① 本机赢的那一条：`zz-won` 在身份序里排在每一条 filler 之后，而切片按（深度，身份）
+        // 排序，所以它必然落在 250 条之外。
+        var rows: [PhiLocalBookmark] = [
+            .fixture(guid: "G-won", syncId: "zz-won", spaceId: "s-1", index: 0,
+                     title: "本机新标题",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ]
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["zz-won"] = publishedCursor(
+            alignedPayload(uuid: "zz-won", rank: "B", title: "旧标题"),
+            entityId: "srv-won", version: 7)
+        // ② 260 条本机改过名、都在等发布的行，把这一轮的切片填满。
+        for index in 0..<260 {
+            let identity = String(format: "f-%03d", index)
+            rows.append(.fixture(guid: "G-" + identity, syncId: identity, spaceId: "s-1",
+                                 index: index + 1, title: "new",
+                                 contentUpdatedDate: Date(timeIntervalSince1970: 500)))
+            store.table.cursors[identity] = publishedCursor(
+                alignedPayload(uuid: identity, rank: fillerRank(index), title: "old"),
+                entityId: "srv-" + identity, version: 2)
+        }
+        let access = FakeBookmarkAccess(rows: rows)
+        let client = FakePhiSyncClient()
+        // 对端改的是 URL；本机那次改名还没发布 ⇒ 合并结果里本机赢下标题。
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "zz-won", rank: "B", title: "旧标题",
+                            url: "https://peer.example", contentStamp: 2_000_000,
+                            createdAtMs: Self.rowCreatedAtMs),
+            uuid: "zz-won", version: 42, entityId: "srv-won")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let firstRound = bookmarkCommits(client)
+        XCTAssertEqual(firstRound.count, 250, "前提：这一轮的切片满了")
+        XCTAssertFalse(firstRound.contains { $0.clientTagHash == bookmarkHash("zz-won") },
+                       "前提：本机赢的那一条没排上")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNotEqual(table.cursors["zz-won"]?.server, table.cursors["zz-won"]?.reconciled,
+                          "① 分歧持久地记在游标上：账户手上那一份不是本机落地的那一份")
+
+        await engine.pullOnce()
+
+        let later = Array(bookmarkCommits(client).dropFirst(firstRound.count))
+        let sent = later.first { $0.clientTagHash == bookmarkHash("zz-won") }
+            .flatMap(committedBookmark)
+        XCTAssertNotNil(sent, "② 下一轮把它发出去——轮内那个集合早就清空了")
+        XCTAssertEqual(sent?.title.stringValue, "本机新标题", "② 带的是本机那个标题")
+    }
+
+    /// F-CX-3 ② — 落地与发布之间断了一次（这里用一次抛错的 commit 表达；退休、sign-out、
+    /// 进程退出是同一个形状）⇒ 那条重发需求必须活到下一轮。
+    func testALocallyWonMergeSurvivesAFailedCommitAndPublishesNextRound() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "本机新标题",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "旧标题"),
+                                                    entityId: "srv-b1", version: 7)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", title: "旧标题", url: "https://peer.example",
+                            contentStamp: 2_000_000, createdAtMs: Self.rowCreatedAtMs),
+            uuid: "b1", version: 42, entityId: "srv-b1")]
+        client.commitErrorOnce = URLError(.timedOut)
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(bookmarkCommits(client).count, 1, "前提：那一轮试过发，而它抛了")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNotEqual(table.cursors["b1"]?.server, table.cursors["b1"]?.reconciled,
+                          "① 需求留在游标上")
+
+        await engine.pullOnce()
+
+        let later = Array(bookmarkCommits(client).dropFirst(1))
+        XCTAssertEqual(later.count, 1, "② 下一轮重发，正好一条")
+        XCTAssertEqual(later.first.flatMap(committedBookmark)?.title.stringValue, "本机新标题")
+        let settled = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(settled.cursors["b1"]?.server, settled.cursors["b1"]?.reconciled,
+                       "③ 被接受之后两份基线合一，需求就此消失（不然它每轮都重发）")
+    }
+}

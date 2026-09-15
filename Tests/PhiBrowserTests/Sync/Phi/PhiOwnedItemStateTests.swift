@@ -41,11 +41,11 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.1
 
-    /// CASE 3.1 — 十三个字段全部往返。
+    /// CASE 3.1 — 十四个字段全部往返。
     ///
     /// 防的是什么：只钉住一部分字段的往返用例会放过一条被漏掉的 `Codable` 字段，而漏掉
     /// 任何一条都让引擎对一条实体做出错误判断；错误的方向是「发一条 `baseVersion == 0`
-    /// 的 create 把账户上那条盲写覆盖」。字段数断言让加第十四个字段的人必须回到这里。
+    /// 的 create 把账户上那条盲写覆盖」。字段数断言让加第十五个字段的人必须回到这里。
     func testEveryCursorFieldSurvivesAFileRoundTrip() throws {
         var cursor = PhiOwnedItemCursor()
         cursor.entityId = "srv-1"
@@ -60,6 +60,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         cursor.pendingDelete = true
         cursor.deleteDecidedAtMs = 77
         cursor.deleteRejectRounds = 2
+        cursor.rekeyRejectRounds = 3
         cursor.deletedAtMs = 88
 
         var table = PhiOwnedItemTable()
@@ -71,7 +72,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let fieldCount = Mirror(reflecting: cursor).children.count
         let roundTripped = loaded.table
         let reportedLoss = loaded.reportedLoss
-        XCTAssertEqual(fieldCount, 13, "新增一个游标字段必须同时在这条用例里赋非默认值")
+        XCTAssertEqual(fieldCount, 14, "新增一个游标字段必须同时在这条用例里赋非默认值")
         XCTAssertEqual(roundTripped, table)
         XCTAssertEqual(roundTripped.cursors["bm-1"], cursor)
         XCTAssertFalse(reportedLoss, "读得出来就不是丢失")
@@ -94,13 +95,57 @@ final class PhiOwnedItemStateTests: XCTestCase {
           "pendingDelete": true,
           "deleteDecidedAtMs": 77,
           "deleteRejectRounds": 2,
+          "rekeyRejectRounds": 3,
           "deletedAtMs": 88
         }
         """.utf8)
 
         let fromLiteral = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: literal)
 
-        XCTAssertEqual(fromLiteral, cursor, "十三个盘上键名必须与这份字面量逐字一致")
+        XCTAssertEqual(fromLiteral, cursor, "十四个盘上键名必须与这份字面量逐字一致")
+    }
+
+    /// CASE 3.1b — **上一版落盘的文件仍然读得出来**（R-exec-13 / F-PK-2）。
+    ///
+    /// 防的是什么：合成的 `init(from:)` 对一条**非可选**属性调的是 `decode(_:forKey:)`，缺键
+    /// 就抛 `keyNotFound`——属性上写没写默认值都一样。而 `JSONEncoder` 只省略值为 nil 的可选
+    /// 字段，所以线上那些文件里每一个非可选字段都在、后加的那个不在。于是给这个结构体加一条
+    /// **非可选**字段 = 每一台已有设备的 `pins-cursors.json` / `bookmarks-cursors.json` 整份
+    /// 解不开 = `load` 交出空表并报损 = 整类型重放 + 每一份 `reconciled` 基线当场丢失。
+    ///
+    /// 这份字面量就是 build 822 真机上那份文件的键集（少了 `rekeyRejectRounds`）。它必须解得
+    /// 出来，并且解出 `nil`（= 没有连败）。
+    func testACursorFileFromTheBuildBeforeThisFieldStillDecodes() throws {
+        let previousBuild = Data("""
+        {
+          "formatVersion": 1,
+          "cursors": {
+            "bm-1": {
+              "entityId": "srv-1",
+              "version": 4,
+              "reconciled": "AQ==",
+              "server": "Ag==",
+              "ownerUuid": "su-1",
+              "pendingTombstone": false,
+              "pendingDelete": false,
+              "deleteDecidedAtMs": 0,
+              "deleteRejectRounds": 0
+            }
+          }
+        }
+        """.utf8)
+
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try previousBuild.write(to: fileURL, options: .atomic)
+        let store = makeStore()
+        let loaded = store.load(hadRecords: true)
+
+        XCTAssertFalse(loaded.reportedLoss, "① 上一版的文件不是一次丢失")
+        XCTAssertEqual(loaded.table.cursors["bm-1"]?.entityId, "srv-1", "② 基线与三元组都还在")
+        XCTAssertNotNil(loaded.table.cursors["bm-1"]?.reconciled)
+        XCTAssertNil(loaded.table.cursors["bm-1"]?.rekeyRejectRounds,
+                     "③ 缺键解成 nil，与「没有连败」同义")
     }
 
     // MARK: - CASE 3.2

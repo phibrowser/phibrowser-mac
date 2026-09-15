@@ -64,7 +64,7 @@ struct PhiOwnedItemTable: Codable, Equatable {
     }
 }
 
-/// 一条归属项身份的同步影子。十三个字段，逐条都有文档注释——这些注释是这些字段**存在
+/// 一条归属项身份的同步影子。十四个字段，逐条都有文档注释——这些注释是这些字段**存在
 /// 理由**的唯一记录，删掉一条注释等于让下一个人有理由删掉那个字段。
 ///
 /// 逐字段比 `PhiSpaceCursor` 少三项，各有理由：没有 `hidden`（归属项的远端删除是**真删
@@ -121,6 +121,27 @@ struct PhiOwnedItemCursor: Codable, Equatable {
     var deleteDecidedAtMs: Int64 = 0
     /// 连续 `INVALID_MESSAGE` 拒绝次数（M3-2 §5.1 的 3 次放弃规则）。
     var deleteRejectRounds: Int = 0
+    /// R-exec-13 的补键自愈**连续被拒**的次数，判据与上面那条同款、计的是另一件事：
+    /// 「有基线、没有 `entityId`」的游标每一轮被无条件排进发布切片，而那条 create 每一轮
+    /// 都被服务端判 `INVALID_MESSAGE`。三轮之后**不再重新武装**（`PhiSyncEngine` 的
+    /// `rekeyRejectGiveUpRounds`），于是一条补不回键的游标不会变成一条永久的每轮提交。
+    ///
+    /// **放弃不写 `deletedAtMs`，也不动 `reconciled`**（与 tombstone 那一条的放弃相反）：
+    /// 那条身份在本机**还有活行**——补键自愈的判据里就有这一条。放弃的含义只是「这台机器
+    /// 不再主动去认那一行」，本机那一行照常存在、照常显示；它下一次被对端更新收割
+    /// （`applyOwnedKind` 的 harvest）或者被用户改一次内容（那时快照字节与基线不等，走的是
+    /// 正常的发布通路）就重新有了 id，`.applied` 把它清回 nil。
+    ///
+    /// **`Int?` 而不是 `Int = 0`，nil 与 0 同义，这不是风格选择。** 合成的 `init(from:)` 对一条
+    /// **非可选**属性调的是 `decode(_:forKey:)`——缺键就抛 `keyNotFound`，属性上写没写默认值
+    /// 都一样（实测：Swift 6.2 仍是这个行为）。而落盘的 JSON 是 `JSONEncoder` 写的，它只省略
+    /// 值为 nil 的可选字段，所以线上那些 822 时代的文件里**每一个非可选字段都在、新加的那个
+    /// 不在**。给这个结构体加一条非可选字段 ⇒ 每一台已有设备的 `pins-cursors.json` /
+    /// `bookmarks-cursors.json` 整份解不开 ⇒ `FileOwnedItemStateStore.load` 交出空表并报损
+    /// ⇒ 整类型重放 + 每一份 `reconciled` 基线当场丢失，正是本文件开头点名的那场静默灾难。
+    /// 加可选字段没有这个问题，也就不必为一条计数器去动 `formatVersion` 把全网的表硬切一次。
+    /// **下一个往这里加字段的人：要么加可选的，要么就得连 `formatVersion` 一起想清楚。**
+    var rekeyRejectRounds: Int?
     /// 这条实体的删除**已经定案**的时刻，**两个方向共用**：远端 tombstone 落地时写，本机
     /// tombstone 被服务端接受（`.applied`）时也写（§5.6）。只写远端那一半，会让本机删掉的
     /// 每一条书签在这张表里留一条永久游标，而一次大规模整理正是这张表最不该永久增长的时刻。

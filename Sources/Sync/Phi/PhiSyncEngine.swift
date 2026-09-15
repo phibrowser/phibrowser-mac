@@ -448,6 +448,11 @@ actor PhiSyncEngine {
     /// (§5.1). Same shape as `tombstoneHealAfterRounds`.
     private static let tombstoneRejectGiveUpRounds = 3
 
+    /// R-exec-13：补键自愈连续被拒多少轮之后**不再重新武装**。与上面那条同一个数字、同一条
+    /// 理由（一次瞬时失败不该定案，一条永远失败的条目不该每轮重发一遍），但放弃的动作完全
+    /// 不同——见 `PhiOwnedItemCursor.rekeyRejectRounds`。
+    private static let rekeyRejectGiveUpRounds = 3
+
     /// The server's `MaxCommitEntries` default is 500; batching well under it keeps one bad
     /// round small.
     private static let maxCommitEntriesPerBatch = 25
@@ -3317,14 +3322,25 @@ actor PhiSyncEngine {
         // 与版本（`applyOwnedCommitOutcome`）。Space 侧对同族状态（`.invalidMessage` 之后
         // 丢掉服务端三元组）走的就是这条通路，注释见 `applySpaceCommitOutcome`。
         //
-        // 三条限制让它不会变成一条常驻的重发规则：只碰**本机还有合格行**的身份（与快照取
+        // **第二个触发点是 `resetForNewStoreBirthday()`**（F-PK-1，不是缺陷）：NOT_MY_BIRTHDAY
+        // 之后它把每一条归属游标的 `entityId` / `version` / `server` 归零而**保留
+        // `reconciled`**，于是全表都进入这里的判据。这正是要的行为——新 store 上这些身份要么
+        // 不存在、要么是另一行，都该经 client tag 重新认一次。次序上也安全：同一次 reset 把
+        // `hasDrainedFullReplay` 置假，而 `ownedItemsPublishAllowed` 读的就是它，所以补键一条
+        // 都发不出去，直到新 store 的整类型重放排干；重放里到达的那些身份在 `harvest` 里就把
+        // 三元组补回去了（`applyOwnedKind`），真正走到补键的只剩**新 store 确实没有**的那些。
+        //
+        // 四条限制让它不会变成一条常驻的重发规则：只碰**本机还有合格行**的身份（与快照取
         // 交集）、只碰没有停放载荷也没有待发删除的游标（那两种本轮各有自己的出路）、补上
-        // 之后判据不再成立。本机没有行的那些补不了键——没有载荷可发；它们由对端的下一次
-        // 更新收割，或者随保留期过期。
+        // 之后判据不再成立、连续三轮被拒之后**不再重新武装**（R-exec-13 的放弃，见
+        // `PhiOwnedItemCursor.rekeyRejectRounds`）。本机没有行的那些补不了键——没有载荷可发；
+        // 它们由对端的下一次更新收割，或者随保留期过期。
         let unkeyed = Set(table.cursors.filter {
             $0.value.entityId.isEmpty && $0.value.reconciled != nil
                 && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
-                && !$0.value.pendingDelete && snapshot.entities[$0.key] != nil
+                && !$0.value.pendingDelete
+                && ($0.value.rekeyRejectRounds ?? 0) < Self.rekeyRejectGiveUpRounds
+                && snapshot.entities[$0.key] != nil
         }.keys)
         if !unkeyed.isEmpty, onlyIdentities == nil {
             // R12：只报条数与 kind，不报身份。
@@ -3459,6 +3475,7 @@ actor PhiSyncEngine {
             for (item, outcome) in zip(sent, outcomes) {
                 applyOwnedCommitOutcome(outcome, for: item, registration: registration,
                                         owner: snapshot.ownerUuids[item.identity],
+                                        rekeying: unkeyed.contains(item.identity),
                                         table: &table, counters: &counters,
                                         conflicted: &conflicted)
                 if case .applied = outcome, item.payload != nil,
@@ -3503,11 +3520,16 @@ actor PhiSyncEngine {
     }
 
     /// 发布段的五个基线写入点，与 `applySpaceCommitOutcome` 同一个形状。
+    ///
+    /// `rekeying` = 这一条是不是本轮 R-exec-13 的补键自愈**排进去**的（而不是一次普通的
+    /// 内容发布）。判据放在调用方而不是这里重算：`unkeyed` 是那一轮真正武装过的集合，而
+    /// 这个函数看到的游标此刻可能已经被同一批里更早的一条 outcome 改过。
     private func applyOwnedCommitOutcome(
         _ outcome: PhiCommitOutcome,
         for item: (identity: String, entry: PhiCommitEntry, payload: Data?),
         registration: OwnedKindRegistration,
         owner: String?,
+        rekeying: Bool,
         table: inout PhiOwnedItemTable,
         counters: inout OwnedRoundCounters,
         conflicted: inout Set<String>
@@ -3548,6 +3570,9 @@ actor PhiSyncEngine {
                     counters.resurrected += 1
                 }
                 cursor.deleteRejectRounds = 0
+                // 一次被接受的发布就是「这条身份此刻有 id 了」（上面刚写下）：R-exec-13 的
+                // 连败计数清零，与 `deleteRejectRounds` 逐字同款。补键成功走的正是这一支。
+                cursor.rekeyRejectRounds = nil
                 counters.pushed += 1
             }
         case .conflict:
@@ -3567,6 +3592,22 @@ actor PhiSyncEngine {
                 cursor.entityId = ""
                 cursor.version = 0
                 cursor.server = nil
+                // R-exec-13 的放弃（F-PK-2）。**只数补键自愈武装出来的那些**：一次普通的
+                // 内容发布被拒同样落到这一支，把它算进去会让一条正常工作的身份在三次无关的
+                // 瞬时拒绝之后失去补键资格。三轮之后不再重新武装，于是一条服务端**始终**判
+                // 非法的条目不会变成一条每 60 s 重发一次的永动机；放弃只停这一条自愈通路，
+                // 本机那一行、它的基线与它的归属一个字都不动（见 `rekeyRejectRounds`）。
+                guard rekeying else { break }
+                let rejected = (cursor.rekeyRejectRounds ?? 0) + 1
+                cursor.rekeyRejectRounds = rejected
+                if rejected == Self.rekeyRejectGiveUpRounds {
+                    // **一条，只在跨过那道线的那一轮**：此后这条身份不再进切片，也就不再有
+                    // 新的 outcome 落到这里，所以不需要「放弃之后不再每轮警告」的额外判断。
+                    // R12：只带 kind、tag 前缀与次数。
+                    AppLogWarn("[phi-sync] giving up on re-keying an owned-item cursor after "
+                               + "\(rejected) rejections kind=\(registration.label) "
+                               + "tag=\(String(item.entry.clientTagHash.prefix(8)))")
+                }
                 break
             }
             // 一条被拒的 tombstone 什么都不能证明：服务端在提交事务**之外**解析 tombstone 的
@@ -4002,6 +4043,10 @@ actor PhiSyncEngine {
                 cursor.version = 0
                 cursor.server = nil
                 cursor.deleteRejectRounds = 0
+                // R-exec-13：换了 store，之前那几次拒绝什么都不再证明。不清的话，一台在旧
+                // store 上放弃过补键的机器**在新 store 上**也永远不会去认那几行——而 reset
+                // 刚刚把全表的 `entityId` 清空，补键正是它们回到账户上的唯一通路。
+                cursor.rekeyRejectRounds = nil
                 table.cursors[identity] = cursor
             }
             writeOwnedTable(registration, table)

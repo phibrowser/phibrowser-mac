@@ -617,12 +617,20 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNil(table.cursors["b1"]?.reconciled)
         XCTAssertFalse(table.cursors["b1"]?.pendingTombstone ?? true)
         XCTAssertEqual(applyCallCount(access), 2, "③ 一个 Space 一次 apply，不是一次")
+        // A6：停放**新建**出来的游标同样带服务端三元组。共享 marker 已经推过那一页，这一版
+        // 实体永不重投——不在停放那一刻收割，下一轮落了地也补不上（`applyOwnedKind`）。
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1")
+        XCTAssertEqual(table.cursors["b1"]?.version, 20)
 
         access.importingSpaceIds = []
         await engine.pullOnce()
         table = await engine.ownedTableForTesting("bookmarks")
         XCTAssertEqual(access.rows.filter { $0.spaceId == "s-b" }.count, 2, "④ 下一轮落地")
         XCTAssertNotNil(table.cursors["b1"]?.reconciled)
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1",
+                       "⑤ 停放落地之后身份还在：这一轮 `b1` 没有任何实体到达，三元组只能是"
+                       + "停放那一轮留下的")
+        XCTAssertEqual(table.cursors["b1"]?.version, 20)
     }
 
     /// CASE 6.10c-3 — 三种落地失败各走各的路，不共用一条笼统分支。
@@ -3629,6 +3637,14 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNotNil(table.cursors["lx:pu-1"]?.pendingApply,
                         "⑧ 停放不丢东西：marker 已经推过那一页，载荷记在游标上")
         XCTAssertNotNil(table.cursors["ly:pu-1"]?.pendingApply)
+        // A6：**停放同样收割服务端三元组。** 这两条身份的游标是这一轮由停放**新建**出来的，
+        // 而共享 marker 已经推过那一页 —— 不在这里收割，这一版实体永不重投，游标再也补不上
+        // 身份（Mac B 2026-09-14，build 822）。
+        XCTAssertEqual(table.cursors["lx:pu-1"]?.entityId, "srv-lx",
+                       "⑨ 停放建出来的游标带着到达那一条的 entity id")
+        XCTAssertEqual(table.cursors["lx:pu-1"]?.version, 10)
+        XCTAssertEqual(table.cursors["ly:pu-1"]?.entityId, "srv-ly")
+        XCTAssertEqual(table.cursors["ly:pu-1"]?.version, 11)
     }
 
     /// CASE 9b.4b（R-exec-12）— 上一条的下一轮：停放的两条以 **update** 落地，不是 create，
@@ -3668,6 +3684,112 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                                                           else { return false } })
         XCTAssertNil(table.cursors["lx:pu-1"]?.pendingApply, "⑦ 停放解开了")
         XCTAssertNil(table.cursors["ly:pu-1"]?.pendingApply)
+        // **落地之后的游标必须与「直接落地的那一条」逐字一样。** 这一轮没有任何实体到达
+        // （第二页是空的），所以 `plan.harvest` 里一条记录都没有：三元组只能是停放那一轮
+        // 留下的。少了它，这两条身份此后既发不出 tombstone 也只能以 `baseVersion == 0`
+        // 盲写发布。
+        XCTAssertEqual(table.cursors["lx:pu-1"]?.entityId, "srv-lx",
+                       "⑧ 停放落地之后 entity id 还在")
+        XCTAssertEqual(table.cursors["lx:pu-1"]?.version, 10, "⑨ 版本就是到达那一条的版本")
+        XCTAssertEqual(table.cursors["ly:pu-1"]?.entityId, "srv-ly")
+        XCTAssertEqual(table.cursors["ly:pu-1"]?.version, 11)
+        XCTAssertNotNil(table.cursors["lx:pu-1"]?.reconciled, "⑩ 基线照常写下")
+    }
+
+    /// CASE 9b.4e（R-exec-1 / A6）— 停放落地之后**本机取消固定**：发出**一条** tombstone，
+    /// 带着那条实体真正的 entity id 与基版本。
+    ///
+    /// 这是 9b.4b 的下一步，也是这条缺陷在现场的样子（Mac B 2026-09-14，build 822，步骤
+    /// 6c）：作用域迁移让每条 pin 换了身份，新身份的游标全部由**停放**新建，而停放那一支
+    /// 不收割服务端三元组。七条游标于是以 `entityId == "" / version == 0` 落盘并**一直**
+    /// 保持这个样子——共享 marker 早已推过那一页，那一版实体永不重投。用户随后在 Test2 里
+    /// 取消固定一条 pin，`§4.7` 的差分照常判出删除，而 §9.1 的第二道闸看见 `entityId == ""`
+    /// 就把它就地收尾：**一条 tombstone 都没发出去**，对端那一条 pin 从此没有任何设备能删掉。
+    ///
+    /// 防的是什么：断言在游标上（9b.4b）挡不住这一条——游标坏掉的后果要等到**下一次本机
+    /// 删除**才现形，而那正是用户能看见的那一刻。
+    func testAnUnpinAfterAParkedLandingTombstonesTheEntityItLandedFrom() async throws {
+        let pinAccess = migratingPinAccess()
+        pinAccess.midRoundMigration = (onAccountScopeRead: 1, run: applyFollowerMigration)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 三轮：① 作用域挡下 ⇒ 全部停放；② 停放落地；③ 本机取消固定 ⇒ 差分发 tombstone。
+        client.scriptedPages = [profileScopedPinPage(), page([]), page([])]
+        // 账户上那两行确实在，id 与版本与脚本页里那两条实体对齐——第 ③ 轮那条 tombstone 走
+        // 的是假件的 update 支（带 id + 基版本），它要认得出这一行才答得出 `.applied`。
+        client.seed(tagHash: pinHash("lx", owner: "pu-1"), ciphertext: Data(), version: 10,
+                    entityId: "srv-lx")
+        client.seed(tagHash: pinHash("ly", owner: "pu-1"), ciphertext: Data(), version: 11,
+                    entityId: "srv-ly")
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        // 用户在 UI 上取消固定 LX：本机那一行没了，LY 原样留着。
+        pinAccess.rows.removeAll { $0.lineageId == "LX" }
+        await engine.pullOnce()
+
+        let tombstones = pinCommits(client).filter(\.deleted)
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(tombstones.count, 1, "① 恰好一条 tombstone")
+        XCTAssertEqual(tombstones.first?.entityId, "srv-lx",
+                       "② 带的是那条实体的 entity id，不是空串")
+        XCTAssertEqual(tombstones.first?.baseVersion, 10,
+                       "③ 基版本是停放那一轮收割到的版本")
+        XCTAssertEqual(tombstones.first?.clientTagHash, pinHash("lx", owner: "pu-1"))
+        XCTAssertEqual(counters?.tombstones, 1)
+        XCTAssertNotNil(table.cursors["lx:pu-1"]?.deletedAtMs,
+                        "④ 服务端接受之后删除定案")
+        XCTAssertNil(table.cursors["ly:pu-1"]?.deletedAtMs, "⑤ 还有行的那条一个字都不动")
+    }
+
+    /// CASE 9b.4f（R-exec-1）— **已经坏掉的表**的补键自愈：一条「有基线、没有 entityId」
+    /// 的游标被无条件排进发布切片，经 client tag 的唯一索引认回账户上那一行。
+    ///
+    /// 为什么需要它：9b.4e 修的是「不再写出这种游标」，而 build 822 已经在真机上写下了七条。
+    /// 那些机器**自己修不好**——那一版实体永不重投，快照字节又恰好等于基线（那条行就是从
+    /// 账户上落下来的），于是既收不到新的 id，也没有任何东西会让它重发。
+    ///
+    /// 断言③是这条自愈的要害：服务端的 `ON CONFLICT (client_tag_hash) DO UPDATE` 按 tag
+    /// 认行，所以这次 create **打在账户上那一行上**，回来的是它原本的 id，不是一条新实体。
+    func testABaselinedCursorWithNoEntityIdRepublishesToReKeyItself() async throws {
+        let created = Date(timeIntervalSince1970: 1)
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "px", spaceId: "space-a", index: 0,
+                     createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        // build 822 写出来的那种游标：基线有、归属有，服务端三元组是空的。
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "", version: 0, owner: "su-1")
+        let client = FakePhiSyncClient()
+        // 账户上那一行确实在，id 是 `srv-lx`。**空页**：它这一轮不会被投递（marker 早已
+        // 推过那一页），所以游标补不到三元组的唯一通路就是发布那一侧。
+        client.seed(tagHash: pinHash("lx", owner: "su-1"), ciphertext: Data(), version: 10,
+                    entityId: "srv-lx")
+        client.scriptedPages = [page([])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = pinCommits(client)
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(commits.count, 1,
+                       "① 快照字节等于基线，可它照样发了一条——补键是发布的唯一通路")
+        XCTAssertNil(commits.first?.entityId, "② 以 create 出门：本机手上没有 id 可带")
+        XCTAssertEqual(commits.first?.deleted, false)
+        XCTAssertEqual(table.cursors["lx:su-1"]?.entityId, "srv-lx",
+                       "③ 认回的是账户上那一行原本的 id，不是一条新实体")
+        XCTAssertGreaterThan(table.cursors["lx:su-1"]?.version ?? 0, 0, "④ 版本也补上了")
+        XCTAssertNotNil(table.cursors["lx:su-1"]?.reconciled)
     }
 
     /// CASE 9b.4c（R-exec-12 / §11.2）— **纯 push 轮**：没有任何入站，于是 `plan` 与落地都

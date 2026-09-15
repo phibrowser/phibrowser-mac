@@ -284,6 +284,72 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         let wrapper: PinnedScopeVariantWebContentWrapperSpy
     }
 
+    /// 现场那一串动作（Mac B 2026-09-15 01:20，build 825）：Profile → Space 的作用域切换，
+    /// 紧接着取消固定一条 pin。侧栏在第二步崩掉了。
+    ///
+    /// 钉的是 `pinnedTabs` 这一侧的不变量：**一条物理行一个运行时 `Tab`，同一个对象不许出现
+    /// 两次**。迁移会把迁移前那些 `Tab` 原地改指向新行（为了保住活着的 WebContents），任何
+    /// 漏网的重复都会直接进到侧栏那份 diffable 快照，而重复标识符在那里不是瑕疵、是崩溃。
+    func testAScopeMigrationThenAnUnpinKeepsOneRuntimeTabPerRow() async throws {
+        let store = try makeStore()
+        let profile = try seedProfileAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "profile-one", lineageId: "lineage-one",
+                            profile: profile, title: "One", url: "https://one.example",
+                            index: 0)
+        try insertPinnedTab(in: store, guid: "profile-two", lineageId: "lineage-two",
+                            profile: profile, title: "Two", url: "https://two.example",
+                            index: 1)
+
+        let state = BrowserState(windowId: 1, localStore: store,
+                                 profileId: "Default", spaceId: "space-a")
+        XCTAssertEqual(state.pinnedTabs.count, 2)
+        let runtimeOne = try runtimeTab(in: state, lineageId: "lineage-one")
+        let oldGuid = try XCTUnwrap(runtimeOne.guidInLocalDB)
+        let binding = bindLiveTab(runtimeOne, to: state, chromiumGuid: 101)
+
+        try await store.changePinnedTabScope(to: .space, preferredProfileId: "Default",
+                                             preferredSpaceId: "space-a")
+        try waitUntil(describing: "the migrated Space rows reach the window") {
+            state.pinnedTabs.count == 2 && runtimeOne.guidInLocalDB != oldGuid
+        }
+        assertUniquePinnedRuntimeTabs(state, expectedCount: 2)
+        XCTAssertTrue(state.pinnedTabs.contains { $0 === runtimeOne },
+                      "① 迁移保住了那个活着的运行时 tab，没有换成一个新对象")
+        XCTAssertEqual(binding.liveTab.guidInLocalDB, runtimeOne.guidInLocalDB,
+                       "② 活标签页跟着迁到了同一条新行上")
+
+        // 第二步：取消固定另一条 —— 现场就是在这一步崩的。
+        let victim = try XCTUnwrap(
+            state.pinnedTabs.first(where: { $0.pinnedLineageId == "lineage-two" })?.guidInLocalDB
+        )
+        store.removeActivePinnedTab(guid: victim)
+        await store.performBackgroundWriteAndWait { _ in }
+        try waitUntil(describing: "the unpin reaches the window") {
+            state.pinnedTabs.count == 1
+        }
+
+        assertUniquePinnedRuntimeTabs(state, expectedCount: 1)
+        XCTAssertTrue(state.pinnedTabs.first === runtimeOne,
+                      "③ 活下来的还是那一个运行时 tab")
+    }
+
+    private func assertUniquePinnedRuntimeTabs(
+        _ state: BrowserState,
+        expectedCount: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(state.pinnedTabs.count, expectedCount, file: file, line: line)
+        let guids = state.pinnedTabs.compactMap(\.guidInLocalDB)
+        XCTAssertEqual(guids.count, state.pinnedTabs.count,
+                       "每一条 pin 都绑着一条物理行", file: file, line: line)
+        XCTAssertEqual(Set(guids).count, guids.count,
+                       "没有两个运行时 tab 指着同一条行", file: file, line: line)
+        let objects = state.pinnedTabs.map { ObjectIdentifier($0) }
+        XCTAssertEqual(Set(objects).count, objects.count,
+                       "同一个对象没有出现两次", file: file, line: line)
+    }
+
     private func makeStore() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

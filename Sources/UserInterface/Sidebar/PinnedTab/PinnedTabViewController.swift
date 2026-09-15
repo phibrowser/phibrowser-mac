@@ -183,9 +183,13 @@ class PinnedTabViewController: NSViewController {
         }
     }
 
-    private enum Item: Hashable {
+    enum Item: Hashable {
         case extensionItem(PinnedTabItemModel)
         case tabItem(PinnedTabSnapshotItem)
+
+        static func tab(_ tab: Tab) -> Item {
+            .tabItem(PinnedTabSnapshotItem(tab: tab))
+        }
         case splitItem(PinnedSplitGroupItem)
 
         func hash(into hasher: inout Hasher) {
@@ -793,15 +797,46 @@ class PinnedTabViewController: NSViewController {
         state.pinnedSplitDBPair(forPinnedTab: tab) == nil ? 1 : 2
     }
 
+    /// Drops repeated item identifiers, keeping the first.
+    ///
+    /// `NSDiffableDataSourceSnapshot` requires identifiers to be unique across the
+    /// **whole** snapshot, not per section, and it does not fail politely: a repeat
+    /// throws out of Foundation's ordered-set diffing with an uncaught
+    /// `NSInvalidArgumentException`, which is a hard crash. Every producer above is
+    /// supposed to guarantee uniqueness already, so a non-zero `dropped` here means
+    /// one of them is wrong — log it and render the sidebar anyway. R12: counts only.
+    /// `static` and not `private` so `PinnedTabSnapshotIdentityTests` can drive it
+    /// without standing up a collection view; it reads nothing off `self`.
+    static func deduplicatedItems(_ items: [Item], seen: inout Set<Item>, dropped: inout Int) -> [Item] {
+        var unique: [Item] = []
+        unique.reserveCapacity(items.count)
+        for item in items {
+            guard seen.insert(item).inserted else { dropped += 1; continue }
+            unique.append(item)
+        }
+        return unique
+    }
+
     private func applySnapshot(animatingDifferences: Bool = true, completion: (() -> Void)? = nil) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections(Section.allCases)
-        if !pinnedExtensionItems.isEmpty {
-            snapshot.appendItems(pinnedExtensionItems.map { .extensionItem($0) }, toSection: .extensions)
+        // One `seen` set across both sections: the uniqueness requirement spans the
+        // whole snapshot, not each section.
+        var seen = Set<Item>()
+        var dropped = 0
+        let extensionItems = Self.deduplicatedItems(pinnedExtensionItems.map { .extensionItem($0) },
+                                                   seen: &seen, dropped: &dropped)
+        if !extensionItems.isEmpty {
+            snapshot.appendItems(extensionItems, toSection: .extensions)
         }
-        let tabSectionItems = buildTabSectionItems()
+        let tabSectionItems = Self.deduplicatedItems(buildTabSectionItems(),
+                                                    seen: &seen, dropped: &dropped)
         if !tabSectionItems.isEmpty {
             snapshot.appendItems(tabSectionItems, toSection: .tabs)
+        }
+        if dropped > 0 {
+            AppLogWarn("[PinnedTab] dropped \(dropped) duplicate item identifier(s) "
+                       + "before applying the sidebar snapshot")
         }
 
         var newSplitPairs: [String: String] = [:]

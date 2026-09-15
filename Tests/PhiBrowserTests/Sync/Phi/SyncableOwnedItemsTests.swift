@@ -2263,3 +2263,77 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
         XCTAssertFalse(known)
     }
 }
+
+// MARK: - 外部评审回归：入站合并的本机那一侧（§4.3 / §6.2）
+
+extension SyncableOwnedItemsTests {
+
+    /// 本机那一行**此刻**的出站投影，即 `plan` 的 `context.localProjections` 要的那份字节。
+    /// 构造方式与引擎侧的 `bookmarkLocalProjections` 逐字相同（`project` + 基线盖戳）。
+    private func projectionBytes(of row: PhiLocalBookmark,
+                                 baseline: Phi_PhiBookmarkEntity,
+                                 parentIdentity: String? = nil,
+                                 now: Int64) throws -> Data {
+        let projected = try XCTUnwrap(BookmarkKind.project(row, resolve: resolve, scope: nil,
+                                                          parentIdentity: parentIdentity))
+        let stamped = BookmarkKind.stamp(projected, baseline: baseline, local: row,
+                                         rank: BookmarkKind.rank(of: baseline), now: now)
+        return try BookmarkKind.envelope(stamped).serializedData()
+    }
+
+    /// 一条**还没发布**的本机编辑，遇上对端改了同一条实体的**另一个**字段。
+    ///
+    /// 防的是什么：把 `reconciled` 当成合并的本机那一侧，那次本机编辑在参与比较的两条实体
+    /// 里根本没有代表——它的字段在基线里仍是旧值旧戳。合并结果于是带着**旧值**回来，而
+    /// `.update` 的补丁是四个内容字段一起写的（`bookmarkPatch`），那次编辑被静默改写：没有
+    /// commit、没有计数，两台机器都认为自己收敛了。
+    func testAnUnpublishedLocalEditSurvivesARemoteEditOfAnotherField() throws {
+        let baseline = bookmarkPayload(uuid: "b1", title: "T", url: "https://old.example")
+        // 本机把 URL 改了，还没发布；标题一个字没动。
+        let edited = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-a",
+                                              title: "T",
+                                              url: URL(string: "https://new.example")!,
+                                              createdDate: Date(timeIntervalSince1970: 1),
+                                              contentUpdatedDate: Date(timeIntervalSince1970: 400))
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline)
+        // 对端只改了标题。
+        let inbound = bookmarkPayload(uuid: "b1", title: "对端标题",
+                                      url: "https://old.example", contentStamp: 200)
+        var context = OwnedItemPlanContext()
+        context.localProjections = ["b1": try projectionBytes(of: edited, baseline: baseline,
+                                                              now: 500)]
+
+        let plan = planned([arrival(inbound)], table: table, context: context)
+
+        let landed = stepEntity(plan, "b1", .update)
+        XCTAssertEqual(landed?.title.stringValue, "对端标题", "① 对端赢下它改过的那个字段")
+        XCTAssertEqual(landed?.url.stringValue, "https://new.example",
+                       "② 本机那次还没发布的编辑一个字都不被改写")
+        XCTAssertTrue(plan.mustRepublish.contains("b1"),
+                      "③ 本机赢了字段 ⇒ 这条实体必须重新发布，否则账户永远停在旧 URL 上")
+    }
+
+    /// 反方向：本机行与基线逐字相同（没有任何未发布的编辑）⇒ 远端整条赢，**零重发**。
+    ///
+    /// 防的是什么：把「有投影」本身当成「本机赢了」的实现会让每一条入站更新都多一条
+    /// commit，两台机器互相重发，永不安静。
+    func testAnInboundUpdateOnACleanRowRepublishesNothing() throws {
+        let baseline = bookmarkPayload(uuid: "b1", title: "T")
+        let clean = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-a",
+                                             title: "T",
+                                             createdDate: Date(timeIntervalSince1970: 1))
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline)
+        let inbound = bookmarkPayload(uuid: "b1", title: "对端标题", contentStamp: 200)
+        var context = OwnedItemPlanContext()
+        context.localProjections = ["b1": try projectionBytes(of: clean, baseline: baseline,
+                                                              now: 500)]
+
+        let plan = planned([arrival(inbound)], table: table, context: context)
+
+        let landed = stepEntity(plan, "b1", .update)
+        XCTAssertEqual(landed?.title.stringValue, "对端标题")
+        XCTAssertTrue(plan.mustRepublish.isEmpty, "远端整条赢 ⇒ 没有任何东西要发回账户")
+    }
+}

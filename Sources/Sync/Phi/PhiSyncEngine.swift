@@ -174,6 +174,10 @@ struct OwnedPlanInput {
     var maps = OwnedOwnerMaps()
     /// 本轮到达的 tombstone 身份 ∪ 表里还停着的 `pendingTombstone`。
     var tombstoned: Set<String> = []
+    /// 本轮那一次时钟读数。适配层拿它按 §4.2 第 4 条给本机行的投影盖戳——入站合并的本机
+    /// 那一侧必须是「这一轮的快照会发布的那一份」（`OwnedItemPlanContext.localProjections`），
+    /// 而那份投影里**变过的字段盖 `now`**。
+    var now: Int64 = 0
 }
 
 /// `plan` 的产出，外加只有适配层算得出的那几个计数。
@@ -3067,7 +3071,8 @@ actor PhiSyncEngine {
             OwnedPlanInput(arrivals: arrivals.map {
                                (payload: $0.payload, entityId: $0.entityId, version: $0.version)
                            },
-                           parked: parked, table: table, maps: maps, tombstoned: tombstoned))
+                           parked: parked, table: table, maps: maps, tombstoned: tombstoned,
+                           now: now()))
         counters.adopted += output.adopted
         counters.unmatchedFolders += output.unmatchedFolders
         counters.unmergeablePairs += output.unmergeablePairs
@@ -4394,6 +4399,10 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     context.adoptedMerges = adoption.merges
     context.adoptedFieldWrites = adoption.fieldWrites
     context.tombstonedIdentities = input.tombstoned
+    context.localProjections = bookmarkLocalProjections(
+        for: Set(arrivals.map { BookmarkKind.identity(of: $0.entity) })
+            .union(input.parked.keys),
+        table: input.table, resolve: resolve, now: input.now, state: state)
     context.liveLocalParents = Set(state.locals.filter(\.isFolder).compactMap(\.syncId))
     context.deletedSubtree = bookmarkDeletedSubtree(input.tombstoned, state: state)
     out.plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals,
@@ -4403,7 +4412,52 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     out.adopted = adoption.adopted
     out.unmatchedFolders = adoption.unmatchedFolders
     out.unmergeablePairs = adoption.unmergeablePairs
-    out.mustRepublish = adoption.mustRepublish
+    // 两条来源、同一条规则（§6.2 的「本机赢了字段就要发布出去」）：认领那一批由 `adopt`
+    // 算，已经在账户上的那些由 `plan` 算。
+    out.mustRepublish = adoption.mustRepublish.union(out.plan.mustRepublish)
+    return out
+}
+
+/// 身份 -> 本机那一行**此刻**的出站投影，喂给 `OwnedItemPlanContext.localProjections`。
+///
+/// 盖戳走的是 `snapshot` 那一条路（`BookmarkKind.stamp` + 基线），不是 `adopt` 那一条：
+/// **变过的字段盖 `now`、没变的沿用基线的戳**（§4.2 第 4 条）。用 `adopt` 那条无基线规则
+/// （整组内容字段一起盖 `contentUpdatedDate`）会让一条**没被本机动过**的字段也带上一个新鲜
+/// 的戳，于是对端刚做的改名被一个本机从没改过的旧值赢掉——方向与它要修的缺陷正好相反。
+///
+/// 三处跳过，每一处都让那条身份退回「与基线合并」的老路：
+/// - 本机没有这一行（纯远端新建 / 已被删）；
+/// - 游标没有基线（认领那一批、以及游标文件丢失后的重放）——没有基线时 `stamp` 会把
+///   `location` / `rank` 盖成 0，那是 §4.2 第 5 条给**未同步行**的规则；
+/// - 父行还没有身份：那条子行的 `parent_uuid` 填不出来，投影出来的会是一条根级实体，
+///   它的 `location` 值与真实位置不同，合并出来的位置于是是错的。
+@MainActor
+private func bookmarkLocalProjections(for identities: Set<String>,
+                                      table: PhiOwnedItemTable,
+                                      resolve: OwnerResolver,
+                                      now: Int64,
+                                      state: BookmarkSyncRoundState) -> [String: Data] {
+    var out: [String: Data] = [:]
+    for identity in identities {
+        guard let guid = state.identityToGuid[identity], let row = state.rowByGuid[guid],
+              let baselineBytes = table.cursors[identity]?.reconciled,
+              let baselineEnvelope = try? Phi_PhiEntity(serializedBytes: baselineBytes),
+              let baseline = BookmarkKind.entity(from: baselineEnvelope) else { continue }
+        var parentIdentity: String?
+        if let parentGuid = row.parentGuid {
+            guard let parent = state.rowByGuid[parentGuid]?.syncId else { continue }
+            parentIdentity = parent
+        }
+        guard let projected = BookmarkKind.project(row, resolve: resolve, scope: nil,
+                                                   parentIdentity: parentIdentity) else { continue }
+        // rank 取基线那一个：本轮的 rank 只有 `snapshot` 的 `assignRanks` 算得出来，而入站
+        // 这一侧不该为了合并去跑一次账户级排序。于是一次**还没发布**的本机纯排序在这一轮
+        // 输给对端的 rank——下一轮的快照照常把它当成一次本机变化重新发出去。
+        let stamped = BookmarkKind.stamp(projected, baseline: baseline, local: row,
+                                         rank: BookmarkKind.rank(of: baseline), now: now)
+        guard let bytes = try? BookmarkKind.envelope(stamped).serializedData() else { continue }
+        out[identity] = bytes
+    }
     return out
 }
 
@@ -5279,6 +5333,9 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     }
     var context = OwnedItemPlanContext()
     context.tombstonedIdentities = input.tombstoned
+    context.localProjections = pinLocalProjections(
+        for: Set(arrivals.map { PinKind.identity(of: $0.entity) }).union(input.parked.keys),
+        table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
     // §7.3 的判据交给纯函数模块：不一致 ⇒ 零 step、入站实体全部停放。**`liveLocalParents`
     // 与 `deletedSubtree` 留空**：pin 是平的，没有父，A9 的那两个合取项对它退化。
     context.localScope = state.localScope
@@ -5289,6 +5346,40 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
                                        context: context)
     // §11.2 的 `scope_mismatch`：这一轮 pin 段的发布半边有没有因为作用域不一致被跳过。
     out.scopeMismatch = context.scopeMismatch
+    // §6.2 的那条规则对 pin 同样成立（pin 不走 §6 的**认领**，但「本机赢了字段就要发布
+    // 出去」讲的是合并，不是认领）。
+    out.mustRepublish = out.plan.mustRepublish
+    return out
+}
+
+/// `bookmarkLocalProjections` 的 pin 半边，三点差别都来自「pin 是平的」：没有父身份要解，
+/// 身份是**算出来**的（所以同一条身份可能有多条行——与 `landPins` 逐字同一条「留第一条」
+/// 判据），rank 同样取基线那一个。
+@MainActor
+private func pinLocalProjections(for identities: Set<String>,
+                                 table: PhiOwnedItemTable,
+                                 resolve: OwnerResolver,
+                                 now: Int64,
+                                 state: PinSyncRoundState) -> [String: Data] {
+    guard !identities.isEmpty else { return [:] }
+    var rowOf: [String: PhiLocalPin] = [:]
+    for row in state.locals {
+        guard let identity = PinKind.identity(of: row, resolve: resolve, scope: state.localScope),
+              identities.contains(identity), rowOf[identity] == nil else { continue }
+        rowOf[identity] = row
+    }
+    var out: [String: Data] = [:]
+    for (identity, row) in rowOf {
+        guard let baselineBytes = table.cursors[identity]?.reconciled,
+              let baselineEnvelope = try? Phi_PhiEntity(serializedBytes: baselineBytes),
+              let baseline = PinKind.entity(from: baselineEnvelope),
+              let projected = PinKind.project(row, resolve: resolve, scope: state.localScope,
+                                              parentIdentity: nil) else { continue }
+        let stamped = PinKind.stamp(projected, baseline: baseline, local: row,
+                                    rank: PinKind.rank(of: baseline), now: now)
+        guard let bytes = try? PinKind.envelope(stamped).serializedData() else { continue }
+        out[identity] = bytes
+    }
     return out
 }
 

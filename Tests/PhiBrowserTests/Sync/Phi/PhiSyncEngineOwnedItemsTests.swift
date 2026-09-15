@@ -3962,3 +3962,81 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                        "作用域稳住时这一轮本来就该发两条——9b.4c 挡掉的正是这两条")
     }
 }
+
+// MARK: - 外部评审回归：未发布的本机编辑
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// spec §12.1 引擎第 8 条的另一半：本机那处**还没推送**的改名，遇上对端改了同一条实体
+    /// 的**另一个**字段（第 8 条里对端做的是移动，于是根本不产出 `.update`，这条缺陷看不见）。
+    ///
+    /// 防的是什么：合并若拿 `reconciled` 当本机那一侧，那次改名在参与比较的两条实体里没有
+    /// 任何代表，合并结果带回基线里的**旧标题**，而 `.update` 的补丁四个内容字段一起写
+    /// ——用户刚改的名字被静默改写，没有 commit、没有计数。
+    func testAnUnpublishedLocalRenameSurvivesARemoteEditOfAnotherField() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "本机新标题",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        // 账户与基线上都还是旧标题：那次改名本机还没发出去。
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "旧标题"),
+                                                    entityId: "srv-b1", version: 7)
+        let client = FakePhiSyncClient()
+        // 对端改的是 URL，标题一个字没动（内容字段共用一个戳，所以标题也被重盖了一次）。
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", title: "旧标题", url: "https://peer.example",
+                            contentStamp: 2_000_000, createdAtMs: Self.rowCreatedAtMs),
+            uuid: "b1", version: 42, entityId: "srv-b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let row = access.rows.first { $0.guid == "G1" }
+        XCTAssertEqual(row?.title, "本机新标题", "① 本机那次还没发布的改名不被改写")
+        XCTAssertEqual(row?.url.absoluteString, "https://peer.example",
+                       "② 对端那次真实编辑照常落地")
+        let commits = bookmarkCommits(client)
+        let sent = commits.first.flatMap(committedBookmark)
+        XCTAssertEqual(commits.count, 1, "③ 本机赢下的字段要回账户（`mustRepublish`）")
+        XCTAssertEqual(sent?.title.stringValue, "本机新标题", "③ 带的是本机那个标题")
+        XCTAssertEqual(sent?.url.stringValue, "https://peer.example", "③ 也带着对端那个 URL")
+        XCTAssertEqual(commits.first?.baseVersion, 42, "④ 发布打在刚拉到的那一版上")
+    }
+
+    /// pin 那一侧的同一条（评审说两种 kind 都能复现）。
+    func testAnUnpublishedLocalPinRenameSurvivesARemoteUrlEdit() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakePinAccess(scope: .profile, account: .profile, rows: [
+            .fixture(lineageId: "LX", guid: "P1", spaceId: nil, profileId: "Default",
+                     title: "本机新标题", createdDate: Date(timeIntervalSince1970: 1_000),
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["lx:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", title: "旧标题", createdAtMs: 1_000_000),
+            entityId: "srv-p1", version: 7)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", title: "旧标题",
+                                             url: "https://peer.example",
+                                             contentStamp: 2_000_000, createdAtMs: 1_000_000)),
+                         tag: pinTag("lx"), version: 42, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let row = access.rows.first { $0.guid == "P1" }
+        XCTAssertEqual(row?.title, "本机新标题", "① 未发布的本机改名不被改写")
+        XCTAssertEqual(row?.url.absoluteString, "https://peer.example", "② 对端的编辑照常落地")
+        let sent = pinCommits(client).first.flatMap(committedPin)
+        XCTAssertEqual(pinCommits(client).count, 1, "③ 本机赢下的字段要回账户")
+        XCTAssertEqual(sent?.title.stringValue, "本机新标题")
+    }
+}

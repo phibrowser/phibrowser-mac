@@ -65,7 +65,12 @@ struct OwnedItemPlanContext {
     /// §7.3 的作用域不一致成立：`plan` 产出零 step、把入站实体**全部**塞进 `parked`。
     var localScope: PinnedTabScope? = nil
     var accountScope: PinnedTabScope? = nil
+    /// 轮首之后作用域**动过**（R-exec-12）：两个值在轮首取样时还一致，落地之前再读已经不是
+    /// 那一对了。轮内那份本机投影因此过期，与「两者不相等」同等处理——差别只在它证明的是
+    /// 「投影过期」而不是「本机与账户不一致」，而 §7.3 的处置对两者是同一个。
+    var scopeMovedMidRound = false
     var scopeMismatch: Bool {
+        if scopeMovedMidRound { return true }
         guard let localScope, let accountScope else { return false }
         return localScope != accountScope
     }
@@ -371,8 +376,24 @@ enum SyncableOwnedItems {
         }
 
         var candidates: [(identity: String, local: K.Local, entity: K.Entity, group: String)] = []
+        // **一条身份至多一个候选**（R-exec-12 / D-B）。`locals` 是一行一条，而 pin 的身份是
+        // `(lineage, owner)` **推导**出来的（§3.2 / R-M3-3-15），所以两条本机行完全可能算出
+        // 同一条身份——书签那一侧靠 `syncId` 那一列，结构上产不出这个形状。
+        //
+        // 不去重的后果不是「多发一条」，是**永不收敛**：下面那个 rank 通道按行喂
+        // `assignRanks`，于是同一个 uuid 在 `order` 里出现两次；重复的那一个按定义不在严格
+        // 递增的保留集里，每一轮都被派一个新铸的 `rankBetween`，而 `assigned` 按 uuid 记账
+        // ⇒ 它**盖掉**保留的那一条刚拿到的 rank。这条身份的发布字节于是每一轮都与基线不同
+        // （`PhiSyncEngine` 的发布判据是裸字节比较），每一轮都提交一次，分数键一轮长一个
+        // 字符——Mac B 2026-09-14 那一分钟 25 轮、922 → 934 字节的提交循环就是这个。
+        //
+        // 留**第一条**：`allPins()` 按 `(ownerKey, index, guid)` 有序，于是留下的正是
+        // `PinKind.normalizeVariants` 折叠时留下的同一条行。正常情况下身份本来就互不相同，
+        // 这一趟一条都不丢。
+        var claimedIdentities: Set<String> = []
         for (offset, local) in locals.enumerated() {
             guard chainEligible(offset), let identity = identityOf[offset] else { continue }
+            guard claimedIdentities.insert(identity).inserted else { continue }
             let parentIdentity = K.localEdge(of: local).parentId.flatMap { identityByLocalId[$0] }
             // 归属已经在第一遍判过，所以这一支是防御性的：投影再失败就静默跳过，绝不
             // 二次计进任何一个排除计数。

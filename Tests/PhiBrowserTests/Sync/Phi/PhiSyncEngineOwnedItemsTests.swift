@@ -3538,4 +3538,188 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(deviceB["LB"], 1)
         XCTAssertEqual(deviceA, deviceB, "③ 两台设备对同一对 pin 收敛到同一个次序")
     }
+
+    // MARK: - CASE 9b.4：轮中作用域迁移（R-exec-12 / D-A）
+
+    /// 一台正要跟随迁移的机器：Space 作用域、账户也是 Space，两条 Space 形状的行。
+    /// 入站的是**对端已经翻到 Profile 之后**发布的那两条实体（owner 是 profile uuid）。
+    private func migratingPinAccess() -> FakePinAccess {
+        // `createdDate` 与 `pinPayload` 的 `createdAtMs`（1_000 **毫秒**）对齐，理由同上。
+        let created = Date(timeIntervalSince1970: 1)
+        return FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "px-space", spaceId: "space-a",
+                     profileId: "Default", index: 0, createdDate: created),
+            .fixture(lineageId: "LY", guid: "py-space", spaceId: "space-a",
+                     profileId: "Default", index: 1, createdDate: created),
+        ])
+    }
+
+    /// Task 8 的跟随迁移落地之后那台机器的样子：同两条 lineage，Profile 形状，新的物理
+    /// guid（`migratePinnedTabs` 重建整批行），两个作用域都成了 `.profile`。
+    @MainActor
+    private func applyFollowerMigration(_ access: FakePinAccess) {
+        let created = Date(timeIntervalSince1970: 1)
+        access.scope = .profile
+        access.account = .profile
+        access.rows = [
+            .fixture(lineageId: "LX", guid: "px-profile", spaceId: nil,
+                     profileId: "Default", index: 0, createdDate: created),
+            .fixture(lineageId: "LY", guid: "py-profile", spaceId: nil,
+                     profileId: "Default", index: 1, createdDate: created),
+        ]
+        // 迁移重建了整批物理行，本轮那份快照与它已经没有关系了（生产实现只清不重读）。
+        access.beginRound()
+    }
+
+    /// 对端翻到 Profile 之后发布的那两条实体，owner 是 profile uuid。
+    private func profileScopedPinPage() -> FakePhiSyncClient.Page {
+        page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "pu-1")),
+                         tag: pinTag("lx", owner: "pu-1"), version: 10, entityId: "srv-lx",
+                         key: key),
+            remoteEntity(envelope(pinPayload(lineage: "ly", ownerKey: "pu-1")),
+                         tag: pinTag("ly", owner: "pu-1"), version: 11, entityId: "srv-ly",
+                         key: key),
+        ])
+    }
+
+    /// CASE 9b.4（R-exec-12 / D-A）— 作用域在**轮首取样之后、落地之前**动了 ⇒ 这一轮按
+    /// §7.3 处理：入站全部停放、一条都不落、一条都不发。
+    ///
+    /// 现场（Mac B 2026-09-14，build 821）：`beginOwnedRound()` 在 `pull` 翻第一页**之前**
+    /// 冻结 `state.locals` 与两个作用域，而作用域变更正是**跟着那一页到达的**——远端设置落地
+    /// 把镜像键改成 `profile`，Task 8 的跟随迁移在一个 detached `Task` 里 15 ms 后重建了全部
+    /// 物理行。落地段执行时库已是 Profile 形状，而 `state.locals` 还是 Space 形状，于是入站
+    /// 实体的 `(lineage, profileUuid)` 配不上任何一条本机身份，`landPins` 走 create 那一支，
+    /// 在迁移刚建好的行**旁边**又建了一遍。§7.3 原本的守卫挡不住：两个作用域都是在它们还
+    /// 一致的时候取样的。
+    ///
+    /// 防的是什么：那四条重复行是**不可逆**的——下一轮 A11 给它们各铸一条新 lineage，账户上
+    /// 从此多出四条用户从来没有过的 pin，而本仓库里没有任何东西会把两条 lineage 再并回去。
+    func testAScopeMigrationLandingMidRoundParksTheInboundInsteadOfDuplicatingRows() async throws {
+        let pinAccess = migratingPinAccess()
+        // 轮首取样**之后**就地跑一次跟随迁移：`beginRound` 是第 1 次 `accountScope()` 读。
+        pinAccess.midRoundMigration = (onAccountScopeRead: 1, run: applyFollowerMigration)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [profileScopedPinPage()]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(counters?.applied, 0, "① 一条都没落")
+        XCTAssertEqual(counters?.parked, 2, "② 两条入站全部停放")
+        XCTAssertEqual(counters?.scopeMismatch, true,
+                       "③ §11.2 的 `scope_mismatch`：这一轮的 pin 段是被作用域挡下的")
+        XCTAssertEqual(pinAccess.rows.count, 2,
+                       "④ 载荷：库里仍然只有迁移产出的那两条行，没有在它们旁边再建一遍")
+        XCTAssertEqual(Set(pinAccess.rows.map(\.guid)), ["px-profile", "py-profile"],
+                       "⑤ 留下的是迁移建的那两条，不是落地新建的")
+        XCTAssertFalse(pinAccess.calls.contains { if case .apply = $0 { return true }
+                                                  else { return false } },
+                       "⑥ 落地段整段没跑——A11 的重铸同样按 guid 定位，而那批行已经被换掉了")
+        XCTAssertEqual(counters?.relineaged, 0)
+        XCTAssertEqual(counters?.pushed, 0, "⑦ 发布半边整段跳过")
+        XCTAssertTrue(pinCommits(client).isEmpty)
+        XCTAssertNotNil(table.cursors["lx:pu-1"]?.pendingApply,
+                        "⑧ 停放不丢东西：marker 已经推过那一页，载荷记在游标上")
+        XCTAssertNotNil(table.cursors["ly:pu-1"]?.pendingApply)
+    }
+
+    /// CASE 9b.4b（R-exec-12）— 上一条的下一轮：停放的两条以 **update** 落地，不是 create，
+    /// 而且没有任何重铸。
+    ///
+    /// 这是 D-A 的收敛证明。下一轮的 `beginRound` 读到的是一致的「新行 + 新作用域」，于是
+    /// `(lineage, profileUuid)` 配得上本机行，落地走的是「先按身份找本机行，找不到才 create」
+    /// 的前半支。本机行数自始至终是 2。
+    func testTheParkedInboundLandsAsUpdatesOnTheNextRoundWithNoRelineage() async throws {
+        let pinAccess = migratingPinAccess()
+        pinAccess.midRoundMigration = (onAccountScopeRead: 1, run: applyFollowerMigration)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 第二页是空的：停放项自己会被重试，不需要对端再发一次。
+        client.scriptedPages = [profileScopedPinPage(), page([])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(counters?.applied, 2, "① 第二轮把停放的两条落下去")
+        XCTAssertEqual(counters?.relineaged, 0,
+                       "② 没有任何重铸——本机从头到尾每条身份只有一行")
+        XCTAssertEqual(counters?.scopeMismatch, false, "③ 作用域这一轮稳住了")
+        XCTAssertEqual(pinAccess.rows.count, 2, "④ 载荷：本机行数始终是 2")
+        XCTAssertEqual(Set(pinAccess.rows.map(\.guid)), ["px-profile", "py-profile"],
+                       "⑤ 落的是那两条既有行，不是两条新建的")
+        XCTAssertFalse(pinAccess.lastAppliedOps.contains { if case .create = $0 { return true }
+                                                           else { return false } },
+                       "⑥ 落地走的是 update 那一支，不是 create")
+        XCTAssertTrue(pinAccess.lastAppliedOps.contains { if case .update = $0 { return true }
+                                                          else { return false } })
+        XCTAssertNil(table.cursors["lx:pu-1"]?.pendingApply, "⑦ 停放解开了")
+        XCTAssertNil(table.cursors["ly:pu-1"]?.pendingApply)
+    }
+
+    /// CASE 9b.4c（R-exec-12 / §11.2）— **纯 push 轮**：没有任何入站，于是 `plan` 与落地都
+    /// 不跑，`pinSnapshot` 那一处复查是这一轮唯一能看见作用域移动的地方。
+    ///
+    /// 为什么这条单列：现场那一分钟的 25 轮全是这一种（协调器的 `UserDefaults` 2 s 去抖发的
+    /// push 轮，`PhiChromiumCoordinator.swift:601-610`）。只在 `plan` 那一路复查的实现在这条
+    /// 用例上必红——它会把一批**迁移前**的行连同新鲜的 `now` 发回账户，而 §11.2 的
+    /// `scope_mismatch` 仍然印 false，一个计数器都不变色。
+    func testAPushOnlyRoundSkipsThePublishWhenTheScopeMovesUnderIt() async throws {
+        let pinAccess = migratingPinAccess()
+        // 1 = `beginRound`，2 = `pinSnapshot`（`plan` 与落地这一轮都不跑）。挂在 1 上 ⇒ 轮首
+        // 两个值取样一致，迁移紧随其后。
+        pinAccess.midRoundMigration = (onAccountScopeRead: 1, run: applyFollowerMigration)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 空页：一条入站都没有 ⇒ `applyOwnedKind` 在 `plan` 之前就返回。
+        client.scriptedPages = [page([])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(counters?.scopeMismatch, true,
+                       "① 发布段复查时作用域已经动了 ⇒ 整段跳过**并记账**")
+        XCTAssertEqual(counters?.pushed, 0)
+        XCTAssertTrue(pinCommits(client).isEmpty,
+                      "② 载荷：两条迁移前的行一条都没有被发回账户——不挡的话它们本来会发")
+    }
+
+    /// CASE 9b.4d — 上一条的对照：作用域**没动**的同一个纯 push 轮照常发布两条。
+    ///
+    /// 防的是什么：9b.4c 断言的是「一条都没发」。若这条 kind 在这个 fixture 下本来就发不出
+    /// 东西（门没开、映射缺一半、行被过滤掉），那条断言恒真、什么都守不住。
+    func testThePushOnlyControlRoundStillPublishesWhenTheScopeHoldsStill() async throws {
+        let pinAccess = migratingPinAccess()        // 钩子不挂：作用域自始至终是 `.space`
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(counters?.scopeMismatch, false)
+        XCTAssertEqual(pinCommits(client).count, 2,
+                       "作用域稳住时这一轮本来就该发两条——9b.4c 挡掉的正是这两条")
+    }
 }

@@ -4732,6 +4732,13 @@ final class PinSyncRoundState {
         return localScope != accountScope
     }
 
+    /// 轮首取样**之后**这两个值动过没有（R-exec-12）。见 `rescanScopes(localScope:accountScope:)`。
+    private(set) var scopeMovedMidRound = false
+
+    /// §7.3 的跳过判据，两支合一：轮首就不一致，**或者**轮首一致但作用域在轮中动了。
+    /// 发布段的三处守卫与落地段读的都是这一个。
+    var scopeBlocked: Bool { scopeMismatch || scopeMovedMidRound }
+
     func reload(_ rows: [PhiLocalPin], localScope: PinnedTabScope,
                 accountScope: PinnedTabScope?) {
         locals = rows
@@ -4739,6 +4746,31 @@ final class PinSyncRoundState {
         for row in rows { rowByGuid[row.guid] = row }
         self.localScope = localScope
         self.accountScope = accountScope
+        // 新的一轮从「没动过」开始：轮内状态跨轮复用（注册项持有它），不清零的话一次轮中
+        // 迁移会把此后**每一轮**的 pin 段都关掉。
+        scopeMovedMidRound = false
+    }
+
+    /// 轮首之后再取样一次两个作用域值；任一与轮首那一对不同 ⇒ 这一轮按 §7.3 处理。
+    ///
+    /// **为什么必须有这一趟（R-exec-12 / D-A）。** 轮内状态是 `beginRound` 一次性冻结的：
+    /// `locals` 与两个作用域都取自 `pull` **翻第一页之前**那一刻。而作用域变更是**跟着那一页
+    /// 到达的**——远端设置落地把镜像键改成新值，Task 8 的跟随迁移（`applyAccountPinnedTabScope`）
+    /// 在一个 detached `Task` 里重建全部物理行。于是落地段执行时，库已经是新形状，而
+    /// `state.locals` 还是旧形状：入站实体的 `(lineage, ownerKey)` 配不上任何一条**旧形状**
+    /// 行算出来的身份，`landPins` 于是走 create 那一支，在迁移刚建好的行旁边**再建一遍**
+    /// ——Mac B 2026-09-14 那四条重复。§7.3 原本的守卫挡不住它：两个作用域都是在它们还一致
+    /// 的时候取样的。
+    ///
+    /// **只置标志，不更新那两个值。** `localScope` 是 `PinKind.identity(of local:)` 解读
+    /// `state.locals` 的参数，把它换成新值而行还是旧的，等于用另一个作用域的规则去读这一批
+    /// 行——那是比过期更糟的一种错。这一轮什么都不做，下一轮的 `beginRound` 会读到一致的
+    /// 「新行 + 新作用域」。
+    ///
+    /// **粘性**：一轮里往返变回去也照样算动过——`locals` 无论如何都已经和库脱节了。
+    func rescanScopes(localScope: PinnedTabScope, accountScope: PinnedTabScope?) {
+        guard localScope != self.localScope || accountScope != self.accountScope else { return }
+        scopeMovedMidRound = true
     }
 
     /// 一次落地之后把轮内那份本机投影换成**落地后**的行（Step 3）。形状与理由都照
@@ -4919,7 +4951,7 @@ extension OwnedKindRegistration {
             // 路径本来就要靠 R-M3-3-13 的整类型重放兜底。
             localIdentities: { [] },
             snapshot: { table, maps, now in
-                pinSnapshot(table: table, maps: maps, now: now, state: state)
+                pinSnapshot(table: table, maps: maps, now: now, access: access, state: state)
             },
             tombstones: { table, maps, now in
                 try pinTombstones(table: table, maps: maps, now: now,
@@ -4929,7 +4961,7 @@ extension OwnedKindRegistration {
             // 行。它仍然存在并照书签那一条接线，于是引擎那个 helper 不需要为 kind 开分支
             // （R-exec-10）。
             retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
-            plan: { input in pinPlan(input, state: state) },
+            plan: { input in pinPlan(input, access: access, state: state) },
             land: { input in await landPins(input, access: access, state: state) },
             // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
             claimIdentities: { _ in [] },
@@ -5017,14 +5049,18 @@ extension OwnedKindRegistration {
 /// 内存里先铸一个再等提交写回（§6.4 对 pin 退化成空操作）。
 @MainActor
 private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
+                         access: any PhiPinnedTabLocalAccess,
                          state: PinSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
+    // R-exec-12：发布之前再取样一次两个作用域值。纯 push 轮不跑 `plan` 也不跑落地，所以
+    // 这一处是那种轮次里唯一一次复查。
+    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
     // §7.3：作用域不一致 ⇒ 发布半边**整段**跳过——不铸造、不快照、不发任何 commit。
     // 一份空快照就是「这一轮没有任何 pin 要发布」；入站那一半由 `plan` 全部停放。
     //
     // 跳过的同时把 §11.2 的 `scope_mismatch` 带回去：这个跳过在**每一种轮次**里都发生，
     // 而 `plan` 只在有入站的轮次里跑，光靠它那一路，一次纯 push 轮会悄无声息地不发布。
-    guard !state.scopeMismatch else {
+    guard !state.scopeBlocked else {
         out.scopeMismatch = true
         return out
     }
@@ -5055,8 +5091,12 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
 private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
                            access: any PhiPinnedTabLocalAccess,
                            state: PinSyncRoundState) throws -> OwnedItemTombstoneResult {
+    // R-exec-12：同 `pinSnapshot`。**必须排在 `allPinRows()` 之前**——轮中迁移会让 access
+    // 那份快照失效（`changeScope` 只清不重读），此刻去读它只会抛，而这一轮本来就什么都
+    // 不该做。
+    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
     // §7.3：作用域不一致的那一轮发布半边整段不跑，差分是它的一半。
-    guard !state.scopeMismatch else {
+    guard !state.scopeBlocked else {
         return OwnedItemTombstoneResult(identities: [], cursorUpdates: [:])
     }
     let resolve = maps.resolver
@@ -5089,8 +5129,12 @@ private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: 
 
 /// §4.4 的入站计划。**没有 §6 的认领**（§6.7：首次同步时两边的 pin 取并集）。
 @MainActor
-private func pinPlan(_ input: OwnedPlanInput, state: PinSyncRoundState) -> OwnedPlanOutput {
+private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAccess,
+                     state: PinSyncRoundState) -> OwnedPlanOutput {
     var out = OwnedPlanOutput()
+    // R-exec-12：入站的处置在这里定，所以复查要排在建 `context` 之前。作用域动过 ⇒ 这一轮
+    // 的入站实体**全部停放**，等下一轮那份「新行 + 新作用域」的一致投影来落。
+    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
     var arrivals: [OwnedItemArrival<Phi_PhiPinTabEntity>] = []
     for item in input.arrivals {
         guard let envelope = try? Phi_PhiEntity(serializedBytes: item.payload),
@@ -5105,6 +5149,7 @@ private func pinPlan(_ input: OwnedPlanInput, state: PinSyncRoundState) -> Owned
     // 与 `deletedSubtree` 留空**：pin 是平的，没有父，A9 的那两个合取项对它退化。
     context.localScope = state.localScope
     context.accountScope = state.accountScope
+    context.scopeMovedMidRound = state.scopeMovedMidRound
     out.plan = SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: input.parked,
                                        table: input.table, resolve: input.maps.resolver,
                                        context: context)
@@ -5126,22 +5171,53 @@ private func landPins(_ input: OwnedLandingInput,
     let resolve = input.maps.resolver
     let scope = state.localScope
 
-    // §7.2 / A11 的变体重铸：同 owner 下两条同 lineage 的活动行，`index` 较大的那一条重铸
-    // `pinLineageId`。它是一次**本地写**，所以它在这一轮的 `PinApplyBatch` 里、与落地同一个
-    // 事务（W14），**不在**发布段那个只读的 pre-pass 里。
+    // R-exec-12：落地之前再取样一次两个作用域值，动过就整段不跑，入站原样停放。
+    //
+    // **这一趟是这个 fix 的要害。** 轮内那份本机投影是迁移**之前**的形状，按它算出来的身份
+    // 配不上任何一条迁移后的行——照着落下去，`landPins` 会在刚迁好的行旁边把每一条 pin 再建
+    // 一遍（Mac B 2026-09-14）。A11 的重铸同样不能跑：它按 guid 定位，而迁移已经把那批物理行
+    // 换掉了。停放不丢东西——marker 已经推过那一页，但载荷记在游标的 `pendingApply` 上，下一轮
+    // 的 `beginRound` 会带着一致的「新行 + 新作用域」把它们当成 `.update` 落下去。
+    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
+    guard !state.scopeBlocked else {
+        for step in input.steps { outcome.parked.insert(step.identity) }
+        return outcome
+    }
+
+    // §7.2 / A11 的变体重铸：同 owner 下多条同 lineage 的活动行，先折叠掉签名相同的精确
+    // 重复，再给剩下的每一条（`index` 最小的那一条除外）重铸 `pinLineageId`。它是一次
+    // **本地写**，所以它在这一轮的 `PinApplyBatch` 里、与落地同一个事务（W14），**不在**
+    // 发布段那个只读的 pre-pass 里。
     var ops = PinKind.normalizeVariants(locals: state.locals).ops
     // **条数在批次提交之后才记**（见下面那次 `apply` 的后面）：批次是一个事务，被拒或被
     // 停放时一行都没改，此刻就计数会让计数行报出一批没有发生过的重铸。
-    let relineaged = ops.count
+    //
+    // 数的是 `.relineage` 那一种，**不是 `ops.count`**：A11 现在同时产出折叠用的 `.delete`，
+    // 把它们算进 `relineaged` 会让 §11.2 的计数行报出一批没有发生过的重铸。
+    var relineaged = 0
+    var collapsedDuplicates = 0
+    for op in ops {
+        switch op {
+        case .relineage: relineaged += 1
+        case .delete: collapsedDuplicates += 1
+        default: break
+        }
+    }
     guard !input.steps.isEmpty || !ops.isEmpty else { return outcome }
 
-    // 身份 -> 本机行。pin 没有 `syncId` 那一列，身份是**算出来**的。
+    // 身份 -> 本机行。pin 没有 `syncId` 那一列，身份是**算出来**的，所以两条行算出同一条
+    // 身份是可能的（`SyncableOwnedItems.snapshot` 的去重与 A11 的折叠讲的是同一件事）。
+    //
+    // 留**第一条**，与那两处逐字同一个判据：`allPins()` 按 `(ownerKey, index, guid)` 有序，
+    // 于是这里认的行 = 快照发布的那一行 = A11 折叠时留下的那一行。写成后者覆盖前者的话，
+    // 同一轮里一条入站 `.update` 会打在 A11 正要删掉的那个副本上（补丁是第二相、删除是第三
+    // 相），于是那次远端编辑连同被删的行一起消失，而幸存的那一行还是旧值。
     var rowOf: [String: PhiLocalPin] = [:]
     for row in state.locals {
         guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope) else {
             continue
         }
-        rowOf[identity] = row
+        if rowOf[identity] == nil { rowOf[identity] = row }
     }
 
     /// 账户级 ownerKey -> 本机那一侧的两个字段（§7.2 的表反过来读）。
@@ -5408,6 +5484,13 @@ private func landPins(_ input: OwnedLandingInput,
     }
     // 事务提交了，重铸这才真的发生过。
     outcome.relineaged = relineaged
+    // 折叠掉的精确重复没有自己的账户身份，于是差分、游标、每一个计数器都看不见它们——
+    // 一条不会被任何人注意到的本机删除。留一行告警，下一次这类竞态是一次 grep 而不是
+    // 「用户一小时后发现 pin 重复了」。R12：只有条数与 kind，没有任何行内容。
+    if collapsedDuplicates > 0 {
+        AppLogWarn("[phi-sync] pins: collapsed \(collapsedDuplicates) exact duplicate row(s) "
+                   + "sharing an identity; a round landed beside rows it could not see")
+    }
     // 同一个事务里写下去的拆分链接立刻折回轮内投影，于是同一轮的发布段不会把这台机器刚刚
     // **接收**下来的那条链接当成一次本机解除再发回账户（§7.4）。
     state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners)

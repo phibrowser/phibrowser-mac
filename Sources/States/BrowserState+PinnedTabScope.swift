@@ -107,6 +107,44 @@ extension BrowserState {
         )
     }
 
+    /// Enforces the invariant every consumer of `pinnedTabs` already assumes:
+    /// **one runtime `Tab` per physical row, and never the same object twice.**
+    ///
+    /// A scope migration is where this can break. `handlePinnedTabsChanged` keeps
+    /// the pre-migration `Tab` objects alive so their live WebContents survives,
+    /// re-pointing each at its new row in place; a stale or repeated entry there
+    /// propagates straight into the sidebar, whose diffable data source treats a
+    /// repeated identifier as a hard error rather than a glitch. Keeping the first
+    /// occurrence matches the "first row wins" rule the store-side guid lookups use.
+    ///
+    /// R12: the warning carries counts only, no guid, title or url.
+    func dedupedPinnedRuntimeTabs(_ candidates: [Tab]) -> [Tab] {
+        var seenObjects = Set<ObjectIdentifier>()
+        var seenGuids = Set<String>()
+        var unique: [Tab] = []
+        unique.reserveCapacity(candidates.count)
+        var droppedObjects = 0
+        var droppedGuids = 0
+        for tab in candidates {
+            guard seenObjects.insert(ObjectIdentifier(tab)).inserted else {
+                droppedObjects += 1
+                continue
+            }
+            if let guid = tab.guidInLocalDB, !guid.isEmpty {
+                guard seenGuids.insert(guid).inserted else {
+                    droppedGuids += 1
+                    continue
+                }
+            }
+            unique.append(tab)
+        }
+        if droppedObjects > 0 || droppedGuids > 0 {
+            AppLogWarn("[BrowserState] pinned tabs: dropped \(droppedObjects) repeated runtime "
+                       + "tab(s) and \(droppedGuids) row(s) already bound to another tab")
+        }
+        return unique
+    }
+
     /// Retargets both the sidebar record and its live Chromium tab before the
     /// normal open-state sync. This keeps the current WebContents attached
     /// when a scope migration replaces the physical database row.

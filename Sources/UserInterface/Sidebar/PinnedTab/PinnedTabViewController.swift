@@ -60,7 +60,7 @@ class PinnedTabViewController: NSViewController {
                 }
                 return pinnedItem
 
-            case .tabItem(let tab):
+            case .tabItem(let tab, _):
                 guard let tabItem = collectionView.makeItem(withIdentifier: PinnedTabItem.reuseIdentifier, for: indexPath) as? PinnedTabItem else {
                     return NSCollectionViewItem()
                 }
@@ -152,10 +152,36 @@ class PinnedTabViewController: NSViewController {
         let rawPinnedIndices: [Int]
     }
 
-    private enum Item: Hashable {
+    /// Not `private`: `PinnedTabSnapshotIdentityTests` builds items directly to pin
+    /// down the "a diffable identifier never changes under the data source" rule,
+    /// which is exactly what broke here and cannot be observed from outside.
+    enum Item: Hashable {
         case extensionItem(PinnedTabItemModel)
-        case tabItem(Tab)
+        /// The `Tab` is the payload the cells render; `stableId` is the diffable
+        /// **identifier**, frozen when the item is built.
+        ///
+        /// A diffable data source keeps the snapshot it last applied and re-hashes
+        /// those identifiers on the next diff. `Tab` is a reference type and
+        /// `guidInLocalDB` is a `var` on it, so deriving the hash from the live
+        /// object made the retained snapshot's identifiers change underneath it:
+        /// a pinned-tab scope migration re-points the very same `Tab` objects at
+        /// the new physical rows in place
+        /// (`BrowserState+PinnedTabScope.swift`, `rebindPinnedTabAfterScopeMigrationIfNeeded`),
+        /// and the next apply diffed a stale ordered set whose members no longer
+        /// hashed where they were filed. Foundation reports that as duplicate
+        /// identifiers and throws out of `-[NSOrderedCollectionDifference init…]`
+        /// (Mac B, 2026-09-15 01:20:27: scope switch, then an unpin two seconds
+        /// later). Freezing the identifier at construction restores the contract
+        /// that a diffable identifier is immutable for as long as the data source
+        /// holds it.
+        case tabItem(Tab, stableId: String)
         case splitItem(PinnedSplitGroupItem)
+
+        /// The only way to build a `.tabItem`: it freezes the identifier so no
+        /// call site can accidentally file one under a live-mutating key.
+        static func tab(_ tab: Tab) -> Item {
+            .tabItem(tab, stableId: stableTabIdentifier(for: tab))
+        }
 
         private static func stableTabIdentifier(for tab: Tab) -> String {
             if let localGuid = tab.guidInLocalDB, localGuid.isEmpty == false {
@@ -172,9 +198,9 @@ class PinnedTabViewController: NSViewController {
             case .extensionItem(let model):
                 hasher.combine("extension")
                 hasher.combine(model)
-            case .tabItem(let tab):
+            case .tabItem(_, let stableId):
                 hasher.combine("tab")
-                hasher.combine(Self.stableTabIdentifier(for: tab))
+                hasher.combine(stableId)
             case .splitItem(let group):
                 hasher.combine("split")
                 hasher.combine(group.splitId)
@@ -185,8 +211,8 @@ class PinnedTabViewController: NSViewController {
             switch (lhs, rhs) {
             case (.extensionItem(let a), .extensionItem(let b)):
                 return a == b
-            case (.tabItem(let a), .tabItem(let b)):
-                return stableTabIdentifier(for: a) == stableTabIdentifier(for: b)
+            case (.tabItem(_, let a), .tabItem(_, let b)):
+                return a == b
             case (.splitItem(let a), .splitItem(let b)):
                 return a == b
             default:
@@ -590,7 +616,7 @@ class PinnedTabViewController: NSViewController {
     private func buildTabSectionEntries(from sourcePinnedTabs: [Tab]) -> [TabSectionEntry] {
         guard let state = browserState else {
             return sourcePinnedTabs.enumerated().map { index, tab in
-                TabSectionEntry(item: .tabItem(tab), rawPinnedIndices: [index])
+                TabSectionEntry(item: .tab(tab), rawPinnedIndices: [index])
             }
         }
         // Pre-compute lookup dictionaries so the per-tab loop runs O(1) per
@@ -692,7 +718,7 @@ class PinnedTabViewController: NSViewController {
                 }
                 entries.append(TabSectionEntry(item: .splitItem(combined), rawPinnedIndices: rawIndices))
             } else {
-                entries.append(TabSectionEntry(item: .tabItem(tab), rawPinnedIndices: [rawIndex]))
+                entries.append(TabSectionEntry(item: .tab(tab), rawPinnedIndices: [rawIndex]))
             }
             consumedDBGuids.insert(myDBGuid)
         }
@@ -739,15 +765,46 @@ class PinnedTabViewController: NSViewController {
         state.pinnedSplitDBPair(forPinnedTab: tab) == nil ? 1 : 2
     }
 
+    /// Drops repeated item identifiers, keeping the first.
+    ///
+    /// `NSDiffableDataSourceSnapshot` requires identifiers to be unique across the
+    /// **whole** snapshot, not per section, and it does not fail politely: a repeat
+    /// throws out of Foundation's ordered-set diffing with an uncaught
+    /// `NSInvalidArgumentException`, which is a hard crash. Every producer above is
+    /// supposed to guarantee uniqueness already, so a non-zero `dropped` here means
+    /// one of them is wrong — log it and render the sidebar anyway. R12: counts only.
+    /// `static` and not `private` so `PinnedTabSnapshotIdentityTests` can drive it
+    /// without standing up a collection view; it reads nothing off `self`.
+    static func deduplicatedItems(_ items: [Item], seen: inout Set<Item>, dropped: inout Int) -> [Item] {
+        var unique: [Item] = []
+        unique.reserveCapacity(items.count)
+        for item in items {
+            guard seen.insert(item).inserted else { dropped += 1; continue }
+            unique.append(item)
+        }
+        return unique
+    }
+
     private func applySnapshot(animatingDifferences: Bool = true, completion: (() -> Void)? = nil) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections(Section.allCases)
-        if !pinnedExtensionItems.isEmpty {
-            snapshot.appendItems(pinnedExtensionItems.map { .extensionItem($0) }, toSection: .extensions)
+        // One `seen` set across both sections: the uniqueness requirement spans the
+        // whole snapshot, not each section.
+        var seen = Set<Item>()
+        var dropped = 0
+        let extensionItems = Self.deduplicatedItems(pinnedExtensionItems.map { .extensionItem($0) },
+                                                   seen: &seen, dropped: &dropped)
+        if !extensionItems.isEmpty {
+            snapshot.appendItems(extensionItems, toSection: .extensions)
         }
-        let tabSectionItems = buildTabSectionItems()
+        let tabSectionItems = Self.deduplicatedItems(buildTabSectionItems(),
+                                                    seen: &seen, dropped: &dropped)
         if !tabSectionItems.isEmpty {
             snapshot.appendItems(tabSectionItems, toSection: .tabs)
+        }
+        if dropped > 0 {
+            AppLogWarn("[PinnedTab] dropped \(dropped) duplicate item identifier(s) "
+                       + "before applying the sidebar snapshot")
         }
 
         var newSplitPairs: [String: String] = [:]
@@ -788,7 +845,7 @@ class PinnedTabViewController: NSViewController {
         }
         let tabItems = dataSource.snapshot().itemIdentifiers(inSection: .tabs)
         guard let itemIndex = tabItems.firstIndex(where: { item in
-            if case .tabItem(let tab) = item {
+            if case .tabItem(let tab, _) = item {
                 return tab == placeholder
             }
             return false
@@ -856,7 +913,7 @@ class PinnedTabViewController: NSViewController {
         for (index, item) in tabItems.enumerated() {
             let indexPath = IndexPath(item: index, section: Section.tabs.rawValue)
             switch item {
-            case .tabItem(let tab):
+            case .tabItem(let tab, _):
                 if let cell = collectionView.item(at: indexPath) as? PinnedTabItem {
                     cell.isSelected = tab.guidInLocalDB == focusingDBGuid
                 }
@@ -1096,7 +1153,7 @@ extension PinnedTabViewController {
         // the whole pair where appropriate.
         let tab: Tab
         switch item {
-        case .tabItem(let t):
+        case .tabItem(let t, _):
             tab = t
         case .splitItem(let group):
             tab = group.leftTab
@@ -1145,7 +1202,7 @@ extension PinnedTabViewController {
                 return (nil, nil)
             }
             switch item {
-            case .tabItem(let tab):
+            case .tabItem(let tab, _):
                 return (tab, tab.guidInLocalDB)
             case .splitItem(let group):
                 return (group.leftTab, group.leftTab.guidInLocalDB)

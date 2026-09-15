@@ -575,7 +575,7 @@ class BrowserState {
             return
         }
         let localTabs: [TabDataModel] = localStore.getAllPinnedTabs(for: profileId, spaceId: spaceId)
-        pinnedTabs = localTabs.map { makePinnedTab(from: $0) }
+        pinnedTabs = dedupedPinnedRuntimeTabs(localTabs.map { makePinnedTab(from: $0) })
 
         for pinnedTab in pinnedTabs {
             guard let localGuid = pinnedTab.guidInLocalDB else { continue }
@@ -598,14 +598,18 @@ class BrowserState {
             localTabs: localTabs,
             existingTabs: existingTabs
         )
-        pinnedTabs = localTabs.enumerated().map { index, localTab in
+        // `dedupedPinnedRuntimeTabs` is not decoration: the rebind above re-points
+        // surviving `Tab` objects at the migrated rows in place, and any repeat that
+        // escapes here reaches the sidebar's diffable data source, which treats a
+        // repeated identifier as a hard error.
+        pinnedTabs = dedupedPinnedRuntimeTabs(localTabs.enumerated().map { index, localTab in
             if let existing = scopeSyncMatches[index] {
                 rebindPinnedTabAfterScopeMigrationIfNeeded(existing, to: localTab)
                 syncPinnedTabMetadata(existing, from: localTab)
                 return existing
             }
             return localTab
-        }
+        })
 
         // Re-sync every pinned tab against the currently open Chromium tabs.
         syncAllPinnedTabsState()

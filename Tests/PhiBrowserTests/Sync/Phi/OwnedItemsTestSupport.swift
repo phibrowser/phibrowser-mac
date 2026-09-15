@@ -271,7 +271,30 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
 
     func currentScope() -> PinnedTabScope { scope }
 
-    func accountScope() -> PinnedTabScope? { account }
+    /// 轮中作用域迁移的脚本（R-exec-12）：`accountScope()` 被问到第 `onAccountScopeRead` 次
+    /// 时，**先取好返回值再**就地跑一次 `run`，然后清空自己。Task 8 的跟随迁移
+    /// （`PhiChromiumCoordinator.applyAccountPinnedTabScope`）跑在一个 detached `Task` 里，
+    /// 落点就在轮首取样与落地之间，这个钩子把那一刻搬进用例。
+    ///
+    /// **挂在 `accountScope()` 上而不是 `currentScope()` 上**：轮首那个闭包按
+    /// `allPins()` → `currentScope()` → `accountScope()` 的次序取样，只有挂在**最后**那一个
+    /// 上，轮首才会像现场那样把两个作用域都读成迁移**前**的值。挂在前两个任何一个上，
+    /// `beginRound` 自己就读出一对不一致的值 —— 那是 §7.3 既有守卫已经挡住的另一个场景，
+    /// 测不到这个 fix。
+    ///
+    /// 计数：`beginRound` 那一次是第 1 次，此后每一次 `rescanScopes` 各一次。
+    var midRoundMigration: (onAccountScopeRead: Int, run: @MainActor (FakePinAccess) -> Void)?
+    private(set) var accountScopeReads = 0
+
+    func accountScope() -> PinnedTabScope? {
+        accountScopeReads += 1
+        let answer = account
+        if let hook = midRoundMigration, hook.onAccountScopeRead == accountScopeReads {
+            midRoundMigration = nil
+            hook.run(self)
+        }
+        return answer
+    }
 
     /// 开新一轮：把快照标成「没读过」。用例用它制造 R-exec-3 之后那三种无效状态。
     func beginRound() {

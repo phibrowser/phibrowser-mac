@@ -1445,8 +1445,11 @@ final class PinKindTests: XCTestCase {
     /// 则会留下一整类**永远同步不了**的行：第二个副本没有自己的身份，既到不了别的机器，
     /// 也无法被别的机器删除。
     func testVariantsUnderOneOwnerAreRelineagedKeepingTheLowestIndexRow() {
-        let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
-                    pinRow(guid: "p2", spaceId: "space-a", index: 1)]
+        // **两条的同步字段签名必须不同**（R-exec-12 / D-A2）：重铸只针对真变体，签名相同的
+        // 两条是同一条 pin 的物理副本，A11 折叠它们而不是给它们各铸一条身份。用例要钉的是
+        // 重铸那一支，所以第二条给一个不同的标题。
+        let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "T"),
+                    pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "Variant")]
 
         let batch = PinKind.normalizeVariants(locals: rows)
 
@@ -1472,12 +1475,13 @@ final class PinKindTests: XCTestCase {
     func testTheRemintedLineageIsDeterministicAcrossDevices() {
         // 同一批行在「另一台机器」上的样子：物理 guid 按设备重铸，lineage 与 index 由那次
         // 确定性迁移决定，所以两边一致。
-        let deviceA = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
-                       pinRow(guid: "p2", spaceId: "space-a", index: 1),
-                       pinRow(guid: "p3", spaceId: "space-a", index: 2)]
-        let deviceB = [pinRow(guid: "q1", spaceId: "space-a", index: 0),
-                       pinRow(guid: "q2", spaceId: "space-a", index: 1),
-                       pinRow(guid: "q3", spaceId: "space-a", index: 2)]
+        // 三条**签名各不相同**的真变体：签名相同的会被 A11 折叠掉，那是下面几条用例的事。
+        let deviceA = [pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "T"),
+                       pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "U"),
+                       pinRow(guid: "p3", spaceId: "space-a", index: 2, title: "W")]
+        let deviceB = [pinRow(guid: "q1", spaceId: "space-a", index: 0, title: "T"),
+                       pinRow(guid: "q2", spaceId: "space-a", index: 1, title: "U"),
+                       pinRow(guid: "q3", spaceId: "space-a", index: 2, title: "W")]
 
         let first = mintedLineages(PinKind.normalizeVariants(locals: deviceA))
         let again = mintedLineages(PinKind.normalizeVariants(locals: deviceA))
@@ -1519,6 +1523,174 @@ final class PinKindTests: XCTestCase {
         let ops = PinKind.normalizeVariants(locals: rows).ops
 
         XCTAssertTrue(ops.isEmpty)
+    }
+
+    // MARK: - CASE 4b.8b：精确重复折叠（R-exec-12 / D-A2）
+
+    private func deletedGuids(_ batch: PinApplyBatch) -> [String] {
+        batch.ops.compactMap {
+            guard case .delete(let guid) = $0 else { return nil }
+            return guid
+        }
+    }
+
+    /// CASE 4b.8b（R-exec-12 / D-A2）— 同 owner、同 lineage、**签名相同**的两条是同一条 pin
+    /// 的两个物理副本：折叠成一条，**绝不重铸**。
+    ///
+    /// 现场（Mac B 2026-09-14，build 821）：一次轮中作用域迁移让落地在刚迁好的行旁边又建了
+    /// 一遍，于是每条身份下有两条一模一样的行。旧判据「同 lineage 同 owner ⇒ 除第一条外全部
+    /// 重铸」从不看内容，于是它给那四条重复各铸了一条新身份。
+    ///
+    /// 防的是什么：重铸**不可逆**——旧 lineage 已经不在那一行上，而本仓库里没有任何东西会把
+    /// 两条 lineage 再并回去。旧判据因此把一个**瞬时**的碰撞转成了账户上**永久**的四条重复，
+    /// 两台机器都能看见，只能靠用户手工取消固定来清。同一对行交给 `mergeCandidates` 本来就会
+    /// 被合成一条（§7.1），两条路必须对「什么是同一条 pin」给同一个答案。
+    func testTwoIdenticalRowsUnderOneIdentityAreCollapsedNotRelineaged() {
+        // 逐字段相同，只差物理 guid 与 index——那正是一条 pin 的两个副本该有的样子。
+        let rows = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0),
+                    pinRow(guid: "p-dup", spaceId: "space-a", index: 1)]
+
+        let batch = PinKind.normalizeVariants(locals: rows)
+
+        XCTAssertEqual(deletedGuids(batch), ["p-dup"],
+                       "① `index` 最大的那个副本被删，留下 `index` 最小的那一条")
+        XCTAssertTrue(relineageGuids(batch).isEmpty,
+                      "② 一条都不许重铸：重铸会把这次碰撞变成账户上一条永久的重复")
+        XCTAssertEqual(batch.ops.count, 1)
+    }
+
+    /// CASE 4b.8b（拆分伙伴）— 签名带拆分伙伴那一段：伙伴 lineage 不同 ⇒ 是真变体。
+    ///
+    /// 防的是什么：签名只看 `(title, url)` 的话，一条拆分对的两半（内容相同、伙伴不同）会被
+    /// 当成重复折叠掉，用户丢掉半个拆分视图。口径必须与 `PinnedTabVariantSignature` 同源。
+    func testRowsDifferingOnlyInTheirSplitPartnerAreVariantsNotDuplicates() {
+        let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0,
+                           splitPartnerLineageId: "lm"),
+                    pinRow(guid: "p2", spaceId: "space-a", index: 1,
+                           splitPartnerLineageId: "ln")]
+
+        let batch = PinKind.normalizeVariants(locals: rows)
+
+        XCTAssertTrue(deletedGuids(batch).isEmpty)
+        XCTAssertEqual(relineageGuids(batch), ["p2"])
+    }
+
+    /// CASE 4b.8b（混合组）— 三条里两条相同、一条分叉 ⇒ 一条 `.delete` + 一条 `.relineage`，
+    /// 而且重铸的 ordinal 按**幸存者**数，不是按原成员数。
+    ///
+    /// 防的是什么：先铸 ordinal 再折叠的实现会把分叉那一条铸成 `ordinal: 2`，于是同一批行在
+    /// 「有没有重复」这件事上产出不同的 lineage——而重复是否出现取决于一次竞态，两台机器于是
+    /// 给同一条变体铸出两条不同的身份，永远互为对方看不见的多余 pin。
+    func testAMixedGroupCollapsesTheDuplicateAndRelineagesOnlyTheDivergentMember() {
+        let rows = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0, title: "T"),
+                    pinRow(guid: "p-dup", spaceId: "space-a", index: 1, title: "T"),
+                    pinRow(guid: "p-variant", spaceId: "space-a", index: 2, title: "Variant")]
+
+        let batch = PinKind.normalizeVariants(locals: rows)
+
+        XCTAssertEqual(deletedGuids(batch), ["p-dup"])
+        XCTAssertEqual(relineageGuids(batch), ["p-variant"])
+        // 幸存者是 [p-keep, p-variant]，所以分叉那一条是 ordinal 1——与「这一组本来就只有
+        // 两条真变体」时铸出来的值逐字节相同。
+        let twoVariantsOnly = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0, title: "T"),
+                               pinRow(guid: "p-variant", spaceId: "space-a", index: 1,
+                                      title: "Variant")]
+        XCTAssertEqual(mintedLineages(batch),
+                       mintedLineages(PinKind.normalizeVariants(locals: twoVariantsOnly)),
+                       "ordinal 按幸存者数 ⇒ 有没有那条重复，铸出来的 lineage 一模一样")
+    }
+
+    /// CASE 4b.8b（确定性）— 两台设备拿到同一批行，**留下同一条、删掉同一条**。
+    ///
+    /// 防的是什么：折叠的幸存者若按 `guid` 挑，两台机器各留一条不同的物理行、各删对方留下的
+    /// 那一条，于是这条 pin 在两边都被删光。判据必须只读**跨设备一致**的字段——`index` 由
+    /// `migratePinnedTabs` 确定性地产出，`guid` 是每台设备各铸的。
+    func testTheCollapseSurvivorIsTheSameRowOnTwoDevices() {
+        // 两台设备：同一对副本，`index` 一致（迁移是确定性的），物理 guid 各铸一套。
+        // 设备 B 的 guid 次序**相反**，于是任何按 guid 挑幸存者的实现都会在这里分叉。
+        let deviceA = [pinRow(guid: "a-first", spaceId: "space-a", index: 0),
+                       pinRow(guid: "a-second", spaceId: "space-a", index: 1)]
+        let deviceB = [pinRow(guid: "z-first", spaceId: "space-a", index: 0),
+                       pinRow(guid: "b-second", spaceId: "space-a", index: 1)]
+
+        let onA = PinKind.normalizeVariants(locals: deviceA)
+        let onB = PinKind.normalizeVariants(locals: deviceB)
+
+        XCTAssertEqual(deletedGuids(onA), ["a-second"], "① 删的是 `index` 较大的那一条")
+        XCTAssertEqual(deletedGuids(onB), ["b-second"],
+                       "② 另一台设备删的是**同一个位置**的那一条，尽管 guid 次序相反")
+        XCTAssertEqual(onA.ops.count, onB.ops.count)
+    }
+
+    /// CASE 4b.8b（休眠行）— 休眠的备份行不参与折叠，正如它不参与重铸。
+    ///
+    /// 防的是什么：作用域迁移原地留下的备份行与它的活动行内容一模一样，把它折叠掉等于在一次
+    /// 作用域往返里悄悄删掉用户的备份。
+    func testADormantBackupRowIsNeverCollapsedIntoItsActiveTwin() {
+        let rows = [pinRow(guid: "p-active", spaceId: "space-a", index: 0),
+                    pinRow(guid: "p-dormant", spaceId: "space-a", index: 1, isDormant: true)]
+
+        let batch = PinKind.normalizeVariants(locals: rows)
+
+        XCTAssertTrue(batch.ops.isEmpty)
+    }
+
+    // MARK: - CASE 4b.8c：快照按身份去重（R-exec-12 / D-B）
+
+    /// CASE 4b.8c（R-exec-12 / D-B）— 两条本机行算出同一条身份 ⇒ 快照交**一条**实体，
+    /// rank 沿用基线，而且连跑两次字节相同。
+    ///
+    /// 现场（Mac B 2026-09-14，19:18:37 → 19:19:34）：八条行、四条身份，`snapshot` 按**行**
+    /// 建 rank 组，于是同一个 uuid 在 `assignRanks` 的 `order` 里出现两次。重复的那一个按定义
+    /// 不在严格递增的保留集里 ⇒ 每轮派一个新铸的 `rankBetween`，而 `assigned` 按 uuid 记账
+    /// ⇒ 它盖掉保留的那一条刚拿到的 rank。发布判据是裸字节比较，于是这四条身份**每一轮**都
+    /// 与基线不同、每一轮都提交：25 轮、2.34 s 一次、分数键一轮长一个字符（922 → 934 字节）。
+    ///
+    /// 防的是什么：一个跑起来每个计数器都读健康值（`pushed=4 refused=0 parked=0`）的提交
+    /// 死循环。去重让它**结构上不可能**，代价在正常情况下是零——身份本来就互不相同。
+    func testTwoLocalRowsSharingOneIdentityProduceExactlyOneStableEntity() {
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1",
+                                                           rank: "V"))
+        // 同 lineage、同 owner 的两条行 ⇒ `PinKind.identity` 对两条都算出 `lx:su-1`。
+        let doubled = [pinRow(guid: "p-first", spaceId: "space-a", index: 0),
+                       pinRow(guid: "p-second", spaceId: "space-a", index: 1)]
+
+        RankProbe.reset()
+        let first = snapshot(doubled, table: table)
+        let rankCalls = RankProbe.rankBetweenCalls
+        let again = snapshot(doubled, table: table)
+
+        XCTAssertEqual(Array(first.entities.keys), ["lx:su-1"], "① 一条身份一条实体")
+        XCTAssertEqual(first.entities["lx:su-1"]?.rank.stringValue, "V",
+                       "② 基线 rank 原样沿用，不是新铸的一个")
+        XCTAssertEqual(rankCalls, 0,
+                       "③ 基线已经严格递增（只有一条）⇒ `rankBetween` 一次都不该被调到")
+        let firstBytes = first.entities["lx:su-1"].flatMap { try? $0.serializedData() }
+        let againBytes = again.entities["lx:su-1"].flatMap { try? $0.serializedData() }
+        XCTAssertNotNil(firstBytes)
+        XCTAssertEqual(firstBytes, againBytes,
+                       "④ 连跑两次字节相同——发布判据是裸字节比较，这就是收敛本身")
+    }
+
+    /// CASE 4b.8c（留哪一条）— 去重留下的是 `locals` 里的**第一条**，与 A11 折叠时留下的
+    /// 是同一条行。
+    ///
+    /// 防的是什么：两处各留一条不同的行，那条被快照发布、又被 A11 删掉的行会让账户上那条
+    /// 实体在同一轮里既被更新又失去它的本机行。`allPins()` 按 `(ownerKey, index, guid)`
+    /// 有序，所以「第一条」= `index` 最小的那一条 = A11 的幸存者。
+    func testTheDeduplicatedSnapshotKeepsTheSameRowThatVariantCollapseKeeps() {
+        // 两条行的**内容不同**，于是「留了哪一条」在发布出来的实体上看得见。
+        let rows = [pinRow(guid: "p-first", spaceId: "space-a", index: 0, title: "First"),
+                    pinRow(guid: "p-second", spaceId: "space-a", index: 1, title: "Second")]
+
+        let published = snapshot(rows).entities["lx:su-1"]
+
+        XCTAssertEqual(published?.title.stringValue, "First",
+                       "① 留的是 `index` 最小的那一条")
+        // A11 对同一批行（签名不同 ⇒ 真变体）重铸的也正是第二条。
+        XCTAssertEqual(relineageGuids(PinKind.normalizeVariants(locals: rows)), ["p-second"],
+                       "② 两处对「幸存者是谁」给同一个答案")
     }
 
     // MARK: - CASE 4b.9

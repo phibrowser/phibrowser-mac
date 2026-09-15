@@ -308,13 +308,27 @@ enum PinKind: OwnedItemKind {
 
     // MARK: - 变体重铸（§7.2 / A11）
 
-    /// 同一个 `(lineage, ownerKey)` 下的多条**活动**行：保留 `index` 最小的那一条（平手取
-    /// `guid` 字典序最小），其余每一条重铸 `pinLineageId`。
+    /// 同一个 `(lineage, ownerKey)` 下的多条**活动**行，先按同步字段签名折叠掉精确重复，
+    /// 再把**剩下的**每一条（`index` 最小的那一条除外，平手取 `guid` 字典序最小）重铸
+    /// `pinLineageId`。
     ///
-    /// 它们**不是**同一条实体的多个副本——它们是用户看得见的两个固定标签页（`mergeCandidates`
-    /// 对 `PinnedTabVariantSignature` 不同的副本刻意保留第二条）。按「一条实体、多个物理
-    /// 副本」写会留下一整类**永远同步不了**的行：第二个副本没有自己的身份，既到不了别的
-    /// 机器，也无法被别的机器删除，而每一个计数器都读健康值。
+    /// **两种碰撞，答案相反，判据必须先分开它们（R-exec-12 / D-A2）：**
+    ///
+    /// - **签名不同 ⇒ 真变体**，它们**不是**同一条实体的多个副本，而是用户看得见的两个
+    ///   固定标签页（`mergeCandidates` 对 `PinnedTabVariantSignature` 不同的副本刻意保留
+    ///   第二条）。按「一条实体、多个物理副本」写会留下一整类**永远同步不了**的行：第二个
+    ///   副本没有自己的身份，既到不了别的机器，也无法被别的机器删除，而每一个计数器都读
+    ///   健康值。所以它们各自重铸一条身份。
+    /// - **签名相同 ⇒ 同一条 pin 的多个物理副本**，由一次重放或一次落地竞态造出来（Mac B
+    ///   2026-09-14：轮首那份本机投影在作用域迁移之前取样，落地于是在刚迁好的行旁边又建了
+    ///   一遍）。给它重铸等于**把一个瞬时的碰撞变成账户上一条永久的重复**——旧 lineage 已经
+    ///   不在那一行上，而本仓库里没有任何东西会把两条 lineage 再并回去。交给
+    ///   `mergeCandidates` 的话它们本来就会被合成一条，所以这里也折叠成一条：留下 ordinal 0
+    ///   那一条，其余发 `.delete`。
+    ///
+    /// 签名口径与 §7.1 / R-M3-3-16 给 `mergeCandidates` 定的那一个同源——**只看同步字段**
+    /// `(title, url, splitPartnerLineageId)`。两处分叉的后果是「这两行是不是同一条 pin」在
+    /// 迁移那一侧与同步这一侧问出两个答案。
     ///
     /// **产出的是一个 `PinApplyBatch`**，与那一轮的落地同一个事务；它**不是** push 段
     /// pre-pass 的一次旁路写——那个 pre-pass 按 §4.2 第 2 条是只读的，而重铸不可逆（旧
@@ -327,7 +341,9 @@ enum PinKind: OwnedItemKind {
     /// 休眠行不参与分组（它们是作用域迁移留下的本地备份，重铸它们会把那份备份与它的活动
     /// 行永久拆开）。
     ///
-    /// **新 lineage 是确定性的**，见 `mintedLineage(_:ordinal:)`。
+    /// **新 lineage 是确定性的**，见 `mintedLineage(_:ordinal:)`；**留下来的那一条也是**
+    /// ——折叠与重铸读的是同一个 `(index, guid)` 次序，于是两台跑过同一次确定性迁移的机器
+    /// 留下同一条、删掉同一条、给同一条铸同一个 ordinal。
     static func normalizeVariants(locals: [PhiLocalPin]) -> PinApplyBatch {
         var groups: [String: [PhiLocalPin]] = [:]
         for local in locals where !local.isDormant {
@@ -340,14 +356,52 @@ enum PinKind: OwnedItemKind {
             let members = (groups[key] ?? []).sorted {
                 $0.index == $1.index ? $0.guid < $1.guid : $0.index < $1.index
             }
-            // ordinal 从 1 数：0 是保留原 lineage 的那一条（index 最小），它不产出 op。
-            for (ordinal, row) in members.enumerated() where ordinal > 0 {
+            // ① 折叠精确重复：签名第一次出现的那一条留下，其余是同一条 pin 的物理副本。
+            //    **在铸 ordinal 之前做**——重复行若参与计数，两条一模一样的行会分到两个
+            //    ordinal，于是账户上多出一条用户从来没有过的 pin，且不可逆。
+            var survivors: [PhiLocalPin] = []
+            var seen: Set<PinVariantSignature> = []
+            for row in members {
+                guard seen.insert(variantSignature(of: row)).inserted else {
+                    ops.append(.delete(guid: row.guid))
+                    continue
+                }
+                survivors.append(row)
+            }
+            // ② ordinal 从 1 数：0 是保留原 lineage 的那一条（`index` 最小的**幸存者**），
+            //    它不产出 op。
+            for (ordinal, row) in survivors.enumerated() where ordinal > 0 {
                 ops.append(.relineage(guid: row.guid,
                                       newLineageId: mintedLineage(lineageKey(row.lineageId),
                                                                   ordinal: ordinal)))
             }
         }
         return PinApplyBatch(unordered: ops)
+    }
+
+    /// 「这两行是不是同一条 pin」的判据：**只有同步字段**参与。
+    ///
+    /// 与 `LocalStore` 那一侧的 `PinnedTabVariantSignature` 同源（§7.1 / R-M3-3-16）：内容是
+    /// `(title, url)`，外加拆分伙伴那一段。本机侧那个结构还带伙伴的**内容**签名，这里带不了
+    /// ——`PhiLocalPin` 上的伙伴是一条 lineage 而不是一条行，而伙伴自己的内容变化会由**它
+    /// 那一条**身份各自发布。少带它只会让判据更严格一点点（伙伴换了内容但没换 lineage 的两行
+    /// 仍判成同一条 pin），而那正是「同一条 pin 的两个副本」该有的答案。
+    ///
+    /// `index` **不进签名**：两个副本的位置按定义不同（它们是两条物理行），把它算进去等于
+    /// 让这个判据恒不相等，折叠那一支永远到不了。`guid`、`source`、两个日期戳同理不进——
+    /// 它们都是按副本、按设备的。
+    private struct PinVariantSignature: Hashable {
+        let title: String
+        let url: String
+        let splitPartnerLineage: String?
+    }
+
+    private static func variantSignature(of local: PhiLocalPin) -> PinVariantSignature {
+        PinVariantSignature(title: local.title,
+                            url: local.url.absoluteString,
+                            // 伙伴那一列在本机可能是大写（回落成 guid 的旧值，P11），
+                            // 比较入口一律先归一。
+                            splitPartnerLineage: local.splitPartnerLineageId.map(lineageKey))
     }
 
     // MARK: - 私有

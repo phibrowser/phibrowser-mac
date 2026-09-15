@@ -57,6 +57,20 @@ struct OwnedItemPlanContext {
     var adoptedFieldWrites: Set<String> = []
     /// 本轮同时到达的 tombstone 身份集合（提升只在父被**证实死亡**时发生）。
     var tombstonedIdentities: Set<String> = []
+    /// 身份 -> **本机那一行此刻的出站投影**（`Phi_PhiEntity` 信封字节），由适配层按 §4.2
+    /// 第 4 / 5 条盖好戳——即「这一轮的 `snapshot` 会为这条身份发布的那一份」。
+    ///
+    /// **§4.3 的合并是对两条实体 X、Y 对称地写的，而 X 是本机此刻那一条，不是基线。**
+    /// 拿 `reconciled` 当本机那一侧，一处**还没发布**的本机编辑在线上没有任何代表：它的
+    /// 字段在基线里仍是旧值旧戳，于是对端只要碰了同一条实体的**任何**一个字段，合并结果
+    /// 就带着旧值回来，而 `.update` 的字段补丁是整组内容字段一起写的（`bookmarkPatch`）
+    /// ——那次本机编辑被静默改写，没有 commit、没有计数，两台机器都认为自己收敛了。
+    /// 基线的用途是**差分出要发布什么**（§4.2 第 4 条的盖戳判据），不是决定落地什么。
+    ///
+    /// 只给**有基线**的身份算（无基线那一类走 §6.2 的 `adoptedMerges`，或者本来就整条
+    /// 采纳远端）：没有基线时 `stamp` 会把 `location` / `rank` 盖成 0 并把内容字段盖成
+    /// `contentUpdatedDate`，那是认领那条路的规则，不是一条已经在账户上的行的规则。
+    var localProjections: [String: Data] = [:]
     /// 本轮因一条远端文件夹 tombstone 而要消失的身份（A9 的第三个合取项）。
     var deletedSubtree: Set<String> = []
     /// 解析得到一条**活的**本地行的父身份（A9 的第二个合取项）。
@@ -116,6 +130,13 @@ struct OwnedItemPlan {
     var cancelledDeletes: Set<String>
     /// 身份 -> 本轮从协议层收割到的 `(entityId, version)`，即使那条实体被丢弃。
     var harvest: [String: (entityId: String, version: Int64)]
+    /// 合并结果里**本机那一侧赢了字段**的那些身份：必须重新发布（与
+    /// `OwnedItemAdoptionResult.mustRepublish` 同一条规则、同一个理由，§6.2）。
+    ///
+    /// 普通差分对它们的回答永远是「没变化」——落地之后本机那一行与 `reconciled` 逐字相等，
+    /// 于是快照算出来的字节就是基线本身。不显式排进发布队列，本机赢下的那个值**永远**到不了
+    /// 账户，而两台机器都认为自己收敛了。
+    var mustRepublish: Set<String> = []
 }
 
 /// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
@@ -682,6 +703,7 @@ enum SyncableOwnedItems {
         var lifted = 0
         var supersededByDelete = 0
         var cancelledDeletes: Set<String> = []
+        var mustRepublish: Set<String> = []
         var landedIdentities: Set<String> = []
 
         for item in ordered {
@@ -726,9 +748,26 @@ enum SyncableOwnedItems {
                 guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
                 return K.entity(from: envelope)
             }
+            // **合并的本机那一侧是本机行此刻的投影**（`context.localProjections`），基线只在
+            // 没有投影时兜底。理由写在 `OwnedItemPlanContext.localProjections` 上：基线里那
+            // 一份是**上一次同步**的值，用它当本机那一侧会让一处还没发布的本机编辑在对端
+            // 碰了同一条实体的任何字段时被改写掉。
+            let localProjection: K.Entity? = context.localProjections[identity].flatMap {
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
+                return K.entity(from: envelope)
+            }
             let merged = adopted
+                ?? localProjection.map { K.merge(local: $0, remote: item.entity) }
                 ?? baseline.map { K.merge(local: $0, remote: item.entity) }
                 ?? item.entity
+            // 本机赢下 `location` 时落地的父要跟着合并结果走，否则那一行会被搬到**输掉的**
+            // 那个父下面，而 `reconciled` 说的是另一个——下一轮的快照把它当成一次本机移动
+            // 再发出去，一次本机移动因此变成两次。`nil` = 「照载荷自己的父落地」，而载荷
+            // 就是合并结果。提升（`wasLifted`）是模块自己作的决定，不受这一条影响。
+            if !wasLifted, landingParent != nil,
+               K.ownerUuids(of: merged) != K.ownerUuids(of: item.entity) {
+                landingParent = nil
+            }
 
             // §5.6 的 L1 支：游标带 `pendingDelete` 时到达的**存活**实体。
             if cursor?.pendingDelete == true {
@@ -752,6 +791,13 @@ enum SyncableOwnedItems {
             landedIdentities.insert(identity)
             let payload = payloadBytes(merged)
             let rank = K.rank(of: merged)
+            // §6.2 的那条规则，落在普通更新路径上：合并结果与**账户手上那一份**不同 ⇒ 本机
+            // 赢了点什么，这条实体要重新发布。判据比的是整条实体而不是内容签名——本机也可能
+            // 赢下 `location` / `rank`，而那两样都不在签名里。认领那一支不在这里：它的
+            // `mustRepublish` 由 `adopt` 自己算（本机那一侧没有基线，判据不同）。
+            if adopted == nil, localProjection != nil, payload != payloadBytes(item.entity) {
+                mustRepublish.insert(identity)
+            }
 
             if context.pairs[identity] != nil {
                 // §6.3：① 把账户身份写到那条本机行上，② 再按三相把字段落下去。两条 step
@@ -825,7 +871,8 @@ enum SyncableOwnedItems {
 
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
                              supersededByDelete: supersededByDelete,
-                             cancelledDeletes: cancelledDeletes, harvest: harvest)
+                             cancelledDeletes: cancelledDeletes, harvest: harvest,
+                             mustRepublish: mustRepublish)
     }
 
     // MARK: - 认领（§6 的规则 (i)）

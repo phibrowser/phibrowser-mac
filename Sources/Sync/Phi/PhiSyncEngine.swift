@@ -2973,7 +2973,16 @@ actor PhiSyncEngine {
             tombstoned.insert(identity)
         }
         // A6：**每一条能走到游标的入站实体**都先收割服务端三元组，tombstone 也不例外。
+        //
+        // 三元组同时留一份在 `tombstoneTriples` 里：下面那两个停放循环会**新建**游标，而这
+        // 个循环只更新已经存在的那些（T1 支不为一条认不出来的 tombstone 建游标）。新建的
+        // 那一条必须带上三元组，理由与 `plan.harvest` 那一份逐字相同（见停放循环）。
+        var tombstoneTriples: [String: (entityId: String, version: Int64)] = [:]
         for item in batch.tombstones {
+            let previous = tombstoneTriples[item.identity]
+            tombstoneTriples[item.identity] =
+                (entityId: item.entityId.isEmpty ? (previous?.entityId ?? "") : item.entityId,
+                 version: max(item.version, previous?.version ?? 0))
             guard var cursor = table.cursors[item.identity] else { continue }
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
@@ -3056,6 +3065,22 @@ actor PhiSyncEngine {
             table.cursors[identity] = cursor
         }
 
+        /// A6 的收割，**写进一条这一轮才建出来的游标**。
+        ///
+        /// 上面那个循环按 P5 只更新已经存在的游标，于是「本轮新建游标」的三条路——落地、
+        /// §4.4 的停放、导入锁的停放——各自要再收割一次，否则那条游标以
+        /// `entityId == "" / version == 0` 落盘，而共享 marker 早已推过那一页、这一版实体
+        /// **永不重投**。两个来源按到达的种类取：存活实体的三元组在 `plan.harvest` 里
+        /// （停放的那些也收割，见 `SyncableOwnedItems.plan` 的第一段），远端 tombstone 的在
+        /// `tombstoneTriples` 里。
+        func harvestServerTriple(into cursor: inout PhiOwnedItemCursor, _ identity: String) {
+            guard let triple = output.plan.harvest[identity] ?? tombstoneTriples[identity] else {
+                return
+            }
+            if !triple.entityId.isEmpty { cursor.entityId = triple.entityId }
+            cursor.version = max(cursor.version, triple.version)
+        }
+
         let outcome = await registration.land(
             OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps))
         guard !isStopped else { return }
@@ -3069,10 +3094,7 @@ actor PhiSyncEngine {
         var spaceTableChanged = false
         for identity in outcome.landed {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
-            if let harvested = output.plan.harvest[identity] {
-                if !harvested.entityId.isEmpty { cursor.entityId = harvested.entityId }
-                cursor.version = max(cursor.version, harvested.version)
-            }
+            harvestServerTriple(into: &cursor, identity)
             if outcome.deleted.contains(identity) {
                 // §5.6 T1–T3：清三个待办位、写 `deletedAtMs`，于是同一轮的差分不可能把这次
                 // 远端删除改写成一次本机删除再发回去。
@@ -3112,15 +3134,30 @@ actor PhiSyncEngine {
             counters.applied += 1
         }
         // §4.4 第 4 步的停放：归属还没落地。
+        //
+        // **停放建出来的游标同样要带上服务端三元组**（A6）。一条身份第一次到达就被停放
+        // （作用域不一致的整轮停放、归属还没落地、导入锁）时它还没有游标，而上面那个
+        // harvest 循环按 P5 只更新已经存在的那些：少了这一趟收割，游标以
+        // `entityId == "" / version == 0` 落盘，而共享 marker 早已推过那一页、这一版实体
+        // 永不重投——下一轮停放项落了地、写下基线，游标却仍然没有身份。
+        //
+        // 那条游标此后是**双向坏掉**的（Mac B 2026-09-14，build 822）：R-exec-1 说
+        // `entityId == ""` 的含义是「这条身份还没在账户上出现过」，于是本机的一次删除在
+        // §9.1 的第二道闸上被就地收尾（一条 tombstone 都发不出去，账户上那条实体没有任何
+        // 设备还能删掉），而一次本机编辑会以 `baseVersion == 0` 的 create 盲写覆盖账户上
+        // 那一条。形状与 `applySpaceUpdates` 的 fallback B 逐字相同——Space 侧停放时同样
+        // 写这两行。
         for (identity, item) in output.plan.parked {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            harvestServerTriple(into: &cursor, identity)
             cursor.pendingApply = item.payload
             cursor.pendingOwnerUuid = item.pendingOwnerUuid
             table.cursors[identity] = cursor
         }
-        // 落地被导入锁挡住的那一组（§4.9 第 3 条 / §5.6 T4）。
+        // 落地被导入锁挡住的那一组（§4.9 第 3 条 / §5.6 T4）。同上，这一支也**新建**游标。
         for identity in outcome.parked {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            harvestServerTriple(into: &cursor, identity)
             if let payload = output.plan.steps.first(where: { $0.identity == identity })?.payload {
                 cursor.pendingApply = payload
             }
@@ -3265,7 +3302,37 @@ actor PhiSyncEngine {
             .keys.sorted()
         let tombstoneSlice = ownedTombstoneSlice(registration, table: table,
                                                  candidates: deleteCandidates, budget: &budget)
-        let republish = ownedMustRepublish[registration.label] ?? []
+        // R-exec-1 的自愈，**一次性**：`entityId == ""` 的含义是「这条身份还没在账户上出现
+        // 过」，而 `reconciled != nil` 的含义是「账户上那一条的某一版已经在本机落过地」。
+        // 两者同时成立是一条不变量破坏，build 822 及更早会写出它——停放为一条身份新建游标
+        // 时不收割服务端三元组（`applyOwnedKind` 那两个停放循环，已修）。
+        //
+        // 表已经这样落盘的机器**自己修不好**：那一版实体永不重投，游标再也收不到 id，于是
+        // 本机对这一行的删除在上面那道闸上被就地收尾（账户上那条实体没有任何设备还能删掉），
+        // 而一次本机编辑会以 `baseVersion == 0` 盲写覆盖它。
+        //
+        // 唯一的补键通路是**把它当成一次 create 重发**：服务端的
+        // `ON CONFLICT (client_tag_hash) DO UPDATE` 按 tag 认行，而这条身份的 tag 与账户上
+        // 那一条逐字相同，于是这次提交打在同一行上，回来的 `.applied` 带着真正的 entity id
+        // 与版本（`applyOwnedCommitOutcome`）。Space 侧对同族状态（`.invalidMessage` 之后
+        // 丢掉服务端三元组）走的就是这条通路，注释见 `applySpaceCommitOutcome`。
+        //
+        // 三条限制让它不会变成一条常驻的重发规则：只碰**本机还有合格行**的身份（与快照取
+        // 交集）、只碰没有停放载荷也没有待发删除的游标（那两种本轮各有自己的出路）、补上
+        // 之后判据不再成立。本机没有行的那些补不了键——没有载荷可发；它们由对端的下一次
+        // 更新收割，或者随保留期过期。
+        let unkeyed = Set(table.cursors.filter {
+            $0.value.entityId.isEmpty && $0.value.reconciled != nil
+                && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
+                && !$0.value.pendingDelete && snapshot.entities[$0.key] != nil
+        }.keys)
+        if !unkeyed.isEmpty, onlyIdentities == nil {
+            // R12：只报条数与 kind，不报身份。
+            AppLogWarn("[phi-sync] owned-item cursors carry a baseline but no entity id "
+                       + "kind=\(registration.label) count=\(unkeyed.count); "
+                       + "republishing them to re-key through the client tag")
+        }
+        let republish = (ownedMustRepublish[registration.label] ?? []).union(unkeyed)
         // §5.3 / §6.4 的尽力而为的推迟：某个归属在**本轮的 pull 里收到过本 kind 的实体**时，
         // 该归属下**本轮新铸身份**的行不进这一轮的切片；它们在第一个没有该归属实体到达的
         // 轮次里提交。这只是把加入期「本机先铸、对端的同一条随后才到」的窗口压窄——§6 的
@@ -3493,6 +3560,10 @@ actor PhiSyncEngine {
             // 本来就没有游标的身份不该因为一次被拒而长出一条。
             guard existing != nil else { return }
             guard isTombstone else {
+                // 「服务端没有这一行」：丢掉服务端三元组，下一轮经 client_tag 的唯一索引
+                // 重新建出来。`reconciled` 留着——它是这台机器的时间戳历史，不是关于服务端
+                // 的断言。**下一轮真的会重发**：`publishOwnedKind` 的补键自愈把「有基线、
+                // 没有 entityId」的游标无条件排进发布切片，不再依赖「快照字节恰好与基线不等」。
                 cursor.entityId = ""
                 cursor.version = 0
                 cursor.server = nil

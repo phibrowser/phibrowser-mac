@@ -1604,6 +1604,7 @@ actor PhiSyncEngine {
             if spaceLive {
                 flushSpaceObservations(batch)
                 flushOwnedObservations(ownedBatches)
+                parkUndeliveredOwnedEntities(ownedBatches)
                 // ...and what it did NOT persist has to invalidate the drain. A round that
                 // threw mid-way consumed its pages — the marker moved past them — while
                 // everything the routing decoded from them (`batch.decoded` /
@@ -2909,6 +2910,61 @@ actor PhiSyncEngine {
         let seenAt = now()
         mutateSpaceTable { table in
             for hash in hashes { table.unreadableTagHashes[hash] = seenAt }
+        }
+    }
+
+    /// 一次**中途抛错**的 pull 已经把它读过的那些页永久消费掉了：共享 marker 一页一页落盘
+    /// （`storedMarker = marker` 就在页循环里），而路由从那些页上解出来的实体活在这一轮的
+    /// 局部变量 `ownedBatches` 里，随抛错一起消失。对归属 kind 来说这不是「下一轮再拉一次」
+    /// ——服务端只从推进过的 marker 之后发货，页 1 上那些 create / update / delete **再也不会
+    /// 被投递**：那条书签在本机永远不出现，那次远端删除在本机永远不发生，而每一个计数器都是
+    /// 健康值。
+    ///
+    /// 所以这里把它们写进游标自己那条**持久**的待办通道，形状与落地段那两个停放循环逐字相同：
+    /// 存活实体进 `pendingApply` + `pendingOwnerUuid`（§4.4 第 4 步），远端 tombstone 进
+    /// `pendingTombstone`（§5.6 T4），**两者都先收割服务端三元组**（A6——不收割的话那条游标
+    /// 以 `entityId == ""` 落盘，而那一版实体永不重投，R-exec-1 的双向坏掉）。下一轮的
+    /// `applyOwnedKind` 把这两处原样读回工作集（`parked` 与 `tombstoned` 的定义里已经有它们），
+    /// 于是那些页的内容照常落地，只晚一轮。
+    ///
+    /// **为什么不像 Space 段那样丢 marker 重放整个 data type**：那条路是 Space 段唯一能走的
+    /// （它没有「收到了但还没放下去」的持久位），代价是把设置与全部 kind 一起拖进一次整类型
+    /// 重放，而且只在一次**从头开始**的 drain 被打断时才武装（`drainInProgress` 的前置是
+    /// `storedMarker == nil`）——一次普通增量拉取中途失败根本不触发它。归属 kind 手上正好有
+    /// 那条持久通道，用它既不要求对端重发，也不动 marker。
+    ///
+    /// **`ownedReadFailed` 不挡这一趟**：R-exec-3 关的是该 kind 的快照、差分与发布（出站
+    /// 半边），而这里写的全是入站记账——本机行读不出来，一点也不会让这批已经收下的字节更
+    /// 不值得留着。
+    private func parkUndeliveredOwnedEntities(_ batches: [String: OwnedPullBatch]) {
+        guard !isStopped, spaceStore != nil else { return }
+        for registration in ownedKinds {
+            guard let batch = batches[registration.label],
+                  !batch.arrivals.isEmpty || !batch.tombstones.isEmpty else { continue }
+            var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+            for item in batch.tombstones {
+                var cursor = table.cursors[item.identity] ?? PhiOwnedItemCursor()
+                harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
+                cursor.pendingTombstone = true
+                table.cursors[item.identity] = cursor
+            }
+            for item in batch.arrivals {
+                var cursor = table.cursors[item.identity] ?? PhiOwnedItemCursor()
+                let known = cursor.version
+                harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
+                // §5.6 的 L2 支在这里同样成立，判据也同样是**版本**：一条比本机那条 tombstone
+                // 更旧的重放版本不许被停放，否则下一轮它会把一条用户明确删掉的行建回来。
+                // 收割照做（A6）——那条待发的 tombstone 还要拿这个三元组去提交。
+                if cursor.deletedAtMs == nil || item.version > known {
+                    cursor.pendingApply = item.payload
+                    cursor.pendingOwnerUuid = registration.owners(item.payload).first
+                }
+                table.cursors[item.identity] = cursor
+            }
+            AppLogWarn("[phi-sync] a pull was interrupted after the marker moved kind="
+                       + "\(registration.label) parked=\(batch.arrivals.count) "
+                       + "tombstones=\(batch.tombstones.count)")
+            writeOwnedTable(registration, table)
         }
     }
 

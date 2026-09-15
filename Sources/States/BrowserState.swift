@@ -281,6 +281,9 @@ class BrowserState {
     private var aiChatTabsBeingCreated: Set<String> = []
     // Request lifetime only; not a second sidebar ownership registry.
     var travelBackRunning = false
+    @Published var travelBackHandoffs: [Int: TravelBackHandoff] = [:]
+    @Published var profileMoveRequests: [Int: SidecarProfileMoveRequest] = [:]
+    var profileMovesInFlight: Set<Int> = []
     let travelBackTabCreated = PassthroughSubject<(marker: String, tab: Tab), Never>()
     
     @Published var sidebarCollapsed = false

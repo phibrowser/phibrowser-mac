@@ -57,6 +57,10 @@ final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()
 
     @Published private(set) var profiles: [PhiBrowserProfile] = []
+    private var archiveObservers: [NSObjectProtocol] = []
+    private var archiveTimer: Timer?
+    private var archiveInFlight = false
+    private var nextArchiveAttempt: TimeInterval = 0
 
     /// Profiles a user picker should offer: every profile except the agent's
     /// auto-created fallback, which belongs to the agent (see
@@ -70,6 +74,11 @@ final class ProfileManager: ObservableObject {
     }
 
     private init() {
+        for name in [Notification.Name.mainAccountChanged, UserDefaults.didChangeNotification,
+                     NSApplication.didBecomeActiveNotification] {
+            archiveObservers.append(NotificationCenter.default.addObserver(forName: name,
+                object: nil, queue: .main) { [weak self] _ in self?.drainChatArchives() })
+        }
         refresh()
     }
 
@@ -78,17 +87,22 @@ final class ProfileManager: ObservableObject {
     /// Pulls the latest profile list from the bridge. Synchronous and
     /// cheap (Chromium-side just reads from in-memory ProfileAttributesStorage).
     /// Safe to call repeatedly on the main thread.
-    func refresh() {
+    @discardableResult
+    func refresh() -> Bool {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
             // Bridge not up yet at very early launch; `profiles` stays empty
             // and the first post-launch `refresh()` (driven by any UI that
             // needs profiles) will populate it.
-            return
+            return false
         }
         let raw = bridge.listProfiles()
         let decodedProfiles = raw.compactMap(Self.decode(_:))
+        // An incomplete bridge response must not look like Profile deletion.
+        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return false }
         profiles = decodedProfiles
         persistDisplayNamesToLocalStore(decodedProfiles)
+        drainChatArchives()
+        return true
     }
 
     /// Convenience lookup — nil if the basename isn't known. Most callers
@@ -191,18 +205,35 @@ final class ProfileManager: ObservableObject {
     /// it deletes profiles wholesale while restoring a snapshot.
     /// Successful deletion starts best-effort memory cleanup for the original
     /// account. Completion reports Chromium deletion; cleanup failures are logged.
-    /// Import rollback disables cleanup to preserve existing account memory.
+    /// Import rollback disables memory cleanup and conversation archival.
     @MainActor
     func deleteProfile(_ profileId: String,
                        removeMemories: Bool = true,
+                       archiveConversations: Bool = true,
                        completion: @escaping (Bool, String?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
             completion(false, "bridge unavailable")
             return
         }
         let memoryService = removeMemories ? try? SiteMemoryService.currentAccount() : nil
+        let journal = archiveConversations ? AccountController.shared.account.map(Self.chatArchiveJournal) : nil
+        let pending: ProfileChatArchiveJournal.Entry?
+        do {
+            // Persist before the irreversible browser operation, even with AI off.
+            pending = try journal?.prepare(profileId: profileId)
+        } catch {
+            AppLogError("[ProfileChatArchive] could not persist deletion intent")
+            completion(false, NSLocalizedString("profiles.archive.prepareFailed",
+                value: "Could not save the conversation recovery record. Please try again.",
+                comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile"))
+            return
+        }
         bridge.deleteProfile(profileId) { [weak self] success, error in
             DispatchQueue.main.async {
+                if let pending, let journal {
+                    do { try journal.finish(pending.operationId, deleted: success) }
+                    catch { AppLogError("[ProfileChatArchive] could not persist deletion result") }
+                }
                 self?.refresh()
                 if success, removeMemories {
                     if let memoryService {
@@ -219,6 +250,58 @@ final class ProfileManager: ObservableObject {
                 }
                 completion(success, error)
             }
+        }
+    }
+
+    private static func chatArchiveJournal(_ account: Account) -> ProfileChatArchiveJournal {
+        ProfileChatArchiveJournal(fileURL: account.userDataStorage
+            .appendingPathComponent("chat-profile-archive", isDirectory: true)
+            .appendingPathComponent("pending.json"))
+    }
+
+    /// Delivery is gated by AI availability and the original account. It never
+    /// launches Sentinel or enables AI. Only one bounded request is in flight.
+    private func drainChatArchives() {
+        archiveTimer?.invalidate()
+        archiveTimer = nil
+        guard ProfileChatArchiveJournal.deliveryAllowed(
+                aiEnabled: PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+                authenticated: AccountController.shared.account != nil),
+              let account = AccountController.shared.account,
+              !archiveInFlight,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        let journal = Self.chatArchiveJournal(account)
+        let raw = bridge.listProfiles()
+        let decoded = raw.compactMap(Self.decode(_:))
+        guard !decoded.isEmpty, decoded.count == raw.count else { return }
+        let ready: [ProfileChatArchiveJournal.Entry]
+        do { ready = try journal.ready(existingProfileIds: Set(decoded.map(\.profileId))) }
+        catch {
+            AppLogError("[ProfileChatArchive] could not read pending operations")
+            return
+        }
+        guard let entry = ready.first else { return }
+        let remaining = nextArchiveAttempt - ProcessInfo.processInfo.systemUptime
+        if remaining > 0 {
+            archiveTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
+                self?.drainChatArchives()
+            }
+            return
+        }
+        archiveInFlight = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await APIClient.shared.archiveProfileConversations(profileId: entry.profileId,
+                    operationId: entry.operationId, expectedUserID: account.userID)
+                try journal.finish(entry.operationId, deleted: false)
+                self.nextArchiveAttempt = 0
+            } catch {
+                AppLogWarn("[ProfileChatArchive] delivery deferred; will retry while AI is enabled")
+                self.nextArchiveAttempt = ProcessInfo.processInfo.systemUptime + 30
+            }
+            self.archiveInFlight = false
+            self.drainChatArchives()
         }
     }
 

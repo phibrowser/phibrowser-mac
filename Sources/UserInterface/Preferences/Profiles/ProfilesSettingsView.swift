@@ -240,8 +240,8 @@ struct ProfilesSettingsView: View {
             format: NSLocalizedString("settings.profiles.deleteConfirmation.title", value: "Delete profile \u{201C}%@\u{201D}?", comment: "Title of the delete-profile confirmation"),
             profile.displayName
         )
-        alert.informativeText = NSLocalizedString("settings.profiles.deleteConfirmation.message", value: "All cookies, history, extensions, and saved data on this profile will be permanently removed. This cannot be undone.",
-            comment: "Body of the delete-profile confirmation"
+        alert.informativeText = NSLocalizedString("settings.profiles.deleteConfirmation.browserDataAndChats", value: "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again.",
+            comment: "Profiles settings - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable"
         )
         alert.alertStyle = .warning
         alert.addButton(withTitle: NSLocalizedString("settings.profiles.deleteConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))

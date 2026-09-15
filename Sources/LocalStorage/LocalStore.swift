@@ -153,6 +153,11 @@ class LocalStore {
             } catch {
                 AppLogError("[LocalStore] Failed to record opened local store format: \(error)")
             }
+            // 一次性自愈，排在写队列的最前面：一个库里若已经躺着重复的 pin 行，
+            // 任何按 guid 建字典的读者都会 trap（见
+            // `healDuplicatePinnedTabRows()`）。它是 fire-and-forget 的，所以那些读者
+            // **同时**也必须对重复键宽容——两件事都要，谁也替不了谁。
+            healDuplicatePinnedTabRows()
         } catch {
             AppLogError("Failed to create ModelContainer: \(error)")
             container = nil

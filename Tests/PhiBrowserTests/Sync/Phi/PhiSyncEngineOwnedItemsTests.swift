@@ -3696,6 +3696,120 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNotNil(table.cursors["lx:pu-1"]?.reconciled, "⑩ 基线照常写下")
     }
 
+    /// CASE 9b.4g — 一条身份在计划里有**两条 step** 时，落地只许产出**一条** `.create`。
+    ///
+    /// 现场（Mac B 2026-09-14 23:49，build 824）：一条**有基线、本机没有行**的身份到达，
+    /// rank 与标题**同时**变了，于是 `plan` 按「移动与内容改动是两条步骤，不是二选一」产出
+    /// `.move` + `.update`。落地那一支于是走 create（先按身份找本机行，找不到才建），而那
+    /// 一趟循环是**按 step** 走的：两条 step 各把同一行 append 了一遍，
+    /// `applyPinSyncBatchBody` 拿**同一个 guid** 调了两次 `createPinnedTabBody`，库里多出
+    /// 一条与前一条 guid 完全相同的 pin 行。
+    ///
+    /// 防的是什么：两行共享 guid 之后，按 guid 定位的每一种写都只碰得到其中一条（A11 的
+    /// 折叠也一样），而侧栏那本按 `guidInLocalDB` 建的字典在重复键上直接 trap——用户看到的
+    /// 是整个应用崩掉，不是一条重复的 pin。
+    func testOneIdentityWithTwoStepsStillCreatesExactlyOneRow() async throws {
+        // 本机这个 Space 里只有另一条 lineage，`lx` 一条行都没有 ⇒ 落地走 create 那一支。
+        let pinAccess = FakePinAccess(scope: .space, account: .space,
+                                      rows: [.fixture(lineageId: "LY", guid: "py",
+                                                      spaceId: "s-1", profileId: "Default")])
+        let pinStore = MemoryOwnedItemStore()
+        // 基线：rank "V"、标题 "T"。
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1", rank: "V", title: "T",
+                       rankStamp: 100, contentStamp: 100),
+            owner: "su-1")
+        let client = FakePhiSyncClient()
+        // 到达：rank 与标题都变了 ⇒ `.move` + `.update`，两条 step 一条身份。
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "su-1", rank: "W",
+                                             title: "T2", rankStamp: 200, contentStamp: 200)),
+                         tag: pinTag("lx", owner: "su-1"), version: 9, entityId: "srv-p1",
+                         key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let creates = pinAccess.lastAppliedOps.filter {
+            if case .create = $0 { return true } else { return false }
+        }
+        XCTAssertEqual(creates.count, 1, "① 两条 step 只许产出一条 `.create`")
+        XCTAssertEqual(pinAccess.rows.filter { PinKind.lineageKey($0.lineageId) == "lx" }.count, 1,
+                       "② 这条身份在库里只有一行")
+        XCTAssertEqual(Set(pinAccess.rows.map(\.guid)).count, pinAccess.rows.count,
+                       "③ 没有任何两行共享 guid —— 那正是那次崩溃的形状")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(counters?.applied, 1, "④ 这一条照常落地，fix 不改落地结果")
+    }
+
+    /// CASE 9b.4h — 归属形状与本机作用域不符的入站实体**停放**，而且**每一轮都停放**，
+    /// 一行都不建。
+    ///
+    /// 现场（Mac B 2026-09-14 23:49 那次崩溃的成因，以及 00:01 重启后那个起不来的循环）：
+    /// 本机已经迁到 Space 作用域，而账户上还躺着一条 Profile 归属的旧 `c0020f0d` 实体
+    /// （`pins-cursors.json` 里 `…:13352bc5…` 那条游标的 `pendingApply`，rank
+    /// `000007`→`s`、标题 `YouTube`→`YouTube Renamed`，所以 `plan` 产出 `.move` +
+    /// `.update` 两条 step）。`localOwner` 照样把那个 profile uuid 反查成一个 profile，于是
+    /// 它落了下来——`applyPinSyncBatchBody` 把缺掉的 `spaceId` 按 `?? defaultSpaceId` 补齐，
+    /// `applyCurrentPinnedTabOwner` 再按当前作用域盖一次归属，这条 Profile 实体于是变成
+    /// **默认 Space 里的行**，压在迁移刚建好的同 lineage 行旁边，而且两条 step 各建一遍、
+    /// 共用同一个新铸的 guid。
+    ///
+    /// **它自己好不了，因为落地后复核问的是 profile 归属**：新行坐在 `default-space` 上，
+    /// `isKnownLocalPin(lineage, ownerKey: "Default")` 永远答「不在」⇒ 这条身份被重新停放、
+    /// 游标留着 `pendingApply`、下一轮再来一遍。B 的日志里就是这个样子：每一轮
+    /// `parked=1 applied=0`，中间夹着 A11 的 `collapsed 2 exact duplicate row(s)`——
+    /// 上一轮建的两条被折掉、这一轮再建两条，库永远停在「一条幸存 + 两条新的」。
+    /// 侧栏在 `viewDidLoad` 里就撞上那对共享 guid 的行，应用起不来。
+    ///
+    /// 所以这条用例跑**两轮**：真正要钉住的是「再来一轮也不会多出一行」。
+    func testAnInboundOwnerShapeThatDisagreesWithTheLocalScopeIsParked() async throws {
+        // 本机是 Space 形状，Space 里已经有那条 lineage（迁移刚建的）。
+        let pinAccess = FakePinAccess(scope: .space, account: .space,
+                                      rows: [.fixture(lineageId: "LX", guid: "px-space",
+                                                      spaceId: "s-1", profileId: "Default")])
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 到达的是同一条 lineage 的 **Profile 归属**旧实体。第二页是空的：停放项自己会被
+        // 重试，那正是现场那个循环的形状。
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "pu-1")),
+                         tag: pinTag("lx"), version: 9, entityId: "srv-p1", key: key),
+        ]), page([])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(),
+                                store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        var table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(counters?.applied, 0, "① 一条都没落")
+        XCTAssertEqual(counters?.parked, 1, "② 那条形状不符的实体停放着")
+        XCTAssertEqual(pinAccess.rows.count, 1, "③ 库里还是那一行，旁边没有多出来的")
+        XCTAssertEqual(pinAccess.rows.first?.guid, "px-space")
+        XCTAssertNotNil(table.cursors["lx:pu-1"]?.pendingApply,
+                        "④ 停放不丢东西：载荷记在游标上，等作用域收敛")
+
+        await engine.pullOnce()
+
+        counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(counters?.parked, 1, "⑤ 第二轮照旧停放")
+        XCTAssertEqual(pinAccess.rows.count, 1,
+                       "⑥ **重试不生行**——这一条就是那个每轮重建的循环")
+        XCTAssertEqual(pinAccess.rows.first?.guid, "px-space")
+        XCTAssertFalse(pinAccess.lastAppliedOps.contains { if case .create = $0 { return true }
+                                                           else { return false } },
+                       "⑦ 一条 `.create` 都没产出过")
+        XCTAssertNotNil(table.cursors["lx:pu-1"]?.pendingApply, "⑧ 载荷还在，等作用域收敛")
+    }
+
     /// CASE 9b.4e（R-exec-1 / A6）— 停放落地之后**本机取消固定**：发出**一条** tombstone，
     /// 带着那条实体真正的 entity id 与基版本。
     ///

@@ -718,6 +718,80 @@ final class PinnedTabScopeTests: XCTestCase {
         )
     }
 
+    /// CASE 8.5d — 一次带着**已有 guid** 的 create 被库拒收，而不是安静地多出一条行。
+    ///
+    /// 防的是什么：`guid` 在 schema 上不是唯一列，所以在这道守卫之前，同一个 guid 写两遍
+    /// 是成功的。两条共享 guid 的行此后既改不动也删不掉（`.move` / `.update` / `.delete`
+    /// 都按 guid 取第一条），而侧栏那本按 `guidInLocalDB` 建的字典会直接 trap
+    /// （Mac B 2026-09-14 23:49）。`rowAlreadyMapped` 正是同步落地那条「这一批算错了 ⇒
+    /// 整批拒收」认得的错误，于是一个字都不落库。
+    func testASecondPinnedCreateOnAnExistingGuidIsRefused() async throws {
+        let store = try makeStore()
+        try seedProfilesAndSpaces(in: store)
+        let url = try XCTUnwrap(URL(string: "https://dup.example"))
+
+        try await store.createPinnedTabThrowing(guid: "shared-guid", url: url,
+                                                title: "First", profileId: "Default")
+        do {
+            try await store.createPinnedTabThrowing(guid: "shared-guid", url: url,
+                                                    title: "Second", profileId: "Default")
+            XCTFail("第二次 create 必须抛，不许安静地多出一条行")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
+        }
+        try drainMainQueue()
+
+        let rows = store.getAllPinnedTabs(for: "Default")
+        XCTAssertEqual(rows.filter { $0.guid == "shared-guid" }.count, 1,
+                       "库里那个 guid 始终只有一条行")
+        XCTAssertEqual(rows.first?.title, "First", "被拒的那一条一个字段都没写进去")
+    }
+
+    /// CASE 8.5e — 启动自愈把一个**已经**坏掉的库收拾干净。
+    ///
+    /// 两类各一条：共享 guid 的两行留一条（`index` 最小者），同身份的精确重复留一条。
+    /// 内容分歧的变体**不动**——A11 给它们各铸一条新 lineage，删掉就是销毁用户数据。
+    func testStartupSelfHealCollapsesDuplicatePinnedRows() async throws {
+        let store = try makeStore()
+        // `LocalStore.init` 自己排了一次自愈进写队列。空等一个 no-op 写把它排干，于是
+        // 下面那次直接调用面对的是一个确定的、没人动过的库。
+        await store.performBackgroundWriteAndWait { _ in }
+        let fixture = try seedProfilesAndSpaces(in: store)
+        // 共享 guid 的两行（Mac B 那次落地的形状：同 lineage、同内容、两个 index）。
+        try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 1)
+        try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 3)
+        // 同一条身份的第三行，guid 不同、内容逐字相同 ⇒ 精确重复。
+        try insertPinnedTab(in: store, guid: "third-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 4)
+        // 同身份但**内容分歧**的变体：A11 的地盘，自愈不许碰它。
+        try insertPinnedTab(in: store, guid: "variant-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube Renamed",
+                            url: "https://youtube.example", index: 5)
+        let context = try XCTUnwrap(store.getMainContext())
+
+        let counts = try store.healDuplicatePinnedTabRowsBody(in: context)
+        try context.save()
+
+        XCTAssertEqual(counts.sharedGuid, 1, "① 共享 guid 的那一对折成一条")
+        XCTAssertEqual(counts.sharedIdentity, 1, "② 同身份的精确重复也折成一条")
+        let rows = store.getAllPinnedTabs(for: "Default")
+        XCTAssertEqual(rows.filter { $0.guid == "dup-guid" }.count, 1,
+                       "③ 那个 guid 只剩一条行")
+        XCTAssertEqual(rows.first { $0.guid == "dup-guid" }?.index, 1,
+                       "④ 留下的是 index 最小的那一条")
+        XCTAssertNil(rows.first { $0.guid == "third-guid" },
+                     "⑤ 精确重复的第三条没了")
+        XCTAssertNotNil(rows.first { $0.guid == "variant-guid" },
+                        "⑥ 内容分歧的变体一个字都没动")
+        XCTAssertEqual(Set(rows.map(\.guid)).count, rows.count,
+                       "⑦ 收尾之后没有任何两行共享 guid")
+    }
+
     /// CASE 8.6 — a scope migration carries `contentUpdatedDate` across.
     ///
     /// 迁移过去只复制 `createdDate`，把 `contentUpdatedDate` 丢在原行上。丢掉的后果是：用户

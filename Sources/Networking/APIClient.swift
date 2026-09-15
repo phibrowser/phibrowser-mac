@@ -201,6 +201,27 @@ class APIClient {
         return try JSONDecoder().decode(AgentAvatarResponse.self, from: response.body)
     }
 
+    /// Completes a durable browser-owned deletion delivery. This does not start
+    /// Sentinel and cannot switch accounts or re-enable AI while awaiting service.
+    @MainActor
+    func archiveProfileConversations(profileId: String, operationId: String,
+                                     expectedUserID: String) async throws {
+        guard PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+              AccountController.shared.account?.userID == expectedUserID else {
+            throw APIError.invalidRequest(message: "Profile archive delivery is unavailable.")
+        }
+        let bearer = token
+        guard !bearer.isEmpty else { throw APIError.invalidRequest(message: "Authentication required.") }
+        let payload = try JSONSerialization.data(withJSONObject: ["profileId": profileId, "operationId": operationId])
+        let response = try await PhiAgentTransport.shared.send(PhiAgentHTTPRequest(
+            path: "/api/v1/chats/profile-archives", method: "POST",
+            headers: ["Authorization": "Bearer \(bearer)", "Content-Type": "application/json",
+                      "x-phi-chat-scope": "global"], body: payload, timeout: 5))
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode)
+        }
+    }
+
     // MARK: - Agent Spaces
 
     /// Notifies phi-agent that the user entered or left an agent Space's window,

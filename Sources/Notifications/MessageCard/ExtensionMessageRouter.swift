@@ -180,6 +180,28 @@ final class ExtensionMessageRouter {
             return "{}"
         }
 
+        register(type: "sidecar.chat.profiles") { context in
+            MainActor.assumeIsolated {
+                guard context.senderId == SidecarAIOutputStateStore.extensionId,
+                      ApplicationState.shared.isAuthenticated,
+                      PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+                      ChromiumLauncher.sharedInstance().bridge != nil else {
+                    return "{\"error\":\"unavailable\"}"
+                }
+                let manager = ProfileManager.shared
+                guard manager.refresh() else { return "{\"error\":\"unavailable\"}" }
+                let profiles = manager.userAssignableProfiles.map {
+                    ["profileId": $0.profileId, "displayName": $0.displayName]
+                }
+                guard !profiles.isEmpty,
+                      let data = try? JSONSerialization.data(withJSONObject: ["profiles": profiles]),
+                      let reply = String(data: data, encoding: .utf8) else {
+                    return "{\"error\":\"unavailable\"}"
+                }
+                return reply
+            }
+        }
+
         for type in TravelBackMessageHandler.messageTypes {
             register(type: type) { context in
                 Task { @MainActor in

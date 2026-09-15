@@ -69664,6 +69664,30 @@
         }
       }
     },
+    "profiles.archive.prepareFailed" : {
+      "comment" : "Profile deletion - Error when the local recovery record could not be saved before deleting a profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Could not save the conversation recovery record. Please try again."
+          }
+        }
+      }
+    },
+    "settings.profiles.deleteConfirmation.browserDataAndChats" : {
+      "comment" : "Profiles settings - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again."
+          }
+        }
+      }
+    },
     "settings.profiles.deleteConfirmation.cancelButton" : {
       "comment" : "Cancel button",
       "extractionState" : "extracted_with_value",

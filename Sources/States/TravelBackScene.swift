@@ -38,15 +38,26 @@ struct TravelBackSplit: Codable, Equatable {
 
 struct TravelBackScene: Codable {
     struct TabRef: Codable { let tabId: Int }
-    struct WindowRef: Codable { let windowId: Int }
+    /// One process incarnation; persisted numeric IDs are unsafe after restart.
+    static let currentRuntimeId = UUID().uuidString
+    struct WindowRef: Codable { let windowId: Int; var spaceId: String? = nil }
     struct Layout: Codable { let splitView: TravelBackSplit? }
     var page: TravelBackPage? = nil
     var tab: TabRef? = nil
     var window: WindowRef? = nil
     var profileId: String? = nil
+    var runtimeId: String? = nil
     var layout: Layout? = nil
     /// Live capture-only membership, omitted by the persisted client schema.
     var relatedTabIds: [Int]? = nil
+
+    static func destinationWindowId(for scene: TravelBackScene, sourceWindowId: Int?,
+                                    availableWindowIds: [Int]) -> Int? {
+        if scene.runtimeId == currentRuntimeId, let recorded = scene.window?.windowId,
+           availableWindowIds.contains(recorded) { return recorded }
+        if let sourceWindowId, availableWindowIds.contains(sourceWindowId) { return sourceWindowId }
+        return availableWindowIds.sorted().first
+    }
 }
 
 enum TravelBackFailure: String, Error {
@@ -56,18 +67,64 @@ enum TravelBackFailure: String, Error {
     case targetChanged = "target_changed"
     case busy = "busy"
     case timedOut = "timed_out"
+    case targetUnavailable = "target_unavailable"
 }
 
 struct TravelBackTabRef: Equatable {
     let tabId: Int
     let windowId: Int
     let url: String
+    var profileId: String? = nil
+    var spaceId: String? = nil
 
     static func anchor(for scene: TravelBackScene, current: TravelBackTabRef?,
                        openTabs: [TravelBackTabRef]) -> TravelBackTabRef? {
-        if let current, current.url == scene.page?.url { return current }
-        guard let recordedId = scene.tab?.tabId else { return nil }
-        return openTabs.first { $0.tabId == recordedId }
+        let matchesScope: (TravelBackTabRef) -> Bool = {
+            scene.profileId != nil && scene.window?.spaceId != nil
+                && $0.profileId == scene.profileId && $0.spaceId == scene.window?.spaceId
+        }
+        if let current, matchesScope(current), current.url == scene.page?.url { return current }
+        guard scene.runtimeId == TravelBackScene.currentRuntimeId,
+              let recordedId = scene.tab?.tabId else { return nil }
+        return openTabs.first { $0.tabId == recordedId && matchesScope($0) }
+    }
+}
+
+struct TravelBackSidebar: Codable, Equatable {
+    let windowId: Int
+    let chatTabId: Int
+    /// The fixed URL binding can outlive its original content tab.
+    let boundTabId: Int
+    let profileId: String
+}
+
+/// A bounded control-plane envelope, owned by the destination BrowserState.
+/// Claiming is not success: only the exact recipient may acknowledge it.
+struct TravelBackHandoff {
+    enum Status { case offered, claimed, accepted, rejected }
+    let operationId: String
+    let conversationId: String
+    let sourceWindowId: Int?
+    let sourceProfileId: String
+    var sourceId: String? = nil
+    var profileMove = false
+    let destination: TravelBackSidebar
+    let expiresAt: Double
+    let acceptBy: Double
+    /// Wall-clock deadline only for rejecting delayed JS delivery; native uses monotonic time.
+    let acceptBefore: Double
+    var status: Status = .offered
+
+    mutating func claim(by recipient: TravelBackSidebar, now: Double) -> Bool {
+        guard recipient == destination, now < expiresAt, now < acceptBy, status == .offered else { return false }
+        status = .claimed
+        return true
+    }
+
+    mutating func acknowledge(by recipient: TravelBackSidebar, success: Bool, now: Double) -> Bool {
+        guard recipient == destination, now < expiresAt, now < acceptBy, status == .claimed else { return false }
+        status = success ? .accepted : .rejected
+        return true
     }
 }
 

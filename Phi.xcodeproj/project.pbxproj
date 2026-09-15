@@ -65,6 +65,7 @@
 		376B66B03000ABBA004BEA29 /* PhiSparkleUpdateViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376B66AF3000ABBA004BEA29 /* PhiSparkleUpdateViewController.swift */; };
 		376CE2F32F27226A0093D937 /* NewTabViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE2F22F27226A0093D937 /* NewTabViewController.swift */; };
 		376CE4002F2891670093D937 /* ExtensionMessageEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FA2F2891670093D937 /* ExtensionMessageEnvelope.swift */; };
+		747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 747241560000000000000022 /* ProfileChatArchiveJournal.swift */; };
 		376CE4012F2891670093D937 /* ExtensionMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */; };
 		376CE4022F2891670093D937 /* ExtensionMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */; };
 		376CE4032F2891670093D937 /* NotificationCardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FD2F2891670093D937 /* NotificationCardManager.swift */; };
@@ -763,6 +764,7 @@
 		376CE2F22F27226A0093D937 /* NewTabViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabViewController.swift; sourceTree = "<group>"; };
 		376CE3F92F2891670093D937 /* WindowThemeMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowThemeMessageRouter.swift; sourceTree = "<group>"; };
 		376CE3FA2F2891670093D937 /* ExtensionMessageEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessageEnvelope.swift; sourceTree = "<group>"; };
+		747241560000000000000022 /* ProfileChatArchiveJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileChatArchiveJournal.swift; sourceTree = "<group>"; };
 		376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessageRouter.swift; sourceTree = "<group>"; };
 		376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessaging.swift; sourceTree = "<group>"; };
 		376CE3FD2F2891670093D937 /* NotificationCardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCardManager.swift; sourceTree = "<group>"; };
@@ -2675,6 +2677,7 @@
 				CCAA000E2F00010000000002 /* BrowserState+PinnedTabTransfer.swift */,
 				AB1000000000000000000FA2 /* TabMultiSelection.swift */,
 				CC59CE000003000000000002 /* ProfileManager.swift */,
+				747241560000000000000022 /* ProfileChatArchiveJournal.swift */,
 				6A4750023B12345600000301 /* BrowserMigrationRunner.swift */,
 				6A4750023B12345600000601 /* FaviconBackfill.swift */,
 				B17DE0000000000000000021 /* CredentialProvider.swift */,
@@ -3558,6 +3561,7 @@
 				CC59CE000002000000000001 /* SpacesStripView.swift in Sources */,
 				CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */,
 				CC59CE000003000000000001 /* ProfileManager.swift in Sources */,
+				747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */,
 				37C1B2F72EE2882400DD4496 /* OverlayToastViewModel.swift in Sources */,
 				8E5D8B012FDFFAD30039CBE3 /* WebContentSnapshotter.swift in Sources */,
 				376CE4122F2897D30093D937 /* AirbyteResponse.swift in Sources */,

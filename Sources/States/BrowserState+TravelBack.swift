@@ -4,13 +4,6 @@
 import Cocoa
 import Combine
 
-struct TravelBackSidebar: Codable, Equatable {
-    let windowId: Int
-    let chatTabId: Int
-    /// The fixed URL binding, which can outlive its original content tab.
-    let boundTabId: Int
-}
-
 struct TravelBackDestination: Codable {
     let tabId: Int
     let windowId: Int
@@ -19,12 +12,25 @@ struct TravelBackDestination: Codable {
     let sameSidecar: Bool
 }
 
+struct SidecarProfileMoveRequest {
+    let operationId: String
+    let destination: TravelBackDestination
+    let snapshot: TravelBackScene
+    let expiresAt: Double
+    let finishBefore: Double
+    var claimed = false
+    var completed: Bool?
+}
+
 @MainActor
 extension BrowserState {
     static let travelBackTabPrefix = "travel-back-pending:"
 
-    var travelBackAllowed: Bool {
-        !isIncognito && !isKioskWindow && !isInPlaceholderMode
+    var travelBackAllowed: Bool { travelBackWindowAllowed && !isInPlaceholderMode }
+
+    /// Empty Spaces can be activated; their normal spawn path supplies an NTP.
+    var travelBackWindowAllowed: Bool {
+        !isIncognito && !isKioskWindow
             && !AgentSpaceManager.shared.isAgentSpace(spaceId)
             && ApplicationState.shared.isAuthenticated
             && PhiPreferences.AISettings.phiAIEnabled.loadValue()
@@ -45,7 +51,7 @@ extension BrowserState {
                 content = owner
             }
             return (content, TravelBackSidebar(windowId: windowId, chatTabId: chat.guid,
-                                               boundTabId: boundTabId))
+                                               boundTabId: boundTabId, profileId: profileId))
         }
         return (resolveTab(boundTabId), nil)
     }
@@ -62,7 +68,8 @@ extension BrowserState {
     func travelBackScene(for tab: Tab?) -> TravelBackScene {
         guard let tab else { return TravelBackScene() }
         var scene = TravelBackScene(tab: .init(tabId: tab.guid),
-                                    window: .init(windowId: windowId), profileId: profileId)
+                                    window: .init(windowId: windowId, spaceId: spaceId),
+                                    profileId: profileId, runtimeId: TravelBackScene.currentRuntimeId)
         scene.relatedTabIds = [tab.guid]
         let page = TravelBackPage(url: tab.url ?? "", title: tab.title, favicon: tab.faviconUrl)
         if page.isReopenable { scene.page = page }
@@ -112,7 +119,7 @@ extension BrowserState {
 
     /// Observe lifecycle completion on the next main turn, never call Chromium
     /// from inside its own tab-strip callback. One deadline spans the whole restore.
-    private func travelBackWait<T>(until deadline: Double,
+    func travelBackWait<T>(until deadline: Double,
                                    events: AnyPublisher<Void, Never>? = nil,
                                    read: @escaping () throws -> T?) async throws -> T {
         let changes = events ?? travelBackChanges
@@ -165,6 +172,7 @@ extension BrowserState {
 
     private func travelBackCheck(_ tabs: [Tab], deadline: Double) throws {
         guard travelBackAllowed, ProcessInfo.processInfo.systemUptime < deadline,
+              SpaceManager.shared.slot(forWindowId: windowId)?.activeSpaceId == spaceId,
               MainBrowserWindowControllersManager.shared.getBrowserState(for: windowId) === self,
               tabs.allSatisfy({ resolveTab($0.guid) === $0 && $0.webContentWrapper != nil }) else {
             throw TravelBackFailure.targetChanged
@@ -254,6 +262,11 @@ extension BrowserState {
         } else {
             destination = try await travelBackCreatePage(page, deadline: deadline)
         }
+        return try await prepareTravelBackDestination(destination, sourceSidebar: sourceSidebar, deadline: deadline)
+    }
+
+    private func prepareTravelBackDestination(_ destination: Tab, sourceSidebar: TravelBackSidebar?,
+                                             deadline: Double, waitUntilEnabled: Bool = true) async throws -> TravelBackDestination {
         try travelBackCheck([destination], deadline: deadline)
         destination.webContentWrapper?.setAsActiveTab()
         focuseTab(destination)
@@ -265,22 +278,123 @@ extension BrowserState {
         // disabled is ignored by the view, and its enabled observer only
         // autohides; it does not replay that lost expand. Wait for capability,
         // not page load, while the Sidecar WebContents is already preparing.
-        let _: Bool = try await travelBackWait(until: deadline,
-            events: destination.$aiChatEnabled.map { _ in () }.eraseToAnyPublisher()) {
-                try self.travelBackCheck([destination], deadline: deadline)
-                return destination.aiChatEnabled ? true : nil
-            }
-        prepareAIChatSidebarOpen(trigger: .button)
-        setAIChatCollapsed(for: destination, collapsed: false)
+        if waitUntilEnabled {
+            let _: Bool = try await travelBackWait(until: deadline,
+                events: destination.$aiChatEnabled.map { _ in () }.eraseToAnyPublisher()) {
+                    try self.travelBackCheck([destination], deadline: deadline)
+                    return destination.aiChatEnabled ? true : nil
+                }
+        }
+        if destination.aiChatEnabled {
+            prepareAIChatSidebarOpen(trigger: .button)
+            setAIChatCollapsed(for: destination, collapsed: false)
+        }
         let chat: Tab = try await travelBackWait(until: deadline) {
             try self.travelBackCheck([destination], deadline: deadline)
             guard self.chatIdentifier(for: destination) == identifier else { throw TravelBackFailure.targetChanged }
             return self.aiChatTabs[identifier]
         }
         guard let boundTabId = travelBackBoundTabId(chat) else { throw TravelBackFailure.unavailable }
-        let sidebar = TravelBackSidebar(windowId: windowId, chatTabId: chat.guid, boundTabId: boundTabId)
+        let sidebar = TravelBackSidebar(windowId: windowId, chatTabId: chat.guid,
+                                        boundTabId: boundTabId, profileId: profileId)
         return TravelBackDestination(tabId: destination.guid, windowId: windowId, sidebar: sidebar,
                                      sourceSidebar: sourceSidebar, sameSidecar: sidebar == sourceSidebar)
+    }
+
+    func carriedConversationSidebar(for tab: Tab) -> TravelBackSidebar? {
+        guard let chat = aiChatTabs[chatIdentifier(for: tab)],
+              let binding = travelBackBoundTabId(chat) else { return nil }
+        return travelBackSource(boundTabId: binding).sidebar
+    }
+
+    /// Only explicit browser Tab moves use this path. Native never reads chat
+    /// storage or chooses a conversation; the source Sidecar claims its current one.
+    func moveCarriedConversation(_ movingTabs: [Tab], to target: BrowserState,
+                                 sidebar: TravelBackSidebar) async throws {
+        guard profileId != target.profileId, !movingTabs.isEmpty,
+              hasTravelBackSidebar(sidebar), target.travelBackAllowed,
+              profileMovesInFlight.insert(sidebar.chatTabId).inserted else { throw TravelBackFailure.busy }
+        defer { profileMovesInFlight.remove(sidebar.chatTabId) }
+        let deadline = ProcessInfo.processInfo.systemUptime + 8
+        let split = movingTabs.count == 2 ? splitGroup(forTabId: movingTabs[0].guid) : nil
+        let activeIndex = movingTabs.firstIndex(where: { $0.guid == focusingTab?.guid }) ?? 0
+        var created: [Tab] = []
+        for tab in movingTabs {
+            guard let url = tab.url, !url.isEmpty, resolveTab(tab.guid) === tab else {
+                throw TravelBackFailure.targetChanged
+            }
+            created.append(try await target.travelBackCreatePage(.init(url: url), deadline: deadline))
+        }
+        if let split, created.count == 2 {
+            target.focuseTab(created[activeIndex])
+            created[activeIndex].webContentWrapper?.setAsActiveTab()
+            guard let id = target.createSplit(leftTabId: created[0].guid, rightTabId: created[1].guid,
+                                              layout: split.layout) else { throw TravelBackFailure.unavailable }
+            let _: SplitGroup = try await target.travelBackWait(until: deadline) { target.splitGroup(forId: id) }
+            target.updateSplitRatio(id, ratio: split.ratio)
+        }
+        let destination = try await target.prepareTravelBackDestination(created[activeIndex],
+            sourceSidebar: sidebar, deadline: deadline, waitUntilEnabled: false)
+        let operationId = UUID().uuidString
+        let expiresAt = ProcessInfo.processInfo.systemUptime + 20
+        profileMoveRequests[sidebar.chatTabId] = .init(operationId: operationId, destination: destination,
+            snapshot: target.travelBackScene(for: created[activeIndex]), expiresAt: expiresAt,
+            finishBefore: (Date().timeIntervalSince1970 + 20) * 1000)
+        defer {
+            if profileMoveRequests[sidebar.chatTabId]?.operationId == operationId {
+                profileMoveRequests.removeValue(forKey: sidebar.chatTabId)
+            }
+        }
+        ExtensionMessaging.shared.broadcast(type: "sidecar.travelBack.profileMoveAvailable",
+            payload: "{\"boundTabIds\":[\(sidebar.boundTabId)]}")
+        let accepted: Bool = try await travelBackWait(until: expiresAt,
+            events: $profileMoveRequests.map { _ in () }.eraseToAnyPublisher()) {
+                guard let request = self.profileMoveRequests[sidebar.chatTabId], request.operationId == operationId else {
+                    throw TravelBackFailure.targetChanged
+                }
+                return request.completed
+            }
+        guard accepted, hasTravelBackSidebar(sidebar),
+              target.hasTravelBackSidebar(destination.sidebar) else { throw TravelBackFailure.targetChanged }
+        for tab in movingTabs where resolveTab(tab.guid) === tab { tab.close() }
+    }
+
+    func hasTravelBackSidebar(_ sidebar: TravelBackSidebar) -> Bool {
+        sidebar.windowId == windowId && sidebar.profileId == profileId
+            && travelBackSource(boundTabId: sidebar.boundTabId).sidebar == sidebar
+    }
+
+    func offerTravelBackHandoff(_ handoff: TravelBackHandoff) throws {
+        guard hasTravelBackSidebar(handoff.destination) else { throw TravelBackFailure.targetChanged }
+        let key = handoff.destination.chatTabId
+        if let pending = travelBackHandoffs[key], pending.expiresAt > ProcessInfo.processInfo.systemUptime,
+           pending.acceptBy > ProcessInfo.processInfo.systemUptime {
+            throw TravelBackFailure.busy
+        }
+        travelBackHandoffs[key] = handoff
+        // No conversation IDs or tokens in notifications. Cold receivers pull.
+        let payload = "{\"boundTabIds\":[\(handoff.destination.boundTabId)]}"
+        ExtensionMessaging.shared.broadcast(type: "sidecar.travelBack.handoffAvailable", payload: payload)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            guard self?.travelBackHandoffs[key]?.operationId == handoff.operationId else { return }
+            self?.travelBackHandoffs.removeValue(forKey: key)
+        }
+    }
+
+    func waitForTravelBackHandoff(_ operationId: String, destination: TravelBackSidebar) async throws -> Bool {
+        try await travelBackWait(until: ProcessInfo.processInfo.systemUptime + 7.5,
+            events: $travelBackHandoffs.map { _ in () }.eraseToAnyPublisher()) {
+                guard self.hasTravelBackSidebar(destination),
+                      let handoff = self.travelBackHandoffs[destination.chatTabId],
+                      handoff.operationId == operationId,
+                      handoff.expiresAt > ProcessInfo.processInfo.systemUptime else { return false }
+                switch handoff.status {
+                case .accepted: return true
+                case .rejected: return false
+                case .offered, .claimed:
+                    return handoff.acceptBy > ProcessInfo.processInfo.systemUptime ? nil : false
+                }
+            }
     }
 
     /// An exact-instance close after acknowledgement, never a focus-relative toggle.

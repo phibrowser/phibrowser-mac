@@ -19,6 +19,8 @@ the running Phi app:
 - `~/Library/Application Support/com.phibrowser.TimeMachine/<Phi bundle ID>`
 - `~/Library/Application Support/com.phibrowser.sentinel.TimeMachine/<Sentinel bundle ID>`
 - `~/Library/Logs/PhiSentinel`, `PhiSentinel-Canary`, and `PhiSentinel-Dev`
+- The Phi Chat macOS app shim for the current channel, when it has been installed
+  (`<Phi bundle ID>.app.hagekpigdlbdgnimipikmpccaogpnimp`)
 - Phi's channel-specific Bitwarden session keychain item, cleared by Phi before it exits
 - The verified running Phi `.app` bundle
 
@@ -34,7 +36,8 @@ are unrelated and are never touched.
    presents one critical confirmation alert.
 2. Phi verifies its own signed app bundle and prepares a private copy of the embedded uninstaller.
 3. Phi unregisters Sentinel, stops the Sentinel watchdog, and requires Sentinel to confirm exit.
-   A timeout aborts before the helper starts or credentials are cleared.
+   The wait covers Sentinel's Runner shutdown bound (60 seconds). A timeout aborts before the
+   helper starts or credentials are cleared.
 4. Phi launches the copied uninstaller and waits for a bounded readiness acknowledgement after the
    helper validates its workspace, plan, app signature, and deletion allowlist.
 5. Phi clears the Auth0 session, fences Bitwarden persistence, shuts down the Bitwarden helper, and
@@ -42,10 +45,11 @@ are unrelated and are never touched.
    authorized. Phi then sends an explicit commit token and waits for the helper to acknowledge it.
    EOF or a Phi crash before that token aborts the helper without deleting files. After the commit
    acknowledgement, Phi requests normal application termination so Chromium completes its shutdown.
-6. The committed uninstaller waits for both Phi and the same-channel Sentinel to exit.
+6. The committed uninstaller waits for both Phi and the same-channel Sentinel to exit, then
+   requests termination of the current-channel Phi Chat app shim and waits for it to exit.
 7. The uninstaller re-verifies the app signature, validates every filesystem and preferences
    target against the channel allowlist, deletes the channel's data, checks that Phi did not
-   restart, and deletes the app bundle in a separate final stage.
+   restart, and deletes the Phi and Phi Chat app bundles in a separate final stage.
 
 The copied helper is necessary because an executable inside the app bundle cannot reliably remove
 its containing bundle while continuing the uninstall. Preparing and launching it before Phi exits

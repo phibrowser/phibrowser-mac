@@ -34,6 +34,15 @@ final class PhiUninstallCoreTests: XCTestCase {
         XCTAssertEqual(PhiUninstallChannel.canary.sentinelBundleID, "com.phibrowser.canary.Sentinel")
     }
 
+    func testPhiChatShimIdentityIsChannelScoped() {
+        XCTAssertEqual(
+            PhiChatUninstallIdentity.shimBundleIdentifier(
+                browserBundleIdentifier: PhiUninstallChannel.canary.browserBundleID
+            ),
+            "com.phibrowser.canary.Mac.app.hagekpigdlbdgnimipikmpccaogpnimp"
+        )
+    }
+
     func testChannelScopedRoots() {
         XCTAssertEqual(
             paths.browserApplicationSupport(.canary).path,
@@ -121,6 +130,28 @@ final class PhiUninstallCoreTests: XCTestCase {
             planner.planAppBundleRemoval().steps,
             [.deleteTree(appBundleURL)]
         )
+    }
+
+    func testPlannerIncludesPhiChatShimWhenPresent() {
+        let shimURL = URL(fileURLWithPath: "/Users/x/Applications/Phi Chat.app", isDirectory: true)
+        let planner = PhiUninstallPlanner(
+            paths: paths,
+            channel: .canary,
+            appBundleURL: appBundleURL,
+            chatShimBundleURL: shimURL
+        )
+
+        XCTAssertEqual(
+            planner.planAppBundleRemoval().steps,
+            [.deleteTree(appBundleURL), .deleteTree(shimURL)]
+        )
+        let allowlist = PhiUninstallPathAllowlist(
+            paths: paths,
+            channel: .canary,
+            appBundleURL: appBundleURL,
+            chatShimBundleURL: shimURL
+        )
+        XCTAssertTrue(allowlist.isAllowed(shimURL))
     }
 
     func testPlanRoundTripsThroughJSON() throws {

@@ -48,6 +48,14 @@ enum PhiUninstallChannel: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum PhiChatUninstallIdentity {
+    static let appID = "hagekpigdlbdgnimipikmpccaogpnimp"
+
+    static func shimBundleIdentifier(browserBundleIdentifier: String) -> String {
+        "\(browserBundleIdentifier).app.\(appID)"
+    }
+}
+
 struct PhiUninstallPaths: Equatable, Sendable {
     let applicationSupport: URL
     let caches: URL
@@ -176,17 +184,20 @@ struct PhiUninstallPlan: Codable, Equatable, Sendable {
     let hostProcessID: Int32
     let channel: PhiUninstallChannel
     let appBundleURL: URL
+    let chatShimBundleURL: URL?
 
     init(
         schemaVersion: Int = currentSchemaVersion,
         hostProcessID: Int32,
         channel: PhiUninstallChannel,
-        appBundleURL: URL
+        appBundleURL: URL,
+        chatShimBundleURL: URL? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.hostProcessID = hostProcessID
         self.channel = channel
         self.appBundleURL = appBundleURL
+        self.chatShimBundleURL = chatShimBundleURL
     }
 }
 
@@ -356,6 +367,15 @@ struct PhiUninstallPlanner {
     let paths: PhiUninstallPaths
     let channel: PhiUninstallChannel
     let appBundleURL: URL
+    let chatShimBundleURL: URL?
+
+    init(paths: PhiUninstallPaths, channel: PhiUninstallChannel, appBundleURL: URL,
+         chatShimBundleURL: URL? = nil) {
+        self.paths = paths
+        self.channel = channel
+        self.appBundleURL = appBundleURL
+        self.chatShimBundleURL = chatShimBundleURL
+    }
 
     func planAllData() -> PhiUninstallDeletionPlan {
         PhiUninstallDeletionPlan(steps: [
@@ -386,7 +406,11 @@ struct PhiUninstallPlanner {
     }
 
     func planAppBundleRemoval() -> PhiUninstallDeletionPlan {
-        PhiUninstallDeletionPlan(steps: [.deleteTree(appBundleURL)])
+        var steps: [PhiUninstallStep] = [.deleteTree(appBundleURL)]
+        if let chatShimBundleURL {
+            steps.append(.deleteTree(chatShimBundleURL))
+        }
+        return PhiUninstallDeletionPlan(steps: steps)
     }
 }
 
@@ -400,6 +424,15 @@ struct PhiUninstallPathAllowlist: Sendable {
     let paths: PhiUninstallPaths
     let channel: PhiUninstallChannel
     let appBundleURL: URL
+    let chatShimBundleURL: URL?
+
+    init(paths: PhiUninstallPaths, channel: PhiUninstallChannel, appBundleURL: URL,
+         chatShimBundleURL: URL? = nil) {
+        self.paths = paths
+        self.channel = channel
+        self.appBundleURL = appBundleURL
+        self.chatShimBundleURL = chatShimBundleURL
+    }
 
     private var directoryRoots: [URL] {
         [
@@ -456,7 +489,7 @@ struct PhiUninstallPathAllowlist: Sendable {
             url,
             roots: directoryRoots,
             exactFiles: exactFiles,
-            appBundleURL: appBundleURL,
+            appBundleURLs: [appBundleURL, chatShimBundleURL].compactMap { $0 },
             resolveSymlinks: false
         )
     }
@@ -468,7 +501,7 @@ struct PhiUninstallPathAllowlist: Sendable {
             resolvedURL,
             roots: directoryRoots,
             exactFiles: exactFiles,
-            appBundleURL: appBundleURL,
+            appBundleURLs: [appBundleURL, chatShimBundleURL].compactMap { $0 },
             resolveSymlinks: false
         )
     }
@@ -532,14 +565,16 @@ struct PhiUninstallPathAllowlist: Sendable {
         _ url: URL,
         roots: [URL],
         exactFiles: [URL],
-        appBundleURL: URL,
+        appBundleURLs: [URL],
         resolveSymlinks: Bool
     ) -> Bool {
         let normalizedURL = normalized(url, resolveSymlinks: resolveSymlinks)
         let path = normalizedURL.path
-        let normalizedAppBundleURL = normalized(appBundleURL, resolveSymlinks: resolveSymlinks)
-        if path == normalizedAppBundleURL.path {
-            return normalizedAppBundleURL.pathExtension == "app"
+        if appBundleURLs.contains(where: {
+            let normalizedURL = normalized($0, resolveSymlinks: resolveSymlinks)
+            return path == normalizedURL.path && normalizedURL.pathExtension == "app"
+        }) {
+            return true
         }
 
         if exactFiles.contains(where: {

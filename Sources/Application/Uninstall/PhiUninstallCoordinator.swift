@@ -167,10 +167,17 @@ final class PhiUninstallCoordinator {
         ) else {
             throw PhiUninstallCoordinatorError.invalidAppSignature(appBundleURL)
         }
+        let chatShimID = PhiChatUninstallIdentity.shimBundleIdentifier(
+            browserBundleIdentifier: channel.browserBundleID
+        )
+        let chatShimURL = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == chatShimID })?.bundleURL
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: chatShimID)
         return PhiUninstallPlan(
             hostProcessID: ProcessInfo.processInfo.processIdentifier,
             channel: channel,
-            appBundleURL: appBundleURL
+            appBundleURL: appBundleURL,
+            chatShimBundleURL: chatShimURL
         )
     }
 

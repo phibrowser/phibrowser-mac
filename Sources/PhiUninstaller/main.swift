@@ -14,6 +14,7 @@ enum PhiUninstallerMainError: Error, LocalizedError {
     case invalidAppSignature(URL)
     case browserStillRunning(String)
     case sentinelDidNotExit(String)
+    case chatShimDidNotExit(String)
     case invalidCommitSignal
     case unsafePlan(String)
     case deletionFailures([String])
@@ -34,6 +35,8 @@ enum PhiUninstallerMainError: Error, LocalizedError {
             return "A Phi process is still running for \(bundleID)."
         case .sentinelDidNotExit(let bundleID):
             return "Phi Sentinel did not exit for \(bundleID)."
+        case .chatShimDidNotExit(let bundleID):
+            return "Phi Chat did not exit for \(bundleID)."
         case .invalidCommitSignal:
             return "Phi exited before committing the uninstall operation."
         case .unsafePlan(let reason):
@@ -95,14 +98,16 @@ enum PhiUninstallerMain {
         let planner = PhiUninstallPlanner(
             paths: paths,
             channel: plan.channel,
-            appBundleURL: plan.appBundleURL
+            appBundleURL: plan.appBundleURL,
+            chatShimBundleURL: plan.chatShimBundleURL
         )
         let dataPlan = planner.planAllData()
         let appBundlePlan = planner.planAppBundleRemoval()
         let allowlist = PhiUninstallPathAllowlist(
             paths: paths,
             channel: plan.channel,
-            appBundleURL: plan.appBundleURL
+            appBundleURL: plan.appBundleURL,
+            chatShimBundleURL: plan.chatShimBundleURL
         )
         do {
             try allowlist.validate(dataPlan)
@@ -135,6 +140,16 @@ enum PhiUninstallerMain {
             !runningApplications(bundleID: plan.channel.sentinelBundleID).isEmpty
         }) else {
             throw PhiUninstallerMainError.sentinelDidNotExit(plan.channel.sentinelBundleID)
+        }
+
+        let chatShimID = PhiChatUninstallIdentity.shimBundleIdentifier(
+            browserBundleIdentifier: plan.channel.browserBundleID
+        )
+        terminateRunningApplications(bundleID: chatShimID)
+        guard PhiUninstallProcessWaiter.waitUntil(timeout: sentinelExitTimeout, isRunning: {
+            !runningApplications(bundleID: chatShimID).isEmpty
+        }) else {
+            throw PhiUninstallerMainError.chatShimDidNotExit(chatShimID)
         }
 
         guard PhiUninstallSignatureVerifier.verifyAppBundle(
@@ -178,6 +193,13 @@ enum PhiUninstallerMain {
     private static func runningApplications(bundleID: String) -> [NSRunningApplication] {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter { !$0.isTerminated }
+    }
+
+    private static func terminateRunningApplications(bundleID: String) {
+        for application in runningApplications(bundleID: bundleID) {
+            application.terminate()
+            writePhiUninstallerLog("Requested termination of \(bundleID) pid=\(application.processIdentifier)")
+        }
     }
 
     private static func value(after flag: String, in arguments: [String]) throws -> String? {

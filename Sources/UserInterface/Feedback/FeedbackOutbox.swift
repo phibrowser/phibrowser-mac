@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import UniformTypeIdentifiers
 
@@ -97,7 +98,10 @@ final class FeedbackViewModel: ObservableObject {
         attachments.removeAll { $0.id == id }
     }
 
-    func enqueueFeedback(chromiumSystemLogsText: String? = nil) throws {
+    func enqueueFeedback(
+        chromiumSystemLogsText: String? = nil,
+        inputSourceMetadata: [String: String]
+    ) throws {
         guard ApplicationState.shared.isAuthenticated,
               let account = AccountController.shared.account else {
             throw FeedbackOutboxError.missingAccount
@@ -116,7 +120,8 @@ final class FeedbackViewModel: ObservableObject {
             components: FeedbackOutbox.feedbackComponents(extensionVersions: componentVersions),
             chromiumSystemLogsText: chromiumSystemLogsText,
             attachments: attachments,
-            previousSessionCrash: previousSessionCrash
+            previousSessionCrash: previousSessionCrash,
+            inputSourceMetadata: inputSourceMetadata
         )
 
         try FeedbackOutbox.enqueue(draft, account: account)
@@ -151,6 +156,7 @@ struct FeedbackDraft {
     let chromiumSystemLogsText: String?
     let attachments: [FeedbackDraftAttachment]
     var previousSessionCrash: PreviousSessionCrashContext? = nil
+    var inputSourceMetadata: [String: String] = [:]
 }
 
 struct FeedbackSelectedAttachmentInfo {
@@ -1129,6 +1135,24 @@ enum FeedbackOutbox {
         }
     }
 
+    @MainActor
+    static func currentInputSourceMetadata() -> [String: String] {
+        guard let inputSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
+            return [:]
+        }
+
+        let properties: [(String, CFString)] = [
+            ("input_source_id", kTISPropertyInputSourceID),
+            ("input_source_name", kTISPropertyLocalizedName)
+        ]
+        var metadata: [String: String] = [:]
+        for (key, property) in properties {
+            guard let value = TISGetInputSourceProperty(inputSource, property) else { continue }
+            metadata[key] = Unmanaged<CFString>.fromOpaque(value).takeUnretainedValue() as String
+        }
+        return metadata
+    }
+
     static func makeMetadata(jobID: String, draft: FeedbackDraft) -> FeedbackV2Metadata {
         FeedbackV2Metadata(
             browser: .init(
@@ -1154,7 +1178,9 @@ enum FeedbackOutbox {
                 "build_number": SystemUtils.buildNumber,
                 "model_identifier": SystemUtils.modelIdentifier,
                 "os_version": SystemUtils.osVersionString
-            ].merging(draft.previousSessionCrash?.metadata ?? [:]) { _, crashValue in crashValue }
+            ]
+                .merging(draft.inputSourceMetadata) { _, inputSourceValue in inputSourceValue }
+                .merging(draft.previousSessionCrash?.metadata ?? [:]) { _, crashValue in crashValue }
         )
     }
 

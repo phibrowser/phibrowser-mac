@@ -146,7 +146,7 @@ struct TimeMachineSentryTraceStore {
         pendingTimeMachineTraceLock.unlock()
 
         SentrySDK.start { options in
-            options.dsn = "https://25f25943199ae1e81dd0dfdf8343aac7@o4510181852708864.ingest.us.sentry.io/4510181889933312"
+            options.dsn = ""
             options.enableLogs = true
             
             if let basePath = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first,

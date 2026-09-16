@@ -202,7 +202,11 @@ class SidebarViewController: NSViewController {
     
     private lazy var headerView = SidebarHeaderView(state: state)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
-    private lazy var tabList = SidebarTabListViewController(state: state, hostVC: self)
+    private lazy var tabList: SidebarTabListViewController = {
+        let controller = SidebarTabListViewController(state: state, hostVC: self)
+        controller.setCleanupButtonsVisible(false)
+        return controller
+    }()
     private var state: BrowserState
     /// Guards one-time download manager binding (see `bindDownloadsManagerIfNeeded`).
     private var didBindDownloadsManager = false
@@ -398,6 +402,7 @@ class SidebarViewController: NSViewController {
     private var hasSetupConfigObserver = false
     private var isSidebarContentActive = false
     private var lastPersistedFavoriteHeight: CGFloat?
+    private var sidebarTrackingArea: NSTrackingArea?
 
     /// Swipe-to-switch-Space gesture state (see `SpaceSwipeTracker`).
     private let spaceSwipe = SpaceSwipeTracker()
@@ -424,6 +429,14 @@ class SidebarViewController: NSViewController {
         }
         view.themedBackgroundColor = .windowOverlayBackground
         view.material = .fullScreenUI
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        view.addTrackingArea(trackingArea)
+        sidebarTrackingArea = trackingArea
         self.view = view
     }
     
@@ -448,6 +461,7 @@ class SidebarViewController: NSViewController {
         CATransaction.setDisableActions(true)
         spaceTintGradientLayer.frame = spaceTintBackgroundView.bounds
         CATransaction.commit()
+        updateHoverControlsForCurrentMouseLocation()
     }
     
     override func viewWillAppear() {
@@ -457,6 +471,42 @@ class SidebarViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         bindDownloadsManagerIfNeeded()
+        updateHoverControlsForCurrentMouseLocation()
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        setHoverControlsVisible(false)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard event.trackingArea === sidebarTrackingArea else {
+            super.mouseEntered(with: event)
+            return
+        }
+        setHoverControlsVisible(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard event.trackingArea === sidebarTrackingArea else {
+            super.mouseExited(with: event)
+            return
+        }
+        setHoverControlsVisible(false)
+    }
+
+    private func setHoverControlsVisible(_ visible: Bool) {
+        headerView.setAddressBarButtonsVisible(visible)
+        tabList.setCleanupButtonsVisible(visible)
+    }
+
+    private func updateHoverControlsForCurrentMouseLocation() {
+        guard let window = view.window, !view.isHiddenOrHasHiddenAncestor else {
+            setHoverControlsVisible(false)
+            return
+        }
+        let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHoverControlsVisible(view.visibleRect.contains(point))
     }
 
     /// Binds the bottom bar's download button to the downloads manager exactly

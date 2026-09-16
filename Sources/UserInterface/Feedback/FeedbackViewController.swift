@@ -127,6 +127,8 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
     private func submitFeedback() {
         guard viewModel.canSend else { return }
 
+        // Snapshot before awaiting logs, while the feedback window still has focus.
+        let inputSourceMetadata = FeedbackOutbox.currentInputSourceMetadata()
         refreshFeedbackContext()
         viewModel.isSubmitting = true
 
@@ -146,7 +148,10 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
                 guard AccountController.shared.account?.userID == submittingAccountID else {
                     throw FeedbackOutboxError.missingAccount
                 }
-                try viewModel.enqueueFeedback(chromiumSystemLogsText: chromiumSystemLogsText)
+                try viewModel.enqueueFeedback(
+                    chromiumSystemLogsText: chromiumSystemLogsText,
+                    inputSourceMetadata: inputSourceMetadata
+                )
                 closeWindow()
             } catch {
                 AppLogError("Feedback V2 enqueue failed: \(error.localizedDescription)")

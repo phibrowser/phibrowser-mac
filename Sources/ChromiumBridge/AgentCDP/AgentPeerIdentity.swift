@@ -131,12 +131,19 @@ struct AgentIdentity: Equatable {
     /// the two on offer are both bad: "Deny" turns off a built-in feature, and
     /// "Always Allow" records a grant keyed to a bare interpreter's signature
     /// (`87DQ3HMK5G:node`), which from then on silently admits anything at all
-    /// that Sentinel's node is ever pointed at.
+    /// that Sentinel's node is ever pointed at. Named by its script instead
+    /// (`interpreterIdentity`) it is no better: an "unsigned" `phi-agent.bundle`
+    /// whose grant key embeds the component version, so it admits nothing
+    /// after the next update and the prompt simply comes back.
     ///
     /// So it is refused instead of asked about, exactly like the other two. A
     /// component genuinely started by the browser passes the first-party check
-    /// and never arrives here; one that arrives here has been orphaned or
-    /// re-launched by something else, and relaunching the browser restores it.
+    /// and never arrives here. One that arrives here was either started by
+    /// something that is not Phi, or — the shape seen in the field — is a
+    /// phi-agent whose `runner` died without stopping it, leaving it running
+    /// under launchd with no Sentinel in its ancestry. Refusing it costs
+    /// nothing: the live runner's own phi-agent still passes, and the orphan
+    /// is Sentinel's to reap, not the user's to approve.
     static func unresolvedOwnCode(executablePath: String) -> AgentIdentity {
         AgentIdentity(key: unresolvedKey,
                       displayName: "Phi's own runtime, started outside the browser",
@@ -558,7 +565,14 @@ enum AgentPeerIdentity {
     /// not hand over — is not a match: this gate only ever admits.
     private static func runsPhiAgentBundle(_ pid: pid_t) -> Bool {
         guard let argv = processArgv(pid) else { return false }
-        return argv.dropFirst().contains(where: namesPhiAgentComponent)
+        return runsPhiAgentBundle(argv: argv)
+    }
+
+    /// The same test on a command line already in hand. argv[0] is skipped: it
+    /// is the interpreter (or whatever brand the process gave itself), and the
+    /// bundle is only ever an argument to it. Internal for unit coverage.
+    static func runsPhiAgentBundle(argv: [String]) -> Bool {
+        argv.dropFirst().contains(where: namesPhiAgentComponent)
     }
 
     /// Whether an argument names the phi-agent component: any whole path
@@ -743,7 +757,10 @@ enum AgentPeerIdentity {
         // itself and key a grant to a bare interpreter, so it is refused rather
         // than presented (see AgentIdentity.unresolvedOwnCode). Checked last,
         // so a nameable script or a pi session running on our runtime still
-        // resolves to what it actually is.
+        // resolves to what it actually is — with one exception the walk above
+        // handles itself: the phi-agent bundle, which is Phi whatever runs it,
+        // and which `interpreterIdentity` therefore refuses before it can be
+        // named as a script.
         if isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: responsible],
                             pid: responsible) {
             return .unresolvedOwnCode(executablePath: path)
@@ -837,10 +854,26 @@ enum AgentPeerIdentity {
     /// else the script file it runs, else the module it runs. Returns nil for
     /// a plain interpreter or this skill's own plumbing, so the walk keeps
     /// looking upward.
+    ///
+    /// The one interpreter it refuses to name is Phi's own agent runtime: our
+    /// signed `node` running the phi-agent bundle. That process reaches the
+    /// walk only by failing the first-party pass (`firstPartyAgent`), which
+    /// in the field means its `runner` died and left it orphaned under
+    /// launchd. Named by its script it would prompt as an "unsigned"
+    /// `phi-agent.bundle` — the browser asking the user to approve Phi to
+    /// Phi — and an "Always Allow" would be keyed to a version-stamped path
+    /// that admits nothing after the next update. So it resolves to
+    /// `unresolvedOwnCode` right here, whatever sits above it, and the
+    /// listener refuses it without a prompt. Every other script on our
+    /// runtime is still named as what it is (a pi session, a dev checkout).
     private static func interpreterIdentity(argv: [String], exe: String,
                                             pid: pid_t) -> AgentIdentity? {
         guard let arg0 = argv.first else { return nil }
         if isOwnPlumbing(argv: argv) { return nil }
+        if runsPhiAgentBundle(argv: argv),
+           isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: pid], pid: pid) {
+            return .unresolvedOwnCode(executablePath: exe)
+        }
         let interpreterName = (exe as NSString).lastPathComponent
         let arg0Name = (arg0 as NSString).lastPathComponent
         // (1) Custom argv[0] branding: a bare name (not a path) that isn't the

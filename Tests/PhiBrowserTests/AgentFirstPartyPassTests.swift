@@ -125,6 +125,45 @@ final class AgentFirstPartyPassTests: XCTestCase {
         }
     }
 
+    // MARK: - The orphan shape
+
+    /// The command line the field reports for a phi-agent whose runner died:
+    /// Sentinel's node, the bundle as its argument, nothing else. This is the
+    /// argv half of the test that turns such a peer into `unresolvedOwnCode`
+    /// in the ancestry walk instead of a promptable "phi-agent.bundle"; the
+    /// signature half needs a live Phi-signed node and is not staged here.
+    func testOrphanedAgentCommandLineIsRecognized() {
+        let node = "/Applications/Phi.app/Contents/Library/LoginItems/"
+            + "Phi Sentinel.app/Contents/MacOS/runtime/node/bin/node"
+        let bundle = "/Users/x/Library/Application Support/com.phibrowser.Sentinel/"
+            + "auth0_6aa8fa925dda8121178ff0d4/bins/third_party/phi-agent/0.5.16/"
+            + "arm64/phi-agent.bundle.js"
+        XCTAssertTrue(AgentPeerIdentity.runsPhiAgentBundle(argv: [node, bundle]))
+        // Interpreter flags before the script do not hide it.
+        XCTAssertTrue(AgentPeerIdentity.runsPhiAgentBundle(
+            argv: [node, "--max-old-space-size=4096", bundle]))
+    }
+
+    /// argv[0] is the interpreter or a self-chosen brand, never the bundle, so
+    /// it does not count — a process that merely calls itself "phi-agent" is
+    /// not running our component.
+    func testBrandedArgv0AloneIsNotTheAgentBundle() {
+        XCTAssertFalse(AgentPeerIdentity.runsPhiAgentBundle(argv: ["phi-agent"]))
+        XCTAssertFalse(AgentPeerIdentity.runsPhiAgentBundle(argv: ["phi-agent", "-e", "1"]))
+        XCTAssertFalse(AgentPeerIdentity.runsPhiAgentBundle(argv: []))
+    }
+
+    /// Siblings on the same interpreter are still named as what they are;
+    /// only the CDP-driving component is refused as our own code.
+    func testSiblingBundlesAreNotTheAgentBundle() {
+        let node = "/Applications/Phi.app/Contents/Library/LoginItems/"
+            + "Phi Sentinel.app/Contents/MacOS/runtime/node/bin/node"
+        XCTAssertFalse(AgentPeerIdentity.runsPhiAgentBundle(
+            argv: [node, "/x/bins/third_party/pi-agent/1.0.0/arm64/pi-agent.bundle.mjs"]))
+        XCTAssertFalse(AgentPeerIdentity.runsPhiAgentBundle(
+            argv: [node, "/x/bins/phi-memory/1.0.0/arm64/phi-memory.bundle.mjs"]))
+    }
+
     /// A listening AF_UNIX socket plus a connected client, both in this
     /// process — the shape `firstPartyAgent` reads peer credentials from.
     private static func connectedPair(at path: String) throws -> (listener: Int32, peer: Int32) {

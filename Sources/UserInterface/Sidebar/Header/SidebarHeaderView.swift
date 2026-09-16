@@ -220,9 +220,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     
     
     private lazy var addressView: SideAddressBar = {
-        let addressView = SideAddressBar()
+        let addressView = SideAddressBar(isFloating: isFloating)
+        addressView.setAccessoryButtonsVisible(isFloating)
         return addressView
     }()
+
+    func setAddressBarButtonsVisible(_ visible: Bool) {
+        addressView.setAccessoryButtonsVisible(isFloating || visible)
+    }
     
     private weak var browserState: BrowserState?
     

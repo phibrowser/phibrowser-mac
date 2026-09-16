@@ -163,6 +163,83 @@ final class PhiAlertTests: XCTestCase {
         presenter.dismiss(.cancel)
     }
 
+    func testQuitActionIsIgnoredWhileAnOrdinarySheetIsPresented() {
+        let sourceWindow = makeVisibleSourceWindow()
+        let otherWindow = makeVisibleSourceWindow()
+        defer {
+            sourceWindow.close()
+            otherWindow.close()
+        }
+        let presenter = sourceWindow.presentPhiAlert { dismiss in
+            makeAlert(message: "Quit must wait for this sheet.") {
+                dismiss(.OK)
+            }
+        }
+
+        // Switching windows must not let the application Quit action bypass
+        // a modal presentation belonging to another window.
+        otherWindow.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(NSApp.hasModalPresentationBlockingTermination)
+        XCTAssertTrue(NSApp.sendAction(#selector(NSApplication.terminate(_:)), to: NSApp, from: nil))
+        XCTAssertTrue(presenter.isPresented)
+        XCTAssertNotNil(sourceWindow.attachedSheet)
+
+        presenter.dismiss(.cancel)
+        XCTAssertFalse(NSApp.hasModalPresentationBlockingTermination)
+    }
+
+    func testSheetDismissalUnblocksTerminationBeforeCallingCompletion() {
+        let sourceWindow = makeVisibleSourceWindow()
+        defer { sourceWindow.close() }
+        var didComplete = false
+        let presenter = sourceWindow.presentPhiAlert(onDismiss: { response in
+            didComplete = true
+            XCTAssertEqual(response, .alertFirstButtonReturn)
+            // Language changes request a restart directly from this callback.
+            XCTAssertFalse(NSApp.hasModalPresentationBlockingTermination)
+        }) { dismiss in
+            makeAlert(message: "Restart after confirmation.") {
+                dismiss(.alertFirstButtonReturn)
+            }
+        }
+
+        XCTAssertTrue(NSApp.hasModalPresentationBlockingTermination)
+        presenter.dismiss(.alertFirstButtonReturn)
+        XCTAssertTrue(didComplete)
+    }
+
+    func testQuitActionIsIgnoredWhileAStandaloneAlertIsPresented() {
+        var dismissHandler: ((NSApplication.ModalResponse) -> Void)?
+        var didAttemptQuit = false
+        RunLoop.current.perform(inModes: [.eventTracking]) {
+            XCTAssertTrue(NSApp.hasModalPresentationBlockingTermination)
+            didAttemptQuit = true
+            XCTAssertTrue(NSApp.sendAction(#selector(NSApplication.terminate(_:)), to: NSApp, from: nil))
+            XCTAssertTrue(NSApp.hasModalPresentationBlockingTermination)
+            dismissHandler?(.cancel)
+        }
+
+        let response = PhiAlertPresenter.runStandaloneSynchronously { dismiss in
+            makeAppKitEventDismissAlert(
+                dismiss: dismiss,
+                installDismissHandler: { dismissHandler = $0 }
+            )
+        }
+
+        XCTAssertTrue(didAttemptQuit)
+        XCTAssertEqual(response, .cancel)
+        XCTAssertFalse(NSApp.hasModalPresentationBlockingTermination)
+    }
+
+    func testNonModalPresentationDoesNotBlockTermination() {
+        let sourceWindow = makeVisibleSourceWindow()
+        defer { sourceWindow.close() }
+        let presenter = presentNonModalAlert(over: sourceWindow)
+        defer { presenter.dismiss(.cancel) }
+
+        XCTAssertFalse(NSApp.hasModalPresentationBlockingTermination)
+    }
+
     func testNonModalPresentationLeavesTheParentWindowUnblocked() {
         let parentWindow = makeParentWindow()
 

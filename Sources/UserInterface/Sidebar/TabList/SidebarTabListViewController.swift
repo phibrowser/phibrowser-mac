@@ -292,6 +292,8 @@ class SidebarTabListViewController: NSViewController {
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
+    // Floating sidebars keep the controls visible; docked sidebars supply hover state.
+    private var areCleanupButtonsVisible = true
     
     private var browserState: BrowserState
     private weak var hostVC: NSViewController?
@@ -3988,10 +3990,18 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         FarringdonOrganizer.organizeFocusedWindow()
     }
 
+    func setCleanupButtonsVisible(_ visible: Bool) {
+        guard areCleanupButtonsVisible != visible else { return }
+        areCleanupButtonsVisible = visible
+        guard isViewLoaded else { return }
+        updateNewTabCleanupVisibility()
+    }
+
     /// The broom (organize-tabs) action is only useful once the window has
     /// enough eligible tabs to organize.
     private func farringdonCleanupActionIfVisible() -> (() -> Void)? {
-        guard FarringdonOrganizer.canOrganizeTabs(in: browserState) else { return nil }
+        guard areCleanupButtonsVisible,
+              FarringdonOrganizer.canOrganizeTabs(in: browserState) else { return nil }
         return { [weak self] in self?.triggerFarringdonCleanup() }
     }
 

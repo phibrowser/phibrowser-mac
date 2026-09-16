@@ -595,6 +595,8 @@ struct PhiAlertDismissAction {
 }
 
 private final class PhiAlertWindow: NSWindow {
+    var blocksApplicationTermination = false
+
     override var canBecomeKey: Bool { true }
 }
 
@@ -769,6 +771,7 @@ final class PhiAlertPresenter {
         )
         presentationStyle = .sheet
         isPresented = true
+        alertWindow.blocksApplicationTermination = true
         installQuitShortcutMonitor()
         sourceWindow.beginSheet(alertWindow) { [self] response in
             completeDismissal(response)
@@ -782,6 +785,7 @@ final class PhiAlertPresenter {
         )
         presentationStyle = .standalone
         isPresented = true
+        alertWindow.blocksApplicationTermination = true
         installQuitShortcutMonitor()
         alertWindow.level = .modalPanel
         // Nothing sizes a standalone panel to its content the way AppKit
@@ -903,7 +907,7 @@ final class PhiAlertPresenter {
     private func makeAlertWindow<Content: View>(
         content: Content,
         themeProvider: ThemeStateProvider
-    ) -> NSWindow {
+    ) -> PhiAlertWindow {
         let hostingController = ThemedHostingController(
             rootView: content,
             themeSource: themeProvider
@@ -1015,8 +1019,6 @@ final class PhiAlertPresenter {
         let configuredQuitKey = Shortcuts.key(for: .IDC_EXIT)
         quitShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isPresented,
-                  let alertWindow = self.alertWindow,
-                  alertWindow.isKeyWindow || event.window === alertWindow,
                   let eventKeys = ShortcutsKey.eventKeys(for: event),
                   PhiAlert.isQuitShortcut(eventKeys, configuredQuitKey: configuredQuitKey)
             else {
@@ -1032,6 +1034,7 @@ final class PhiAlertPresenter {
     private func completeDismissal(_ response: NSApplication.ModalResponse) {
         guard isPresented else { return }
         isPresented = false
+        (alertWindow as? PhiAlertWindow)?.blocksApplicationTermination = false
         if let quitShortcutMonitor {
             NSEvent.removeMonitor(quitShortcutMonitor)
             self.quitShortcutMonitor = nil
@@ -1119,6 +1122,15 @@ extension NSWindow {
 
 @MainActor
 extension NSApplication {
+    /// Blocks quit during AppKit modal sessions and active Phi alerts. Phi's
+    /// dismissal state clears before callbacks run; AppKit's `attachedSheet`
+    /// can remain set during a callback that requests a confirmed restart.
+    @objc var hasModalPresentationBlockingTermination: Bool {
+        modalWindow != nil || windows.contains { window in
+            (window as? PhiAlertWindow)?.blocksApplicationTermination == true
+        }
+    }
+
     /// Presents the standard alert as a sheet and returns the selected response
     /// synchronously, matching `NSAlert.runModal()` call-site semantics.
     func runPhiAlert(

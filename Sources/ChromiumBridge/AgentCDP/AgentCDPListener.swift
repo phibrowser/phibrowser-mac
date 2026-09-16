@@ -380,9 +380,11 @@ final class AgentCDPListener {
         // joins a Swift task principal nor substitutes the consent identity.
         // The browser's own agent runtime is recognized before any ancestry
         // walk: it is not one of the agents this consent system arbitrates
-        // (see AgentPeerIdentity.firstPartyAgent), and resolving it normally
-        // would only produce a version-stamped "phi-agent.bundle" identity to
-        // prompt about. Every other peer falls through to the walk.
+        // (see AgentPeerIdentity.firstPartyAgent). When it fails that pass —
+        // a phi-agent orphaned by a dead runner — the walk resolves it to
+        // `unresolvedOwnCode` and `evaluate` refuses it without a prompt,
+        // rather than asking about a version-stamped "phi-agent.bundle".
+        // Every other peer falls through to the walk.
         let peerIdentity = AgentPeerIdentity.firstPartyAgent(socketFD: fd)
             ?? AgentPeerIdentity.resolve(socketFD: fd)
             ?? .unresolved

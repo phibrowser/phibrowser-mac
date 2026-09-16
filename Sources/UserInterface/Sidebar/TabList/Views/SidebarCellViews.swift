@@ -1515,8 +1515,10 @@ class NewTabButtonCellView: SidebarCellView {
     /// Triggers the Farringdon "organize tabs with AI" action. When nil, the
     /// trailing broom button is hidden.
     var cleanupAction: (() -> Void)? {
-        didSet { cleanupButton.isHidden = (cleanupAction == nil) }
+        didSet { updateCleanupButtonVisibility() }
     }
+    private var isCleanupButtonVisible = false
+    private var cleanupVisibilityGeneration = 0
     private var iconHoverState = false
     private var didPlayForwardAnimationForCurrentHover = false
 
@@ -1525,8 +1527,37 @@ class NewTabButtonCellView: SidebarCellView {
         button.target = self
         button.action = #selector(cleanupButtonClicked)
         button.isHidden = true
+        button.alphaValue = 0
         return button
     }()
+
+    private func updateCleanupButtonVisibility() {
+        let visible = cleanupAction != nil
+        guard isCleanupButtonVisible != visible else { return }
+        isCleanupButtonVisible = visible
+        cleanupVisibilityGeneration += 1
+        let generation = cleanupVisibilityGeneration
+        let shouldAnimate = window != nil && !isHiddenOrHasHiddenAncestor
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        guard shouldAnimate else {
+            cleanupButton.layer?.removeAllAnimations()
+            cleanupButton.alphaValue = visible ? 1 : 0
+            cleanupButton.isHidden = !visible
+            return
+        }
+
+        cleanupButton.isHidden = false
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.1
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            cleanupButton.animator().alphaValue = visible ? 1 : 0
+        }) { [weak self] in
+            // Ignore completions from a superseded hover transition or reused cell.
+            guard let self, self.cleanupVisibilityGeneration == generation else { return }
+            self.cleanupButton.isHidden = !visible
+        }
+    }
 
     @objc private func cleanupButtonClicked() {
         guard !cleanupButton.isOrganizing, let cleanupAction else { return }

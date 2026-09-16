@@ -579,13 +579,14 @@ class FloatingSidebarViewController: NSViewController {
         // Reserve the Spaces switch row's height under the exact conditions
         // the header shows the row (see
         // `SidebarHeaderView.updateSpaceSwitchVisibility`), mirroring the
-        // docked sidebar's updateHeaderHeight: the row adds 32 (24 row + 8
-        // gap) only while shown, so the header reclaims it when hidden.
+        // docked sidebar's updateHeaderHeight: reserve the row height plus
+        // the 8pt gap only while shown, and reclaim both when hidden.
         let spacesEnabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
-        let base: CGFloat = showInSidebar ? 73 : 41
-        let headerHeight = base + (spacesEnabled ? 32 : 0)
+        let base: CGFloat = showInSidebar ? 80 : 42.5
+        let spacesBandHeight = SpacesStripView.sidebarHeight + 8
+        let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
 

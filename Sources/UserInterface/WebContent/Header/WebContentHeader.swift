@@ -452,7 +452,7 @@ class WebContentHeader: NSView {
             ? tab?.pageColor.map { Self.compositePageColor($0, over: fallback) }
             : nil
         let pageAppearance: Appearance? = background.map {
-            $0.contrastRatio(with: .white) > $0.contrastRatio(with: .black) ? .dark : .light
+            $0.isLight() ? .light : .dark
         }
 
         // Own both layer colors here so a theme binding cannot overwrite the page override.

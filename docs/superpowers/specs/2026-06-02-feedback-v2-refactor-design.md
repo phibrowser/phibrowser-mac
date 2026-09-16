@@ -288,6 +288,8 @@ The submit metadata should include a native snapshot:
 - Channel derived from the bundle identifier or build configuration.
 - Page URL.
 - Locale.
+- Selected input source ID and localized name in `extra.input_source_id` and
+  `extra.input_source_name`, captured when Send is clicked and retained on retries.
 - OS version.
 - Device model.
 - Trace id or job id.

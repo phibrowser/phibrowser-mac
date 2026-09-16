@@ -239,8 +239,40 @@ extension Bookmark: ContextMenuRepresentable {
         return true
     }
     
+    @MainActor
     @objc private func myDelete(_ item: NSMenuItem) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.removeBookmark(self)
+        guard let controller = MainBrowserWindowControllersManager.shared.activeWindowController,
+              let bookmark = controller.browserState.bookmarkManager.bookmark(withGuid: guid) else { return }
+        let manager = controller.browserState.bookmarkManager
+
+        if bookmark.isFolder && !bookmark.children.isEmpty {
+            let configuration = PhiAlertAppKitConfiguration(
+                title: String(format: NSLocalizedString(
+                    "common.bookmarkDeletion.nonEmptyFolderTitle",
+                    value: "Delete %@?",
+                    comment: "Bookmark folder deletion - Confirmation title when the folder contains items; %@ is the folder name"
+                ), bookmark.title),
+                message: NSLocalizedString(
+                    "common.bookmarkDeletion.nonEmptyFolderMessage",
+                    value: "The folder and its contents will be deleted. This action cannot be undone.",
+                    comment: "Bookmark folder deletion - Confirmation message when deleting a single folder containing items"
+                ),
+                style: .critical,
+                secondaryAction: PhiAlertAppKitAction(
+                    NSLocalizedString("common.bookmarkDeletion.cancelButton", value: "Cancel", comment: "Cancel button"),
+                    response: .alertSecondButtonReturn
+                ),
+                primaryAction: PhiAlertAppKitAction(
+                    NSLocalizedString("common.bookmarkDeletion.deleteButton", value: "Delete", comment: "Destructive button"),
+                    role: .primary,
+                    response: .alertFirstButtonReturn
+                )
+            )
+            guard NSApp.runPhiAlert(configuration, relativeTo: controller.window) == .alertFirstButtonReturn else { return }
+        }
+
+        guard let current = manager.bookmark(withGuid: guid) else { return }
+        manager.removeBookmark(current)
     }
 
     @MainActor

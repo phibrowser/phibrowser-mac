@@ -34,8 +34,12 @@
     }
   
     
+    // Native text views, including NSTextField's field editor, need AppKit's
+    // default input-source switching. Chromium handles these keys downstream
+    // after receiving them directly through the key window.
     if (event.type == NSEventTypeKeyDown &&
-        (event.keyCode == kVK_JIS_Eisu || event.keyCode == kVK_JIS_Kana)) {
+        (event.keyCode == kVK_JIS_Eisu || event.keyCode == kVK_JIS_Kana) &&
+        ![NSApp.keyWindow.firstResponder isKindOfClass:[NSTextView class]]) {
         [NSApp.keyWindow sendEvent:event];
     } else {
         [super sendEvent:event];
@@ -52,6 +56,9 @@
 }
 
 - (void)terminate:(id)sender {
+    if (self.hasModalPresentationBlockingTermination) {
+        return;
+    }
     if ([[ChromiumLauncher sharedInstance].bridge respondsToSelector:@selector(tryToTerminateApplication:)]) {
         [[ChromiumLauncher sharedInstance].bridge tryToTerminateApplication:self];
     }

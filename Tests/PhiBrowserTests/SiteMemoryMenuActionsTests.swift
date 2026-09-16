@@ -48,13 +48,29 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
         XCTAssertTrue(unavailable.items.allSatisfy { !$0.isEnabled })
     }
 
-    func testSidebarMovesPinnedExtensionsOutWhenMemoryButtonNeedsSpace() {
+    func testSidebarKeepsPinnedExtensionsInAddressBarWithFixedAccessoryBudget() {
         XCTAssertFalse(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
-            pinnedExtensionCount: 3, containerWidth: 220, isMemoryButtonVisible: false))
+            pinnedExtensionCount: 3, containerWidth: 220))
+        XCTAssertFalse(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
+            pinnedExtensionCount: 2, containerWidth: 193))
         XCTAssertTrue(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
-            pinnedExtensionCount: 3, containerWidth: 220, isMemoryButtonVisible: true))
+            pinnedExtensionCount: 3, containerWidth: 193))
         XCTAssertFalse(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
-            pinnedExtensionCount: 3, containerWidth: 300, isMemoryButtonVisible: true))
+            pinnedExtensionCount: 3, containerWidth: 300))
+    }
+
+    func testSidebarExtensionPlacementUsesFixedReaderAndMemoryBudget() {
+        // Three pinned extensions plus the fixed controls and insets consume
+        // 182pt. The 32pt text allowance puts the boundary at 214pt on every tab.
+        XCTAssertTrue(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
+            pinnedExtensionCount: 3, containerWidth: 213))
+        XCTAssertFalse(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
+            pinnedExtensionCount: 3, containerWidth: 214))
+    }
+
+    func testSidebarDoesNotReservePinnedExtensionShelfWhenNoneArePinned() {
+        XCTAssertFalse(SideAddressBar.shouldDisplayPinnedExtensionsWithinSidebar(
+            pinnedExtensionCount: 0, containerWidth: 0))
     }
 
     func testCollectionStateUsesExactHostProfileAndAccount() throws {

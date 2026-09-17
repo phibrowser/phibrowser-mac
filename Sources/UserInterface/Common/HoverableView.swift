@@ -31,6 +31,16 @@ class HoverableView: NSView {
     var responseToClickAction = true
     var enableClickAnimation = false
     
+    /// Opt in only for tab activation; other controls keep release-to-click behavior.
+    var shouldClickOnMouseDown: (() -> Bool)?
+    private var clickedOnMouseDown = false
+    private var handledMouseDownEvent: NSEvent?
+
+    /// Ancestor drag owners can forward this press without activating it again.
+    func handledClick(onMouseDown event: NSEvent) -> Bool {
+        handledMouseDownEvent === event
+    }
+
     var clickAction: (() -> Void)?
     /// Single-click callback that preserves the mouse-down modifiers.
     /// When set, it replaces `clickAction` for single clicks.
@@ -114,20 +124,37 @@ class HoverableView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
         mouseDownModifierFlags = event.modifierFlags
+        clickedOnMouseDown = responseToClickAction
+            && event.clickCount == 1
+            && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+            && shouldClickOnMouseDown?() == true
+        handledMouseDownEvent = clickedOnMouseDown ? event : nil
+        if clickedOnMouseDown {
+            if let clickActionWithModifierFlags {
+                clickActionWithModifierFlags(event.modifierFlags)
+            } else {
+                clickAction?()
+            }
+        }
+        // The parent collection/table may track the entire drag inside this call.
+        super.mouseDown(with: event)
         if responseToClickAction && enableClickAnimation {
             animateScaleDown()
         }
     }
     
     override func mouseUp(with event: NSEvent) {
-        defer { mouseDownModifierFlags = nil }
+        defer {
+            mouseDownModifierFlags = nil
+            clickedOnMouseDown = false
+            handledMouseDownEvent = nil
+        }
         super.mouseUp(with: event)
         if responseToClickAction && enableClickAnimation {
             animateScaleUp()
         }
-        if responseToClickAction {
+        if responseToClickAction && !clickedOnMouseDown {
             if event.clickCount == 2, let doubleClickAction {
                 doubleClickAction(event)
             } else if let clickActionWithModifierFlags {

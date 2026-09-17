@@ -362,6 +362,22 @@ class SidebarTabListViewController: NSViewController {
         outlineView.setDraggingSourceOperationMask([.move, .copy], forLocal: false)
         outlineView.registerForDraggedTypes([.pinnedTab, .normalTab, .normalTabs, .phiBookmark, .bookmarks, .tabGroup])
         outlineView.phiOutlineDelegate = self
+        outlineView.mouseDownAction = { [weak self] row, event in
+            guard let self,
+                  event.clickCount == 1,
+                  event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+                  !self.browserState.multiSelection.isActive,
+                  let item = self.outlineView.item(atRow: row) as? SidebarItem else { return false }
+            if item.itemType == .tab {
+                self.outlineView(self.outlineView, didClickRow: row, modifierFlags: event.modifierFlags)
+                return true
+            }
+            guard let bookmark = self.bookmarkForRow(row), !bookmark.isFolder,
+                  !bookmark.isEditing,
+                  !self.shouldStartBookmarkRename(for: bookmark, event: event) else { return false }
+            self.handleOutlineClick(row: row, modifierFlags: event.modifierFlags)
+            return true
+        }
         
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("SidebarColumn"))
         column.isEditable = false
@@ -915,16 +931,19 @@ class SidebarTabListViewController: NSViewController {
     }
 
     @objc private func outlineViewClicked(_ sender: NSOutlineView) {
-        let clickedRow = sender.clickedRow
+        guard !outlineView.handledMouseDownAction else { return }
+        let modifierFlags = (sender as? SideBarOutlineView)?.consumeMouseDownModifierFlags()
+            ?? NSApp.currentEvent?.modifierFlags
+            ?? []
+        handleOutlineClick(row: sender.clickedRow, modifierFlags: modifierFlags)
+    }
+
+    private func handleOutlineClick(row clickedRow: Int, modifierFlags: NSEvent.ModifierFlags) {
         guard clickedRow != -1 else {
             handleSidebarBlankAreaClick()
             return
         }
-        cancelTabPreview(at: clickedRow, in: sender)
-
-        let modifierFlags = (sender as? SideBarOutlineView)?.consumeMouseDownModifierFlags()
-            ?? NSApp.currentEvent?.modifierFlags
-            ?? []
+        cancelTabPreview(at: clickedRow, in: outlineView)
         let isCommandClick = modifierFlags.contains(.command)
         let isShiftClick = modifierFlags.contains(.shift)
         if modifierFlags.isPureOptionClick,

@@ -2092,6 +2092,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 self?.handleTabDragEnd()
             }
 
+            view.shouldSelectOnMouseDown = { [weak self] in
+                self?.browserState.multiSelection.isActive != true
+            }
             view.onSelect = { [weak self, weak tab] flags in
                 guard let self, let tab else { return }
                 self.handleTabClick(

@@ -68,6 +68,9 @@ final class TabItemView: NSView {
 
     // MARK: - Public Properties
 
+    var shouldSelectOnMouseDown: (() -> Bool)?
+    private var selectedOnMouseDown = false
+
     var onSelect: ((NSEvent.ModifierFlags) -> Void)?
     var onDoubleSelect: ((NSEvent.ModifierFlags) -> Void)?
     /// Fires for split-merged cells when the click falls on the right half
@@ -106,6 +109,7 @@ final class TabItemView: NSView {
     // MARK: - Drag Gesture State
     private var isDraggingInternal = false
     private var mouseDownPoint: CGPoint?
+    private var mouseDownLocationInWindow: CGPoint?
     private var mouseDownModifierFlags: NSEvent.ModifierFlags?
 
     // MARK: - Tracking Area
@@ -1173,6 +1177,11 @@ final class TabItemView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        defer {
+            mouseDownPoint = nil
+            mouseDownLocationInWindow = nil
+            selectedOnMouseDown = false
+        }
         viewModel.isPressed = false
         let modifierFlags = mouseDownModifierFlags ?? event.modifierFlags
         mouseDownModifierFlags = nil
@@ -1182,6 +1191,7 @@ final class TabItemView: NSView {
             onDragEnd?()
         } else {
             super.mouseUp(with: event)
+            guard !selectedOnMouseDown else { return }
             let point = convert(event.locationInWindow, from: nil)
             guard bounds.contains(point) else { return }
 
@@ -1224,13 +1234,14 @@ final class TabItemView: NSView {
                 onSelect?(modifierFlags)
             }
         }
-        mouseDownPoint = nil
     }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownModifierFlags = event.modifierFlags
+        selectedOnMouseDown = false
 
         mouseDownPoint = convert(event.locationInWindow, from: nil)
+        mouseDownLocationInWindow = event.locationInWindow
         isDraggingInternal = false
 
         let point = convert(event.locationInWindow, from: nil)
@@ -1243,6 +1254,21 @@ final class TabItemView: NSView {
         let isFunctionalMute = isOnMute && isActive
         if !isFunctionalMute && !isOnClose {
             viewModel.isPressed = true
+        }
+
+        // Keep mute controls on the release path: activation can change their hit behavior.
+        let isOnSecondaryMute = !secondaryMuteButtonHostingView.isHidden
+            && secondaryMuteButtonHostingView.frame.contains(point)
+        guard !isOnClose, !isOnMute, !isOnSecondaryMute,
+              event.clickCount == 1,
+              event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+              shouldSelectOnMouseDown?() != false else { return }
+        selectedOnMouseDown = true
+        cancelPreviewForInteraction()
+        if pinnedSplitPartner != nil, point.x > bounds.midX, let onSecondarySelect {
+            onSecondarySelect(event.modifierFlags)
+        } else {
+            onSelect?(event.modifierFlags)
         }
     }
 
@@ -1258,11 +1284,14 @@ final class TabItemView: NSView {
             return
         }
 
-        let currentPoint = convert(event.locationInWindow, from: nil)
+        // Activation can scroll or resize the tab. Measure physical pointer travel
+        // in window coordinates so layout changes cannot start a drag.
+        guard let mouseDownLocationInWindow else { return }
+        let currentPoint = event.locationInWindow
 
         if !isDraggingInternal {
-            let dx = abs(currentPoint.x - startPoint.x)
-            let dy = abs(currentPoint.y - startPoint.y)
+            let dx = abs(currentPoint.x - mouseDownLocationInWindow.x)
+            let dy = abs(currentPoint.y - mouseDownLocationInWindow.y)
             if dx > 5 || dy > 5 {
                 isDraggingInternal = true
                 viewModel.isPressed = false

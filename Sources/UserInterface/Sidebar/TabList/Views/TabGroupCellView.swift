@@ -506,6 +506,9 @@ final class TabGroupCellView: SidebarCellView {
         // hide it so the cell looks flush with the outer outline rows.
         innerTable.focusRingType = .none
         innerTable.phiTableDelegate = self
+        innerTable.shouldSelectOnMouseDown = { [weak self] in
+            self?.configuredBrowserState?.multiSelection.isActive != true
+        }
         innerTable.delegate = self
         innerTable.target = self
         innerTable.action = #selector(innerTableClicked(_:))

@@ -504,6 +504,11 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     private let outerBackground = HoverableView()
     private let leftPane = HoverableView()
     private let rightPane = HoverableView()
+
+    func handledPaneClick(onMouseDown event: NSEvent) -> Bool {
+        leftPane.handledClick(onMouseDown: event) || rightPane.handledClick(onMouseDown: event)
+    }
+
     private lazy var leftIconView = TabFaviconImageView(
         model: leftStatusModel, cornerRadius: Self.faviconCornerRadius
     )
@@ -714,6 +719,12 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         rightPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        leftPane.shouldClickOnMouseDown = { [weak self] in
+            self?.browserState?.multiSelection.isActive != true
+        }
+        rightPane.shouldClickOnMouseDown = { [weak self] in
+            self?.browserState?.multiSelection.isActive != true
+        }
         leftPane.clickAction = { [weak self] in
             self?.handlePaneClick(isLeft: true)
         }

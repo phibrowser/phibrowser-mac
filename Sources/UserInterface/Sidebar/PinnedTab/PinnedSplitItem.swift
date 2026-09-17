@@ -88,6 +88,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.hoveredColor = .sidebarTabHoveredColorEmphasized
         backgroundView.selectedColor = .sidebarTabSelected
         backgroundView.enableClickAnimation = true
+        backgroundView.shouldClickOnMouseDown = { true }
         backgroundView.clickAction = { [weak self] in
             self?.splitTabPreviewRegistration.cancelForInteraction()
             self?.itemClicked?(self?.preferredClickTab())

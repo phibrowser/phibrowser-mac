@@ -26,6 +26,8 @@ final class GroupTabsTableView: NSTableView {
     private var pendingInteractionTarget: GroupTabsTableInteractionTarget?
     private var pendingMouseDownEvent: NSEvent?
     private var manualDragInProgress = false
+    private var selectedOnMouseDown = false
+    var shouldSelectOnMouseDown: (() -> Bool)?
 
     /// Pin the inner cell to the row's full rect so it always tracks
     /// `bounds.width`, regardless of `NSTableColumn.width`. The default
@@ -46,10 +48,19 @@ final class GroupTabsTableView: NSTableView {
         let point = convert(event.locationInWindow, from: nil)
         let row = row(at: point)
         pendingDragRow = row
-        pendingDragStartPoint = point
+        pendingDragStartPoint = event.locationInWindow
         pendingInteractionTarget = interactionTarget(at: point, row: row)
         pendingMouseDownEvent = event
         manualDragInProgress = false
+        let paneHandledClick = row >= 0 && (view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? SidebarSplitPairCellView)?.handledPaneClick(onMouseDown: event) == true
+        selectedOnMouseDown = paneHandledClick || (pendingInteractionTarget == nil && row >= 0
+            && event.clickCount == 1
+            && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+            && shouldSelectOnMouseDown?() == true)
+        if selectedOnMouseDown && !paneHandledClick {
+            phiTableDelegate?.tableView(self, didClickRow: row, modifierFlags: event.modifierFlags)
+        }
         AppLogDebug(
             "[TAB_GROUPS][INNER_DRAG] inner.mouseDown row=\(row) " +
             "windowPoint=\(event.locationInWindow)"
@@ -74,7 +85,7 @@ final class GroupTabsTableView: NSTableView {
             return
         }
 
-        let currentPoint = convert(event.locationInWindow, from: nil)
+        let currentPoint = event.locationInWindow
         let dx = abs(currentPoint.x - startPoint.x)
         let dy = abs(currentPoint.y - startPoint.y)
         guard dx > Self.dragThreshold || dy > Self.dragThreshold else {
@@ -152,7 +163,7 @@ final class GroupTabsTableView: NSTableView {
                 phiTableDelegate?.tableView(self,
                                             didRequest: pendingInteractionTarget,
                                             row: clickedRow)
-            } else if pendingInteractionTarget == nil {
+            } else if pendingInteractionTarget == nil && !selectedOnMouseDown {
                 phiTableDelegate?.tableView(
                     self,
                     didClickRow: clickedRow,
@@ -165,6 +176,7 @@ final class GroupTabsTableView: NSTableView {
     }
 
     private func resetPendingDragState() {
+        selectedOnMouseDown = false
         pendingDragRow = nil
         pendingDragStartPoint = nil
         pendingInteractionTarget = nil

@@ -225,6 +225,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.hoveredColor = .sidebarTabHoveredColorEmphasized
         backgroundView.selectedColor = .sidebarTabSelected
         backgroundView.enableClickAnimation = true
+        backgroundView.shouldClickOnMouseDown = { true }
         backgroundView.clickActionWithModifierFlags = { [weak self] modifierFlags in
             self?.tabPreviewRegistration.cancelForInteraction()
             self?.itemClicked?(self?.tab, modifierFlags)

@@ -137,6 +137,112 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - Routing (§5.2)
 
+    func testFailedPreflightBlocksEveryEntityKindAndPreservesPendingLocalData() async throws {
+        try await assertFailedPullBlocksPublication(afterConflict: false)
+    }
+
+    func testFailedSpaceConflictPullAlsoBlocksLaterOwnedKinds() async throws {
+        try await assertFailedPullBlocksPublication(afterConflict: true)
+    }
+
+    func testPreflightPreservesUnpublishedSpaceEditsAndOrder() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a", "Profile B": "uuid-b"]
+        access.profileIdByUuid = ["uuid-a": "Default", "uuid-b": "Profile B"]
+        access.spaces = ["s-1", "s-2"].enumerated().map { index, id in
+            PhiLocalSpace(spaceId: id, profileId: "Default", name: "Work", colorHex: "#3A6FF8",
+                          iconName: "emoji:1F4BC", sortOrder: index,
+                          createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                          opacityLight: nil, opacityDark: nil)
+        }
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "sync-1", "s-2": "sync-2"], access: access)
+        let client = FakePhiSyncClient()
+        let clock = Clock()
+        clock.nowMs = 1_000
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce() // Consume our own writes before the concurrent edit.
+        let peerRow = try XCTUnwrap(client.stored[spaceHash("sync-1")])
+        client.nextVersion += 10
+        client.reseed(tagHash: spaceHash("sync-1"), ciphertext: peerRow.ciphertext, version: client.nextVersion)
+        clock.nowMs = 2_000
+        access.spaces[0].name = "Renamed locally"
+        access.spaces[0].profileId = "Profile B"
+        access.spaces[0].sortOrder = 1
+        access.spaces[1].sortOrder = 0
+        access.spaces.sort { $0.sortOrder < $1.sortOrder }
+
+        await engine.handleLocalSpacesChange()
+
+        let local = try XCTUnwrap(access.spaces.first { $0.spaceId == "s-1" })
+        XCTAssertEqual(local.name, "Renamed locally")
+        XCTAssertEqual(local.profileId, "Profile B")
+        XCTAssertEqual(access.spaces.sorted { $0.sortOrder < $1.sortOrder }.map(\.spaceId), ["s-2", "s-1"])
+        let published = try XCTUnwrap(client.stored[spaceHash("sync-1")])
+        let entity = try PhiEntityCodec.decrypt(published.ciphertext, key: key).space
+        XCTAssertEqual(entity.name.stringValue, "Renamed locally")
+        XCTAssertEqual(entity.profileUuid.stringValue, "uuid-b")
+        let siblingRow = try XCTUnwrap(client.stored[spaceHash("sync-2")])
+        let sibling = try PhiEntityCodec.decrypt(siblingRow.ciphertext, key: key).space
+        XCTAssertLessThan(sibling.rank.stringValue, entity.rank.stringValue,
+                          "The locally dragged sibling must keep its order on the server too")
+    }
+
+    private func assertFailedPullBlocksPublication(afterConflict: Bool) async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [PhiLocalSpace(spaceId: "s-1", profileId: "Default", name: "Work",
+                                      colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                      createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                                      opacityLight: nil, opacityDark: nil)]
+        access.uuidByProfileId = ["Default": "pu-1"]
+        access.profileIdByUuid = ["pu-1": "Default"]
+        access.knownLocalProfileIds = ["Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "su-1"], access: access)
+        let bookmarks = FakeBookmarkAccess(rows: [.fixture(guid: "local-bookmark", spaceId: "s-1")])
+        let pins = FakePinAccess(scope: .space, account: .space,
+                                 rows: [.fixture(lineageId: "local-pin", spaceId: "s-1", profileId: nil)])
+        let client = FakePhiSyncClient()
+        let clock = Clock()
+        clock.nowMs = 2_000
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   spaceAccess: access, spaceStore: store,
+                                   ownedKinds: [.bookmarks(access: bookmarks, store: MemoryOwnedItemStore()),
+                                                .pins(access: pins, store: MemoryOwnedItemStore())],
+                                   now: { clock.read() })
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let published = client.commits.count
+        clock.nowMs = 3_000
+        access.spaces[0].name = "Renamed"
+        bookmarks.rows[0].title = "Renamed"
+        pins.rows[0].title = "Renamed"
+        if afterConflict {
+            client.conflictOnceForTagHashes = [spaceHash("su-1")]
+            client.getUpdatesErrorAfterPages = (1, URLError(.notConnectedToInternet))
+        } else {
+            client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        }
+
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+
+        let attempted = Array(client.commits.dropFirst(published))
+        XCTAssertEqual(attempted.count, afterConflict ? 1 : 0)
+        XCTAssertFalse(attempted.contains { $0.name == PhiSyncEntity.bookmarkEntityName || $0.name == PhiSyncEntity.pinEntityName },
+                       "A failed pull must also block later entity kinds")
+        XCTAssertEqual(bookmarks.rows.count, 1)
+        XCTAssertEqual(pins.rows.count, 1)
+        let beforeRecovery = client.commits.count
+        await engine.handleLocalSpacesChange()
+        let recovered = Array(client.commits.dropFirst(beforeRecovery))
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.spaceEntityName })
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.bookmarkEntityName })
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.pinEntityName })
+    }
+
     func testAGatedOffEngineNeverHandsSpaceEntitiesToTheSpaceSection() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -829,13 +935,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(store.table.cursors["sync-1"]!.server,
-                       try rebound.serializedData(),
-                       "server must be the entity we pulled, not the merge result")
         let commits = spaceCommits(client)
         XCTAssertEqual(commits.count, 1)
+        let commit = try XCTUnwrap(commits.first)
         let sent = try Phi_PhiSpaceEntity(serializedBytes:
-            try PhiEntityCodec.decrypt(commits[0].ciphertext!, key: key).space.serializedData())
+            try PhiEntityCodec.decrypt(XCTUnwrap(commit.ciphertext), key: key).space.serializedData())
+        XCTAssertEqual(store.table.cursors["sync-1"]?.server, try sent.serializedData(),
+                       "After an accepted commit, the server baseline tracks the acknowledged payload")
         XCTAssertEqual(sent.name.stringValue, "Work2")
         XCTAssertEqual(sent.profileUuid.stringValue, "uuid-b")
         XCTAssertEqual(commits[0].baseVersion, 9)
@@ -943,6 +1049,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     func testALocalDeleteEmitsOneTombstoneAndFinalizesOnSuccess() async throws {
         let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "Default"]
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
@@ -952,22 +1059,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         cursor.pendingDelete = true
         store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        // The row the cursor points at, already tombstoned: the fake's update
-        // path THROWS on a missing row, which would abandon the whole batch
-        // before any outcome was applied. Seeding it as a tombstone also keeps
-        // the pull that precedes the push free of side effects — a deleted
-        // entity is routed to `batch.tombstones`, whose apply path is Task 14.
-        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
-                    version: 6, entityId: "srv-1", deleted: true)
+        // The remote row is still live. Preflight must retain the pending local deletion,
+        // rather than recreate the missing local Space from this incoming entity.
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(spaceEntity("sync-1")),
+                    version: 6, entityId: "srv-1")
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pushLocalSettings()
 
         let commits = spaceCommits(client)
         XCTAssertEqual(commits.count, 1)
-        XCTAssertTrue(commits[0].deleted)
-        XCTAssertNil(commits[0].ciphertext)
-        XCTAssertEqual(commits[0].name, PhiSyncEntity.spaceEntityName)
+        let commit = try XCTUnwrap(commits.first)
+        XCTAssertTrue(commit.deleted)
+        XCTAssertNil(commit.ciphertext)
+        XCTAssertEqual(commit.name, PhiSyncEntity.spaceEntityName)
+        XCTAssertTrue(access.spaces.isEmpty, "Preflight must not recreate a locally deleted Space")
         let after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertFalse(after.pendingDelete)
         XCTAssertNotNil(after.deletedAtMs)
@@ -987,8 +1093,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         cursor.pendingDelete = true
         store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
-                    version: 6, entityId: "srv-1", deleted: true)
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(spaceEntity("sync-1")),
+                    version: 6, entityId: "srv-1")
         client.forceInvalidMessage = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)

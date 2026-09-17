@@ -582,6 +582,11 @@ actor PhiSyncEngine {
     /// the window while the write is in flight.
     private var isApplyingRemote = false
 
+    /// No invalidation channel exists yet: only a completed pull in this serialized round
+    /// permits publication. Every new pull revokes that permission, including conflict pulls,
+    /// so a failed retry cannot leave later entity kinds publishing against stale state.
+    private var canPublishThisRound = false
+
     /// Tail of the round chain. Each public entry point appends its round to this task and
     /// awaits it, so a round that suspends in `getUpdates` or `commit` still finishes before
     /// the next one starts. Only the public entry points enqueue: the internal `pull` -> `push`
@@ -723,7 +728,7 @@ actor PhiSyncEngine {
         await serialized(.pull)
     }
 
-    /// Snapshot -> encrypt -> Commit, with one pull-and-retry on CONFLICT.
+    /// GetUpdates -> merge -> snapshot -> Commit, with one pull-and-retry on CONFLICT.
     func pushLocalSettings() async {
         await serialized(.push)
     }
@@ -1082,6 +1087,7 @@ actor PhiSyncEngine {
     /// points of any round, so it never tears a half-written cursor.
     func resetSyncState() {
         guard !isStopped else { return }
+        canPublishThisRound = false
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
     }
 
@@ -1105,9 +1111,10 @@ actor PhiSyncEngine {
         // start against the account that has since been mounted on the same defaults.
         guard !isStopped else { return }
         // §11's counters are per ROUND, not per pull: one round can contain a
-        // NOT_MY_BIRTHDAY retry, the push's initial pull and a scoped conflict
+        // NOT_MY_BIRTHDAY retry, the push's preflight pull and a scoped conflict
         // retry, and `pushSpaces` runs after the pull's tail has already finished.
         spaceCounters = SpaceRoundCounters()
+        canPublishThisRound = false
         // 同上，同范围：归属 kind 的计数、轮首读的成功与否、以及随学随加的 tag 索引都是
         // **每轮**的，不是每次 pull 的。
         ownedCounters = [:]
@@ -1131,13 +1138,13 @@ actor PhiSyncEngine {
         case .pull:
             _ = await pull(retryOnBirthday: true, thenPush: true)
         case .push:
-            await push(retryOnConflict: true, allowInitialPull: true)
+            await push(retryOnConflict: true)
         case .localChange:
             guard !isApplyingRemote else { return }
-            await push(retryOnConflict: true, allowInitialPull: true)
+            await push(retryOnConflict: true)
         case .localSpaceChange:
             guard !isApplyingRemote else { return }
-            await push(retryOnConflict: true, allowInitialPull: true)
+            await push(retryOnConflict: true)
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
         case .retentionSweep:
@@ -1158,7 +1165,7 @@ actor PhiSyncEngine {
             // 跑完全部 kind，所以一条 kind 的本地变化就是一次普通的 push round。
             guard !isApplyingRemote else { return }
             AppLogInfo("[phi-sync] local change for owned kind=\(label)")
-            await push(retryOnConflict: true, allowInitialPull: true)
+            await push(retryOnConflict: true)
         case .preview(let box):
             await runPreview(into: box)
             return          // 预览不是 Space 轮：不参与 §11 的计数行
@@ -1393,9 +1400,10 @@ actor PhiSyncEngine {
         case unusable(reason: UnusableReason)
     }
 
-    /// Returns whether the round completed. The caller needs that: a first-ever push may only
-    /// fall back to a `version = 0` create once it is sure the account holds nothing.
+    /// Returns whether all pages were downloaded and processed. A page-budget stop is not
+    /// success: callers must wait for a drained pull before publishing any entity kind.
     private func pull(retryOnBirthday: Bool, thenPush: Bool) async -> Bool {
+        canPublishThisRound = false
         guard !isStopped else { return false }
         let key: SymmetricKey
         do {
@@ -1654,12 +1662,12 @@ actor PhiSyncEngine {
             // baseline" as "the server holds bytes this device has not read"; a device that
             // had synced before would otherwise keep the baseline it decrypted at an older
             // version, and the next debounced local change — or the conflict retry, which
-            // reaches `push` with `allowInitialPull: false` and never sees `maySettingsPublish` —
+            // reaches the scoped publisher and never sees `maySettingsPublish` —
             // would commit over the unreadable entity using the id and version harvested from
             // it right here. `storedEntityId` survives (the server always sends a non-empty
             // `id_string`: internal/chromiumsync/getupdates.go toSyncEntity, from the UUID
-            // commit.go assigns on create), so `hasSyncedBefore` stays true and no
-            // `version = 0` create can slip past the guard either. `apply` re-establishes the
+            // commit.go assigns on create), so no `version = 0` create can slip past the
+            // unreadable-baseline guard either. `apply` re-establishes the
             // baseline as soon as a pull can read the entity again.
             storedLastEntity = nil
             maySettingsPublish = false
@@ -1748,9 +1756,10 @@ actor PhiSyncEngine {
         // §5.2 改动三 forbids. `pushSpaces` carries every Space-side guard of its own (the gate,
         // the drain, guard 3), so calling it unconditionally is safe — on a settings-only
         // engine (`spaceStore == nil`) it returns on its first line.
-        if thenPush {
+        canPublishThisRound = drained && !isStopped
+        if thenPush, canPublishThisRound {
             if maySettingsPublish {
-                await pushSettings(retryOnConflict: false, allowInitialPull: false)
+                await pushSettings(retryOnConflict: false)
             }
             await pushSpaces(retryOnConflict: false)
             // 归属 kind 的发布段排在 Space 之后（§5.2）。它自己带全部守卫（门、drain、
@@ -1767,7 +1776,7 @@ actor PhiSyncEngine {
         } else if drained {
             followUpRoundsUsed = 0
         }
-        return true
+        return canPublishThisRound
     }
 
     /// What one pull collected for the Space section.
@@ -1917,6 +1926,36 @@ actor PhiSyncEngine {
                     version: $0.version, fromServer: true) }
         let all = pending.filter { p in !incoming.contains { $0.uuid == p.uuid } } + incoming
 
+        // Capture actual local edits before any incoming entity changes the rows or their
+        // order. Merging the old reconciled bytes alone would erase an unpublished rename,
+        // rebind, or drag during the pull that now precedes every local push.
+        var localProjections: [String: Phi_PhiSpaceEntity] = [:]
+        if !all.isEmpty {
+            let spaces = await spaceAccess.currentSpaces()
+            var uuidBySpace: [String: String] = [:]
+            var uuidByProfile: [String: String] = [:]
+            for space in spaces {
+                uuidBySpace[space.spaceId] = await spaceAccess.syncUuid(forSpaceId: space.spaceId)
+                if uuidByProfile[space.profileId] == nil {
+                    uuidByProfile[space.profileId] = await spaceAccess.globalUuid(forProfileId: space.profileId)
+                }
+            }
+            var projectionTable = table
+            var withHistory: Set<String> = []
+            for (uuid, cursor) in table.cursors {
+                guard let bytes = cursor.reconciled,
+                      (try? Phi_PhiSpaceEntity(serializedBytes: bytes)) != nil else { continue }
+                withHistory.insert(uuid)
+                // Publication still rejects parked rows. Their local edits participate in
+                // reconciliation once a baseline exists; first adoption stays wholesale.
+                projectionTable.cursors[uuid]?.pendingApply = nil
+            }
+            localProjections = SyncableSpaces.snapshot(spaces: spaces, table: projectionTable,
+                                                       globalUuid: { uuidByProfile[$0] },
+                                                       syncUuid: { uuidBySpace[$0] }, now: now())
+                .filter { withHistory.contains($0.key) }
+        }
+
         var landedAny = false
         for item in all {
             guard !isStopped else { return }
@@ -1937,6 +1976,16 @@ actor PhiSyncEngine {
             }
             // A soft-deleted uuid is never resurrected by a replayed create.
             if cursor.deletedAtMs != nil { cursor.pendingApply = nil; table.cursors[item.uuid] = cursor; continue }
+            if cursor.pendingDelete {
+                // A local deletion wins over a concurrent live update. Learn the current
+                // server version for its tombstone without recreating the deleted local row.
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingApply = nil
+                table.cursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
 
             // A0: resolve the binding. From Task 11 on the mapping is refreshed
             // earlier in the SAME round (§5.2), so a Space bound to a profile the
@@ -2013,9 +2062,17 @@ actor PhiSyncEngine {
             let merged: Phi_PhiSpaceEntity
             if let bytes = cursor.reconciled,
                let baseline = try? Phi_PhiSpaceEntity(serializedBytes: bytes) {
-                merged = SyncableSpaces.merge(local: baseline, remote: item.entity)
+                merged = SyncableSpaces.merge(local: localProjections[item.uuid] ?? baseline, remote: item.entity)
             } else {
                 merged = item.entity
+            }
+            if !isDefault, merged.profileUuid.stringValue != item.entity.profileUuid.stringValue {
+                // Resolve the winning binding, not the remote binding examined above.
+                profileId = await spaceAccess.localProfileId(forGlobalUuid: merged.profileUuid.stringValue)
+                if profileId != nil {
+                    cursor.heldProfileUuid = nil
+                    cursor.heldForLocalProfileId = nil
+                }
             }
 
             // A2 + A3: land in order, await every step, and only THEN write the
@@ -2102,7 +2159,10 @@ actor PhiSyncEngine {
                       let bytes = cursor.reconciled,
                       let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
                 guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
-                ranks[local] = entity.rank.stringValue
+                // A locally dragged sibling may have no incoming entity in this pull. Its
+                // current rank must participate without advancing its unsent baseline.
+                let projected = localProjections[uuid].map { SyncableSpaces.merge(local: $0, remote: entity) }
+                ranks[local] = (projected ?? entity).rank.stringValue
             }
             // `allSpacesForOrdering()`, NOT `currentSpaces()`: the result goes
             // straight to `LocalStore.reorderSpaces`, which renumbers exactly the
@@ -2274,9 +2334,8 @@ actor PhiSyncEngine {
 
     // MARK: - Push
 
-    /// One round's publish step: the settings half first (unchanged M3-1
-    /// behaviour), then the Space half — unconditionally, whatever the settings
-    /// half decided.
+    /// Pull first, then publish settings, Spaces, and owned items. The publishers stay
+    /// independent when settings are unchanged or unreadable, but share the pull prerequisite.
     ///
     /// The two must be siblings rather than one appended to the other. Every
     /// early return in `pushSettings` is a statement about the SETTINGS entity,
@@ -2284,24 +2343,16 @@ actor PhiSyncEngine {
     /// on almost every round, because the user changed a Space and not a setting.
     /// A Space push hanging off the end of that function would therefore never
     /// run in exactly the case it exists for (§5.2 改动三).
-    private func push(retryOnConflict: Bool, allowInitialPull: Bool) async {
-        await pushSettings(retryOnConflict: retryOnConflict, allowInitialPull: allowInitialPull)
+    private func push(retryOnConflict: Bool) async {
+        guard await pull(retryOnBirthday: true, thenPush: false) else { return }
+        await pushSettings(retryOnConflict: retryOnConflict)
         await pushSpaces(retryOnConflict: retryOnConflict)
         await pushOwnedItems(retryOnConflict: retryOnConflict)
     }
 
-    /// The settings half: M3-1's `push`, renamed and otherwise untouched.
-    private func pushSettings(retryOnConflict: Bool, allowInitialPull: Bool) async {
-        guard !isStopped else { return }
-        // A `version = 0` commit takes the server's ON CONFLICT (client_tag_hash) DO UPDATE
-        // path, which overwrites whatever is there. A device that has never synced must
-        // discover the account's entity first or it silently clobbers every other device.
-        if allowInitialPull, !hasSyncedBefore {
-            guard await pull(retryOnBirthday: true, thenPush: false) else {
-                AppLogWarn("[phi-sync] first push aborted: the account's current settings could not be read")
-                return
-            }
-        }
+    /// Publishes settings after this round's shared pull prerequisite.
+    private func pushSettings(retryOnConflict: Bool) async {
+        guard !isStopped, canPublishThisRound else { return }
 
         // A round that knows the server holds bytes it could not decode must not overwrite
         // them. `storedLastEntity` is the decrypted baseline of what the server has; an entity
@@ -2338,7 +2389,7 @@ actor PhiSyncEngine {
         // cannot be airtight (a `shutdown()` landing between here and URLSession's send is not
         // seen), which `shutdown()` documents; what it does rule out is a round that resumed
         // from the network long after sign-out going on to commit.
-        guard !isStopped else { return }
+        guard !isStopped, canPublishThisRound else { return }
 
         let last = storedLastEntity
         // A snapshot is a write too — it stamps the sidecars — so it makes its own check.
@@ -2387,10 +2438,10 @@ actor PhiSyncEngine {
                     AppLogWarn("[phi-sync] commit still conflicting server_version=\(serverVersion.map(String.init) ?? "unknown"); abandoning this round")
                     return
                 }
-                _ = await pull(retryOnBirthday: true, thenPush: false)
+                guard await pull(retryOnBirthday: true, thenPush: false) else { return }
                 // `pushSettings`, not `push`: this retry is the settings entity's
                 // own, and the Space half of this round has not run yet.
-                await pushSettings(retryOnConflict: false, allowInitialPull: false)
+                await pushSettings(retryOnConflict: false)
             case .invalidMessage:
                 // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
                 // reported per entry instead of thrown for the whole batch. Both paths exist:
@@ -2493,7 +2544,7 @@ actor PhiSyncEngine {
     /// CONFLICT retry passes so one conflicting Space cannot drag the other
     /// twenty back through the wire.
     private func pushSpaces(retryOnConflict: Bool, onlyUuids: Set<String>? = nil) async {
-        guard !isStopped, spaceSectionEnabled, let spaceAccess, spaceStore != nil else { return }
+        guard !isStopped, canPublishThisRound, spaceSectionEnabled, let spaceAccess, spaceStore != nil else { return }
         // The one Space read-modify-write that is not a `mutateSpaceTable` delta,
         // for the same reason as the apply path's: per-entry outcomes have to be
         // carried across the batch loop's suspension points. Safe here because
@@ -2585,7 +2636,7 @@ actor PhiSyncEngine {
                 AppLogError("[phi-sync] space commit aborted: the domain key or the seal failed")
                 break
             }
-            guard !isStopped else { break }
+            guard !isStopped, canPublishThisRound else { break }
             let outcomes: [PhiCommitOutcome]
             do {
                 outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
@@ -2618,7 +2669,7 @@ actor PhiSyncEngine {
         // the other twenty back through the wire (§5.1: "一次 pull 后只重发冲突的
         // 那几条; 二次冲突放弃这几条, 本轮其余已生效").
         if retryOnConflict, !conflicted.isEmpty {
-            _ = await pull(retryOnBirthday: true, thenPush: false)
+            guard await pull(retryOnBirthday: true, thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
         }
     }
@@ -3356,7 +3407,7 @@ actor PhiSyncEngine {
     private func pushOwnedItems(retryOnConflict: Bool) async {
         // 判据与 `spaceLive` 同构，`spaceAccess` 那一项也在里面：没有它，身份翻译表整张是空
         // 的，发布段会拿一份「什么都解析不出来」的映射跑完一轮。
-        guard !isStopped, !ownedKinds.isEmpty, spaceSectionEnabled,
+        guard !isStopped, canPublishThisRound, !ownedKinds.isEmpty, spaceSectionEnabled,
               spaceStore != nil, spaceAccess != nil else { return }
         await beginOwnedRound()
         let maps = await ownedRoundMaps()
@@ -3378,7 +3429,7 @@ actor PhiSyncEngine {
                                   maps: OwnedOwnerMaps,
                                   retryOnConflict: Bool,
                                   onlyIdentities: Set<String>? = nil) async {
-        guard !isStopped else { return }
+        guard !isStopped, canPublishThisRound else { return }
         // R-exec-3：轮首读失败 ⇒ 快照、差分、发布**全部没跑**，不是「少发了几条」。
         guard !ownedReadFailed.contains(registration.label) else { return }
         guard ownedItemsPublishAllowed else { return }
@@ -3628,7 +3679,7 @@ actor PhiSyncEngine {
                             + "the domain key or the seal failed")
                 break
             }
-            guard !isStopped else { break }
+            guard !isStopped, canPublishThisRound else { break }
             let outcomes: [PhiCommitOutcome]
             do {
                 outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
@@ -3684,7 +3735,7 @@ actor PhiSyncEngine {
 
         // 一次 pull 加一次**限定到那几条**的重发；二次冲突就本轮放弃这几条（§5.3）。
         if retryOnConflict, !conflicted.isEmpty {
-            _ = await pull(retryOnBirthday: true, thenPush: false)
+            guard await pull(retryOnBirthday: true, thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
                                    onlyIdentities: conflicted)
         }
@@ -4115,16 +4166,10 @@ actor PhiSyncEngine {
         defaults.set(value, forKey: key)
     }
 
-    /// True once this device knows *which row* the account's settings live in — either it has
-    /// seen the entity or it has committed its own. Answers "may a `version = 0` create go
-    /// out?", nothing else; `clearEntityCursor()` makes it false again. The merge-vs-adopt
-    /// decision deliberately does not read it — that is `hasAdopted`.
-    private var hasSyncedBefore: Bool { storedEntityId != nil || storedLastEntity != nil }
-
     /// True once this device has settings history for the account: a pull applied the account's
     /// entity, or this device committed a snapshot of its own. Either way `<key>.phiSyncTs`
     /// sidecars now exist for the registered keys, which is what makes a field-level merge
-    /// meaningful — so this, not `hasSyncedBefore`, is what gates the wholesale adopt in
+    /// meaningful — so this, not the presence of a server cursor, gates the wholesale adopt in
     /// `apply`. The two used to be the same predicate, and the coupling was a silent data
     /// loss: `clearEntityCursor()` (the tombstone heal, the full-replay branch) forgets which
     /// row the settings live in, and the next readable entity was then adopted wholesale over
@@ -4137,10 +4182,9 @@ actor PhiSyncEngine {
     /// `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`, run before the new
     /// account's engine is built; `resetSyncState()` does the same wipe from in here.
     ///
-    /// One known window, accepted rather than closed. The two predicates disagree the other way
-    /// when a device's only sight of the entity was `.unusable`: the pull records
-    /// `storedEntityId` from that entity before dropping the baseline, so `hasSyncedBefore` is
-    /// true while `hasAdopted` is false, and `push` then returns at its "an entity id with no
+    /// One known window, accepted rather than closed. When a device's only sight of the entity
+    /// was `.unusable`, the pull records `storedEntityId` before dropping the baseline while
+    /// `hasAdopted` remains false, and `push` returns at its "an entity id with no
     /// baseline" guard *before* `SyncableSettings.snapshot` can stamp anything. A setting the
     /// user changes in that window is therefore adopted over — not merged — once the entity
     /// becomes readable, with no log line of its own.
@@ -4192,6 +4236,7 @@ actor PhiSyncEngine {
     /// same reason and with the same exception: what describes the store goes, what describes
     /// this account's own history stays.
     private func resetForNewStoreBirthday() {
+        canPublishThisRound = false
         clearRemoteCursor()
         storedBirthday = ""
         tombstoneRounds = 0

@@ -48,8 +48,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "launchHelper",
             "clearLocalAccountData:false",
@@ -89,8 +89,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "launchHelper",
             "cleanupHelper",
@@ -114,8 +114,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "cleanupHelper",
             "restoreSentinel",
@@ -138,8 +138,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "launchHelper",
             "clearLocalAccountData:false",
@@ -165,8 +165,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "launchHelper",
             "clearLocalAccountData:false",
@@ -201,8 +201,8 @@ final class PhiUninstallCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "makePlan",
             "prepareHelper",
-            "unregisterSentinel",
             "stopSentinelWatchdog",
+            "unregisterSentinel",
             "requestSentinelTermination",
             "launchHelper",
             "clearLocalAccountData:false",

@@ -129,6 +129,25 @@ enum PhiUninstallerMain {
             contentsOf: Data(PhiUninstallReadiness.committedToken.utf8)
         )
 
+        // Close the shim before waiting for Chromium: a live app window may
+        // keep the browser alive. Only the independently verified bundle is targeted.
+        let chatShimID = PhiChatUninstallIdentity.shimBundleIdentifier(
+            browserBundleIdentifier: plan.channel.browserBundleID
+        )
+        for application in runningApplications(bundleID: chatShimID) {
+            guard let url = application.bundleURL,
+                  url.standardizedFileURL == plan.chatShimBundleURL?.standardizedFileURL,
+                  PhiChatUninstallIdentity.verify(at: url, channel: plan.channel, paths: paths) else {
+                throw PhiUninstallerMainError.unsafePlan("Unverified running Phi Chat shim")
+            }
+            application.terminate()
+        }
+        guard PhiUninstallProcessWaiter.waitUntil(timeout: 15, isRunning: {
+            !runningApplications(bundleID: chatShimID).isEmpty
+        }) else {
+            throw PhiUninstallerMainError.chatShimDidNotExit(chatShimID)
+        }
+
         _ = PhiUninstallProcessWaiter.waitUntil(timeout: nil) {
             PhiUninstallProcessWaiter.isProcessRunning(plan.hostProcessID)
         }
@@ -142,13 +161,7 @@ enum PhiUninstallerMain {
             throw PhiUninstallerMainError.sentinelDidNotExit(plan.channel.sentinelBundleID)
         }
 
-        let chatShimID = PhiChatUninstallIdentity.shimBundleIdentifier(
-            browserBundleIdentifier: plan.channel.browserBundleID
-        )
-        terminateRunningApplications(bundleID: chatShimID)
-        guard PhiUninstallProcessWaiter.waitUntil(timeout: sentinelExitTimeout, isRunning: {
-            !runningApplications(bundleID: chatShimID).isEmpty
-        }) else {
+        guard runningApplications(bundleID: chatShimID).isEmpty else {
             throw PhiUninstallerMainError.chatShimDidNotExit(chatShimID)
         }
 
@@ -167,7 +180,9 @@ enum PhiUninstallerMain {
         )
         var failures = executor.execute(dataPlan)
 
-        if runningApplications(bundleID: plan.channel.browserBundleID).isEmpty {
+        if runningApplications(bundleID: plan.channel.browserBundleID).isEmpty,
+           runningApplications(bundleID: chatShimID).isEmpty,
+           runningApplications(bundleID: plan.channel.sentinelBundleID).isEmpty {
             failures.append(contentsOf: executor.execute(appBundlePlan))
         } else {
             failures.append(
@@ -193,13 +208,6 @@ enum PhiUninstallerMain {
     private static func runningApplications(bundleID: String) -> [NSRunningApplication] {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter { !$0.isTerminated }
-    }
-
-    private static func terminateRunningApplications(bundleID: String) {
-        for application in runningApplications(bundleID: bundleID) {
-            application.terminate()
-            writePhiUninstallerLog("Requested termination of \(bundleID) pid=\(application.processIdentifier)")
-        }
     }
 
     private static func value(after flag: String, in arguments: [String]) throws -> String? {

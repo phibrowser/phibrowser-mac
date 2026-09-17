@@ -20,6 +20,7 @@ private final class RecordingDiffableOutlineView: DiffableOutlineView {
     private(set) var events: [String] = []
     private(set) var invalidSnapshotErrors: [DiffableOutlineSnapshotValidationError<AnyHashable>] = []
     var onApplyInsert: (() -> Void)?
+    private(set) var lastMoveAnimationDuration: TimeInterval?
 
     func record(_ event: String) {
         events.append(event)
@@ -55,6 +56,7 @@ private final class RecordingDiffableOutlineView: DiffableOutlineView {
     }
 
     override func applyMove(from fromIndex: Int, inParent oldParent: Any?, to toIndex: Int, inParent newParent: Any?) {
+        lastMoveAnimationDuration = NSAnimationContext.current.duration
         events.append("move:\(fromIndex):\(parentID(oldParent))->\(toIndex):\(parentID(newParent))")
     }
 
@@ -94,6 +96,65 @@ private func applySnapshot(
 }
 
 final class DiffableOutlineViewTests: XCTestCase {
+    func testResetDuringFirstLoadForcesPendingRequestToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let snapshot = applySnapshot(["item0"], ["item0": (OutlineApplyItem("item0"), nil, [])])
+
+        view.reloadWith(snapshot, animated: false) {
+            view.resetDiffableSnapshot()
+            view.reloadWith(snapshot, animated: false) { view.record("pendingDataSource") }
+        }
+
+        XCTAssertEqual(view.events, ["reloadData", "pendingDataSource", "reloadData"])
+    }
+
+    func testResetDuringFallbackPreparationForcesPendingRequestToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let snapshot = applySnapshot(["item0"], ["item0": (OutlineApplyItem("item0"), nil, [])])
+        view.resetDiffableSnapshot(.init(rootIDs: [AnyHashable("missing")], nodes: [:]))
+
+        view.reloadWith(snapshot, animated: false, updateDataSource: {}, prepareReloadData: {
+            view.resetDiffableSnapshot()
+            view.reloadWith(snapshot, animated: false) { view.record("pendingDataSource") }
+        })
+
+        XCTAssertEqual(view.events, ["reloadData", "pendingDataSource", "reloadData"])
+    }
+
+    func testResetDuringInsertForcesPendingRequestToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let item = OutlineApplyItem("item0")
+        let snapshot = applySnapshot(["item0"], ["item0": (item, nil, [])])
+        view.reloadWith(applySnapshot([], [:]), animated: false) {}
+        view.clearEvents()
+        view.onApplyInsert = {
+            view.onApplyInsert = nil
+            view.resetDiffableSnapshot()
+            view.reloadWith(snapshot, animated: false) { view.record("pendingDataSource") }
+        }
+
+        view.reloadWith(snapshot, animated: false) {}
+
+        XCTAssertEqual(view.events, [
+            "beginUpdates", "insert:[0]:root:none", "endUpdates",
+            "pendingDataSource", "reloadData",
+        ])
+    }
+
+    func testExplicitResetBaselineDuringApplyRemainsUntrustedForNextRequest() {
+        let view = RecordingDiffableOutlineView()
+        let snapshot = applySnapshot(["item0"], ["item0": (OutlineApplyItem("item0"), nil, [])])
+
+        view.reloadWith(snapshot, animated: false) {
+            view.resetDiffableSnapshot(.init(rootIDs: [AnyHashable("missing")], nodes: [:]))
+        }
+        view.clearEvents()
+        view.reloadWith(snapshot, animated: false) { view.record("nextDataSource") }
+
+        XCTAssertEqual(view.events, ["nextDataSource", "reloadData"])
+        XCTAssertTrue(view.invalidSnapshotErrors.isEmpty)
+    }
+
     func testFirstSnapshotUpdatesDataSourceBeforeReloadData() {
         let view = RecordingDiffableOutlineView()
         let snapshot = applySnapshot(["item0"], ["item0": (OutlineApplyItem("item0"), nil, [])])
@@ -230,6 +291,58 @@ final class DiffableOutlineViewTests: XCTestCase {
         ])
     }
 
+    func testFirstLoadQueuesReentrantDataSourceUpdateUntilSnapshotIsCommitted() {
+        let view = RecordingDiffableOutlineView()
+        let item0 = OutlineApplyItem("item0")
+        let item1 = OutlineApplyItem("item1")
+        let first = applySnapshot(["item0"], ["item0": (item0, nil, [])])
+        let latest = applySnapshot(["item0", "item1"], [
+            "item0": (item0, nil, []),
+            "item1": (item1, nil, []),
+        ])
+
+        view.reloadWith(first, animated: false) {
+            view.record("firstData")
+            view.reloadWith(latest, animated: false) {
+                view.record("latestData")
+            }
+        }
+
+        XCTAssertEqual(view.events, [
+            "firstData", "reloadData", "latestData",
+            "beginUpdates", "insert:[1]:root:none", "endUpdates",
+        ])
+        view.clearEvents()
+        view.reloadWith(latest, animated: false) {}
+        XCTAssertTrue(view.events.isEmpty, "The committed baseline must be the latest snapshot.")
+    }
+
+    func testFallbackQueuesReloadRequestedWhilePreparingCells() {
+        let view = RecordingDiffableOutlineView()
+        let item0 = OutlineApplyItem("item0")
+        let item1 = OutlineApplyItem("item1")
+        let first = applySnapshot(["item0"], ["item0": (item0, nil, [])])
+        let latest = applySnapshot(["item0", "item1"], [
+            "item0": (item0, nil, []),
+            "item1": (item1, nil, []),
+        ])
+        view.resetDiffableSnapshot(.init(rootIDs: ["missing"], nodes: [:]))
+
+        view.reloadWith(first, animated: false, updateDataSource: {
+            view.record("firstData")
+        }, prepareReloadData: {
+            view.record("prepare")
+            view.reloadWith(latest, animated: false) {
+                view.record("latestData")
+            }
+        })
+
+        XCTAssertEqual(view.events, [
+            "firstData", "prepare", "reloadData", "latestData",
+            "beginUpdates", "insert:[1]:root:none", "endUpdates",
+        ])
+    }
+
     func testReplaceUsesOldParentForRemoveAndNewParentForInsert() {
         let view = RecordingDiffableOutlineView()
         let oldFolder = OutlineApplyItem("oldFolder")
@@ -288,6 +401,7 @@ final class DiffableOutlineViewTests: XCTestCase {
             "move:1:folder->0:folder",
             "endUpdates",
         ])
+        XCTAssertEqual(view.lastMoveAnimationDuration, 0)
     }
 
     func testParentReplacementDoesNotApplyChildMove() {
@@ -415,8 +529,8 @@ final class DiffableOutlineViewTests: XCTestCase {
         XCTAssertEqual(view.events, [
             "updateDataSource",
             "beginUpdates",
-            "reloadRows:[1]",
             "endUpdates",
+            "reloadRows:[1]",
         ])
     }
 

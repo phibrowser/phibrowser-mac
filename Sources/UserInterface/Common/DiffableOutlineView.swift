@@ -19,6 +19,7 @@ class DiffableOutlineView: NSOutlineView {
     /// view. A snapshot injected through `resetDiffableSnapshot` deliberately
     /// remains untrusted so the checked planner preserves its fallback path.
     private var currentSnapshotIsValidated = false
+    private var snapshotResetGeneration: UInt = 0
     private var isApplyingSnapshot = false
     private var pendingReloadRequest: ReloadRequest?
 
@@ -65,6 +66,12 @@ class DiffableOutlineView: NSOutlineView {
     }
 
     private func apply(_ request: ReloadRequest) {
+        // Full reloads also invoke data-source/delegate callbacks. Queue any
+        // reentrant request until this snapshot has become the baseline.
+        isApplyingSnapshot = true
+        defer { isApplyingSnapshot = false }
+        let resetGeneration = snapshotResetGeneration
+
         let validationError = request.snapshot.validationError
         if let validationError {
             reportInvalidSnapshot(validationError)
@@ -76,8 +83,10 @@ class DiffableOutlineView: NSOutlineView {
             request.updateDataSource()
             request.prepareReloadData?()
             reloadData()
-            currentSnapshot = request.snapshot
-            currentSnapshotIsValidated = true
+            if resetGeneration == snapshotResetGeneration {
+                currentSnapshot = request.snapshot
+                currentSnapshotIsValidated = true
+            }
             request.completion?()
             return
         }
@@ -98,18 +107,20 @@ class DiffableOutlineView: NSOutlineView {
             request.updateDataSource()
             request.prepareReloadData?()
             reloadData()
-            currentSnapshot = request.snapshot
-            currentSnapshotIsValidated = true
+            if resetGeneration == snapshotResetGeneration {
+                currentSnapshot = request.snapshot
+                currentSnapshotIsValidated = true
+            }
             request.completion?()
             return
         }
 
-        isApplyingSnapshot = true
         request.updateDataSource()
         apply(plan.operations, oldSnapshot: oldSnapshot, newSnapshot: request.snapshot, animated: request.animated)
-        currentSnapshot = request.snapshot
-        currentSnapshotIsValidated = true
-        isApplyingSnapshot = false
+        if resetGeneration == snapshotResetGeneration {
+            currentSnapshot = request.snapshot
+            currentSnapshotIsValidated = true
+        }
 
         DispatchQueue.main.async {
             request.completion?()
@@ -117,6 +128,8 @@ class DiffableOutlineView: NSOutlineView {
     }
 
     func resetDiffableSnapshot(_ snapshot: DiffableOutlineSnapshot<AnyHashable>? = nil) {
+        // A reset from a reentrant callback must survive the active apply.
+        snapshotResetGeneration &+= 1
         currentSnapshot = snapshot
         currentSnapshotIsValidated = false
     }
@@ -167,16 +180,37 @@ class DiffableOutlineView: NSOutlineView {
         guard !operations.isEmpty else { return }
 
         let animation: NSOutlineView.AnimationOptions = animated ? [.effectFade, .effectGap] : []
-        beginUpdates()
-        for operation in operations {
-            apply(
-                operation,
-                oldSnapshot: oldSnapshot,
-                newSnapshot: newSnapshot,
-                animation: animation
-            )
+        NSAnimationContext.runAnimationGroup { context in
+            // moveItem has no AnimationOptions argument, so an empty option
+            // set alone does not disable animations for an unanimated request.
+            if !animated {
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+            }
+            beginUpdates()
+            for operation in operations {
+                if case .reload = operation { continue }
+                apply(
+                    operation,
+                    oldSnapshot: oldSnapshot,
+                    newSnapshot: newSnapshot,
+                    animation: animation
+                )
+            }
+            endUpdates()
+
+            // AppKit resolves inserted items through the data source at
+            // endUpdates. Resolve reload IDs only after that row map commits.
+            for operation in operations {
+                guard case .reload = operation else { continue }
+                apply(
+                    operation,
+                    oldSnapshot: oldSnapshot,
+                    newSnapshot: newSnapshot,
+                    animation: animation
+                )
+            }
         }
-        endUpdates()
     }
 
     private func apply(

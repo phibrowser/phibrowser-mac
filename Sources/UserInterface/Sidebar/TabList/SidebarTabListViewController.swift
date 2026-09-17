@@ -789,9 +789,18 @@ class SidebarTabListViewController: NSViewController {
 
     private func reconcileTabGroupRowHeightsWithoutAnimation() {
         var groupRows = IndexSet()
-        for row in 0..<outlineView.numberOfRows
-            where outlineView.item(atRow: row) is TabGroupSidebarItem {
-            groupRows.insert(row)
+        for row in 0..<outlineView.numberOfRows {
+            guard let item = outlineView.item(atRow: row) as? TabGroupSidebarItem else { continue }
+            let expectedHeight = self.outlineView(outlineView, heightOfRowByItem: item)
+                + outlineView.intercellSpacing.height
+            let cachedHeight = outlineView.rect(ofRow: row).height
+            if abs(cachedHeight - expectedHeight) > 0.5 {
+                groupRows.insert(row)
+                AppLogDebug(
+                    "[TAB_GROUP_GAP] reconciling cached height row=\(row) " +
+                        "height=\(cachedHeight)->\(expectedHeight)"
+                )
+            }
         }
         guard !groupRows.isEmpty else { return }
         NSAnimationContext.runAnimationGroup { context in
@@ -4106,6 +4115,10 @@ extension SidebarTabListViewController: TabSectionDelegate {
                     change.affectedGroupTokens,
                     animated: !self.suppressesGroupUpdateAnimations
                 )
+                // Off-screen groups have no cell to send a height callback.
+                // Membership, collapse, and split changes can preserve every
+                // root ID while changing their cached height and all later rows.
+                self.reconcileTabGroupRowHeightsWithoutAnimation()
                 self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
                 self.updateNewTabCleanupVisibility()
                 self.clearFloatingProxyIfTabClosed()

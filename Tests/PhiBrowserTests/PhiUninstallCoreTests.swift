@@ -133,7 +133,7 @@ final class PhiUninstallCoreTests: XCTestCase {
     }
 
     func testPlannerIncludesPhiChatShimWhenPresent() {
-        let shimURL = URL(fileURLWithPath: "/Users/x/Applications/Phi Chat.app", isDirectory: true)
+        let shimURL = URL(fileURLWithPath: "/Users/x/Applications/Phi Canary Apps.localized/Phi Chat.app", isDirectory: true)
         let planner = PhiUninstallPlanner(
             paths: paths,
             channel: .canary,
@@ -151,7 +151,21 @@ final class PhiUninstallCoreTests: XCTestCase {
             appBundleURL: appBundleURL,
             chatShimBundleURL: shimURL
         )
-        XCTAssertTrue(allowlist.isAllowed(shimURL))
+        XCTAssertTrue(allowlist.isAllowed(shimURL), "A missing path is safe to treat as a no-op")
+    }
+
+    func testShimMetadataRejectsForeignChannelAndDataRoot() {
+        var info: [String: Any] = [
+            "CFBundleIdentifier": PhiChatUninstallIdentity.shimBundleIdentifier(browserBundleIdentifier: PhiUninstallChannel.canary.browserBundleID),
+            "CrBundleIdentifier": PhiUninstallChannel.canary.browserBundleID,
+            "CrAppModeShortcutID": PhiChatUninstallIdentity.appID,
+            "CFBundleExecutable": "app_mode_loader",
+            "CrAppModeUserDataDir": paths.browserApplicationSupport(.canary).appendingPathComponent("-/Web Applications/_crx_\(PhiChatUninstallIdentity.appID)").path,
+        ]
+        XCTAssertTrue(PhiChatUninstallIdentity.metadataMatches(info, channel: .canary, paths: paths))
+        XCTAssertFalse(PhiChatUninstallIdentity.metadataMatches(info, channel: .stable, paths: paths))
+        info["CrAppModeUserDataDir"] = "/tmp/_crx_\(PhiChatUninstallIdentity.appID)"
+        XCTAssertFalse(PhiChatUninstallIdentity.metadataMatches(info, channel: .canary, paths: paths))
     }
 
     func testPlanRoundTripsThroughJSON() throws {

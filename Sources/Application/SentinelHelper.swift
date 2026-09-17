@@ -394,7 +394,7 @@ enum SentinelHelper {
     }
 
     @discardableResult
-    static func requestTerminationForBrowserUpdate(timeout: TimeInterval = 60) -> Bool {
+    static func requestTerminationForBrowserUpdate(timeout: TimeInterval = 8) -> Bool {
         let identifier = loginItemIdentifier()
         guard runningApplication(identifier: identifier) != nil else {
             AppLogInfo("Sentinel is not running; no browser update termination request needed")

@@ -59,7 +59,7 @@ final class PhiUninstallCoordinator {
                 unregisterSentinel: { await SentinelHelper.unregister() },
                 stopSentinelWatchdog: { SentinelWatchdog.shared.stop() },
                 requestSentinelTermination: {
-                    SentinelHelper.requestTerminationForBrowserUpdate()
+                    SentinelHelper.requestTerminationForBrowserUpdate(timeout: 60)
                 },
                 launchHelper: { try PhiUninstallHelperLauncher.launch($0) },
                 clearLocalAccountData: {
@@ -120,8 +120,8 @@ final class PhiUninstallCoordinator {
 
             state = .stoppingSentinel
             sentinelShutdownStarted = true
-            await environment.unregisterSentinel()
             environment.stopSentinelWatchdog()
+            await environment.unregisterSentinel()
             guard environment.requestSentinelTermination() else {
                 throw PhiUninstallCoordinatorError.sentinelDidNotExit
             }

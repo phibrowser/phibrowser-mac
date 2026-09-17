@@ -54,6 +54,58 @@ enum PhiChatUninstallIdentity {
     static func shimBundleIdentifier(browserBundleIdentifier: String) -> String {
         "\(browserBundleIdentifier).app.\(appID)"
     }
+
+    static func installationDirectory(channel: PhiUninstallChannel, paths: PhiUninstallPaths) -> URL {
+        let name: String
+        switch channel {
+        case .stable: name = "Phi Apps.localized"
+        case .canary: name = "Phi Canary Apps.localized"
+        case .dev: name = "Phi Dev Apps.localized"
+        }
+        return paths.applicationSupport.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Applications").appendingPathComponent(name)
+    }
+
+    static func metadataMatches(_ info: [String: Any], channel: PhiUninstallChannel,
+                                paths: PhiUninstallPaths) -> Bool {
+        guard info["CFBundleIdentifier"] as? String == shimBundleIdentifier(browserBundleIdentifier: channel.browserBundleID),
+              info["CrBundleIdentifier"] as? String == channel.browserBundleID,
+              info["CrAppModeShortcutID"] as? String == appID,
+              info["CFBundleExecutable"] as? String == "app_mode_loader",
+              let dataPath = info["CrAppModeUserDataDir"] as? String else { return false }
+        let root = paths.browserApplicationSupport(channel).standardizedFileURL.path + "/"
+        let dataURL = URL(fileURLWithPath: dataPath).standardizedFileURL
+        return dataURL.path.hasPrefix(root)
+            && dataURL.resolvingSymlinksInPath().path.hasPrefix(root)
+            && dataURL.lastPathComponent == "_crx_\(appID)"
+    }
+
+    // Chromium-generated shims are ad-hoc signed, not Team-ID signed. Never
+    // treat a LaunchServices URL or a plan-provided path as deletion authority.
+    static func verify(at url: URL, channel: PhiUninstallChannel, paths: PhiUninstallPaths) -> Bool {
+        let target = url.standardizedFileURL
+        guard target.isFileURL, target.pathExtension == "app",
+              target.deletingLastPathComponent() == installationDirectory(channel: channel, paths: paths),
+              target.resolvingSymlinksInPath() == target,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: target.path),
+              (attrs[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+              let data = try? Data(contentsOf: target.appendingPathComponent("Contents/Info.plist")),
+              let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              metadataMatches(info, channel: channel, paths: paths) else { return false }
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(target as CFURL, [], &code) == errSecSuccess,
+              let code else { return false }
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate), nil) == errSecSuccess
+    }
+
+    static func isAllowedPlannedURL(_ url: URL, channel: PhiUninstallChannel, paths: PhiUninstallPaths) -> Bool {
+        let target = url.standardizedFileURL
+        guard target.deletingLastPathComponent() == installationDirectory(channel: channel, paths: paths),
+              target.lastPathComponent == "Phi Chat.app",
+              target.resolvingSymlinksInPath() == target else { return false }
+        return !FileManager.default.fileExists(atPath: target.path)
+            || verify(at: target, channel: channel, paths: paths)
+    }
 }
 
 struct PhiUninstallPaths: Equatable, Sendable {
@@ -485,23 +537,29 @@ struct PhiUninstallPathAllowlist: Sendable {
     }
 
     func isAllowed(_ url: URL) -> Bool {
-        isAllowed(
+        if let shim = chatShimBundleURL, url.standardizedFileURL == shim.standardizedFileURL {
+            return PhiChatUninstallIdentity.isAllowedPlannedURL(shim, channel: channel, paths: paths)
+        }
+        return isAllowed(
             url,
             roots: directoryRoots,
             exactFiles: exactFiles,
-            appBundleURLs: [appBundleURL, chatShimBundleURL].compactMap { $0 },
+            appBundleURLs: [appBundleURL],
             resolveSymlinks: false
         )
     }
 
     func isAllowedResolvingSymlinks(_ url: URL) -> Bool {
+        if let shim = chatShimBundleURL, url.standardizedFileURL == shim.standardizedFileURL {
+            return PhiChatUninstallIdentity.isAllowedPlannedURL(shim, channel: channel, paths: paths)
+        }
         guard !isSymbolicLink(url) else { return false }
         let resolvedURL = normalized(url, resolveSymlinks: true)
         return isAllowed(
             resolvedURL,
             roots: directoryRoots,
             exactFiles: exactFiles,
-            appBundleURLs: [appBundleURL, chatShimBundleURL].compactMap { $0 },
+            appBundleURLs: [appBundleURL],
             resolveSymlinks: false
         )
     }

@@ -748,6 +748,9 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
     /// 用例自己置回 false 放行。
     var failNextSave = false
+    /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「最后一页那次
+    /// 落地写」「发布段那一次」这种精确注入。失败那一次同样**不改** `table`。
+    var failSaveOnCallNumber: Int?
     private(set) var saveCalls = 0
 
     init(table: PhiOwnedItemTable = PhiOwnedItemTable()) {
@@ -773,7 +776,7 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     @discardableResult
     func save(_ table: PhiOwnedItemTable) -> Bool {
         saveCalls += 1
-        guard !failNextSave else { return false }
+        guard !failNextSave, failSaveOnCallNumber != saveCalls else { return false }
         self.table = table
         return true
     }

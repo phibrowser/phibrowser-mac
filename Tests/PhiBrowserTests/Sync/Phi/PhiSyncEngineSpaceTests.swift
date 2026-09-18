@@ -15,12 +15,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`——「写盘失败之后内存与磁盘
         /// 一起停在旧表上」的内存版（R-M3-4a-83）。用例自己置回 false 放行。
         var failNextSave = false
+        /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「轮末那一次
+        /// 派生标志的写失败」这种精确注入。失败那一次同样**不改** `table`。
+        var failSaveOnCallNumber: Int?
         private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
         @discardableResult
         func save(_ table: PhiSpaceSyncTable) -> Bool {
             saveCalls += 1
-            guard !failNextSave else { return false }
+            guard !failNextSave, failSaveOnCallNumber != saveCalls else { return false }
             self.table = table
             return true
         }
@@ -44,19 +47,24 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private let key = SymmetricKey(size: .bits256)
+    /// CASE 2a.9 换掉的那个进程级闭包在用例之前的值，`tearDown` 里原样放回去。
+    private var previousLocalSpaceIdLookup: ((String) -> String?)?
 
     override func setUp() {
         super.setUp()
         suiteName = "PhiSyncEngineSpaceTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        previousLocalSpaceIdLookup = PhiSpaceSyncState.shared.localSpaceIdLookup
     }
 
     override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil; suiteName = nil
         // CASE 2a.9 把 `PhiSpaceSyncState.shared` 的解析闭包换成一个计数器；`shared` 是
-        // 进程级单例，留着会污染后面每一条用例。
-        PhiSpaceSyncState.shared.localSpaceIdLookup = nil
+        // 进程级单例，留着会污染后面每一条用例。**恢复**而不是清成 nil：hosted 测试里那个
+        // 单例可能已经被宿主 app 接上了真正的解析器。
+        PhiSpaceSyncState.shared.localSpaceIdLookup = previousLocalSpaceIdLookup
+        previousLocalSpaceIdLookup = nil
         super.tearDown()
     }
 
@@ -612,17 +620,18 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     }
 
     /// ...and it must finish the drain by *replaying* it, not by continuing over the hole the
-    /// failure left. An interrupted round consumed its pages: the shared marker moved past
-    /// them for good, while everything the routing decoded from them (`SpacePullBatch.decoded`
-    /// / `.tombstones` — Task 9's apply input) died with the throw. A later round resuming
-    /// from that advanced marker would reach `drained == true` and stamp
-    /// `hasDrainedFullReplay = true` over the gap, and from then on *neither* disjunct in
-    /// `applySpaceGate` can re-arm the replay: `markerMovedWhileGateShut` is false (the gate
-    /// was open the whole time) and `hasDrainedFullReplay` is true. The Spaces page 1 carried
-    /// would be missing until some peer happened to touch them, and Task 9's `pushSpaces`
-    /// would publish against a Space set this device never fully received. Dropping the
-    /// marker on the failure path makes the drain restart instead; `drainInProgress` stays
-    /// true, so nothing in between may declare it complete.
+    /// failure left. Under the page-by-page boundary (M3-4a B-2) page 1 lands u1 *on the spot*
+    /// and the marker only ever walks past pages that landed in full, so the gap argument of
+    /// old no longer applies; what still does is the drain rule (Task 2b 计划裁定 10): a later
+    /// round resuming from the advanced marker would reach `drained == true` and stamp
+    /// `hasDrainedFullReplay = true` while this device never walked the whole type in one
+    /// armed drain, and from then on *neither* disjunct in `applySpaceGate` can re-arm the
+    /// replay: `markerMovedWhileGateShut` is false (the gate was open the whole time) and
+    /// `hasDrainedFullReplay` is true — the guard the owned kinds read before publishing.
+    /// So the failure path keeps dropping the marker while `drainInProgress` is armed; the
+    /// drain restarts from scratch, `drainInProgress` stays true, and nothing in between may
+    /// declare it complete. (The incremental-round twin, where the marker stays on the last
+    /// landed page, is CASE B2-8(a) in `PhiSyncMarkerBoundaryTests`.)
     func testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -641,7 +650,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()                               // page 1 lands u1; page 2 throws
         XCTAssertEqual(client.getUpdatesCalls.count, 2)
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
-                     "a gapped drain drops the marker instead of counting page 1 as delivered")
+                     "an interrupted armed drain drops the marker so the replay restarts")
         XCTAssertTrue(store.table.drainInProgress, "and stays armed until a whole replay lands")
         XCTAssertFalse(store.table.hasDrainedFullReplay)
 

@@ -129,3 +129,97 @@
     在运行时跑过**；`FilePhiSyncMarkerStore` 的 `load` 不写回、`save` 的 `.atomic` 落盘、
     `Gate` 驱动的 3.5A，都是按既有同形用例（`FileOwnedItemStateStore` / CASE 2a.7、
     `PhiSyncEngineTests` 的 shutdown 用例）推断为确定的。
+
+## Task 2b
+
+B-2 逐页边界：`markerSuppression` / 轮级 `RemoteView` / guard 2 前移 / `ownedMapsThisRound`
+每页失效 / `cursorSaveFailed` 四个置位点 / 结局行 / 两个 debug abort 开关 / 发布闸合取 /
+per-kind 报损重放两步确认。
+
+### brief 的「计划裁定」要求记档的
+
+1. **裁定 3（R-M3-4a-89）**：guard 2 前移到 `recordsGatedMarkerMoves` 之后、`do {` 之前，判据只读
+   `spaceTableAtEntry`；`c549c4c5` `:1690` 闩 / `:1691` marker 的相对次序**被颠倒**，两步之间加确认
+   （① `persistStoredMarker(nil)` ② `mutateSpaceTable { 三个标志 }` ③ 才动内存）。R-M3-4a-47 的
+   「闩与 marker 在同一个闭包」措辞按 R-89 改写；R-47 其余部分照旧。`hadRecords` 的维护跟着前移，
+   但写成**独立的一次** `mutateSpaceTable`（第 ② 步的闭包只在 `cursors.isEmpty` 时才跑，放进去
+   永远不会置真）。
+2. **裁定 3b（R-M3-4a-103）**：`loadOwnedTable` 报损支的「闩先写、marker 后写」被颠倒，两步之间加
+   确认，两个失败支回 `(table, false)` 并把**引擎属性** `roundOutcome` 收口成 `.cursorSaveFailed`；
+   `AppLogWarn` 挪到第 ② 步成功之后；函数头注释「不需要第二个 `publishBlocked` 标志」的理由改成
+   「发布闸在 `cursorSaveFailed` 那一轮已经关掉整个发布段」。探针留给 Task 6 的 CASE U-18。
+3. **裁定 5**：置位点由三个变成**四个**——`applySpaces` create 支 `mapSpace` 的 catch 里错误恰为
+   `SpaceSyncMappingError.persistFailed` 时计数，其余映射错误不计；Profile 映射（`refreshAccountProfiles`）
+   按 §13.2 字面该计而**不计**，理由是它跑在页循环之前、不描述任何一页，失败仍由
+   `spaceCounters.profileRefresh = "failed"` 报告。
+4. **裁定 6**：§2.8 写的是 `serialized(_:)`，实际发射点在 `run(_:)` 的 `logSpaceRound()` 之前
+   （`logRoundOutcome()`），`.preview` 不发；一轮多次 pull 时结局取最后一次，`pages` /
+   `cursorSaveFailures` 全轮累加。优先级 2（`cursorSaveFailures > 0 ⇒ .cursorSaveFailed`）对
+   `.notMyBirthday` 之外的**全部**结局生效（含 `.pageBudgetExhausted` / `.unusableSettings`），不只
+   brief 点名的三个——任一游标写失败的一轮都该以它命名。
+5. **裁定 8**：编译条件是 `#if DEBUG || PHI_SYNC_DEBUG_SWITCHES`，没有 `ADHOC`，`project.pbxproj`
+   零改动；本仓库里只在 `DEBUG` 下编译。**签名偏离**：`abortIfRequested(_:)` 收的是
+   `DebugAbortPoint`（`.afterApply` / `.betweenKinds`）而不是 `String` 键——两个键常量与函数体同在
+   `#if` 段里（release 零字符串常量、零 `UserDefaults` 读），而调用点仍然不需要 `#if`；brief 的
+   「键常量同段」与「调用点不需要 `#if`」用 `String` 参数无法同时成立。键名逐字不变。
+6. **裁定 10**：catch 里 `if loadSpaceTable().drainInProgress { storedMarker = nil }` **保留**，注释
+   按 §2.4 说明 4 改写；B2-8 拆成 B2-8(a)（增量轮，marker 停在第 3 页）与 B2-8(b)（drain 轮，
+   整条重放）。
+7. **裁定 11**：既有断言**一条不改**。改了注释与断言**消息**：`PhiSyncEngineSpaceTests.
+   testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap` 的文档注释与那条
+   `XCTAssertNil` 的 message（「instead of counting page 1 as delivered」在逐页边界下不再成立）；
+   引擎侧 guard 1 上方「shared marker is written page by page」段、`applySpaces` 前的次序注释
+   （guard 2 不再需要那个次序理由）、门关记账的「persisted by the page that observed it」补
+   「before that page's marker」、`mutateSpaceTable` 的 Durability 段补「and before that page's marker」。
+8. **裁定 12（R-M3-4a-88 / 92）**：第三个合取项折进 `canPublishThisRound` 的**唯一一次赋值**，
+   `if thenPush, canPublishThisRound` 与五个发布入口、`push(retryOnConflict:)` 与三条冲突重试的
+   `guard await pull(…)` 一行不改。**偏离**：第三项写成 `cursorSaveFailures == 0`（计数）而不是
+   brief Step 6 的 `roundOutcome != .cursorSaveFailed`——guard 1 / `hadRecords` / NOT_MY_BIRTHDAY
+   复位那几次写失败时 `roundOutcome` 可能还不是 `.cursorSaveFailed`，而「本地这一轮落盘全成了吗」
+   问的正是计数；伪码里的局部 `cursorSaveFailed` 与它同义。轮末 drain 收尾的写失败也收口成
+   `.cursorSaveFailed`（CASE B2-4b）。
+
+### 与 brief 不同的实现判断
+
+9. **四个测试接缝读的是结局行发射时的快照**（`LoggedRound`），不是活的 `roundPages` /
+   `roundMarkerAdvanced` / `cursorSaveFailures`：一轮 `page_budget_exhausted` 会把跟进轮排进队列，
+   跟进轮的 `run(_:)` 一进门就清零活计数，断言那一刻读到的会是下一轮的残值。
+10. **`FakePhiSyncClient.gateGetUpdatesFromCall`**（brief 之外的第二个假件旋钮）：让 `getUpdatesGate`
+    只从第 N 次调用起生效，用来把引擎自己排进队列、不可 await 的跟进轮停在它的第一次请求里
+    （B2-1c(c) / B2-8b / B2-9 另一半方向）；放行后再排一轮 `pullOnce()` 等它跑完。既有两种
+    gate 用法语义不变（nil = 每次都生效）。
+11. **B2-4d 的「本机 Space 行仍是 1 条」在 HEAD 上不断言**：今天的 create 支先建行、后写映射，
+    `persistFailed` 留下一条无映射的行、重投再建一条——那正是 Task 3b 的映射先行（R-M3-4a-87）
+    要消掉的形状，3b 的 CASE B2-4d-x 断言它。本任务的 B2-4d 断言第四个置位点、marker 不推、停放、
+    第二轮映射写下并解析得出。
+12. **B2-2b 住在 `PinnedTabScopeTests`**（真 `LocalStore` 的脚手架在那里），走生产的
+    `AccountPhiPinnedTabAccess.apply(_:)` → `applyPinSyncBatchThrowing` 批次路径；该文件进 `git add`。
+13. **B2-7c 不断言 `counters.tombstones == 0` 与 `applied == 1`**：`tombstones` 数的是**入站**远端
+    tombstone（`applyOwnedKind` 头三行），一条入站 tombstone 的轮次它就是 1；「零出站 tombstone」
+    用 `client.commits` 里零条 `deleted` 与 `pushed == 0` 钉。
+14. **B2-13 的 fixture 预置 `drainInProgress = true`**（与 `hasDrainedFullReplay = true` 并存）：
+    入口 marker 为 nil 时 guard 1 否则会把 `hasDrainedFullReplay` 置假，归属 kind 的发布段在
+    guard ① 就返回，brief 要的 `hadRecordsSeen.count == 2` 观察不到。
+15. **B2-5b 的「重投」用第二台引擎**：引擎持有 marker 的内存镜像，直接改 `markerStore.file` 对
+    第一台不可见；第二台在回退后的文件上建，等价于重启后重投。
+16. **B2-14 (d)** 按「第一台的第 2 次写从未发生（页 1 被抑制）、第二台在放行后的同一组 store 上
+    从头重放并正常收尾」写；brief 那一句的字面读法（第二台带着 `failSaveOnCallNumber = 2`）会让
+    第二台页 1 的 marker 写失败，与它自己的期望冲突。
+17. **`pull` 的 catch 不再调 `flushSpaceObservations` / `flushOwnedObservations` /
+    `parkUndeliveredOwnedEntities`**：逐页落地之后两个收集篮是页内局部量，抛错只可能发生在
+    `getUpdates`，那一页根本没到；`parkUndeliveredOwnedEntities` 只剩 `applyOwnedKind` 的
+    `ownedReadFailed` 那个调用点，头注释加一段说明。
+18. 新增私有辅助 `persistStoredMarker(_:) -> Bool` 与 `normalizedMarker(_:)`：`storedMarker` setter
+    经它写穿，页末 / guard 2 / 报损重放读它的 Bool。
+19. **控制者交办的两条 2a 尾项**：`PhiSpaceSyncState.deliver` 无引擎路径 `directStore.save` 失败
+    时不再 `refreshCaches`；`PhiSyncEngineSpaceTests` 的 `setUp` 捕获、`tearDown` 恢复
+    `PhiSpaceSyncState.shared.localSpaceIdLookup`。2a 已知的「`ownedTables[label] = table` 先于
+    save guard」按交办**不改**，写口注释说明理由。
+20. `cursorSaveFailures` 在 `pull` 之外的写口失败（`.spaceGate` 轮的 `applySpaceGate`、reset 的
+    表写）同样计数并在**那一轮**的结局行上报告——它是引擎属性、按 `run(_:)` 清零。
+
+### 验证口径
+
+21. **compile-only**（`xcodebuild build-for-testing`）。本任务新增的 31 条用例（B2-1 … B2-18 的引擎
+    半边、B2-2b）**没有在运行时跑过**；跟进轮 / 冲突重试的写序号（B2-1e 的第 4 次、B2-4b 的
+    `saveCalls + 2`）按代码推导，未实测。

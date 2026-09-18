@@ -438,7 +438,9 @@ final class PhiSpaceSyncState {
             // business driving; the sweep runs for real at the next engine start.
             return
         }
-        directStore.save(table)
+        // 与引擎的 `writeSpaceTable` 同一条规则（R-M3-4a-83）：只有落盘成功才刷新主线程缓存，
+        // 否则缓存展示一份没落盘的表，重启后又回来。
+        guard directStore.save(table) else { return }
         refreshCaches(from: table)
     }
 }

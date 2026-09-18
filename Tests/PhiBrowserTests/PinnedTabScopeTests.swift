@@ -850,6 +850,51 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertEqual(rows.first?.title, "First", "被拒的那一条一个字段都没写进去")
     }
 
+    /// CASE B2-2b（M3-4a Task 2b）— `rowAlreadyMapped` 的正面用例：一次**同步落地**的批次里带着
+    /// 一条已有 guid 的 create ⇒ 整批被拒、一个字都不落库。
+    ///
+    /// 走的是生产的落地入口 `AccountPhiPinnedTabAccess.apply(_:)` → `applyPinSyncBatchThrowing`
+    /// （一个写块、一个事务），不是 8.5d 那个单条 throwing 入口：B2-2 断言的「重投一页零抛出」
+    /// 可以被一个根本不检查的实现满足，这里钉住 pin 侧幂等性的唯一实现点
+    /// （`LocalStore+PinnedTabScope.swift` 的 `createPinnedTabBody`）真的在批次路径上生效，且
+    /// 同批的另一条 create 也随事务回滚。
+    ///
+    /// 防的是什么：那道守卫被悄悄绕开——两条共享 guid 的行此后既改不动也删不掉，而引擎在
+    /// 「重投把 update 走成 create」时靠的正是这一次拒收把整批打回去。
+    func testASyncLandingBatchWithAnExistingGuidIsRefusedAsAWhole() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "G", lineageId: "lineage-g",
+                            profile: fixture.defaultProfile, title: "First",
+                            url: "https://first.example")
+        let suite = "PinnedTabScopeTests.B2-2b.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let access = AccountPhiPinnedTabAccess(store: store, defaults: defaults)
+
+        let batch = PinApplyBatch(unordered: [
+            .create(.fixture(lineageId: "lineage-g", guid: "G", spaceId: nil,
+                             profileId: "Default", title: "Second",
+                             url: try XCTUnwrap(URL(string: "https://second.example")))),
+            .create(.fixture(lineageId: "lineage-h", guid: "H", spaceId: nil,
+                             profileId: "Default", title: "Other",
+                             url: try XCTUnwrap(URL(string: "https://other.example")))),
+        ])
+        do {
+            try await access.apply(batch)
+            XCTFail("带着已有 guid 的 create 必须让整批抛出")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
+        }
+        try drainMainQueue()
+
+        let rows = store.getAllPinnedTabs(for: "Default")
+        let sharedGuidRows = rows.filter { $0.guid == "G" }
+        XCTAssertEqual(sharedGuidRows.count, 1, "库里那个 guid 始终只有一条行")
+        XCTAssertEqual(sharedGuidRows.first?.title, "First", "被拒的那一条一个字段都没写进去")
+        XCTAssertFalse(rows.contains { $0.guid == "H" }, "同批其它落地项随事务一起回滚")
+    }
+
     /// CASE 8.5e — 启动自愈把一个**已经**坏掉的库收拾干净。
     ///
     /// 两类各一条：共享 guid 的两行留一条（`index` 最小者），同身份的精确重复留一条。

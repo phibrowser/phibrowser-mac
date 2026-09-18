@@ -14,6 +14,13 @@ import XCTest
 /// 3.5。CASE 3.2（自撤销多删一次 `marker.json`）住在 `SelfRevokeTests`——它要一个完整的
 /// `SyncKeyController` 脚手架，只有那里有。
 ///
+/// **Task 2b 追加**（逐页边界的引擎半边，`// MARK: - Task 2b` 之后）：B2-1 / 1b / 1c / 1d / 1e /
+/// 2 / 4 / 4b / 4c / 4d / 5 / 5b / 6 / 6b / 6c / 7 / 7b / 7c / 8(a) / 8(b) / 8b / 9 / 10 / 12 / 13 /
+/// 14 / 15 / 16 / 18。B2-2b（真 `LocalStore` 上 `rowAlreadyMapped` 的正面用例）住在
+/// `PinnedTabScopeTests`（脚手架在那里）；B2-3 / B2-17 与每一条「五种 kind」用例里的 urlrules
+/// 那一格留给 Task 6 / 3b。崩溃窗口一律用「假件在精确那一点回 `false` + 同一组 store 上新建
+/// 第二个引擎」模拟，测试里没有任何 `abort()`，也不碰那两个 debug 键。
+///
 /// 两条本任务写下、但住在别处的半边（写在有现成脚手架的地方，不在这里复制一份）：
 ///
 /// - **B2-18 变体 (b)**（`MemorySpaceStore` + `failNextSave` 下 `localSpaceIdLookup` 零调用）
@@ -598,5 +605,1618 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertTrue(PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(
             accountId: "auth0|carol", defaults: defaults))
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.markerStateKey))
+    }
+    // MARK: - Task 2b：装配与小工具
+
+    /// 与 `client.storeBirthday`（"birthday-1"）一致的 marker 文件：逐页的 birthday 写因此是
+    /// `updated == markerState` 的零写，`MemoryMarkerStore.saves` 里只剩 marker 本身的写，
+    /// `failSaveOnCallNumber` 数的也只是它们。
+    private func markerStore(marker: String?) -> MemoryMarkerStore {
+        MemoryMarkerStore(file: PhiSyncMarkerFile(marker: marker.map { Data($0.utf8) },
+                                                  storeBirthday: "birthday-1"))
+    }
+
+    /// `hasDrainedFullReplay` 预置为真 = 这台机器已经完整拉过一遍这个 data type，发布侧的
+    /// guard ① 不挡路。
+    private func drainedSpaceStore() -> MemorySpaceStore {
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        return store
+    }
+
+    private func bookmarkTag(_ uuid: String) -> String { PhiSyncEntity.bookmarkClientTag(uuid) }
+
+    private func bookmarkHash(_ uuid: String) -> String {
+        PhiSyncEntity.clientTagHash(for: bookmarkTag(uuid))
+    }
+
+    private func pinTag(_ lineage: String, owner: String = "pu-1") -> String {
+        PhiSyncEntity.pinClientTag(lineage, ownerKey: owner)
+    }
+
+    private func bookmarkEntity(_ uuid: String, version: Int64, entityId: String? = nil,
+                                spaceUuid: String = "su-1", title: String = "T") -> PhiRemoteEntity {
+        remoteEntity(envelope(bookmarkPayload(uuid: uuid, spaceUuid: spaceUuid, title: title)),
+                     tag: bookmarkTag(uuid), version: version,
+                     entityId: entityId ?? "srv-\(uuid)", key: key)
+    }
+
+    private func pinEntity(_ lineage: String, version: Int64, entityId: String? = nil,
+                           title: String = "T") -> PhiRemoteEntity {
+        remoteEntity(envelope(pinPayload(lineage: lineage, title: title)),
+                     tag: pinTag(lineage), version: version,
+                     entityId: entityId ?? "srv-\(lineage)", key: key)
+    }
+
+    /// 一条能落地的 Space create：`profile_uuid` 绑到 `makeSpaceAccess` 里那个 `pu-1`。
+    private func spaceCreateEntity(_ uuid: String, version: Int64,
+                                   entityId: String? = nil) -> PhiRemoteEntity {
+        var payload = spacePayload(uuid: uuid)
+        payload.profileUuid = stamped("pu-1", at: 100)
+        return remoteEntity(envelope(payload), tag: PhiSyncEntity.spaceClientTag(uuid),
+                            version: version, entityId: entityId ?? "srv-\(uuid)", key: key)
+    }
+
+    private func boolSettingsEntity(key settingKey: String, _ flag: Bool, at ms: Int64,
+                                    version: Int64, entityId: String = "srv-settings")
+        -> PhiRemoteEntity {
+        var setting = Phi_PhiSettingEntity()
+        setting.values[settingKey] = stamped(flag, at: ms)
+        var wrapper = Phi_PhiEntity()
+        wrapper.setting = setting
+        return remoteEntity(wrapper, tag: PhiSyncEntity.clientTag, version: version,
+                            entityId: entityId, key: key)
+    }
+
+    /// 一元 bool 注册表，形状照 `PhiSyncEngineTests.registry`（那一份是 `private`）。
+    private func boolRegistry(_ settingKey: String) -> [SyncableSetting] {
+        [SyncableSetting(
+            key: settingKey,
+            read: { defaults in
+                var value = Phi_PhiSettingValue()
+                value.boolValue = defaults.bool(forKey: settingKey)
+                return value
+            },
+            write: { value, defaults in
+                if case .boolValue(let flag)? = value.v { defaults.set(flag, forKey: settingKey) }
+            })]
+    }
+
+    private func settingsCommits(_ client: FakePhiSyncClient) -> [FakePhiSyncClient.CommitCall] {
+        client.commits.filter { $0.clientTagHash == PhiSyncEntity.settingsClientTagHash }
+    }
+
+    /// 一条本机待发的书签编辑：行的标题与游标 `reconciled` 不同 ⇒ 差分为它发一条 update。
+    /// 服务端那一行同时种进 `client.stored`（版本 1，`entityId` 与游标一致），否则假件的
+    /// update 路径找不到行会抛 INVALID_MESSAGE。用 `pagesByMarker` 时 `stored` 不参与
+    /// `getUpdates`；用 `stored` 模式时入口 marker 取 "1"，这一行就不会被重投。
+    private func seedPendingLocalBookmarkEdit(access: FakeBookmarkAccess,
+                                              store: MemoryOwnedItemStore,
+                                              client: FakePhiSyncClient) {
+        let baseline = bookmarkPayload(uuid: "bl", title: "Old")
+        access.rows.append(.fixture(guid: "gl", syncId: "bl", spaceId: "s-1", title: "Local edit"))
+        store.table.cursors["bl"] = ownedCursor(reconciled: baselineBytes(baseline),
+                                                server: baselineBytes(baseline),
+                                                entityId: "srv-bl", version: 1, ownerUuid: "su-1")
+        client.seed(tagHash: bookmarkHash("bl"),
+                    ciphertext: (try? PhiEntityCodec.encrypt(envelope(baseline), key: key)) ?? Data(),
+                    version: 1, entityId: "srv-bl")
+    }
+
+    private func createCount(_ ops: [BookmarkApplyOp]) -> Int {
+        ops.filter { if case .create = $0 { return true } else { return false } }.count
+    }
+
+    private func pinCreateCount(_ ops: [PinApplyOp]) -> Int {
+        ops.filter { if case .create = $0 { return true } else { return false } }.count
+    }
+
+    private func applyCalls(_ access: FakeBookmarkAccess) -> Int {
+        access.calls.filter { if case .apply = $0 { return true } else { return false } }.count
+    }
+
+    /// 形状照 `PhiSyncEngineOwnedItemsTests.makeEngine`，多传 `markerStore:`；`spaceAccess`
+    /// 是可选参数而不是带默认实参的非可选值（那个假件是 `@MainActor` 的，默认实参在非隔离
+    /// 上下文里求值）。
+    private func makeOwnedEngine(client: FakePhiSyncClient,
+                                 markerStore: any PhiSyncMarkerStore,
+                                 spaceStore: MemorySpaceStore,
+                                 spaceAccess: FakePhiSpaceAccess? = nil,
+                                 settings: [SyncableSetting] = [],
+                                 ownedKinds: [OwnedKindRegistration] = []) -> PhiSyncEngine {
+        PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      spaceAccess: spaceAccess ?? makeSpaceAccess(), spaceStore: spaceStore,
+                      markerStore: markerStore, ownedKinds: ownedKinds,
+                      now: { 1_700_000_000_000 })
+    }
+
+    /// M3-1 形态的纯设置引擎：`spaceStore == nil`、`spaceAccess == nil`。
+    private func makeSettingsOnlyEngine(client: FakePhiSyncClient,
+                                        markerStore: any PhiSyncMarkerStore,
+                                        settings: [SyncableSetting]) -> PhiSyncEngine {
+        PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      markerStore: markerStore, now: { 1_700_000_000_000 })
+    }
+
+    // MARK: - CASE B2-1（书签游标 save 失败 ⇒ marker 不推）
+
+    /// CASE B2-1 — 书签游标 save 失败 ⇒ 本页 marker 不推、本轮 `cursor_save_failed`；放行之后
+    /// 假件从 M0 重投同一页，落地走 update 支、一行不多。
+    ///
+    /// 防的是什么：「收到就落 marker」那一版——行落了、游标没落、marker 却越过了那一页，服务端
+    /// 永不重投 ⇒ 下一轮 `loadOwnedTable` 读到落地前的基线 ⇒ 差分为这条身份重发一遍。
+    func testABookmarkCursorSaveFailureHoldsTheMarkerAndTheReplayIsIdempotent() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        ownedStore.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "M0 未动")
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(failures, 1)
+        XCTAssertEqual(pages, 1)
+        XCTAssertEqual(access.rows.count, 1, "行已经建出来：落地先于游标")
+        XCTAssertEqual(counters?.applied, 1)
+
+        ownedStore.failNextSave = false
+        let applyCallsBefore = applyCalls(access)
+        await engine.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data("0".utf8), "假件从 M0 重投同一页")
+        if applyCalls(access) > applyCallsBefore {
+            XCTAssertEqual(createCount(access.lastAppliedOps), 0, "重投走 update 支，不是 create")
+        }
+        XCTAssertEqual(access.rows.count, 1)
+        XCTAssertEqual(access.rows.filter { $0.syncId == "b1" }.count, 1, "一条身份一行")
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8))
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+    }
+
+    /// CASE B2-1b — 失败轮零发布：`client.commits` 里书签 tag 零条，发布段那次 `loadOwnedTable`
+    /// 根本没发生（`hadRecordsSeen.count == 1`，只有轮首那一次）。
+    ///
+    /// 防的是什么：放行 push 的那一版会带着**落地前**的基线 commit，正是 `c549c4c5` 刚修掉的
+    /// 提交风暴（R-M3-4a-16 的三条后果）。
+    func testAFailedCursorSaveRoundPublishesNothing() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        seedPendingLocalBookmarkEdit(access: access, store: ownedStore, client: client)
+        ownedStore.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertTrue(bookmarkCommits(client).isEmpty, "失败轮一条都不发")
+        XCTAssertEqual(counters?.pushed, 0)
+        XCTAssertEqual(counters?.tombstones, 0)
+        XCTAssertEqual(ownedStore.saveCalls, 1, "只有落地那一次写，发布段那次没发生")
+        XCTAssertEqual(ownedStore.hadRecordsSeen.count, 1, "发布段的 `loadOwnedTable` 零调用")
+    }
+
+    // MARK: - CASE B2-1c（发布闸是 `canPublishThisRound ∧ cursorSaveFailures == 0`）
+
+    /// CASE B2-1c (a) — `spaceStore == nil` 的纯设置引擎：`.ok`（**不是** `.gated`），设置照发。
+    func testASettingsOnlyEngineReportsOkAndPublishes() async throws {
+        let settingKey = "phi.test.b21c.local"
+        defaults.set(true, forKey: settingKey)              // 本机待发编辑
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: "phi.test.b21c.remote", false,
+                                                          at: 100, version: 10)], marker: "10")]
+        client.seed(ciphertext: Data(), version: 10, entityId: "srv-settings")
+        let engine = makeSettingsOnlyEngine(client: client, markerStore: markerStore(marker: "0"),
+                                            settings: boolRegistry(settingKey))
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(outcome, .ok, "`spaceStore == nil` 不算 gated（RR-B10）")
+        XCTAssertEqual(failures, 0)
+        XCTAssertEqual(settingsCommits(client).count, 1, "设置 tag 恰 1 条")
+    }
+
+    /// CASE B2-1c (b) — 门关、`spaceStore` 非 nil ⇒ `.gated`，设置照发。
+    func testAGatedRoundReportsGatedAndStillPublishesSettings() async throws {
+        let settingKey = "phi.test.b21c.local"
+        defaults.set(true, forKey: settingKey)
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: "phi.test.b21c.remote", false,
+                                                          at: 100, version: 10)], marker: "10")]
+        client.seed(ciphertext: Data(), version: 10, entityId: "srv-settings")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: MemorySpaceStore(),
+                                     settings: boolRegistry(settingKey))
+        // 门**关着**：不调 `setSpaceSyncEnabled(true)`。
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .gated)
+        XCTAssertEqual(settingsCommits(client).count, 1, "门关轮次设置照发")
+    }
+
+    /// CASE B2-1c (c) — 页预算用尽 ⇒ `.pageBudgetExhausted`、64 页、**零 commit**
+    /// （`canPublishThisRound == false`，`c9ab5806` 的语义；marker 照推，B2-8b）；跟进轮把
+    /// 剩下的页排干之后 `.ok` 并把本机那条待发编辑发出去。
+    ///
+    /// 跟进轮是引擎自己排进队列的、不可 await 的一轮：`gateGetUpdatesFromCall = 65` 让它停在
+    /// 自己的第一次请求里，本轮的结局行因此可以确定地读到；放行之后再排一轮普通 `pullOnce()`
+    /// 排在它后面，等它跑完。
+    func testAPageBudgetRoundPublishesNothingUntilAFollowUpDrains() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        seedPendingLocalBookmarkEdit(access: access, store: ownedStore, client: client)
+        client.seed(tagHash: bookmarkHash("b9"),
+                    ciphertext: try PhiEntityCodec.encrypt(envelope(bookmarkPayload(uuid: "b9")), key: key),
+                    version: 5, entityId: "srv-b9")
+        client.pageBudgetExhaustsAfter = 1_000
+        let followUpGate = Gate()
+        client.getUpdatesGate = followUpGate
+        client.gateGetUpdatesFromCall = 65
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "1"),
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .pageBudgetExhausted)
+        XCTAssertEqual(pages, 64)
+        XCTAssertTrue(advanced, "marker 照推，发布与推进是两件事")
+        XCTAssertTrue(client.commits.isEmpty, "没 drain 完的一轮一条都不发")
+
+        client.pageBudgetExhaustsAfter = nil
+        await followUpGate.open()
+        await engine.pullOnce()                     // 排在跟进轮后面，等它排干并发布
+
+        let drainedOutcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(drainedOutcome, .ok)
+        XCTAssertGreaterThanOrEqual(bookmarkCommits(client).count, 1, "排干那一轮才发出去")
+    }
+
+    /// CASE B2-1c (d) — 只有书签的本机读失败 ⇒ `.localReadFailed`，书签 `pushed == 0` 而 pin 照发
+    /// （R-exec-3 是 per-kind 的，不是全局）。urlrules 那一格 Task 6 补。
+    func testALocalReadFailureIsPerKindAndReportedAsLocalReadFailed() async throws {
+        let bookmarkAccess = FakeBookmarkAccess()
+        bookmarkAccess.readError = LocalStoreWriteError.storeUnavailable
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile,
+                                      rows: [.fixture(lineageId: "lp", guid: "gp", profileId: "Default")])
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
+                                                  .pins(access: pinAccess, store: pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting
+        XCTAssertEqual(outcome, .localReadFailed)
+        XCTAssertEqual(counters["bookmarks"]?.pushed, 0)
+        XCTAssertTrue(bookmarkCommits(client).isEmpty)
+        XCTAssertEqual(pinCommits(client).count, 1, "pin 不受书签那次读失败影响")
+        XCTAssertGreaterThanOrEqual(counters["pins"]?.pushed ?? 0, 1)
+        // CASE B2-1c (d) urlrules — Task 6
+    }
+
+    /// CASE B2-1d — 本地编辑轮绕过 `if thenPush` 那一行（R-M3-4a-92）：最后一页的游标 save 失败
+    /// ⇒ `drained == true` 但 `pull` 回 `false` ⇒ `push` 的 guard 拦住 ⇒ 零 commit；盘上 marker
+    /// 停在第 1 页那个值。放行之后重投第 2 页，本机那条待发编辑这才发出去。
+    ///
+    /// 防的是什么：把合取项只串在 `if thenPush, canPublishThisRound` 上的那一版——本地编辑轮走
+    /// 的是 `guard await pull(retryOnBirthday: true, thenPush: false) else { return }`，
+    /// `thenPush == false`，那一行根本不参与判定。
+    func testALocalOwnedChangeRoundIsBlockedByTheCursorSaveFailureOfItsLastPage() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        seedPendingLocalBookmarkEdit(access: access, store: ownedStore, client: client)
+        client.pagesByMarker = [
+            page([bookmarkEntity("b1", version: 7)], marker: "7", changesRemaining: true),
+            page([bookmarkEntity("b2", version: 9)], marker: "9"),
+        ]
+        // 两页各一次落地写 ⇒ 最后一页那次是第 2 次。
+        ownedStore.failSaveOnCallNumber = 2
+        let markerStore = markerStore(marker: "0")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertTrue(client.commits.isEmpty, "书签 / 设置 / Space 全零：那次内部 pull 回的是 false")
+        XCTAssertEqual(counters?.pushed, 0)
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8), "停在第 1 页，没有越过第 2 页")
+
+        ownedStore.failSaveOnCallNumber = nil
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8))
+        XCTAssertEqual(bookmarkCommits(client).count, 1, "本机那条待发编辑这才发出去")
+    }
+
+    /// CASE B2-1e — 冲突重试的绕过（R-M3-4a-92）：`.conflict` 之后的限定重发前那次 pull 落地
+    /// 写失败 ⇒ 重试在 `guard await pull(…) else { return }` 当场中止，本轮书签 commit 恰 1 条
+    /// （冲突的那一次），冲突身份的 `reconciled` 一个字节没动；下一轮放行 ⇒ 正常重试并 `.applied`。
+    ///
+    /// 写序号的推导：pull#1 两页各一次落地写（1、2）→ `publishOwnedKind` 提交后写一次表（3）→
+    /// 重试那次 pull 只取第 3 页（第 2 页 `changesRemaining == false`，第 3 页水位更高、要等
+    /// 重试才被取到）⇒ 它的落地写是第 4 次。
+    func testAConflictRetryIsBlockedByTheCursorSaveFailureOfItsPreflightPull() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        seedPendingLocalBookmarkEdit(access: access, store: ownedStore, client: client)
+        let baseline = ownedStore.table.cursors["bl"]?.reconciled
+        client.pagesByMarker = [
+            page([bookmarkEntity("b1", version: 7)], marker: "7", changesRemaining: true),
+            page([bookmarkEntity("b2", version: 9)], marker: "9"),
+            page([bookmarkEntity("b3", version: 11)], marker: "11"),
+        ]
+        client.conflictOnceForTagHashes = [bookmarkHash("bl")]
+        ownedStore.failSaveOnCallNumber = 4
+        let markerStore = markerStore(marker: "0")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(bookmarkCommits(client).count, 1, "冲突的那一次之后零条")
+        XCTAssertEqual(ownedStore.table.cursors["bl"]?.reconciled, baseline,
+                       "没有被「重试前的基线」覆写")
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8), "重试那次 pull 的第 3 页没推 marker")
+
+        ownedStore.failSaveOnCallNumber = nil
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(bookmarkCommits(client).count, 2, "重投缺的那一页之后正常重试")
+        XCTAssertGreaterThan(ownedStore.table.cursors["bl"]?.version ?? 0, 1, "这一次 `.applied`")
+        XCTAssertEqual(markerStore.file.marker, Data("11".utf8))
+    }
+
+    // MARK: - CASE B2-2（pin 游标 save 失败）
+
+    /// CASE B2-2 — pin 游标 save 失败 ⇒ marker 不推；重投之后按 `(lineage, ownerKey)` 命中了行，
+    /// 一条 pin 不会在本机变两条。B2-2b（真 `LocalStore` 上 `rowAlreadyMapped` 的正面用例）在
+    /// `PinnedTabScopeTests`。
+    func testAPinCursorSaveFailureHoldsTheMarkerAndTheReplayDoesNotDuplicateTheRow() async throws {
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([pinEntity("lx", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.pins(access: pinAccess, store: pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(counters?.applied, 1)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertEqual(pinAccess.rows.count, 1)
+        let titleAfterFirstLanding = pinAccess.rows.first?.title
+
+        pinStore.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let secondCounters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(pinAccess.rows.count, 1, "重投没有把 update 走成 create")
+        XCTAssertEqual(pinCreateCount(pinAccess.lastAppliedOps), 0)
+        XCTAssertEqual(pinAccess.rows.first?.title, titleAfterFirstLanding)
+        XCTAssertEqual(secondCounters?.refused, 0, "零 `rowAlreadyMapped` 抛出")
+        XCTAssertNotNil(pinStore.table.cursors.values.first { $0.entityId == "e1" })
+    }
+
+    // CASE B2-3: urlrules — Task 6
+
+    // MARK: - CASE B2-4（Space 表 save 失败）
+
+    /// CASE B2-4 — Space 表 save 失败 ⇒ marker 不动；重投同一页 ⇒ 本机不新增第二条行、映射不重铸、
+    /// 游标这才写下。
+    ///
+    /// 防的是什么：Space 表写失败被吞掉 ⇒ marker 越过 ⇒ 游标永远缺这一条 ⇒ 下一轮差分把它当
+    /// 「本机没有」，为它发一条出站 tombstone。
+    func testASpaceTableSaveFailureHoldsTheMarkerAndTheReplayDoesNotDuplicateTheSpace() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = drainedSpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("u1", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess)
+        await engine.setSpaceSyncEnabled(true)
+        spaceStore.failNextSave = true                 // 门那一次写已经过去了
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertEqual(spaceAccess.spaces.count, 2, "`SpaceModel` 行已建（s-1 之外多一条）")
+        XCTAssertEqual(spaceAccess.spaceMappings.values.filter { $0 == "u1" }.count, 1)
+        XCTAssertNil(spaceStore.table.cursors["u1"], "那次写没落盘")
+
+        spaceStore.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(spaceAccess.spaces.count, 2, "重投不新增第二条行")
+        XCTAssertEqual(spaceAccess.spaceMappings.values.filter { $0 == "u1" }.count, 1, "映射不重铸")
+        XCTAssertNotNil(spaceStore.table.cursors["u1"]?.reconciled)
+        XCTAssertEqual(spaceStore.table.cursors["u1"]?.entityId, "srv-u1")
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8))
+    }
+
+    /// CASE B2-4b — 派生状态那次写失败也要被捕获：轮末 drain 收尾的 `mutateSpaceTable` 回 `false`
+    /// ⇒ 计数 1、`.cursorSaveFailed`、`hasDrainedFullReplay` 仍为 false。marker 在那次写**之前**
+    /// 已经随页推进过，所以断言的是结局与计数，不是 `marker_advanced`。
+    func testAFailedDrainFlagWriteAtTheRoundTailIsCountedAsACursorSaveFailure() async throws {
+        let spaceStore = MemorySpaceStore()
+        spaceStore.table.drainInProgress = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("u1", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore)
+        await engine.setSpaceSyncEnabled(true)
+        // 页内落地写是下一次，轮末 drain 标志那次再下一次。
+        spaceStore.failSaveOnCallNumber = spaceStore.saveCalls + 2
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay, "那次写没落盘")
+        XCTAssertTrue(spaceStore.table.drainInProgress)
+        XCTAssertTrue(advanced, "页的 marker 在轮末那次写之前已经推进")
+        XCTAssertNotNil(spaceStore.table.cursors["u1"], "页内落地那次写成了")
+    }
+
+    /// CASE B2-4c (a) — `spaceStore == nil` 的早退不算失败：纯设置引擎照推 marker。
+    func testASettingsOnlyEngineCountsNoCursorSaveFailures() async throws {
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: "phi.test.b24c", true, at: 100,
+                                                          version: 10)], marker: "10")]
+        let engine = makeSettingsOnlyEngine(client: client, markerStore: markerStore,
+                                            settings: boolRegistry("phi.test.b24c"))
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(failures, 0)
+        XCTAssertEqual(outcome, .ok)
+        XCTAssertTrue(advanced)
+        XCTAssertEqual(markerStore.file.marker, Data("10".utf8))
+    }
+
+    /// CASE B2-4c (b) — `isStopped` 的早退不算失败：一轮停在落地之后的 commit 里时 `shutdown()`，
+    /// 醒来之后每一处写口都早退回 `true`，结局不是 `.cursorSaveFailed`。
+    func testARetiredRoundsEarlyReturnsAreNotCursorSaveFailures() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        seedPendingLocalBookmarkEdit(access: access, store: ownedStore, client: client)
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7)], marker: "7")]
+        let arrived = Gate()
+        let release = Gate()
+        client.gatedCommitTagHash = bookmarkHash("bl")
+        client.arrivedInCommit = arrived
+        client.commitGate = release
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+
+        let parked = Task { await engine.pullOnce() }
+        await arrived.wait()                     // 落地已完成，本轮停在书签那次 commit 里
+        engine.shutdown()
+        await release.open()
+        await parked.value
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertNotEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 0)
+    }
+
+    /// CASE B2-4d（引擎半边）— Space 身份映射写失败（`mapSpace` 抛 `persistFailed`）是第四个
+    /// 置位点：`.cursorSaveFailed`、marker 不推、该 uuid 的游标进 `pendingApply`；放行之后重投 ⇒
+    /// 映射写下、`localSpaceId(forSyncUuid:)` 解析得出。
+    ///
+    /// 「本机 Space 行仍是 1 条」那一半由 Task 3b 的映射先行（R-M3-4a-87，CASE B2-4d-x）保证：
+    /// 今天的 create 支先建行、后写映射，所以一次映射写失败在 HEAD 上留下一条无映射的行，
+    /// 重投会再建一条——那正是 3b 要消掉的形状，本任务不在旧次序上断言它。
+    func testASpaceMappingPersistFailureIsCountedAndTheEntityIsReplayed() async throws {
+        let spaceAccess = makeSpaceAccess()
+        spaceAccess.errorOnNextMapping = SpaceSyncMappingError.persistFailed
+        let spaceStore = drainedSpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("u1", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertNotNil(spaceStore.table.cursors["u1"]?.pendingApply, "既有停放路径")
+        XCTAssertNil(spaceAccess.localSpaceId(forSyncUuid: "u1"), "抛出之后不留痕迹")
+
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertNotNil(spaceAccess.localSpaceId(forSyncUuid: "u1"), "映射写下")
+        XCTAssertEqual(spaceAccess.spaceMappings.values.filter { $0 == "u1" }.count, 1)
+        XCTAssertNil(spaceStore.table.cursors["u1"]?.pendingApply)
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8))
+    }
+
+    // MARK: - CASE B2-5（设置页与 marker 的次序）
+
+    /// CASE B2-5 — 写入次序是 `writeSettings` → `storedLastEntity` → `hasAdopted` → **marker**：
+    /// marker 那次写失败时前三样都已经落地。
+    ///
+    /// 补注：设置值本身的写入无法回传失败（`UserDefaults.standard.set` 不报错），所以没有
+    /// 「设置侧 save 失败」这条用例。
+    func testSettingsLandBeforeTheMarkerWrite() async throws {
+        let settingKey = "phi.test.b25"
+        defaults.set(false, forKey: settingKey)
+        defaults.set(NSNumber(value: Int64(100)), forKey: SyncableSettings.timestampKey(for: settingKey))
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 1
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: settingKey, true, at: 300,
+                                                          version: 10)], marker: "10")]
+        let engine = makeSettingsOnlyEngine(client: client, markerStore: markerStore,
+                                            settings: boolRegistry(settingKey))
+        await engine.pullOnce()
+
+        XCTAssertTrue(defaults.bool(forKey: settingKey), "V2 已落地")
+        XCTAssertEqual(defaults.object(forKey: SyncableSettings.timestampKey(for: settingKey)) as? NSNumber,
+                       NSNumber(value: Int64(300)))
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey), "`storedLastEntity` 已写")
+        XCTAssertTrue(defaults.bool(forKey: PhiSyncEngine.hasAdoptedStateKey))
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "marker 仍是入口值")
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+    }
+
+    /// CASE B2-5b — 重收设置页幂等的真实依据是「盖的是 `value.updatedAtMs`」（R-M3-4a-33）：
+    /// 第二次走 merge 支，`K` 的字节逐字相同，sidecar 仍是 300 而不是任何一次 `now()`。
+    /// 「重投」用第二台引擎 + 手工回退的 marker 文件模拟（引擎持有内存镜像，直接改文件对
+    /// 第一台不可见）。
+    func testReceivingTheSameSettingsPageTwiceIsIdempotentByTimestamp() async throws {
+        let settingKey = "phi.test.b25b"
+        defaults.set(false, forKey: settingKey)
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: settingKey, true, at: 300,
+                                                          version: 10)], marker: "10")]
+        let first = makeSettingsOnlyEngine(client: client, markerStore: markerStore,
+                                           settings: boolRegistry(settingKey))
+        await first.pullOnce()
+        XCTAssertTrue(defaults.bool(forKey: settingKey))
+        XCTAssertTrue(defaults.bool(forKey: PhiSyncEngine.hasAdoptedStateKey))
+        let firstBytes = defaults.data(forKey: SyncableSettings.valueKey(for: settingKey))
+
+        markerStore.file.marker = Data("0".utf8)             // 模拟重投：盘上回到入口值
+        let second = makeSettingsOnlyEngine(client: client, markerStore: markerStore,
+                                            settings: boolRegistry(settingKey))
+        await second.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data("0".utf8))
+        XCTAssertTrue(defaults.bool(forKey: settingKey))
+        XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: settingKey)), firstBytes,
+                       "字节逐字相同")
+        XCTAssertEqual(defaults.object(forKey: SyncableSettings.timestampKey(for: settingKey)) as? NSNumber,
+                       NSNumber(value: Int64(300)), "不是任何一次 now()")
+    }
+
+    // MARK: - CASE B2-6 / 6b / 6c（apply 与 marker 之间被杀）
+
+    /// CASE B2-6 — 落地段与游标写全部完成、marker 写没成（= 在 marker 写之前进程死亡）；用同一组
+    /// store 新建第二个引擎（= 重启）重投 ⇒ 行数不增、零 create、零 adopt。
+    func testARestartAfterAFailedMarkerWriteReplaysThePageWithoutDuplicates() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = drainedSpaceStore()
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 1
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let first = makeOwnedEngine(client: client, markerStore: markerStore,
+                                    spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                    ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertEqual(ownedStore.table.cursors["b1"]?.entityId, "e1", "游标写全部完成")
+        let titleAfterFirstLanding = access.rows.first?.title
+
+        markerStore.failSaveOnCallNumber = nil
+        let second = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        let applyCallsBefore = applyCalls(access)
+        await second.pullOnce()
+
+        let counters = await second.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(access.rows.count, 1)
+        if applyCalls(access) > applyCallsBefore {
+            XCTAssertEqual(createCount(access.lastAppliedOps), 0)
+        }
+        XCTAssertEqual(counters?.adopted, 0)
+        XCTAssertEqual(access.rows.first?.title, titleAfterFirstLanding)
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8))
+    }
+
+    /// CASE B2-6b — 跨 kind 之间被杀：第一台只注册书签、marker 写失败（= 书签已落、pin 一步没跑、
+    /// marker 未推）；第二台注册两条 kind 共用同一组 store ⇒ 书签行数仍 1、pin 正常落地一条。
+    /// urlrules 那一格 Task 6 补。
+    func testARestartBetweenKindsLandsTheMissingKindWithoutDuplicatingTheFirst() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = drainedSpaceStore()
+        let bookmarkAccess = FakeBookmarkAccess()
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 1
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7),
+                                      pinEntity("lx", version: 8)], marker: "8")]
+        let first = makeOwnedEngine(client: client, markerStore: markerStore,
+                                    spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                    ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore)])
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+
+        XCTAssertEqual(bookmarkAccess.rows.count, 1)
+        XCTAssertTrue(pinAccess.rows.isEmpty, "pin 那条 kind 一步没跑")
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+
+        markerStore.failSaveOnCallNumber = nil
+        let second = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                     ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
+                                                  .pins(access: pinAccess, store: pinStore)])
+        let applyCallsBefore = applyCalls(bookmarkAccess)
+        await second.pullOnce()
+
+        XCTAssertEqual(bookmarkAccess.rows.count, 1, "书签无重复")
+        if applyCalls(bookmarkAccess) > applyCallsBefore {
+            XCTAssertEqual(createCount(bookmarkAccess.lastAppliedOps), 0, "走 update 支")
+        }
+        XCTAssertEqual(pinAccess.rows.count, 1, "pin 无丢失")
+        XCTAssertEqual(markerStore.file.marker, Data("8".utf8))
+        // CASE B2-6b urlrules — Task 6
+    }
+
+    /// CASE B2-6c — LocalStore 事务提交与游标写之间被杀：行已建且带 `syncId`、游标文件仍是旧的。
+    /// 重启后 tag 索引的种子含 `localIdentities()` 里那个 `syncId` ⇒ 路由命中 ⇒ 游标被**重建**
+    /// （`entityId == "e1"`）而不是新建第二条行。
+    func testARestartAfterAFailedCursorWriteRebuildsTheCursorFromTheLocalIdentity() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = drainedSpaceStore()
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        ownedStore.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let first = makeOwnedEngine(client: client, markerStore: markerStore,
+                                    spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                    ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+
+        XCTAssertEqual(access.rows.first?.syncId, "b1", "行存在且带 `syncId`")
+        XCTAssertTrue(ownedStore.table.cursors.isEmpty, "游标表里没有它的身份")
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+
+        ownedStore.failNextSave = false
+        let second = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        let applyCallsBefore = applyCalls(access)
+        await second.pullOnce()
+
+        XCTAssertEqual(access.rows.count, 1)
+        if applyCalls(access) > applyCallsBefore {
+            XCTAssertEqual(createCount(access.lastAppliedOps), 0)
+        }
+        XCTAssertEqual(ownedStore.table.cursors["b1"]?.entityId, "e1", "游标被重建")
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8))
+    }
+
+    // MARK: - CASE B2-7 / 7b / 7c（多种 kind 同页）
+
+    /// 同一页：设置 1 + Space 1 + 书签 2 + pin 1（规则 1 条 —— Task 6 补）。
+    private func fourKindPage(settingKey: String) -> FakePhiSyncClient.Page {
+        page([
+            boolSettingsEntity(key: settingKey, true, at: 300, version: 10),
+            spaceCreateEntity("u1", version: 11),
+            bookmarkEntity("b1", version: 12),
+            bookmarkEntity("b2", version: 13),
+            pinEntity("lx", version: 14),
+        ], marker: "14")
+    }
+
+    private struct FourKindFixture {
+        let spaceAccess: FakePhiSpaceAccess
+        let spaceStore: MemorySpaceStore
+        let bookmarkAccess: FakeBookmarkAccess
+        let bookmarkStore: MemoryOwnedItemStore
+        let pinAccess: FakePinAccess
+        let pinStore: MemoryOwnedItemStore
+        let markerStore: MemoryMarkerStore
+        let client: FakePhiSyncClient
+        let settingKey: String
+    }
+
+    private func makeFourKindFixture() -> FourKindFixture {
+        let settingKey = "phi.test.b27"
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [fourKindPage(settingKey: settingKey)]
+        return FourKindFixture(spaceAccess: makeSpaceAccess(), spaceStore: drainedSpaceStore(),
+                               bookmarkAccess: FakeBookmarkAccess(), bookmarkStore: MemoryOwnedItemStore(),
+                               pinAccess: FakePinAccess(scope: .profile, account: .profile),
+                               pinStore: MemoryOwnedItemStore(), markerStore: markerStore(marker: "0"),
+                               client: client, settingKey: settingKey)
+    }
+
+    private func makeFourKindEngine(_ f: FourKindFixture) -> PhiSyncEngine {
+        makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.spaceStore,
+                        spaceAccess: f.spaceAccess, settings: boolRegistry(f.settingKey),
+                        ownedKinds: [.bookmarks(access: f.bookmarkAccess, store: f.bookmarkStore),
+                                     .pins(access: f.pinAccess, store: f.pinStore)])
+    }
+
+    private func assertFourKindsLandedExactlyOnce(_ f: FourKindFixture,
+                                                  file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(defaults.bool(forKey: f.settingKey), "设置键值", file: file, line: line)
+        XCTAssertEqual(defaults.object(forKey: SyncableSettings.timestampKey(for: f.settingKey)) as? NSNumber,
+                       NSNumber(value: Int64(300)), "设置 sidecar", file: file, line: line)
+        XCTAssertEqual(f.spaceAccess.spaces.count, 2, "Space 行：s-1 之外恰一条", file: file, line: line)
+        XCTAssertEqual(f.spaceAccess.spaceMappings.values.filter { $0 == "u1" }.count, 1,
+                       file: file, line: line)
+        XCTAssertEqual(f.bookmarkAccess.rows.count, 2, "书签两行", file: file, line: line)
+        XCTAssertEqual(Set(f.bookmarkAccess.rows.compactMap(\.syncId)), ["b1", "b2"], file: file, line: line)
+        XCTAssertEqual(f.pinAccess.rows.count, 1, "pin 一行", file: file, line: line)
+    }
+
+    /// CASE B2-7 — 只有 pin 的 store save 失败 ⇒ marker 不推，但**四种 kind 的落地都已发生**；
+    /// 重投整页 ⇒ 四种 kind 各自的行数与身份数不增、零 resurrected / refused / 出站 tombstone。
+    /// 规则那一格 Task 6 补。
+    func testOneKindsSaveFailureDoesNotUndoTheOtherKindsAndTheReplayAddsNothing() async throws {
+        let f = makeFourKindFixture()
+        f.pinStore.failNextSave = true
+        let engine = makeFourKindEngine(f)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        assertFourKindsLandedExactlyOnce(f)
+        XCTAssertNotNil(f.spaceStore.table.cursors["u1"], "Space 游标写成了（那张表没失败）")
+        XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2)
+        XCTAssertTrue(f.pinStore.table.cursors.isEmpty, "只有 pin 那次写没落盘")
+
+        f.pinStore.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting
+        XCTAssertEqual(second, .ok)
+        assertFourKindsLandedExactlyOnce(f)
+        XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2, "身份数不增")
+        XCTAssertEqual(f.pinStore.table.cursors.count, 1)
+        for label in ["bookmarks", "pins"] {
+            XCTAssertEqual(counters[label]?.resurrected, 0, label)
+            XCTAssertEqual(counters[label]?.refused, 0, label)
+            XCTAssertEqual(counters[label]?.tombstones, 0, label)
+        }
+        XCTAssertTrue(f.client.commitsAreFreeOfOutboundTombstones(), "重收不产出出站 tombstone")
+        XCTAssertEqual(f.markerStore.file.marker, Data("14".utf8))
+        // CASE B2-7 urlrules — Task 6
+    }
+
+    /// CASE B2-7b — 同一页多种 kind 落地之后、marker 之前被杀：四个 store 全放行，marker 写失败；
+    /// 第二台引擎重投 ⇒ 四种 kind 的行数、身份数不增、内容与中止前逐字相同。
+    func testARestartAfterAFullyLandedMultiKindPageReplaysItWithoutDuplicates() async throws {
+        let f = makeFourKindFixture()
+        f.markerStore.failSaveOnCallNumber = 1
+        let first = makeFourKindEngine(f)
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+
+        XCTAssertEqual(f.markerStore.file.marker, Data("0".utf8))
+        assertFourKindsLandedExactlyOnce(f)
+        let bookmarkTitles = f.bookmarkAccess.rows.map(\.title).sorted()
+        let pinTitle = f.pinAccess.rows.first?.title
+        let spaceName = f.spaceAccess.spaces.first { f.spaceAccess.spaceMappings[$0.spaceId] == "u1" }?.name
+
+        f.markerStore.failSaveOnCallNumber = nil
+        let second = makeFourKindEngine(f)
+        await second.pullOnce()
+
+        let outcome = await second.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .ok)
+        assertFourKindsLandedExactlyOnce(f)
+        XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2)
+        XCTAssertEqual(f.pinStore.table.cursors.count, 1)
+        XCTAssertEqual(f.bookmarkAccess.rows.map(\.title).sorted(), bookmarkTitles)
+        XCTAssertEqual(f.pinAccess.rows.first?.title, pinTitle)
+        XCTAssertEqual(f.spaceAccess.spaces.first { f.spaceAccess.spaceMappings[$0.spaceId] == "u1" }?.name,
+                       spaceName)
+        XCTAssertEqual(f.markerStore.file.marker, Data("14".utf8))
+    }
+
+    /// CASE B2-7c — 重收一条远端 tombstone 不产出出站 tombstone：第一轮行被删、游标写失败、零
+    /// commit；第二轮重投 ⇒ 本机已无行（T3 支）、仍然零出站 tombstone。
+    ///
+    /// `counters.tombstones` 数的是**入站**的远端 tombstone（`applyOwnedKind` 的头三行），所以这里
+    /// 钉「零出站」用的是 `client.commits` 与 `pushed`，不是那个计数。
+    func testReceivingARemoteTombstoneTwiceNeverProducesAnOutboundTombstone() async throws {
+        let access = FakeBookmarkAccess(rows: [.fixture(guid: "g1", syncId: "b1", spaceId: "s-1")])
+        let ownedStore = MemoryOwnedItemStore()
+        let payload = bookmarkPayload(uuid: "b1")
+        ownedStore.table.cursors["b1"] = ownedCursor(reconciled: baselineBytes(payload),
+                                                     server: baselineBytes(payload),
+                                                     entityId: "srv-b1", version: 1, ownerUuid: "su-1")
+        ownedStore.failNextSave = true
+        let markerStore = markerStore(marker: "1")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 9,
+                                                      entityId: "srv-b1")], marker: "9")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertTrue(access.rows.isEmpty, "行被删")
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(counters?.pushed, 0)
+        XCTAssertTrue(bookmarkCommits(client).isEmpty, "书签 tag 零条")
+        XCTAssertEqual(markerStore.file.marker, Data("1".utf8))
+
+        ownedStore.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let secondCounters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(second, .ok)
+        XCTAssertTrue(access.rows.isEmpty)
+        XCTAssertEqual(secondCounters?.pushed, 0)
+        XCTAssertTrue(bookmarkCommits(client).filter(\.deleted).isEmpty, "零出站 tombstone")
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8))
+    }
+
+    // MARK: - CASE B2-8(a) / 8(b) / 8b（中途抛错与页预算）
+
+    /// CASE B2-8(a) — 增量轮中途抛错，前面的页保住：marker 停在第 3 页那个值（不是入口值、不是
+    /// nil），`.pullFailed`、`marker_advanced == true`，前三页的实体都已落地；下一轮从 13 继续。
+    func testAnIncrementalRoundInterruptedMidWayKeepsTheLandedPages() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let spaceStore = drainedSpaceStore()            // drainInProgress == false：guard 1 不武装
+        let markerStore = markerStore(marker: "10")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = (11...15).map { version in
+            page([bookmarkEntity("b\(version)", version: Int64(version))], marker: "\(version)",
+                 changesRemaining: version < 15)
+        }
+        client.getUpdatesErrorAfterPages = (pages: 3, error: URLError(.timedOut))
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(markerStore.file.marker, Data("13".utf8), "第 3 页那个值")
+        XCTAssertEqual(pages, 3)
+        XCTAssertEqual(outcome, .pullFailed)
+        XCTAssertTrue(advanced)
+        XCTAssertEqual(Set(access.rows.compactMap(\.syncId)), ["b11", "b12", "b13"], "前三页都已落地")
+        XCTAssertTrue(client.commits.isEmpty, "抛错的一轮零 commit")
+
+        let callsBefore = client.getUpdatesCalls.count
+        await engine.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls[callsBefore].marker, Data("13".utf8), "从 13 继续")
+        XCTAssertEqual(Set(access.rows.compactMap(\.syncId)), ["b11", "b12", "b13", "b14", "b15"])
+        XCTAssertEqual(markerStore.file.marker, Data("15".utf8))
+    }
+
+    /// CASE B2-8(b) — drain 轮中途抛错，整条重放：首同步（marker nil）⇒ guard 1 武装 ⇒ 抛错后
+    /// catch 里那句丢 marker 保留 ⇒ 第二轮真的从头重放，跑完五页后 `hasDrainedFullReplay == true`。
+    ///
+    /// 防的是什么：删掉那一句的那一版会让一次被打断的 drain 在下一轮以「已完整重放」收尾
+    /// （`hasDrainedFullReplay` 盖在洞上），而那个标志是归属 kind 的发布闸。
+    func testAnInterruptedFirstDrainReplaysFromScratch() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let spaceStore = MemorySpaceStore()
+        let markerStore = markerStore(marker: nil)
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = (11...15).map { version in
+            page([bookmarkEntity("b\(version)", version: Int64(version))], marker: "\(version)",
+                 changesRemaining: version < 15)
+        }
+        client.getUpdatesErrorAfterPages = (pages: 3, error: URLError(.timedOut))
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertNil(markerStore.file.marker, "被打断的 drain 丢 marker")
+        XCTAssertTrue(spaceStore.table.drainInProgress)
+        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay)
+        XCTAssertEqual(outcome, .pullFailed)
+
+        let callsBefore = client.getUpdatesCalls.count
+        await engine.pullOnce()
+
+        XCTAssertNil(client.getUpdatesCalls[callsBefore].marker, "真的从头重放")
+        XCTAssertEqual(client.getUpdatesCalls.count - callsBefore, 5)
+        XCTAssertTrue(spaceStore.table.hasDrainedFullReplay)
+        XCTAssertFalse(spaceStore.table.drainInProgress)
+        XCTAssertEqual(markerStore.file.marker, Data("15".utf8))
+    }
+
+    /// CASE B2-8b — 页预算用尽照推 marker：`.pageBudgetExhausted`、`marker_advanced == true`、
+    /// 64 页、盘上 marker 是第 64 页那个值、**零 commit**；跟进轮从它继续，排干那一轮才发布。
+    ///
+    /// 防的是什么：按「只有 `ok` 才推 marker」实现的版本——真机上那意味着大账户每轮重读同样
+    /// 64 页、永远排不干。
+    func testAPageBudgetRoundStillAdvancesTheMarkerButCommitsNothing() async throws {
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: bookmarkHash("b9"),
+                    ciphertext: try PhiEntityCodec.encrypt(envelope(bookmarkPayload(uuid: "b9")), key: key),
+                    version: 5, entityId: "srv-b9")
+        client.pageBudgetExhaustsAfter = 1_000
+        let followUpGate = Gate()
+        client.getUpdatesGate = followUpGate
+        client.gateGetUpdatesFromCall = 65
+        let markerStore = markerStore(marker: "1")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        XCTAssertEqual(outcome, .pageBudgetExhausted)
+        XCTAssertTrue(advanced)
+        XCTAssertEqual(pages, 64)
+        XCTAssertEqual(markerStore.file.marker, Data("5".utf8), "第 64 页那个值")
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(access.rows.count, 1, "第 1 页的实体已落地")
+
+        // 跟进轮停在它的第 65 次请求里；放行后它从 "5" 继续并排干。
+        client.pageBudgetExhaustsAfter = nil
+        await followUpGate.open()
+        await engine.pullOnce()
+        let drainedOutcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(drainedOutcome, .ok)
+        XCTAssertEqual(client.getUpdatesCalls[64].marker, Data("5".utf8), "跟进轮从它继续")
+    }
+
+    // MARK: - CASE B2-9（门关轮次照推 marker，记账先于 marker）
+
+    /// CASE B2-9 — 门关轮次：`.gated`、marker 照推、`markerMovedWhileGateShut == true`、设置那一条
+    /// 已经落地（键值与 sidecar），三条非设置实体被丢弃、`cursors` 仍为空。
+    func testAGatedRoundAdvancesTheMarkerRecordsTheMoveAndLandsSettings() async throws {
+        let settingKey = "phi.test.b29"
+        let spaceStore = MemorySpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([
+            boolSettingsEntity(key: settingKey, true, at: 300, version: 10),
+            spaceCreateEntity("u1", version: 11),
+            bookmarkEntity("b1", version: 12),
+            pinEntity("lx", version: 13),
+        ], marker: "13")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     settings: boolRegistry(settingKey))
+        await engine.pullOnce()                            // 门关着
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .gated)
+        XCTAssertTrue(advanced)
+        XCTAssertTrue(spaceStore.table.markerMovedWhileGateShut)
+        XCTAssertTrue(defaults.bool(forKey: settingKey), "设置已落地")
+        XCTAssertEqual(defaults.object(forKey: SyncableSettings.timestampKey(for: settingKey)) as? NSNumber,
+                       NSNumber(value: Int64(300)))
+        XCTAssertTrue(spaceStore.table.cursors.isEmpty, "三条非设置实体被丢弃")
+        XCTAssertEqual(markerStore.file.marker, Data("13".utf8))
+    }
+
+    /// CASE B2-9 崩溃窗口变体（R-M3-4a-77）— 标志写成功、marker 写失败（= 在两次写之间死亡）⇒
+    /// `markerMovedWhileGateShut == true` **且** 盘上 marker 仍是入口值、`.cursorSaveFailed`；
+    /// 第二台引擎重投同一页 ⇒ 正常收尾；随后开门 ⇒ `applySpaceGate` 第一个析取项成立 ⇒ 整类型重放。
+    ///
+    /// 防的是什么：按 RR-B12 原次序（标志写在 marker 落盘之后）实现的那一版：同一个注入点留下
+    /// 「marker 已推进、标志丢失」⇒ 下次开门两个析取项都不成立 ⇒ 门关期间越过的页永久丢失。
+    func testAGatedRoundWritesTheMoveRecordBeforeTheMarker() async throws {
+        let settingKey = "phi.test.b29w"
+        let spaceStore = MemorySpaceStore()
+        spaceStore.table.hasDrainedFullReplay = true       // 只有 `markerMovedWhileGateShut` 能武装重放
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 1
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: settingKey, true, at: 300, version: 10)],
+                                     marker: "10")]
+        let first = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                    settings: boolRegistry(settingKey))
+        await first.pullOnce()
+
+        let outcome = await first.lastRoundOutcomeForTesting
+        XCTAssertTrue(spaceStore.table.markerMovedWhileGateShut, "标志先落盘")
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "marker 仍是入口值")
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+
+        markerStore.failSaveOnCallNumber = nil
+        let second = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     settings: boolRegistry(settingKey))
+        await second.pullOnce()
+        let secondOutcome = await second.lastRoundOutcomeForTesting
+        XCTAssertEqual(secondOutcome, .gated)
+        XCTAssertEqual(markerStore.file.marker, Data("10".utf8), "重投同一页，正常收尾")
+
+        await second.setSpaceSyncEnabled(true)
+        XCTAssertNil(markerStore.file.marker, "开门：第一个析取项成立 ⇒ 整类型重放")
+        XCTAssertTrue(spaceStore.table.drainInProgress)
+        XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
+    }
+
+    /// CASE B2-9 另一半方向 — 标志那次 `mutateSpaceTable` 回 `false` ⇒ 本页**不推** marker、
+    /// `.cursorSaveFailed`、`markerMovedWhileGateShut` 仍为 false，且本轮当场早退（第 2 页不再
+    /// 试：`saveCalls == 1`）；放行重跑 ⇒ 再次调用（`saveCalls == 2`）并写下标志。
+    ///
+    /// 第 1 页 `changesRemaining == true` ⇒ 早退的一轮没 drain 完 ⇒ 引擎自己排一轮跟进轮；
+    /// `gateGetUpdatesFromCall = 2` 把它停在第一次请求里，放行之后它就是那次「重跑」。
+    func testAFailedMoveRecordWriteHoldsTheMarkerAndEndsTheRound() async throws {
+        let settingKey = "phi.test.b29f"
+        let spaceStore = MemorySpaceStore()
+        spaceStore.failSaveOnCallNumber = 1
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([boolSettingsEntity(key: settingKey, true, at: 300, version: 7)], marker: "7",
+                 changesRemaining: true),
+            page([], marker: "9"),
+        ]
+        let followUpGate = Gate()
+        client.getUpdatesGate = followUpGate
+        client.gateGetUpdatesFromCall = 2
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     settings: boolRegistry(settingKey))
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "本页不推 marker")
+        XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
+        XCTAssertEqual(spaceStore.saveCalls, 1, "早退：第 2 页没有再试一次")
+        XCTAssertTrue(markerStore.saves.isEmpty, "marker 一次都没写")
+
+        await followUpGate.open()                          // 放行重跑（跟进轮）
+        await engine.pullOnce()                            // 排在它后面，等它跑完
+
+        XCTAssertEqual(spaceStore.saveCalls, 2, "再次调用")
+        XCTAssertTrue(spaceStore.table.markerMovedWhileGateShut)
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8))
+    }
+
+    // MARK: - CASE B2-10（引擎半边）
+
+    /// CASE B2-10（引擎半边）— 失败那一轮 `saveCalls` 恰 1（落地那一次，发布段没跑）、
+    /// `bookmarksHadRecords` 仍为 false；放行重投之后才置真。store 半边在上面。
+    func testAFailedCursorSaveRoundWritesExactlyOnceAndLeavesHadRecordsFalse() async throws {
+        let spaceStore = drainedSpaceStore()
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        ownedStore.failNextSave = true
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertFalse(spaceStore.table.bookmarksHadRecords)
+        XCTAssertEqual(ownedStore.saveCalls, 1)
+
+        ownedStore.failNextSave = false
+        await engine.pullOnce()
+
+        XCTAssertTrue(spaceStore.table.bookmarksHadRecords)
+    }
+
+    // MARK: - CASE B2-12（push 侧游标写失败仍然收敛）
+
+    /// CASE B2-12 — 发布段那一次 `writeOwnedTable` 失败 ⇒ `.cursorSaveFailed`（push 段自己的游标写
+    /// 失败也收口）、计数 ≥ 1、**marker 不回退**（它在 pull 段已经推过）；下一轮 pull 把刚提交的
+    /// 实体重新投回 ⇒ 按身份命中本机行 ⇒ update 支 ⇒ 行数不增、游标被重建。
+    ///
+    /// 用 `stored` 模式：commit 写进 `stored` 的那一行正是下一轮要被重投的。入口 marker "0"，
+    /// 另种一条远端书签 `b0@50` 让 pull 段真的推进 marker。写序号：落地是第 1 次 ⇒ 发布段是第 2 次。
+    func testAPublishSideCursorWriteFailureStillConverges() async throws {
+        let access = FakeBookmarkAccess(rows: [.fixture(guid: "gl", spaceId: "s-1", title: "Mine")])
+        let ownedStore = MemoryOwnedItemStore()
+        ownedStore.failSaveOnCallNumber = 2
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: bookmarkHash("b0"),
+                    ciphertext: try PhiEntityCodec.encrypt(envelope(bookmarkPayload(uuid: "b0")), key: key),
+                    version: 50, entityId: "srv-b0")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertGreaterThanOrEqual(failures, 1)
+        XCTAssertTrue(advanced, "marker 不回退")
+        XCTAssertEqual(markerStore.file.marker, Data("50".utf8))
+        XCTAssertEqual(bookmarkCommits(client).count, 1, "那条本机书签的 create 得了 `.applied`")
+        let minted = try XCTUnwrap(access.rows.first { $0.guid == "gl" }?.syncId, "身份已认领")
+        XCTAssertNil(ownedStore.table.cursors[minted], "发布段那次写没落盘")
+
+        let applyCallsBefore = applyCalls(access)
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(access.rows.count, 2, "行数不增（b0 + 本机那条）")
+        if applyCalls(access) > applyCallsBefore {
+            XCTAssertEqual(createCount(access.lastAppliedOps), 0)
+        }
+        XCTAssertEqual(ownedStore.table.cursors[minted]?.entityId,
+                       client.entityId(forTagHash: bookmarkHash(minted)), "游标被重建")
+    }
+
+    // MARK: - CASE B2-13（`.unusable` 不中断 drain）
+
+    /// CASE B2-13 — 第 2 页带一条解不开的设置实体：五页全部取回并落地、请求 marker 依次是
+    /// nil / "1" / "2" / "3" / "4"（内存 marker 照推，R-M3-4a-76）、第 2 页之后再没有非 nil 的
+    /// marker 写、轮末盘上 marker 为 nil、`.unusableSettings`；设置不发而 `pushOwnedItems` 被调用。
+    ///
+    /// `drainInProgress` / `hasDrainedFullReplay` 预置为真：前者让 guard 1 不在 marker nil 的入口
+    /// 重新武装（否则后者被置假，归属 kind 的发布段在 guard ① 就返回，`loadOwnedTable` 观察不到）。
+    /// 抑制中的一轮不跑轮末 drain 收尾，所以两者本轮不变。
+    func testAnUnusableSettingsEntityDoesNotInterruptTheDrain() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = MemorySpaceStore()
+        spaceStore.table.hasDrainedFullReplay = true
+        spaceStore.table.drainInProgress = true
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let markerStore = markerStore(marker: nil)
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([], marker: "1", changesRemaining: true),
+            page([remoteUnreadable(tag: PhiSyncEntity.clientTag, version: 2)], marker: "2",
+                 changesRemaining: true),
+            page([], marker: "3", changesRemaining: true),
+            page([spaceCreateEntity("u4", version: 4)], marker: "4", changesRemaining: true),
+            page([bookmarkEntity("b5", version: 5)], marker: "5"),
+        ]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     spaceAccess: spaceAccess,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        let spaceTable = await engine.spaceTableForTesting
+        XCTAssertNotNil(spaceTable.cursors["u4"]?.reconciled, "第 4 页落地")
+        XCTAssertEqual(spaceAccess.spaceMappings.values.filter { $0 == "u4" }.count, 1)
+        XCTAssertEqual(counters?.applied, 1, "第 5 页落地")
+        XCTAssertEqual(client.getUpdatesCalls.map(\.marker),
+                       [nil, Data("1".utf8), Data("2".utf8), Data("3".utf8), Data("4".utf8)])
+        XCTAssertEqual(pages, 5)
+        XCTAssertEqual(markerStore.saves.first?.marker, Data("1".utf8), "第 1 页照常落盘")
+        XCTAssertTrue(markerStore.saves.dropFirst().allSatisfy { $0.marker == nil },
+                      "第 2 页之后再没有非 nil 的 marker 写")
+        XCTAssertNil(markerStore.file.marker, "轮末盘上 marker 为 nil")
+        XCTAssertEqual(outcome, .unusableSettings)
+        XCTAssertTrue(settingsCommits(client).isEmpty, "`maySettingsPublish == false`")
+        XCTAssertEqual(ownedStore.hadRecordsSeen.count, 2, "`pushOwnedItems` 被调用：发布段的 load 发生过")
+        // CASE B2-13 urlrules — Task 6
+    }
+
+    // MARK: - CASE B2-14（guard 2 是轮级的；marker 先清、确认之后才烧闩）
+
+    private func makeGuard2Fixture()
+        -> (store: MemorySpaceStore, markerStore: MemoryMarkerStore, client: FakePhiSyncClient) {
+        let store = MemorySpaceStore()
+        store.table.hadRecords = true
+        store.table.hasDrainedFullReplay = true
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([], marker: "11", changesRemaining: true),
+            page([spaceCreateEntity("u12", version: 12)], marker: "12", changesRemaining: true),
+            page([], marker: "13"),
+        ]
+        return (store, markerStore(marker: "10"), client)
+    }
+
+    /// CASE B2-14 (a) — 本轮**第一次** marker 写就是那个 nil（闩与 marker 之间没有任何别的 marker
+    /// 写，也没有页 1 的推进）、本轮就从头拉、三页照常落地、轮末 marker 仍为 nil、
+    /// `hasDrainedFullReplay` 仍为 false；下一轮的第一次请求带 nil。
+    /// (b) 把 guard 2 放进页循环的那一版让「第一次写是 nil」「轮末 nil」「未 drain」三条同时红。
+    func testGuard2IsRoundLevelAndClearsTheMarkerBeforeBurningTheLatch() async throws {
+        let f = makeGuard2Fixture()
+        let engine = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(f.store.table.didReplayForEmptyTable)
+        XCTAssertTrue(f.store.table.drainInProgress)
+        XCTAssertFalse(f.store.table.hasDrainedFullReplay)
+        XCTAssertEqual(f.markerStore.saves.count, 1, "本轮唯一一次 marker 写")
+        XCTAssertNil(f.markerStore.saves.first?.marker, "第一次写就是那个 nil")
+        XCTAssertNil(f.client.getUpdatesCalls.first?.marker, "本轮就从头拉")
+        XCTAssertEqual(f.client.getUpdatesCalls.count, 3)
+        XCTAssertNotNil(f.store.table.cursors["u12"], "三页照常落地")
+        XCTAssertNil(f.markerStore.file.marker, "轮末 marker 仍为 nil")
+        XCTAssertFalse(f.store.table.hasDrainedFullReplay, "轮末那块因抑制不跑")
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .ok)
+
+        let callsBefore = f.client.getUpdatesCalls.count
+        await engine.pullOnce()
+        XCTAssertNil(f.client.getUpdatesCalls[callsBefore].marker, "下一轮从 nil 拉")
+        XCTAssertTrue(f.store.table.hasDrainedFullReplay, "这一轮没有抑制，drain 正常收尾")
+        XCTAssertEqual(f.markerStore.file.marker, Data("13".utf8))
+    }
+
+    /// CASE B2-14 (c) — 第 2 页抛网络错 ⇒ 盘上 marker **已经**是 nil（guard 2 的第 1 步就写下了）、
+    /// 闩已烧、未 drain；下一轮真的从头重放。把 `storedMarker = nil` 推到轮末的那一版在这里留下
+    /// 「闩已烧、marker 未清」，而闩的全仓唯一复位点是 `resetForNewStoreBirthday()`。
+    func testGuard2ClearsTheMarkerBeforeTheFirstPageEvenIfALaterPageThrows() async throws {
+        let f = makeGuard2Fixture()
+        f.client.getUpdatesErrorAfterPages = (pages: 1, error: URLError(.timedOut))
+        let engine = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .pullFailed)
+        XCTAssertNil(f.markerStore.file.marker, "第 1 步就写下了")
+        XCTAssertTrue(f.store.table.didReplayForEmptyTable)
+        XCTAssertFalse(f.store.table.hasDrainedFullReplay)
+
+        let callsBefore = f.client.getUpdatesCalls.count
+        await engine.pullOnce()
+        XCTAssertNil(f.client.getUpdatesCalls[callsBefore].marker, "真的从头重放")
+        XCTAssertTrue(f.store.table.hasDrainedFullReplay)
+    }
+
+    /// CASE B2-14 (d) — `failSaveOnCallNumber = 2`（放过 guard 2 那一次；页 1 被抑制所以退化为
+    /// 「不再有写」）+ 第二台引擎重启 ⇒ 重启看到的是 `didReplayForEmptyTable == true` 且 marker
+    /// 为 nil、`hasDrainedFullReplay == false`；放行后重启那一轮从头重放并正常收尾。
+    func testGuard2LeavesARestartableStateWhenNoLaterMarkerWriteHappens() async throws {
+        let f = makeGuard2Fixture()
+        f.markerStore.failSaveOnCallNumber = 2
+        let first = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+
+        XCTAssertEqual(f.markerStore.saves.count, 1, "页 1 被抑制：不再有写")
+        XCTAssertTrue(f.store.table.didReplayForEmptyTable)
+        XCTAssertNil(f.markerStore.file.marker)
+        XCTAssertFalse(f.store.table.hasDrainedFullReplay)
+
+        f.markerStore.failSaveOnCallNumber = nil
+        let second = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        let callsBefore = f.client.getUpdatesCalls.count
+        await second.pullOnce()
+        XCTAssertNil(f.client.getUpdatesCalls[callsBefore].marker)
+        XCTAssertTrue(f.store.table.hasDrainedFullReplay)
+        XCTAssertEqual(f.markerStore.file.marker, Data("13".utf8))
+    }
+
+    /// CASE B2-14 (e) — 两步确认的主探针（R-M3-4a-89）：guard 2 的**第 1 步**就写不成 ⇒
+    /// `.cursorSaveFailed`、计数 1、**零页**、**闩没烧**、drain 标志与入口逐字相同、盘上仍是入口值、
+    /// 零 commit。放行再拉 ⇒ guard 2 再次命中（判据没被消耗掉）⇒ marker 清成 nil、闩烧掉、三页
+    /// 从头重放、`hasDrainedFullReplay` 按抑制规则仍为 false。
+    /// (g) 把两次写写回「同一个闭包」或对调两步的那一版在这里让「闩没烧」与「盘上仍是入口值」同时红。
+    func testGuard2StepOneFailureBurnsNothingAndRetriggersNextRound() async throws {
+        let f = makeGuard2Fixture()
+        f.markerStore.failSaveOnCallNumber = 1
+        let engine = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertEqual(pages, 0)
+        XCTAssertTrue(f.client.getUpdatesCalls.isEmpty, "一次请求都没发生")
+        XCTAssertFalse(f.store.table.didReplayForEmptyTable, "闩没烧")
+        XCTAssertFalse(f.store.table.drainInProgress, "与入口逐字相同")
+        XCTAssertTrue(f.store.table.hasDrainedFullReplay, "与入口逐字相同")
+        XCTAssertEqual(f.markerStore.file.marker, Data("10".utf8), "盘上仍是入口值")
+        XCTAssertTrue(f.client.commits.isEmpty)
+
+        f.markerStore.failSaveOnCallNumber = nil
+        await engine.pullOnce()
+
+        XCTAssertTrue(f.store.table.didReplayForEmptyTable, "guard 2 再次命中")
+        XCTAssertNil(f.markerStore.file.marker)
+        XCTAssertNil(f.client.getUpdatesCalls.first?.marker)
+        XCTAssertEqual(f.client.getUpdatesCalls.count, 3, "三页从头重放")
+        XCTAssertFalse(f.store.table.hasDrainedFullReplay, "按抑制规则仍为 false")
+    }
+
+    /// CASE B2-14 (f) — 另一半方向：第 1 步成功（盘上 marker 已是 nil）、第 2 步 `mutateSpaceTable`
+    /// 回 `false` ⇒ `.cursorSaveFailed`、零页、闩没烧（回滚之后内存与盘一致）、零 commit。放行再拉
+    /// ⇒ guard 2 又命中 ⇒ 第 1 步**幂等**（`saves` 不增、计数不增）⇒ 第 2 步这次写成 ⇒ 正常从头重放。
+    func testGuard2StepTwoFailureIsRetriedWithAnIdempotentStepOne() async throws {
+        let f = makeGuard2Fixture()
+        let engine = makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.store)
+        await engine.setSpaceSyncEnabled(true)
+        f.store.failNextSave = true                        // 门那一次写已经过去了
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let pages = await engine.lastRoundPagesForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(pages, 0)
+        XCTAssertNil(f.markerStore.file.marker, "第 1 步成功")
+        XCTAssertEqual(f.markerStore.saves.count, 1)
+        XCTAssertFalse(f.store.table.didReplayForEmptyTable, "回滚之后内存与盘一致")
+        XCTAssertTrue(f.client.commits.isEmpty)
+
+        f.store.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let secondFailures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(secondFailures, 0, "第 1 步幂等：不计 `cursorSaveFailures`")
+        XCTAssertEqual(f.markerStore.saves.count, 1, "第 1 步幂等：`saves` 不增")
+        XCTAssertTrue(f.store.table.didReplayForEmptyTable, "第 2 步这次写成")
+        XCTAssertEqual(f.client.getUpdatesCalls.count, 3, "正常从头重放")
+        XCTAssertNil(f.client.getUpdatesCalls.first?.marker)
+    }
+
+    // MARK: - CASE B2-15（设置 `.absent` 是轮级谓词）
+
+    /// CASE B2-15 — 设置实体只在第 1 页、第 2 至 5 页只有 Space / 书签 / pin（规则 Task 6 补）⇒
+    /// `clearEntityCursor()` 零调用：entity id 键仍是第 1 页写下的那个、`storedLastEntity` 非 nil；
+    /// 下一轮 push 走 update（`entityId != nil`、`baseVersion != 0`）。
+    ///
+    /// 防的是什么：逐页求值 `.absent` 的那一版会在第 5 页命中 `clearEntityCursor()`，把刚建立的
+    /// 设置游标丢掉 ⇒ 下一次 push 退化成 `baseVersion == 0` 的 create。
+    func testAbsentSettingsIsARoundLevelPredicate() async throws {
+        let settingKey = "phi.test.b215"
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([boolSettingsEntity(key: settingKey, true, at: 300, version: 1, entityId: "srv-set")],
+                 marker: "1", changesRemaining: true),
+            page([spaceCreateEntity("u2", version: 2)], marker: "2", changesRemaining: true),
+            page([bookmarkEntity("b3", version: 3)], marker: "3", changesRemaining: true),
+            page([pinEntity("l4", version: 4)], marker: "4", changesRemaining: true),
+            page([], marker: "5"),
+        ]
+        client.seed(ciphertext: Data(), version: 1, entityId: "srv-set")
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: nil),
+                                     spaceStore: MemorySpaceStore(), settings: boolRegistry(settingKey),
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore),
+                                                  .pins(access: pinAccess, store: pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-set",
+                       "`clearEntityCursor()` 零调用")
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey))
+
+        defaults.set(false, forKey: settingKey)             // 本机编辑 ⇒ 下一轮 push
+        await engine.pushLocalSettings()
+
+        let last = try XCTUnwrap(settingsCommits(client).last)
+        XCTAssertEqual(last.entityId, "srv-set", "走 update")
+        XCTAssertNotEqual(last.baseVersion, 0)
+        // CASE B2-15 urlrules — Task 6
+    }
+
+    /// CASE B2-15 正面那一半 — 五页一条设置实体都没有 ∧ drained ∧ `startedFromScratch` ∧
+    /// `storedEntityId != nil` ⇒ `clearEntityCursor()` 恰好一次（entity id 键变成 nil）。
+    func testAFullReplayWithoutASettingsEntityClearsTheStaleEntityCursorOnce() async throws {
+        defaults.set("stale-id", forKey: PhiSyncEngine.entityIdStateKey)
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([], marker: "1", changesRemaining: true),
+            page([spaceCreateEntity("u2", version: 2)], marker: "2", changesRemaining: true),
+            page([], marker: "3", changesRemaining: true),
+            page([], marker: "4", changesRemaining: true),
+            page([], marker: "5"),
+        ]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: nil),
+                                     spaceStore: MemorySpaceStore())
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "entity id 键变成 nil")
+        XCTAssertEqual(client.getUpdatesCalls.count, 5)
+        XCTAssertNil(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey),
+                     "注入了 marker store 就一个字节都不进 defaults")
+    }
+
+    // MARK: - CASE B2-16（跨页归属解析）
+
+    /// CASE B2-16 — 第 2 页同时带一条新 Space 与一条归属于它的书签（路由次序 Space 在前）⇒
+    /// 那条书签**本轮落地**、`parked == 0`、`applied == 1`。Task 6 换成规则再做一遍。
+    ///
+    /// 防的是什么：不在页末失效 `ownedMapsThisRound` 的那一版：`classify` 用的是第 1 页那一刻的
+    /// `localSpaceIdBySyncUuid` ⇒ `.unresolved` ⇒ 停放，本轮解不开、要等下一轮。
+    func testABookmarkOwnedByASpaceLandedOnTheSamePageResolvesThisRound() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess()
+        let ownedStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([], marker: "1", changesRemaining: true),        // 第 1 页就算过一次翻译表
+            page([spaceCreateEntity("u2", version: 2),
+                  bookmarkEntity("b2", version: 3, spaceUuid: "u2")], marker: "3"),
+        ]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: drainedSpaceStore(), spaceAccess: spaceAccess,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.parked, 0)
+        XCTAssertEqual(counters?.applied, 1)
+        let landedSpaceId = try XCTUnwrap(spaceAccess.localSpaceId(forSyncUuid: "u2"))
+        XCTAssertEqual(access.rows.first?.spaceId, landedSpaceId, "落在那条刚建出来的 Space 里")
+        XCTAssertNil(ownedStore.table.cursors["b2"]?.pendingApply)
+    }
+
+    // MARK: - CASE B2-18（引擎半边）
+
+    /// CASE B2-18（引擎半边）— 门关轮次里标志那次 plist 写失败 ⇒ `.cursorSaveFailed`、marker 不推、
+    /// `saveCalls == 1`；第 2 轮假件从同一个 marker 重投同一页 ⇒ **再次看见差异、再次 save**
+    /// （`saveCalls == 2`），这次写下 `markerMovedWhileGateShut == true`，只有在它成功之后 marker
+    /// 才推进（推进就是内存闩已置的可观察代理）。变体 (a)：第二次也失败 ⇒ marker 仍不推、
+    /// `saveCalls == 2`。变体 (b) / (c) 各在 `PhiSyncEngineSpaceTests` /
+    /// `SpaceSyncMappingManagerTests`（Task 2a）。
+    func testAFailedMoveRecordWriteIsRetriedOnTheReplayedPage() async throws {
+        let spaceStore = MemorySpaceStore()
+        spaceStore.failSaveOnCallNumber = 1
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: "phi.test.b218", true, at: 300,
+                                                          version: 7)], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore)
+        await engine.pullOnce()                            // 门关着
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertEqual(spaceStore.saveCalls, 1)
+        XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
+
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .gated)
+        XCTAssertEqual(spaceStore.saveCalls, 2, "再次看见差异、再次 save")
+        XCTAssertTrue(spaceStore.table.markerMovedWhileGateShut)
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8), "只有在它成功之后 marker 才推进")
+    }
+
+    /// CASE B2-18 变体 (a) — 第二次也失败 ⇒ marker 仍不推、`saveCalls == 2`。
+    func testTwoFailedMoveRecordWritesNeverAdvanceTheMarker() async throws {
+        let spaceStore = MemorySpaceStore()
+        spaceStore.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([boolSettingsEntity(key: "phi.test.b218a", true, at: 300,
+                                                          version: 7)], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(spaceStore.saveCalls, 2, "两轮各试一次，零内部重试")
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "marker 仍不推")
+        XCTAssertTrue(markerStore.saves.isEmpty)
+        XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
+    }
+}
+
+private extension PhiSyncEngineTests.FakePhiSyncClient {
+    /// 「重收不产出出站 tombstone」：commits 里没有任何一条 `deleted` 条目。
+    func commitsAreFreeOfOutboundTombstones() -> Bool {
+        !commits.contains { $0.deleted }
     }
 }

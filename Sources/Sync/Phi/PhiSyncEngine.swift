@@ -617,6 +617,35 @@ actor PhiSyncEngine {
     /// so a failed retry cannot leave later entity kinds publishing against stale state.
     private var canPublishThisRound = false
 
+    // ── B-2 的轮级状态（M3-4a Task 2b，§2.5 / §2.8）。全部在 `run(_:)` 的复位段清零。──
+    //
+    // `cursorSaveFailures` 是 §2.5 第 4 条那个布尔的计数形态：四个置位点全在**写口内部**
+    // （`writeSpaceTable` / `writeOwnedTable` / `persistMarkerState` 的 `false` 支，以及
+    // `applySpaces` create 支里 `mapSpace` 抛 `persistFailed` 的那个 catch），不在调用点。
+    // 它同时是发布闸的第三个合取项（R-M3-4a-88 / 92）：本轮任何一次游标落盘失败 ⇒ 零发布。
+    private var cursorSaveFailures = 0
+    /// §2.8 的具名结局。`pull` 自己只写五个（`.cursorSaveFailed` / `.pullFailed` /
+    /// `.unusableSettings` / `.pageBudgetExhausted` / `.notMyBirthday`），其余三个由结局行
+    /// 发射前按固定优先级派生。一轮里多次 pull 时后写覆盖先写。
+    private var roundOutcome: RoundOutcome = .ok
+    /// 本轮取回的页数，跨同一轮内的多次 pull 累加。
+    private var roundPages = 0
+    /// 「**盘上**那个 marker 本轮动过」：只在 `persistStoredMarker` 成功之后按
+    /// `storedMarker != markerAtEntry` 置真（计划裁定 7）。
+    private var roundMarkerAdvanced = false
+    /// 结局行**发射时**写下的那一份快照；轮首不清（`nil` 只表示「这个引擎还没跑完过一轮」）。
+    /// 快照而不是活值：一次 `page_budget_exhausted` 会把跟进轮排进队列，而跟进轮的
+    /// `run(_:)` 一进门就把四个活计数清零——测试接缝读活值会读到下一轮的残值。
+    private var lastLoggedRound: LoggedRound?
+
+    /// 结局行的四个字段，原样冻结。
+    struct LoggedRound {
+        let outcome: RoundOutcome
+        let pages: Int
+        let markerAdvanced: Bool
+        let cursorSaveFailures: Int
+    }
+
     /// Tail of the round chain. Each public entry point appends its round to this task and
     /// awaits it, so a round that suspends in `getUpdates` or `commit` still finishes before
     /// the next one starts. Only the public entry points enqueue: the internal `pull` -> `push`
@@ -1169,6 +1198,11 @@ actor PhiSyncEngine {
         ownedRoundStarted = []
         ownedParkedRetryDone = []
         ownedMapsThisRound = nil
+        // B-2 的四个轮级计数（§2.5 / §2.8）同范围：一轮之内的每一次 pull 累加，轮首清零。
+        cursorSaveFailures = 0
+        roundOutcome = .ok
+        roundPages = 0
+        roundMarkerAdvanced = false
         ownedTables = [:]
         ownedMustRepublish = [:]
         // §8.2 / Task 10：投喂源也是**每轮**的。上一轮没来得及交出去的行由队列自己留着，
@@ -1214,11 +1248,43 @@ actor PhiSyncEngine {
             await push(retryOnConflict: true)
         case .preview(let box):
             await runPreview(into: box)
-            return          // 预览不是 Space 轮：不参与 §11 的计数行
+            return          // 预览不是 Space 轮：不参与 §11 的计数行，也不发结局行
         }
+        logRoundOutcome()
         await logSpaceRound()
         logOwnedRounds()
         await runFaviconBackfill()
+    }
+
+    /// §2.8 / §13.2 的结局行（B-2）。发射点在这里而不是 `serialized(_:)`：后者只是排队壳。
+    /// **不带** `logSpaceRound` / `logOwnedRounds` 那道 `spaceSectionEnabled` 守卫——门关轮次与
+    /// M3-1 纯设置引擎正是要读这一行的两种形态。
+    ///
+    /// 发射前按固定优先级收口（计划裁定 6）：
+    /// 1. `.notMyBirthday` 已置 ⇒ 不被覆盖；
+    /// 2. `cursorSaveFailures > 0` ⇒ `.cursorSaveFailed`（这条让 push 段自己的游标写失败也收口成
+    ///    `cursor_save_failed`，§2.5 第 8 条）；
+    /// 3. 仍是 `.ok` 且本轮有 kind 的本机读失败 ⇒ `.localReadFailed`；
+    /// 4. 仍是 `.ok` 且 Space 段有 store 但门关着 ⇒ `.gated`（`spaceStore == nil` 不算 gated，
+    ///    那是 M3-1 纯设置引擎的正常形态，RR-B10）。
+    ///
+    /// R12：只有枚举名、计数与布尔，没有实体内容。
+    private func logRoundOutcome() {
+        var outcome = roundOutcome
+        if outcome != .notMyBirthday {
+            if cursorSaveFailures > 0 {
+                outcome = .cursorSaveFailed
+            } else if outcome == .ok, !ownedReadFailed.isEmpty {
+                outcome = .localReadFailed
+            } else if outcome == .ok, spaceStore != nil, !spaceSectionEnabled {
+                outcome = .gated
+            }
+        }
+        lastLoggedRound = LoggedRound(outcome: outcome, pages: roundPages,
+                                      markerAdvanced: roundMarkerAdvanced,
+                                      cursorSaveFailures: cursorSaveFailures)
+        AppLogInfo("[phi-sync] round outcome=\(outcome.rawValue) pages=\(roundPages) "
+                   + "marker_advanced=\(roundMarkerAdvanced) cursor_save_failed=\(cursorSaveFailures)")
     }
 
     /// §8.2 / Task 10：每轮末尾的一趟图标回填。
@@ -1446,8 +1512,61 @@ actor PhiSyncEngine {
         case unusable(reason: UnusableReason)
     }
 
+    /// R-M3-4a-37：逐页边界下的 marker 抑制是**轮级状态**，不是 `break`。
+    ///
+    /// `.resetToNil` 之后本轮**内存里的** marker 照常逐页推进（下一次请求带什么，R-M3-4a-76），
+    /// 只是不再持久化任何一页，轮末把盘上的 marker 写成 nil。两个来源：guard 2 的空表重放、
+    /// 设置实体 `.unusable`。
+    private enum MarkerSuppression { case none, resetToNil }
+
+    /// §2.8 的八个具名结局。每一个都对应引擎里一条**已经存在**的早退或失败路径，
+    /// 本里程碑只给它们起名字，不新增路径。`rawValue` 直接进 R12 日志行。
+    enum RoundOutcome: String {
+        case ok
+        case gated
+        case pageBudgetExhausted = "page_budget_exhausted"
+        case localReadFailed = "local_read_failed"
+        case unusableSettings = "unusable_settings"
+        case cursorSaveFailed = "cursor_save_failed"
+        case pullFailed = "pull_failed"
+        case notMyBirthday = "not_my_birthday"
+    }
+
+    /// 两个 debug 中止点（§12.2 Q-12）。调用点只说「哪一个」，于是 release 构建里既没有键名
+    /// 字符串也不需要 `#if`（计划裁定 8）。
+    private enum DebugAbortPoint { case afterApply, betweenKinds }
+
+    #if DEBUG || PHI_SYNC_DEBUG_SWITCHES
+    static let abortAfterApplyKey = "phi.sync.debug.abortAfterApply"
+    static let abortBetweenKindsKey = "phi.sync.debug.abortBetweenKinds"
+    #endif
+
+    /// 一次性：读到真值先清键再 `abort()`，否则重启后的第一轮立刻再自杀。
+    /// Release 构建里整个方法体为空（计划裁定 8），调用点因此不需要 `#if`。编译条件是
+    /// `#if DEBUG || PHI_SYNC_DEBUG_SWITCHES`：后者只由 Task 12 的验收构建配方经
+    /// `OTHER_SWIFT_FLAGS` 传入，本仓库的工程设置里没有它。
+    private func abortIfRequested(_ point: DebugAbortPoint) {
+        #if DEBUG || PHI_SYNC_DEBUG_SWITCHES
+        let key: String
+        switch point {
+        case .afterApply: key = Self.abortAfterApplyKey
+        case .betweenKinds: key = Self.abortBetweenKindsKey
+        }
+        let store = UserDefaults.standard
+        guard store.bool(forKey: key) else { return }
+        store.removeObject(forKey: key)
+        AppLogError("[phi-sync] deliberate abort requested by \(key)")
+        abort()
+        #endif
+    }
+
     /// Returns whether all pages were downloaded and processed. A page-budget stop is not
     /// success: callers must wait for a drained pull before publishing any entity kind.
+    ///
+    /// M3-4a B-2（spec §2.4）：**逐页边界**。每一页的次序是 路由 → 设置落地 → Space 落地 →
+    /// 归属 kind 落地 → （派生标志）→ marker；marker 是全页最后一次写，只越过已经完整落地的
+    /// 页。任何一次游标 / 表 / 映射 / marker 文件写失败（`cursorSaveFailures`）都让本页的 marker
+    /// 不推、本轮零发布，下一轮从上一个完整落盘的页重收——重收一页是幂等的（§2.7）。
     private func pull(retryOnBirthday: Bool, thenPush: Bool) async -> Bool {
         canPublishThisRound = false
         guard !isStopped else { return false }
@@ -1469,9 +1588,11 @@ actor PhiSyncEngine {
         //
         // The whole Space side of this round obeys one rule: **no copy of the table spans a
         // suspension point, and every flag is persisted the moment it is observed**. The
-        // shared marker is written page by page (`storedMarker = marker` below), so a flag
-        // derived from it that is only written on the success path is simply gone when a
-        // later page throws — with the marker left standing past whatever it walked over.
+        // shared marker is written page by page (`persistStoredMarker(marker)` is the last
+        // write of every page), so a flag derived from it has to be persisted page by page
+        // too — and BEFORE that page's marker (R-M3-4a-77): a flag written after the marker
+        // is simply gone when the marker write succeeds and the flag write does not, with the
+        // marker left standing past whatever it walked over.
         let spaceTableAtEntry = loadSpaceTable()
         let spaceLive = spaceSectionEnabled && spaceStore != nil && spaceAccess != nil
         if spaceLive, storedMarker == nil, !spaceTableAtEntry.drainInProgress {
@@ -1522,13 +1643,15 @@ actor PhiSyncEngine {
         // 观察并处理：它在那里丢 marker、把 `hasDrainedFullReplay` 置假，于是**下一轮**才是
         // 那次整类型重放，而这一轮的发布就地中止（CASE 6.26）。
         if spaceLive { await beginOwnedRound() }
-        var ownedBatches: [String: OwnedPullBatch] = [:]
-        var batch = SpacePullBatch()
         // A snapshot, used for the cursor keys it carries and never written back.
         let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
+        // ── 轮级状态，全部在页循环之外声明（RR-B11）──
+        //
         // A pull with no marker replays the whole type, so "the entity was not in the response"
         // is only evidence of absence when we started from scratch and drained every page.
+        // 读的是 guard 2 生效**之前**的 marker（计划裁定 1）：guard 2 排在下面，所以一次
+        // 「空表重放 + 账户里确实没有设置实体」的轮次不会多丢一次设置游标。
         let startedFromScratch = storedMarker == nil
         // What guard 2's first trigger compares against. `storedMarker`'s setter maps an empty
         // marker to *absent*, so "the marker did not move" is spelled "unchanged", never
@@ -1541,19 +1664,81 @@ actor PhiSyncEngine {
         // Space table entirely.
         let recordsGatedMarkerMoves = !spaceLive && spaceStore != nil
         var markerMoveRecorded = false
+        // R-M3-4a-38：设置实体的视图是**轮级**的——一条 drain 里它至多出现一次，而 `.absent`
+        // 的动作（清设置游标）问的是「整条 drain 一页都没带设置实体吗」，逐页求值会在最后一页
+        // 把刚建立的游标丢掉。`sawSettingsEntity` 就是那个轮级谓词。
         var view = RemoteView.absent
+        var sawSettingsEntity = false
+        var markerSuppression = MarkerSuppression.none
+        var maySettingsPublish = true
+        // R-M3-4a-76：内存里这个 marker 永远逐页推进，它回答的是「下一次请求带什么」，与
+        // 「要不要持久化」无关；抑制只作用在 `storedMarker` 上。
+        var marker = storedMarker
+        var pages = 0
+        var more = true
         var drained = false
+
+        // Guard 2, trigger 2 (空表重放) 是**轮级**判定，留在页循环之外（R-M3-4a-37 / 47）：它
+        // 描述的是「这台机器的 Space 表整份丢了」，与页无关；判据只读 `spaceTableAtEntry`。
+        // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`: an
+        // account whose Space entities all fail to decrypt keeps `cursors` empty and
+        // `hadRecords` true forever, and would drop the marker and replay on every round.
+        //
+        // **先清 marker、确认写成之后才烧闩**（R-M3-4a-89，计划裁定 3）：marker 在 `marker.json`、
+        // 闩在 plist，两份文件不可能原子写，所以次序必须是「可重来的那一步在前」。失败一律
+        // 收口成 `.cursorSaveFailed`：闩没烧、drain 标志没动、零页、零发布，下一轮 guard 2 再
+        // 触发一次。「旧 marker + 已烧闩」那一格由此不可达——闩的全仓唯一复位点是
+        // `resetForNewStoreBirthday()`，那一格一旦可达就是永久失效。
+        if spaceLive, spaceTableAtEntry.cursors.isEmpty, spaceTableAtEntry.hadRecords,
+           !spaceTableAtEntry.didReplayForEmptyTable {
+            // ① 先把盘上的 marker 清成 nil。写不成 ⇒ 什么都没发生，本轮到此为止：返回值就是
+            //    `canPublishThisRound`，它在函数入口已经复位成 `false` ⇒ 零页、零发布。
+            guard persistStoredMarker(nil) else {
+                roundOutcome = .cursorSaveFailed
+                return false
+            }
+            // ② marker 已确认落盘，这才烧闩 + 武装 drain。写不成 ⇒ 盘上是「marker 已清、闩未烧」，
+            //    R-M3-4a-83 的回滚让内存与盘一致 ⇒ 下一轮 guard 2 判据仍成立 ⇒ 再清一次 marker
+            //    （幂等，`persistMarkerState` 的 `updated == markerState` 短路成零写）⇒ 收敛。
+            guard mutateSpaceTable({ table in
+                table.didReplayForEmptyTable = true
+                table.hasDrainedFullReplay = false
+                table.drainInProgress = true
+            }) else {
+                roundOutcome = .cursorSaveFailed
+                return false
+            }
+            AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
+            // ③ 两次写都确认之后才动内存。
+            marker = nil                                    // 本轮从头拉
+            markerSuppression = .resetToNil                 // 此后任何一页都不再持久化 marker
+        }
+        // `hadRecords` 的维护跟着 guard 2 走到页循环之前（计划裁定 2），读的是 `spaceTableAtEntry`
+        // 那一刻的 `cursors`：留在每一页里的话，第 1 页落地的游标会让第 2 页当场置真，同一轮内
+        // 改变 guard 2 第二个触发条件的语义。本轮新建的游标要下一轮才置 `hadRecords`，这是无害
+        // 的：`hadRecords` 描述的是一张曾经有过内容、后来丢了的表。
+        if spaceLive, !spaceTableAtEntry.cursors.isEmpty, !spaceTableAtEntry.hadRecords {
+            mutateSpaceTable { $0.hadRecords = true }
+        }
+
         do {
-            var marker = storedMarker
-            var page = 0
-            var more = true
-            while more, page < Self.maxPullPages {
+            pageLoop: while more, pages < Self.maxPullPages {
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
                 guard !isStopped else { return false }
+                // 逐页落盘（§2.4 说明 1）：birthday 变了 ⇒ marker 作废，两者住同一个文件。写失败
+                // 由 `persistMarkerState` 计数，本页末统一收口——本页照常落地，只是不推 marker。
                 storedBirthday = response.storeBirthday
-                marker = response.newMarker
-                storedMarker = marker
+                // 先不落盘（R-M3-4a-18）：它是全页的最后一次写。
+                let pageMarker = response.newMarker
+                more = response.changesRemaining
+                pages += 1
+                roundPages += 1
 
+                // 本页的两个收集篮。逐页落地之后它们不再跨页：一页落完就没有「收到了但还没
+                // 放下去」的实体，所以中途抛错（只可能发生在 `getUpdates`）不再需要停放。
+                var batch = SpacePullBatch()
+                var ownedBatches: [String: OwnedPullBatch] = [:]
+                var pageCarriedSettingsEntity = false
                 for entity in response.entities {
                     guard entity.clientTagHash == PhiSyncEntity.settingsClientTagHash else {
                         // Not the settings entity. With two kinds live on data type 2000 the
@@ -1594,6 +1779,10 @@ actor PhiSyncEngine {
                     }
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
                     storedVersion = entity.version
+                    // 设置那一条只更新**轮级** `view`，不在页内求值（R-M3-4a-38）；四个子支都算
+                    // 「本页带了设置实体」。
+                    sawSettingsEntity = true
+                    pageCarriedSettingsEntity = true
                     guard !entity.deleted else {
                         // A tombstone from another device: nothing to apply, and nothing to
                         // publish either — re-committing this device's snapshot on top of it
@@ -1618,107 +1807,176 @@ actor PhiSyncEngine {
                         view = .unusable(reason: .undecryptable)
                     }
                 }
-                more = response.changesRemaining
-                page += 1
-                if recordsGatedMarkerMoves, !markerMoveRecorded, storedMarker != markerAtEntry {
-                    // A page that advanced the shared marker while the gate was shut.
-                    // Recorded without inspecting its contents on purpose: deciding "did this
-                    // page hold a Space?" needs a decrypt, and an entity this build cannot
-                    // decrypt is exactly one of the things that gets missed.
+
+                // ── 这一页的落地段。次序与整轮粒度时的轮末段逐字相同，只是作用域变成一页 ──
+                switch view {
+                case .usable(let remote) where pageCarriedSettingsEntity:
+                    tombstoneRounds = 0
+                    // Wholesale only until this device has settings history of its own — which
+                    // is `hasAdopted`, not "do we know which row they live in": a cursor
+                    // dropped by the tombstone heal or the full-replay branch must not cost
+                    // this device its local timestamps. See `apply` and `hasAdopted`.
+                    apply(remote, adopt: !hasAdopted)
+                case .unusable(let reason) where pageCarriedSettingsEntity:
+                    // The server holds bytes under our client tag that this build cannot read.
+                    // Not applying them is only half the job: the trailing push must not run
+                    // either, because it would commit this device's snapshot against the id
+                    // and version we just harvested from that very entity and replace it for
+                    // every other device — including the keys of a newer client that this
+                    // build does not understand. Rewinding the marker makes the next round see
+                    // the entity again, so a re-minted domain key or a newer build heals this
+                    // instead of it being terminal.
                     //
-                    // Written here rather than at the round's tail because the marker advance
-                    // is already durable: if a later page throws, the record of the move must
-                    // not go with it, or the next gate-open takes neither disjunct in
-                    // `applySpaceGate`, never replays, and whatever this page walked past is
-                    // lost on this device until some peer touches it again.
-                    markerMoveRecorded = true
-                    mutateSpaceTable { $0.markerMovedWhileGateShut = true }
+                    // R-M3-4a-37：抑制是轮级状态，取代原地的 `storedMarker = nil`。drain 照常走完
+                    // 剩下的页（内存 marker 继续推进，R-M3-4a-76），轮末才把盘上的 marker 写成
+                    // nil——`break` 会让版本高于这一条的一切实体永久收不到。
+                    markerSuppression = .resetToNil
+                    // The baseline goes with the marker, and that is what makes the refusal
+                    // durable rather than a one-round suppression. `push`'s guard reads "an
+                    // entity id with no baseline" as "the server holds bytes this device has not
+                    // read"; a device that had synced before would otherwise keep the baseline
+                    // it decrypted at an older version, and the next debounced local change —
+                    // or the conflict retry, which reaches the scoped publisher and never sees
+                    // `maySettingsPublish` — would commit over the unreadable entity using the
+                    // id and version harvested from it right here. `storedEntityId` survives
+                    // (the server always sends a non-empty `id_string`:
+                    // internal/chromiumsync/getupdates.go toSyncEntity, from the UUID commit.go
+                    // assigns on create), so no `version = 0` create can slip past the
+                    // unreadable-baseline guard either. `apply` re-establishes the baseline as
+                    // soon as a pull can read the entity again.
+                    storedLastEntity = nil
+                    maySettingsPublish = false
+                    noteUnusable(reason)
+                default:
+                    break                       // `.absent` 的动作是**轮级**的，见循环之后
+                }
+
+                if spaceLive {
+                    flushSpaceObservations(batch)
+                    flushOwnedObservations(ownedBatches)
+                    // The apply path is the one Space write that cannot be expressed as a
+                    // `mutateSpaceTable` delta: `applySpaces` hops to the main actor on
+                    // every landing, so its table copy necessarily spans suspension
+                    // points. One load / apply / write per page is safe *here* and only
+                    // here — rounds are serialized (`serialized(_:)` chains them; the gate
+                    // edge and BOTH main-thread Space intents are themselves rounds), and
+                    // nothing else touches the table between this load and this write.
+                    //
+                    // It MUST sit after `flushSpaceObservations(batch)`: `applySpaces`
+                    // clears `unreadableTagHashes` for every uuid it lands, and loading
+                    // after the flush is what makes "the refusal lifts by itself" true
+                    // instead of racing this page's own record of the same hash. (Guard 2
+                    // no longer needs an ordering here: it is a round-level check that
+                    // reads `spaceTableAtEntry` before the first page, §2.4 说明 6.)
+                    var spaceTable = loadSpaceTable()
+                    spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
+                    await applySpaces(batch, table: &spaceTable)
+                    await applySpaceTombstones(batch, table: &spaceTable)
+                    writeSpaceTable(spaceTable)
+
+                    // §5.2 的轮次顺序：设置 → Space → 归属 kind（注册清单的次序）。放在同一页
+                    // 的后段，账户里本机没有的 Space 与它下面的树因此**通常在一页内**全部落地。
+                    //
+                    // R-M3-4a-39：身份翻译表**每页失效一次**。这一页刚落地的 Space 写下了新映射，
+                    // 归属于它的书签 / pin 在同一页里就要解析得出，否则 `classify` 用的是上一页
+                    // 那一刻的表 ⇒ 停放一轮。
+                    ownedMapsThisRound = nil
+                    let ownedMaps = await ownedRoundMaps()
+                    for registration in ownedKinds {
+                        await retryParkedOwnedClaims(registration, maps: ownedMaps)
+                    }
+                    for (index, registration) in ownedKinds.enumerated() {
+                        await applyOwnedKind(registration,
+                                             batch: ownedBatches[registration.label] ?? OwnedPullBatch(),
+                                             maps: ownedMaps)
+                        // §12.2 Q-12：第 1 条 kind 落完、第 2 条还没跑 —— 「一页跨 kind 半落地」
+                        // 的那个窗口。Release 里是空调用。
+                        if index == 0 { abortIfRequested(.betweenKinds) }
+                    }
+                }
+                // §12.2 Q-12：落地全部完成、marker 还没写。
+                abortIfRequested(.afterApply)
+
+                // ── 这一页的 marker。全页最后一次写（§2.5）──
+                // 本页任何一次游标 / 表 / 映射 / marker 文件写失败 ⇒ 本页不推、本轮不发、前面各页
+                // 保留（它们各自的 marker 早已落盘）。
+                if cursorSaveFailures > 0 {
+                    roundOutcome = .cursorSaveFailed
+                    break pageLoop
+                }
+                // R-M3-4a-76：**内存里这个 marker 永远推进**（下一次请求带什么），与「要不要
+                // 持久化」无关；抑制只作用在 storedMarker 上。
+                marker = pageMarker
+                if markerSuppression == .none {
+                    if recordsGatedMarkerMoves, !markerMoveRecorded,
+                       Self.normalizedMarker(marker) != markerAtEntry {
+                        // A page that advanced the shared marker while the gate was shut.
+                        // Recorded without inspecting its contents on purpose: deciding "did
+                        // this page hold a Space?" needs a decrypt, and an entity this build
+                        // cannot decrypt is exactly one of the things that gets missed.
+                        //
+                        // R-M3-4a-77：门关期间的重放标志**先落盘**，那次写确认之后才轮到
+                        // `storedMarker`。反过来（marker 先落盘、标志后写）在「marker 写成、标志
+                        // 写失败」下留下「marker 已推进、标志丢失」⇒ 下次开门两个析取项都不成立
+                        // ⇒ 门关期间越过的页永久丢失。假阴不可逆，假阳只是一次重收。
+                        guard mutateSpaceTable({ $0.markerMovedWhileGateShut = true }) else {
+                            roundOutcome = .cursorSaveFailed
+                            break pageLoop
+                        }
+                        markerMoveRecorded = true       // 只在那次写确认之后才置
+                    }
+                    // R-M3-4a-18：写的是 `marker.json`。
+                    guard persistStoredMarker(marker) else {
+                        roundOutcome = .cursorSaveFailed
+                        break pageLoop
+                    }
+                    if storedMarker != markerAtEntry { roundMarkerAdvanced = true }
                 }
             }
             drained = !more
-            if spaceLive, drained {
-                mutateSpaceTable { table in
+            if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }
+            // 轮末的 drain 收尾。两条新前置（RR2-11）：抑制中的一轮没有把任何一页的 marker 落盘，
+            // 它不能宣称 drain 完成；游标落盘失败的一轮同理。
+            if spaceLive, drained, markerSuppression == .none, roundOutcome != .cursorSaveFailed {
+                let stamped = mutateSpaceTable { table in
                     guard table.drainInProgress else { return }
                     table.drainInProgress = false
                     table.hasDrainedFullReplay = true
                     table.lastDrainedBirthday = storedBirthday
                 }
+                // 派生状态那次写失败也要被捕获（CASE B2-4b）：写口已经计数，这里只收口结局。
+                if !stamped { roundOutcome = .cursorSaveFailed }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
             // Nothing to flush: the store those pages came from is gone, and
             // `resetForNewStoreBirthday()` clears the Space table's server-side state and its
             // unreadable-tag record wholesale.
+            roundOutcome = .notMyBirthday
             resetForNewStoreBirthday()
             guard retryOnBirthday else { return false }
             return await pull(retryOnBirthday: false, thenPush: thenPush)
         } catch {
+            roundOutcome = .pullFailed
             AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
-            // The pages that did land advanced the shared marker for good, so what this round
-            // learned about them has to outlive the failure.
-            if spaceLive {
-                flushSpaceObservations(batch)
-                flushOwnedObservations(ownedBatches)
-                parkUndeliveredOwnedEntities(ownedBatches, reason: "pull-interrupted")
-                // ...and what it did NOT persist has to invalidate the drain. A round that
-                // threw mid-way consumed its pages — the marker moved past them — while
-                // everything the routing decoded from them (`batch.decoded` /
-                // `batch.tombstones`, the apply path's input) died with the throw. That is a
-                // GAP in the replay, not progress through it. Left alone, a later round would
-                // resume from the advanced marker, reach `drained == true` and stamp
-                // `hasDrainedFullReplay = true` over the hole; from that point neither
-                // disjunct in `applySpaceGate` can ever re-arm the replay
-                // (`markerMovedWhileGateShut` is false because the gate never shut, and
-                // `hasDrainedFullReplay` is true), so the entities this round dropped would be
-                // missing on this device until some peer touched them again — and the guard
-                // that reads `hasDrainedFullReplay` before publishing would be answering for a
-                // Space set this device never fully received.
-                //
-                // Dropping the marker restarts the replay from scratch instead. It is the
-                // self-healing direction: `drainInProgress` deliberately stays true, so no
-                // round in between may declare the drain complete, and the only cost of a
-                // false positive is re-reading pages this device has already seen.
-                if loadSpaceTable().drainInProgress {
-                    AppLogWarn("[phi-sync] a drain of data type \(PhiSyncEntity.dataTypeID) was interrupted; replaying it rather than resuming past the gap")
-                    storedMarker = nil
-                }
+            // 逐页边界之后这里**尊重抑制状态、别的什么都不写**（R-M3-4a-47）：抛错只可能发生在
+            // `getUpdates`，那时前面每一页都已经完整落地并推过自己的 marker，而抛错的这一页
+            // 根本没到——没有什么需要停放或冲刷。marker 只越过已经完整落地的页；下面这一句留给
+            // `drainInProgress` 仍然武装着、而本轮没能把 drain 走完的那些情形（计划裁定 10）：
+            // 一次**从头开始**的 drain 被打断时，一个从推进过的 marker 续拉的后续轮次会到达
+            // `drained == true` 并把 `hasDrainedFullReplay = true` 盖在洞上——从那一刻起
+            // `applySpaceGate` 的两个析取项都再也不能重新武装重放（门没关过、drain 已「完成」），
+            // 而归属 kind 的发布闸读的正是那个标志。丢掉 marker 让重放从头再来：`drainInProgress`
+            // 刻意保持为真，所以中间没有任何一轮可以宣称 drain 完成，假阳的代价只是重读本机
+            // 已经见过的页。
+            if spaceLive, loadSpaceTable().drainInProgress {
+                AppLogWarn("[phi-sync] a drain of data type \(PhiSyncEntity.dataTypeID) was interrupted; replaying it rather than resuming past the gap")
+                storedMarker = nil
             }
             return false
         }
 
-        var maySettingsPublish = true
-        switch view {
-        case .usable(let remote):
-            tombstoneRounds = 0
-            // Wholesale only until this device has settings history of its own — which is
-            // `hasAdopted`, not "do we know which row they live in": a cursor dropped by the
-            // tombstone heal or the full-replay branch below must not cost this device its
-            // local timestamps. See `apply` and `hasAdopted`.
-            apply(remote, adopt: !hasAdopted)
-        case .unusable(let reason):
-            // The server holds bytes under our client tag that this build cannot read. Not
-            // applying them is only half the job: the trailing push must not run either,
-            // because it would commit this device's snapshot against the id and version we
-            // just harvested from that very entity and replace it for every other device —
-            // including the keys of a newer client that this build does not understand.
-            // Rewinding the marker makes the next round see the entity again, so a re-minted
-            // domain key or a newer build heals this instead of it being terminal.
-            storedMarker = nil
-            // The baseline goes with the marker, and that is what makes the refusal durable
-            // rather than a one-round suppression. `push`'s guard reads "an entity id with no
-            // baseline" as "the server holds bytes this device has not read"; a device that
-            // had synced before would otherwise keep the baseline it decrypted at an older
-            // version, and the next debounced local change — or the conflict retry, which
-            // reaches the scoped publisher and never sees `maySettingsPublish` —
-            // would commit over the unreadable entity using the id and version harvested from
-            // it right here. `storedEntityId` survives (the server always sends a non-empty
-            // `id_string`: internal/chromiumsync/getupdates.go toSyncEntity, from the UUID
-            // commit.go assigns on create), so no `version = 0` create can slip past the
-            // unreadable-baseline guard either. `apply` re-establishes the
-            // baseline as soon as a pull can read the entity again.
-            storedLastEntity = nil
-            maySettingsPublish = false
-            noteUnusable(reason)
-        case .absent:
+        // `.absent` 的轮级动作（R-M3-4a-38）：整条 drain 一页都没带设置实体。
+        if !sawSettingsEntity, roundOutcome != .cursorSaveFailed {
             tombstoneRounds = 0
             if drained, startedFromScratch, storedEntityId != nil {
                 // A full replay carried no settings entity: the row this device points at is
@@ -1729,67 +1987,13 @@ actor PhiSyncEngine {
                 clearEntityCursor()
             }
         }
-
-        if spaceLive {
-            flushSpaceObservations(batch)
-            flushOwnedObservations(ownedBatches)
-            mutateSpaceTable { table in
-                // Guard 2, trigger 2: the account plist was lost or restored from a backup.
-                // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`:
-                // an account whose Space entities all fail to decrypt keeps `cursors` empty
-                // and `hadRecords` true forever, and would drop the marker and replay on every
-                // single round.
-                if table.cursors.isEmpty, table.hadRecords, !table.didReplayForEmptyTable {
-                    AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
-                    table.didReplayForEmptyTable = true
-                    storedMarker = nil
-                    table.hasDrainedFullReplay = false
-                    table.drainInProgress = true
-                }
-                if !table.cursors.isEmpty { table.hadRecords = true }
-            }
-
-            // The apply path is the one Space write that cannot be expressed as a
-            // `mutateSpaceTable` delta: `applySpaces` hops to the main actor on
-            // every landing, so its table copy necessarily spans suspension
-            // points. One load / apply / write is safe *here* and only here —
-            // rounds are serialized (`serialized(_:)` chains them; the gate edge
-            // and BOTH main-thread Space intents are themselves rounds), and
-            // this is the last Space work of the round, so nothing can touch the
-            // table between the load and the write.
-            //
-            // It MUST sit after `flushSpaceObservations(batch)` and after the
-            // block above, and both orderings are load-bearing:
-            //  1. `applySpaces` clears `unreadableTagHashes` for every uuid it
-            //     lands. Loading after the flush is what makes "the refusal lifts
-            //     by itself" true instead of racing this round's own record of
-            //     the same hash.
-            //  2. `applySpaces` writes cursors, so running it before guard 2
-            //     would make `table.cursors.isEmpty` false and silently disable
-            //     the one-shot empty-table replay. The cost is that cursors
-            //     created this round only set `hadRecords` on the NEXT round,
-            //     which is harmless: `hadRecords` exists to describe a table that
-            //     was populated and then lost.
-            var spaceTable = loadSpaceTable()
-            spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
-            await applySpaces(batch, table: &spaceTable)
-            await applySpaceTombstones(batch, table: &spaceTable)
-            writeSpaceTable(spaceTable)
-
-            // §5.2 的轮次顺序：设置 → Space → 归属 kind（注册清单的次序）。放在同一轮的
-            // 后段，账户里本机没有的 Space 与它下面的树因此**通常在一轮内**全部落地。
-            let ownedMaps = await ownedRoundMaps()
-            for registration in ownedKinds {
-                await retryParkedOwnedClaims(registration, maps: ownedMaps)
-            }
-            for registration in ownedKinds {
-                await applyOwnedKind(registration,
-                                     batch: ownedBatches[registration.label] ?? OwnedPullBatch(),
-                                     maps: ownedMaps)
-            }
+        if markerSuppression == .resetToNil {
+            // 幂等：guard 2 那一支已经写过一次；`.unusable` 那一支在这里才第一次写。
+            storedMarker = nil
+            if roundOutcome == .ok, case .unusable = view { roundOutcome = .unusableSettings }
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
-        // persisted by the page that observed it.
+        // persisted by the page that observed it, before that page's marker (R-M3-4a-77).
 
         // Publish whatever the merge left the server short of (a locally newer value, or a
         // registered key the remote entity did not carry). `push` decides by comparison, so a
@@ -1802,7 +2006,13 @@ actor PhiSyncEngine {
         // §5.2 改动三 forbids. `pushSpaces` carries every Space-side guard of its own (the gate,
         // the drain, guard 3), so calling it unconditionally is safe — on a settings-only
         // engine (`spaceStore == nil`) it returns on its first line.
-        canPublishThisRound = drained && !isStopped
+        //
+        // 第三项是 B-2 的本地落盘闸（R-M3-4a-88 / 92）：三项各管一件互不相干的事，必须是合取
+        // ——`drained` 回答「远端这一轮拿全了吗」，`!isStopped` 回答「这台机器还在这个账户上吗」，
+        // `cursorSaveFailures == 0` 回答「本地这一轮落盘全成了吗」。落点必须是这一次赋值而不是
+        // 下面那个 `if`：`pull` 的返回值就是这个布尔，`push(retryOnConflict:)` 与三条冲突重试
+        // 都写成 `guard await pull(…) else { return }` 然后直接发布，五个发布入口查的也只是它。
+        canPublishThisRound = drained && !isStopped && cursorSaveFailures == 0
         if thenPush, canPublishThisRound {
             if maySettingsPublish {
                 await pushSettings(retryOnConflict: false)
@@ -2151,6 +2361,10 @@ actor PhiSyncEngine {
                     try await spaceAccess.mapSpace(landed, toSyncUuid: item.uuid)
                 } catch {
                     AppLogWarn("[phi-sync] could not map a landed space tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                    // 第四个 `cursorSaveFailed` 置位点（计划裁定 5 / §13.2）：映射不走
+                    // `writeSpaceTable` 那条链，它的落盘失败面是 Task 2a 的 `persistFailed`
+                    // （抛出后 store 已回滚）。其余映射错误是裁决，不是落盘失败，不计。
+                    if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }
                     if item.fromServer {
                         cursor.pendingApply = try? item.entity.serializedData()
                         table.cursors[item.uuid] = cursor
@@ -2878,7 +3092,15 @@ actor PhiSyncEngine {
     /// `armsReplayOnLoss` 只在**发布段**那一次为真（CASE 6.26）：报损做的第一件事是丢
     /// marker、重新武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ①
     /// 读的正是 `hasDrainedFullReplay`——所以从报损那一刻起，该 kind 在重放收尾之前一条都
-    /// 发不出去，不需要第二个 `publishBlocked` 标志（M2 裁定）。
+    /// 发不出去。不需要第二个 `publishBlocked` 标志（M2 裁定）：两步之一写不成时本轮已经
+    /// `cursorSaveFailed`，发布闸（`canPublishThisRound`）在这一轮关掉了整个发布段，
+    /// `publishOwnedKind` 根本走不到这里（R-M3-4a-103）。
+    ///
+    /// **报损支是两步确认，次序是 marker 先、闩后**（R-M3-4a-103，计划裁定 3b）：与 guard 2 同一个
+    /// 缺陷的第二处现场。反过来（闩先写、marker 后写）在 marker 写失败时留下「旧 marker +
+    /// 已置位的 per-kind 闩 + 已武装的 drain」：下一轮从旧 marker 增量拉、一页空页就让 drain
+    /// 「完成」、闩此后直接 `return (table, true)` 再也不报损、而闩的复位判据（一次成功的 load
+    /// 交回带已发布游标的表）永远不成立——那条 kind 的整类型重放**永久丢失**。
     private func loadOwnedTable(_ registration: OwnedKindRegistration,
                                 armsReplayOnLoss: Bool)
         -> (table: PhiOwnedItemTable, lost: Bool) {
@@ -2906,14 +3128,31 @@ actor PhiSyncEngine {
         guard !spaceTable[keyPath: registration.flags.replayedForEmptyTable] else {
             return (table, true)
         }
-        AppLogWarn("[phi-sync] owned-item cursor table lost kind=\(registration.label); "
-                   + "replaying data type \(PhiSyncEntity.dataTypeID) once")
-        mutateSpaceTable { updated in
+        // ① 先把盘上的 marker 清成 nil。写不成 ⇒ 闩不置位、三个 drain 标志一个不动，本轮收口成
+        //    `.cursorSaveFailed`（发布闸 R-M3-4a-88 / 92 自动关掉这一轮的发布）。盘上与进入
+        //    这一轮之前逐字节相同 ⇒ 下一轮报损检查**照样触发**。
+        //    写的是**引擎属性**而不是 `pull` 的局部量：这个函数在 `pull` 之外也被调（轮首那次
+        //    `armsReplayOnLoss: false`，那条路径不写任何东西）。`cursorSaveFailures` 由写口自己加。
+        guard persistStoredMarker(nil) else {
+            roundOutcome = .cursorSaveFailed
+            return (table, false)
+        }
+        // ② marker 已确认落盘，这才置位 per-kind 闩 + 武装 drain。写不成 ⇒ 盘上是「marker 已清、
+        //    闩未置位」，R-M3-4a-83 的回滚让内存镜像跟着退回 ⇒ 下一轮报损检查再触发一次，第 ① 步
+        //    幂等（`persistMarkerState` 的 `updated == markerState` 短路成零写、不计
+        //    `cursorSaveFailures`）⇒ 收敛。
+        guard mutateSpaceTable({ updated in
             updated[keyPath: registration.flags.replayedForEmptyTable] = true
             updated.hasDrainedFullReplay = false
             updated.drainInProgress = true
+        }) else {
+            roundOutcome = .cursorSaveFailed
+            return (table, false)
         }
-        storedMarker = nil
+        // 两个失败支都回 `(table, false)`：`lost == true` 的含义是「这一次真的换来了一次重放」，
+        // 而那两支什么都没换来——所以这句日志也只在两步都确认之后才说。
+        AppLogWarn("[phi-sync] owned-item cursor table lost kind=\(registration.label); "
+                   + "replaying data type \(PhiSyncEntity.dataTypeID) once")
         return (table, true)
     }
 
@@ -2934,7 +3173,13 @@ actor PhiSyncEngine {
         // 早退，不是失败（R-M3-4a-16）。
         guard !isStopped else { return true }
         ownedTables[registration.label] = table
-        guard registration.store.save(table) else { return false }
+        // §2.5 第 4 条的置位点之一：判据「某个 store 的 `save` 被调用过且回报了失败」属于写口。
+        // （内存镜像 `ownedTables` 在 guard 之前赋值，所以一个失败轮次里镜像领先文件；B-2 让
+        // 这一轮跳过发布、下一轮重新 load，所以这一步的先后不构成问题。）
+        guard registration.store.save(table) else {
+            cursorSaveFailures += 1
+            return false
+        }
         let hasPublished = table.cursors.values.contains { !$0.entityId.isEmpty }
         guard hasPublished else { return true }
         // 两个 per-kind 标志排在 `save` **之后**（§2.5 第 7 条）：`…HadRecords` 的含义是
@@ -3021,6 +3266,10 @@ actor PhiSyncEngine {
         }
     }
 
+    /// （B-2 之后 `pull` 的 catch 不再调用这里：逐页落地让「收到了但还没放下去」的实体不再跨
+    /// 页存在，抛错只可能发生在 `getUpdates`，那一页根本没到。剩下的唯一调用点是下面说的
+    /// `applyOwnedKind` 的 `ownedReadFailed` 提前返回。下面这段是它原本的成因，留作理由。）
+    ///
     /// 一次**中途抛错**的 pull 已经把它读过的那些页永久消费掉了：共享 marker 一页一页落盘
     /// （`storedMarker = marker` 就在页循环里），而路由从那些页上解出来的实体活在这一轮的
     /// 局部变量 `ownedBatches` 里，随抛错一起消失。对归属 kind 来说这不是「下一轮再拉一次」
@@ -4162,7 +4411,12 @@ actor PhiSyncEngine {
     private func writeSpaceTable(_ table: PhiSpaceSyncTable) -> Bool {
         // 两条早退，都不是失败（R-M3-4a-16）。
         guard !isStopped, let spaceStore else { return true }
-        guard spaceStore.save(table) else { return false }
+        // §2.5 第 4 条的置位点之一（计划裁定 4）：派生状态的每一次写（`markerMovedWhileGateShut`、
+        // 三个 drain 标志、guard 2 的闩）都经 `mutateSpaceTable` ⇒ 这里 ⇒ 自动被覆盖。
+        guard spaceStore.save(table) else {
+            cursorSaveFailures += 1
+            return false
+        }
         Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
         return true
     }
@@ -4171,10 +4425,10 @@ actor PhiSyncEngine {
     /// change it. Two reasons, both of which a load-once/write-once round gets wrong:
     ///
     /// 1. **Durability.** A pull persists the shared marker page by page. Anything derived
-    ///    from that marker therefore has to be persisted page by page too, or an error on
-    ///    page 2 throws away the record of what page 1 already walked past — while the marker
-    ///    itself stays advanced. Small deltas written where they are observed, never a whole
-    ///    table written at the end.
+    ///    from that marker therefore has to be persisted page by page too — and before that
+    ///    page's marker (R-M3-4a-77) — or an error on page 2 throws away the record of what
+    ///    page 1 already walked past, while the marker itself stays advanced. Small deltas
+    ///    written where they are observed, never a whole table written at the end.
     /// 2. **Freshness.** `body` sees the table as it is *now*, not as it was before the last
     ///    suspension point, so a round can only overwrite the fields it actually touches.
     ///    The gate edge runs as its own round (`setSpaceSyncEnabled`) so it cannot interleave
@@ -4188,12 +4442,17 @@ actor PhiSyncEngine {
     /// 一次失败的写把 `AccountUserDefaults.storage` 还原成写之前那一份，于是内存等于磁盘，
     /// 下一轮的 `loadSpaceTable()` 读到的是**旧表**，同一个改动照样被判成「变了」而重写。
     /// 少了回滚，第二轮就会在这里当场早退，`save` 根本不会被调用。
-    private func mutateSpaceTable(_ body: (inout PhiSpaceSyncTable) -> Void) {
+    ///
+    /// **返回值 = 这次改动已落盘**（R-M3-4a-77 的「确认」靠它）：guard 2 与 per-kind 报损重放的
+    /// 第 ② 步、门关记账、轮末 drain 收尾都要看它。「没变化」回 `true`——R-M3-4a-83 的回滚让
+    /// 「没变化」真的等于「盘上就是这样」，所以它不是失败、也不计 `cursorSaveFailures`。
+    @discardableResult
+    private func mutateSpaceTable(_ body: (inout PhiSpaceSyncTable) -> Void) -> Bool {
         var table = loadSpaceTable()
         let before = table
         body(&table)
-        guard table != before else { return }
-        writeSpaceTable(table)
+        guard table != before else { return true }
+        return writeSpaceTable(table)
     }
 
     /// `mutateSpaceTable`'s sibling for the §5.3 intents delivered by
@@ -4376,15 +4635,36 @@ actor PhiSyncEngine {
     ///
     /// 失败回滚是 R-M3-4a-83 的同一条理由搬到 marker 上：不回滚 ⇒ 镜像领先磁盘 ⇒ 第 N+1 轮
     /// 重投同一页时 `updated != markerState` 不成立 ⇒ 连 `save` 都不调 ⇒ marker「推进」了而
-    /// 盘上没有。返回值此刻被两个 setter 丢掉；Task 2b 在这里接 `cursorSaveFailed`。
+    /// 盘上没有。两个 setter 仍然丢掉返回值；`cursorSaveFailed` 的第三个置位点就在这里的
+    /// `false` 支（计划裁定 4）：marker 或 birthday 任一写失败都算这一轮落盘失败，页循环在页末
+    /// 读 `cursorSaveFailures` 收口。要看 Bool 的调用点走 `persistStoredMarker(_:)`。
     @discardableResult
     private func persistMarkerState(_ updated: PhiSyncMarkerFile) -> Bool {
         guard !isStopped else { return true }              // §2.5 第 4 条：早退不算失败
         guard updated != markerState else { return true }  // 没变化就不调 save，同上
         let previous = markerState
         markerState = updated
-        guard markerStore.save(updated) else { markerState = previous; return false }
+        guard markerStore.save(updated) else {
+            markerState = previous
+            cursorSaveFailures += 1
+            return false
+        }
         return true
+    }
+
+    /// `storedMarker` setter 的带回传版本：页末的 marker 写、guard 2 与 per-kind 报损重放的
+    /// 第 ① 步都要看它的 Bool。归一化与 setter 相同（空 marker 存成 nil）。
+    @discardableResult
+    private func persistStoredMarker(_ newValue: Data?) -> Bool {
+        var updated = markerState
+        updated.marker = Self.normalizedMarker(newValue)
+        return persistMarkerState(updated)
+    }
+
+    /// An empty marker is stored as `nil`: on the wire "no marker" and "empty marker" are the
+    /// same request, and `nil` is the value every full-replay predicate here compares against.
+    private static func normalizedMarker(_ marker: Data?) -> Data? {
+        (marker?.isEmpty ?? true) ? nil : marker
     }
 
     /// The empty string is "not known yet" on the wire. It lives in `marker.json` beside the
@@ -4400,15 +4680,11 @@ actor PhiSyncEngine {
         }
     }
 
-    /// An empty marker is stored as `nil`: on the wire "no marker" and "empty marker" are the
-    /// same request, and `nil` is the value every full-replay predicate here compares against.
+    /// See `normalizedMarker`: an empty marker is stored as `nil`. The setter discards the
+    /// write's Bool; call sites that need it go through `persistStoredMarker(_:)`.
     private var storedMarker: Data? {
         get { markerState.marker }
-        set {
-            var updated = markerState
-            updated.marker = (newValue?.isEmpty ?? true) ? nil : newValue
-            persistMarkerState(updated)
-        }
+        set { persistStoredMarker(newValue) }
     }
 
     /// Consecutive pulls that found the account's settings row tombstoned. Zero is stored as
@@ -6152,5 +6428,17 @@ extension PhiSyncEngine {
     /// value 会同时改坏向导里的两处 `case .truncated:` 与两个测试文件里既有的断言，而
     /// 它们要表达的东西一个字都没变。
     var lastPreviewStatsForTesting: (pages: Int, entities: Int) { lastPreviewStats }
+
+    /// B-2 结局行的四个只读接缝（Task 2b，§2.8）。读的是 `run(_:)` 发射结局行那一刻的**快照**
+    /// （`LoggedRound`），不是活的轮级计数：一次 `page_budget_exhausted` 会把跟进轮排进队列，
+    /// 而跟进轮的 `run(_:)` 一进门就把活计数清零——活值在断言那一刻读到的可能已经是下一轮的。
+    /// `nil` / 0 / false 只表示「这个引擎还没跑完过一轮」。只读，不是新的驱动入口。
+    var lastRoundOutcomeForTesting: RoundOutcome? { lastLoggedRound?.outcome }
+    /// 最近一轮取回的页数（同一轮内多次 pull 累加）。只读。
+    var lastRoundPagesForTesting: Int { lastLoggedRound?.pages ?? 0 }
+    /// 最近一轮**盘上**的 marker 是否动过（计划裁定 7）。只读。
+    var lastRoundMarkerAdvancedForTesting: Bool { lastLoggedRound?.markerAdvanced ?? false }
+    /// 最近一轮四个写口回报失败的次数。只读。
+    var lastRoundCursorSaveFailedCountForTesting: Int { lastLoggedRound?.cursorSaveFailures ?? 0 }
 }
 #endif

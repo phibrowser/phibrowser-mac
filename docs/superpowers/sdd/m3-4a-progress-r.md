@@ -44,3 +44,74 @@
   right below the field-number table this task just updated and contradict it. Reworded to "M3-4a
   took 5 for URL rules; 6 is spoken for by M3-4b's profiles" -- same sentence, updated tense, no
   other content changed.
+
+## Task 4
+
+Controller ruling (not a deviation): the brief names the ledger as
+`docs/superpowers/sdd/m3-4a-progress.md`; in lane R the file is this one
+(`m3-4a-progress-r.md`).
+
+- **计划裁定一 (CASE numbering C-10 / C-11):** spec §12.1's compatibility block stops at
+  C-9; the `deletedDate` default-read filter (R-M3-4a-51) and the `syncId` backfill's
+  distinctness / lowercase / idempotence (R-M3-4a-23) had prose only, no CASE number. The
+  plan numbered them C-10 / C-11; both live in the new
+  `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` next to C-1 / C-2 (Task 5
+  appends C-6 ~ C-9 to the same file). Task 12 folds this into spec §15.
+
+- **计划裁定二 (`Compatibility/README.md` V11 line):** that README has no version-history
+  section (Background / Design / Opening Flow / Development Rules only), so no new section or
+  table was opened. One English sentence appended at the end of the file, wording set by the
+  plan: "The current store format is 11 (`TabDataModelSchemaV11`), which adds the six
+  `SpaceURLRule` account-sync columns and the two `ProfileModel` columns."
+
+- **计划裁定三 (derived version expressions in `LocalStoreCompatibilityTests`):** the two
+  assertions on the shipping configuration (`:393` / `:394`) keep the literals `11` /
+  `1...11` — they are the anchor of the whole chain. The "too new" group
+  (`testShippingReadableStoreFormatVersionBounds`) and the "older build" group
+  (`testStoreFormatElevenIsPreservedWhenOpenedByAnAppThatOnlyReadsTen`) now derive from
+  `LocalStore.compatibilityConfiguration.currentStoreFormatVersion` (`+ 1` → `tooNewVersion`,
+  `- 1` → `olderBuildVersion`). After the sweep the only remaining `\b10\b` literals in that
+  file are the backup-version group (`:353` / `:368` / `:380` / `:388`), which name the V10
+  store being upgraded and are correct as literals.
+
+- **Two further rulings the brief carried, applied as written:** (a) C-1 / C-2 go in the new
+  file, not in `LocalStoreCompatibilityTests` (that file runs on text placeholder files and
+  two throwaway schemas; it never reaches `migrateV10toV11`); (b) `ProfileModel.init` gains
+  no parameters — `syncId` / `createdDate` are declared-but-dead in M3-4a and default to nil
+  on the `@Model` (precedent `TabDataModelSchemaV10.TabDataModel.syncId`).
+
+- **spec line-number errata (measured on `c549c4c5`, unchanged at `32889806`):**
+  `LocalStore.compatibilityConfiguration` is at `LocalStore.swift:44-48` (spec §4.2 says
+  `:37-42`); the production `ModelContainer(for:…)` is at `:129-137` (spec says `:131-137`;
+  `migrationPlan:` at `:135` matches); the `migrateV8toV9` backfill precedent is at
+  `TabDataModel.swift:146-163` (spec says `:145-161`). spec §12.1 CASE C-3 says "11 处 `10`";
+  the measured count is 12 (`:357 :358 :369 :379 :393 :394 :397 :398 :412 :435 :449 :456`) and
+  all 12 were changed; the one the "11" count misses is `:412`.
+
+- **Implementer deviations (comment / message level, no assertion changed):**
+  1. `LocalStoreCompatibilityTests`: the CASE 2a.24 header comment now reads "schema V11"
+     and is tagged "/ C-3"; the CASE 2a.25b header is rewritten to describe V11's six columns
+     (account identity, soft-delete intent, merge partner) and tagged "/ C-4"; the two
+     `XCTFail` messages moved one version up ("version ten store … version eleven app",
+     "version eleven store … refused by a version ten app"). The brief's table lists only the
+     literals, neighbours and function names; leaving the comments on V10/V9 would have made
+     them contradict the code directly below.
+  2. C-2 carries three structural assertions beyond the brief's two: `schemas.count == 11`,
+     `TabDataModelSchemaV11.versionIdentifier == Schema.Version(11, 0, 0)` and
+     `TabDataModelSchemaV11.models.count == 5`. Additive; the brief's two
+     (`stages.count == schemas.count - 1`, `schemas.last` is V11 by `ObjectIdentifier`) are
+     present verbatim.
+  3. C-10 subscribes to `urlRulesPublisher()` **before** inserting the four rows (the brief
+     fixes "subscribe and take the first value, then `save()`" but not the order of insert vs
+     subscribe). `ModelContext.fetch` includes pending inserts, so subscribing after the
+     inserts could make the initial emission already equal the post-save projection, and the
+     publisher's `removeDuplicates` would then swallow the post-save emission — step ③ would
+     time out. Subscribing first pins the first value to `[]` and makes the post-save emission
+     structurally distinct.
+  4. `getAllURLRules()` gained a two-line `///` doc comment naming the R-M3-4a-51 filter and
+     that `urlRulesPublisher()` follows it; `TabDataModelSchemaV11.SpaceURLRule.init` carries
+     a two-line `//` comment on why all six new parameters default. The V11 file header is in
+     English (V10 precedent) and carries the brief's required substance (one migration instead
+     of two; `beforeSchemaUpgrade` copies the whole store + sidecars each bump; favicon PNG
+     bytes are inlined on bookmark rows; README forbids folding backup deletion into a schema
+     change).

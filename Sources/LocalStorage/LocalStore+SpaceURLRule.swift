@@ -45,11 +45,14 @@ extension LocalStore {
         }
     }
 
+    /// 默认读口：软删行（`deletedDate != nil`）只对同步可见（R-M3-4a-51），这里一律过滤。
+    /// `urlRulesPublisher()` 经这一函数取值，自动跟随。
     @MainActor
     func getAllURLRules() -> [SpaceRoutingRule] {
         guard let context = mainContext else { return [] }
         do {
             let descriptor = FetchDescriptor<SpaceURLRule>(
+                predicate: #Predicate { $0.deletedDate == nil },
                 sortBy: [SortDescriptor(\.spaceId), SortDescriptor(\.sortOrder)]
             )
             return try context.fetch(descriptor).map { model in
@@ -69,7 +72,7 @@ extension LocalStore {
         guard let context = mainContext else { return [] }
         do {
             let descriptor = FetchDescriptor<SpaceURLRule>(
-                predicate: #Predicate { $0.spaceId == spaceId },
+                predicate: #Predicate { $0.spaceId == spaceId && $0.deletedDate == nil },
                 sortBy: [SortDescriptor(\.sortOrder)]
             )
             return try context.fetch(descriptor).map { model in

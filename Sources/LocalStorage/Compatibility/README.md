@@ -97,3 +97,6 @@ SQLite files.
 Do not delete old backups as part of a schema change unless a separate retention
 policy is intentionally designed and tested. Older app builds may still need a
 lower-version backup to recover from a manual downgrade.
+
+The current store format is 11 (`TabDataModelSchemaV11`), which adds the six
+`SpaceURLRule` account-sync columns and the two `ProfileModel` columns.

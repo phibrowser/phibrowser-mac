@@ -784,6 +784,48 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     }
 }
 
+/// 内存版 `PhiSyncMarkerStore`（M3-4a Task 3）。形状照上面的 `MemoryOwnedItemStore`，并且
+/// 同样是**顶层类型**：`PhiSyncMarkerBoundaryTests` 与 `SelfRevokeTests` 跨文件共用同一个
+/// 假件，不各抄一份。
+///
+/// `saves` 记**每一次** `save` 调用收到的表（失败的那一次也记），所以 `saves.count` 就是
+/// 调用计数，`failSaveOnCallNumber` 数的正是它；「一次写都没有」断言 `saves.isEmpty`。
+final class MemoryMarkerStore: PhiSyncMarkerStore {
+    var file: PhiSyncMarkerFile
+    /// 每次 `save` 都失败（= 盘满 / 目录不可写）。Task 2b 的第三个置位点用它。
+    var failSave = false
+    /// 只让第 N 次 `save` 失败（N 从 1 数）——逐页边界的用例要「第 3 页那一次写失败」。
+    var failSaveOnCallNumber: Int?
+    private(set) var saves: [PhiSyncMarkerFile] = []
+    private(set) var loadCount = 0
+    private(set) var deleted = false
+
+    init(file: PhiSyncMarkerFile = PhiSyncMarkerFile()) {
+        self.file = file
+    }
+
+    func load() -> PhiSyncMarkerFile {
+        loadCount += 1
+        return file
+    }
+
+    /// 失败那一路**不改 `file`**（R-M3-4a-83 的内存版）：内存与「磁盘」一起停在旧表上。
+    @discardableResult
+    func save(_ file: PhiSyncMarkerFile) -> Bool {
+        saves.append(file)
+        if failSave || failSaveOnCallNumber == saves.count { return false }
+        self.file = file
+        return true
+    }
+
+    /// 删，不是存一张空表：只置 `deleted`，`file` 复位成空表——下一次 `load` 交回的正是
+    /// 真 store「文件不存在」那一路的结论。
+    func deleteFile() {
+        deleted = true
+        file = PhiSyncMarkerFile()
+    }
+}
+
 // MARK: - CASE 0.1 – 0.5
 
 /// 本文件既是 M3-3「自有条目」（书签 + pin）全部测试的共享脚手架，也是 Task 0 自己那

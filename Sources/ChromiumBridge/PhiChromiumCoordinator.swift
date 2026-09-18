@@ -173,20 +173,28 @@ import SwiftUI
     /// Drops the engine's persisted cursor when `defaults` still carries a *different*
     /// account's, and records the new owner. Returns whether anything was dropped.
     ///
-    /// The cursor (progress marker, entity id, version, store birthday, last-committed
-    /// entity, `hasAdopted`) lives in `UserDefaults.standard`, which is not account-scoped,
-    /// so without this account A's marker and entity version would be replayed against
-    /// account B. Keyed on the account id rather than done unconditionally in
-    /// `invalidateSyncKeyController` because `.mainAccountChanged` fires on *every* account
-    /// assignment — including the ordinary launch/refresh path — and wiping the cursor there
-    /// would clear `hasAdopted` on every launch, making the next pull adopt the server's
-    /// entity wholesale and discard settings edited while signed out.
+    /// The cursor keys (entity id, version, last-committed entity, `hasAdopted`, tombstone
+    /// rounds) live in `UserDefaults.standard`, which is not account-scoped, so without this
+    /// account A's entity version would be replayed against account B. Keyed on the account
+    /// id rather than done unconditionally in `invalidateSyncKeyController` because
+    /// `.mainAccountChanged` fires on *every* account assignment — including the ordinary
+    /// launch/refresh path — and wiping the cursor there would clear `hasAdopted` on every
+    /// launch, making the next pull adopt the server's entity wholesale and discard settings
+    /// edited while signed out.
+    ///
+    /// The progress marker and the store birthday are isolated per account directory as of
+    /// M3-4a (`sync/marker.json`, §2.10) and need no wipe here. Their two *legacy* keys are
+    /// still on the list: a machine whose one-time migration failed to write the file keeps
+    /// them for the next launch (§2.10), and `buildPhiSyncEngine` runs that migration right
+    /// after this wipe — so what is cleared here is the previous account's leftover, which
+    /// would otherwise be carried into the new account's `marker.json`.
     @discardableResult
     static func resetPhiSyncCursorIfAccountChanged(accountId: String, defaults: UserDefaults) -> Bool {
         guard defaults.string(forKey: phiSyncCursorOwnerKey) != accountId else { return false }
         defaults.set(accountId, forKey: phiSyncCursorOwnerKey)
-        let hadCursor = PhiSyncEngine.stateKeys.contains { defaults.object(forKey: $0) != nil }
-        for key in PhiSyncEngine.stateKeys { defaults.removeObject(forKey: key) }
+        let keys = PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys
+        let hadCursor = keys.contains { defaults.object(forKey: $0) != nil }
+        for key in keys { defaults.removeObject(forKey: key) }
         return hadCursor
     }
 
@@ -228,6 +236,12 @@ import SwiftUI
             fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
         let pinStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
+        // M3-4a §2.10：共享进度 marker 与 store birthday 也落在同一个目录（`marker.json`），
+        // 于是一次用户数据导入把库、游标表与 marker 一起回退。**同样建在这里、而不是等
+        // `buildPhiSyncEngine`**：§4.4 的自撤销要删的正是它指着的文件，而那一步与引擎建不建
+        // 得起来无关——controller 与引擎共用这一个对象。
+        let markerStore = FilePhiSyncMarkerStore(
+            fileURL: syncDirectory.appendingPathComponent("marker.json"))
         syncKeyController = SyncKeyController(
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
             spaceKeys: spaceKeys,
@@ -263,6 +277,8 @@ import SwiftUI
             // `syncId`」那一半，窄成一个函数、与 `notifyChromium` 同形，于是 controller
             // 仍然既不持 `Account` 也不持 `LocalStore`。
             ownedItemStores: [bookmarkStore, pinStore],
+            // §4.4：自撤销第 4 步多删一次 `marker.json`。
+            markerStore: markerStore,
             clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
@@ -306,7 +322,7 @@ import SwiftUI
         buildPhiSyncEngine(stack: stack, accountId: account.userID,
                            account: account, spaceStateStore: spaceStateStore,
                            bookmarkAccess: bookmarkAccess, bookmarkStore: bookmarkStore,
-                           pinStore: pinStore)
+                           pinStore: pinStore, markerStore: markerStore)
         return syncKeyController
     }
 
@@ -322,7 +338,8 @@ import SwiftUI
         spaceStateStore: AccountPhiSpaceSyncStateStore,
         bookmarkAccess: AccountPhiBookmarkAccess,
         bookmarkStore: FileOwnedItemStateStore,
-        pinStore: FileOwnedItemStateStore
+        pinStore: FileOwnedItemStateStore,
+        markerStore: FilePhiSyncMarkerStore
     ) {
         let deviceKeyId: String
         do {
@@ -343,6 +360,14 @@ import SwiftUI
         if Self.resetPhiSyncCursorIfAccountChanged(accountId: accountId, defaults: defaults) {
             AppLogInfo("[phi-sync] dropped the previous account's settings cursor")
         }
+        // M3-4a §2.10 的一次性迁移：`phi.sync.marker` / `phi.sync.storeBirthday` 两个旧键
+        // 迁进账户目录的 `marker.json`。**次序**：紧跟在上面那次按账户归属的擦除之后——那次
+        // 擦除连两个旧键一起擦，否则一台迁移写失败的机器换账户之后会把上一个账户的残留迁进
+        // 新账户的文件（marker 是服务端按账户发的不透明 token，新账户按它要增量 = 永久漏收）。
+        // 这里正是 §2.10 点名的那扇窗口（`discardIfStaleFormat()` 的同款：store 刚构造、引擎
+        // 还不存在、主 actor 上），所以主线程直接碰 store 是合法的。写失败 ⇒ 不清键、下次启动
+        // 重来，迁移自己会记日志。
+        PhiSyncMarkerMigration.migrateLegacyMarker(from: defaults, into: markerStore)
 
         // M3-3 §7.1 第 3 步：挂载账户时重新播种 pin 作用域的镜像键（R-M3-3-8）。这里正是
         // 「`LocalStore` 已打开、引擎尚未启动」的那一点，而 `reseed` 是个纯函数，所以协调器
@@ -410,6 +435,7 @@ import SwiftUI
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
+                                      markerStore: markerStore,
                                       ownedKinds: ownedKinds,
                                       faviconBackfill: faviconBackfill)
         // With an engine present, every mutating call on the facade becomes an
@@ -612,13 +638,16 @@ import SwiftUI
             .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 // The notification does not say which key changed, and the engine writes this
-                // same domain on every single round — `phi.sync.marker` / `phi.sync.version`
-                // through `writeState`, plus the `<key>.phiSync*` sidecars. So the trigger
-                // must compare the registered preferences' VALUES and fire only on a real
-                // change; `handleLocalDefaultsChange()` alone is not enough of a guard,
-                // because a round that commits nothing still writes a marker and would re-arm
-                // this subscription 2 s later. With M3-3's owned-item CONFLICT retry pulling
-                // INSIDE the round, that pair is a 2.5 s commit loop (Mac B 2026-09-14).
+                // same domain on every single round — `phi.sync.version` / `phi.sync.entityId`
+                // through `writeState`, plus the `<key>.phiSync*` sidecars. (The progress
+                // marker moved to the account directory's `marker.json` in M3-4a and no longer
+                // touches this domain; the rest still does, so this dedupe stays necessary.)
+                // So the trigger must compare the registered preferences' VALUES and fire only
+                // on a real change; `handleLocalDefaultsChange()` alone is not enough of a
+                // guard, because a round that commits nothing still rewrites its cursor keys
+                // and would re-arm this subscription 2 s later. With M3-3's owned-item CONFLICT
+                // retry pulling INSIDE the round, that pair is a 2.5 s commit loop (Mac B
+                // 2026-09-14).
                 //
                 // Dropping a signal is safe: the 60 s pull timer below runs `pull(thenPush:)`,
                 // so a local edit this filter mistakes for an echo is picked up within the

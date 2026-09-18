@@ -87,6 +87,10 @@ final class SyncKeyController {
     /// 持的是 store 而不是两个 URL：删文件是 `PhiOwnedItemStateStore` 契约里的一条
     /// （`deleteFile()`），自己拼路径等于把 §3.5 的落点抄第二遍。
     private let ownedItemStores: [any PhiOwnedItemStateStore]
+    /// M3-4a §4.4：自撤销要删的第三个文件——账户目录里的 `marker.json`（共享进度 marker 与
+    /// store birthday）。它不是游标表，所以不进 `ownedItemStores` 那个数组；nil 与空数组
+    /// 同款含义（单元测试，以及任何还没接线的构造点）。
+    private let markerStore: (any PhiSyncMarkerStore)?
     /// M3-3 §9.1 的第二半：抹掉本机全部 `syncId`（**行保留**，只把那一列置 nil）。
     ///
     /// 注入成一个窄闭包，与 `notifyChromium` 同形：controller 今天既不持 `Account` 也不持
@@ -161,6 +165,7 @@ final class SyncKeyController {
          engineDefaults: UserDefaults = .standard,
          spaceStateStore: (any PhiSpaceSyncStateStore)? = nil,
          ownedItemStores: [any PhiOwnedItemStateStore] = [],
+         markerStore: (any PhiSyncMarkerStore)? = nil,
          clearAllSyncIds: (@Sendable () async throws -> Void)? = nil) {
         self.manager = manager
         self.approvals = approvals
@@ -174,6 +179,7 @@ final class SyncKeyController {
         self.engineDefaults = engineDefaults
         self.spaceStateStore = spaceStateStore
         self.ownedItemStores = ownedItemStores
+        self.markerStore = markerStore
         self.clearAllSyncIds = clearAllSyncIds
     }
 
@@ -241,10 +247,11 @@ final class SyncKeyController {
     /// prudence (§3.3 step 2.0): a round parked in `getUpdates` still holds the
     /// domain key it fetched before the suspension, and the server does not check
     /// whether the committing device has been revoked. If the cleanup ran first,
-    /// that round would resume, write the `phi.sync.*` cursor and the whole
-    /// `sync.phiSpaces` table back, adopt the account's settings and every Space
-    /// wholesale (both baselines were just erased), and then commit this machine's
-    /// snapshot -- the exact opposite of what the confirmation promised.
+    /// that round would resume, write the `phi.sync.*` cursor, the progress marker
+    /// (`marker.json`, M3-4a) and the whole `sync.phiSpaces` table back, adopt the
+    /// account's settings and every Space wholesale (both baselines were just
+    /// erased), and then commit this machine's snapshot -- the exact opposite of
+    /// what the confirmation promised.
     func removeThisDeviceFromSync() async throws {
         let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
         try await profileKeys.revokeDevice(deviceKeyId: deviceKeyId)   // 409 -> lastActiveDevice, nothing below runs
@@ -288,6 +295,12 @@ final class SyncKeyController {
         //    删文件而不是保存一张空表（§3.5 的 `deleteFile()` 契约）：一张「正常的空表」
         //    会让下一次 `load` 再也报不出损，于是那一次整类型重放不会发生。
         for store in ownedItemStores { store.deleteFile() }
+        // M3-4a §4.4：第三个要删的文件——`marker.json`。**仍然排在 `clearAllSyncIds()` 之前**：
+        // 上面那段论证里「文件没了、`syncId` 还在」是可恢复的一侧，marker 属于同一侧。删，
+        // 不是存一张空表：游标表删了而 marker 留着，重新加入时 marker 说「我已经越过账户的
+        // 全部历史」，那一次本该按身份把实体认回本机行的整类型重放一条实体都收不到，而游标表
+        // 是空的 ⇒ 差分把整张表判成「本机已删」⇒ 一批 tombstone 删掉账户上每一台设备的数据。
+        markerStore?.deleteFile()
         do {
             // 行保留、只清 `syncId` 那一列——自撤销不是删数据。重新加入时这台机器的树是
             // 「全部未同步」，§6 的认领会按 D10 与账户树重新对齐。
@@ -309,7 +322,12 @@ final class SyncKeyController {
         //    else will push them back, and stale ones keep the departed account's
         //    hidden/soft-deleted Spaces hidden and keep refusing profile deletions
         //    until the next launch.
-        for key in PhiSyncEngine.stateKeys { engineDefaults.removeObject(forKey: key) }
+        //    The two legacy marker keys go too (M3-4a): they are what a failed one-time
+        //    migration leaves behind, and the file they would be migrated into was just
+        //    deleted in step 4.
+        for key in PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys {
+            engineDefaults.removeObject(forKey: key)
+        }
         spaceStateStore?.save(PhiSpaceSyncTable())
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
 

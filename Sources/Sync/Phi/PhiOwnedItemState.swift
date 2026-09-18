@@ -173,7 +173,8 @@ protocol PhiOwnedItemStateStore: AnyObject {
     /// `hadRecords` 是该 kind 的 `…HadRecords` 标志，它住在 `PhiSpaceSyncTable` 里、store 看不到
     /// （§3.5 的单副本裁定）。做成入参 + 返回值，比让 store 去读另一张表干净，也让报损在类型上
     /// 无法被忽略——丢一个游标文件而不报损是一场**静默的灾难**：`syncId` 住在 SwiftData 行上、
-    /// marker 住在 `UserDefaults.standard`，两者都不在被丢掉的那个文件里，于是行仍然同步合格却
+    /// marker 住在同目录的 `marker.json` 里（M3-4a 之前在 `UserDefaults.standard`），两者都
+    /// 不在被丢掉的那个文件里，于是行仍然同步合格却
     /// 一条基线都没有，下一轮的组批器以 `entityId == "" / version == 0` 发出一批 create，而服务端
     /// 的 `ON CONFLICT (client_tag_hash) DO UPDATE` **没有版本检查**——整个账户的书签被这台机器
     /// 盲写覆盖，时间戳还赢下每个对端的 LWW。

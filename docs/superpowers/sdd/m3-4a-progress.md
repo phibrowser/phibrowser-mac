@@ -73,3 +73,59 @@
     用 `chmod 0o500` 注入落盘失败的那七条用例（2a.1 – 2a.8、B2-18 主探针与变体 (a)/(c)）
     **没有在运行时跑过**。注入手法本身是确定的（测试进程不是 root，`.atomic` 写要在同目录
     建临时文件），但「断言的那个值」没有被实测。
+
+## Task 3
+
+`PhiSyncMarkerStore` / `marker.json`（§2.10 / R-M3-4a-18）+ 一次性迁移 + `stateKeys` 收缩
++ 引擎 init 参数 `markerStore` + 自撤销与 `resetSyncState()` 多删一个文件。
+
+### brief 的「计划裁定」要求记档的
+
+1. **`PhiSyncEngine.legacyMarkerStateKeys`（计划裁定 3，spec 未写）。** `stateKeys` 收缩成
+   五项，但账户切换（`resetPhiSyncCursorIfAccountChanged`）与自撤销第 5 步的擦除面改成
+   `stateKeys + legacyMarkerStateKeys`，`hadCursor` 的判据同样认它们；迁移调用点排在那次擦除
+   **之后**。理由：一台迁移写失败的机器换账户之后，否则会把上一个账户的 `phi.sync.marker`
+   迁进新账户的 `marker.json`。`DefaultsBackedPhiSyncMarkerStore.deleteFile()` 也是把这两个
+   键去掉，所以回落实现上的 `resetSyncState()` 与收缩之前可观察行为一致。
+2. **两个 spec §11 Task 3 行没列的文件各改一行注释（计划裁定 6）**：
+   `PhiOwnedItemState.swift`（「marker 住在 `UserDefaults.standard`」→ 同目录的 `marker.json`）
+   与 `SyncableSettings.swift`（`valueSignature` 去重的例子从 `phi.sync.marker` 换成
+   `phi.sync.version` / `phi.sync.entityId`；去重本身照旧必要）。`PhiChromiumCoordinator`
+   的 debounce 订阅注释同款改法。
+
+### 与 brief 不同的实现判断
+
+3. **`PhiSyncMarkerBoundaryTests.swift` 不是新建的**——Task 2a 已经建了它（B2-4d / B2-10 /
+   B2-18）。本任务**追加** B2-11a…d、3.1、3.3、3.4、3.5，头注释补一段 Task 3 的清单。
+4. **`SelfRevokeTests.makeController` 多了两个参数**，不是一个：`ownedItemStores`（默认 `[]`）
+   与 `markerStore`（默认 nil）。CASE 3.2 的 spec 本身要传两张非空游标表，而原来的
+   `makeController` 没有 `ownedItemStores` 这个口。既有三条用例一字不改。
+5. **Step 1 的「红」没有单独编译一次。** 本机一次 `build-for-testing` 是多分钟级；红的结论
+   由「类型不存在」保证（`cannot find type 'PhiSyncMarkerFile'`），不需要实测。最终只跑了
+   一次绿的编译（两次：第一次全量、第二次增量取退出码 0）。
+6. **`MemoryMarkerStore.saves` 记每一次调用，失败的那一次也记**（brief 只给了字段名）。与
+   `MemoryOwnedItemStore.saveCalls` 同义：`saves.count` 就是调用计数，`failSaveOnCallNumber`
+   数的正是它；「一次写都没有」断言 `saves.isEmpty`，两者不冲突。
+7. **迁移先看两个旧键、再 `store.load()`**（brief 没定次序）：稳态（键早已清掉）零磁盘读。
+   结论集合与 brief 逐字相同。
+8. **用例比 case spec 多几条断言**，都是同一条判据的直接后果：
+   - CASE 3.3 多断言 `getUpdatesCalls[0].marker == "4"`（读的是注入的文件）与
+     `saves.contains(PhiSyncMarkerFile())`（`marker == nil` 是一次真正的写，钉的正是「防的是
+     什么」的 ②）。
+   - CASE 3.5B 多一个第二阶段：只剩 legacy 键时 `hadCursor` 也为真。
+   - CASE 3.2 多断言第 5 步把两个 legacy 键也擦掉（那一行改动的唯一探针）。
+   - CASE 3.1 拆出一条 `testAZeroLengthMarkerIsNotTheSameAsNoMarkerOnDisk`：store 层
+     `Data()` 与 nil 分得开（brief「防的是什么」里的后半句）。
+9. **`persistMarkerState` 对「没变化」早退**（brief 逐字给的形状）带来一个与 M3-4a 之前不同
+   的可观察细节：回落实现上，birthday 逐页不变时两个旧键不再每页重写一次。没有任何既有断言
+   看这一点（只有 `didChangeNotification` 能看到），生产上反而是少一次无意义的落盘。
+10. **既有 marker 断言清单重 grep 过一遍**（Task 2a 之后行号已漂）：seed 两个键的十处里九处
+    在建引擎**之前**，唯一在之后的一处（`PhiSyncEngineSpaceTests` 的预览用例）只断言键未被
+    改动，而预览路径根本不读 `storedMarker`——镜像设计对它无影响。
+
+### 验证口径
+
+11. **compile-only**。新增的十三条用例（B2-11a…d、3.1 ×2、3.2、3.3、3.4、3.5A、3.5B）**没有
+    在运行时跑过**；`FilePhiSyncMarkerStore` 的 `load` 不写回、`save` 的 `.atomic` 落盘、
+    `Gate` 驱动的 3.5A，都是按既有同形用例（`FileOwnedItemStateStore` / CASE 2a.7、
+    `PhiSyncEngineTests` 的 shutdown 用例）推断为确定的。

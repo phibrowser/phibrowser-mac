@@ -404,14 +404,22 @@ struct OwnedKindRegistration {
 actor PhiSyncEngine {
     // MARK: - Persisted state
     //
-    // All account-scoped, and they live in `UserDefaults.standard`, which is not — so account
-    // A's progress marker and entity version must never be replayed against account B. What
-    // enforces that is `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`, which
-    // compares the recorded owner against the account being mounted and wipes these keys
-    // *before* the engine is built. Sign-out itself only calls `shutdown()`: the cursor is left
-    // where it is and either re-adopted by the same account or dropped by that owner check.
-    // (`resetSyncState()` below performs the same wipe on demand, but nothing in the app calls
-    // it.)
+    // All account-scoped. The five in `stateKeys` (entity id, version, last entity, tombstone
+    // rounds, `hasAdopted`) live in `UserDefaults.standard`, which is not — so account A's
+    // entity version must never be replayed against account B. What enforces that is
+    // `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`, which compares the recorded
+    // owner against the account being mounted and wipes these keys *before* the engine is
+    // built. Sign-out itself only calls `shutdown()`: the cursor is left where it is and either
+    // re-adopted by the same account or dropped by that owner check. (`resetSyncState()` below
+    // performs the same wipe on demand, but nothing in the app calls it.)
+    //
+    // The progress marker and the store birthday are the exception as of M3-4a (§2.10 /
+    // R-M3-4a-18): they live in the account directory's `sync/marker.json`, beside the
+    // per-kind cursor tables, through `markerStore` — so a user-data import that replaces the
+    // whole directory rolls the marker back together with the tables. Their two legacy keys
+    // are still declared below (`legacyMarkerStateKeys`) because the one-time migration reads
+    // them and the account-switch wipe clears them; the engine itself never reads or writes
+    // them once a file store is injected.
 
     static let statePrefix = "phi.sync."
     /// Server-assigned entity id (`id_string`) for the settings entity.
@@ -434,9 +442,21 @@ actor PhiSyncEngine {
     /// the entity cursor: see `hasAdopted`.
     static let hasAdoptedStateKey = statePrefix + "hasAdopted"
 
-    static let stateKeys = [entityIdStateKey, versionStateKey, storeBirthdayStateKey,
-                            markerStateKey, lastEntityStateKey, tombstoneRoundsStateKey,
-                            hasAdoptedStateKey]
+    /// The cursor keys that still live in `UserDefaults`. `storeBirthdayStateKey` and
+    /// `markerStateKey` left this list in M3-4a: the marker and the birthday are in the
+    /// account directory's `marker.json` now, so `resetSyncState()` and the self-revocation
+    /// delete that file instead of wiping keys for them.
+    static let stateKeys = [entityIdStateKey, versionStateKey, lastEntityStateKey,
+                            tombstoneRoundsStateKey, hasAdoptedStateKey]
+
+    /// The two keys the marker and the birthday lived under before M3-4a. Not in `stateKeys`,
+    /// but still on every *account-scope* wipe (`resetPhiSyncCursorIfAccountChanged`, the
+    /// self-revocation): a machine whose one-time migration failed to write `marker.json`
+    /// keeps these keys for the next launch, and an account switch in between must not let
+    /// `PhiSyncMarkerMigration` carry the previous account's marker into the new account's
+    /// file — the marker is an opaque per-account token, and requesting a delta with the
+    /// wrong account's marker skips that account's history for good.
+    static let legacyMarkerStateKeys = [storeBirthdayStateKey, markerStateKey]
 
     /// GetUpdates pages drained in one pull before the round gives up. 16 was enough for one
     /// settings entity; a first-time Space drain of a busy account is not. The budget still
@@ -476,6 +496,16 @@ actor PhiSyncEngine {
     private let domainKeys: any PhiDomainKeyProviding
     private let client: PhiSyncProtocolClient
     private let defaults: UserDefaults
+    /// marker / birthday 的落点（M3-4a §2.10）。`init` 的 `markerStore` 为 nil 时回落成
+    /// `DefaultsBackedPhiSyncMarkerStore(defaults:)`——读写两个旧键，只给测试与还没接线的
+    /// 构造点用；生产的唯一构造点 `PhiChromiumCoordinator.buildPhiSyncEngine` 必传
+    /// `FilePhiSyncMarkerStore`。引擎里只有这一条代码路径：两个访问器一律走它，没有 kind 分支。
+    private let markerStore: any PhiSyncMarkerStore
+    /// marker / birthday 的内存镜像：`load()` 只在 `init` 跑一次，之后 `storedMarker` /
+    /// `storedBirthday` 的 get 读它，set 经 `persistMarkerState` 写穿、失败回滚。每次 get 读
+    /// 一次文件会给一轮加上十几次磁盘读，而且一次瞬时读失败会被解读成「marker 为 nil」⇒
+    /// 整类型重放。
+    private var markerState: PhiSyncMarkerFile
     private let deviceKeyId: String
     private let settings: [SyncableSetting]
     private let now: () -> Int64
@@ -702,6 +732,7 @@ actor PhiSyncEngine {
          settings: [SyncableSetting] = SyncableSettings.all,
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
+         markerStore: (any PhiSyncMarkerStore)? = nil,
          ownedKinds: [OwnedKindRegistration] = [],
          faviconBackfill: PhiFaviconBackfillQueue? = nil,
          previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages,
@@ -717,6 +748,12 @@ actor PhiSyncEngine {
         self.faviconBackfill = faviconBackfill
         self.previewMaxPages = previewMaxPages
         self.now = now
+        // nil ⇒ 回落到两个旧键（见 `markerStore` 的属性注释），不是内存 store、也不是引擎里
+        // 留一条 `if markerStore == nil` 的旧分支。镜像必须在任何一轮之前就位。
+        let resolvedMarkerStore: any PhiSyncMarkerStore =
+            markerStore ?? DefaultsBackedPhiSyncMarkerStore(defaults: defaults)
+        self.markerStore = resolvedMarkerStore
+        self.markerState = resolvedMarkerStore.load()
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
 
@@ -1065,16 +1102,20 @@ actor PhiSyncEngine {
     }
 
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
-    /// is adopted rather than merged against the previous account's timestamps.
+    /// is adopted rather than merged against the previous account's timestamps. As of M3-4a
+    /// that is the five `stateKeys` *and* the marker file: the marker and the birthday live in
+    /// `marker.json` (§2.10), and "every account-scoped cursor" has to stay true, so the file
+    /// is deleted here — deleted, not saved empty, the same contract as the self-revocation.
     ///
     /// **Test and recovery helper — the app never calls this.** The account-scope reset that
     /// actually ships runs one layer up, in
     /// `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(accountId:defaults:)`: it
     /// wipes the same `stateKeys` from outside, keyed on a recorded owner account, at the one
-    /// moment the wipe is safe — before the engine for the new account exists. Doing it from
-    /// in here cannot cover that case anyway: sign-out calls `shutdown()`, and the guard below
-    /// then makes this a no-op, precisely because a retired engine's `UserDefaults` may already
-    /// belong to the account mounted next.
+    /// moment the wipe is safe — before the engine for the new account exists (the marker file
+    /// needs no wipe there: it is inside the account directory). Doing it from in here cannot
+    /// cover that case anyway: sign-out calls `shutdown()`, and the guard below then makes
+    /// this a no-op, precisely because a retired engine's `UserDefaults` may already belong to
+    /// the account mounted next.
     ///
     /// **Account scope only.** Nothing that happens *within* one account may call this:
     /// clearing `hasAdopted` re-arms the wholesale adopt in `apply`, and the account's own
@@ -1089,6 +1130,11 @@ actor PhiSyncEngine {
         guard !isStopped else { return }
         canPublishThisRound = false
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
+        // marker / birthday 住在账户目录的 `marker.json` 里（§2.10），不在 `stateKeys` 里；
+        // 「Drops every account-scoped cursor」这句合同要它们也一起走。删文件而不是存一张
+        // 空表（§4.4），镜像同步复位。
+        markerState = PhiSyncMarkerFile()
+        markerStore.deleteFile()
     }
 
     // MARK: - Round serialization
@@ -4184,8 +4230,10 @@ actor PhiSyncEngine {
 
     // MARK: - Persisted state accessors
 
-    /// Single write path for the account-scoped cursor, so the shutdown check cannot be
-    /// forgotten at one of the seven accessors below. `nil` removes the key.
+    /// Single write path for the account-scoped cursor keys, so the shutdown check cannot be
+    /// forgotten at one of the five `UserDefaults` accessors below. `nil` removes the key.
+    /// The marker and the birthday do not come through here: they go to `marker.json` via
+    /// `persistMarkerState`, which carries the same shutdown check.
     private func writeState(_ value: Any?, forKey key: String) {
         guard !isStopped else { return }
         guard let value else { return defaults.removeObject(forKey: key) }
@@ -4319,19 +4367,47 @@ actor PhiSyncEngine {
         set { writeState(newValue.map { NSNumber(value: $0) }, forKey: Self.versionStateKey) }
     }
 
-    /// The empty string is "not known yet" on the wire, so it is stored as *absent* rather
-    /// than as an empty value — same convention as `storedMarker`, and it keeps `stateKeys` a
-    /// clean "nothing persisted" set after a reset.
-    private var storedBirthday: String {
-        get { defaults.string(forKey: Self.storeBirthdayStateKey) ?? "" }
-        set { writeState(newValue.isEmpty ? nil : newValue, forKey: Self.storeBirthdayStateKey) }
+    /// marker / birthday 的唯一写穿口（M3-4a §2.10）：镜像先改、再落盘，落盘失败就回滚镜像。
+    ///
+    /// `guard !isStopped` 是从 `writeState` 原样继承过来的，**不可省**：`stateKeys` 收缩之后
+    /// 「shutdown 之后没有 state key 被写」那两条既有断言不再覆盖 marker，而一个已退休的
+    /// 引擎恰好还持着**上一个账户目录**的 store（自撤销第 1 步退休引擎、第 4 步删文件，一个
+    /// 还挂在 `getUpdates` 里的轮次醒来若把 marker 写回去，就把 §4.4 防的那个灾难原样造出来）。
+    ///
+    /// 失败回滚是 R-M3-4a-83 的同一条理由搬到 marker 上：不回滚 ⇒ 镜像领先磁盘 ⇒ 第 N+1 轮
+    /// 重投同一页时 `updated != markerState` 不成立 ⇒ 连 `save` 都不调 ⇒ marker「推进」了而
+    /// 盘上没有。返回值此刻被两个 setter 丢掉；Task 2b 在这里接 `cursorSaveFailed`。
+    @discardableResult
+    private func persistMarkerState(_ updated: PhiSyncMarkerFile) -> Bool {
+        guard !isStopped else { return true }              // §2.5 第 4 条：早退不算失败
+        guard updated != markerState else { return true }  // 没变化就不调 save，同上
+        let previous = markerState
+        markerState = updated
+        guard markerStore.save(updated) else { markerState = previous; return false }
+        return true
     }
 
-    private var storedMarker: Data? {
-        get { defaults.data(forKey: Self.markerStateKey) }
+    /// The empty string is "not known yet" on the wire. It lives in `marker.json` beside the
+    /// marker (M3-4a): the birthday is written page by page (§2.4), and the two must roll back
+    /// together on a user-data import — a birthday kept anywhere else would come back stale
+    /// and loop on NOT_MY_BIRTHDAY.
+    private var storedBirthday: String {
+        get { markerState.storeBirthday }
         set {
-            let stored: Data? = (newValue?.isEmpty ?? true) ? nil : newValue
-            writeState(stored, forKey: Self.markerStateKey)
+            var updated = markerState
+            updated.storeBirthday = newValue
+            persistMarkerState(updated)
+        }
+    }
+
+    /// An empty marker is stored as `nil`: on the wire "no marker" and "empty marker" are the
+    /// same request, and `nil` is the value every full-replay predicate here compares against.
+    private var storedMarker: Data? {
+        get { markerState.marker }
+        set {
+            var updated = markerState
+            updated.marker = (newValue?.isEmpty ?? true) ? nil : newValue
+            persistMarkerState(updated)
         }
     }
 

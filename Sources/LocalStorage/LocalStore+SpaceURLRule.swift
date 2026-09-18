@@ -389,6 +389,17 @@ extension LocalStore {
                 bySyncId[syncId] = nil
             }
         }
+
+        /// §8.4.2 M1 的 re-key 之后把索引跟上：旧键若指向这一行就摘掉，新键登记（`row.syncId`
+        /// 已经是新值）。同一个写块里排在后面的 `.update` 按新身份寻址，靠的就是这一步。
+        mutating func rekey(_ row: SpaceURLRule, from previous: String?) {
+            if let previous, bySyncId[previous] === row {
+                bySyncId[previous] = nil
+            }
+            if let syncId = row.syncId, bySyncId[syncId] == nil {
+                bySyncId[syncId] = row
+            }
+        }
     }
 
     /// 一次 `FetchDescriptor<SpaceURLRule>()`（含软删行）建索引。
@@ -519,6 +530,53 @@ extension LocalStore {
         return bucket
     }
 
+    // MARK: - §8.4.2 M1 的 re-key 原语（§4.3 六个新原语的第一个）
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.2 M1 的 re-key，**按本机行 `id` 寻址**（`OwnedItemApplyStep` 既不带旧 `syncId`
+    /// 也不带本机 id，而 `context.pairs` 带的正是后者）。
+    /// 守卫两条：① 该行此刻的 `syncId` **等于** `syncId` ⇒ 幂等返回、零写；
+    /// ② 该行 `deletedDate != nil` ⇒ 抛 `LocalStoreWriteError.rowNotFound`（软删行不认领）。
+    /// 外加 R-M3-4a-80 的唯一 `rowAlreadyMapped` 形状：`syncId` 已经属于**另一条 `id`** 的
+    /// 行 ⇒ 抛 `LocalStoreWriteError.rowAlreadyMapped`、**整批回滚**。
+    /// **必须是 re-key 而不是「删旧建新」**：后者会让本机那一行短暂没有身份、或产生第二条
+    /// 行，而 §5.7 的差分对「有游标、无本机行」的回答是发一条 tombstone。
+    func rekeyURLRuleThrowing(localId: String, to syncId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            var index = try self.urlRuleTableIndex(in: context)
+            try self.rekeyURLRuleBody(localId: localId, to: syncId, index: &index, in: context)
+        }
+    }
+
+    /// R-exec-2 的 body 兄弟：批次入口在自己的写块里调它（各自开一次
+    /// `performBackgroundWriteAndWaitThrowing` 会在同一个串行写流上自我死锁）。
+    /// 寻址定义域是**整张表按 `id`**（含软删行，R-M3-4a-56 / R-M3-4a-80），撞车检查按 `syncId`
+    /// 在整表上做。**只写 `syncId` 一列**：不盖戳、不置位、不碰 `mergePartnerSyncId`
+    /// （RR10-8 / R-M3-4a-69）。书签那条认领守卫（`syncId == nil || syncId == 新值`）在这里
+    /// **不适用**：规则的 re-key 必然改写一个非 nil 的旧值（插入点铸造），照抄会让每一次认领都抛。
+    func rekeyURLRuleBody(localId: String,
+                          to syncId: String,
+                          index: inout URLRuleTableIndex,
+                          in context: ModelContext) throws {
+        guard let row = index.rows.first(where: { $0.id == localId }) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        guard row.deletedDate == nil else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        // ① 相等则幂等接受（CASE M-32 (a)）：少了它 CASE M-13 的重投会抛。
+        if row.syncId == syncId { return }
+        // R-M3-4a-80：这个账户身份已经属于另一条 `id` 的行（`.unique` 只建在 `id` 上，两条行争
+        // 同一个身份 ⇒ 本机没有活行认领其中一条 ⇒ 下一轮差分为它发一条 tombstone）。
+        if let owner = index.bySyncId[syncId], owner !== row {
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
+        let previous = row.syncId
+        row.syncId = syncId
+        index.rekey(row, from: previous)
+    }
+
     // MARK: - 落地批次入口（R-exec-2）
 
     /// 一页远端落地的**全部**操作，一个写块、一个事务（§5.5）。
@@ -589,6 +647,20 @@ extension LocalStore {
             case .delete(let syncId):
                 if let bucket = try hardDeleteURLRuleBody(syncId: syncId, index: &index, in: context) {
                     touchedBuckets.insert(bucket)
+                }
+            case .rekey(let localId, let syncId, let values):
+                // §8.4.2 M1：先 re-key（只写 `syncId`），带 `values` 时同一个写块里紧接着按**新**
+                // 身份 upsert（`index.rekey` 已经让它命中这一行）。认领的行第一次拿到账户级 rank，
+                // 桶按投影重排一次，所以目标桶记账（与 `.create` 同一条理由）。
+                try rekeyURLRuleBody(localId: localId, to: syncId, index: &index, in: context)
+                if let values {
+                    assert(values.syncId == syncId, "url rule batch: rekey values carry another identity")
+                    let sourceBucket = index.bySyncId[syncId]?.spaceId
+                    try upsertURLRuleBody(values, index: &index, in: context)
+                    touchedBuckets.insert(values.spaceId)
+                    if let sourceBucket, sourceBucket != values.spaceId {
+                        touchedBuckets.insert(sourceBucket)
+                    }
                 }
             }
         }

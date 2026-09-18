@@ -560,3 +560,72 @@ B2-17neg / B2-4d-x）。
     不含它、写入提交、桶稠密）。
 18. `computeEditSet` 的中文契约块从 `///` 改成 `//`（首行英文 `///` 保留）。
 19. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。
+
+## Task 8b-1
+
+D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（行、实体两个重载）/
+`baselineSignature` / `isAtRest`（十项，R-M3-4a-86）；协议六个 D30 成员（`signatureIndex` /
+`pendingLocalEditIdentities` / `unpublishedIdentities` / `mergePartners` / `notePersistedClaims` /
+`noteDeletedRows`）+ `AccountPhiURLRuleAccess` / `FakeURLRuleAccess` 实现；`URLRuleSyncOp.rekey` +
+`LocalStore.rekeyURLRuleThrowing` / `rekeyURLRuleBody(localId:to:index:in:)`；`PhiOwnedItemTable.removeCursor`；
+`urlRulePlan` 的 M1 pre-pass、`landURLRules` 的 `.claim` → `.rekey` 翻译与两个就地更新口、
+`applyOwnedKind` 提交后删旧游标。Commit：见 task-8b-1-report.md。
+
+### brief 的五条计划裁定（要求记档的）
+
+1. **`OwnedItemPlanContext` 三个成员已存在**：`pairs` / `adoptedMerges` / `adoptedFieldWrites` 只**填**不建，
+   `SyncableOwnedItems.swift` 只改 `pairs` 那一行注释（「实体身份 -> 本机行的稳定本地 id（书签是 `guid`，
+   规则是 `PhiLocalURLRule.id`）」）。`.claim` 的本机 id 走 `OwnedPlanOutput.claimedLocalIds` →
+   `OwnedLandingInput.claimedLocalIds`（都带默认空值，书签 / pin 构造点逐字不变）。
+2. **`notePersistedClaims` 的参数方向与书签相反**：规则收 **本机行 id -> 新 syncId**（§5.6），
+   `BookmarkSyncRoundState.notePersistedClaims` 收的是身份 -> guid。协议注释与两处实现都钉了方向。
+3. **M1 不受 `ownedItemsPublishAllowed` 闸约束**：pre-pass 住在 `urlRulePlan`（落地段），`:3811` 的闸一个字节
+   没碰；CASE M-11 用 `MemorySpaceStore()`（`hasDrainedFullReplay == false`）验收 `adopted == 3`。
+4. **`adoptedFieldWrites` 按 §8.4.2 那张成员表**：判据 `payloadBytes(merged) != payloadBytes(本机行此刻的投影)`；
+   `mustRepublish` 判据 `payloadBytes(merged) != payloadBytes(arrival.entity)`。spec 第 2 步那句「本机赢下任何一个
+   单元 ⇒ 进 `adoptedFieldWrites`」与表不等价，**spec 内部不自洽，登记待 Task 12 收进 §15**。
+5. **`normalize` 显式入参、不给默认值**：三个 `URLRuleKind` 静态函数都收 `normalize:`；调用方一律传
+   `URLRuleSignatureQueries.normalize`（= `LocalStore.normalizedRule`）。`signature(of row:)` 自己跑一次归一化
+   （CASE M-8 的本机行是 `"GitHub.com."`）。
+
+### 与 brief 不同的实现判断
+
+6. **`mergePartners` 多一个入参 `tombstonesThisPage: Set<String>`**（brief 写的是 `mergePartners(table:resolve:)`）。
+   brief 内部矛盾：同一段要求「W 必须静止（十个合取项，**含第 10 项**）」且 CASE M-28 (a) 断言变体 10
+   （`tombstonesThisPage == ["r"]`）下不交回——第 10 项只能从本页 tombstone 集合算，协议成员没有别的来源可读它。
+   8b-3 接线时从 `input.tombstoned` 传。
+7. **四个只读查询的逻辑只有一份**：`URLRuleSignatureQueries`（`PhiURLRuleLocalAccess.swift`，internal enum）承载
+   纯函数半边，`AccountPhiURLRuleAccess` 喂 `cachedRows` / `cachedLive`、`FakeURLRuleAccess` 喂 `rows`。
+   两处各写一份会在「谁算静止」上分叉。
+8. **M1 的候选定义域是「本页到达 ∪ 停放」**（brief ② 只写「每条 arrival」）：与模块 `plan` 的工作集同域。
+   CASE M-1 ⑤ 的落地失败 ⇒ 整批停放，下一轮停放项重试时走同一条认领通路收敛到 ①（用例末尾多跑一轮断言）；
+   只看 arrival 的实现会在重试轮把它建成第二条行。两条排除：本机已有对应行（含软删行）的到达身份不是候选
+   （它按身份落地）；`syncId` 正在本页到达的本机行也不是候选（它被那条到达按身份命中）。
+9. **认领的行按账户级 rank 重新排位**：`landURLRules` 把认领当成「进了桶」（与 `.create` 同一条理由）；
+   投影下标变了而又没有字段写时，那一次写仍走 `values`（`.update` 折进 `.rekey`），不另发 `.reorder`
+   （R-M3-4a-42(b) 一身份一次落地写）。批次入口 `.rekey` 带 `values` 时同样记目标桶。
+10. **`URLRuleApplyBatch.init` 对 `.rekey` 按 `localId` 去重**：同一条本机行的第二条 `.rekey` 丢弃（DEBUG 断言），
+    留第一条；后到的那条身份落地后复核不过 ⇒ 停放。
+11. **`FakeURLRuleAccess.land` 的 `.update` 不再对活行清 `mergePartnerSyncId`**：Task 8 的假件无条件清，与生产
+    `upsertURLRuleBody`（只在命中软删行时清）不同形；CASE M-20 第二段（认领带字段写、`mergePartnerSyncId`
+    一个字节不动）要求假件与生产同判据。假件的 `.rekey` 照生产 body 做两条守卫 + 撞车检查，**先整批校验再改
+    `rows`**（假件没有事务）。
+12. **`urlRulePlan` 多一个入参 `access:`**（`signatureIndex` 住在 access 上），注册项闭包跟着传。
+13. **CASE M-2b 用 `getUpdatesErrorAfterPages = (1, Boom)` 让本轮止于 pull**：`drainedSpaceStore()` 下发布段的
+    补键通路（`unkeyed`）会为这种形状的游标经 client tag 重新认一次身份并收割三元组——那是它的正当行为，但会
+    遮住「认领 pre-pass 一个字节没动它」这条断言；R-exec-8 的 `ownerUuid` 刷新同理（fixture 预置 `"su-1"`）。
+14. **CASE M-18 主变体第 2 页是空页**（brief 写「别的 kind 的内容」）：本引擎只注册规则 kind，空页对规则照样
+    走 `plan` / `land`（`landsEmptyBatch`）；跨页重复认领变体第 2 页带同签名的第二条规则实体。
+15. **远端戳一律 5_000_000 ms**（比 fixture 行的 `createdDate` 1_000_000 ms 新），且同桶到达 rank 递增
+    （`V` / `W` / `X`）：合并结果 == 入站实体、零 `mustRepublish`、认领后 `sortOrder` 序与基线 rank 序一致 ⇒
+    `pushed == 0` 的断言只说认领这一件事。默认戳（100）下本机会按 R-M3-4a-12 赢下三个单元并正当地重新发布一次。
+16. **`adopted` 在整批回滚时仍计 `pairs.count`**（`counters.adopted += output.adopted` 在 `land` 之前），与书签
+    `adopt` 同形；CASE M-1 ⑤ 不断言它。
+17. **测试文件不需要工程改动**：`Tests/PhiBrowserTests` 是 `fileSystemSynchronizedGroups`（Task 7 的
+    `URLRuleKindTests.swift` 也不在 pbxproj 里），dispatch 里「照 Task 7 的 gem 脚本注册」那一句不适用。
+
+### 验证口径
+
+18. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，日志零 warning）。二十四条新用例
+    （`URLRuleMergeTests` 18 条、`PhiOwnedItemStateTests` 1 条、`LocalStoreURLRuleThrowingTests` 5 条）没有在
+    运行时跑过；每条的走向按代码推导（见 report 的逐条说明）。

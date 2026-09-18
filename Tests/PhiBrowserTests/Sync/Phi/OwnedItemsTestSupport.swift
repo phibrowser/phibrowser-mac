@@ -426,6 +426,9 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         case apply(opCount: Int)
         /// Task 6：落地提交之后那一次显式的路由表刷新（§6.6 / R-M3-4a-34）。
         case refreshRoutingTable
+        /// 8b-1：两个就地更新口（R-M3-4a-62），记条数好让 CASE M-18 断言它们真的被调过。
+        case notePersistedClaims(count: Int)
+        case noteDeletedRows(count: Int)
     }
 
     /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
@@ -505,6 +508,18 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             self.applyErrorOnce = nil
             throw applyErrorOnce
         }
+        // `.rekey` 的两条守卫与撞车检查照生产 body（`LocalStore.rekeyURLRuleBody`），**先整批校验
+        // 再动 `rows`**：假件没有事务，抛在半途会留下半应用状态，而 §5.5 的契约是「抛错 = 一条
+        // 都没落」。
+        for op in batch.ops {
+            guard case .rekey(let localId, let to, _) = op else { continue }
+            guard let row = rows.first(where: { $0.id == localId }), row.deletedDate == nil else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            if row.syncId != to, rows.contains(where: { $0.syncId == to && $0.id != localId }) {
+                throw LocalStoreWriteError.rowAlreadyMapped
+            }
+        }
         var touchedBuckets: Set<String> = []
         for op in batch.ops {
             land(op, touchedBuckets: &touchedBuckets)
@@ -519,6 +534,45 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
     func refreshRoutingTableAfterLanding() {
         calls.append(.refreshRoutingTable)
+    }
+
+    // MARK: 8b-1：D30 的四个只读查询 + 两个就地更新口
+
+    /// 四个查询建在 `rows` 上、逻辑与生产实现共用 `URLRuleSignatureQueries`（判据只有一份）。
+    /// 不看 `snapshotIsLoaded`：M-28 / M-29 直接构造假件就调。
+    func signatureIndex(resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]] {
+        URLRuleSignatureQueries.signatureIndex(rows: rows, resolve: resolve)
+    }
+
+    func pendingLocalEditIdentities(resolve: OwnerResolver) -> Set<String> {
+        URLRuleSignatureQueries.pendingLocalEditIdentities(rows: rows, resolve: resolve)
+    }
+
+    func unpublishedIdentities(table: PhiOwnedItemTable, resolve: OwnerResolver) -> Set<String> {
+        URLRuleSignatureQueries.unpublishedIdentities(rows: rows, table: table, resolve: resolve)
+    }
+
+    func mergePartners(table: PhiOwnedItemTable, resolve: OwnerResolver,
+                       tombstonesThisPage: Set<String>) -> [String: String] {
+        URLRuleSignatureQueries.mergePartners(rows: rows, table: table, resolve: resolve,
+                                              tombstonesThisPage: tombstonesThisPage)
+    }
+
+    /// 键方向：**本机行 id -> 新 syncId**（与书签那一侧相反）。`apply` 已经改过 `rows`，这里是
+    /// 一次幂等的补写；记一条调用。
+    func notePersistedClaims(_ claimed: [String: String]) {
+        calls.append(.notePersistedClaims(count: claimed.count))
+        for index in rows.indices {
+            if let syncId = claimed[rows[index].id] { rows[index].syncId = syncId }
+        }
+    }
+
+    func noteDeletedRows(_ syncIds: Set<String>) {
+        calls.append(.noteDeletedRows(count: syncIds.count))
+        rows.removeAll { row in
+            guard let syncId = row.syncId else { return false }
+            return syncIds.contains(syncId)
+        }
     }
 
     /// 出路 1：按 `syncId` 真删（活行与软删行都删——生产 body 同样不看 `deletedDate`）；
@@ -550,10 +604,17 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     }
 
     /// 与 `LocalStore.applyURLRuleSyncBatchBody` 同形：寻址含软删行；`.create` / `.update` /
-    /// `.move` 命中就写九个字段并清 `deletedDate` / `mergePartnerSyncId`，不命中就建行；
-    /// `.reorder` 只写 `sortOrder`；`.delete` 真删。`pendingLocalEdit` 一个字节不碰。
+    /// `.move` 命中就写九个字段、**命中软删行时**才清 `deletedDate` / `mergePartnerSyncId`
+    /// （生产 body `upsertURLRuleBody` 同一条判据，RR10-8：落地不动活行的合并伙伴），不命中就
+    /// 建行；`.reorder` 只写 `sortOrder`；`.delete` 真删；`.rekey` 按 `id` 改 `syncId`、带
+    /// `values` 时紧接着走 `.update` 那一支。`pendingLocalEdit` 一个字节不碰。
     private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>) {
         switch op {
+        case .rekey(let localId, let syncId, let values):
+            guard let index = rows.firstIndex(where: { $0.id == localId }) else { return }
+            rows[index].syncId = syncId
+            touchedBuckets.insert(rows[index].spaceId)
+            if let values { land(.update(values), touchedBuckets: &touchedBuckets) }
         case .create(let values), .update(let values), .move(let values):
             let existing = rows.firstIndex { $0.syncId == values.syncId }
             let sourceBucket = existing.map { rows[$0].spaceId }
@@ -568,8 +629,10 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
                 rows[index].createdDate = values.createdDate
                 rows[index].contentUpdatedDate = values.contentUpdatedDate
                 rows[index].targetUpdatedDate = values.targetUpdatedDate
-                rows[index].deletedDate = nil
-                rows[index].mergePartnerSyncId = nil
+                if rows[index].deletedDate != nil {
+                    rows[index].deletedDate = nil
+                    rows[index].mergePartnerSyncId = nil
+                }
             } else {
                 rows.append(PhiLocalURLRule(id: UUID().uuidString, syncId: values.syncId,
                                             spaceId: values.spaceId, host: values.host,

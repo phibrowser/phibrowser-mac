@@ -1568,6 +1568,119 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         date.map { Int(($0.timeIntervalSince1970 * 1_000).rounded()) }
     }
 
+    // MARK: - 8b-1 —— CASE M-32（re-key 的 `syncId` 撞车整批回滚）
+
+    // 防的是什么：书签那条认领守卫（`syncId == nil || syncId == 新值`）对规则的 re-key 会让每一次认领
+    // 都抛（规则的 re-key 必然改写一个非 nil 的旧值）；反过来，不做撞车检查的实现让两条行争同一个账户
+    // 身份（`.unique` 只建在 `id` 上）⇒ 本机没有活行认领其中一条 ⇒ 下一轮差分为它发一条 tombstone。
+    // (a) 那一条钉住「相等则幂等接受」，少了它 CASE M-13 的重投会抛。
+    private static let rekeySeeds: [RuleSeed] = [
+        RuleSeed(id: "i1", spaceId: spaceOne, host: "a.example", sortOrder: 0, syncId: "local-a",
+                 contentUpdatedDate: t0, targetUpdatedDate: t0),
+        RuleSeed(id: "i2", spaceId: spaceOne, host: "b.example", sortOrder: 1, syncId: "remote-b",
+                 contentUpdatedDate: t0, targetUpdatedDate: t0),
+        RuleSeed(id: "i3", spaceId: spaceTwo, host: "c.example", sortOrder: 0, syncId: "R3",
+                 contentUpdatedDate: t0, targetUpdatedDate: t0),
+    ]
+
+    /// 同批一条对别的身份的 `.update`，好让「整批回滚」真的有东西可回。
+    private var unrelatedUpdate: URLRuleSyncOp {
+        .update(landing("R3", spaceId: Self.spaceTwo, host: "changed.example", sortOrder: 0,
+                        contentUpdatedDate: Self.t1))
+    }
+
+    func testRekeyOntoAnotherRowsSyncIdThrowsRowAlreadyMappedAndRollsBackTheBatch() async throws {
+        let store = try makeStore()
+        try await seed(Self.rekeySeeds, in: store)
+        let before = try allRows(in: store)
+
+        await assertThrows(.rowAlreadyMapped) {
+            try await store.applyURLRuleSyncBatchThrowing(
+                [.rekey(localId: "i1", to: "remote-b", values: nil), self.unrelatedUpdate])
+        }
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after, before, "库里零变化")
+        XCTAssertEqual(after["i1"]?.syncId, "local-a")
+        XCTAssertEqual(after["i2"]?.syncId, "remote-b")
+        XCTAssertEqual(after["i3"]?.host, "c.example", "那条 .update 也没写进去")
+    }
+
+    /// (a) 幂等：`to` 等于行现值 ⇒ 零抛出、零行写。
+    func testRekeyOntoTheRowsOwnSyncIdIsAnIdempotentNoOp() async throws {
+        let store = try makeStore()
+        try await seed(Self.rekeySeeds, in: store)
+        let before = try allRows(in: store)
+
+        try await store.applyURLRuleSyncBatchThrowing([.rekey(localId: "i1", to: "local-a", values: nil)])
+
+        XCTAssertEqual(try allRows(in: store), before, "零行写")
+    }
+
+    /// (b) `localId` 在库里不存在 ⇒ `rowNotFound`、整批回滚。
+    func testRekeyOfAnUnknownLocalIdThrowsRowNotFoundAndRollsBackTheBatch() async throws {
+        let store = try makeStore()
+        try await seed(Self.rekeySeeds, in: store)
+        let before = try allRows(in: store)
+
+        await assertThrows(.rowNotFound) {
+            try await store.applyURLRuleSyncBatchThrowing(
+                [.rekey(localId: "nope", to: "acc-1", values: nil), self.unrelatedUpdate])
+        }
+
+        XCTAssertEqual(try allRows(in: store), before)
+    }
+
+    /// (c) 软删行不认领 ⇒ `rowNotFound`、整批回滚。
+    func testRekeyOfASoftDeletedRowThrowsRowNotFoundAndRollsBackTheBatch() async throws {
+        let store = try makeStore()
+        var seeds = Self.rekeySeeds
+        seeds[0].deletedDate = Self.t1
+        try await seed(seeds, in: store)
+        let before = try allRows(in: store)
+
+        await assertThrows(.rowNotFound) {
+            try await store.applyURLRuleSyncBatchThrowing(
+                [.rekey(localId: "i1", to: "acc-1", values: nil), self.unrelatedUpdate])
+        }
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(after["i1"]?.syncId, "local-a")
+        XCTAssertNotNil(after["i1"]?.deletedDate)
+    }
+
+    /// 正面：re-key 只写 `syncId`（不盖戳、不置位、不动 `mergePartnerSyncId`）；带 `values` 时字段合并
+    /// 结果在同一个写块里按**新**身份落地，`pendingLocalEdit` 仍然一个字节不碰。
+    func testRekeyWritesOnlyTheSyncIdAndLandsTheMergedValuesUnderTheNewIdentity() async throws {
+        let store = try makeStore()
+        var seeds = Self.rekeySeeds
+        seeds[0].pendingLocalEdit = true
+        seeds[0].mergePartnerSyncId = "w"
+        try await seed(seeds, in: store)
+
+        try await store.applyURLRuleSyncBatchThrowing([.rekey(localId: "i1", to: "acc-1", values: nil)])
+        let rekeyed = try row("i1", in: store)
+        XCTAssertEqual(rekeyed.syncId, "acc-1")
+        XCTAssertEqual(rekeyed.host, "a.example")
+        XCTAssertEqual(rekeyed.contentUpdatedDate, Self.t0, "不盖戳")
+        XCTAssertTrue(rekeyed.pendingLocalEdit, "不清位")
+        XCTAssertEqual(rekeyed.mergePartnerSyncId, "w", "不动这一列")
+
+        try await store.applyURLRuleSyncBatchThrowing([
+            .rekey(localId: "i1", to: "acc-2",
+                   values: landing("acc-2", spaceId: Self.spaceOne, host: "merged.example",
+                                   sortOrder: 0, contentUpdatedDate: Self.t1)),
+        ])
+        let landed = try row("i1", in: store)
+        XCTAssertEqual(landed.syncId, "acc-2")
+        XCTAssertEqual(landed.host, "merged.example", "合并结果按新身份命中同一行")
+        XCTAssertEqual(landed.contentUpdatedDate, Self.t1)
+        XCTAssertTrue(landed.pendingLocalEdit)
+        XCTAssertEqual(landed.mergePartnerSyncId, "w")
+        XCTAssertEqual(try allRows(in: store).count, 3, "没有第二条行")
+    }
+
     /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地（照 `LocalStoreBookmarkThrowingTests`）。
     private func waitPastDebounceWindow(_ window: TimeInterval) {
         RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))

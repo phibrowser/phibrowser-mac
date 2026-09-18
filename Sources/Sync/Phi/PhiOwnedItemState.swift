@@ -69,6 +69,17 @@ struct PhiOwnedItemTable: Codable, Equatable {
     }
 }
 
+extension PhiOwnedItemTable {
+    /// §8.4.2 第 4 步 / R-M3-4a-53：认领之后**整条删掉**旧身份那条本机铸的游标。
+    /// 与 `dropExpiredTombstones(nowMs:)` 并列——两者都是「让一条身份**整条**退出
+    /// 这张表」，所以都是 `PhiOwnedItemTable` 上的 mutating 方法而不是调用方直接改
+    /// `cursors`：直接改的实现绕得过这一行注释，而这一行注释是「什么时候允许删游标」的
+    /// 唯一记录。**`PhiOwnedItemCursor` 一个字段都不加**（RR8-4）。
+    /// 不存在的身份 ⇒ 表逐字不变（幂等）。**绝不是**写一条空 `PhiOwnedItemCursor()`：那种
+    /// 游标会被 R-exec-13 的补键判据与 §4.2 第 3b 条反复扫到（CASE M-31）。
+    mutating func removeCursor(identity: String) { cursors.removeValue(forKey: identity) }
+}
+
 /// 一条归属项身份的同步影子。十四个字段，逐条都有文档注释——这些注释是这些字段**存在
 /// 理由**的唯一记录，删掉一条注释等于让下一个人有理由删掉那个字段。
 ///

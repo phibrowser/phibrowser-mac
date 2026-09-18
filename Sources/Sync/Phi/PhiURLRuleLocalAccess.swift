@@ -78,14 +78,21 @@ enum URLRuleSyncOp: Equatable, Sendable {
     case reorder(syncId: String, spaceId: String, sortOrder: Int)
     /// 入站 tombstone ⇒ **硬删**（R-M3-4a-41）。
     case delete(syncId: String)
+    /// §8.4.2 的认领：`.claim` step 的落地形式。**按本机行 `id` 寻址**（`OwnedItemApplyStep`
+    /// 既不带旧 `syncId` 也不带本机 id，而 `context.pairs` 带的正是后者）。
+    /// `values != nil` = 这条身份在 `context.adoptedFieldWrites` 里 ⇒ re-key 与字段合并结果
+    /// **写在同一次行写里**（R-M3-4a-42(b)：一页里同一条身份只有一次落地写）。
+    case rekey(localId: String, to: String, values: URLRuleLandingValues?)
 
-    /// 这条 op 指向的账户级身份。
+    /// 这条 op 指向的账户级身份（`.rekey` 是它要写上去的**新**身份）。
     var syncId: String {
         switch self {
         case .create(let values), .update(let values), .move(let values):
             return values.syncId
         case .reorder(let syncId, _, _), .delete(let syncId):
             return syncId
+        case .rekey(_, let to, _):
+            return to
         }
     }
 }
@@ -122,11 +129,25 @@ struct URLRuleApplyBatch {
             var move: URLRuleLandingValues?
             var reorder: (spaceId: String, sortOrder: Int)?
             var delete = false
+            /// §8.4.2 M1：这条身份要写到哪条本机行上（按 `localId` 寻址）。
+            var rekey: (localId: String, values: URLRuleLandingValues?)?
         }
         var order: [String] = []
         var slots: [String: Slot] = [:]
+        // ③ **一条本机行一页只认领一次**（RR3-4 / CASE M-13）：plan 那一侧按 1:1 配对，两条
+        //    `.rekey` 指向同一条行在结构上不该出现；真出现时留第一条、丢后到的（后到的那条
+        //    身份落地后复核不过 ⇒ 停放，下一轮按普通 create 落地），绝不让第二次 re-key 把
+        //    第一个身份从那一行上挤掉——挤掉的那条身份本机再无活行认领，下一轮差分为它发
+        //    一条 tombstone。
+        var rekeyedLocalIds: Set<String> = []
         for op in unordered {
             let syncId = op.syncId
+            if case .rekey(let localId, _, _) = op {
+                guard rekeyedLocalIds.insert(localId).inserted else {
+                    assertionFailure("url rule batch: local row claimed twice in one page")
+                    continue
+                }
+            }
             if slots[syncId] == nil {
                 slots[syncId] = Slot()
                 order.append(syncId)
@@ -137,6 +158,7 @@ struct URLRuleApplyBatch {
             case .move(let values): slots[syncId]?.move = values
             case .reorder(_, let spaceId, let sortOrder): slots[syncId]?.reorder = (spaceId, sortOrder)
             case .delete: slots[syncId]?.delete = true
+            case .rekey(let localId, _, let values): slots[syncId]?.rekey = (localId, values)
             }
         }
 
@@ -145,7 +167,13 @@ struct URLRuleApplyBatch {
         for syncId in order {
             guard let slot = slots[syncId] else { continue }
             var merged: URLRuleSyncOp?
-            if let move = slot.move {
+            if let rekey = slot.rekey {
+                // §8.4.2 M1 / R-M3-4a-42(b)：认领与字段合并结果**同一条 op**——同一身份另有的
+                // `.update`（`adoptedFieldWrites` 那条）折进 `values`。签名含目标，所以一次认领
+                // 不会同时是一次 rehome；`.move` / `.create` 在这里只是防御性的兜底取值。
+                merged = .rekey(localId: rekey.localId, to: syncId,
+                                values: rekey.values ?? slot.update ?? slot.move ?? slot.create)
+            } else if let move = slot.move {
                 if currentSpaceIds[syncId] == move.spaceId {
                     // 目标没动。内容要写的留 `.update`；行本页不存在的留 `.create`（两者都落到
                     // 同一个 upsert，只是记桶的规则不同）；否则就是一次纯重排。
@@ -193,7 +221,7 @@ struct URLRuleApplyBatch {
 /// Task 6 `refreshRoutingTableAfterLanding()`；Task 9 `hardDeleteURLRule(syncId:)` /
 /// `purgeSoftDeletedURLRules(olderThan:)`；8b-1 `signatureIndex(resolve:)` /
 /// `pendingLocalEditIdentities` / `unpublishedIdentities` / `mergePartners` /
-/// `notePersistedClaims` / `noteDeletedRows`；8b-3 `partnerNotAtRest(table:rows:resolve:tombstonesThisPage:)`；
+/// `notePersistedClaims` / `noteDeletedRows`（本文件已交）；8b-3 `partnerNotAtRest(table:rows:resolve:tombstonesThisPage:)`；
 /// 8b-4 `clearPendingLocalEdit(syncId:ifProjectionEquals:)` / `clearPendingLocalEditIfUnchanged(entries:)`。
 ///
 /// 生产实现是本文件末尾的 `AccountPhiURLRuleAccess`。
@@ -248,9 +276,146 @@ protocol PhiURLRuleLocalAccess: AnyObject {
     /// **判据是 `deletedDate`，与游标无关。**
     func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int
 
+    // MARK: D30（8b-1）
+
+    /// §8.4.1 的签名索引，**每页建一次**：来源是**本页那一次**
+    /// `allURLRulesIncludingDeleted()` 的结果**减去软删行**（软删行不参与认领、也不是收敛的
+    /// 组成员）。**「本页那一次」是硬的**（R-M3-4a-62 / RR4-3）。
+    /// 一个签名可以对应多条行（正是收敛要处理的情形），所以值是数组；组内**按
+    /// `(syncId ?? "", id)` 升序**排好，§8.4.2 的 1:1 配对直接取第一条。
+    /// 选「一次建索引」而不是逐条查：这个协议是 `@MainActor` 的，逐条查就是每条实体一次
+    /// 主 actor 跃迁；索引是那一次整库读的内存分组，**零额外 fetch**。
+    func signatureIndex(resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]]
+
+    /// R-M3-4a-73 的具名输入之一：满足 **(α) 前三个合取项**（行在、`deletedDate == nil`、
+    /// **有签名**）**且** `row.pendingLocalEdit == true` 的身份。填进
+    /// `OwnedItemPlanContext.pendingLocalEdits`（那个成员是 **8b-3** 加的）。
+    func pendingLocalEditIdentities(resolve: OwnerResolver) -> Set<String>
+
+    /// 同上，取值式是 `server != nil && reconciled != nil && server != reconciled`
+    /// （与发布段的 `pending` 集合 `PhiSyncEngine.publishOwnedKind` **同源**）。
+    func unpublishedIdentities(table: PhiOwnedItemTable, resolve: OwnerResolver) -> Set<String>
+
+    /// 身份 -> 伙伴 W 的身份，按 §8.4.4 的**三步查找次序**算好：① 读行上的
+    /// `mergePartnerSyncId`，指到的行**静止**就是 W；② 取不到、或取到的行**存在但不静止**
+    /// ⇒ 退到兜底支「当前签名 == `baselineSignature(X)`」的**静止活行**（多条时取 `syncId`
+    /// 字典序最小的那条）；③ 都拿不出 ⇒ 不进本表。**W 必须静止**（§8.4.1 的十个合取项，
+    /// 含第 10 项，R-M3-4a-86——所以本页的 tombstone 集合是入参，谓词没有别的来源可读它），
+    /// **W 绝不等于 X 自己**（RR7-13）。
+    /// **定义域不受 (α) 前三个合取项限制**（RR8-1）：(β) 落点上的 X 按定义是**软删态**的，
+    /// 照抄 `deletedDate == nil` 会让这张表对 (β) 恒空。
+    /// **读它的只有 8b-3 的 (α) / (β) 两支**；8b-1 把它实现完整并钉住判据，不接线。
+    func mergePartners(table: PhiOwnedItemTable, resolve: OwnerResolver,
+                       tombstonesThisPage: Set<String>) -> [String: String]
+
+    /// R-M3-4a-62 的第一个就地更新口：认领把账户身份写进本机行之后**立刻**折回轮内投影。
+    /// 参数方向是**本机行 id -> 新 `syncId`**（**与书签那一侧相反**：
+    /// `BookmarkSyncRoundState.notePersistedClaims` 收的是身份 -> guid，§5.6 给规则写死的是
+    /// 这个方向，spec 是约束方）。不折回去，同一页的落地段看到的还是「这一行没有（这个）身份」，
+    /// 于是它可能把第二个身份配给同一条行。
+    func notePersistedClaims(_ claimed: [String: String])
+
+    /// R-M3-4a-62 的第二个口：本页**真的被删掉**的那些行立刻退出投影，形状照
+    /// `BookmarkSyncRoundState.noteDeletedRows`。**让位的身份绝不进这里**（R-M3-4a-61）。
+    func noteDeletedRows(_ syncIds: Set<String>)
+
     // **没有、也不许有 `clearAllSyncIds`**（§4.4 末段 / R-M3-4a-23）：规则的 `syncId` 在插入点
     // 铸造，自撤销时清掉它，重新加入后账户上那些旧身份没有任何设备认领 ⇒ 孤儿实体。缺席本身
     // 就是那道防线——协调器的 `clearAllSyncIds` 闭包只扩到书签。
+}
+
+// MARK: - D30 的四个只读查询（生产实现与假件共用同一份逻辑）
+
+/// `signatureIndex` / `pendingLocalEditIdentities` / `unpublishedIdentities` / `mergePartners`
+/// 的**纯函数**半边：入参是本页那一次读的**全部**行（含软删行），每个函数按自己的定义域
+/// 过滤。生产实现喂 `cachedRows`、假件喂 `rows`，判据只有这一份——两处各写一份的实现迟早
+/// 在「谁算静止」上分叉，而那正是 §8.4.1 要求「三处读同一个谓词」的原因。
+enum URLRuleSignatureQueries {
+    /// §8.4.1 的归一化函数（三处调用点之一，与 `normalizeArrivals` 同款注入）。
+    static let normalize: (String, String?) -> (host: String, pathPrefix: String?) = {
+        LocalStore.normalizedRule(host: $0, pathPrefix: $1)
+    }
+
+    static func signatureIndex(rows: [PhiLocalURLRule],
+                               resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]] {
+        var out: [RuleSignature: [PhiLocalURLRule]] = [:]
+        for row in rows where row.deletedDate == nil {
+            guard let signature = URLRuleKind.signature(of: row, resolve: resolve,
+                                                        normalize: normalize) else { continue }
+            out[signature, default: []].append(row)
+        }
+        for key in out.keys {
+            out[key]?.sort { ($0.syncId ?? "", $0.id) < ($1.syncId ?? "", $1.id) }
+        }
+        return out
+    }
+
+    static func pendingLocalEditIdentities(rows: [PhiLocalURLRule],
+                                           resolve: OwnerResolver) -> Set<String> {
+        var out: Set<String> = []
+        for row in rows where row.deletedDate == nil && row.pendingLocalEdit {
+            guard let syncId = row.syncId,
+                  URLRuleKind.signature(of: row, resolve: resolve, normalize: normalize) != nil
+            else { continue }
+            out.insert(syncId)
+        }
+        return out
+    }
+
+    static func unpublishedIdentities(rows: [PhiLocalURLRule], table: PhiOwnedItemTable,
+                                      resolve: OwnerResolver) -> Set<String> {
+        var out: Set<String> = []
+        for row in rows where row.deletedDate == nil {
+            guard let syncId = row.syncId, let cursor = table.cursors[syncId],
+                  let server = cursor.server, let reconciled = cursor.reconciled,
+                  server != reconciled,
+                  URLRuleKind.signature(of: row, resolve: resolve, normalize: normalize) != nil
+            else { continue }
+            out.insert(syncId)
+        }
+        return out
+    }
+
+    static func mergePartners(rows: [PhiLocalURLRule], table: PhiOwnedItemTable,
+                              resolve: OwnerResolver,
+                              tombstonesThisPage: Set<String>) -> [String: String] {
+        func atRest(_ row: PhiLocalURLRule) -> Bool {
+            URLRuleKind.isAtRest(row: row, cursor: row.syncId.flatMap { table.cursors[$0] },
+                                 resolve: resolve, normalize: normalize,
+                                 tombstonesThisPage: tombstonesThisPage)
+        }
+        // 候选 W 的定义域：静止的活行，按当前签名分组、组内按 `syncId` 升序（兜底支取最小）。
+        var restingBySyncId: [String: PhiLocalURLRule] = [:]
+        var restingBySignature: [RuleSignature: [PhiLocalURLRule]] = [:]
+        for row in rows where row.deletedDate == nil {
+            guard let syncId = row.syncId, atRest(row),
+                  let signature = URLRuleKind.signature(of: row, resolve: resolve,
+                                                        normalize: normalize) else { continue }
+            restingBySyncId[syncId] = row
+            restingBySignature[signature, default: []].append(row)
+        }
+        for key in restingBySignature.keys {
+            restingBySignature[key]?.sort { ($0.syncId ?? "") < ($1.syncId ?? "") }
+        }
+        var out: [String: String] = [:]
+        // X 的定义域**含软删行**（RR8-1）。
+        for x in rows {
+            guard let xId = x.syncId else { continue }
+            // ① 行上的 `mergePartnerSyncId`：指到的行必须存在**且静止**，且不是 X 自己。
+            if let pointer = x.mergePartnerSyncId, pointer != xId, restingBySyncId[pointer] != nil {
+                out[xId] = pointer
+                continue
+            }
+            // ② 兜底：当前签名 == `baselineSignature(X)` 的静止活行，取 `syncId` 最小的那条。
+            guard let baseline = URLRuleKind.baselineSignature(identity: xId, table: table,
+                                                               resolve: resolve, normalize: normalize),
+                  let partner = restingBySignature[baseline]?.first(where: { $0.syncId != xId }),
+                  let partnerId = partner.syncId else { continue }
+            out[xId] = partnerId
+            // ③ 两条都拿不出 ⇒ 不进本表（上面的 `guard` 就是那条出口）。
+        }
+        return out
+    }
 }
 
 // MARK: - 生产实现
@@ -382,7 +547,72 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
         return purged
     }
 
+    // MARK: - D30（8b-1）：四个只读查询 + 两个就地更新口
+
+    /// 全部读**本页缓存**（Task 8 的 `cachedRows` / `cachedLive`），零额外 fetch。快照没读到
+    /// 时照 `requireLoadedSnapshot()` 的形状交回空值并在 DEBUG 下断言。
+    func signatureIndex(resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]] {
+        guard requireLoadedSnapshot() else { return [:] }
+        return URLRuleSignatureQueries.signatureIndex(rows: cachedLive, resolve: resolve)
+    }
+
+    func pendingLocalEditIdentities(resolve: OwnerResolver) -> Set<String> {
+        guard requireLoadedSnapshot() else { return [] }
+        return URLRuleSignatureQueries.pendingLocalEditIdentities(rows: cachedLive, resolve: resolve)
+    }
+
+    func unpublishedIdentities(table: PhiOwnedItemTable, resolve: OwnerResolver) -> Set<String> {
+        guard requireLoadedSnapshot() else { return [] }
+        return URLRuleSignatureQueries.unpublishedIdentities(rows: cachedLive, table: table,
+                                                             resolve: resolve)
+    }
+
+    func mergePartners(table: PhiOwnedItemTable, resolve: OwnerResolver,
+                       tombstonesThisPage: Set<String>) -> [String: String] {
+        guard requireLoadedSnapshot() else { return [:] }
+        return URLRuleSignatureQueries.mergePartners(rows: cachedRows, table: table, resolve: resolve,
+                                                     tombstonesThisPage: tombstonesThisPage)
+    }
+
+    /// 按本机行 `id` 定位、改两份缓存里那一条的 `syncId`（键方向：**本机行 id -> 新 syncId**）。
+    /// `apply(_:)` 成功返回时缓存已经重建过一次，这里通常是一次幂等的补写；它存在是为了
+    /// R-M3-4a-62 的契约在类型上可见，而不依赖「apply 顺手重读过」这个实现细节。
+    func notePersistedClaims(_ claimed: [String: String]) {
+        guard requireLoadedSnapshot(), !claimed.isEmpty else { return }
+        for index in cachedRows.indices {
+            guard let syncId = claimed[cachedRows[index].id] else { continue }
+            cachedRows[index].syncId = syncId
+        }
+        reindexLive()
+    }
+
+    /// 按 `syncId` 把本页真的被删掉的行从两份缓存里移除。**让位的身份绝不进这里**（R-M3-4a-61）。
+    func noteDeletedRows(_ syncIds: Set<String>) {
+        guard requireLoadedSnapshot(), !syncIds.isEmpty else { return }
+        cachedRows.removeAll { row in
+            guard let syncId = row.syncId else { return false }
+            return syncIds.contains(syncId)
+        }
+        reindexLive()
+    }
+
     // MARK: - 私有
+
+    /// 从 `cachedRows` 重算另三份派生缓存（两个就地更新口改完 `cachedRows` 之后调）。
+    private func reindexLive() {
+        let live = cachedRows.filter { $0.deletedDate == nil }
+        var siblings: [String: [PhiLocalURLRule]] = [:]
+        var liveSyncIds: Set<String> = []
+        for row in live {
+            siblings[row.spaceId, default: []].append(row)
+            if let syncId = row.syncId {
+                liveSyncIds.insert(syncId)
+            }
+        }
+        cachedLive = live
+        cachedSiblings = siblings
+        cachedLiveSyncIds = liveSyncIds
+    }
 
     private func invalidateCache() {
         cachedRows = []

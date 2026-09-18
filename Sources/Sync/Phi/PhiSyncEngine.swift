@@ -214,12 +214,21 @@ struct OwnedPlanOutput {
     var serverBytes: [String: Data] = [:]
     /// §13.2 / R-M3-4a-29：本轮入站里被 `normalizeArrivals` 就地归一的身份数。只有规则填。
     var normalized = 0
+    /// M1 配对的落地寻址表：**身份 -> 本机行 `id`**（= `OwnedItemPlanContext.pairs`）。
+    /// 落地闭包按它把 `.claim` 翻成 `.rekey(localId:to:values:)`。书签与 pin 恒空。
+    var claimedLocalIds: [String: String] = [:]
+    /// M1 认领之后要**整条删掉**的那条旧游标：**新身份 -> 被它取代的旧 `syncId`**。
+    /// 引擎只对**真的落了地**的身份删（整批回滚时 re-key 没发生、旧 `syncId` 还在行上）。
+    var retiredIdentities: [String: String] = [:]
 }
 
 struct OwnedLandingInput {
     var steps: [OwnedItemApplyStep] = []
     var table = PhiOwnedItemTable()
     var maps = OwnedOwnerMaps()
+    /// `OwnedPlanOutput.claimedLocalIds`，原样交给落地闭包。默认空 ⇒ 书签与 pin 的每一处
+    /// 构造点逐字不变（计划裁定二：不走轮内状态盒、也不给 `OwnedItemApplyStep` 加成员）。
+    var claimedLocalIds: [String: String] = [:]
 }
 
 /// 一次落地的结果。三条出路**方向相反**，所以它们是三个集合而不是一个笼统的失败位
@@ -3637,7 +3646,8 @@ actor PhiSyncEngine {
         }
 
         let outcome = await registration.land(
-            OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps))
+            OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps,
+                              claimedLocalIds: output.claimedLocalIds))
         guard !isStopped else { return }
         // §7.2 / A11 的变体重铸跑在落地那一批里，所以它的条数跟着落地结果回来。
         counters.relineaged += outcome.relineaged
@@ -3689,6 +3699,16 @@ actor PhiSyncEngine {
                 spaceTableChanged = true
             }
             counters.applied += 1
+        }
+        // §8.4.2 第 4 步 / R-M3-4a-53：认领提交之后**整条删掉**旧身份那条本机铸的游标。
+        // 按「从未发布」三合取项它 `entityId` 为空、`server` 与 `reconciled` 都是 nil，删掉不丢
+        // 任何账户状态。**只对真的落了地的身份删**：整批回滚时 re-key 没发生，旧 `syncId` 还在
+        // 行上，删了它下一轮那条行会被差分当成从未发布过、以 `baseVersion == 0` 盲写覆盖账户。
+        // `retired == identity` 是幂等 re-key 那一格（行的 `syncId` 本来就等于新身份），删它会把
+        // **刚写下的基线**删掉。
+        for (identity, retired) in output.retiredIdentities
+        where outcome.landed.contains(identity) && retired != identity {
+            table.removeCursor(identity: retired)
         }
         // §4.4 第 4 步的停放：归属还没落地。
         //
@@ -6587,7 +6607,8 @@ final class URLRuleSyncRoundState {
 
     /// 每一页落地段提交之后那一次重读（R-M3-4a-62）：`access.apply(_:)` 成功返回时它自己
     /// 那份页内缓存已经重建过，这里把同一份行接进轮内投影。
-    /// **Task 8b-1 的 `notePersistedClaims` / `noteDeletedRows` 两个就地更新口接在这里。**
+    /// `notePersistedClaims` / `noteDeletedRows` 两个就地更新口由 `landURLRules` 在 `apply`
+    /// 返回之后、调这里之前先调（8b-1）；这一次重读是它们之上的兜底。
     func reloadAfterPage(_ access: any PhiURLRuleLocalAccess) {
         guard let rows = try? access.allURLRulesIncludingDeleted() else {
             pageReloadFailed = true
@@ -6670,7 +6691,7 @@ extension OwnedKindRegistration {
             // §6.1：空实现。规则的认领是**落地事务内**的一次 re-key，「配上了、身份还没写回
             // 本机行」那个中间态在结构上不存在（R-M3-4a-53）。它必须显式存在（R-exec-10）。
             retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
-            plan: { input in urlRulePlan(input, state: state) },
+            plan: { input in urlRulePlan(input, access: access, state: state) },
             land: { input in await landURLRules(input, access: access, state: state) },
             // 同上：身份在 `LocalStore` 的插入点铸造，push 侧没有身份写回窗口（R-M3-4a-53）。
             claimIdentities: { _ in [] },
@@ -6734,9 +6755,11 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
     return out
 }
 
-/// §4.4 的入站计划，规则那一半：解码 → 记 `server` 字节 → 归一（§8.1）→ 投影 → 模块的 `plan`。
+/// §4.4 的入站计划，规则那一半：解码 → 记 `server` 字节 → 归一（§8.1）→ M1 认领 pre-pass
+/// （§8.4.2）→ 投影 → 模块的 `plan`。
 @MainActor
-private func urlRulePlan(_ input: OwnedPlanInput, state: URLRuleSyncRoundState) -> OwnedPlanOutput {
+private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAccess,
+                         state: URLRuleSyncRoundState) -> OwnedPlanOutput {
     var out = OwnedPlanOutput()
     var arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>] = []
     for item in input.arrivals {
@@ -6760,9 +6783,20 @@ private func urlRulePlan(_ input: OwnedPlanInput, state: URLRuleSyncRoundState) 
     out.normalized = normalized.normalized.count
     var context = OwnedItemPlanContext()
     context.tombstonedIdentities = input.tombstoned
+    // §8.4.2 M1：认领 pre-pass 紧接归一化**之后**（签名读的是归一化之后的值）。**不受
+    // `ownedItemsPublishAllowed` 闸约束**（计划裁定四：闸只管 §8.4.3 第 2 步，M1 必须在
+    // drain 里跑，CASE M-11）。三个 context 成员是 M3-3 就有的，这里只**填**不建。
+    let claims = urlRuleClaims(arrivals: arrivals, parked: input.parked, table: input.table,
+                               resolve: input.maps.resolver, now: input.now,
+                               access: access, state: state)
+    context.pairs = claims.pairs
+    context.adoptedMerges = claims.merges
+    context.adoptedFieldWrites = claims.fieldWrites
+    out.claimedLocalIds = claims.pairs
+    out.retiredIdentities = claims.retired
+    out.adopted = claims.pairs.count
     // 定义域是「本页到达 ∪ 停放」；加上 `input.tombstoned` 是 8b-3 的（§5.6 / RR8-9）。
-    // `pairs` / `adoptedMerges` / `adoptedFieldWrites` 是 8b-1 的，`RuleProjection` 与四个
-    // 具名输入是 8b-3 的。
+    // `RuleProjection` 与四个具名输入是 8b-3 的。
     context.localProjections = urlRuleLocalProjections(
         for: Set(arrivals.map { URLRuleKind.identity(of: $0.entity) }).union(input.parked.keys),
         table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
@@ -6770,6 +6804,103 @@ private func urlRulePlan(_ input: OwnedPlanInput, state: URLRuleSyncRoundState) 
                                        table: input.table, resolve: input.maps.resolver,
                                        context: context)
     out.mustRepublish = normalized.normalized.union(out.plan.mustRepublish)
+        .union(claims.mustRepublish)
+    return out
+}
+
+/// §8.4.2 M1 的产物：四张表一个集合，全部按身份索引。
+private struct URLRuleClaimPlan {
+    /// 身份 -> 本机行 `id`（= `context.pairs` = `OwnedPlanOutput.claimedLocalIds`）。
+    var pairs: [String: String] = [:]
+    /// 身份 -> 被它取代的旧 `syncId`（`OwnedPlanOutput.retiredIdentities`）。
+    var retired: [String: String] = [:]
+    /// 身份 -> §8.2 无基线分支的合并结果（`context.adoptedMerges`）。
+    var merges: [String: Data] = [:]
+    /// 合并结果 ≠ 行现值投影的那些（`context.adoptedFieldWrites`，计划裁定五按表）。
+    var fieldWrites: Set<String> = []
+    /// 合并结果 ≠ 入站实体的那些（本机赢下任何一个单元 ⇒ 必须重新发布）。
+    var mustRepublish: Set<String> = []
+}
+
+/// §8.4.2 M1 的认领 pre-pass，逐步：
+/// ① `access.signatureIndex(resolve:)`（本页那一次读，减软删行，组内按 `(syncId ?? "", id)`）；
+/// ② 对每条到达（∪ 停放；到达覆盖同身份的停放）算实体侧签名，按签名分组；
+/// ③ 组内 remote 按 `identity` 字典序、local 沿用索引的序，**照 `pairWithinGroups` 的形状按位
+///    1:1 配对**，多出来的两侧都不配（RR3-4 / RR3-16，CASE M-13）；
+/// ④ local 侧的候选过「从未发布」三合取项：`table.cursors[syncId] == nil`，或
+///    `entityId.isEmpty && server == nil && reconciled == nil`（CASE M-2 / M-2b：有基线的、
+///    birthday 重置留下的都不可认领）；
+/// ⑤ 配上的每一对填 `pairs` / `retired`；
+/// ⑥ 按 §8.2 的**无基线分支**合并（本机那一侧 `stamp(project(row), baseline: nil, …)`，R-M3-4a-12
+///    的三项），结果进 `merges`；
+/// ⑦ 合并结果 ≠ 行现值投影 ⇒ `fieldWrites`；≠ 入站实体 ⇒ `mustRepublish`。
+///
+/// 两条定义域上的排除，都是为了让「同一身份」走它本来的路而不是一次多余的 re-key：本机已有
+/// 对应行（含软删行）的到达身份不是认领候选（它按身份落地，一次重放绝不新建第二行）；`syncId`
+/// 正在本页到达的本机行也不是候选（它被那条到达按身份命中）。
+@MainActor
+private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
+                           parked: [String: ParkedOwnedItem],
+                           table: PhiOwnedItemTable,
+                           resolve: OwnerResolver,
+                           now: Int64,
+                           access: any PhiURLRuleLocalAccess,
+                           state: URLRuleSyncRoundState) -> URLRuleClaimPlan {
+    var out = URLRuleClaimPlan()
+    let normalize = URLRuleSignatureQueries.normalize
+    let localIdentities = Set(state.rows.compactMap(\.syncId))
+
+    var candidates: [String: Phi_PhiURLRuleEntity] = [:]
+    for (identity, item) in parked {
+        guard let envelope = try? Phi_PhiEntity(serializedBytes: item.payload),
+              let entity = URLRuleKind.entity(from: envelope) else { continue }
+        candidates[identity] = entity
+    }
+    for item in arrivals {
+        candidates[URLRuleKind.identity(of: item.entity)] = item.entity
+    }
+    let arrivingIdentities = Set(candidates.keys)
+
+    var remoteGroups: [RuleSignature: [(identity: String, entity: Phi_PhiURLRuleEntity)]] = [:]
+    for (identity, entity) in candidates where !identity.isEmpty && !localIdentities.contains(identity) {
+        guard let signature = URLRuleKind.signature(of: entity, resolve: resolve,
+                                                    normalize: normalize) else { continue }
+        remoteGroups[signature, default: []].append((identity, entity))
+    }
+    guard !remoteGroups.isEmpty else { return out }
+
+    let index = access.signatureIndex(resolve: resolve)
+    for (signature, remotes) in remoteGroups {
+        let orderedRemote = remotes.sorted { $0.identity < $1.identity }
+        let orderedLocal = (index[signature] ?? []).filter { row in
+            guard let syncId = row.syncId, !arrivingIdentities.contains(syncId) else { return false }
+            guard let cursor = table.cursors[syncId] else { return true }
+            return cursor.entityId.isEmpty && cursor.server == nil && cursor.reconciled == nil
+        }
+        for (offset, remote) in orderedRemote.enumerated() where offset < orderedLocal.count {
+            let row = orderedLocal[offset]
+            guard let previous = row.syncId,
+                  let projected = URLRuleKind.project(row, resolve: resolve, scope: nil,
+                                                      parentIdentity: nil) else { continue }
+            let rank = URLRuleKind.rank(of: remote.entity)
+            // 本机那一侧：无基线投影（R-M3-4a-12 三项），身份换成要认领的那一个——合并结果
+            // 与基线都要以账户身份落笔，否则 `reconciled` 带着旧 `syncId`，下一轮的快照永远
+            // 与它不等。
+            var local = URLRuleKind.stamp(projected, baseline: nil, local: row, rank: rank, now: now)
+            local.ruleUuid = remote.identity
+            let merged = URLRuleKind.merge(local: local, remote: remote.entity)
+            guard let mergedBytes = try? URLRuleKind.envelope(merged).serializedData() else { continue }
+            out.pairs[remote.identity] = row.id
+            out.retired[remote.identity] = previous
+            out.merges[remote.identity] = mergedBytes
+            if mergedBytes != (try? URLRuleKind.envelope(local).serializedData()) {
+                out.fieldWrites.insert(remote.identity)
+            }
+            if mergedBytes != (try? URLRuleKind.envelope(remote.entity).serializedData()) {
+                out.mustRepublish.insert(remote.identity)
+            }
+        }
+    }
     return out
 }
 
@@ -6806,9 +6937,11 @@ private func urlRuleLocalProjections(for identities: Set<String>,
 /// 翻译表（每条 step 一条 op，`identity` 就是 `syncId`）：`.create` ⇒ 本机**没有**这条身份的
 /// 行才 `.create`，有行（含软删行，R-M3-4a-42(a)）就是一次 `.update` / `.move`——一次重放
 /// （游标丢失、marker 回退）绝不新建第二行；`.update` ⇒ `.update`；`.move` ⇒ `.move`，目标取
-/// `step.newOwnerUuid`（R-M3-4a-26）；`.delete` ⇒ `.delete(syncId:)`；`.claim` 本任务不可达
-/// （M1 是 8b-1 的）。同一身份的 `.move` + `.update` 交给 `URLRuleApplyBatch.init` 合成一条，
-/// 目标没动的 `.move` 由它降成 `.reorder`（CASE U-10b）。
+/// `step.newOwnerUuid`（R-M3-4a-26）；`.delete` ⇒ `.delete(syncId:)`；`.claim` ⇒
+/// `.rekey(localId:to:values:)`，本机行按 `input.claimedLocalIds[identity]` 定位（§8.4.2 M1，
+/// 计划裁定二）。同一身份的 `.move` + `.update` 交给 `URLRuleApplyBatch.init` 合成一条，
+/// 目标没动的 `.move` 由它降成 `.reorder`（CASE U-10b），`.claim` + `.update` 由它折成一条
+/// `.rekey`（R-M3-4a-42(b)）。
 @MainActor
 private func landURLRules(_ input: OwnedLandingInput,
                           access: any PhiURLRuleLocalAccess,
@@ -6833,6 +6966,9 @@ private func landURLRules(_ input: OwnedLandingInput,
         guard let identity = row.syncId, rowOf[identity] == nil else { continue }
         rowOf[identity] = row
     }
+    // 本机行 id -> 行：`.claim` 按本机 id 寻址（§8.4.2），那一行此刻挂在**旧**身份上。
+    var rowById: [String: PhiLocalURLRule] = [:]
+    for row in state.rows { rowById[row.id] = row }
     // 身份 -> 本轮的 rank：先基线，再被本页的合并结果覆盖。被触及的桶里没有 step 的兄弟按
     // 基线排；从没发布过的行没有 rank，`rankToSortOrder` 把它们排最前。
     var rankOf: [String: String] = [:]
@@ -6850,6 +6986,8 @@ private func landURLRules(_ input: OwnedLandingInput,
         var row: PhiLocalURLRule?
         var moves = false
         var writesContent = false
+        /// §8.4.2 M1：这条身份要认领的本机行 `id`；`row` 就是那一行（还挂着旧 `syncId`）。
+        var claimsLocalId: String?
     }
     var order: [String] = []
     var landing: [String: Landing] = [:]
@@ -6857,15 +6995,23 @@ private func landURLRules(_ input: OwnedLandingInput,
 
     for step in input.steps {
         let identity = step.identity
+        var claimedLocalId: String?
+        var claimedRow: PhiLocalURLRule?
         switch step.kind {
         case .delete:
             deleteIdentities.append(identity)
             continue
         case .claim:
-            // §6.1：规则没有 §6 的认领，这条 step 在结构上不可达。
-            assertionFailure("url rules: unexpected .claim step for \(identity.prefix(8))")
-            out.refused.insert(identity)
-            continue
+            // §8.4.2 M1：本机行按 `claimedLocalIds` 定位；表里没有、行不在、或行已软删 = 这一批
+            // 算错了 ⇒ 拒收，不停放（停放会每轮原样重试同一条错误的配对）。
+            guard let localId = input.claimedLocalIds[identity],
+                  let row = rowById[localId], row.deletedDate == nil else {
+                out.refused.insert(identity)
+                landing.removeValue(forKey: identity)
+                continue
+            }
+            claimedLocalId = localId
+            claimedRow = row
         case .create, .move, .update:
             break
         }
@@ -6900,13 +7046,18 @@ private func landURLRules(_ input: OwnedLandingInput,
         if landing[identity] == nil {
             order.append(identity)
             landing[identity] = Landing(entity: entity, payload: payload, spaceId: spaceId,
-                                        row: rowOf[identity])
+                                        row: claimedRow ?? rowOf[identity],
+                                        claimsLocalId: claimedLocalId)
         }
         // 同一身份的两条 step 带的是同一份合并结果，后到的覆盖先到的。
         landing[identity]?.entity = entity
         landing[identity]?.payload = payload
         landing[identity]?.spaceId = spaceId
-        if step.kind == .move { landing[identity]?.moves = true } else { landing[identity]?.writesContent = true }
+        switch step.kind {
+        case .move: landing[identity]?.moves = true
+        case .claim: break      // 只写身份；内容只走 `.update`（`adoptedFieldWrites` 那条）
+        default: landing[identity]?.writesContent = true
+        }
         rankOf[identity] = URLRuleKind.rank(of: entity)
     }
     let active = order.filter { landing[$0] != nil }
@@ -6928,13 +7079,14 @@ private func landURLRules(_ input: OwnedLandingInput,
 
     // 被触及的桶：新建 / 救回软删行 / 纯重排进目标桶；rehome 进**源桶与目标桶**（R-M3-4a-3）。
     // 纯内容更新不碰桶的次序（与 `landPins` 同一条判据）。
+    // 认领的行第一次拿到账户级 rank（§8.4.2），与新建同一条理由进目标桶。
     for identity in active {
         guard let item = landing[identity] else { continue }
         if let row = item.row {
             if row.spaceId != item.spaceId {
                 touched.insert(row.spaceId)
                 touched.insert(item.spaceId)
-            } else if item.moves || row.deletedDate != nil {
+            } else if item.moves || row.deletedDate != nil || item.claimsLocalId != nil {
                 touched.insert(item.spaceId)
             }
         } else {
@@ -6946,11 +7098,14 @@ private func landURLRules(_ input: OwnedLandingInput,
     // 的行 − 本页搬走 / 删掉的 + 本页搬进来 / 新建 / 救回的；软删行由投影函数自己排除。
     // 页内重读失败过时 `siblings` 那份缓存不可用（生产实现会断言），退回轮内投影的同一份行。
     var sortOrderOf: [String: Int] = [:]
+    let claimedLocalIds = Set(active.compactMap { landing[$0]?.claimsLocalId })
     for bucket in touched {
         var members = state.pageReloadFailed
             ? state.live.filter { $0.spaceId == bucket }
             : access.siblings(inSpaceId: bucket)
         members.removeAll { row in
+            // 认领的行在快照里还挂着旧 `syncId`：先摘掉，下面按新身份重新加入。
+            if claimedLocalIds.contains(row.id) { return true }
             guard let identity = row.syncId else { return false }
             if deletedWithRow.contains(identity) { return true }
             if let item = landing[identity] { return item.spaceId != bucket }
@@ -6964,6 +7119,7 @@ private func landURLRules(_ input: OwnedLandingInput,
             if var row = item.row {
                 row.spaceId = bucket
                 row.deletedDate = nil
+                row.syncId = identity
                 members.append(row)
             } else {
                 // 新建的行还没有本机 id；投影按 `(rank, syncId ?? id)` 排，占位 id 取身份本身。
@@ -7008,6 +7164,15 @@ private func landURLRules(_ input: OwnedLandingInput,
             ops.append(.create(values))
             continue
         }
+        if let localId = item.claimsLocalId {
+            // §8.4.2 M1：re-key 按本机 id；字段合并结果（`.update` 那条）由 `URLRuleApplyBatch.init`
+            // 折进同一条 `.rekey`。行的投影下标变了也要写（认领的行第一次按账户级 rank 排位），
+            // 走的同样是那一次 `values` 写，不另发一条 `.reorder`。
+            ops.append(.rekey(localId: localId, to: identity, values: nil))
+            let repositioned = sortOrderOf[identity].map { $0 != row.sortOrder } ?? false
+            if item.writesContent || repositioned { ops.append(.update(values)) }
+            continue
+        }
         // §4.5：**先按身份找本机行，找不到才 create**。有行的一律是 update / move。
         if item.moves || row.spaceId != item.spaceId { ops.append(.move(values)) }
         if item.writesContent { ops.append(.update(values)) }
@@ -7036,6 +7201,13 @@ private func landURLRules(_ input: OwnedLandingInput,
         }
         return out
     }
+    // R-M3-4a-62 的第一个就地更新口：真的提交了的 re-key **立刻**折回轮内投影
+    // （**本机行 id -> 新 syncId**，与书签那一侧方向相反，计划裁定三）。
+    var persisted: [String: String] = [:]
+    for op in batch.ops {
+        if case .rekey(let localId, let to, _) = op { persisted[localId] = to }
+    }
+    if !persisted.isEmpty { access.notePersistedClaims(persisted) }
     // §4.5：落地之后、写基线之前，按计划复核一次。`apply` 收尾自己重建过一次缓存，所以这个
     // 读者此刻答的是新世界；复核排在下面那次重读之前，重读失败也不会把已落地的行读成「不在」。
     for identity in active {
@@ -7046,14 +7218,19 @@ private func landURLRules(_ input: OwnedLandingInput,
         out.landed.insert(identity)
         if let payload = payloadOf[identity] { out.reconciled[identity] = payload }
     }
+    var deletedRows: Set<String> = []
     for identity in deletedWithRow {
         if access.isKnownLocalURLRule(identity) {
             out.parked.insert(identity)
         } else {
             out.landed.insert(identity)
             out.deleted.insert(identity)
+            deletedRows.insert(identity)
         }
     }
+    // R-M3-4a-62 的第二个就地更新口：本页**真的被删掉**的行立刻退出投影。**让位的身份绝不进
+    // 这里**（R-M3-4a-61）——让位是 8b-3 的 (ii) 支，它软删的行仍在投影里等自己的 tombstone。
+    if !deletedRows.isEmpty { access.noteDeletedRows(deletedRows) }
     // R-M3-4a-62：这一页的行投影在提交之后重读一次。
     state.reloadAfterPage(access)
     // §6.6 第 1 行 / R-M3-4a-34：落地**显式**触发一次路由表刷新，**一页一次**。

@@ -521,4 +521,41 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL).count, bytesAfterA,
                        "失败那一次一个字节都没写出去")
     }
+
+    // MARK: - CASE M-31（`removeCursor` 的文件往返，8b-1）
+
+    /// 防的是什么：把「删旧游标」实现成「写一条空 `PhiOwnedItemCursor()`」的实现在这里红：一条
+    /// `entityId == ""`、`reconciled == nil` 的游标会被补键判据与 §4.2 第 3b 条反复扫到，而它对应的
+    /// 本机行此刻挂在**另一个**身份上 ⇒ 每轮一次无主重发。`reportedLoss == false` 那一半钉住删一条
+    /// 游标不等于丢整表。
+    func testRemoveCursorDropsTheWholeEntryAndSurvivesAFileRoundTrip() throws {
+        var table = PhiOwnedItemTable()
+        var old = PhiOwnedItemCursor()
+        old.ownerUuid = "su-1"
+        table.cursors["old"] = old
+        var fresh = PhiOwnedItemCursor()
+        fresh.entityId = "srv-new"
+        fresh.version = 7
+        fresh.reconciled = Data([0x01, 0x02])
+        fresh.server = Data([0x01, 0x02])
+        fresh.ownerUuid = "su-1"
+        table.cursors["new"] = fresh
+        let formatVersion = table.formatVersion
+
+        table.removeCursor(identity: "old")
+        XCTAssertNil(table.cursors["old"], "整条不在，不是一条空游标")
+        XCTAssertEqual(table.cursors.count, 1)
+        XCTAssertTrue(makeStore().save(table))
+
+        let reloaded = makeStore().load(hadRecords: true)
+        XCTAssertNil(reloaded.table.cursors["old"])
+        XCTAssertEqual(reloaded.table.cursors["new"], fresh, "逐字段相等")
+        XCTAssertFalse(reloaded.reportedLoss)
+        XCTAssertEqual(reloaded.table.formatVersion, formatVersion)
+
+        // 幂等：对一条不存在的身份调 `removeCursor` ⇒ 表逐字不变。
+        var untouched = reloaded.table
+        untouched.removeCursor(identity: "missing")
+        XCTAssertEqual(untouched, reloaded.table)
+    }
 }

@@ -398,3 +398,119 @@ enum URLRuleKind: OwnedItemKind {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
 }
+
+// MARK: - D30：合并签名与静止谓词（§8.4.1）
+
+/// 规则的**合并签名**（§8.4.1 / R-M3-4a-52）。三个成员全部取**归一化之后**的值（§8.1 的
+/// 同一个不动点函数）。`ask` 与 rank **不在里面**（D30 原文）；**目标在里面**，所以「同一个
+/// host 路由到两个不同 Space」是**冲突不是重复**，由 §9 的裁决键分胜负、两条规则都留着。
+struct RuleSignature: Hashable {
+    let host: String
+    /// nil 与 `"/"` 是**两个值**。
+    let pathPrefix: String?
+    /// **账户级**的量：普通 Space 经 resolver 反查出的 syncUuid，或保留常量
+    /// `SyncableSpaces.defaultSpaceUuid` / `SyncableSpaces.incognitoSpaceUuid`。
+    /// **绝不是本机 `spaceId`**（RR3-6：签名要与入站实体的 `target_space_uuid` 比，
+    /// 按本机 id 建索引是另一个键空间、永不命中，认领会整条静默失效）。
+    let owner: String
+}
+
+extension URLRuleKind {
+    /// §8.4.1 第一条：**两道门必须一起判**（RR7-2）。
+    /// ① `eligibilityOwner(of:resolve:scope:) != nil`；
+    /// ② `resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner)`
+    ///    （与 `snapshot` 的第二道准入 `SyncableOwnedItems.swift:376-380` 逐字相同）。
+    /// 任一不过 ⇒ **nil = 这一行惰性（inert）**：不进分组、不参与 M1 / M2 / M3、也不进
+    /// `snapshot`。**任何退化取值都是错的**（nil / `""` / 本机 `spaceId` 三种写法都会把目标
+    /// 不同的两条规则并进一组 ⇒ 软删其中一条 ⇒ 它若从未发布连 tombstone 都发不出）。
+    /// `normalize` 由调用方注入（`LocalStore.normalizedRule`，与 `normalizeArrivals` 同一条
+    /// 纪律：本模块不去够 `LocalStore`）。**自己跑一次 `normalize`**：V11 回填的老行按定义没过
+    /// 归一化（CASE M-8 的本机行就是 `"GitHub.com."`），幂等保证它对已归一的值是恒等。
+    static func signature(of row: PhiLocalURLRule, resolve: OwnerResolver,
+                          normalize: (String, String?) -> (host: String, pathPrefix: String?))
+        -> RuleSignature? {
+        guard let owner = eligibilityOwner(of: row, resolve: resolve, scope: nil) else { return nil }
+        return signature(host: row.host, pathPrefix: row.pathPrefix, owner: owner,
+                         resolve: resolve, normalize: normalize)
+    }
+
+    /// 实体那一侧的同一条规则：owner 直接读 `target_space_uuid`（它本来就是账户级的量），
+    /// 线上 `""` ⇔ 本机 nil（§8.1）。目标为空 / 第二道门不过 ⇒ nil。
+    static func signature(of entity: Phi_PhiURLRuleEntity, resolve: OwnerResolver,
+                          normalize: (String, String?) -> (host: String, pathPrefix: String?))
+        -> RuleSignature? {
+        let wirePath = entity.pathPrefix.stringValue
+        return signature(host: entity.host.stringValue,
+                         pathPrefix: wirePath.isEmpty ? nil : wirePath,
+                         owner: entity.targetSpaceUuid.stringValue,
+                         resolve: resolve, normalize: normalize)
+    }
+
+    /// §8.4.1 第二条。从 X 游标的 **`reconciled`** 那份投影解出实体、按同一条规则算签名，
+    /// 也就是**这次本机编辑之前**那一个（M3 的兜底查找读它）。
+    /// 没有游标 / 没有 `reconciled` / 解不出实体 / 目标为空 / 第二道门不过 ⇒ **nil**
+    /// （fail-closed，**绝不**退化成任何别的取值）。与 `signature(of entity:)` 是同一个函数，
+    /// 两处各写一份的实现迟早分叉（CASE M-30 (e)）。
+    static func baselineSignature(identity: String, table: PhiOwnedItemTable,
+                                  resolve: OwnerResolver,
+                                  normalize: (String, String?)
+                                      -> (host: String, pathPrefix: String?)) -> RuleSignature? {
+        guard let bytes = table.cursors[identity]?.reconciled,
+              let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+              let entity = entity(from: envelope) else { return nil }
+        return signature(of: entity, resolve: resolve, normalize: normalize)
+    }
+
+    /// §8.4.1 第三条：**静止（at rest）= 十个合取项**，按 spec 的表序求值。三处读**同一个
+    /// 谓词**（M2 的入组判据、胜者候选集、§8.4.4 里 W 的合格性），所以它只有这一个实现。
+    ///
+    /// 实现口径：**只有 `syncId != nil` 的行才谈得上静止**（`syncId` 是判据 1 的寻址键，
+    /// 也是胜者比较的键；V11 回填漏掉的行在这里直接出局，**绝不强解包**）。
+    ///
+    /// 1/2/3/4/5/9 读游标，6/7 读行，8 由 resolver 算，**10 由本页 `arrivals` 算**。
+    /// 求值时刻是 kind 的 pre-pass，用**本页那一次** `allURLRulesIncludingDeleted()` 与当时
+    /// 的游标表，**每页一次**；同一页之内后续的写不改变已经算好的那份判定（R-M3-4a-62）。
+    static func isAtRest(row: PhiLocalURLRule, cursor: PhiOwnedItemCursor?,
+                         resolve: OwnerResolver,
+                         normalize: (String, String?) -> (host: String, pathPrefix: String?),
+                         tombstonesThisPage: Set<String>) -> Bool {
+        guard let syncId = row.syncId else { return false }
+        // 1. 已发布（R-M3-4a-23）：没上过账户的行没有「账户手上那一份」可比。
+        guard let cursor, cursor.server != nil else { return false }
+        // 2. 账户手上那一份 == 本机落地的那一份：还没发出去的分歧不算静止。
+        guard cursor.server == cursor.reconciled else { return false }
+        // 3. 没有停放中的入站实体：停放项落地之后这一行会变。
+        guard cursor.pendingApply == nil else { return false }
+        // 4. 没有待发的本机删除：它下一轮就会消失。
+        guard !cursor.pendingDelete else { return false }
+        // 5. 没有停着的远端 tombstone（RR8-3）：选它当胜者 ⇒ 它吸收败者之后自己也被删，
+        //    整组归零。
+        guard !cursor.pendingTombstone else { return false }
+        // 6. 没有未发布的用户编辑（R-M3-4a-65）：那次编辑还没在账户上有代表。
+        guard !row.pendingLocalEdit else { return false }
+        // 7. 活行：软删行不参与收敛，也不是合并伙伴。
+        guard row.deletedDate == nil else { return false }
+        // 8. 有签名（两道门都过）：惰性行不进任何一组。
+        guard signature(of: row, resolve: resolve, normalize: normalize) != nil else { return false }
+        // 9. 不在 R-exec-13 的补键态（判据的镜像在 `PhiSyncEngine` 的 `unkeyed`）：那条游标
+        //    正等着经 client tag 重新认一次身份，淘汰它会绕过整套放弃计数。
+        guard !(cursor.entityId.isEmpty && cursor.reconciled != nil) else { return false }
+        // 10. 本页没有它的入站 tombstone（R-M3-4a-86）：前九项固定在 pre-pass、看不见本页
+        //     到达的删除；`.transfer` 与 `.delete` 同页同事务时，先把编辑转移到一条本页就要
+        //     被删掉的 W 上，那次编辑丢失。第 5 项与第 10 项是同族的两半。
+        guard !tombstonesThisPage.contains(syncId) else { return false }
+        return true
+    }
+
+    /// 两个 `signature(of:)` 重载共用的收尾：目标为空 ⇒ nil；第二道门（映射得到但不合格）
+    /// ⇒ nil；保留常量在 `localSpaceId` 里不映射（R-M3-4a-7），所以那一半对它恒过。
+    private static func signature(host: String, pathPrefix: String?, owner: String,
+                                  resolve: OwnerResolver,
+                                  normalize: (String, String?) -> (host: String, pathPrefix: String?))
+        -> RuleSignature? {
+        guard !owner.isEmpty else { return nil }
+        if resolve.localSpaceId(owner) != nil, !resolve.isEligibleSpace(owner) { return nil }
+        let normalized = normalize(host, pathPrefix)
+        return RuleSignature(host: normalized.host, pathPrefix: normalized.pathPrefix, owner: owner)
+    }
+}

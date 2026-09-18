@@ -46,7 +46,7 @@ struct OwnedItemArrival<Entity> {
 /// `plan` 的第六个参数：一次调用要带的全部轮内上下文。散成多个实参会让签名随着每一条新
 /// 规则而变。
 struct OwnedItemPlanContext {
-    /// `adopt` 的配对表：实体身份 -> 本机 guid。
+    /// `adopt` 的配对表：实体身份 -> 本机行的稳定本地 id（书签是 `guid`，规则是 `PhiLocalURLRule.id`）。
     var pairs: [String: String] = [:]
     /// `adopt` 按 §6.2 算好的**字段级合并结果**（身份 -> `Phi_PhiEntity` 信封字节），即
     /// `OwnedItemAdoptionResult.merges`。`plan` 用它替换这些身份的入站实体，于是落地的是

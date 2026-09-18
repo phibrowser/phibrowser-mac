@@ -1077,6 +1077,40 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertTrue(pointerPass([a0, a], published: ["a"]).isEmpty)
     }
 
+    /// **F1 的探针（8b-2 fix round 1）**：锚点子集的**基数**按伪码的时刻求值 —— 也就是收敛
+    /// **之前**那一份活集。组里两条已发布静止成员 A / B 加一条从未发布、本页也没落地的活行 C：
+    /// 收敛把 B 软删掉，软删之后的活集里「已发布 ∪ 本页落地」只剩 A 一条。
+    ///
+    /// 防的是什么：把锚点子集也建在软删之后那一份活集上的实现，这一组的子集从 2 掉到 1 ⇒
+    /// `guard anchors.count >= 2` 当场 `continue` ⇒ **C 一条指针都拿不到**，而 §8.4.3 的
+    /// `writePointer` 在收敛之前求那个 `> 1`、给**每一个**非锚点成员（含从未发布的）写指针，
+    /// `mergePartnerSyncId` 生命周期表的 RR10-8 那一行正是按「它被写过」立的。
+    func testM2a_theAnchorCardinalityIsEvaluatedBeforeTheSoftDeletes() throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedSettled("a", id: "i-a", accountStamp: 100, rows: &rows, table: &table)
+        seedSettled("b", id: "i-b", sortOrder: 1, accountStamp: 100, rows: &rows, table: &table)
+        // C：有 `syncId`（插入点铸造，R-M3-4a-23），**没有游标** ⇒ 既不在 `publishedIdentities`
+        // 里、也不在 `landedThisPage` 里，而且它不静止 ⇒ 不是收敛的成员。
+        rows.append(.fixture(id: "i-c", syncId: "c-local", sortOrder: 2, pendingLocalEdit: true))
+
+        let out = mergePass(rows: rows, table: table, atRest: ["a", "b"])
+        XCTAssertEqual(out.collapsed, 1, "B 被软删")
+        XCTAssertEqual(out.ops, [
+            .softDelete(syncId: "b", mergePartnerSyncId: "a"),
+            .setMergePartner(syncId: "c-local", mergePartnerSyncId: "a"),
+        ], "C 照样拿到指向锚点 A 的那一列")
+
+        // 对照：同一份输入但闸关着（零软删）⇒ C 拿到的那一列**逐字相同**。B 此时还活着、
+        // 也还是非锚点成员，所以它多一条指针写；C 那一条两条路径一致，正是「`convergePass`
+        // 先跑」那条偏离要证明的东西。
+        let gated = mergePass(rows: rows, table: table, atRest: ["a", "b"], convergeAllowed: false)
+        XCTAssertEqual(gated.ops, [
+            .setMergePartner(syncId: "b", mergePartnerSyncId: "a"),
+            .setMergePartner(syncId: "c-local", mergePartnerSyncId: "a"),
+        ])
+    }
+
     // =======================================================================================
     // MARK: - CASE M2-c（闸只管第 2 步：通道级断言）
     // =======================================================================================

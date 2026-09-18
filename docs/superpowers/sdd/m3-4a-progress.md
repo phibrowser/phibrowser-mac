@@ -643,8 +643,14 @@ D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（
    `OwnedItemPlan` 拖成泛型、牵动书签与 pin 的每一个调用点）。全仓一个 module，`SyncableOwnedItems.swift`
    已经具名引用过 pin 专属的 `PinnedTabScope`，没有新的构建边。书签与 pin 那两条路径永不填它。
 2. **`convergePass` 先跑、`mergePointerPass` 后跑**（裁定四）：与 §8.4.3 伪码「按组交织 + 循环后第二遍」的
-   op 发出次序不同，终态逐字相同、行写严格更少。证明两条（锚点不变 / 终值支配）逐字写在
-   `URLRuleKind.mergePass` 的文档注释里，评审按那一段核对。
+   op 发出次序不同，终态逐字相同、行写严格更少。证明**三条腿**逐字写在 `URLRuleKind.mergePass` 的文档
+   注释里，评审按那一段核对：(1) 锚点的**身份**不变（锚点 ≤ 胜者 < 每一条败者 ⇒ 锚点永不当败者，那一行
+   也必然活到写循环）、(2) 锚点子集的**基数**不变、(3) 终值支配。**第 (2) 条靠的是接缝不是论证**
+   （fix round 1 / 评审 F1）：伪码的 `writePointer` 在收敛**之前**求那个 `published.count > 1`，先收敛会把
+   「两条已发布成员 + 一条从未发布、本页也没落地的活行」这一组的子集从 2 掉到 1，那条从未发布的成员
+   就拿不到指针（而 `mergePartnerSyncId` 生命周期表的 RR10-8 那一行按「它被写过」立）。落法：
+   `mergePointerPass` 加第二个入参 `anchorRows`（带默认值 `nil` ⇒ 与 `liveRows` 同一份），**锚点子集建在
+   软删之前那一份活集上、写循环仍然只跑软删之后那一份**。探针 `testM2a_theAnchorCardinalityIsEvaluatedBeforeTheSoftDeletes`。
 3. **三个原语「找不到行」零写返回、DEBUG `assertionFailure`，不抛**（裁定五）：M2 的输入全部来自同一个事务里
    刚读到的那份投影，结构上必然命中；抛会把整页落地回滚掉，同一页每轮重放每轮抛。
 4. **本页 `.transfer` 目标从 M2 第 2 步候选集里减掉**（裁定六 (1)，R-M3-4a-90）：`land` 闭包里
@@ -721,8 +727,20 @@ D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（
 23. **CASE M-16b / M-17 (i) / M-25 (e) 的 8b-3 半边不写**（brief 已经点名它们不属于本任务）：M-17 只断 M2
     那一半，M-16b 整条依赖 (ii) 让位支，留给 8b-3。
 
+### Fix round 1（评审 `task-8b-2-review.md` 的 F1 / F3 / F2；F4 ~ F7 由控制者 park）
+
+25. **F1（Important）**：`mergePointerPass` 的锚点子集与写循环分域 —— 见上面重写过的第 2 条。
+    `mergePass` 传 `anchorRows: live`（软删之前）、`liveRows: liveAfter`（软删之后）；两处文档与本条 ledger
+    同批把「终态逐字相同」那句证明补成三条腿。新增一条纯值探针。
+26. **F3（Minor）**：`effectiveAccountStamps` 的**第一层**按同一条「毫秒 0 = 缺席」口径压零。
+    `URLRuleLandingValues` 的两枚戳是非可选 `Date`，而 R-M3-4a-12 的无基线分支给目标戳与 rank 戳写的正是
+    0 ⇒ 不压就会给 8b-3 的 `.transfer` 递一枚 `Date(1970)` 这种「看起来很旧但很真」的目标戳。缺的那一枚
+    **按单元**落到第二 / 三层（一条本页 `.create` 的身份根本没有游标，补不到就仍然缺席）。
+27. **F2（Minor）**：`OwnedLandingOutcome.collapsed` / `.mergeChangedRouting` 挪到 `createdRows` /
+    `createdPins` **之后**，`createdRows` 那段被劫走的文档注释归位。
+
 ### 验证口径
 
-24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 31 条用例与全部实现改动只经
+24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 32 条用例与全部实现改动只经
     逐行核对：每个引用到的符号都先 grep 过签名，每个 `switch URLRuleSyncOp` 都是穷举的，
     `URLRuleKind` 的四个新纯函数没有任何 actor 隔离状态。一次统一的编译检查在全部任务做完之后跑。

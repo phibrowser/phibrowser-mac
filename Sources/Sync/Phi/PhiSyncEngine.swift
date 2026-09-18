@@ -293,6 +293,11 @@ struct OwnedLandingOutcome {
     /// 字段，所以一条由落地新建的行**按构造**没有图标；认领 / 更新命中的是本机早就有的行，
     /// 它们自己的图标不该被一次回填盖掉。于是回填的投喂源不需要任何新的本机读。
     ///
+    /// 书签那一侧填这个，pin 那一侧填 `createdPins`。
+    var createdRows: [PhiLocalBookmark] = []
+    /// §8.2 / Task 10 的 pin 半边。同一条判据（「本轮新建」⇒ 按构造没有图标）；spec §8.2
+    /// 开头那句是「落地的书签**与 pin** 没有图标时」，所以两种 kind 都投喂。
+    var createdPins: [PhiLocalPin] = []
     /// §8.4.3 第 2 步 (b)：这一页的落地事务尾部真的被软删掉的败者条数（R-M3-4a-54）。
     /// 引擎按它回填 `OwnedRoundCounters.collapsed`。书签与 pin 恒为 0。
     var collapsed = 0
@@ -300,11 +305,6 @@ struct OwnedLandingOutcome {
     /// 都没落地。**指针写不算**（`mergePartnerSyncId` 不进路由表，CASE M-7 钉住零刷新）。
     /// 书签与 pin 恒 `false`。
     var mergeChangedRouting = false
-    /// 书签那一侧填这个，pin 那一侧填 `createdPins`。
-    var createdRows: [PhiLocalBookmark] = []
-    /// §8.2 / Task 10 的 pin 半边。同一条判据（「本轮新建」⇒ 按构造没有图标）；spec §8.2
-    /// 开头那句是「落地的书签**与 pin** 没有图标时」，所以两种 kind 都投喂。
-    var createdPins: [PhiLocalPin] = []
 }
 
 /// 一次停放项重试的结果（§3 / R-exec-10）。

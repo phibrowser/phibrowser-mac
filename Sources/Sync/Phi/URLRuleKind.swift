@@ -645,6 +645,10 @@ extension URLRuleKind {
     ///
     /// - 三层都取不到、或该单元那一枚为 nil ⇒ **这个单元不进表**（`convergePass` 按
     ///   `.distantPast` 处理，永不当 `source`，fail-closed）。
+    /// - **毫秒 0 一律读成「缺席」，三层同一条口径**（8b-2 fix round 1 / F3）：第二 / 三层走
+    ///   `stampDate`，第一层的两枚戳是非可选的 `Date`，所以要显式压掉 `Date(1970)`——
+    ///   R-M3-4a-12 的无基线分支给目标戳与 rank 戳写的正是 0，不压就会给 8b-3 的 `.transfer`
+    ///   递一枚「看起来很旧但很真」的目标戳。**缺的那一枚按单元落到下一层**。
     ///
     /// **绝不读行上的 `contentUpdatedDate`**：Task 5 的计划裁定 5 让新行那一列是 `nil`（发布侧
     /// 用 `?? createdDate` 投影、`.applied` 不回填），而 `rebaselined` 只刷游标基线、**一个字节
@@ -658,23 +662,38 @@ extension URLRuleKind {
         -> [String: URLRuleEffectiveStamps] {
         var out: [String: URLRuleEffectiveStamps] = [:]
         for identity in identities {
-            // 第一层。
+            var stamps = URLRuleEffectiveStamps()
+            // 第一层。**`URLRuleLandingValues` 的两枚戳是非可选的 `Date`**，而 R-M3-4a-12 的
+            // 无基线分支给目标戳与 rank 戳写的是 **0** ⇒ 那一枚到这里是 `Date(1970)`，一枚
+            // 「看起来很旧但很真」的戳，而它的真实含义是**缺席**（8b-2 fix round 1 / F3）。
+            // 与第二 / 三层的 `stampDate` 同一条口径压零，于是缺席的单元不进表
+            // （`convergePass` 按 `.distantPast` 处理、永不当 `source`；8b-3 的 `.transfer`
+            // 按 `max` 的另一半处理）。
             if let values = landed[identity] {
-                out[identity] = URLRuleEffectiveStamps(content: values.contentUpdatedDate,
-                                                       target: values.targetUpdatedDate)
-                continue
+                stamps.content = suppressingEpoch(values.contentUpdatedDate)
+                stamps.target = suppressingEpoch(values.targetUpdatedDate)
             }
             // 第二层优先于第三层：`rebaselined` 里那一份就是这一页之后游标会有的字节。
-            guard let bytes = rebaselined[identity] ?? table.cursors[identity]?.reconciled,
-                  let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
-                  let entity = entity(from: envelope) else { continue }
-            let stamps = URLRuleEffectiveStamps(
-                content: stampDate(entity.host.updatedAtMs),
-                target: stampDate(entity.targetSpaceUuid.updatedAtMs))
+            // **按单元补**：第一层压零之后还缺的那一枚落到这里（一条本页 `.create` 的身份
+            // 根本没有游标，补不到就仍然缺席）。
+            if stamps.content == nil || stamps.target == nil,
+               let bytes = rebaselined[identity] ?? table.cursors[identity]?.reconciled,
+               let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+               let entity = entity(from: envelope) {
+                if stamps.content == nil { stamps.content = stampDate(entity.host.updatedAtMs) }
+                if stamps.target == nil {
+                    stamps.target = stampDate(entity.targetSpaceUuid.updatedAtMs)
+                }
+            }
             guard stamps.content != nil || stamps.target != nil else { continue }
             out[identity] = stamps
         }
         return out
+    }
+
+    /// 毫秒 0 换算过来的那一刻 = **缺席**，不是 1970 年那一枚真戳。
+    private static func suppressingEpoch(_ date: Date) -> Date? {
+        date.timeIntervalSince1970 == 0 ? nil : date
     }
 
     /// §8.4.3 第 1 步的**两遍**指针，一次做完，**每一页都跑、不受 `hasDrainedFullReplay`
@@ -691,15 +710,25 @@ extension URLRuleKind {
     ///   **「已发布」由 `publishedIdentities` 显式传入**（R-M3-4a-95），本函数手上没有游标表，
     ///   而 `syncId != nil` **不等于**「已发布」：一条本机新建的行在 M1 认领那一刻就有了
     ///   `syncId`、却要等这一轮的发布段才有服务端三元组。
+    /// - `anchorRows`：**锚点子集的定义域**，与写循环的定义域分开（8b-2 fix round 1）。尾钩把
+    ///   它喂成**软删之前**那一份活集，而 `liveRows` 是软删**之后**那一份。分开是承重的：
+    ///   §8.4.3 的 `writePointer` 在收敛**之前**求那个 `> 1` 的基数，而先收敛再写指针会把
+    ///   「两条已发布成员 + 一条从未发布的活行」这一组的子集从 2 掉到 1 ⇒ 那条从未发布的成员
+    ///   拿不到指针，而伪码给它写（生命周期表 RR10-8 那一行正是按「它被写过」立的）。锚点**行
+    ///   本身**不会因此指向一条死行：锚点 ≤ 胜者 < 每一条败者，所以锚点永远不是败者、必然
+    ///   活到写循环那一刻。`nil` ⇒ 与 `liveRows` 同一份（纯值调用点的常态）。
     /// - **前置（承重句，RR12-7）**：只写这一列**此刻**为 nil、或指向一条本机没有活行的身份
     ///   的**活成员**；已经指向一条活行的不动。函数内部按已产出的写更新自己那份状态，于是
     ///   第二遍不会覆盖第一遍。原语那层的「值相同零写」是**第二道防御**，不是承重条款。
     static func mergePointerPass(liveRows: [PhiLocalURLRule],
+                                 anchorRows: [PhiLocalURLRule]? = nil,
                                  landedThisPage: Set<String>,
                                  publishedIdentities: Set<String>,
                                  preLandingSignatures: [String: RuleSignature],
                                  resolve: OwnerResolver) -> [String: String] {
         let normalize = mergeNormalize
+        // 锚点子集的定义域。`nil` ⇒ 与写循环同一份（纯值调用点的常态）。
+        let anchorDomain = anchorRows ?? liveRows
         // 悬空判据的定义域：**全部**活行的身份（含没有签名的那些）。
         var liveIdentities: Set<String> = []
         // 每条身份那一列**此刻**的值，随本函数已经产出的写就地更新。
@@ -717,15 +746,18 @@ extension URLRuleKind {
                 guard let key = keyOf(row) else { continue }
                 groups[key, default: []].append(row)
             }
+            // 锚点子集建在 `anchorRows` 上（**软删之前**那一份活集，见签名上的说明）。
+            var anchorGroups: [RuleSignature: [String]] = [:]
+            for row in anchorDomain {
+                guard let identity = row.syncId, let key = keyOf(row),
+                      publishedIdentities.contains(identity)
+                        || landedThisPage.contains(identity) else { continue }
+                anchorGroups[key, default: []].append(identity)
+            }
             // 固定的遍历次序（`PinKind.swift:361` 的收敛先例）：字典的 `keys` 每进程随机。
             for key in groups.keys.sorted() {
                 let members = (groups[key] ?? []).sorted { ($0.syncId ?? "") < ($1.syncId ?? "") }
-                let anchors = members.compactMap { row -> String? in
-                    guard let identity = row.syncId,
-                          publishedIdentities.contains(identity)
-                            || landedThisPage.contains(identity) else { return nil }
-                    return identity
-                }
+                let anchors = (anchorGroups[key] ?? []).sorted()
                 // 子集少于两条 ⇒ 这一组零写（一条锚点自己不需要伙伴指针）。
                 guard anchors.count >= 2, let anchor = anchors.first else { continue }
                 for row in members {
@@ -830,20 +862,32 @@ extension URLRuleKind {
     /// `effectiveAccountStamps(landed:rebaselined:table:identities:)`（R-M3-4a-94 / 97）⇒
     /// **把 `atRest` 里此刻 `pendingLocalEdit == true` / `deletedDate != nil` / 行已不在的那些
     /// 剔掉**（R-M3-4a-100；`rows` 就是事务里刚重读的那一份，零额外读）⇒（闸开才）
-    /// `convergePass`（喂进去的是那张表的 `.content` 那一枚）⇒ 在**软删之后**的活集上跑
-    /// `mergePointerPass`（计划裁定四）⇒ 按 `.setContentGroup` → `.softDelete` →
+    /// `convergePass`（喂进去的是那张表的 `.content` 那一枚）⇒ 跑 `mergePointerPass`
+    /// （计划裁定四；写循环在**软删之后**的活集上，锚点子集在**软删之前**那一份上）⇒
+    /// 按 `.setContentGroup` → `.softDelete` →
     /// `.setMergePartner` 的相序拼 ops。
     ///
     /// **`convergePass` 先于 `mergePointerPass` 的等价性证明**（计划裁定四）。§8.4.3 的伪码把
     /// 第一遍指针与收敛按组交织，第二遍指针跑在整个循环之后的 `liveAfter` 上；这里是**先
-    /// 收敛、再两遍指针一次做完，定义域是软删之后的活集**。终态逐字相同、行写严格更少：
-    /// **(1) 锚点不变** —— 锚点 = 「已发布活行 ∪ `landedThisPage`」里 `syncId` 最小的那一条，
-    /// 胜者 = 静止成员里 `syncId` 最小的那一条，而静止**蕴含**已发布（判据 1 / 2）⇒ 静止成员
-    /// ⊆ 锚点候选集 ⇒ `锚点 ≤ 胜者 ≤ 每一条败者`，且锚点自己若静止就**是**胜者、永不当败者
-    /// ⇒ 移走败者不改变锚点。**(2) 终值支配** —— 伪码里败者行上会先被第一遍写成锚点、再被
-    /// (b) 覆盖成胜者，净结果是胜者；这里败者根本不进指针的定义域，净结果同样是胜者。非败者
-    /// 行两种次序下的输入完全相同。**RR11-2 的「指针不得覆盖 (b) 的终值」因此是结构性成立
-    /// 的，不靠任何运行期判断。**
+    /// 收敛、再两遍指针一次做完**。终态逐字相同、行写严格更少，**三条腿**：
+    ///
+    /// **(1) 锚点的身份不变** —— 锚点 = 「已发布活行 ∪ `landedThisPage`」里 `syncId` 最小的
+    /// 那一条，胜者 = 静止成员里 `syncId` 最小的那一条，而静止**蕴含**已发布（判据 1 / 2）
+    /// ⇒ 静止成员 ⊆ 锚点候选集 ⇒ `锚点 ≤ 胜者 < 每一条败者`，且锚点自己若静止就**是**胜者、
+    /// 永不当败者 ⇒ 移走败者既不改变锚点的身份，也不会让锚点那一**行**消失。
+    ///
+    /// **(2) 锚点子集的基数不变** —— 这条腿靠的不是论证而是**接缝**（8b-2 fix round 1）：
+    /// 伪码的 `writePointer` 在收敛**之前**求那个 `published.count > 1`，而先收敛会把
+    /// 「两条已发布成员 + 一条从未发布、本页也没落地的活行」这一组的子集从 2 掉到 1 ——
+    /// 伪码给那条从未发布的成员写指针（生命周期表 RR10-8 那一行按「它被写过」立），先收敛
+    /// 的版本一条都不写。所以 `mergePointerPass` 的**锚点子集建在 `anchorRows`（软删之前那
+    /// 一份活集）上、写循环仍然只跑 `liveRows`（软删之后那一份）**：基数按伪码的时刻求值，
+    /// 而 (3) 一个字不受影响。
+    ///
+    /// **(3) 终值支配** —— 伪码里败者行上会先被第一遍写成锚点、再被 (b) 覆盖成胜者，净结果
+    /// 是胜者；这里败者根本不进指针的**写**定义域，净结果同样是胜者。非败者行两种次序下的
+    /// 输入完全相同。**RR11-2 的「指针不得覆盖 (b) 的终值」因此是结构性成立的，不靠任何运行
+    /// 期判断。**
     ///
     /// `table:` / `landed:` / `rebaselined:` 三个入参供且仅供 `effectiveAccountStamps` 用
     /// （R-M3-4a-90 曾把 `table:` 删掉，R-M3-4a-94 恢复：有效账户戳的「未落地那一半」只能从
@@ -913,7 +957,9 @@ extension URLRuleKind {
             guard let identity = row.syncId else { return true }
             return !collapsedIds.contains(identity)
         }
-        let pointers = mergePointerPass(liveRows: liveAfter, landedThisPage: landedThisPage,
+        // 写循环跑软删之后那一份活集，**锚点子集跑软删之前那一份**（等价性证明的第 (2) 腿）。
+        let pointers = mergePointerPass(liveRows: liveAfter, anchorRows: live,
+                                        landedThisPage: landedThisPage,
                                         publishedIdentities: publishedIdentities,
                                         preLandingSignatures: preLandingSignatures,
                                         resolve: resolve)

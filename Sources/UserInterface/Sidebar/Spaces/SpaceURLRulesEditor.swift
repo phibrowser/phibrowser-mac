@@ -11,15 +11,16 @@ import SwiftUI
 /// picker so the user can manage all rules in one list — moving a rule from
 /// one Space to another is a picker change, not a delete-and-recreate.
 ///
-/// Persists via `SpaceManager.setAllRules(_:)`, which replaces every Space's
-/// rule set atomically and pushes the recompiled routing table down to
-/// Chromium in one shot. No direct LocalStore writes from the view, no
-/// manual bridge calls.
+/// Persists through `SpaceManager.applyRuleEdits(upserts:deletedIds:)`, which
+/// touches only the rows this sheet names — rows it never saw are left alone,
+/// including ones that landed from another device while it was open. The
+/// routing table is refreshed once, after the write commits. No direct
+/// LocalStore writes from the view, no manual bridge calls.
 ///
 /// Stays intentionally small: one host per row matched as either a domain
 /// suffix (host + all subdomains) or an exact domain, enable toggle,
-/// drag-to-reorder within the flat list. Sort order is preserved per target
-/// Space at save time.
+/// drag-to-reorder within the flat list. Dense per-target sort order is the
+/// store's job, not this view's.
 struct URLRulesEditor: View {
     @ObservedObject var manager: SpaceManager
     let onClose: () -> Void
@@ -29,6 +30,12 @@ struct URLRulesEditor: View {
     /// can detect a no-op save and skip the LocalStore round-trip.
     @State private var initialFingerprint: String = ""
     @State private var editingStoreIdentifier: UUID?
+    /// The rows exactly as `load()` built them — the "did the user touch this
+    /// row" baseline for `computeEditSet` (step (a) of the row-dirty test).
+    @State private var loadedRows: [Row] = []
+    /// Rows the user deleted in this sheet, in deletion order. Only the ones
+    /// that came from the store (`storeId != nil`) turn into `deletedIds`.
+    @State private var removedRows: [Row] = []
 
     /// Sentinel selection in a row's target-Space picker meaning "don't route
     /// to a fixed Space — prompt every time". Distinct from any real
@@ -85,7 +92,7 @@ struct URLRulesEditor: View {
         // last rule doesn't tear down the NSView tree mid-animation and adding
         // the first rule doesn't rebuild it. The empty-state placeholder lives
         // inside the host (see RuleTableView.makeEmptyOverlay).
-        RuleTableView(rows: $rows, spaces: ruleTargetSpaces)
+        RuleTableView(rows: $rows, removedRows: $removedRows, spaces: ruleTargetSpaces)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -117,6 +124,8 @@ struct URLRulesEditor: View {
 
     private func load() {
         rows = manager.allRules.map(Row.init(from:))
+        loadedRows = rows
+        removedRows = []
         initialFingerprint = fingerprint(of: rows)
     }
 
@@ -129,42 +138,163 @@ struct URLRulesEditor: View {
         guard let editingStoreIdentifier,
               manager.acceptsStoreAction(from: editingStoreIdentifier),
               fingerprint(of: rows) != initialFingerprint else { return }
-        let validSpaceIds = Set(ruleTargetSpaces.map(\.spaceId))
-        let validPromptSpaceIds = validSpaceIds.subtracting([SpaceManager.kioskRuleTargetId])
-        var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
+        let edits = Self.computeEditSet(rows: rows, loaded: loadedRows,
+                                        removed: removedRows, stored: manager.allRules)
+        guard !edits.isEmpty else { return }
+        let manager = self.manager
+        // 写在 main actor 上等提交；失败只记一行（R12：错误走 `describe`，不带 host / id），
+        // sheet 里的草稿一个字不动。路由表的刷新由 `applyRuleEdits` 在提交之后做（R-M3-4a-34）。
+        Task { @MainActor in
+            do {
+                try await manager.applyRuleEdits(upserts: edits.upserts, deletedIds: edits.deletedIds,
+                                                 expectedStoreIdentifier: editingStoreIdentifier)
+            } catch {
+                AppLogError("[URLRulesEditor] applyRuleEdits failed: \(PhiSyncLog.describe(error))")
+            }
+        }
+    }
+
+    /// One Save's worth of edits, addressed row by row (R-M3-4a-30).
+    struct EditSet {
+        var upserts: [LocalStore.URLRuleDraft]
+        var deletedIds: Set<String>
+
+        var isEmpty: Bool { upserts.isEmpty && deletedIds.isEmpty }
+    }
+
+    /// Pure: the whole §5.8 contract in one function so it is testable without a view.
+    ///
+    /// 逐条契约（§5.8 第 1 / 2 / 5 条 + 裁定 2 / 3 / 4）：
+    /// - `storeId != nil` 且四个可编辑单元与 `loaded` 里同 `id` 的那份不同（用户真的动过）、
+    ///   且与 `stored` 里同 `storeId` 的那行仍不同（不是一次无操作）⇒ 整行进 `upserts`，
+    ///   `id` 用（可能已重铸的）`row.id`、`syncId` 原样、目标**原样**（R-M3-4a-9 / 10）。
+    /// - `storeId == nil` 且 host 非空 ⇒ 新行进 `upserts`（`syncId == nil`，插入点铸，R-M3-4a-23）。
+    /// - `storeId != nil` 且清空（`value` trim 后为空或 `encode` 后 host 为空）⇒ `deletedIds`
+    ///   里放 `storeId`（不是重铸后的 `row.id`，裁定 3）；`storeId == nil` 的空行直接忽略。
+    /// - `removed` 里 `storeId != nil` 的行 ⇒ `deletedIds`；`storeId == nil` 的从没落过库，忽略。
+    /// - 某目标桶里既有行的 id 序列与 `loaded` 里（只看仍留在这个桶里的那些）不同 ⇒ 该桶其余
+    ///   既有行也进 `upserts`，只带 `sortOrder`（内容 / 目标单元传 `nil` = 不碰，裁定 4）。
+    /// - `stored` 里已经没有的行（sheet 打开期间被远端删掉）：draft 带原 `id`、`syncId = nil`，
+    ///   由 store 的插入支复活（R-M3-4a-101 / 104）。
+    static func computeEditSet(rows: [Row],
+                               loaded: [Row],
+                               removed: [Row],
+                               stored: [SpaceRoutingRule]) -> EditSet {
+        var loadedById: [UUID: Row] = [:]
+        for row in loaded where loadedById[row.id] == nil { loadedById[row.id] = row }
+        var storedByStoreId: [String: SpaceRoutingRule] = [:]
+        for rule in stored where storedByStoreId[rule.id] == nil { storedByStoreId[rule.id] = rule }
+
+        struct Live {
+            var row: Row
+            var host: String
+            var pathPrefix: String?
+            var bucketIndex: Int
+        }
+        var upserts: [LocalStore.URLRuleDraft] = []
+        var deletedIds: Set<String> = []
+        var live: [Live] = []
+        var bucketCounts: [String: Int] = [:]
+
+        // 第一遍：分「活行」与「清空」。桶内下标只数活行。
         for row in rows {
-            let trimmedValue = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else { continue }
-            // Resolve the bucket Space. An auto-route rule must target a live
-            // Space; an "ask every time" rule only uses its target as the
-            // prompt's default, so if that Space was deleted fall back to any
-            // Space rather than dropping the rule.
-            let targetSpaceId: String
-            if row.askBeforeRouting,
-               validPromptSpaceIds.contains(row.targetSpaceId) {
-                targetSpaceId = row.targetSpaceId
-            } else if row.askBeforeRouting,
-                      let fallback = ruleTargetSpaces.first(where: {
-                          validPromptSpaceIds.contains($0.spaceId)
-                      })?.spaceId {
-                targetSpaceId = fallback
-            } else if validSpaceIds.contains(row.targetSpaceId) {
-                targetSpaceId = row.targetSpaceId
-            } else {
+            let trimmed = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            var host = ""
+            var pathPrefix: String? = nil
+            if !trimmed.isEmpty {
+                (host, pathPrefix) = row.matchType.encode(value: trimmed)
+            }
+            if host.isEmpty {
+                if let storeId = row.storeId { deletedIds.insert(storeId) }
                 continue
             }
-            let (host, pathPrefix) = row.matchType.encode(value: trimmedValue)
-            guard !host.isEmpty else { continue }
-            let draft = LocalStore.URLRuleDraft(
-                id: row.id.uuidString,
-                host: host,
-                pathPrefix: pathPrefix,
-                askBeforeRouting: row.askBeforeRouting,
-                createdDate: row.createdDate
-            )
-            byTarget[targetSpaceId, default: []].append(draft)
+            let index = bucketCounts[row.targetSpaceId, default: 0]
+            bucketCounts[row.targetSpaceId] = index + 1
+            live.append(Live(row: row, host: host, pathPrefix: pathPrefix, bucketIndex: index))
         }
-        manager.setAllRules(byTarget, expectedStoreIdentifier: editingStoreIdentifier)
+        for row in removed {
+            if let storeId = row.storeId { deletedIds.insert(storeId) }
+        }
+
+        // 第二遍：行级脏判据 (a) + (b)，与新行。
+        var upsertedRowIds: Set<UUID> = []
+        for entry in live {
+            let row = entry.row
+            guard let storeId = row.storeId else {
+                upserts.append(LocalStore.URLRuleDraft(
+                    id: row.id.uuidString,
+                    host: entry.host,
+                    pathPrefix: entry.pathPrefix,
+                    askBeforeRouting: row.askBeforeRouting,
+                    spaceId: row.targetSpaceId,
+                    sortOrder: entry.bucketIndex,
+                    createdDate: row.createdDate))
+                upsertedRowIds.insert(row.id)
+                continue
+            }
+            // (a) 与 `loaded` 里同 `id` 的那份比；找不到基线按「动过」处理。
+            let touched: Bool
+            if let baseline = loadedById[row.id] {
+                touched = baseline.value != row.value
+                    || baseline.matchType != row.matchType
+                    || baseline.askBeforeRouting != row.askBeforeRouting
+                    || baseline.targetSpaceId != row.targetSpaceId
+            } else {
+                touched = true
+            }
+            guard touched else { continue }
+            // (b) 与库里此刻的那一行比；已经不在库里 ⇒ 恢复支（原 `id`、`syncId = nil`）。
+            var syncId = row.syncId
+            if let current = storedByStoreId[storeId] {
+                let normalized = LocalStore.normalizedRule(host: entry.host, pathPrefix: entry.pathPrefix)
+                let unchanged = current.host == normalized.host
+                    && current.pathPrefix == normalized.pathPrefix
+                    && current.askBeforeRouting == row.askBeforeRouting
+                    && current.spaceId == row.targetSpaceId
+                if unchanged { continue }
+            } else {
+                syncId = nil
+            }
+            upserts.append(LocalStore.URLRuleDraft(
+                id: row.id.uuidString,
+                host: entry.host,
+                pathPrefix: entry.pathPrefix,
+                askBeforeRouting: row.askBeforeRouting,
+                spaceId: row.targetSpaceId,
+                sortOrder: entry.bucketIndex,
+                createdDate: row.createdDate,
+                syncId: syncId))
+            upsertedRowIds.insert(row.id)
+        }
+
+        // 第三遍（裁定 4）：桶内既有行的序列变了 ⇒ 该桶其余既有行只带 `sortOrder`。
+        var liveIdsByBucket: [String: [UUID]] = [:]
+        for entry in live where entry.row.storeId != nil {
+            liveIdsByBucket[entry.row.targetSpaceId, default: []].append(entry.row.id)
+        }
+        var liveBucketById: [UUID: String] = [:]
+        for entry in live { liveBucketById[entry.row.id] = entry.row.targetSpaceId }
+        var loadedIdsByBucket: [String: [UUID]] = [:]
+        for row in loaded where row.storeId != nil && liveBucketById[row.id] == row.targetSpaceId {
+            loadedIdsByBucket[row.targetSpaceId, default: []].append(row.id)
+        }
+        for entry in live {
+            let bucket = entry.row.targetSpaceId
+            guard entry.row.storeId != nil,
+                  !upsertedRowIds.contains(entry.row.id),
+                  liveIdsByBucket[bucket] != loadedIdsByBucket[bucket, default: []] else { continue }
+            upserts.append(LocalStore.URLRuleDraft(
+                id: entry.row.id.uuidString,
+                syncId: entry.row.syncId,
+                content: nil,
+                spaceId: nil,
+                sortOrder: entry.bucketIndex,
+                createdDate: nil,
+                contentUpdatedDate: nil))
+            upsertedRowIds.insert(entry.row.id)
+        }
+
+        return EditSet(upserts: upserts, deletedIds: deletedIds)
     }
 
     private func fingerprint(of rows: [Row]) -> String {
@@ -302,6 +432,14 @@ struct URLRulesEditor: View {
 
     struct Row: Identifiable {
         let id: UUID
+        /// The store row this came from (`SpaceURLRule.id`, verbatim). `nil` means the
+        /// user added it in this sheet — the two halves of "clearing a rule deletes it"
+        /// split on exactly this, and the delete set addresses rows by it: `id` has
+        /// already been recast for any non-UUID legacy id (`init(from:)`).
+        let storeId: String?
+        /// Account-level identity (V11 `SpaceURLRule.syncId`), passed straight into the
+        /// draft so a row whose `id` got recast still lands on the same entity.
+        var syncId: String?
         var targetSpaceId: String
         var matchType: MatchType
         var value: String
@@ -312,6 +450,8 @@ struct URLRulesEditor: View {
 
         init(defaultSpaceId: String) {
             self.id = UUID()
+            self.storeId = nil
+            self.syncId = nil
             self.targetSpaceId = defaultSpaceId
             self.matchType = .domainSuffix
             self.value = ""
@@ -321,6 +461,8 @@ struct URLRulesEditor: View {
 
         init(from rule: SpaceRoutingRule) {
             self.id = UUID(uuidString: rule.id) ?? UUID()
+            self.storeId = rule.id
+            self.syncId = rule.syncId
             self.targetSpaceId = rule.spaceId
             let (matchType, value) = MatchType.decode(
                 host: rule.host, pathPrefix: rule.pathPrefix)
@@ -343,6 +485,7 @@ struct URLRulesEditor: View {
 /// focus resigns. The SwiftUI shell (header / footer / save) is unchanged.
 private struct RuleTableView: NSViewRepresentable {
     @Binding var rows: [URLRulesEditor.Row]
+    @Binding var removedRows: [URLRulesEditor.Row]
     let spaces: [Space]
 
     /// Captures every Space field shown in the target popup, so a rename / icon
@@ -533,6 +676,8 @@ private struct RuleTableView: NSViewRepresentable {
         private func deleteRow(id: UUID) {
             guard let index = parent.rows.firstIndex(where: { $0.id == id }) else { return }
             var updated = parent.rows
+            // 先记下这一行：`computeEditSet` 从 `removed` 里取 `storeId` 进 `deletedIds`。
+            parent.removedRows.append(updated[index])
             updated.remove(at: index)
             parent.rows = updated
             displayedIDs = updated.map(\.id)
@@ -710,9 +855,10 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         } else if row.askBeforeRouting {
             targetPopup.select(askItem)
         } else {
-            // Auto-route rule whose target Space was deleted. Show an explicit
-            // disabled "unavailable" item (NOT a false "Ask every time") so the
-            // user must re-target it; if left as-is, save() drops it as before.
+            /// Auto-route rule whose target Space is not currently resolvable. Show an
+            /// explicit disabled "unavailable" item (NOT a false "Ask every time"); the
+            /// row is saved back with its target untouched and simply stays out of the
+            /// routing payload until that Space comes back.
             let missing = NSMenuItem(
                 title: NSLocalizedString("sidebar.urlRulesEditor.target.unavailablePlaceholder", value: "Target Space unavailable",
                     comment: "URL rule target whose Space no longer exists"),

@@ -481,3 +481,67 @@ B2-17neg / B2-4d-x）。
 20. **9.3 / 9.4 的假 client 用 `scriptedPages` 喂空页**：种下的服务端行（空密文、只给 commit 的更新路径用）
     否则会在默认 marker 下被拉回来当成一条解不开的入站实体、进 `unreadableTagHashes`、把那次 commit 挡掉。
 21. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。
+
+## Task 11
+
+汇合段：`SpaceManager.applyRuleEdits(upserts:deletedIds:)` 成为四个写面（编辑器 Save、agent `urlRules.add` /
+`.update` / `.delete`）共用的唯一入口，`setAllRules` / `setRules` 与两条乐观推送删除；编辑器改成显式编辑集
+（`URLRulesEditor.computeEditSet`，行级脏判据 + 「清空即删除」+ 拖动排序整桶只带 `sortOrder`），两处本地改写
+（失效目标回退到 `ruleTargetSpaces.first` / 整条丢掉）拿掉；agent 四处 draft 构造点都带 `id` / `syncId` /
+`spaceId` / `sortOrder`，三个写面改成延迟回执。Commit：见 task-11-report.md。
+
+### brief 的四条计划裁定（要求记档的）
+
+1. **裁定 1（`URLRuleDraft.spaceId` / `.sortOrder`）**：Task 5 已经落地（两个 `Optional` 合并单元，`nil` = 这次
+   upsert 不带），没有 BLOCKED；本任务按 `spaceId: String?` + `sortOrder: Int?` 消费。Task 12 收进 spec §15。
+2. **裁定 3（store 的 `syncId` 兜底）**：Task 5 的 `applyURLRuleEditsBody` 第 2 步已实现「`id` 命中不到、
+   `draft.syncId` 命中 ⇒ 同一条行、`row.id` 改写成 `draft.id`」；U-14 legacy 变体正面钉住。spec §4.3 第 3 条
+   仍缺这一句，登记待 Task 12 补。
+3. **裁定 5（`ExtensionMessageRouter.swift` 不在 spec §11 文件表；新错误码 `write_failed`）**：三条注册改成
+   `return nil  // async reply via ExtensionMessaging`（形状照 `profiles.create` / `.rename`）。`ok` 从此意味着
+   已提交。全仓没有 agent 协议错误码表，`write_failed` 只在 handler 注释里描述。
+4. **裁定 6（§6.6 第 5 行）**：`SpaceManager.deleteSpace` 的级联改成 `Task { @MainActor in try await
+   deleteSpaceCascadeThrowing(spaceId:origin: .userIntent); reloadURLRulesFromStore() }`，失败一条 R12 log。
+   代价：级联从「同步入队」变成「一个 Task hop 之后入队」；`deleteSpace` 之后没有任何同步的 store 写依赖这个
+   顺序（其后只清 userDefaults 的 theme 记录）。
+
+### 与 brief 不同的实现判断
+
+5. **`SpaceManager.makeForTesting(boundTo:)`（控制者已批准）**：`SpaceManager` 是 `private init()` + `shared`
+   + `private bind(to:)`，brief 的 U-24c (a)「一个绑在临时目录 store 上的 SpaceManager、不碰单例」无法成立。
+   加了一个 internal 的 `@MainActor static func makeForTesting(boundTo: Account?)`，只置 `boundAccount`
+   （不接 publisher、不跑 `ensureDefaultSpace`、不碰 `shared`），带 `//` 注释钉「仅供测试、生产代码绝不能调」；
+   `Sources/` 里除定义外零引用（grep 核对）。测试经 `Account.localStorage`（可赋值的 lazy var）指到临时 store。
+6. **裁定 4 的重排 draft 用 `content: nil` / `spaceId: nil`**（brief 写的是「四单元原样带库里的值」）：Task 5
+   落地后 `nil` 单元的字面含义就是「不碰」，比回填 `stored` 现值更稳（缓存滞后时不会把陈旧内容写回去）；
+   body 于是只写 `sortOrder`、两枚戳不动，与裁定 4 的目的逐字相同。序列比较只看**既有行**（`storeId != nil`）
+   且 `loaded` 侧只数仍留在同一桶里的 id：单纯删一行 / 清空一行不触发整桶重排（U-15c / U-22 的 `upserts` 为空），
+   新行插入或从别的桶搬进来才触发。
+7. **恢复支（R-M3-4a-101 / 104）**：行在 (a) 上脏、但 `stored` 里已经没有 ⇒ draft 带原 `id`、`syncId = nil`
+   （store 的 2b 步对 `syncId != nil` 命中软删行会抛 `rowAlreadyMapped`）。brief 裁定 2 把「`syncId` 该不该复用」
+   留给 8b-4；本任务按控制者的自查清单取 `nil`，用例 `testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId`。
+8. **`Row.init(from:)` 对小写 uuid 形的 id 也会「重铸」**（`UUID(uuidString:).uuidString` 输出大写）：这种行的
+   upsert 走 store 的 `syncId` 兜底并把 `row.id` 改写成大写。功能正确（身份由 `syncId` 兜住、`deletedIds` 走
+   `storeId`），只是多一次 `id` 改写；U-14 主变体的种子用大写 UUID 串以便正面断言 `id` 不变。若要消掉这次
+   改写，draft 的 `id` 应传 `row.storeId ?? row.id.uuidString`——但那与 brief 裁定 3 / U-14 legacy 变体
+   「`id` 变了」的正面断言冲突，本任务照 brief。
+9. **三处「陈旧注释」外的残留提及**：`git grep 'setAllRules\|setRules\|pushOptimistic…' -- Sources` 的代码符号
+   零命中，但三条 doc 注释仍提到旧名：`LocalStore+SpaceURLRule.swift:697`（Task 5 的扁平 init 注释；brief
+   点名本任务不碰该文件）、`TabDataModelSchemaV7.swift:135` / `V8.swift:137`（冻结的历史 schema 文档）。
+   都不在 Files 表里，留给 Task 12 的收尾扫。
+10. **`URLRuleDraft` 的三个兼容读口（`host` / `pathPrefix` / `askBeforeRouting`）保留**：`Sources/` 里已无
+    使用者，但 `Tests/PhiBrowserTests/URLRouterTests.swift:600` 还在用；按 dispatch 的规则不删、记档。
+11. **`AgentSpaceRouter.bucket(_:in:)`**：agent 侧的桶序按 `(sortOrder, id)` 排（`storedRules()` 本来就按
+    `(spaceId, sortOrder)` 读出来；纯函数的入参可能无序，测试直接构造）。
+12. **U-15b 的「下一轮差分 tombstones == 0」与 U-15c 的「tombstones == 1」没有在本任务的用例里跑引擎**：
+    真 store 与引擎的 `FakeURLRuleAccess` 不是同一个对象；本任务只断言行状态，tombstone 半边由 Task 9 的
+    U-22 / U-12 用例覆盖。
+13. **U-24c (b) 多断言了一次改目标的 update**（源桶 / 目标桶各自成序）；delete 面按 brief 直接构造 `EditSet`。
+
+### 验证口径
+
+14. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰文件零 warning）。九条新
+    用例没有在运行时跑过；U-14 / U-22 / U-24c (a) 依赖 Task 8 记的那条运行期未验证前提（一次已 await 的
+    后台写之后主上下文 fetch 可见），用例照 `LocalStoreURLRuleThrowingTests` 的 `drainMainQueue()` 形状。
+15. CASE 11.1 的三条 grep：代码符号零命中（见第 9 条的注释残留）；`applyRuleEdits(` 在
+    `AgentSpaceRouter+Management.swift` 恰好 3；`localStorage.` 只在 `storedRules()` 一处、三个 handler 段内零命中。

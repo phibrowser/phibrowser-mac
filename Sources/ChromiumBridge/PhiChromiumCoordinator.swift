@@ -278,6 +278,19 @@ import SwiftUI
         PhiSpaceSyncState.shared.syncUuidLookup = { [weak self] spaceId in
             self?.syncKeyController?.syncUuid(forSpaceId: spaceId)
         }
+        // R-M3-4a-35: the routing tie-break key needs one spaceId -> syncUuid
+        // reverse lookup, and `SpaceManager` (state layer) must not depend on
+        // `Sources/Sync/Keys`. Same `[weak self]` shape as the three lookups
+        // above; re-resolves on every payload build, never cached
+        // (R-M3-4a-46). The reserved Incognito target has no mapping row and
+        // no SpaceModel, so it answers from the account-level constant here
+        // (design §7.2) — that keeps "incognito-space" in exactly one place.
+        SpaceManager.shared.ruleTieBreakKeyResolver = { [weak self] spaceId in
+            if SpaceManager.isIncognitoSpaceId(spaceId) {
+                return SyncableSpaces.incognitoSpaceUuid
+            }
+            return self?.syncKeyController?.syncUuid(forSpaceId: spaceId)
+        }
         PhiSpaceSyncState.shared.localSpaceProfileIds = {
             account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) }
         }
@@ -770,6 +783,7 @@ import SwiftUI
         PhiSpaceSyncState.shared.globalUuidLookup = nil
         PhiSpaceSyncState.shared.localSpaceIdLookup = nil
         PhiSpaceSyncState.shared.syncUuidLookup = nil
+        SpaceManager.shared.ruleTieBreakKeyResolver = { _ in nil }
         PhiSpaceSyncState.shared.localSpaceProfileIds = nil
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
         ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()

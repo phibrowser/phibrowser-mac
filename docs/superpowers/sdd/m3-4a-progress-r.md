@@ -297,3 +297,74 @@ Commit scope: `Sources/Sync/Phi/URLRuleKind.swift` (new), `Sources/Sync/Phi/PhiU
   5. `merge` is symmetric but, like the spec's rank rule itself, not associative in general when
      three inputs disagree on target with interleaved stamps; U-5's three-way assertion is the
      brief's `(A,B)+C == (B,A)+C` only.
+
+## Task 10
+
+Swift commit scope: `URLRouter.swift` (rewrite), `SpaceManager.swift` (resolver + key, two stale
+doc comments, canonical order, five entry construction points, tightened filter),
+`PhiChromiumCoordinator.swift` (inject + tear down), `URLRouterTests.swift` (+8 cases, header,
+helper, two CASE R-1 call sites), this ledger. Verification is compile-only (`build-for-testing`,
+red first with exactly the expected errors, then exit 0; the 8 new cases confirmed present in the
+built `PhiBrowserTests` bundle via `nm`, not executed). Chromium side (`phi_url_router.h` / `.cc`,
+`PhiChromiumBridge.mm`, new `phi_url_router_unittest.cc`, `chrome/test/BUILD.gn`) is edited but
+NOT built and NOT committed here: the controller runs the single
+`autoninja -C out/PhiRelease chrome unit_tests` + `--gtest_filter='PhiURLRouter*'` and the Chromium
+commit follows a green result (global constraints).
+
+- **计划裁定一 (`"incognito-space"` in exactly one place):** applied as ruled.
+  `SpaceManager.ruleTieBreakKey(forTargetSpaceId:)` is `ruleTieBreakKeyResolver(spaceId) ?? spaceId`
+  with no Incognito branch; the injected closure in `PhiChromiumCoordinator` maps
+  `SpaceManager.isIncognitoSpaceId(_:)` to `SyncableSpaces.incognitoSpaceUuid`. CASE 10.1 pins both
+  the assembled and the unassembled (`"space.incognito"`) answer.
+
+- **计划裁定 (CASE R-1 is two call sites, not 52):** confirmed on `4f40c8ca`: the file has 51
+  `func test` and exactly two `URLRouter.resolve` calls (the private `resolve(_:_:)` helper and the
+  direct call in `testURLWithoutHostReturnsNil`); both got `tieBreakKey: { $0.spaceId }` and
+  `ruleId: { $0.id }`, no existing assertion changed. Now 59 `func test`.
+
+- **计划裁定 (keys on all three push paths; filter tightened on one):** applied as ruled. The two
+  optimistic pushes' three entry points and `pushRoutingTableToChromium`'s one all carry
+  `"tieBreakKey"` / `"ruleId"`; only `pushRoutingTableToChromium` got the R-M3-4a-31 membership
+  filter (`spaces` membership, or the reserved Incognito target; no sync-mapping state read).
+
+- **Implementer deviation — draft `ruleId` is `draft.syncId ?? draft.id`, not the brief's literal
+  `draft.id`:** the brief cites `LocalStore+SpaceURLRule.swift:23`, i.e. the pre-Task-5 draft that had
+  no `syncId`; since Task 5 `URLRuleDraft.syncId` exists, and `syncId ?? id` is exactly the
+  steady-state path's expression (`rule.syncId ?? rule.id`), so the optimistic and the steady-state
+  table carry the same `ruleId` for a row that has one. Decision-neutral either way: `ruleId` is the
+  last clause and only separates two rules with equal `tieBreakKey` AND equal `sortOrder`, which a
+  dense per-bucket `sortOrder` never produces for a well-formed table. All three lines are deleted
+  with the optimistic pushes in Task 11.
+
+- **Implementer deviation — C++ `IsMoreSpecific` comment says "rule_id clause", spec §9.2 item 2's
+  comment text says "target_space_id clause":** the spec's own prose in the same item (and RR-R4)
+  requires the last comparison to be `rule_id`, and the code is `rule_id`; a comment naming
+  `target_space_id` would describe the exact degenerate order the item forbids. One word changed;
+  the body is verbatim. The signature is `(const PhiURLRouter::Rule&, const PhiURLRouter::Rule&)`
+  (the brief's Produces line) because bare `Rule` is not in scope in the anonymous namespace. Also
+  added a two-line "mirror of `URLRouter.isMoreSpecific`" cross-reference above the comment.
+
+- **Implementer deviation — `phi_url_router.h:51` trailing comment:** `// ascending wins as final
+  tiebreak` on `sort_order` became `// ascending wins (third specificity component)`; the two new
+  fields directly below it now own the final tiebreak, and the old wording contradicted them.
+
+- **Implementer note — `hostMatches` keeps `.count` at the wildcard-suffix dot check:** the brief
+  names three `.count` sites (contains-form length gates in `hostMatches` / `specificity`, path
+  length) plus `pathMatches`; the `*.suffix` boundary arithmetic (`urlHost.count > bare.count + 1`)
+  was left as is — hosts are lowercased ASCII on both sides and non-ASCII hosts are the recorded
+  divergence (R-M3-4a-1), so grapheme and byte counts agree there.
+
+- **Implementer note — test helper additions:** `rule(...)` gained three defaulted parameters
+  (`id`, `ask`, `deletedDate`; the 51 existing call sites are untouched) and a `resolveTable`
+  helper materializes each fixture table in a scratch `ModelContext` (the two array-order runs of one
+  CASE insert the same rule ids and `id` is `@Attribute(.unique)`). CASE 10.1's resolver is reset in
+  `tearDownWithError`. The C++ fixture tables carry `ask = false` like the Swift ones; R-6(b) / R-7
+  flip `is_ask` in code (`WithAskOn`) so the tables stay byte-identical across the two files.
+
+- **Implementer note — `pushRoutingTableToChromium` keeps the old four-line incognito-prefix
+  comment** above the new R-M3-4a-31 block; it still explains the `isRoutableRuleTarget` conjunct.
+
+- **Not done here, by ruling:** no `handleSpacesUpdate` refresh (Task 8); `setAllRules` / `setRules`
+  and the two optimistic pushes keep their structure (Task 11); no Chromium build, no Chromium
+  commit (controller). Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
+  Tasks 4 / 5 / 7).

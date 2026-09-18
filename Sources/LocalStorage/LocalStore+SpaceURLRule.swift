@@ -777,6 +777,96 @@ extension LocalStore {
         return out
     }
 
+    // MARK: - §8.4.5 的两处清位（§4.3 六个新原语的第六个，8b-4）
+
+    // 两处清位**穷举为二**，别处不得再写第三处。两者的判据是同一句话：「行此刻的三个合并单元
+    // 与调用方手上那份基线逐单元相等（毫秒粒度）」；差别只有两格——(a) 顺手清 `mergePartnerSyncId`
+    // （§8.4.3 生命周期表第 2 行，**同一次行写**），(b) **一个字节都不碰它**。
+    //
+    // 三件事（读行、比、写）在**同一个 `context` 事务**里是硬条款（R-M3-4a-79 / R-M3-4a-91）：
+    // 只 `guard row.pendingLocalEdit` 的那一版有一个真实可达的窗口——快照与清位事务之间用户在
+    // 编辑器里又存了一次（E2），标志被重新置真，于是原语把 **E2** 的标志清掉，下一轮一条远端
+    // tombstone 到达时 §8.4.4 (α) 的让位谓词不成立 ⇒ 硬删一条带着未发布编辑的行。
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.5 清位 (a) + §8.4.3 生命周期表第 2 行，**一次行写、一个 SwiftData 事务**
+    /// （R-M3-4a-79）。调用方是 `.urlRules` 注册项的 `notePublishApplied` 闭包：本趟提交里
+    /// **存活**发布拿到 `.applied` 的那些身份（tombstone 的 `.applied` 与这一列无关）。
+    ///
+    /// 返回值 = **`pendingLocalEdit` 这一半**这一次清掉了没有；`mergePartnerSyncId` 那一半照清，
+    /// 但不进返回值（两条独立的记账，M-7d）。行寻不到 ⇒ `false`、零写（fail-closed：本轮铸出来的
+    /// 身份要等 `claimIdentities` 回写才写进本机行，裁定 5 因此把调用点排在那次回写之后）。
+    @discardableResult
+    func clearPendingLocalEditThrowing(syncId: String,
+                                       ifProjectionEquals confirmed: RuleProjection) async throws
+        -> Bool {
+        try await performBackgroundWriteAndWaitThrowing { context -> Bool in
+            try self.clearPendingLocalEditBody(syncId: syncId, ifProjectionEquals: confirmed,
+                                               in: context)
+        }
+    }
+
+    private func clearPendingLocalEditBody(syncId: String,
+                                           ifProjectionEquals confirmed: RuleProjection,
+                                           in context: ModelContext) throws -> Bool {
+        // 寻址定义域是含软删行的那一份（R-M3-4a-56），与别的 per-row 原语逐字相同。
+        let index = try urlRuleTableIndex(in: context)
+        guard let row = index.bySyncId[syncId] else { return false }
+        // §8.4.3 的第一条清空规则：「那条编辑上账户之后的下一轮」就是此刻。**与下面那次标志写
+        // 同一个事务、同一次行写**——拆成第二次行写是一次多余的 `urlRulesPublisher()` 发射 + 一次
+        // 多余的 §6.6 路由刷新，也是「崩在两次写中间 ⇒ 标志清了指针还在」的窗口（CASE M-7）。
+        // 值相同零写（RR11-8 同款）。
+        if row.mergePartnerSyncId != nil { row.mergePartnerSyncId = nil }
+        guard row.pendingLocalEdit else { return false }
+        let current = URLRuleKind.clearingProjection(of: Self.projectURLRule(row))
+        guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+            // 行此刻 ≠ 基线 ⇒ 那次 `.applied` 确认的不是行上这一份（E1 在途、用户又存了 E2）。
+            // 标志留着，下一轮由清位 (b) 自愈或由 E2 自己那次 `.applied` 清掉（CASE M-7b）。
+            return false
+        }
+        row.pendingLocalEdit = false
+        return true
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.5 清位 (b)。入参是候选身份**及它们各自的比较基线**（R-M3-4a-91）：
+    /// `entries[syncId]` 是发布段判定「`snapshot.entities[id] == reconciled`」时**那一刻**的行侧
+    /// `RuleProjection`。身份由 `publishOwnedKind` 算、基线由 `.urlRules` 那个闭包从它**捕获**的
+    /// `state.publishBaseline[id]` 查出来（两层，R-M3-4a-96；与清位 (a) 同一份记录，不开新通道）。
+    ///
+    /// body 在**同一个事务**里按 `syncId` 重读行、用**与 (a) 同一个函数**重算此刻的投影、按**毫秒
+    /// 粒度**逐单元比，**相等才清** `pendingLocalEdit`，不等就留着（零写）。基线缺席 ⇒ 不清。
+    /// **只对此刻 `pendingLocalEdit == true` 的行**落写，其余零写（RR7-14：对全库每条干净行都写
+    /// 一次的实现每轮触发一次 `urlRulesPublisher()` 与一次路由刷新）。
+    ///
+    /// **一个字节都不碰 `mergePartnerSyncId`**（CASE M-7c）：§8.4.3 的两条清空规则是「存活发布
+    /// `.applied`」与「静止且组里没有第二条活行」，(b) 不在其中；顺手清掉指针会让下一轮的让位从
+    /// 「有伙伴走转移」退到「没有伙伴走 (ii)」，把一次无损的转移换成一条多出来的活规则。
+    func clearPendingLocalEditIfUnchangedThrowing(entries: [String: RuleProjection]) async throws {
+        // 空 ⇒ 零事务。调用方（闭包）已经挡过一次，这里是原语自己的那一道。
+        guard !entries.isEmpty else { return }
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.clearPendingLocalEditIfUnchangedBody(entries: entries, in: context)
+        }
+    }
+
+    private func clearPendingLocalEditIfUnchangedBody(entries: [String: RuleProjection],
+                                                      in context: ModelContext) throws {
+        let index = try urlRuleTableIndex(in: context)
+        // 次序稳定只为日志与用例可读；每一条彼此独立。
+        for syncId in entries.keys.sorted() {
+            guard let confirmed = entries[syncId], let row = index.bySyncId[syncId] else { continue }
+            guard row.pendingLocalEdit else { continue }
+            let current = URLRuleKind.clearingProjection(of: Self.projectURLRule(row))
+            guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+                continue        // 判定与写入之间用户又存了一次 ⇒ 原样留着、零写（裁定 14）
+            }
+            row.pendingLocalEdit = false
+        }
+    }
+
     // MARK: - 落地批次入口（R-exec-2）
 
     /// 一页远端落地的**全部**操作，一个写块、一个事务（§5.5）。

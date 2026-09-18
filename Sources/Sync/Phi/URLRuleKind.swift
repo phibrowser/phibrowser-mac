@@ -690,6 +690,58 @@ extension URLRuleKind {
         date.map { milliseconds($0) }
     }
 
+    // MARK: - §8.4.5 两处清位共用的行侧投影（8b-4）
+
+    /// §8.4.5 清位 (a) **与 (b)** 比较的那份值：**行此刻的三个合并单元**，不是「解出来的载荷
+    /// 字节」（裁定 2）。
+    ///
+    /// **两处清位调的是同一个函数**：(a) 的基线由 `.urlRules` 的 `snapshot` 闭包在产出
+    /// `snapshot.entities[identity]` 的**同一趟**记下（`URLRuleSyncRoundState.publishBaseline`），
+    /// (b) 从**同一份**记录里查（R-M3-4a-91 / 96，不开第二条通道）；两处的「此刻」一侧都由
+    /// `LocalStore` 在清位事务里对重读出来的行再调一次本函数。
+    ///
+    /// **目标单元走本机 `spaceId` 这一条通路**（裁定 4，与 `transferURLRuleEditBody` 读
+    /// `source.targetSpaceId` 逐字同一条）：`LocalStore` 不认识任何账户映射，所以
+    /// `targetOwnerUuid` 在这里恒空，而 `clearingProjectionMatches` **一个字节都不看它**。
+    ///
+    /// 三枚戳按原值带出去，毫秒换算留给比较那一步（`clearingProjectionMatches`）——行上是
+    /// `Date`（`Date()` 带亚毫秒）、账户上是 `Int64` 毫秒，在这里截断会让两次投影自己也对不齐。
+    static func clearingProjection(of row: PhiLocalURLRule) -> RuleProjection {
+        let normalize = mergeNormalize
+        let normalized = normalize(row.host, row.pathPrefix)
+        return RuleProjection(host: normalized.host,
+                              pathPrefix: normalized.pathPrefix,
+                              askBeforeRouting: row.askBeforeRouting,
+                              contentUpdatedDate: row.contentUpdatedDate,
+                              targetOwnerUuid: "",
+                              targetSpaceId: row.spaceId,
+                              targetUpdatedDate: row.targetUpdatedDate,
+                              sortOrder: row.sortOrder)
+    }
+
+    /// 三个合并单元逐单元、**毫秒粒度**的相等判据（裁定 2）。
+    ///
+    /// `confirmed` 那一侧**缺目标或缺 `sortOrder` ⇒ 恒不等**（fail-closed，裁定 3 / 4）：从实体
+    /// 折出来的投影（`transferSource(of:resolve:)`）那两格分别可能是 `nil`，拿它当清位基线必须
+    /// 判成「算不出 ⇒ 不清」，而不是「碰巧相等 ⇒ 清掉一条带着未发布编辑的行」。
+    ///
+    /// **`targetOwnerUuid` 不参与比较**（裁定 4）：清位两侧都是行侧投影，那一格恒空。
+    static func clearingProjectionMatches(row: RuleProjection, confirmed: RuleProjection) -> Bool {
+        guard row.host == confirmed.host,
+              row.pathPrefix == confirmed.pathPrefix,
+              row.askBeforeRouting == confirmed.askBeforeRouting,
+              stampMilliseconds(row.contentUpdatedDate)
+                  == stampMilliseconds(confirmed.contentUpdatedDate)
+        else { return false }
+        guard let targetSpaceId = confirmed.targetSpaceId,
+              row.targetSpaceId == targetSpaceId,
+              stampMilliseconds(row.targetUpdatedDate)
+                  == stampMilliseconds(confirmed.targetUpdatedDate)
+        else { return false }
+        guard let sortOrder = confirmed.sortOrder, row.sortOrder == sortOrder else { return false }
+        return true
+    }
+
     /// R-M3-4a-102 / 裁定 11 的**事务内**复查：X 那一行与 op 里带的 `source` 还是不是同一份。
     ///
     /// **为什么不是六格原样相等**（本任务的实现裁定，写死在这里）：`source` 的两枚戳来自

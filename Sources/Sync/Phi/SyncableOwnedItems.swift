@@ -140,6 +140,16 @@ struct RuleProjection: Equatable, Sendable {
     var targetSpaceId: String?
     /// 目标那一枚戳。
     var targetUpdatedDate: Date?
+    /// rank 这个合并单元的**本机**取值（8b-4 / 裁定 3）。**只有 §8.4.5 的两处清位读它**：
+    /// 它们比的是「行此刻的三个合并单元」，而第三个单元在行上是 `sortOrder: Int`、在载荷里是
+    /// `SyncableSpaces.assignRanks` 出来的字典序串，两者在
+    /// store 里没法互算。少了这一项，「E1 改 `ask` 在途 + E2 纯拖动」会被判成相等 ⇒ 当场清位
+    /// ⇒ 那一轮的远端 tombstone 硬删、E2 的顺序连同规则一起没了。
+    ///
+    /// **`transferURLRuleEditThrowing` 一个字节都不看它**（rank 不转移，§8.4.4 那张表第三行），
+    /// 所以从实体折出来的 `transferSource(of:resolve:)` 让它保持 `nil` —— 而 `nil` 在清位那一侧
+    /// 恒不等（fail-closed，见 `URLRuleKind.clearingProjectionMatches`）。
+    var sortOrder: Int? = nil
 }
 
 /// 一个落地步骤属于 §4.4 四相里的哪一相，由这个枚举决定——它同时是排序键：

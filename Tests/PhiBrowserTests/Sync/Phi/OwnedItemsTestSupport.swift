@@ -429,6 +429,9 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         /// 8b-1：两个就地更新口（R-M3-4a-62），记条数好让 CASE M-18 断言它们真的被调过。
         case notePersistedClaims(count: Int)
         case noteDeletedRows(count: Int)
+        /// 8b-4：§8.4.5 的两处清位。(a) 一条身份一次；(b) 一次事务一条（空集连调都不调）。
+        case clearPendingLocalEdit(syncId: String)
+        case clearPendingLocalEditIfUnchanged(count: Int)
     }
 
     /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
@@ -457,6 +460,20 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     var beforeLandingTransaction: (@MainActor () async -> Void)?
     /// 最近一次 `apply` 里尾钩交回的那些 M2 op（没有尾钩的那次是空数组）。
     private(set) var lastMergeOps: [URLRuleSyncOp] = []
+    /// 8b-4 / CASE M-7e：下一次 `clearPendingLocalEdit(syncId:ifProjectionEquals:)` **抛**
+    /// 一次 `LocalStoreWriteError.storeUnavailable`，然后清零。**一个字节都不写**——与
+    /// §8.4.5 那张表第 7 行「记一条 R12 日志、下一轮由 (b) 自愈」同形。
+    var failNextClearPendingLocalEdit = false
+    /// 8b-4 / CASE M-7e（R-M3-4a-91 / 裁定 14）的注入点：在
+    /// `clearPendingLocalEditIfUnchanged(entries:)` 真正落事务**之前**被调一次，用来在
+    /// 「判定」与「写入」之间注入一次**真实的**本机 Save（走 `applyEditorSave` 那条口，
+    /// 绝不手写行）。
+    ///
+    /// **只能放在假件上**：注册项闭包与引擎那一层此刻手上只有一个 `Set<String>`，钩子放在
+    /// 那里既够不到 `entries`、也测不到「判定与写入之间」这个真正的窗口。生产协议一个字节不加。
+    var beforeClearPendingLocalEditIfUnchanged: (@MainActor () async -> Void)?
+    /// 最近一次 `clearPendingLocalEditIfUnchanged` 收到的那张「身份 -> 基线」表。
+    private(set) var lastClearEntries: [String: RuleProjection] = [:]
 
     init(rows: [PhiLocalURLRule] = []) {
         self.rows = rows
@@ -610,6 +627,52 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows.removeAll { row in
             guard let syncId = row.syncId else { return false }
             return syncIds.contains(syncId)
+        }
+    }
+
+    // MARK: 8b-4：§8.4.5 的两处清位
+
+    /// 清位 (a)，与生产 body（`LocalStore.clearPendingLocalEditBody`）逐字同形：
+    /// 寻址含软删行 ⇒ `mergePartnerSyncId` 非 nil 才清（值相同零写）⇒
+    /// `guard row.pendingLocalEdit` ⇒ 用**与生产同一个函数**算此刻的投影、逐单元比 ⇒
+    /// 相等才清标志。三件事一次完成（假件没有事务，但次序与判据必须一致）。
+    @discardableResult
+    func clearPendingLocalEdit(syncId: String,
+                               ifProjectionEquals confirmed: RuleProjection) async throws -> Bool {
+        calls.append(.clearPendingLocalEdit(syncId: syncId))
+        if failNextClearPendingLocalEdit {
+            failNextClearPendingLocalEdit = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return false }
+        if rows[index].mergePartnerSyncId != nil { rows[index].mergePartnerSyncId = nil }
+        guard rows[index].pendingLocalEdit else { return false }
+        let current = URLRuleKind.clearingProjection(of: rows[index])
+        guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+            return false
+        }
+        rows[index].pendingLocalEdit = false
+        return true
+    }
+
+    /// 清位 (b)，同样与生产 body 逐字同形，外加 M-7e 的注入钩子。
+    /// **`mergePartnerSyncId` 一个字节都不碰**。
+    func clearPendingLocalEditIfUnchanged(entries: [String: RuleProjection]) async throws {
+        calls.append(.clearPendingLocalEditIfUnchanged(count: entries.count))
+        lastClearEntries = entries
+        // 「判定」与「写入」之间的那个真实窗口（裁定 14）。
+        if let beforeClearPendingLocalEditIfUnchanged {
+            await beforeClearPendingLocalEditIfUnchanged()
+        }
+        for syncId in entries.keys.sorted() {
+            guard let confirmed = entries[syncId],
+                  let index = rows.firstIndex(where: { $0.syncId == syncId }) else { continue }
+            guard rows[index].pendingLocalEdit else { continue }
+            let current = URLRuleKind.clearingProjection(of: rows[index])
+            guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+                continue
+            }
+            rows[index].pendingLocalEdit = false
         }
     }
 

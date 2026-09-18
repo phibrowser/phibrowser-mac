@@ -470,6 +470,23 @@ struct OwnedKindRegistration {
     /// §6.4：提交被接受之后才把铸出来的身份写进本机行。返回真的写下去了的那些身份。
     let claimIdentities: @MainActor ([String: String]) async -> Set<String>
 
+    /// §8.4.5 清位 (a)：本趟提交里**存活**发布拿到 `.applied` 的那些身份（tombstone 的 `.applied`
+    /// 与它无关——收集点的 `item.payload != nil` 是硬条件）。实现方在同一次行写事务里重读行、
+    /// 比三个合并单元、相等才清 `pendingLocalEdit`，`mergePartnerSyncId` 那一半照清。
+    /// `.bookmarks` / `.pins` 取「关闭」值 `{ _ in }`，两条 kind 的行为逐字不变。
+    let notePublishApplied: @MainActor (Set<String>) async -> Void
+    /// §8.4.5 清位 (b)：发布段算出的候选**身份集**。
+    ///
+    /// **入参就是 `Set<String>`，不是「身份 -> 基线」（R-M3-4a-96）**：比较基线住在
+    /// `.urlRules` 工厂那个**闭包捕获**的每轮状态对象 `state.publishBaseline` 里，而
+    /// `publishOwnedKind` 是 kind-generic 的、**够不到那个局部对象**（写 `state.publishBaseline`
+    /// 编译不过）。所以分工写死：泛型函数只算候选身份（它手上只有游标与 `snapshot`），
+    /// **基线的查表留在闭包里**——闭包自己把每个 id 映到 `state.publishBaseline[id]`、映不出的
+    /// **丢掉**（fail-closed），再按 `pendingLocalEditIdentities(resolve:)` 过滤，最后调
+    /// `access.clearPendingLocalEditIfUnchanged(entries:)`。R-M3-4a-91 的「原语带比较基线」一个字
+    /// 不改：变的只是基线在**哪一层**被查出来。
+    let clearPendingLocalEdits: @MainActor (Set<String>) async -> Void
+
     /// §9.3 保留期级联在本机这一侧的唯一读口：收本轮命中判据 (a) 的那批候选身份，交回其中
     /// **本机还有活行认领**的那些（判据 (b)）以及它们此刻所在的归属（rehome 要写的值）。
     ///
@@ -4204,6 +4221,44 @@ actor PhiSyncEngine {
                 liveCandidates.append(identity)
             }
         }
+
+        // 4b. §8.4.5 清位 (b)（8b-4）：`pendingLocalEdit` 的自愈网，**每一轮发布段都重算一次**。
+        //
+        // **落点写死在这里**（裁定 6）：`liveCandidates` 那个循环之后、`ownedLiveSlice` 之前，
+        // 也就是 `guard !work.isEmpty` 那道早退**之前**——一轮「没有任何东西可发」正是 (b) 唯一
+        // 要工作的那种轮次（CASE M-19 的 (a) / (b) / (d) 全是这种形状），排在早退之后等于整条
+        // 自愈永不执行。**只在 `onlyIdentities == nil` 那一趟跑**：限定重发那一趟重跑了同一轮的
+        // 快照与差分，在那里再跑一遍是纯重复（判据与上面 `pendingPublish` 记账同源）。
+        //
+        // 这一层**只算候选身份集**，不查基线（R-M3-4a-96：`state` 是 `.urlRules` 工厂的局部对象，
+        // 这个 kind-generic 的作用域里没有它）。四个合取项一律**取值式**，缺值不清（fail-closed）：
+        // **绝不写 `cursor.server == cursor.reconciled`** —— 两个 `nil` 在 Optional 比较里相等，
+        // 那一版会恒真地清一片（CASE M-19x (x2)）。
+        //
+        // 第四个合取项是「本轮快照的字节 == `reconciled`」，**裸字节比较**：
+        // **绝不**换成 `urlRuleLocalProjections` 的字节，也**绝不**写成「不在本轮候选 / `republish`
+        // 里」（RR8-8 / RR9-2）。一次未发布的纯重排必须留住标志，而拖动不碰游标 ⇒
+        // `server == reconciled` 成立；`urlRuleLocalProjections` 的 rank **取基线**（§5.6 第 1 条）
+        // ⇒ 拿它的字节判会判成「零变化」⇒ 当轮清位。同一轮的 `snapshot` 走
+        // `SyncableSpaces.assignRanks` ⇒ 字节与
+        // `reconciled` **不等** ⇒ 这一项不成立、标志留住，直到那次 rank 提交 `.applied` 走清位 (a)。
+        //
+        // 不在 `snapshot.entities` 里的身份根本进不了这个循环 ⇒ 没有签名的惰性行、
+        // `pendingTombstone` / `pendingApply` / `pendingDelete` 的行永远不被清位（CASE M-19x (x1)）。
+        if onlyIdentities == nil {
+            var clearCandidates: Set<String> = []
+            for (identity, bytes) in snapshot.entities {
+                guard let cursor = table.cursors[identity],
+                      let reconciled = cursor.reconciled,
+                      let server = cursor.server,
+                      server == reconciled,
+                      bytes == reconciled
+                else { continue }
+                clearCandidates.insert(identity)
+            }
+            await registration.clearPendingLocalEdits(clearCandidates)
+        }
+
         let liveSlice = ownedLiveSlice(registration, snapshot: snapshot,
                                        candidates: liveCandidates, budget: &budget)
         // 限定重发那一趟**不再累加**：它重跑了同一轮的快照与差分，把剩余队列再数一遍会让
@@ -4259,6 +4314,8 @@ actor PhiSyncEngine {
         var appliedMinted: [String: String] = [:]
         // §5.7 第一条出路的收集：本轮被服务端 `.applied` 的 tombstone 身份。
         var appliedTombstones: Set<String> = []
+        // §8.4.5 清位 (a) 的收集（8b-4）：**存活**发布拿到 `.applied` 的那些身份。
+        var appliedLive: Set<String> = []
         var encryptionFailed = false
         var queue = work
         while !queue.isEmpty {
@@ -4319,6 +4376,11 @@ actor PhiSyncEngine {
                 if case .applied = outcome, item.entry.deleted {
                     appliedTombstones.insert(item.identity)
                 }
+                // §8.4.5 清位 (a)：**`item.payload != nil` 是硬条件**——tombstone 的 `.applied`
+                // 与 `pendingLocalEdit` 这一列无关（§8.4.5 那张表第一行）。
+                if case .applied = outcome, item.payload != nil {
+                    appliedLive.insert(item.identity)
+                }
             }
         }
 
@@ -4345,6 +4407,20 @@ actor PhiSyncEngine {
                 table.cursors[identity] = cursor
             }
         }
+
+        // §8.4.5 清位 (a)（8b-4）。**排在 `claimIdentities` 回写之后、`writeOwnedTable` 之前**
+        // （裁定 5）：(a) 按 `syncId` 寻址，而本轮铸出来的身份要等那次回写才写进本机行；排在
+        // 前面的话，每一条**新建**规则的第一次 `.applied` 都寻不到行、标志永远只能靠 (b) 清。
+        // 认领没写下去的那些（`!persisted.contains`）在 (a) 里同样寻不到行 ⇒ 零写，正是
+        // fail-closed 要的。
+        //
+        // 一次让位之后的 3b 重新发布**同样走这里，而且必须比**（裁定 13）：那一次 `.applied`
+        // 正是「用户那次编辑终于上账户了」。给 3b 开「无条件清位」的例外必须判红——它的输入恰恰
+        // 是一条刚刚证明过自己带着未发布用户编辑的行（CASE M-7d）。
+        if !appliedLive.isEmpty {
+            await registration.notePublishApplied(appliedLive)
+        }
+
         ownedCounters[registration.label] = counters
         let saved = writeOwnedTable(registration, table)
 
@@ -5221,6 +5297,10 @@ extension OwnedKindRegistration {
             claimIdentities: { minted in
                 await claimBookmarkIdentities(minted, access: access, state: state)
             },
+            // §8.4.5 的两处清位是**规则专属**的（`pendingLocalEdit` 这一列只有 `SpaceURLRule`
+            // 有）。书签取「关闭」值，两个调用点因此在它身上是两次空 await、零行为变化。
+            notePublishApplied: { _ in },
+            clearPendingLocalEdits: { _ in },
             // §9.3 的级联。判据 (b) 问 `allSyncIds()`——本机**所有**带身份的行，不做根过滤
             // （R-exec-4，与差分的定义域同一条）：孤儿根下面那些行不进快照、永远不发布，
             // 但它们是活的本地行，删掉它们的游标与删掉任何一条活行的游标后果相同。
@@ -6093,6 +6173,9 @@ extension OwnedKindRegistration {
             land: { input in await landPins(input, access: access, state: state) },
             // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
             claimIdentities: { _ in [] },
+            // §8.4.5 的两处清位是**规则专属**的（见 `.bookmarks` 那一段）。pin 取「关闭」值。
+            notePublishApplied: { _ in },
+            clearPendingLocalEdits: { _ in },
             // §9.3 的级联。判据 (b) 的粒度是**完整身份**（`<lineage>:<ownerKey>`），不是裸
             // lineage——域的构造与 `pinTombstones` 逐字同源，同样两个来源：
             //
@@ -6767,6 +6850,26 @@ final class URLRuleSyncRoundState {
     /// 最近一次**页内重读**失败过。那一批已经提交，投影原样沿用上一页那份——**绝不当成
     /// 零行**（与 R-exec-3 同一个方向）。
     private(set) var pageReloadFailed = false
+    /// §8.4.5 清位 (a) **与 (b)** 共用的比较基线（裁定 2 / R-M3-4a-91）：`snapshot` 闭包产出
+    /// 每一条身份的字节时，**在同一趟**记下那一行此刻的三个合并单元。
+    ///
+    /// 它与「刚被账户确认的那份载荷」是**同一份东西**——提交发的正是 `snapshot.entities[identity]`。
+    /// 拿解码回来的载荷直接与行比，等式**永远不成立**（载荷里三枚戳是 `Int64` 毫秒、行上的是
+    /// `Date()` 带亚毫秒）⇒ (a) 恒不清位，而缺陷的表现是「标志只靠 (b) 清」这种极难察觉的形状。
+    ///
+    /// **每轮（每次进 `publishOwnedKind`）开头清空**：`urlRuleSnapshot` 是发布段的第一步。
+    var publishBaseline: [String: RuleProjection] = [:]
+    /// 清位 (b) 那个闭包做 `pendingLocalEditIdentities(resolve:)` 过滤要用的 resolver。
+    /// 注册项闭包的类型写死成 `(Set<String>) async -> Void`（R-M3-4a-96），拿不到 `maps`，
+    /// 所以与 `publishBaseline` **同一趟**记下。`nil` ⇒ 这一轮不清位（fail-closed）。
+    private(set) var publishResolver: OwnerResolver?
+
+    /// `snapshot` 闭包每轮开头调一次：换上这一轮的 resolver、清空上一轮的基线。
+    func beginPublishBaseline(resolve: OwnerResolver) {
+        publishBaseline = [:]
+        publishResolver = resolve
+    }
+
     /// `URLRuleApplyBatch.init` 的 `currentSpaceIds`：身份 -> 行**现值** `spaceId`。活行优先
     /// （一条身份至多一条活行；软删行只在没有活行时代表这条身份）。
     var currentSpaceIds: [String: String] {
@@ -6893,6 +6996,52 @@ extension OwnedKindRegistration {
             land: { input in await landURLRules(input, access: access, state: state) },
             // 同上：身份在 `LocalStore` 的插入点铸造，push 侧没有身份写回窗口（R-M3-4a-53）。
             claimIdentities: { _ in [] },
+            // §8.4.5 清位 (a)：**存活**发布拿到 `.applied` 的那些身份，逐条比基线。
+            // **算不出基线 ⇒ 跳过**（fail-closed）：`publishBaseline` 只记本轮真的进了快照的
+            // 那些身份，别的身份这一轮根本没被发布过。
+            notePublishApplied: { identities in
+                for identity in identities.sorted() {
+                    guard let baseline = state.publishBaseline[identity] else { continue }
+                    do {
+                        _ = try await access.clearPendingLocalEdit(syncId: identity,
+                                                                   ifProjectionEquals: baseline)
+                    } catch {
+                        // R12：只记 kind 与错误类型，不记身份、host、path_prefix。这一次写失败
+                        // **不影响本轮别的写**——下一轮由清位 (b) 自愈（§8.4.5 那张表最后一行）。
+                        AppLogWarn("[phi-sync] clearing a rule pending-local-edit flag failed "
+                                   + "kind=urlrules (\(PhiSyncLog.describe(error)))")
+                    }
+                }
+            },
+            // §8.4.5 清位 (b) 的**第二层**（R-M3-4a-96）。泛型的 `publishOwnedKind` 只交候选
+            // 身份集；基线在这里才查得到——`state` 是本工厂的局部对象，只被这几个闭包捕获。
+            //
+            // 四件事，次序是三道防御的前两道（RR12-7 同款；第三道是原语在**同一个事务**里
+            // 再比一次投影）：
+            // ① 每个 id 映到**捕获的** `state.publishBaseline[id]`（清位 (a) 那一趟记下的行侧
+            //    投影，裁定 2，**不开第二条通道**），映不出的**丢掉**（fail-closed）；
+            // ② 按 `pendingLocalEditIdentities(resolve:)`（与 `OwnedItemPlanContext.pendingLocalEdits`
+            //    **同一个函数**）过滤键——此刻没置位的一律剔掉；
+            // ③ 空集 ⇒ **连原语都不调**（零事务，CASE M-19x (x3)）；
+            // ④ 否则 `access.clearPendingLocalEditIfUnchanged(entries:)`。
+            clearPendingLocalEdits: { candidates in
+                guard !candidates.isEmpty, let resolve = state.publishResolver else { return }
+                var entries: [String: RuleProjection] = [:]
+                for identity in candidates {
+                    guard let baseline = state.publishBaseline[identity] else { continue }
+                    entries[identity] = baseline
+                }
+                let flagged = access.pendingLocalEditIdentities(resolve: resolve)
+                entries = entries.filter { flagged.contains($0.key) }
+                guard !entries.isEmpty else { return }
+                do {
+                    try await access.clearPendingLocalEditIfUnchanged(entries: entries)
+                } catch {
+                    // R12：同上。下一轮重算，不需要任何跨 store 原子性。
+                    AppLogWarn("[phi-sync] the rule pending-local-edit self-heal failed "
+                               + "kind=urlrules (\(PhiSyncLog.describe(error)))")
+                }
+            },
             liveOwners: { candidates, maps in
                 // `access.liveOwners(_:)` 只填 `claimed`（判据 (b)）；`owners`（rehome 要写
                 // 的值）在这里用与 `snapshot` **同一个** `eligibilityOwner` 填，两处分叉不了
@@ -6934,6 +7083,13 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
                              state: URLRuleSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
     let resolve = maps.resolver
+    // §8.4.5 清位 (a) / (b) 的比较基线，每轮重记（裁定 2）。
+    state.beginPublishBaseline(resolve: resolve)
+    var rowsByIdentity: [String: PhiLocalURLRule] = [:]
+    for row in state.live {
+        guard let identity = row.syncId, rowsByIdentity[identity] == nil else { continue }
+        rowsByIdentity[identity] = row
+    }
     let result = SyncableOwnedItems.snapshot(URLRuleKind.self, locals: state.live, table: table,
                                              resolve: resolve, scope: nil, now: now)
     out.skippedUnmappedOwner = result.skippedUnmappedOwner
@@ -6941,6 +7097,11 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
     for (identity, entity) in result.entities {
         guard let bytes = try? URLRuleKind.envelope(entity).serializedData() else { continue }
         out.entities[identity] = bytes
+        // **同一趟**（裁定 2）：这一条身份的字节与它那一行此刻的三个合并单元一起记下。
+        // 序列化失败的那些身份既不进快照、也不进基线 —— 两处清位于是对它们 fail-closed。
+        if let row = rowsByIdentity[identity] {
+            state.publishBaseline[identity] = URLRuleKind.clearingProjection(of: row)
+        }
     }
     // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。与
     // 注册项的 `liveOwners` 闭包用同一个 `eligibilityOwner`。

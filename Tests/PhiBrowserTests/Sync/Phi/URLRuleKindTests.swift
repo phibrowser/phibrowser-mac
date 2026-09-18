@@ -2393,10 +2393,13 @@ extension URLRuleKindTests {
         liveRules(store).map(Row.init(from:))
     }
 
+    /// M5（8b-4）：`dirty` 是第五个入参。默认空表 = 「用户一个控件都没碰过」，所以**每一条
+    /// 期待 upsert 的用例都必须显式给出它碰过的那些控件**——这正是 R-M3-4a-72 要的判据。
     private func editSet(rows: [Row], loaded: [Row], removed: [Row] = [],
+                         dirty: [UUID: URLRulesEditor.RowDirty] = [:],
                          store: LocalStore) -> URLRulesEditor.EditSet {
         URLRulesEditor.computeEditSet(rows: rows, loaded: loaded, removed: removed,
-                                      stored: liveRules(store))
+                                      stored: liveRules(store), dirty: dirty)
     }
 
     private func apply(_ edits: URLRulesEditor.EditSet, to store: LocalStore) async throws {
@@ -2431,7 +2434,7 @@ extension URLRuleKindTests {
         var rows = loaded
         let index1 = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
         rows[index1].value = "one-changed.example"
-        let e1 = editSet(rows: rows, loaded: loaded, store: store)
+        let e1 = editSet(rows: rows, loaded: loaded, dirty: [rows[index1].id: .value], store: store)
         XCTAssertEqual(e1.upserts.map(\.id), [Self.i1], "(1) 只有第 2 条进 upserts")
         XCTAssertEqual(e1.upserts.first?.syncId, "r1")
         XCTAssertTrue(e1.deletedIds.isEmpty)
@@ -2504,7 +2507,7 @@ extension URLRuleKindTests {
         XCTAssertNotEqual(rows[index].id.uuidString, "legacy-7", "Row.init(from:) 重铸了非 UUID 形的 id")
         XCTAssertEqual(rows[index].syncId, "r2")
         rows[index].value = "legacy-changed.example"
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [rows[index].id: .value], store: store)
         XCTAssertEqual(edits.upserts.count, 1)
         XCTAssertEqual(edits.upserts.first?.id, rows[index].id.uuidString, "upsert 传重铸后的 id")
         XCTAssertEqual(edits.upserts.first?.syncId, "r2", "…与 syncId 兜住身份")
@@ -2539,7 +2542,7 @@ extension URLRuleKindTests {
         var rows = loaded
         let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i2 })
         rows[index].value = "c-changed.example"
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [rows[index].id: .value], store: store)
         XCTAssertEqual(edits.upserts.map(\.id), [Self.i2])
         XCTAssertEqual(edits.upserts.first?.spaceId, Self.t11SpaceA)
         XCTAssertTrue(edits.deletedIds.isEmpty)
@@ -2573,7 +2576,7 @@ extension URLRuleKindTests {
         var rows = loaded
         let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
         rows[index].value = "zero-changed.example"
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [rows[index].id: .value], store: store)
         XCTAssertTrue(edits.deletedIds.isEmpty)
         XCTAssertEqual(edits.upserts.map(\.id), [Self.i0])
         try await apply(edits, to: store)
@@ -2604,6 +2607,7 @@ extension URLRuleKindTests {
         let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
         rows[index].value = ""
         rows.append(Row(defaultSpaceId: Self.t11SpaceA))
+        // 删除半边**一个脏位都不看**（R-M3-4a-69），所以 `dirty` 故意留空。
         let edits = editSet(rows: rows, loaded: loaded, store: store)
         XCTAssertEqual(edits.deletedIds, [Self.i0])
         XCTAssertTrue(edits.upserts.isEmpty, "新空行与被清空的行都不进 upserts")
@@ -2763,11 +2767,15 @@ extension URLRuleKindTests {
         XCTAssertEqual(delete.deletedIds, [Self.i1])
     }
 
-    // MARK: 裁定 4（拖动排序：整桶只带 `sortOrder`）与恢复支（R-M3-4a-101 / 104）
+    // MARK: 裁定 12（拖动只脏被拖动那一行）与恢复支（R-M3-4a-101 / 104）
 
-    /// 桶内把第 3 条拖到最前 ⇒ 三条都进 `upserts`，全部 `content == nil` / `spaceId == nil`、
-    /// `sortOrder` 是新下标；落库后桶序 [I2, I0, I1]、两枚戳一动不动。
-    func testReorderingABucketSendsSortOrderOnlyDrafts() async throws {
+    /// 桶内把第 3 条拖到最前 ⇒ `upserts` **只有那一条**、只带 `sortOrder`（`content == nil` ∧
+    /// `spaceId == nil`）；落库后桶序 [I2, I0, I1]、桶内稠密、两枚戳一动不动，而且**只有被拖动
+    /// 那一行**置位（其余两行的重编号由 `applyURLRuleEditsBody` 第 8 步做，不置位）。
+    ///
+    /// 8b-4 / M5：原先那一版（Task 11 的第三遍「整桶重排」）给桶里每一条都发一份 `sortOrder`
+    /// draft，于是整桶被置位 ⇒ 那一轮整桶不静止、整桶对远端删除让位（CASE U-21）。
+    func testReorderingABucketSendsASortOrderOnlyDraftForTheDraggedRowOnly() async throws {
         let store = try makeRuleStore()
         try await seed(Self.threeSeeds, in: store)
         let before = try snapshot(store)
@@ -2776,24 +2784,28 @@ extension URLRuleKindTests {
         var rows = loaded
         let last = rows.removeLast()
         rows.insert(last, at: 0)
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
-        XCTAssertEqual(edits.upserts.map(\.id), [Self.i2, Self.i0, Self.i1])
-        XCTAssertEqual(edits.upserts.map(\.sortOrder), [0, 1, 2])
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [last.id: .order], store: store)
+        XCTAssertEqual(edits.upserts.map(\.id), [Self.i2], "只有被拖动那一行")
+        XCTAssertEqual(edits.upserts.map(\.sortOrder), [0])
         XCTAssertTrue(edits.upserts.allSatisfy { $0.content == nil && $0.spaceId == nil }, "只带 sortOrder")
         XCTAssertTrue(edits.deletedIds.isEmpty)
         try await apply(edits, to: store)
 
         let after = try snapshot(store)
         XCTAssertEqual(liveRules(store).map(\.id), [Self.i2, Self.i0, Self.i1])
+        XCTAssertEqual(liveRules(store).map(\.sortOrder), [0, 1, 2], "桶内稠密")
         for id in [Self.i0, Self.i1, Self.i2] {
             XCTAssertEqual(after[id]?.contentUpdatedDate, before[id]?.contentUpdatedDate)
             XCTAssertEqual(after[id]?.targetUpdatedDate, before[id]?.targetUpdatedDate)
         }
+        XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, true, "被拖动那一行置位")
+        XCTAssertEqual(after[Self.i0]?.pendingLocalEdit, false, "重编号不置位")
+        XCTAssertEqual(after[Self.i1]?.pendingLocalEdit, false)
     }
 
-    /// CASE 11.2（fix round 1）：拖动重排 + 一条**没动过的**兄弟行在 sheet 打开期间被远端硬删 ⇒ 消失的
-    /// 那条不进 `upserts`（它没有现值可重排；带 `content: nil` 的 draft 会让 store 的插入支抛
-    /// `noCandidateSurvived` 并整批回滚），其余行的 `sortOrder` draft 照发、写入提交、桶稠密。
+    /// CASE 11.2（fix round 1，M5 之后的形状）：拖动重排 + 一条**没动过的**兄弟行在 sheet 打开
+    /// 期间被远端硬删 ⇒ 消失的那条**零脏位**，两个集合都不进（用户没碰过的行本机不复活它）；
+    /// 被拖动那一行的 `sortOrder` draft 照发、写入提交、桶稠密。
     func testAReorderStillCommitsWhenASiblingVanishedBehindTheSheet() async throws {
         let store = try makeRuleStore()
         try await seed(Self.threeSeeds, in: store)
@@ -2812,8 +2824,8 @@ extension URLRuleKindTests {
         var rows = loaded
         let last = rows.removeLast()
         rows.insert(last, at: 0)
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
-        XCTAssertEqual(edits.upserts.map(\.id), [Self.i2, Self.i0], "消失的 I1 不进 upserts")
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [last.id: .order], store: store)
+        XCTAssertEqual(edits.upserts.map(\.id), [Self.i2], "消失的 I1 零脏位 ⇒ 不进任何集合")
         XCTAssertTrue(edits.upserts.allSatisfy { $0.content == nil && $0.spaceId == nil })
         XCTAssertTrue(edits.deletedIds.isEmpty)
         try await apply(edits, to: store)
@@ -2843,9 +2855,13 @@ extension URLRuleKindTests {
         var rows = loaded
         let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
         rows[index].value = "one-revived.example"
-        let edits = editSet(rows: rows, loaded: loaded, store: store)
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [rows[index].id: .value], store: store)
         XCTAssertEqual(edits.upserts.map(\.id), [Self.i1], "原 id")
         XCTAssertNil(edits.upserts.first?.syncId, "恢复支不带旧 syncId")
+        // M5：恢复支带**满三个单元**（按单元 draft 会让 store 的插入支抛 `noCandidateSurvived`）。
+        XCTAssertNotNil(edits.upserts.first?.content)
+        XCTAssertNotNil(edits.upserts.first?.spaceId)
+        XCTAssertNotNil(edits.upserts.first?.sortOrder)
         try await apply(edits, to: store)
 
         let after = try snapshot(store)
@@ -2854,4 +2870,398 @@ extension URLRuleKindTests {
         XCTAssertNotNil(after[Self.i1]?.syncId)
         XCTAssertNotEqual(after[Self.i1]?.syncId, "r1")
     }
+
+    // MARK: - 8b-4 段（M5 的编辑器半边：U-15d / U-15f / U-15g / U-21）
+
+    private static let t11SpaceC = "space-c"
+    private static let i3 = "3D3D3D3D-0000-4000-8000-000000000003"
+    private static let i4 = "4E4E4E4E-0000-4000-8000-000000000004"
+
+    private static var fiveSeeds: [Seed] {
+        [
+            Seed(id: i0, syncId: "r0", host: "zero.example", sortOrder: 0),
+            Seed(id: i1, syncId: "r1", host: "one.example", sortOrder: 1),
+            Seed(id: i2, syncId: "r2", host: "two.example", sortOrder: 2),
+            Seed(id: i3, syncId: "r3", host: "three.example", sortOrder: 3),
+            Seed(id: i4, syncId: "r4", host: "four.example", sortOrder: 4),
+        ]
+    }
+
+    /// 一次**远端落地**：走生产那条批次入口（`LocalStore.applyURLRuleSyncBatchThrowing`），
+    /// 与引擎落地段调的是同一份 body。**绝不手写行、绝不手写 `deletedDate`**。
+    private func landRemote(_ ops: [URLRuleSyncOp], in store: LocalStore) async throws {
+        _ = try await store.applyURLRuleSyncBatchThrowing(ops)
+    }
+
+    private func landingValues(syncId: String, spaceId: String,
+                               host: String, sortOrder: Int, stamp: Double) -> URLRuleLandingValues {
+        URLRuleLandingValues(syncId: syncId, spaceId: spaceId, host: host, pathPrefix: nil,
+                             askBeforeRouting: false, sortOrder: sortOrder,
+                             createdDate: Date(timeIntervalSince1970: 1_000),
+                             contentUpdatedDate: Date(timeIntervalSince1970: stamp),
+                             targetUpdatedDate: Date(timeIntervalSince1970: stamp))
+    }
+
+    // MARK: CASE U-15d（Save 只写真的变了的行、而且只写变了的单元）（R-M3-4a-72 / RR6-6 / RR7-10）
+
+    /// 五条已发布规则，五个子步骤各起一次 sheet：
+    /// ① 只改第 3 条的目标选择器（选中一个真 Space）⇒ `upserts` 只有 1 条、只带**目标**单元；
+    /// ② 什么都不改 ⇒ 两个集合都空（连 `applyRuleEdits` 都不调）；
+    /// ③ sheet 打开期间远端把第 3 条的目标改成 S3、用户只在文本框里敲字 ⇒ 那一行 `spaceId == S3`、
+    ///    `targetUpdatedDate` 一个字节没被改写、`contentUpdatedDate` 是这次 Save 的 `now`；
+    /// ④ 远端刷新了第 4 条（用户没碰过）⇒ 它不进 `upserts`、`pendingLocalEdit` 仍是 `false`；
+    /// ⑤ 用户把第 5 条改成 `"a.example"`、远端同期把 host 改成 `"b.example"` ⇒ 界面上仍是
+    ///    `"a.example"`、`upserts` 带 `content` 且 `host == "a.example"`。
+    ///
+    /// 防的是什么：照「整表遍历 + 一道 fingerprint 守卫」迁移过来的实现把 5 条全部置位，于是那一轮
+    /// **全库都不静止、全库对远端删除让位**。③ 专门钉「按整行比」的实现：它会给一个**用户从没碰过**
+    /// 的字段铸一枚 `now` 去赢那次并发的远端改目标。④ 钉「记脏基线取 `load()` 快照」的实现。
+    /// ⑤ 钉裁定 10：把刷新判据留在「只跳过此刻正在敲的那一个字段」的实现会把 `"a.example"` 换成
+    /// `"b.example"`，Save 时与库里相等 ⇒ 不进 `upserts` ⇒ 用户那次编辑**无声消失**。
+    func testSaveWritesOnlyTheRowsAndTheUnitsTheUserTouched() async throws {
+        // ① 只改第 3 条的目标选择器。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let before = try snapshot(store)
+            let loaded = editorRows(store)
+            var rows = loaded
+            let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i2 })
+            rows[index].askBeforeRouting = false
+            rows[index].targetSpaceId = Self.t11SpaceB
+            let edits = editSet(rows: rows, loaded: loaded,
+                                dirty: [rows[index].id: [.ask, .target]], store: store)
+            XCTAssertEqual(edits.upserts.map(\.id), [Self.i2], "① upserts 只有 1 条")
+            XCTAssertTrue(edits.deletedIds.isEmpty)
+            XCTAssertNil(edits.upserts.first?.content, "① 内容组与库里相同 ⇒ 不带这个单元")
+            XCTAssertEqual(edits.upserts.first?.spaceId, Self.t11SpaceB)
+            try await apply(edits, to: store)
+
+            let after = try snapshot(store)
+            XCTAssertEqual(after[Self.i2]?.spaceId, Self.t11SpaceB)
+            XCTAssertNotNil(after[Self.i2]?.targetUpdatedDate)
+            XCTAssertEqual(after[Self.i2]?.contentUpdatedDate, before[Self.i2]?.contentUpdatedDate,
+                           "① 内容戳一个字节不动")
+            XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, true)
+            for id in [Self.i0, Self.i1, Self.i3, Self.i4] {
+                XCTAssertEqual(after[id]?.contentUpdatedDate, before[id]?.contentUpdatedDate, id)
+                XCTAssertEqual(after[id]?.targetUpdatedDate, before[id]?.targetUpdatedDate, id)
+                XCTAssertEqual(after[id]?.pendingLocalEdit, false, id)
+            }
+        }
+
+        // ② 什么都不改就 Save。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let loaded = editorRows(store)
+            let edits = editSet(rows: loaded, loaded: loaded, store: store)
+            XCTAssertTrue(edits.isEmpty, "② 零脏位 ⇒ 两个集合都空、连 `applyRuleEdits` 都不调")
+        }
+
+        // ③ sheet 打开期间远端改目标；用户只在文本框里敲字。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let loaded = editorRows(store)                 // sheet 打开
+            try await landRemote([.move(landingValues(syncId: "r2", spaceId: Self.t11SpaceC,
+                                                      host: "two.example", sortOrder: 0,
+                                                      stamp: 2_000))], in: store)
+            let landed = try snapshot(store)
+            XCTAssertEqual(landed[Self.i2]?.spaceId, Self.t11SpaceC)
+
+            var rows = loaded
+            let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i2 })
+            rows[index].value = "two-typed.example"
+            let edits = editSet(rows: rows, loaded: loaded,
+                                dirty: [rows[index].id: .value], store: store)
+            XCTAssertEqual(edits.upserts.map(\.id), [Self.i2])
+            XCTAssertNotNil(edits.upserts.first?.content)
+            XCTAssertNil(edits.upserts.first?.spaceId, "③ 目标单元不在场 ⇒ 库里那两列一个字节不动")
+            try await apply(edits, to: store)
+
+            let after = try snapshot(store)
+            XCTAssertEqual(after[Self.i2]?.spaceId, Self.t11SpaceC, "③ 库里刚落地的那个目标")
+            XCTAssertEqual(after[Self.i2]?.targetUpdatedDate, landed[Self.i2]?.targetUpdatedDate,
+                           "③ `targetUpdatedDate` 一个字节没被改写")
+            XCTAssertNotEqual(after[Self.i2]?.contentUpdatedDate, landed[Self.i2]?.contentUpdatedDate,
+                              "③ `contentUpdatedDate` 是这次 Save 的 `now`")
+            XCTAssertEqual(after[Self.i2]?.host, "two-typed.example")
+            XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, true)
+        }
+
+        // ④ 远端刷新了第 4 条（用户没碰过它）。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let loaded = editorRows(store)
+            try await landRemote([.update(landingValues(syncId: "r3", spaceId: Self.t11SpaceA,
+                                                        host: "three-remote.example",
+                                                        sortOrder: 3, stamp: 2_000))], in: store)
+            let landed = try snapshot(store)
+
+            var rows = loaded
+            let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
+            rows[index].value = "zero-typed.example"
+            let edits = editSet(rows: rows, loaded: loaded,
+                                dirty: [rows[index].id: .value], store: store)
+            XCTAssertEqual(edits.upserts.map(\.id), [Self.i0], "④ 第 4 条不进 `upserts`")
+            try await apply(edits, to: store)
+
+            let after = try snapshot(store)
+            XCTAssertEqual(after[Self.i3]?.host, "three-remote.example")
+            XCTAssertEqual(after[Self.i3]?.pendingLocalEdit, false, "④ 仍然是 `false`")
+            XCTAssertEqual(after[Self.i3]?.contentUpdatedDate, landed[Self.i3]?.contentUpdatedDate)
+        }
+
+        // ⑤ 脏字段 vs 并发的远端内容落地。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let loaded = editorRows(store)
+            var rows = loaded
+            let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i4 })
+            rows[index].value = "a.example"                // 脏位 `.value` 在场、焦点已移走
+            try await landRemote([.update(landingValues(syncId: "r4", spaceId: Self.t11SpaceA,
+                                                        host: "b.example",
+                                                        sortOrder: 4, stamp: 2_000))], in: store)
+            let landedFive = try snapshot(store)
+            XCTAssertEqual(landedFive[Self.i4]?.host, "b.example")
+
+            let edits = editSet(rows: rows, loaded: loaded,
+                                dirty: [rows[index].id: .value], store: store)
+            XCTAssertEqual(rows[index].value, "a.example", "⑤ 脏字段不被刷新")
+            XCTAssertEqual(edits.upserts.map(\.id), [Self.i4])
+            XCTAssertEqual(edits.upserts.first?.content?.host, "a.example")
+            try await apply(edits, to: store)
+
+            let after = try snapshot(store)
+            XCTAssertEqual(after[Self.i4]?.host, "a.example", "⑤ 用户那次编辑没有无声消失")
+            XCTAssertEqual(after[Self.i4]?.pendingLocalEdit, true)
+        }
+    }
+
+    // MARK: CASE U-21（一次本地拖动只脏一行的 rank 单元）
+
+    /// 同一个桶里 5 条已发布规则，全部 `pendingLocalEdit == false`；用户把第 4 条拖到第 2 位。
+    /// ⇒ `upserts` **只有 1 条**且**只带 `sortOrder`**；被拖动那一行置位、**其余四行仍然 `false`**；
+    /// 五行的两枚戳一枚都没被推进；桶内 `sortOrder` 仍是 0…n-1 的稠密序列。
+    ///
+    /// 防的是什么：拖动落点给整桶记脏的实现会把五行全部置位 ⇒ 整桶那一轮不静止、整桶对远端删除
+    /// 让位；给被拖动那一行带上内容组或目标单元的实现会推进一枚用户没碰过的戳。
+    func testALocalDragDirtiesOnlyTheRankUnitOfTheDraggedRow() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.fiveSeeds, in: store)
+        let before = try snapshot(store)
+        let loaded = editorRows(store)
+
+        var rows = loaded
+        let moved = rows.remove(at: 3)
+        rows.insert(moved, at: 1)
+        let edits = editSet(rows: rows, loaded: loaded, dirty: [moved.id: .order], store: store)
+        XCTAssertEqual(edits.upserts.map(\.id), [Self.i3], "只有被拖动那一行")
+        XCTAssertEqual(edits.upserts.first?.sortOrder, 1)
+        XCTAssertNil(edits.upserts.first?.content, "不带内容组")
+        XCTAssertNil(edits.upserts.first?.spaceId, "不带目标")
+        XCTAssertTrue(edits.deletedIds.isEmpty)
+        try await apply(edits, to: store)
+
+        let after = try snapshot(store)
+        XCTAssertEqual(liveRules(store).map(\.id), [Self.i0, Self.i3, Self.i1, Self.i2, Self.i4])
+        XCTAssertEqual(liveRules(store).map(\.sortOrder), [0, 1, 2, 3, 4], "桶内稠密 0…n-1")
+        XCTAssertEqual(after[Self.i3]?.pendingLocalEdit, true)
+        for id in [Self.i0, Self.i1, Self.i2, Self.i4] {
+            XCTAssertEqual(after[id]?.pendingLocalEdit, false, "\(id)：重编号不置位")
+        }
+        for id in [Self.i0, Self.i1, Self.i2, Self.i3, Self.i4] {
+            XCTAssertEqual(after[id]?.contentUpdatedDate, before[id]?.contentUpdatedDate, id)
+            XCTAssertEqual(after[id]?.targetUpdatedDate, before[id]?.targetUpdatedDate, id)
+        }
+    }
+
+    // MARK: CASE U-15f（远端删掉的脏行的恢复）（R-M3-4a-101 / spec §5.8 第 3 条）
+
+    /// 用户只改第 2 条的文本框；随后 sheet 仍然开着，第 2 条的**入站 tombstone 落地**（走生产的
+    /// 落地批次入口 ⇒ `hardDeleteURLRuleThrowing`，行真的没了）。Save ⇒ **成功**、`upserts` 恰好
+    /// 1 条：**三个单元全带**、`id == row.id.uuidString`、**`syncId == nil`** ⇒ 落库之后库里多出
+    /// 一条活行，`syncId` 是插入点刚铸的一个新值（≠ R2）、`pendingLocalEdit == true`。
+    ///
+    /// 防的是什么：M5 的按单元 draft 把 §5.8 第 3 条那句「Save 时以一条 upsert 重新出现」变成了
+    /// 一次**整批失败**——缺陷的表现是「用户按了 Save，界面没报错，什么都没写进去」。另一头是拿旧
+    /// `syncId` 去复活，把账户上一条**别的设备刚做出来的删除**静默撤销掉。
+    func testADirtyRowKilledByAnInboundTombstoneComesBackUnderAFreshIdentity() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+
+        var rows = loaded
+        let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+        rows[index].value = "one-typed.example"
+        // 第 1 条也改一次：负面对照要断言「另一条 upsert 同样没落盘」。
+        let other = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
+        rows[other].value = "zero-typed.example"
+        let dirty: [UUID: URLRulesEditor.RowDirty] = [rows[index].id: .value,
+                                                      rows[other].id: .value]
+
+        // sheet 仍然开着：第 2 条的远端 tombstone 落地 ⇒ 硬删。
+        try await landRemote([.delete(syncId: "r1")], in: store)
+        let afterTombstone = try snapshot(store)
+        XCTAssertEqual(afterTombstone.count, 2, "行真的没了")
+
+        let edits = editSet(rows: rows, loaded: loaded, dirty: dirty, store: store)
+        let revived = try XCTUnwrap(edits.upserts.first { $0.id == Self.i1 })
+        XCTAssertEqual(edits.upserts.count, 2, "第 2 条的恢复支 + 第 1 条的按单元 draft")
+        XCTAssertNotNil(revived.content, "三个单元全带")
+        XCTAssertNotNil(revived.spaceId)
+        XCTAssertNotNil(revived.sortOrder)
+        XCTAssertEqual(revived.content?.host, "one-typed.example", "sheet 里那一行此刻的值")
+        XCTAssertNil(revived.syncId, "**绝不复用旧的 `syncId`**：那是让编辑器去做一次复活")
+        XCTAssertTrue(edits.deletedIds.isEmpty)
+
+        try await apply(edits, to: store)              // Save **成功**，不抛
+
+        let after = try snapshot(store)
+        XCTAssertEqual(after.count, 3, "库里多出一条活行")
+        let row = try XCTUnwrap(after[Self.i1])
+        XCTAssertNil(row.deletedDate)
+        XCTAssertNotNil(row.syncId)
+        XCTAssertNotEqual(row.syncId, "r1", "插入点铸的新身份")
+        XCTAssertEqual(row.pendingLocalEdit, true)
+        XCTAssertEqual(after[Self.i0]?.host, "zero-typed.example", "另一条 upsert 照样落盘")
+        XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, false, "第 3 条一个字节不动")
+    }
+
+    /// **负面对照**：按 M5 的常规支走（只带 `content` 一个单元的按单元 draft）⇒
+    /// `applyURLRuleEditsBody` 的 `id` / `syncId` 都命中不到 ⇒ 落进插入支 ⇒ 前置要求
+    /// `content != nil ∧ spaceId != nil` 不成立 ⇒ 抛 `noCandidateSurvived`、**整批回滚**，
+    /// 连同一批里另一条本该落盘的 upsert 一起没了。必须红。
+    func testAUnitOnlyDraftForAVanishedRowFailsTheWholeSave() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        try await landRemote([.delete(syncId: "r1")], in: store)
+        let before = try snapshot(store)
+
+        let broken = LocalStore.URLRuleDraft(
+            id: Self.i1, syncId: nil,
+            content: LocalStore.URLRuleDraft.ContentUnit(host: "one-typed.example"),
+            spaceId: nil, sortOrder: nil, createdDate: nil, contentUpdatedDate: nil)
+        let healthy = LocalStore.URLRuleDraft(
+            id: Self.i0, syncId: "r0",
+            content: LocalStore.URLRuleDraft.ContentUnit(host: "zero-typed.example"),
+            spaceId: nil, sortOrder: nil, createdDate: nil, contentUpdatedDate: nil)
+        do {
+            try await store.applyURLRuleEditsThrowing(upserts: [healthy, broken], deletedIds: [])
+            XCTFail("expected noCandidateSurvived")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .noCandidateSurvived)
+        }
+        let rolledBack = try snapshot(store)
+        XCTAssertEqual(rolledBack, before, "整批回滚：另一条 upsert 同样没落盘")
+    }
+
+    /// **对照（没碰过的行不复活）**：同一形状，但用户**没有**改第 2 条（零脏位）⇒ 那一行不进任何
+    /// 集合、库里不多出行。这一条钉住「恢复支只对**脏**行成立」，别把它写成「`stored` 里没有就
+    /// 一律重建」（那会让每一次远端删除都被本机撤销回去）。
+    func testACleanRowDeletedRemotelyIsNeverRevived() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+        try await landRemote([.delete(syncId: "r1")], in: store)
+
+        let edits = editSet(rows: loaded, loaded: loaded, store: store)
+        XCTAssertTrue(edits.isEmpty, "零脏位 ⇒ 两个集合都不进")
+        let after = try snapshot(store)
+        XCTAssertEqual(after.count, 2, "库里不多出行")
+    }
+
+    // MARK: CASE U-15g（恢复支撞上**软删**行）（R-M3-4a-104 / Task 5 计划裁定 8）
+
+    /// 与 U-15f 逐字同一份 draft，只是 sheet 打开期间那一行被 **M2 软删**（行还在库里，只是
+    /// `allURLRules()` 按 R-M3-4a-51 读不到它）——**编辑器这一层看不出软删与硬删的区别，也不需要
+    /// 看出**。落库之后：库里多出**一条新的活行**（`id` 与 `syncId` 都是新铸的），**那条软删行一个
+    /// 字节没变**；最后那条软删行的 tombstone `.applied` ⇒ **只硬删它**，新行一个字节不动。
+    ///
+    /// 防的是什么：编辑器的 `stored`（`allURLRules()`，**过滤**软删）与写事务的 `byId`
+    /// （**含**软删，R-M3-4a-56）**定义域不同**。就地 upsert 到那条软删行的那一版会让用户那次编辑
+    /// 写进一条**隐身**行，随后那条 tombstone 把它连编辑一起硬删，而用户看到的是「保存成功」。
+    func testTheRecoveryDraftHittingASoftDeletedRowMintsAFreshRowInstead() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+
+        var rows = loaded
+        let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+        rows[index].value = "one-typed.example"
+        let dirty: [UUID: URLRulesEditor.RowDirty] = [rows[index].id: .value]
+
+        // sheet 仍然开着：M2 把第 2 条软删掉（走生产的落地批次入口，不手写 `deletedDate`）。
+        try await landRemote([.softDelete(syncId: "r1", mergePartnerSyncId: "r0")], in: store)
+        let afterSoftDelete = try snapshot(store)
+        XCTAssertEqual(afterSoftDelete.count, 3, "行还在库里")
+        XCTAssertNotNil(afterSoftDelete[Self.i1]?.deletedDate)
+        XCTAssertFalse(liveRules(store).contains { $0.id == Self.i1 }, "但默认读口读不到它")
+
+        let edits = editSet(rows: rows, loaded: loaded, dirty: dirty, store: store)
+        let revived = try XCTUnwrap(edits.upserts.first)
+        XCTAssertEqual(edits.upserts.count, 1)
+        XCTAssertEqual(revived.id, Self.i1, "与 U-15f 逐字同一份 draft：原 `id`")
+        XCTAssertNil(revived.syncId, "…与 `syncId == nil`")
+        XCTAssertNotNil(revived.content)
+        XCTAssertNotNil(revived.spaceId)
+        XCTAssertNotNil(revived.sortOrder)
+
+        try await apply(edits, to: store)              // Save **成功**，不抛
+
+        let after = try snapshot(store)
+        XCTAssertEqual(after.count, 4, "库里多出一条新的活行")
+        // 那条软删行一个字节没变。
+        XCTAssertEqual(after[Self.i1], afterSoftDelete[Self.i1], "软删行一个字节没变")
+        // 新行：`id` 与 `syncId` 都是新铸的。
+        let fresh = try XCTUnwrap(after.values.first { $0.host == "one-typed.example" })
+        XCTAssertNotEqual(fresh.id, Self.i1, "新铸的 `id`")
+        XCTAssertNotNil(fresh.syncId)
+        XCTAssertNotEqual(fresh.syncId, "r1", "新铸的小写 uuid")
+        XCTAssertNil(fresh.deletedDate)
+        XCTAssertNil(fresh.mergePartnerSyncId)
+        XCTAssertEqual(fresh.pendingLocalEdit, true)
+        // `load()` 之后 sheet 里那一行的 `storeId` 换成了新的 `id`（位置不变）。
+        XCTAssertEqual(editorRows(store).compactMap(\.storeId), liveRules(store).map(\.id))
+        // 第 1 / 3 条一个字节不动。
+        XCTAssertEqual(after[Self.i0]?.pendingLocalEdit, false)
+        XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, false)
+
+        // 最后：那条软删行的 tombstone 拿到 `.applied` ⇒ **只硬删它**。
+        try await store.hardDeleteURLRuleThrowing(syncId: "r1")
+        let afterHardDelete = try snapshot(store)
+        XCTAssertNil(afterHardDelete[Self.i1], "只硬删那条旧的软删行")
+        XCTAssertEqual(afterHardDelete[fresh.id]?.syncId, fresh.syncId, "新行一个字节不动")
+        XCTAssertEqual(afterHardDelete[fresh.id]?.pendingLocalEdit, true)
+    }
+
+    /// **对照（命中活行 ⇒ 普通 upsert）**：同一形状，但 M2 **没有**软删第 2 条 ⇒ 走 M5 的常规按单元
+    /// 支（只带 `content`）、**不新建行**、`id == I2` 与 `syncId == r1` 都不变、`pendingLocalEdit`
+    /// 置位。钉住「新建只在软删命中那一支上发生」，别写成「只要 `syncId == nil` 就一律新建」。
+    func testADirtyRowStillInTheStoreTakesTheOrdinaryPerUnitBranch() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+
+        var rows = loaded
+        let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+        rows[index].value = "one-typed.example"
+        let edits = editSet(rows: rows, loaded: loaded,
+                            dirty: [rows[index].id: .value], store: store)
+        XCTAssertEqual(edits.upserts.map(\.id), [Self.i1])
+        XCTAssertEqual(edits.upserts.first?.syncId, "r1", "命中活行 ⇒ 身份原样")
+        XCTAssertNil(edits.upserts.first?.spaceId, "只带内容组这一个单元")
+        XCTAssertNil(edits.upserts.first?.sortOrder)
+        try await apply(edits, to: store)
+
+        let after = try snapshot(store)
+        XCTAssertEqual(after.count, 3, "行数不增")
+        XCTAssertEqual(after[Self.i1]?.syncId, "r1")
+        XCTAssertEqual(after[Self.i1]?.host, "one-typed.example")
+        XCTAssertEqual(after[Self.i1]?.pendingLocalEdit, true)
+    }
+
 }

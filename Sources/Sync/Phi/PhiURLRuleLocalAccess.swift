@@ -457,6 +457,21 @@ protocol PhiURLRuleLocalAccess: AnyObject {
                           resolve: OwnerResolver,
                           tombstonesThisPage: Set<String>) -> Set<String>
 
+    // MARK: D30（8b-4）：§8.4.5 的两处清位
+
+    /// 清位 (a)：`syncId` 那一行此刻的三个合并单元 == `confirmed`（毫秒粒度）⇒ 清
+    /// `pendingLocalEdit`；**无论比不比得上，`mergePartnerSyncId` 那一半照清**，且与标志写在
+    /// **同一次行写**里（§8.4.3 生命周期表第 2 行）。返回值 = 标志这一半这次清掉了没有。
+    /// 行寻不到 / 算不出 ⇒ `false`、零写（fail-closed）。
+    @discardableResult
+    func clearPendingLocalEdit(syncId: String,
+                               ifProjectionEquals confirmed: RuleProjection) async throws -> Bool
+
+    /// 清位 (b)：`entries` 是「候选身份 -> 它在**发布判定那一刻**的行侧投影」（R-M3-4a-91）。
+    /// 实现在**同一个事务**里重读每一行、用与 (a) **同一个函数**重算此刻的投影、逐单元比，
+    /// 相等才清标志；**`mergePartnerSyncId` 一个字节都不碰**。
+    func clearPendingLocalEditIfUnchanged(entries: [String: RuleProjection]) async throws
+
     // **没有、也不许有 `clearAllSyncIds`**（§4.4 末段 / R-M3-4a-23）：规则的 `syncId` 在插入点
     // 铸造，自撤销时清掉它，重新加入后账户上那些旧身份没有任何设备认领 ⇒ 孤儿实体。缺席本身
     // 就是那道防线——协调器的 `clearAllSyncIds` 闭包只扩到书签。
@@ -795,6 +810,20 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
             return syncIds.contains(syncId)
         }
         reindexLive()
+    }
+
+    // MARK: - D30（8b-4）：§8.4.5 的两处清位
+
+    /// 薄转发。**不动本页缓存**：两处清位都跑在发布段（页循环之外），本页落地早已结束，
+    /// 下一页 / 下一轮的 `allURLRules()` 自己重建——与 `hardDeleteURLRule(syncId:)` 同一条纪律。
+    @discardableResult
+    func clearPendingLocalEdit(syncId: String,
+                               ifProjectionEquals confirmed: RuleProjection) async throws -> Bool {
+        try await store.clearPendingLocalEditThrowing(syncId: syncId, ifProjectionEquals: confirmed)
+    }
+
+    func clearPendingLocalEditIfUnchanged(entries: [String: RuleProjection]) async throws {
+        try await store.clearPendingLocalEditIfUnchangedThrowing(entries: entries)
     }
 
     // MARK: - 私有

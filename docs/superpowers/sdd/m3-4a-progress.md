@@ -845,3 +845,108 @@ M3 让位：(α) / (β) 两落点 + `.transfer` + `RuleProjection` + `parkedTomb
     `push(retryOnConflict:)`，而它自己**先做一次 preflight pull**，所以 `plan` 照样会跑——
     对照三因此是「守卫对每一种走到发布段的轮次都成立」这条行为断言，判别「守卫读的是不是
     `plan` 的产物」靠的是 `OwnedPlanOutput` 上根本没有那个成员（结构性不可写）。
+
+## Task 8b-4
+
+M4 `pendingLocalEdit` 生命周期的两处清位（R-M3-4a-79 / R-M3-4a-91 / R-M3-4a-96）+ M5 编辑器
+按行按字段记脏（R-M3-4a-72）。
+
+### brief 的「计划裁定」要求记档的
+
+1. **裁定 1（`URLRuleDraft` 的三个可选合并单元）本步是零改动。** Task 5 已经按本形状落地：
+   `content: ContentUnit?` / `spaceId: String?` / `sortOrder: Int?`、`applyURLRuleEditsBody`
+   的单元判据就是「非 nil 即在场」、插入支的前置要求 `content != nil ∧ spaceId != nil` 不成立
+   时抛 `LocalStoreWriteError.noCandidateSurvived` 并整批回滚。扁平便利 init 与四处既有构造点
+   一行都没碰。
+2. **裁定 2（比较值是行侧投影、毫秒粒度）落在两个新纯函数上**：
+   `URLRuleKind.clearingProjection(of:)`（行 -> `RuleProjection`）与
+   `URLRuleKind.clearingProjectionMatches(row:confirmed:)`（逐单元、`stampMilliseconds` 粒度）。
+   两处清位与 `.urlRules` 的 `snapshot` 闭包调的是**同一个**函数，所以「基线」与「此刻」在结构上
+   不可能用两套折算。投影**不截断**戳（截断会让两次投影自己也对不齐），毫秒换算只在比较那一步做。
+3. **裁定 3（`RuleProjection` 的第八个成员 `sortOrder: Int?`）带默认值 `nil`**，所以
+   `URLRuleKind.transferSource(of:resolve:)` 与既有测试的每一处构造点一个字不改，而
+   `transferURLRuleEditBody` / `transferDecision` 一个字节都不读它（rank 不转移）。
+   **`nil` 在清位那一侧恒不等**（fail-closed）：从实体折出来的投影永远当不成清位基线。
+4. **裁定 4（目标单元的换算通路）走「kind 侧换算完再交给原语」那一支。** 两处清位比较的两侧
+   **都是行侧投影**，所以比的是本机 `spaceId`（`RuleProjection.targetSpaceId`），
+   `targetOwnerUuid` 在行侧投影里恒空、**不参与比较**——与 `transferURLRuleEditBody` 只读
+   `source.targetSpaceId` 逐字同一条通路，`LocalStore` 因此仍然不认识任何账户映射。
+   `confirmed.targetSpaceId == nil` ⇒ 恒不等（换不出 ⇒ 不清）。
+5. **裁定 14 的两层分工**：**原语**收 `entries: [String: RuleProjection]`（R-M3-4a-91），
+   **注册项闭包** `clearPendingLocalEdits` 收 `Set<String>`（R-M3-4a-96），基线由 `.urlRules`
+   闭包从**捕获的** `state.publishBaseline` 查出来。spec §8.4.5 待同批修订；附录 C-28。
+6. **裁定 11 的恢复支**（远端删掉的脏行按「完整单元 + `syncId = nil`」重建，R-M3-4a-101）与
+   **软删那一格**（「`stored` 里找不到」有硬删与软删两种现实，编辑器**一行都不用分**，判定由
+   Task 5 的写事务第 2b 步收口，R-M3-4a-104；唯一的下游事实是 Save 之后那一行的 `storeId`
+   换成了新铸的 `id`）。附录 C-36 / C-39。
+7. **裁定 12 那张「脏位 -> 合并单元」映射表**由 Task 12 一次性写进 spec §15 实施勘误段。
+
+### 与 brief 不同的地方
+
+8. **`URLRuleSyncRoundState` 多了一个 `publishResolver`（brief 没写）。** 注册项闭包的类型被
+   R-M3-4a-96 写死成 `(Set<String>) async -> Void`，拿不到 `maps`，而第二层的第 ② 步要调
+   `pendingLocalEditIdentities(resolve:)`。于是与 `publishBaseline` **同一趟**（`snapshot` 闭包里）
+   记下本轮的 resolver；`nil` ⇒ 这一轮整条不清位（fail-closed）。不新开通道、不改闭包类型。
+9. **两个闭包对 `access` 是强捕获，不是 brief 示例代码里的 `[weak access]`。** 同一个工厂产出的
+   其余每一个闭包（`beginRound` / `localIdentities` / `plan` / `land` / `liveOwners` /
+   `hardDeleteAfterTombstone` / `purgeSoftDeletedRows`）都强捕获同一个 `access`，弱捕获这两个
+   挡不住任何环，只会让两处清位在生命周期上与别处不一致。
+10. **`computeEditSet` 的第三遍「整桶重排」整条删掉。** 裁定 12 写死「`acceptDrop` **只给被拖动
+    那一行**记 `.order`」，而 U-21 要求 `upserts` **恰好 1 条**；第三遍按定义给同桶其余既有行也
+    发 `sortOrder` draft ⇒ 整桶进 `upserts` ⇒ 整桶被 `applyURLRuleEditsBody` 第 9 步置位 ⇒ 那一轮
+    整桶不静止、整桶对远端删除让位。其余兄弟行的稠密重编号由第 8 步的重排定义域完成，**不置位**
+    （`upsertedIds` 不含它们）。Task 11 的两条相关用例随之改判（`testReorderingABucket…` 更名为
+    `…SendsASortOrderOnlyDraftForTheDraggedRowOnly`、`testAReorderStillCommits…` 的期待从
+    `[I2, I0]` 收成 `[I2]`），**它们钉的行为没有被削弱，只是换成了 M5 的判据**。
+11. **`loaded` 这个入参保留在 `computeEditSet` 的签名里但已经没有读者。** brief 把签名写死成
+    `computeEditSet(rows:loaded:removed:stored:dirty:)`；M5 之后「用户碰过没有」由 `dirty` 回答、
+    「与库里还差不差」由 `stored` 回答，`loaded` 两头都不沾。保留是为了 §5.8 的调用形状与
+    `loadedRows` 这个 `@State` 的既有含义，删它属于另一次改动。
+12. **裁定 10（sheet 期间按字段刷新的收紧）在本仓库是空操作。** Task 11 **没有**实现 §5.8 第 3 条
+    的「sheet 打开期间按字段刷新」——`load()` 只在 `.onAppear` 跑一次，编辑器此后不再从 store
+    刷新任何字段。所以「脏字段一律不刷新」这条收紧没有落点可改；本任务不新造一条刷新通路
+    （那是 §5.8 第 3 条自己的任务）。U-15d 的 ③ / ④ / ⑤ 在「没有刷新」这一现实下**照样成立**，
+    而且成立的理由与裁定 10 同源：③ 的目标单元根本不在场、④ 零脏位、⑤ 脏字段不会被覆盖。
+    **spec §5.8 第 3 条在实现上仍然缺席，这一条记进勘误**。
+13. **U-15f / U-15g 里「sheet 打开期间那次删除」用生产的落地批次入口驱动，不是 `pullOnce()`。**
+    brief 要求「用既有 `pullOnce()` 驱动、不要手写硬删 / `deletedDate`」；后半条严格遵守——
+    硬删走 `.delete(syncId:)` op、软删走 `.softDelete(syncId:mergePartnerSyncId:)` op，两者都经
+    `LocalStore.applyURLRuleSyncBatchThrowing`，与引擎落地段调的是**同一份 body**。前半条做不到
+    的原因是结构性的：这两条用例跑在真 `LocalStore` 上（U-15g 的断言依赖 Task 5 写事务里的
+    第 2b 步），而 `URLRuleKindTests` 的真库段没有引擎脚手架（引擎段用的是 `FakeURLRuleAccess`），
+    把 `AccountPhiURLRuleAccess` + 引擎 + 假 client 接起来属于新造脚手架、且**不经构建无法验证**。
+14. **U-15d 与 U-21 的「下一轮 `pushed == 1` / 恰好一条 commit」两条引擎侧断言没有写。** 同第 13
+    条的理由（编辑器用例跑在真库上、那一层没有引擎）。清位两侧的发布行为由
+    `URLRuleMergeTests` 的 M-7 / M-7b / M-7c / M-7d / M-7e / M-19 / M-19x 覆盖。
+15. **M-19 的七个输入按「可观测终态」归并**：(a) 归一化不动点折回、(b) `ask` 改了又改回来、
+    (c) 零单元转移三者在行与游标上是**同一个状态**（标志置位 ∧ 快照字节 == `reconciled`），
+    合成一条用例三行断言；(d) 用 `FakeURLRuleAccess.failNextClearPendingLocalEdit` 造「(a) 那次
+    行写失败」并断言下一轮由 (b) 自愈；(e) / (f) 各一条；(g) 并进 M-19x (x1) 的四条边界。
+16. **M-20 改在真 `LocalStore` 上跑**（复用 8b-2 的 `makeMergeStore` / `mergeRows` 脚手架）：
+    落地的每一种写（`.create` / `.update` / `.move` / `.reorder` / `.rekey` / M2 的三条 / 入站
+    tombstone 的硬删）各一次 + 编辑器删除集那一条软删，逐条断言 `pendingLocalEdit == false`。
+    `deleteSpaceCascade` 的两个级联入口（`.userIntent` / `.retentionPurge`）由 Task 9 的用例覆盖，
+    本任务不重复。
+17. **M-7b / M-7d 的「提交在途」注入点是 `FakePhiSyncClient` 既有的 `gatedCommitTagHash` +
+    `arrivedInCommit` / `commitGate`**（形状照 `PhiSyncEngineOwnedItemsTests` 的加密失败用例），
+    没有往假 client 上加任何新开关；M-7e 的注入点按 brief 落在 `FakeURLRuleAccess` 上
+    （`beforeClearPendingLocalEditIfUnchanged`），那是唯一够得到 `entries` 的一层。
+18. **多改了一个 brief 没列的生产文件：`Sources/Sync/Phi/URLRuleKind.swift`。** 裁定 2 要求
+    「两处清位与 `snapshot` 闭包用**同一个**折算函数」，而那三个调用点分别在 `LocalStorage`、
+    `Sync/Phi` 的引擎与工厂里；`URLRuleKind` 是它们共同的、既有的判据之家
+    （`transferSourceUnchanged` / `transferDecision` 就住在那里，理由逐字相同：两处各写一份
+    的实现迟早分叉）。新增的只有 `clearingProjection(of:)` 与
+    `clearingProjectionMatches(row:confirmed:)` 两个纯函数，没有碰任何既有成员。
+19. **`FakeURLRuleAccess` 的两个新实现与生产 body 逐字同形**（同一条判据函数
+    `URLRuleKind.clearingProjectionMatches`），并新增两个 `Call` case
+    （`.clearPendingLocalEdit(syncId:)` / `.clearPendingLocalEditIfUnchanged(count:)`）让
+    「一次行写」「空集零事务」这两条在假件上可断言。
+
+### 验证口径
+
+20. **无构建**（2026-09-18 amendment）：逐行核对 + `swiftc -parse` 语法过一遍。每个新符号在使用
+    前都 grep 过签名（`RuleProjection` 成员表、`transferURLRuleEditThrowing` 的实参形状、
+    `URLRuleDraft` 成员表、`URLRuleSyncRoundState`、`computeEditSet` 现签名与 `stored` 实参类型
+    ——brief 点名的那五项全部核过）；`URLRuleSyncOp` 仍然 `Equatable`（新成员是 `Int?`）；
+    `OwnedKindRegistration` 的成员次序与三个工厂的实参次序逐条对齐；两处清位都跑在
+    `@MainActor` 的 access 上、原语在 `LocalStore` 的写队列上。本任务**没有新增任何 `switch`**。

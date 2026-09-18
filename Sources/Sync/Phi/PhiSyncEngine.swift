@@ -415,6 +415,17 @@ struct OwnedKindRegistration {
     /// 快照（R-exec-4 / R-exec-8）：孤儿根下面的行、作用域迁移原地留下的备份行都不发布，但
     /// 它们是**活的本地行**，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话。
     let liveOwners: @MainActor (Set<String>, OwnedOwnerMaps) throws -> OwnedLiveRows
+
+    /// §5.7 软删行的**第一条**出路（规则专属）：本轮 tombstone 被服务端 `.applied` 的那些
+    /// 身份，在游标表落盘之后把本机那条软删行**硬删**。`nil` = 这条 kind 的本机删除本来
+    /// 就是硬删（书签 / pin），调用方整段跳过、行为逐字不变。
+    /// 失败只记日志（R12：kind + 条数）——那一行由第二条出路的 30 天清扫兜住。
+    var hardDeleteAfterTombstone: (@MainActor (Set<String>) async -> Void)? = nil
+    /// §5.7 软删行的**第二条**出路（规则专属）：`.retentionSweep` 里按**行上的**
+    /// `deletedDate` 清掉超过 30 天的软删行，返回清掉的条数。判据不是游标上的
+    /// `deletedAtMs`：一条永远发不出 tombstone 的软删行（三轮被拒放弃、或从来没有
+    /// `entityId`）的游标已经被 `dropExpiredOwnedTombstones` 丢掉。
+    var purgeSoftDeletedRows: (@MainActor (Date) async -> Int)? = nil
 }
 
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
@@ -1007,6 +1018,26 @@ actor PhiSyncEngine {
         // 返回值上，一次「数据删成功、游标文件写失败」就永久留下一批孤儿游标——而 §11.4
         // 明说游标文件写失败**不重试**。幂等重算一遍不需要任何新状态。
         await applyOwnedRetentionCascade()
+        await purgeExpiredSoftDeletedOwnedRows()
+    }
+
+    /// §5.7 软删行的第二条出路。与 `dropExpiredOwnedTombstones` **同一轮、排在
+    /// 游标级联之后**：那一趟按游标的 `deletedAtMs` 丢**游标**，这一趟按行的 `deletedDate`
+    /// 删**行**，两个判据分属两个 store，谁也覆盖不了谁——一条永远发不出 tombstone 的软删
+    /// 行（三轮被拒放弃、或从来没有 `entityId`）的游标早已被上一趟丢掉。
+    private func purgeExpiredSoftDeletedOwnedRows() async {
+        let cutoff = Date(timeIntervalSince1970:
+                            Double(now() - PhiSpaceSyncState.retentionMs) / 1000)
+        for registration in ownedKinds {
+            guard !isStopped else { return }
+            guard let purge = registration.purgeSoftDeletedRows else { continue }
+            let purged = await purge(cutoff)
+            // R12：只带 kind 与条数。
+            if purged > 0 {
+                AppLogInfo("[phi-sync] purged soft-deleted rows "
+                           + "kind=\(registration.label) count=\(purged)")
+            }
+        }
     }
 
     /// 上面那两段说的 Space 那一半：`purgeExpired` + 数据级联。
@@ -1140,7 +1171,21 @@ actor PhiSyncEngine {
             // 多写一次盘。
             var dropped = 0
             var rehomed = 0
+            var parked = 0
             for identity in candidates.sorted() {
+                // **R-M3-4a-27 的停放豁免，排在判据 (b) 之前。** 一条**停放中**的改目标
+                // 移动不了本机行 ⇒ 游标的 `ownerUuid` 停在**旧** Space 上 ⇒ 旧 Space 被
+                // purge 时命中候选 ⇒ 本机那一行也被 purge 级联硬删掉 ⇒ `live.claimed`
+                // 不含它 ⇒ 下面那个 `removeValue` 连同 `pendingApply` 载荷与已收割的三元组
+                // 一起丢掉整条游标。共享 marker 早已推过那一页，那条改目标**永不重投**：
+                // 账户上规则在新 Space，本机既没有行也没有游标。
+                // **豁免留下的组合状态（游标在、行没了）由 R-M3-4a-42(a)「行不存在 ⇒ 按
+                // 载荷建行」兜住**，`ownerUuid` 这一轮**不刷**：那条行已经没了，
+                // `live.owners[identity]` 必然缺席，而猜一个值正是下面那段注释禁止的事。
+                if table.cursors[identity]?.pendingApply != nil {
+                    parked += 1
+                    continue
+                }
                 guard live.claimed.contains(identity) else {
                     table.cursors.removeValue(forKey: identity)
                     dropped += 1
@@ -1157,6 +1202,10 @@ actor PhiSyncEngine {
             var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
             counters.rehomedCursors += rehomed
             ownedCounters[registration.label] = counters
+            if parked > 0 {
+                AppLogInfo("[phi-sync] retention cascade kept parked cursors "
+                           + "kind=\(registration.label) parked=\(parked)")
+            }
             guard dropped > 0 || rehomed > 0 else { continue }
             // R12：只记 kind 与条数。写一律走 `writeOwnedTable`（`guard !isStopped` + 两个
             // per-kind 标志的维护都在那里），绝不直接 `store.save`。
@@ -4014,6 +4063,8 @@ actor PhiSyncEngine {
 
         var conflicted: Set<String> = []
         var appliedMinted: [String: String] = [:]
+        // §5.7 第一条出路的收集：本轮被服务端 `.applied` 的 tombstone 身份。
+        var appliedTombstones: Set<String> = []
         var encryptionFailed = false
         var queue = work
         while !queue.isEmpty {
@@ -4071,6 +4122,9 @@ actor PhiSyncEngine {
                    let localId = snapshot.minted[item.identity] {
                     appliedMinted[item.identity] = localId
                 }
+                if case .applied = outcome, item.entry.deleted {
+                    appliedTombstones.insert(item.identity)
+                }
             }
         }
 
@@ -4099,6 +4153,15 @@ actor PhiSyncEngine {
         }
         ownedCounters[registration.label] = counters
         writeOwnedTable(registration, table)
+
+        // §5.7 软删行的第一条出路：tombstone 被 `.applied`（`applyOwnedCommitOutcome` 刚给游标
+        // 写下 `deletedAtMs`）⇒ 账户上那条实体没了 ⇒ 本机那条软删行硬删。**排在
+        // `writeOwnedTable` 之后**：崩在中间只剩一条孤立的软删行，由第二条出路兜住；
+        // 反过来崩在中间，游标停在「有基线、无 `deletedAtMs`、本机无行」上，下一轮差分
+        // 三条判据全成立 ⇒ 为它再发一条无谓的 tombstone。`mergePartnerSyncId` 随行消失。
+        if !appliedTombstones.isEmpty, let hardDelete = registration.hardDeleteAfterTombstone {
+            await hardDelete(appliedTombstones)
+        }
 
         // 一次 pull 加一次**限定到那几条**的重发；二次冲突就本轮放弃这几条（§5.3）。
         if retryOnConflict, !conflicted.isEmpty {
@@ -6573,14 +6636,33 @@ extension OwnedKindRegistration {
                 urlRuleSnapshot(table: table, maps: maps, now: now, state: state)
             },
             tombstones: { table, maps, now in
-                // §5.7：软删行**退出 `locals`**，差分据此产出 tombstone。这一次读含软删行，
-                // 而且是 Task 9 的 `explicitDeletions` 与 Task 8b-3 的 `deferredDeletions`
-                // （R-M3-4a-78 / R-M3-4a-84）的**唯一**取值源——两者都从这里算，不多读库。
+                // 轮末唯一那一次**含软删行**的读（R-M3-4a-51）。抛出去 ⇒ 引擎既有的
+                // `publishOwnedKind` fail-closed：本轮这条 kind 的快照 / 差分 / 发布整段不跑、
+                // `local_read_failed` +1、游标表零字节写入。**绝不吞成空集**。
                 let rows = try access.allURLRulesIncludingDeleted()
+                // 一次读、两个集合（不多读一次库）。Task 8b-3 的 `deferredDeletions` 也在
+                // 这一次读上算（R-M3-4a-84）。
+                var locals: [PhiLocalURLRule] = []
+                var explicitDeletions: Set<String> = []
+                for row in rows {
+                    guard let syncId = row.syncId else { continue }
+                    if row.deletedDate == nil {
+                        // **定义域不做任何归属过滤**（R-M3-4a-51）：归属过滤在 `snapshot`
+                        // 内部。目标 hidden / purged（R-M3-4a-5）与 agent / 过期 incognito
+                        // （R-M3-4a-8）的行**留在这里**，靠 `URLRuleKind.identity(of local:)`
+                        // 恒交 `syncId` 进 `liveIdentities`，于是「本机没有这一行」对它们不成立。
+                        locals.append(row)
+                    } else if table.cursors[syncId]?.reconciled != nil {
+                        // 起源 (b)：软删 + 有身份 + 账户上真有这条实体（R-M3-4a-78）。
+                        explicitDeletions.insert(syncId)
+                    }
+                }
                 return SyncableOwnedItems.tombstones(
-                    URLRuleKind.self, locals: rows.filter { $0.deletedDate == nil },
+                    URLRuleKind.self, locals: locals,
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
-                    pendingClaims: [])
+                    // 规则的 `claimIdentities` 是空实现（spec §5.1），没有待写回的认领。
+                    pendingClaims: [],
+                    explicitDeletions: explicitDeletions)
             },
             // §6.1：空实现。规则的认领是**落地事务内**的一次 re-key，「配上了、身份还没写回
             // 本机行」那个中间态在结构上不存在（R-M3-4a-53）。它必须显式存在（R-exec-10）。
@@ -6604,6 +6686,21 @@ extension OwnedKindRegistration {
                     out.owners[identity] = owner
                 }
                 return out
+            },
+            hardDeleteAfterTombstone: { identities in
+                for syncId in identities.sorted() {
+                    do { try await access.hardDeleteURLRule(syncId: syncId) } catch {
+                        AppLogWarn("[phi-sync] hard-deleting a soft-deleted rule failed kind=urlrules "
+                                   + "(\(PhiSyncLog.describe(error)))")
+                    }
+                }
+            },
+            purgeSoftDeletedRows: { cutoff in
+                do { return try await access.purgeSoftDeletedURLRules(olderThan: cutoff) } catch {
+                    AppLogWarn("[phi-sync] the soft-deleted rule sweep failed kind=urlrules "
+                               + "(\(PhiSyncLog.describe(error)))")
+                    return 0
+                }
             })
     }
 }

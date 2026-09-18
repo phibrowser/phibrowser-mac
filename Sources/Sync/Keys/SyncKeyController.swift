@@ -283,8 +283,8 @@ final class SyncKeyController {
         // whose cursor no longer exists.
         spaceKeys?.removeAllMappings()
 
-        // 4. M3-3 §9.1 的归属项（书签 / pin）两步，**次序不能反过来：先删两个游标文件，
-        //    再清 `syncId`**（E14）。两种中途失败的后果不对称——
+        // 4. M3-3 §9.1 的归属项两步，**次序不能反过来：先删三张游标表的文件（书签 / pin /
+        //    URL Rule，M3-4a），再清 `syncId`**（E14）。两种中途失败的后果不对称——
         //    「文件没了、`syncId` 还在」是**可恢复**的：重新加入时那一次整类型重放
         //    （R-M3-3-13 正是为这个形状写的）按身份把每条实体重新落回它原来那一行，游标
         //    自己长回来；
@@ -294,6 +294,13 @@ final class SyncKeyController {
         //
         //    删文件而不是保存一张空表（§3.5 的 `deleteFile()` 契约）：一张「正常的空表」
         //    会让下一次 `load` 再也报不出损，于是那一次整类型重放不会发生。
+        //
+        //    **URL Rule 那一张只走第一步、不走第二步**（M3-4a §4.4 末两段）：下面的
+        //    `clearAllSyncIds` 闭包只覆盖书签。规则的 `syncId` 在插入点铸造（R-M3-4a-23），
+        //    清掉之后下一次写入重铸一个**新的**，重新加入时账户上那些旧身份没有任何设备
+        //    认领 ⇒ 孤儿实体；而规则的认领只对**从未发布**的行成立（R-M3-4a-53），D30 救不了。
+        //    留着 `syncId` 正好让重新加入时每条规则经「报损重放 + 按身份匹配本机行」认回它
+        //    自己那条实体（游标文件已经删掉）。
         for store in ownedItemStores { store.deleteFile() }
         // M3-4a §4.4：第三个要删的文件——`marker.json`。**仍然排在 `clearAllSyncIds()` 之前**：
         // 上面那段论证里「文件没了、`syncId` 还在」是可恢复的一侧，marker 属于同一侧。删，

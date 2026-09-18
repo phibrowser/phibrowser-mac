@@ -542,11 +542,29 @@ enum SyncableOwnedItems {
     /// **绝不能退化成「`pendingApply != nil` 就排除」**：一条认领**配不上**的停放游标
     /// （用户在重试窗口里改了那一行或把它删了）正是该被 tombstone 的那一类，靠 `pendingApply`
     /// 一刀切会把它永久留在账户上，而没有任何设备还能删掉它。
+    ///
+    /// **第七个入参 `explicitDeletions` 是规则这一 kind 的第二个 tombstone 起源**
+    /// （R-M3-4a-78）。上面那套判据是**跟随端保护**：账户说某个 Space 没了、或本机映射还没
+    /// 建起来，就不替别人发删除。而「用户在本机删掉一个 Space」恰好踩中两道归属门的中间
+    /// 态——`SpaceModel` 行已在同一次提交里删掉 ⇒ `isEligibleSpace(owner)` 假，sync-uuid
+    /// 映射却还在 ⇒ `localSpaceId(owner)` 非 nil ⇒ 合格门逐条 `continue` ⇒ 一条 tombstone
+    /// 都发不出来，本机没了、账户还在，那些实体成为**任何设备都删不掉**的孤儿。
+    ///
+    /// 落在这个集合里的身份**只跳过两道归属门**：它的软删**就是**用户这一次删除动作本身
+    /// 写下的，归属合不合格与「用户要不要删它」无关；而它已经在账户上（第一条判据）。
+    /// 其余三条判据、`pendingClaims` 排除与整段游标记账**逐字照旧**。
+    ///
+    /// **集合的来源必须是「一次删除决定」，不是「行不见了」**（R-M3-4a-85）：保留期 purge
+    /// 是跟随不是决定，它对规则行走硬删、绝不写 `deletedDate`，因此永远进不了这个集合。
     static func tombstones<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                              table: PhiOwnedItemTable, resolve: OwnerResolver,
                                              scope: PinnedTabScope?,
                                              nowMs: Int64,
-                                             pendingClaims: Set<String> = []) -> OwnedItemTombstoneResult {
+                                             pendingClaims: Set<String> = [],
+                                             explicitDeletions: Set<String> = []) -> OwnedItemTombstoneResult {
+        // 往后长的入参一律接在 `pendingClaims` 之后、一律带默认值：Task 8b-3 的
+        // `deferredDeletions: Set<String> = []` 排在 `explicitDeletions` 之后（R-M3-4a-84），
+        // 书签 / pin 的调用点与既有用例一个字都不用改。
         var liveIdentities: Set<String> = []
         for local in locals {
             if let identity = K.identity(of: local, resolve: resolve, scope: scope) {
@@ -557,23 +575,28 @@ enum SyncableOwnedItems {
         var identities: [String] = []
         var cursorUpdates: [String: PhiOwnedItemCursor] = [:]
         for (identity, cursor) in table.cursors {
+            // Task 8b-3 的 `deferredDeletions` 进来时排在**这一行之前**（R-M3-4a-84）：
+            // 它要的是「不进 identities、零 cursorUpdates」，所以必须先于三条判据。
             guard cursor.reconciled != nil else { continue }
             guard cursor.deletedAtMs == nil else { continue }
             guard !liveIdentities.contains(identity) else { continue }
             // 本轮认领已经配上、只差一次成功的写回（R-exec-9）。
             guard !pendingClaims.contains(identity) else { continue }
-            // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
-            // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
-            // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
-            // 放行则可能删掉账户上一整个 Space 的书签。
-            guard let owner = cursor.ownerUuid else { continue }
-            // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
-            // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
-            // 由引擎的 resolver 把它映成自身。
-            let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
-            guard mapped else { continue }
-            // 归属不合格（hidden / purged）。
-            guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
+            // 两道**归属**门，起源 (b) 的身份从这里绕过去（R-M3-4a-78）。
+            if !explicitDeletions.contains(identity) {
+                // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
+                // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
+                // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
+                // 放行则可能删掉账户上一整个 Space 的书签。
+                guard let owner = cursor.ownerUuid else { continue }
+                // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
+                // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
+                // 由引擎的 resolver 把它映成自身。
+                let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
+                guard mapped else { continue }
+                // 归属不合格（hidden / purged）。
+                guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
+            }
             identities.append(identity)
             var updated = cursor
             updated.pendingApply = nil

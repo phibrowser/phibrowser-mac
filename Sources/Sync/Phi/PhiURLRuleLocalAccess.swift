@@ -240,6 +240,17 @@ protocol PhiURLRuleLocalAccess: AnyObject {
     /// 与 `PhiSpaceLocalAccess`（`applyRemoteHidden` / `closeSpaceWindows` / `clearThemeRecords`）
     /// 落地副作用的形状逐字相同（Task 6 计划裁定一）。
     func refreshRoutingTableAfterLanding()
+
+    /// §5.7 第一条出路：那条身份的 tombstone 已被服务端接受 ⇒ 把本机那条软删行硬删。
+    /// 行已经不在（并发清扫刚删过）**不是错误**，无事可做即可。
+    func hardDeleteURLRule(syncId: String) async throws
+    /// §5.7 第二条出路：把 `deletedDate < cutoff` 的软删行硬删掉，返回条数。
+    /// **判据是 `deletedDate`，与游标无关。**
+    func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int
+
+    // **没有、也不许有 `clearAllSyncIds`**（§4.4 末段 / R-M3-4a-23）：规则的 `syncId` 在插入点
+    // 铸造，自撤销时清掉它，重新加入后账户上那些旧身份没有任何设备认领 ⇒ 孤儿实体。缺席本身
+    // 就是那道防线——协调器的 `clearAllSyncIds` 闭包只扩到书签。
 }
 
 // MARK: - 生产实现
@@ -331,6 +342,32 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
     /// 一页一次、只在 `apply` 成功返回之后（引擎那一侧保证）。
     func refreshRoutingTableAfterLanding() {
         SpaceManager.shared.reloadURLRulesFromStore()
+    }
+
+    // MARK: - §5.7 软删行的两条出路
+
+    /// 直接转 Task 5 的 `hardDeleteURLRuleThrowing(syncId:)`：找不到行是无事可做，不是错误。
+    /// **不动本页缓存**：出路 1 跑在发布段末尾，本页落地早已结束，下一页 / 下一轮的
+    /// `allURLRules()` 自己重建。
+    func hardDeleteURLRule(syncId: String) async throws {
+        try await store.hardDeleteURLRuleThrowing(syncId: syncId)
+    }
+
+    /// 用已有的两件东西组合：一次 `allURLRulesIncludingDeleted()` 筛出 `deletedDate < cutoff`
+    /// 且有身份的软删行，逐条 `hardDeleteURLRuleThrowing(syncId:)`。**逐条一个事务是特性**：
+    /// 中途崩掉剩下的那些下一次清理轮重算，判据没有任何一次性状态。`syncId == nil` 的软删行
+    /// 按 R-M3-4a-23 不可达（插入点铸造）。判据是**行上的** `deletedDate`，与游标无关。
+    func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int {
+        let expired = try allURLRulesIncludingDeleted().compactMap { row -> String? in
+            guard let deletedDate = row.deletedDate, deletedDate < cutoff else { return nil }
+            return row.syncId
+        }
+        var purged = 0
+        for syncId in expired {
+            try await store.hardDeleteURLRuleThrowing(syncId: syncId)
+            purged += 1
+        }
+        return purged
     }
 
     // MARK: - 私有

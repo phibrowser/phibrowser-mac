@@ -407,3 +407,63 @@ B2-17neg / B2-4d-x）。
     warning。覆盖的用例：`testAFailedMarkerClearLeavesTheLossUnarmedAndRetriggersNextRound`、
     `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay`、
     `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`（以及经同一 fixture 的 (a)–(d) 四条）。
+
+## Task 9
+
+生命周期汇合段：`SyncableOwnedItems.tombstones` 的第七个入参 `explicitDeletions`（R-M3-4a-78）、`.urlRules` 的
+`tombstones` 闭包（一次读、两个集合）、`applyOwnedRetentionCascade` 的停放豁免（R-M3-4a-27）、软删行的两条
+清理出路（`hardDeleteAfterTombstone` / `purgeSoftDeletedRows` 两个 `= nil` 注册项成员 + 协议两成员 + 假件 +
+生产实现 + `purgeExpiredSoftDeletedOwnedRows` 第四步）、`SyncKeyController.ownedItemStores` 第三个元素、
+`resetForNewStoreBirthday` 核对。
+
+### brief 的「计划裁定」要求记档的
+
+1. **`explicitDeletions` 只跳两道归属门**：模块里三条判据、`pendingClaims` 排除、整段游标记账逐字照旧，两道门
+   包进 `if !explicitDeletions.contains(identity) { … }`。入参排在 `pendingClaims` 之后、带默认空集；书签 / pin 的
+   两个调用点与 `SyncableOwnedItemsTests` 的八处调用一个字没改。循环最前面留了一句 `//` 指路：8b-3 的
+   `deferredDeletions` 的 `continue` 排在判据 1 之前。
+2. **三条规则侧例外的落点**：闭包构造 `locals` 时不做任何归属过滤，靠 `identity(of local:) == syncId` 让 hidden /
+   purged / agent / 过期 incognito 目标的活行进 `liveIdentities`（判据 3）；两道门是第二道防线。U-12 两个变体钉住。
+3. **停放豁免不刷 `ownerUuid`**：`if table.cursors[identity]?.pendingApply != nil { parked += 1; continue }` 排在
+   `guard live.claimed.contains` 之前；`parked > 0` 时一条 info（kind + 条数）。
+4. **出路 1 排在 `writeOwnedTable` 之后、冲突重试之前**；`appliedTombstones` 在 `applyOwnedCommitOutcome` 循环里与
+   `appliedMinted` 并列收集（`if case .applied = outcome, item.entry.deleted`）。硬删抛错只记 warn（kind），不回滚。
+5. **出路 2 不碰 `LocalStore+SpaceURLRule.swift`**：`AccountPhiURLRuleAccess.purgeSoftDeletedURLRules(olderThan:)` =
+   一次 `allURLRulesIncludingDeleted()` 筛 `deletedDate < cutoff && syncId != nil` + 逐条 `hardDeleteURLRuleThrowing`
+   （一行一事务，特性不是妥协）。判据是行上的 `deletedDate`；`syncId == nil` 的软删行按 R-M3-4a-23 不可达，accepted。
+6. **两个注册项成员 `var … = nil`**：合成 memberwise init 给默认实参，`.bookmarks` / `.pins` 工厂零改动。
+7. **自撤销**：`SyncKeyController.swift` 的 `for store in ownedItemStores` 一字未改，协调器数组加 `urlRuleStore`
+   （Task 6 建的同一个对象）；`clearAllSyncIds` 闭包仍只覆盖书签，理由写进协调器闭包旁与 controller 第 4 步注释；
+   `PhiURLRuleLocalAccess` 里加了一句注释钉住「没有、也不许有 `clearAllSyncIds`」。
+8. **`resetForNewStoreBirthday` 核对通过**：`for registration in ownedKinds` 覆盖第三条 kind、逐条 `writeOwnedTable`，
+   Task 6 已把 `urlRulesReplayedForEmptyTable = false` 加进 Space 表那一批；本任务零代码，CASE 9.3 钉住。
+
+### 与 brief 不同的实现判断
+
+9. **U-13c 的「purge 级联硬删 X 的行」按 store 半边的产物建模**：`FakePhiSpaceAccess.purge` 不级联到
+   `FakeURLRuleAccess.rows`（也不想为此改 `PhiSpaceLocalAccessTests.swift` 那个假件），所以 fixture 直接以「行不存在」
+   开局；引擎半边（映射被 `dropSpaceMapping` 删、游标豁免、零 tombstone、③ 按载荷建行）逐条断言。
+10. **U-13b 的第一页同时带 Space tombstone 与三条规则更新**：只有 Space tombstone 的页不会让规则游标长出
+    `pendingApply`（没有入站实体就没有停放），brief 的期望要三条规则更新与 tombstone 同页到达（Space 段先落 ⇒ hidden
+    ⇒ 规则段目标不合格 ⇒ 停放）。`su-1` 给一条已落地的 Space 游标，并从 `silenceOtherSections` 的 `unreadableTagHashes`
+    里摘掉它；撤销变体直接把 `su-1` 游标从 hidden 改回活着。
+11. **U-13 的 RR-B6 重启探针**：第一轮 `client.commitErrorOnce = Boom()` 模拟「发出去之前进程没了」，第二台引擎复用
+    同一个 access / store / client；断言行上的 `deletedDate` 与游标上的 `deleteDecidedAtMs` 都活过重启、值只写一次。
+12. **CASE 9.3 抛在 owned commit 上**：`r1` 的行改过 host ⇒ 发布段真的发一次规则 commit；设置段与 Space 段按 2b-L1
+    静默，`commitErrorOnce = .notMyBirthday` 于是落在那一次上（U-30 用的是 getUpdates 侧的 `throwNotMyBirthdayOnce`）。
+13. **U-20 (a) 的 agent Space 用过期 incognito 运行期 id 代替**（`SpaceManager.incognitoRuleTargetId + ".stale-runtime"`，
+    `isRoutableRuleTarget` 假 ⇒ `eligibilityOwner` nil），同一条 R-M3-4a-8 判据、不需要真的 agent Space id 形状。
+14. **`FakeURLRuleAccess` 多了 `deleteError`**（让两条出路抛，与 `readError` 同款）；本任务的用例没用它，留给 review /
+    8b 的失败路径用例。
+15. **`purgeExpiredSoftDeletedOwnedRows` 不带 `spaceSectionEnabled` 门**（照 brief ⑥ 原文）：清的是本机 30 天前的软删
+    垃圾，与门无关；门关着超过 30 天的软删行会在没发出 tombstone 的情况下被清掉，这一格由既有的起源 (a) 差分（行没了、
+    归属合格 ⇒ tombstone）兜住，只有「目标 Space 同时不合格」才会留一条账户孤儿——与 M3-3 书签硬删的既有行为同形。
+16. **`URLRuleKindTests.makeEngine` 加了 `clock: Clock? = nil`**（`PhiSyncEngineSpaceTests.Clock`），9.1 / U-13c 推时钟；
+    不传时仍是冻结的 `Self.now`。
+
+### 验证口径
+
+17. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰的文件零 warning）。十六条新用例
+    没有在运行时跑过；每条的走向（判据 3 挡住活行、`explicitDeletions` 绕过两道门、`.applied` ⇒ 硬删、豁免保游标、
+    `dropExpiredOwnedTombstones` 先丢游标再由出路 2 按行清）按代码推导。U-22 的「另外两条零 commit」依赖 rank 投影
+    在次序一致时沿用基线 rank（U-18 (a) 的零 commit 是同一条前提）。

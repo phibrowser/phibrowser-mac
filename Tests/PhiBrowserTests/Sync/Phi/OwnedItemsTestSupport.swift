@@ -440,6 +440,12 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     private(set) var calls: [Call] = []
     /// 最近一次 `apply` 收到的 `ops`（抛错的那次也记）。
     private(set) var lastAppliedOps: [URLRuleSyncOp] = []
+    /// Task 9：出路 1 的每一次 `hardDeleteURLRule(syncId:)`，按调用序（行不在的那次也记）。
+    private(set) var hardDeleteCalls: [String] = []
+    /// Task 9：出路 2 的每一次 `purgeSoftDeletedURLRules(olderThan:)` 收到的 cutoff。
+    private(set) var purgeCalls: [Date] = []
+    /// 让两条出路抛。**每次都抛，不自动清零。**
+    var deleteError: Error?
 
     init(rows: [PhiLocalURLRule] = []) {
         self.rows = rows
@@ -513,6 +519,30 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
     func refreshRoutingTableAfterLanding() {
         calls.append(.refreshRoutingTable)
+    }
+
+    /// 出路 1：按 `syncId` 真删（活行与软删行都删——生产 body 同样不看 `deletedDate`）；
+    /// 行不在 = 无事可做。
+    func hardDeleteURLRule(syncId: String) async throws {
+        hardDeleteCalls.append(syncId)
+        if let deleteError { throw deleteError }
+        let buckets = Set(rows.filter { $0.syncId == syncId }.map(\.spaceId))
+        rows.removeAll { $0.syncId == syncId }
+        for bucket in buckets { densify(bucket) }
+    }
+
+    /// 出路 2：判据是**行上的** `deletedDate`，与游标无关；`syncId == nil` 的软删行不碰。
+    func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int {
+        purgeCalls.append(cutoff)
+        if let deleteError { throw deleteError }
+        let expired = rows.compactMap { row -> String? in
+            guard let deletedDate = row.deletedDate, deletedDate < cutoff else { return nil }
+            return row.syncId
+        }
+        for syncId in expired {
+            rows.removeAll { $0.syncId == syncId }
+        }
+        return expired.count
     }
 
     private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {

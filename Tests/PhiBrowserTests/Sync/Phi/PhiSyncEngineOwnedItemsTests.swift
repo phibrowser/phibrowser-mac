@@ -3202,6 +3202,129 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNil(pins.table.cursors["pold:pu-1"])
     }
 
+    // MARK: - CASE 9.2 / 9.3：生命周期（URL Rule 的汇合半边，M3-4a Task 9）
+
+    /// CASE 9.2 — 自撤销删第三个游标文件、且**不清规则的 `syncId`**。
+    ///
+    /// `makeController(ownedStores: [bookmarkStore, urlRuleStore], …)`：`removeThisDeviceFromSync()`
+    /// 之后 ① `urlRuleStore.deleted`（`for store in ownedItemStores` 那个循环覆盖了第三个 store，
+    /// 一字未改）、② `bookmarkStore.deleted`、③ 规则行的 `syncId` 两条都还在、④ 书签那一侧的
+    /// `syncId` 照旧被清。
+    ///
+    /// 防的是什么：(a) 忘了把第三个 store 加进协调器的数组 ⇒ 自撤销留下一份 `urlrules-cursors.json`，
+    /// 重新加入时它说「我发布过这些身份」而本机行的身份对不上，差分把整张表判成本机删除。
+    /// (b) 把 `clearAllSyncIds` 扩成「书签 + 规则」⇒ 规则的 `syncId` 在插入点重铸（R-M3-4a-23），
+    /// 重新加入后账户上那些旧身份没有任何设备认领（规则的认领只对从未发布的行成立，R-M3-4a-53）
+    /// ⇒ 孤儿实体。**结构上的防线是 `PhiURLRuleLocalAccess` 压根没有 `clearAllSyncIds` 这个成员**，
+    /// 所以 (b) 连编译都过不去——这条用例钉的是「别有人去加它」：规则 access 与 controller 之间
+    /// 没有任何一条线，自撤销全程一次都不碰它。
+    func testSelfRevokeDeletesTheRuleCursorFileButKeepsTheRuleSyncIds() async throws {
+        let bookmarkAccess = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        let ruleAccess = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "r1", sortOrder: 0),
+            .fixture(id: "i2", syncId: "r2", sortOrder: 1),
+        ])
+        let bookmarkStore = MemoryOwnedItemStore()
+        bookmarkStore.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
+                                                        ownerUuid: "su-1")
+        let urlRuleStore = MemoryOwnedItemStore()
+        urlRuleStore.table.cursors["r1"] = ownedCursor(entityId: "srv-r1", version: 1,
+                                                       ownerUuid: "su-1")
+        urlRuleStore.table.cursors["r2"] = ownedCursor(entityId: "srv-r2", version: 1,
+                                                       ownerUuid: "su-1")
+        ProfilePairingGate.staticPendingOverride = true
+        defer { ProfilePairingGate.staticPendingOverride = nil }
+
+        let controller = try await makeController(ownedStores: [bookmarkStore, urlRuleStore],
+                                                  bookmarkAccess: bookmarkAccess)
+        try await controller.removeThisDeviceFromSync()
+
+        XCTAssertTrue(urlRuleStore.deleted, "① 第三个游标文件删了")
+        XCTAssertTrue(urlRuleStore.table.cursors.isEmpty)
+        XCTAssertTrue(bookmarkStore.deleted, "② 书签的照删")
+        XCTAssertEqual(ruleAccess.rows.compactMap(\.syncId), ["r1", "r2"], "③ 规则的 syncId 两条都还在")
+        XCTAssertEqual(ruleAccess.rows.count, 2, "③ 行也都在")
+        XCTAssertTrue(ruleAccess.calls.isEmpty, "③ 自撤销一次都没碰规则 access")
+        XCTAssertTrue(ruleAccess.hardDeleteCalls.isEmpty)
+        XCTAssertTrue(bookmarkAccess.rows.allSatisfy { $0.syncId == nil }, "④ 书签那一侧照旧清")
+        XCTAssertTrue(bookmarkAccess.calls.contains(.clearAllSyncIds), "④")
+    }
+
+    /// CASE 9.3 — `NOT_MY_BIRTHDAY` 之后第三条 kind 跟着重置（**确认用例**，不是新实现）。
+    ///
+    /// `urlrules` 表里两条游标，`entityId` / `version` / `server` / `deleteRejectRounds` /
+    /// `rekeyRejectRounds` 都非空，`reconciled` 有值、一条带 `deletedAtMs`；`r1` 的本机行改过 host，于是
+    /// 发布段真的发出一次 **owned commit**，假 client 在它上面抛 `notMyBirthday`（设置段与 Space 段
+    /// 预先静默，保证抛的是那一次）。之后两条游标：`entityId == ""`、`version == 0`、`server == nil`、
+    /// `deleteRejectRounds == 0`、`rekeyRejectRounds == nil`；`reconciled` 与 `deletedAtMs` 原样保留；
+    /// 条数不变、文件没被删；`urlRulesReplayedForEmptyTable == false`。
+    ///
+    /// 防的是什么：「别有人为规则单写一条重置分支」——清表或删文件会毁掉每一份 `reconciled` 基线，
+    /// 而那正是触发账户级盲写覆盖的状态；漏掉 `urlRulesReplayedForEmptyTable` 则会让 reset 之后那条
+    /// 一次性闸再也武装不起来。`resetForNewStoreBirthday` 的 `for registration in ownedKinds` 天然
+    /// 覆盖第三条 kind。
+    func testANewStoreBirthdayResetsTheRuleCursorsAlongsideTheOtherKinds() async throws {
+        let ruleHash = { (uuid: String) in
+            PhiSyncEntity.clientTagHash(for: PhiSyncEntity.urlRuleClientTag(uuid))
+        }
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "r1", host: "edited.example", sortOrder: 0),
+        ])
+        let store = MemoryOwnedItemStore()
+        let baselineLive = baselineBytes(urlRulePayload(uuid: "r1"))
+        var live = ownedCursor(reconciled: baselineLive, server: baselineLive,
+                               entityId: "srv-r1", version: 3, ownerUuid: "su-1")
+        live.deleteRejectRounds = 1
+        live.rekeyRejectRounds = 2
+        let baselineGone = baselineBytes(urlRulePayload(uuid: "r2"))
+        var gone = ownedCursor(reconciled: baselineGone, server: baselineGone,
+                               entityId: "srv-r2", version: 4, ownerUuid: "su-1")
+        gone.deleteRejectRounds = 2
+        gone.rekeyRejectRounds = 1
+        gone.deletedAtMs = 1_234
+        store.table.cursors["r1"] = live
+        store.table.cursors["r2"] = gone
+        let spaceStore = makeSpaceStore()
+        spaceStore.table.urlRulesReplayedForEmptyTable = true
+        spaceStore.table.urlRulesHadRecords = true
+        // 静默设置段与 Space 段（2b-L1 的办法），让本轮第一次、也是唯一一次 commit 是规则的。
+        spaceStore.table.unreadableTagHashes[spaceHash("su-1")] = 1
+        defaults.set(try Phi_PhiSettingEntity().serializedData(),
+                     forKey: PhiSyncEngine.lastEntityStateKey)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: ruleHash("r1"), ciphertext: Data(), version: 3, entityId: "srv-r1")
+        client.commitErrorOnce = PhiSyncProtocolError.notMyBirthday
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: spaceStore, ownedKinds: [urlRuleKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let ruleCommits = client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName }
+        XCTAssertEqual(ruleCommits.count, 1, "抛 notMyBirthday 的正是那一次 owned commit")
+        XCTAssertEqual(ruleCommits.first?.clientTagHash, ruleHash("r1"))
+        let table = await engine.ownedTableForTesting("urlrules")
+        XCTAssertEqual(table.cursors.count, 2, "游标条数不变")
+        for identity in ["r1", "r2"] {
+            let cursor = try XCTUnwrap(table.cursors[identity])
+            XCTAssertEqual(cursor.entityId, "", identity)
+            XCTAssertEqual(cursor.version, 0, identity)
+            XCTAssertNil(cursor.server, identity)
+            XCTAssertEqual(cursor.deleteRejectRounds, 0, identity)
+            XCTAssertNil(cursor.rekeyRejectRounds, identity)
+        }
+        XCTAssertEqual(table.cursors["r1"]?.reconciled, baselineLive, "reconciled 原样保留")
+        XCTAssertEqual(table.cursors["r2"]?.reconciled, baselineGone, "reconciled 原样保留")
+        XCTAssertEqual(table.cursors["r2"]?.deletedAtMs, 1_234, "deletedAtMs 原样保留")
+        XCTAssertNil(table.cursors["r1"]?.deletedAtMs)
+        XCTAssertFalse(store.deleted, "文件没被删")
+        XCTAssertEqual(store.table.cursors.count, 2, "落盘的表同样两条")
+        XCTAssertEqual(store.table.cursors["r1"]?.entityId, "")
+        XCTAssertFalse(spaceStore.table.urlRulesReplayedForEmptyTable, "Task 6 加进 reset 那一批的那一行")
+        XCTAssertTrue(spaceStore.table.urlRulesHadRecords, "描述的是「这台机器曾经发布过」，换 store 不改变它")
+    }
+
     // MARK: - CASE 9b.1 – 9b.3：生命周期（pin 半边）
 
     /// CASE 9b.1 — 复活按 **update** 发，沿用 tombstone 那条实体与版本。

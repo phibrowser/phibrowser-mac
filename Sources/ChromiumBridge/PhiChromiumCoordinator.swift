@@ -242,8 +242,8 @@ import SwiftUI
         let pinStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
         // M3-4a：URL Rule 的游标表，第三张、同一个目录，字段集与另两张逐字相同（§3.5）。
-        // **不进** `ownedItemStores`：§9.1 的自撤销对规则的处置（连同「清 `syncId` 不覆盖规则」，
-        // §4.4 末段：规则的 `syncId` 清掉会造孤儿）是 Task 9 的。
+        // 进 `ownedItemStores`（§9.1 的自撤销删它的文件），但**不进** `clearAllSyncIds`——
+        // 理由见下面那个闭包旁的注释（§4.4 末两段）。
         let urlRuleStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("urlrules-cursors.json"))
         // M3-4a §2.10：共享进度 marker 与 store birthday 也落在同一个目录（`marker.json`），
@@ -283,12 +283,18 @@ import SwiftUI
             deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
             engineDefaults: UserDefaults.standard,
             spaceStateStore: spaceStateStore,
-            // M3-3 §9.1 的两步。store 数组给「先删两个游标文件」那一半；闭包给「后清
+            // M3-3 §9.1 的两步。store 数组给「先删三个游标文件」那一半；闭包给「后清
             // `syncId`」那一半，窄成一个函数、与 `notifyChromium` 同形，于是 controller
             // 仍然既不持 `Account` 也不持 `LocalStore`。
-            ownedItemStores: [bookmarkStore, pinStore],
+            ownedItemStores: [bookmarkStore, pinStore, urlRuleStore],
             // §4.4：自撤销第 4 步多删一次 `marker.json`。
             markerStore: markerStore,
+            // **只清书签的 `syncId`，规则的不清**（M3-4a §4.4 末两段）：规则的 `syncId` 在
+            // 插入点铸造（R-M3-4a-23），清空之后下一次写入重铸一个**新的**，重新加入时账户上
+            // 那些旧身份没有任何设备认领 ⇒ 孤儿实体；而规则的认领只对**从未发布**的行成立
+            // （R-M3-4a-53），D30 救不了。留着 `syncId` 正好让重新加入时每条规则经「报损重放
+            // + 按身份匹配本机行」认回它自己那条实体（游标文件已经删掉）。
+            // `PhiURLRuleLocalAccess` 因此没有、也不许有 `clearAllSyncIds` 这个成员。
             clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in

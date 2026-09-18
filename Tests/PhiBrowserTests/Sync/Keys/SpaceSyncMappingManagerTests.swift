@@ -147,6 +147,41 @@ final class SpaceSyncMappingManagerTests: XCTestCase {
         XCTAssertEqual(store.map.count, 1)
     }
 
+    // MARK: - 9. 保留 id 两侧都拒（R-M3-4a-6，CASE U-R2 / U-R3）
+
+    /// 映射成功之后 `incognitoRuleTargetId` 就成了一个「真 Space」，它的规则会按 Space 归属
+    /// 走 `isEligibleSpace` 与保留期级联——而它没有 `SpaceModel` 行、没有 Space 游标，
+    /// `currentSpaces()` 在源头就排除它。
+    func testMapRefusesTheLocalIncognitoReservedIds() {
+        let (keys, store) = makeManager()
+        XCTAssertThrowsError(try keys.map(spaceId: SpaceManager.incognitoRuleTargetId,
+                                          toSyncUuid: "su-9")) {
+            XCTAssertEqual($0 as? SpaceSyncMappingError, .reservedSpaceId)
+        }
+        XCTAssertThrowsError(try keys.map(spaceId: "space.incognito.ABC-123", toSyncUuid: "su-9")) {
+            XCTAssertEqual($0 as? SpaceSyncMappingError, .reservedSpaceId)
+        }
+        XCTAssertTrue(store.allMappings().isEmpty)
+    }
+
+    /// 两个参数在两个命名空间里（RT-17）：`spaceId` 是本机大写 UUID 串，拿它去比保留 sync
+    /// uuid 永远不成立，所以只写一条守卫必然漏掉这一半。
+    func testMapRefusesTheAccountReservedUuids() {
+        let (keys, store) = makeManager()
+        XCTAssertThrowsError(try keys.map(spaceId: "S-1", toSyncUuid: SyncableSpaces.defaultSpaceUuid)) {
+            XCTAssertEqual($0 as? SpaceSyncMappingError, .reservedSyncUuid)
+        }
+        XCTAssertThrowsError(try keys.map(spaceId: "S-1", toSyncUuid: SyncableSpaces.incognitoSpaceUuid)) {
+            XCTAssertEqual($0 as? SpaceSyncMappingError, .reservedSyncUuid)
+        }
+        XCTAssertTrue(store.allMappings().isEmpty)
+        // 常量分支未受影响：默认 Space 仍然双向可解析。
+        XCTAssertEqual(keys.localSpaceId(forSyncUuid: SyncableSpaces.defaultSpaceUuid),
+                       LocalStore.defaultSpaceId)
+        XCTAssertNil(keys.localSpaceId(forSyncUuid: SyncableSpaces.incognitoSpaceUuid),
+                     "保留常量不是一个 Space 身份，映射层对它一无所知")
+    }
+
     // MARK: - 生产 store（spec §10.1 末行）
 
     /// `AccountUserDefaults` 确实只能由一个真的 `Account` 构造

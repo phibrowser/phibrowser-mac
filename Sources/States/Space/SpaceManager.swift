@@ -580,6 +580,29 @@ final class SpaceManager: ObservableObject {
     /// memory). Updated only on the main thread via the publisher sink.
     private var cachedURLRules: [SpaceRoutingRule] = []
 
+    /// Resolves a local `spaceId` to its account-level Space sync uuid, nil
+    /// when that Space has no account identity yet. The reserved Incognito
+    /// target answers with the account-level constant, so this file needs no
+    /// knowledge of it (design §7.2). Injected by
+    /// `PhiChromiumCoordinator` (R-M3-4a-35) so the state layer keeps its zero
+    /// dependency on `Sources/Sync/Keys`. Re-resolves on EVERY payload build —
+    /// never cache it (R-M3-4a-46): mappings are minted lazily inside a sync
+    /// round (`SpaceSyncMappingManager.ensureMapped`, `:93-97`), and a snapshot
+    /// taken at assembly time would keep rules falling back to the local
+    /// spaceId long after their Space got an account identity.
+    var ruleTieBreakKeyResolver: (String) -> String? = { _ in nil }
+
+    /// R-M3-4a-22's key. Never empty, and a total order at any instant on any
+    /// device. Two of the three branches are the resolver's ("incognito-space"
+    /// for the reserved Incognito target, the target Space's account sync uuid
+    /// otherwise — "default-space" arriving via the constant branch in
+    /// `SpaceSyncMappingManager.syncUuid(forSpaceId:)`); the third is the
+    /// fallback here: the LOCAL spaceId, which is also what an unassembled
+    /// resolver yields before the coordinator injects one.
+    func ruleTieBreakKey(forTargetSpaceId spaceId: String) -> String {
+        ruleTieBreakKeyResolver(spaceId) ?? spaceId
+    }
+
     /// True once the initial URL-rule snapshot from `urlRulesPublisher` has
     /// arrived (even if empty). External URL opens are held on this in
     /// `AppController.scheduleForwardOpenURLsToChromium`: forwarding earlier
@@ -5860,7 +5883,7 @@ final class SpaceManager: ObservableObject {
         // strip/bookmark state between separate saves. Without the rule
         // cleanup they would linger as inert rows that keep being pushed to
         // Chromium and dangle in the rules editor.
-        boundAccount?.localStorage.deleteSpaceCascade(spaceId: spaceId)
+        boundAccount?.localStorage.deleteSpaceCascade(spaceId: spaceId, origin: .userIntent)
         // The per-Space theme records live in userDefaults, outside the
         // cascade; prune them here or they linger forever.
         clearThemeRecords(forSpaceId: spaceId)
@@ -6533,15 +6556,40 @@ final class SpaceManager: ObservableObject {
     /// Replaces every Space's rule set at once. `byTargetSpaceId` keys are
     /// `spaceId`s; absent spaceIds end up cleared. Pushes the recompiled
     /// routing table optimistically so the change is live before SwiftData's
-    /// save notification fires. The publisher re-emission then pushes the
-    /// same table a second time — `replaceAllURLRules` regenerates row ids
-    /// on every save, so `removeDuplicates` never suppresses it — which is
-    /// harmless: Chromium replaces the table atomically.
+    /// save notification fires. The publisher re-emission may then push the
+    /// same table a second time — or not: rows are upserted in place, so row
+    /// ids are stable across saves (R-M3-4a-13), and `urlRulesPublisher`'s
+    /// `removeDuplicates` (`LocalStore+SpaceURLRule.swift`) compares the six
+    /// fields of the same refreshed SwiftData instances and CAN swallow that
+    /// second push. Either way is harmless: Chromium replaces the table
+    /// atomically. This API and its optimistic push are replaced by
+    /// `applyRuleEdits(upserts:deletedIds:)` + `reloadURLRulesFromStore()` in
+    /// Task 11 (R-M3-4a-45 / R-M3-4a-34).
     func setAllRules(_ byTargetSpaceId: [String: [LocalStore.URLRuleDraft]], expectedStoreIdentifier: UUID? = nil) {
         guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
         guard let account = boundAccount else { return }
-        account.localStorage.replaceAllURLRules(byTargetSpaceId)
+        // 裁定 6 的临时改道（Task 11 整体删除这个包装）：字典键铺进 `draft.spaceId`、
+        // `enumerated()` 下标铺进 `draft.sortOrder`；不在载荷里的行 = 没了，只是从硬删变成软删。
+        var upserts: [LocalStore.URLRuleDraft] = []
+        for (spaceId, drafts) in byTargetSpaceId {
+            for (index, draft) in drafts.enumerated() {
+                var placed = draft
+                placed.spaceId = spaceId
+                placed.sortOrder = index
+                upserts.append(placed)
+            }
+        }
+        let named = Set(upserts.map(\.id))
+        let deletedIds = Set(cachedURLRules.map(\.id)).subtracting(named)
         pushOptimisticAllRoutingTable(byTargetSpaceId)
+        Task {
+            do {
+                try await account.localStorage.applyURLRuleEditsThrowing(upserts: upserts,
+                                                                          deletedIds: deletedIds)
+            } catch {
+                AppLogError("[SpaceManager] setAllRules failed: \(PhiSyncLog.describe(error))")
+            }
+        }
     }
 
     /// Universal-editor counterpart of `pushOptimisticRoutingTable`. Builds
@@ -6564,6 +6612,8 @@ final class SpaceManager: ObservableObject {
                     "host": host,
                     "ask": NSNumber(value: draft.askBeforeRouting),
                     "sortOrder": NSNumber(value: index),
+                    "tieBreakKey": ruleTieBreakKey(forTargetSpaceId: spaceId),
+                    "ruleId": draft.syncId ?? draft.id,
                 ]
                 if let prefix = draft.pathPrefix?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !prefix.isEmpty {
@@ -6577,37 +6627,61 @@ final class SpaceManager: ObservableObject {
         bridge.setSpaceRoutingTable(rulesPayload, spaceWindowMap: windowMapPayload)
     }
 
-    /// Orders a routing-table payload by (targetSpaceId, sortOrder) — the
-    /// same order the persisted-path push sees from the publisher. Payload
-    /// order is load-bearing: `sortOrder` values are per-Space indices, so
-    /// rules from different Spaces can tie on full specificity, and the C++
-    /// matcher keeps the FIRST best rule it encounters. Without one
-    /// canonical order, an optimistic push could resolve such a tie
-    /// differently than the steady-state push that follows the SwiftData
-    /// save.
+    /// Orders a routing-table payload by (tieBreakKey, sortOrder, ruleId) —
+    /// the three keys the C++ matcher reads on a full specificity tie.
+    /// Payload order is no longer load-bearing: the C++ matcher decides ties
+    /// with `IsMoreSpecific` over the same three keys (a strict total order),
+    /// so this only keeps the payload byte-comparable between pushes
+    /// (R-M3-4a-22 / R-M3-4a-43). A missing key reads as "" / 0.
     private static func canonicalizeRulesPayloadOrder(_ payload: inout [[String: Any]]) {
         payload.sort { lhs, rhs in
-            let lhsSpace = (lhs["targetSpaceId"] as? String) ?? ""
-            let rhsSpace = (rhs["targetSpaceId"] as? String) ?? ""
-            if lhsSpace != rhsSpace { return lhsSpace < rhsSpace }
+            let lhsKey = (lhs["tieBreakKey"] as? String) ?? ""
+            let rhsKey = (rhs["tieBreakKey"] as? String) ?? ""
+            if lhsKey != rhsKey { return lhsKey < rhsKey }
             let lhsOrder = ((lhs["sortOrder"] as? NSNumber)?.intValue) ?? 0
             let rhsOrder = ((rhs["sortOrder"] as? NSNumber)?.intValue) ?? 0
-            return lhsOrder < rhsOrder
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            let lhsId = (lhs["ruleId"] as? String) ?? ""
+            let rhsId = (rhs["ruleId"] as? String) ?? ""
+            return lhsId < rhsId
         }
     }
 
     /// Replaces the rule list for `spaceId` with `drafts` (full set, in the
-    /// order the user authored). Existing rows for the Space are deleted
-    /// and re-created with `sortOrder = index`. Pushes optimistically so the
-    /// new table is live in Chromium before the SwiftData write + notification
-    /// round-trip completes; the publisher re-emission then pushes the same
-    /// table a second time (fresh row ids defeat `removeDuplicates`), which
-    /// is harmless — Chromium replaces the table atomically.
+    /// order the user authored): rows are upserted in place with
+    /// `sortOrder = index`, rows not named are soft-deleted. Pushes
+    /// optimistically so the new table is live in Chromium before the
+    /// SwiftData write + notification round-trip completes; the publisher
+    /// re-emission may then push the same table a second time — or not: row
+    /// ids are stable across saves (R-M3-4a-13) and `urlRulesPublisher`'s
+    /// `removeDuplicates` compares the six fields of the same refreshed
+    /// instances, so it CAN swallow that second push. Either way is harmless
+    /// — Chromium replaces the table atomically. Replaced together with its
+    /// optimistic push by `applyRuleEdits(upserts:deletedIds:)` +
+    /// `reloadURLRulesFromStore()` in Task 11 (R-M3-4a-45 / R-M3-4a-34).
     func setRules(_ drafts: [LocalStore.URLRuleDraft], forSpaceId spaceId: String, expectedStoreIdentifier: UUID? = nil) {
         guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
         guard let account = boundAccount else { return }
-        account.localStorage.replaceURLRules(forSpaceId: spaceId, with: drafts)
+        // 裁定 6 的临时改道（Task 11 整体删除这个包装）：`forSpaceId` 铺进 `draft.spaceId`、
+        // `enumerated()` 下标铺进 `draft.sortOrder`；这个桶里不在载荷里的行 = 没了（软删）。
+        let upserts = drafts.enumerated().map { index, draft -> LocalStore.URLRuleDraft in
+            var placed = draft
+            placed.spaceId = spaceId
+            placed.sortOrder = index
+            return placed
+        }
+        let named = Set(upserts.map(\.id))
+        let deletedIds = Set(cachedURLRules.filter { $0.spaceId == spaceId }.map(\.id))
+            .subtracting(named)
         pushOptimisticRoutingTable(drafts: drafts, forSpaceId: spaceId)
+        Task {
+            do {
+                try await account.localStorage.applyURLRuleEditsThrowing(upserts: upserts,
+                                                                          deletedIds: deletedIds)
+            } catch {
+                AppLogError("[SpaceManager] setRules failed: \(PhiSyncLog.describe(error))")
+            }
+        }
     }
 
     /// Builds the routing-table payload using `drafts` for `spaceId` and the
@@ -6628,6 +6702,8 @@ final class SpaceManager: ObservableObject {
                 "host": rule.host,
                 "ask": NSNumber(value: rule.askBeforeRouting),
                 "sortOrder": NSNumber(value: rule.sortOrder),
+                "tieBreakKey": ruleTieBreakKey(forTargetSpaceId: rule.spaceId),
+                "ruleId": rule.syncId ?? rule.id,
             ]
             if let prefix = rule.pathPrefix, !prefix.isEmpty {
                 entry["pathPrefix"] = prefix
@@ -6642,6 +6718,8 @@ final class SpaceManager: ObservableObject {
                 "host": host,
                 "ask": NSNumber(value: draft.askBeforeRouting),
                 "sortOrder": NSNumber(value: index),
+                "tieBreakKey": ruleTieBreakKey(forTargetSpaceId: spaceId),
+                "ruleId": draft.syncId ?? draft.id,
             ]
             if let prefix = draft.pathPrefix?.trimmingCharacters(in: .whitespacesAndNewlines),
                !prefix.isEmpty {
@@ -6669,17 +6747,33 @@ final class SpaceManager: ObservableObject {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         let mapping = currentSpaceWindowMap()
 
-        // User-Space rules, the generic Incognito target, and the Kiosk action
-        // target route; any other id under the incognito prefix would be a
-        // stale runtime Space id — keep such a row inert instead of routing
-        // into a Space that no longer exists.
-        let effectiveRules = cachedURLRules.filter { Self.isRoutableRuleTarget($0.spaceId) }
+        // User-Space rules and the generic Incognito target route; any other
+        // id under the incognito prefix would be a stale runtime Space id —
+        // keep such a row inert instead of routing into a Space that no
+        // longer exists.
+        // R-M3-4a-31: a rule whose target Space is gone or hidden must not
+        // reach Chromium — it would compile into a kRouteToSpace carrying a
+        // dead route_target_space_id (`phi_url_router.cc:249-252`) and ask
+        // Swift to cold-spawn a Space that no longer exists. Hidden Spaces are
+        // already absent from `spaces` (`handleSpacesUpdate`), so membership
+        // is the whole predicate; do NOT consult any sync mapping state here
+        // (RR-R9). Excluded rules stay in the store and in the editor: the
+        // target coming back re-arms them.
+        let liveTargets = Set(spaces.map(\.spaceId))
+        let effectiveRules = cachedURLRules.filter {
+            Self.isRoutableRuleTarget($0.spaceId)
+                && ($0.spaceId == Self.incognitoRuleTargetId
+                    || $0.spaceId == Self.kioskRuleTargetId
+                    || liveTargets.contains($0.spaceId))
+        }
         var rulesPayload: [[String: Any]] = effectiveRules.map { rule in
             var entry: [String: Any] = [
                 "targetSpaceId": rule.spaceId,
                 "host": rule.host,
                 "ask": NSNumber(value: rule.askBeforeRouting),
                 "sortOrder": NSNumber(value: rule.sortOrder),
+                "tieBreakKey": ruleTieBreakKey(forTargetSpaceId: rule.spaceId),
+                "ruleId": rule.syncId ?? rule.id,
             ]
             if let prefix = rule.pathPrefix, !prefix.isEmpty {
                 entry["pathPrefix"] = prefix
@@ -7613,6 +7707,29 @@ final class SpaceManager: ObservableObject {
         pushRoutingTableToChromium()
     }
 
+    /// 从 `LocalStore` 重新 fetch（软删行已被 `getAllURLRules()` 过滤掉，R-M3-4a-51）、
+    /// 替换 `cachedURLRules`、再走既有的 `pushRoutingTableToChromium()`。**非 private**：
+    /// §6.6 那张穷举表里的每一个写面都调它，同步的落地段经协调器在 main actor 上调它。
+    ///
+    /// **不调 `handleURLRulesUpdate(_:)`**（它是 private 而且收 model 对象，正是 §5.6 禁止
+    /// 同步层持有的东西），**也不只调 `pushRoutingTableToChromium()`**（它只从 `cachedURLRules`
+    /// 编译载荷，而那份缓存只由 publisher 的 sink 刷新，推出去的还是旧表），**更不依赖
+    /// `urlRulesPublisher` 自己发射**（`removeDuplicates` 比的是 SwiftData 就地刷新的同一批
+    /// 实例，一次只改 host 的落地会被它吞掉）。R-M3-4a-34 / RR-R3。
+    ///
+    /// **解析器不缓存**（R-M3-4a-46）：本函数只负责「重读 + 换缓存 + 推」，裁决键与
+    /// `ruleTieBreakKeyResolver` 接在 `pushRoutingTableToChromium` 里、每次载荷构建现算。
+    ///
+    /// `@MainActor` 是硬要求（见 `applyRemoteRebind` 上的规则）：`getAllURLRules()` 读的是
+    /// SwiftData 的主上下文。
+    @MainActor
+    func reloadURLRulesFromStore() {
+        guard let account = boundAccount else { return }
+        cachedURLRules = account.localStorage.getAllURLRules()
+        hasLoadedURLRules = true
+        pushRoutingTableToChromium()
+    }
+
     private func handleSpacesUpdate(_ storeSpaces: [Space]) {
         guard !isStoreBindingSuspended else { return }
         // Strip any synthetic entry from the input first: callers like
@@ -7659,6 +7776,8 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         updated = Space.reconcile(updated, with: spaces)
+        // 换掉 `spaces` 之前先记下旧的 id 集合：末尾那道路由表刷新的判据是「集合真的变了」。
+        let previousSpaceIds = Set(spaces.map(\.spaceId))
         spaces = updated
         let defaultSpaceId = currentDefaultSpaceId
         if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
@@ -7753,8 +7872,15 @@ final class SpaceManager: ObservableObject {
             slot.respawnWindow(forSpaceId: spaceId)
         }
 
-        // Space set / names / icons / order may have changed (routing rules
-        // didn't, so only the submenu list needs refreshing).
+        // R-M3-4a-50 第 6 行：Space 的出现 / 消失 / 隐藏就是路由表的输入（R-M3-4a-31 之后
+        // 过滤判据接上 `spaces` + hidden）。只在集合真的变了时刷新——名字 / 图标 / 次序变动
+        // 与路由无关，§6.6 明确把它们排除在刷新之外。
+        if validIds != previousSpaceIds {
+            MainActor.assumeIsolated { reloadURLRulesFromStore() }
+        }
+
+        // Space 集合变了时上面已经刷过路由表；这里只补提交单（names / icons / order changes
+        // only need the submenu list refreshed).
         pushOpenLinkSpaceMenuToChromium()
 
         // A cold-start repair adjudication deferred on an unresolved

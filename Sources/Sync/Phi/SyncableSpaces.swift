@@ -211,6 +211,13 @@ extension SyncableSpaces {
     /// 相等由 `SpaceSyncMappingManagerTests` 的一条断言钉住。
     static let defaultSpaceUuid = "default-space"
 
+    /// D12 / R-M3-4a-6：URL Rule 的 Incognito 目标在账户上的保留常量。先例是
+    /// `defaultSpaceUuid`（上面那一行）——一个不在映射表里、双向不可摧毁的字面量。
+    /// **它不是一个 Space 身份**：不会出现在 `PhiSpaceEntity` 的任何字段里，Space 段
+    /// 永远看不到它，只服务规则这一种 kind。解析由 `OwnedOwnerMaps.resolver` 的自映射
+    /// 负责（与 `"app"` 同一条先例），映射表两侧都拒收它（`SpaceSyncMappingManager.map`）。
+    static let incognitoSpaceUuid = "incognito-space"
+
     // MARK: - Snapshot (§6.2 S1-S4)
 
     /// The outgoing entity for every sync-eligible Space, keyed by **syncUuid**.

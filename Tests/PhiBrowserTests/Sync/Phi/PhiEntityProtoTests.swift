@@ -167,6 +167,13 @@ final class PhiEntityProtoTests: XCTestCase {
         return v
     }
 
+    private func lwwBool(_ b: Bool, _ ts: Int64) -> Phi_PhiSettingValue {
+        var v = Phi_PhiSettingValue()
+        v.updatedAtMs = ts
+        v.boolValue = b
+        return v
+    }
+
     private func sampleSpace() -> Phi_PhiSpaceEntity {
         var space = Phi_PhiSpaceEntity()
         space.spaceUuid = "1D2E3F40-0000-0000-0000-000000000001"
@@ -197,6 +204,44 @@ final class PhiEntityProtoTests: XCTestCase {
         XCTAssertEqual(back.rank.updatedAtMs, 0)
     }
 
+    // MARK: - M3-4a URL Rule payload (CASE 1.10)
+
+    private func sampleURLRule() -> Phi_PhiURLRuleEntity {
+        var rule = Phi_PhiURLRuleEntity()
+        rule.ruleUuid = "0123abcd"
+        rule.host = lwwString("github.com", 1_700_000_000_001)
+        rule.pathPrefix = lwwString("", 1_700_000_000_002)
+        rule.ask = lwwBool(true, 1_700_000_000_003)
+        rule.targetSpaceUuid = lwwString("default-space", 1_700_000_000_004)
+        rule.rank = lwwString("V", 1_700_000_000_005)
+        rule.createdAtMs = 1_699_000_000_000
+        rule.source = 1
+        return rule
+    }
+
+    /// Every mutable field is a `PhiSettingValue`, never a bare scalar (see
+    /// PhiURLRuleEntity's header in phi_entity.proto): `path_prefix` cleared to
+    /// "" carries its own timestamp, so it is distinguishable on the wire from
+    /// a peer that simply never learned about the field -- writing it as a
+    /// plain proto3 `string` would make both cases decode identically and a
+    /// deliberate clear would lose to a stale value on the next merge. Also
+    /// proves the `kind` oneof still round-trips `.setting` (M3-1) after
+    /// growing a fifth case (`testSettingEntityStillDecodesAfterTheOneofGrew`
+    /// covers that directly; this one only needs to not disturb it).
+    func testURLRuleEntityRoundTripsThroughPhiEntityKind() throws {
+        let rule = sampleURLRule()
+        var entity = Phi_PhiEntity()
+        entity.urlRule = rule
+
+        let decoded = try Phi_PhiEntity(serializedBytes: try entity.serializedData())
+        guard case .urlRule(let back)? = decoded.kind else {
+            return XCTFail("kind did not decode as .urlRule")
+        }
+        XCTAssertEqual(back, rule)
+        XCTAssertEqual(back.pathPrefix.stringValue, "")
+        XCTAssertEqual(back.pathPrefix.updatedAtMs, 1_700_000_000_002)
+    }
+
     /// A settings entity must still decode as `.setting` after the oneof grew a
     /// second case: the shipped M3-1 wire format is unchanged.
     func testSettingEntityStillDecodesAfterTheOneofGrew() throws {
@@ -212,12 +257,15 @@ final class PhiEntityProtoTests: XCTestCase {
         XCTAssertEqual(back, setting)
     }
 
-    /// An unknown kind (a future client's field 3) survives parse and
+    /// An unknown kind (a future client's field 13) survives parse and
     /// re-serialization untouched, so §5.2 step 4's "ignore just this entity"
-    /// never has to reconstruct anything.
+    /// never has to reconstruct anything. Field 13 is unowned across this
+    /// entire schema as of this commit -- 5 and 6 are now spoken for by M3-4a
+    /// (url_rule) and M3-4b (profile) respectively, so this probes a slot
+    /// that is still genuinely in the future.
     func testUnknownKindSurvivesRoundTrip() throws {
-        // field 3, wire type 2, length 0 -> tag byte 0x1A, length byte 0x00
-        let foreign = Data([0x1A, 0x00])
+        // field 13, wire type 2, length 0 -> tag byte 0x6A, length byte 0x00
+        let foreign = Data([0x6A, 0x00])
         let decoded = try Phi_PhiEntity(serializedBytes: foreign)
         XCTAssertNil(decoded.kind)
         XCTAssertEqual(try decoded.serializedData(), foreign)

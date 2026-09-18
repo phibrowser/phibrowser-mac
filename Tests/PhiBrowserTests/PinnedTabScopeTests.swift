@@ -353,7 +353,7 @@ final class PinnedTabScopeTests: XCTestCase {
         )
 
         try await store.changePinnedTabScope(to: .space)
-        store.deleteSpaceCascade(spaceId: "space-c")
+        store.deleteSpaceCascade(spaceId: "space-c", origin: .userIntent)
         await flushWrites(store)
 
         try await store.changePinnedTabScope(to: .profile)
@@ -736,7 +736,7 @@ final class PinnedTabScopeTests: XCTestCase {
         )
         await flushWrites(store)
 
-        store.deleteSpaceCascade(spaceId: "space-a")
+        store.deleteSpaceCascade(spaceId: "space-a", origin: .userIntent)
         await flushWrites(store)
         try drainMainQueue()
 

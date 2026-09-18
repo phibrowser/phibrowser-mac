@@ -20,6 +20,14 @@ enum SpaceSyncMappingError: Error, Equatable {
     /// 写盘失败：store 已经把内存回滚回写之前那一份（R-M3-4a-83），所以这条错**不留痕迹**
     /// ——抛出之后 `syncUuid(forSpaceId:)` 与 `localSpaceId(forSyncUuid:)` 都查不到这条映射。
     case persistFailed
+    /// R-M3-4a-6：本机那一侧的保留 id（incognito 前缀下的任何 spaceId）。映上之后
+    /// `incognitoRuleTargetId` 就成了一个「真 Space」，它的规则会按 Space 归属走
+    /// `isEligibleSpace` 与保留期级联——而它根本没有 `SpaceModel` 行、没有 Space 游标。
+    case reservedSpaceId
+    /// R-M3-4a-6：账户那一侧的保留 uuid（`defaultSpaceUuid` / `incognitoSpaceUuid`）。
+    /// 映上之后保留常量就被某台机器绑到一个真 Space 上，两台对同一条 incognito 规则解析出
+    /// 不同目标，而没有任何日志会提示。
+    case reservedSyncUuid
 }
 
 /// 本地 `spaceId` <-> 账户级 syncUuid 的翻译层（D6 §2.1）。`ProfileKeyManager` 的
@@ -83,9 +91,18 @@ final class SpaceSyncMappingManager {
         return uuid
     }
 
-    /// 向导的「对应到账户已有 Space」。三道闸：默认 Space、已有映射、该 uuid 已被
-    /// 别的本地 Space 认领。
+    /// 向导的「对应到账户已有 Space」。两条保留守卫在前（R-M3-4a-6，**两个参数在两个命名
+    /// 空间里**：`spaceId` 是本机大写 UUID 串，拿它去比保留 sync uuid 永远不成立，所以只写
+    /// 一条守卫必然漏掉另一半），随后是三道闸：默认 Space、已有映射、该 uuid 已被别的本地
+    /// Space 认领。
     func map(spaceId: String, toSyncUuid uuid: String) throws {
+        guard !SpaceManager.isIncognitoSpaceId(spaceId) else {
+            throw SpaceSyncMappingError.reservedSpaceId
+        }
+        guard uuid != SyncableSpaces.defaultSpaceUuid,
+              uuid != SyncableSpaces.incognitoSpaceUuid else {
+            throw SpaceSyncMappingError.reservedSyncUuid
+        }
         guard spaceId != LocalStore.defaultSpaceId else {
             throw SpaceSyncMappingError.defaultSpaceIsImplicit
         }

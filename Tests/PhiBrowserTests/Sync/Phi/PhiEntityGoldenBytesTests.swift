@@ -265,13 +265,94 @@ final class PhiEntityGoldenBytesTests: XCTestCase {
         XCTAssertEqual(PhiSyncEntity.spaceEntityName, "phi-space")
         XCTAssertEqual(PhiSyncEntity.bookmarkEntityName, "phi-bookmark")
         XCTAssertEqual(PhiSyncEntity.pinEntityName, "phi-pin")
+        XCTAssertEqual(PhiSyncEntity.urlRuleEntityName, "phi-urlrule")
 
         for name in [PhiSyncEntity.clientTag,
                      PhiSyncEntity.spaceEntityName,
                      PhiSyncEntity.bookmarkEntityName,
-                     PhiSyncEntity.pinEntityName] {
+                     PhiSyncEntity.pinEntityName,
+                     PhiSyncEntity.urlRuleEntityName] {
             XCTAssertFalse(name.contains(":"),
                            "a plaintext entity name must never carry a tag separator or a uuid")
         }
+    }
+
+    // MARK: - CASE C-5 (group 1): PhiURLRuleEntity's eight field numbers
+
+    /// One assertion per field, each on a message with only that field set --
+    /// the same pattern as `testBookmarkEntityFieldNumbersArePinned`. `host`
+    /// (2) and `path_prefix` (3) are the pair to watch: both are
+    /// `string_value` and share one timestamp, so a swap round-trips, merges
+    /// and LWWs cleanly on every self-consistent test and only shows up when
+    /// another device decodes "host" out of the path field.
+    func testURLRuleEntityFieldNumbersArePinned() throws {
+        var ruleUuid = Phi_PhiURLRuleEntity()
+        ruleUuid.ruleUuid = "r"
+        XCTAssertEqual(firstByte(try ruleUuid.serializedData(), "rule_uuid"), 0x0A)
+
+        var host = Phi_PhiURLRuleEntity()
+        host.host = stamped("github.com", at: 1)
+        XCTAssertEqual(firstByte(try host.serializedData(), "host"), 0x12)
+
+        var pathPrefix = Phi_PhiURLRuleEntity()
+        pathPrefix.pathPrefix = stamped("/docs", at: 1)
+        XCTAssertEqual(firstByte(try pathPrefix.serializedData(), "path_prefix"), 0x1A)
+
+        var ask = Phi_PhiURLRuleEntity()
+        ask.ask = stamped("ask", at: 1)
+        XCTAssertEqual(firstByte(try ask.serializedData(), "ask"), 0x22)
+
+        var targetSpaceUuid = Phi_PhiURLRuleEntity()
+        targetSpaceUuid.targetSpaceUuid = stamped("default-space", at: 1)
+        XCTAssertEqual(firstByte(try targetSpaceUuid.serializedData(), "target_space_uuid"), 0x2A)
+
+        var rank = Phi_PhiURLRuleEntity()
+        rank.rank = stamped("V", at: 1)
+        XCTAssertEqual(firstByte(try rank.serializedData(), "rank"), 0x32)
+
+        var createdAtMs = Phi_PhiURLRuleEntity()
+        createdAtMs.createdAtMs = 1
+        XCTAssertEqual(firstByte(try createdAtMs.serializedData(), "created_at_ms"), 0x38)
+
+        var source = Phi_PhiURLRuleEntity()
+        source.source = 1
+        XCTAssertEqual(firstByte(try source.serializedData(), "source"), 0x40)
+    }
+
+    // MARK: - CASE C-5 (group 2): the `kind` oneof's field 5 for `url_rule`
+
+    /// Field 5 has been reserved by a comment since M3-2 (`phi_entity.proto`);
+    /// this is the commit that turns it into a real case. Landing on 6
+    /// (M3-4b's Profile slot) or falling back onto 4 would make two devices
+    /// decode the same ciphertext as different kinds -- one side silently
+    /// drops the rule, the other applies it as a pin.
+    func testKindOneofUsesFieldFiveForURLRule() throws {
+        var envelope = Phi_PhiEntity()
+        envelope.urlRule = Phi_PhiURLRuleEntity()
+
+        let bytes = try envelope.serializedData()
+        XCTAssertEqual([UInt8](bytes), [0x2A, 0x00])
+
+        let decoded = try Phi_PhiEntity(serializedBytes: bytes)
+        guard case .urlRule? = decoded.kind else {
+            return XCTFail("expected the `urlRule` variant of PhiEntity.kind")
+        }
+    }
+
+    // MARK: - CASE C-5 (group 3): the url_rule tag text, hash literal and entity name
+
+    /// Same rationale as `testClientTagHashesArePinnedLiterals`: a frozen
+    /// string is the only thing that catches a self-consistent-but-wrong
+    /// prefix, because recomputing the hash with the same helper the product
+    /// uses stays green even when the helper itself derives the wrong tag --
+    /// and every entity this client ever published under that tag would then
+    /// look like forged payload to its own receiver (§3.4).
+    func testURLRuleTagAndHashArePinnedLiterals() {
+        XCTAssertEqual(PhiSyncEntity.urlRuleTagPrefix, "phi-urlrule:")
+        XCTAssertEqual(PhiSyncEntity.urlRuleClientTag("0123abcd"), "phi-urlrule:0123abcd")
+        XCTAssertEqual(
+            PhiSyncEntity.clientTagHash(for: PhiSyncEntity.urlRuleClientTag("0123abcd")),
+            "jodLs9n9WuFJYEJt7bRvO0o1l6w=")
+        XCTAssertEqual(PhiSyncEntity.urlRuleEntityName, "phi-urlrule")
     }
 }

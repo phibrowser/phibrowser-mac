@@ -20,7 +20,8 @@ message PhiEntity {
     PhiSpaceEntity    space    = 2;   // M3-2
     PhiBookmarkEntity bookmark = 3;   // M3-3
     PhiPinTabEntity   pin_tab  = 4;   // M3-3
-    // M3-4: PhiURLRuleEntity url_rule = 5; PhiProfileEntity profile = 6;
+    PhiURLRuleEntity  url_rule = 5;   // M3-4a
+    // M3-4b: PhiProfileEntity profile = 6;
   }
 }
 
@@ -281,4 +282,101 @@ message PhiPinTabEntity {
   int64 created_at_ms = 9;
 
   reserved 10 to 13;  // M3-4 / M4. Do not reuse.
+}
+
+// One URL routing rule. Entity identity is the client tag
+// "phi-urlrule:<rule_uuid>"; `rule_uuid` is repeated inside the payload
+// because client_tag_hash is a one-way SHA1 and the receiver cannot recover
+// the uuid from it.
+//
+// Same conventions as PhiSpaceEntity / PhiBookmarkEntity: every MUTABLE field
+// is a PhiSettingValue (M3-1's generic LWW-stamped scalar), always emitted,
+// never omitted-when-empty. Immutable facts are plain fields and take no part
+// in LWW.
+//
+// THREE MERGE UNITS, three timestamps (design D15 as amended by R-M3-4a-40):
+//   1. THE CONTENT GROUP: `host` + `path_prefix` + `ask`, one shared timestamp
+//      carried by `host`. They are not merged field by field: `host` and
+//      `path_prefix` are two halves of one match key, and a field-level merge of
+//      "A changed the host" with "B changed the path" produces a rule neither
+//      user ever wrote. `ask` rides with them because it only makes sense
+//      against the key it qualifies.
+//   2. THE TARGET: `target_space_uuid` with its OWN timestamp. It is NOT part of
+//      the identity (D13) -- retargeting is a first-class edit and tombstone +
+//      create would re-mint the identity every time -- but it is also not part
+//      of the content group: it is this kind's LOCATION, it carries the
+//      single-argument `locationStamp` the owned-item module reads for the A9
+//      delete-vs-move arbitration, and keeping it separate lets a host edit on
+//      one device and a retarget on another BOTH survive.
+//   3. `rank`, its OWN timestamp: a pure reorder must not be able to revert a
+//      concurrent retarget.
+message PhiURLRuleEntity {
+  // Lowercase uuid, minted on the device that first published this row, then
+  // stored verbatim in SpaceURLRule.syncId. NEVER the local `id`, which is a
+  // per-save handle (design §4.3).
+  string rule_uuid = 1;
+
+  // string_value. Match host in one of three forms: "github.com" (exact),
+  // "*.figma.com" (suffix wildcard), "*git*" (contains). Normalized by the one
+  // fixed-point function (design §8.1 / R-M3-4a-21), in exactly three steps:
+  //   1. leading whitespace/newlines trimmed;
+  //   2. the trailing run of {whitespace, newline, '.'} removed in ONE scan
+  //      (NOT "strip dots then trim" -- that is not a fixed point: "a. ."
+  //      would yield "a." and need another pass);
+  //   3. lowercased (locale-independent).
+  // No IDNA/punycode conversion (R-M3-4a-1).
+  // CARRIES THE CONTENT GROUP'S TIMESTAMP.
+  PhiSettingValue host = 2;
+
+  // string_value. Percent-encoded canonical path prefix, or "" for "any path"
+  // (the explicit cleared encoding). "/" means "root path only" and is a
+  // DISTINCT value from "" -- see design §8.1. Normalized by the same
+  // fixed-point function; a payload that is not a fixed point of it is
+  // normalized in the kind's plan closure and republished (R-M3-4a-2 /
+  // R-M3-4a-29).
+  // Content-group member: its timestamp is written equal to `host`'s and
+  // IGNORED on receipt.
+  PhiSettingValue path_prefix = 3;
+
+  // bool_value. true = a matching navigation prompts for a Space instead of
+  // routing silently; `target_space_uuid` degrades to the prompt's default.
+  // Content-group member, same timestamp rule as `path_prefix`.
+  PhiSettingValue ask = 4;
+
+  // string_value: the ACCOUNT-LEVEL Space sync uuid, resolved through
+  // `sync.spaceGlobalUuids`; the literal "default-space" for the account's
+  // default Space (D1); the literal "incognito-space" for the reserved
+  // Incognito target (D12 / R-M3-4a-6). NEVER a local SpaceModel.spaceId and
+  // NEVER a runtime "space.incognito.<uuid>".
+  // ITS OWN timestamp (unit 2 above); this member is the LOCATION carrier.
+  // An unresolvable value PARKS the entity; it is never rewritten (D16).
+  PhiSettingValue target_space_uuid = 5;
+
+  // Ordering among rules that tie on specificity, with its OWN timestamp.
+  // string_value: fractional index over "0-9A-Za-z" (ASCII-ascending, so byte
+  // order == rank order); never ends in '0'. Ordering is PER TARGET SPACE.
+  // Ties break on rule_uuid. The receiver projects rank onto the dense local
+  // `sortOrder` (design §8.3).
+  PhiSettingValue rank = 6;
+
+  // NOT last-writer-wins: merged with min(). Epoch ms of SpaceURLRule
+  // .createdDate on the device that created the row.
+  //
+  // R-exec-16 / R-M3-4a-19: this field and `source` below CANNOT LAND on the
+  // local row as-is, so the OUTBOUND PROJECTION must fold them against the
+  // baseline before returning, or the two devices never converge (the raw-byte
+  // publish compare re-differs every round). See BookmarkKind.swift:162-176.
+  int64 created_at_ms = 7;
+
+  // NOT last-writer-wins: written once by the FIRST publisher and merged
+  // DETERMINISTICALLY on disagreement -- a non-zero baseline is copied
+  // verbatim, never overwritten from the local row. There is no `source`
+  // column on SpaceURLRule (V11 adds only syncId + contentUpdatedDate), so
+  // EVERY publisher this build ships emits 0; the field exists so a later
+  // build that does distinguish authoring surfaces has a stable slot, and the
+  // baseline fold keeps such a value stable across devices meanwhile.
+  // Diagnostics only; no matching behaviour depends on it.
+  int32 source = 8;
+
+  reserved 9 to 12;  // M3-4b / M4. Do not reuse.
 }

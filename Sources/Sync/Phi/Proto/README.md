@@ -24,7 +24,8 @@ the `Phi` module.
 
 `protoc-gen-swift` prefixes each type with the camel-cased proto package:
 
-- package `phi` → `Phi_PhiEntity`, `Phi_PhiSettingEntity`, `Phi_PhiSettingValue`
+- package `phi` → `Phi_PhiEntity`, `Phi_PhiSettingEntity`, `Phi_PhiSettingValue`,
+  `Phi_PhiSpaceEntity`, `Phi_PhiBookmarkEntity`, `Phi_PhiPinTabEntity`, `Phi_PhiURLRuleEntity`
 - package `sync_pb` → `SyncPb_ClientToServerMessage`, `SyncPb_SyncEntity`, … (note: `SyncPb_`,
   **not** `Sync_pb_`)
 
@@ -188,6 +189,7 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiEntity` | `kind.space` | 2 | `PhiSpaceEntity` (oneof `kind`, M3-2) |
 | `PhiEntity` | `kind.bookmark` | 3 | `PhiBookmarkEntity` (oneof `kind`, M3-3) |
 | `PhiEntity` | `kind.pin_tab` | 4 | `PhiPinTabEntity` (oneof `kind`, M3-3) |
+| `PhiEntity` | `kind.url_rule` | 5 | `PhiURLRuleEntity` (oneof `kind`, M3-4a) |
 | `PhiSpaceEntity` | `space_uuid` | 1 | `string` (account-level sync uuid, M3-2b) |
 | `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
 | `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
@@ -223,13 +225,22 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiPinTabEntity` | `split_partner_uuid` | 7 | `PhiSettingValue` (the PARTNER's `pin_uuid`; `""` = not split) |
 | `PhiPinTabEntity` | `source` | 8 | `int32` (same rule as `PhiBookmarkEntity.source`) |
 | `PhiPinTabEntity` | `created_at_ms` | 9 | `int64` (merged with `min()`, not LWW) |
+| `PhiURLRuleEntity` | `rule_uuid` | 1 | `string` (lowercase, minted once; never the local `id`) |
+| `PhiURLRuleEntity` | `host` | 2 | `PhiSettingValue` (content-group; carries the group's shared timestamp) |
+| `PhiURLRuleEntity` | `path_prefix` | 3 | `PhiSettingValue` (content-group; timestamp shared with `host`, ignored on receipt) |
+| `PhiURLRuleEntity` | `ask` | 4 | `PhiSettingValue` (bool; content-group, same timestamp rule as `path_prefix`) |
+| `PhiURLRuleEntity` | `target_space_uuid` | 5 | `PhiSettingValue` (own timestamp; the LOCATION carrier, not part of identity) |
+| `PhiURLRuleEntity` | `rank` | 6 | `PhiSettingValue` (fractional index, own timestamp) |
+| `PhiURLRuleEntity` | `created_at_ms` | 7 | `int64` (merged with `min()`, not LWW) |
+| `PhiURLRuleEntity` | `source` | 8 | `int32` (written once, merged deterministically) |
 
 Since M3-2b, `space_uuid` is the **account-level** sync uuid resolved through the device's
 `sync.spaceGlobalUuids` mapping table, not the local `SpaceModel.spaceId`. Nothing else about
 the wire format changed.
 
 Reserved ranges are **declared in the proto**, not just described here: `PhiSpaceEntity`
-reserves 11-14, `PhiBookmarkEntity` 12-15 and `PhiPinTabEntity` 10-13, all for M3-4 / M4.
+reserves 11-14, `PhiBookmarkEntity` 12-15, `PhiPinTabEntity` 10-13 and `PhiURLRuleEntity` 9-12,
+all for M3-4b / M4 (the 5 slot on `PhiEntity.kind` is spoken for as of this commit).
 Until M3-3 these were comments only, which protoc does not enforce; with the declarations in
 place, reusing one of those numbers is a compile failure rather than a code-review catch. The
 declarations are wire-neutral (a reserved range emits no field), and
@@ -271,12 +282,14 @@ per DATA TYPE (2000), so every kind shares it. The tags themselves live in
 | `space` | `phi-space:<space_uuid>` | `phi-space` |
 | `bookmark` | `phi-bookmark:<bookmark_uuid>` | `phi-bookmark` |
 | `pin_tab` | `phi-pin:<lineage>:<ownerKey>` | `phi-pin` |
+| `url_rule` | `phi-urlrule:<rule_uuid>` | `phi-urlrule` |
 
 `ownerKey` is the `space_uuid`, the `profile_uuid`, or the literal `app`; a pin's identity is
 the PAIR (lineage, owner), so one lineage living in N Spaces is N entities. The `<lineage>` put
 into the tag **must already be normalized to lowercase** by the same helper the local index and
 the landing matcher use -- an un-normalized lineage produces a self-consistent hash that no
-other device will ever compute.
+other device will ever compute. `url_rule`'s identity, by contrast, is `rule_uuid` **alone**
+(D13): the target Space is not part of it, so retargeting a rule never re-mints its tag.
 
 `name` is the only part of an entity the server stores in plaintext, so it is **a constant per
 kind**: never a title, a URL, or a tag carrying a uuid. The constant is also what makes the
@@ -291,8 +304,8 @@ table above. Re-vendoring Chromium in sync-service does **not** automatically af
 directory.
 
 `PhiEntity.kind` is an open oneof. Adding a kind means: a new field NUMBER that
-is never reused (M3-2 took 2; M3-3 took 3 and 4, and 5 / 6 are spoken for by
-M3-4's URL rules and profiles), a re-run of `generate.sh`, one table row per
+is never reused (M3-2 took 2; M3-3 took 3 and 4; M3-4a took 5 for URL rules; 6
+is spoken for by M3-4b's profiles), a re-run of `generate.sh`, one table row per
 field above, a row in the client-tag table, and a receiver that IGNORES ONLY the
 unknown entity -- never one that rewinds the shared progress marker, because
 every kind shares a single marker for data type 2000.

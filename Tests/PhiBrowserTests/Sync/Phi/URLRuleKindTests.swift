@@ -876,6 +876,13 @@ final class URLRuleKindTests: XCTestCase {
         access.calls.filter { $0 == .refreshRoutingTable }.count
     }
 
+    /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地（照
+    /// `LocalStoreURLRuleThrowingTests.waitPastDebounceWindow`）。同步 helper：`run(until:)` 不能
+    /// 直接在 async 上下文里调。
+    private func waitPastDebounceWindow(_ window: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
+    }
+
     /// 一条**活**的已发布游标：有基线、有服务端三元组、归属已知。
     private func publishedRuleCursor(_ payload: Phi_PhiURLRuleEntity,
                                      entityId: String = "srv-1",
@@ -928,13 +935,20 @@ final class URLRuleKindTests: XCTestCase {
     /// 四段共用：本机两条行；`MemoryOwnedItemStore` 空表（= 文件没了，`hadRecords` 为真时报损）；
     /// `storedMarker = "5"`。重放页的水位是 3 ≤ 5：从 "5" 起拉不到它，只有重放（从 nil 起）
     /// 才拉得到——这就是 (a) 的「重放页里带 `r1` 一条存活实体」。
+    ///
+    /// 设置段与 Space 段静默（`silenceOtherSections`）：`makeSpaceAccess` 映了三个没有游标的
+    /// Space，不静默的话 `pushSpaces` 在 `pushOwnedItems` **之前**就把它们三条 create 发出去并写一次
+    /// Space 表，(e) 的「零 commit」与 (e)/(f) 数 Space 表写次数的旋钮都会被它打偏。静默之后
+    /// `pushSpaces` 仍然写**一次**表（`work` 为空那一支的 `writeSpaceTable(table)` 写回），
+    /// (e)/(f) 的序号按它算。
     private func makeLossFixture(hadRecords: Bool, withSyncIds: Bool = true,
-                                 replayPage: Bool = true) -> LossFixture {
+                                 replayPage: Bool = true) throws -> LossFixture {
         let rows: [PhiLocalURLRule] = withSyncIds
             ? [.fixture(id: "i1", syncId: "r1", sortOrder: 0), .fixture(id: "i2", syncId: "r2", sortOrder: 1)]
             : [.fixture(id: "i1", sortOrder: 0), .fixture(id: "i2", sortOrder: 1)]
         let spaceStore = drainedSpaceStore()
         spaceStore.table.urlRulesHadRecords = hadRecords
+        try silenceOtherSections(spaceStore, defaults: defaults)
         let client = FakePhiSyncClient()
         if replayPage {
             client.pagesByMarker = [page([ruleEntity(urlRulePayload(uuid: "r1"), version: 3)], marker: "3")]
@@ -980,7 +994,7 @@ final class URLRuleKindTests: XCTestCase {
     /// 写成「本机还有带 `syncId` 的规则行」的实现（对规则恒真 ⇒ (c)/(d) 会重放）；报损之后照常
     /// push 的实现（`hasDrainedFullReplay == false` 那道 guard ① 是重放期间零 commit 的唯一依据）。
     func testALostCursorFileArmsOneReplayAndTheReplayRebuildsTheCursorByIdentity() async throws {
-        let f = makeLossFixture(hadRecords: true)
+        let f = try makeLossFixture(hadRecords: true)
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
@@ -999,7 +1013,7 @@ final class URLRuleKindTests: XCTestCase {
 
     /// (b) — 同 (a)，但书签那道一次性闸已经花掉：两道闸互不相干。
     func testALostCursorFileStillReplaysWhenTheBookmarkLatchIsAlreadySpent() async throws {
-        let f = makeLossFixture(hadRecords: true)
+        let f = try makeLossFixture(hadRecords: true)
         f.spaceStore.table.bookmarksReplayedForEmptyTable = true
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
@@ -1015,7 +1029,7 @@ final class URLRuleKindTests: XCTestCase {
 
     /// (c) — `urlRulesHadRecords == false`、store 同样报损 ⇒ 不是丢失：marker 不动、零重放。
     func testAnEmptyTableIsNotALossWhenThisDeviceNeverPublishedRules() async throws {
-        let f = makeLossFixture(hadRecords: false, withSyncIds: false)
+        let f = try makeLossFixture(hadRecords: false, withSyncIds: false)
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
@@ -1032,7 +1046,7 @@ final class URLRuleKindTests: XCTestCase {
     /// (d) — 同 (c)，但本机两条行都带 `syncId`（R-M3-4a-23 让每条活行都有）：判据不是「本机还有
     /// 带 `syncId` 的规则行」，那条判据对规则恒真。
     func testRowsWithSyncIdsDoNotTurnAnEmptyTableIntoALoss() async throws {
-        let f = makeLossFixture(hadRecords: false, withSyncIds: true)
+        let f = try makeLossFixture(hadRecords: false, withSyncIds: true)
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
@@ -1054,7 +1068,7 @@ final class URLRuleKindTests: XCTestCase {
     /// `guard !…replayedForEmptyTable` 每轮直接早退、报损检查再也不触发 ⇒ 下面「第二轮闩才置位」
     /// 与「第三轮真的重放了」两条必须红。同时钉住失败支回 `(table, false)` 而不是 `(table, true)`。
     func testAFailedMarkerClearLeavesTheLossUnarmedAndRetriggersNextRound() async throws {
-        let f = makeLossFixture(hadRecords: true)
+        let f = try makeLossFixture(hadRecords: true)
         f.markerStore.failSaveOnCallNumber = 1          // 第一次 marker 写 = 报损重放的第 ① 步
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
@@ -1072,8 +1086,9 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertTrue(f.client.commits.filter { $0.clientTagHash != PhiSyncEntity.settingsClientTagHash }.isEmpty,
                       "五种 kind 一条都不发")
         XCTAssertEqual(f.markerStore.saves.count, 1, "恰好多出那一次失败的调用；落地段那次 load 什么都没写")
-        // 页 1 那一次表写之外没有第二次 Space 表写：步骤 ② 没跑。
-        XCTAssertLessThanOrEqual(f.spaceStore.saveCalls - spaceSavesBefore, 1)
+        // Space 表恰好两次写：页 1 那次无条件的表写（#1）+ `pushSpaces` 在 `pushOwnedItems` 之前那次
+        // 写回（#2，Space 段已静默、`work` 为空）。没有第三次 = 步骤 ② 没跑。
+        XCTAssertEqual(f.spaceStore.saveCalls - spaceSavesBefore, 2)
         XCTAssertTrue(f.store.table.cursors.isEmpty, "没有对着丢失的表发布、也没有重建它的文件")
 
         f.markerStore.failSaveOnCallNumber = nil
@@ -1097,11 +1112,12 @@ final class URLRuleKindTests: XCTestCase {
     /// 因此不再命中、闩不需要再置位：那次可重来的落盘失败没有变成永久失效，整类型重放确实发生了。
     /// 「第 ① 步幂等零写、第 ② 步这次写成」那一格由下一条（重放页为空的账户）钉。
     func testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay() async throws {
-        let f = makeLossFixture(hadRecords: true)
+        let f = try makeLossFixture(hadRecords: true)
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
-        // 页 1 那次表写是第 1 次，报损重放的第 ② 步是第 2 次。
-        f.spaceStore.failSaveOnCallNumber = f.spaceStore.saveCalls + 2
+        // Space 表写的序号：页 1 那次无条件的表写是第 1 次，`pushSpaces`（静默，`work` 为空）的写回是
+        // 第 2 次，报损重放的第 ② 步是第 3 次。
+        f.spaceStore.failSaveOnCallNumber = f.spaceStore.saveCalls + 3
         await engine.pullOnce()
 
         let outcome = await engine.lastRoundOutcomeForTesting
@@ -1131,10 +1147,11 @@ final class URLRuleKindTests: XCTestCase {
     /// `persistMarkerState` 的 `updated == markerState` 短路成零写（`markerStore.saves` 不增、
     /// `cursor_save_failed` 为 0），第 ② 步这次写成 ⇒ 闩置位、drain 武装。
     func testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear() async throws {
-        let f = makeLossFixture(hadRecords: true, replayPage: false)
+        let f = try makeLossFixture(hadRecords: true, replayPage: false)
         let engine = makeLossEngine(f)
         await engine.setSpaceSyncEnabled(true)
-        f.spaceStore.failSaveOnCallNumber = f.spaceStore.saveCalls + 2
+        // 同上一条：页写 #1、`pushSpaces` 写回 #2、第 ② 步 #3。
+        f.spaceStore.failSaveOnCallNumber = f.spaceStore.saveCalls + 3
         await engine.pullOnce()
 
         let outcome = await engine.lastRoundOutcomeForTesting
@@ -1444,7 +1461,7 @@ final class URLRuleKindTests: XCTestCase {
                                                   spaceId: "space-a")],
                 deletedIds: [])
         }
-        RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
+        waitPastDebounceWindow(window)
         XCTAssertEqual(received, ["urlrules"], "三条写塌成一轮，实参是注册项的 label")
 
         // `stopPhiSync()`：cancel + 置 nil + label 置 nil。
@@ -1454,7 +1471,7 @@ final class URLRuleKindTests: XCTestCase {
         try await store.applyURLRuleEditsThrowing(
             upserts: [LocalStore.URLRuleDraft(id: "u29-late", host: "late.example", spaceId: "space-a")],
             deletedIds: [])
-        RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
+        waitPastDebounceWindow(window)
         XCTAssertEqual(received, ["urlrules"], "teardown 之后零调用")
         XCTAssertNil(cancellable)
     }

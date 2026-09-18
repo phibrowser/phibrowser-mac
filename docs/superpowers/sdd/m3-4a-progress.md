@@ -385,3 +385,25 @@ B2-17neg / B2-4d-x）。
 21. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰的文件零
     warning）。十九条新用例与三处扩写没有在运行时跑过；每条的走向（`.create` 步落成 `.update`、
     冲突后的限定重发、guard 1 的轮首重放、`hadRecordsSeen == [true, true]` 等）按代码推导。
+
+### Fix round 1（review 的一条 Important，tests only）
+
+22. **U-18 (e) / (f) / (f-empty) 没有静默设置段与 Space 段。** `makeSpaceAccess()` 映了三个没有游标的
+    Space，`hasDrainedFullReplay == true` 时 `pushSpaces` 在 `pushOwnedItems` 之前把三条 create 发
+    出去并写一次 Space 表：(e) 的「零 commit」与「Space 表写次数」两条断言、(f)/(f-empty) 的
+    `failSaveOnCallNumber = saveCalls + 2` 旋钮都被它打偏（旋钮打在 Space 段的表写上，步骤 ② 反而
+    成功，断言在引擎正确时变红）。修法：`makeLossFixture` 内调本文件自己的
+    `silenceOtherSections`（与 U-16 / U-11 同一个 helper），函数改成 `throws`、七个调用点加 `try`。
+23. **序号重新推导**：静默之后 `pushSpaces` 仍然写**一次**表（guard 3 在 `spaceCommitEntries` 里
+    `continue` 掉三条 ⇒ `work` 为空 ⇒ `guard !work.isEmpty else { writeSpaceTable(table); return }`
+    那一支），`push` 的次序是 settings → spaces → owned。于是 Space 表写：页 1 无条件表写 #1、
+    `pushSpaces` 写回 #2、报损重放第 ② 步 #3。(f)/(f-empty) 的旋钮改成 `saveCalls + 3`；(e) 的
+    Space 表断言改成精确 `== 2`（没有第三次 = 步骤 ② 没跑）。(a)–(d) 的断言逐条复核，静默不改变
+    它们的走向（`hadRecordsSeen == [true, true]`、零 rule commit、marker / drain 标志同前）。
+24. **顺手清掉同文件唯一的编译 warning**：U-29 的 `RunLoop.main.run(until:)` 直接在 async 上下文里
+    调（Swift 6 下是 error），改经同步 helper `waitPastDebounceWindow(_:)`（照
+    `LocalStoreURLRuleThrowingTests` 的形状）。
+25. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零
+    warning。覆盖的用例：`testAFailedMarkerClearLeavesTheLossUnarmedAndRetriggersNextRound`、
+    `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay`、
+    `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`（以及经同一 fixture 的 (a)–(d) 四条）。

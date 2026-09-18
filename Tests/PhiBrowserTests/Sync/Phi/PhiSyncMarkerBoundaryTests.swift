@@ -720,16 +720,23 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
     private func ruleTag(_ uuid: String) -> String { PhiSyncEntity.urlRuleClientTag(uuid) }
 
-    /// 一条能落地的规则实体：目标 `su-1` 映到 `makeSpaceAccess` 的 `s-1`。
+    /// 一条能落地的规则实体：目标默认 `su-1`，映到 `makeSpaceAccess` 的 `s-1`。`targetSpaceUuid`
+    /// 传别的值 = 归属那条 Space 还没建出来（B2-16 的规则版就靠它把归属与 Space 排在同一页）。
     private func urlRuleEntity(_ uuid: String, version: Int64, entityId: String? = nil,
+                               targetSpaceUuid: String = "su-1",
                                host: String = "github.com") -> PhiRemoteEntity {
-        remoteEntity(envelope(urlRulePayload(uuid: uuid, targetSpaceUuid: "su-1", host: host)),
+        remoteEntity(envelope(urlRulePayload(uuid: uuid, targetSpaceUuid: targetSpaceUuid,
+                                             host: host)),
                      tag: ruleTag(uuid), version: version,
                      entityId: entityId ?? "srv-\(uuid)", key: key)
     }
 
     private func ruleCreateCount(_ ops: [URLRuleSyncOp]) -> Int {
         ops.filter { if case .create = $0 { return true } else { return false } }.count
+    }
+
+    private func ruleCommits(_ client: FakePhiSyncClient) -> [FakePhiSyncClient.CommitCall] {
+        client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName }
     }
 
     private func ruleApplyCalls(_ access: FakeURLRuleAccess) -> Int {
@@ -922,8 +929,9 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(bookmarkCommits(client).count, 1, "排干那一轮才发出去")
     }
 
-    /// CASE B2-1c (d) — 只有书签的本机读失败 ⇒ `.localReadFailed`，书签 `pushed == 0` 而 pin 照发
-    /// （R-exec-3 是 per-kind 的，不是全局）。urlrules 那一格 Task 6 补。
+    /// CASE B2-1c (d) — 只有书签的本机读失败 ⇒ `.localReadFailed`，书签 `pushed == 0` 而 pin 与
+    /// 规则照发（R-exec-3 是 per-kind 的，不是全局）。规则那一格（Task 6）：本机那条未发布的
+    /// `r1` 照常发出去一条 create、`urlrules` 自己的 `local_read_failed` 是 0。
     func testALocalReadFailureIsPerKindAndReportedAsLocalReadFailed() async throws {
         let bookmarkAccess = FakeBookmarkAccess()
         bookmarkAccess.readError = LocalStoreWriteError.storeUnavailable
@@ -931,12 +939,16 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let pinAccess = FakePinAccess(scope: .profile, account: .profile,
                                       rows: [.fixture(lineageId: "lp", guid: "gp", profileId: "Default")])
         let pinStore = MemoryOwnedItemStore()
+        // 目标是 `makeSpaceAccess` 的 `s-1`（映到 `su-1`）⇒ 归属合格、这一条进得了快照。
+        let ruleAccess = FakeURLRuleAccess(rows: [.fixture(id: "ir", syncId: "r1", spaceId: "s-1")])
+        let ruleStore = MemoryOwnedItemStore()
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "3")]
         let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
                                      spaceStore: drainedSpaceStore(),
                                      ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
-                                                  .pins(access: pinAccess, store: pinStore)])
+                                                  .pins(access: pinAccess, store: pinStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
@@ -947,7 +959,11 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertTrue(bookmarkCommits(client).isEmpty)
         XCTAssertEqual(pinCommits(client).count, 1, "pin 不受书签那次读失败影响")
         XCTAssertGreaterThanOrEqual(counters["pins"]?.pushed ?? 0, 1)
-        // CASE B2-1c (d) urlrules — Task 6
+        // CASE B2-1c (d) urlrules（Task 6）
+        XCTAssertEqual(counters["bookmarks"]?.localReadFailed, 1, "失效的只有书签那一条 kind")
+        XCTAssertEqual(counters["urlrules"]?.localReadFailed, 0)
+        XCTAssertEqual(ruleCommits(client).count, 1, "规则不受书签那次读失败影响")
+        XCTAssertGreaterThanOrEqual(counters["urlrules"]?.pushed ?? 0, 1)
     }
 
     /// CASE B2-1d — 本地编辑轮绕过 `if thenPush` 那一行（R-M3-4a-92）：最后一页的游标 save 失败
@@ -1383,9 +1399,10 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(markerStore.file.marker, Data("7".utf8))
     }
 
-    /// CASE B2-6b — 跨 kind 之间被杀：第一台只注册书签、marker 写失败（= 书签已落、pin 一步没跑、
-    /// marker 未推）；第二台注册两条 kind 共用同一组 store ⇒ 书签行数仍 1、pin 正常落地一条。
-    /// urlrules 那一格 Task 6 补。
+    /// CASE B2-6b — 跨 kind 之间被杀：第一台只注册书签、marker 写失败（= 书签已落、pin 与规则
+    /// 一步没跑、marker 未推）；第二台注册三条 kind 共用同一组 store ⇒ 书签行数仍 1、pin 与规则
+    /// 各正常落地一条。规则那一格（Task 6）：第一轮零行（那条 kind 根本没注册），第二轮按身份
+    /// 落一行、游标这才写下。
     func testARestartBetweenKindsLandsTheMissingKindWithoutDuplicatingTheFirst() async throws {
         let spaceAccess = makeSpaceAccess()
         let spaceStore = drainedSpaceStore()
@@ -1393,11 +1410,14 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let bookmarkStore = MemoryOwnedItemStore()
         let pinAccess = FakePinAccess(scope: .profile, account: .profile)
         let pinStore = MemoryOwnedItemStore()
+        let ruleAccess = FakeURLRuleAccess(rows: [])
+        let ruleStore = MemoryOwnedItemStore()
         let markerStore = markerStore(marker: "0")
         markerStore.failSaveOnCallNumber = 1
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([bookmarkEntity("b1", version: 7),
-                                      pinEntity("lx", version: 8)], marker: "8")]
+                                      pinEntity("lx", version: 8),
+                                      urlRuleEntity("r1", version: 9)], marker: "9")]
         let first = makeOwnedEngine(client: client, markerStore: markerStore,
                                     spaceStore: spaceStore, spaceAccess: spaceAccess,
                                     ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore)])
@@ -1406,13 +1426,15 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
         XCTAssertEqual(bookmarkAccess.rows.count, 1)
         XCTAssertTrue(pinAccess.rows.isEmpty, "pin 那条 kind 一步没跑")
+        XCTAssertTrue(ruleAccess.rows.isEmpty, "规则那条 kind 一步没跑")
         XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
 
         markerStore.failSaveOnCallNumber = nil
         let second = makeOwnedEngine(client: client, markerStore: markerStore,
                                      spaceStore: spaceStore, spaceAccess: spaceAccess,
                                      ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
-                                                  .pins(access: pinAccess, store: pinStore)])
+                                                  .pins(access: pinAccess, store: pinStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
         let applyCallsBefore = applyCalls(bookmarkAccess)
         await second.pullOnce()
 
@@ -1421,8 +1443,14 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
             XCTAssertEqual(createCount(bookmarkAccess.lastAppliedOps), 0, "走 update 支")
         }
         XCTAssertEqual(pinAccess.rows.count, 1, "pin 无丢失")
-        XCTAssertEqual(markerStore.file.marker, Data("8".utf8))
-        // CASE B2-6b urlrules — Task 6
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8))
+        // CASE B2-6b urlrules（Task 6）
+        let counters = await second.lastOwnedRoundCountersForTesting["urlrules"]
+        XCTAssertEqual(ruleAccess.rows.count, 1, "规则无丢失")
+        XCTAssertEqual(ruleAccess.rows.first?.syncId, "r1")
+        XCTAssertEqual(ruleAccess.rows.first?.spaceId, "s-1")
+        XCTAssertEqual(counters?.applied, 1)
+        XCTAssertEqual(ruleStore.table.cursors["r1"]?.entityId, "srv-r1", "游标这才写下")
     }
 
     /// CASE B2-6c — LocalStore 事务提交与游标写之间被杀：行已建且带 `syncId`、游标文件仍是旧的。
@@ -1983,19 +2011,22 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         spaceStore.table.drainInProgress = true
         let access = FakeBookmarkAccess()
         let ownedStore = MemoryOwnedItemStore()
+        let ruleAccess = FakeURLRuleAccess(rows: [])
+        let ruleStore = MemoryOwnedItemStore()
         let markerStore = markerStore(marker: nil)
         let client = FakePhiSyncClient()
         client.pagesByMarker = [
             page([], marker: "1", changesRemaining: true),
             page([remoteUnreadable(tag: PhiSyncEntity.clientTag, version: 2)], marker: "2",
                  changesRemaining: true),
-            page([], marker: "3", changesRemaining: true),
+            page([urlRuleEntity("r3", version: 3)], marker: "3", changesRemaining: true),
             page([spaceCreateEntity("u4", version: 4)], marker: "4", changesRemaining: true),
             page([bookmarkEntity("b5", version: 5)], marker: "5"),
         ]
         let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
                                      spaceAccess: spaceAccess,
-                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
@@ -2016,7 +2047,15 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(outcome, .unusableSettings)
         XCTAssertTrue(settingsCommits(client).isEmpty, "`maySettingsPublish == false`")
         XCTAssertEqual(ownedStore.hadRecordsSeen.count, 2, "`pushOwnedItems` 被调用：发布段的 load 发生过")
-        // CASE B2-13 urlrules — Task 6
+        // CASE B2-13 urlrules（Task 6）——那条解不开的设置实体在第 2 页，规则在第 3 页：
+        // 「`.unusable` 就地中断 drain」的实现连第 3 页都取不到，这一条落地与它的游标都不会存在。
+        let ruleCounters = await engine.lastOwnedRoundCountersForTesting["urlrules"]
+        XCTAssertEqual(ruleCounters?.applied, 1, "第 3 页落地")
+        XCTAssertEqual(ruleAccess.rows.count, 1)
+        XCTAssertEqual(ruleAccess.rows.first?.syncId, "r3")
+        XCTAssertEqual(ruleStore.table.cursors["r3"]?.entityId, "srv-r3")
+        XCTAssertEqual(ruleStore.hadRecordsSeen.count, 2,
+                       "`loadOwnedTable` 一轮两次（轮首 + 发布段），与页数无关")
     }
 
     // MARK: - CASE B2-14（guard 2 是轮级的；marker 先清、确认之后才烧闩）
@@ -2180,18 +2219,22 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
     // MARK: - CASE B2-15（设置 `.absent` 是轮级谓词）
 
-    /// CASE B2-15 — 设置实体只在第 1 页、第 2 至 5 页只有 Space / 书签 / pin（规则 Task 6 补）⇒
+    /// CASE B2-15 — 设置实体只在第 1 页、第 2 至 5 页只有 Space / 书签 / pin / 规则 ⇒
     /// `clearEntityCursor()` 零调用：entity id 键仍是第 1 页写下的那个、`storedLastEntity` 非 nil；
     /// 下一轮 push 走 update（`entityId != nil`、`baseVersion != 0`）。
     ///
     /// 防的是什么：逐页求值 `.absent` 的那一版会在第 5 页命中 `clearEntityCursor()`，把刚建立的
-    /// 设置游标丢掉 ⇒ 下一次 push 退化成 `baseVersion == 0` 的 create。
+    /// 设置游标丢掉 ⇒ 下一次 push 退化成 `baseVersion == 0` 的 create。规则那一格（Task 6）把
+    /// 最后那一页从空页换成一条规则：最后一页带的是**非设置**实体，正是逐页求值那一版会失手的
+    /// 那一页。
     func testAbsentSettingsIsARoundLevelPredicate() async throws {
         let settingKey = "phi.test.b215"
         let access = FakeBookmarkAccess()
         let ownedStore = MemoryOwnedItemStore()
         let pinAccess = FakePinAccess(scope: .profile, account: .profile)
         let pinStore = MemoryOwnedItemStore()
+        let ruleAccess = FakeURLRuleAccess(rows: [])
+        let ruleStore = MemoryOwnedItemStore()
         let client = FakePhiSyncClient()
         client.pagesByMarker = [
             page([boolSettingsEntity(key: settingKey, true, at: 300, version: 1, entityId: "srv-set")],
@@ -2199,19 +2242,27 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
             page([spaceCreateEntity("u2", version: 2)], marker: "2", changesRemaining: true),
             page([bookmarkEntity("b3", version: 3)], marker: "3", changesRemaining: true),
             page([pinEntity("l4", version: 4)], marker: "4", changesRemaining: true),
-            page([], marker: "5"),
+            page([urlRuleEntity("r5", version: 5)], marker: "5"),
         ]
         client.seed(ciphertext: Data(), version: 1, entityId: "srv-set")
         let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: nil),
                                      spaceStore: MemorySpaceStore(), settings: boolRegistry(settingKey),
                                      ownedKinds: [.bookmarks(access: access, store: ownedStore),
-                                                  .pins(access: pinAccess, store: pinStore)])
+                                                  .pins(access: pinAccess, store: pinStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-set",
                        "`clearEntityCursor()` 零调用")
         XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey))
+        // CASE B2-15 urlrules（Task 6）——最后一页那条规则真的被取回并落地了（否则「最后一页
+        // 不带设置实体」这个前提本身不成立，整条用例会空跑）。
+        let ruleCounters = await engine.lastOwnedRoundCountersForTesting["urlrules"]
+        XCTAssertEqual(ruleCounters?.applied, 1, "第 5 页落地")
+        XCTAssertEqual(ruleAccess.rows.count, 1)
+        XCTAssertEqual(ruleAccess.rows.first?.syncId, "r5")
+        XCTAssertEqual(ruleStore.table.cursors["r5"]?.entityId, "srv-r5")
 
         defaults.set(false, forKey: settingKey)             // 本机编辑 ⇒ 下一轮 push
         await engine.pushLocalSettings()
@@ -2219,7 +2270,6 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let last = try XCTUnwrap(settingsCommits(client).last)
         XCTAssertEqual(last.entityId, "srv-set", "走 update")
         XCTAssertNotEqual(last.baseVersion, 0)
-        // CASE B2-15 urlrules — Task 6
     }
 
     /// CASE B2-15 正面那一半 — 五页一条设置实体都没有 ∧ drained ∧ `startedFromScratch` ∧
@@ -2248,7 +2298,8 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
     // MARK: - CASE B2-16（跨页归属解析）
 
     /// CASE B2-16 — 第 2 页同时带一条新 Space 与一条归属于它的书签（路由次序 Space 在前）⇒
-    /// 那条书签**本轮落地**、`parked == 0`、`applied == 1`。Task 6 换成规则再做一遍。
+    /// 那条书签**本轮落地**、`parked == 0`、`applied == 1`。规则版是下面那条同名用例
+    /// （Task 6）。
     ///
     /// 防的是什么：不在页末失效 `ownedMapsThisRound` 的那一版：`classify` 用的是第 1 页那一刻的
     /// `localSpaceIdBySyncUuid` ⇒ `.unresolved` ⇒ 停放，本轮解不开、要等下一轮。
@@ -2274,6 +2325,42 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let landedSpaceId = try XCTUnwrap(spaceAccess.localSpaceId(forSyncUuid: "u2"))
         XCTAssertEqual(access.rows.first?.spaceId, landedSpaceId, "落在那条刚建出来的 Space 里")
         XCTAssertNil(ownedStore.table.cursors["b2"]?.pendingApply)
+    }
+
+    /// CASE B2-16 的规则版（Task 6）— 同一页同时带一条新 Space 与一条 `target_space_uuid` 指向
+    /// 它的规则 ⇒ 那条规则**本轮落地**、`parked == 0`、`applied == 1`、行落在那条刚建出来的
+    /// Space 里、游标上不留 `pendingApply`。
+    ///
+    /// 防的是什么：与书签版同一条——不在页末失效 `ownedMapsThisRound` 的那一版拿的是第 1 页那
+    /// 一刻的 `localSpaceIdBySyncUuid`，`"u2"` 解析不出 ⇒ 规则被当成「归属还没建出来」停放，本轮
+    /// 解不开。规则那一格额外钉的是「停放的是**规则**而不是书签」：它的归属是 `target_space_uuid`
+    /// 而不是 `space_uuid`，两条路径各自解析一次。
+    func testAURLRuleOwnedByASpaceLandedOnTheSamePageResolvesThisRound() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let ruleAccess = FakeURLRuleAccess(rows: [])
+        let ruleStore = MemoryOwnedItemStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [
+            page([], marker: "1", changesRemaining: true),        // 第 1 页就算过一次翻译表
+            page([spaceCreateEntity("u2", version: 2),
+                  urlRuleEntity("r2", version: 3, targetSpaceUuid: "u2")], marker: "3"),
+        ]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(), spaceAccess: spaceAccess,
+                                     ownedKinds: [.urlRules(access: ruleAccess, store: ruleStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["urlrules"]
+        XCTAssertEqual(counters?.parked, 0)
+        XCTAssertEqual(counters?.applied, 1)
+        XCTAssertEqual(ruleAccess.rows.count, 1)
+        XCTAssertEqual(ruleAccess.rows.first?.syncId, "r2")
+        let landedSpaceId = try XCTUnwrap(spaceAccess.localSpaceId(forSyncUuid: "u2"))
+        XCTAssertEqual(ruleAccess.rows.first?.spaceId, landedSpaceId, "落在那条刚建出来的 Space 里")
+        XCTAssertNil(ruleStore.table.cursors["r2"]?.pendingApply)
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8))
     }
 
     // MARK: - CASE B2-18（引擎半边）

@@ -1068,3 +1068,28 @@ Task 8b-1 ~ 8b-4 及其修复轮全部在**没有编译**的前提下写完（�
 `Sources/ChromiumBridge/ChromiumLauncher.h`（nullability specifier），与本计划无关、本轮未动。
 
 留给验收的问题：**零**——没有任何一处修复需要改动行为。
+
+## Task 6 placeholders (final pass)
+
+Task 6 的进度条目 20 把 `PhiSyncMarkerBoundaryTests.swift` 里没填的 urlrules 占位留给 Task 12 收口。
+本轮把那几格补齐，只动这一个测试文件；**生产代码零改动，既有断言一条没删、没削弱**。
+
+| CASE | 结果 | 这一格断的是什么 |
+| ---- | ---- | ---------------- |
+| B2-1c (d) | **filled** | 页里多挂一条 `.urlRules` 注册项 + 本机一条未发布的 `r1`（`spaceId: "s-1"` ⇒ 归属合格）：书签读失败的那一轮里 `urlrules` 的 `local_read_failed == 0`、规则 commit 恰 1 条、`pushed ≥ 1`（R-exec-3 是 per-kind 的）；顺带钉 `bookmarks` 的 `local_read_failed == 1` |
+| B2-6b | **filled** | 页里多一条 `urlRuleEntity("r1", version: 9)`（页 marker 随之 `"8"` → `"9"`，两处 marker 断言同步）：第一台只注册书签 ⇒ 规则零行；第二台注册三条 kind ⇒ `applied == 1`、行落在 `s-1`、`syncId == "r1"`、游标 `entityId == "srv-r1"` |
+| B2-13 | **filled** | 第 3 页从空页换成一条规则（解不开的设置实体在第 2 页）：`applied == 1`、行与游标都在 ⇒ 「`.unusable` 就地中断 drain」的实现连第 3 页都取不到。另钉 `ruleStore.hadRecordsSeen.count == 2`——`loadOwnedTable` 一轮两次（轮首 + 发布段），与页数无关，`landsEmptyBatch` 让规则每页都走到 `writeOwnedTable`，但**不**多调 `load` |
+| B2-15 | **filled** | 最后一页（第 5 页）从空页换成一条规则 ⇒ 「最后一页带的是非设置实体」这个前提这才有观察量：`applied == 1` + 游标 `srv-r5`，原来的 `clearEntityCursor()` 零调用与 update 支断言原样 |
+| B2-16（规则版） | **filled** | 新用例 `testAURLRuleOwnedByASpaceLandedOnTheSamePageResolvesThisRound`：同一页 Space + `target_space_uuid` 指向它的规则 ⇒ `parked == 0`、`applied == 1`、行落在刚建出来的那条 Space、游标无 `pendingApply`。为此 `urlRuleEntity` 加了一个 `targetSpaceUuid: String = "su-1"` 默认实参（既有调用点一个字节不改） |
+| B2-3 / B2-7 / B2-7b | already present | Task 6 本体已写（brief 点名的三格），本轮未动 |
+| B2-17 的规则侧连带断言 | **not filled** | 文件头注释（`:27`）提到它，但 B2-17 用例体内**没有** Task 6 占位、也没有规则 fixture；进度条目 20 列的遗留清单里也没有它。要补就得让第 2 轮带一条页（B2-17 第 2 轮是**零新页**，而 owned kind 的停放重投挂在页循环上，`landsEmptyBatch` 也只在有页时生效），那是改这条用例的脚本形状、不是填一格 —— 留给验收决定 |
+
+新增的小工具：`ruleCommits(_:)`（`client.commits` 按 `PhiSyncEntity.urlRuleEntityName` 过滤，形状照
+`bookmarkCommits` / `pinCommits`）。`:1110` 那处内联的同款过滤原样未动。
+
+验证口径：**没有编译、没有跑测试**（用户指令：本轮不得 `xcodebuild`）。逐符号按源码核对了
+签名与实参标签次序（`FakeURLRuleAccess(rows:)` / `PhiLocalURLRule.fixture(id:syncId:spaceId:)` /
+`urlRulePayload(uuid:targetSpaceUuid:host:)` / `OwnedKindRegistration.urlRules(access:store:)` /
+`OwnedRoundCounters.localReadFailed`），并用 `swiftc -parse` 单文件过了一遍语法（exit 0）。
+留给下一次整支构建的风险：仅类型层面，行为推导按 `applyOwnedKind` / `beginOwnedRound` /
+`publishOwnedKind` 三处源码。

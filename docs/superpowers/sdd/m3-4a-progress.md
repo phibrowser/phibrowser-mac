@@ -545,3 +545,18 @@ B2-17neg / B2-4d-x）。
     后台写之后主上下文 fetch 可见），用例照 `LocalStoreURLRuleThrowingTests` 的 `drainMainQueue()` 形状。
 15. CASE 11.1 的三条 grep：代码符号零命中（见第 9 条的注释残留）；`applyRuleEdits(` 在
     `AgentSpaceRouter+Management.swift` 恰好 3；`localStorage.` 只在 `storedRules()` 一处、三个 handler 段内零命中。
+
+### Fix round 1（review 的两条 Important + 一条 Minor）
+
+16. **`makeForTesting(boundTo:)` 改走新的 `private init(testAccount:)`**：从前它调 `private init()`，而那个 init
+    无条件 `bind(to: AccountController.shared.account ?? defaultAccount)`（`ensureDefaultSpace` 写真库、订阅
+    publisher、`handleSpacesUpdate` 末尾的 `reloadURLRulesFromStore()` 让 U-22 / U-24c (a) 的计数断言依赖时序）。
+    新 init 不注册观察者、不绑任何账号、只置 `boundAccount`；第 5 条的「只置 `boundAccount`」从此为真。
+    U-22 期望计数 1、U-24c (a) 期望 0 → 1 → 2 → 3，对 bind-nothing 的实例只有 `applyRuleEdits` 会自增，成立。
+17. **裁定 4 的重排 draft 跳过已从 `stored` 消失的兄弟行**：pass 3 加 `storedByStoreId[storeId] != nil` 守卫。
+    没这条时，远端硬删 / tombstone 掉的兄弟行会以 `content: nil` 的 draft 撞进 store 的插入支
+    （`noCandidateSurvived` / `rowAlreadyMapped`），整次 Save 回滚。CASE 11.2
+    `testAReorderStillCommitsWhenASiblingVanishedBehindTheSheet` 钉住（重排 + 一条兄弟行硬删 ⇒ `upserts`
+    不含它、写入提交、桶稠密）。
+18. `computeEditSet` 的中文契约块从 `///` 改成 `//`（首行英文 `///` 保留）。
+19. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。

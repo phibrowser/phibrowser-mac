@@ -163,19 +163,21 @@ struct URLRulesEditor: View {
     }
 
     /// Pure: the whole §5.8 contract in one function so it is testable without a view.
-    ///
-    /// 逐条契约（§5.8 第 1 / 2 / 5 条 + 裁定 2 / 3 / 4）：
-    /// - `storeId != nil` 且四个可编辑单元与 `loaded` 里同 `id` 的那份不同（用户真的动过）、
-    ///   且与 `stored` 里同 `storeId` 的那行仍不同（不是一次无操作）⇒ 整行进 `upserts`，
-    ///   `id` 用（可能已重铸的）`row.id`、`syncId` 原样、目标**原样**（R-M3-4a-9 / 10）。
-    /// - `storeId == nil` 且 host 非空 ⇒ 新行进 `upserts`（`syncId == nil`，插入点铸，R-M3-4a-23）。
-    /// - `storeId != nil` 且清空（`value` trim 后为空或 `encode` 后 host 为空）⇒ `deletedIds`
-    ///   里放 `storeId`（不是重铸后的 `row.id`，裁定 3）；`storeId == nil` 的空行直接忽略。
-    /// - `removed` 里 `storeId != nil` 的行 ⇒ `deletedIds`；`storeId == nil` 的从没落过库，忽略。
-    /// - 某目标桶里既有行的 id 序列与 `loaded` 里（只看仍留在这个桶里的那些）不同 ⇒ 该桶其余
-    ///   既有行也进 `upserts`，只带 `sortOrder`（内容 / 目标单元传 `nil` = 不碰，裁定 4）。
-    /// - `stored` 里已经没有的行（sheet 打开期间被远端删掉）：draft 带原 `id`、`syncId = nil`，
-    ///   由 store 的插入支复活（R-M3-4a-101 / 104）。
+    //
+    // 逐条契约（§5.8 第 1 / 2 / 5 条 + 裁定 2 / 3 / 4）：
+    // - `storeId != nil` 且四个可编辑单元与 `loaded` 里同 `id` 的那份不同（用户真的动过）、
+    //   且与 `stored` 里同 `storeId` 的那行仍不同（不是一次无操作）⇒ 整行进 `upserts`，
+    //   `id` 用（可能已重铸的）`row.id`、`syncId` 原样、目标**原样**（R-M3-4a-9 / 10）。
+    // - `storeId == nil` 且 host 非空 ⇒ 新行进 `upserts`（`syncId == nil`，插入点铸，R-M3-4a-23）。
+    // - `storeId != nil` 且清空（`value` trim 后为空或 `encode` 后 host 为空）⇒ `deletedIds`
+    //   里放 `storeId`（不是重铸后的 `row.id`，裁定 3）；`storeId == nil` 的空行直接忽略。
+    // - `removed` 里 `storeId != nil` 的行 ⇒ `deletedIds`；`storeId == nil` 的从没落过库，忽略。
+    // - 某目标桶里既有行的 id 序列与 `loaded` 里（只看仍留在这个桶里的那些）不同 ⇒ 该桶其余
+    //   **仍在 `stored` 里的**既有行也进 `upserts`，只带 `sortOrder`（内容 / 目标单元传 `nil` =
+    //   不碰，裁定 4）；sheet 打开期间从库里消失的兄弟行没有现值可以重排，跳过（body 会把
+    //   其余行稠密化），否则 store 的插入支会抛错、整次 Save 回滚。
+    // - `stored` 里已经没有的行（sheet 打开期间被远端删掉）：draft 带原 `id`、`syncId = nil`，
+    //   由 store 的插入支复活（R-M3-4a-101 / 104）。
     static func computeEditSet(rows: [Row],
                                loaded: [Row],
                                removed: [Row],
@@ -280,7 +282,8 @@ struct URLRulesEditor: View {
         }
         for entry in live {
             let bucket = entry.row.targetSpaceId
-            guard entry.row.storeId != nil,
+            guard let storeId = entry.row.storeId,
+                  storedByStoreId[storeId] != nil,
                   !upsertedRowIds.contains(entry.row.id),
                   liveIdsByBucket[bucket] != loadedIdsByBucket[bucket, default: []] else { continue }
             upserts.append(LocalStore.URLRuleDraft(

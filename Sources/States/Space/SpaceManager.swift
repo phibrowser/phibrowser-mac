@@ -985,6 +985,11 @@ final class SpaceManager: ObservableObject {
         refreshAccountBindingForBrowserAccess()
     }
 
+    // 只给 `makeForTesting(boundTo:)` 用的构造器：什么都不注册、什么都不绑，只置 `boundAccount`。
+    private init(testAccount: Account?) {
+        boundAccount = testAccount
+    }
+
     // MARK: - Public — read
 
     /// The persisted "last-active Space" used as the initial Space when a
@@ -6583,13 +6588,12 @@ final class SpaceManager: ObservableObject {
     /// Read-only test surface: how many times `reloadURLRulesFromStore()` ran.
     private(set) var urlRuleReloadCountForTesting = 0
 
-    // 仅供测试（CASE U-24c (a)）：造一个只绑了 `boundAccount` 的实例——不接 publisher、不跑
-    // `ensureDefaultSpace`、不碰 `shared`。生产代码绝不能调用它；`Sources/` 里除本定义外零引用。
+    // 仅供测试（CASE U-24c (a)）：造一个只绑了 `boundAccount` 的实例——走 `init(testAccount:)`，
+    // 不注册通知观察者、不 `bind(to:)`、不接 publisher、不跑 `ensureDefaultSpace`、不碰 `shared`
+    // 与 `AccountController`。生产代码绝不能调用它；`Sources/` 里除本定义外零引用。
     @MainActor
     static func makeForTesting(boundTo account: Account?) -> SpaceManager {
-        let manager = SpaceManager()
-        manager.boundAccount = account
-        return manager
+        SpaceManager(testAccount: account)
     }
 
 

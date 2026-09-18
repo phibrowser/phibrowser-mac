@@ -2787,6 +2787,40 @@ extension URLRuleKindTests {
         }
     }
 
+    /// CASE 11.2（fix round 1）：拖动重排 + 一条**没动过的**兄弟行在 sheet 打开期间被远端硬删 ⇒ 消失的
+    /// 那条不进 `upserts`（它没有现值可重排；带 `content: nil` 的 draft 会让 store 的插入支抛
+    /// `noCandidateSurvived` 并整批回滚），其余行的 `sortOrder` draft 照发、写入提交、桶稠密。
+    func testAReorderStillCommitsWhenASiblingVanishedBehindTheSheet() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+
+        // 远端硬删了第 2 条（用户在 sheet 里没碰它）。
+        try await store.performBackgroundWriteAndWaitThrowing { context in
+            let id = Self.i1
+            for row in try context.fetch(FetchDescriptor<SpaceURLRule>(predicate: #Predicate { $0.id == id })) {
+                context.delete(row)
+            }
+        }
+        XCTAssertEqual(liveRules(store).count, 2)
+
+        // 用户把第 3 条拖到最前：rows = [I2, I0, I1]。
+        var rows = loaded
+        let last = rows.removeLast()
+        rows.insert(last, at: 0)
+        let edits = editSet(rows: rows, loaded: loaded, store: store)
+        XCTAssertEqual(edits.upserts.map(\.id), [Self.i2, Self.i0], "消失的 I1 不进 upserts")
+        XCTAssertTrue(edits.upserts.allSatisfy { $0.content == nil && $0.spaceId == nil })
+        XCTAssertTrue(edits.deletedIds.isEmpty)
+        try await apply(edits, to: store)
+
+        let after = try snapshot(store)
+        XCTAssertEqual(after.count, 2, "写入提交了；I1 没有被复活")
+        XCTAssertNil(after[Self.i1])
+        XCTAssertEqual(liveRules(store).map(\.id), [Self.i2, Self.i0])
+        XCTAssertEqual(liveRules(store).map(\.sortOrder), [0, 1], "桶稠密")
+    }
+
     /// sheet 打开期间那一行被远端硬删；用户改了它 ⇒ draft 带原 `id`、`syncId = nil`（恢复支），落库后
     /// 它以一条新身份回来、行数不变。
     func testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId() async throws {

@@ -693,6 +693,90 @@ extension LocalStore {
         }
     }
 
+    // MARK: - §8.4.4 M3 的转移原语（§4.3 六个新原语的第五个，8b-3）
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.4 的 M3 编辑转移。按**三个合并单元**与 W 此刻的值比 LWW，**只写赢下的整组**；
+    /// 返回真的写下去的单元数（0…2），调用方据此计 `transferred`（§13.2）。
+    /// 至少写了一个单元 ⇒ 置位 `W.pendingLocalEdit`；两组都输 ⇒ **零写、不置位**（§8.4.5）。
+    ///
+    /// **W 那一侧的戳按单元取 `max(行戳, 有效账户戳)`**（R-M3-4a-98）：行戳会滞后于账户
+    /// （新行那一列是 `nil`、`rebaselined` 只刷基线不写行），只读行会把账户上更新的那份取值
+    /// 覆写掉，而本页没有到 W 的 `.update` 时 R-M3-4a-93 的相序救不了。`targetEffectiveStamps`
+    /// 由落地批次从 `URLRuleApplyBatch.accountStamps` 里取 W 那一条填进来（与页内 M2 尾钩用的
+    /// 是同一张表），**不开新的协议成员**；取不到 ⇒ 两枚按 `nil` 处理、`max` 退化成行戳。
+    ///
+    /// **原语这一层不认识 X**：R-M3-4a-102 的「来源行未变」复查在批次执行器里做完，这里只管
+    /// 往 W 上写。寻址定义域是含软删行的那一份 `URLRuleTableIndex`（R-M3-4a-56）；
+    /// `toSyncId` 在整表都找不到 ⇒ 返回 0、零写、**不抛**。
+    @discardableResult
+    func transferURLRuleEditThrowing(toSyncId: String, source: RuleProjection,
+                                     targetEffectiveStamps: URLRuleEffectiveStamps) async throws
+        -> Int {
+        try await performBackgroundWriteAndWaitThrowing { context -> Int in
+            var index = try self.urlRuleTableIndex(in: context)
+            return try self.transferURLRuleEditBody(toSyncId: toSyncId, source: source,
+                                                    targetEffectiveStamps: targetEffectiveStamps,
+                                                    index: &index, in: context).written
+        }
+    }
+
+    /// 一次转移真的写下去了什么。`movedFrom` 非 nil = 目标单元赢下、W 换了桶，**源桶与目标桶
+    /// 都要进本页的重排定义域**（R-M3-4a-3）。
+    struct URLRuleTransferResult: Equatable {
+        var written = 0
+        /// 内容组输掉 ⇒ 计一次 `superseded_by_delete`（§13.3）。
+        var contentSuperseded = false
+        var movedFrom: String?
+    }
+
+    /// R-exec-2 的 body 兄弟（批次入口要在同一个写块、同一份索引上调它）。判定整个交给
+    /// `URLRuleKind.transferDecision(target:source:targetEffectiveStamps:)`——生产落地与假件
+    /// 读**同一份**判据，两处各写一份的实现迟早在「谁赢」上分叉。
+    @discardableResult
+    func transferURLRuleEditBody(toSyncId: String, source: RuleProjection,
+                                 targetEffectiveStamps: URLRuleEffectiveStamps,
+                                 index: inout URLRuleTableIndex,
+                                 in context: ModelContext) throws -> URLRuleTransferResult {
+        var out = URLRuleTransferResult()
+        guard let row = index.bySyncId[toSyncId] else {
+            // 寻址不到 ⇒ 零写、不抛（同族守卫见 `softDeleteURLRuleBody`）。
+            out.contentSuperseded = true
+            return out
+        }
+        // 同款守卫，见 `upsertURLRuleBody`。
+        guard row.syncId == nil || row.syncId == toSyncId else {
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
+        let decision = URLRuleKind.transferDecision(target: Self.projectURLRule(row),
+                                                    source: source,
+                                                    targetEffectiveStamps: targetEffectiveStamps)
+        out.contentSuperseded = decision.contentSuperseded
+        out.written = decision.written
+        if decision.writesContent {
+            // §8.1 的幂等归一（来源行可能是 V11 回填的老行）；三个字段连同 source 的那一枚
+            // 组戳一起写，**照抄，绝不铸 `now`**（D33 / §8.4.1 第五条）。
+            let normalized = LocalStore.normalizedRule(host: source.host,
+                                                       pathPrefix: source.pathPrefix)
+            row.host = normalized.host
+            row.pathPrefix = normalized.pathPrefix
+            row.askBeforeRouting = source.askBeforeRouting
+            row.contentUpdatedDate = source.contentUpdatedDate
+        }
+        if decision.writesTarget, let spaceId = source.targetSpaceId {
+            if row.spaceId != spaceId {
+                out.movedFrom = row.spaceId
+                row.spaceId = spaceId
+            }
+            row.targetUpdatedDate = source.targetUpdatedDate
+        }
+        // §8.4.5：**`written > 0` 才置位**。无条件置位会给 W 留一个永不清掉的标志——它从此
+        // 永久退出静止（M2 不再收敛它）、并对每一次远端删除让位。
+        if out.written > 0, !row.pendingLocalEdit { row.pendingLocalEdit = true }
+        return out
+    }
+
     // MARK: - 落地批次入口（R-exec-2）
 
     /// 一页远端落地的**全部**操作，一个写块、一个事务（§5.5）。
@@ -717,7 +801,9 @@ extension LocalStore {
     /// 事务体。分出来只为可读性，没有第二个调用方。块内**五件事**，顺序固定（8b-2 在 Task 8
     /// 的四件事里插了第 ③ 件）：
     /// 1. **一次**把整张表（含软删行）按 `syncId` 建索引；
-    /// 2. 按序执行每个 op——`.create` / `.update` / `.move` 都落到 `upsertURLRuleBody`（行不存在就建，
+    /// 2. 按序执行每个 op（`URLRuleApplyBatch.init` 已经按四相排好，这里**不再重排**）——
+    ///    `.transfer`（第三相，8b-3）先做 R-M3-4a-102 的「来源行未变」复查再写伙伴行；
+    ///    `.create` / `.update` / `.move` 都落到 `upsertURLRuleBody`（行不存在就建，
     ///    两个远端戳照抄载荷，命中软删行就在同一次行写里清 `deletedDate` / `mergePartnerSyncId`），
     ///    `.reorder` 只写 `sortOrder`，`.delete` 走 `hardDeleteURLRuleBody`（真删）；`pendingLocalEdit`
     ///    一个字节都不碰；
@@ -737,6 +823,15 @@ extension LocalStore {
         var outcome = URLRuleBatchOutcome()
         var index = try urlRuleTableIndex(in: context)
         var touchedBuckets: Set<String> = []
+        // R-M3-4a-102 / 裁定 11：**只有 (α) 那一对**要做「来源行未变」复查。判别标准写死成
+        // 「这条 `.transfer` 的同身份 `.delete` 在不在同一批里」——`plan` 的 (α) 支产出这一对、
+        // (β) 支只产出 `.transfer`，两者在 op 列表上结构可分。
+        // (β) 的取值源是本轮那条入站 `merged`、不是本机行，拿本机行去比必然不等 ⇒ 把复查加到
+        // 每一条 `.transfer` 上的实现会让 (β) 永远转移不成、终态两条规则。
+        var alphaSources: Set<String> = []
+        for op in ops {
+            if case .delete(let syncId) = op { alphaSources.insert(syncId) }
+        }
 
         /// 一条 op 的执行。第 ② 步与第 ④ 步（尾钩）**共用它**：M2 的三条与落地那五条在同一个
         /// 事务、同一份索引上写，两处各写一份的实现迟早在记桶上分叉。
@@ -776,8 +871,33 @@ extension LocalStore {
                 }
                 touchedBuckets.insert(row.spaceId)
             case .delete(let syncId):
+                // R-M3-4a-102：(α) 的复查不过 ⇒ `.transfer` 与**同身份的 `.delete`** 两条
+                // op 都不执行（相序保证 `.transfer` 已经先跑过、集合已经填好）。
+                guard !outcome.deferredTombstones.contains(syncId) else { return }
                 if let bucket = try hardDeleteURLRuleBody(syncId: syncId, index: &index, in: context) {
                     touchedBuckets.insert(bucket)
+                }
+            case .transfer(let fromSyncId, let toSyncId, let source, let stamps):
+                if alphaSources.contains(fromSyncId),
+                   !URLRuleKind.transferSourceUnchanged(
+                       row: index.bySyncId[fromSyncId].map(Self.projectURLRule), source: source) {
+                    // 来源行在 pre-pass 与这次事务之间被用户改过（或已不在 / 已软删）⇒
+                    // W 一个字节不写、X 一个字节不写、`transferred` 不加，身份交回引擎按
+                    // `plan.parkedTombstones` 停放，下一页 / 下一轮拿**新**取值重判。
+                    outcome.deferredTombstones.insert(fromSyncId)
+                    return
+                }
+                let result = try transferURLRuleEditBody(toSyncId: toSyncId, source: source,
+                                                         targetEffectiveStamps: stamps,
+                                                         index: &index, in: context)
+                if result.written > 0 { outcome.transferred += 1 }
+                if result.contentSuperseded { outcome.transferSupersededByDelete += 1 }
+                // 目标单元赢下 ⇒ W 换了桶 ⇒ 源桶与目标桶都进重排定义域（R-M3-4a-3）。
+                if let movedFrom = result.movedFrom {
+                    touchedBuckets.insert(movedFrom)
+                    if let bucket = index.bySyncId[toSyncId]?.spaceId {
+                        touchedBuckets.insert(bucket)
+                    }
                 }
             case .rekey(let localId, let syncId, let values):
                 // §8.4.2 M1：先 re-key（只写 `syncId`），带 `values` 时同一个写块里紧接着按**新**

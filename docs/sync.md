@@ -73,7 +73,31 @@ written" restart window falls on them.
   entities the engine had to normalize before landing (those are republished);
   `owner_moved` counts the target changes that survived batch merging.
   `adopted`, `collapsed`, `transferred` and `yield_no_partner` are filled by the
-  claim, collapse and transfer passes and stay zero until those land.
+  claim, collapse and yield passes. `transferred` counts the transfers that
+  wrote at least one merge unit; a transfer that loses every unit writes nothing
+  and is not counted. `yield_no_partner` counts the yields whose rule had no
+  merge partner at all — it is how a legitimate leftover is told apart from a
+  defect, so it is never inferred from `resurrected`.
+- An inbound tombstone for a rule that still holds an unpublished user edit does
+  not hard-delete the row. If the local merge partner of that rule is at rest,
+  the edit is transferred onto the partner per merge unit (content group and
+  target, each with its own stamp, the target side comparing against
+  `max(row stamp, effective account stamp)`) and only then is the row hard
+  deleted; both operations run in the same landing transaction, and the
+  transaction re-reads the source row first — if the user saved it between the
+  pre-pass and the transaction, neither operation runs and the tombstone is
+  parked for the next round. If the partner exists but is not at rest, the
+  tombstone is parked. If there is no partner row at all, the rule yields: the
+  row stays, both baselines are cleared, `deletedAtMs` is written and kept, and
+  the end of the publish segment republishes the rule from that tombstone's
+  version. Every publish segment re-checks that admission, because the
+  republication can fail or be interrupted; a rule whose target Space has since
+  gone hidden or purged has the yield revoked and the row hard-deleted instead.
+  Bookmarks and pinned tabs never yield: the switch is off for those kinds.
+- While a rule's inbound entity is parked because its merge partner is not at
+  rest, the round's diff emits no tombstone for it and writes nothing at all
+  into its cursor. Both conjuncts matter: an owner-shaped park is not covered by
+  the guard, and a plain collapse loser never carries a parked entity.
 - Local rule edits reach the engine through the store-level
   `urlRuleChangesPublisher()` (debounced in the store, deduplicated on value
   snapshots), never through the UI publisher. The coordinator subscribes with a

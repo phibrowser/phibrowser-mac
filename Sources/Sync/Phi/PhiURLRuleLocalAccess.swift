@@ -97,7 +97,25 @@ enum URLRuleSyncOp: Equatable, Sendable {
     case setContentGroup(syncId: String, host: String, pathPrefix: String?,
                          ask: Bool, contentUpdatedDate: Date)
 
-    /// 这条 op 指向的账户级身份（`.rekey` 是它要写上去的**新**身份）。
+    // MARK: 8b-3：§8.4.4 的编辑转移。**第三相**（R-M3-4a-93），排在 `.update` 之后、
+    // `.delete` 之前。
+
+    /// §8.4.4 的 M3 编辑转移：把 `fromSyncId` 那一行手上那次还没上账户的用户意图，按**三个
+    /// 合并单元**与 `toSyncId` 此刻的值比 LWW 搬过去，**只写赢下的整组**。
+    ///
+    /// **四个标签，`fromSyncId` 是 R-M3-4a-102 加的**：事务内的「来源行未变」复查要重读 X 那
+    /// 一行并与 `source` 比对，执行器手上必须有 X 的 `syncId`（身份即 `syncId`，R-M3-4a-23）。
+    /// 那次复查**只加在 (α) 那一对上**——判别标准是「这条 `.transfer` 的同身份 `.delete` 在不
+    /// 在同一批里」（(β) 只产出 `.transfer`，结构可分）；(β) 的取值源是本轮那条入站 `merged`、
+    /// 不是本机行，拿本机行去比必然不等 ⇒ (β) 永远转移不成、终态两条规则。
+    ///
+    /// `targetEffectiveStamps` 是 R-M3-4a-98 那一枚，由 `URLRuleApplyBatch.accountStamps` 供给；
+    /// 取不到 ⇒ 两枚按 `nil` 处理、`max` 退化成行戳。
+    case transfer(fromSyncId: String, toSyncId: String,
+                  source: RuleProjection, targetEffectiveStamps: URLRuleEffectiveStamps)
+
+    /// 这条 op 指向的账户级身份（`.rekey` 是它要写上去的**新**身份，`.transfer` 是它要写的
+    /// 那一条**目标**行）。
     var syncId: String {
         switch self {
         case .create(let values), .update(let values), .move(let values):
@@ -110,6 +128,8 @@ enum URLRuleSyncOp: Equatable, Sendable {
             return syncId
         case .setContentGroup(let syncId, _, _, _, _):
             return syncId
+        case .transfer(_, let toSyncId, _, _):
+            return toSyncId
         }
     }
 }
@@ -137,10 +157,20 @@ struct URLRuleBatchOutcome: Sendable, Equatable {
     /// **R-M3-4a-102**（8b-3 的计划裁定 11）：§8.4.4 (α) 的那一对 op（`.transfer` + 同身份的
     /// `.delete`）在事务里重读来源行、发现它与 op 带的 `source` **已经不同**（或行已不在 /
     /// 已软删）⇒ **两条 op 都不执行**，身份进这个集合。
-    /// 本任务只**声明并原样回传**（M2 自己从不填它，落地 op 的执行器填）；引擎按
-    /// `plan.parkedTombstones` 记账（游标 `pendingTombstone = true`、行不动），**绝不**进
-    /// `outcome.landed` / `outcome.deleted`。书签与 pin 恒空集。
+    /// 落地 op 的执行器填（M2 自己从不填它）；引擎按 `plan.parkedTombstones` 记账
+    /// （游标 `pendingTombstone = true`、行不动），**绝不**进 `outcome.landed` /
+    /// `outcome.deleted`。书签与 pin 恒空集。
     var deferredTombstones: Set<String> = []
+    /// §13.2 的 `transferred`（8b-3 / 裁定 9）：本批里**真的写进了 ≥ 1 个合并单元**的
+    /// `.transfer` 条数。零单元的转移不计（§8.4.5），也不置位 `pendingLocalEdit`。
+    var transferred = 0
+    /// §13.3：本批的 `.transfer` 里**内容组输掉**（整组不转移）的条数，计进
+    /// `superseded_by_delete`。
+    ///
+    /// **判据在事务里求值、不在 plan 闭包里**：那一格要拿 `max(W 的行戳, W 的有效账户戳)` 去
+    /// 比（R-M3-4a-98），而 plan 闭包手上既没有本页那条 `.update(W)` 落地之后的值、也没有那张
+    /// 有效账户戳表——CASE M-34 的变体 (b) 与 (c) 各钉住其中一半。
+    var transferSupersededByDelete = 0
 }
 
 /// 一页远端落地要施加的**全部**规则操作，已按 §5.5 合并与排序。
@@ -170,9 +200,13 @@ struct URLRuleApplyBatch {
     ///    的那一种；有 `.update` 的按 ① 留 `.update`）。把 `.move` 一律当 rehome 会白
     ///    重排一个这一页根本没被碰过的桶。
     ///
-    /// 相序：① `create` / `update` / `move` / `reorder` ② `delete`；相内**稳定**（保持传入
-    /// 次序，按身份首次出现的位置）。规则之间没有父子，所以相序只为让「被触及的桶」这份
-    /// 记账有确定的求值点。
+    /// 相序（R-M3-4a-93）：① `create` / `update` / `move` / `reorder` ② **`transfer`**
+    /// ③ `delete`；相内**稳定**（保持传入次序，按身份首次出现的位置）。
+    ///
+    /// `.transfer` 夹在中间那个窗口里，两侧都是硬的：它的每单元 LWW 要跟 W 的**当前值**比，
+    /// 而「当前值」只有在本页那条普通 `.update(W)` 已经落下去之后才是真的当前值（CASE M-34）；
+    /// 它又必须赶在 X 的硬删之前，否则那次编辑无处可捞。8b-2 那三条 M2 op 同在这个窗口里，
+    /// 与它互不相干（它们碰的是 M2 的败者行，`.transfer` 碰的是 M3 的伙伴行）。
     init(unordered: [URLRuleSyncOp], currentSpaceIds: [String: String] = [:],
          mergeTail: URLRuleMergeTail? = nil,
          accountStamps: [String: URLRuleEffectiveStamps] = [:]) {
@@ -201,10 +235,16 @@ struct URLRuleApplyBatch {
         // 兄弟，也不参与 `.move` 的降级。按传入次序原样穿过，相序排在 `.delete` **之前**
         // （§8.4.3 的 (b) 软删要看得见一条本页稍后才被硬删的行）。
         var passthrough: [URLRuleSyncOp] = []
+        // 8b-3 的 `.transfer` 同样**不进槽**：它写的是**另一条**身份（`toSyncId`）的行，
+        // 与同 `syncId` 的落地写没有可合并的关系，也不参与 `.move` 的降级。自成一相。
+        var transfers: [URLRuleSyncOp] = []
         for op in unordered {
             switch op {
             case .softDelete, .setMergePartner, .setContentGroup:
                 passthrough.append(op)
+                continue
+            case .transfer:
+                transfers.append(op)
                 continue
             case .create, .update, .move, .reorder, .delete, .rekey:
                 break
@@ -227,7 +267,7 @@ struct URLRuleApplyBatch {
             case .reorder(_, let spaceId, let sortOrder): slots[syncId]?.reorder = (spaceId, sortOrder)
             case .delete: slots[syncId]?.delete = true
             case .rekey(let localId, _, let values): slots[syncId]?.rekey = (localId, values)
-            case .softDelete, .setMergePartner, .setContentGroup: continue   // 上面已经穿过
+            case .softDelete, .setMergePartner, .setContentGroup, .transfer: continue   // 上面已经穿过
             }
         }
 
@@ -266,9 +306,10 @@ struct URLRuleApplyBatch {
                 merged = .reorder(syncId: syncId, spaceId: reorder.spaceId, sortOrder: reorder.sortOrder)
             }
             if slot.delete {
-                // 同一条身份不会既有一条升级写又有一条 `.delete`。(α) 的 `.transfer` + `.delete`
-                // 组合是 Task 8b-3 的，届时这条断言随之放宽。相序让 `.delete` 落在最后，所以
-                // 真的撞上时终态仍是确定的（删）。
+                // 同一条身份不会既有一条升级写又有一条 `.delete`。§8.4.4 (α) 的
+                // `.transfer` + `.delete` 那一对**不落进这里**：`.transfer` 根本不进槽
+                // （它写的是伙伴 W 那一行），所以这条断言对 8b-3 逐字有效。相序让 `.delete`
+                // 落在最后，所以真的撞上时终态仍是确定的（删）。
                 assert(merged == nil, "url rule batch: identity \(syncId.prefix(8)) has both an upgrade and a delete")
                 deletes.append(.delete(syncId: syncId))
             }
@@ -276,7 +317,7 @@ struct URLRuleApplyBatch {
                 upgrades.append(merged)
             }
         }
-        ops = upgrades + passthrough + deletes
+        ops = upgrades + transfers + passthrough + deletes
     }
 }
 
@@ -395,9 +436,90 @@ protocol PhiURLRuleLocalAccess: AnyObject {
     /// `BookmarkSyncRoundState.noteDeletedRows`。**让位的身份绝不进这里**（R-M3-4a-61）。
     func noteDeletedRows(_ syncIds: Set<String>)
 
+    // MARK: D30（8b-3）
+
+    /// §5.6 / R-M3-4a-73：三步查找次序走完拿不出静止 W、**而这一组确实有伙伴行**的身份
+    /// （RR10-3）。与「根本没有伙伴」必须分开：一张字典用「键不在」表示两件事，会让实现在
+    /// 伙伴不静止时走 (ii) / A9 原语义，于是终态两条签名不同的规则。
+    ///
+    /// **纯函数**：入参是游标表 + 本机行 + resolver，不读任何轮次状态。**唯一实现在下面那个
+    /// 协议扩展里**，`AccountPhiURLRuleAccess` 与 `FakeURLRuleAccess` 都不覆盖它——RR12-2 要的
+    /// 「两个调用方是同一个函数」因此在结构上不可能分叉。
+    ///
+    /// **两个调用方**：`plan` 的 pre-pass（`rows` = **本页**那一次
+    /// `allURLRulesIncludingDeleted()`，第四个实参是本页到达的 tombstone 集）与**发布段**
+    /// （`rows` = **轮末**那一次，同样**含软删行**；它跑在页循环之外，按定义不带任何本页到达，
+    /// 所以第四个实参传**空集**）。
+    ///
+    /// **`rows` 取 `allURLRules()` 的实现必须判红**：(β) 的 X 结构性是软删态的，默认读口按
+    /// R-M3-4a-51 过滤软删 ⇒ 这个集合恒空 ⇒ 守卫形同虚设。
+    func partnerNotAtRest(table: PhiOwnedItemTable, rows: [PhiLocalURLRule],
+                          resolve: OwnerResolver,
+                          tombstonesThisPage: Set<String>) -> Set<String>
+
     // **没有、也不许有 `clearAllSyncIds`**（§4.4 末段 / R-M3-4a-23）：规则的 `syncId` 在插入点
     // 铸造，自撤销时清掉它，重新加入后账户上那些旧身份没有任何设备认领 ⇒ 孤儿实体。缺席本身
     // 就是那道防线——协调器的 `clearAllSyncIds` 闭包只扩到书签。
+}
+
+// MARK: - `partnerNotAtRest` 的**唯一**实现（8b-3 / 控制者裁定）
+
+extension PhiURLRuleLocalAccess {
+    /// 三步查找次序（RR10-7）的第三个结局，摊开写：
+    /// ① 行上的 `mergePartnerSyncId` 指到一条**静止**活行 ⇒ 那就是 W，**不进本集合**；
+    /// ② 指针取不到、或指到的行**存在但不静止** ⇒ 退到兜底支「当前签名 == `baselineSignature(X)`」
+    ///    找一条**静止**活行，找到 ⇒ 那就是 W，**不进本集合**；
+    /// ③ 两步都拿不出静止的 W ⇒ 再问一次「这一组**有没有伙伴行**」：指针指到的那一条**活着**，
+    ///    或兜底组里有另一条活行 ⇒ 进本集合（停放，下一轮重判）；两者都没有 ⇒ 不进
+    ///    （那是「根本没有伙伴」⇒ (ii) / A9 原语义）。
+    ///
+    /// ①②两步与 `mergePartners(table:resolve:tombstonesThisPage:)` **调的是同一份实现**
+    /// （`URLRuleSignatureQueries.mergePartners`），所以「谁算 W」两处不可能分叉；本函数只补
+    /// 第 ③ 步那一次分流。
+    ///
+    /// **第 2 步的「指针那条不静止也要退到兜底支」是硬的**：锚点完全可能是一条**永远不会静止**
+    /// 的行（目标 Space 转 `hidden` ⇒ 失去签名 ⇒「有签名」那一项永假，而行还活着），不退回
+    /// 兜底支就把上界抬到 §8.4.7 那条 30 天。停放的判据是「这一组此刻拿不出规范记录」，不是
+    /// 「指针那一条此刻不合格」。
+    ///
+    /// **伙伴行必须是活行**：一条软删的伙伴按静止判据第 7 项永远静止不了，把它算成「有伙伴」
+    /// 会让 X 无界地停放下去。
+    func partnerNotAtRest(table: PhiOwnedItemTable, rows: [PhiLocalURLRule],
+                          resolve: OwnerResolver,
+                          tombstonesThisPage: Set<String>) -> Set<String> {
+        let normalize = URLRuleSignatureQueries.normalize
+        let partners = URLRuleSignatureQueries.mergePartners(
+            rows: rows, table: table, resolve: resolve,
+            tombstonesThisPage: tombstonesThisPage)
+        // 活行的两张索引：按身份、按**当前**签名。兜底支问的是「组里还有没有别的活行」。
+        var liveBySyncId: [String: PhiLocalURLRule] = [:]
+        var liveBySignature: [RuleSignature: [String]] = [:]
+        for row in rows where row.deletedDate == nil {
+            guard let syncId = row.syncId else { continue }
+            liveBySyncId[syncId] = row
+            guard let signature = URLRuleKind.signature(of: row, resolve: resolve,
+                                                        normalize: normalize) else { continue }
+            liveBySignature[signature, default: []].append(syncId)
+        }
+        var out: Set<String> = []
+        // X 的定义域**含软删行**（RR8-1）：(β) 落点上的 X 按定义是软删态的。
+        for row in rows {
+            guard let identity = row.syncId, partners[identity] == nil else { continue }
+            var hasPartnerRow = false
+            if let pointer = row.mergePartnerSyncId, pointer != identity,
+               liveBySyncId[pointer] != nil {
+                hasPartnerRow = true
+            }
+            if !hasPartnerRow,
+               let baseline = URLRuleKind.baselineSignature(identity: identity, table: table,
+                                                            resolve: resolve, normalize: normalize),
+               liveBySignature[baseline]?.contains(where: { $0 != identity }) == true {
+                hasPartnerRow = true
+            }
+            if hasPartnerRow { out.insert(identity) }
+        }
+        return out
+    }
 }
 
 // MARK: - D30 的四个只读查询（生产实现与假件共用同一份逻辑）

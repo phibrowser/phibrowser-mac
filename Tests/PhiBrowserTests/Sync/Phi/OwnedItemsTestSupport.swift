@@ -537,17 +537,25 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             }
         }
         var touchedBuckets: Set<String> = []
-        for op in batch.ops {
-            land(op, touchedBuckets: &touchedBuckets)
-        }
         var outcome = URLRuleBatchOutcome()
+        // 8b-3 / R-M3-4a-102：**只有 (α) 那一对**做「来源行未变」复查，判别标准与生产 body
+        // 逐字相同——「这条 `.transfer` 的同身份 `.delete` 在不在同一批里」。
+        var alphaSources: Set<String> = []
+        for op in batch.ops {
+            if case .delete(let syncId) = op { alphaSources.insert(syncId) }
+        }
+        for op in batch.ops {
+            land(op, touchedBuckets: &touchedBuckets, outcome: &outcome,
+                 alphaSources: alphaSources)
+        }
         // 尾钩：交给它的是此刻**含软删行**的那份投影（寻址要它），**排在稠密重排之前**——
         // 排在之后的实现会在败者离开的桶里留下一个空洞下标。
         if let mergeTail = batch.mergeTail {
             let result = mergeTail.evaluate(Self.ordered(rows))
             lastMergeOps = result.ops
             for op in result.ops {
-                land(op, touchedBuckets: &touchedBuckets)
+                land(op, touchedBuckets: &touchedBuckets, outcome: &outcome,
+                     alphaSources: alphaSources)
             }
             touchedBuckets.formUnion(result.touchedBuckets)
             outcome.collapsed = result.collapsed
@@ -664,6 +672,26 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows[index].pendingLocalEdit = true
     }
 
+    /// 同一条入口的**改目标**半边（`LocalStore.applyURLRuleEditsBody` 第 5 / 9 步）：
+    /// 目标真的变了 ⇒ 写 `spaceId` + `targetUpdatedDate` + `pendingLocalEdit = true`；
+    /// 相同 ⇒ 一个字节都不写、也不置位。`deletedIds` 那一半是 `applyEditorDelete`。
+    func applyEditorRetarget(syncId: String, toSpaceId: String, at targetUpdatedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil, rows[index].spaceId != toSpaceId else { return }
+        rows[index].spaceId = toSpaceId
+        rows[index].targetUpdatedDate = targetUpdatedDate
+        rows[index].pendingLocalEdit = true
+    }
+
+    /// 编辑器删除集那一半（第 7 步）：**软删**，`pendingLocalEdit` 一个字节都不碰
+    /// （删除不是编辑，R-M3-4a-69）；`mergePartnerSyncId` 由调用方另行安排（M2 那条路径是
+    /// `.softDelete` op）。
+    func applyEditorDelete(syncId: String, at deletedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        rows[index].deletedDate = deletedDate
+    }
+
     private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {
         rows.sorted { ($0.spaceId, $0.sortOrder, $0.id) < ($1.spaceId, $1.sortOrder, $1.id) }
     }
@@ -673,13 +701,17 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     /// （生产 body `upsertURLRuleBody` 同一条判据，RR10-8：落地不动活行的合并伙伴），不命中就
     /// 建行；`.reorder` 只写 `sortOrder`；`.delete` 真删；`.rekey` 按 `id` 改 `syncId`、带
     /// `values` 时紧接着走 `.update` 那一支。`pendingLocalEdit` 一个字节不碰。
-    private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>) {
+    private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>,
+                      outcome: inout URLRuleBatchOutcome, alphaSources: Set<String>) {
         switch op {
         case .rekey(let localId, let syncId, let values):
             guard let index = rows.firstIndex(where: { $0.id == localId }) else { return }
             rows[index].syncId = syncId
             touchedBuckets.insert(rows[index].spaceId)
-            if let values { land(.update(values), touchedBuckets: &touchedBuckets) }
+            if let values {
+                land(.update(values), touchedBuckets: &touchedBuckets, outcome: &outcome,
+                     alphaSources: alphaSources)
+            }
         case .create(let values), .update(let values), .move(let values):
             let existing = rows.firstIndex { $0.syncId == values.syncId }
             let sourceBucket = existing.map { rows[$0].spaceId }
@@ -729,10 +761,51 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             rows[index].sortOrder = sortOrder
             touchedBuckets.insert(rows[index].spaceId)
         case .delete(let syncId):
+            // R-M3-4a-102：(α) 的复查不过 ⇒ `.transfer` 与**同身份的 `.delete`** 两条都不执行
+            // （相序保证 `.transfer` 已经先跑过、集合已经填好）。
+            guard !outcome.deferredTombstones.contains(syncId) else { return }
             for row in rows where row.syncId == syncId {
                 touchedBuckets.insert(row.spaceId)
             }
             rows.removeAll { $0.syncId == syncId }
+        // 8b-3：§8.4.4 的编辑转移。与生产 body 共用 `URLRuleKind` 那两个纯判定函数
+        // （`transferSourceUnchanged` / `transferDecision`），两处各写一份的实现迟早在「谁赢」
+        // 上分叉。
+        case .transfer(let fromSyncId, let toSyncId, let source, let stamps):
+            if alphaSources.contains(fromSyncId),
+               !URLRuleKind.transferSourceUnchanged(
+                   row: rows.first(where: { $0.syncId == fromSyncId }), source: source) {
+                outcome.deferredTombstones.insert(fromSyncId)
+                return
+            }
+            guard let index = rows.firstIndex(where: { $0.syncId == toSyncId }) else {
+                outcome.transferSupersededByDelete += 1
+                return
+            }
+            let decision = URLRuleKind.transferDecision(target: rows[index], source: source,
+                                                        targetEffectiveStamps: stamps)
+            if decision.writesContent {
+                let normalized = LocalStore.normalizedRule(host: source.host,
+                                                           pathPrefix: source.pathPrefix)
+                rows[index].host = normalized.host
+                rows[index].pathPrefix = normalized.pathPrefix
+                rows[index].askBeforeRouting = source.askBeforeRouting
+                rows[index].contentUpdatedDate = source.contentUpdatedDate
+            }
+            if decision.writesTarget, let spaceId = source.targetSpaceId {
+                if rows[index].spaceId != spaceId {
+                    touchedBuckets.insert(rows[index].spaceId)
+                    rows[index].spaceId = spaceId
+                    touchedBuckets.insert(spaceId)
+                }
+                rows[index].targetUpdatedDate = source.targetUpdatedDate
+            }
+            // §8.4.5：**`written > 0` 才置位**、才计一次 `transferred`。
+            if decision.written > 0 {
+                rows[index].pendingLocalEdit = true
+                outcome.transferred += 1
+            }
+            if decision.contentSuperseded { outcome.transferSupersededByDelete += 1 }
         // 8b-2 的三条，与生产 body 的三个原语逐字同形（计划裁定五）：按 `syncId` 在**含软删行**
         // 的定义域里寻址、找不到零写、值相同零写、**一律不碰 `pendingLocalEdit`**。
         case .softDelete(let syncId, let mergePartnerSyncId):

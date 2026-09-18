@@ -96,6 +96,43 @@ enum URLRuleKind: OwnedItemKind {
         entity.targetSpaceUuid.stringValue
     }
 
+    // MARK: - §8.4.4 的让位（8b-3）
+
+    /// §6.1：规则这一 kind **让位**——一条入站 tombstone 撞上「本机手上还有没上账户的用户
+    /// 意图」时不硬删，而是把那次编辑转移到合并后的那一条（(i)）或把这一条重新发回账户（(ii)）。
+    /// 书签与 pin 本里程碑走协议默认实现的 `false`（§14.1）。
+    static var tombstoneYieldsToLocalEdits: Bool { true }
+
+    /// §8.4.4 的转移取值源。两个落点喂进来的实体不同（(α) 是 X 的本机行投影，(β) 是本轮的
+    /// `merged`），本函数对两者是**同一份**折算。
+    ///
+    /// `targetSpaceId` 是同一个账户级目标反查出的**本机** Space id（裁定 3）：落地写的是
+    /// `SpaceURLRule.spaceId` 这一本机列，而 `LocalStore` 不认识任何账户映射。保留常量
+    /// `incognito` 在 `resolve.localSpaceId` 里不映射（R-M3-4a-7），所以它单独反查一次。
+    /// **host 为空 ⇒ nil**（fail-closed：算不出取值的身份由调用方按 (ii) 处置）。
+    static func transferSource(of entity: Phi_PhiURLRuleEntity,
+                               resolve: OwnerResolver) -> RuleProjection? {
+        let host = entity.host.stringValue
+        guard !host.isEmpty else { return nil }
+        let wirePath = entity.pathPrefix.stringValue
+        let target = entity.targetSpaceUuid.stringValue
+        return RuleProjection(host: host,
+                              // 线上 `""` ⇔ 本机 nil（§8.1）。
+                              pathPrefix: wirePath.isEmpty ? nil : wirePath,
+                              askBeforeRouting: entity.ask.boolValue,
+                              contentUpdatedDate: stampDate(entity.host.updatedAtMs),
+                              targetOwnerUuid: target,
+                              targetSpaceId: localSpaceId(of: target, resolve: resolve),
+                              targetUpdatedDate: stampDate(entity.targetSpaceUuid.updatedAtMs))
+    }
+
+    /// 账户级目标 -> 本机 `spaceId`。与 `landURLRules` 里那个同名局部函数逐字同一条规则。
+    private static func localSpaceId(of target: String, resolve: OwnerResolver) -> String? {
+        guard !target.isEmpty else { return nil }
+        if target == SyncableSpaces.incognitoSpaceUuid { return SpaceManager.incognitoRuleTargetId }
+        return resolve.localSpaceId(target)
+    }
+
     // MARK: - 出站投影与盖戳（§8.2）
 
     /// 本机行 → 线上实体，**不盖戳也不填 rank**。规则没有父，`parentIdentity` 被忽略；
@@ -566,6 +603,20 @@ struct URLRuleConvergence: Equatable {
     var touchedBuckets: Set<String> = []
 }
 
+/// §8.4.4 的一次编辑转移**判定结果**（8b-3 / 裁定 9）。纯值：`LocalStore` 的落地 body 与
+/// `FakeURLRuleAccess` 都按它写，两处各写一份的实现迟早在「谁赢」上分叉。
+struct URLRuleTransferDecision: Equatable {
+    /// 内容组整组（`host` / `pathPrefix` / `ask` + 它们共用的那一枚戳）赢下 ⇒ 真。
+    var writesContent = false
+    /// 目标单元（`spaceId` + 目标戳）赢下 ⇒ 真。
+    var writesTarget = false
+    /// 真的写下去的单元数（0…2）。`> 0` 才置位 `pendingLocalEdit`、才计一次 `transferred`
+    /// （§8.4.5：零字段的转移不该给 W 留一个永不清掉的标志）。
+    var written: Int { (writesContent ? 1 : 0) + (writesTarget ? 1 : 0) }
+    /// 内容组**输掉**（整组不转移）⇒ 计一次 `superseded_by_delete`（§13.3）。
+    var contentSuperseded: Bool { !writesContent }
+}
+
 /// 尾钩交回的全部东西。
 struct URLRuleMergeResult {
     var ops: [URLRuleSyncOp] = []
@@ -604,7 +655,10 @@ extension URLRuleKind {
             switch step.kind {
             case .claim, .create, .move, .update:
                 out.insert(step.identity)
-            case .delete:
+            case .transfer, .delete:
+                // `.transfer` **不在里面**：它写的是 W 的本机行，不是「账户上这条实体在本机
+                // 有了代表」；(β) 那一半交回 `outcome.landed` 只为清 `pendingApply`（裁定 8），
+                // 所以 `outcome.landed` 是本集合的超集，两者不可互换（RR12-6）。
                 continue
             }
         }
@@ -615,20 +669,98 @@ extension URLRuleKind {
     /// 要从本页 M2 第 2 步的候选集里减掉（计划裁定六 (1)）。与 `landedIdentities` 同一份
     /// step 列表、同一个 `land` 闭包里算，**不开新通道**。
     ///
-    /// **今天结构性地为空**：`.transfer` 那一相由 8b-3 加进 `StepKind`（本任务不改那个枚举），
-    /// 所以此刻没有任何 step 落进它。减法本身已经接上（`land` 闭包在调 `mergePass` 之前就减），
-    /// 8b-3 补上那个 case 时这个 `switch` 会当场编译不过 —— 那正是它该被想起来的时刻。
-    ///
     /// **精确集**是「`transferURLRuleEditBody` 真的写进了 ≥ 1 个单元」的那些目标；本函数是它的
     /// **纯函数超集**（全部 `.transfer` 目标）。两者都安全：超集最坏让那一组**本页**不收敛，
-    /// 下一页再收。
+    /// 下一页再收。少了这条减法，本页尾部的 M2 会把刚转移进 W 的那次编辑按**落地前**的戳
+    /// 覆写掉（CASE M-33）。
     static func transferTargets(in steps: [OwnedItemApplyStep]) -> Set<String> {
         Set(steps.compactMap { step -> String? in
             switch step.kind {
+            case .transfer(_, let to):
+                return to
             case .claim, .create, .move, .update, .delete:
                 return nil
             }
         })
+    }
+
+    /// 毫秒粒度的可比形式（R-M3-4a-102 / 裁定 11）：戳在账户上是 ms、在行上是 `Date`，
+    /// 直接比 `Date` 会被亚毫秒抖动判成「变了」⇒ 白停放一轮。两侧都先过它再比。
+    static func stampMilliseconds(_ date: Date?) -> Int64? {
+        date.map { milliseconds($0) }
+    }
+
+    /// R-M3-4a-102 / 裁定 11 的**事务内**复查：X 那一行与 op 里带的 `source` 还是不是同一份。
+    ///
+    /// **为什么不是六格原样相等**（本任务的实现裁定，写死在这里）：`source` 的两枚戳来自
+    /// `context.localProjections` 那份**带基线**的投影——一个单元的取值与基线相同时，
+    /// `stamp(_:baseline:…)` 沿用的是**基线**那一枚戳，而不是行上那一列（行上那一列完全
+    /// 可能是 `nil`）。拿行上的列去和它比，M-12 的 (i) 支（只改了目标、内容组没动）每一轮
+    /// 都会被判成「变了」⇒ 永久停放，而那正是这条复查**不该**挡的形状。
+    ///
+    /// 所以判据是两个合取项，逐条对应一次真实的用户 Save 会留下的痕迹：
+    /// ① **四个取值逐格相等**（`host` / `pathPrefix` / `askBeforeRouting` / `spaceId`）——
+    ///    编辑器那条写路径只在某个单元**真的变了**时才落写（`applyURLRuleEditsBody` 第 4 / 5
+    ///    步「三个都相同 ⇒ 一个字节都不写」），所以任何一次有效的 Save 必然改掉其中一格；
+    /// ② 行上那两枚编辑戳**都不新于** `source` 手上那两枚（毫秒粒度）——Save 把它们写成
+    ///    `now`，于是「戳往前跳了」是同一件事的第二个签名（A→B→A 那种净值不变的两次 Save
+    ///    由它兜住）。
+    ///
+    /// **行已不在、或 `deletedDate != nil` ⇒ 一律算「变了」**：M2 可能刚在同一个事务的尾钩里
+    /// 把 X 软删掉（它是败者），而软删之后那条 tombstone 该走的是 (β)、不是 (α)。
+    static func transferSourceUnchanged(row: PhiLocalURLRule?, source: RuleProjection) -> Bool {
+        guard let row, row.deletedDate == nil else { return false }
+        let normalize = mergeNormalize
+        let rowContent = normalize(row.host, row.pathPrefix)
+        let sourceContent = normalize(source.host, source.pathPrefix)
+        guard rowContent.host == sourceContent.host,
+              rowContent.pathPrefix == sourceContent.pathPrefix,
+              row.askBeforeRouting == source.askBeforeRouting,
+              row.spaceId == source.targetSpaceId else { return false }
+        if let rowStamp = stampMilliseconds(row.contentUpdatedDate),
+           rowStamp > (stampMilliseconds(source.contentUpdatedDate) ?? Int64.min) {
+            return false
+        }
+        if let rowStamp = stampMilliseconds(row.targetUpdatedDate),
+           rowStamp > (stampMilliseconds(source.targetUpdatedDate) ?? Int64.min) {
+            return false
+        }
+        return true
+    }
+
+    /// §8.4.4 的转移按**三个合并单元**与 W 此刻的值比 LWW，**只写赢下的整组**（裁定 9）。
+    ///
+    /// **W 那一侧的戳按单元取 `max(行戳, 有效账户戳)`**（R-M3-4a-98）：行戳会滞后于账户
+    /// （新行那一列是 `nil`、`rebaselined` 只刷基线不写行），只读行会把账户上更新的那份取值
+    /// 覆写掉，而本页没有到 W 的 `.update` 时 R-M3-4a-93 的相序救不了。取 `max` 而不是直接取
+    /// 有效账户戳，是因为**同一页里更早的那次转移**只写了行、没上账户。
+    ///
+    /// - **内容组**：`host` / `path_prefix` / `ask` 共用一枚戳、载体是 `host`。
+    ///   赢了**三个字段连同 source 的那一枚组戳一起**写（**照抄，绝不铸 `now`**）。
+    ///   **绝不按字段**：只转 `ask` 而写 X 的组戳会让 W 自己的 `host` / `pathPrefix` 白捡一个
+    ///   更新的戳，对端一次介于两者之间的改名被凭空打败（D15 / R-M3-4a-40）。
+    /// - **目标**：赢了把 `spaceId`（= `source.targetSpaceId`）与目标戳一起写；
+    ///   **`targetSpaceId == nil` ⇒ 这一组不转移**。
+    /// - **rank**：不比、**不转移**（rank 是位置，不是内容）。
+    /// - 缺戳一律当 `Date.distantPast`：`nil` 从不赢，缺值 ⇒ 零写（fail-closed）；平手也不赢。
+    static func transferDecision(target: PhiLocalURLRule, source: RuleProjection,
+                                 targetEffectiveStamps: URLRuleEffectiveStamps)
+        -> URLRuleTransferDecision {
+        var out = URLRuleTransferDecision()
+        let sourceContent = source.contentUpdatedDate ?? .distantPast
+        let targetContent = latest(target.contentUpdatedDate, targetEffectiveStamps.content)
+        out.writesContent = sourceContent > targetContent
+        if source.targetSpaceId != nil {
+            let sourceTarget = source.targetUpdatedDate ?? .distantPast
+            let targetTarget = latest(target.targetUpdatedDate, targetEffectiveStamps.target)
+            out.writesTarget = sourceTarget > targetTarget
+        }
+        return out
+    }
+
+    /// `max` 的两个操作数各自可以是 `nil`，两个都 `nil` ⇒ `.distantPast`。
+    private static func latest(_ left: Date?, _ right: Date?) -> Date {
+        max(left ?? .distantPast, right ?? .distantPast)
     }
 
     /// 合并单元戳的**唯一**取值源：**本页落地之后的「有效账户戳」**（R-M3-4a-94）。

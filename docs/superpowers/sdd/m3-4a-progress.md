@@ -758,3 +758,58 @@ D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（
 24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 33 条用例与全部实现改动只经
     逐行核对：每个引用到的符号都先 grep 过签名，每个 `switch URLRuleSyncOp` 都是穷举的，
     `URLRuleKind` 的四个新纯函数没有任何 actor 隔离状态。一次统一的编译检查在全部任务做完之后跑。
+
+## Task 8b-3
+
+M3 让位：(α) / (β) 两落点 + `.transfer` + `RuleProjection` + `parkedTombstones` /
+`yieldedTombstones` + (ii) 记账 + 轮末 3b 复查 + `deferredDeletions`（spec §8.4.4 / §8.4.6）。
+
+### 偏离与实现裁定（逐条写明理由）
+
+1. **事务内「来源行未变」复查的判据不是六格原样相等**（R-M3-4a-102 / 裁定 11 的实现裁定）。
+   `source` 的两枚戳来自 `context.localProjections` 那份**带基线**的投影：一个单元的取值与基线相同时，
+   `stamp(_:baseline:…)` 沿用的是**基线**那一枚戳，而不是行上那一列（行上那一列完全可能是 `nil`）。
+   拿行上的列去和它原样比，M-12 的 (i) 支（只改了目标、内容组没动 ⇒ 投影的内容组戳 = 基线戳、行上
+   `contentUpdatedDate` 是 nil）每一轮都会被判成「变了」⇒ **永久停放**，而那正是这条复查不该挡的形状。
+   落成两个合取项：① `host` / `pathPrefix` / `askBeforeRouting` / `spaceId` 四个**取值**逐格相等
+   （编辑器那条写路径只在某个单元真的变了时才落写，所以任何一次有效的 Save 必然改掉其中一格）；
+   ② 行上那两枚编辑戳**都不新于** `source` 手上那两枚（毫秒粒度，兜住 A→B→A 那种净值不变的两次 Save）。
+   行已不在 / `deletedDate != nil` 一律算「变了」。实现是纯函数
+   `URLRuleKind.transferSourceUnchanged(row:source:)`，生产落地与假件共用。
+2. **`transferred` 与转移那一格 `superseded_by_delete` 在落地事务里求值，不在 plan 闭包里**
+   （偏离计划裁定六末段的字面写法）。裁定六写的是「`source.contentUpdatedDate <= W 那一行的
+   contentUpdatedDate` ⇒ +1」，而 CASE M-34 的变体 (b) 与 (c) 都期望 `superseded_by_delete == 1`：
+   (b) 里 W 的行戳要等本页那条 `.update(W)` 落下去才是真的，(c) 里判据本来就是
+   `max(行戳, 有效账户戳)`（R-M3-4a-98）——两样东西 plan 闭包手上都没有。按行戳的字面实现在两个变体上
+   都算成 0。落法：`URLRuleBatchOutcome` 加 `transferred` / `transferSupersededByDelete` 两个计数，
+   `OwnedLandingOutcome` 加 `transferred` / `supersededByDelete`，引擎并进既有的两个计数器。
+   `yield_no_partner` 仍按裁定六留在 plan 闭包（它的两个判据都在 pre-pass 手上）。
+3. **`transferURLRuleEditBody` 的签名带 `index: inout URLRuleTableIndex`、返回
+   `URLRuleTransferResult`**（Produces 写的是 `in context:` + `-> Int`）。前者与 M2 那三个 body 同形，
+   是「一个写块只建一次索引」（R-M3-4a-80 / 56）的硬要求；后者让批次执行器拿得到「内容组输没输」与
+   「W 换没换桶」两件事，而公开的 `transferURLRuleEditThrowing(toSyncId:source:targetEffectiveStamps:)`
+   仍按 Produces 返回 `Int`（写下去的单元数）。判定本身在纯函数
+   `URLRuleKind.transferDecision(target:source:targetEffectiveStamps:)` 里，生产与假件共用。
+4. **`partnerNotAtRest` 既是协议要求、也只有协议扩展里那一份实现**（控制者裁定的形状）。①② 两步直接调
+   `URLRuleSignatureQueries.mergePartners`，所以「谁算 W」两处不可能分叉；本函数只补第 ③ 步那一次分流
+   （「这一组有没有**活的**伙伴行」——软删的伙伴按静止第 7 项永远静止不了，算成「有伙伴」就是无界停放）。
+   它对一条**本身静止**、而同组另有一条不静止活行的身份**也会返回真**：那是正确的（若它随后带着一次
+   未发布编辑撞上 tombstone，确实该停放），发布段那一侧由第二个合取项 `pendingApply != nil` 干净放行。
+5. **`URLRuleApplyBatch` 的 `.transfer` 不进槽**：它写的是**另一条**身份（`toSyncId`）的行，与同
+   `syncId` 的落地写没有可合并的关系。于是 Task 8 那条「同一身份不会既有升级写又有 `.delete`」的断言
+   对 8b-3 逐字有效，不需要放宽。相序落成 `upgrades + transfers + passthrough + deletes`。
+6. **`landBookmarks` 的 `switch step.kind` 加了一条 `.transfer: continue`**（结构性不可达：
+   `tombstoneYieldsToLocalEdits` 在书签上恒假）。pin 那一侧不是 `switch`，不用改。
+7. **`FakeURLRuleAccess` 加了两个「真实用户写」入口**：`applyEditorRetarget(syncId:toSpaceId:at:)`
+   与 `applyEditorDelete(syncId:at:)`，形状照 `LocalStore.applyURLRuleEditsBody` 的第 5 / 7 / 9 步
+   （用例不许直接戳 `rows`）。`apply(_:)` 的 `land` 多收 `outcome:` / `alphaSources:` 两个入参，
+   M-37 的注入点复用 8b-2 已经加好的 `beforeLandingTransaction`，**没有新加旋钮**。
+
+### 验证口径
+
+8. **无构建**（2026-09-18 amendment）：只经逐行核对。每个引用到的符号都先 grep 过签名；
+   `StepKind` / `URLRuleSyncOp` / `OwnedItemTombstoneResult` 上的每一个 `switch` 都重新核过穷举性
+   （`SyncableOwnedItems.phase`、`URLRuleKind.landedIdentities` / `.transferTargets`、
+   `landBookmarks`、`landURLRules`、`URLRuleApplyBatch.init`、`applyURLRuleSyncBatchBody`、
+   `FakeURLRuleAccess.land`、`URLRuleMergeTests.opSummary` / `.stepSummary`）；
+   `URLRuleKind` 的三个新纯函数没有任何 actor 隔离状态。

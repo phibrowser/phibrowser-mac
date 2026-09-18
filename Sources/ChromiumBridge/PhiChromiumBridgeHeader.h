@@ -1853,6 +1853,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Mac side. Chromium re-pulls via getPhiProfileSyncInfo:.
 - (void)notifyPhiSyncKeysChanged;
 
+// M4 routing metadata. Empty profileUUID + dataTypeIds requests account catch-up.
+// Optional for compatibility with an older polling-only framework.
+- (void)notifyPhiSyncInvalidationForAccount:(NSString *)accountId
+                              profileUUID:(NSString *)profileUUID
+                              dataTypeIds:(NSArray<NSNumber *> *)dataTypeIds
+                        excludingClientId:(NSString *)excludingClientId
+    NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:));
+
 @end
 
 @protocol WebContentWrapper <NSObject>

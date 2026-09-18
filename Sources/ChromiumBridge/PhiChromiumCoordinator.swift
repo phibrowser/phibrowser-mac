@@ -80,8 +80,9 @@ import SwiftUI
     /// subscription above can tell a real local edit from the engine writing its own
     /// `phi.sync.*` cursor into the same domain. Lives and dies with the subscription.
     private var phiSyncedSettingsSignature: Data?
-    /// Periodic GetUpdates.
-    private var phiSyncPullTimer: Timer?
+    /// M4 connection, coalesced pulls and adaptive polling, bound to this engine/account.
+    private var phiInvalidationCoordinator: PhiSyncInvalidationCoordinator?
+    private var phiSyncWakeObserver: NSObjectProtocol?
     /// `NSApplication.didBecomeActiveNotification` token for the foreground pull. `AppController`
     /// implements no `applicationDidBecomeActive(_:)`, and an observer keeps this whole feature
     /// inside one file.
@@ -154,12 +155,6 @@ import SwiftUI
     /// 同上，pin 那一条。
     private var phiPinKindLabel: String?
 
-    /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
-    /// invalidation, so this timer and the foreground pull are the only unattended triggers on
-    /// a peer, and the acceptance criterion (§9) is convergence "within seconds" — a longer
-    /// idle cadence has to wait for M4's FCM invalidation. One GetUpdates per minute per
-    /// device against a single small row is the deliberate cost.
-    private static let phiSyncPullInterval: TimeInterval = 60
     /// Coalescing window for local edits. A settings pane can write several keys in a row
     /// (and unrelated app code writes the same domain constantly), so never push per write.
     private static let phiSyncPushDebounce: TimeInterval = 2
@@ -299,7 +294,7 @@ import SwiftUI
                     // this path has to be able to start the settings scheduling too.
                     self?.startPhiSyncIfReady()
                     // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
-                    // early-returns once the timer exists).
+                    // early-returns once scheduling starts).
                     self?.refreshSpaceSyncGate()
                 }
             }
@@ -412,6 +407,35 @@ import SwiftUI
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
                                       ownedKinds: ownedKinds,
                                       faviconBackfill: faviconBackfill)
+        let builtEngine = phiSyncEngine
+        phiInvalidationCoordinator = PhiSyncInvalidationCoordinator(
+            stream: { receive in try await client.streamInvalidations(receive: receive) },
+            pull: { [weak self] demand in
+                guard let self, let engine = builtEngine,
+                      self.phiSyncEngine === engine,
+                      AccountController.shared.account?.userID == accountId,
+                      self.syncKeyController?.manager.currentARK != nil else { return }
+                let bridge = ChromiumLauncher.sharedInstance().bridge
+                var pullPhi = false
+                switch demand {
+                case .catchUp:
+                    pullPhi = true
+                    bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
+                                                       dataTypeIds: [], excludingClientId: "")
+                case .changes(let hints):
+                    for hint in hints {
+                        if hint.namespace == "chromium:phi", hint.dataTypes.contains(2000),
+                           hint.sourceClientID.isEmpty || hint.sourceClientID != deviceKeyId {
+                            pullPhi = true
+                        } else if let uuid = hint.profileUUID {
+                            bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: uuid,
+                                                               dataTypeIds: hint.dataTypes.map { NSNumber(value: $0) },
+                                                               excludingClientId: hint.sourceClientID)
+                        }
+                    }
+                }
+                if pullPhi { await engine.pullOnce() }
+            })
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in
@@ -559,7 +583,7 @@ import SwiftUI
     /// marker and a full replay of data type 2000.
     ///
     /// Driven from four places (the three observers above and the `$profiles` sink), never
-    /// from `startPhiSyncIfReady()` — that one early-returns as soon as the pull timer
+    /// from `startPhiSyncIfReady()` — that one early-returns as soon as the invalidation schedule
     /// exists, so it would open the gate at most once per process.
     ///
     /// All four of those can fire BEFORE the first `pullOnce()`, which is fine:
@@ -585,7 +609,7 @@ import SwiftUI
     }
 
     /// Starts the settings sync schedule once the key layer is actually unlocked: a login
-    /// pull, then a periodic pull, a foreground pull and a debounced push for local edits.
+    /// catch-up, then SSE hints, adaptive fallback, wake/foreground catch-up and local pushes.
     ///
     /// Idempotent — both `.loginCompleted` and `.loginStatusRefreshCompleted` reach here on a
     /// single login, and the `$profiles` subscription and `.phiAccountKeyDidUnlock` can too,
@@ -594,13 +618,19 @@ import SwiftUI
     /// each tick would be a wasted no-op.
     @MainActor
     private func startPhiSyncIfReady() {
-        guard let engine = phiSyncEngine, phiSyncPullTimer == nil else { return }
+        guard let engine = phiSyncEngine, let invalidation = phiInvalidationCoordinator,
+              !invalidation.isRunning else { return }
         guard syncKeyController?.manager.currentARK != nil else { return }
 
         phiSyncForegroundObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
+        ) { [weak invalidation] _ in
+            Task { @MainActor in invalidation?.foregroundOrWake() }
+        }
+        phiSyncWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak invalidation] _ in
+            Task { @MainActor in invalidation?.foregroundOrWake() }
         }
 
         // The value snapshot this subscription dedupes against starts at what the domain holds
@@ -620,9 +650,9 @@ import SwiftUI
                 // this subscription 2 s later. With M3-3's owned-item CONFLICT retry pulling
                 // INSIDE the round, that pair is a 2.5 s commit loop (Mac B 2026-09-14).
                 //
-                // Dropping a signal is safe: the 60 s pull timer below runs `pull(thenPush:)`,
-                // so a local edit this filter mistakes for an echo is picked up within the
-                // minute rather than lost.
+                // A fallback pull also pushes pending local changes, so a local edit this
+                // filter mistakes for an echo is recovered by the adaptive polling schedule:
+                // 60 seconds without a healthy SSE stream, 300 seconds while connected.
                 Task { @MainActor in
                     guard let self else { return }
                     let signature = SyncableSettings.valueSignature(UserDefaults.standard)
@@ -632,15 +662,7 @@ import SwiftUI
                 }
             }
 
-        // `.common`, not the default mode: `Timer.scheduledTimer` registers in `.default`
-        // only, which is suspended for the whole of a menu or scroll tracking loop — the
-        // periodic pull would then stall for as long as a menu stays open. Same construction
-        // as `KeyLayerViewModel.startPollTimer()`.
-        let pullTimer = Timer(timeInterval: Self.phiSyncPullInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
-        }
-        RunLoop.main.add(pullTimer, forMode: .common)
-        phiSyncPullTimer = pullTimer
+        invalidation.start()
 
         // Local Space edits: the SwiftData publisher (already value-deduped) plus
         // the theme/opacity notification, because those two maps live in the
@@ -689,8 +711,7 @@ import SwiftUI
             }
         }
 
-        AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
-        Task { await engine.pullOnce() }
+        AppLogInfo("[phi-sync] scheduling started with invalidation and adaptive polling")
         // The 30-day sweep runs once per engine start.
         Task { await engine.runRetentionSweep() }
     }
@@ -799,13 +820,17 @@ import SwiftUI
     /// the account actually differs.
     @MainActor
     private func stopPhiSync() {
+        phiInvalidationCoordinator?.stop()
+        phiInvalidationCoordinator = nil
+        if let observer = phiSyncWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            phiSyncWakeObserver = nil
+        }
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
         // Dropped with the subscription: the next account's preferences are a different
         // domain's worth of values, and a stale signature would swallow its first edit.
         phiSyncedSettingsSignature = nil
-        phiSyncPullTimer?.invalidate()
-        phiSyncPullTimer = nil
         if let observer = phiSyncForegroundObserver {
             NotificationCenter.default.removeObserver(observer)
             phiSyncForegroundObserver = nil
@@ -2124,11 +2149,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
         NotificationCenter.default.addObserver(
             forName: .phiAuthSessionDidChange, object: nil, queue: .main
-        ) { _ in
+        ) { [weak self] _ in
             // Optional-chained twice: the bridge may not be up yet, and an
             // older framework may not implement the selector — both degrade
             // to Chromium's 30s poll.
             ChromiumLauncher.sharedInstance().bridge?.notifyPhiAuthStateChanged?()
+            Task { @MainActor in self?.phiInvalidationCoordinator?.reconnect() }
         }
 
         // Sign-out and account switch. `.mainAccountChanged` is the minimal

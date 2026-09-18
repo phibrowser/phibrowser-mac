@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		F10920260921000000000001 /* FloatingSidebarHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10920260921000000000002 /* FloatingSidebarHostViewController.swift */; };
+		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */; };
 		0604A0F7564970C47522F57E /* AccountProfileSyncMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED3785F123750CD029A126E /* AccountProfileSyncMappingStore.swift */; };
@@ -359,6 +360,7 @@
 		994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */; };
 		9D3E693D86E067E0F7015678 /* get_updates_caller_info.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */; };
 		9DA3DAC2E9DE1CCA0D831C9A /* PhiEntityCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */; };
+		A18579F32E653D9600B9A99E /* ProfileButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18579F42E653D9600B9A99E /* ProfileButton.swift */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
 		A57A00000000000000000002 /* agent.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000001 /* agent.json */; };
 		A57A00000000000000000004 /* inputting.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000003 /* inputting.json */; };
@@ -782,6 +784,7 @@
 
 /* Begin PBXFileReference section */
 		F10920260921000000000002 /* FloatingSidebarHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingSidebarHostViewController.swift; sourceTree = "<group>"; };
+		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelfRevokeStrings.swift; path = UI/SelfRevokeStrings.swift; sourceTree = "<group>"; };
@@ -1135,6 +1138,7 @@
 		A11E00000000000000000013 /* Phi.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Phi.sdef; sourceTree = "<group>"; };
 		9940A7139B932D02382460E3 /* PhiSpaceLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSpaceLocalAccess.swift; sourceTree = "<group>"; };
 		9F0024EB323125F300021F9D /* AccountKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccountKeyManager.swift; sourceTree = "<group>"; };
+		A18579F42E653D9600B9A99E /* ProfileButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileButton.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
 		A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingListInfoPopover.swift; sourceTree = "<group>"; };
 		A57A00000000000000000001 /* agent.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = agent.json; sourceTree = "<group>"; };
@@ -1789,6 +1793,7 @@
 			children = (
 				37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */,
 				CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */,
+				A18579F42E653D9600B9A99E /* ProfileButton.swift */,
 				37C1B2FD2EE2E26F00DD4496 /* DownloadButton.swift */,
 				7A5B00A02EF0000000000002 /* MemoryButton.swift */,
 			);
@@ -3517,6 +3522,7 @@
 				3769C2E82EF9437A00A94DE0 /* ArcDataParser.swift in Sources */,
 				6A4750023B12345600000502 /* ZenDataParser.swift in Sources */,
 				CCBF8F422E653D9600B9A99E /* SidebarBottomBar.swift in Sources */,
+				A18579F32E653D9600B9A99E /* ProfileButton.swift in Sources */,
 				CCBF8F822E67F7C400B9A99E /* ExtensionManager.swift in Sources */,
 				B0F370D02E432CB8000B51F9 /* SpaceSessionController+Actions.swift in Sources */,
 				CCBF8F4C2E6543E800B9A99E /* BookmarkSectionController.swift in Sources */,

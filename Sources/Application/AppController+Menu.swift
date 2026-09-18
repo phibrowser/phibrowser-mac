@@ -1950,7 +1950,7 @@ extension AppController {
     /// affordance, so both layouts share one switcher UI. Items target the
     /// controller and reuse the Spaces menu's activate / create actions, so
     /// switching here behaves exactly like the menu-bar Spaces menu.
-    func populateSpaceSwitcherMenu(_ menu: NSMenu) {
+    func populateSpaceSwitcherMenu(_ menu: NSMenu, includesNewSpaceAction: Bool = true) {
         menu.removeAllItems()
         let activeSpaceId = currentActiveSpace()?.spaceId
 
@@ -1971,6 +1971,7 @@ extension AppController {
             menu.addItem(item)
         }
 
+        guard includesNewSpaceAction else { return }
         if menu.numberOfItems > 0 {
             menu.addItem(.separator())
         }
@@ -1982,6 +1983,39 @@ extension AppController {
         newSpaceItem.target = self
         newSpaceItem.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         menu.addItem(newSpaceItem)
+    }
+
+    /// Builds the shared account-button menu using the same window and command
+    /// routing as the main menu and the Space switcher.
+    func populateProfileMenu(_ menu: NSMenu) {
+        populateSpaceSwitcherMenu(menu, includesNewSpaceAction: false)
+
+        func add(_ title: String, action: Selector, command: CommandWrapper? = nil, target: AnyObject? = nil) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = target
+            if let command {
+                item.tag = command.rawValue
+                applyEffectiveShortcut(command, to: item)
+            }
+            menu.addItem(item)
+        }
+
+        add(NSLocalizedString("profile.menu.newIncognitoSpace", value: "New Incognito Space", comment: "Profile menu - New Incognito Space action"),
+            action: #selector(newIncognitoSpaceFromMenu(_:)), command: .PHI_NEW_INCOGNITO_SPACE, target: self)
+        menu.addItem(.separator())
+        add(NSLocalizedString("profile.menu.downloads", value: "Download List", comment: "Profile menu - Download List action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_SHOW_DOWNLOADS, target: nil)
+        add(NSLocalizedString("profile.menu.bookmarks", value: "Manage Bookmarks", comment: "Profile menu - Manage Bookmarks action"),
+            action: #selector(openBookmarkManager(_:)), target: self)
+        add(NSLocalizedString("profile.menu.extensions", value: "Manage Extensions", comment: "Profile menu - Manage Extensions action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_MANAGE_EXTENSIONS, target: nil)
+        add(NSLocalizedString("profile.menu.settings", value: "Settings", comment: "Profile menu - Settings action"),
+            action: #selector(showPreferences(_:)), command: .IDC_OPTIONS, target: self)
+        menu.addItem(.separator())
+        add(NSLocalizedString("profile.menu.newTab", value: "New Tab", comment: "Profile menu - New Tab action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_NEW_TAB, target: nil)
+        add(NSLocalizedString("profile.menu.newIncognitoWindow", value: "New Incognito Window", comment: "Profile menu - New Incognito Window action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_NEW_INCOGNITO_WINDOW, target: nil)
     }
 
     /// Inline title for a switcher row: the Space name in the label color followed

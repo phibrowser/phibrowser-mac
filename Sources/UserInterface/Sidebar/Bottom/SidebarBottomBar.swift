@@ -84,6 +84,9 @@ struct SidebarBottomBarSwiftUI: View {
     
     private var regularLayout: some View {
         HStack(spacing: 4) {
+            ProfileButton(surface: .sidebar)
+                .frame(width: 24, height: 24)
+
             downloadButton
 
             memoryButton

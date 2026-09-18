@@ -1040,3 +1040,31 @@ M4 `pendingLocalEdit` 生命周期的两处清位（R-M3-4a-79 / R-M3-4a-91 / R-
     探针：U-15d ③ / ④ / ⑤ / ⑥ 各加一条 `changedIds` 断言（③ ④ 恰好那一行、⑤ 与 ⑥ 恒空）。
 29. **本轮只改了 `SpaceURLRulesEditor.swift` 与它的用例**：`SpaceManager` 的信号、两个清位原语、
     两处引擎接线、`computeEditSet` 一个字节都没动。
+
+## Final compile check
+
+Task 8b-1 ~ 8b-4 及其修复轮全部在**没有编译**的前提下写完（用户指令），收尾时跑一次整支的
+`xcodebuild build-for-testing`（scheme `PhiBrowser`，macOS/arm64，`CODE_SIGNING_ALLOWED=NO`）。
+
+结果：**4 个 error、1 条新告警**，全部落在测试文件里；八个生产文件
+（`URLRuleKind.swift` / `SyncableOwnedItems.swift` / `PhiSyncEngine.swift` /
+`PhiURLRuleLocalAccess.swift` / `LocalStore+SpaceURLRule.swift` / `PhiOwnedItemState.swift` /
+`SpaceManager.swift` / `SpaceURLRulesEditor.swift`）**一次过**，零 error 零告警。
+四处修复都是纯类型/作用域层面的，没有一条断言被削弱、没有一个用例被删、生产行为零改动。
+
+| # | 文件:行 | 符号 | 成因 | 修法 |
+| - | ------- | ---- | ---- | ---- |
+| 1 | `Tests/…/Sync/Phi/URLRuleKindTests.swift:3299` | `RuleSnap.mergePartnerSyncId` | U-15f 的新建支用例断言 `XCTAssertNil(fresh.mergePartnerSyncId)`，但 Task 8b 之前铸的私有快照结构 `RuleSnap` 没收这一列 | `RuleSnap` 补 `var mergePartnerSyncId: String?` 与 `init(_:)` 里的一行赋值。副作用是正向的：`RuleSnap` 是 `Equatable`，「软删行一个字节没变」那类整行比较从此也盯着这一列 |
+| 2 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1165` | `seedSettled(_:id:…)` | 实参写成 `ask:accountStamp:sortOrder:`，而声明里 `sortOrder` 在 `accountStamp` 之前 | 调换两个实参的书写顺序（值一字不改） |
+| 3 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1824` | `counters(_:)` | 同一作用域里先有 `let counters = await counters(engine)`，之后的 `counters(engine)` 解析到那个 `OwnedRoundCounters?` 局部量而非方法 | 后一处改成 `await self.counters(engine)`（`let counters` 与它的断言都不动） |
+| 4 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:2940` | `counters(_:)` | 同上（M3-7 主变体里的 `let second`） | 同上 |
+
+新告警一条，顺手清掉：
+`Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift:1559-1561` —— `landing(...)` 的三个
+默认实参引用 `Self.t0`，而默认实参在 actor 隔离之外求值，主 actor 隔离的静态量在那里被引用会告警。
+`t0` 改成 `private nonisolated static let`（不可变的 `Sendable` 常量，脱离隔离安全）。
+
+复跑之后：**TEST BUILD SUCCEEDED**，全仓零 error；剩下的两条告警来自
+`Sources/ChromiumBridge/ChromiumLauncher.h`（nullability specifier），与本计划无关、本轮未动。
+
+留给验收的问题：**零**——没有任何一处修复需要改动行为。

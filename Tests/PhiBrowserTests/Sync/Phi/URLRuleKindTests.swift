@@ -2306,6 +2306,7 @@ extension URLRuleKindTests {
         var contentUpdatedDate: Date?
         var targetUpdatedDate: Date?
         var deletedDate: Date?
+        var mergePartnerSyncId: String?
         var pendingLocalEdit: Bool
 
         init(_ rule: SpaceURLRule) {
@@ -2319,6 +2320,7 @@ extension URLRuleKindTests {
             contentUpdatedDate = rule.contentUpdatedDate
             targetUpdatedDate = rule.targetUpdatedDate
             deletedDate = rule.deletedDate
+            mergePartnerSyncId = rule.mergePartnerSyncId
             pendingLocalEdit = rule.pendingLocalEdit
         }
     }

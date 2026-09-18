@@ -345,7 +345,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
     private static let spaceOne = "space-1"
     private static let spaceTwo = "space-2"
     private static let spaceThree = "space-3"
-    private static let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    // `nonisolated`：`landing(...)` 的默认实参在 actor 隔离之外求值，主 actor 隔离的静态量
+    // 在那里引用会告警；这是个不可变的 `Sendable` 常量，脱离隔离是安全的。
+    private nonisolated static let t0 = Date(timeIntervalSince1970: 1_700_000_000)
     private static let t1 = Date(timeIntervalSince1970: 1_700_000_500)
 
     // MARK: CASE C-6 —— 唯一的对外入口真的抛，且没有 fire-and-forget 兄弟（R-M3-4a-49）

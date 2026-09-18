@@ -1162,7 +1162,7 @@ final class URLRuleMergeTests: XCTestCase {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", ask: false, accountStamp: 10, rows: &rows, table: &table)
-        seedSettled("b", id: "i-b", ask: true, accountStamp: 20, sortOrder: 1,
+        seedSettled("b", id: "i-b", ask: true, sortOrder: 1, accountStamp: 20,
                     rows: &rows, table: &table)
 
         let closed = mergePass(rows: rows, table: table, atRest: ["a", "b"], convergeAllowed: false)
@@ -1821,7 +1821,7 @@ final class URLRuleMergeTests: XCTestCase {
 
             // 随后两轮稳态。
             for _ in 0..<2 { await engine.pullOnce() }
-            let steady = await counters(engine)
+            let steady = await self.counters(engine)
             XCTAssertEqual(steady?.collapsed, 0, label)
             XCTAssertEqual(refreshCalls(access), 1, "\(label)：稳态不再刷新")
         }
@@ -2937,7 +2937,7 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(movedOn.contentUpdatedDate, Date(timeIntervalSince1970: 0.040))
         XCTAssertTrue(movedOn.pendingLocalEdit)
         XCTAssertNil(row(access, "b"), "X 随后才被硬删")
-        let second = await counters(engine)
+        let second = await self.counters(engine)
         XCTAssertEqual(second?.transferred, 1)
     }
 

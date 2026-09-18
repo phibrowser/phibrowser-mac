@@ -40,6 +40,26 @@ class ColoredVisualEffectView: NSVisualEffectView {
         }
     }
 
+    /// While true the view paints nothing of its own — neither the vibrancy
+    /// material nor the color fill — and only its subviews show. Used while a
+    /// Space switch slides this view's content over another sidebar: the
+    /// material is masked out (a mask does not affect subviews) instead of
+    /// hidden, since hiding the view would hide the content too.
+    var suppressesBackdrop = false {
+        didSet {
+            guard suppressesBackdrop != oldValue else { return }
+            maskImage = suppressesBackdrop ? Self.clearMaskImage : nil
+            colorView.isHidden = suppressesBackdrop
+        }
+    }
+
+    private static let clearMaskImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 1, height: 1), flipped: false) { _ in true }
+        image.capInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        image.resizingMode = .stretch
+        return image
+    }()
+
     // MARK: - Overrides
 
     override init(frame frameRect: NSRect) {

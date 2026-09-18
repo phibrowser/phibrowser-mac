@@ -203,7 +203,7 @@ struct SpacesStripView: View {
     /// slot observes the same bump; this lets `openActiveIconPicker` honor the
     /// request only in the window currently on screen. Nil (previews) means the
     /// strip always treats itself as the owner. See `openActiveIconPicker`.
-    var resolveOwnerController: () -> MainBrowserWindowController? = { nil }
+    var resolveOwnerController: () -> SpaceSessionController? = { nil }
     /// Wheel-to-pip-step feed from the strip's AppKit hosting view (see
     /// SpacesStripWheelTracker), letting the user scroll an overflowing row
     /// directly. Nil for the horizontal chip, which renders no pip row.

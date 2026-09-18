@@ -155,6 +155,18 @@ extension PhiPreferences {
 
         static let layoutModeKey = "layoutMode"
 
+        /// Hosted-window mode: one shell NSWindow per Space slot, with each
+        /// Space's Chromium window kept hidden behind it. Read once at launch
+        /// (`SpaceManager.isHostedWindowMode`) and mirrored to Chromium by
+        /// `ChromiumLauncher` before the first browser window exists, so it
+        /// cannot change mid-session. Also settable as a launch argument:
+        /// `-PhiHostedWindowMode YES`.
+        static let hostedWindowModeKey = "PhiHostedWindowMode"
+
+        static func loadHostedWindowModeEnabled() -> Bool {
+            UserDefaults.standard.bool(forKey: Self.hostedWindowModeKey)
+        }
+
         static func loadLayoutMode() -> LayoutMode {
             let defaults = UserDefaults.standard
 
@@ -186,10 +198,18 @@ extension PhiPreferences {
         /// cross-fade. The horizontal slide is the longer, more prominent
         /// motion; vertical's tint cross-fade is shorter.
         static func loadSwitchSpaceAnimationDuration() -> TimeInterval {
-            loadLayoutMode().isTraditional
+            // Debug override for inspecting the switch animation, in seconds:
+            // `defaults write <bundle id> PhiSwitchSpaceAnimationDurationOverride -float 2`.
+            let override = UserDefaults.standard.double(forKey: Self.switchSpaceAnimationDurationOverrideKey)
+            if override > 0 {
+                return override
+            }
+            return loadLayoutMode().isTraditional
                 ? Self.horizontalSwitchSpaceAnimationDuration
                 : Self.verticalSwitchSpaceAnimationDuration
         }
+
+        static let switchSpaceAnimationDurationOverrideKey = "PhiSwitchSpaceAnimationDurationOverride"
 
         /// Cross-Space animation duration in the horizontal (Comfortable) layout.
         static let horizontalSwitchSpaceAnimationDuration: TimeInterval = 0.2

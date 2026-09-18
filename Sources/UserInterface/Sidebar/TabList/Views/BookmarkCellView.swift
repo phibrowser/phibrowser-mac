@@ -588,7 +588,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private var resolvedBrowserState: BrowserState? {
-        browserState ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
+        browserState ?? SpaceSessionControllersManager.shared.activeWindowController?.browserState
     }
 
     private func refreshLiveTabs(for bookmark: Bookmark) {
@@ -607,7 +607,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private func configure(viewModel: TabViewModel, with tab: Tab?) {
         viewModel.prepareForReuse()
         guard let tab else { return }
-        let state = MainBrowserWindowControllersManager.shared
+        let state = SpaceSessionControllersManager.shared
             .controller(for: tab.windowId)?.browserState ?? resolvedBrowserState
         viewModel.configure(with: tab, in: state)
         viewModel.onToggleMute = { [weak tab] in

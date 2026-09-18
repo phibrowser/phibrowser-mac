@@ -118,7 +118,7 @@ are out of scope.
 | `oobe_finished` | Authenticated browser access is published or Guest entry succeeds; includes `is_guest`, `steps_completed`, and active `total_duration_seconds` | `Onboarding/OOBEAnalyticsSession.swift` |
 | `oobe_interrupted` | The user directly closes the OOBE window before success, or Phi terminates while it is active; includes the last step, active duration, and `reason` (`window_closed` or `app_terminated`) | `Onboarding/OOBEAnalyticsSession.swift` |
 | `onboarding_completed` | **Legacy compatibility event:** user tapped Next on the theme welcome screen. Its historical name and trigger remain unchanged; new OOBE events use the `oobe_` prefix | `Onboarding/Welcome/OnboardingWelcomeViewController.swift` |
-| `import_viewed` | The browser-data import window is presented or brought forward; `entry_point` is always `menu` | `MainBrowserWindow/MainBrowserWindowController+Actions.swift` |
+| `import_viewed` | The browser-data import window is presented or brought forward; `entry_point` is always `menu` | `MainBrowserWindow/SpaceSessionController+Actions.swift` |
 | `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |

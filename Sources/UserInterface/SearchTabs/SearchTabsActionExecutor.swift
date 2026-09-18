@@ -95,6 +95,6 @@ final class SearchTabsActionExecutor {
             return browserState
         }
 
-        return MainBrowserWindowControllersManager.shared.getBrowserState(for: windowId)
+        return SpaceSessionControllersManager.shared.getBrowserState(for: windowId)
     }
 }

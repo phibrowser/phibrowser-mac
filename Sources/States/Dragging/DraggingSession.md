@@ -61,7 +61,7 @@ tab movement, drag previews, and TabStrip integration.
 - `Sources/UserInterface/HorizontalBar/TabStrip/TabStrip.swift`
 - `Sources/UserInterface/HorizontalBar/TabStrip/TabStripDragController.swift`
 - `Sources/UserInterface/WebContent/WebContentContainerViewController.swift`
-- `Sources/UserInterface/MainBrowserWindow/MainBrowserWindowController.swift`
+- `Sources/UserInterface/MainBrowserWindow/SpaceSessionController.swift`
 
 ## Data Flow Summary
 1. Drag start writes item identifiers + `.sourceWindowId` to pasteboard.

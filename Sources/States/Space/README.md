@@ -4,7 +4,7 @@ Defines what happens when a Space's NSWindow closes, depending on how the close 
 
 ## Why two paths exist
 
-A `SpaceWindowSlot` is the user-perceived window. It hosts one `MainBrowserWindowController` per Space ever surfaced from this slot; exactly one is visible at a time. Two close triggers map to different user intent:
+A `SpaceWindowSlot` is the user-perceived window. It hosts one `SpaceSessionController` per Space ever surfaced from this slot; exactly one is visible at a time. Two close triggers map to different user intent:
 
 - **Tab-driven close** — the user closed the last tab in the active Space through the tab UI. Chromium used to auto-close the Browser, which closed the NSWindow; today it enters placeholder mode instead and the window stays (see "The tag is cancelled…" below). The user is saying "I'm done with this Space," not "I'm done with this window."
 - **Window-driven close** — the user explicitly closed the window itself (red ✕, ⇧⌘W via the Close Window menu item's `performClose:` action, ⌘W on the last tab, Chromium's internal `BrowserWindowCocoa::Close`). The user is saying "I'm done with this whole window."

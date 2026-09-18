@@ -1480,7 +1480,7 @@ final class AgentSpaceManager: ObservableObject {
             AgentPageTheme.shared.clear(windowId: task.windowId)
             return
         }
-        guard let themeContext = MainBrowserWindowControllersManager.shared
+        guard let themeContext = SpaceSessionControllersManager.shared
                 .getBrowserState(for: task.windowId)?.themeContext else { return }
         let appearance = themeContext.currentAppearance
         let color = themeContext.currentTheme.color(
@@ -1502,7 +1502,7 @@ final class AgentSpaceManager: ObservableObject {
     /// The Phi tab id of the agent window's currently active (operating) tab.
     private func currentActiveTabId(forSpaceId spaceId: String) -> Int? {
         guard let task = tasksBySpaceId[spaceId], task.windowId != 0 else { return nil }
-        return MainBrowserWindowControllersManager.shared
+        return SpaceSessionControllersManager.shared
             .getBrowserState(for: task.windowId)?.focusingTab?.guid
     }
 

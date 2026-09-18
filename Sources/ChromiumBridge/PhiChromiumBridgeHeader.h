@@ -466,6 +466,16 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 @optional
 
+/// Hosted-window mode: Chromium asked to show or activate a hosted browser
+/// window — a routed navigation landing in another Space's window, a page
+/// calling window.focus(), chrome.windows.update({focused: true}), a tab
+/// activated by an extension. The window itself never appears; the Mac client
+/// presents that window's Space in its slot instead, which is the outcome the
+/// ordered-in NSWindow used to produce through key-window adoption. Not sent
+/// for inactive shows (restored siblings), so a restore burst never switches
+/// Spaces.
+- (void)windowRequestedPresentation:(int64_t)windowId;
+
 /// Queried synchronously on the browser UI thread before each highlight copy.
 /// Read the current native preference without blocking. NO skips authentication
 /// and the short-link request; the original highlight URL is copied instead.
@@ -912,7 +922,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                     atIndex:(NSInteger)index
                    windowId:(NSInteger)windowId
                  customGuid:(NSString* _Nullable)customGuid;
-                 
+
 // Unlike createNewTabWithUrl, this reuses an existing tab for the same URL when possible.
 - (void)openTabWithUrl:(NSString *)urlString windowId:(int64_t)windowId;
 
@@ -1160,6 +1170,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                                             profileId:(NSString * _Nullable)profileId
                                                                 hidden:(BOOL)hidden;
 
+/// Hosted-window mode: mints a window id from the Browser session-id
+/// generator without creating a Browser. The Mac client keys the Space's
+/// session on it up front — sidebar, pinned tabs and bookmarks are built
+/// before the Space is first visited — and hands it back through
+/// `createBrowserWithWindowType:profileId:hidden:reservedWindowId:` on the
+/// first switch, so the Browser that arrives carries the id the session
+/// already has. Ids are as unique as minted ones; an unused reservation is
+/// simply never seen again.
+- (int64_t)reserveWindowId;
+
+/// `createBrowserWithWindowType:profileId:hidden:` for a window id obtained
+/// from `reserveWindowId`. Pass 0 to mint one as usual.
+- (nullable NSDictionary<NSString *, id> *)createBrowserWithWindowType:(ChromiumBrowserType)browserType
+                                                            profileId:(NSString * _Nullable)profileId
+                                                               hidden:(BOOL)hidden
+                                                     reservedWindowId:(int64_t)reservedWindowId;
+
 /// Creates a hidden agent-Space browser window: TYPE_NORMAL, never Show()n by
 /// Chromium, omitted from session restore, and starting in agent mode (window
 /// activation, content fullscreen, and omnibox focus are suppressed; tab
@@ -1304,6 +1331,41 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// user switches to is never a blank page. Both directions are idempotent
 /// and a `windowId` that no longer resolves is a no-op.
 - (void)setRestoredSiblingConcealed:(BOOL)concealed windowId:(int64_t)windowId;
+
+// ==========================================================================
+// Hosted window mode (Mac → Chromium)
+// ==========================================================================
+
+/// Turns hosted-window mode on for every TYPE_NORMAL, non-shadow browser
+/// created from now on (Space windows, Incognito Spaces, agent Spaces, and
+/// session-restored windows alike). A hosted browser's own NSWindow is never
+/// shown by Chromium: Show()/Activate()/fullscreen on it are no-ops, and its
+/// visibility and activity are answered from the presentation state below.
+/// The Mac client presents a hosted browser by mounting its tabs' native
+/// views into a client-owned shell window. Send YES once, before the first
+/// browser is created or restored; the mode is fixed per browser at creation.
+- (void)setHostedWindowModeEnabled:(BOOL)enabled;
+
+/// Binds a hosted browser to the client-owned shell NSWindow that presents
+/// it. From then on Chromium attaches that browser's child windows —
+/// permission and other bubbles, the find bar, dialogs and sheets — to the
+/// shell instead of to the hidden browser window, and treats the browser as
+/// visible for child-ordering whenever the shell is. Pass nil to unbind (the
+/// binding also clears itself when the browser closes). A `windowId` that
+/// does not resolve to a hosted browser is a no-op.
+- (void)setPresentationHost:(nullable NSWindow *)shellWindow
+                forWindowId:(int64_t)windowId;
+
+/// Marks a hosted browser as the one currently presented in its shell (YES)
+/// or as a background Space of that shell (NO). Presenting drives
+/// Browser::DidBecomeActive(), so the activation order Chromium uses for
+/// "the current window" (keyboard commands, chrome.windows.getLastFocused,
+/// new tabs from the Dock menu) follows Space switches; the previously
+/// presented browser of the same shell becomes inactive. Send YES after the
+/// entering Space's view tree is installed and NO for the leaving one; both
+/// directions are idempotent. Tab visibility is not driven here — mounting
+/// and detaching the tab's native view already does that.
+- (void)setPresented:(BOOL)presented forWindowId:(int64_t)windowId;
 
 // ==========================================================================
 // Window-group close (Mac → Chromium)
@@ -1587,6 +1649,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// misreading its result. Main thread only.
 - (void)materializeGhostWindow:(int32_t)previousSessionWindowId
                      profileId:(NSString *)profileId
+             outcomeCompletion:(void (^)(PhiGhostMaterializeOutcome outcome))completion;
+
+/// `materializeGhostWindow:profileId:outcomeCompletion:` for a window id
+/// obtained from `reserveWindowId`: the rebuilt window adopts it as its
+/// window id (hosted-window mode, where the Mac side's session for the Space
+/// already exists under that id). Pass 0 to mint one as usual.
+- (void)materializeGhostWindow:(int32_t)previousSessionWindowId
+                     profileId:(NSString *)profileId
+              reservedWindowId:(int64_t)reservedWindowId
              outcomeCompletion:(void (^)(PhiGhostMaterializeOutcome outcome))completion;
 
 /// Drops the ghost window parked as `previousSessionWindowId` for `profileId`

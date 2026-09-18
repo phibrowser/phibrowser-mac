@@ -174,7 +174,7 @@ private extension NSView {
 /// App-scoped owner of the Space list and per-window-group active-space
 /// selection.
 ///
-/// Each Space is backed at runtime by one `MainBrowserWindowController` *per
+/// Each Space is backed at runtime by one `SpaceSessionController` *per
 /// slot*. A slot (`SpaceWindowSlot`) is a user-perceived browser window — its
 /// own active Space, its own set of dedicated Chromium NSWindows (one per
 /// Space ever surfaced from this slot), its own swap animation. Multiple
@@ -360,6 +360,9 @@ final class SpaceManager: ObservableObject {
     /// surfaces, so nothing else would tell them to.
     @Published private(set) var spaces: [Space] = [] {
         didSet {
+            for slot in slots {
+                slot.scheduleDormantReconcile()
+            }
             // Keep menu order comparison independent of mutable presentation fields.
             let newIds = spaces.map(\.spaceId)
             let orderChanged = Self.spaceOrderDidChange(from: publishedSpaceIds,
@@ -506,6 +509,13 @@ final class SpaceManager: ObservableObject {
         if anotherSlotIsSpawning { return .dropWhileSpawning }
         return .local
     }
+
+    /// Hosted-window mode: one `ShellWindowController` per slot presents the
+    /// slot's Space sessions in turn, and Chromium never shows a browser
+    /// window of its own. Fixed for the process — read once, before any
+    /// browser window exists, and mirrored to Chromium by `ChromiumLauncher`.
+    static let isHostedWindowMode: Bool =
+        PhiPreferences.GeneralSettings.loadHostedWindowModeEnabled()
 
     /// The slot whose window was most recently key. Used as the default
     /// destination for Chromium-initiated windows (Cmd+N from the menu bar)
@@ -1036,7 +1046,7 @@ final class SpaceManager: ObservableObject {
     // MARK: - Public — slot lifecycle
 
     /// Creates a new slot. Caller is responsible for handing the slot to a
-    /// `MainBrowserWindowController` that will register itself. If
+    /// `SpaceSessionController` that will register itself. If
     /// `initialSpaceId` is nil, the slot starts on the persisted default
     /// (or the first known Space).
     /// `callerFile`/`callerLine` default to the CALL SITE: a slot that never
@@ -1066,13 +1076,14 @@ final class SpaceManager: ObservableObject {
 
     /// Drops a slot from the registry. Reached three ways: the slot itself when
     /// its last controller closes (see `SpaceWindowSlot.unregisterWindow`),
-    /// `MainBrowserWindowControllersManager.removeEmptyDanglingSlots`, and
+    /// `SpaceSessionControllersManager.removeEmptyDanglingSlots`, and
     /// `reclaimMintedSlot` below when a mint's window never arrived.
     func removeSlot(_ slot: SpaceWindowSlot) {
         // Resolved before the reattach binding below is dropped — it is the
         // binding that scopes the park set to this slot's entries.
         let parkedGhosts = parkedGhostEntries(for: slot)
         slots.removeAll { $0 === slot }
+        slot.closeShellIfPresent()
         // Paired with the mint line in `createSlot`: the two together are what
         // let a log bundle tell "the registry drained" from "one slot stayed
         // behind", which is the whole of the windowless-reopen predicate.
@@ -1404,7 +1415,7 @@ final class SpaceManager: ObservableObject {
     /// from the predicate, and the drifted line would misattribute the refusal
     /// — the one thing that line exists to say.
     private var liveNonShadowWindowCount: Int {
-        MainBrowserWindowControllersManager.shared.getAllWindows()
+        SpaceSessionControllersManager.shared.getAllWindows()
             .filter {
                 $0.browserType != .shadow
                     && $0.browserType != .kiosk
@@ -1984,6 +1995,9 @@ final class SpaceManager: ObservableObject {
         isSessionRestoreInFlight = false
         AppLogInfo("[SpaceManager] windowless reopen — restore settled (restoredAnyWindow=\(restoredAnyWindow)); writing the slot snapshot")
         persistSlotsSnapshot()
+        for slot in slots {
+            slot.scheduleDormantReconcile()
+        }
     }
 
     /// Arms the deadline that bounds the freeze. Re-arming replaces any
@@ -5155,6 +5169,23 @@ final class SpaceManager: ObservableObject {
     /// Called by a slot when one of its windows becomes key so the manager
     /// can route Chromium-initiated windows (Cmd+N) and global queries to
     /// the right slot.
+    /// Hosted-window mode: Chromium asked for a hosted window on screen
+    /// (`windowRequestedPresentation:`). Presents its Space in the slot that
+    /// owns the session — the hosted equivalent of the ordered-in NSWindow
+    /// that key-window adoption used to turn into a Space switch. Ignored
+    /// while a session restore is replaying windows, and for restored
+    /// siblings the user has not surfaced yet.
+    func presentHostedWindow(windowId: Int) {
+        guard Self.isHostedWindowMode else { return }
+        guard !isSessionRestoreInFlight else {
+            AppLogInfo("[SpaceManager] presentHostedWindow(\(windowId)) dropped: session restore in flight")
+            return
+        }
+        guard let controller = SpaceSessionControllersManager.shared.controller(for: windowId),
+              controller.isHosted, let slot = controller.slot else { return }
+        slot.presentRequestedSession(controller)
+    }
+
     func notifySlotBecameKey(_ slot: SpaceWindowSlot) {
         guard keySlot !== slot else { return }
         keySlot = slot
@@ -5331,7 +5362,7 @@ final class SpaceManager: ObservableObject {
     /// bookmark-backed tabs remain filtered because their per-Space persistence
     /// bindings would be stranded by a move.
     func moveTab(_ tab: Tab, toSpaceId targetSpaceId: String) {
-        guard let sourceState = MainBrowserWindowControllersManager.shared
+        guard let sourceState = SpaceSessionControllersManager.shared
                 .getBrowserState(for: tab.windowId) else {
             AppLogWarn("[SpaceManager] moveTab: no BrowserState for windowId \(tab.windowId)")
             return
@@ -6104,7 +6135,7 @@ final class SpaceManager: ObservableObject {
             // Evict before closing so the asynchronous teardown's late
             // unregister can't run the visible-close side effects.
             slot.evictWindow(for: spaceId)
-            controller.window?.close()
+            controller.closeChromiumWindow()
         }
     }
 
@@ -6648,7 +6679,7 @@ final class SpaceManager: ObservableObject {
                 withUrl: urlString, windowId: windowId, activateWindow: activateWindow)
         }
 
-        let sourceController = MainBrowserWindowControllersManager.shared
+        let sourceController = SpaceSessionControllersManager.shared
             .controller(for: Int(sourceWindowId))
         let currentSpaceId = sourceController?.spaceId
         // An incognito target — the rules' generic Incognito id, or a Space
@@ -6721,7 +6752,7 @@ final class SpaceManager: ObservableObject {
         // (the stray window the user sees over the fullscreen). Asserting key
         // focus first mirrors the path that already works.
         if slot?.windowController(for: spaceId) == nil,
-           let sourceWindow = MainBrowserWindowControllersManager.shared
+           let sourceWindow = SpaceSessionControllersManager.shared
                .controller(for: Int(sourceWindowId))?.window {
             sourceWindow.makeKey()
         }
@@ -6860,7 +6891,7 @@ final class SpaceManager: ObservableObject {
     func refreshActiveNewTab(inWindow windowId: Int64) {
         // Gate here too: the auto-route C++ callback can fire for a non-NTP
         // source, and only a stranded new tab should be reset.
-        guard let controller = MainBrowserWindowControllersManager.shared
+        guard let controller = SpaceSessionControllersManager.shared
                 .controller(for: Int(windowId)),
               let tab = controller.browserState.focusingTab,
               Self.isStrandedNewTab(tab) else { return }
@@ -6911,7 +6942,7 @@ final class SpaceManager: ObservableObject {
 
     /// Applied by `SpaceWindowSlot.registerWindow` so a freshly-spawned
     /// controller adopts its Space's theme before first paint.
-    func applyPersistedTheme(to controller: MainBrowserWindowController, spaceId: String) {
+    func applyPersistedTheme(to controller: SpaceSessionController, spaceId: String) {
         // Only touch the context when the Space has something persisted —
         // leaving the default `mirrorsSharedTheme = true` (and an Incognito
         // window's fixed incognito theme) alone otherwise.
@@ -7003,7 +7034,7 @@ final class SpaceManager: ObservableObject {
     /// is on main already (UI menu actions, slot.registerWindow from
     /// `NSWindowController` init), so we assume main isolation rather than
     /// propagating the annotation through the whole call chain.
-    fileprivate func applyResolvedTheme(forSpaceId spaceId: String, to controller: MainBrowserWindowController) {
+    fileprivate func applyResolvedTheme(forSpaceId spaceId: String, to controller: SpaceSessionController) {
         MainActor.assumeIsolated {
             let context = controller.browserState.themeContext
             if hasThemeCustomization(forSpaceId: spaceId) {
@@ -7419,14 +7450,14 @@ final class SpaceManager: ObservableObject {
                     return
                 }
                 slot.evictWindow(for: spaceId)
-                controller.window?.close()
+                controller.closeChromiumWindow()
             }
         }
         for slot in slots where !retreatingSlots.contains(where: { $0 === slot }) {
             guard let controller = slot.windowController(for: spaceId) else { continue }
             guard slot.visibleController !== controller else { continue }
             slot.evictWindow(for: spaceId)
-            controller.window?.close()
+            controller.closeChromiumWindow()
         }
     }
 
@@ -7653,7 +7684,7 @@ final class SpaceManager: ObservableObject {
 
 /// Per-window-group container: one slot per user-perceived browser window.
 ///
-/// Each slot owns a private set of `MainBrowserWindowController`s — one per
+/// Each slot owns a private set of `SpaceSessionController`s — one per
 /// Space ever surfaced from this slot (lazy: the controller is only spawned
 /// the first time the slot activates that Space). Exactly one of the slot's
 /// controllers is on-screen at a time, the rest are kept around but hidden;
@@ -7811,7 +7842,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// sidebar is collapsed then, so its band is zero-sized and snapshots
     /// would come back nil), the docked sidebar otherwise. Same
     /// pointer-vs-presenting reasoning as `activeStripRowView`.
-    private func spaceSwitchSurface(of controller: MainBrowserWindowController) -> any SpaceSwitchBandSurface {
+    fileprivate func spaceSwitchSurface(of controller: SpaceSessionController) -> any SpaceSwitchBandSurface {
         let webContent = controller.mainSplitViewController.webContentContainerViewController
         if let panel = webContent.floatingSidebarContainerView, panel.isHidden == false,
            let floating = webContent.floatingSidebarViewController {
@@ -7885,7 +7916,29 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// spaceId → controller dedicated to this slot for that Space.
     /// Populated lazily by `activate`'s spawn path and `registerWindow`.
-    private(set) var windowsBySpaceId: [String: MainBrowserWindowController] = [:]
+    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:]
+
+    /// Hosted mode: sessions built ahead of their Browser, one per user
+    /// Space this slot presents but has not visited (see
+    /// `SpaceSessionController.isDormant`). Kept apart from
+    /// `windowsBySpaceId`, which means "has a Chromium window": nothing that
+    /// routes on window ids, persists the layout, or cascades closes sees a
+    /// dormant session. `reconcileDormantSessions` keeps the map in step
+    /// with the Space list; `activateHosted` presents one on the first
+    /// switch and the Browser it spawns attaches to it.
+    private(set) var dormantSessionsBySpaceId: [String: SpaceSessionController] = [:]
+
+    /// Hosted-window mode: the slot's one visible window. Created by the first
+    /// session that registers (`ensureShell`), closed when the slot empties
+    /// (`closeShellIfPresent`). Every session's `window` is this shell; the
+    /// sessions' Chromium windows stay hidden behind it.
+    private(set) var shell: ShellWindowController?
+    var isHosted: Bool { SpaceManager.isHostedWindowMode }
+
+    /// Hosted mode: Spaces whose session arrived as a restored sibling and has
+    /// not been presented yet. A Chromium presentation request for one of
+    /// them (its restored tab finishing a load) is not the user's switch.
+    private var restoredSiblingsAwaitingPresent: Set<String> = []
 
     /// The controller whose NSWindow is currently visible to the user in
     /// this slot. Kept in sync via `didBecomeKey` so any path that surfaces
@@ -7896,7 +7949,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// `observeFrameChanges`).
     /// Weak-var auto-nil-out does NOT trigger didSet, so cleanup also runs
     /// from `deinit`.
-    private(set) weak var visibleController: MainBrowserWindowController? {
+    private(set) weak var visibleController: SpaceSessionController? {
         didSet {
             guard oldValue !== visibleController else { return }
             observeFrameChanges(on: visibleController)
@@ -8081,7 +8134,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// later because registration runs inside Chromium's synchronous
     /// window-created callback, where closing a Browser re-entrantly is
     /// unsafe. See `respawnWindow(forSpaceId:)`.
-    private var pendingCloseOnReplacementBySpaceId: [String: MainBrowserWindowController] = [:]
+    private var pendingCloseOnReplacementBySpaceId: [String: SpaceSessionController] = [:]
 
     /// Sidebar width/collapsed state pending application to a Space's window
     /// that hasn't been spawned yet. Consumed in `registerWindow` so the
@@ -8478,7 +8531,7 @@ final class SpaceWindowSlot: ObservableObject {
         // gradient are bound to the shared slot, so capturing afterward would
         // bake in the TARGET Space (the name would change before the animation
         // and the background wouldn't transition).
-        let isVerticalSwitch = spaceId != activeSpaceId
+        let isVerticalSwitch = spaceId != activeSpaceId && !isHosted
             && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let verticalLeavingBand: NSImage? = isVerticalSwitch
             ? visibleController.flatMap { spaceSwitchSurface(of: $0).snapshotSpaceSwitchBand() }
@@ -8500,6 +8553,16 @@ final class SpaceWindowSlot: ObservableObject {
             }
         }
         recordRegularSpace(spaceId)
+
+        if isHosted {
+            activateHosted(spaceId: spaceId,
+                           animated: animated,
+                           direction: swapDirection(previousSpaceId: previousSpaceId,
+                                                    targetSpaceId: spaceId),
+                           onActivationFailed: onActivationFailed,
+                           onSwapSettled: onSwapSettled)
+            return
+        }
 
         let previous = visibleController
         // The frame the entering Space's window inherits — resolved once, from
@@ -9110,6 +9173,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// nothing is said to the user beyond the log line, and the records are
     /// exactly as retryable as the failure was.
     func materializeParkedGhost(windowId: Int, spaceId: String,
+                                reservedWindowId: Int = 0,
                                 completion: @escaping (Bool) -> Void) {
         guard let manager else {
             completion(false)
@@ -9211,8 +9275,17 @@ final class SpaceWindowSlot: ObservableObject {
                 }
                 // Synchronous: the window callback (claim + registration) and the
                 // completion both run inside this call.
-                bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { reported in
-                    outcome = reported
+                if reservedWindowId > 0,
+                   bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                       .materializeGhostWindow(_:profileId:reservedWindowId:outcomeCompletion:))) {
+                    bridge.materializeGhostWindow(Int32(windowId), profileId: profileId,
+                                                  reservedWindowId: Int64(reservedWindowId)) { reported in
+                        outcome = reported
+                    }
+                } else {
+                    bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { reported in
+                        outcome = reported
+                    }
                 }
                 self.materializeConcealSpaceId = nil
                 manager.currentSpawn = nil
@@ -9319,6 +9392,987 @@ final class SpaceWindowSlot: ObservableObject {
     /// (`createAgentBrowser`), which Chromium never Show()s, so it stays ordered
     /// out until the user switches to its Space. `completion` receives the new
     /// windowId (or nil on failure).
+    // MARK: - Hosted window mode
+
+    /// Returns the slot's shell, creating it on first use. `initialFrame` is
+    /// honoured only for a new shell: the frame queued for the arriving window
+    /// (spawn inheritance, reopen placement), else the slot's last known
+    /// frame, else a centred default.
+    @discardableResult
+    func ensureShell(initialFrame: NSRect?) -> ShellWindowController {
+        if let shell { return shell }
+        let frame = Self.plausibleShellFrame(initialFrame ?? lastKnownFrame)
+        let controller = ShellWindowController(slot: self, frame: frame)
+        shell = controller
+        AppLogInfo("[SpaceWindowSlot] shell created frame=\(controller.window.frame)")
+        return controller
+    }
+
+    /// A remembered frame smaller than any usable browser window is a record
+    /// of a window that was shrunk by accident, not a placement the user
+    /// chose; open at the default size on that origin instead of restoring
+    /// the accident.
+    static func plausibleShellFrame(_ frame: NSRect?) -> NSRect? {
+        guard let frame else { return nil }
+        let minimum = NSSize(width: 640, height: 480)
+        guard frame.width < minimum.width || frame.height < minimum.height else { return frame }
+        let size = ShellWindowController.defaultContentSize
+        var origin = frame.origin
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame
+            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        return NSRect(origin: origin, size: size)
+    }
+
+    /// Closes the shell for good. Called when the slot leaves the registry;
+    /// no-op without a shell.
+    func closeShellIfPresent() {
+        discardDormantSessions()
+        guard let shell else { return }
+        self.shell = nil
+        shell.closeForTeardown()
+    }
+
+    /// Hosted counterpart of the window-centric tail of `registerWindow`:
+    /// applies the queued sidebar shape, decides whether the session is the
+    /// one the user is about to see, and presents it — or, for a restored
+    /// sibling, keeps its selected tab's load deferred until it is presented.
+    private func registerHostedSession(_ controller: SpaceSessionController,
+                                       spaceId: String) {
+        let pendingFrame = pendingFrameByWindowId.removeValue(forKey: controller.windowId)
+            ?? reopenPlacementFrame
+        ensureShell(initialFrame: pendingFrame)
+        let pendingWidth = pendingSidebarWidthByWindowId.removeValue(forKey: controller.windowId)
+        let pendingCollapsed = pendingSidebarCollapsedByWindowId.removeValue(forKey: controller.windowId)
+        if let pendingCollapsed {
+            controller.mainSplitViewController.syncSidebar(
+                width: (pendingWidth ?? 0) > 0 ? pendingWidth : nil,
+                collapsed: pendingCollapsed
+            )
+        }
+        // The Mac half of concealment (alpha, tab-group exclusion) has no
+        // window to act on; only the Chromium half — deferring the restored
+        // tab's load — still applies to a sibling that is not presented now.
+        let concealAsRestoredSibling = pendingRestoreConcealSpaceIds.remove(spaceId) != nil
+        if materializeConcealSpaceId == spaceId {
+            materializeConcealSpaceId = nil
+        }
+        // A switch's own spawn is presented the moment it exists: its Swift
+        // side (pinned tabs, bookmarks, sidebar) is complete already, and it
+        // joins the slide that `activateHosted` started; the normal tabs
+        // appear in it as Chromium delivers them, exactly like a warm Space.
+        let shouldBecomeVisible = visibleController == nil || spaceId == activeSpaceId
+        defer { scheduleDormantReconcile() }
+        if visibleController === controller {
+            // A dormant session the switch presented ahead of its spawn;
+            // `attachChromiumWindow` told Chromium it is presented. Nothing
+            // to re-present (a slide may still be carrying its view).
+            pendingHostedTransition = nil
+            Self.setRestoredSiblingConcealedIfSupported(false, windowId: Int64(controller.windowId))
+            closeReopenLoadingWindow()
+        } else if shouldBecomeVisible {
+            let transition = pendingHostedTransition
+            pendingHostedTransition = nil
+            presentHostedSession(controller, transition: transition)
+            closeReopenLoadingWindow()
+        } else {
+            // `NSWindowController.init(window:)` made this background session
+            // the shell's window controller; the responder chain (menu actions
+            // implemented on the session) must keep pointing at the presented
+            // one.
+            shell?.window.windowController = visibleController
+            if concealAsRestoredSibling {
+                restoredSiblingsAwaitingPresent.insert(spaceId)
+                Self.setRestoredSiblingConcealedIfSupported(true, windowId: Int64(controller.windowId))
+            }
+        }
+        if let replaced = pendingCloseOnReplacementBySpaceId.removeValue(forKey: spaceId),
+           replaced !== controller {
+            AppLogInfo("[SpaceWindowSlot] registerHostedSession(\(spaceId)): closing replaced window \(replaced.windowId)")
+            DispatchQueue.main.async {
+                replaced.closeChromiumWindow()
+            }
+        }
+        manager?.applyPersistedTheme(to: controller, spaceId: spaceId)
+    }
+
+    /// Puts `controller`'s content in the shell and makes it the slot's
+    /// visible session. The previous session is concealed first so its
+    /// window-level surfaces are gone before the entering one takes them.
+    private func presentHostedSession(_ controller: SpaceSessionController,
+                                      transition: HostedTransition? = nil) {
+        guard let shell else {
+            transition?.onSwapSettled?()
+            return
+        }
+        let previous = visibleController
+        let switching = previous != nil && previous !== controller
+        if switching {
+            // The leaving view stays in the shell while the slide runs; the
+            // entering view is added above it (or, for the vertical band
+            // slide, inside a clip the size of the band).
+            previous?.concealFromShell(removingView: false)
+        }
+        let animates = switching && transition != nil && shell.window.isVisible
+            && Self.swapAnimationDuration > 0
+        let bandSlide = animates
+            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+        AppLogInfo("[SpaceWindowSlot] present \(controller.spaceId): previous=\(previous?.spaceId ?? "nil") switching=\(switching) transition=\(transition != nil) animates=\(animates) bandSlide=\(bandSlide) duration=\(Self.swapAnimationDuration)")
+        controller.presentInShell(installingView: !bandSlide, completing: !animates)
+        visibleController = controller
+        restoredSiblingsAwaitingPresent.remove(controller.spaceId)
+        shell.window.title = manager?.spaces.first(where: { $0.spaceId == controller.spaceId })?.name ?? "Phi"
+        Self.setRestoredSiblingConcealedIfSupported(false, windowId: Int64(controller.windowId))
+        if shell.window.isMiniaturized {
+            shell.window.deminiaturize(nil)
+        }
+        if !shell.window.isVisible {
+            shell.show()
+            applyPendingRestoreFullScreen(activeWindow: shell.window)
+        } else if !shell.window.isKeyWindow {
+            shell.window.makeKeyAndOrderFront(nil)
+        }
+        AppLogInfo("[SpaceWindowSlot] presented \(controller.spaceId) window=\(controller.windowId) shellFrame=\(shell.window.frame)")
+        if switching, let previous {
+            if animates, let transition {
+                if bandSlide {
+                    if let slide = activeHostedBandSlide {
+                        // Started ahead of the spawn; the seeded session joins
+                        // the slide in flight.
+                        slide.attachEntering(controller)
+                    } else if let slide = beginHostedBandSlide(leaving: previous,
+                                                               enteringSpaceId: controller.spaceId,
+                                                               direction: transition.direction,
+                                                               onSwapSettled: transition.onSwapSettled) {
+                        slide.attachEntering(controller)
+                    } else {
+                        controller.installSessionViewInShell()
+                        previous.removeSessionViewFromShell()
+                        controller.completePresentationInShell()
+                        transition.onSwapSettled?()
+                    }
+                } else {
+                    performHostedTwoViewSlide(entering: controller,
+                                              leaving: previous,
+                                              direction: transition.direction,
+                                              onSwapSettled: transition.onSwapSettled)
+                }
+            } else {
+                previous.removeSessionViewFromShell()
+                transition?.onSwapSettled?()
+            }
+        } else {
+            transition?.onSwapSettled?()
+        }
+    }
+
+    /// The hosted switch: a warm Space is presented at once; a cold one is
+    /// spawned hidden and presented by its registration. Either way the
+    /// entering view slides in live over the leaving one when `animated`.
+    private func activateHosted(spaceId: String,
+                                animated: Bool,
+                                direction: SwapDirection,
+                                onActivationFailed: (() -> Void)?,
+                                onSwapSettled: (() -> Void)?) {
+        let transition: HostedTransition? = animated
+            ? HostedTransition(direction: direction, onSwapSettled: onSwapSettled)
+            : nil
+        if let target = windowsBySpaceId[spaceId] {
+            if target.browserState.tabs.isEmpty,
+               !MainActor.assumeIsolated({
+                   AgentSpaceManager.shared.isAgentSpace(spaceId)
+               }) {
+                target.browserState.createQuickLookupTab()
+            }
+            // Align the target's sidebar shape to the leaving Space's so the
+            // user reads one window whose contents change.
+            if let previous = visibleController, previous !== target {
+                let previousWidth = previous.browserState.sidebarWidth
+                target.mainSplitViewController.syncSidebar(
+                    width: previousWidth > 0 ? previousWidth : nil,
+                    collapsed: previous.browserState.sidebarCollapsed
+                )
+            }
+            if visibleController === target {
+                presentHostedSession(target)
+                onSwapSettled?()
+            } else {
+                presentHostedSession(target, transition: transition)
+                if transition == nil {
+                    onSwapSettled?()
+                }
+            }
+            return
+        }
+        // A dormant session is the warm case for everything the Mac side
+        // owns: present it now, complete, and spawn its Browser under the
+        // window id it was built with. Chromium's tabs land in it as they
+        // are created, as for a warm Space.
+        if let dormant = dormantSessionsBySpaceId[spaceId] {
+            if let previous = visibleController, previous !== dormant {
+                let previousWidth = previous.browserState.sidebarWidth
+                dormant.mainSplitViewController.syncSidebar(
+                    width: previousWidth > 0 ? previousWidth : nil,
+                    collapsed: previous.browserState.sidebarCollapsed
+                )
+            }
+            if visibleController === dormant {
+                presentHostedSession(dormant)
+                onSwapSettled?()
+            } else {
+                presentHostedSession(dormant, transition: transition)
+                if transition == nil {
+                    onSwapSettled?()
+                }
+            }
+            spawnHostedSession(spaceId: spaceId,
+                               reservedWindowId: dormant.windowId,
+                               onActivationFailed: onActivationFailed,
+                               onSpawned: { _ in })
+            return
+        }
+        // Animate first, like the old push-in: in vertical layouts the leaving
+        // band starts sliding now, covering the spawn's latency. The spawned
+        // session joins the slide the moment its registration presents it —
+        // the same swap a warm Space gets — with its pinned tabs and
+        // bookmarks already in the band; the normal tabs land as Chromium
+        // creates them.
+        if let transition, let previous = visibleController,
+           !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            _ = beginHostedBandSlide(leaving: previous,
+                                     enteringSpaceId: spaceId,
+                                     direction: transition.direction,
+                                     onSwapSettled: transition.onSwapSettled)
+        }
+        pendingHostedTransition = transition
+        spawnHostedSession(spaceId: spaceId,
+                           onActivationFailed: { [weak self] in
+                               self?.pendingHostedTransition = nil
+                               self?.activeHostedBandSlide?.fail()
+                               onActivationFailed?()
+                           },
+                           onSpawned: { [weak self] registered in
+                               guard let self else { return }
+                               // The registration presented the session and
+                               // consumed the transition; if it did not (the
+                               // active Space moved on meanwhile), nothing is
+                               // owed beyond settling.
+                               if self.pendingHostedTransition != nil {
+                                   self.pendingHostedTransition = nil
+                                   self.activeHostedBandSlide?.settle()
+                                   onSwapSettled?()
+                               } else if transition == nil {
+                                   onSwapSettled?()
+                               }
+                           })
+    }
+
+    /// Cold path of the hosted switch. Mirrors `activate`'s spawn leg without
+    /// the animation and reveal machinery: the window is created hidden, the
+    /// registration inside `createBrowser` presents it (`activeSpaceId` was
+    /// flipped before), and the first tab is seeded afterwards.
+    private func spawnHostedSession(spaceId: String,
+                                    reservedWindowId: Int = 0,
+                                    onActivationFailed: (() -> Void)?,
+                                    onSpawned: @escaping (SpaceSessionController) -> Void) {
+        guard let manager else {
+            onActivationFailed?()
+            return
+        }
+        if pendingSpawnSpaceIds.contains(spaceId) {
+            AppLogInfo("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): spawn already in flight, ignoring repeat")
+            onActivationFailed?()
+            return
+        }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogWarn("[SpaceWindowSlot] spawnHostedSession cannot spawn: bridge unavailable")
+            onActivationFailed?()
+            return
+        }
+        if let ghostWindowId = manager.parkedGhostWindowId(forSpaceId: spaceId, in: self) {
+            AppLogInfo("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): materializing ghost \(ghostWindowId) reserved=\(reservedWindowId)")
+            materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId,
+                                   reservedWindowId: reservedWindowId) { [weak self] success in
+                guard let self else { return }
+                guard success, let registered = self.windowsBySpaceId[spaceId],
+                      self.activeSpaceId == spaceId else {
+                    onActivationFailed?()
+                    return
+                }
+                onSpawned(registered)
+            }
+            return
+        }
+        let targetProfileId = manager.spaces.first(where: { $0.spaceId == spaceId })?.profileId
+        let isIncognitoSpace = SpaceManager.isIncognitoSpaceId(spaceId)
+        let previous = visibleController
+        let inheritedFrame = resolveInheritedFrame(from: previous)
+        let spawn: () -> Void = { [weak self, weak previous, weak manager] in
+            guard let self else {
+                onActivationFailed?()
+                return
+            }
+            let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
+            let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
+            manager?.currentSpawn = SpaceManager.SpawnContext(
+                slot: self,
+                spaceId: spaceId,
+                inheritedFrame: inheritedFrame,
+                inheritedSidebarWidth: inheritedSidebarWidth,
+                inheritedSidebarCollapsed: inheritedSidebarCollapsed
+            )
+            let dict = bridge.createBrowser(withWindowType: isIncognitoSpace ? .incognitoSpace : .normal,
+                                            profileId: isIncognitoSpace ? nil : targetProfileId,
+                                            hidden: true,
+                                            reservedWindowId: Int64(reservedWindowId))
+            manager?.currentSpawn = nil
+            guard let dict, let windowIdNumber = dict["windowId"] as? NSNumber else {
+                AppLogWarn("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): createBrowser returned no window")
+                self.pendingSpawnSpaceIds.remove(spaceId)
+                onActivationFailed?()
+                return
+            }
+            let id = windowIdNumber.intValue
+            AppLogInfo("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): reserved=\(reservedWindowId) created=\(id)")
+            if !self.contains(windowId: id) {
+                if self.pendingSpawnSpaceIdByWindowId[id] == nil {
+                    self.pendingSpawnSpaceIdByWindowId[id] = spaceId
+                }
+                if let inheritedSidebarCollapsed,
+                   self.pendingSidebarCollapsedByWindowId[id] == nil {
+                    self.pendingSidebarWidthByWindowId[id] = inheritedSidebarWidth
+                    self.pendingSidebarCollapsedByWindowId[id] = inheritedSidebarCollapsed
+                }
+            }
+            if self.windowsBySpaceId[spaceId]?.browserState.tabs.isEmpty != false {
+                if let reopenURLs = manager?.consumePendingProfileChangeReopenURLs(
+                    forSpaceId: spaceId,
+                    profileId: targetProfileId
+                ), !reopenURLs.isEmpty {
+                    AppLogInfo("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): replaying \(reopenURLs.count) captured tab(s)")
+                    for (index, url) in reopenURLs.enumerated() {
+                        bridge.createNewTab(withUrl: url,
+                                            windowId: windowIdNumber.int64Value,
+                                            customGuid: nil,
+                                            focusAfterCreate: index == 0)
+                    }
+                } else {
+                    if let state = self.windowsBySpaceId[spaceId]?.browserState,
+                       state.isIncognito {
+                        state.enqueueNativeNTP()
+                    }
+                    bridge.createQuickLookupTab(withWindowId: windowIdNumber.int64Value,
+                                                customGuid: nil)
+                }
+            }
+            guard let registered = self.windowsBySpaceId[spaceId] else {
+                AppLogWarn("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): window \(id) not registered synchronously")
+                onActivationFailed?()
+                return
+            }
+            guard self.activeSpaceId == spaceId else {
+                onActivationFailed?()
+                return
+            }
+            onSpawned(registered)
+        }
+        pendingSpawnSpaceIds.insert(spaceId)
+        if isIncognitoSpace {
+            bridge.ensureIncognitoSpaceProfileLoaded { [weak self] success in
+                guard success else {
+                    AppLogWarn("[SpaceWindowSlot] ensureIncognitoSpaceProfileLoaded failed; not spawning")
+                    self?.pendingSpawnSpaceIds.remove(spaceId)
+                    onActivationFailed?()
+                    return
+                }
+                spawn()
+            }
+        } else if let pid = targetProfileId, !pid.isEmpty {
+            bridge.ensureProfileLoaded(pid) { [weak self] success in
+                guard success else {
+                    AppLogWarn("[SpaceWindowSlot] ensureProfileLoaded failed for \(pid); not spawning")
+                    self?.pendingSpawnSpaceIds.remove(spaceId)
+                    onActivationFailed?()
+                    return
+                }
+                spawn()
+            }
+        } else {
+            spawn()
+        }
+    }
+
+    // MARK: - Dormant sessions
+
+    func registerDormantSession(_ controller: SpaceSessionController, for spaceId: String) {
+        guard isHosted else { return }
+        if let existing = dormantSessionsBySpaceId[spaceId], existing !== controller {
+            existing.discardDormant()
+        }
+        dormantSessionsBySpaceId[spaceId] = controller
+    }
+
+    /// The dormant session whose reserved window id a spawned Browser
+    /// carries, if any.
+    func dormantSession(forWindowId windowId: Int) -> SpaceSessionController? {
+        dormantSessionsBySpaceId.values.first { $0.windowId == windowId }
+    }
+
+    private var dormantReconcileScheduled = false
+
+    /// Coalesces reconciles onto the next runloop turn: registrations and
+    /// Space-list changes arrive in bursts, and the trees are built off the
+    /// switch's own turn.
+    func scheduleDormantReconcile() {
+        guard isHosted, !dormantReconcileScheduled else { return }
+        dormantReconcileScheduled = true
+        // Long enough for a launch restore's window burst to land, so the
+        // sessions built here are the ones the restore did not bring back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.dormantReconcileScheduled = false
+            self.reconcileDormantSessions()
+        }
+    }
+
+    /// Gives every user Space this slot presents a session: a live one if
+    /// its window exists, a dormant one otherwise. Drops dormant sessions
+    /// whose Space left the slot or changed profile. Waits for a session
+    /// restore to settle, since restored windows arrive with their own ids.
+    func reconcileDormantSessions() {
+        guard isHosted, let manager, let shell, !manager.isSessionRestoreInFlight,
+              visibleController != nil,
+              let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.reserveWindowId)) else { return }
+        let wanted = manager.userSpaces.filter { presents($0) && windowsBySpaceId[$0.spaceId] == nil }
+        let wantedIds = Set(wanted.map(\.spaceId))
+        for (spaceId, session) in dormantSessionsBySpaceId
+        where !wantedIds.contains(spaceId) || session.profileId != wanted.first(where: { $0.spaceId == spaceId })?.profileId {
+            dormantSessionsBySpaceId.removeValue(forKey: spaceId)
+            AppLogInfo("[SpaceWindowSlot] dropping dormant session \(session.windowId) for \(spaceId)")
+            if visibleController === session {
+                visibleController = nil
+            }
+            session.discardDormant()
+        }
+        for space in wanted where dormantSessionsBySpaceId[space.spaceId] == nil
+            && !pendingSpawnSpaceIds.contains(space.spaceId) {
+            let reserved = Int(bridge.reserveWindowId())
+            guard reserved > 0 else { continue }
+            let session = MainActor.assumeIsolated {
+                SpaceSessionControllersManager.shared.createWindowController(
+                    window: shell.window,
+                    windowId: reserved,
+                    browserType: .normal,
+                    profileId: space.profileId,
+                    spaceId: space.spaceId,
+                    slot: self,
+                    dormant: true
+                )
+            }
+            session.warmUpDormantTree()
+            AppLogInfo("[SpaceWindowSlot] dormant session \(reserved) built for \(space.spaceId)")
+        }
+    }
+
+    /// Slot teardown: dormant sessions have no Chromium window to close.
+    func discardDormantSessions() {
+        let sessions = Array(dormantSessionsBySpaceId.values)
+        dormantSessionsBySpaceId.removeAll()
+        for session in sessions {
+            if visibleController === session {
+                visibleController = nil
+            }
+            session.discardDormant()
+        }
+    }
+
+    /// Hosted counterpart of `unregisterWindow`'s decision tail. A session
+    /// closing while presented is the user closing the window (or the last
+    /// tab): every other session is closed through Chromium and the shell goes
+    /// with the last one. A tab-driven close with a viable sibling hands off
+    /// to it instead. A background session closing is just dropped.
+    private func unregisterHostedSession(_ controller: SpaceSessionController,
+                                         spaceId: String,
+                                         wasVisible: Bool,
+                                         isTabDriven: Bool) {
+        if wasVisible {
+            controller.concealFromShell()
+            visibleController = nil
+        }
+        let siblingWithTabs = (wasVisible && isTabDriven) ? firstSiblingWithTabs() : nil
+        if let siblingWithTabs {
+            AppLogInfo("[SpaceWindowSlot] tab-driven close of \(spaceId); switching to sibling \(siblingWithTabs)")
+            activate(spaceId: siblingWithTabs)
+        } else if wasVisible, !windowsBySpaceId.isEmpty {
+            AppLogInfo("[SpaceWindowSlot] window-driven close of \(spaceId); cascading \(windowsBySpaceId.count) sibling(s) via Chromium")
+            isCascadingSlotClose = true
+            cascadeCloseRemainingWindows()
+            scheduleCascadeVetoRecovery()
+        }
+        if windowsBySpaceId.isEmpty {
+            closeReopenLoadingWindow()
+            manager?.removeSlot(self)
+        }
+    }
+
+    /// Chromium asked for `controller`'s window on screen. Switches to its
+    /// Space when it is a background session, then fronts the shell and the
+    /// app — what an activating Show() of a real window did.
+    func presentRequestedSession(_ controller: SpaceSessionController) {
+        guard isHosted, windowsBySpaceId[controller.spaceId] === controller else { return }
+        if restoredSiblingsAwaitingPresent.contains(controller.spaceId) {
+            AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(controller.spaceId)) dropped: restored sibling not yet surfaced")
+            return
+        }
+        if visibleController !== controller {
+            AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(controller.spaceId)): switching Space on Chromium's request")
+            activate(spaceId: controller.spaceId, animated: true)
+        }
+        if let shell {
+            if shell.window.isMiniaturized {
+                shell.window.deminiaturize(nil)
+            }
+            shell.window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The shell's close button. With sessions still open this starts the
+    /// same window-driven cascade a session close does and refuses the
+    /// AppKit close; the shell is closed by `removeSlot` once the cascade has
+    /// drained (or kept if a `beforeunload` prompt vetoes it).
+    func shellRequestedClose() -> Bool {
+        guard isHosted else { return true }
+        if windowsBySpaceId.isEmpty { return true }
+        guard !isCascadingSlotClose else { return false }
+        manager?.flushPendingSlotsSnapshotPersist()
+        AppLogInfo("[SpaceWindowSlot] shell close requested; cascading \(windowsBySpaceId.count) session(s) via Chromium")
+        isCascadingSlotClose = true
+        cascadeCloseRemainingWindows()
+        scheduleCascadeVetoRecovery()
+        return false
+    }
+
+    /// The shell window is gone (teardown, or AppKit closed it on quit).
+    func shellDidClose() {
+        shell = nil
+        discardDormantSessions()
+    }
+
+    func shellDidBecomeKey() {
+        manager?.notifySlotBecameKey(self)
+    }
+
+    func shellFullScreenWillChange(isFullScreen: Bool) {
+        if !isFullScreen {
+            shellEnteredFullScreenForContent = false
+        }
+        visibleController?.browserState.toggleFullScreenMode(isFullScreen)
+        windowFullScreenStateChanged(isFullScreen: isFullScreen)
+    }
+
+    func shellFullScreenDidSettle() {
+        reconcileFullScreenWithWindowState()
+    }
+
+    func shellFrameDidChange() {
+        visibleController?.mirrorFrameToChromiumWindow()
+    }
+
+    func shellDidDeminiaturize() {
+        visibleController?.mainSplitViewController.phiHandleRestoreFromMinimized()
+    }
+
+    /// A hosted switch animation: what the entering session slides in from
+    /// and what runs once the leaving session's view is out of the shell.
+    fileprivate struct HostedTransition {
+        let direction: SwapDirection
+        let onSwapSettled: (() -> Void)?
+    }
+
+    /// The transition a cold switch owes its spawned session: set by
+    /// `activateHosted` before the spawn, consumed by the registration that
+    /// presents the window inside `createBrowser`.
+    private var pendingHostedTransition: HostedTransition?
+
+    /// Live two-view slide for the traditional layout, the hosted form of
+    /// `performHorizontalWindowSlide`. Both Space trees stay in the shell for
+    /// the duration: the entering view starts one width aside and slides to rest
+    /// while the leaving view slides out the other way, both painting live
+    /// (video keeps playing, spinners keep turning). No snapshot is taken.
+    /// The leaving view is removed from the shell when the slide lands.
+    private func performHostedTwoViewSlide(entering: SpaceSessionController,
+                                           leaving: SpaceSessionController,
+                                           direction: SwapDirection,
+                                           onSwapSettled: (() -> Void)?) {
+        windowSlideCancel?()
+        guard let shell, let root = shell.window.contentView,
+              entering.mainSplitViewController.isViewLoaded,
+              leaving.mainSplitViewController.isViewLoaded else {
+            leaving.removeSessionViewFromShell()
+            entering.completePresentationInShell()
+            onSwapSettled?()
+            return
+        }
+        let enteringView = entering.mainSplitViewController.view
+        let leavingView = leaving.mainSplitViewController.view
+        guard enteringView.superview === root, leavingView.superview === root else {
+            leaving.removeSessionViewFromShell()
+            entering.completePresentationInShell()
+            onSwapSettled?()
+            return
+        }
+        root.layoutSubtreeIfNeeded()
+        let width = root.bounds.width
+        let forward = (direction == .forward)
+        let enteringStartDx: CGFloat = forward ? width : -width
+        let leavingEndDx: CGFloat = forward ? -width : width
+
+        let setTransforms: (CGFloat) -> Void = { progress in
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            enteringView.wantsLayer = true
+            leavingView.wantsLayer = true
+            enteringView.layer?.transform =
+                CATransform3DMakeTranslation(enteringStartDx * (1 - progress), 0, 0)
+            leavingView.layer?.transform =
+                CATransform3DMakeTranslation(leavingEndDx * progress, 0, 0)
+            CATransaction.commit()
+        }
+        setTransforms(0)
+
+        isAnimatingWindowSlide = true
+        let duration = Self.swapAnimationDuration
+        var didFinish = false
+        var timer: Timer?
+        let finalize: () -> Void = { [weak self, weak entering, weak leaving, weak enteringView, weak leavingView] in
+            guard !didFinish else { return }
+            didFinish = true
+            timer?.invalidate()
+            timer = nil
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            enteringView?.layer?.transform = CATransform3DIdentity
+            leavingView?.layer?.transform = CATransform3DIdentity
+            CATransaction.commit()
+            leaving?.removeSessionViewFromShell()
+            entering?.completePresentationInShell()
+            self?.isAnimatingWindowSlide = false
+            self?.windowSlideCancel = nil
+            onSwapSettled?()
+        }
+        windowSlideCancel = finalize
+        if duration <= 0 {
+            finalize()
+            return
+        }
+        let startTime = CACurrentMediaTime()
+        let easeInOut: (CGFloat) -> CGFloat = { t in
+            t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+        }
+        let tick = Timer(timeInterval: 1.0 / 60.0, repeats: true) { t in
+            let elapsed = CACurrentMediaTime() - startTime
+            let progress = CGFloat(min(1.0, elapsed / duration))
+            setTransforms(easeInOut(progress))
+            if progress >= 1.0 {
+                t.invalidate()
+                finalize()
+            }
+        }
+        timer = tick
+        RunLoop.main.add(tick, forMode: .common)
+    }
+
+    /// Live vertical-layout switch, the hosted form of `performVerticalSidebarPushIn`:
+    /// only the sidebar band moves. The leaving tree stays on screen with its
+    /// page; its band views slide out while the entering tree — installed in
+    /// a clip the size of the band — slides its own band in, both live. The
+    /// leaving window theme and sidebar tint ramp to the entering Space's
+    /// colors underneath, and when the slide has landed AND the entering
+    /// tree is attached, the entering tree takes the whole shell, exactly
+    /// where the old code fronted the target window.
+    ///
+    /// Animate-first, like the old push-in: a cold switch starts the slide
+    /// before the spawn, against an empty clip, and attaches the entering
+    /// tree when the spawned session is seeded (`attachEntering`). A warm
+    /// switch attaches it at once.
+    fileprivate final class HostedBandSlide {
+        private weak var slot: SpaceWindowSlot?
+        private weak var leaving: SpaceSessionController?
+        private weak var entering: SpaceSessionController?
+        /// The entering surface whose backdrop is hidden for the slide.
+        private weak var enteringSurface: (any SpaceSwitchBandSurface)?
+        private let root: NSView
+        private let clip: NSView
+        /// Band-sized clip around the entering tree, the part that slides.
+        /// Only the entering band is ever exposed; the rest of that tree —
+        /// its page, on a backward switch — stays behind the mask.
+        private let enteringClip: NSView
+        private let bandFrame: NSRect
+        private let leavingBandViews: [NSView]
+        private let leavingBandContainer: NSView
+        private let leavingContainerMaskedToBounds: Bool
+        private let enteringStartDx: CGFloat
+        private let leavingEndDx: CGFloat
+        private let duration: TimeInterval
+        private let restoreLeavingTheme: () -> Void
+        private var timer: Timer?
+        private var progress: CGFloat = 0
+        private var slideDone = false
+        private var finished = false
+        var onSwapSettled: (() -> Void)?
+
+        init(slot: SpaceWindowSlot,
+             leaving: SpaceSessionController,
+             root: NSView,
+             bandFrame: NSRect,
+             leavingBandViews: [NSView],
+             leavingBandContainer: NSView,
+             direction: SwapDirection,
+             duration: TimeInterval,
+             restoreLeavingTheme: @escaping () -> Void) {
+            self.slot = slot
+            self.leaving = leaving
+            self.root = root
+            self.bandFrame = bandFrame
+            self.leavingBandViews = leavingBandViews
+            self.leavingBandContainer = leavingBandContainer
+            leavingBandContainer.wantsLayer = true
+            leavingContainerMaskedToBounds = leavingBandContainer.layer?.masksToBounds ?? false
+            self.duration = duration
+            self.restoreLeavingTheme = restoreLeavingTheme
+            let forward = (direction == .forward)
+            enteringStartDx = forward ? bandFrame.width : -bandFrame.width
+            leavingEndDx = forward ? -bandFrame.width : bandFrame.width
+            clip = NSView(frame: bandFrame)
+            clip.wantsLayer = true
+            clip.layer?.masksToBounds = true
+            clip.autoresizingMask = []
+            enteringClip = NSView(frame: NSRect(origin: .zero, size: bandFrame.size))
+            enteringClip.wantsLayer = true
+            enteringClip.layer?.masksToBounds = true
+            enteringClip.autoresizingMask = []
+            clip.addSubview(enteringClip)
+        }
+
+        func start() {
+            // The leaving band slides out of its own sidebar; keep it from
+            // drawing over the page next to it (views no longer clip to
+            // bounds by default).
+            leavingBandContainer.layer?.masksToBounds = true
+            root.addSubview(clip, positioned: .above, relativeTo: nil)
+            applyTransforms()
+            let startTime = CACurrentMediaTime()
+            let easeInOut: (CGFloat) -> CGFloat = { t in
+                t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+            }
+            let tick = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+                guard let self else {
+                    t.invalidate()
+                    return
+                }
+                let elapsed = CACurrentMediaTime() - startTime
+                let linear = CGFloat(min(1.0, elapsed / self.duration))
+                self.progress = easeInOut(linear)
+                self.applyTransforms()
+                if linear >= 1.0 {
+                    t.invalidate()
+                    self.timer = nil
+                    self.slideDone = true
+                    self.finishIfReady()
+                }
+            }
+            timer = tick
+            RunLoop.main.add(tick, forMode: .common)
+        }
+
+        /// The entering tree is ready (warm: at once; cold: once seeded). It
+        /// joins the slide at the current progress, or lands immediately if
+        /// the slide has already finished.
+        func attachEntering(_ controller: SpaceSessionController) {
+            guard !finished, entering == nil else { return }
+            entering = controller
+            let view = controller.mainSplitViewController.view
+            // Content only, like the old band snapshot: the entering
+            // sidebar's own vibrancy and fill would otherwise blur and paint
+            // over the leaving backdrop that is ramping underneath.
+            if let surface = slot?.spaceSwitchSurface(of: controller) {
+                surface.setSpaceSwitchBackdropHidden(true)
+                enteringSurface = surface
+            }
+            view.removeFromSuperview()
+            view.autoresizingMask = []
+            view.frame = NSRect(x: -bandFrame.minX, y: -bandFrame.minY,
+                                width: root.bounds.width, height: root.bounds.height)
+            view.layoutSubtreeIfNeeded()
+            enteringClip.addSubview(view)
+            applyTransforms()
+            finishIfReady()
+        }
+
+        private func restoreLeavingBand() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for view in leavingBandViews {
+                view.layer?.transform = CATransform3DIdentity
+            }
+            leavingBandContainer.layer?.masksToBounds = leavingContainerMaskedToBounds
+            CATransaction.commit()
+        }
+
+        /// Resolves the slide now: lands on the entering tree if it has been
+        /// attached, otherwise puts the leaving band back.
+        func settle() {
+            guard !finished else { return }
+            timer?.invalidate()
+            timer = nil
+            slideDone = true
+            if entering != nil {
+                finishIfReady()
+            } else {
+                fail()
+            }
+        }
+
+        /// The spawn did not produce a session: put the leaving band back.
+        func fail() {
+            guard !finished else { return }
+            finished = true
+            timer?.invalidate()
+            timer = nil
+            restoreLeavingBand()
+            clip.removeFromSuperview()
+            enteringSurface?.setSpaceSwitchBackdropHidden(false)
+            restoreLeavingTheme()
+            slot?.hostedBandSlideDidEnd(self)
+            onSwapSettled?()
+        }
+
+        private func applyTransforms() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if entering != nil {
+                enteringClip.layer?.transform =
+                    CATransform3DMakeTranslation(enteringStartDx * (1 - progress), 0, 0)
+            }
+            for view in leavingBandViews {
+                view.wantsLayer = true
+                view.layer?.transform =
+                    CATransform3DMakeTranslation(leavingEndDx * progress, 0, 0)
+            }
+            CATransaction.commit()
+        }
+
+        private func finishIfReady() {
+            guard !finished, slideDone, let entering else { return }
+            finished = true
+            restoreLeavingBand()
+            restoreLeavingTheme()
+            enteringSurface?.setSpaceSwitchBackdropHidden(false)
+            entering.installSessionViewInShell()
+            clip.removeFromSuperview()
+            leaving?.removeSessionViewFromShell()
+            entering.completePresentationInShell()
+            slot?.hostedBandSlideDidEnd(self)
+            onSwapSettled?()
+        }
+    }
+
+    /// The band slide in flight, if any. Started by `activateHosted` ahead of
+    /// a cold spawn or by `presentHostedSession` for a warm switch; the
+    /// entering session is attached by `presentHostedSession` either way.
+    private var activeHostedBandSlide: HostedBandSlide?
+
+    fileprivate func hostedBandSlideDidEnd(_ slide: HostedBandSlide) {
+        if activeHostedBandSlide === slide {
+            activeHostedBandSlide = nil
+            verticalSwapCancel = nil
+        }
+    }
+
+    /// Starts the band slide on the leaving session's sidebar. Returns nil
+    /// when nothing can animate (no band, zero duration, shell not on
+    /// screen), in which case the caller presents instantly.
+    private func beginHostedBandSlide(leaving: SpaceSessionController,
+                                      enteringSpaceId: String,
+                                      direction: SwapDirection,
+                                      onSwapSettled: (() -> Void)?) -> HostedBandSlide? {
+        verticalSwapCancel?()
+        activeSidebarOverlay?.cancel()
+        windowSlideCancel?()
+        guard let shell, shell.window.isVisible, let root = shell.window.contentView,
+              leaving.mainSplitViewController.isViewLoaded,
+              leaving.mainSplitViewController.view.superview === root else {
+            return nil
+        }
+        let prevSurface = spaceSwitchSurface(of: leaving)
+        let bandInSurface = prevSurface.spaceSwitchBandFrame
+        let bandFrame = prevSurface.view.convert(bandInSurface, to: root)
+        let duration = Self.swapAnimationDuration
+        AppLogInfo("[SpaceWindowSlot] band slide \(leaving.spaceId) -> \(enteringSpaceId): band=\(bandFrame) duration=\(duration)")
+        guard duration > 0, bandFrame.width > 0, bandFrame.height > 0 else {
+            return nil
+        }
+        // Ramp the leaving tree's theme and tint to the entering Space's so
+        // the hand-over lands on matching colors; restored afterwards since
+        // the leaving tree keeps its own Space.
+        let prevThemeContext = leaving.browserState.themeContext
+        let sourceTheme = prevThemeContext.currentTheme
+        let sourceMirrors = prevThemeContext.mirrorsSharedTheme
+        let targetTheme = manager?.resolvedTheme(forSpaceId: enteringSpaceId) ?? sourceTheme
+        let sourceColorHex = manager?.spaces.first(where: { $0.spaceId == leaving.spaceId })?.colorHex
+        let targetColorHex = manager?.spaces.first(where: { $0.spaceId == enteringSpaceId })?.colorHex
+        rampWindowTheme(prevThemeContext, from: sourceTheme, to: targetTheme, duration: duration)
+        prevSurface.rampSpaceTint(fromHex: sourceColorHex, toHex: targetColorHex, duration: duration)
+        let slide = HostedBandSlide(
+            slot: self,
+            leaving: leaving,
+            root: root,
+            bandFrame: bandFrame,
+            leavingBandViews: prevSurface.spaceSwitchBandViews,
+            leavingBandContainer: prevSurface.spaceSwitchBandContainer,
+            direction: direction,
+            duration: duration,
+            restoreLeavingTheme: { [weak self] in
+                self?.themeRampTimer?.invalidate()
+                self?.themeRampTimer = nil
+                prevThemeContext.setTheme(sourceTheme)
+                prevThemeContext.mirrorsSharedTheme = sourceMirrors
+            }
+        )
+        slide.onSwapSettled = onSwapSettled
+        activeHostedBandSlide = slide
+        verticalSwapCancel = { [weak slide] in slide?.settle() }
+        slide.start()
+        return slide
+    }
+
+    /// Set while the shell entered native fullscreen because a presented
+    /// tab went content-fullscreen (video, `requestFullscreen`), so that the
+    /// content leaving fullscreen takes the shell back out — and a manual
+    /// fullscreen the user chose is left alone.
+    private var shellEnteredFullScreenForContent = false
+
+    /// Hosted mode: Chromium no longer fullscreens the (hidden) browser
+    /// window for content fullscreen, so the presented session drives the
+    /// shell instead.
+    func sessionContentFullscreenChanged(_ controller: SpaceSessionController,
+                                         isFullscreen: Bool) {
+        guard isHosted, let shell, controller === visibleController else { return }
+        let window = shell.window
+        let isNativeFullScreen = window.styleMask.contains(.fullScreen)
+        if isFullscreen, !isNativeFullScreen {
+            shellEnteredFullScreenForContent = true
+            window.toggleFullScreen(nil)
+        } else if !isFullscreen, shellEnteredFullScreenForContent, isNativeFullScreen {
+            shellEnteredFullScreenForContent = false
+            window.toggleFullScreen(nil)
+        }
+    }
+
     func spawnHiddenWindow(forSpaceId spaceId: String,
                            completion: @escaping (Int?) -> Void) {
         guard let manager else { completion(nil); return }
@@ -9419,8 +10473,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// fall back to an instant present when the precondition for an animated
     /// swap is missing (no previous visible window, missing snapshot, etc.).
     private func performSwap(
-        from previous: MainBrowserWindowController?,
-        to target: MainBrowserWindowController,
+        from previous: SpaceSessionController?,
+        to target: SpaceSessionController,
         direction: SwapDirection,
         leavingSnapshotOverride: NSImage? = nil,
         verticalLeavingBand: NSImage? = nil,
@@ -9505,9 +10559,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// gradient shows through. Falls back to an instant present whenever a
     /// precondition is missing.
     private func performVerticalSidebarPushIn(
-        from previous: MainBrowserWindowController?,
+        from previous: SpaceSessionController?,
         previousWindow: NSWindow?,
-        to target: MainBrowserWindowController,
+        to target: SpaceSessionController,
         targetWindow: NSWindow,
         direction: SwapDirection,
         leavingBand: NSImage?,
@@ -9667,7 +10721,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// it), so only the sidebar band animates; that's the most a post-hoc
     /// notification can choreograph without controlling Chromium's swap timing.
     private func performExternalVerticalSlide(
-        target: MainBrowserWindowController,
+        target: SpaceSessionController,
         leavingBand: NSImage,
         direction: SwapDirection,
         sourceColorHex: String?,
@@ -9749,14 +10803,14 @@ final class SpaceWindowSlot: ObservableObject {
     /// only if the spawn has already landed.
     private final class SpawnSwitchAnimation {
         // Wired by `beginSpawnVerticalPushIn`; all run on the main thread.
-        var hotSwapBand: (MainBrowserWindowController) -> Void = { _ in }
-        var reveal: (MainBrowserWindowController) -> Void = { _ in }
+        var hotSwapBand: (SpaceSessionController) -> Void = { _ in }
+        var reveal: (SpaceSessionController) -> Void = { _ in }
         var restore: () -> Void = {}
         var armSpawnDeadline: () -> Void = {}
 
         private var slideDone = false
         private var finished = false
-        private var target: MainBrowserWindowController?
+        private var target: SpaceSessionController?
         private var failed = false
 
         /// The slide finished (real completion or its fallback).
@@ -9780,7 +10834,7 @@ final class SpaceWindowSlot: ObservableObject {
         /// The spawned window registered (hidden and seeded). Returns false
         /// when the animation already resolved — the spawn path then falls
         /// back to an instant present (or stays hidden).
-        func spawnCompleted(_ controller: MainBrowserWindowController) -> Bool {
+        func spawnCompleted(_ controller: SpaceSessionController) -> Bool {
             guard !finished else { return false }
             target = controller
             if slideDone {
@@ -9832,7 +10886,7 @@ final class SpaceWindowSlot: ObservableObject {
     private func beginSpawnVerticalPushIn(
         targetSpaceId spaceId: String,
         fromSpaceId: String?,
-        previous: MainBrowserWindowController?,
+        previous: SpaceSessionController?,
         leavingBand: NSImage?,
         direction: SwapDirection,
         sourceColorHex: String?,
@@ -9954,7 +11008,7 @@ final class SpaceWindowSlot: ObservableObject {
                 // SwiftUI commit) has applied, and in dark mode those
                 // pre-pass states are light. Same mechanism as the
                 // traffic-light step fixed synchronously in
-                // `MainBrowserWindowController.setupContentView`; the hop is
+                // `SpaceSessionController.setupContentView`; the hop is
                 // the general half. The leaving window stays up one extra
                 // frame. Supersession stays safe across it: the handle is
                 // already `finished`, so a settle() from a newer switch is a
@@ -10186,9 +11240,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// fall through to the snapshot overlay below, which is the only path
     /// that can consume the pre-captured composite.
     private func performSlideSwap(
-        from previous: MainBrowserWindowController?,
+        from previous: SpaceSessionController?,
         previousWindow: NSWindow?,
-        to target: MainBrowserWindowController,
+        to target: SpaceSessionController,
         targetWindow: NSWindow,
         direction: SwapDirection,
         leavingSnapshotOverride: NSImage? = nil,
@@ -10296,7 +11350,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// overlay keeps the overlay out of the translation loop.
     private func performHorizontalWindowSlide(
         previousWindow: NSWindow,
-        target: MainBrowserWindowController,
+        target: SpaceSessionController,
         targetWindow: NSWindow,
         direction: SwapDirection,
         onSwapSettled: (() -> Void)? = nil
@@ -10586,7 +11640,7 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// Adds or removes `.moveToActiveSpace` across every window in this slot in
     /// response to its visible window entering/leaving native fullscreen.
-    /// Forwarded from `MainBrowserWindowController`'s will-enter / will-exit
+    /// Forwarded from `SpaceSessionController`'s will-enter / will-exit
     /// fullscreen notifications.
     ///
     /// `.moveToActiveSpace` (armed on hidden slot windows — see
@@ -10606,7 +11660,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// come in through `reconcileFullScreenWithWindowState`.
     func windowFullScreenStateChanged(isFullScreen: Bool) {
         self.isFullScreen = isFullScreen
-        for controller in windowsBySpaceId.values {
+        // Hosted: every session's window is the one shell, which is never a
+        // hidden sibling, so there is nothing to re-arm.
+        for controller in windowsBySpaceId.values where !isHosted {
             guard let window = controller.window else { continue }
             if isFullScreen {
                 window.collectionBehavior.remove(.moveToActiveSpace)
@@ -10811,7 +11867,7 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
-    private func observeNativeTabBarAccessories(for controller: MainBrowserWindowController) {
+    private func observeNativeTabBarAccessories(for controller: SpaceSessionController) {
         guard tabBarAccessoryObservationsByWindowId[controller.windowId] == nil,
               let window = controller.window else {
             return
@@ -10994,7 +12050,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// Used by restore-time callers that need to keep a sibling Space window
     /// off-screen. If AppKit is already managing that sibling as a non-selected
     /// tab in this slot's tab group, doing nothing preserves the group.
-    func orderOutIfNotManagedBySlotTabGroup(_ controller: MainBrowserWindowController) {
+    func orderOutIfNotManagedBySlotTabGroup(_ controller: SpaceSessionController) {
         guard let window = controller.window else { return }
         if isTabbedWithAnySibling(window) {
             hideSlotTabBars()
@@ -11078,7 +12134,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// every settle path; `syncSlotTabGroup` restores the preferred tabbing
     /// mode when the window is regrouped. Mirrors the dangling-window alpha
     /// conceal/restore pair in
-    /// `MainBrowserWindowControllersManager.hideDanglingWindow`.
+    /// `SpaceSessionControllersManager.hideDanglingWindow`.
     ///
     /// Chromium is told too: alpha concealment is invisible to it, so it
     /// would otherwise start a page load for this window's selected restored
@@ -11191,7 +12247,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// away and disarms this. An apply landing after the burst window (the
     /// flag self-clears on the reconcile's final pass) simply falls back to
     /// the settle reveal — later, never wrong.
-    func frontRestoredWindowOnSnapshotApplied(_ controller: MainBrowserWindowController) {
+    func frontRestoredWindowOnSnapshotApplied(_ controller: SpaceSessionController) {
         guard restoreVisibilityReconcileScheduled,
               controller.spaceId == activeSpaceId,
               controller.spaceId == manager?.persistedActiveSpaceId,
@@ -11230,6 +12286,9 @@ final class SpaceWindowSlot: ObservableObject {
 
     fileprivate var restoreVisibilityReconcileScheduled = false
     func scheduleRestoreVisibilityReconcile() {
+        // Hosted: restored siblings are never on screen, and the active
+        // session presented itself at registration.
+        guard !isHosted else { return }
         guard !restoreVisibilityReconcileScheduled else { return }
         restoreVisibilityReconcileScheduled = true
         for delay in [0.0, 0.4, 1.2, 3.0] {
@@ -11396,7 +12455,7 @@ final class SpaceWindowSlot: ObservableObject {
         return lhsGroup === rhsGroup
     }
 
-    // MARK: - Registration (called by SpaceManager / MainBrowserWindowController)
+    // MARK: - Registration (called by SpaceManager / SpaceSessionController)
 
     /// Registers (or replaces) the controller hosting `spaceId` in this slot.
     /// Idempotent. Window controllers call this from `init` once their slot
@@ -11413,7 +12472,7 @@ final class SpaceWindowSlot: ObservableObject {
     ///    for a key event.
     ///  - Applies any persisted per-Space theme override so the new window
     ///    adopts it on first paint.
-    func registerWindow(_ controller: MainBrowserWindowController, for spaceId: String) {
+    func registerWindow(_ controller: SpaceSessionController, for spaceId: String) {
         // Defense in depth against a double-spawn for one (slot, Space): if a
         // live, DIFFERENT controller is already registered here, don't silently
         // overwrite it — that orphans a window the slot's sweeps and cascade
@@ -11424,6 +12483,13 @@ final class SpaceWindowSlot: ObservableObject {
         // didBecomeKey can't adopt this replacement, then retire its window via
         // the same deferred-close path a profile-change respawn uses (drained
         // near the end of this method).
+        if let dormant = dormantSessionsBySpaceId.removeValue(forKey: spaceId), dormant !== controller {
+            // A window for this Space arrived some other way (session
+            // restore, a Chromium-side open): the pre-built session is
+            // surplus.
+            AppLogInfo("[SpaceWindowSlot] registerWindow(\(spaceId)): dropping dormant session \(dormant.windowId) for arriving window \(controller.windowId)")
+            dormant.discardDormant()
+        }
         if let existing = windowsBySpaceId[spaceId], existing !== controller {
             AppLogWarn("[SpaceWindowSlot] registerWindow(\(spaceId)): replacing already-registered window \(existing.windowId) with \(controller.windowId)")
             if let token = keyObservationsByWindowId.removeValue(forKey: existing.windowId) {
@@ -11462,6 +12528,10 @@ final class SpaceWindowSlot: ObservableObject {
             // and writes once from its own completion instead — see
             // `SpaceManager.mayPersistSlotsSnapshot`.
             manager?.persistSlotsSnapshot()
+        }
+        if isHosted {
+            registerHostedSession(controller, spaceId: spaceId)
+            return
         }
         if let window = controller.window {
             observeNativeTabBarAccessories(for: controller)
@@ -11636,7 +12706,7 @@ final class SpaceWindowSlot: ObservableObject {
            replaced !== controller {
             AppLogInfo("[SpaceWindowSlot] registerWindow(\(spaceId)): closing replaced window \(replaced.windowId)")
             DispatchQueue.main.async {
-                replaced.window?.close()
+                replaced.closeChromiumWindow()
             }
         }
         manager?.applyPersistedTheme(to: controller, spaceId: spaceId)
@@ -11677,7 +12747,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// reliably once a slot owns two agent windows. Deferring runs the ordering
     /// on a clean stack, mirroring the deferred `window.close()` in
     /// `registerWindow` (unsafe to close re-entrantly from a Chromium callback).
-    private func scheduleEnforceAgentWindowHidden(_ controller: MainBrowserWindowController) {
+    private func scheduleEnforceAgentWindowHidden(_ controller: SpaceSessionController) {
         DispatchQueue.main.async { [weak self, weak controller] in
             guard let self, let controller else { return }
             self.enforceAgentWindowHidden(controller)
@@ -11704,7 +12774,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// e.g. the ownership flip of an agent handoff): key parked on a hidden
     /// agent window is handed to an arbitrary sibling by the next
     /// Chromium-side hide.
-    private func enforceAgentWindowHidden(_ controller: MainBrowserWindowController) {
+    private func enforceAgentWindowHidden(_ controller: SpaceSessionController) {
         guard !isPerformingActivate else { return }
         guard controller !== visibleController else { return }
         guard let window = controller.window else { return }
@@ -11821,7 +12891,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// because the user has already decided to close the window; a
     /// sibling Space's delegate (e.g. an unload prompt) shouldn't be
     /// allowed to veto.
-    func unregisterWindow(_ controller: MainBrowserWindowController, for spaceId: String) {
+    func unregisterWindow(_ controller: SpaceSessionController, for spaceId: String) {
         // Identity check, not just a key lookup: `changeProfile` evicts a
         // window from the registry before closing it, and by the time the
         // asynchronous teardown reaches `windowWillClose` the Space's
@@ -11920,6 +12990,11 @@ final class SpaceWindowSlot: ObservableObject {
         // extension / script `window.close()` / Chromium-internal teardown: that
         // window is not the selected tab, so it must NOT cascade the visible
         // window shut — it is just dropped from the map below.
+        if isHosted {
+            unregisterHostedSession(controller, spaceId: spaceId,
+                                    wasVisible: wasVisible, isTabDriven: isTabDriven)
+            return
+        }
         let closingWindow = controller.window
         let wasOnScreen = wasVisible
             || (closingWindow != nil && closingWindow === closingWindow?.tabGroup?.selectedWindow)
@@ -12125,8 +13200,12 @@ final class SpaceWindowSlot: ObservableObject {
         activeSpaceId = survivor.key
         // `visibleController`'s didSet re-pushes the Space→window routing map,
         // undoing the drop-out the stuck flag caused.
-        visibleController = survivor.value
-        makeKeyAndOrderFrontHidingSlotTabBar(survivor.value.window)
+        if isHosted {
+            presentHostedSession(survivor.value)
+        } else {
+            visibleController = survivor.value
+            makeKeyAndOrderFrontHidingSlotTabBar(survivor.value.window)
+        }
         // `unregisterWindow`'s deferred reconcile skipped itself while the
         // cascade was armed, so a fullscreen slot whose teardown was vetoed
         // still carries the closed window's flag. Re-derive it from the
@@ -12151,7 +13230,9 @@ final class SpaceWindowSlot: ObservableObject {
         // A multi-veto (several dirty Spaces kept) can leave more than one
         // window on screen; collapse the rest behind the adopted one over the
         // standard sweep ladder.
-        scheduleNonTargetSlotWindowSweep()
+        if !isHosted {
+            scheduleNonTargetSlotWindowSweep()
+        }
     }
 
     /// Lets the slot's DISPLAY follow the window on screen during a window-driven
@@ -12193,7 +13274,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// the slot off to a sibling Space. Eviction makes the respawn a
     /// guaranteed spawn and the late unregister a no-op (identity check).
     @discardableResult
-    func evictWindow(for spaceId: String, removeSlotIfEmpty: Bool = true) -> MainBrowserWindowController? {
+    func evictWindow(for spaceId: String, removeSlotIfEmpty: Bool = true) -> SpaceSessionController? {
         guard let controller = windowsBySpaceId.removeValue(forKey: spaceId) else { return nil }
         if let token = keyObservationsByWindowId.removeValue(forKey: controller.windowId) {
             NotificationCenter.default.removeObserver(token)
@@ -12225,7 +13306,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// synchronously after this returns, using `destinationSpaceId`.
     @discardableResult
     func prepareAccountTransitionWindowReplacement(
-        _ controller: MainBrowserWindowController,
+        _ controller: SpaceSessionController,
         from sourceSpaceId: String,
         to destinationSpaceId: String
     ) -> Bool {
@@ -12290,7 +13371,7 @@ final class SpaceWindowSlot: ObservableObject {
             // the queued tab replay runs on the next manual activation.
             AppLogInfo("[SpaceWindowSlot] respawnWindow(\(spaceId)): fallback — active=\(activeSpaceId ?? "nil"), window \(windowsBySpaceId[spaceId] == nil ? "absent" : "present")")
             if let leftover = evictWindow(for: spaceId) {
-                leftover.window?.close()
+                leftover.closeChromiumWindow()
             }
             return
         }
@@ -12364,7 +13445,7 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// Returns the controller this slot has registered for `spaceId`, or
     /// nil. Used by theme application across slots.
-    func windowController(for spaceId: String) -> MainBrowserWindowController? {
+    func windowController(for spaceId: String) -> SpaceSessionController? {
         windowsBySpaceId[spaceId]
     }
 
@@ -12532,13 +13613,13 @@ final class SpaceWindowSlot: ObservableObject {
     /// hidden sibling, whose key event would then be adopted as an external
     /// switch and yank the user onto a Space they never chose (observed when
     /// a completed agent task's window closed while the user was watching it).
-    func closeRetiredWindow(_ controller: MainBrowserWindowController) {
+    func closeRetiredWindow(_ controller: SpaceSessionController) {
         agentKeyFalloutArmedAt = Date()
-        if controller.window?.isKeyWindow == true,
+        if !isHosted, controller.window?.isKeyWindow == true,
            let visible = visibleController?.window {
             makeKeyAndOrderFrontHidingSlotTabBar(visible)
         }
-        controller.window?.close()
+        controller.closeChromiumWindow()
     }
 
     private func handleWindowDidBecomeKey(spaceId: String) {
@@ -12784,7 +13865,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// remembered geometry follows the window currently visible to the user.
     /// Switch and spawn paths apply that geometry when another Space surfaces;
     /// grouped windows continue to share geometry through AppKit.
-    private func observeFrameChanges(on controller: MainBrowserWindowController?) {
+    private func observeFrameChanges(on controller: SpaceSessionController?) {
         for token in visibleFrameObservers {
             NotificationCenter.default.removeObserver(token)
         }
@@ -12922,7 +14003,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// is not the user resizing anything. The seed goes through
     /// `snapshotSidebarWidth`'s filter so a not-yet-laid-out window cannot
     /// donate its initial zero.
-    private func observeSidebarWidth(on controller: MainBrowserWindowController?) {
+    private func observeSidebarWidth(on controller: SpaceSessionController?) {
         visibleSidebarWidthObserver = nil
         guard let controller else { return }
         _ = snapshotSidebarWidth()
@@ -12986,7 +14067,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// window closed during the profile load, a tab-driven hand-off from a
     /// window mid-close). Returns nil only before the slot has ever had a
     /// positioned window.
-    private func resolveInheritedFrame(from source: MainBrowserWindowController?) -> NSRect? {
+    private func resolveInheritedFrame(from source: SpaceSessionController?) -> NSRect? {
         if let frame = source?.window?.frame, !frame.isEmpty {
             lastKnownFrame = frame
         }
@@ -13495,7 +14576,7 @@ final class ReopenLoadingWindow: NSWindow {
         // never a background of its own.
         //
         // The value is the literal one
-        // `MainBrowserWindowController.setupWindow` gives the browser window,
+        // `SpaceSessionController.setupWindow` gives the browser window,
         // so the rect held here is already the colour the restored window
         // arrives in. Light and dark cannot diverge between the two either:
         // both resolve it against one app-wide preference —
@@ -13958,7 +15039,7 @@ final class ReopenLoadingWindow: NSWindow {
     /// The other thing that could put the two sets out of step is the restored
     /// window hiding its own lights, which it does when the sidebar is
     /// collapsed in a non-traditional layout
-    /// (`MainBrowserWindowController.setupContentView`) — the sidebar's
+    /// (`SpaceSessionController.setupContentView`) — the sidebar's
     /// floating pair is drawn instead, at its own metrics. That would not be a
     /// four-point step, it would be three discs moving and changing size, so it
     /// matters more than the correction above.

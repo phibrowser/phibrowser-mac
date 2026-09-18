@@ -28,6 +28,14 @@ class WebContentContainerViewController: NSViewController {
     private var currentTabIdentifier: String?
     
     /// Currently displayed WebContentViewController
+    /// Hands keyboard focus to the presented tab's page. Hosted-window mode
+    /// calls this after a Space switch installs the session's view tree: the
+    /// leaving session's first responder left the window with its views, and
+    /// the page would otherwise stay unfocused until the next click.
+    func focusCurrentWebContent() {
+        currentWebContentController?.focusWebContent()
+    }
+
     private weak var currentWebContentController: WebContentViewController? {
         didSet {
             guard currentWebContentController !== oldValue else { return }

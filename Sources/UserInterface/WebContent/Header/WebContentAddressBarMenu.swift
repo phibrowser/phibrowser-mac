@@ -326,7 +326,7 @@ final class WebContentAddressBarMenuPresenter {
             return
         }
         guard let docWindow =
-                MainBrowserWindowControllersManager.shared.activeWindowController?.window
+                SpaceSessionControllersManager.shared.activeWindowController?.window
                 ?? NSApp.keyWindow else {
             return
         }

@@ -76,7 +76,7 @@ final class WindowThemeMessageRouter {
             return
         }
 
-        guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(for: request.windowId) else {
+        guard let browserState = SpaceSessionControllersManager.shared.getBrowserState(for: request.windowId) else {
             messenger.sendError("Window not found", requestId: context.requestId)
             return
         }
@@ -117,7 +117,7 @@ final class WindowThemeMessageRouter {
 
     private func rebroadcastAllObservedWindows() {
         for windowId in subscriptions.keys {
-            guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(for: windowId) else { continue }
+            guard let browserState = SpaceSessionControllersManager.shared.getBrowserState(for: windowId) else { continue }
             broadcastThemeChanged(for: browserState)
         }
     }

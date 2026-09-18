@@ -81,14 +81,14 @@ struct CommandDispatcher {
     /// Its workspace is off-limits to the user until they take control.
     @MainActor
     static func isWindowAgentLocked(_ window: NSWindow) -> Bool {
-        guard let state = MainBrowserWindowControllersManager.shared
+        guard let state = SpaceSessionControllersManager.shared
                 .findControllerWith(window: window)?.browserState else { return false }
         return AgentSpaceManager.shared.isAgentOwned(state.spaceId)
     }
 
     @MainActor
     private static func dispatchCommand(_ command: CommandWrapper, to window: NSWindow) -> Bool {
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             return true
         }
@@ -103,7 +103,7 @@ struct CommandDispatcher {
             appController.newIncognitoSpaceFromMenu(nil)
             return true
         }
-        guard let windowController = MainBrowserWindowControllersManager.shared.findControllerWith(window: window) else {
+        guard let windowController = SpaceSessionControllersManager.shared.findControllerWith(window: window) else {
             return false
         }
         if let kioskWindowController = windowController as? KioskBrowserWindowController {
@@ -273,7 +273,7 @@ struct CommandDispatcher {
             )
             return true
         case let c where c.rawValue >= CommandWrapper.IDC_SELECT_TAB_0.rawValue && c.rawValue <= CommandWrapper.IDC_SELECT_TAB_7.rawValue:
-            MainBrowserWindowControllersManager.shared.findControllerWith(window: window)?.selectTabWithIndex(c.rawValue - CommandWrapper.IDC_SELECT_TAB_0.rawValue)
+            SpaceSessionControllersManager.shared.findControllerWith(window: window)?.selectTabWithIndex(c.rawValue - CommandWrapper.IDC_SELECT_TAB_0.rawValue)
             return true
         default: break
         }
@@ -281,7 +281,7 @@ struct CommandDispatcher {
     }
 
     @MainActor
-    private static func activateSpace(by step: Int, from windowController: MainBrowserWindowController) -> Bool {
+    private static func activateSpace(by step: Int, from windowController: SpaceSessionController) -> Bool {
         guard spacesShortcutsEnabled else { return false }
         // The slot's own list: agent Spaces hosted by other windows are not
         // cycled through here (`SpaceWindowSlot.presents`).
@@ -299,7 +299,7 @@ struct CommandDispatcher {
     }
 
     @MainActor
-    private static func activateSpace(at index: Int, from windowController: MainBrowserWindowController) -> Bool {
+    private static func activateSpace(at index: Int, from windowController: SpaceSessionController) -> Bool {
         guard spacesShortcutsEnabled else { return false }
         guard let slot = windowController.slot else { return false }
         // Indexed into the slot's own list, matching the Spaces menu's
@@ -317,7 +317,7 @@ struct CommandDispatcher {
     
     @MainActor
     static func handleKeyEquivalent(_ event: NSEvent, window: NSWindow) -> Bool {
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             // Keep application lifecycle shortcuts available while every
             // browser command remains frozen behind the migration boundary.
@@ -330,7 +330,7 @@ struct CommandDispatcher {
 
         // Kiosk Space actions have independent keys and take precedence over
         // the ordinary window's menu equivalents only inside Kiosk windows.
-        if let kiosk = MainBrowserWindowControllersManager.shared
+        if let kiosk = SpaceSessionControllersManager.shared
                 .findControllerWith(window: window) as? KioskBrowserWindowController,
            let command = interceptedKioskCommand(for: event) {
             return kiosk.handleCommand(command)

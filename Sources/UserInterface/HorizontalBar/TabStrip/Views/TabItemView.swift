@@ -1139,7 +1139,7 @@ final class TabItemView: NSView {
         cancelPreviewForInteraction()
         let menu = NSMenu()
         if let tab = sourceTab,
-           let state = MainBrowserWindowControllersManager.shared.getBrowserState(for: tab.windowId),
+           let state = SpaceSessionControllersManager.shared.getBrowserState(for: tab.windowId),
            TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state) {
             return menu
         }

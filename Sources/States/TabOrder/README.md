@@ -47,7 +47,7 @@ The core challenge: when the user reorders tabs via drag-and-drop in the native 
 | `PhiChromiumBridgeHeader.h` | Bridge protocol: snapshot callback, `createQuickLookupTab` |
 | `EventBus.swift` | Events: `.newTabWithContext`, `.updateTabRelationships` |
 | `Tab.swift` | `close()` calls `prepareForActiveTabClose` before sending `IDC_CLOSE_TAB` |
-| `MainBrowserWindowController+Actions.swift` | Cmd+T routed to `createQuickLookupTab` |
+| `SpaceSessionController+Actions.swift` | Cmd+T routed to `createQuickLookupTab` |
 
 ## 3. Chromium-Side Modifications
 

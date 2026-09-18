@@ -138,7 +138,7 @@ extension AgentSpaceRouter {
     private static func readerTab(taskId: String, targetId: String?) throws -> Tab {
         guard let windowId = AgentSpaceManager.shared.task(forTaskId: taskId)?.windowId,
               windowId != 0,
-              let controller = MainBrowserWindowControllersManager.shared
+              let controller = SpaceSessionControllersManager.shared
                   .controller(for: windowId) else {
             throw ReaderAPIError.unknownTask
         }

@@ -35,7 +35,7 @@ extension AgentSpaceRouter {
                   windowId != 0 else {
                 return unknownTask()
             }
-            guard let controller = MainBrowserWindowControllersManager.shared
+            guard let controller = SpaceSessionControllersManager.shared
                     .controller(for: windowId),
                   let contentView = controller.window?.contentView else {
                 return "{\"ok\":false,\"error\":\"no_window\"}"

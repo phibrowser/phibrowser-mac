@@ -974,7 +974,7 @@ class PinnedTabViewController: NSViewController {
             handleExtensionSecondaryClicked(item)
             return
         }
-        let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
+        let windowId = SpaceSessionControllersManager.shared.activeWindowController?.browserState.windowId
         ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
             withId: item.id,
             anchorRect: ExtensionPopupAnchor.rectOfView(view),
@@ -984,7 +984,7 @@ class PinnedTabViewController: NSViewController {
 
     private func handleExtensionSecondaryClicked(_ item: PinnedTabItemModel) {
         let point = ExtensionPopupAnchor.mouseFallback()
-        let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
+        let windowId = SpaceSessionControllersManager.shared.activeWindowController?.browserState.windowId
         ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
             withId: item.id,
             pointInScreen: point,
@@ -2015,7 +2015,7 @@ extension PinnedTabViewController {
     
     private func sourceBrowserState(for pasteboard: NSPasteboard) -> BrowserState? {
         guard let sourceId = dragSourceWindowId(from: pasteboard) else { return nil }
-        return MainBrowserWindowControllersManager.shared.getBrowserState(for: sourceId)
+        return SpaceSessionControllersManager.shared.getBrowserState(for: sourceId)
     }
     
     private func isCrossWindowDrag(_ pasteboard: NSPasteboard) -> Bool {

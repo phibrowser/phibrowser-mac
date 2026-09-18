@@ -311,7 +311,7 @@ public class ThemedHostingController<Content: View>: NSHostingController<AnyView
     }
 
     private static func resolveNonIncognitoContext() -> ThemeStateProvider {
-        if let controller = MainBrowserWindowControllersManager.shared.activeWindowController,
+        if let controller = SpaceSessionControllersManager.shared.activeWindowController,
            !controller.browserState.isIncognito {
             return controller.browserState.themeContext
         }
@@ -350,7 +350,7 @@ public class ThemedHostingView: NSHostingView<AnyView> {
     }
 
     private static func resolveNonIncognitoContext() -> ThemeStateProvider {
-        if let controller = MainBrowserWindowControllersManager.shared.activeWindowController,
+        if let controller = SpaceSessionControllersManager.shared.activeWindowController,
            !controller.browserState.isIncognito {
             return controller.browserState.themeContext
         }

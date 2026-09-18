@@ -42,7 +42,7 @@ protocol TabGroupDragDelegate: AnyObject {
     /// `atIndex` is in the target strip's `normalTabs` coordinate space.
     func groupDragControllerCommitMoveCrossWindow(
         memberTabIds: [Int],
-        targetWindowController: MainBrowserWindowController,
+        targetWindowController: SpaceSessionController,
         atIndex: Int
     )
 

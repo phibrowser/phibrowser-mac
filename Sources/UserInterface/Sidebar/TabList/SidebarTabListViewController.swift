@@ -3445,7 +3445,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         else { return }
 
         let pt = CGPoint(x: screenPoint.x, y: screenPoint.y)
-        let overPhiTabChrome = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let overPhiTabChrome = SpaceSessionControllersManager.shared.getAllWindows()
             .contains { $0.containsTabDragBoundary(at: pt) }
         guard !overPhiTabChrome else { return }
 
@@ -3632,7 +3632,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     
     private func sourceBrowserState(for pasteboard: NSPasteboard) -> BrowserState? {
         guard let sourceId = dragSourceWindowId(from: pasteboard) else { return nil }
-        return MainBrowserWindowControllersManager.shared.getBrowserState(for: sourceId)
+        return SpaceSessionControllersManager.shared.getBrowserState(for: sourceId)
     }
     
     private func isCrossWindowDrag(_ pasteboard: NSPasteboard) -> Bool {
@@ -3681,7 +3681,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     private func tabIsInSplitInAnyWindow(_ tab: Tab) -> Bool {
-        MainBrowserWindowControllersManager.shared.getAllWindows().contains {
+        SpaceSessionControllersManager.shared.getAllWindows().contains {
             $0.browserState.splitGroup(forTabId: tab.guid) != nil
         }
     }

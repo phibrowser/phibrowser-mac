@@ -357,7 +357,7 @@ so selection changes re-render immediately.
 - `Sources/UserInterface/HorizontalBar/TabStrip/Views/TabItemView.swift` — `onSelect` signature, `menu(for:)` hook, `isMultiSelected`.
 - `Sources/UserInterface/HorizontalBar/TabStrip/Views/TabBackgroundLayer.swift` — `.subSelected` state.
 - `Sources/UserInterface/HorizontalBar/TabStrip/Core/TabStripState.swift` — `TabRenderData.isMultiSelected`.
-- `MainBrowserWindowController` (Cmd+W entry) — multi-select close interception.
+- `SpaceSessionController` (Cmd+W entry) — multi-select close interception.
 - Asset catalog — `sidebarTabSubSelected`; `ThemedColor.tabSubSelected`.
 
 ## Risks / Notes

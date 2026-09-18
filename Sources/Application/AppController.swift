@@ -581,10 +581,10 @@ import PostHog
         let spaceReady = !requiresSpaceReadiness
             || (SpaceManager.shared.hasLoadedURLRules
                 && (opensInKiosk
-                    || MainBrowserWindowControllersManager.shared
+                    || SpaceSessionControllersManager.shared
                         .getFirstAvailableWindowId() != nil))
         let regularWindowReady = !requiresVisibleRegularWindow
-            || MainBrowserWindowControllersManager.shared.hasVisibleRegularBrowserWindow
+            || SpaceSessionControllersManager.shared.hasVisibleRegularBrowserWindow
         let restoreVisibilityReady = !requiresVisibleRegularWindow
             || !SpaceManager.shared.isRestoreVisibilityReconcileInFlight
         return spaceReady && regularWindowReady && restoreVisibilityReady
@@ -608,7 +608,7 @@ import PostHog
             )
             if !isReady,
                self.pendingColdOpenRequiresVisibleRegularWindow {
-                if !MainBrowserWindowControllersManager.shared
+                if !SpaceSessionControllersManager.shared
                         .hasVisibleRegularBrowserWindow,
                    !self.requestedRegularWindowForPendingKioskOpen,
                    self.coldOpenURLForwardAttempts
@@ -747,7 +747,7 @@ import PostHog
         let profileId = manager.profileId(
             forURLRuleTargetSpaceId: targetSpaceId
         )
-        let activeProfileId = MainBrowserWindowControllersManager.shared
+        let activeProfileId = SpaceSessionControllersManager.shared
             .activeWindowController?.profileId ?? "none"
         AppLogDebug(
             "[ExternalKioskRouting] resolved identity targetSpace=\(targetSpaceId) "
@@ -846,7 +846,7 @@ import PostHog
         defaultSpaceId: String
     ) {
         assert(Thread.isMainThread)
-        let controllers = MainBrowserWindowControllersManager.shared
+        let controllers = SpaceSessionControllersManager.shared
             .getAllWindows()
         let sourceController = controllers.first(where: {
             $0.browserType == .normal && $0.window?.isVisible == true
@@ -968,7 +968,7 @@ import PostHog
             // window. Ask Chromium to create/reopen one only when neither a
             // live nor a dangling browser already exists.
             if !pendingKioskOwnsPostLoginPresentation,
-               MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() == nil {
+               SpaceSessionControllersManager.shared.getFirstAvailableWindowId() == nil {
                 ChromiumLauncher.sharedInstance().bridge?
                     .applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
             }
@@ -1050,7 +1050,7 @@ import PostHog
             self.pendingHotKioskPresentationInFlight = false
             self.pendingHotKioskPresentationWorkItem = nil
             guard ApplicationState.shared.canUseBrowser,
-                  MainBrowserWindowControllersManager.shared
+                  SpaceSessionControllersManager.shared
                     .getFirstAvailableWindowId() == nil else {
                 return
             }

@@ -786,4 +786,14 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
         // background follows the window theme ramp that the swap drives
         // (see SpaceWindowSlot.rampWindowTheme).
     }
+
+    func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
+        if let effectView = view as? ColoredVisualEffectView {
+            effectView.suppressesBackdrop = hidden
+        } else if hidden {
+            view.layer?.backgroundColor = nil
+        } else {
+            view.phiLayer?.setBackgroundColor(.windowOverlayBackground)
+        }
+    }
 }

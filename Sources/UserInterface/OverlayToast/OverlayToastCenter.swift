@@ -267,7 +267,7 @@ final class OverlayToastCenter: ObservableObject {
     private static func resolveTarget(_ target: OverlayToastTarget) -> Int? {
         switch target {
         case .activeWindow:
-            return MainBrowserWindowControllersManager.shared.getActiveWindowState()?.windowId
+            return SpaceSessionControllersManager.shared.getActiveWindowState()?.windowId
         case .windowId(let windowId):
             return windowId
         }

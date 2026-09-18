@@ -33,7 +33,7 @@ extension AgentSpaceRouter {
     /// user-space management message refuses with this response. nil means
     /// allowed.
     static func userSpaceOperationsRefusal() -> String? {
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             return failure("guest_account_transition_in_progress")
         }
@@ -56,7 +56,7 @@ extension AgentSpaceRouter {
         let spaces = MainActor.assumeIsolated { () -> [[String: Any]] in
             let manager = SpaceManager.shared
             let activeId = manager.activeSpaceId
-            let controllers = MainBrowserWindowControllersManager.shared.getAllWindows()
+            let controllers = SpaceSessionControllersManager.shared.getAllWindows()
             return manager.spaces
                 .filter { !$0.isAgentSpace && !SpaceManager.isIncognitoSpaceId($0.spaceId) }
                 .map { space in
@@ -523,7 +523,7 @@ extension AgentSpaceRouter {
         guard let task = AgentSpaceManager.shared.task(forTaskId: taskId),
               task.windowId != 0 else { return nil }
         return (task.windowId,
-                MainBrowserWindowControllersManager.shared.getBrowserState(for: task.windowId))
+                SpaceSessionControllersManager.shared.getBrowserState(for: task.windowId))
     }
 
     /// Resolves a user Space's open window (its slot's registered controller,
@@ -536,7 +536,7 @@ extension AgentSpaceRouter {
     private static func spaceWindow(spaceId: String, windowId: Int? = nil)
         -> (windowId: Int, state: BrowserState?)? {
         guard !AgentSpaceManager.shared.isAgentSpace(spaceId) else { return nil }
-        let controllers = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let controllers = SpaceSessionControllersManager.shared.getAllWindows()
             .filter { $0.spaceId == spaceId }
         if let windowId {
             guard let chosen = controllers.first(where: { $0.windowId == windowId })
@@ -554,7 +554,7 @@ extension AgentSpaceRouter {
     @MainActor
     private static func windowSpace(windowId: Int)
         -> (windowId: Int, state: BrowserState?, spaceId: String)? {
-        guard let chosen = MainBrowserWindowControllersManager.shared.getAllWindows()
+        guard let chosen = SpaceSessionControllersManager.shared.getAllWindows()
             .first(where: { $0.windowId == windowId }),
             !AgentSpaceManager.shared.isAgentSpace(chosen.spaceId) else { return nil }
         return (chosen.windowId, chosen.browserState, chosen.spaceId)

@@ -1671,7 +1671,7 @@ class WebContentViewController: NSViewController {
     /// renders a fixed `CrashPageData` snapshot.
     private func showCrashedPage(for tab: Tab) {
         guard let crashData = tab.crashState else { return }
-        guard let host = view.window?.windowController as? MainBrowserWindowController else {
+        guard let host = view.window?.windowController as? SpaceSessionController else {
             return
         }
         // Already showing this exact crash for this tab — don't rebuild (avoids
@@ -1738,7 +1738,7 @@ class WebContentViewController: NSViewController {
                                     tabId: Int) {
         guard let tab = browserState?.tabs.first(where: { $0.guid == tabId }),
               let crashData = tab.crashState,
-              let hostWC = view.window?.windowController as? MainBrowserWindowController else {
+              let hostWC = view.window?.windowController as? SpaceSessionController else {
             host.detachCrashView(pane: pane)
             dropSplitCrashController(tabId: tabId)
             return

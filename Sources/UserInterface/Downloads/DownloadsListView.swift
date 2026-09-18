@@ -132,7 +132,7 @@ private struct DownloadsBottomBar: View {
     
     private func openAllDownloadsPage() {
         let url = URLProcessor.processUserInput("phi://downloads")
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(url)
+        SpaceSessionControllersManager.shared.activeWindowController?.browserState.createTab(url)
     }
 }
 

@@ -207,6 +207,14 @@
     self.bridge = [NSClassFromString(@"PhiChromiumBridge") sharedInstance];
     if ([self.bridge conformsToProtocol:@protocol(PhiChromiumBridgeProtocol)]) {
         self.bridge.delegate = [PhiChromiumCoordinator shared];
+        // Hosted-window mode must be fixed before ChromeMain creates or
+        // restores any browser window (see PhiPreferences.GeneralSettings
+        // .hostedWindowModeKey; the Swift side reads the same default).
+        if ([[NSUserDefaults standardUserDefaults] boolForKey:@"PhiHostedWindowMode"]
+            && [self.bridge respondsToSelector:@selector(setHostedWindowModeEnabled:)]) {
+            [self.bridge setHostedWindowModeEnabled:YES];
+            AppLogInfo(@"ChromiumLauncher: hosted-window mode enabled");
+        }
     }
     [self initializeChromiumWithLaunchArgc:argc launchArgv:argv];
 

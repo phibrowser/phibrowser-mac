@@ -65,8 +65,8 @@ The data layer describes actions; the UI executor performs them.
 
 ## Integration Points
 
-- `MainBrowserWindowController` owns the overlay controller and background view.
-- `MainBrowserWindowController+Actions` toggles and hides the panel.
+- `SpaceSessionController` owns the overlay controller and background view.
+- `SpaceSessionController+Actions` toggles and hides the panel.
 - `CommandDispatcher` intercepts `IDC_TAB_SEARCH`.
 - New UI files are added to the SearchTabs group in the app target.
 

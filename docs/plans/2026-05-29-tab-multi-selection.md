@@ -275,7 +275,7 @@ git commit -m "feat: add multi-selection state and intents to BrowserState"
 - Modify: `Sources/States/BrowserState.swift` (extend the multi-selection section)
 - Test: `Tests/PhiBrowserTests/BrowserStateMultiSelectionTests.swift` (add cases)
 
-**Context:** Reuse existing single-tab operations. Group create/add uses the existing bridge methods (`createGroupFromTabs`, `addTabsToGroup`) — locate the exact Mac-side wrappers (search `createGroupFromTabs` in `Sources/`). Copy-link reuses the existing clipboard helper (`MainBrowserWindowController.myCopyLink` logic). Bookmark reuse: existing "Add to Bookmark / Add to Folder" path in `TabModel+Sidebar.swift`.
+**Context:** Reuse existing single-tab operations. Group create/add uses the existing bridge methods (`createGroupFromTabs`, `addTabsToGroup`) — locate the exact Mac-side wrappers (search `createGroupFromTabs` in `Sources/`). Copy-link reuses the existing clipboard helper (`SpaceSessionController.myCopyLink` logic). Bookmark reuse: existing "Add to Bookmark / Add to Folder" path in `TabModel+Sidebar.swift`.
 
 **Step 1: Write the failing test** (pure-logic parts: dedup + ordering)
 
@@ -361,7 +361,7 @@ func addMultiSelectedTabs(toGroup token: String) {
 }
 ```
 
-> Fill in the bookmark/group/duplicate bridge calls with the exact existing APIs found in `BrowserState` / `MainBrowserWindowController` / `TabModel+Sidebar.swift`. Do not invent new bridge methods.
+> Fill in the bookmark/group/duplicate bridge calls with the exact existing APIs found in `BrowserState` / `SpaceSessionController` / `TabModel+Sidebar.swift`. Do not invent new bridge methods.
 
 **Step 4: Run test to verify it passes**
 
@@ -583,7 +583,7 @@ git commit -m "feat: unified multi-selection context menu"
 ## Task 9: Cmd+W batch close interception
 
 **Files:**
-- Modify: the Cmd+W command entry in `MainBrowserWindowController` (locate via search for `IDC_CLOSE_TAB` / the Close Tab `NSMenuItem` action / `performKeyEquivalent`)
+- Modify: the Cmd+W command entry in `SpaceSessionController` (locate via search for `IDC_CLOSE_TAB` / the Close Tab `NSMenuItem` action / `performKeyEquivalent`)
 
 **Step 2: Implementation**
 

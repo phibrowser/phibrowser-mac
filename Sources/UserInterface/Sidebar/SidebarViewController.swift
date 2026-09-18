@@ -29,7 +29,7 @@ final class SpacesStripHostingView: ThemedHostingView {
 
     /// Keep AppKit's window-background drag off the strip row. The main window
     /// sets `isMovableByWindowBackground = true`
-    /// (`MainBrowserWindowController.swift`), which makes a mouse-drag over the
+    /// (`SpaceSessionController.swift`), which makes a mouse-drag over the
     /// row a window move unless the view AppKit hit-tests vetoes it.
     ///
     /// This veto works and is what AppKit consults — measured on macOS 15.6
@@ -309,7 +309,7 @@ class SidebarViewController: NSViewController {
     /// resolved via `state.windowController?.slot`; for the early-init case
     /// where the window controller isn't wired up yet (BrowserState is
     /// constructed before the controller assigns itself in
-    /// `MainBrowserWindowController.init`), fall back to the manager's
+    /// `SpaceSessionController.init`), fall back to the manager's
     /// `keySlot` as a stand-in — at cold start that IS this window's own slot.
     /// A stand-in only: `init` wires the controller before `setupWindow()`
     /// loads this view tree, so the first resolution is the one that answers
@@ -832,7 +832,7 @@ class SidebarViewController: NSViewController {
             .store(in: &cancellables)
 
         // Mirror the SpacesStripView fallback chain so the gradient still
-        // resolves before MainBrowserWindowController has wired up its slot.
+        // resolves before SpaceSessionController has wired up its slot.
         let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
         slot?.$activeSpaceId
             .receive(on: DispatchQueue.main)
@@ -1586,4 +1586,9 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     // so the push-in band is just the pinned strip and the tab list.
     var spaceSwitchBandViews: [NSView] { [pinnedTabContainerView, tabList.view] }
     var spaceSwitchBandContainer: NSView { mainStackView }
+
+    func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
+        (view as? ColoredVisualEffectView)?.suppressesBackdrop = hidden
+        spaceTintBackgroundView.isHidden = hidden
+    }
 }

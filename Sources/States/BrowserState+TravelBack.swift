@@ -139,7 +139,7 @@ extension BrowserState {
             let check = { [weak self] in
                 do {
                     guard let self, self.travelBackAllowed,
-                          MainBrowserWindowControllersManager.shared.getBrowserState(for: self.windowId) === self else {
+                          SpaceSessionControllersManager.shared.getBrowserState(for: self.windowId) === self else {
                         throw TravelBackFailure.targetChanged
                     }
                     guard ProcessInfo.processInfo.systemUptime < deadline else {
@@ -173,7 +173,7 @@ extension BrowserState {
     private func travelBackCheck(_ tabs: [Tab], deadline: Double) throws {
         guard travelBackAllowed, ProcessInfo.processInfo.systemUptime < deadline,
               SpaceManager.shared.slot(forWindowId: windowId)?.activeSpaceId == spaceId,
-              MainBrowserWindowControllersManager.shared.getBrowserState(for: windowId) === self,
+              SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self,
               tabs.allSatisfy({ resolveTab($0.guid) === $0 && $0.webContentWrapper != nil }) else {
             throw TravelBackFailure.targetChanged
         }
@@ -270,7 +270,7 @@ extension BrowserState {
         try travelBackCheck([destination], deadline: deadline)
         destination.webContentWrapper?.setAsActiveTab()
         focuseTab(destination)
-        MainBrowserWindowControllersManager.shared.controller(for: windowId)?.window?.makeKeyAndOrderFront(nil)
+        SpaceSessionControllersManager.shared.controller(for: windowId)?.window?.makeKeyAndOrderFront(nil)
         let identifier = chatIdentifier(for: destination)
         // Request-driven creation bypasses the view's historical 300 ms timer.
         createAIChatTab(for: identifier, chromeTabId: destination.guid)

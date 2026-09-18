@@ -12,6 +12,51 @@ NS_ASSUME_NONNULL_BEGIN
 @protocol BookmarkWrapper;
 @protocol DownloadItemWrapper;
 @class ASWebAuthenticationSessionRequest;
+
+// ==========================================================================
+// Content blocking (Privacy pane)
+// ==========================================================================
+
+/// The three Privacy pane toggles.
+typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
+  PhiContentBlockingCategoryAds = 0,
+  PhiContentBlockingCategoryCookieBanners = 1,
+  PhiContentBlockingCategoryTrackers = 2,
+};
+
+/// One catalog filter list as shown in the Advanced sheet. Titles and
+/// descriptions are Mac-side strings keyed by `listId`. A protocol, like
+/// WebContentWrapper: the framework does not export class symbols.
+@protocol PhiContentBlockingListInfo <NSObject>
+@property (nonatomic, copy, readonly) NSString *listId;
+/// One of @"ads", @"trackers", @"cookies", @"regional", @"phi".
+@property (nonatomic, copy, readonly) NSString *category;
+@property (nonatomic, copy, readonly) NSString *homepage;
+@property (nonatomic, copy, readonly) NSString *license;
+/// BCP 47 primary subtags that switch a regional list on by default.
+@property (nonatomic, copy, readonly) NSArray<NSString *> *langs;
+/// The checkbox state (user override, else catalog/language default).
+@property (nonatomic, assign, readonly) BOOL checked;
+@property (nonatomic, assign, readonly) BOOL defaultChecked;
+@end
+
+/// A snapshot of one profile's content blocking state.
+@protocol PhiContentBlockingSettings <NSObject>
+@property (nonatomic, assign, readonly) BOOL blockAds;
+@property (nonatomic, assign, readonly) BOOL blockCookieBanners;
+@property (nonatomic, assign, readonly) BOOL blockTrackers;
+@property (nonatomic, copy, readonly) NSArray<id<PhiContentBlockingListInfo>> *lists;
+/// Registrable domains where blocking is off.
+@property (nonatomic, copy, readonly) NSArray<NSString *> *siteExceptions;
+/// One of @"active", @"building", @"degraded", @"disabled".
+@property (nonatomic, copy, readonly) NSString *status;
+/// Human-readable reason when `status` is @"degraded"; empty otherwise.
+@property (nonatomic, copy, readonly) NSString *statusDetail;
+/// 0 while no generation is published.
+@property (nonatomic, assign, readonly) int64_t generationId;
+/// Unix seconds; 0 while no generation is published.
+@property (nonatomic, assign, readonly) NSTimeInterval builtAt;
+@end
 // Window types reported by Chromium bridge.
 // Note: ChromiumBrowserTypeIncognito means TYPE_NORMAL + incognito profile.
 // Non-normal incognito windows (e.g. DevTools, Popup opened from incognito)
@@ -855,6 +900,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// closed since. Sent before the request resolves; never on failure. Callers
 /// must guard with respondsToSelector: (skew).
 - (void)collapseAIChatForTabId:(int64_t)tabId windowId:(int64_t)windowId;
+
+/// Content blocking of `profileId` published a new rule generation or changed
+/// status (active / building / degraded / disabled). Re-read the settings
+/// with -getContentBlockingSettings:completion:. UI thread.
+- (void)contentBlockingStatusChanged:(NSString *)profileId;
+
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>
@@ -912,7 +963,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                     atIndex:(NSInteger)index
                    windowId:(NSInteger)windowId
                  customGuid:(NSString* _Nullable)customGuid;
-                 
+
 // Unlike createNewTabWithUrl, this reuses an existing tab for the same URL when possible.
 - (void)openTabWithUrl:(NSString *)urlString windowId:(int64_t)windowId;
 
@@ -1787,6 +1838,32 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)setDownloadLocation:(NSString *)profileId
                        path:(NSString *)path
                  completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Reads `profileId`'s content blocking state. `completion` fires on the UI
+/// thread with the snapshot, or nil and an error.
+- (void)getContentBlockingSettings:(NSString *)profileId
+                        completion:(void (^)(id<PhiContentBlockingSettings> _Nullable settings, NSString * _Nullable error))completion;
+
+/// Turns one of the three Privacy pane toggles on or off. The rule set is
+/// rebuilt in the background; `contentBlockingStatusChanged:` reports it.
+- (void)setContentBlockingCategory:(NSString *)profileId
+                          category:(PhiContentBlockingCategory)category
+                           enabled:(BOOL)enabled
+                        completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Records the user's choice for one Advanced sheet list (`listId` from
+/// PhiContentBlockingListInfo). Unknown ids fail.
+- (void)setContentBlockingList:(NSString *)profileId
+                        listId:(NSString *)listId
+                       enabled:(BOOL)enabled
+                    completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Adds (`enabled` YES) or removes a registrable-domain exception where
+/// blocking is off for `profileId`.
+- (void)setContentBlockingSiteException:(NSString *)profileId
+                                 domain:(NSString *)domain
+                                enabled:(BOOL)enabled
+                             completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
 
 /// Opens one of `profileId`'s data/settings pages in a browser window for that
 /// profile (creating one if needed). `page` is one of @"privacy",

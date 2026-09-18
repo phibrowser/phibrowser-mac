@@ -4,6 +4,534 @@
     "" : {
 
     },
+    "settings.navigation.privacy" : {
+      "comment" : "Settings - Tab title for the privacy pane",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Privacy"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.done" : {
+      "comment" : "Advanced ad block settings - Button closing the sheet",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.intro" : {
+      "comment" : "Advanced ad block settings - Introductory sentence under the sheet title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block common components found across the web by using additional rules and filters."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.learnMore" : {
+      "comment" : "Advanced ad block settings - Link to the help page about content blocking",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Learn more"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.ads" : {
+      "comment" : "Advanced ad block settings - Section title for ad filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ad Blockers"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.cookies" : {
+      "comment" : "Advanced ad block settings - Section title for cookie banner filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cookie Banners"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.phi" : {
+      "comment" : "Advanced ad block settings - Section title for Phi's own filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.regional" : {
+      "comment" : "Advanced ad block settings - Section title for language-specific filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Regional"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.trackers" : {
+      "comment" : "Advanced ad block settings - Section title for tracker filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Trackers"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.title" : {
+      "comment" : "Advanced ad block settings - Sheet title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Advanced Ad Block Settings"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advancedButton" : {
+      "comment" : "Privacy settings - Button opening the Advanced Ad Block Settings sheet",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Advanced Settings"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.blockAds" : {
+      "comment" : "Privacy settings - Toggle title for blocking ads",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block ads"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.blockCookieBanners" : {
+      "comment" : "Privacy settings - Toggle title for hiding cookie consent banners",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block cookie banners"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.blockTrackers" : {
+      "comment" : "Privacy settings - Toggle title for blocking trackers",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block trackers"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardChinese.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard Chinese regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Chinese websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardChinese.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard Chinese regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard Chinese (中文)"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardJapanese.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard Japanese regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Japanese websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardJapanese.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard Japanese regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard Japanese (日本語)"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardRussian.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard Russian regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Russian websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardRussian.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard Russian regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard Russian"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.bulgarian.desc" : {
+      "comment" : "Privacy settings - Description of the Bulgarian regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Bulgarian websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.bulgarian.title" : {
+      "comment" : "Privacy settings - Name of the Bulgarian regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bulgarian List"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylist.desc" : {
+      "comment" : "Privacy settings - Description of the EasyList ad filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The most widely used list of ad servers and ad elements."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylist.title" : {
+      "comment" : "Privacy settings - Name of the EasyList ad filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "EasyList"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylistCookie.desc" : {
+      "comment" : "Privacy settings - Description of the EasyList cookie notice filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hides cookie consent banners and unlocks scrolling behind them."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylistCookie.title" : {
+      "comment" : "Privacy settings - Name of the EasyList cookie notice filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "EasyList - Cookie Notices"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylistPolish.desc" : {
+      "comment" : "Privacy settings - Description of the Polish regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Polish websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easylistPolish.title" : {
+      "comment" : "Privacy settings - Name of the Polish regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "EasyList - Polska lista"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easyprivacy.desc" : {
+      "comment" : "Privacy settings - Description of the EasyPrivacy tracker filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Blocks tracking scripts, beacons and analytics."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.easyprivacy.title" : {
+      "comment" : "Privacy settings - Name of the EasyPrivacy tracker filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "EasyPrivacy"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.phiSpecific.desc" : {
+      "comment" : "Privacy settings - Description of Phi's own first-party filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Fixes and rules maintained by Phi. Keep this on unless a site misbehaves."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.phiSpecific.title" : {
+      "comment" : "Privacy settings - Name of Phi's own first-party filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi Blocklists"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockAds.desc" : {
+      "comment" : "Privacy settings - Description of the uBlock Origin ads filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Additional ad rules maintained by the uBlock Origin project."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockAds.title" : {
+      "comment" : "Privacy settings - Name of the uBlock Origin ads filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "uBlock - Ads"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockPrivacy.desc" : {
+      "comment" : "Privacy settings - Description of the uBlock Origin privacy filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Extra tracker rules from the uBlock Origin project. May affect some sites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockPrivacy.title" : {
+      "comment" : "Privacy settings - Name of the uBlock Origin privacy filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "uBlock - Privacy"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockUnbreak.desc" : {
+      "comment" : "Privacy settings - Description of the uBlock Origin unbreak list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Fixes for sites that other rules would break."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.ublockUnbreak.title" : {
+      "comment" : "Privacy settings - Name of the uBlock Origin list that fixes sites broken by blocking",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "uBlock - Unbreak"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.listInfo.license" : {
+      "comment" : "Advanced ad block settings - License line in a filter list's details; %@ is the license name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "License: %@"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.listInfo.source" : {
+      "comment" : "Advanced ad block settings - Link label pointing at a filter list's home page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Source"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.status.degraded" : {
+      "comment" : "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Filtering is running with the last good rules"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.status.disabled" : {
+      "comment" : "Privacy settings - Status line shown when every content blocking toggle is off",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Content blocking is off"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.title" : {
+      "comment" : "Privacy settings - Section title above the ad, cookie banner and tracker toggles",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Content blocking"
+          }
+        }
+      }
+    },
+    "settings.privacy.profilePicker.label" : {
+      "comment" : "Privacy settings - Label of the picker choosing which profile the privacy settings apply to",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Settings for profile"
+          }
+        }
+      }
+    },
     "・" : {
       "shouldTranslate" : false
     },

@@ -35,6 +35,7 @@ extension AppController {
     private func panes() -> [SettingsPane] {
         var panes: [SettingsPane] =
         [AccountSettingViewController(),
+         PrivacySettingViewController(),
          GeneralSettingViewController(),
          ProfilesSettingViewController(),
          SpacesSettingViewController(),

@@ -51,6 +51,7 @@
 		3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */; };
 		374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */; };
 		374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */; };
+		3751E249305D18AE004D82C7 /* LibraryViewModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3751E246305D18AE004D82C7 /* LibraryViewModule.swift */; };
 		3756AB282F31ABA300FFA686 /* WebContentAddressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */; };
 		3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */; };
 		375B2D3A2ED009F60053FECC /* BrowserDataImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B2D392ED009F60053FECC /* BrowserDataImporter.swift */; };
@@ -60,6 +61,7 @@
 		375C66392EFB925F00885D78 /* Ivy-Presto-Display-Light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 375C66342EFB923C00885D78 /* Ivy-Presto-Display-Light.otf */; };
 		375C663A2EFB925F00885D78 /* ivy-presto-headline-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 375C66352EFB923C00885D78 /* ivy-presto-headline-semi-bold.otf */; };
 		375C663B2EFB925F00885D78 /* IvyEpic-Regular.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 375C66362EFB923C00885D78 /* IvyEpic-Regular.otf */; };
+		375F11D0305ABE47005EF5E8 /* AllDownloadsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375F11CF305ABE47005EF5E8 /* AllDownloadsListView.swift */; };
 		37604F632F14C52300B9FB37 /* DefaultColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37604F622F14C52300B9FB37 /* DefaultColors.swift */; };
 		376193532F4EB8630094A78E /* SystemUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376193522F4EB8630094A78E /* SystemUtils.swift */; };
 		376195412F5149C40094A78E /* HeaderExtensionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376195402F5149C40094A78E /* HeaderExtensionsView.swift */; };
@@ -623,6 +625,7 @@
 		DEBE00000000000000000005 /* DeveloperSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000002 /* DeveloperSettingViewController.swift */; };
 		DEBE00000000000000000006 /* DeveloperSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */; };
 		DEBE00000000000000000007 /* DeveloperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000004 /* DeveloperSettingsView.swift */; };
+		EA9211000000000000000001 /* LibraryOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211000000000000000002 /* LibraryOverlayController.swift */; };
 		EAD000000000000000000012 /* ReaderExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000011 /* ReaderExtractionService.swift */; };
 		EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000013 /* BrowserState+Reader.swift */; };
 		EAD000000000000000000016 /* ReaderDocumentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000015 /* ReaderDocumentBuilder.swift */; };
@@ -832,6 +835,7 @@
 		3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-light.otf"; sourceTree = "<group>"; };
 		374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAreaContextMenuHelper.swift; sourceTree = "<group>"; };
 		374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabDecisionEngine.swift; sourceTree = "<group>"; };
+		3751E246305D18AE004D82C7 /* LibraryViewModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModule.swift; sourceTree = "<group>"; };
 		3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBar.swift; sourceTree = "<group>"; };
 		3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthManager+Provider.swift"; sourceTree = "<group>"; };
 		375B2D392ED009F60053FECC /* BrowserDataImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserDataImporter.swift; sourceTree = "<group>"; };
@@ -841,6 +845,7 @@
 		375C66342EFB923C00885D78 /* Ivy-Presto-Display-Light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Ivy-Presto-Display-Light.otf"; sourceTree = "<group>"; };
 		375C66352EFB923C00885D78 /* ivy-presto-headline-semi-bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-semi-bold.otf"; sourceTree = "<group>"; };
 		375C66362EFB923C00885D78 /* IvyEpic-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IvyEpic-Regular.otf"; sourceTree = "<group>"; };
+		375F11CF305ABE47005EF5E8 /* AllDownloadsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllDownloadsListView.swift; sourceTree = "<group>"; };
 		37604F622F14C52300B9FB37 /* DefaultColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultColors.swift; sourceTree = "<group>"; };
 		376193522F4EB8630094A78E /* SystemUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemUtils.swift; sourceTree = "<group>"; };
 		376195402F5149C40094A78E /* HeaderExtensionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderExtensionsView.swift; sourceTree = "<group>"; };
@@ -1405,6 +1410,7 @@
 		E08D677F10AA9CACCB10A15C /* TabDataModelSchemaV12.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV12.swift; sourceTree = "<group>"; };
 		2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV13.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-OpenSource.entitlements"; sourceTree = "<group>"; };
+		EA9211000000000000000002 /* LibraryOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryOverlayController.swift; sourceTree = "<group>"; };
 		EAD000000000000000000011 /* ReaderExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtractionService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000013 /* BrowserState+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+Reader.swift"; sourceTree = "<group>"; };
 		EAD000000000000000000015 /* ReaderDocumentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDocumentBuilder.swift; sourceTree = "<group>"; };
@@ -1573,6 +1579,23 @@
 				37289F112EFE602F0003624E /* EventTracker.swift */,
 			);
 			path = EventTrack;
+			sourceTree = "<group>";
+		};
+		3751E245305D1857004D82C7 /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				3751E246305D18AE004D82C7 /* LibraryViewModule.swift */,
+				EA9211000000000000000002 /* LibraryOverlayController.swift */,
+				3751E6B5305D39B8004D82C7 /* Space */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
+		3751E6B5305D39B8004D82C7 /* Space */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Space;
 			sourceTree = "<group>";
 		};
 		375C66372EFB923C00885D78 /* Fonts */ = {
@@ -1770,6 +1793,7 @@
 				37C1B2812EE0396900DD4496 /* DownloadsManager.swift */,
 				37C1B2872EE0418700DD4496 /* DownloadsManager+Test.swift */,
 				37C1B2832EE039D000DD4496 /* DownloadsListView.swift */,
+				375F11CF305ABE47005EF5E8 /* AllDownloadsListView.swift */,
 				37C1B2852EE03C7300DD4496 /* DownloadsListViewController.swift */,
 				37C1B2892EE0457F00DD4496 /* LivingDownloadsListView.swift */,
 				37C1B2A32EE162EE00DD4496 /* DownloadItemRow.swift */,
@@ -2461,6 +2485,7 @@
 		B0F370CC2E432646000B51F9 /* UserInterface */ = {
 			isa = PBXGroup;
 			children = (
+				3751E245305D1857004D82C7 /* Library */,
 				8EB020203020000000000020 /* AccountDataExport */,
 				8EB01BE03010BCED0043E59D /* AccountDeletion */,
 				CC6B000D2E77E03000D4F133 /* AboutWindow */,
@@ -3805,6 +3830,7 @@
 				5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */,
 				5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */,
 				37C1B2842EE039D000DD4496 /* DownloadsListView.swift in Sources */,
+				375F11D0305ABE47005EF5E8 /* AllDownloadsListView.swift in Sources */,
 				8E4FD9BF2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift in Sources */,
 				CC450ACD2EA251D3004EE144 /* HoverableButton.swift in Sources */,
 				37EECF222F0F623A0022A176 /* EmbeddedChatViewController.swift in Sources */,
@@ -3915,6 +3941,8 @@
 				AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */,
 				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
 				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
+				3751E249305D18AE004D82C7 /* LibraryViewModule.swift in Sources */,
+				EA9211000000000000000001 /* LibraryOverlayController.swift in Sources */,
 				5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */,
 				AB7090710000000000000002 /* SiteMemoryService.swift in Sources */,
 				5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */,

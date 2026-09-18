@@ -1,6 +1,78 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "library.content.comingSoon" : {
+      "comment" : "Library - Placeholder for a category not yet available",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming soon"
+          }
+        }
+      }
+    },
+    "library.navigation.close" : {
+      "comment" : "Library - Close button label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to browsing"
+          }
+        }
+      }
+    },
+    "library.navigation.downloads" : {
+      "comment" : "Library - Downloads category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloads"
+          }
+        }
+      }
+    },
+    "library.navigation.folio" : {
+      "comment" : "Library - Saved content category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folio"
+          }
+        }
+      }
+    },
+    "library.navigation.spaces" : {
+      "comment" : "Library - Spaces category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces"
+          }
+        }
+      }
+    },
+    "library.navigation.title" : {
+      "comment" : "Library - Title and entry button label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        }
+      }
+    },
     "" : {
 
     },
@@ -37658,6 +37730,90 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這個檔案不常被下載，可能有危險性"
+          }
+        }
+      }
+    },
+    "downloads.all.allProfiles" : {
+      "comment" : "All downloads window - Filter including all regular profiles",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Profiles"
+          }
+        }
+      }
+    },
+    "downloads.all.empty" : {
+      "comment" : "All downloads window - No downloads match the selected profiles",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Downloads in Selected Profiles"
+          }
+        }
+      }
+    },
+    "downloads.all.loadFailure" : {
+      "comment" : "All downloads window - Partial failure while loading profile download histories",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some profiles could not be loaded. Try refreshing."
+          }
+        }
+      }
+    },
+    "downloads.all.loading" : {
+      "comment" : "All downloads window - Loading profile download histories",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading Downloads…"
+          }
+        }
+      }
+    },
+    "downloads.all.refresh" : {
+      "comment" : "All downloads window - Refresh download history",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh"
+          }
+        }
+      }
+    },
+    "downloads.all.selectedProfiles" : {
+      "comment" : "All downloads window - Profile filter menu with a custom selection",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected Profiles"
+          }
+        }
+      }
+    },
+    "downloads.all.windowTitle" : {
+      "comment" : "All downloads window - Window title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Downloads"
           }
         }
       }

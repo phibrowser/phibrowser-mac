@@ -410,7 +410,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param downloadItem The download item wrapper containing meta information (may be nil for REMOVED/DESTROYED events)
 - (void)downloadEventOccurred:(DownloadEventType)eventType
                          guid:(NSString *)guid
-                 downloadItem:(id<DownloadItemWrapper> _Nullable)downloadItem;
+                 downloadItem:(id<DownloadItemWrapper> _Nullable)downloadItem
+                    profileId:(NSString *)profileId
+               isOffTheRecord:(BOOL)isOffTheRecord;
 
 - (NSString *)getNativeSettings;
 /// Returns whether Phi extensions should be kept enabled (Mac is source of truth).
@@ -1604,6 +1606,25 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @return Array of DownloadItemWrapper objects
 - (NSArray<id<DownloadItemWrapper>> *)getAllDownloadItemsWithWindowId:(int64_t)windowId;
 
+/// Queries regular profiles, loading each profile and its download history first.
+/// nil selects all registered profiles; an empty array selects none. Duplicate IDs
+/// are ignored. Invalid/unavailable IDs are returned in failedProfileIds; no fallback.
+/// Completion runs on the UI thread. Off-the-record sessions are never included.
+- (void)getDownloadItemsForProfileIds:(NSArray<NSString *> * _Nullable)profileIds
+    completion:(void (^)(NSArray<id<DownloadItemWrapper>> *items, NSArray<NSString *> *failedProfileIds))completion
+    NS_SWIFT_NAME(getDownloadItems(forProfileIds:completion:));
+
+/// Profile-addressed operations target loaded regular profiles without a window.
+- (void)pauseDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)resumeDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)cancelDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)removeDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)openDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)showDownloadInFinderWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)validateDangerousDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+- (void)validateInsecureDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
+
+
 /// Get a single download item by GUID
 /// @param guid The unique identifier of the download item
 /// @param windowId The window ID (used to find the Browser object)
@@ -2302,6 +2323,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Identification
 @property(nonatomic, copy, readonly) NSString *guid;
+/// Owning regular profile basename (or the Incognito Space wire ID).
+@property(nonatomic, copy, readonly) NSString *profileId;
+@property(nonatomic, assign, readonly) BOOL isOffTheRecord;
 @property(nonatomic, copy, readonly) NSString *url;
 @property(nonatomic, copy, readonly) NSString *mimeType;
 

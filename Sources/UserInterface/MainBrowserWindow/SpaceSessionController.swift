@@ -63,6 +63,24 @@ class SpaceSessionController: NSWindowController {
         ImagePreviewOverlayViewController(state: browserState.imagePreviewState)
     }()
 
+    /// Window-scoped Library view, created on first use.
+    private var libraryOverlayController: LibraryOverlayController?
+
+    func showLibrary(from source: NSView) {
+        guard let window, source.window === window else { return }
+        if libraryOverlayController == nil {
+            libraryOverlayController = LibraryOverlayController(parent: window, browserState: browserState)
+        }
+        libraryOverlayController?.show(from: source)
+    }
+
+    @discardableResult
+    func dismissLibraryIfVisible() -> Bool {
+        guard libraryOverlayController?.isVisible == true else { return false }
+        libraryOverlayController?.dismiss()
+        return true
+    }
+
     /// Peek popup panel, created on first present. Exposed to the
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
     private var peekPanelController: PeekPanelController?
@@ -1356,6 +1374,7 @@ class SpaceSessionController: NSWindowController {
         // Browser::~Browser → HidePlaceholder fires first and clears state,
         // making this a no-op; kept as a backstop in case the destruction
         // order ever shifts. See spec §9.1 / §9.4.
+        libraryOverlayController?.dismiss(animated: false, restoreFocus: false)
         browserState.exitPlaceholderMode()
         // Drop peek bookkeeping and the panel; the peek tab itself is torn
         // down by Chromium together with the window's tab strip.

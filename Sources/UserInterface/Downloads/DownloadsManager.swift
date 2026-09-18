@@ -26,6 +26,10 @@ enum DownloadState: Int {
 /// Swift model for download item
 class DownloadItem: ObservableObject, Identifiable {
     let id: String  // guid
+    let profileId: String
+    let isOffTheRecord: Bool
+
+    var profileScopedId: String { "\(profileId):\(isOffTheRecord):\(id)" }
     
     @Published var fileName: String
     @Published var url: String
@@ -142,6 +146,8 @@ class DownloadItem: ObservableObject, Identifiable {
     
     init(from wrapper: DownloadItemWrapper) {
         self.id = wrapper.guid
+        self.profileId = wrapper.profileId
+        self.isOffTheRecord = wrapper.isOffTheRecord
         self.fileName = wrapper.fileNameToReportUser
         self.url = wrapper.url
         self.mimeType = wrapper.mimeType
@@ -189,6 +195,8 @@ class DownloadItem: ObservableObject, Identifiable {
     init(id: String, fileName: String, url: String, state: DownloadState = .complete, 
          percentComplete: Int = 100, totalBytes: Int64 = 0, receivedBytes: Int64 = 0) {
         self.id = id
+        self.profileId = LocalStore.defaultProfileId
+        self.isOffTheRecord = false
         self.fileName = fileName
         self.url = url
         self.mimeType = ""
@@ -248,6 +256,30 @@ class DownloadsManager: ObservableObject {
         activeDownloadCount > 0
     }
     
+    /// Non-nil for aggregate downloads in Library and the All Downloads window.
+    private(set) var profileIds: [String]?
+    @Published private(set) var isLoading = false
+    @Published private(set) var failedProfileIds: [String] = []
+    private var refreshGeneration = 0
+    private var eventSubscription: AnyCancellable?
+    convenience init(profileIds: [String]) {
+        self.init(browserState: nil)
+        self.profileIds = profileIds
+        eventSubscription = PhiChromiumCoordinator.shared.downloadEvents
+            .sink { [weak self] event in
+                guard let self, !event.isOffTheRecord,
+                      self.profileIds?.contains(event.profileId) == true else { return }
+                self.handleDownloadEvent(eventType: event.eventType, guid: event.guid,
+                                         wrapper: event.wrapper, profileId: event.profileId)
+            }
+    }
+
+    func selectProfiles(_ ids: [String]) {
+        profileIds = ids
+        downloads.removeAll { !ids.contains($0.profileId) }
+        refreshDownloads()
+    }
+
     private var windowId: Int64 {
         Int64(browserState?.windowId ?? 0)
     }
@@ -313,6 +345,19 @@ class DownloadsManager: ObservableObject {
             return
         }
         
+        if let profileIds {
+            refreshGeneration += 1
+            let generation = refreshGeneration
+            isLoading = true
+            failedProfileIds = []
+            bridge.getDownloadItems(forProfileIds: profileIds) { [weak self] wrappers, failures in
+                guard let self, self.refreshGeneration == generation else { return }
+                self.failedProfileIds = failures
+                self.applyDownloadSnapshot(wrappers)
+                self.isLoading = false
+            }
+            return
+        }
         let wrappers = bridge.getAllDownloadItems(withWindowId: windowId)
         applyDownloadSnapshot(wrappers)
     }
@@ -321,10 +366,10 @@ class DownloadsManager: ObservableObject {
         var newDownloads: [DownloadItem] = []
         for wrapper in wrappers {
             guard !Self.shouldHideDownload(wrapper) else {
-                hideDownload(wrapper.guid)
+                hideDownload(wrapper.guid, profileId: wrapper.profileId)
                 continue
             }
-            if let existing = downloads.first(where: { $0.id == wrapper.guid }) {
+            if let existing = downloads.first(where: { $0.id == wrapper.guid && $0.profileId == wrapper.profileId && $0.isOffTheRecord == wrapper.isOffTheRecord }) {
                 existing.update(from: wrapper)
                 newDownloads.append(existing)
             } else {
@@ -332,26 +377,21 @@ class DownloadsManager: ObservableObject {
             }
         }
         
-        // Sort: in-progress first, then by start time (newest first) within each group
-        newDownloads.sort { item1, item2 in
-            let isInProgress1 = item1.state == .inProgress
-            let isInProgress2 = item2.state == .inProgress
-            
-            // In-progress items come first
-            if isInProgress1 != isInProgress2 {
-                return isInProgress1
-            }
-            
-            // Within same group, sort by start time (newest first)
-            return (item1.startTime ?? .distantPast) > (item2.startTime ?? .distantPast)
-        }
-        
+        newDownloads.sort(by: Self.downloadOrder)
+
         downloads = newDownloads
         updateTotalProgress()
         AppLogDebug("📥 [Downloads] Refreshed \(downloads.count) items, progress: \(Int(totalDownloadProgress * 100))%")
         
         // Check if completed files still exist on disk
         checkCompletedFilesExistence()
+    }
+
+    private static func downloadOrder(_ lhs: DownloadItem, _ rhs: DownloadItem) -> Bool {
+        if (lhs.state == .inProgress) != (rhs.state == .inProgress) {
+            return lhs.state == .inProgress
+        }
+        return (lhs.startTime ?? .distantPast) > (rhs.startTime ?? .distantPast)
     }
 
     private static func shouldHideDownload(_ wrapper: DownloadItemWrapper) -> Bool {
@@ -364,9 +404,9 @@ class DownloadsManager: ObservableObject {
                 || wrapper.state == DownloadState.cancelled.rawValue)
     }
 
-    private func hideDownload(_ guid: String) {
-        guard let existing = downloads.first(where: { $0.id == guid }) else { return }
-        downloads.removeAll { $0.id == guid }
+    private func hideDownload(_ guid: String, profileId: String? = nil) {
+        guard let existing = downloads.first(where: { $0.id == guid && (profileId == nil || $0.profileId == profileId) }) else { return }
+        downloads.removeAll { $0.id == guid && (profileId == nil || $0.profileId == profileId) }
         updateTotalProgress()
         downloadEventPublisher.send(DownloadEvent(eventType: .removed, downloadItem: existing))
     }
@@ -397,12 +437,13 @@ class DownloadsManager: ObservableObject {
     }
     
     /// Handle download event from Chromium
-    func handleDownloadEvent(eventType: DownloadEventType, guid: String, wrapper: DownloadItemWrapper?) {
-        DispatchQueue.main.async { [weak self] in
+    func handleDownloadEvent(eventType: DownloadEventType, guid: String, wrapper: DownloadItemWrapper?, profileId: String? = nil) {
+        let applyEvent = { [weak self] in
             guard let self = self else { return }
+            if let ids = self.profileIds, let profileId, !ids.contains(profileId) { return }
 
             if let wrapper, Self.shouldHideDownload(wrapper) {
-                self.hideDownload(guid)
+                self.hideDownload(guid, profileId: profileId)
                 return
             }
             
@@ -412,11 +453,11 @@ class DownloadsManager: ObservableObject {
             switch eventType {
             case .created, .updated, .completed, .paused, .resumed, .cancelled, .interrupted:
                 if let wrapper,
-                   let existing = self.downloads.first(where: { $0.id == guid }) {
+                   let existing = self.downloads.first(where: { $0.id == guid && (profileId == nil || $0.profileId == profileId) }) {
                     existing.update(from: wrapper)
                     affectedItem = existing
                 } else if let wrapper,
-                          eventType == .created || URL(string: wrapper.url)?.isFileURL == true {
+                          eventType == .created || self.profileIds != nil || URL(string: wrapper.url)?.isFileURL == true {
                     // A local download may first become visible on an update or
                     // completion. Publish its first visible state as creation so
                     // the floating download UI receives it as well.
@@ -427,8 +468,8 @@ class DownloadsManager: ObservableObject {
                 }
                 
             case .removed, .destroyed:
-                affectedItem = self.downloads.first { $0.id == guid }
-                self.downloads.removeAll { $0.id == guid }
+                affectedItem = self.downloads.first { $0.id == guid && (profileId == nil || $0.profileId == profileId) }
+                self.downloads.removeAll { $0.id == guid && (profileId == nil || $0.profileId == profileId) }
                 
             case .opened:
                 // No UI update needed
@@ -438,6 +479,9 @@ class DownloadsManager: ObservableObject {
                 break
             }
             
+            if self.profileIds != nil {
+                self.downloads.sort(by: Self.downloadOrder)
+            }
             // Update total progress after any download event
             self.updateTotalProgress()
             
@@ -445,32 +489,61 @@ class DownloadsManager: ObservableObject {
             let event = DownloadEvent(eventType: publishedEventType, downloadItem: affectedItem)
             self.downloadEventPublisher.send(event)
         }
+        if Thread.isMainThread {
+            applyEvent()
+        } else {
+            DispatchQueue.main.async(execute: applyEvent)
+        }
     }
     
     // MARK: - Download Actions
     
     func pauseDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.pauseDownload(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.pauseDownload(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.pauseDownload(withGuid: item.id, windowId: windowId)
+        }
     }
     
     func resumeDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.resumeDownload(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.resumeDownload(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.resumeDownload(withGuid: item.id, windowId: windowId)
+        }
     }
     
     func cancelDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.cancelDownload(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.cancelDownload(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.cancelDownload(withGuid: item.id, windowId: windowId)
+        }
     }
     
     func removeDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.removeDownload(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.removeDownload(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.removeDownload(withGuid: item.id, windowId: windowId)
+        }
     }
     
     func openDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.openDownload(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.openDownload(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.openDownload(withGuid: item.id, windowId: windowId)
+        }
     }
     
     func showInFinder(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.showDownloadInFinder(withGuid: item.id, windowId: windowId)
+        if profileIds != nil {
+            ChromiumLauncher.sharedInstance().bridge?.showDownloadInFinder(withGuid: item.id, profileId: item.profileId)
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.showDownloadInFinder(withGuid: item.id, windowId: windowId)
+        }
     }
     
     // MARK: - Safety Actions
@@ -480,14 +553,22 @@ class DownloadsManager: ObservableObject {
         guard item.safetyState == .warning else { return }
 
         if item.isInsecure {
-            ChromiumLauncher.sharedInstance().bridge?.validateInsecureDownload(withGuid: item.id, windowId: windowId)
+            if profileIds != nil {
+                ChromiumLauncher.sharedInstance().bridge?.validateInsecureDownload(withGuid: item.id, profileId: item.profileId)
+            } else {
+                ChromiumLauncher.sharedInstance().bridge?.validateInsecureDownload(withGuid: item.id, windowId: windowId)
+            }
         } else if item.isDangerous {
-            ChromiumLauncher.sharedInstance().bridge?.validateDangerousDownload(withGuid: item.id, windowId: windowId)
+            if profileIds != nil {
+                ChromiumLauncher.sharedInstance().bridge?.validateDangerousDownload(withGuid: item.id, profileId: item.profileId)
+            } else {
+                ChromiumLauncher.sharedInstance().bridge?.validateDangerousDownload(withGuid: item.id, windowId: windowId)
+            }
         }
     }
 
     func discardDownload(_ item: DownloadItem) {
-        ChromiumLauncher.sharedInstance().bridge?.removeDownload(withGuid: item.id, windowId: windowId)
+        removeDownload(item)
     }
 
     func copyLink(_ item: DownloadItem) {

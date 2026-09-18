@@ -223,3 +223,15 @@ per-kind 报损重放两步确认。
 21. **compile-only**（`xcodebuild build-for-testing`）。本任务新增的 31 条用例（B2-1 … B2-18 的引擎
     半边、B2-2b）**没有在运行时跑过**；跟进轮 / 冲突重试的写序号（B2-1e 的第 4 次、B2-4b 的
     `saveCalls + 2`）按代码推导，未实测。
+
+### Fix round 1（review 的一条 Important）
+
+22. **R-M3-4a-103 的控制者裁定**：报损重放的第 ① / ② 步任一写不成 ⇒ 那条 kind **本轮不发布**、
+    报损检查下一轮再触发。`loadOwnedTable` 的两个 `(table, false)` 失败支不改、函数内不加闸；改在
+    `publishOwnedKind` 的 `guard !loaded.lost` 之后加 `guard cursorSaveFailures == 0 else { return }`。
+    理由：那两支回到的 `publishOwnedKind` 已经过了轮首的 `canPublishThisRound`，不拦的话发布段会对着
+    **空的**游标表跑快照 → 差分 → commit，并用 `writeOwnedTable` 重建文件 ⇒ 下一轮不再报损、per-kind
+    闩永不置位、整类型重放永久丢失——正是两步次序要防的那一格。探针 CASE 2b-L1
+    （`PhiSyncMarkerBoundaryTests.testAFailedLossReplayArmDoesNotPublishAgainstTheLostTableNorRecreateItsFile`，
+    设置半边靠预置空 `storedLastEntity` 早退、Space 半边靠 guard 3 的 `unreadableTagHashes` 跳过，
+    于是「零 `commit` 调用」只说书签那一半）；Task 6 的 U-18 两条 R-103 变体为 urlrules 再钉。

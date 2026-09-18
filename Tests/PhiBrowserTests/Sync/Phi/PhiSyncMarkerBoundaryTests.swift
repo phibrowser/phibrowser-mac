@@ -2212,6 +2212,70 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertTrue(markerStore.saves.isEmpty)
         XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
     }
+
+    // MARK: - CASE 2b-L1（报损重放的两步之一失败 ⇒ 那条 kind 本轮不发布、不重建文件）
+
+    /// CASE 2b-L1（Task 2b fix round 1，R-M3-4a-103）— 书签游标文件丢失（`bookmarksHadRecords ==
+    /// true`）+ 一条本机待发编辑；报损重放的第 ① 步（清 marker）写不成 ⇒ 那一轮**零 `commit`
+    /// 调用**、书签 store 没有新写（不重建文件）、`bookmarksReplayedForEmptyTable == false`、
+    /// `cursor_save_failed`；下一轮 store 放行 ⇒ 报损再次检测到、marker 清成 nil、闩写下、drain
+    /// 武装。Task 6 的 U-18 两条 R-103 变体会为 urlrules 再钉一次。
+    ///
+    /// 防的是什么：`loadOwnedTable` 的两个失败支回 `(table, false)`，`publishOwnedKind` 里的
+    /// `guard !loaded.lost` 放行——不再拦一道的话，发布段会对着**空的**游标表跑快照 → 差分 →
+    /// commit（本机那条待发编辑被当成新建发出去），并在末尾 `writeOwnedTable` 写出一份新文件；
+    /// 下一轮的 load 不再报损，per-kind 闩再也不会置位，那条 kind 的整类型重放**永久丢失**——
+    /// 对着空表发布 + 重建文件把丢失永远藏起来。
+    ///
+    /// 设置与 Space 两半各自没有东西可发（`storedLastEntity` 预置成空实体 ⇒ `outgoing == last`
+    /// 早退；`su-1` 记进 `unreadableTagHashes` ⇒ guard 3 跳过它），于是「零 `commit` 调用」说的
+    /// 就是书签那一半。marker 写序号：页 1 的 marker 写是第 1 次，报损重放的第 ① 步是第 2 次。
+    func testAFailedLossReplayArmDoesNotPublishAgainstTheLostTableNorRecreateItsFile() async throws {
+        let spaceStore = drainedSpaceStore()
+        spaceStore.table.bookmarksHadRecords = true
+        spaceStore.table.unreadableTagHashes[
+            PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("su-1"))] = 1
+        defaults.set(try Phi_PhiSettingEntity().serializedData(),
+                     forKey: PhiSyncEngine.lastEntityStateKey)
+        let access = FakeBookmarkAccess(rows: [.fixture(guid: "gl", syncId: "bl", spaceId: "s-1",
+                                                        title: "Local edit")])
+        let ownedStore = MemoryOwnedItemStore()               // 空表 = 游标文件丢了
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 2
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertTrue(client.commits.isEmpty, "零 commit 调用")
+        XCTAssertTrue(client.callLog.filter { $0 == "commit" }.isEmpty)
+        XCTAssertEqual(ownedStore.saveCalls, 1, "只有落地那一次（空表）；发布段没有写出新文件")
+        XCTAssertTrue(ownedStore.table.cursors.isEmpty, "没有游标被写下 ⇒ 下一轮 load 照样报损")
+        XCTAssertEqual(ownedStore.hadRecordsSeen, [true, true], "轮首与发布段各报损一次")
+        XCTAssertFalse(spaceStore.table.bookmarksReplayedForEmptyTable, "闩没置位")
+        XCTAssertFalse(spaceStore.table.drainInProgress, "drain 没武装")
+        XCTAssertTrue(spaceStore.table.hasDrainedFullReplay)
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8), "页 1 的 marker 已落盘，清 marker 那一步没成")
+        XCTAssertEqual(markerStore.saves.count, 2)
+
+        markerStore.failSaveOnCallNumber = nil
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertTrue(client.commits.isEmpty, "报损再次检测到 ⇒ 这一轮仍然一条不发")
+        XCTAssertNil(markerStore.file.marker, "marker 清成 nil")
+        XCTAssertTrue(spaceStore.table.bookmarksReplayedForEmptyTable, "闩写下")
+        XCTAssertTrue(spaceStore.table.drainInProgress, "重放武装")
+        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay)
+        XCTAssertTrue(ownedStore.table.cursors.isEmpty, "仍然没有对着空表发布")
+    }
 }
 
 private extension PhiSyncEngineTests.FakePhiSyncClient {

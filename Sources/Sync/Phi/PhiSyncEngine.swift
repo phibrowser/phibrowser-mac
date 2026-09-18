@@ -3741,6 +3741,13 @@ actor PhiSyncEngine {
         guard ownedItemsPublishAllowed else { return }
         let loaded = loadOwnedTable(registration, armsReplayOnLoss: true)
         guard !loaded.lost else { return }
+        // R-M3-4a-103（Task 2b fix round 1）：报损重放的两步之一写不成时 `loadOwnedTable` 回的是
+        // `(table, false)`——上面那道 guard 放行，而这里已经过了轮首的 `canPublishThisRound`。
+        // 不拦的话，发布段会拿一张**空的**游标表跑快照 → 差分 → commit，并在末尾
+        // `writeOwnedTable` 写出一份新文件：下一轮的 load 不再报损，per-kind 闩再也不会置位，
+        // 那条 kind 的整类型重放**永久丢失**——正是两步次序要防的那一格。一次失败的重放武装
+        // 既不许对着丢失的表发布，也不许重建它的文件；下一轮报损检查照样触发。
+        guard cursorSaveFailures == 0 else { return }
         var table = loaded.table
         var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
 

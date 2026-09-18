@@ -11,8 +11,17 @@ final class SpaceSyncMappingManagerTests: XCTestCase {
     /// 逐行同形的内存假件。
     final class MemorySpaceMappingStore: SpaceSyncMappingStore {
         var map: [String: String] = [:]
+        /// 置真 ⇒ 每一次 `setSyncUuid` 都回 false 并**不改** `map`：写盘失败之后
+        /// store 已经把内存回滚，所以那条 uuid**不留痕迹**（R-M3-4a-83）。
+        var failNextSet = false
+        private(set) var setCalls = 0
         func syncUuid(forSpaceId spaceId: String) -> String? { map[spaceId] }
-        func setSyncUuid(_ uuid: String, forSpaceId spaceId: String) { map[spaceId] = uuid }
+        func setSyncUuid(_ uuid: String, forSpaceId spaceId: String) -> Bool {
+            setCalls += 1
+            guard !failNextSet else { return false }
+            map[spaceId] = uuid
+            return true
+        }
         func allMappings() -> [String: String] { map }
         func removeMapping(forSpaceId spaceId: String) { map.removeValue(forKey: spaceId) }
         func removeAllMappings() { map = [:] }
@@ -164,10 +173,21 @@ final class SpaceSyncMappingManagerTests: XCTestCase {
 
     override func tearDown() {
         for account in scratchAccounts {
+            // B2-18 变体 (c) 把 `defaults/` 改成只读来注入落盘失败；**先恢复权限再删**。
+            try? Self.setDefaultsDirectoryWritable(true, for: account)
             try? FileManager.default.removeItem(at: account.userDataStorage)
         }
         scratchAccounts = []
         super.tearDown()
+    }
+
+    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
+    /// **测试进程不是 root**，所以这个注入是确定的。
+    private static func setDefaultsDirectoryWritable(_ writable: Bool, for account: Account) throws {
+        let directory = account.userDataStorage
+            .appendingPathComponent("defaults", isDirectory: true)
+        try FileManager.default.setAttributes([.posixPermissions: writable ? 0o700 : 0o500],
+                                              ofItemAtPath: directory.path)
     }
 
     /// 键名是「这张表按账户隔离」的全部理由，一次改名会把老机器的映射静默丢掉。
@@ -179,8 +199,8 @@ final class SpaceSyncMappingManagerTests: XCTestCase {
         let store = makeAccountStore()
         XCTAssertEqual(store.allMappings(), [:], "一张没写过的表读出来是空的，不是 nil 崩溃")
 
-        store.setSyncUuid("sync-1", forSpaceId: "LOCAL-1")
-        store.setSyncUuid("sync-2", forSpaceId: "LOCAL-2")
+        XCTAssertTrue(store.setSyncUuid("sync-1", forSpaceId: "LOCAL-1"), "一次成功的写回 true")
+        XCTAssertTrue(store.setSyncUuid("sync-2", forSpaceId: "LOCAL-2"))
         XCTAssertEqual(store.syncUuid(forSpaceId: "LOCAL-1"), "sync-1")
         XCTAssertEqual(store.allMappings(), ["LOCAL-1": "sync-1", "LOCAL-2": "sync-2"])
 
@@ -200,9 +220,44 @@ final class SpaceSyncMappingManagerTests: XCTestCase {
     func testASecondStoreOverTheSameAccountReadsTheSameTable() {
         let account = Account(userID: UUID().uuidString)
         scratchAccounts.append(account)
-        AccountSpaceSyncMappingStore(defaults: account.userDefaults)
-            .setSyncUuid("sync-1", forSpaceId: "LOCAL-1")
+        XCTAssertTrue(AccountSpaceSyncMappingStore(defaults: account.userDefaults)
+            .setSyncUuid("sync-1", forSpaceId: "LOCAL-1"))
         XCTAssertEqual(AccountSpaceSyncMappingStore(defaults: account.userDefaults).allMappings(),
                        ["LOCAL-1": "sync-1"])
+    }
+
+    // MARK: - B2-18 变体 (c)（R-M3-4a-83）：懒铸造这一半
+
+    /// B2-18 变体 (c) — `SpaceSyncMappingManager` 建在一个**真的**
+    /// `AccountSpaceSyncMappingStore` 上，落盘目录只读：`ensureMapped(spaceId:)` 抛
+    /// `persistFailed` 之后 `syncUuid(forSpaceId:)` **立刻回 `nil`**、`allMappings()` 为空。
+    ///
+    /// 防的是什么：内存假件覆盖不到的那一半——回滚发生在 `AccountUserDefaults` 里，所以
+    /// 「抛出之后不留痕迹」这句话只有经过真实的 `persistLocked` 失败才算证明过。吞掉失败
+    /// 的那一版会在内存里留下一个**从没落盘**的 uuid，本轮 `pushSpaces` 拿它发布，重启后
+    /// 映射消失、下一轮再铸一个新的 ⇒ 同一个本机 Space 在账户上占两条。
+    func testLazyMintingOnARealStoreLeavesNoTraceWhenThePlistWriteFails() throws {
+        let account = Account(userID: UUID().uuidString)
+        scratchAccounts.append(account)
+        let store = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
+        let keys = SpaceSyncMappingManager(store: store)
+
+        try Self.setDefaultsDirectoryWritable(false, for: account)
+        XCTAssertThrowsError(try keys.ensureMapped(spaceId: localId)) { error in
+            XCTAssertEqual(error as? SpaceSyncMappingError, .persistFailed)
+        }
+        XCTAssertNil(keys.syncUuid(forSpaceId: localId), "抛出之后这条映射查不到")
+        XCTAssertNil(store.syncUuid(forSpaceId: localId))
+        XCTAssertEqual(store.allMappings(), [:], "回滚可见：内存不领先磁盘")
+        XCTAssertNil(keys.localSpaceId(forSyncUuid: localId))
+
+        try Self.setDefaultsDirectoryWritable(true, for: account)
+        let minted = try keys.ensureMapped(spaceId: localId)
+        XCTAssertEqual(store.allMappings(), [localId: minted])
+        XCTAssertEqual(
+            AccountSpaceSyncMappingStore(defaults: AccountUserDefaults(account: account))
+                .allMappings(),
+            [localId: minted],
+            "放行之后那一次真的落了盘")
     }
 }

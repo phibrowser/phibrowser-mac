@@ -2878,14 +2878,25 @@ actor PhiSyncEngine {
     /// **一次性重放闸的复位不在这里**，它的判据是一次成功的 `load`（见 `loadOwnedTable`）：
     /// 这里看到的表是引擎刚在内存里建出来的，用它当「文件恢复了」的证据，会让一个永远读不
     /// 出来的文件每一轮都重放整个 data type。
+    ///
+    /// **返回值 = 这张表已落盘**（R-M3-4a-83）。退休那条早退**不算失败**（R-M3-4a-16 的
+    /// 判据是「某个 store 的 `save` 被调用过且回报了失败」）：把它写成 `return false` 会让
+    /// 一个已退休的引擎在 Task 2b 落地之后再也不推 marker。
+    @discardableResult
     private func writeOwnedTable(_ registration: OwnedKindRegistration,
-                                 _ table: PhiOwnedItemTable) {
-        guard !isStopped else { return }
+                                 _ table: PhiOwnedItemTable) -> Bool {
+        // 早退，不是失败（R-M3-4a-16）。
+        guard !isStopped else { return true }
         ownedTables[registration.label] = table
-        registration.store.save(table)
+        guard registration.store.save(table) else { return false }
         let hasPublished = table.cursors.values.contains { !$0.entityId.isEmpty }
-        guard hasPublished else { return }
+        guard hasPublished else { return true }
+        // 两个 per-kind 标志排在 `save` **之后**（§2.5 第 7 条）：`…HadRecords` 的含义是
+        // 「这台机器曾经为该 kind **写下过**一条带 `entityId` 的游标」。一次没落盘的写提前
+        // 置真，会让下一次真正的文件丢失被 `load(hadRecords:)` 读成「本来就是空的」而拿不到
+        // 整类型重放——而那次重放是唯一能把账户的书签树重新对齐的机制。
         mutateSpaceTable { $0[keyPath: registration.flags.hadRecords] = true }
+        return true
     }
 
     /// §5.2 步骤 2-5，次序固定为 **路由 → 解密 → 反推 tag → 比对 → 落位**。
@@ -4094,10 +4105,20 @@ actor PhiSyncEngine {
     /// Single write path for `sync.phiSpaces`, with the same retirement check every other
     /// engine write takes — a round that resumes after `shutdown()` must not write the previous
     /// account's Space shadow back over a freshly cleared table (§3.3 step 2.0).
-    private func writeSpaceTable(_ table: PhiSpaceSyncTable) {
-        guard !isStopped, let spaceStore else { return }
-        spaceStore.save(table)
+    ///
+    /// **返回值 = 这张表已落盘**（R-M3-4a-83）。两条早退**不算失败**（R-M3-4a-16）：
+    /// `spaceStore == nil` 是纯设置引擎（M3-1）的**正常形态**，把它读成失败会让设置同步
+    /// 从 Task 2b 落地那一刻起再也不推 marker。
+    ///
+    /// 主线程缓存的刷新搬进成功分支：留在 `save` 外面会让主线程展示一份**没落盘**的表
+    /// ——`hiddenSpaceIds` 会把一个盘上还活着的 Space 从侧栏漏斗里滤掉，重启后它又回来。
+    @discardableResult
+    private func writeSpaceTable(_ table: PhiSpaceSyncTable) -> Bool {
+        // 两条早退，都不是失败（R-M3-4a-16）。
+        guard !isStopped, let spaceStore else { return true }
+        guard spaceStore.save(table) else { return false }
         Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
+        return true
     }
 
     /// Read-modify-write against `sync.phiSpaces`, and the only way a round is allowed to
@@ -4116,6 +4137,11 @@ actor PhiSyncEngine {
     ///
     /// Writes only when `body` changed something, so a no-op mutation costs no plist write and
     /// no main-actor cache refresh.
+    ///
+    /// **回滚之后这道 `guard table != before` 仍然正确**（R-M3-4a-83 / §2.5 第 3 条）：
+    /// 一次失败的写把 `AccountUserDefaults.storage` 还原成写之前那一份，于是内存等于磁盘，
+    /// 下一轮的 `loadSpaceTable()` 读到的是**旧表**，同一个改动照样被判成「变了」而重写。
+    /// 少了回滚，第二轮就会在这里当场早退，`save` 根本不会被调用。
     private func mutateSpaceTable(_ body: (inout PhiSpaceSyncTable) -> Void) {
         var table = loadSpaceTable()
         let before = table

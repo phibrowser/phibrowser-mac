@@ -23,7 +23,11 @@ struct RemoteProfile: Equatable {
 /// Persists the local-profile-id -> account-global profile UUID mapping.
 protocol ProfileSyncMappingStore {
     func globalUuid(forProfileId profileId: String) -> String?
-    func setGlobalUuid(_ uuid: String, forProfileId profileId: String)
+    /// false = 这条映射**没有落盘**（R-M3-4a-83 / §13.3「Space 或 Profile 身份映射写
+    /// 失败」）。**不带** `@discardableResult`：Profile 侧只接回传、不转抛错（§11 只把
+    /// 「失败转抛错」派给 `SpaceSyncMappingManager`），所以两个调用方各留一个**看得见**
+    /// 的 `_ =` 丢弃点，比一个隐形的 `@discardableResult` 更容易被 M3-4c 接手。
+    func setGlobalUuid(_ uuid: String, forProfileId profileId: String) -> Bool
     func allMappings() -> [String: String]
     /// Drops ONE dead entry: the local profile behind it was deleted, so the
     /// reverse lookup would otherwise hand the sync layer a profileId that no
@@ -105,7 +109,9 @@ final class ProfileKeyManager {
         if !created {
             return try await adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
         }
-        mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
+        // Profile 侧只接回传、不转抛错（`ProfileSyncMappingStore.setGlobalUuid` 的注释）：
+        // 抛错会改掉 `mintProfileKey` 的失败面与 `SyncKeyController` 的调用序，M3-4a 一格都没列。
+        _ = mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
         return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: displayName)
     }
 
@@ -115,7 +121,8 @@ final class ProfileKeyManager {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else { throw ProfileKeyManagerError.badEnvelope }
         let (key, name) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
-        mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
+        // 同上：采纳这一侧也只接回传，不改 `adoptRemoteProfile` 的失败面。
+        _ = mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
         return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name)
     }
 

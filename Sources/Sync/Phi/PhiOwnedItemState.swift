@@ -178,7 +178,9 @@ protocol PhiOwnedItemStateStore: AnyObject {
     /// 的 `ON CONFLICT (client_tag_hash) DO UPDATE` **没有版本检查**——整个账户的书签被这台机器
     /// 盲写覆盖，时间戳还赢下每个对端的 LWW。
     func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool)
-    func save(_ table: PhiOwnedItemTable)
+    /// false = 这张表**没有落盘**（R-M3-4a-83）。`@discardableResult` 是为了让本任务
+    /// 之外的调用方一行不改；引擎的两个写口已经把它接出来，Task 2b 才据此不推 marker。
+    @discardableResult func save(_ table: PhiOwnedItemTable) -> Bool
     /// §9.1 的自撤销：直接删文件，不是保存一张空表。
     func deleteFile()
 }
@@ -215,14 +217,21 @@ final class FileOwnedItemStateStore: PhiOwnedItemStateStore {
     ///
     /// 写失败**不重试**（§11.4）：下一轮的 `load` 读到的是上一份完整的表，或者读不出来而报损，
     /// 两条路都是收敛的；一个半截的重试队列不是。日志按 R12 只带条数与错误元数据。
-    func save(_ table: PhiOwnedItemTable) {
+    ///
+    /// 失败现在**回传**（R-M3-4a-83）：引擎据此不推本页的 marker（§2.5 第 6 条），于是
+    /// 那一页下一轮还会再来一次。这不是重试队列——重试的是**整轮**，store 自己仍然一次
+    /// 都不重试。
+    @discardableResult
+    func save(_ table: PhiOwnedItemTable) -> Bool {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try JSONEncoder().encode(table).write(to: fileURL, options: .atomic)
+            return true
         } catch {
             AppLogError("[phi-sync] owned-item cursor save failed cursors=\(table.cursors.count) "
                 + "(\(PhiSyncLog.describe(error)))")
+            return false
         }
     }
 

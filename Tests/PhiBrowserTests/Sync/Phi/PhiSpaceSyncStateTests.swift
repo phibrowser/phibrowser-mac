@@ -6,8 +6,18 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     final class FakeStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
         private(set) var saves = 0
+        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
+        var failNextSave = false
+        private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
-        func save(_ table: PhiSpaceSyncTable) { self.table = table; saves += 1 }
+        @discardableResult
+        func save(_ table: PhiSpaceSyncTable) -> Bool {
+            saves += 1
+            saveCalls += 1
+            guard !failNextSave else { return false }
+            self.table = table
+            return true
+        }
     }
 
     private func published(_ uuid: String, entityId: String = "srv-1") -> PhiSpaceCursor {
@@ -149,6 +159,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
 
     override func tearDown() {
         for account in scratchAccounts {
+            // CASE 2a.8 把 `defaults/` 改成只读来注入落盘失败；**先恢复权限再删**。
+            try? Self.setDefaultsDirectoryWritable(true, for: account)
             try? FileManager.default.removeItem(at: account.userDataStorage)
         }
         scratchAccounts = []
@@ -156,9 +168,26 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     }
 
     private func makeAccountStateStore() -> (AccountPhiSpaceSyncStateStore, AccountUserDefaults) {
+        let (store, defaults, _) = makeAccountStateStoreWithAccount()
+        return (store, defaults)
+    }
+
+    /// CASE 2a.8 还要拿着 `Account` 去改目录权限，所以多一个返回 `Account` 的版本；
+    /// 上面那个保持原签名，既有三条用例一字不改。
+    private func makeAccountStateStoreWithAccount()
+        -> (AccountPhiSpaceSyncStateStore, AccountUserDefaults, Account) {
         let account = Account(userID: UUID().uuidString)
         scratchAccounts.append(account)
-        return (AccountPhiSpaceSyncStateStore(defaults: account.userDefaults), account.userDefaults)
+        return (AccountPhiSpaceSyncStateStore(defaults: account.userDefaults),
+                account.userDefaults, account)
+    }
+
+    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
+    private static func setDefaultsDirectoryWritable(_ writable: Bool, for account: Account) throws {
+        let directory = account.userDataStorage
+            .appendingPathComponent("defaults", isDirectory: true)
+        try FileManager.default.setAttributes([.posixPermissions: writable ? 0o700 : 0o500],
+                                              ofItemAtPath: directory.path)
     }
 
     func testAStaleTableOnDiskIsDiscardedIntoAnEmptyOne() throws {
@@ -512,5 +541,36 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         state.localSpaceProfileIds = { [] }
         state.syncUuidLookup = { _ in nil }
         XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 2"))
+    }
+
+    // MARK: - CASE 2a.8（R-M3-4a-83）
+
+    /// CASE 2a.8 — `PhiSpaceSyncStateStore.save` 回 `false` 之后 `load()` 还是旧表。
+    ///
+    /// 防的是什么：Space 表与三个 JSON 文件的对称性（§2.5 第 6 条第二段）。没有回滚，
+    /// `load()` 在第一次失败之后就回 `T2`，`mutateSpaceTable` 的 `guard table != before`
+    /// （`PhiSyncEngine.swift`）从此永久早退——`save` 根本不会被再调用一次。
+    func testAFailedSpaceTableSaveReportsItAndLeavesLoadOnTheOldTable() throws {
+        let (store, _, account) = makeAccountStateStoreWithAccount()
+        var t1 = PhiSpaceSyncTable()
+        t1.cursors["sync-1"] = published("sync-1")
+        XCTAssertTrue(store.save(t1), "一次成功的写回 true")
+        XCTAssertEqual(store.load(), t1)
+
+        var t2 = t1
+        t2.hasDrainedFullReplay = true
+        XCTAssertNotEqual(t1, t2, "前提：两张表确实不同")
+
+        try Self.setDefaultsDirectoryWritable(false, for: account)
+        XCTAssertFalse(store.save(t2), "写盘失败 ⇒ false")
+        XCTAssertEqual(store.load(), t1, "回滚可见：内存不领先磁盘")
+
+        try Self.setDefaultsDirectoryWritable(true, for: account)
+        XCTAssertTrue(store.save(t2))
+        XCTAssertEqual(store.load(), t2)
+        XCTAssertEqual(
+            AccountPhiSpaceSyncStateStore(defaults: AccountUserDefaults(account: account)).load(),
+            t2,
+            "同一个账户上新建的实例读盘，盘上确实是它")
     }
 }

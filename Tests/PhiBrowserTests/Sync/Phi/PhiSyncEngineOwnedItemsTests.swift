@@ -2986,9 +2986,11 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
             return (table, hadRecords && table.cursors.isEmpty)
         }
 
-        func save(_ table: PhiOwnedItemTable) {
+        @discardableResult
+        func save(_ table: PhiOwnedItemTable) -> Bool {
             self.table = table
             ledger.note("save")
+            return true
         }
 
         func deleteFile() {
@@ -4665,5 +4667,40 @@ extension PhiSyncEngineOwnedItemsTests {
         let table = await engine.ownedTableForTesting("bookmarks")
         XCTAssertGreaterThan(table.cursors["b1"]?.version ?? 0, 9,
                              "④ 重试因此被服务端接受，而不是第二次冲突")
+    }
+
+    // MARK: - CASE 2a.10(b)（R-M3-4a-16）
+
+    /// CASE 2a.10(b) — `writeOwnedTable` 的退休早退**不算失败**。
+    ///
+    /// R-M3-4a-16 的判据是「某个 store 的 `save` **被调用过**且回报了失败」。把
+    /// `guard !isStopped else { return true }` 直接改成 `return false` 的实现，会让一个
+    /// 已经退休的引擎在 Task 2b 落地之后再也不推 marker。能在 2a 钉住的是那个判据的前半
+    /// 句：退休之后 `save` **一次都没有被调用**，所以它不可能是一次失败。
+    func testAStoppedEngineNeverCallsTheOwnedStoreAtAll() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = makeSpaceStore()
+        let access = FakeBookmarkAccess()
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteEntity(envelope(bookmarkPayload(uuid: "b1")),
+                                                   tag: bookmarkTag("b1"), version: 7,
+                                                   entityId: "e1", key: key)],
+                                     marker: "m1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: spaceStore,
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let ownedSaves = store.saveCalls
+        let spaceSaves = spaceStore.saveCalls
+        XCTAssertGreaterThan(ownedSaves, 0, "前提：落地那一轮确实写过游标表")
+
+        engine.shutdown()
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+
+        XCTAssertEqual(store.saveCalls, ownedSaves, "退休之后游标表的 `save` 一次都不调用")
+        XCTAssertEqual(spaceStore.saveCalls, spaceSaves, "Space 表同样")
     }
 }

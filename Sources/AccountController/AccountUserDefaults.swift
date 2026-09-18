@@ -6,6 +6,19 @@
 import Foundation
 
 /// Account-scoped preferences persisted to a plist under `account.userDataStorage/defaults`.
+///
+/// **内存永不领先磁盘（R-M3-4a-83）。** 六个写入面全部在同一个 `queue.sync` 块内先拍
+/// 一份 `storage` 的快照，落盘失败就把快照写回去。于是进程内的字典与 plist 永远是同一
+/// 份：一次失败的写不会在内存里留下一个「已经改过」的值，让下一轮的读-改-写以为没有
+/// 变化而早退——那正是 §2.7「plist 写失败之后的第二轮」整行的病根。
+///
+/// 六个面里只有四个自带 `queue.sync`（两个 `set(_:forKey:)` 重载、CAS 面、`removeAll()`）；
+/// `removeObject(forKey:)` 与 `set(_:forCodableKey:)` 是转发面，**不各开一个块**：再套
+/// 一层会让快照跨两次入队，中间可以插进另一个写者，回滚就会把别人的写一起抹掉。它们的
+/// 快照与回滚发生在被转发的那个块里。
+///
+/// 返回值的语义：前五个面是「**已落盘**」，第六个（`ifCurrentDataEquals:` 的 CAS 面）
+/// 是「**已改变且已落盘**」。前五个带 `@discardableResult`，所以非同步调用方一处不改。
 final class AccountUserDefaults {
     private let account: Account
     private let storeURL: URL
@@ -35,32 +48,50 @@ final class AccountUserDefaults {
         }
     }
     
-    func set(_ value: Any?, forKey key: String) {
+    /// true = 已落盘。失败时 `storage` 回到写之前那一份（R-M3-4a-83）。
+    @discardableResult
+    func set(_ value: Any?, forKey key: String) -> Bool {
         queue.sync {
+            let previous = storage
             if let value = value {
                 storage[key] = value
             } else {
                 storage.removeValue(forKey: key)
             }
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
-    
-    func set(_ value: Any?, forKey key: DefaultsKey) {
+
+    /// `DefaultsKey` 重载有**自己的** `queue.sync` 块，所以回滚也要自己写一遍：
+    /// 只改一个重载在类型上完全无声。
+    @discardableResult
+    func set(_ value: Any?, forKey key: DefaultsKey) -> Bool {
         queue.sync {
+            let previous = storage
             if let value = value {
                 storage[key.rawValue] = value
             } else {
                 storage.removeValue(forKey: key.rawValue)
             }
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
-    
-    func removeObject(forKey key: String) {
+
+    /// 转发面：快照与回滚在 `set(_:forKey:)` 的那个 `queue.sync` 块里，这里只把
+    /// Bool 转出来。
+    @discardableResult
+    func removeObject(forKey key: String) -> Bool {
         set(nil, forKey: key)
     }
-    
+
     func bool(forKey key: String) -> Bool {
         object(forKey: key) as? Bool ?? false
     }
@@ -85,21 +116,28 @@ final class AccountUserDefaults {
         object(forKey: key) as? Date
     }
     
-    func set<T: Encodable>(_ value: T?, forCodableKey key: String) {
+    /// 第二个转发面：编码之后走 `set(_:forKey:)`，回滚同样在那个块里。编码抛错是
+    /// 「一个字节都没写」，回 false。
+    @discardableResult
+    func set<T: Encodable>(_ value: T?, forCodableKey key: String) -> Bool {
         guard let value = value else {
-            removeObject(forKey: key)
-            return
+            return removeObject(forKey: key)
         }
         do {
             let data = try JSONEncoder().encode(value)
-            set(data, forKey: key)
+            return set(data, forKey: key)
         } catch {
             AppLogError("Failed to encode value for key \(key): \(error.localizedDescription)")
+            return false
         }
     }
 
     /// Atomically writes an encoded value only when the stored data has not
     /// changed since the caller captured `expectedData`.
+    ///
+    /// **这一个面的 true 是「已改变 *且* 已落盘」**（R-M3-4a-83）：比不中回 false 并且
+    /// 磁盘零写，比中但落盘失败也回 false 并把 `storage` 还原——后者今天是一次假阳，
+    /// 值进了内存、没进 plist。
     @discardableResult
     func set<T: Encodable>(
         _ value: T,
@@ -115,9 +153,13 @@ final class AccountUserDefaults {
         }
 
         return queue.sync {
+            let previous = storage
             guard (storage[key] as? Data) == expectedData else { return false }
             storage[key] = data
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
             return true
         }
     }
@@ -132,10 +174,18 @@ final class AccountUserDefaults {
         }
     }
     
-    func removeAll() {
+    /// 失败时还原的是**整张字典**，不是被碰过的那一个键：这个面的失败态是整份账户
+    /// 偏好在内存里凭空消失。
+    @discardableResult
+    func removeAll() -> Bool {
         queue.sync {
+            let previous = storage
             storage.removeAll()
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
     
@@ -167,12 +217,15 @@ final class AccountUserDefaults {
         }
     }
     
-    private func persistLocked() {
+    /// 调用方**必须**已经持有 `queue`，并且必须处理 false：六个写入面按它回滚。
+    private func persistLocked() -> Bool {
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: storage, format: .xml, options: 0)
             try data.write(to: storeURL, options: .atomic)
+            return true
         } catch {
             AppLogError("Failed to write account defaults: \(error.localizedDescription)")
+            return false
         }
     }
 

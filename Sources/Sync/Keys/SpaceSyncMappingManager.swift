@@ -17,6 +17,9 @@ enum SpaceSyncMappingError: Error, Equatable {
     /// 这个 `SyncKeyController` 根本没有映射层（`spaceKeys == nil`）。失败方向是
     /// 「一条都不发布」，由 §9.3 的 `unmapped=<n>` 暴露——绝不是「用一张内存表凑合」。
     case mappingLayerUnavailable
+    /// 写盘失败：store 已经把内存回滚回写之前那一份（R-M3-4a-83），所以这条错**不留痕迹**
+    /// ——抛出之后 `syncUuid(forSpaceId:)` 与 `localSpaceId(forSyncUuid:)` 都查不到这条映射。
+    case persistFailed
 }
 
 /// 本地 `spaceId` <-> 账户级 syncUuid 的翻译层（D6 §2.1）。`ProfileKeyManager` 的
@@ -71,7 +74,12 @@ final class SpaceSyncMappingManager {
             throw SpaceSyncMappingError.alreadyMapped
         }
         let uuid = UUID().uuidString.lowercased()
-        store.setSyncUuid(uuid, forSpaceId: spaceId)
+        // 落盘失败 ⇒ 抛错，**在 `return uuid` 之前**：吞掉它会在内存里留下一个从没落盘的
+        // uuid，本轮 `pushSpaces` 拿它发布，重启后映射消失、下一轮再铸一个新的，同一个
+        // 本机 Space 在账户上占两条（§2.5 第 2 条）。
+        guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
+            throw SpaceSyncMappingError.persistFailed
+        }
         return uuid
     }
 
@@ -87,7 +95,10 @@ final class SpaceSyncMappingManager {
         guard !store.allMappings().values.contains(uuid) else {
             throw SpaceSyncMappingError.syncUuidAlreadyClaimed
         }
-        store.setSyncUuid(uuid, forSpaceId: spaceId)
+        // 三道既有闸之后同一句 guard（见 `mintSyncUuid`）。
+        guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
+            throw SpaceSyncMappingError.persistFailed
+        }
     }
 
     /// 引擎在首次 snapshot 前对每个同步合格 Space 调一次（R-D6-7 的懒铸造）。

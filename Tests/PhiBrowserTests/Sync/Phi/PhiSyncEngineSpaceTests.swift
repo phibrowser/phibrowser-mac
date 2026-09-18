@@ -12,8 +12,18 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     final class MemorySpaceStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
+        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`——「写盘失败之后内存与磁盘
+        /// 一起停在旧表上」的内存版（R-M3-4a-83）。用例自己置回 false 放行。
+        var failNextSave = false
+        private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
-        func save(_ table: PhiSpaceSyncTable) { self.table = table }
+        @discardableResult
+        func save(_ table: PhiSpaceSyncTable) -> Bool {
+            saveCalls += 1
+            guard !failNextSave else { return false }
+            self.table = table
+            return true
+        }
     }
 
     /// The engine's clock, so a test can step past `profileRefreshMinIntervalMs`
@@ -44,7 +54,17 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil; suiteName = nil
+        // CASE 2a.9 把 `PhiSpaceSyncState.shared` 的解析闭包换成一个计数器；`shared` 是
+        // 进程级单例，留着会污染后面每一条用例。
+        PhiSpaceSyncState.shared.localSpaceIdLookup = nil
         super.tearDown()
+    }
+
+    /// CASE 2a.9 的计数盒子。`localSpaceIdLookup` 是一个 escaping 闭包，装在一个引用类型
+    /// 里比捕获一个局部 `var` 更不容易随并发检查的收紧而变味。
+    final class LookupCounter {
+        private(set) var calls = 0
+        func bump() { calls += 1 }
     }
 
     // MARK: - Helpers
@@ -2285,5 +2305,87 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(summary.overlayOpacityLightMilli, 850)
         XCTAssertEqual(summary.overlayOpacityDarkMilli, -1, "-1 哨兵原样带出，不换成 nil、不换成 0")
         XCTAssertEqual(summary.profileUuid, "uuid-a")
+    }
+
+    // MARK: - CASE 2a.9 / 2a.10(a)（R-M3-4a-83 / R-M3-4a-16）
+
+    /// CASE 2a.9 — `writeSpaceTable` 回 `false` 时 `refreshCaches` **零调用**。
+    ///
+    /// 接缝：`refreshCaches` 对表里每一个 `hiddenSyncUuids` 成员调一次
+    /// `localSpaceIdLookup`，这是它唯一的外部可观测副作用（`hiddenSpaceIds` /
+    /// `hasDrainedFullReplay` 都是 `private(set)`，而断言一个异步 `Task` 的**缺席**天生弱）。
+    ///
+    /// 驱动用的是**门关着**那条路：`recordsGatedMarkerMoves` 为真时第一页推进 marker 就写
+    /// 一次 Space 表，于是这一轮里 `writeSpaceTable` 的调用次数是确定的 1。
+    ///
+    /// 防的是什么：R-M3-4a-83 的第二个出口——把 `Task { @MainActor in refreshCaches(…) }`
+    /// 留在 `save` 外面的实现，会让主线程缓存展示一份**没落盘**的表：`hiddenSpaceIds` 会把
+    /// 一个盘上还活着的 Space 从侧栏漏斗里滤掉，重启后它又回来。**正向对照是必需的**：
+    /// 没有它，一个把 `refreshCaches` 整条删掉的实现同样绿。
+    func testAFailedSpaceTableWriteSkipsTheMainActorCacheRefresh() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var hidden = PhiSpaceCursor()
+        hidden.entityId = "srv-h"
+        hidden.version = 1
+        hidden.hidden = true
+        hidden.deletedAtMs = 1
+        store.table.cursors["sync-hidden"] = hidden
+        store.failNextSave = true
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "on",
+                                                           version: 10, key: key)],
+                                     marker: "m1")]
+        let counter = LookupCounter()
+        PhiSpaceSyncState.shared.localSpaceIdLookup = { _ in counter.bump(); return nil }
+        let drainedBefore = PhiSpaceSyncState.shared.hasDrainedFullReplay
+
+        // 门**关着**：不调 `setSpaceSyncEnabled(true)`。
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.pullOnce()
+        await Task.yield()   // 跨一次主 actor 跳，让那个 `Task { @MainActor … }` 有机会跑。
+
+        XCTAssertEqual(store.saveCalls, 1, "写口被调用过一次，没有内部重试")
+        XCTAssertEqual(counter.calls, 0, "写失败 ⇒ 主线程缓存一次都不刷新")
+        XCTAssertEqual(PhiSpaceSyncState.shared.hasDrainedFullReplay, drainedBefore,
+                       "失败那一轮没有任何东西被推进主线程缓存")
+
+        store.failNextSave = false
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "off",
+                                                           version: 11, key: key)],
+                                     marker: "m2")]
+        await engine.pullOnce()
+        await Task.yield()
+
+        XCTAssertEqual(store.saveCalls, 2, "第二轮真的又写了一次——回滚之后 guard 仍然正确")
+        XCTAssertGreaterThanOrEqual(counter.calls, 1, "正向对照：写成功 ⇒ 缓存照常刷新")
+    }
+
+    /// CASE 2a.10(a) — `spaceStore == nil` 的早退**不算失败**。
+    ///
+    /// 纯设置引擎（M3-1 形态）是 `spaceStore == nil` 的**正常形态**。把
+    /// `guard !isStopped, let spaceStore else { return true }` 写成 `return false` 的实现，
+    /// 会让它从 Task 2b 落地那一刻起再也不推 marker，设置同步整条死掉——所以这一条在 2a
+    /// 就要红，不能等到 2b。
+    ///
+    /// Bool 本身在本任务里还不可观测（引擎里两处返回值都被 `@discardableResult` 丢弃），
+    /// 能钉住的是它的两个前提：一轮设置同步逐字照旧跑完，并且**没有任何 Space store 调用**
+    /// 发生过（根本没有 store）。
+    func testASettingsOnlyEngineStillAdvancesItsMarkerWithNoSpaceStore() async throws {
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "on",
+                                                           version: 10, key: key)],
+                                     marker: "m1")]
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   spaceAccess: nil, spaceStore: nil,
+                                   now: { 1_700_000_000_000 })
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data("m1".utf8),
+                       "marker 照常推进")
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey),
+                        "设置段照常落位")
     }
 }

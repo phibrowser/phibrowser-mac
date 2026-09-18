@@ -745,6 +745,10 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     /// 每一次 `load` 收到的 `hadRecords`，按调用序。报损判据只随它变，断言它就是断言引擎
     /// 把哪一条 per-kind 标志喂了进来。
     private(set) var hadRecordsSeen: [Bool] = []
+    /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
+    /// 用例自己置回 false 放行。
+    var failNextSave = false
+    private(set) var saveCalls = 0
 
     init(table: PhiOwnedItemTable = PhiOwnedItemTable()) {
         self.table = table
@@ -766,8 +770,12 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
         return (PhiOwnedItemTable(), hadRecords)
     }
 
-    func save(_ table: PhiOwnedItemTable) {
+    @discardableResult
+    func save(_ table: PhiOwnedItemTable) -> Bool {
+        saveCalls += 1
+        guard !failNextSave else { return false }
         self.table = table
+        return true
     }
 
     func deleteFile() {

@@ -286,7 +286,9 @@ extension PhiSpaceSyncTable {
 
 protocol PhiSpaceSyncStateStore: AnyObject {
     func load() -> PhiSpaceSyncTable
-    func save(_ table: PhiSpaceSyncTable)
+    /// false = 这张表**没有落盘**（R-M3-4a-83），与三个 per-kind JSON 文件对称。
+    /// `@discardableResult` 让 `discardIfStaleFormat` 那一处既有的忽略保持不变。
+    @discardableResult func save(_ table: PhiSpaceSyncTable) -> Bool
 }
 
 /// The table in the account plist, next to `sync.profileGlobalUuids`.
@@ -302,7 +304,10 @@ final class AccountPhiSpaceSyncStateStore: PhiSpaceSyncStateStore {
         PhiSpaceSyncTable.loaded(from: defaults.codableValue(forKey: Self.defaultsKey))
     }
 
-    func save(_ table: PhiSpaceSyncTable) {
+    /// 整条链的 Bool 都是 `AccountUserDefaults.set(_:forCodableKey:)` 那一个的转出：
+    /// 它失败时内存已经回滚，所以「没落盘」与「`load()` 还是旧表」在这里是同一句话。
+    @discardableResult
+    func save(_ table: PhiSpaceSyncTable) -> Bool {
         defaults.set(table, forCodableKey: Self.defaultsKey)
     }
 

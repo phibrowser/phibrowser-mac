@@ -1093,3 +1093,45 @@ Task 6 的进度条目 20 把 `PhiSyncMarkerBoundaryTests.swift` 里没填的 ur
 `OwnedRoundCounters.localReadFailed`），并用 `swiftc -parse` 单文件过了一遍语法（exit 0）。
 留给下一次整支构建的风险：仅类型层面，行为推导按 `applyOwnedKind` / `beginOwnedRound` /
 `publishOwnedKind` 三处源码。
+
+## Task 12 (docs half)
+
+本任务**一行生产代码、一行 `.swift` 都没改**，也**没有**跑任何构建 / 测试 / App。
+验收脚本 T-M3-4a 与 Chromium 的那一次 `autoninja` **不在本任务范围内**，由用户执行。
+
+### 写了什么、写在哪
+
+| 仓库 | 文件 | 做了什么 |
+| --- | --- | --- |
+| 代码仓 | `docs/sync.md` | 新增 `## Marker persistence boundary` 一节（排在 `## Pull before commit` 之后）：逐页次序、四类 store 的 `Bool` 回传与 `AccountUserDefaults` 回滚、失败页的 `marker_advanced=false` + 零发布 + `cursor_save_failed`、发布闸是**合取**且 `page_budget_exhausted` / `pull_failed` 同样零发布（前者 marker 照推）、marker 搬进 `marker.json` 与备份恢复的后果、点名 `E-M3-4a-1`。`## URL Rules` 一节（Task 6 / 8b-3 已写）核对过与合并后的代码一致，**只补三条本来缺的**：归属是 Space 不是 Profile + 目标解析不出 ⇒ 停放（绝不改写、绝不丢弃）；本机删除一律软删 + 两条清理出路；D30 三段自动合并与「编辑赢过删除」的用户可见后果。`## Verification` 列出五个新测试文件与 Chromium 的 `phi_url_router_unittest.cc`，并保留「compile-only、绝不 `xcodebuild test`」那条口径 |
+| 代码仓 | `Sources/Sync/Phi/Proto/README.md` | **verify-only，已存在**：`:28` 的生成类型行含 `Phi_PhiURLRuleEntity`（Task 1 的 commit 里） |
+| 代码仓 | `Sources/LocalStorage/Compatibility/README.md` | **verify-only，已存在**：`:101` 的 V11 一句（Task 4 的 commit 里） |
+| 代码仓 | 本文件 | 这一节 |
+| KB | `design/2026-09-16-m3-4a-url-rules-marker-boundary-design.md` §15 | 新增 §15.1 写回口径 + §15.2 计划期勘误表（`E-M3-4a-2a ~ 2i`）+ §15.3 执行期勘误（`E-M3-4a-3 ~ 25`，按任务编号排序，两份 ledger 去重合并 + 控制者裁定里改了契约的那些）。`E-M3-4a-1` **一个字未动**。§15 是权威清单，两份 ledger 与 rulings 文件保留为施工期记录 |
+| KB | `design/2026-09-18-m3-4a-execution-rulings.md` | **新建**：抬头（编号约定）+ 状态表（分支 / 基点 / 区间 / 未合并 / 终审 pending / **验收结论 pending — acceptance not yet run (2026-09-18)**）+ `P1 ~ P4` 计划期裁定 + 逐任务的执行期裁定与仲裁 + 两条用户指令 + **各任务推迟的 minor 归档** + 并行 worktree 与整合记录 + 用户 / 控制者持有的五条未完项 + 附录 A（终审发现表，pending）+ 附录 B（验收后的外部评审，pending）+ Related |
+| KB | `30-projects/phinomenon/sync-service/README.md` | 新增 `## M3-4a Marker Boundary + URL Rules` 一节（照 `## M3-3` 的体例：状态 / 内容两半 / 规模与流程 / 验证方式 / 待做五条 / 已知残留），并把第 197 行那条「下一里程碑」的状态从「spec 已定稿待审阅」推进到「已实施完成，终审与验收待做」；Related 加一行指向新的 rulings 文件 |
+| KB | `60-knowledge-items/guidelines/assign-every-spec-clause-to-exactly-one-task.md` | **新建 draft**：§5.8 第 3 条那个「两份 brief 各自指向对方」的计划缺口，收成「spec 条款 → 任务」必须是全函数、brief 里「兄弟任务已经做了」是待核的断言、假则报 BLOCKED 而不是记勘误 |
+| KB | `60-knowledge-items/pitfalls/compile-only-suites-hide-vacuous-assertions.md` | **新建 draft**：四个里程碑几千条用例从未执行过，各任务评审登记的五类空洞断言，要求每条 case 一句可证伪注记 + 承重裁定配负面对照 |
+
+### 核对过的几件事（写进 §15 之前逐条读代码确认）
+
+- `mergePartners` / `partnerNotAtRest` 确实各带第四个 `tombstonesThisPage:`（`PhiURLRuleLocalAccess.swift:425` / `:456`）。
+- M1 认领的候选域是 `urlRuleClaims(arrivals:parked:…)`（`PhiSyncEngine.swift:7148`）。
+- `convergePass`（`URLRuleKind.swift:1157`）确实排在 `mergePointerPass`（`:1168`）之前；第一遍 `anchorsFrom: anchorDomain`（软删之前的 `live`）、第二遍 `anchorsFrom: liveRows`（软删之后）。
+- `transferSupersededByDelete` 在 `LocalStore+SpaceURLRule.swift:968` 的事务里累加；`transferSourceUnchanged`（`URLRuleKind.swift:763`）是「四值相等 ∧ 两枚行戳都不更新（ms）」，不是六格逐字相等。
+- `SpaceManager.urlRulesRevision`（`:422`，三处 `&+= 1`）+ `SpaceURLRulesEditor.swift:92` 的 `.onChange`。
+- 编辑器只给被拖动那一行记 `.order`（`SpaceURLRulesEditor.swift:383` / `:1002` 的注释与实现）。
+- `URLRuleDraft` 的三个可选单元 + 三个转发访问器（`LocalStore+SpaceURLRule.swift:52-61`）。
+- `purgeExpiredSoftDeletedOwnedRows`（`PhiSyncEngine.swift:1115`）没有 `spaceSectionEnabled` 门；出路 1 的硬删带 `saved` 合取（`:4435`）。
+- `SpaceManager.makeForTesting`（`:1987`）+ bind-nothing 的 `private init`（`:551`）；`Sources/` 里除定义外零引用。
+- `URLRuleKind.clearingProjection`（`:709`）/ `clearingProjectionMatches`（`:729`）与 `transferSourceUnchanged` / `transferDecision` 同住一个文件。
+- `git diff --name-status c9ab5806..HEAD -- Tests` 的五个新文件名（写进 `docs/sync.md` 的 `## Verification`）。
+
+### 留给别人的（本任务不做）
+
+1. **用户**：`autoninja -C out/PhiRelease chrome unit_tests` + `unit_tests --gtest_filter='PhiURLRouter*'`，绿了之后提交 Task 10 的五处 Chromium 改动（提交信息在 `task-10-report.md`）。
+2. **用户**：在没有 Phi 运行的机器上单跑一次 `LocalStoreURLRuleThrowingTests`（U-24 家族的主上下文可见性前提，运行期未验证）。
+3. **用户**：T-M3-4a 双机验收（24 个勾 + 前置五项 + Task 12 brief 第二节那两张计数稳态表）。验收结论与走查期发现事后补进 spec §15 与 rulings 文件的附录 A / B。**§15 与 README 里现在写的是 `pending — acceptance not yet run (2026-09-18)`。**
+4. **用户**：知识库与 origin 的同步 —— 本任务在 `~/.agents/company-knowledge` 上**只 commit**，没有 pull、没有 rebase、没有上传（按 dispatch 的约束）。因此知识库相对 origin 可能是陈旧的。
+5. **控制者**：整支终审（`c9ab5806..e24be36a`，与本任务并行派发）。结论到手后填进 rulings 文件的附录 A；spec §15 与 README 里现在写的是「终审 pending」。
+6. **验收决定**：`PhiSyncMarkerBoundaryTests` 的 B2-17 规则侧连带断言仍未写（那条用例第 2 轮是零新页，要补就得改脚本形状；已登记为 `E-M3-4a-24` ①）。

@@ -34,6 +34,37 @@ state. Disabled or lost notification delivery must restore pull-before-commit.
 The engine owns the prerequisite inside its serialized round queue. Callers and
 the transport must not independently decide whether a commit is safe to send.
 
+## Marker persistence boundary
+
+A pull is no longer a single all-or-nothing round: it is a sequence of pages,
+and each page runs routing, landing, derived-state writes, cursor persistence
+and finally the marker write, in that order. The shared marker only moves past
+a page whose writes all reached disk, and it covers all five entity kinds —
+settings, Spaces, bookmarks, pinned tabs and URL rules.
+
+- The four store types return `Bool` from `save`. `AccountUserDefaults` rolls
+  the in-memory snapshot back when the write to disk fails, so memory never
+  leads disk.
+- Any failed persistence in a page leaves that page with
+  `marker_advanced=false`, makes the round publish nothing, reports
+  `outcome=cursor_save_failed`, and replays the same page on the next round.
+- The publish gate is a conjunction, `canPublishThisRound && !cursorSaveFailed`
+  — the first half is the gate described under "Pull before commit", this
+  section only adds the second. It is one boolean assigned in one place, so
+  every publishing entry point and every scoped conflict retry reads the same
+  value. A round that did not drain (`page_budget_exhausted`) or failed
+  (`pull_failed`) therefore also publishes nothing, but `page_budget_exhausted`
+  still advances the marker.
+- The marker and the store birthday now live in `users/<sub>/sync/marker.json`
+  instead of `UserDefaults.standard`, with a one-shot migration. Restoring a
+  user-data backup therefore restores the marker that belongs to that backup,
+  and the replay it triggers re-lands the missing rows instead of emitting
+  tombstones for them.
+- Known residual `E-M3-4a-1`: the first whole-scale adoption of settings is not
+  atomic, so a crash between "values written" and "adoption flag written"
+  replays the page and performs that adoption a second time. It is recorded in
+  the milestone's design errata and is not fixed here.
+
 ## URL Rules
 
 URL rules are the fifth entity kind (`phi-urlrule`) and the third owned-item
@@ -43,6 +74,24 @@ order is settings, Spaces, bookmarks, pinned tabs, URL rules — rules are alway
 the last kind on a page, so the "last kind landed but the marker not yet
 written" restart window falls on them.
 
+- A rule's owner is its target **Space**, never a Profile: the wire carries
+  `target_space_uuid`, and the Profile is derived from the Space the device
+  resolves it to. A rule whose `target_space_uuid` does not resolve on this
+  device is parked — its target is never rewritten to some other Space and the
+  entity is never discarded.
+- Deleting a rule locally is always a soft delete: the row keeps its identity,
+  gains a `deletedDate`, and the round's diff turns it into a tombstone. The row
+  itself is hard-deleted only after that tombstone is `.applied`, and a soft
+  row that never got its tombstone out is purged 30 days later.
+- Three automatic merge passes run over rules that look identical (same
+  normalized host, path prefix and target): a claim pass re-keys a matching
+  local row onto an inbound identity instead of creating a second row
+  (`adopted`), a collapse pass soft-deletes all but one member of a settled
+  group (`collapsed`), and a yield pass keeps an unpublished local edit alive
+  when a remote delete arrives for the same rule (`transferred` /
+  `yield_no_partner`). The user-visible consequence of the last one is that an
+  edit beats a concurrent delete: the rule reappears on the deleting device, and
+  deleting it again after the edit has published removes it everywhere.
 - The cursor table lives in `users/<sub>/sync/urlrules-cursors.json`. Its field
   set is exactly the one the bookmark and pinned-tab tables use; the merge
   partner of a rule is a column on the local row, not a cursor field.
@@ -109,3 +158,31 @@ written" restart window falls on them.
 `PhiSyncEngineOwnedItemsTests` cover wire ordering, failed and paginated pulls,
 remote merge before publication, and bounded conflict recovery. These tests use
 dedicated defaults suites and injected in-memory protocol/local-access fakes.
+
+The marker boundary and the URL rule kind add five test files:
+
+- `Tests/PhiBrowserTests/Sync/Phi/PhiSyncMarkerBoundaryTests.swift` — the
+  per-page marker boundary: forced cursor-write failures, the zero-publish
+  round, the deterministic abort switches, the loss-replay ordering and the
+  mapping-before-row create branch.
+- `Tests/PhiBrowserTests/Sync/Phi/URLRuleKindTests.swift` — the rule codec,
+  normalization, merge units, counters, the editor's edit set and the
+  `pendingLocalEdit` lifecycle.
+- `Tests/PhiBrowserTests/Sync/Phi/URLRuleMergeTests.swift` — the three
+  automatic merge passes (claim, collapse, yield) end to end through the
+  engine.
+- `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` — the store-level
+  throwing primitives, the batch entry, the V11 migration cases and the
+  routing-table refresh.
+- `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift` — the
+  `AccountUserDefaults` write-face rollback.
+
+The Chromium half of the routing tie-break is covered by
+`phi_url_router_unittest.cc` in the fork, which is built and run separately
+(`autoninja -C out/PhiRelease chrome unit_tests`, then
+`unit_tests --gtest_filter='PhiURLRouter*'`).
+
+Verification for all of the above is **compile-only**
+(`xcodebuild build-for-testing`). `xcodebuild test` is never run: a hosted
+XCTest bundle launches a Phi host process that collides with the developer's
+running Phi through `ProcessSingleton`.

@@ -577,6 +577,122 @@ extension LocalStore {
         index.rekey(row, from: previous)
     }
 
+    // MARK: - §8.4.3 M2 的三个原语（§4.3 六个新原语的第二 ~ 四个，8b-2）
+
+    // 三条共用（计划裁定五）：寻址定义域一律是**含软删行**的那一份 `URLRuleTableIndex`
+    // （R-M3-4a-56 的寻址条款）；带 §4.3 末段那条与 `LocalStore+Bookmark.swift:2196-2199`
+    // 逐字同款的 `rowAlreadyMapped` 守卫；**索引里找不到那条 `syncId` ⇒ 零写返回、DEBUG 下
+    // `assertionFailure`，不抛** —— M2 的三个输入全部来自同一个事务里刚读到的那份投影，结构上
+    // 必然命中；抛会把整页落地回滚掉，而 §5.5 的「落地失败 ⇒ 整批回滚、下一轮重放」会让同一页
+    // 每轮重放每轮抛（与 CASE M-13 论证过的死循环同形）。三条都**一个字节不碰
+    // `pendingLocalEdit`**（R-M3-4a-69 / RR5-8），也都不铸任何**戳**——`contentUpdatedDate`
+    // 只在 `setURLRuleContentGroupBody` 里**照抄来源**（D33 / §8.4.1 第五条）。
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.3 第 2 步 (b) 与编辑器删除集共用。**两列一次写、一个 SwiftData 事务**（RR8-4）：
+    /// `deletedDate = Date()` 与 `mergePartnerSyncId` 同时落行。编辑器那条路径传 `nil`。
+    func softDeleteURLRuleThrowing(syncId: String, mergePartnerSyncId: String?) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            var index = try self.urlRuleTableIndex(in: context)
+            try self.softDeleteURLRuleBody(syncId: syncId,
+                                           mergePartnerSyncId: mergePartnerSyncId,
+                                           index: &index, in: context)
+        }
+    }
+
+    /// 返回被软删那一行所在的桶（`nil` = 索引里没有这条身份，零写）。调用方用它记桶：一次
+    /// 软删会在桶里留下一个空洞下标，而 `sortOrder` 是路由特异度的第三项、排在裁决键之前。
+    /// **已经软删的行不重写 `deletedDate`**（那会把 §8.4.7 的 30 天清理时钟拨回去）。
+    @discardableResult
+    func softDeleteURLRuleBody(syncId: String,
+                               mergePartnerSyncId: String?,
+                               index: inout URLRuleTableIndex,
+                               in context: ModelContext) throws -> String? {
+        guard let row = index.bySyncId[syncId] else {
+            assertionFailure("url rule soft delete: the merge tail addressed a row that is not there")
+            return nil
+        }
+        guard row.syncId == nil || row.syncId == syncId else {
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
+        // 同一次行写：抛在两句中间的实现会留下「软删了、伙伴没写」的半状态，而 §8.4.4 的
+        // 伙伴查找正是靠那一列把那次编辑救回来的。
+        if row.deletedDate == nil { row.deletedDate = Date() }
+        if row.mergePartnerSyncId != mergePartnerSyncId {
+            row.mergePartnerSyncId = mergePartnerSyncId
+        }
+        return row.spaceId
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.3 第 1 步的提示写，**只写这一列**；传 `nil` 就是清空（两条清空规则走它）。
+    /// **值相同时零写**（RR11-8，**第二道防御**——承重的那条前置在 `mergePointerPass` 里）。
+    func setURLRuleMergePartnerThrowing(syncId: String, mergePartnerSyncId: String?) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            var index = try self.urlRuleTableIndex(in: context)
+            try self.setURLRuleMergePartnerBody(syncId: syncId,
+                                                mergePartnerSyncId: mergePartnerSyncId,
+                                                index: &index, in: context)
+        }
+    }
+
+    func setURLRuleMergePartnerBody(syncId: String,
+                                    mergePartnerSyncId: String?,
+                                    index: inout URLRuleTableIndex,
+                                    in context: ModelContext) throws {
+        guard let row = index.bySyncId[syncId] else {
+            assertionFailure("url rule merge partner: the merge tail addressed a row that is not there")
+            return
+        }
+        guard row.syncId == nil || row.syncId == syncId else {
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
+        guard row.mergePartnerSyncId != mergePartnerSyncId else { return }
+        row.mergePartnerSyncId = mergePartnerSyncId
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `updateBookmarkThrowing`.
+    ///
+    /// §8.4.3 第 2 步 (a) 的胜者吸收，**按内容组整组写**：三个字段连同它们共用的那一枚戳。
+    /// **不碰** `sortOrder` / `targetUpdatedDate` / `deletedDate` / `pendingLocalEdit`。
+    /// **不复用 `upsertURLRuleThrowing`**：它要求同时给 `sortOrder`（与本页重排打架）与
+    /// `targetUpdatedDate`（收敛不该碰目标戳）。
+    func setURLRuleContentGroupThrowing(syncId: String, host: String, pathPrefix: String?,
+                                        ask: Bool, contentUpdatedDate: Date) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            var index = try self.urlRuleTableIndex(in: context)
+            try self.setURLRuleContentGroupBody(syncId: syncId, host: host,
+                                                pathPrefix: pathPrefix, ask: ask,
+                                                contentUpdatedDate: contentUpdatedDate,
+                                                index: &index, in: context)
+        }
+    }
+
+    func setURLRuleContentGroupBody(syncId: String, host: String, pathPrefix: String?,
+                                    ask: Bool, contentUpdatedDate: Date,
+                                    index: inout URLRuleTableIndex,
+                                    in context: ModelContext) throws {
+        guard let row = index.bySyncId[syncId] else {
+            assertionFailure("url rule content group: the merge tail addressed a row that is not there")
+            return
+        }
+        guard row.syncId == nil || row.syncId == syncId else {
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
+        // §8.1 的第四处调用点：幂等，来源行可能是 V11 回填的、没过归一化的老行。
+        let normalized = LocalStore.normalizedRule(host: host, pathPrefix: pathPrefix)
+        if row.host != normalized.host { row.host = normalized.host }
+        if row.pathPrefix != normalized.pathPrefix { row.pathPrefix = normalized.pathPrefix }
+        if row.askBeforeRouting != ask { row.askBeforeRouting = ask }
+        // 戳**照抄来源**（D33）：铸 `now` 会让一条经机器搬运的规则带着伪造的新鲜度去赢一次
+        // 真实的用户编辑。
+        if row.contentUpdatedDate != contentUpdatedDate {
+            row.contentUpdatedDate = contentUpdatedDate
+        }
+    }
+
     // MARK: - 落地批次入口（R-exec-2）
 
     /// 一页远端落地的**全部**操作，一个写块、一个事务（§5.5）。
@@ -585,14 +701,21 @@ extension LocalStore {
     /// **必须住在这个文件里**：per-row 的 throwing 兄弟各开一次 `performBackgroundWriteAndWaitThrowing`
     /// （串行写流），在写块里调它们会自我死锁；共享的 `…Body` 半边只有这里能在同一个 `context` 里
     /// 组合。抛错 = `performThrowing` 回滚整批，一条都没落。
-    func applyURLRuleSyncBatchThrowing(_ ops: [URLRuleSyncOp]) async throws {
-        guard !ops.isEmpty else { return }
-        try await performBackgroundWriteAndWaitThrowing { context in
-            try self.applyURLRuleSyncBatchBody(ops, in: context)
+    ///
+    /// **`ops` 为空、但带着尾钩的批次照样开一次事务**（R-M3-4a-56：一页没有任何规则落地时
+    /// 同样要跑 M2，那一页单开一次同形事务）。两者都空才是真的无事可做。
+    @discardableResult
+    func applyURLRuleSyncBatchThrowing(_ ops: [URLRuleSyncOp],
+                                       mergeTail: URLRuleMergeTail? = nil) async throws
+        -> URLRuleBatchOutcome {
+        guard !ops.isEmpty || mergeTail != nil else { return URLRuleBatchOutcome() }
+        return try await performBackgroundWriteAndWaitThrowing { context in
+            try self.applyURLRuleSyncBatchBody(ops, mergeTail: mergeTail, in: context)
         }
     }
 
-    /// 事务体。分出来只为可读性，没有第二个调用方。块内四件事，顺序固定：
+    /// 事务体。分出来只为可读性，没有第二个调用方。块内**五件事**，顺序固定（8b-2 在 Task 8
+    /// 的四件事里插了第 ③ 件）：
     /// 1. **一次**把整张表（含软删行）按 `syncId` 建索引；
     /// 2. 按序执行每个 op——`.create` / `.update` / `.move` 都落到 `upsertURLRuleBody`（行不存在就建，
     ///    两个远端戳照抄载荷，命中软删行就在同一次行写里清 `deletedDate` / `mergePartnerSyncId`），
@@ -602,14 +725,22 @@ extension LocalStore {
     ///    （R-M3-4a-3）；`.reorder` ⇒ 本桶；`.delete` ⇒ 删之前读到的桶；`.update` ⇒ **不记**（它只改
     ///    内容组，次序没动；一次白写会经 §6.5 的 publisher 变成一次多余的推送轮）——只有它**进了桶**
     ///    （建了新行，R-M3-4a-42(a)；或救回了一条软删行，§5.5「行存在」一格）或（防御）目标真的变了才记；
-    /// 4. 收尾：对被触及的每个桶各跑一次稠密重排——排除软删行（R-M3-4a-51）后按当前 `(sortOrder, id)`
+    /// 4. **尾钩**（8b-2 / R-M3-4a-56）：把此刻的行投影（含软删行）交给
+    ///    `URLRuleMergeTail.evaluate`，按序执行它交回的 M2 ops，并把它报的桶**并进**第 ③ 步
+    ///    那份记账。**排在稠密重排之前**：排在之后的实现会在败者离开的桶里留下一个空洞下标。
+    /// 5. 收尾：对被触及的每个桶各跑一次稠密重排——排除软删行（R-M3-4a-51）后按当前 `(sortOrder, id)`
     ///    升序写 `sortOrder = index`，只写真的变了的行。
     private func applyURLRuleSyncBatchBody(_ ops: [URLRuleSyncOp],
-                                           in context: ModelContext) throws {
+                                           mergeTail: URLRuleMergeTail?,
+                                           in context: ModelContext) throws
+        -> URLRuleBatchOutcome {
+        var outcome = URLRuleBatchOutcome()
         var index = try urlRuleTableIndex(in: context)
         var touchedBuckets: Set<String> = []
 
-        for op in ops {
+        /// 一条 op 的执行。第 ② 步与第 ④ 步（尾钩）**共用它**：M2 的三条与落地那五条在同一个
+        /// 事务、同一份索引上写，两处各写一份的实现迟早在记桶上分叉。
+        func execute(_ op: URLRuleSyncOp) throws {
             switch op {
             case .create(let values):
                 try upsertURLRuleBody(values, index: &index, in: context)
@@ -639,7 +770,7 @@ extension LocalStore {
                 touchedBuckets.insert(values.spaceId)
             case .reorder(let syncId, _, let sortOrder):
                 // 没有载荷，无从建行：命中不到就跳过（那条身份这一页没有行可排）。
-                guard let row = index.bySyncId[syncId] else { continue }
+                guard let row = index.bySyncId[syncId] else { return }
                 if row.sortOrder != sortOrder {
                     row.sortOrder = sortOrder
                 }
@@ -662,9 +793,42 @@ extension LocalStore {
                         touchedBuckets.insert(sourceBucket)
                     }
                 }
+            // 8b-2 的三条（§8.4.3）。**只由尾钩产出**，落地那一批里不会有它们。
+            case .softDelete(let syncId, let mergePartnerSyncId):
+                if let bucket = try softDeleteURLRuleBody(syncId: syncId,
+                                                          mergePartnerSyncId: mergePartnerSyncId,
+                                                          index: &index, in: context) {
+                    touchedBuckets.insert(bucket)
+                }
+            case .setMergePartner(let syncId, let mergePartnerSyncId):
+                // **不记桶**：这一列不进路由表、不改次序（CASE M-7 的「零次行写以外的动静」）。
+                try setURLRuleMergePartnerBody(syncId: syncId,
+                                               mergePartnerSyncId: mergePartnerSyncId,
+                                               index: &index, in: context)
+            case .setContentGroup(let syncId, let host, let pathPrefix, let ask,
+                                  let contentUpdatedDate):
+                // 同上：内容组不改桶内次序（`sortOrder` 一个字节不碰）。
+                try setURLRuleContentGroupBody(syncId: syncId, host: host, pathPrefix: pathPrefix,
+                                               ask: ask, contentUpdatedDate: contentUpdatedDate,
+                                               index: &index, in: context)
             }
         }
 
+        // ② 落地 op，按序。
+        for op in ops { try execute(op) }
+
+        // ④ 尾钩：R-M3-4a-56 写死「全部落地写之后、稠密重排之前、同一个事务」。交给它的是
+        //    `index.rows` 此刻那份投影（**含软删行**，寻址要它；活行过滤在 `mergePass` 里，
+        //    与 `allURLRules()` 同一条判据）——零额外读，也正是 R-M3-4a-100 的剔除依据。
+        if let mergeTail {
+            let result = mergeTail.evaluate(index.rows.map(Self.projectURLRule))
+            for op in result.ops { try execute(op) }
+            touchedBuckets.formUnion(result.touchedBuckets)
+            outcome.collapsed = result.collapsed
+            outcome.mergeChangedRouting = result.changedRouting
+        }
+
+        // ⑤ 收尾稠密重排。
         for bucket in touchedBuckets {
             let live = index.rows
                 .filter { $0.spaceId == bucket && $0.deletedDate == nil }
@@ -673,6 +837,26 @@ extension LocalStore {
                 row.sortOrder = position
             }
         }
+        return outcome
+    }
+
+    /// 事务内的取值快照，**绝不是 model 对象**（同步层的 `PhiLocalURLRule` 上有完整说明）。
+    /// 与 `AccountPhiURLRuleAccess.project` 逐字同形，只是那一份读的是主 context 的 fetch、
+    /// 这一份读的是写块里那份**已经被本页落地写改过**的索引。
+    private static func projectURLRule(_ model: SpaceURLRule) -> PhiLocalURLRule {
+        PhiLocalURLRule(id: model.id,
+                        syncId: model.syncId,
+                        spaceId: model.spaceId,
+                        host: model.host,
+                        pathPrefix: model.pathPrefix,
+                        askBeforeRouting: model.askBeforeRouting,
+                        sortOrder: model.sortOrder,
+                        createdDate: model.createdDate,
+                        contentUpdatedDate: model.contentUpdatedDate,
+                        targetUpdatedDate: model.targetUpdatedDate,
+                        deletedDate: model.deletedDate,
+                        pendingLocalEdit: model.pendingLocalEdit,
+                        mergePartnerSyncId: model.mergePartnerSyncId)
     }
 
     /// 九个字段的载荷形式，转发到上面那个逐参数的 body。

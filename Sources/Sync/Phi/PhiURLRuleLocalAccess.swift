@@ -84,6 +84,19 @@ enum URLRuleSyncOp: Equatable, Sendable {
     /// **写在同一次行写里**（R-M3-4a-42(b)：一页里同一条身份只有一次落地写）。
     case rekey(localId: String, to: String, values: URLRuleLandingValues?)
 
+    // MARK: 8b-2：§8.4.3 的 M2 三条。**只由落地段尾钩产出**（`URLRuleMergeTail`），不经
+    // `URLRuleApplyBatch` 的合并与降级——它们不是「落地一条远端实体」，而是本机收敛的补写。
+
+    /// §8.4.3 第 2 步 (b) 的败者软删。`deletedDate` 与 `mergePartnerSyncId` **同一次行写**
+    /// （RR8-4）；编辑器那条删除路径传 `nil`。**`pendingLocalEdit` 一个字节不碰**。
+    case softDelete(syncId: String, mergePartnerSyncId: String?)
+    /// §8.4.3 第 1 步的提示写，**只写这一列**；`nil` 就是清空（两条清空规则走它）。
+    case setMergePartner(syncId: String, mergePartnerSyncId: String?)
+    /// §8.4.3 第 2 步 (a) 的胜者吸收，**按内容组整组写**：三个字段连同它们共用的那一枚戳。
+    /// **不碰** `sortOrder` / `targetUpdatedDate` / `deletedDate` / `pendingLocalEdit`。
+    case setContentGroup(syncId: String, host: String, pathPrefix: String?,
+                         ask: Bool, contentUpdatedDate: Date)
+
     /// 这条 op 指向的账户级身份（`.rekey` 是它要写上去的**新**身份）。
     var syncId: String {
         switch self {
@@ -93,8 +106,41 @@ enum URLRuleSyncOp: Equatable, Sendable {
             return syncId
         case .rekey(_, let to, _):
             return to
+        case .softDelete(let syncId, _), .setMergePartner(let syncId, _):
+            return syncId
+        case .setContentGroup(let syncId, _, _, _, _):
+            return syncId
         }
     }
+}
+
+// MARK: - 落地段尾部（R-M3-4a-56 / 计划裁定三）
+
+/// R-M3-4a-56 的落地段尾部。**在这一页的全部落地写之后、稠密 `sortOrder` 重排之前**，
+/// 在**同一个事务**里对含软删行的**当前**行投影求值一次，交回要补写的 M2 ops 与它们碰过
+/// 的桶。纯计算：真的找到重复时才产出 ops（§8.4.3 开头）。
+/// 那份**当前**投影同时是 **R-M3-4a-100** 的剔除依据：候选集在这里做第二次减法
+/// （`pendingLocalEdit` / 已软删 / 行已不在，计划裁定六 (3)），**零额外读**。
+///
+/// **闭包刻意不带全局 actor**：它在写队列上被调，在 `@MainActor` 的落地闭包里直接形成会被
+/// 推断成 `@MainActor` 闭包。装配点因此是一个**非隔离**的工厂函数，捕获的全是值类型。
+struct URLRuleMergeTail {
+    var evaluate: ([PhiLocalURLRule]) -> URLRuleMergeResult
+}
+
+/// 一次批次落地的可观测结局。**`collapsed` 只统计真的被软删的败者**（R-M3-4a-54）。
+struct URLRuleBatchOutcome: Sendable, Equatable {
+    var collapsed = 0
+    /// §6.6 第 8 行的触发条件：M2 真的写了**软删或内容组**。**指针写不算**
+    /// （`mergePartnerSyncId` 不进路由表，为它刷一次是白刷，CASE M-7 钉住零刷新）。
+    var mergeChangedRouting = false
+    /// **R-M3-4a-102**（8b-3 的计划裁定 11）：§8.4.4 (α) 的那一对 op（`.transfer` + 同身份的
+    /// `.delete`）在事务里重读来源行、发现它与 op 带的 `source` **已经不同**（或行已不在 /
+    /// 已软删）⇒ **两条 op 都不执行**，身份进这个集合。
+    /// 本任务只**声明并原样回传**（M2 自己从不填它，落地 op 的执行器填）；引擎按
+    /// `plan.parkedTombstones` 记账（游标 `pendingTombstone = true`、行不动），**绝不**进
+    /// `outcome.landed` / `outcome.deleted`。书签与 pin 恒空集。
+    var deferredTombstones: Set<String> = []
 }
 
 /// 一页远端落地要施加的**全部**规则操作，已按 §5.5 合并与排序。
@@ -103,6 +149,13 @@ enum URLRuleSyncOp: Equatable, Sendable {
 /// 要求它们在**一个**事务里（部分成功不存在）。
 struct URLRuleApplyBatch {
     private(set) var ops: [URLRuleSyncOp]
+    /// R-M3-4a-56 的落地段尾钩（8b-2）。`nil` = 这一页不跑 M2（书签 / pin 的路径与 Task 8
+    /// 的既有调用点都不传它）。
+    private(set) var mergeTail: URLRuleMergeTail?
+    /// R-M3-4a-98：`.transfer` 的目标侧戳从这里取，落地闭包在拼批次**之前**用
+    /// `URLRuleKind.effectiveAccountStamps(landed:rebaselined:table:identities:)` 算好整张表。
+    /// 本任务只**供给**它（消费者是 8b-3 的转移 op 执行器）。
+    private(set) var accountStamps: [String: URLRuleEffectiveStamps]
 
     /// `currentSpaceIds`：**本页那一次** `allURLRulesIncludingDeleted()` 给的
     /// `syncId -> 行现值 spaceId`。init 做两件事，缺一不可：
@@ -120,7 +173,11 @@ struct URLRuleApplyBatch {
     /// 相序：① `create` / `update` / `move` / `reorder` ② `delete`；相内**稳定**（保持传入
     /// 次序，按身份首次出现的位置）。规则之间没有父子，所以相序只为让「被触及的桶」这份
     /// 记账有确定的求值点。
-    init(unordered: [URLRuleSyncOp], currentSpaceIds: [String: String] = [:]) {
+    init(unordered: [URLRuleSyncOp], currentSpaceIds: [String: String] = [:],
+         mergeTail: URLRuleMergeTail? = nil,
+         accountStamps: [String: URLRuleEffectiveStamps] = [:]) {
+        self.mergeTail = mergeTail
+        self.accountStamps = accountStamps
         // 一身份一槽，按首次出现的次序；同类 op 重复出现时后到的覆盖先到的（两条带的是同一份
         // 合并结果，择哪条都一样）。
         struct Slot {
@@ -140,7 +197,18 @@ struct URLRuleApplyBatch {
         //    第一个身份从那一行上挤掉——挤掉的那条身份本机再无活行认领，下一轮差分为它发
         //    一条 tombstone。
         var rekeyedLocalIds: Set<String> = []
+        // 8b-2 的三条 M2 op **不进槽**：它们不是「落地一条远端实体」，没有可合并的同身份
+        // 兄弟，也不参与 `.move` 的降级。按传入次序原样穿过，相序排在 `.delete` **之前**
+        // （§8.4.3 的 (b) 软删要看得见一条本页稍后才被硬删的行）。
+        var passthrough: [URLRuleSyncOp] = []
         for op in unordered {
+            switch op {
+            case .softDelete, .setMergePartner, .setContentGroup:
+                passthrough.append(op)
+                continue
+            case .create, .update, .move, .reorder, .delete, .rekey:
+                break
+            }
             let syncId = op.syncId
             if case .rekey(let localId, _, _) = op {
                 guard rekeyedLocalIds.insert(localId).inserted else {
@@ -159,6 +227,7 @@ struct URLRuleApplyBatch {
             case .reorder(_, let spaceId, let sortOrder): slots[syncId]?.reorder = (spaceId, sortOrder)
             case .delete: slots[syncId]?.delete = true
             case .rekey(let localId, _, let values): slots[syncId]?.rekey = (localId, values)
+            case .softDelete, .setMergePartner, .setContentGroup: continue   // 上面已经穿过
             }
         }
 
@@ -207,7 +276,7 @@ struct URLRuleApplyBatch {
                 upgrades.append(merged)
             }
         }
-        ops = upgrades + deletes
+        ops = upgrades + passthrough + deletes
     }
 }
 
@@ -260,7 +329,14 @@ protocol PhiURLRuleLocalAccess: AnyObject {
     func liveOwners(_ candidates: Set<String>) throws -> OwnedLiveRows
 
     /// 一整页远端落地，**一个**事务（§5.5）。抛错 = 一条都没落，调用方不许写基线。
-    func apply(_ batch: URLRuleApplyBatch) async throws
+    ///
+    /// 返回值是 8b-2 的落地段尾钩（M2）在**同一个事务**里的结局：`collapsed` 与
+    /// `mergeChangedRouting`（§6.6 第 8 行的触发条件）。**`ops` 为空、只带尾钩的批次照样
+    /// 落一次事务**（R-M3-4a-56：一页没有任何规则落地时同样要收敛）。
+    /// `@discardableResult` 只为让 Task 8 那几条「只看 `rows` 变没变」的值级 fixture 用例
+    /// 保持原样；引擎那一侧**永远**读它（`landURLRules` 把两个字段接进 `OwnedLandingOutcome`）。
+    @discardableResult
+    func apply(_ batch: URLRuleApplyBatch) async throws -> URLRuleBatchOutcome
 
     /// §6.6 / R-M3-4a-34：一页规则落地**提交之后**刷新 Chromium 那张路由表，**一页一次**。
     /// 生产实现是一句 `SpaceManager.shared.reloadURLRulesFromStore()`（重读 + 换缓存 +
@@ -497,9 +573,12 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
     /// **成功之后就地重读一遍**（R-M3-4a-62 的「每页刷新」在这里落地），不是清空了事。这次
     /// 重读抛了就原样上抛，**但那一批已经提交了**——调用方必须把它当成「落地成功、快照跟不上」，
     /// 而不是「没落地」，与 `AccountPhiBookmarkAccess.apply` 逐字同一条契约。
-    func apply(_ batch: URLRuleApplyBatch) async throws {
-        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+    @discardableResult
+    func apply(_ batch: URLRuleApplyBatch) async throws -> URLRuleBatchOutcome {
+        let outcome = try await store.applyURLRuleSyncBatchThrowing(batch.ops,
+                                                                    mergeTail: batch.mergeTail)
         try rebuildCache()
+        return outcome
     }
 
     /// 靠 `urlRulesPublisher` 自己发射是不够的：它按 SwiftData 就地刷新的同一批实例去重，一次

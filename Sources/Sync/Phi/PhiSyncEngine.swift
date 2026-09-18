@@ -220,6 +220,16 @@ struct OwnedPlanOutput {
     /// M1 认领之后要**整条删掉**的那条旧游标：**新身份 -> 被它取代的旧 `syncId`**。
     /// 引擎只对**真的落了地**的身份删（整批回滚时 re-key 没发生、旧 `syncId` 还在行上）。
     var retiredIdentities: [String: String] = [:]
+    /// D30 / §8.4.1：本页那一次 pre-pass 算出的**静止**身份（十个合取项，R-M3-4a-86）。
+    /// 求值时刻是硬的——kind 的 pre-pass、用**本页那一次** `allURLRulesIncludingDeleted()` 与
+    /// 当时的游标表，**每页一次**：尾钩跑在落地写之后、手上那份行投影已经变过，而第 10 项要读
+    /// **本页 `arrivals`**（尾钩根本拿不到），在尾钩里重算既违反求值时刻、又结构性地少一个
+    /// 合取项（CASE M-27）。
+    ///
+    /// 语义是 **M2 第 2 步候选集的上界**（计划裁定六）：`land` 闭包减掉本页 `.transfer` 的目标
+    /// （R-M3-4a-90），尾钩在事务里再减掉此刻 `pendingLocalEdit` / 已软删 / 已消失的那些
+    /// （R-M3-4a-100）。**书签与 pin 恒空集。**
+    var atRestIdentities: Set<String> = []
 }
 
 struct OwnedLandingInput {
@@ -229,6 +239,24 @@ struct OwnedLandingInput {
     /// `OwnedPlanOutput.claimedLocalIds`，原样交给落地闭包。默认空 ⇒ 书签与 pin 的每一处
     /// 构造点逐字不变（计划裁定二：不走轮内状态盒、也不给 `OwnedItemApplyStep` 加成员）。
     var claimedLocalIds: [String: String] = [:]
+
+    // MARK: D30 M2 的四条通道（8b-2）。四个都带默认值 ⇒ 书签与 pin 的落地闭包一个都不读，
+    // 行为逐字不变。
+
+    /// `OwnedItemPlan.preLandingSignatures`，原样转（§8.4.3 第 1 步第二遍的分组键）。
+    var preLandingSignatures: [String: RuleSignature] = [:]
+    /// `OwnedPlanOutput.atRestIdentities`，原样转。语义 = **M2 第 2 步候选集的上界**：
+    /// `land` 闭包在拼尾钩之前减掉本页 `.transfer` 的目标（R-M3-4a-90），尾钩在事务里再减掉
+    /// 新变脏 / 新软删 / 已消失的那些（R-M3-4a-100）。
+    var atRestIdentities: Set<String> = []
+    /// `ownedItemsPublishAllowed`（含 `hasDrainedFullReplay`）。§8.4.3 **第 2 步**的闸
+    /// （R-M3-4a-74(3)）：第 1 步的指针与所有查表都不在它后面。闸是引擎的 `private var`、
+    /// `land` 闭包读不到它，这个具名入参是唯一自洽的接缝。
+    var convergeAllowed = false
+    /// `OwnedItemPlan.rebaselined`（R-M3-4a-97）：有效账户戳的**第二层**。引擎自己要等 `land`
+    /// 返回之后才把它写进游标，所以落地闭包只能从这里拿——`input.table` 里那一条仍然是更旧的
+    /// 那一枚戳（CASE M-33 变体 (d)）。
+    var rebaselined: [String: Data] = [:]
 }
 
 /// 一次落地的结果。三条出路**方向相反**，所以它们是三个集合而不是一个笼统的失败位
@@ -265,6 +293,13 @@ struct OwnedLandingOutcome {
     /// 字段，所以一条由落地新建的行**按构造**没有图标；认领 / 更新命中的是本机早就有的行，
     /// 它们自己的图标不该被一次回填盖掉。于是回填的投喂源不需要任何新的本机读。
     ///
+    /// §8.4.3 第 2 步 (b)：这一页的落地事务尾部真的被软删掉的败者条数（R-M3-4a-54）。
+    /// 引擎按它回填 `OwnedRoundCounters.collapsed`。书签与 pin 恒为 0。
+    var collapsed = 0
+    /// §6.6 第 8 行：M2 真的写了**软删或内容组** ⇒ 这一页要刷一次路由表，哪怕它一条远端实体
+    /// 都没落地。**指针写不算**（`mergePartnerSyncId` 不进路由表，CASE M-7 钉住零刷新）。
+    /// 书签与 pin 恒 `false`。
+    var mergeChangedRouting = false
     /// 书签那一侧填这个，pin 那一侧填 `createdPins`。
     var createdRows: [PhiLocalBookmark] = []
     /// §8.2 / Task 10 的 pin 半边。同一条判据（「本轮新建」⇒ 按构造没有图标）；spec §8.2
@@ -3647,10 +3682,20 @@ actor PhiSyncEngine {
 
         let outcome = await registration.land(
             OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps,
-                              claimedLocalIds: output.claimedLocalIds))
+                              claimedLocalIds: output.claimedLocalIds,
+                              // D30 M2 的四条通道（8b-2）。书签与 pin 的落地闭包一个都不读。
+                              preLandingSignatures: output.plan.preLandingSignatures,
+                              atRestIdentities: output.atRestIdentities,
+                              // C-15：闸只管 §8.4.3 的**第 2 步**。
+                              convergeAllowed: ownedItemsPublishAllowed,
+                              // R-M3-4a-97：这一趟的 `rebaselined` 要到下面才写进游标，
+                              // 落地闭包只能从这个入参拿到它。
+                              rebaselined: output.plan.rebaselined))
         guard !isStopped else { return }
         // §7.2 / A11 的变体重铸跑在落地那一批里，所以它的条数跟着落地结果回来。
         counters.relineaged += outcome.relineaged
+        // §13.2 的 `collapsed`：M2 在落地事务尾部真的软删掉的败者（R-M3-4a-54）。
+        counters.collapsed += outcome.collapsed
         // §13.2 的 `owner_moved` 同一条通路：数的是批次里真的留下来的 `.move`（计划裁定三）。
         counters.ownerMoved += outcome.ownerMoved
         // §8.2 / Task 10：本轮新建出来的行攒进收集篮，轮末一次交给回填队列。
@@ -6800,6 +6845,26 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     context.localProjections = urlRuleLocalProjections(
         for: Set(arrivals.map { URLRuleKind.identity(of: $0.entity) }).union(input.parked.keys),
         table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
+    // D30 M2 的两条 pre-pass 通道（8b-2 计划裁定二 / 六）。**必须在调 `SyncableOwnedItems.plan`
+    // 之前**、用**本页那一次**行投影（`state.live`，`beginRound` / `reloadAfterPage` 每页刷新
+    // 一次，R-M3-4a-62）与**当时**的游标表算：
+    // - `localSignatures`：`plan` 在产出 `.move` / `.update` 的那一刻照身份查它，抄进
+    //   `OwnedItemPlan.preLandingSignatures`（第二遍指针的分组键）。**每页重算**——第 N+1 页读
+    //   到的是第 N 页落地**之后**的行，CASE M2-b 钉这一格。
+    // - `atRestIdentities`：十个合取项的静止集，第 10 项读的就是**本页**那份 `tombstoned`
+    //   （尾钩拿不到它，所以绝不能挪到尾钩里重算，CASE M-27）。
+    let resolve = input.maps.resolver
+    let normalize = URLRuleSignatureQueries.normalize
+    for row in state.live {
+        guard let identity = row.syncId,
+              let signature = URLRuleKind.signature(of: row, resolve: resolve,
+                                                    normalize: normalize) else { continue }
+        context.localSignatures[identity] = signature
+        if URLRuleKind.isAtRest(row: row, cursor: input.table.cursors[identity], resolve: resolve,
+                                normalize: normalize, tombstonesThisPage: input.tombstoned) {
+            out.atRestIdentities.insert(identity)
+        }
+    }
     out.plan = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: arrivals, parked: input.parked,
                                        table: input.table, resolve: input.maps.resolver,
                                        context: context)
@@ -6932,6 +6997,36 @@ private func urlRuleLocalProjections(for identities: Set<String>,
     return out
 }
 
+/// §8.4.3 的落地段尾钩装配点（8b-2 计划裁定三）。
+///
+/// **刻意不带 `@MainActor`**：这个闭包在**写队列**上、落地事务的尾部被调，而 `landURLRules`
+/// 是 `@MainActor` 的——在那里直接形成闭包会被推断成 `@MainActor` 闭包，转成
+/// `URLRuleMergeTail.evaluate` 那个非隔离函数类型就要丢掉全局 actor。捕获的全是值类型
+/// （游标表、两张字典、三个集合、`OwnerResolver` 那几个读不可变字典的闭包），闭包体是
+/// `URLRuleKind.mergePass` 这个纯函数，所以跨执行器求值没有任何共享可变状态。
+private func makeURLRuleMergeTail(landedThisPage: Set<String>,
+                                  publishedIdentities: Set<String>,
+                                  preLandingSignatures: [String: RuleSignature],
+                                  atRest: Set<String>,
+                                  landed: [String: URLRuleLandingValues],
+                                  rebaselined: [String: Data],
+                                  table: PhiOwnedItemTable,
+                                  convergeAllowed: Bool,
+                                  resolve: OwnerResolver) -> URLRuleMergeTail {
+    URLRuleMergeTail { rows in
+        URLRuleKind.mergePass(rows: rows,
+                              landedThisPage: landedThisPage,
+                              publishedIdentities: publishedIdentities,
+                              preLandingSignatures: preLandingSignatures,
+                              atRest: atRest,
+                              landed: landed,
+                              rebaselined: rebaselined,
+                              table: table,
+                              convergeAllowed: convergeAllowed,
+                              resolve: resolve)
+    }
+}
+
 /// §4.4 / §4.5 的落地，规则那一半：翻译表 + 两桶稠密投影 + **一个事务** + 落地后复核。
 ///
 /// 翻译表（每条 step 一条 op，`identity` 就是 `syncId`）：`.create` ⇒ 本机**没有**这条身份的
@@ -6947,7 +7042,9 @@ private func landURLRules(_ input: OwnedLandingInput,
                           access: any PhiURLRuleLocalAccess,
                           state: URLRuleSyncRoundState) async -> OwnedLandingOutcome {
     var out = OwnedLandingOutcome()
-    guard !input.steps.isEmpty else { return out }
+    // **没有「本页没有规则 step 就早退」那一条**（8b-2 / R-M3-4a-56）：一页没有任何规则落地时
+    // M2 同样要跑，那一页单开一次同形事务。漏掉它，纯本机重复与「只带别的 kind 的页」两类页
+    // 永远不收敛——而 drain 结束之后的稳态里绝大多数页正是这两类（CASE M-35）。
     let resolve = input.maps.resolver
 
     /// 账户级目标 -> 本机 `spaceId`。保留常量映回裸 Incognito 前缀（R-M3-4a-7）。
@@ -7145,6 +7242,10 @@ private func landURLRules(_ input: OwnedLandingInput,
     // 「桶变没变」定，`URLRuleApplyBatch.init` 再按身份合并。
     var ops: [URLRuleSyncOp] = []
     var payloadOf: [String: Data] = [:]
+    /// R-M3-4a-94 的**第一层**：身份 -> 它这一页的落地值。那份取值里的两枚戳与马上要写进
+    /// 游标 `reconciled` 的字节是同一枚，所以它就是账户此刻的值——而游标里还是**落地前**那
+    /// 一份（记账排在 `land(...)` 之后）。
+    var landedValues: [String: URLRuleLandingValues] = [:]
     for identity in active {
         guard let item = landing[identity] else { continue }
         payloadOf[identity] = item.payload
@@ -7160,6 +7261,7 @@ private func landURLRules(_ input: OwnedLandingInput,
             // 两枚远端戳照合并结果落，**不是 `now`**（R-M3-4a-20 / 48：引擎不铸戳）。
             contentUpdatedDate: date(item.entity.host.updatedAtMs),
             targetUpdatedDate: date(item.entity.targetSpaceUuid.updatedAtMs))
+        landedValues[identity] = values
         guard let row = item.row else {
             ops.append(.create(values))
             continue
@@ -7186,11 +7288,44 @@ private func landURLRules(_ input: OwnedLandingInput,
     }
     ops.append(contentsOf: deleteOps)
 
-    guard !ops.isEmpty else { return out }
+    // §8.4.3 M2 的装配（8b-2）。**`ops` 为空也照走**：这一页仍然要开一次同形事务跑尾钩
+    // （R-M3-4a-56 / CASE M-35）。
+    //
+    // 三件事在拼批次**之前**算好：
+    // ① 候选集的**第一次**减法（计划裁定六 (1) / R-M3-4a-90）：本页 `.transfer` 相真的写进过
+    //    单元的那些目标此刻都带 `pendingLocalEdit`，按静止判据第 3 项它们本来就不该静止，
+    //    pre-pass 只是算得太早。传进 `mergePass(atRest:)` 的**必须**是减完的那一份（CASE M-33）。
+    //    第二次减法在尾钩里、事务内（R-M3-4a-100 / CASE M-36）。
+    // ② `publishedIdentities`（R-M3-4a-95）：`syncId != nil` **不等于**「已发布」——一条本机新建
+    //    的行在 M1 认领那一刻就有了 `syncId`，却要等这一轮的发布段才有服务端三元组。
+    // ③ 有效账户戳那**一张**表（R-M3-4a-94 / 97 / 98）：`.transfer` 的目标侧戳与尾钩共用它。
+    //    尾钩那一侧的 `mergePass` 拿着**同样的三个入参**再算一次——纯函数、输入逐字相同 ⇒
+    //    两处取值不可能分叉。
+    let landedThisPage = URLRuleKind.landedIdentities(in: input.steps)
+    let transferTargets = URLRuleKind.transferTargets(in: input.steps)
+    let mergeCandidates = input.atRestIdentities.subtracting(transferTargets)
+    let publishedIdentities = Set(input.table.cursors.filter { $0.value.server != nil }.keys)
+    let stampIdentities = Set(state.live.compactMap(\.syncId))
+        .union(landedThisPage).union(transferTargets)
+    let accountStamps = URLRuleKind.effectiveAccountStamps(landed: landedValues,
+                                                           rebaselined: input.rebaselined,
+                                                           table: input.table,
+                                                           identities: stampIdentities)
+    let mergeTail = makeURLRuleMergeTail(landedThisPage: landedThisPage,
+                                         publishedIdentities: publishedIdentities,
+                                         preLandingSignatures: input.preLandingSignatures,
+                                         atRest: mergeCandidates,
+                                         landed: landedValues,
+                                         rebaselined: input.rebaselined,
+                                         table: input.table,
+                                         convergeAllowed: input.convergeAllowed,
+                                         resolve: resolve)
     let identities = Set(active).union(deletedWithRow)
-    let batch = URLRuleApplyBatch(unordered: ops, currentSpaceIds: state.currentSpaceIds)
+    let batch = URLRuleApplyBatch(unordered: ops, currentSpaceIds: state.currentSpaceIds,
+                                  mergeTail: mergeTail, accountStamps: accountStamps)
+    let batchOutcome: URLRuleBatchOutcome
     do {
-        try await access.apply(batch)
+        batchOutcome = try await access.apply(batch)
     } catch {
         // §5.5：一个事务，抛错 = 一条都没落 ⇒ 整批停放，下一轮重试。落地算错那一类
         // （`rowAlreadyMapped`）走 `refused`，与 `landPins` 逐字同一条分流。
@@ -7201,6 +7336,9 @@ private func landURLRules(_ input: OwnedLandingInput,
         }
         return out
     }
+    // §8.4.3 M2 的结局，两个字段（8b-2）。
+    out.collapsed = batchOutcome.collapsed
+    out.mergeChangedRouting = batchOutcome.mergeChangedRouting
     // R-M3-4a-62 的第一个就地更新口：真的提交了的 re-key **立刻**折回轮内投影
     // （**本机行 id -> 新 syncId**，与书签那一侧方向相反，计划裁定三）。
     var persisted: [String: String] = [:]
@@ -7234,7 +7372,15 @@ private func landURLRules(_ input: OwnedLandingInput,
     // R-M3-4a-62：这一页的行投影在提交之后重读一次。
     state.reloadAfterPage(access)
     // §6.6 第 1 行 / R-M3-4a-34：落地**显式**触发一次路由表刷新，**一页一次**。
-    access.refreshRoutingTableAfterLanding()
+    //
+    // §6.6 **第 8 行**（8b-2 计划裁定七 / R-M3-4a-56）：第二个析取项。纯收敛的页（零落地）上
+    // 败者已经软删，而 Chromium 那张表里还留着它——少了这个 `||` 就要等下一次有落地的轮次才
+    // 纠正，与「远端删掉一个 Space 之后规则留在表里」逐字同形。**指针写不进这个条件**
+    // （`mergePartnerSyncId` 不进路由表，为它刷一次是白刷，CASE M-7 钉住零刷新）。
+    // M3 的编辑转移不需要第 9 行：它发生在落地段里，第一个析取项已经覆盖（§8.4.7）。
+    if !ops.isEmpty || out.mergeChangedRouting {
+        access.refreshRoutingTableAfterLanding()
+    }
     // §13.2 的 `owner_moved`：数批次里真的留下来的 `.move`（计划裁定三）。
     out.ownerMoved = batch.ops.reduce(into: 0) { sum, op in
         if case .move = op { sum += 1 }

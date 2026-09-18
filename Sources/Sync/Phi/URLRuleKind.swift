@@ -415,6 +415,18 @@ struct RuleSignature: Hashable {
     let owner: String
 }
 
+/// 8b-2 补的定序（**不改 8b-1 的类型定义本身**）：`convergePass` / `mergePointerPass` 都按
+/// `groups.keys.sorted()` 遍历分组（收敛先例 `PinKind.swift:361`），而字典的 `keys` 次序是
+/// 每进程随机的——不定序的实现会让两台机器（甚至同一台的两次运行）按不同次序产出 op。
+/// 比较键**注入**：`pathPrefix` 的 nil 与 `""` 是两个值（§8.1），所以先比「有没有」再比值，
+/// 两个不同的签名绝不会比成相等。
+extension RuleSignature: Comparable {
+    static func < (lhs: RuleSignature, rhs: RuleSignature) -> Bool {
+        (lhs.host, lhs.pathPrefix == nil ? 0 : 1, lhs.pathPrefix ?? "", lhs.owner)
+            < (rhs.host, rhs.pathPrefix == nil ? 0 : 1, rhs.pathPrefix ?? "", rhs.owner)
+    }
+}
+
 extension URLRuleKind {
     /// §8.4.1 第一条：**两道门必须一起判**（RR7-2）。
     /// ① `eligibilityOwner(of:resolve:scope:) != nil`；
@@ -512,5 +524,424 @@ extension URLRuleKind {
         if resolve.localSpaceId(owner) != nil, !resolve.isEligibleSpace(owner) { return nil }
         let normalized = normalize(host, pathPrefix)
         return RuleSignature(host: normalized.host, pathPrefix: normalized.pathPrefix, owner: owner)
+    }
+}
+
+// MARK: - D30 M2：两遍指针 + 整组归约（§8.4.3，8b-2）
+
+/// 一条身份此刻的有效账户戳，**按合并单元分两枚**（内容组与目标，R-M3-4a-97 / 98）。
+/// M2 只读 `.content`；8b-3 的 `.transfer` 两枚都读。两枚各自可以缺席。
+struct URLRuleEffectiveStamps: Equatable, Sendable {
+    var content: Date?
+    var target: Date?
+}
+
+/// §8.4.3 第 2 步 (a)：胜者按**内容组**整组吸收来源的那一次写。三个字段连同它们共用的
+/// 那一枚戳（R-M3-4a-48）。**每组至多一条**（R-M3-4a-82）。
+struct RuleContentGroupWrite: Equatable {
+    var syncId: String
+    var host: String
+    var pathPrefix: String?
+    var ask: Bool
+    var contentUpdatedDate: Date
+}
+
+/// §8.4.3 第 2 步 (b)：一条败者的软删。`deletedDate` 与 `mergePartnerSyncId` 是**同一次行写**
+/// （RR8-4），所以它们是同一个值类型的两半而不是两条 op。
+struct RuleSoftDelete: Equatable {
+    var syncId: String
+    var mergePartnerSyncId: String
+}
+
+/// `convergePass` 的产出。
+struct URLRuleConvergence: Equatable {
+    /// 每组**至多一次**（R-M3-4a-82：整组归约，绝不逐个败者去比一份固定的 W 快照）。
+    var contentGroupWrites: [RuleContentGroupWrite] = []
+    var softDeletes: [RuleSoftDelete] = []
+    /// 生命周期表第 3 行的清空规则①：静止、且签名组里没有第二条活行 ⇒ 清空那一列。
+    var clearedPartners: [String] = []
+    /// **只统计真的被软删的败者**（R-M3-4a-54）。
+    var collapsed = 0
+    /// (c)：败者离开的每个桶，进本页的稠密重排定义域。
+    var touchedBuckets: Set<String> = []
+}
+
+/// 尾钩交回的全部东西。
+struct URLRuleMergeResult {
+    var ops: [URLRuleSyncOp] = []
+    var collapsed = 0
+    var touchedBuckets: Set<String> = []
+    /// 软删或内容组写 ⇒ 真；**纯指针写 ⇒ 假**（`mergePartnerSyncId` 不进路由表，为它刷一次
+    /// 路由表是白刷，CASE M-7 钉住零刷新）。
+    var changedRouting = false
+}
+
+extension URLRuleKind {
+    /// §8.4.1 的归一化函数（三处注入点之外的**唯一**一处内部引用）。M2 的三个纯函数按
+    /// spec §11 的字面签名写，没有 `normalize:` 入参，而签名分组必须用同一个不动点函数
+    /// ——这个别名把它绑到与 `signatureIndex` / `mergePartners` **同一份**实现上，两处分叉
+    /// 不了（§8.4.1 的「三处读同一个谓词」在归一化这一侧的对应物）。
+    private static var mergeNormalize: (String, String?) -> (host: String, pathPrefix: String?) {
+        URLRuleSignatureQueries.normalize
+    }
+
+    /// 毫秒戳 -> `Date`，与 `milliseconds(_:)` 互为逆。**0 当「缺席」**：R-M3-4a-12 的无基线
+    /// 分支把目标戳写 0、rank 戳写 0，把它读成 1970 那一刻会让一条从没有过目标编辑的实体在
+    /// LWW 里当成「有一枚极旧的真戳」。
+    private static func stampDate(_ ms: Int64) -> Date? {
+        ms == 0 ? nil : Date(timeIntervalSince1970: Double(ms) / 1000)
+    }
+
+    /// 本页**从账户落地**的那些身份（R-M3-4a-74(1)）。**按 step 种类过滤**：
+    /// `outcome.landed` 是它的超集（还含 `.delete` 的身份、以及 8b-3 的 (β) 转移为清
+    /// `pendingApply` 交回去的那一条），**绝不**拿 `outcome.landed` 当这个集合用（RR12-6）。
+    ///
+    /// `.claim` 也在里面：那一行这一页第一次拿到账户身份与账户级 rank，它与 `.create` 同样是
+    /// 「账户上这条实体在本机有了代表」，`mergePointerPass` 的锚点子集要认得它。
+    static func landedIdentities(in steps: [OwnedItemApplyStep]) -> Set<String> {
+        var out: Set<String> = []
+        for step in steps {
+            switch step.kind {
+            case .claim, .create, .move, .update:
+                out.insert(step.identity)
+            case .delete:
+                continue
+            }
+        }
+        return out
+    }
+
+    /// 本页 `.transfer` 相（四相下的第三相，R-M3-4a-93）的**目标**身份（R-M3-4a-90），
+    /// 要从本页 M2 第 2 步的候选集里减掉（计划裁定六 (1)）。与 `landedIdentities` 同一份
+    /// step 列表、同一个 `land` 闭包里算，**不开新通道**。
+    ///
+    /// **今天结构性地为空**：`.transfer` 那一相由 8b-3 加进 `StepKind`（本任务不改那个枚举），
+    /// 所以此刻没有任何 step 落进它。减法本身已经接上（`land` 闭包在调 `mergePass` 之前就减），
+    /// 8b-3 补上那个 case 时这个 `switch` 会当场编译不过 —— 那正是它该被想起来的时刻。
+    ///
+    /// **精确集**是「`transferURLRuleEditBody` 真的写进了 ≥ 1 个单元」的那些目标；本函数是它的
+    /// **纯函数超集**（全部 `.transfer` 目标）。两者都安全：超集最坏让那一组**本页**不收敛，
+    /// 下一页再收。
+    static func transferTargets(in steps: [OwnedItemApplyStep]) -> Set<String> {
+        Set(steps.compactMap { step -> String? in
+            switch step.kind {
+            case .claim, .create, .move, .update, .delete:
+                return nil
+            }
+        })
+    }
+
+    /// 合并单元戳的**唯一**取值源：**本页落地之后的「有效账户戳」**（R-M3-4a-94）。
+    /// 按身份**分三层**取，**优先级从上到下**（第二层是 R-M3-4a-97 加的）：
+    ///
+    /// 1. `landed[id]` 有值（本页 `.create` / `.move` / `.update` 的目标）⇒ 取**那份落地值**的
+    ///    两枚戳。它与马上要写进游标 `reconciled` 的那份字节是同一枚戳，所以它就是账户此刻
+    ///    的值；此时游标里还是**落地前**那一份（记账排在 `land(...)` 之后）。
+    /// 2. `rebaselined[id]` 有值（本页「取值没变、只是戳更新」的那些身份，
+    ///    `OwnedItemPlan.rebaselined`）⇒ 解那份**新基线字节**取两枚戳。引擎要等 `land` 返回
+    ///    之后才把它写进游标，所以 `table` 里那一条仍然是**更旧**的那一枚；漏掉这一层 ⇒
+    ///    CASE M-33 变体 (d) 红。
+    /// 3. 其余身份 ⇒ 取 `table.cursors[id]?.reconciled` 解出的那条实体的两枚戳。
+    ///
+    /// - 三层都取不到、或该单元那一枚为 nil ⇒ **这个单元不进表**（`convergePass` 按
+    ///   `.distantPast` 处理，永不当 `source`，fail-closed）。
+    ///
+    /// **绝不读行上的 `contentUpdatedDate`**：Task 5 的计划裁定 5 让新行那一列是 `nil`（发布侧
+    /// 用 `?? createdDate` 投影、`.applied` 不回填），而 `rebaselined` 只刷游标基线、**一个字节
+    /// 都不写行**。于是一条账户戳 30 的静止行，盘上那一列完全可能是 `nil` 或 10 —— 读行就会
+    /// 输给一条 B@20，而退到 `?? createdDate` 又变成每设备量、两台选出不同的 `source`。
+    /// 「静止」只蕴含「有基线且 `server == reconciled`」，**不蕴含「行戳 == 基线戳」**。
+    static func effectiveAccountStamps(landed: [String: URLRuleLandingValues],
+                                       rebaselined: [String: Data],
+                                       table: PhiOwnedItemTable,
+                                       identities: Set<String>)
+        -> [String: URLRuleEffectiveStamps] {
+        var out: [String: URLRuleEffectiveStamps] = [:]
+        for identity in identities {
+            // 第一层。
+            if let values = landed[identity] {
+                out[identity] = URLRuleEffectiveStamps(content: values.contentUpdatedDate,
+                                                       target: values.targetUpdatedDate)
+                continue
+            }
+            // 第二层优先于第三层：`rebaselined` 里那一份就是这一页之后游标会有的字节。
+            guard let bytes = rebaselined[identity] ?? table.cursors[identity]?.reconciled,
+                  let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+                  let entity = entity(from: envelope) else { continue }
+            let stamps = URLRuleEffectiveStamps(
+                content: stampDate(entity.host.updatedAtMs),
+                target: stampDate(entity.targetSpaceUuid.updatedAtMs))
+            guard stamps.content != nil || stamps.target != nil else { continue }
+            out[identity] = stamps
+        }
+        return out
+    }
+
+    /// §8.4.3 第 1 步的**两遍**指针，一次做完，**每一页都跑、不受 `hasDrainedFullReplay`
+    /// 的闸约束**（R-M3-4a-74(3) / RR11-1）。交回「身份 -> 锚点」，**只含真的要落行写的那些**。
+    ///
+    /// - `liveRows`：本页的**全部**活行（`deletedDate == nil`），**含没有签名的**——它们不进
+    ///   任何分组，但「指向一条本机没有活行的身份」这个悬空判据要在**全部**活行上问。
+    /// - 第一遍分组键 = 每一行**此刻**的 `signature(of:resolve:normalize:)`；第二遍分组键 =
+    ///   `preLandingSignatures[id] ?? 此刻的签名`，**两遍的定义域都是全部活行**（RR12-1：
+    ///   收成「表里那些身份」会在唯一要救的形状上**静默**空转）；两者都算不出的行不进分组。
+    /// - 锚点 = 这一组「已发布活行 ∪ `landedThisPage`」里 `syncId` 字典序最小的那一条，
+    ///   **只在这个子集里选，不是组内最小**（RR13-5：一条 `syncId` 更小的未发布行当锚点会
+    ///   永远不静止 ⇒ §8.4.4 第一步查找恒不命中）；该子集少于两条 ⇒ 这一组零写。
+    ///   **「已发布」由 `publishedIdentities` 显式传入**（R-M3-4a-95），本函数手上没有游标表，
+    ///   而 `syncId != nil` **不等于**「已发布」：一条本机新建的行在 M1 认领那一刻就有了
+    ///   `syncId`、却要等这一轮的发布段才有服务端三元组。
+    /// - **前置（承重句，RR12-7）**：只写这一列**此刻**为 nil、或指向一条本机没有活行的身份
+    ///   的**活成员**；已经指向一条活行的不动。函数内部按已产出的写更新自己那份状态，于是
+    ///   第二遍不会覆盖第一遍。原语那层的「值相同零写」是**第二道防御**，不是承重条款。
+    static func mergePointerPass(liveRows: [PhiLocalURLRule],
+                                 landedThisPage: Set<String>,
+                                 publishedIdentities: Set<String>,
+                                 preLandingSignatures: [String: RuleSignature],
+                                 resolve: OwnerResolver) -> [String: String] {
+        let normalize = mergeNormalize
+        // 悬空判据的定义域：**全部**活行的身份（含没有签名的那些）。
+        var liveIdentities: Set<String> = []
+        // 每条身份那一列**此刻**的值，随本函数已经产出的写就地更新。
+        var pointer: [String: String] = [:]
+        for row in liveRows {
+            guard let identity = row.syncId else { continue }
+            liveIdentities.insert(identity)
+            if let partner = row.mergePartnerSyncId { pointer[identity] = partner }
+        }
+
+        var out: [String: String] = [:]
+        func pass(_ keyOf: (PhiLocalURLRule) -> RuleSignature?) {
+            var groups: [RuleSignature: [PhiLocalURLRule]] = [:]
+            for row in liveRows where row.syncId != nil {
+                guard let key = keyOf(row) else { continue }
+                groups[key, default: []].append(row)
+            }
+            // 固定的遍历次序（`PinKind.swift:361` 的收敛先例）：字典的 `keys` 每进程随机。
+            for key in groups.keys.sorted() {
+                let members = (groups[key] ?? []).sorted { ($0.syncId ?? "") < ($1.syncId ?? "") }
+                let anchors = members.compactMap { row -> String? in
+                    guard let identity = row.syncId,
+                          publishedIdentities.contains(identity)
+                            || landedThisPage.contains(identity) else { return nil }
+                    return identity
+                }
+                // 子集少于两条 ⇒ 这一组零写（一条锚点自己不需要伙伴指针）。
+                guard anchors.count >= 2, let anchor = anchors.first else { continue }
+                for row in members {
+                    guard let identity = row.syncId, identity != anchor else { continue }
+                    // 承重前置：已经指向一条活行的**不动**。
+                    if let current = pointer[identity], liveIdentities.contains(current) { continue }
+                    guard pointer[identity] != anchor else { continue }
+                    out[identity] = anchor
+                    pointer[identity] = anchor
+                }
+            }
+        }
+        pass { signature(of: $0, resolve: resolve, normalize: normalize) }
+        pass { row in
+            if let identity = row.syncId, let key = preLandingSignatures[identity] { return key }
+            return signature(of: row, resolve: resolve, normalize: normalize)
+        }
+        return out
+    }
+
+    /// §8.4.3 第 2 步。**只在 `convergeAllowed` 为真时被调**（调用方守门，C-15）。
+    /// `atRest` 是**两次减法之后**的候选集：`land` 闭包减掉本页转移目标（计划裁定六 (1) /
+    /// R-M3-4a-90），尾钩在事务里再减掉此刻 `pendingLocalEdit` / 已软删 / 已消失的那些
+    /// （计划裁定六 (3) / R-M3-4a-100）。本函数**不再加工**它。
+    /// `accountStamps` 是 `effectiveAccountStamps(...)` 交回那张表的 **`.content` 那一枚**
+    /// （R-M3-4a-94 / 97）：本页落地过的取落地值，本页 `rebaselined` 的取新基线字节，其余取
+    /// 游标基线，**没有一层是行上那一列**；`.content` 缺席的身份不进这张字典。
+    ///
+    /// 对每个签名组：静止成员 < 2 ⇒ 这一组不收敛（`members.count == 1` 且那一条静止且它的
+    /// `mergePartnerSyncId != nil` ⇒ 进 `clearedPartners`，生命周期表第 3 行、零额外读）；
+    /// 静止成员 ≥ 2 ⇒ 胜者 W = 静止成员里 `syncId` 字典序最小的那一条，
+    /// **(a)** `source` = 全部静止成员（**含 W 自己**）里 `accountStamps` 最大的那一条，
+    ///         戳相等按 `syncId` 字典序定序；**当且仅当** `source` 的内容组与 W 不同、**或**
+    ///         `source` 的戳严格新于 W ⇒ 产出**一条** `RuleContentGroupWrite`（R-M3-4a-82：
+    ///         **绝不**逐个败者去比一份固定的 W 快照，照抄来源的戳、绝不铸 `now`）；
+    /// **(b)** 每条败者 ⇒ 一条 `RuleSoftDelete(syncId:, mergePartnerSyncId: W.syncId)`；
+    /// **(c)** 败者离开的每个桶进 `touchedBuckets`。胜者的 rank 与目标**一个字节都不动**。
+    static func convergePass(groups: [RuleSignature: [PhiLocalURLRule]],
+                             atRest: Set<String>,
+                             accountStamps: [String: Date]) -> URLRuleConvergence {
+        let normalize = mergeNormalize
+        var out = URLRuleConvergence()
+        /// 内容组的可比形式：三个成员都取**归一化之后**的值（V11 回填的老行按定义没过归一化）。
+        func content(_ row: PhiLocalURLRule) -> (String, String?, Bool) {
+            let normalized = normalize(row.host, row.pathPrefix)
+            return (normalized.host, normalized.pathPrefix, row.askBeforeRouting)
+        }
+        func stamp(_ row: PhiLocalURLRule) -> Date? {
+            row.syncId.flatMap { accountStamps[$0] }
+        }
+
+        for key in groups.keys.sorted() {
+            let members = (groups[key] ?? []).sorted { ($0.syncId ?? "") < ($1.syncId ?? "") }
+            let settled = members.filter { row in
+                guard let identity = row.syncId else { return false }
+                return atRest.contains(identity)
+            }
+            guard settled.count >= 2 else {
+                // 清空规则①（RR9-4 的措辞是硬的：判据是「组里没有第二条活行」，不是「不在
+                // 任何签名组里」——后者按字面永不成立，静止第 8 项就是「它有签名」）。
+                if members.count == 1, let row = members.first, let identity = row.syncId,
+                   atRest.contains(identity), row.mergePartnerSyncId != nil {
+                    out.clearedPartners.append(identity)
+                }
+                continue
+            }
+            // 胜者：静止成员里 `syncId` 字典序最小的那一条（`settled` 已按它升序）。
+            guard let winner = settled.first, let winnerId = winner.syncId else { continue }
+            // (a) **整组归约**：一次选出 `source`，一次写。戳相等按 `syncId` 字典序定序，
+            //     于是两台机器逐字相同。
+            let source = settled.max { left, right in
+                (stamp(left) ?? .distantPast, left.syncId ?? "")
+                    < (stamp(right) ?? .distantPast, right.syncId ?? "")
+            }
+            if let source, let sourceStamp = stamp(source) {
+                let winnerStamp = stamp(winner) ?? .distantPast
+                if content(source) != content(winner) || sourceStamp > winnerStamp {
+                    let normalized = normalize(source.host, source.pathPrefix)
+                    out.contentGroupWrites.append(
+                        RuleContentGroupWrite(syncId: winnerId,
+                                              host: normalized.host,
+                                              pathPrefix: normalized.pathPrefix,
+                                              ask: source.askBeforeRouting,
+                                              // D33 / §8.4.1 第五条：**照抄来源的戳**，绝不铸 `now`。
+                                              contentUpdatedDate: sourceStamp))
+                }
+            }
+            // (b) / (c)：`settled.first` **绝不**进这个定义域（本机这一台上某个签名组一条不剩
+            //     正是 CASE M-5 要防的那一格）。
+            for loser in settled.dropFirst() {
+                guard let identity = loser.syncId else { continue }
+                out.softDeletes.append(RuleSoftDelete(syncId: identity,
+                                                      mergePartnerSyncId: winnerId))
+                out.collapsed += 1
+                out.touchedBuckets.insert(loser.spaceId)
+            }
+        }
+        return out
+    }
+
+    /// 尾钩的全部内容，**纯函数**。次序：过滤活行 ⇒ 建组 ⇒
+    /// `effectiveAccountStamps(landed:rebaselined:table:identities:)`（R-M3-4a-94 / 97）⇒
+    /// **把 `atRest` 里此刻 `pendingLocalEdit == true` / `deletedDate != nil` / 行已不在的那些
+    /// 剔掉**（R-M3-4a-100；`rows` 就是事务里刚重读的那一份，零额外读）⇒（闸开才）
+    /// `convergePass`（喂进去的是那张表的 `.content` 那一枚）⇒ 在**软删之后**的活集上跑
+    /// `mergePointerPass`（计划裁定四）⇒ 按 `.setContentGroup` → `.softDelete` →
+    /// `.setMergePartner` 的相序拼 ops。
+    ///
+    /// **`convergePass` 先于 `mergePointerPass` 的等价性证明**（计划裁定四）。§8.4.3 的伪码把
+    /// 第一遍指针与收敛按组交织，第二遍指针跑在整个循环之后的 `liveAfter` 上；这里是**先
+    /// 收敛、再两遍指针一次做完，定义域是软删之后的活集**。终态逐字相同、行写严格更少：
+    /// **(1) 锚点不变** —— 锚点 = 「已发布活行 ∪ `landedThisPage`」里 `syncId` 最小的那一条，
+    /// 胜者 = 静止成员里 `syncId` 最小的那一条，而静止**蕴含**已发布（判据 1 / 2）⇒ 静止成员
+    /// ⊆ 锚点候选集 ⇒ `锚点 ≤ 胜者 ≤ 每一条败者`，且锚点自己若静止就**是**胜者、永不当败者
+    /// ⇒ 移走败者不改变锚点。**(2) 终值支配** —— 伪码里败者行上会先被第一遍写成锚点、再被
+    /// (b) 覆盖成胜者，净结果是胜者；这里败者根本不进指针的定义域，净结果同样是胜者。非败者
+    /// 行两种次序下的输入完全相同。**RR11-2 的「指针不得覆盖 (b) 的终值」因此是结构性成立
+    /// 的，不靠任何运行期判断。**
+    ///
+    /// `table:` / `landed:` / `rebaselined:` 三个入参供且仅供 `effectiveAccountStamps` 用
+    /// （R-M3-4a-90 曾把 `table:` 删掉，R-M3-4a-94 恢复：有效账户戳的「未落地那一半」只能从
+    /// 游标基线读；`rebaselined:` 是 R-M3-4a-97 的第二层）；
+    /// **`convergePass` 仍然不许自己去翻 `table`** —— 它只拿算好的 `accountStamps`。
+    /// `publishedIdentities` 供且仅供 `mergePointerPass` 选锚点用（R-M3-4a-95）。
+    /// `atRest` 是**上界**：`land` 闭包已经减过本页转移目标，本函数在事务里再减一次。
+    static func mergePass(rows: [PhiLocalURLRule],
+                          landedThisPage: Set<String>,
+                          publishedIdentities: Set<String>,
+                          preLandingSignatures: [String: RuleSignature],
+                          atRest: Set<String>,
+                          landed: [String: URLRuleLandingValues],
+                          rebaselined: [String: Data],
+                          table: PhiOwnedItemTable,
+                          convergeAllowed: Bool,
+                          resolve: OwnerResolver) -> URLRuleMergeResult {
+        let normalize = mergeNormalize
+        var out = URLRuleMergeResult()
+        // 活行过滤与 `allURLRules()` 同一条判据（R-M3-4a-51）：一条用户刚删掉的行绝不当成员
+        // （CASE M-10）。寻址那一侧要软删行，所以入参是含软删行的那一份。
+        let live = rows.filter { $0.deletedDate == nil }
+
+        var groups: [RuleSignature: [PhiLocalURLRule]] = [:]
+        for row in live where row.syncId != nil {
+            guard let key = signature(of: row, resolve: resolve, normalize: normalize) else {
+                continue
+            }
+            groups[key, default: []].append(row)
+        }
+
+        // R-M3-4a-100 的第二次减法：**只减不加**。一条 pre-pass 说不静止的行绝不因为事务里
+        // 看起来干净就被加回来（那会绕过游标侧的七个合取项与第 10 项，CASE M-27 / M-36）。
+        // 这三个合取项恰好是十项静止谓词里**只读行**的那三项，重读的这份投影本来就带着它们。
+        var rowOf: [String: PhiLocalURLRule] = [:]
+        for row in rows {
+            guard let identity = row.syncId else { continue }
+            if row.deletedDate == nil || rowOf[identity] == nil { rowOf[identity] = row }
+        }
+        let candidates = atRest.filter { identity in
+            guard let row = rowOf[identity] else { return false }   // 行已不在
+            return !row.pendingLocalEdit && row.deletedDate == nil
+        }
+
+        // 这张表在本页只算一次的那一份的尾钩侧副本：纯函数、输入逐字相同 ⇒ 与 `land` 闭包
+        // 拼批次之前算的那一张不可能分叉（R-M3-4a-98 的「同一张表」就是这个含义）。
+        var asked: Set<String> = landedThisPage
+        for members in groups.values {
+            for row in members { if let identity = row.syncId { asked.insert(identity) } }
+        }
+        let stamps = effectiveAccountStamps(landed: landed, rebaselined: rebaselined,
+                                            table: table, identities: asked)
+        var contentStamps: [String: Date] = [:]
+        for (identity, pair) in stamps {
+            if let content = pair.content { contentStamps[identity] = content }
+        }
+
+        // C-15：闸只管第 2 步。第 1 步的指针与上面的查表都不在闸后面。
+        let convergence = convergeAllowed
+            ? convergePass(groups: groups, atRest: candidates, accountStamps: contentStamps)
+            : URLRuleConvergence()
+
+        // 计划裁定四：指针跑在**软删之后**的活集上。内容组写不改变签名（`ask` 不在签名里，
+        // `host` / `pathPrefix` 写的就是这一组共用的那个归一化值），所以这里只减败者。
+        let collapsedIds = Set(convergence.softDeletes.map(\.syncId))
+        let liveAfter = live.filter { row in
+            guard let identity = row.syncId else { return true }
+            return !collapsedIds.contains(identity)
+        }
+        let pointers = mergePointerPass(liveRows: liveAfter, landedThisPage: landedThisPage,
+                                        publishedIdentities: publishedIdentities,
+                                        preLandingSignatures: preLandingSignatures,
+                                        resolve: resolve)
+
+        // 相序：`.setContentGroup` → `.softDelete` → `.setMergePartner`。清空（规则①）排在
+        // 指针写**之前**：同一条身份若两者都命中（第一遍单成员、第二遍按落地前签名进了一个
+        // 更大的组），后到的那条指针写才是终值。
+        for write in convergence.contentGroupWrites.sorted(by: { $0.syncId < $1.syncId }) {
+            out.ops.append(.setContentGroup(syncId: write.syncId, host: write.host,
+                                            pathPrefix: write.pathPrefix, ask: write.ask,
+                                            contentUpdatedDate: write.contentUpdatedDate))
+        }
+        for delete in convergence.softDeletes.sorted(by: { $0.syncId < $1.syncId }) {
+            out.ops.append(.softDelete(syncId: delete.syncId,
+                                       mergePartnerSyncId: delete.mergePartnerSyncId))
+        }
+        for identity in convergence.clearedPartners.sorted() {
+            out.ops.append(.setMergePartner(syncId: identity, mergePartnerSyncId: nil))
+        }
+        for identity in pointers.keys.sorted() {
+            out.ops.append(.setMergePartner(syncId: identity, mergePartnerSyncId: pointers[identity]))
+        }
+
+        out.collapsed = convergence.collapsed
+        out.touchedBuckets = convergence.touchedBuckets
+        // §6.6 第 8 行的触发条件：**指针写不算**（CASE M-7 钉住零刷新）。
+        out.changedRouting = !convergence.softDeletes.isEmpty
+            || !convergence.contentGroupWrites.isEmpty
+        return out
     }
 }

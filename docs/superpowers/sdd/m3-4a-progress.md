@@ -629,3 +629,100 @@ D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（
 18. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，日志零 warning）。二十四条新用例
     （`URLRuleMergeTests` 18 条、`PhiOwnedItemStateTests` 1 条、`LocalStoreURLRuleThrowingTests` 5 条）没有在
     运行时跑过；每条的走向按代码推导（见 report 的逐条说明）。
+
+## Task 8b-2
+
+§8.4.3 的 M2 收敛：两遍指针 + 整组归约（R-M3-4a-82）、落地段尾钩 `URLRuleMergeTail`、
+三个 `LocalStore` 原语、两条清空规则、drain 闸只管第 2 步、§6.6 第 8 行、
+`OwnedItemPlan.preLandingSignatures`。
+
+### brief 的「计划裁定」要求记档的
+
+1. **`preLandingSignatures` 用具体类型 `[String: RuleSignature]`**（裁定一）：不用 `AnyHashable`
+   （分组键退化成运行期强转、失败即静默空转），也不给 `OwnedItemKind` 加第三个关联类型（会把非泛型的
+   `OwnedItemPlan` 拖成泛型、牵动书签与 pin 的每一个调用点）。全仓一个 module，`SyncableOwnedItems.swift`
+   已经具名引用过 pin 专属的 `PinnedTabScope`，没有新的构建边。书签与 pin 那两条路径永不填它。
+2. **`convergePass` 先跑、`mergePointerPass` 后跑**（裁定四）：与 §8.4.3 伪码「按组交织 + 循环后第二遍」的
+   op 发出次序不同，终态逐字相同、行写严格更少。证明两条（锚点不变 / 终值支配）逐字写在
+   `URLRuleKind.mergePass` 的文档注释里，评审按那一段核对。
+3. **三个原语「找不到行」零写返回、DEBUG `assertionFailure`，不抛**（裁定五）：M2 的输入全部来自同一个事务里
+   刚读到的那份投影，结构上必然命中；抛会把整页落地回滚掉，同一页每轮重放每轮抛。
+4. **本页 `.transfer` 目标从 M2 第 2 步候选集里减掉**（裁定六 (1)，R-M3-4a-90）：`land` 闭包里
+   `input.atRestIdentities.subtracting(URLRuleKind.transferTargets(in: input.steps))`，传进 `mergePass(atRest:)`
+   的是减完的那一份。**`transferTargets(in:)` 今天结构性地交空集**——`.transfer` 相由 8b-3 加进 `StepKind`
+   （本任务不改那个枚举），函数体里那个穷举 `switch` 会在 8b-3 补 case 的那一刻编译不过，减法本身已经接上。
+5. **内容组戳改读「有效账户戳」**（裁定六 (2)，R-M3-4a-94）：唯一取值源是
+   `URLRuleKind.effectiveAccountStamps(landed:rebaselined:table:identities:)`；`mergePass` 的 `table:` 入参
+   **先被 R-M3-4a-90 删掉、又被 R-M3-4a-94 恢复**（未落地那一半只能从游标 `reconciled` 读），同批加
+   `landed:`。**`accountContentStamp(identity:table:)` 那个「只读基线」的旧口仍然不要**——它是这条裁定的反面。
+   `convergePass` 的签名与函数体一字不改，它只拿算好的 `[String: Date]`。
+6. **有效账户戳的第二层 `rebaselined` 与 `OwnedLandingInput.rebaselined` 这条新通道**（R-M3-4a-97）：
+   `plan.rebaselined` 要等 `land` 返回之后才写进游标，落地闭包读 `input.table` 就读到更旧的那一枚戳
+   （CASE M-33 变体 (d)）。引擎在 `land(...)` 调用点同批转 `output.plan.rebaselined`。
+7. **那张表按单元分两枚（`URLRuleEffectiveStamps`）并经 `URLRuleApplyBatch.accountStamps` 供给 8b-3 的
+   `.transfer`**（R-M3-4a-98）：`land` 闭包在拼批次**之前**算一次（`identities` = 本页活行 ∪ `landedIdentities`
+   ∪ `transferTargets`），整张交给批次的第四个 init 参数；尾钩那一侧的 `mergePass` 拿同样的三个入参再算一次
+   （纯函数、输入逐字相同 ⇒ 不可能分叉）。本任务只**供给**，消费者是 8b-3。
+8. **空批次也走完整引擎入口**（R-M3-4a-99）：`OwnedKindRegistration.landsEmptyBatch` 与
+   `applyOwnedKind` 那道空批次早退 guard 的第四个析取项由 **Task 6 已经产出**（`.urlRules` 取 `true`、
+   书签与 pin 显式 `false`），本任务只放宽另外两处：`LocalStore.applyURLRuleSyncBatchThrowing` 的
+   `guard !ops.isEmpty` 放成 `!ops.isEmpty || mergeTail != nil`，`landURLRules` 的
+   `guard !input.steps.isEmpty` **整条删掉**。
+9. **pre-pass 静止集只是上界，尾钩在事务里做第二次减法**（裁定六 (3)，R-M3-4a-100）：`mergePass` 在重读的
+   `rows` 之后、调 `convergePass` **之前**剔掉此刻 `pendingLocalEdit == true` / `deletedDate != nil` / 行已不在
+   的身份。**只减不加**——游标侧的七个合取项与第 10 项一律不重算。
+10. **指针锚点的「已发布」输入显式传入 `publishedIdentities`**（R-M3-4a-95）：`land` 闭包按
+    `Set(input.table.cursors.filter { $0.value.server != nil }.keys)` 算；函数内**不许**拿 `row.syncId != nil`
+    当「已发布」（M1 认领那一刻就有 `syncId` 了）。
+11. **§6.6 第 8 行落在 Task 6 的刷新钩子上，不碰 `SpaceManager.swift`**（裁定七）：钩子是
+    `landURLRules` 末尾那一句 `access.refreshRoutingTableAfterLanding()`（`PhiSyncEngine.swift`，**不在**
+    `PhiChromiumCoordinator.swift`）；改动是把它包进
+    `if !ops.isEmpty || out.mergeChangedRouting`。**指针写不进这个条件**（CASE M-7 钉住零刷新）。
+
+### 本任务额外的偏离
+
+12. **`RuleSignature: Comparable` 在 `URLRuleKind.swift` 里补了一个扩展**（不改 8b-1 的类型定义本身）：
+    两个 pass 都按 `groups.keys.sorted()` 遍历（`PinKind.swift:361` 的收敛先例），而字典 `keys` 的次序是
+    每进程随机的。比较键**注入**（先比 `pathPrefix` 有没有、再比值），两个不同的签名绝不比成相等。
+13. **三个原语的 body 多一个 `index: inout URLRuleTableIndex` 入参**（brief 的签名只写了 `in context:`）：
+    R-M3-4a-56 的寻址条款在一个写块里的落地形式就是那份含软删行的整表索引，而 `upsertURLRuleBody` /
+    `hardDeleteURLRuleBody` / `rekeyURLRuleBody` 三者已经是这个形状。body 是 **internal 不是 private**，
+    理由同 R-exec-2。
+14. **`URLRuleMergeTail` / `URLRuleBatchOutcome` 定义在 `PhiURLRuleLocalAccess.swift`**（brief 把它们画在
+    批次入口那一节）：`URLRuleApplyBatch` 要持 `mergeTail`、协议的 `apply(_:)` 要返回 `URLRuleBatchOutcome`，
+    放在同步层可以让 `LocalStorage` 不去定义同步层协议依赖的类型。
+15. **`apply(_:)` 与 `applyURLRuleSyncBatchThrowing(_:mergeTail:)` 都标 `@discardableResult`**：Task 8 与
+    Task 5 留下的那批「只看 `rows` / 库里的行变没变」的值级用例（`URLRuleKindTests` 2 处、
+    `LocalStoreURLRuleThrowingTests` 十余处）不必为了一个返回值逐行改。引擎那一侧**永远**读它。
+16. **尾钩的装配点是一个非隔离的自由函数 `makeURLRuleMergeTail(...)`**：闭包在写队列上被调，在 `@MainActor`
+    的 `landURLRules` 里直接形成会被推断成 `@MainActor` 闭包、转成非隔离函数类型要丢掉全局 actor。
+    捕获的全是值类型，闭包体是 `URLRuleKind.mergePass` 这个纯函数。
+17. **`landedIdentities(in:)` 含 `.claim`**（brief 的注释只点名 `.create` / `.move` / `.update` 是排除项的
+    反面）：一条被认领的行这一页第一次拿到账户身份与账户级 rank，指针的锚点子集要认得它。排除项仍然只有
+    `.delete`（以及 8b-3 的 (β)）。有效账户戳的第一层读的是另一份字典 `landed`（`land` 闭包刚翻译出的
+    那批 op 的值），两者是两个概念。
+18. **不声明 `URLRuleSyncOp.transfer`**：brief 的 op 清单只有三条新 case，而 `.transfer` 的 `source:`
+    需要 8b-3 的 `RuleProjection` 类型。`URLRuleBatchOutcome.deferredTombstones` 与
+    `URLRuleApplyBatch.accountStamps` 两条给 8b-3 的通道已经**声明并原样回传 / 供给**。
+19. **改了一条既有断言**：`URLRuleKindTests.swift` 的回声轮用例把 `applyCalls(access)` 从 1 改成 2 —— 回声轮
+    （`push` 先跑一次 pull）那一页零规则 step，而 R-M3-4a-56 要求空批次照样进事务跑 M2。同一处补了两条
+    探针（那一批零落地 op、刷新总数仍是 1）。书签与 pin 的用例一条没改。
+20. **CASE M2-d 的冲突支用 `.rekey` 撞车，不是「`.softDelete` 命中 `syncId` 不符的行」**：三个原语一律按
+    `syncId` 在 `URLRuleTableIndex.bySyncId` 上寻址，那条 `rowAlreadyMapped` 守卫在该寻址路径上**结构性
+    不可达**（留着是为了寻址方式一旦变化，静默覆盖仍然变成一次抛错）。钉的东西不变：一次抛错让**尾钩已经
+    写下的那几列**一起回滚。
+21. **CASE M-36 的「真实用户写」经 `FakeURLRuleAccess.applyEditorSave(...)`**：假件背后没有 `LocalStore`，
+    这个入口是 `applyURLRuleEditsBody` 第 4 / 9 步的假件等价物（内容组逐成员比 ⇒ 写 + 置位 + 戳；三个都相同
+    ⇒ 零写零置位），用例仍然不许直接戳 `rows`。旋钮 `beforeLandingTransaction` 只在假件上。
+22. **CASE M-6 缩到「同一对账户身份、两台的每设备量完全相反 ⇒ 同一个幸存者」**：brief 的逐轮脚本
+    （两台并发新建、轮 1/2/3/4 的 `collapsed` 与 tombstone 计数）要一台真的共享服务端状态的双引擎 fixture，
+    而它同时依赖 8b-3 的让位半边；本任务写的是**承重的那一条**——胜者选择不依赖任何每设备量
+    （本机 `id` / `createdDate` / `sortOrder` / 插入次序），两台软删的身份逐字相同。
+23. **CASE M-16b / M-17 (i) / M-25 (e) 的 8b-3 半边不写**（brief 已经点名它们不属于本任务）：M-17 只断 M2
+    那一半，M-16b 整条依赖 (ii) 让位支，留给 8b-3。
+
+### 验证口径
+
+24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 31 条用例与全部实现改动只经
+    逐行核对：每个引用到的符号都先 grep 过签名，每个 `switch URLRuleSyncOp` 都是穷举的，
+    `URLRuleKind` 的四个新纯函数没有任何 actor 隔离状态。一次统一的编译检查在全部任务做完之后跑。

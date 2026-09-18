@@ -79,6 +79,19 @@ struct OwnedItemPlanContext {
     /// §7.3 的作用域不一致成立：`plan` 产出零 step、把入站实体**全部**塞进 `parked`。
     var localScope: PinnedTabScope? = nil
     var accountScope: PinnedTabScope? = nil
+    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1），由适配层的 pre-pass 填
+    /// （8b-2 计划裁定二）。`plan` 手上没有本机行（`localProjections` 是投影字节，不是行），
+    /// 算不出签名，所以它只在产出 `.move` / `.update` 的那一刻**照身份查一次**这张表并把命中的
+    /// 那些抄进 `OwnedItemPlan.preLandingSignatures`；查不到的身份**结构性地不在表里**
+    /// （不强解包、不填空值）。
+    ///
+    /// 类型逐字是 `[String: RuleSignature]`（8b-2 计划裁定一）：`AnyHashable` 会把第二遍指针的
+    /// 分组键从编译期类型退化成运行期强转（失败即**静默**空转，正是 RR12-1 点名的那种失效），
+    /// 而给 `OwnedItemKind` 加第三个关联类型会把非泛型的 `OwnedItemPlan` 也拖成泛型、牵动书签
+    /// 与 pin 的每一个调用点。本文件已经在 `localScope` / `accountScope` 上具名引用了 pin 专属
+    /// 的 `PinnedTabScope`，全仓又是**一个** Swift module，所以这里没有任何新的构建边。
+    /// **书签与 pin 那两条路径永不填它。**
+    var localSignatures: [String: RuleSignature] = [:]
     /// 轮首之后作用域**动过**（R-exec-12）：两个值在轮首取样时还一致，落地之前再读已经不是
     /// 那一对了。轮内那份本机投影因此过期，与「两者不相等」同等处理——差别只在它证明的是
     /// 「投影过期」而不是「本机与账户不一致」，而 §7.3 的处置对两者是同一个。
@@ -161,6 +174,17 @@ struct OwnedItemPlan {
     /// 这一位不破坏「apply → 基线」的次序（§4.5）：走到这里的身份按定义没有任何东西要落地，
     /// 合并结果与基线在**取值**上逐字相同，差的只是时间戳。
     var rebaselined: [String: Data] = [:]
+    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1 / R-M3-4a-73），
+    /// **只在产出 `.move` / `.update` 的那一刻**从 `OwnedItemPlanContext.localSignatures` 抄下来。
+    ///
+    /// §8.4.3 第 1 步的**第二遍**指针按它分组：一条本页被 `.move` 搬走目标的规则 Z，与一条
+    /// 留在旧目标上、本页什么都不落地的同签名重复 X，按**此刻**的签名已经不同组了，而那正是
+    /// 唯一需要写下指针的形状（R-M3-4a-74 / 75）。三条禁令：**绝不**落地之后重读行（那时行
+    /// 已经在新目标上，第二遍与第一遍逐字相同）；**绝不**用 `OwnedItemApplyStep.newOwnerUuid`
+    /// （那是**新**目标）；**绝不**在轮首冻结一次（pre-pass 每页跑一次，CASE M2-b）。
+    ///
+    /// **书签与 pin 恒空**（它们的 plan 上下文不填 `localSignatures`）。
+    var preLandingSignatures: [String: RuleSignature] = [:]
 }
 
 /// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
@@ -778,6 +802,7 @@ enum SyncableOwnedItems {
         var cancelledDeletes: Set<String> = []
         var mustRepublish: Set<String> = []
         var rebaselined: [String: Data] = [:]
+        var preLandingSignatures: [String: RuleSignature] = [:]
         var landedIdentities: Set<String> = []
 
         for item in ordered {
@@ -901,6 +926,11 @@ enum SyncableOwnedItems {
                                                 newParentUuid: landingParent,
                                                 newOwnerUuid: K.targetOwnerUuid(of: merged),
                                                 newRank: rank, payload: payload))
+                // D30 / §8.4.3 第 1 步的第二遍分组键：**产出 step 的这一刻**记下那一行落地前的
+                // 签名（8b-2 计划裁定二）。算不出的身份结构性地不在表里。
+                if let key = context.localSignatures[identity] {
+                    preLandingSignatures[identity] = key
+                }
             }
             // **移动与内容改动是两条步骤，不是二选一。** 落地的 move 操作
             // （`BookmarkApplyOp.move`）不带字段补丁，内容只走 update；一条既搬了家又被改了
@@ -913,6 +943,11 @@ enum SyncableOwnedItems {
             if contentChanged {
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
                                                 newParentUuid: nil, newRank: nil, payload: payload))
+                // 同上（8b-2 计划裁定二）：`.move` 与 `.update` 是同一条身份的两条 step，记两次
+                // 是幂等的（值相同）。
+                if let key = context.localSignatures[identity] {
+                    preLandingSignatures[identity] = key
+                }
             }
             // 一条 step 都没有、而合并结果与基线仍然不同 ⇒ 只差时间戳，基线照样要跟上
             // （见 `OwnedItemPlan.rebaselined`）。判据是「本轮没有任何东西要落地」，所以它
@@ -958,7 +993,8 @@ enum SyncableOwnedItems {
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
-                             mustRepublish: mustRepublish, rebaselined: rebaselined)
+                             mustRepublish: mustRepublish, rebaselined: rebaselined,
+                             preLandingSignatures: preLandingSignatures)
     }
 
     // MARK: - 认领（§6 的规则 (i)）

@@ -1309,8 +1309,12 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertEqual(counters?.tombstones, 0)
         XCTAssertEqual(counters?.pendingPublish, 0)
         XCTAssertTrue(client.commits.isEmpty, "回声轮零 commit")
-        XCTAssertEqual(applyCalls(access), 1, "回声轮零 .apply")
-        XCTAssertEqual(refreshCalls(access), 1, "刷新总数仍然是落地那一条")
+        // 8b-2 / R-M3-4a-56：回声轮（`push` 先跑一次 pull）那一页**零规则 step**，但规则的落地段
+        // 照样单开一次同形事务跑 M2 尾钩——这条断言因此从 1 变成 2。零 op 的那一批一行都没写：
+        // 下面两条（零 commit、刷新总数仍是 1）就是它的探针（CASE M-7 / M-35）。
+        XCTAssertEqual(applyCalls(access), 2, "回声轮那一页零落地 op，但空批次照样进事务跑 M2")
+        XCTAssertEqual(access.lastAppliedOps.count, 0, "回声轮那一批一条落地 op 都没有")
+        XCTAssertEqual(refreshCalls(access), 1, "刷新总数仍然是落地那一条（M2 零写 ⇒ 零刷新）")
     }
 
     // MARK: - CASE U-27（`urlrules` 计数行的字段与门）

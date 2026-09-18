@@ -449,6 +449,14 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     private(set) var purgeCalls: [Date] = []
     /// 让两条出路抛。**每次都抛，不自动清零。**
     var deleteError: Error?
+    /// 8b-2 / R-M3-4a-100（CASE M-36）：在 `apply(_:)` 真正落「落地写 + 尾钩」这一段**之前**
+    /// 被调一次，用来在 pre-pass 与落地事务之间注入一次**真实的**本机 Save
+    /// （`applyURLRuleEditsThrowing`，绝不手写行或游标）。生产实现里那个窗口是真实可达的：
+    /// pre-pass 跑在主 actor 上、落地事务跑在写队列上，中间隔着一次
+    /// `performBackgroundWriteAndWaitThrowing` 的排队。**只在假件上有**，生产协议一个字节不加。
+    var beforeLandingTransaction: (@MainActor () async -> Void)?
+    /// 最近一次 `apply` 里尾钩交回的那些 M2 op（没有尾钩的那次是空数组）。
+    private(set) var lastMergeOps: [URLRuleSyncOp] = []
 
     init(rows: [PhiLocalURLRule] = []) {
         self.rows = rows
@@ -497,9 +505,13 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return OwnedLiveRows(claimed: candidates.intersection(live), owners: [:])
     }
 
-    func apply(_ batch: URLRuleApplyBatch) async throws {
+    /// **`ops` 为空、只带尾钩的批次照样跑一遍**（8b-2 / R-M3-4a-56：一页没有任何规则落地时
+    /// M2 同样要跑）。块内次序与生产 body 逐字相同：落地 op ⇒ **尾钩** ⇒ 稠密重排。
+    @discardableResult
+    func apply(_ batch: URLRuleApplyBatch) async throws -> URLRuleBatchOutcome {
         calls.append(.apply(opCount: batch.ops.count))
         lastAppliedOps = batch.ops
+        lastMergeOps = []
         if failApplyOnce {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
@@ -507,6 +519,10 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         if let applyErrorOnce {
             self.applyErrorOnce = nil
             throw applyErrorOnce
+        }
+        // R-M3-4a-100（CASE M-36）的注入点：**落地写之前**那一刻，pre-pass 已经跑完。
+        if let beforeLandingTransaction {
+            await beforeLandingTransaction()
         }
         // `.rekey` 的两条守卫与撞车检查照生产 body（`LocalStore.rekeyURLRuleBody`），**先整批校验
         // 再动 `rows`**：假件没有事务，抛在半途会留下半应用状态，而 §5.5 的契约是「抛错 = 一条
@@ -524,11 +540,25 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         for op in batch.ops {
             land(op, touchedBuckets: &touchedBuckets)
         }
+        var outcome = URLRuleBatchOutcome()
+        // 尾钩：交给它的是此刻**含软删行**的那份投影（寻址要它），**排在稠密重排之前**——
+        // 排在之后的实现会在败者离开的桶里留下一个空洞下标。
+        if let mergeTail = batch.mergeTail {
+            let result = mergeTail.evaluate(Self.ordered(rows))
+            lastMergeOps = result.ops
+            for op in result.ops {
+                land(op, touchedBuckets: &touchedBuckets)
+            }
+            touchedBuckets.formUnion(result.touchedBuckets)
+            outcome.collapsed = result.collapsed
+            outcome.mergeChangedRouting = result.changedRouting
+        }
         for bucket in touchedBuckets {
             densify(bucket)
         }
         // 生产实现末尾会重读一次，于是落地后的复核在同一轮里就能做。
         snapshotIsLoaded = true
+        return outcome
     }
 
     /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
@@ -597,6 +627,41 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             rows.removeAll { $0.syncId == syncId }
         }
         return expired.count
+    }
+
+    /// 一次**编辑器语义**的本机 Save，`LocalStore.applyURLRuleEditsBody` 第 4 / 9 步的假件
+    /// 等价物：内容组三个成员逐一比、有任何一个不同 ⇒ 写不同的那些 + `contentUpdatedDate`
+    /// + `pendingLocalEdit = true`；三个都相同 ⇒ 一个字节都不写、也不置位。
+    ///
+    /// **用例不许直接戳 `rows`**：假件背后没有 `LocalStore`，这个入口是「真实用户写」在假件上
+    /// 唯一的形状（R-M3-4a-100 / CASE M-36 的注入点靠它）。游标一个字节不碰——那次 Save 本来
+    /// 就没上账户。
+    func applyEditorSave(syncId: String, host: String? = nil, pathPrefix: String?? = nil,
+                         ask: Bool? = nil, at contentUpdatedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        var changed = false
+        if let host {
+            let normalized = LocalStore.normalizedHost(host)
+            if rows[index].host != normalized {
+                rows[index].host = normalized
+                changed = true
+            }
+        }
+        if let pathPrefix {
+            let normalized = LocalStore.normalizedPathPrefix(pathPrefix)
+            if rows[index].pathPrefix != normalized {
+                rows[index].pathPrefix = normalized
+                changed = true
+            }
+        }
+        if let ask, rows[index].askBeforeRouting != ask {
+            rows[index].askBeforeRouting = ask
+            changed = true
+        }
+        guard changed else { return }
+        rows[index].contentUpdatedDate = contentUpdatedDate
+        rows[index].pendingLocalEdit = true
     }
 
     private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {
@@ -668,6 +733,29 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
                 touchedBuckets.insert(row.spaceId)
             }
             rows.removeAll { $0.syncId == syncId }
+        // 8b-2 的三条，与生产 body 的三个原语逐字同形（计划裁定五）：按 `syncId` 在**含软删行**
+        // 的定义域里寻址、找不到零写、值相同零写、**一律不碰 `pendingLocalEdit`**。
+        case .softDelete(let syncId, let mergePartnerSyncId):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            // 两列**同一次行写**（RR8-4）；已经软删的行不重写 `deletedDate`。
+            if rows[index].deletedDate == nil { rows[index].deletedDate = Date() }
+            rows[index].mergePartnerSyncId = mergePartnerSyncId
+            touchedBuckets.insert(rows[index].spaceId)
+        case .setMergePartner(let syncId, let mergePartnerSyncId):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+                  rows[index].mergePartnerSyncId != mergePartnerSyncId else { return }
+            // **不记桶**：这一列不进路由表、不改次序。
+            rows[index].mergePartnerSyncId = mergePartnerSyncId
+        case .setContentGroup(let syncId, let host, let pathPrefix, let ask,
+                              let contentUpdatedDate):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            let normalized = LocalStore.normalizedRule(host: host, pathPrefix: pathPrefix)
+            // 三个字段 + 它们共用的那一枚戳；`sortOrder` / `targetUpdatedDate` / `deletedDate`
+            // 一个字节不碰。
+            rows[index].host = normalized.host
+            rows[index].pathPrefix = normalized.pathPrefix
+            rows[index].askBeforeRouting = ask
+            rows[index].contentUpdatedDate = contentUpdatedDate
         }
     }
 

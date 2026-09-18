@@ -480,3 +480,18 @@ commit follows a green result (global constraints).
 - **Not done here, by ruling:** no `PhiSyncEngine.swift` / `PhiChromiumCoordinator.swift` change (Task 6);
   no `setAllRules` / `setRules` / optimistic-push change (Task 11); no `tieBreakKey` / filter change
   (Task 10); no Chromium.
+
+- **Fix round 1 (review Important — `.update` revive never densified the target bucket):** in
+  `applyURLRuleSyncBatchBody`'s `.update` case the row's `deletedDate` was not consulted, so a soft-deleted
+  row revived by an `.update` (R-M3-4a-56 / §5.5 "行存在") entered the live domain at the payload's
+  `sortOrder` while `siblings(inSpaceId:)` (soft-deleted rows excluded) had never counted it ⇒ duplicate
+  index or hole (R-M3-4a-3 / RR-B9). Fixed by reading `existing = index.bySyncId[syncId]` BEFORE the upsert
+  (the upsert clears `deletedDate` in place) and treating `existing == nil || existing.deletedDate != nil`
+  as "entered the bucket" ⇒ record the target bucket; the spaceId-differs defensive branch stays for the
+  live-hit case. No extra publisher signal: the revive already writes `deletedDate` in the same
+  transaction. `FakeURLRuleAccess.land` mirrors the rule (`entersBucket` read before the write).
+  Tests: `testUpdateHittingASoftDeletedRowRevivesItInPlaceWithoutASecondRow` now revives at the
+  occupied index 1 of a `[0,1,2]` bucket and asserts the full permutation `[0,1,2,3]` with
+  `s1-0 / s1-1 / s1-9 / s1-2 → 0 / 1 / 2 / 3` (pre-landing `(sortOrder, id)` order) and the other bucket
+  byte-identical; new `testFakeAccessReviveViaUpdateDensifiesTheBucket` pins the fake mirror
+  (`i0 / i1 / i9 / i2 → 0..3`). Batch-body doc comment item 3 names the revive case.

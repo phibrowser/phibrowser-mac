@@ -520,6 +520,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         case .create(let values), .update(let values), .move(let values):
             let existing = rows.firstIndex { $0.syncId == values.syncId }
             let sourceBucket = existing.map { rows[$0].spaceId }
+            // 与生产 body 同一条规则：建行或救回软删行都算「进了桶」，在写之前读。
+            let entersBucket = existing.map { rows[$0].deletedDate != nil } ?? true
             if let index = existing {
                 rows[index].spaceId = values.spaceId
                 rows[index].host = values.host
@@ -549,8 +551,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             case .create:
                 touchedBuckets.insert(values.spaceId)
             default:
-                // `.update`：只有建了新行、或（防御）目标真的变了才记桶。
-                if sourceBucket == nil {
+                // `.update`：只有进了桶（建行 / 救回软删行）、或（防御）目标真的变了才记桶。
+                if entersBucket {
                     touchedBuckets.insert(values.spaceId)
                 } else if let sourceBucket, sourceBucket != values.spaceId {
                     touchedBuckets.insert(sourceBucket)

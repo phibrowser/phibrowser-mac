@@ -1307,14 +1307,18 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
     }
 
+    // 救回的那一行在 `siblings(inSpaceId:)` 的活行定义域里从没被数过，落在载荷下标上会撞上一条活行
+    // （R-M3-4a-3 / RR-B9），所以救回也算「进了桶」：这里刻意让它落在一个**已被占用**的下标上。
     func testUpdateHittingASoftDeletedRowRevivesItInPlaceWithoutASecondRow() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds + [
             RuleSeed(id: "s1-9", spaceId: Self.spaceOne, host: "s1-9.example", sortOrder: 9, syncId: "R-s1-9",
                      deletedDate: Self.t1, mergePartnerSyncId: "R-s1-0"),
         ], in: store)
+        let before = try allRows(in: store)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: before), [0, 1, 2], "index 1 is taken before the revive")
 
-        let values = landing("R-s1-9", spaceId: Self.spaceOne, host: "revived.example", sortOrder: 3)
+        let values = landing("R-s1-9", spaceId: Self.spaceOne, host: "revived.example", sortOrder: 1)
         try await store.applyURLRuleSyncBatchThrowing([.update(values)])
 
         let after = try allRows(in: store)
@@ -1325,7 +1329,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertNil(revived.mergePartnerSyncId)
         XCTAssertEqual(revived.host, "revived.example")
         XCTAssertFalse(revived.pendingLocalEdit)
+        // 全置换、无重复：按落地前的 `(sortOrder, id)`，`s1-1`(1) 排在 `s1-9`(1) 前面，`s1-2` 被顶到 3。
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
+        XCTAssertEqual(["s1-0", "s1-1", "s1-9", "s1-2"].compactMap { after[$0]?.sortOrder }, [0, 1, 2, 3])
+        XCTAssertEqual(after["s2-0"], before["s2-0"], "the other bucket is not written")
+        XCTAssertEqual(after["s2-1"], before["s2-1"])
     }
 
     // MARK: CASE U-16 —— 稠密 `sortOrder` 的收尾重排，含无身份行与停放行（R-M3-4a-3 / §8.3）

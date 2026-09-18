@@ -712,4 +712,27 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertEqual(owners.claimed, ["R0"])
         XCTAssertTrue(owners.owners.isEmpty, "owners is Task 6's closure to fill")
     }
+
+    // 假件镜像生产 body 的「进了桶」规则：一次 `.update` 救回软删行、落在已占用的下标上 ⇒ 目标桶
+    // 重排成全置换（R-M3-4a-3 / RR-B9），身份与 `id` 不变，不多出第二条行。
+    func testFakeAccessReviveViaUpdateDensifiesTheBucket() async throws {
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i0", syncId: "R0", spaceId: "S1", sortOrder: 0),
+            .fixture(id: "i1", syncId: "R1", spaceId: "S1", sortOrder: 1),
+            .fixture(id: "i2", syncId: "R2", spaceId: "S1", sortOrder: 2),
+            .fixture(id: "i9", syncId: "R9", spaceId: "S1", sortOrder: 9,
+                     deletedDate: Date(timeIntervalSince1970: 2_000), mergePartnerSyncId: "R0"),
+        ])
+        let values = URLRuleLandingValues.fixture(syncId: "R9", spaceId: "S1", host: "revived.example",
+                                                  sortOrder: 1)
+        try await access.apply(URLRuleApplyBatch(unordered: [.update(values)], currentSpaceIds: ["R9": "S1"]))
+
+        XCTAssertEqual(access.rows.count, 4)
+        let revived = try XCTUnwrap(access.rows.first { $0.syncId == "R9" })
+        XCTAssertEqual(revived.id, "i9")
+        XCTAssertNil(revived.deletedDate)
+        XCTAssertNil(revived.mergePartnerSyncId)
+        XCTAssertEqual(access.siblings(inSpaceId: "S1").map(\.id), ["i0", "i1", "i9", "i2"])
+        XCTAssertEqual(access.siblings(inSpaceId: "S1").map(\.sortOrder), [0, 1, 2, 3])
+    }
 }

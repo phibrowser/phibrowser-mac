@@ -542,8 +542,8 @@ extension LocalStore {
     ///    一个字节都不碰；
     /// 3. 记账「被触及的桶」：`.create` ⇒ 目标桶；`.move` ⇒ 写 `spaceId` **之前**读到的源桶 + 目标桶
     ///    （R-M3-4a-3）；`.reorder` ⇒ 本桶；`.delete` ⇒ 删之前读到的桶；`.update` ⇒ **不记**（它只改
-    ///    内容组，次序没动；一次白写会经 §6.5 的 publisher 变成一次多余的推送轮）——只有它建了新行
-    ///    （R-M3-4a-42(a)）或（防御）目标真的变了才记；
+    ///    内容组，次序没动；一次白写会经 §6.5 的 publisher 变成一次多余的推送轮）——只有它**进了桶**
+    ///    （建了新行，R-M3-4a-42(a)；或救回了一条软删行，§5.5「行存在」一格）或（防御）目标真的变了才记；
     /// 4. 收尾：对被触及的每个桶各跑一次稠密重排——排除软删行（R-M3-4a-51）后按当前 `(sortOrder, id)`
     ///    升序写 `sortOrder = index`，只写真的变了的行。
     private func applyURLRuleSyncBatchBody(_ ops: [URLRuleSyncOp],
@@ -557,14 +557,19 @@ extension LocalStore {
                 try upsertURLRuleBody(values, index: &index, in: context)
                 touchedBuckets.insert(values.spaceId)
             case .update(let values):
-                let sourceBucket = index.bySyncId[values.syncId]?.spaceId
+                // 两个判据都要在 upsert **之前**读：命中软删行时 upsert 会当场清掉 `deletedDate`。
+                let existing = index.bySyncId[values.syncId]
+                let sourceBucket = existing?.spaceId
+                // 「进了桶」= 行不存在（建行，R-M3-4a-42(a)）或命中的是软删行（救回，§5.5「行存在」
+                // 一格）：两种情况下这一行在 `siblings(inSpaceId:)` 的活行定义域里都**从没被数过**，
+                // 落在载荷的下标上会撞上一条活行（R-M3-4a-3 / RR-B9），所以目标桶必须重排。救回那次
+                // 写本来就改了 `deletedDate`，同一事务里重排不多出任何一次 publisher 信号。
+                let entersBucket = existing == nil || existing?.deletedDate != nil
                 try upsertURLRuleBody(values, index: &index, in: context)
-                if let sourceBucket {
-                    if sourceBucket != values.spaceId {
-                        touchedBuckets.insert(sourceBucket)
-                        touchedBuckets.insert(values.spaceId)
-                    }
-                } else {
+                if entersBucket {
+                    touchedBuckets.insert(values.spaceId)
+                } else if let sourceBucket, sourceBucket != values.spaceId {
+                    touchedBuckets.insert(sourceBucket)
                     touchedBuckets.insert(values.spaceId)
                 }
             case .move(let values):

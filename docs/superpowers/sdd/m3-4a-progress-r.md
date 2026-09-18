@@ -6,11 +6,11 @@
   brief's task-1-brief.md flags that `PhiEntityProtoTests.testUnknownKindSurvivesRoundTrip`
   (written in M3-2, `c96c8158`) probed `Data([0x1A, 0x00])` as "a future client's field 3",
   but M3-3 gave field 3 to `bookmark` (`phi_entity.proto:21`, pinned by
-  `PhiEntityGoldenBytesTests.testKindOneofUsesFieldThreeForBookmarkAndFourForPinTab`), which
-  made the test's own comment wrong (though the assertion still happened to pass, since an
-  unknown-field probe and a known-field decode are not distinguishable by this test's
-  assertions alone in the general case — here it stayed red only in spirit, not in CI, because
-  the wire bytes for an empty `bookmark` and an "unknown field 3" both round-trip identically).
+  `PhiEntityGoldenBytesTests.testKindOneofUsesFieldThreeForBookmarkAndFourForPinTab`). This
+  test was already red on `c549c4c5`, as the brief states ("已经是红的"): SwiftProtobuf's
+  `BinaryDecoder.decodeSingularMessageField` materializes an empty message for a zero-length
+  body, so `Data([0x1A, 0x00])` decodes to `.bookmark(Phi_PhiBookmarkEntity())`, not to an
+  unrecognized field, and `XCTAssertNil(decoded.kind)` fails.
   This task is the one that finally occupies slot 5 (`url_rule`), so it is the last natural
   place to also retire the stale slot-3 probe before a THIRD person mistakes 3 for still being
   free. Fixed by moving the probe to field 13 (`(13 << 3) | 2 == 0x6A`), which remains unowned

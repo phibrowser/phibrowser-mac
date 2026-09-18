@@ -2993,6 +2993,9 @@ final class URLRuleMergeTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([remoteTombstone(tag: ruleTag("b"), version: 40,
                                                       entityId: "srv-b")], marker: "7")]
+        // 账户上那一行真的还在（tombstone 那一版），于是轮末那次 3b 走 update 支并被接受。
+        client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 40, entityId: "srv-b",
+                    deleted: true)
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
@@ -3012,6 +3015,373 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(counters?.yieldNoPartner, 1, "成因：指针空 ∧ 兜底未命中")
         XCTAssertEqual(counters?.transferred, 0)
         XCTAssertEqual(counters?.tombstones, 1, "到达的那一条，不是本机发出去的")
+        // `.applied` 之后：§4.2 规则 3b 的复活——`deletedAtMs` 被清、两份基线写回。
+        XCTAssertEqual(counters?.resurrected, 1)
+        let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertNil(cursor?.deletedAtMs, "**只有** `.applied` 才清它（RR5-3）")
+        XCTAssertNotNil(cursor?.reconciled)
+        XCTAssertEqual(cursor?.reconciled, cursor?.server, "R-exec-7：两份基线都写")
+        XCTAssertEqual(cursor?.pendingDelete, false)
+        XCTAssertEqual(cursor?.pendingTombstone, false)
+        // `pendingLocalEdit` 的清位是 8b-4 的清位 (b)，本任务不碰它。
+        XCTAssertTrue(try XCTUnwrap(row(access, "b")).pendingLocalEdit)
+    }
+
+
+    // =======================================================================================
+    // MARK: - 8b-3 fix round 1：守卫的引擎接线与 3b 复查的两条「不过」支
+    // =======================================================================================
+
+    /// 本轮真的发出去的**规则 tombstone** commit。守卫写歪的唯一可观测后果就是这里多一条。
+    private func ruleTombstoneCommits(_ client: FakePhiSyncClient) -> [FakePhiSyncClient.CommitCall] {
+        ruleCommits(client).filter(\.deleted)
+    }
+
+    /// 一台只跑规则的引擎，但 Space 侧的假件与 store 由用例自己给（3b 复查的成因二要改
+    /// Space 游标，成因三要改 `currentSpaces()`，两者 `makeRuleEngine` 都够不到）。
+    private func makeYieldEngine(_ access: FakeURLRuleAccess, _ store: MemoryOwnedItemStore,
+                                 client: FakePhiSyncClient,
+                                 spaceAccess: FakePhiSpaceAccess,
+                                 spaceStore: MemorySpaceStore) -> PhiSyncEngine {
+        PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                      defaults: defaults, deviceKeyId: "devA", settings: [],
+                      spaceAccess: spaceAccess, spaceStore: spaceStore,
+                      markerStore: markerStore(marker: "0"),
+                      ownedKinds: [.urlRules(access: access, store: store)],
+                      now: { Self.now })
+    }
+
+    /// 一条**走过 (ii)** 的游标：两份基线 nil、`deletedAtMs` 写下**并保留**、三个待办位清掉
+    /// （= `applyOwnedKind` 让位记账那一段写下的形状）。3b 复查的定义域就是它。
+    private func yieldedCursor(entityId: String = "srv-b", version: Int64 = 40,
+                               owner: String = "su-1") -> PhiOwnedItemCursor {
+        var cursor = PhiOwnedItemCursor()
+        cursor.entityId = entityId
+        cursor.version = version
+        cursor.reconciled = nil
+        cursor.server = nil
+        cursor.ownerUuid = owner
+        cursor.deletedAtMs = Self.now - 1_000
+        return cursor
+    }
+
+    /// 一条 (β) 停放态：X 软删 + 指针指向 W、游标待删；W 活着但**不静止**（行上带一次未发布
+    /// 编辑）。两条行的取值与各自的基线逐字相同，所以「这一轮零 commit」的断言只说守卫这一件事。
+    private func seedBetaPark(rows: inout [PhiLocalURLRule], table: inout PhiOwnedItemTable,
+                              decidedAtMs: Int64 = 700) {
+        seedSettled("a", id: "i-a", accountStamp: 100, pendingLocalEdit: true,
+                    rows: &rows, table: &table)
+        let payload = urlRulePayload(uuid: "b", host: "github.com", rank: "W", contentStamp: 100,
+                                     targetStamp: 100, rankStamp: 100)
+        var cursor = publishedRuleCursor(payload, entityId: "srv-b", version: 1)
+        cursor.pendingDelete = true
+        cursor.deleteDecidedAtMs = decidedAtMs
+        table.cursors["b"] = cursor
+        rows.append(.fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
+                             sortOrder: 1, deletedDate: Date(timeIntervalSince1970: 5),
+                             mergePartnerSyncId: "a"))
+    }
+
+    // =======================================================================================
+    // MARK: - CASE M-22 引擎级 / CASE 8b-3.3 整轮版（R-M3-4a-84 的守卫接线）
+    // =======================================================================================
+
+    /// **这一支必须经完整发布段**（R-M3-4a-84）：`pullOnce()` 跑完 `plan` → `land` → 差分 →
+    /// 切片 → 组批。守卫这一次由**引擎**算（`tombstones` 闭包里的
+    /// `partnerNotAtRest ∩ pendingApply != nil`），不是用例手喂的集合。
+    ///
+    /// 防的是什么（spec 点名的那条失败链）：守卫恒空 ⇒ 差分在**同一步**清掉 `pendingApply`
+    /// 并把 X 排进 `deleteCandidates` ⇒ 那条 tombstone 必然 `.applied` ⇒ **正在重判的那一行被
+    /// 硬删** ⇒ 下一轮差分为它重发一条 `.create` ⇒ 终态两条规则。
+    func testM22_theEngineComputedGuardSuppressesTheTombstoneThroughAFullRound() async throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedBetaPark(rows: &rows, table: &table)
+
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = FakePhiSyncClient()
+        // B 的 tombstone 拿了 `.conflict` ⇒ 这一页带回 X 的**存活**实体。
+        client.pagesByMarker = [page([ruleEntity(remote(uuid: "b", rank: "W"), version: 40)],
+                                     marker: "7")]
+        let engine = try makeRuleEngine(access, store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        // ① (β) 的停放真的发生了：那条实体没落地，游标带上载荷与归属。
+        let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertNotNil(cursor?.pendingApply, "入站实体停放下来（**不是**被差分清掉）")
+        XCTAssertEqual(cursor?.pendingOwnerUuid, "su-1")
+        XCTAssertEqual(cursor?.pendingTombstone, false, "那是 (α) 的位")
+        // ② 守卫：差分对它**零记账**，四个字段与轮首逐字相同（CASE 8b-3.3 的整轮版）。
+        XCTAssertEqual(cursor?.pendingDelete, true)
+        XCTAssertEqual(cursor?.deleteDecidedAtMs, 700, "比较基准没有被一路往后推")
+        XCTAssertEqual(cursor?.reconciled, table.cursors["b"]?.reconciled, "基线一个字节没写")
+        // ③ `client.commit` 里没有 X 的 tombstone。
+        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "守卫恒空的实现在这里红")
+        let counters = await counters(engine)
+        XCTAssertEqual(counters?.tombstones, 0)
+        // ④ X 的行一个字节没动。
+        let x = try XCTUnwrap(row(access, "b"))
+        XCTAssertEqual(x.deletedDate, Date(timeIntervalSince1970: 5), "仍是软删态")
+        XCTAssertEqual(x.mergePartnerSyncId, "a")
+        XCTAssertEqual(x.spaceId, "space-a")
+        XCTAssertTrue(access.hardDeleteCalls.isEmpty)
+    }
+
+    /// **对照二（owner 形状停放不进守卫）**：X 的停放是「归属还没映射」那一种
+    /// （`pendingOwnerUuid` 指一个未映射 Space，身份**不在** `partnerNotAtRest` 里），而用户
+    /// 本机删除还在 ⇒ **那一轮照常发 tombstone**。
+    ///
+    /// 防的是什么：把守卫写成 `pendingApply == nil` 一条的实现会把 §5.5 第 4 步的 owner 形状
+    /// 停放一并圈进来，一条正当的用户删除被**无界**地挡住。
+    func testM22_anOwnerShapedParkIsNotCoveredByTheGuard() async throws {
+        let payload = urlRulePayload(uuid: "b", host: "github.com", contentStamp: 100)
+        var table = PhiOwnedItemTable()
+        var cursor = publishedRuleCursor(payload, entityId: "srv-b", version: 1)
+        cursor.pendingDelete = true
+        cursor.deleteDecidedAtMs = 700
+        // owner 形状停放：等的是一个**未映射**的 Space，与伙伴静不静止无关。
+        cursor.pendingApply = baselineBytes(urlRulePayload(uuid: "b", targetSpaceUuid: "su-9"))
+        cursor.pendingOwnerUuid = "su-9"
+        table.cursors["b"] = cursor
+        // 组里没有第二条行 ⇒ `partnerNotAtRest` 对它恒空。
+        let rows: [PhiLocalURLRule] = [
+            .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
+                     deletedDate: Date(timeIntervalSince1970: 5)),
+        ]
+        let access = FakeURLRuleAccess(rows: rows)
+        XCTAssertTrue(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
+                                              tombstonesThisPage: []).isEmpty,
+                      "根本没有伙伴行 ⇒ 不进守卫")
+
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "7")]
+        // 服务端上那一行真的存在，于是这次 tombstone commit 走 update 支并被接受。
+        client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 1, entityId: "srv-b")
+        let engine = try makeRuleEngine(access, store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(ruleTombstoneCommits(client).count, 1, "正当的用户删除照常发出去")
+        XCTAssertEqual(ruleTombstoneCommits(client).first?.baseVersion, 1)
+        let counters = await counters(engine)
+        XCTAssertEqual(counters?.tombstones, 1)
+    }
+
+    /// **对照三（求值点）**：在 (β) 停放态上跑一趟 `.localOwnedChange`（`push(...)` 那四支之一，
+    /// 不是 `pullOnce()`）⇒ 那一趟同样零 tombstone、X 的行仍是软删态、`pendingDelete` 仍为真、
+    /// `pendingApply` 一个字节没动。守卫住在 `tombstones` 闭包里，所以它对**每一种**走到发布段
+    /// 的轮次都成立。
+    ///
+    /// **同一趟再加一条**：把守卫那一次的 `rows` 换成 `allURLRules()`（过滤软删）⇒ 守卫恒空
+    /// ——(β) 的 X 结构性是软删态的，那一版必须红。
+    func testM22_theGuardAlsoHoldsOnAPushOnlyRound() async throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedBetaPark(rows: &rows, table: &table)
+        // 停放态已经在盘上（上一轮 (β) 写下的），这一趟不拉任何页。
+        table.cursors["b"]?.pendingApply = baselineBytes(
+            urlRulePayload(uuid: "b", host: "github.com", rank: "W", contentStamp: 100))
+        table.cursors["b"]?.pendingOwnerUuid = "su-1"
+        let parkedPayload = table.cursors["b"]?.pendingApply
+
+        let access = FakeURLRuleAccess(rows: rows)
+        // 定义域那一格：含软删行 ⇒ 守卫命中；换成活行 ⇒ 恒空。
+        XCTAssertTrue(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
+                                              tombstonesThisPage: []).contains("b"))
+        XCTAssertTrue(access.partnerNotAtRest(table: table,
+                                              rows: rows.filter { $0.deletedDate == nil },
+                                              resolve: resolve,
+                                              tombstonesThisPage: []).isEmpty,
+                      "`rows` 取 `allURLRules()` 的那一版必须红")
+
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = FakePhiSyncClient()
+        let engine = try makeRuleEngine(access, store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalOwnedChange(label: "urlrules")
+
+        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "push-only 的那一趟同样不发")
+        let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertEqual(cursor?.pendingApply, parkedPayload, "`pendingApply` 一个字节没动")
+        XCTAssertEqual(cursor?.pendingDelete, true)
+        XCTAssertEqual(cursor?.deleteDecidedAtMs, 700)
+        XCTAssertEqual(row(access, "b")?.deletedDate, Date(timeIntervalSince1970: 5))
+    }
+
+    // =======================================================================================
+    // MARK: - CASE 8b-3.4（3b 复查：游标上没有可用的服务端三元组 ⇒ 零写）
+    // =======================================================================================
+
+    /// 一条走过 (ii) 的身份（`deletedAtMs != nil`、`reconciled == nil`、本机有活行），三元组
+    /// **不可用**（`entityId` 为空 / `version == 0`），**同时**它的目标 Space 游标带 `hidden`。
+    ///
+    /// 防的是什么：把「没有可用三元组」也走撤销支的实现会**硬删一条本机活行**而账户上没有任何
+    /// 东西被执行；把 RR13-6 读成「`pendingDelete == false` 就没有可执行的 tombstone」的实现会
+    /// 让撤销让位整支变成死代码（(ii) 的记账已经把三个待办位清掉了）。
+    func test8b34_aYieldWithNoUsableServerTripleWritesNothing() async throws {
+        for (label, entityId, version) in [("entityId 为空", "", Int64(40)),
+                                           ("version == 0", "srv-b", Int64(0))] {
+            let rows: [PhiLocalURLRule] = [
+                .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
+                         contentUpdatedDate: stampDate(30), pendingLocalEdit: true),
+            ]
+            var table = PhiOwnedItemTable()
+            table.cursors["b"] = yieldedCursor(entityId: entityId, version: version)
+
+            let access = FakeURLRuleAccess(rows: rows)
+            let store = MemoryOwnedItemStore()
+            store.table = table
+            let client = FakePhiSyncClient()
+            client.pagesByMarker = [page([], marker: "7")]
+            let spaceStore = try drainedSpaceStore()
+            // 成因二那一格也成立（目标 Space 已 purge）⇒ 成因一必须**先**判，否则这一条会被
+            // 撤销支硬删。
+            spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
+            let engine = makeYieldEngine(access, store, client: client,
+                                         spaceAccess: makeSpaceAccess(), spaceStore: spaceStore)
+            await engine.setSpaceSyncEnabled(true)
+            await engine.pullOnce()
+
+            // **一个字节都不写。**
+            let survivor = try XCTUnwrap(row(access, "b"), label)
+            XCTAssertNil(survivor.deletedDate, "\(label)：行还在")
+            XCTAssertTrue(survivor.pendingLocalEdit, "\(label)：`pendingLocalEdit` 一个字节不动")
+            XCTAssertEqual(survivor.contentUpdatedDate, stampDate(30), label)
+            let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+            XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "\(label)：`deletedAtMs` 还在")
+            XCTAssertNil(cursor?.reconciled, label)
+            XCTAssertNil(cursor?.server, label)
+            XCTAssertTrue(ruleCommits(client).isEmpty, "\(label)：不发任何 tombstone，也不发 3b")
+            XCTAssertFalse(access.lastAppliedOps.contains { if case .delete = $0 { return true }
+                                                            else { return false } },
+                           "\(label)：撤销支没跑")
+            XCTAssertTrue(access.hardDeleteCalls.isEmpty, label)
+        }
+    }
+
+    // =======================================================================================
+    // MARK: - CASE M-12 变体 (2) / (4)（跨轮复查 ⇒ 撤销让位、硬删）
+    // =======================================================================================
+
+    /// 第一轮：准入**通过**，3b 发出去却拿 `.conflict`（连同那次限定重发一起）⇒ 让位状态原样
+    /// 留着。**下一轮**才让目标 Space 转 `hidden` ⇒ **那一轮仍然复查并撤销让位、硬删**。
+    ///
+    /// 这一条同时是**变体 (4)**：行上 `pendingLocalEdit == false`（那条身份当初只靠取值式
+    /// `unpublished` 让位），而让位记账已经把两份基线清 nil ⇒ 把复查的第三个合取项写成
+    /// 「`pendingLocalEdit` ∨ `unpublished`」的实现在这里恒假 ⇒ 这条身份被**永久**排除在复查
+    /// 之外、行永远留着 ⇒ 断言「行没了」必须红。
+    ///
+    /// 防的是什么：把复查绑在**本轮** `yieldedTombstones` 上的实现在第二轮什么都不做。
+    func testM12_variant2_theRecheckRevokesTheYieldOnALaterRound() async throws {
+        let rows: [PhiLocalURLRule] = [
+            .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
+                     contentUpdatedDate: stampDate(30), pendingLocalEdit: false),
+        ]
+        var table = PhiOwnedItemTable()
+        table.cursors["b"] = yieldedCursor()
+
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "7"), page([], marker: "8")]
+        // 第一轮那次 3b 与它的限定重发都拿 `.conflict`（`forcedConflicts` 在服务端行寻址之前
+        // 判，所以不需要往 `stored` 里塞行）。
+        client.forcedConflicts = 2
+        let spaceStore = try drainedSpaceStore()
+        let engine = makeYieldEngine(access, store, client: client,
+                                     spaceAccess: makeSpaceAccess(), spaceStore: spaceStore)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        // 第一轮：准入通过 ⇒ 3b 真的发了（`base_version` 取 tombstone 那一版），但没被接受。
+        XCTAssertEqual(ruleCommits(client).count, 2, "一次 3b + 一次限定重发")
+        XCTAssertEqual(ruleCommits(client).first?.baseVersion, 40)
+        XCTAssertEqual(ruleCommits(client).first?.deleted, false)
+        XCTAssertNotNil(row(access, "b"), "让位状态原样留着")
+        var cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "`.conflict` 不写任何基线")
+        XCTAssertNil(cursor?.reconciled)
+
+        // 第二轮：目标 Space 转 hidden ⇒ 复查照跑（本轮 `yieldedTombstones` 是空集）⇒ 撤销。
+        spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
+        await engine.pullOnce()
+
+        XCTAssertNil(row(access, "b"), "撤销让位：那一行被**硬删**")
+        XCTAssertTrue(access.lastAppliedOps.contains { if case .delete(let syncId) = $0 {
+            return syncId == "b" } else { return false } }, "走的是 `registration.land([.delete])`")
+        cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now, "按 `:3195-3201` 逐字记账")
+        XCTAssertEqual(cursor?.pendingDelete, false)
+        XCTAssertNil(cursor?.reconciled)
+        XCTAssertNil(cursor?.server)
+        XCTAssertEqual(ruleCommits(client).count, 2, "撤销那一轮一条都不发（身份已剔出切片）")
+    }
+
+    // =======================================================================================
+    // MARK: - CASE M-12 变体 (3)（成因区分：解析不出 ≠ hidden ⇒ 零写）
+    // =======================================================================================
+
+    /// 目标 Space 只是**暂时不在 `currentSpaces()` 里**（**没有** `hidden`、**没有**
+    /// `purgedAtMs`，Space 游标根本不存在）⇒ 不硬删、不发任何 tombstone、行与
+    /// `pendingLocalEdit` 与 `deletedAtMs` 一个字节不动、那一轮也不发 3b；映射建立之后正常发
+    /// 3b、`resurrected == 1`。
+    ///
+    /// 防的是什么：一刀切硬删的实现在这里把一条用户还在用的规则连同它那次未发布编辑一起删掉。
+    func testM12_variant3_anUnresolvableOwnerWritesNothingAndRepublishesLater() async throws {
+        let rows: [PhiLocalURLRule] = [
+            .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
+                     contentUpdatedDate: stampDate(30), pendingLocalEdit: true),
+        ]
+        var table = PhiOwnedItemTable()
+        table.cursors["b"] = yieldedCursor()
+
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "7"), page([], marker: "8")]
+        // 3b 被接受要求服务端那一行真的在（tombstone 那一版）。
+        client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 40, entityId: "srv-b",
+                    deleted: true)
+        let spaceAccess = makeSpaceAccess()
+        let restored = spaceAccess.spaces
+        // Space 列表还没加载：映射表还在，但它不在 `currentSpaces()` 里 ⇒ 归属不合格 ⇒ 这一行
+        // 惰性 ⇒ 进不了快照 ⇒ 准入不过；而 Space 游标**不存在** ⇒ 成因二不成立。
+        spaceAccess.spaces = []
+        let spaceStore = try drainedSpaceStore()
+        let engine = makeYieldEngine(access, store, client: client,
+                                     spaceAccess: spaceAccess, spaceStore: spaceStore)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let survivor = try XCTUnwrap(row(access, "b"), "不硬删")
+        XCTAssertTrue(survivor.pendingLocalEdit, "`pendingLocalEdit` 一个字节不动")
+        XCTAssertEqual(survivor.contentUpdatedDate, stampDate(30))
+        var cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "`deletedAtMs` 留着")
+        XCTAssertTrue(ruleCommits(client).isEmpty, "那一轮也不发 3b")
+        XCTAssertTrue(access.hardDeleteCalls.isEmpty)
+
+        // 映射建立之后：准入通过 ⇒ 正常发 3b ⇒ `.applied` ⇒ 复活。
+        spaceAccess.spaces = restored
+        await engine.pullOnce()
+
+        XCTAssertEqual(ruleCommits(client).count, 1, "3b 发出去了")
+        XCTAssertEqual(ruleCommits(client).first?.baseVersion, 40)
+        XCTAssertEqual(ruleCommits(client).first?.deleted, false)
+        cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
+        XCTAssertNil(cursor?.deletedAtMs, "§4.2 规则 3b 的复活：`deletedAtMs` 被清")
+        XCTAssertNotNil(cursor?.reconciled)
+        let counters = await counters(engine)
+        XCTAssertEqual(counters?.resurrected, 1)
+        XCTAssertNotNil(row(access, "b"), "行一直都在")
     }
 
 }

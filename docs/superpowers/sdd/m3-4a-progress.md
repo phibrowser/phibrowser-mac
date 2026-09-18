@@ -813,3 +813,35 @@ M3 让位：(α) / (β) 两落点 + `.transfer` + `RuleProjection` + `parkedTomb
    `landBookmarks`、`landURLRules`、`URLRuleApplyBatch.init`、`applyURLRuleSyncBatchBody`、
    `FakeURLRuleAccess.land`、`URLRuleMergeTests.opSummary` / `.stepSummary`）；
    `URLRuleKind` 的三个新纯函数没有任何 actor 隔离状态。
+
+### Fix round 1（review 判出的两条 Important，**只补测试**）
+
+9. **F1 —— R-M3-4a-84 守卫的引擎接线零覆盖**：原来的 `test8b33_…` 是模块级的（把
+   `deferredDeletions: ["b"]` 手喂进 `SyncableOwnedItems.tombstones`），绕过了「谁来算这个集合」
+   与「引擎读不读 `diff.deferred`」两件真正会写歪的事。补三条**引擎级**用例，全部经
+   `pullOnce()` / `handleLocalOwnedChange(label:)` 真实走完发布段：
+   `testM22_theEngineComputedGuardSuppressesTheTombstoneThroughAFullRound`（CASE M-22 的「W 不
+   静止 ⇒ 停放」那一支 + CASE 8b-3.3 的整轮版：`pendingApply` 仍在、四个游标字段与轮首逐字
+   相同、`client.commit` 里没有 X 的 tombstone、行一个字节没动）、
+   `testM22_anOwnerShapedParkIsNotCoveredByTheGuard`（对照二：owner 形状停放**不**进守卫 ⇒
+   那一轮照常发 tombstone，`pendingApply == nil` 一条的实现在这里红）、
+   `testM22_theGuardAlsoHoldsOnAPushOnlyRound`（对照三：只跑 `.localOwnedChange` 那一趟，
+   外加「`rows` 换成 `allURLRules()` ⇒ 守卫恒空」的同趟断言）。
+10. **F2 —— 轮末 3b 复查的两条「不过」支零覆盖**：补
+   `test8b34_aYieldWithNoUsableServerTripleWritesNothing`（CASE 8b-3.4 两个变体：`entityId` 为空
+   / `version == 0`，**同时**目标 Space 已 purge ⇒ 成因一必须先判 ⇒ 一个字节都不写、撤销支没
+   跑）、`testM12_variant2_theRecheckRevokesTheYieldOnALaterRound`（变体 (2)：第一轮准入通过、
+   3b 与限定重发都拿 `.conflict`，**下一轮**才 hidden ⇒ 仍然复查并撤销、行被硬删；行上
+   `pendingLocalEdit == false` 同时覆盖变体 (4)——第三个合取项写成「`pendingLocalEdit` ∨
+   `unpublished`」的实现在这里恒假 ⇒ 行留着 ⇒ 断言红）、
+   `testM12_variant3_anUnresolvableOwnerWritesNothingAndRepublishesLater`（变体 (3)：Space 只是
+   不在 `currentSpaces()` 里、Space 游标根本不存在 ⇒ 零写；映射建立之后正常发 3b、
+   `resurrected == 1`）。M-12 (ii) 那条原有用例补上 `.applied` 之后的三条断言
+   （`resurrected == 1`、`deletedAtMs` 被清、两份基线都写回）——服务端那一行用
+   `FakePhiSyncClient.seed(tagHash:…)` 铺好，否则 update 支在寻址上直接抛。
+11. **本轮没有改动任何生产代码**：三条引擎级新用例把守卫与复查两段真的跑了一遍，没有暴露出
+    实现缺陷。F3 / F4 / F5 / F6 / F7 / F8 六条 Minor 按控制者指示**不动**。
+12. 一处口径澄清（写进用例注释，不改代码）：`.localOwnedChange` 那一趟走的是
+    `push(retryOnConflict:)`，而它自己**先做一次 preflight pull**，所以 `plan` 照样会跑——
+    对照三因此是「守卫对每一种走到发布段的轮次都成立」这条行为断言，判别「守卫读的是不是
+    `plan` 的产物」靠的是 `OwnedPlanOutput` 上根本没有那个成员（结构性不可写）。

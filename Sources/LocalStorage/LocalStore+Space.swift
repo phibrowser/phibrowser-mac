@@ -277,7 +277,21 @@ extension LocalStore {
             }
         }
     }
+}
 
+/// 一次 Space 级联删除的**来源**（R-M3-4a-85）。它只决定规则行那一段：
+/// `.userIntent` ⇒ 软删（`deletedDate = now`，这是一次「这条规则要在账户上消失」的
+/// 决定）；`.retentionPurge` ⇒ `context.delete`（保留期清理是**跟随**不是决定，
+/// R-M3-4a-5，写 `deletedDate` 会让 §5.7 的 `explicitDeletions` 把它当显式意图、
+/// 绕过两道归属门、删掉对端此刻仍然有效的规则）。**两个 origin 都不置位
+/// `pendingLocalEdit`**（R-M3-4a-69 按入口判，不按共享 body 判）。
+/// `TabDataModel` 与 `SpaceModel` 两段在两个 origin 下逐字相同。
+enum SpaceCascadeOrigin {
+    case userIntent
+    case retentionPurge
+}
+
+extension LocalStore {
     /// Atomically removes a Space and everything tagged to it — the
     /// `SpaceModel` row, its tagged pinned tabs / bookmarks (`TabDataModel`),
     /// and its URL routing rules (`SpaceURLRule`) — in a single write/save.
@@ -286,12 +300,15 @@ extension LocalStore {
     /// otherwise leave a content-less ghost Space (or orphaned tagged rows),
     /// and the intermediate saves would briefly publish an inconsistent
     /// strip/bookmark state. `deleteSpace` / `deleteTaggedRows` /
-    /// `replaceURLRules` stay separate for callers that want a non-cascade or
-    /// reassign-to-default flow.
-    func deleteSpaceCascade(spaceId: String) {
+    /// `applyURLRuleEditsThrowing` stay separate for callers that want a
+    /// non-cascade or reassign-to-default flow.
+    ///
+    /// `origin` 无默认值：两个调用方（`SpaceManager.deleteSpace` 与
+    /// `PhiSpaceLocalAccess.purge`）必须各自表态（R-M3-4a-85）。
+    func deleteSpaceCascade(spaceId: String, origin: SpaceCascadeOrigin) {
         performBackgroundWrite { context in
             do {
-                try self.deleteSpaceCascadeBody(spaceId: spaceId, in: context)
+                try self.deleteSpaceCascadeBody(spaceId: spaceId, origin: origin, in: context)
             } catch {
                 AppLogError("[LocalStore] deleteSpaceCascade failed: \(error)")
             }
@@ -299,15 +316,19 @@ extension LocalStore {
     }
 
     /// Throwing sibling used ONLY by the sync layer — see `createSpaceThrowing`.
-    func deleteSpaceCascadeThrowing(spaceId: String) async throws {
+    func deleteSpaceCascadeThrowing(spaceId: String, origin: SpaceCascadeOrigin) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
-            try self.deleteSpaceCascadeBody(spaceId: spaceId, in: context)
+            try self.deleteSpaceCascadeBody(spaceId: spaceId, origin: origin, in: context)
         }
     }
 
-    /// Single implementation shared by both entry points; the existing body,
-    /// unchanged.
-    private func deleteSpaceCascadeBody(spaceId: String, in context: ModelContext) throws {
+    /// Single implementation shared by both entry points. 只有规则那一段按
+    /// `origin` 分支；`TabDataModel` 与 `SpaceModel` 两段与从前逐字相同。
+    private func deleteSpaceCascadeBody(spaceId: String,
+                                        origin: SpaceCascadeOrigin,
+                                        in context: ModelContext) throws {
+        // 同一次级联里全部规则行共用这一枚 `now`。
+        let now = Date()
         for row in try context.fetch(FetchDescriptor<TabDataModel>(
             predicate: #Predicate { $0.spaceId == spaceId }
         )) {
@@ -316,7 +337,16 @@ extension LocalStore {
         for rule in try context.fetch(FetchDescriptor<SpaceURLRule>(
             predicate: #Predicate { $0.spaceId == spaceId }
         )) {
-            context.delete(rule)
+            switch origin {
+            case .retentionPurge:
+                context.delete(rule)
+            case .userIntent:
+                // 软删（R-M3-4a-41）。已经软删的行跳过，不刷新它的 `deletedDate`；
+                // `pendingLocalEdit` 一个字节不碰（删除不是编辑，R-M3-4a-69）。
+                if rule.deletedDate == nil {
+                    rule.deletedDate = now
+                }
+            }
         }
         for space in try context.fetch(FetchDescriptor<SpaceModel>(
             predicate: #Predicate { $0.spaceId == spaceId }

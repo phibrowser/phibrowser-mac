@@ -115,3 +115,119 @@ Controller ruling (not a deviation): the brief names the ledger as
      of two; `beforeSchemaUpgrade` copies the whole store + sidecars each bump; favicon PNG
      bytes are inlined on bookmark rows; README forbids folding backup deletion into a schema
      change).
+
+## Task 5
+
+Commit scope: `LocalStore+SpaceURLRule.swift` (rewrite), `LocalStore+Space.swift`,
+`PhiSpaceLocalAccess.swift`, `SpaceManager.swift` (`:1410` + the two wrapper bodies),
+`LocalStoreURLRuleThrowingTests.swift` (+25 cases), `URLRouterTests.swift` (two assertions),
+`PinnedTabScopeTests.swift` (two call sites), this ledger. Verification is compile-only
+(`build-for-testing`, exit 0, no warnings in the touched files); the new cases were confirmed
+present in the built `PhiBrowserTests` bundle via `nm`, not executed.
+
+- **计划裁定一 (per-row bodies are `internal`):** `upsertURLRuleBody(…in:)` /
+  `hardDeleteURLRuleBody(syncId:in:)` are internal, not private, so Task 8's
+  `applyURLRuleSyncBatchBody` can compose them inside one write block (nesting a second
+  `performBackgroundWriteAndWaitThrowing` deadlocks the serial write actor). spec §4.3 item 6
+  only names the throwing halves.
+
+- **计划裁定二 (`URLRuleDraft` carries "which units were sent" as `Optional`):** `content:
+  ContentUnit?` (host / pathPrefix / askBeforeRouting share one stamp, so they travel as one
+  unit), `spaceId: String?`, `sortOrder: Int?`, `createdDate: Date?`; `nil` = "not sent" ⇒ the
+  body writes nothing, stamps nothing, and does not count it towards `pendingLocalEdit`. Sent
+  but equal ⇒ also a zero write. This extends spec §4.3 item 1 / Task 11 rulings 1-2.
+  Two additions ruled by the controller when the brief's literal signature could not compile
+  against pre-Task-11 code:
+  1. the flat convenience init takes `spaceId: String? = nil` (the brief wrote `spaceId:
+     String`): the four leaf construction sites (`AgentSpaceRouter+Management.swift:248/:308/:350`,
+     `SpaceURLRulesEditor.swift:143`) and `URLRouterTests.swift:383` do not pass a target;
+     `SpaceManager.setAllRules` / `setRules` overwrite `draft.spaceId` from the dictionary key /
+     `forSpaceId` anyway. Task 11 passes `spaceId:` explicitly at those sites.
+  2. three read-only forwarding accessors on `URLRuleDraft` (`host` → `content?.host ?? ""`,
+     `pathPrefix` → `content?.pathPrefix`, `askBeforeRouting` → `content?.askBeforeRouting ??
+     false`), each documented as a compatibility read for pre-Task-11 callers (the two optimistic
+     pushes at `SpaceManager.swift` read `draft.host` / `draft.pathPrefix` /
+     `draft.askBeforeRouting`; so does `URLRouterTests:383`). Task 11 / 8b-4 use `content`
+     directly; the accessors can be retired with the pushes.
+  The flat init lives in `extension LocalStore.URLRuleDraft` so the synthesized memberwise
+  initializer (`init(id:syncId:content:spaceId:sortOrder:createdDate:contentUpdatedDate:)`, every
+  parameter defaulted) stays available — that is the "成员逐个构造" path the brief names for
+  8b-4, and what the 置位表 cases use to send genuinely `nil` units.
+
+- **计划裁定三 (`id` miss falls back to `syncId` and rewrites `row.id`):** the editor's
+  `Row.init(from:)` turns a non-UUID historical id into a fresh UUID on every round trip; the body
+  therefore locates by `syncId` when `byId` misses and adopts `draft.id` on the row (CASE
+  U-14-legacy). spec §4.3 item 3 only says "insert".
+
+- **计划裁定四 (densify domain includes the buckets of `deletedIds`):** a soft delete leaves a
+  hole exactly like a retarget; `touchedBuckets` = every upsert's new bucket + every retargeted
+  row's old bucket + every soft-deleted row's bucket. Same ruling as Task 11's ruling 4.
+
+- **计划裁定五 (new rows mint no content stamp):** insert writes `contentUpdatedDate =
+  draft.contentUpdatedDate` (nil for a genuinely new row) and `targetUpdatedDate = nil`; the
+  no-baseline projection falls back to `createdDate`, which is the same instant.
+  `pendingLocalEdit = true` still.
+
+- **计划裁定六 (both `replace*` functions deleted now; `SpaceManager` wrapper bodies rerouted):**
+  `replaceURLRules` / `replaceAllURLRules` and their contract comments are gone;
+  `setAllRules` / `setRules` keep signature, stale doc comments (`:1910-1916` / `:1978-1981`) and
+  the two optimistic pushes verbatim, and their bodies now compute `deletedIds` = affected cached
+  rows not named in the payload, then `Task { try await applyURLRuleEditsThrowing(…) }` with an
+  `AppLogError` + `PhiSyncLog.describe` catch. `SpaceManager.swift:1410` passes
+  `origin: .userIntent` (no default ⇒ compile-forced), so Task 11 Step 2's line for it is a no-op.
+  Post-check: `git grep 'replaceURLRules\|replaceAllURLRules' -- Sources` leaves only the stale
+  `SpaceManager.swift:1914` comment (Task 11 deletes it). The brief expected two further hits in
+  `TabDataModelSchemaV7.swift:135` / `V8.swift:137`; those lines mention
+  `SpaceManager.setRules(_:forSpaceId:)`, not the replace functions — nothing to do there.
+  **Pre-Task-11 consequence worth knowing:** the agent router's `draft(from:)` does not pass
+  `id:`, so until Task 11 lands, each agent `urlRules.*` mutation soft-deletes the bucket's
+  existing rows and re-inserts them under fresh ids / syncIds (user-visible behaviour equals
+  today's delete-then-insert; the difference is soft-deleted rows accumulate locally). Rule sync
+  is not live before Tasks 8/9, so nothing reaches the account; Task 11 must land before it does.
+
+- **计划裁定七 (no `urlRuleChangesPublisher()` here):** spec §12.3 item 5 lists it under this
+  task, §11's file table and the plan skeleton put it in `LocalStore.swift` under Task 8. Followed
+  the latter; `LocalStore.swift` untouched.
+
+- **计划裁定八 (R-M3-4a-104, a `syncId == nil` draft hitting a soft-deleted row):** step 2b in
+  the body: the soft-deleted row is left byte-for-byte alone, the draft goes through the insert
+  branch with a freshly minted `id` **and** `syncId` (`draft.id` is still held by the soft-deleted
+  row under `@Attribute(.unique)`), `pendingLocalEdit = true`; a `syncId != nil` draft hitting a
+  soft-deleted row throws `.rowAlreadyMapped` (that path belongs to the per-row primitives, whose
+  soft-delete semantics are the opposite — CASE C-9 ①). CASE C-12 has all three legs. spec §4.3
+  needs this cell; appendix C-39.
+
+- **Further deviations / notes (implementer):**
+  1. `Tests/PhiBrowserTests/PinnedTabScopeTests.swift:327` / `:710` call
+     `deleteSpaceCascade(spaceId:)`; with `origin` mandatory they now pass `.userIntent`
+     (controller ruling; both origins are identical for `TabDataModel`, which is all those tests
+     assert on). File added to the commit.
+  2. `URLRouterTests.swift`: the plan skeleton lists this file under Task 10 only; this task
+     changed exactly the two "bare `/` ⇒ nil" assertions to `"/"` (§8.1) and renamed them
+     `testNormalizeBareSlashBecomesRootOnly` / `testNormalizeMultipleSlashesCollapseToRootOnly`;
+     the other four normalizer cases are untouched and still hold under the new function.
+  3. `SpaceCascadeOrigin` is file-scope as specified; to keep it "紧挨着级联三件套" the single
+     `extension LocalStore` in `LocalStore+Space.swift` is closed before the enum and reopened
+     after it. `deleteSpaceCascadeBody` takes its one `now` at the top of the body.
+  4. **CASE C-9 ③ as written in the brief is unreachable** with the specified signature:
+     `upsertURLRuleBody(syncId:…)` addresses strictly by `syncId` over the full table and the
+     brief's own semantics say "命中不到 ⇒ 建行、绝不抛 `.rowNotFound`". After `B.syncId → R3`,
+     an upsert for `R2` finds no row, so it cannot throw `.rowAlreadyMapped`. The test writes the
+     outcome those semantics produce — a new row is created, `B` is untouched, count +1 (probe:
+     addressing never clobbers by anything but `syncId`). The `:2196-2199`-shaped guard is in
+     both bodies but is vacuous under `syncId` addressing (commented as such). If a throwing ③ was
+     intended it needs an `id:` parameter on the primitive — an API change Task 8 consumes —
+     so it is left for a controller ruling.
+  5. CASE C-8b orders the legitimate upsert (`B`) before the colliding one (`A`) so the
+     `performThrowing` rollback is actually exercised; the brief listed `A` first, where the
+     throw would happen before anything was written.
+  6. The 2b-minted `id` is `UUID().uuidString.lowercased()` as the brief says (the draft default
+     `id` is uppercase). The editor's `Row.init(from:)` re-uppercases via
+     `UUID(uuidString:).uuidString`, so such a row misses `byId` on its next Save; harmless once
+     Task 11 makes editor drafts carry `syncId` (ruling 3 adopts the new id), noted for Task 11.
+  7. C-6's "structural assertion" is executable: the test reads
+     `Sources/LocalStorage/LocalStore+SpaceURLRule.swift` via `#filePath` and asserts that
+     `func applyURLRuleEdits(`, `func replaceURLRules(` and `func replaceAllURLRules(` are absent
+     and `func applyURLRuleEditsThrowing(` is present.
+  8. Test header comment now lists every case group Task 5 appended (the Task 4 wording said
+     "C-6 ~ C-9" only).

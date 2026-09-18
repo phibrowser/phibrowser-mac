@@ -267,14 +267,14 @@ final class URLRouterTests: XCTestCase {
         XCTAssertNil(resolve("https://h.com/p", []))
     }
 
-    // MARK: - normalizedPathPrefix (issue #2: bare "/" must not be inert)
+    // MARK: - normalizedPathPrefix (§8.1: "/" is root-only, nil is any path)
 
-    func testNormalizeBareSlashBecomesNil() {
-        XCTAssertNil(LocalStore.normalizedPathPrefix("/"))
+    func testNormalizeBareSlashBecomesRootOnly() {
+        XCTAssertEqual(LocalStore.normalizedPathPrefix("/"), "/")
     }
 
-    func testNormalizeMultipleSlashesBecomesNil() {
-        XCTAssertNil(LocalStore.normalizedPathPrefix("///"))
+    func testNormalizeMultipleSlashesCollapseToRootOnly() {
+        XCTAssertEqual(LocalStore.normalizedPathPrefix("///"), "/")
     }
 
     func testNormalizeEmptyAndWhitespaceBecomeNil() {

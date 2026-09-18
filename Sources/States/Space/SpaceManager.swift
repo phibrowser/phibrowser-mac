@@ -5860,7 +5860,7 @@ final class SpaceManager: ObservableObject {
         // strip/bookmark state between separate saves. Without the rule
         // cleanup they would linger as inert rows that keep being pushed to
         // Chromium and dangle in the rules editor.
-        boundAccount?.localStorage.deleteSpaceCascade(spaceId: spaceId)
+        boundAccount?.localStorage.deleteSpaceCascade(spaceId: spaceId, origin: .userIntent)
         // The per-Space theme records live in userDefaults, outside the
         // cascade; prune them here or they linger forever.
         clearThemeRecords(forSpaceId: spaceId)
@@ -6540,8 +6540,28 @@ final class SpaceManager: ObservableObject {
     func setAllRules(_ byTargetSpaceId: [String: [LocalStore.URLRuleDraft]], expectedStoreIdentifier: UUID? = nil) {
         guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
         guard let account = boundAccount else { return }
-        account.localStorage.replaceAllURLRules(byTargetSpaceId)
+        // 裁定 6 的临时改道（Task 11 整体删除这个包装）：字典键铺进 `draft.spaceId`、
+        // `enumerated()` 下标铺进 `draft.sortOrder`；不在载荷里的行 = 没了，只是从硬删变成软删。
+        var upserts: [LocalStore.URLRuleDraft] = []
+        for (spaceId, drafts) in byTargetSpaceId {
+            for (index, draft) in drafts.enumerated() {
+                var placed = draft
+                placed.spaceId = spaceId
+                placed.sortOrder = index
+                upserts.append(placed)
+            }
+        }
+        let named = Set(upserts.map(\.id))
+        let deletedIds = Set(cachedURLRules.map(\.id)).subtracting(named)
         pushOptimisticAllRoutingTable(byTargetSpaceId)
+        Task {
+            do {
+                try await account.localStorage.applyURLRuleEditsThrowing(upserts: upserts,
+                                                                          deletedIds: deletedIds)
+            } catch {
+                AppLogError("[SpaceManager] setAllRules failed: \(PhiSyncLog.describe(error))")
+            }
+        }
     }
 
     /// Universal-editor counterpart of `pushOptimisticRoutingTable`. Builds
@@ -6606,8 +6626,26 @@ final class SpaceManager: ObservableObject {
     func setRules(_ drafts: [LocalStore.URLRuleDraft], forSpaceId spaceId: String, expectedStoreIdentifier: UUID? = nil) {
         guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
         guard let account = boundAccount else { return }
-        account.localStorage.replaceURLRules(forSpaceId: spaceId, with: drafts)
+        // 裁定 6 的临时改道（Task 11 整体删除这个包装）：`forSpaceId` 铺进 `draft.spaceId`、
+        // `enumerated()` 下标铺进 `draft.sortOrder`；这个桶里不在载荷里的行 = 没了（软删）。
+        let upserts = drafts.enumerated().map { index, draft -> LocalStore.URLRuleDraft in
+            var placed = draft
+            placed.spaceId = spaceId
+            placed.sortOrder = index
+            return placed
+        }
+        let named = Set(upserts.map(\.id))
+        let deletedIds = Set(cachedURLRules.filter { $0.spaceId == spaceId }.map(\.id))
+            .subtracting(named)
         pushOptimisticRoutingTable(drafts: drafts, forSpaceId: spaceId)
+        Task {
+            do {
+                try await account.localStorage.applyURLRuleEditsThrowing(upserts: upserts,
+                                                                          deletedIds: deletedIds)
+            } catch {
+                AppLogError("[SpaceManager] setRules failed: \(PhiSyncLog.describe(error))")
+            }
+        }
     }
 
     /// Builds the routing-table payload using `drafts` for `spaceId` and the

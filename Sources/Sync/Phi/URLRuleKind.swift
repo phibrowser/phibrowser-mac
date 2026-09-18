@@ -141,13 +141,17 @@ enum URLRuleKind: OwnedItemKind {
         entity.targetSpaceUuid.updatedAtMs
     }
 
-    /// §8.2 的盖戳。三个单元三条规则：
+    /// §8.2 的盖戳（D33：**引擎的每一次写都不铸戳**，`now` 只落到 rank 上）。三个单元三条规则：
     ///
-    /// - **内容组**：三个成员按 signature 整组比，变了整组盖 `now`，否则沿用基线的载体戳
-    ///   （`host`）；三个成员**一律写成相等**（§8.2 第 1 条）。
-    /// - **目标**：变了 ⇒ 目标戳与 rank 戳**都**盖 `now`（§8.2 第 4 条：桶变了，在新桶里的
-    ///   位置也是新的）；否则目标戳沿用基线，rank 戳按自己的 signature 比。只靠「rank 串变了
-    ///   才盖」不够：一次搬桶之后 rank 串偶然相同时，合并的第三行会拿到一枚旧戳。
+    /// - **内容组**：三个成员按 signature 整组比，变了整组带**行戳** `contentUpdatedDate ??
+    ///   createdDate`（本机用户真的改它的那一刻，R-M3-4a-11 的写点），否则沿用基线的载体戳
+    ///   （`host`）；三个成员**一律写成相等**（§8.2 第 1 条）。**不是快照时刻的 `now`**：一次
+    ///   本机编辑可能在几轮之后才被发布，盖 `now` 会让一次更早的本机编辑赢下对端更晚的那次
+    ///   真实编辑（控制者裁定：spec §8.2 / D33 压过 `BookmarkKind` 的先例，只对这一 kind）。
+    /// - **目标**：变了 ⇒ 目标戳带行戳 `targetUpdatedDate ?? createdDate`、rank 戳盖 `now`
+    ///   （§8.2 第 4 条：桶变了，在新桶里的位置也是新的，而 rank 是本机派生的、没有行戳）；
+    ///   否则目标戳沿用基线，rank 戳按自己的 signature 比。只靠「rank 串变了才盖」不够：一次
+    ///   搬桶之后 rank 串偶然相同时，合并的第三行会拿到一枚旧戳。
     /// - **无基线**（R-M3-4a-12，三项）：内容组戳取 `contentUpdatedDate ?? createdDate`、目标戳
     ///   取 `targetUpdatedDate ?? createdDate`、rank 戳取 0。取 `now` 会让一条三个月前建的、
     ///   没人动过的本机规则凭「我今天跑了一轮同步」赢下对端上周那次真实的改目标；目标戳取
@@ -175,12 +179,14 @@ enum URLRuleKind: OwnedItemKind {
         if baseline.source != 0 { out.source = baseline.source }
 
         let contentChanged = contentSignature(of: out) != contentSignature(of: baseline)
-        setContentStamp(&out, contentChanged ? now : baseline.host.updatedAtMs)
+        setContentStamp(&out, contentChanged
+                            ? milliseconds(local.contentUpdatedDate ?? local.createdDate)
+                            : baseline.host.updatedAtMs)
 
         let targetChanged = SyncableSettings.signature(of: out.targetSpaceUuid)
             != SyncableSettings.signature(of: baseline.targetSpaceUuid)
         if targetChanged {
-            out.targetSpaceUuid.updatedAtMs = now
+            out.targetSpaceUuid.updatedAtMs = milliseconds(local.targetUpdatedDate ?? local.createdDate)
             out.rank.updatedAtMs = now
         } else {
             out.targetSpaceUuid.updatedAtMs = baseline.targetSpaceUuid.updatedAtMs

@@ -264,12 +264,16 @@ Commit scope: `Sources/Sync/Phi/URLRuleKind.swift` (new), `Sources/Sync/Phi/PhiU
   `reservedSyncUuid`. Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
   Task 4).
 
-- **Spec tension recorded, brief followed:** `stamp`'s with-baseline branch stamps a changed
-  content group / target with the round's `now` (target change also restamps rank), exactly as
-  the brief's ruling and `BookmarkKind` prescribe. Spec §8.2's R-exec-14 paragraph (":1771",
-  "真的变了的才带 `contentUpdatedDate`") reads as if the changed unit should carry the row stamp
-  instead. Not resolved here; Task 12 should fold one wording into §15. The no-baseline branch is
-  the three-item R-M3-4a-12 form (CASE U-19) and does not use `now`.
+- **Controller ruling, fix round 1 (spec §8.2 / D33 over the plan's `:2474` ruling and the
+  `BookmarkKind` precedent, for THIS kind only):** in `stamp`'s with-baseline branch a changed
+  content group carries `milliseconds(local.contentUpdatedDate ?? local.createdDate)` and a
+  changed target carries `milliseconds(local.targetUpdatedDate ?? local.createdDate)`; unchanged
+  units keep the baseline's stamps; only the rank stamp takes `now` (when rank or target changed).
+  The first commit (`04041b6a`) minted `now` for both per the brief; the fix-up commit corrects
+  the two lines and the doc comment, and `testEditsAgainstABaselineCarryTheRowStampsNotNow` pins
+  it (a snapshot-time `now` would let a stale local edit beat the peer's real, later one). Task 12
+  writes the §15 wording (spec over plan). The no-baseline branch was already the three-item
+  R-M3-4a-12 form (CASE U-19).
 
 - **§5.4 "six criteria":** five are refusals (`invalidUuid`, `illegalRank`, `emptyHost`,
   `degenerateHost`, `malformedHost`, evaluated in table order); the table's last two rows

@@ -435,6 +435,51 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertEqual(rounded?.createdAtMs, 1_002)
     }
 
+    // MARK: - §8.2 / D33：有基线的改动带行戳，不带 `now`
+
+    /// 控制者裁定（spec §8.2 / D33 压过计划与 `BookmarkKind` 的先例，只对这一 kind）：一次本机
+    /// 编辑可能在几轮之后才被发布，快照时刻的 `now` 会让一次更早的本机编辑赢下对端更晚的那次
+    /// 真实编辑；只有 rank（本机派生、没有行戳）允许带 `now`。
+    func testEditsAgainstABaselineCarryTheRowStampsNotNow() throws {
+        let baseline = urlRulePayload(uuid: "rs", targetSpaceUuid: "su-1", host: "old.com",
+                                      contentStamp: 100, targetStamp: 100, rankStamp: 100)
+        let now: Int64 = 5_000_000
+
+        // 只改 host，行的内容戳是 2_000 s。
+        let edited = PhiLocalURLRule.fixture(syncId: "rs", spaceId: "space-a", host: "new.com",
+                                             contentUpdatedDate: Date(timeIntervalSince1970: 2_000))
+        let stampedEdit = URLRuleKind.stamp(
+            try XCTUnwrap(URLRuleKind.project(edited, resolve: resolve, scope: nil, parentIdentity: nil)),
+            baseline: baseline, local: edited, rank: "V", now: now)
+        XCTAssertEqual(stampedEdit.host.updatedAtMs, 2_000_000, "行戳，不是 now")
+        XCTAssertEqual(stampedEdit.pathPrefix.updatedAtMs, 2_000_000)
+        XCTAssertEqual(stampedEdit.ask.updatedAtMs, 2_000_000)
+        XCTAssertEqual(stampedEdit.targetSpaceUuid.updatedAtMs, 100, "目标没动 ⇒ 沿用基线")
+        XCTAssertEqual(stampedEdit.rank.updatedAtMs, 100, "rank 没动 ⇒ 沿用基线")
+
+        // 只改目标，行的目标戳是 3_000 s。
+        let retargeted = PhiLocalURLRule.fixture(syncId: "rs", spaceId: "space-b", host: "old.com",
+                                                 targetUpdatedDate: Date(timeIntervalSince1970: 3_000))
+        let stampedRetarget = URLRuleKind.stamp(
+            try XCTUnwrap(URLRuleKind.project(retargeted, resolve: resolve, scope: nil, parentIdentity: nil)),
+            baseline: baseline, local: retargeted, rank: "V", now: now)
+        XCTAssertEqual(stampedRetarget.targetSpaceUuid.stringValue, "su-2")
+        XCTAssertEqual(stampedRetarget.targetSpaceUuid.updatedAtMs, 3_000_000, "行戳，不是 now")
+        XCTAssertEqual(stampedRetarget.rank.updatedAtMs, now, "桶变了 ⇒ rank 戳是唯一允许带 now 的")
+        XCTAssertEqual(stampedRetarget.host.updatedAtMs, baseline.host.updatedAtMs)
+        XCTAssertEqual(stampedRetarget.pathPrefix.updatedAtMs, baseline.host.updatedAtMs)
+        XCTAssertEqual(stampedRetarget.ask.updatedAtMs, baseline.host.updatedAtMs)
+
+        // 行戳缺席时退回 createdDate（与无基线分支同源），仍然不是 now。
+        let fallback = PhiLocalURLRule.fixture(syncId: "rs", spaceId: "space-a", host: "new.com",
+                                               createdDate: Date(timeIntervalSince1970: 1_000))
+        let stampedFallback = URLRuleKind.stamp(
+            try XCTUnwrap(URLRuleKind.project(fallback, resolve: resolve, scope: nil, parentIdentity: nil)),
+            baseline: baseline, local: fallback, rank: "V", now: now)
+        XCTAssertEqual(stampedFallback.host.updatedAtMs, 1_000_000)
+        XCTAssertEqual(stampedFallback.targetSpaceUuid.updatedAtMs, 100)
+    }
+
     // MARK: - R-M3-4a-26：`.move` 带 `newOwnerUuid`
 
     func testMoveStepCarriesTheMergedTargetAsNewOwner() {

@@ -260,6 +260,12 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
 
     // MARK: - Transport
 
+    func streamInvalidations(receive: @escaping @Sendable (Data) async throws -> Void) async throws {
+        try await PhiSyncInvalidationHTTPStream.run(session: session, baseURL: baseURL,
+                                                    deviceID: deviceKeyId, tokenProvider: tokenProvider,
+                                                    receive: receive)
+    }
+
     /// `share` and `message_contents` are proto2 `required`: leaving either unset makes
     /// `serializedData()` throw before a request is ever made.
     private static func newMessage(storeBirthday: String) -> SyncPb_ClientToServerMessage {

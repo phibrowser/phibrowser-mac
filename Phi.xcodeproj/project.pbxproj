@@ -275,6 +275,7 @@
 		897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */; };
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
 		89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */; };
+		8ADAB5612D010D1B7285F467 /* PhiSyncInvalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */; };
 		8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */; };
 		8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */; };
 		8D581F000AB58C74FB7409F6 /* URLRuleKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */; };
@@ -1132,6 +1133,7 @@
 		A8F100152FF0000000000015 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		A8F100162FF0000000000016 /* PhiUninstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PhiUninstaller; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingViewController.swift; sourceTree = "<group>"; };
+		A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncInvalidation.swift; sourceTree = "<group>"; };
 		AA10000000000000000000F1 /* TabSwitchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchMetrics.swift; sourceTree = "<group>"; };
 		AA10000000000000000000F2 /* TabSwitchItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchItem.swift; sourceTree = "<group>"; };
 		AA10000000000000000000F3 /* TabSwitchCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchCellView.swift; sourceTree = "<group>"; };
@@ -2006,6 +2008,7 @@
 				69E9284FAF9F3D97D76D7072 /* PinKind.swift */,
 				60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */,
 				0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */,
+				A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */,
 				38B4BC3A8362D0949084AC79 /* PhiSyncMarkerFile.swift */,
 				0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */,
 				2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */,
@@ -3908,6 +3911,7 @@
 				AE8E3290D9DF13FF422A4948 /* PinKind.swift in Sources */,
 				3E0CF4A966BCAA02B16EB715 /* PinnedTabScopeMirror.swift in Sources */,
 				DB3B811377A5EF1C83D51CA0 /* PhiFaviconBackfillQueue.swift in Sources */,
+				8ADAB5612D010D1B7285F467 /* PhiSyncInvalidation.swift in Sources */,
 				77412B67E81DF25046BBC581 /* PhiSyncMarkerFile.swift in Sources */,
 				A26D0443C3C4667246975164 /* TabDataModelSchemaV11.swift in Sources */,
 				5D1FCB130435E47C4C7D387A /* PhiURLRuleLocalAccess.swift in Sources */,

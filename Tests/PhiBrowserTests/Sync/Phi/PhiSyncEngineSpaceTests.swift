@@ -1782,7 +1782,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - D6：入站身份翻译（§3.4）
 
-    /// 1. 账户里有、本机没有的 Space：新建一行本地 id，落地成功之后才写映射。
+    /// 1. 账户里有、本机没有的 Space：先写映射、再建行（R-M3-4a-87），本地 id 由引擎预铸。
     func testAnAccountSpaceWithNoLocalRowLandsUnderAFreshLocalIdAndThenMaps() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1802,9 +1802,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors["sync-new"]?.reconciled)
     }
 
-    /// 1b. `create` 抛错的那一版：映射**没有**被写、基线**没有**被写、实体留在
-    /// `pendingApply`。重试会再次走 create 分支，因为没有映射行、不会撞上半成品。
-    func testAFailedCreateWritesNeitherAMappingNorABaseline() async throws {
+    /// 1b. `create` 抛错的那一版：映射**已经写下**、行**未建**（映射先行，R-M3-4a-87）、
+    /// 基线**没有**被写、实体留在 `pendingApply`。盘上留下的正是一条悬空映射 ⇒ 下一轮 A0
+    /// 死映射自愈把它丢掉、再铸一次干净落地（CASE B2-17，`PhiSyncMarkerBoundaryTests`）。
+    func testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
@@ -1818,7 +1819,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertTrue(access.spaceMappings.isEmpty)
+        XCTAssertEqual(access.spaceMappings.count, 1, "映射已写（悬空，待自愈）")
+        XCTAssertEqual(access.spaceMappings.values.first, "sync-new")
+        XCTAssertTrue(access.spaces.isEmpty, "行未建")
         XCTAssertNil(store.table.cursors["sync-new"]?.reconciled)
         XCTAssertNotNil(store.table.cursors["sync-new"]?.pendingApply)
     }

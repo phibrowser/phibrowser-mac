@@ -21,6 +21,11 @@ import XCTest
 /// 那一格留给 Task 6 / 3b。崩溃窗口一律用「假件在精确那一点回 `false` + 同一组 store 上新建
 /// 第二个引擎」模拟，测试里没有任何 `abort()`，也不碰那两个 debug 键。
 ///
+/// **Task 3b 追加**（`// MARK: - Task 3b` 之后）：Space 入站 create 的映射先行（R-M3-4a-87）——
+/// B2-17（主探针：映射已写、行未建 ⇒ A0 死映射自愈收口）、B2-17a（行已建、游标未写 ⇒ 重投走
+/// update 支）、B2-4d-x（映射写失败零痕迹 + 本页重投去重）；B2-17neg 是 B2-17 上方的一段注释，
+/// 不是第二份测试代码。B2-17 的规则侧连带断言留给 Task 6 在同一条用例上**追加**。
+///
 /// 两条本任务写下、但住在别处的半边（写在有现成脚手架的地方，不在这里复制一份）：
 ///
 /// - **B2-18 变体 (b)**（`MemorySpaceStore` + `failNextSave` 下 `localSpaceIdLookup` 零调用）
@@ -2275,6 +2280,214 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertTrue(spaceStore.table.drainInProgress, "重放武装")
         XCTAssertFalse(spaceStore.table.hasDrainedFullReplay)
         XCTAssertTrue(ownedStore.table.cursors.isEmpty, "仍然没有对着空表发布")
+    }
+
+    // MARK: - Task 3b：Space 入站 create 的映射先行（R-M3-4a-87）
+
+    /// 引擎预铸的本机 id（`UUID().uuidString`）从 `.mapSpace` 那条调用里取——**不预设常量**。
+    /// 按出现次序返回，所以「铸了几次」就是 `count`。
+    private func mintedSpaceIds(_ access: FakePhiSpaceAccess, syncUuid: String) -> [String] {
+        access.calls.compactMap {
+            if case .mapSpace(let spaceId, let uuid) = $0, uuid == syncUuid { return spaceId }
+            return nil
+        }
+    }
+
+    /// `.create` 的全部调用（含抛错那次——`createError` 是先记调用再抛）。
+    private func spaceCreateCalls(_ access: FakePhiSpaceAccess) -> [String] {
+        access.calls.compactMap { if case .create(let id) = $0 { return id } else { return nil } }
+    }
+
+    /// Space 实体的 commit 条目；设置实体骑在同一个 `commits` 列表上，不是这些用例关心的东西。
+    private func spaceCommits(_ client: FakePhiSyncClient) -> [FakePhiSyncClient.CommitCall] {
+        client.commits.filter { $0.name == PhiSyncEntity.spaceEntityName }
+    }
+
+    /// CASE B2-17neg（负面：旧次序在主探针下必须红；写成注释与一条 ledger 条目，不写第二份
+    /// 测试代码）— 把次序写回「先建行、后写映射」之后，下面 B2-17 的 Setup 表达的窗口就变成
+    /// 「**行已建、映射未写**」：`create` 成功、进程死在 `mapSpace` 之前。那一版第 2 轮的实际
+    /// 走向：`localSpaceId(forSyncUuid:)` 查不到 ⇒ A0 自愈**不触发**（它的前提是「反查命中而行
+    /// 不在」，这里反查根本不命中）⇒ 再走一次 create 支 ⇒ `spaces.count == 2`（两条同名 Space）；
+    /// 无映射的旧行日后被发布段的 `ensureMapped` 惰性铸一个**自己的**新 uuid ⇒ 账户上多出第二条
+    /// 实体（M3-2b 承接的 App-B#2 / #3 / #17）。B2-17 里会红的是三条：「行数 1」、「value 为
+    /// `sync-new` 的映射恰一条」与 `.dropSpaceMapping` 的 `contains`。复审照这三条核对即可。
+    /// 防的是什么：一个只改注释、代码次序没动的实现通过评审。
+    ///
+    /// CASE B2-17（主探针：映射已写、行未建、进程死亡 ⇒ 死映射自愈收口；§2.6 三窗口表第 2 行）
+    /// — `createError` 让 `create` **先记 `.create` 调用、再抛**（行写发出去了、事务提交前死掉）。
+    /// 第 1 轮：`.mapSpace` 的下标小于 `.create` 的下标、`create` 收到的正是预铸的 id、盘上恰一条
+    /// 悬空映射、零行、停放不写基线、结局**不是** `cursor_save_failed`（`land` 抛错不是持久化失败，
+    /// 本轮那次 `mapSpace` 成功了，裁定 7）⇒ 本页 marker 照推。第 2 轮：假 client 零新页，实体从
+    /// `pendingApply` 回到 `all` ⇒ A0 反查命中而 `isKnownLocalSpace` 为假 ⇒ `dropSpaceMapping`
+    /// ⇒ 本块再铸一次、干净落地 ⇒ **一条行、一条映射、零第二个 uuid**。
+    ///
+    /// 自愈里 `dropSpaceMapping` 写失败那一支（它返回 Void、不抛）不写成用例：随后的
+    /// `mapSpace(newId2, …)` 撞上 `syncUuidAlreadyClaimed` ⇒ 抛错 ⇒ 停放 ⇒ 再下一轮重试
+    /// （裁定 6）；假件的 `dropSpaceMapping` 不可能失败，这一支是一条论证。
+    ///
+    /// 防的是什么：「映射先行留下的悬空映射没人收口」。一个把两次写反序、却在自愈上失手的实现
+    /// （比如给 A0 那个 `if` 加一条 `cursor.reconciled == nil` 的短路）会留下「映射指向一条不存在
+    /// 的行」：那个 uuid 从此解析到一个查不到的 id，Space 永远建不出来、指向它的规则永远停放，
+    /// 而 `applied` 不涨、`parked` 涨，与「对端还没建 Space」无法区分。
+    func testACrashBetweenTheMappingWriteAndTheRowCreateLeavesADanglingMappingThatHealsIntoOneRow() async throws {
+        let spaceAccess = makeSpaceAccess([:])                 // 零行、零映射
+        spaceAccess.createError = NSError(domain: "test", code: 1)
+        let spaceStore = drainedSpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("sync-new", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let minted = mintedSpaceIds(spaceAccess, syncUuid: "sync-new")
+        XCTAssertEqual(minted.count, 1)
+        let newId = try XCTUnwrap(minted.first)
+        let mapIndex = try XCTUnwrap(spaceAccess.calls.firstIndex(
+            of: .mapSpace(spaceId: newId, syncUuid: "sync-new")))
+        let createIndex = try XCTUnwrap(spaceAccess.calls.firstIndex(of: .create(newId)))
+        XCTAssertLessThan(mapIndex, createIndex,
+                          "映射先行：`.mapSpace` 在 `.create` 之前，且 `create` 收到的是预铸的 id")
+        XCTAssertEqual(spaceAccess.allSpaceMappings(), [newId: "sync-new"], "恰一条悬空映射")
+        XCTAssertTrue(spaceAccess.spaces.isEmpty, "零行")
+        XCTAssertNotNil(spaceStore.table.cursors["sync-new"]?.pendingApply, "停放")
+        XCTAssertNil(spaceStore.table.cursors["sync-new"]?.reconciled, "不写基线")
+        XCTAssertNotEqual(outcome, .cursorSaveFailed,
+                          "`land` 抛错不是持久化失败；置位点是 `mapSpace` 的 `persistFailed`，本轮那次成功了")
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8), "本页 marker 照推，重投来自停放")
+
+        spaceAccess.createError = nil
+        await engine.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data("3".utf8), "假 client 本轮零新页")
+        XCTAssertTrue(spaceAccess.calls.contains(.dropSpaceMapping(newId)), "A0 自愈确实跑过")
+        XCTAssertEqual(spaceCreateCalls(spaceAccess).count, 2, "第一次抛错那次也记了调用")
+        XCTAssertEqual(spaceAccess.spaces.count, 1, "行数 1——整条用例的落点")
+        let rowId = try XCTUnwrap(spaceAccess.spaces.first?.spaceId)
+        XCTAssertNotEqual(rowId, newId, "自愈之后重铸，不复用悬空的那个 id")
+        let mappingsForUuid = spaceAccess.allSpaceMappings().filter { $0.value == "sync-new" }
+        XCTAssertEqual(mappingsForUuid.count, 1, "value 为 sync-new 的映射恰一条")
+        XCTAssertEqual(mappingsForUuid.keys.first, rowId)
+        XCTAssertEqual(spaceAccess.allSpaceMappings().count, 1, "零第二个 uuid、零悬空残留")
+        let resolved = try XCTUnwrap(spaceAccess.localSpaceId(forSyncUuid: "sync-new"))
+        XCTAssertTrue(spaceAccess.isKnownLocalSpace(resolved))
+        XCTAssertNotNil(spaceStore.table.cursors["sync-new"]?.reconciled)
+        XCTAssertNil(spaceStore.table.cursors["sync-new"]?.pendingApply)
+    }
+
+    /// CASE B2-17a（变体：行已建、游标未写；§2.6 三窗口表第 3 行）— 本页 `writeSpaceTable` 的
+    /// save 失败 ⇒ `cursor_save_failed`、marker 不推；假 client 按传进来的 marker 分页，第 2 轮从
+    /// 同一个 marker **再发一次同一页** ⇒ `localSpaceId(forSyncUuid:)` 解析得出 ⇒ 新块整个跳过、
+    /// `land` 走 update 支：`.create` 仍 1、`.mapSpace` 仍 1（**不铸第二个 uuid**）、行数 1、游标
+    /// 这才写下。
+    ///
+    /// 「走了 update 支」的观察量是第 2 轮的 `.themeState(newId)`：`land` 的 update 支对非默认
+    /// Space **无条件**调 `applyThemeState`，而 `update(spaceId:…)` 只在名字 / 颜色 / 图标 / 创建
+    /// 时间有差异时才调——重投的是同一页，行是上一轮照它建的，四个字段零差异，`.update` 不会出现。
+    ///
+    /// 防的是什么：把「映射先行」实现成「每页都重铸一次 `newId` 再 `mapSpace`」（新块的守卫写成
+    /// `if !isDefault` 而漏掉 `localSpaceId == nil`）的版本。重投时 `localSpaceId` 已解析得出，本块
+    /// 应当整个跳过；跳不过就会撞上 `syncUuidAlreadyClaimed`，把一条本来幂等的 update 变成永久停放。
+    func testACrashBetweenTheRowCreateAndTheCursorWriteReplaysThePageThroughTheUpdateBranch() async throws {
+        let spaceAccess = makeSpaceAccess([:])
+        let spaceStore = drainedSpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("sync-new", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess)
+        await engine.setSpaceSyncEnabled(true)
+        spaceStore.failNextSave = true                 // 门那一次写已经过去了
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "盘上仍是 markerAtEntry")
+        XCTAssertEqual(spaceAccess.spaces.count, 1, "行已建")
+        XCTAssertEqual(spaceAccess.allSpaceMappings().count, 1, "映射已写")
+        XCTAssertNil(spaceStore.table.cursors["sync-new"], "游标那次写没落盘")
+        let newId = try XCTUnwrap(mintedSpaceIds(spaceAccess, syncUuid: "sync-new").first)
+        XCTAssertEqual(spaceAccess.spaces.first?.spaceId, newId, "`create` 收到的是预铸的 id")
+        let callsAfterFirstRound = spaceAccess.calls.count
+
+        spaceStore.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let secondRoundCalls = Array(spaceAccess.calls[callsAfterFirstRound...])
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data("0".utf8), "同一个 marker 重投同一页")
+        XCTAssertEqual(spaceCreateCalls(spaceAccess).count, 1, "第二次没有再建行")
+        XCTAssertEqual(mintedSpaceIds(spaceAccess, syncUuid: "sync-new").count, 1, "不铸第二个 uuid")
+        XCTAssertEqual(spaceAccess.allSpaceMappings(), [newId: "sync-new"])
+        XCTAssertTrue(secondRoundCalls.contains(.themeState(newId)), "重投走 update 支")
+        XCTAssertFalse(secondRoundCalls.contains(.dropSpaceMapping(newId)), "行在，自愈不触发")
+        XCTAssertEqual(spaceAccess.spaces.count, 1, "行数 1")
+        XCTAssertNotNil(spaceStore.table.cursors["sync-new"]?.reconciled)
+        XCTAssertNil(spaceStore.table.cursors["sync-new"]?.pendingApply)
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8))
+    }
+
+    /// CASE B2-4d-x（交叉核：映射写失败之后什么都不留，且本页重投；与 B2-4d 同一个输入）—
+    /// `mapSpaceError = .persistFailed`（在写 `spaceMappings` 之前抛、不自动清空）。第 1 轮：第四个
+    /// 置位点 ⇒ `cursor_save_failed`、marker 不推；**零映射、零行**、`.calls` 里既无 `.mapSpace` 也无
+    /// `.create`（`land` 根本没被调到）；停放本身已经落盘——置位发生在本页 `writeSpaceTable` 之后，
+    /// 那次 save 成功；发布闸是 `canPublishThisRound ∧ !cursorSaveFailed` 的合取，本轮 drain 完了，
+    /// 抑制发布的是 `cursorSaveFailed` 这一项。第 2 轮同一个 marker 重投同一页，停放重试与入站实体
+    /// 去重（`all = pending.filter { !incoming.contains(uuid) } + incoming`）⇒ `sync-new` 在 `all`
+    /// 里只出现一次 ⇒ `.mapSpace` 恰一次、`.create` 恰一次 ⇒ **一映射一行**。
+    ///
+    /// 防的是什么，一条用例各钉一半：(a) 旧次序下一次 `mapSpace` 失败留下的是一条**无映射的行**
+    /// （catch 跑到时 `land` 已经建过行），把新块写在 `land` 之后、或 catch 里忘了 `continue` 的版本
+    /// 都会留下它；(b) 把映射写失败**只**当停放、不置 `cursorSaveFailed` 的版本——marker 越过这一页，
+    /// 那条 Space 从此只靠 `pendingApply` 存活，一次游标文件丢失就永久丢掉。同时钉死去重：少了那个
+    /// `filter`，重投页让同一个 uuid 在 `all` 里出现两次 ⇒ 两次 create ⇒ 两条行。
+    func testAMappingPersistFailureLeavesNoTraceAndTheReplayedPageLandsExactlyOnce() async throws {
+        let spaceAccess = makeSpaceAccess([:])
+        spaceAccess.mapSpaceError = SpaceSyncMappingError.persistFailed
+        let spaceStore = drainedSpaceStore()
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([spaceCreateEntity("sync-new", version: 3)], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: spaceStore, spaceAccess: spaceAccess)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed, "第四个置位点")
+        XCTAssertEqual(failures, 1)
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "盘上仍是 markerAtEntry")
+        XCTAssertTrue(spaceAccess.allSpaceMappings().isEmpty, "零映射")
+        XCTAssertTrue(spaceAccess.spaces.isEmpty, "零行")
+        XCTAssertTrue(mintedSpaceIds(spaceAccess, syncUuid: "sync-new").isEmpty, "抛在记调用之前")
+        XCTAssertTrue(spaceCreateCalls(spaceAccess).isEmpty, "`land` 没有被调到")
+        XCTAssertNotNil(spaceStore.table.cursors["sync-new"]?.pendingApply, "停放本身已经落盘")
+        XCTAssertNil(spaceStore.table.cursors["sync-new"]?.reconciled)
+        XCTAssertTrue(spaceCommits(client).isEmpty, "发布闸被 cursorSaveFailed 这一项关掉")
+
+        spaceAccess.mapSpaceError = nil
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        let secondAdvanced = await engine.lastRoundMarkerAdvancedForTesting
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data("0".utf8), "同一个 marker 重投同一页")
+        XCTAssertEqual(second, .ok)
+        XCTAssertTrue(secondAdvanced)
+        XCTAssertEqual(markerStore.file.marker, Data("3".utf8))
+        XCTAssertEqual(mintedSpaceIds(spaceAccess, syncUuid: "sync-new").count, 1, "`.mapSpace` 恰一次")
+        XCTAssertEqual(spaceCreateCalls(spaceAccess).count, 1, "`.create` 恰一次——停放与入站去重成立")
+        XCTAssertEqual(spaceAccess.allSpaceMappings().count, 1, "一映射")
+        XCTAssertEqual(spaceAccess.spaces.count, 1, "一行")
+        XCTAssertNotNil(spaceStore.table.cursors["sync-new"]?.reconciled)
+        XCTAssertNil(spaceStore.table.cursors["sync-new"]?.pendingApply)
     }
 }
 

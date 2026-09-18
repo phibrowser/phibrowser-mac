@@ -2255,6 +2255,9 @@ actor PhiSyncEngine {
             if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
                 // 死映射：反查命中，但本地那一行已经没了（用户删了 Space 而清理路径
                 // 被打断）。就地丢掉并按「无映射」处理，下一轮当作新 Space 落地。
+                // 第二个同样可达的成因：映射先行的 create 在两次写之间死掉（R-M3-4a-87，
+                // 下面 create 支的新块），留下的悬空映射走同一条出口——R-87 的整条可恢复性
+                // 压在这一段上，它不是一条只服务于删除路径的补丁，重构时不可顺手删掉。
                 // 形状与 profile 侧的 A0 逐字对应。
                 AppLogInfo("[phi-sync] dropping a dead space mapping; the entity will land as a new Space")
                 await spaceAccess.dropSpaceMapping(forSpaceId: resolved)
@@ -2331,6 +2334,33 @@ actor PhiSyncEngine {
                 }
             }
 
+            // R-M3-4a-87：create 支的两次写反序、映射先行。行在 SwiftData、映射在账户
+            // plist，两个 store 之间没有事务（§2.6），所以这里要的不是原子性而是可恢复性：
+            // 留下的唯一中间态是「映射已写、行未建」，由上面 A0 段的死映射自愈收口。
+            // 本机 id 在这里预铸（形状同 SpaceManager.swift:960），`land` 一行不改——
+            // 它的 create 支本来就接受显式 id（SyncableSpaces.swift:514）。
+            // `!isDefault` 与 A0 的守卫同形：默认 Space 的 `localSpaceId` 永不为 nil，写出来
+            // 是为了挡住 `map` 的 `defaultSpaceIsImplicit`——否则默认 Space 每轮停放。
+            if localSpaceId == nil, !isDefault {
+                let newId = UUID().uuidString
+                do {
+                    try await spaceAccess.mapSpace(newId, toSyncUuid: item.uuid)
+                } catch {
+                    AppLogWarn("[phi-sync] could not map a new space tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                    // 第四个 `cursorSaveFailed` 置位点（计划裁定 7 / §13.2）：映射不走
+                    // `writeSpaceTable` 那条链，它的落盘失败面是 Task 2a 的 `persistFailed`
+                    // （抛出后 store 已回滚，盘上零映射、零行，`land` 还没被调到）。其余映射
+                    // 错误是裁决，不是落盘失败，只停放不计。
+                    if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }
+                    if item.fromServer {
+                        cursor.pendingApply = try? item.entity.serializedData()
+                        table.cursors[item.uuid] = cursor
+                    }
+                    continue
+                }
+                localSpaceId = newId
+            }
+
             // A2 + A3: land in order, await every step, and only THEN write the
             // baselines. The reverse order leaves the shadow ahead of the row and
             // the next snapshot stamps the stale value `now` for the whole account.
@@ -2353,25 +2383,6 @@ actor PhiSyncEngine {
                 continue
             }
             guard !isStopped else { return }
-            // **落地成功之后、写基线之前**才写映射（§5.6 同一条规则）：`create` 抛错
-            // 时既不写基线也不写映射，下一轮从 `pendingApply` 重试，重试会再次走
-            // create 分支——因为没有映射行，不会撞上一个半成品。
-            if localSpaceId == nil {
-                do {
-                    try await spaceAccess.mapSpace(landed, toSyncUuid: item.uuid)
-                } catch {
-                    AppLogWarn("[phi-sync] could not map a landed space tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
-                    // 第四个 `cursorSaveFailed` 置位点（计划裁定 5 / §13.2）：映射不走
-                    // `writeSpaceTable` 那条链，它的落盘失败面是 Task 2a 的 `persistFailed`
-                    // （抛出后 store 已回滚）。其余映射错误是裁决，不是落盘失败，不计。
-                    if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }
-                    if item.fromServer {
-                        cursor.pendingApply = try? item.entity.serializedData()
-                        table.cursors[item.uuid] = cursor
-                    }
-                    continue
-                }
-            }
 
             // §5.6 again, for the one write that can report success without
             // having happened: `SpaceManager.applyRemoteRebind` optional-chains

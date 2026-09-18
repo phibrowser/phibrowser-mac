@@ -235,3 +235,60 @@ per-kind 报损重放两步确认。
     （`PhiSyncMarkerBoundaryTests.testAFailedLossReplayArmDoesNotPublishAgainstTheLostTableNorRecreateItsFile`，
     设置半边靠预置空 `storedLastEntity` 早退、Space 半边靠 guard 3 的 `unreadableTagHashes` 跳过，
     于是「零 `commit` 调用」只说书签那一半）；Task 6 的 U-18 两条 R-103 变体为 urlrules 再钉。
+
+## Task 3b
+
+`applySpaces` create 支的映射先行（R-M3-4a-87）+ 死映射自愈的重投证明（CASE B2-17 / B2-17a /
+B2-17neg / B2-4d-x）。
+
+### brief 的「计划裁定」要求记档的
+
+1. **既有用例里唯一一条断言方向被 R-87 翻转的**：
+   `PhiSyncEngineSpaceTests.testAFailedCreateWritesNeitherAMappingNorABaseline` → 改名
+   `testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal`，断言从
+   「`spaceMappings.isEmpty`」翻成「映射恰一条（value 为 `sync-new`）、行零条、`reconciled` nil、
+   `pendingApply` 非 nil」；用例 1 的头注释「落地成功之后才写映射」改成「先写映射、再建行」。
+   其余 create 路径用例逐条核过不变（brief Step 4 列的那几条；
+   `testAFailedLandingWritesNoBaselineAndParksTheEntity` 用 `errorOnNextWrite` 让 `create` 抛错，
+   两轮断言在新次序下仍成立——第 2 轮由 A0 自愈接管）；全仓 `.mapSpace` 这个 `Call` case 零既有
+   断言，`PhiSpaceLocalAccessTests:171` 的 exact-array 不受影响（两个新 knob 默认 nil）。
+2. **裁定 7 的控制者裁定**：`mapSpace` 的 `persistFailed` 是第四个 `cursorSaveFailed` 置位点
+   （§2.5 第 4 条待改成**四个**）。Task 2b 落地；本任务把那个 catch 连同新块搬到 `land` 之前，
+   「`persistFailed` ⇒ 停放 + 计数、其余 `SpaceSyncMappingError` 只停放」的语义逐字保留，
+   CASE B2-4d-x 验它。
+3. **B2-17neg 不写成代码**：B2-17 上方的注释块 + 本条。旧次序（先建行、后写映射）下 B2-17 会红的
+   三条断言：「行数 1」、「value 为 `sync-new` 的映射恰一条」、`.dropSpaceMapping` 的 `contains`。
+4. **裁定 6 的第三条路径（自愈里 `dropSpaceMapping` 写失败 ⇒ 随后 `mapSpace` 撞
+   `syncUuidAlreadyClaimed` ⇒ 停放 ⇒ 再下一轮）只是论证**，记在 B2-17 的注释里；假件的
+   `dropSpaceMapping` 不可能失败。
+
+### 与 brief 不同的实现判断
+
+5. **新块插在 `// A2 + A3` 注释之前，不是 `merged` 求值的 `}` 之后**：`c9ab5806` 之后两者之间多了
+   一段「按 `merged.profileUuid` 重解析 `profileId`」的块（`c549c4c5` 里没有）。新块只用
+   `localSpaceId` / `isDefault` / `item` / `cursor` / `table` / `tag`，放在紧挨 `land` 之前更贴近
+   「映射写在行之前那一刻」的意图，语义无差别。
+6. **新块的 catch 带 Task 2b 的计数行**：brief 裁定 1 的逐字代码没有 `cursorSaveFailures += 1`
+   （它写于 Task 2b 之前）；按任务交办与裁定 7 保留
+   `if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }`。
+7. **B2-17a 的「走 update 支」不用 `.update(id)` 断言**：`SyncableSpaces.land` 的 update 支只在
+   名字 / 颜色 / 图标 / 创建时间有差异时才调 `access.update`，而重投的是同一页、行是上一轮照它建的，
+   四个字段零差异 ⇒ `.update` **结构上不会出现**。改用第 2 轮调用切片里的 `.themeState(newId)`
+   （update 支对非默认 Space 无条件调 `applyThemeState`）+ `.create` 总数仍 1 + `.dropSpaceMapping`
+   不出现，钉「走了 update 支、没有再建行、没有自愈」。
+8. **三条新用例的 fixture 用 `PhiSyncMarkerBoundaryTests` 自己的脚手架**（`makeSpaceAccess([:])` +
+   `spaceCreateEntity` + `pagesByMarker` + `makeOwnedEngine` + `drainedSpaceStore` +
+   `markerStore(marker:)`），不是 brief 写的 `PhiSyncEngineSpaceTests` 那一组（那些是 `private`，
+   且 brief 自己要求追加进本文件）。profile uuid 因此是 `pu-1` 而不是 `uuid-a`，Space 名是 `S`
+   而不是 `Reading`；两者都不进任何断言。
+9. **B2-17 多钉了几条 brief 没写的**：第 1 轮 `markerStore.file.marker == "3"`（`land` 抛错不是
+   持久化失败 ⇒ marker 照推，裁定 7 第三条的另一半）；第 2 轮 `getUpdatesCalls.last?.marker == "3"`
+   （假 client 本轮零新页，重投确实来自停放）与 `rowId != newId`（自愈之后重铸，不复用悬空 id）。
+   B2-17a / B2-4d-x 同理钉 `getUpdatesCalls.last?.marker == "0"`（同一 marker 重投同一页）。
+10. **`spaceCommits` 在本文件按 `name == PhiSyncEntity.spaceEntityName` 过滤**
+    （`PhiSyncEngineSpaceTests` 那份是 `!= settingsClientTagHash`，且 `private`）。
+
+### 验证口径
+
+11. **compile-only**（`xcodebuild build-for-testing`）。三条新用例与翻转的那条没有在运行时跑过；
+    两轮的走向（A0 自愈触发、update 支的 `applyThemeState`、去重后的 `.create` 计数）按代码推导。

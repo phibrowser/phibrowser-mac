@@ -16,7 +16,7 @@ Keep this section current. A successor agent reads only this section first.
 
 | Field | Value |
 | --- | --- |
-| Current task | D2/D3/D4 written and compiling (Mac `xcodebuild build-for-testing` succeeds); Mac unit tests NOT executed (Phi was running); D3/D4 not yet run in the app; committed as 8dd1cc6a |
+| Current task | D3/D4 in-app verification (pane and sheet not yet opened in the running app); D5 and Phase E not started |
 | Chromium branch | `feature/phi-r152-content-blocking` (off `phi-r152` a493fbcf57fb5), local only, never pushed |
 | Chromium last commit | 6f7f6815c6b28 (D1 bridge); 8de66c077a042 (B4+C1+C2+C3); 6d59b997bfd21 (B1+B2+B3); c233424aa9817 (A4); 3b1122dfe8d60 (A3); 2f5e83f2faca7 (A2); a1c036958d7e2, 3affb848c5066 (A1) |
 | Mac branch | `feat/content-blocking` (off `origin/dev` 51fc5189), local only, never pushed |
@@ -27,6 +27,7 @@ Keep this section current. A successor agent reads only this section first.
 
 Session notes (append, newest first):
 
+- 2026-09-18 (D2 verified): the three Mac test classes pass (12 cases) with `xcodebuild test-without-building ... -only-testing:PhiBrowserTests/<Class>` after quitting Phi. xcodebuild still prints `Testing failed` / `TEST EXECUTE FAILED` with "Phi (pid) encountered an error (Early unexpected exit ...)" lines: harness noise from the Chromium helper processes the test host spawns, reproduced with the unrelated `AppLanguagePreferenceTests` (which also carries a pre-existing failing case). Judge a run by the `Test case ... passed/failed` lines.
 - 2026-09-18 (D5 step 2 attempted): `gn gen out/Upstream` with `is_phi_browser=false is_mac_phi=false` fails before any content blocking file is reached: an upstream target references `//chrome/browser/phinomenon:browser_finder` unconditionally (pre-existing on `phi-r152`, not caused by this work). The non-Phi gating check for content blocking therefore could not run; every content blocking hunk is wrapped in `#if BUILDFLAG(IS_PHI_BROWSER)` / `if (is_phi_browser)` by inspection.
 - 2026-09-18 (D2, D3, D4 written): Mac branch `feat/content-blocking` (uncommitted). Files: `Sources/ChromiumBridge/ContentBlockingSettings.swift` (facade, `ContentBlockingBridging` protocol with a `LiveContentBlockingBridge` adapter that guards every call with `responds(to:)`, `ContentBlockingListStrings` titles/descriptions, `Notification.Name.contentBlockingStatusChanged`), coordinator callback `contentBlockingStatusChanged(_:)`, `Sources/UserInterface/Preferences/Privacy/*` (pane trio + `PrivacySettingsModel` + `ContentBlockingAdvancedSheet` + `ContentBlockingListInfoPopover`), `Settings.swift` `.privacy`, `AppController+Settings.swift` pane after Account, 44 English entries appended textually to `Resources/Localizable.xcstrings` (Xcode re-sorts on save), three test files under `Tests/PhiBrowserTests/` (auto-synced folder), `Phi.xcodeproj/project.pbxproj` edited by a helper script that adds file refs/build files/groups (the Privacy group id is `7314217E9114C4DD1881CA1A`). `Frameworks/Phi Framework.framework` (git-ignored) was replaced by the `out/PhiTest` build (152.0.7977.76); the previous 150.0.7871.47 copy is kept as `Frameworks/Phi Framework.framework.previous-150.0.7871.47`. `xcodebuild build-for-testing -scheme PhiBrowser -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO` succeeds. NOT done: running the three Mac unit test classes (`xcodebuild test-without-building -scheme PhiBrowser -destination 'platform=macOS' -only-testing:PhiBrowserTests/ContentBlockingSettingsTests -only-testing:PhiBrowserTests/PrivacySettingsViewTests -only-testing:PhiBrowserTests/ContentBlockingAdvancedSheetTests`; quit Phi first, the test host collides with a running Phi), the D3/D4 in-app run and screenshots, D3/D4 commits. Deviations: the pane has a profile picker only with more than one user-assignable profile and starts on the active Space's profile (`PrivacySettingsModel.initialProfileId`); list titles/descriptions are Swift-side (`ContentBlockingListStrings`), the bridge carries only ids; `ContentBlockingAdvancedSheet.learnMoreURL` points at `https://phibrowser.com/help/content-blocking` (placeholder URL, confirm with the owner).
 
@@ -429,8 +430,8 @@ The facade updates `state` optimistically and reverts on failure. Delegate callb
 - [x] **Step 1:** Create the Mac branch: `git fetch origin dev && git checkout -b feat/content-blocking origin/dev`.
 - [x] **Step 2:** Tests with a fake bridge object: `RefreshMapsBridgePayload`, `SetCategoryOptimisticThenConfirmed`, `SetCategoryRevertsOnFailure`, `BridgeUnavailableLeavesStateNil`, `StatusNotificationTriggersRefresh`.
 - [x] **Step 3:** `xcodebuild build-for-testing -scheme PhiBrowser -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO` then run the test class. Expected FAIL, implement, PASS. Note the KB warning: `xcodebuild test` launches a Phi host that collides with a running Phi; quit Phi first.
-- [ ] **Step 4:** Ask the user for commit go-ahead if not yet given this session; commit: `feat: add the content blocking settings facade`.
-- [ ] **Done when:** five tests pass.
+- [x] **Step 4:** Ask the user for commit go-ahead if not yet given this session; commit: `feat: add the content blocking settings facade`.
+- [x] **Done when:** five tests pass.
 
 ### Task D3: Privacy pane
 

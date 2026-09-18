@@ -3295,6 +3295,9 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                      forKey: PhiSyncEngine.lastEntityStateKey)
         let client = FakePhiSyncClient()
         client.seed(tagHash: ruleHash("r1"), ciphertext: Data(), version: 3, entityId: "srv-r1")
+        // 脚本一页空页：种下的那一行只给 commit 的更新路径用，不让它当成一条（解不开的）入站实体
+        // 被拉回来。
+        client.scriptedPages = [page([], marker: "9")]
         client.commitErrorOnce = PhiSyncProtocolError.notMyBirthday
         let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
                                 store: spaceStore, ownedKinds: [urlRuleKind(access, store)])
@@ -3323,6 +3326,80 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(store.table.cursors["r1"]?.entityId, "")
         XCTAssertFalse(spaceStore.table.urlRulesReplayedForEmptyTable, "Task 6 加进 reset 那一批的那一行")
         XCTAssertTrue(spaceStore.table.urlRulesHadRecords, "描述的是「这台机器曾经发布过」，换 store 不改变它")
+    }
+
+    /// CASE 9.4（Task 9 fix round 1）— 出路 1 只在游标表**落盘成功**之后跑。
+    ///
+    /// 一条软删行 `r1`（已发布、目标合格）⇒ 差分发一条 tombstone ⇒ 服务端 `.applied`；但发布段末尾那次
+    /// `writeOwnedTable` 的 `save` 失败（`failSaveOnCallNumber`，B-2 用例的同一个旋钮）⇒ **行不删**、
+    /// `hardDeleteCalls` 为空、本轮收口 `.cursorSaveFailed`；盘上那份表仍是发布前的旧表（有 `reconciled`、
+    /// 无 `deletedAtMs`）。放行之后再跑一轮：游标从盘上重读，差分为它再发一条 tombstone（这正是那一格的
+    /// 既有形状），`.applied` 之后行才被出路 1 删掉。
+    ///
+    /// **发布段那一次 save 的序号不写死**：规则是 `landsEmptyBatch` 的 kind，空页的落地段末尾也无条件写
+    /// 一次表，所以先跑一轮**行还活着**的校准轮数出「一轮几次 save」（照 Task 6 fix round 1 的
+    /// `saveCalls + N` 写法），再把失败注入到下一轮的最后那一次上。校准轮里 `work.isEmpty` 那一支同样写
+    /// 一次表，两轮的次数相同。
+    ///
+    /// 防的是什么：不看 `writeOwnedTable` 的返回值就硬删。写盘失败时行先没了、`deletedAtMs` 只在内存里，
+    /// 下一轮从盘上重读 ⇒ 游标停在「有基线、无 `deletedAtMs`、本机无行」⇒ 差分再发一条 tombstone；而行已经
+    /// 没了，出路 2 也兜不住这条「本机有游标、账户有 tombstone、本机无行」的组合——软删行留着，才有下一轮
+    /// `.applied` 之后的第二次机会。
+    func test9_4_exit1IsSkippedWhenTheCursorTableSaveFails() async throws {
+        let ruleHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.urlRuleClientTag("r1"))
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "r1", sortOrder: 0),
+        ])
+        let store = MemoryOwnedItemStore()
+        let baseline = baselineBytes(urlRulePayload(uuid: "r1"))
+        store.table.cursors["r1"] = ownedCursor(reconciled: baseline, server: baseline,
+                                                entityId: "srv-r1", version: 3, ownerUuid: "su-1")
+        let spaceStore = makeSpaceStore()
+        spaceStore.table.unreadableTagHashes[spaceHash("su-1")] = 1
+        defaults.set(try Phi_PhiSettingEntity().serializedData(),
+                     forKey: PhiSyncEngine.lastEntityStateKey)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: ruleHash, ciphertext: Data(), version: 3, entityId: "srv-r1")
+        // 三轮各一页空页（种下的那一行只给 commit 的更新路径用，不让它当成入站实体被拉回来）。
+        client.scriptedPages = [page([], marker: "9"), page([], marker: "9"), page([], marker: "9")]
+        let engine = makeEngine(client: client, access: makeSpaceAccess(["space-a": "su-1"]),
+                                store: spaceStore, ownedKinds: [urlRuleKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+
+        // 校准轮：行活着、投影与基线相等 ⇒ 零 commit；数出一轮的 save 次数。
+        await engine.pullOnce()
+        let savesPerRound = store.saveCalls
+        XCTAssertGreaterThan(savesPerRound, 0, "一轮至少写一次表（发布段末尾那一次）")
+        XCTAssertTrue(client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName }.isEmpty)
+
+        // 编辑器软删 `r1`；发布段末尾那一次 save（本轮最后一次）失败。
+        access.rows[0].deletedDate = Date(timeIntervalSince1970: 2_000)
+        store.failSaveOnCallNumber = store.saveCalls + savesPerRound
+        await engine.pullOnce()
+
+        let firstTombstones = client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName && $0.deleted }
+        XCTAssertEqual(firstTombstones.count, 1, "tombstone 发出去了、被 .applied（发布闸这一轮是开的）")
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed, "失败的正是发布段那一次 save")
+        XCTAssertEqual(store.saveCalls, 2 * savesPerRound, "失败那一次是本轮最后一次")
+        XCTAssertEqual(access.rows.count, 1, "写盘失败 ⇒ 行不删")
+        XCTAssertNotNil(access.rows.first?.deletedDate, "行仍是软删态")
+        XCTAssertTrue(access.hardDeleteCalls.isEmpty, "出路 1 没跑")
+        XCTAssertNil(store.table.cursors["r1"]?.deletedAtMs, "盘上仍是发布前的表")
+        XCTAssertEqual(store.table.cursors["r1"]?.pendingDelete, false, "删除决定也没落盘")
+        XCTAssertNotNil(store.table.cursors["r1"]?.reconciled)
+
+        // 放行之后再跑一轮：游标从盘上重读 ⇒ 差分再发一条 ⇒ .applied ⇒ 落盘成功 ⇒ 出路 1 才跑。
+        store.failSaveOnCallNumber = nil
+        client.reseed(tagHash: ruleHash, ciphertext: Data(), version: 3)
+        await engine.pullOnce()
+
+        let secondOutcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(secondOutcome, .ok)
+        XCTAssertTrue(access.rows.isEmpty, "落盘成功之后行才被硬删")
+        XCTAssertEqual(access.hardDeleteCalls, ["r1"])
+        XCTAssertNotNil(store.table.cursors["r1"]?.deletedAtMs, "这一次 deletedAtMs 落了盘")
+        XCTAssertNil(store.table.cursors["r1"]?.reconciled)
     }
 
     // MARK: - CASE 9b.1 – 9b.3：生命周期（pin 半边）

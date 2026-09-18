@@ -4152,14 +4152,17 @@ actor PhiSyncEngine {
             }
         }
         ownedCounters[registration.label] = counters
-        writeOwnedTable(registration, table)
+        let saved = writeOwnedTable(registration, table)
 
         // §5.7 软删行的第一条出路：tombstone 被 `.applied`（`applyOwnedCommitOutcome` 刚给游标
         // 写下 `deletedAtMs`）⇒ 账户上那条实体没了 ⇒ 本机那条软删行硬删。**排在
-        // `writeOwnedTable` 之后**：崩在中间只剩一条孤立的软删行，由第二条出路兜住；
-        // 反过来崩在中间，游标停在「有基线、无 `deletedAtMs`、本机无行」上，下一轮差分
-        // 三条判据全成立 ⇒ 为它再发一条无谓的 tombstone。`mergePartnerSyncId` 随行消失。
-        if !appliedTombstones.isEmpty, let hardDelete = registration.hardDeleteAfterTombstone {
+        // `writeOwnedTable` 之后、且只在它落盘成功之后**：崩在中间只剩一条孤立的软删行，由
+        // 第二条出路兜住；反过来（行先没、`deletedAtMs` 没落盘——崩在中间或写盘失败都是这一格），
+        // 下一轮从盘上重读的游标停在「有基线、无 `deletedAtMs`、本机无行」上，差分三条判据全
+        // 成立 ⇒ 为它再发一条无谓的 tombstone。写盘失败时行原样留着（软删、对每个读口不可见），
+        // 下一轮 `.applied` 之后再删，或由第二条出路兜住。`mergePartnerSyncId` 随行消失。
+        if saved, !appliedTombstones.isEmpty,
+           let hardDelete = registration.hardDeleteAfterTombstone {
             await hardDelete(appliedTombstones)
         }
 

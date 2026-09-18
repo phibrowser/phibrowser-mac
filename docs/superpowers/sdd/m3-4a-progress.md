@@ -467,3 +467,17 @@ B2-17neg / B2-4d-x）。
     没有在运行时跑过；每条的走向（判据 3 挡住活行、`explicitDeletions` 绕过两道门、`.applied` ⇒ 硬删、豁免保游标、
     `dropExpiredOwnedTombstones` 先丢游标再由出路 2 按行清）按代码推导。U-22 的「另外两条零 commit」依赖 rank 投影
     在次序一致时沿用基线 rank（U-18 (a) 的零 commit 是同一条前提）。
+
+### Fix round 1（review 的一条 Important + 一条 Minor）
+
+18. **出路 1 只在游标表落盘成功之后跑**：`let saved = writeOwnedTable(registration, table)`，硬删加 `saved` 合取。
+    写盘失败时行原样留着（软删、对每个读口不可见），下一轮从盘上重读的游标再发一条 tombstone、`.applied` 之后
+    才删。CASE 9.4 `test9_4_exit1IsSkippedWhenTheCursorTableSaveFails`（`PhiSyncEngineOwnedItemsTests`）钉住：
+    发布段那一次 save 的序号**不写死**——规则是 `landsEmptyBatch` 的 kind，空页的落地段末尾也无条件写一次表，
+    所以先跑一轮行还活着的校准轮数出「一轮几次 save」，再 `failSaveOnCallNumber = saveCalls + N`；断言本轮
+    `.cursorSaveFailed` 且 tombstone 已发出（证明失败的是发布段那一次而不是更早的那次）。
+19. **`purgeSoftDeletedURLRules` 一行失败不中断**：逐行 `do/catch`，数成功条数，末尾一条 R12 warn（kind + 失败
+    条数），返回成功条数；只有那一次读抛出去。
+20. **9.3 / 9.4 的假 client 用 `scriptedPages` 喂空页**：种下的服务端行（空密文、只给 commit 的更新路径用）
+    否则会在默认 marker 下被拉回来当成一条解不开的入站实体、进 `unreadableTagHashes`、把那次 commit 挡掉。
+21. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。

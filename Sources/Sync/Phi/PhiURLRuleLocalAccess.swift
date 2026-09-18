@@ -357,15 +357,27 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
     /// 且有身份的软删行，逐条 `hardDeleteURLRuleThrowing(syncId:)`。**逐条一个事务是特性**：
     /// 中途崩掉剩下的那些下一次清理轮重算，判据没有任何一次性状态。`syncId == nil` 的软删行
     /// 按 R-M3-4a-23 不可达（插入点铸造）。判据是**行上的** `deletedDate`，与游标无关。
+    ///
+    /// **一行失败不中断**：剩下的照删、成功的照数，末尾按 R12 记一条（kind + 失败条数），返回
+    /// 成功条数。失败的那几行没有任何一次性状态，下一次清理轮重算。只有那一次读抛出去。
     func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int {
         let expired = try allURLRulesIncludingDeleted().compactMap { row -> String? in
             guard let deletedDate = row.deletedDate, deletedDate < cutoff else { return nil }
             return row.syncId
         }
         var purged = 0
+        var failed = 0
         for syncId in expired {
-            try await store.hardDeleteURLRuleThrowing(syncId: syncId)
-            purged += 1
+            do {
+                try await store.hardDeleteURLRuleThrowing(syncId: syncId)
+                purged += 1
+            } catch {
+                failed += 1
+            }
+        }
+        if failed > 0 {
+            AppLogWarn("[phi-sync] soft-deleted rule sweep: some rows could not be hard-deleted "
+                       + "kind=urlrules failed=\(failed)")
         }
         return purged
     }

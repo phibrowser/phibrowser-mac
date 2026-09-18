@@ -2442,7 +2442,7 @@ extension URLRuleKindTests {
         let s1 = try snapshot(store)
         XCTAssertEqual(s1.count, 3)
         assertIdentityUntouched(s0, s1, ids: [Self.i0, Self.i1, Self.i2])
-        XCTAssertEqual(s1[Self.i1]?.host, "*.one-changed.example")
+        XCTAssertEqual(s1[Self.i1]?.host, "one-changed.example")
         XCTAssertNotNil(s1[Self.i1]?.contentUpdatedDate, "(1) 内容改了 ⇒ 盖内容戳")
         XCTAssertNil(s1[Self.i1]?.targetUpdatedDate, "(1) 目标戳不动")
 
@@ -2518,7 +2518,7 @@ extension URLRuleKindTests {
         XCTAssertNil(after["legacy-7"], "旧 id 没了")
         let recast = try XCTUnwrap(after.values.first { $0.syncId == "r2" })
         XCTAssertNotNil(UUID(uuidString: recast.id), "新 id 是一个 UUID 串")
-        XCTAssertEqual(recast.host, "*.legacy-changed.example")
+        XCTAssertEqual(recast.host, "legacy-changed.example")
         XCTAssertEqual(after[Self.i0]?.syncId, "r0")
     }
 
@@ -2554,7 +2554,7 @@ extension URLRuleKindTests {
         XCTAssertEqual(after[Self.i1]?.spaceId, "dead-space-b")
         XCTAssertEqual(after[Self.i0], before[Self.i0], "第 1 条一个字节不动")
         XCTAssertEqual(after[Self.i1], before[Self.i1], "第 2 条一个字节不动")
-        XCTAssertEqual(after[Self.i2]?.host, "*.c-changed.example")
+        XCTAssertEqual(after[Self.i2]?.host, "c-changed.example")
     }
 
     // MARK: CASE U-15b（编辑器不碰它没见过的行）
@@ -2586,7 +2586,7 @@ extension URLRuleKindTests {
         XCTAssertEqual(after[Self.i2]?.syncId, "r3")
         XCTAssertNil(after[Self.i2]?.deletedDate)
         XCTAssertEqual(after[Self.i2]?.host, "remote.example")
-        XCTAssertEqual(after[Self.i0]?.host, "*.zero-changed.example")
+        XCTAssertEqual(after[Self.i0]?.host, "zero-changed.example")
     }
 
     // MARK: CASE U-15c（清空即删除）
@@ -2866,7 +2866,7 @@ extension URLRuleKindTests {
 
         let after = try snapshot(store)
         XCTAssertEqual(after.count, 3)
-        XCTAssertEqual(after[Self.i1]?.host, "*.one-revived.example")
+        XCTAssertEqual(after[Self.i1]?.host, "one-revived.example")
         XCTAssertNotNil(after[Self.i1]?.syncId)
         XCTAssertNotEqual(after[Self.i1]?.syncId, "r1")
     }
@@ -2891,6 +2891,17 @@ extension URLRuleKindTests {
     /// 与引擎落地段调的是同一份 body。**绝不手写行、绝不手写 `deletedDate`**。
     private func landRemote(_ ops: [URLRuleSyncOp], in store: LocalStore) async throws {
         _ = try await store.applyURLRuleSyncBatchThrowing(ops)
+    }
+
+    /// spec §5.8 第 3 条的驱动糖（8b-4 fix round 1）：`URLRulesEditor.refreshFromStore()` 是
+    /// 视图私有的 `@State` 写入，纯判据整条住在 `refreshRows(rows:loaded:stored:dirty:)` 里
+    /// （与 `computeEditSet` 同一条纪律），用例驱动的就是它。
+    /// `stored` 取 `liveRules(store)`，与视图那一侧的 `manager.allRules` 同一个读口。
+    private func refresh(rows: [Row], loaded: [Row],
+                         dirty: [UUID: URLRulesEditor.RowDirty] = [:],
+                         store: LocalStore) -> URLRulesEditor.RefreshResult {
+        URLRulesEditor.refreshRows(rows: rows, loaded: loaded, stored: liveRules(store),
+                                   dirty: dirty)
     }
 
     private func landingValues(syncId: String, spaceId: String,
@@ -2959,7 +2970,7 @@ extension URLRuleKindTests {
             XCTAssertTrue(edits.isEmpty, "② 零脏位 ⇒ 两个集合都空、连 `applyRuleEdits` 都不调")
         }
 
-        // ③ sheet 打开期间远端改目标；用户只在文本框里敲字。
+        // ③ sheet 打开期间远端改目标（**经一次真的按字段刷新**）；用户只在文本框里敲字。
         do {
             let store = try makeRuleStore()
             try await seed(Self.fiveSeeds, in: store)
@@ -2970,10 +2981,15 @@ extension URLRuleKindTests {
             let landed = try snapshot(store)
             XCTAssertEqual(landed[Self.i2]?.spaceId, Self.t11SpaceC)
 
-            var rows = loaded
+            // §5.8 第 3 条：目标选择器**没被碰过** ⇒ 刷新把它换成库里刚落地的那个。
+            let refreshed = refresh(rows: loaded, loaded: loaded, store: store)
+            XCTAssertTrue(refreshed.changed, "③ 刷新真的改了界面上的值")
+            var rows = refreshed.rows
             let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i2 })
+            XCTAssertEqual(rows[index].targetSpaceId, Self.t11SpaceC,
+                           "③ 非脏的目标选择器被刷新（正面对照）")
             rows[index].value = "two-typed.example"
-            let edits = editSet(rows: rows, loaded: loaded,
+            let edits = editSet(rows: rows, loaded: refreshed.loaded,
                                 dirty: [rows[index].id: .value], store: store)
             XCTAssertEqual(edits.upserts.map(\.id), [Self.i2])
             XCTAssertNotNil(edits.upserts.first?.content)
@@ -2990,7 +3006,8 @@ extension URLRuleKindTests {
             XCTAssertEqual(after[Self.i2]?.pendingLocalEdit, true)
         }
 
-        // ④ 远端刷新了第 4 条（用户没碰过它）。
+        // ④ 远端刷新了第 4 条（用户没碰过它）⇒ 刷新把它换成落地值，而它**不进 `upserts`**、
+        //    也不置位（记脏基线随库走，§5.8 第 4 条）。
         do {
             let store = try makeRuleStore()
             try await seed(Self.fiveSeeds, in: store)
@@ -3000,10 +3017,16 @@ extension URLRuleKindTests {
                                                         sortOrder: 3, stamp: 2_000))], in: store)
             let landed = try snapshot(store)
 
-            var rows = loaded
+            let refreshed = refresh(rows: loaded, loaded: loaded, store: store)
+            XCTAssertTrue(refreshed.changed)
+            var rows = refreshed.rows
+            let fourth = try XCTUnwrap(rows.first { $0.storeId == Self.i3 })
+            XCTAssertEqual(fourth.value, "three-remote.example",
+                           "④ 非脏的文本框被刷新（正面对照）")
+            XCTAssertEqual(fourth.matchType, .domain)
             let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
             rows[index].value = "zero-typed.example"
-            let edits = editSet(rows: rows, loaded: loaded,
+            let edits = editSet(rows: rows, loaded: refreshed.loaded,
                                 dirty: [rows[index].id: .value], store: store)
             XCTAssertEqual(edits.upserts.map(\.id), [Self.i0], "④ 第 4 条不进 `upserts`")
             try await apply(edits, to: store)
@@ -3014,7 +3037,7 @@ extension URLRuleKindTests {
             XCTAssertEqual(after[Self.i3]?.contentUpdatedDate, landed[Self.i3]?.contentUpdatedDate)
         }
 
-        // ⑤ 脏字段 vs 并发的远端内容落地。
+        // ⑤ 脏字段 vs 并发的远端内容落地：刷新**必须跳过**那一个脏字段（裁定 10）。
         do {
             let store = try makeRuleStore()
             try await seed(Self.fiveSeeds, in: store)
@@ -3022,15 +3045,28 @@ extension URLRuleKindTests {
             var rows = loaded
             let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i4 })
             rows[index].value = "a.example"                // 脏位 `.value` 在场、焦点已移走
+            let dirty: [UUID: URLRulesEditor.RowDirty] = [rows[index].id: .value]
             try await landRemote([.update(landingValues(syncId: "r4", spaceId: Self.t11SpaceA,
                                                         host: "b.example",
                                                         sortOrder: 4, stamp: 2_000))], in: store)
             let landedFive = try snapshot(store)
             XCTAssertEqual(landedFive[Self.i4]?.host, "b.example")
 
-            let edits = editSet(rows: rows, loaded: loaded,
-                                dirty: [rows[index].id: .value], store: store)
-            XCTAssertEqual(rows[index].value, "a.example", "⑤ 脏字段不被刷新")
+            // 真的跑一次按字段刷新。
+            let refreshed = refresh(rows: rows, loaded: loaded, dirty: dirty, store: store)
+            rows = refreshed.rows
+            let fifth = try XCTUnwrap(rows.first { $0.storeId == Self.i4 })
+            XCTAssertEqual(fifth.value, "a.example",
+                           "⑤ 脏字段不被刷新——换成 `b.example` 的实现在这里必须红")
+            // 「刷新永不清脏位」在**类型上**就成立：`dirty` 是 `refreshRows` 的只读入参，
+            // `RefreshResult` 里根本没有脏位这一格。这两条断言钉的是它的可观测推论。
+            XCTAssertEqual(dirty[fifth.id], .value)
+            XCTAssertTrue(refreshed.droppedIds.isEmpty, "⑤ 没有任何一行掉出 sheet")
+            // 记脏基线**只对非脏单元**随库走：那一行的内容组是脏的 ⇒ 基线原样保留。
+            let baseline = try XCTUnwrap(refreshed.loaded.first { $0.storeId == Self.i4 })
+            XCTAssertEqual(baseline.value, "four.example", "⑤ 脏单元的基线不被刷新")
+
+            let edits = editSet(rows: rows, loaded: refreshed.loaded, dirty: dirty, store: store)
             XCTAssertEqual(edits.upserts.map(\.id), [Self.i4])
             XCTAssertEqual(edits.upserts.first?.content?.host, "a.example")
             try await apply(edits, to: store)
@@ -3038,6 +3074,36 @@ extension URLRuleKindTests {
             let after = try snapshot(store)
             XCTAssertEqual(after[Self.i4]?.host, "a.example", "⑤ 用户那次编辑没有无声消失")
             XCTAssertEqual(after[Self.i4]?.pendingLocalEdit, true)
+        }
+
+        // ⑥ 刷新的另外三条行级规则：新出现的行追加、干净的消失行掉出、脏的消失行留下。
+        do {
+            let store = try makeRuleStore()
+            try await seed(Self.fiveSeeds, in: store)
+            let loaded = editorRows(store)
+            var rows = loaded
+            let dirtyIndex = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+            rows[dirtyIndex].value = "one-typed.example"
+            let dirty: [UUID: URLRulesEditor.RowDirty] = [rows[dirtyIndex].id: .value]
+
+            // 远端：删掉第 2 条（用户碰过）与第 3 条（用户没碰过），新增一条。
+            try await landRemote([
+                .delete(syncId: "r1"),
+                .delete(syncId: "r2"),
+                .create(landingValues(syncId: "r9", spaceId: Self.t11SpaceA,
+                                      host: "nine.example", sortOrder: 9, stamp: 2_000)),
+            ], in: store)
+
+            let refreshed = refresh(rows: rows, loaded: loaded, dirty: dirty, store: store)
+            XCTAssertTrue(refreshed.changed)
+            let ids = refreshed.rows.compactMap(\.storeId)
+            XCTAssertTrue(ids.contains(Self.i1), "脏的消失行**留在 sheet 里**（恢复支的入口）")
+            XCTAssertFalse(ids.contains(Self.i2), "干净的消失行随刷新消失（本机不复活它）")
+            XCTAssertEqual(refreshed.droppedIds.count, 1)
+            let appended = try XCTUnwrap(refreshed.rows.first { $0.value == "nine.example" },
+                                         "库里新出现的行被追加进 sheet")
+            XCTAssertNil(dirty[appended.id], "追加的新行不记脏位")
+            XCTAssertEqual(refreshed.rows.count, 5, "5 − 1（干净的消失行）+ 1（新行）")
         }
     }
 

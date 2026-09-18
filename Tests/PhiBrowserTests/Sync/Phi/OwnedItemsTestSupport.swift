@@ -746,6 +746,28 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows[index].pendingLocalEdit = true
     }
 
+    /// 同一条入口的**纯拖动**半边（`LocalStore.applyURLRuleEditsBody` 第 8 / 9 步）：把这一行
+    /// 挪到它那个桶里的 `sortOrder` 位，整桶按 0…n-1 稠密回写，**只给被拖动那一行置位**
+    /// （其余行的重编号是第 8 步的副产品，不在 `upsertedIds` 里 ⇒ 第 9 步不碰它们）。
+    /// **两枚戳一枚都不写**（§4.3 第 4 条：只有 `sortOrder` 变 ⇒ 内容戳与目标戳都不动）。
+    ///
+    /// 8b-4 fix round 1 / 裁定 3 的探针要它：清位比的是**三个**合并单元，rank 是第三个，而
+    /// `applyEditorSave` 造不出「取值全同、只有位置变了」这种编辑。
+    func applyEditorReorder(syncId: String, toSortOrder: Int) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        let bucket = rows[index].spaceId
+        let movedId = rows[index].id
+        var sequence = rows.filter { $0.spaceId == bucket && $0.deletedDate == nil && $0.id != movedId }
+            .sorted { ($0.sortOrder, $0.id) < ($1.sortOrder, $1.id) }
+        sequence.insert(rows[index], at: min(max(toSortOrder, 0), sequence.count))
+        for (position, row) in sequence.enumerated() {
+            guard let slot = rows.firstIndex(where: { $0.id == row.id }) else { continue }
+            rows[slot].sortOrder = position
+        }
+        rows[index].pendingLocalEdit = true
+    }
+
     /// 编辑器删除集那一半（第 7 步）：**软删**，`pendingLocalEdit` 一个字节都不碰
     /// （删除不是编辑，R-M3-4a-69）；`mergePartnerSyncId` 由调用方另行安排（M2 那条路径是
     /// `.softDelete` op）。

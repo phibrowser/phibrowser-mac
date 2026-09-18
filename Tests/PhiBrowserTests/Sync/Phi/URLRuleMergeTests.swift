@@ -4076,4 +4076,116 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(afterDelete["M"]?.pendingLocalEdit, false, "删除不是编辑")
     }
 
+
+    // =======================================================================================
+    // MARK: - CASE M-7b 的 rank 变体 / 清位 (b) 的 rank 变体（裁定 3 的探针）
+    // =======================================================================================
+
+    /// 一桶两条已发布规则。① 用户存 **E1**（改 R1 的 `ask`）⇒ 置位、快照记下基线
+    /// （`ask == true` ∧ `sortOrder == 0`）、提交发出；② 提交**在途**时用户做一次**纯拖动**
+    /// （把 R1 拖到第 2 位）⇒ 行此刻取值与 E1 逐格相同、**只有 `sortOrder` 变了**；
+    /// ③ 那次 commit `.applied`（确认的是 E1）⇒ (a) 比出第三个合并单元不等 ⇒
+    /// **`pendingLocalEdit` 仍为 `true`**，而 `mergePartnerSyncId` 那一半照清。
+    ///
+    /// 防的是什么：把 rank 排除在比较之外的实现（删掉 `RuleProjection.sortOrder` 与
+    /// `clearingProjectionMatches` 里那一条 `guard let sortOrder`）在这里**必须红**——它会把
+    /// 「E1 在途 + E2 纯拖动」判成相等 ⇒ 当场清位 ⇒ 那一轮的远端 tombstone 硬删，用户那次拖动
+    /// 连同规则一起没了（裁定 3 点名的那一族）。
+    func testM7b_aPureReorderInFlightKeepsTheFlagBecauseRankIsAMergeUnit() async throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedSettled("R1", id: "i-1", host: "one.example", sortOrder: 0, accountStamp: 100,
+                    rowContentUpdatedDate: stampDate(100), mergePartnerSyncId: "w",
+                    rows: &rows, table: &table)
+        seedSettled("R2", id: "i-2", host: "two.example", sortOrder: 1, accountStamp: 100,
+                    rows: &rows, table: &table)
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let client = publishingClient(seeding: ["R1", "R2"])
+        let engine = try makeRuleEngine(access, store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        // ① E1：只改 `ask`。
+        access.applyEditorSave(syncId: "R1", ask: true, at: stampDate(200))
+        XCTAssertEqual(row(access, "R1")?.sortOrder, 0)
+
+        // ② 提交在途时的**纯拖动**：取值一格都没变，只有位置变了。
+        let arrived = Gate()
+        let release = Gate()
+        client.gatedCommitTagHash = ruleHash("R1")
+        client.arrivedInCommit = arrived
+        client.commitGate = release
+        let round = Task { await engine.pullOnce() }
+        await arrived.wait()
+        access.applyEditorReorder(syncId: "R1", toSortOrder: 1)
+        await release.open()
+        await round.value
+
+        // ③ `.applied` 确认的是 E1（`sortOrder == 0`），而行此刻是 `sortOrder == 1`。
+        XCTAssertEqual(clearCalls(access), ["R1"], "(a) 照常跑了一次")
+        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "拖动落在行上了")
+        XCTAssertEqual(row(access, "R1")?.askBeforeRouting, true, "取值与 E1 逐格相同")
+        XCTAssertEqual(flag(access, "R1"), true, "第三个合并单元不等 ⇒ **不清位**")
+        XCTAssertNil(row(access, "R1")?.mergePartnerSyncId, "指针那一半照清")
+        XCTAssertEqual(flag(access, "R2"), false, "重编号不置位")
+    }
+
+    /// 清位 (b) 那一侧的同一条判据：入口状态是「上一轮 E1 上了账户、(a) 那次写失败」
+    /// （`server == reconciled` ∧ 标志还挂着），本轮 (b) 把 R1 收进候选并映到快照那一刻的基线；
+    /// 就在**判定与写入之间**用户做一次**纯拖动** ⇒ 原语在事务里重算出的 `sortOrder` 与基线不等
+    /// ⇒ **标志仍然是 `true`**、零行写、指针不碰。
+    ///
+    /// 防的是什么：与上一条同一族——少了第八个合并成员，这一条的重算投影与基线逐格相等 ⇒ 清位
+    /// ⇒ 下一轮一条远端 tombstone 到达时让位谓词不成立 ⇒ 硬删一条带着未发布拖动的行。
+    func testM7e_aPureReorderBetweenTheDecisionAndTheWriteKeepsTheFlag() async throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedSettled("R1", id: "i-1", host: "one.example", sortOrder: 0, accountStamp: 100,
+                    pendingLocalEdit: true, mergePartnerSyncId: "w", rows: &rows, table: &table)
+        seedSettled("R2", id: "i-2", host: "two.example", sortOrder: 1, accountStamp: 100,
+                    rows: &rows, table: &table)
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let engine = try makeRuleEngine(access, store,
+                                        client: publishingClient(seeding: ["R1", "R2"]))
+        await engine.setSpaceSyncEnabled(true)
+
+        access.beforeClearPendingLocalEditIfUnchanged = { [weak access] in
+            access?.applyEditorReorder(syncId: "R1", toSortOrder: 1)
+        }
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) 真的把 R1 收进了 `entries`")
+        XCTAssertEqual(access.lastClearEntries["R1"]?.sortOrder, 0, "基线记的是快照那一刻的位置")
+        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "拖动落在行上了")
+        XCTAssertEqual(flag(access, "R1"), true, "rank 这个单元不等 ⇒ **不清位**")
+        XCTAssertEqual(row(access, "R1")?.mergePartnerSyncId, "w", "(b) 一个字节都不碰指针")
+        XCTAssertEqual(flag(access, "R2"), false)
+    }
+
+    /// **对照**：同一形状，钩子不做任何事 ⇒ (b) 正常清位。证明上面那条红的原因**只有** rank
+    /// 这一个单元，而不是「凡是有第二条行就不清」。
+    func testM7e_withoutTheReorderTheSelfHealStillClears() async throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedSettled("R1", id: "i-1", host: "one.example", sortOrder: 0, accountStamp: 100,
+                    pendingLocalEdit: true, mergePartnerSyncId: "w", rows: &rows, table: &table)
+        seedSettled("R2", id: "i-2", host: "two.example", sortOrder: 1, accountStamp: 100,
+                    rows: &rows, table: &table)
+        let access = FakeURLRuleAccess(rows: rows)
+        let store = MemoryOwnedItemStore()
+        store.table = table
+        let engine = try makeRuleEngine(access, store,
+                                        client: publishingClient(seeding: ["R1", "R2"]))
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(flag(access, "R1"), false)
+        XCTAssertEqual(row(access, "R1")?.mergePartnerSyncId, "w")
+    }
+
 }

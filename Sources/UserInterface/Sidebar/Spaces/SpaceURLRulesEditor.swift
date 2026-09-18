@@ -36,6 +36,12 @@ struct URLRulesEditor: View {
     /// M5（R-M3-4a-72）：用户自 `load()` 以来**真的动过**的那些控件，按行记。
     /// 记的是「碰过」；比值那一步在 `save()` 里对**库里此刻**的行做（裁定 8）。
     @State private var dirty: [UUID: RowDirty] = [:]
+    /// spec §5.8 第 3 条：**只有按字段刷新那一条路**自增它。`RuleTableView.updateNSView` 在
+    /// id 序列不变时早退（内容编辑由 coordinator 就地施加），所以一次「只改了几行内容」的
+    /// 刷新在界面上看不见；这个 token 是那道早退的唯一例外入口。
+    /// **绝不能**用「`rows` 的内容指纹」代替：那样每一次按键都会把行重新 `configure` 一遍，
+    /// 正在编辑的 field editor 会被扰动。
+    @State private var refreshToken: Int = 0
 
     /// Sentinel selection in a row's target-Space picker meaning "don't route
     /// to a fixed Space — prompt every time". Distinct from any real
@@ -76,6 +82,15 @@ struct URLRulesEditor: View {
             load()
         }
         .onChange(of: manager.storeIdentifier) { _, _ in onClose() }
+        // spec §5.8 第 3 条：sheet 打开期间库里换过一次 ⇒ 按字段刷新一次。
+        //
+        // 读的是**包装值**（`manager` 是 `@ObservedObject`，`SpaceManager` 那一列是
+        // `@Published`，所以 `objectWillChange` 会把 body 重算一遍，`onChange` 于是拿到新旧值）。
+        // **不用 `.onReceive(manager.$urlRulesRevision)`**：`@Published private(set)` 的投影值
+        // 跟着 setter 收到 `private`，视图这一侧够不到它。
+        // `onChange` 按定义**不在首次出现时触发**（`initial` 默认 false），正好——那一次比
+        // `.onAppear` 的 `load()` 还早，会把一张空 `rows` 与整库合并成「全是新行」。
+        .onChange(of: manager.urlRulesRevision) { _, _ in refreshFromStore() }
     }
 
     private var header: some View {
@@ -113,7 +128,7 @@ struct URLRulesEditor: View {
         // the first rule doesn't rebuild it. The empty-state placeholder lives
         // inside the host (see RuleTableView.makeEmptyOverlay).
         RuleTableView(rows: $rows, removedRows: $removedRows, dirty: $dirty,
-                      spaces: ruleTargetSpaces)
+                      refreshToken: refreshToken, spaces: ruleTargetSpaces)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -151,6 +166,122 @@ struct URLRulesEditor: View {
         // 「整表写回」时代的守卫，已经整条删掉——留着会在「用户改了又改回来」时挡掉一次本该
         // 为空的 Save，而空 Save 现在由「零脏位 ⇒ 零 upsert」表达。
         dirty = [:]
+    }
+
+    /// spec §5.8 第 3 条（8b-4 fix round 1）的 `@State` 写入半边。整条判据住在下面那个纯函数
+    /// `refreshRows(rows:loaded:stored:dirty:)` 里（与 `computeEditSet` 同一条纪律）。
+    /// `stored` 取 `manager.allRules` ——**视图不直读 store**（文件头注释写死的边界）。
+    private func refreshFromStore() {
+        let merged = Self.refreshRows(rows: rows, loaded: loadedRows,
+                                      stored: manager.allRules, dirty: dirty)
+        guard merged.changed else { return }
+        rows = merged.rows
+        // 记脏基线随库走（§5.8 第 4 条）。
+        loadedRows = merged.loaded
+        // 掉出 sheet 的那些行零脏位，这一句等价于 no-op；写它是为了「`dirty` 的定义域永远是
+        // `rows` 的子集」这条不变量在结构上可见。**脏位本身一个都不清**（裁定 10）。
+        for id in merged.droppedIds { dirty[id] = nil }
+        // 让 `RuleTableView` 对受影响的行做一次定点 `configure`（id 序列不变时它会早退）。
+        refreshToken &+= 1
+    }
+
+    /// 一次按字段刷新的结果。`changed == false` ⇒ 调用方**一个 `@State` 都不写**（零重绘）。
+    struct RefreshResult {
+        var rows: [Row]
+        var loaded: [Row]
+        /// 零脏位、且库里已经没有了的那些行——它们随刷新从 sheet 里消失。
+        var droppedIds: Set<UUID>
+        var changed: Bool
+    }
+
+    /// Pure: spec §5.8 第 3 条的整条判据，一个函数，和 `computeEditSet` 一样不依赖视图。
+    ///
+    /// 判据比「此刻正在敲的那一个字段」严一格（裁定 10）：**用户碰过的那些字段（脏位在场的）
+    /// 一律不刷新**。理由是记脏与比值是两件事——脏位回答「用户碰过没有」，比值在 `save()` 里对
+    /// 库里此刻的行做；刷新把一个脏字段换成落地值，用户那次编辑就在界面上被悄悄撤销了，而它的
+    /// 脏位还在 ⇒ Save 时拿落地值与库里比 ⇒ 相等 ⇒ 不进 `upserts` ⇒ 用户那次改动**无声消失**
+    /// （CASE U-15d ⑤）。反过来，刷新一个**没碰过**的字段既不记脏、也不会让那一行进 `upserts`
+    /// （记脏基线随库走，§5.8 第 4 条），那正是 U-15d ④ 的形状。
+    ///
+    /// **裁剪按控件分组，不按库里那几列分**（裁定 7）：文本框与匹配类型是内容组这一个单元的
+    /// 两个控件（`MatchType.encode` 在 Save 时才把它们拆成 host / pathPrefix），任一脏 ⇒ 两个
+    /// 都不碰；目标选择器**一个控件承载两个单元**（`ask` 由 `askSpaceTag` 哨兵承载），
+    /// `.ask` / `.target` 任一脏 ⇒ 整个选择器不碰。
+    ///
+    /// 四条行级规则：
+    /// - `storeId == nil`（本次 sheet 新建）⇒ 一个字节不碰；
+    /// - 库里已经没有它 ∧ **有脏位** ⇒ **留在 sheet 里**，Save 时走恢复支（R-M3-4a-101 / 104）；
+    /// - 库里已经没有它 ∧ 零脏位 ⇒ 进 `droppedIds`，随刷新消失（裁定 11 后半，本机不复活它）；
+    /// - 库里新出现的行 ⇒ 追加，**不记脏位**；次序不动（`.order` 的语义在 `save()` 里按
+    ///   `bucketIndex` 现算，追加不会伪造一次拖动）。
+    ///
+    /// **`dirty` 是只读入参**：刷新永远不清脏位，也不碰 `removedRows`。
+    static func refreshRows(rows: [Row], loaded: [Row], stored: [SpaceRoutingRule],
+                            dirty: [UUID: RowDirty]) -> RefreshResult {
+        var storedByStoreId: [String: SpaceRoutingRule] = [:]
+        for rule in stored where storedByStoreId[rule.id] == nil { storedByStoreId[rule.id] = rule }
+        var loadedById: [UUID: Row] = [:]
+        for row in loaded where loadedById[row.id] == nil { loadedById[row.id] = row }
+
+        var updatedRows: [Row] = []
+        var updatedLoaded: [Row] = []
+        var droppedIds: Set<UUID> = []
+        var changed = false
+
+        for row in rows {
+            guard let storeId = row.storeId else {
+                updatedRows.append(row)
+                if let baseline = loadedById[row.id] { updatedLoaded.append(baseline) }
+                continue
+            }
+            let bits = dirty[row.id] ?? []
+            guard let current = storedByStoreId[storeId] else {
+                // 库里已经没有这一行：远端 tombstone 硬删、或 M2 / §8.4.4 (β) 软删
+                // （`stored` 是 `allRules`，按 R-M3-4a-51 过滤软删，两种现实在这一层长得一样）。
+                if bits.isEmpty {
+                    droppedIds.insert(row.id)
+                    changed = true
+                } else {
+                    updatedRows.append(row)
+                    if let baseline = loadedById[row.id] { updatedLoaded.append(baseline) }
+                }
+                continue
+            }
+            var merged = row
+            var baseline = loadedById[row.id] ?? row
+            if bits.intersection([.value, .matchType]).isEmpty {
+                let decoded = MatchType.decode(host: current.host, pathPrefix: current.pathPrefix)
+                merged.matchType = decoded.0
+                merged.value = decoded.1
+                baseline.matchType = decoded.0
+                baseline.value = decoded.1
+            }
+            if bits.intersection([.ask, .target]).isEmpty {
+                merged.askBeforeRouting = current.askBeforeRouting
+                merged.targetSpaceId = current.spaceId
+                baseline.askBeforeRouting = current.askBeforeRouting
+                baseline.targetSpaceId = current.spaceId
+            }
+            // 身份与创建时刻不是用户可编辑的单元：一次并发的认领 re-key 要跟上。
+            merged.syncId = current.syncId
+            merged.createdDate = current.createdDate
+            baseline.syncId = current.syncId
+            baseline.createdDate = current.createdDate
+            if merged != row { changed = true }
+            updatedRows.append(merged)
+            updatedLoaded.append(baseline)
+        }
+
+        let seen = Set(rows.compactMap(\.storeId))
+        for rule in stored where !seen.contains(rule.id) {
+            let appended = Row(from: rule)
+            updatedRows.append(appended)
+            updatedLoaded.append(appended)
+            changed = true
+        }
+
+        return RefreshResult(rows: updatedRows, loaded: updatedLoaded,
+                             droppedIds: droppedIds, changed: changed)
     }
 
     private func addBlankRow() {
@@ -467,7 +598,7 @@ struct URLRulesEditor: View {
         }
     }
 
-    struct Row: Identifiable {
+    struct Row: Identifiable, Equatable {
         let id: UUID
         /// The store row this came from (`SpaceURLRule.id`, verbatim). `nil` means the
         /// user added it in this sheet — the two halves of "clearing a rule deletes it"
@@ -525,6 +656,8 @@ private struct RuleTableView: NSViewRepresentable {
     @Binding var removedRows: [URLRulesEditor.Row]
     /// M5（R-M3-4a-72）：五个记脏落点写它，`computeEditSet` 读它。
     @Binding var dirty: [UUID: URLRulesEditor.RowDirty]
+    /// spec §5.8 第 3 条：只有按字段刷新那一条路自增它，见 `updateNSView`。
+    let refreshToken: Int
     let spaces: [Space]
 
     /// Captures every Space field shown in the target popup, so a rename / icon
@@ -629,12 +762,22 @@ private struct RuleTableView: NSViewRepresentable {
             if coordinator.spacesFingerprint != newFingerprint {
                 coordinator.spacesFingerprint = newFingerprint
                 tableView.reloadData()
+                coordinator.refreshToken = refreshToken
+                return
+            }
+            // spec §5.8 第 3 条的唯一例外：一次**按字段刷新**改了几行的内容而 id 序列没动。
+            // 定点 `configure` 已经物化的那几行，**绝不 `reloadData()`**——那会丢掉正在编辑的
+            // field editor 焦点。没物化的行等滚进来时自己走 `viewFor` 拿新值。
+            if coordinator.refreshToken != refreshToken {
+                coordinator.refreshToken = refreshToken
+                coordinator.reconfigureMaterializedRows()
             }
             return
         }
 
         coordinator.displayedIDs = newIDs
         coordinator.spacesFingerprint = newFingerprint
+        coordinator.refreshToken = refreshToken
 
         // A single blank row appended at the end is the "Add Rule" path: insert
         // incrementally, scroll it into view, and focus its value field. A saved
@@ -671,8 +814,27 @@ private struct RuleTableView: NSViewRepresentable {
         weak var emptyOverlay: NSView?
         var displayedIDs: [UUID] = []
         var spacesFingerprint: String = ""
+        /// 最近一次已经反映到界面上的按字段刷新代次（spec §5.8 第 3 条）。
+        var refreshToken: Int = 0
 
         init(_ parent: RuleTableView) { self.parent = parent }
+
+        /// 把 `parent.rows` 的当前取值重新灌进**已经物化**的那些 cell。
+        /// `makeIfNecessary: false` 是硬要求：物化一行没滚进视野的 cell 既没意义，又会让
+        /// 一次刷新的开销与整表行数成正比。
+        func reconfigureMaterializedRows() {
+            guard let tableView else { return }
+            // 这一支只在 id 序列未变时跑，所以两边的行数本就相等；取 `min` 是防御——
+            // 越界的 `view(atColumn:row:)` 会直接抛 NSException。
+            let count = min(parent.rows.count, tableView.numberOfRows)
+            for index in 0..<count {
+                guard let cell = tableView.view(atColumn: 0, row: index,
+                                                makeIfNecessary: false) as? RuleCellView
+                else { continue }
+                cell.configure(row: parent.rows[index], spaces: parent.spaces,
+                               askSpaceTag: URLRulesEditor.askSpaceTag)
+            }
+        }
 
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rows.count }
 

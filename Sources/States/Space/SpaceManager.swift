@@ -580,6 +580,23 @@ final class SpaceManager: ObservableObject {
     /// memory). Updated only on the main thread via the publisher sink.
     private var cachedURLRules: [SpaceRoutingRule] = []
 
+    /// spec §5.8 第 3 条（8b-4 fix round 1）：`cachedURLRules` **换过一次**的信号。
+    ///
+    /// **为什么是一个计数器而不是把 `cachedURLRules` 变成 `@Published`**：那份缓存装的是
+    /// SwiftData 的 `@Model` 实例，而 SwiftData **就地刷新同一批实例**——一次「只改了 host」的
+    /// 落地之后数组的元素身份逐个不变，`@Published` 的 `objectWillChange` 发得出来，但任何
+    /// 按值比较的下游（含 `removeDuplicates`）都会把它当成「没变」。计数器每次自增，所以
+    /// 「就地改了一个字段」与「整批换掉」在订阅者眼里是同一件事。
+    ///
+    /// **唯一的写点是下面那三处改 `cachedURLRules` 的地方**（publisher 的 sink、
+    /// `reloadURLRulesFromStore()`、`unbind()`）。`applyRuleEdits` 与 §6.6 那张表里的每一个
+    /// 写面都以 `reloadURLRulesFromStore()` 收尾，所以它们自动带上这一次自增。
+    ///
+    /// 订阅者只有 `URLRulesEditor`（`.onReceive` → 按字段刷新，§5.8 第 3 条）；它拿到信号之后
+    /// 读的是 `allRules`。**视图绝不直连 `LocalStore.urlRulesPublisher()`**：那既捅穿视图层的
+    /// store 边界，又会踩上面那条 `removeDuplicates` 的坑。
+    @Published private(set) var urlRulesRevision: Int = 0
+
     /// Resolves a local `spaceId` to its account-level Space sync uuid, nil
     /// when that Space has no account identity yet. The reserved Incognito
     /// target answers with the account-level constant, so this file needs no
@@ -7543,6 +7560,7 @@ final class SpaceManager: ObservableObject {
         // gone would otherwise replay destroyed models into
         // `handleSpacesUpdate` (same trap as the `spaces` didSet documents).
         lastStoreSpaces = []
+        urlRulesRevision &+= 1
         spaces = []
         // Tear down each slot's NotificationCenter registrations before
         // dropping the registry — controllers may keep the slots alive past
@@ -7590,6 +7608,8 @@ final class SpaceManager: ObservableObject {
     private func handleURLRulesUpdate(_ rules: [SpaceRoutingRule]) {
         cachedURLRules = rules
         hasLoadedURLRules = true
+        // §5.8 第 3 条：缓存换过了 ⇒ 打开着的 sheet 该按字段刷新一次。
+        urlRulesRevision &+= 1
         pushRoutingTableToChromium()
     }
 
@@ -7614,6 +7634,9 @@ final class SpaceManager: ObservableObject {
         cachedURLRules = account.localStorage.getAllURLRules()
         hasLoadedURLRules = true
         urlRuleReloadCountForTesting += 1
+        // §5.8 第 3 条：`applyRuleEdits` 与 §6.6 那张表里的每一个写面都以本函数收尾，所以
+        // 「任何改了 `cachedURLRules` 的路径都发一次信号」这条在这一行上成立。
+        urlRulesRevision &+= 1
         pushRoutingTableToChromium()
     }
 

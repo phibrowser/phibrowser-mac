@@ -950,3 +950,62 @@ M4 `pendingLocalEdit` 生命周期的两处清位（R-M3-4a-79 / R-M3-4a-91 / R-
     ——brief 点名的那五项全部核过）；`URLRuleSyncOp` 仍然 `Equatable`（新成员是 `Int?`）；
     `OwnedKindRegistration` 的成员次序与三个工厂的实参次序逐条对齐；两处清位都跑在
     `@MainActor` 的 access 上、原语在 `LocalStore` 的写队列上。本任务**没有新增任何 `switch`**。
+
+### Fix round 1（review 判出的 1 条 Critical + 3 条 Important；五条 Minor 按控制者指示不动）
+
+21. **F-1 —— spec §5.8 第 3 条「sheet 打开期间的按字段刷新」本轮补齐**（计划缺口：Task 11 的
+    计划裁定 2 把第 3 / 4 条一起划给 8b-4，而 8b-4 的 brief 裁定 10 反过来假设 Task 11 已经做了）。
+    三处改动：
+    - `SpaceManager` 加 `@Published private(set) var urlRulesRevision: Int`，在**每一个**改
+      `cachedURLRules` 的地方自增（publisher 的 sink `handleURLRulesUpdate(_:)`、
+      `reloadURLRulesFromStore()`、`unbind()`）。**不把 `cachedURLRules` 本身变成 `@Published`**：
+      它装的是 SwiftData 的 `@Model` 实例，就地刷新之后元素身份逐个不变，任何按值比较的下游都会
+      判成「没变」（`reloadURLRulesFromStore` 的注释里那条 `removeDuplicates` 坑就是同一件事）。
+      `applyRuleEdits` 与 §6.6 那张表里的每一个写面都以 `reloadURLRulesFromStore()` 收尾，所以
+      「任何改了缓存的路径都发一次信号」在一行上成立。
+    - `URLRulesEditor` 加 `.onChange(of: manager.urlRulesRevision) { _, _ in refreshFromStore() }`。
+      **不用 `.onReceive(manager.$urlRulesRevision)`**：`@Published private(set)` 的投影值跟着
+      setter 收成 `private`，视图这一侧够不到；`onChange` 读的是包装值，而 `@ObservedObject` 的
+      `objectWillChange` 保证 body 会被重算。`onChange` 按定义不在首次出现时触发，正好——那一次
+      比 `.onAppear` 的 `load()` 还早，会把一张空 `rows` 与整库合并成「全是新行」。
+    - 判据整条做成**纯函数** `URLRulesEditor.refreshRows(rows:loaded:stored:dirty:) -> RefreshResult`
+      （与 `computeEditSet` 同一条纪律：视图外可测）；`refreshFromStore()` 只是它的 `@State`
+      写入半边。裁剪**按控件分组**（裁定 7）：`[.value, .matchType]` 任一在场 ⇒ 文本框与匹配类型
+      都不碰；`[.ask, .target]` 任一在场 ⇒ 整个目标选择器不碰。四条行级规则：新建行不碰、
+      消失且有脏位 ⇒ 留在 sheet（Save 走恢复支）、消失且零脏位 ⇒ 掉出（本机不复活它）、
+      库里新出现的行 ⇒ 追加且**不记脏位**。`loadedRows` **只对非脏单元**随库走（脏单元保留上一次
+      加载那份——把用户未提交的编辑写进基线会让它此后永远「与基线相同」）。**`dirty` 是只读
+      入参，`RefreshResult` 里根本没有脏位这一格**，所以「刷新永不清脏位」在类型上成立。
+    - `RuleTableView` 加 `let refreshToken: Int` + `Coordinator.refreshToken` +
+      `reconfigureMaterializedRows()`：`updateNSView` 在 id 序列不变时早退（内容编辑由 coordinator
+      就地施加），一次「只改了几行内容」的刷新原本在界面上看不见。**只有按字段刷新那一条路自增
+      token**——用「`rows` 的内容指纹」当判据会让每一次按键都重新 `configure` 一遍，扰动正在编辑的
+      field editor。定点 `configure` 已物化的行（`makeIfNecessary: false`），**绝不 `reloadData()`**。
+      `Row` 因此加了 `Equatable`（`changed` 的判据）。
+    - **已知残留**：一次让 id 序列变化的刷新（新增 / 掉出一行）仍走既有的 `reloadData()` 分支，
+      如果用户此刻正在某个字段里敲字，field editor 焦点会丢。那是 Task 11 时代就有的结构
+      （任何结构性变化都这样），不在本轮的修复面上。
+22. **F-2 —— U-15d ③ / ④ / ⑤ 改成「先驱动一次真的刷新，再断言」**，⑤ 从空断言变成实断言
+    （脏字段刷新前后都是 `"a.example"`，脏单元的**基线**同样没被刷新）；③ / ④ 各加一条**正面
+    对照**（非脏的目标选择器 / 非脏的文本框确实被刷新成落地值，而 ④ 那一行仍然不进 `upserts`、
+    不置位）。新加 ⑥：刷新的另外三条行级规则（新行追加、干净的消失行掉出、脏的消失行留下）。
+23. **F-3 —— 裁定 3 的探针补上**：`FakeURLRuleAccess.applyEditorReorder(syncId:toSortOrder:)`
+    （形状照 `applyEditorSave`：真的改 `sortOrder` + 整桶稠密回写 + **只给被拖动那一行**置位、
+    两枚戳一枚都不写）。三条新用例：
+    `testM7b_aPureReorderInFlightKeepsTheFlagBecauseRankIsAMergeUnit`（(a) 那一侧：E1 改 `ask`
+    在途 + E2 纯拖动 ⇒ 第三个合并单元不等 ⇒ 不清位，指针照清）、
+    `testM7e_aPureReorderBetweenTheDecisionAndTheWriteKeepsTheFlag`（(b) 那一侧：判定与写入之间
+    的纯拖动 ⇒ 不清位，指针不碰）、`testM7e_withoutTheReorderTheSelfHealStillClears`（对照，
+    证明红的原因只有 rank 这一个单元）。删掉 `RuleProjection.sortOrder` 或
+    `clearingProjectionMatches` 里那条 `guard let sortOrder` ⇒ 前两条必红。
+24. **F-4 —— 三条 `"*.<host>"` 遗留断言改成裸 host**（`URLRuleKindTests.swift` 的
+    `testEveryDraftConstructionSiteCarriesTheRowIdentity` (1) / `testALegacyIdRowIsRecast…` /
+    `testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId`）。**外加同一根因的另外两条**
+    （`testTheEditorNeitherRewritesNorDropsRulesWithUnresolvableTargets` 的 `c-changed.example`、
+    `testTheEditorLeavesRowsItNeverSawAlone` 的 `zero-changed.example`）：seed 的 host 不带 `*.`
+    ⇒ `MatchType.decode` 判成 `.domain` ⇒ `encode` 交回裸 host。review 只点了三条，但另外两条是
+    逐字相同的缺陷、在同一个文件、也在本任务改过的用例里，留着等于明知会红。
+25. **本轮没有改动任何清位逻辑**：F-1 是新增的视图层刷新通路 + 一条 `SpaceManager` 信号，
+    F-2 / F-3 / F-4 只动测试与假件。两个原语、两处接线、`RuleProjection`、`computeEditSet` 的
+    upsert 半边与恢复支**一个字节都没动**。
+26. F-5 / F-6 / F-7 / F-8 / F-9 五条 Minor 按控制者指示**不动**。

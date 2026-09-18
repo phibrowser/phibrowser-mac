@@ -966,6 +966,99 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(counters["urlrules"]?.pushed ?? 0, 1)
     }
 
+    /// CASE B2-1c (e)（whole-branch final review I-1，R-M3-4a-103）— **发布段自己**那次游标表写
+    /// 失败也是 per-kind 的：书签的 `writeOwnedTable` 失败 ⇒ 只有书签这一条 kind 缩手，pin 与
+    /// 规则的整个发布段（快照 → 差分 → commit → 写表，连同 §8.4.5 清位 (b) 与 3b 重新准入复检）
+    /// 照跑，各 1 条 commit、各自的游标真的落了盘；结局仍收口成 `cursor_save_failed`。
+    ///
+    /// 防的是什么：`publishOwnedKind` 里把 R-M3-4a-103 那道闸写成 `cursorSaveFailures == 0` 的
+    /// 那一版。注册次序是 `bookmarks → pins → urlrules`，书签一次推送侧的写失败会把后面两条 kind
+    /// 的发布段整段吃掉——§2.5 第 6 条点名禁止把 R-exec-3 的 per-kind 语义扩成全局。轮级的那道闸
+    /// 是 `canPublishThisRound`（本用例里它是真：失败发生在 push 段，不在任何一页里）。
+    ///
+    /// 写序号的推导（同 2b-L1 / B2-1d）：空页那一次落地写是第 1 次（`applyOwnedKind` 每页每种
+    /// kind 无条件写一次表），发布段那一次是第 2 次；书签本机零行 ⇒ `work` 为空 ⇒ 它那次写正是
+    /// `guard !work.isEmpty` 的早退写、零 commit。
+    func testAPushSideCursorSaveFailureOfOneKindDoesNotSuppressTheLaterKinds() async throws {
+        let bookmarkAccess = FakeBookmarkAccess()
+        let bookmarkStore = MemoryOwnedItemStore()
+        bookmarkStore.failSaveOnCallNumber = 2
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile,
+                                      rows: [.fixture(lineageId: "lp", guid: "gp", profileId: "Default")])
+        let pinStore = MemoryOwnedItemStore()
+        // 目标是 `makeSpaceAccess` 的 `s-1`（映到 `su-1`）⇒ 归属合格、这一条进得了快照。
+        let ruleAccess = FakeURLRuleAccess(rows: [.fixture(id: "ir", syncId: "r1", spaceId: "s-1")])
+        let ruleStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "3")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore(marker: "0"),
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
+                                                  .pins(access: pinAccess, store: pinStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1, "失败的恰好是书签发布段那一次写")
+        XCTAssertEqual(bookmarkStore.saveCalls, 2, "落地那次 + 发布段那次")
+        XCTAssertTrue(bookmarkCommits(client).isEmpty)
+        XCTAssertEqual(counters["bookmarks"]?.pushed, 0)
+        XCTAssertEqual(pinCommits(client).count, 1, "pin 不受书签那次写失败影响")
+        XCTAssertGreaterThanOrEqual(counters["pins"]?.pushed ?? 0, 1)
+        XCTAssertEqual(pinStore.table.cursors.count, 1, "pin 的游标真的落了盘")
+        XCTAssertEqual(ruleCommits(client).count, 1, "规则不受书签那次写失败影响")
+        XCTAssertGreaterThanOrEqual(counters["urlrules"]?.pushed ?? 0, 1)
+        XCTAssertNotNil(ruleStore.table.cursors["r1"], "规则的游标真的落了盘")
+    }
+
+    /// CASE B2-1c (f)（final review I-1 的负面对照，R-M3-4a-103）— 同一道闸的**本意**必须保住：
+    /// 书签自己那次报损重放武装（第 ① 步清 marker）写失败 ⇒ 书签这一条 kind 本轮不发布、不重建
+    /// 它的游标文件、闩不置位；而同一轮里 pin 与规则照发。
+    ///
+    /// 两条断言分工：书签那几条钉的是 2b-L1 的语义在 delta 形态下没被放宽（`before` 取在
+    /// `loadOwnedTable` **之前**，武装那次失败落在 delta 里）；pin / 规则那两条钉的是它没有被
+    /// 扩成全局。写序号：页 1 的 marker 写是第 1 次，书签报损重放的第 ① 步是第 2 次（pin 与规则
+    /// 的 `…HadRecords` 是假 ⇒ 它们那两次 load 不报损、不写 marker）。
+    func testAFailedLossReplayArmStillSkipsOnlyItsOwnKind() async throws {
+        let spaceStore = drainedSpaceStore()
+        spaceStore.table.bookmarksHadRecords = true        // 书签的空表 = 游标文件丢了
+        let bookmarkAccess = FakeBookmarkAccess(rows: [.fixture(guid: "gl", syncId: "bl", spaceId: "s-1",
+                                                                title: "Local edit")])
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile,
+                                      rows: [.fixture(lineageId: "lp", guid: "gp", profileId: "Default")])
+        let pinStore = MemoryOwnedItemStore()
+        let ruleAccess = FakeURLRuleAccess(rows: [.fixture(id: "ir", syncId: "r1", spaceId: "s-1")])
+        let ruleStore = MemoryOwnedItemStore()
+        let markerStore = markerStore(marker: "0")
+        markerStore.failSaveOnCallNumber = 2
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: bookmarkAccess, store: bookmarkStore),
+                                                  .pins(access: pinAccess, store: pinStore),
+                                                  .urlRules(access: ruleAccess, store: ruleStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(failures, 1)
+        XCTAssertTrue(bookmarkCommits(client).isEmpty, "没有对着丢失的表发布")
+        XCTAssertEqual(bookmarkStore.saveCalls, 1, "只有落地那一次；发布段没有写出新文件")
+        XCTAssertTrue(bookmarkStore.table.cursors.isEmpty, "下一轮 load 照样报损")
+        XCTAssertFalse(spaceStore.table.bookmarksReplayedForEmptyTable, "闩没置位")
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8), "清 marker 那一步没成")
+        XCTAssertEqual(pinCommits(client).count, 1, "书签那次失败的武装不牵连 pin")
+        XCTAssertEqual(ruleCommits(client).count, 1, "也不牵连规则")
+        XCTAssertNotNil(ruleStore.table.cursors["r1"])
+    }
+
     /// CASE B2-1d — 本地编辑轮绕过 `if thenPush` 那一行（R-M3-4a-92）：最后一页的游标 save 失败
     /// ⇒ `drained == true` 但 `pull` 回 `false` ⇒ `push` 的 guard 拦住 ⇒ 零 commit；盘上 marker
     /// 停在第 1 页那个值。放行之后重投第 2 页，本机那条待发编辑这才发出去。

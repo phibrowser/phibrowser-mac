@@ -3986,6 +3986,13 @@ actor PhiSyncEngine {
         // R-exec-3：轮首读失败 ⇒ 快照、差分、发布**全部没跑**，不是「少发了几条」。
         guard !ownedReadFailed.contains(registration.label) else { return }
         guard ownedItemsPublishAllowed else { return }
+        // 计数**快照在这一次 load 之前**：下面那道 guard 问的是「**这一条 kind** 的重放武装刚刚
+        // 写失败了吗」，不是「本轮有没有任何一条 kind 写失败过」。读绝对值会把 R-M3-4a-103 的
+        // per-kind 语义扩成全局——`ownedKinds` 是 `bookmarks → pins → urlrules`，书签的一次推送
+        // 侧写失败会连带吃掉后面两条 kind 的整个发布段（含 §8.4.5 清位 (b) 与 3b 重新准入复检），
+        // 正是 §2.5 第 6 条点名禁止的那一格。轮级的那道闸是 `canPublishThisRound`
+        // （`… && cursorSaveFailures == 0`，轮首折叠），与这里是两件事。
+        let failuresBeforeLoad = cursorSaveFailures
         let loaded = loadOwnedTable(registration, armsReplayOnLoss: true)
         guard !loaded.lost else { return }
         // R-M3-4a-103（Task 2b fix round 1）：报损重放的两步之一写不成时 `loadOwnedTable` 回的是
@@ -3994,7 +4001,7 @@ actor PhiSyncEngine {
         // `writeOwnedTable` 写出一份新文件：下一轮的 load 不再报损，per-kind 闩再也不会置位，
         // 那条 kind 的整类型重放**永久丢失**——正是两步次序要防的那一格。一次失败的重放武装
         // 既不许对着丢失的表发布，也不许重建它的文件；下一轮报损检查照样触发。
-        guard cursorSaveFailures == 0 else { return }
+        guard cursorSaveFailures == failuresBeforeLoad else { return }
         var table = loaded.table
         var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
 

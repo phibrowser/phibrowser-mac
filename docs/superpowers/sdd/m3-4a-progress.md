@@ -1135,3 +1135,32 @@ Task 6 的进度条目 20 把 `PhiSyncMarkerBoundaryTests.swift` 里没填的 ur
 4. **用户**：知识库与 origin 的同步 —— 本任务在 `~/.agents/company-knowledge` 上**只 commit**，没有 pull、没有 rebase、没有上传（按 dispatch 的约束）。因此知识库相对 origin 可能是陈旧的。
 5. **控制者**：整支终审（`c9ab5806..e24be36a`，与本任务并行派发）。结论到手后填进 rulings 文件的附录 A；spec §15 与 README 里现在写的是「终审 pending」。
 6. **验收决定**：`PhiSyncMarkerBoundaryTests` 的 B2-17 规则侧连带断言仍未写（那条用例第 2 轮是零新页，要补就得改脚本形状；已登记为 `E-M3-4a-24` ①）。
+
+## Final review fix (I-1)
+
+整支终审（`c9ab5806..e24be36a`，见 `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-review.md`）
+的唯一 Important 发现，已修。
+
+1. **发现**：`PhiSyncEngine.publishOwnedKind` 里 R-M3-4a-103 那道闸写成了 `guard cursorSaveFailures == 0`，
+   读的是**轮**计数。Task 2b 写它时只注册了 `bookmarks`，per-kind 与 round-global 无从区分；三条 kind
+   都注册之后（`bookmarks → pins → urlrules`），书签任何一次推送侧的 `writeOwnedTable` 失败都会让
+   `pins` 与 `urlrules` 在快照之前整段早退——连同 §8.4.5 清位 (b) 与 3b 重新准入复检。§2.5 第 6 条点名
+   禁止把 R-exec-3 的 per-kind 语义扩成全局；R-M3-4a-103 本身的措辞也只管「**一次**失败的重放武装」。
+2. **修法**：把闸改成 delta——`let failuresBeforeLoad = cursorSaveFailures` 取在 `loadOwnedTable` **之前**，
+   `guard cursorSaveFailures == failuresBeforeLoad else { return }`。两条早退语义一个不动：`!loaded.lost`
+   照旧，武装失败（第 ① / ② 步写不成）仍然落在 delta 里 ⇒ 那条 kind 照旧不发布、不重建文件。
+   **`canPublishThisRound`（`drained && !isStopped && cursorSaveFailures == 0`，轮首折叠）一个字没动**——
+   轮级的闸本来就该是 round-global，两者是两件事。
+3. **探针**（`Tests/PhiBrowserTests/Sync/Phi/PhiSyncMarkerBoundaryTests.swift`，三条 kind 的 B2-1c 家族）：
+   - `testAPushSideCursorSaveFailureOfOneKindDoesNotSuppressTheLaterKinds`（CASE B2-1c (e)）—— 书签
+     `failSaveOnCallNumber = 2`（空页那次落地写是 #1，发布段 `guard !work.isEmpty` 那次早退写是 #2）
+     ⇒ 书签零 commit，pin 与规则各 1 条 commit、各自游标落盘，结局 `cursor_save_failed`。修前红。
+   - `testAFailedLossReplayArmStillSkipsOnlyItsOwnKind`（CASE B2-1c (f)，负面对照）—— `bookmarksHadRecords`
+     为真 + marker `failSaveOnCallNumber = 2`（页 1 的 marker 写是 #1，报损重放第 ① 步是 #2）⇒ 书签仍旧
+     不发布、不重建文件、闩不置位（2b-L1 的语义在 delta 形态下没被放宽），而 pin 与规则各 1 条 commit。
+     后两条修前红。
+4. **既有期望**：无需改动。`grep cursorSaveFailures Tests` 的两处都是注释；多 kind + 注入写失败的三条既有
+   用例（B2-6b、B2-6c、B2-7）失败点全在落地段或单 kind 引擎上 ⇒ 由 `canPublishThisRound` 收口，与这道闸
+   无关；`URLRuleKindTests` 的两条 R-103 变体（(e) / (f)）失败发生在 `urlrules` **自己**那次 load 里，
+   delta ≠ 0 ⇒ 照旧跳过。CASE 2b-L1 逐字读过，语义不变。
+5. **构建**：`build-for-testing`（log 在 `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-build-4.log`）。

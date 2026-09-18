@@ -739,8 +739,22 @@ D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（
 27. **F2（Minor）**：`OwnedLandingOutcome.collapsed` / `.mergeChangedRouting` 挪到 `createdRows` /
     `createdPins` **之后**，`createdRows` 那段被劫走的文档注释归位。
 
+### Fix round 2（re-review 在 fix round 1 上判出的新 Important）
+
+28. **锚点子集的「软删之前」那一份定义域只给第一遍用**：fix round 1 让**两遍**都从软删之前那一份活集
+    求锚点子集，而 leg (1) 的「锚点 ≤ 胜者 < 每一条败者」**只在分组键与 `convergePass` 的键相同时成立**
+    —— 也就是第一遍的「此刻的签名」。第二遍的键是 `preLandingSignatures[id] ?? 此刻的签名`：一条本页按
+    K1 被软删掉的败者会以它的**落地前**键 K2 重新进组，并且完全可能是 K2 里 `syncId` 最小的那一条 ⇒
+    它当上 K2 的锚点，而它是一条**同一个事务里刚被软删的死行**（K2 的子集还常常正是靠它才够到 2），
+    K2 那条活成员的 `mergePartnerSyncId` 会当场指向它。可达性：一条本页落地了入站 `.move` / `.update`
+    的行照样保留 pre-pass 那一刻的静止判定，收敛因此完全可能选中它当败者。
+    **落法**：`mergePointerPass` 里那个 `pass(_:)` 加一个 `anchorsFrom:` 入参 —— 第一遍传 `anchorRows`
+    （软删之前），第二遍传 `liveRows`（软删之后）。这不违反伪码：伪码的第二遍本来就跑在 `liveAfter` 上。
+    `mergePass` 与 `mergePointerPass` 两处的证明同批重写，明说哪一遍用哪一份、为什么。
+    探针 `testM2a_theSecondPassNeverAnchorsOnARowCollapsedThisPage`（含「`p` 还活着时那条写是对的」的对照）。
+
 ### 验证口径
 
-24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 32 条用例与全部实现改动只经
+24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 33 条用例与全部实现改动只经
     逐行核对：每个引用到的符号都先 grep 过签名，每个 `switch URLRuleSyncOp` 都是穷举的，
     `URLRuleKind` 的四个新纯函数没有任何 actor 隔离状态。一次统一的编译检查在全部任务做完之后跑。

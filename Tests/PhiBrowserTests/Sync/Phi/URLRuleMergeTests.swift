@@ -1111,6 +1111,47 @@ final class URLRuleMergeTests: XCTestCase {
         ])
     }
 
+    /// **fix round 2 的探针**：第二遍的锚点子集**绝不**能建在软删之前那一份活集上。
+    ///
+    /// 形状：`"p"` 本页按**此刻**的签名 K1（`su-1`）被收敛掉（胜者 `"m"` 的 `syncId` 更小），
+    /// 而它的**落地前**签名是 K2（`su-2`，本页一条 `.move` 把它从 `space-b` 搬到了 `space-a`）。
+    /// K2 里还有一条活成员 `"z"`，`syncId` 比 `"p"` 大。
+    ///
+    /// 防的是什么：第二遍若沿用软删之前那一份活集求子集，K2 的子集是 `["p", "z"]`（基数 2 **正是
+    /// 靠那条死行才够到的**）、锚点是 `"p"` ⇒ `"z"` 的 `mergePartnerSyncId` 当场指向一条**同一个
+    /// 事务里刚被软删的行**。leg (1) 的「锚点 ≤ 胜者 < 每一条败者」只在分组键与 `convergePass`
+    /// 的键相同时成立，而第二遍的键不是那一个。
+    func testM2a_theSecondPassNeverAnchorsOnARowCollapsedThisPage() throws {
+        var rows: [PhiLocalURLRule] = []
+        var table = PhiOwnedItemTable()
+        seedSettled("m", id: "i-m", accountStamp: 100, rows: &rows, table: &table)
+        seedSettled("p", id: "i-p", sortOrder: 1, accountStamp: 100, rows: &rows, table: &table)
+        seedSettled("z", id: "i-z", spaceId: "space-b", target: "su-2", accountStamp: 100,
+                    rows: &rows, table: &table)
+        // `"p"` 这一页刚落地一条 `.move`（su-2 → su-1），所以它的落地前签名是 K2。
+        let k2 = RuleSignature(host: "github.com", pathPrefix: nil, owner: "su-2")
+        let preLanding = ["p": k2]
+
+        let out = mergePass(rows: rows, table: table, atRest: ["m", "p", "z"],
+                            landedThisPage: ["p"], preLanding: preLanding)
+        XCTAssertEqual(out.collapsed, 1)
+        XCTAssertEqual(out.ops, [.softDelete(syncId: "p", mergePartnerSyncId: "m")],
+                       "`z` 一条指针都不该有：K2 的活成员只剩它自己")
+        XCTAssertFalse(out.ops.contains(.setMergePartner(syncId: "z", mergePartnerSyncId: "p")),
+                       "绝不指向一条同一个事务里刚被软删的行")
+
+        // 对照（也就是 fix 之前那一版会走的那条路）：`"p"` **还活着**的时候，第二遍给 `"z"` 写的
+        // 正是指向 `"p"` 的那一列——写本身是对的，错的是在它已经被本页软删之后还照写。
+        // （闸关着 ⇒ 零软删；第一遍照样给 K1 的非锚点成员 `"p"` 写一条指向 `"m"` 的。）
+        let alive = mergePass(rows: rows, table: table, atRest: ["m", "p", "z"],
+                              convergeAllowed: false, landedThisPage: ["p"],
+                              preLanding: preLanding)
+        XCTAssertEqual(alive.ops, [
+            .setMergePartner(syncId: "p", mergePartnerSyncId: "m"),
+            .setMergePartner(syncId: "z", mergePartnerSyncId: "p"),
+        ])
+    }
+
     // =======================================================================================
     // MARK: - CASE M2-c（闸只管第 2 步：通道级断言）
     // =======================================================================================

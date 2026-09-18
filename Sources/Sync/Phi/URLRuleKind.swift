@@ -710,13 +710,21 @@ extension URLRuleKind {
     ///   **「已发布」由 `publishedIdentities` 显式传入**（R-M3-4a-95），本函数手上没有游标表，
     ///   而 `syncId != nil` **不等于**「已发布」：一条本机新建的行在 M1 认领那一刻就有了
     ///   `syncId`、却要等这一轮的发布段才有服务端三元组。
-    /// - `anchorRows`：**锚点子集的定义域**，与写循环的定义域分开（8b-2 fix round 1）。尾钩把
-    ///   它喂成**软删之前**那一份活集，而 `liveRows` 是软删**之后**那一份。分开是承重的：
+    /// - `anchorRows`：**第一遍**锚点子集的定义域，与写循环的定义域分开（8b-2 fix round 1）。
+    ///   尾钩把它喂成**软删之前**那一份活集，而 `liveRows` 是软删**之后**那一份。分开是承重的：
     ///   §8.4.3 的 `writePointer` 在收敛**之前**求那个 `> 1` 的基数，而先收敛再写指针会把
     ///   「两条已发布成员 + 一条从未发布的活行」这一组的子集从 2 掉到 1 ⇒ 那条从未发布的成员
-    ///   拿不到指针，而伪码给它写（生命周期表 RR10-8 那一行正是按「它被写过」立的）。锚点**行
-    ///   本身**不会因此指向一条死行：锚点 ≤ 胜者 < 每一条败者，所以锚点永远不是败者、必然
-    ///   活到写循环那一刻。`nil` ⇒ 与 `liveRows` 同一份（纯值调用点的常态）。
+    ///   拿不到指针，而伪码给它写（生命周期表 RR10-8 那一行正是按「它被写过」立的）。
+    ///   `nil` ⇒ 与 `liveRows` 同一份（纯值调用点的常态）。
+    /// - **只有第一遍用它；第二遍的锚点子集与基数一律从 `liveRows` 算**（8b-2 fix round 2）。
+    ///   「锚点 ≤ 胜者 < 每一条败者、所以锚点永不是败者」这条论证**只在分组键与 `convergePass`
+    ///   的键相同时成立** —— 也就是第一遍的「此刻的签名」。第二遍的键是
+    ///   `preLandingSignatures[id] ?? 此刻的签名`，一条本页按键 K1 被软删掉的败者会以它的**落地前**
+    ///   键 K2 重新进组；它在 K2 里完全可能是 `syncId` 最小的那一条 ⇒ 它当上 K2 的锚点，而它是一条
+    ///   **同一个事务里刚被软删的死行**，K2 那条活成员的 `mergePartnerSyncId` 会当场指向它
+    ///   （更糟：K2 的子集常常正是**靠这条死行**才够到 2）。所以第二遍必须在软删**之后**那一份
+    ///   活集上求子集与基数。可达性：一条本页落地了入站 `.move` / `.update` 的行照样保留 pre-pass
+    ///   那一刻的静止判定，收敛因此完全可能选中它当败者。
     /// - **前置（承重句，RR12-7）**：只写这一列**此刻**为 nil、或指向一条本机没有活行的身份
     ///   的**活成员**；已经指向一条活行的不动。函数内部按已产出的写更新自己那份状态，于是
     ///   第二遍不会覆盖第一遍。原语那层的「值相同零写」是**第二道防御**，不是承重条款。
@@ -740,15 +748,17 @@ extension URLRuleKind {
         }
 
         var out: [String: String] = [:]
-        func pass(_ keyOf: (PhiLocalURLRule) -> RuleSignature?) {
+        /// `anchorsFrom` 是**这一遍**求锚点子集与基数的定义域（见签名上 `anchorRows` 那一条）：
+        /// 第一遍是软删**之前**那一份活集，第二遍是软删**之后**那一份。
+        func pass(_ keyOf: (PhiLocalURLRule) -> RuleSignature?,
+                  anchorsFrom: [PhiLocalURLRule]) {
             var groups: [RuleSignature: [PhiLocalURLRule]] = [:]
             for row in liveRows where row.syncId != nil {
                 guard let key = keyOf(row) else { continue }
                 groups[key, default: []].append(row)
             }
-            // 锚点子集建在 `anchorRows` 上（**软删之前**那一份活集，见签名上的说明）。
             var anchorGroups: [RuleSignature: [String]] = [:]
-            for row in anchorDomain {
+            for row in anchorsFrom {
                 guard let identity = row.syncId, let key = keyOf(row),
                       publishedIdentities.contains(identity)
                         || landedThisPage.contains(identity) else { continue }
@@ -770,11 +780,16 @@ extension URLRuleKind {
                 }
             }
         }
-        pass { signature(of: $0, resolve: resolve, normalize: normalize) }
-        pass { row in
+        // 第一遍：键 = 此刻的签名（与 `convergePass` 同一个键）⇒ 基数按伪码的时刻、也就是
+        // 软删**之前**那一份活集求。
+        pass({ signature(of: $0, resolve: resolve, normalize: normalize) },
+             anchorsFrom: anchorDomain)
+        // 第二遍：键 = 落地前的签名 ⇒ 「锚点永不是败者」不成立，子集与基数都从软删**之后**
+        // 那一份活集求（fix round 2）。
+        pass({ row in
             if let identity = row.syncId, let key = preLandingSignatures[identity] { return key }
             return signature(of: row, resolve: resolve, normalize: normalize)
-        }
+        }, anchorsFrom: liveRows)
         return out
     }
 
@@ -863,7 +878,8 @@ extension URLRuleKind {
     /// **把 `atRest` 里此刻 `pendingLocalEdit == true` / `deletedDate != nil` / 行已不在的那些
     /// 剔掉**（R-M3-4a-100；`rows` 就是事务里刚重读的那一份，零额外读）⇒（闸开才）
     /// `convergePass`（喂进去的是那张表的 `.content` 那一枚）⇒ 跑 `mergePointerPass`
-    /// （计划裁定四；写循环在**软删之后**的活集上，锚点子集在**软删之前**那一份上）⇒
+    /// （计划裁定四；写循环在**软删之后**的活集上，**第一遍**的锚点子集在**软删之前**那一份
+    /// 上、**第二遍**的仍在软删之后那一份上）⇒
     /// 按 `.setContentGroup` → `.softDelete` →
     /// `.setMergePartner` 的相序拼 ops。
     ///
@@ -876,13 +892,20 @@ extension URLRuleKind {
     /// ⇒ 静止成员 ⊆ 锚点候选集 ⇒ `锚点 ≤ 胜者 < 每一条败者`，且锚点自己若静止就**是**胜者、
     /// 永不当败者 ⇒ 移走败者既不改变锚点的身份，也不会让锚点那一**行**消失。
     ///
-    /// **(2) 锚点子集的基数不变** —— 这条腿靠的不是论证而是**接缝**（8b-2 fix round 1）：
-    /// 伪码的 `writePointer` 在收敛**之前**求那个 `published.count > 1`，而先收敛会把
-    /// 「两条已发布成员 + 一条从未发布、本页也没落地的活行」这一组的子集从 2 掉到 1 ——
-    /// 伪码给那条从未发布的成员写指针（生命周期表 RR10-8 那一行按「它被写过」立），先收敛
-    /// 的版本一条都不写。所以 `mergePointerPass` 的**锚点子集建在 `anchorRows`（软删之前那
-    /// 一份活集）上、写循环仍然只跑 `liveRows`（软删之后那一份）**：基数按伪码的时刻求值，
-    /// 而 (3) 一个字不受影响。
+    /// **(2) 锚点子集的基数不变 —— 只对第一遍成立，而第一遍正是伪码求那个基数的地方**
+    /// （8b-2 fix round 1 + fix round 2）。这条腿靠的不是论证而是**接缝**：伪码的
+    /// `writePointer` 在收敛**之前**求 `published.count > 1`，而先收敛会把「两条已发布成员 +
+    /// 一条从未发布、本页也没落地的活行」这一组的子集从 2 掉到 1 —— 伪码给那条从未发布的成员
+    /// 写指针（生命周期表 RR10-8 那一行按「它被写过」立），先收敛的版本一条都不写。所以
+    /// **第一遍**（键 = 此刻的签名，与 `convergePass` 同一个键）的锚点子集建在 `anchorRows`
+    /// （软删之前那一份活集）上，写循环仍然只跑 `liveRows`（软删之后那一份）。
+    ///
+    /// **第二遍不能这么做**：它的键是 `preLandingSignatures[id] ?? 此刻的签名`，与
+    /// `convergePass` 的键**不是同一个**，(1) 的「锚点 ≤ 胜者 < 每一条败者」因此不适用 ——
+    /// 一条按 K1 被软删掉的败者会以它的落地前键 K2 重新进组，并且完全可能是 K2 里 `syncId`
+    /// 最小的那一条 ⇒ 它当上 K2 的锚点，而它是一条**同一个事务里刚被软删的死行**（K2 的子集
+    /// 还常常正是靠它才够到 2）。所以**第二遍的子集与基数一律从 `liveRows` 求**。这不违反
+    /// 伪码：伪码的第二遍本来就跑在 `liveAfter` 上。
     ///
     /// **(3) 终值支配** —— 伪码里败者行上会先被第一遍写成锚点、再被 (b) 覆盖成胜者，净结果
     /// 是胜者；这里败者根本不进指针的**写**定义域，净结果同样是胜者。非败者行两种次序下的

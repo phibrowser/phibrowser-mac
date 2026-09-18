@@ -184,7 +184,7 @@ final class AccountDataExportController {
     }
 
     private var alertParentWindow: NSWindow? {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.window
+        SpaceSessionControllersManager.shared.activeWindowController?.window
             ?? NSApp.keyWindow
     }
 

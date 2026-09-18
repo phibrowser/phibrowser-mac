@@ -318,7 +318,7 @@ final class TabMultiSelectionMenuController: NSObject {
     }
     @objc func createNewFolder() {
         guard let browserState,
-              let window = MainBrowserWindowControllersManager.shared.activeWindowController?.window else { return }
+              let window = SpaceSessionControllersManager.shared.activeWindowController?.window else { return }
         // Snapshot the selection now; the modal dialog clears it before the
         // completion handler runs.
         let tabs = browserState.orderedMultiSelectedTabsIncludingSplitPartners

@@ -305,7 +305,7 @@ is handled by a same-target follow-up migration.
 
 ## Account Transition and Windows
 
-`MainBrowserWindowController.account` and `BrowserState.localStore` are fixed
+`SpaceSessionController.account` and `BrowserState.localStore` are fixed
 for the controller lifetime. A Guest-to-account transition therefore uses the
 existing dangling-window lifecycle instead of adding a second live-store
 binding architecture:

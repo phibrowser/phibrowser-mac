@@ -520,7 +520,7 @@ class BookmarkBar: NSView {
               sourceId != state.windowId else {
             return nil
         }
-        return MainBrowserWindowControllersManager.shared.getBrowserState(for: sourceId)
+        return SpaceSessionControllersManager.shared.getBrowserState(for: sourceId)
     }
 
     // MARK: - Actions

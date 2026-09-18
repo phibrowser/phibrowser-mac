@@ -288,7 +288,7 @@ final class KioskTrafficLightPositioner: NSObject {
 }
 
 /// Native owner for Chromium browsers carrying the Kiosk semantic type.
-final class KioskBrowserWindowController: MainBrowserWindowController {
+final class KioskBrowserWindowController: SpaceSessionController {
     override var centeredOmniBoxHorizontalInset: CGFloat { 20 }
 
     private static let toolbarIdentifier = NSToolbar.Identifier("KioskBrowserToolbar")
@@ -426,7 +426,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                       ApplicationState.shared.canOpenExternalLinksInKiosk,
                       self.window?.styleMask.contains(.fullScreen) != true,
                       let bridge = ChromiumLauncher.sharedInstance().bridge,
-                      MainBrowserWindowControllersManager.shared
+                      SpaceSessionControllersManager.shared
                         .controller(for: self.windowId) === self else {
                     self?.pendingProfileId = nil
                     return
@@ -467,7 +467,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         let replacementWindowId = (result["windowId"] as? NSNumber)?.intValue
         guard let replacementWindowId,
               let replacementWindow = result["window"] as? NSWindow,
-              let replacement = MainBrowserWindowControllersManager.shared
+              let replacement = SpaceSessionControllersManager.shared
                 .controller(for: replacementWindowId) as? KioskBrowserWindowController,
               let reportedProfileId = result["profileId"] as? String,
               let reportedWindowType = result["windowType"] as? NSNumber,
@@ -582,7 +582,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             abortProfileReplacement()
             return
         }
-        guard MainBrowserWindowControllersManager.shared
+        guard SpaceSessionControllersManager.shared
             .controller(for: source.windowId) === source,
               browserState.focusingTab != nil,
               let replacementWindow = window,

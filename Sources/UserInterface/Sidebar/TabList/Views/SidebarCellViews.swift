@@ -416,7 +416,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     private func closePeekTapped() {
         guard let tab = item as? Tab else { return }
-        MainBrowserWindowControllersManager.shared
+        SpaceSessionControllersManager.shared
             .controller(for: tab.windowId)?.browserState
             .closePeek(forOpener: tab.guid)
     }
@@ -427,7 +427,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
 
-        let state = MainBrowserWindowControllersManager.shared
+        let state = SpaceSessionControllersManager.shared
             .controller(for: tab.windowId)?.browserState
         viewModel.configure(with: tab, in: state)
         if let state {
@@ -1319,7 +1319,7 @@ enum FarringdonOrganizer {
     static func organizeFocusedWindow(eligibleTabCount: Int? = nil) {
         // Buttons and shortcuts share the same eligibility gate; this is the
         // backstop for hidden UI and direct command dispatch.
-        guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState() else {
+        guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {
             return
         }
         let count = eligibleTabCount ?? Self.eligibleTabCount(in: state.normalTabs)

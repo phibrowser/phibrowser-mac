@@ -231,7 +231,7 @@ extension AgentSpaceManager {
         // The window is never key (alpha 0, ignoresMouseEvents, activation
         // suppressed), so this can't hand key to a hidden sibling the way a
         // Space window's close can.
-        MainBrowserWindowControllersManager.shared
+        SpaceSessionControllersManager.shared
             .controller(for: shadow.windowId)?.window?.close()
         return true
     }

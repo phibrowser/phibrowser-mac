@@ -537,7 +537,7 @@ class BrowserState {
     private(set) lazy var  extensionManager: ExtensionManager = { .init(browserState: self) }()
     private(set) lazy var  downloadsManager: DownloadsManager = { .init(browserState: self) }()
     
-    weak var windowController: MainBrowserWindowController?
+    weak var windowController: SpaceSessionController?
     
     @MainActor
     init(windowId: Int,
@@ -5248,6 +5248,7 @@ class BrowserState {
         if tab.isInContentFullscreen != isFullscreen {
             tab.isInContentFullscreen = isFullscreen
         }
+        windowController?.handleTabContentFullscreen(isFullscreen: isFullscreen)
     }
     
     func toggleTabPinStatus(_ tabId: Int, guidInDB: String?) {
@@ -8357,7 +8358,7 @@ class BrowserState {
 
 extension BrowserState {
     static func currentState() -> BrowserState? {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
+        SpaceSessionControllersManager.shared.activeWindowController?.browserState
     }
 }
 
@@ -8382,7 +8383,7 @@ extension BrowserState {
 protocol BrowserWindowAware: AnyObject {
     var unsafeBrowserWindowId: Int? { get }
     var unsafeBrowserState: BrowserState? { get }
-    var unsafeBrowserWindowController: MainBrowserWindowController? { get }
+    var unsafeBrowserWindowController: SpaceSessionController? { get }
 }
 
 extension NSViewController: BrowserWindowAware {
@@ -8393,7 +8394,7 @@ extension NSViewController: BrowserWindowAware {
     weak var unsafeBrowserState: BrowserState? { view.unsafeBrowserState }
     
     @available(*, deprecated, message: "Not Safe, should avoid using it")
-    weak var unsafeBrowserWindowController: MainBrowserWindowController? { view.unsafeBrowserWindowController }
+    weak var unsafeBrowserWindowController: SpaceSessionController? { view.unsafeBrowserWindowController }
 }
 
 extension NSView: BrowserWindowAware {
@@ -8404,5 +8405,5 @@ extension NSView: BrowserWindowAware {
     weak var unsafeBrowserState: BrowserState? { unsafeBrowserWindowController?.browserState }
     
     @available(*, deprecated, message: "Not Safe, should avoid using it")
-    weak var unsafeBrowserWindowController: MainBrowserWindowController? { window?.windowController as? MainBrowserWindowController }
+    weak var unsafeBrowserWindowController: SpaceSessionController? { window?.windowController as? SpaceSessionController }
 }

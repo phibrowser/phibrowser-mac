@@ -153,7 +153,7 @@ final class AccountDeletionController {
     /// first: at click time some floating panel can happen to be key, and the
     /// alert must not attach to it.
     private var alertParentWindow: NSWindow? {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.window
+        SpaceSessionControllersManager.shared.activeWindowController?.window
             ?? NSApp.keyWindow
     }
 

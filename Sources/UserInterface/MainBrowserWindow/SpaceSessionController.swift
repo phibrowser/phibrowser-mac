@@ -7,7 +7,7 @@ import Cocoa
 import Combine
 import SnapKit
 import SwiftUI
-class MainBrowserWindowController: NSWindowController {
+class SpaceSessionController: NSWindowController {
     static let defaultWindowSize = NSSize(width: 1280, height: 860)
     
     let mainSplitViewController: MainSplitViewController
@@ -18,10 +18,39 @@ class MainBrowserWindowController: NSWindowController {
     let spaceId: String
     /// The window-group this controller belongs to. Set by the caller
     /// (`PhiChromiumCoordinator.mainBrowserWindowCreated`,
-    /// `MainBrowserWindowControllersManager.processDanglingWindow`) right
+    /// `SpaceSessionControllersManager.processDanglingWindow`) right
     /// after construction. Weak so the controller doesn't pin a slot the
     /// manager has already dropped from its registry.
     weak var slot: SpaceWindowSlot?
+
+    /// Hosted-window mode (`SpaceManager.isHostedWindowMode`): the hidden
+    /// Chromium window whose Browser backs this session. `window` is then the
+    /// slot's shared `ShellWindow`, which every session of the slot presents
+    /// into in turn. nil in legacy mode, where `window` IS the Chromium window.
+    private(set) var hostedChromiumWindow: NSWindow?
+    /// Hosted mode: a session built ahead of its Browser. The slot creates
+    /// one per Space it presents, keyed by a window id reserved from
+    /// Chromium's session-id generator, so the Swift side of the Space —
+    /// sidebar, pinned tabs, bookmarks, strip — exists before the Space is
+    /// first visited. The first switch spawns the Browser under that id and
+    /// `attachChromiumWindow` turns this into an ordinary hosted session.
+    private(set) var isDormant = false
+    var isHosted: Bool { hostedChromiumWindow != nil || isDormant }
+    /// The window whose close ends this controller's life: the Chromium window
+    /// in hosted mode (the shell outlives its sessions), `window` otherwise.
+    /// A dormant session has none yet.
+    var lifecycleWindow: NSWindow? {
+        if isDormant { return nil }
+        return hostedChromiumWindow ?? window
+    }
+    /// Hosted mode: whether this session's split view is installed in the
+    /// shell right now.
+    private(set) var isPresented = false
+    /// True when the user sees this controller's content through `window`:
+    /// always in legacy mode, only while presented in hosted mode. Gates every
+    /// window-level side effect (panels, traffic lights, overlays) that a
+    /// background session of the shared shell must not perform.
+    var isPresentedOrLegacy: Bool { !isHosted || isPresented }
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
     var searchTabsContainerViewController: SearchTabsContainerViewController?
@@ -173,7 +202,11 @@ class MainBrowserWindowController: NSWindowController {
          spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          account: Account = AccountController.shared.account ?? AccountController.defaultAccount,
          slot: SpaceWindowSlot? = nil,
-         browserState suppliedBrowserState: BrowserState? = nil) {
+         browserState suppliedBrowserState: BrowserState? = nil,
+         chromiumWindow: NSWindow? = nil,
+         dormant: Bool = false) {
+        self.hostedChromiumWindow = chromiumWindow
+        self.isDormant = dormant && chromiumWindow == nil
         let state = suppliedBrowserState ?? BrowserState(
             windowId: windowId,
             localStore: account.localStorage,
@@ -201,16 +234,29 @@ class MainBrowserWindowController: NSWindowController {
         SpaceManager.shared.seedPersistedTheme(into: state, spaceId: spaceId)
         self.mainSplitViewController = MainSplitViewController(state: state)
         super.init(window: window)
+        self.slot = slot
+        browserState.windowController = self
+        if isDormant {
+            // The Browser-bound wiring waits for `attachChromiumWindow`.
+            setupHostedSession()
+            installMultiSelectionEscapeMonitor()
+            SpaceSessionControllersManager.shared.retainDormantSession(self)
+            slot?.registerDormantSession(self, for: spaceId)
+            return
+        }
         ChromiumLauncher.sharedInstance().bridge?
             .setWebContentsOwnsMouseDown(
                 true,
                 windowId: Int64(windowId)
             )
-        self.slot = slot
-        browserState.windowController = self
-        setupWindow()
+        if isHosted {
+            Self.setPresentationHostIfSupported(window, windowId: windowId)
+            setupHostedSession()
+        } else {
+            setupWindow()
+        }
         installMultiSelectionEscapeMonitor()
-        MainBrowserWindowControllersManager.shared.retainWindowControllerUntilWindowClosed(self)
+        SpaceSessionControllersManager.shared.retainWindowControllerUntilWindowClosed(self)
         // Normal, Incognito Space, and agent-Space windows participate in the
         // Space mapping; standalone incognito and shadow windows are orthogonal
         // to Spaces. Agent-Space windows are hidden TYPE_NORMAL windows the user
@@ -218,7 +264,7 @@ class MainBrowserWindowController: NSWindowController {
         // `windowsBySpaceId[spaceId]` entry, its seed tab is never created, and
         // surfacing the pip shows an empty Space even though the Chromium window
         // has live tabs. The slot was resolved by the caller
-        // (PhiChromiumCoordinator / MainBrowserWindowControllersManager), which
+        // (PhiChromiumCoordinator / SpaceSessionControllersManager), which
         // treats `.normal`, `.incognitoSpace`, and `.agentSpace` identically.
         if browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace {
             slot?.registerWindow(self, for: spaceId)
@@ -237,7 +283,7 @@ class MainBrowserWindowController: NSWindowController {
         guard multiSelectionEscapeMonitor == nil else { return }
         multiSelectionEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
-            guard let self, let window = self.window else { return event }
+            guard let self, let window = self.window, self.isPresentedOrLegacy else { return event }
             return Self.handleMultiSelectionEscape(
                 event,
                 in: window,
@@ -260,7 +306,7 @@ class MainBrowserWindowController: NSWindowController {
     ) -> NSEvent? {
         if event.type == .keyDown,
            event.window === window,
-           MainBrowserWindowControllersManager.shared
+           SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             let modifiers = event.modifierFlags.intersection([
                 .command,
@@ -285,6 +331,90 @@ class MainBrowserWindowController: NSWindowController {
         return nil
     }
     
+    /// Hosted-mode counterpart of `setupWindow()`. The shell is dressed by
+    /// `ShellWindowController`; this session only wires what is its own —
+    /// teardown on ITS Chromium window's close, theme following while
+    /// presented, and the content tree, which `presentInShell()` installs.
+    private func setupHostedSession() {
+        observeChromiumWindowClose()
+        browserState.themeContext.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                guard let self, self.isPresented, let window = self.window else { return }
+                self.applyThemeAppearance(to: window)
+            }
+            .store(in: &cancellables)
+        WindowThemeMessageRouter.shared.observeWindow(browserState)
+        NotificationCenter.default.publisher(for: .appearanceDidChange, object: ThemeManager.shared)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.isPresented, let window = self.window else { return }
+                guard self.browserState.themeContext.hasFixedWindowAppearance else { return }
+                self.applyThemeAppearance(to: window)
+            }
+            .store(in: &cancellables)
+        setupContentView()
+        observeBlockingOverlayVisibility()
+    }
+
+    private func observeChromiumWindowClose() {
+        guard let chromiumWindow = hostedChromiumWindow else { return }
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(myWindowWillClose(_:)),
+                                               name: NSWindow.willCloseNotification,
+                                               object: chromiumWindow)
+    }
+
+    /// Builds the dormant session's tree now, off-window, so a first switch
+    /// into its Space has nothing left to construct. `presentInShell` would
+    /// otherwise load it on the switch.
+    func warmUpDormantTree() {
+        guard isDormant else { return }
+        mainSplitViewController.loadViewIfNeeded()
+        mainSplitViewController.adoptAutosavedSplitPositionNow()
+        if let bounds = window?.contentView?.bounds {
+            mainSplitViewController.view.frame = NSRect(origin: .zero, size: bounds.size)
+        }
+        mainSplitViewController.view.layoutSubtreeIfNeeded()
+    }
+
+    /// The Browser spawned under this dormant session's reserved window id
+    /// has arrived: `chromiumWindow` is its hidden NSWindow. Wires everything
+    /// `init` skipped for a dormant session and registers with the slot as a
+    /// live hosted session. If the session is presented already (the switch
+    /// showed it ahead of the spawn), Chromium learns that now.
+    func attachChromiumWindow(_ chromiumWindow: NSWindow) {
+        guard isDormant, hostedChromiumWindow == nil, let window = self.window else { return }
+        isDormant = false
+        hostedChromiumWindow = chromiumWindow
+        ChromiumLauncher.sharedInstance().bridge?
+            .setWebContentsOwnsMouseDown(true, windowId: Int64(windowId))
+        Self.setPresentationHostIfSupported(window, windowId: windowId)
+        observeChromiumWindowClose()
+        SpaceSessionControllersManager.shared.noteChromiumWindowAttached(self)
+        if isPresented {
+            (window as? ShellWindow)?.commandTargetWindow = chromiumWindow
+            mirrorFrameToChromiumWindow()
+            Self.setPresentedIfSupported(true, windowId: windowId)
+        }
+        if browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace {
+            slot?.registerWindow(self, for: spaceId)
+        }
+        NotificationCenter.default.post(name: .mainBrowserWindowCreated, object: window)
+    }
+
+    /// Drops a dormant session that will never get a Browser: its Space left
+    /// the slot, its profile changed, or the slot closed. A live session is
+    /// retired through its Chromium window's close instead.
+    func discardDormant() {
+        guard isDormant else { return }
+        concealFromShell()
+        removeMultiSelectionEscapeMonitor()
+        cancellables.removeAll()
+        WindowThemeMessageRouter.shared.stopObservingWindow(windowId: windowId)
+        SpaceSessionControllersManager.shared.releaseDormantSession(self)
+    }
+
     private func setupWindow() {
         guard let window = self.window else { return }
         
@@ -436,7 +566,9 @@ class MainBrowserWindowController: NSWindowController {
             return
         }
         
-        self.contentViewController = mainSplitViewController
+        if !isHosted {
+            self.contentViewController = mainSplitViewController
+        }
         
         $browserState.compactMap { $0 }
             .flatMap { state in
@@ -449,16 +581,8 @@ class MainBrowserWindowController: NSWindowController {
             }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] collapsed, fullScreen, _ in
-                guard let self, let window = self.window  else { return }
-                let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-                let hideTrafficLights = !fullScreen && collapsed && !traditionalLayout
-                
-                window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
-                window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
-                window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
-                
-                window.titlebarAppearsTransparent = !fullScreen
-                self.updateTrafficLightPlacement(fullScreen: fullScreen)
+                guard let self, self.isPresentedOrLegacy else { return }
+                self.applyTrafficLightVisibility(collapsed: collapsed, fullScreen: fullScreen)
             }
             .store(in: &cancellables)
 
@@ -469,13 +593,13 @@ class MainBrowserWindowController: NSWindowController {
         // visibly step onto the row. A warm Space was placed long before it is
         // shown, which is why only a cold one shows the step. The layout guard
         // inside makes the sink's own first pass a no-op.
-        updateTrafficLightPlacement(
-            fullScreen: browserState.isInFullScreenMode
-        )
-        self.contentViewController = mainSplitViewController
-        
-        
-        
+        if !isHosted {
+            updateTrafficLightPlacement(
+                fullScreen: browserState.isInFullScreenMode
+            )
+            self.contentViewController = mainSplitViewController
+        }
+
         mainSplitViewController.addChild(toastContainerViewController)
         mainSplitViewController.view.addSubview(toastContainerViewController.view)
         toastContainerViewController.view.snp.makeConstraints { make in
@@ -575,6 +699,7 @@ class MainBrowserWindowController: NSWindowController {
             .sink { [weak self] notification in
                 guard let self,
                       notification.object as? NSWindow === self.window,
+                      self.isPresentedOrLegacy,
                       let visible = notification.userInfo?["visible"] as? Bool else { return }
                 if notification.userInfo?["surface"] as? String == "omnibox" {
                     if !visible {
@@ -608,7 +733,9 @@ class MainBrowserWindowController: NSWindowController {
     }
 
     private func presentPeekPanel(for tab: Tab, flyIn: Bool) {
-        guard let window = self.window else { return }
+        // A background session of a hosted shell owns no on-screen surface;
+        // its panel is re-shown by the peek/reader sinks once presented.
+        guard let window = self.window, isPresentedOrLegacy else { return }
         if peekPanelController == nil {
             let container = mainSplitViewController.webContentContainerViewController
             peekPanelController = PeekPanelController(
@@ -623,7 +750,7 @@ class MainBrowserWindowController: NSWindowController {
     }
 
     private func presentReaderPanel(for tab: Tab) {
-        guard let window = self.window else { return }
+        guard let window = self.window, isPresentedOrLegacy else { return }
         if readerPanelController == nil {
             let container = mainSplitViewController.webContentContainerViewController
             readerPanelController = ReaderPanelController(
@@ -636,7 +763,185 @@ class MainBrowserWindowController: NSWindowController {
         readerPanelController?.present(tab: tab)
     }
 
+    // MARK: - Hosted window mode
+
+    /// Installs this session's content in the slot's shell and makes it the
+    /// window's controller, so the responder chain, menu validation and
+    /// `SpaceSessionControllersManager.findControllerWith` resolve to
+    /// the Space on screen. The previous session's content leaves the window
+    /// with the content-view-controller swap, which is what takes its tab's
+    /// native view out of the window and lets Chromium mark it hidden.
+    /// `installingView: false` leaves the tree out of the shell for a slide
+    /// that places it itself (`installSessionViewInShell` later);
+    /// `completing: false` defers the focus and panel hand-over to
+    /// `completePresentationInShell`, called when that slide lands.
+    func presentInShell(installingView: Bool = true, completing: Bool = true) {
+        guard isHosted, let window = self.window else { return }
+        isPresented = true
+        window.windowController = self
+        (window as? ShellWindow)?.commandTargetWindow = hostedChromiumWindow
+        // A freshly built tree would otherwise show the default sidebar width
+        // for one tick and then jump to the saved one.
+        mainSplitViewController.adoptAutosavedSplitPositionNow()
+        if installingView {
+            installSessionViewInShell()
+        }
+        mirrorFrameToChromiumWindow()
+        Self.setPresentedIfSupported(true, windowId: windowId)
+        if completing {
+            completePresentationInShell()
+        }
+    }
+
+    /// Window-level chrome for this session: appearance, fullscreen state,
+    /// traffic lights. Applied when the session takes the whole shell — at
+    /// once for an instant present, when the slide lands for an animated one,
+    /// so the titlebar and background do not change ahead of the content.
+    private func applyWindowChrome() {
+        guard let window else { return }
+        applyThemeAppearance(to: window)
+        let isNativeFullScreen = window.styleMask.contains(.fullScreen)
+        if browserState.isInFullScreenMode != isNativeFullScreen {
+            browserState.toggleFullScreenMode(isNativeFullScreen)
+        }
+        applyTrafficLightVisibility(collapsed: browserState.sidebarCollapsed,
+                                    fullScreen: isNativeFullScreen)
+    }
+
+    /// The session's tree as a subview of the shell's root — not the window's
+    /// content view controller: two trees coexist during a switch (the
+    /// leaving one animates out live), and installing a view never resizes
+    /// the window the way a content view controller does.
+    func installSessionViewInShell() {
+        guard isHosted, let root = window?.contentView else { return }
+        let view = mainSplitViewController.view
+        view.layer?.transform = CATransform3DIdentity
+        if view.superview !== root {
+            view.removeFromSuperview()
+            view.frame = root.bounds
+            view.autoresizingMask = [.width, .height]
+            root.addSubview(view, positioned: .above, relativeTo: nil)
+        } else {
+            view.frame = root.bounds
+            view.autoresizingMask = [.width, .height]
+        }
+    }
+
+    /// Focus and panel hand-over, one turn after the tree is in the shell (or
+    /// when a slide has landed on it).
+    func completePresentationInShell() {
+        guard isPresented else { return }
+        applyWindowChrome()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isPresented else { return }
+            self.mainSplitViewController.webContentContainerViewController.focusCurrentWebContent()
+            self.reshowOverlayPanelsAfterPresent()
+        }
+    }
+
+    /// The peek and reader sinks only act while presented, so a session
+    /// re-entering the shell re-shows the panels its focused tab owns.
+    private func reshowOverlayPanelsAfterPresent() {
+        guard let focusingTab = browserState.focusingTab else { return }
+        if let peekTab = browserState.peekState.peeksByOpener[focusingTab.guid] {
+            presentPeekPanel(for: peekTab, flyIn: false)
+        }
+        if let readerTab = browserState.readerOverlayState.readersByOrigin[focusingTab.guid] {
+            presentReaderPanel(for: readerTab)
+        }
+    }
+
+    /// Content fullscreen (video, `requestFullscreen`) on one of this
+    /// session's tabs. In hosted mode Chromium leaves the hidden browser
+    /// window alone, so the slot fullscreens the shell for the presented
+    /// session; legacy windows are fullscreened by Chromium itself.
+    func handleTabContentFullscreen(isFullscreen: Bool) {
+        guard isHosted else { return }
+        slot?.sessionContentFullscreenChanged(self, isFullscreen: isFullscreen)
+    }
+
+    /// Withdraws this session from the shell without removing its content:
+    /// the entering session's `presentInShell()` replaces it. Window-level
+    /// surfaces this session put up (panels, traffic-light positioner) are
+    /// dropped so the entering session can take them over.
+    func concealFromShell(removingView: Bool = true) {
+        guard isHosted, isPresented else { return }
+        isPresented = false
+        if removingView {
+            removeSessionViewFromShell()
+        }
+        peekPanelController?.hide()
+        readerPanelController?.hide()
+        if let panel = omniBoxHostPanel {
+            panel.parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+        }
+        Self.setPresentedIfSupported(false, windowId: windowId)
+    }
+
+    /// Takes this session's tree out of the shell. Detaching it is what takes
+    /// the tab's native view out of the window and lets Chromium mark the
+    /// tab hidden.
+    func removeSessionViewFromShell() {
+        guard isHosted, mainSplitViewController.isViewLoaded else { return }
+        let view = mainSplitViewController.view
+        guard view.superview != nil else { return }
+        view.layer?.transform = CATransform3DIdentity
+        view.removeFromSuperview()
+    }
+
+    /// Keeps the hidden Chromium window's frame equal to the shell's so
+    /// Chromium's bounds-dependent logic (popup placement, `chrome.windows`
+    /// bounds, new-window cascading) answers for the window the user sees.
+    func mirrorFrameToChromiumWindow() {
+        guard let chromiumWindow = hostedChromiumWindow, let window = self.window else { return }
+        let target = window.frame
+        if chromiumWindow.frame != target {
+            chromiumWindow.setFrame(target, display: false)
+        }
+    }
+
+    /// Closes the window whose close ends this controller: the Chromium
+    /// window (through Chromium's own Browser close) in hosted mode, the
+    /// adopted window otherwise. Callers that retire a Space's window must
+    /// use this rather than `window?.close()`, which in hosted mode would
+    /// close the whole shell.
+    func closeChromiumWindow() {
+        lifecycleWindow?.close()
+    }
+
+    private static func setPresentationHostIfSupported(_ shell: NSWindow?, windowId: Int) {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setPresentationHost(_:forWindowId:)))
+        else { return }
+        bridge.setPresentationHost(shell, forWindowId: Int64(windowId))
+    }
+
+    private static func setPresentedIfSupported(_ presented: Bool, windowId: Int) {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setPresented(_:forWindowId:)))
+        else { return }
+        bridge.setPresented(presented, forWindowId: Int64(windowId))
+    }
+
     // MARK: - Traffic light placement
+
+    /// Shows or hides the native traffic lights for the sidebar state and
+    /// re-places them on the chrome row. Driven by the sidebar/fullscreen sink
+    /// and, in hosted mode, re-applied when a session is presented (the sink
+    /// is silent for background sessions).
+    private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
+        guard let window else { return }
+        let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+        let hideTrafficLights = !fullScreen && collapsed && !traditionalLayout
+
+        window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
+        window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
+
+        window.titlebarAppearsTransparent = !fullScreen
+        updateTrafficLightPlacement(fullScreen: fullScreen)
+    }
 
     /// Centre line of the chrome row that runs beside the traffic lights, as a
     /// distance from the top of the window.
@@ -645,7 +950,7 @@ class MainBrowserWindowController: NSWindowController {
     /// control row, at its default 8pt and legacy 15.5pt top insets;
     /// `.comfortable` is the horizontal tab strip, whose 32pt tab row starts
     /// `WebContentConstant.edgesSpacing - 2` below the top of the window.
-    private static func chromeRowCenter(for layoutMode: LayoutMode) -> CGFloat {
+    static func chromeRowCenter(for layoutMode: LayoutMode) -> CGFloat {
         switch layoutMode {
         case .performance:
             return 20
@@ -674,6 +979,12 @@ class MainBrowserWindowController: NSWindowController {
     /// row used to be.
     private func updateTrafficLightPlacement(fullScreen: Bool) {
         guard let window else { return }
+        // Hosted: the lights belong to the shell window, which keeps one
+        // positioner across every Space it presents.
+        if isHosted {
+            (window as? ShellWindow)?.shellController?.updateTrafficLightPlacement(fullScreen: fullScreen)
+            return
+        }
         guard !fullScreen else {
             // AppKit rebuilds the titlebar across the transition and restores
             // the default placement on its own.

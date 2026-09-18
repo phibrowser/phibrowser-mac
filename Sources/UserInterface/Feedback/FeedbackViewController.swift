@@ -8,7 +8,7 @@ import SwiftUI
 
 @MainActor
 class FeedbackViewController: NSViewController, NSWindowDelegate {
-    private(set) var hostWindowController: MainBrowserWindowController
+    private(set) var hostWindowController: SpaceSessionController
     
     private let viewModel = FeedbackViewModel()
     
@@ -35,7 +35,7 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
     
     private lazy var feedbackHosting = ThemedHostingController(rootView: feedbackView)
     
-    init(host: MainBrowserWindowController) {
+    init(host: SpaceSessionController) {
         self.hostWindowController = host
         super.init(nibName: nil, bundle: nil)
     }
@@ -84,7 +84,7 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
     /// report's window-scoped context — the windowId for Chromium system logs and
     /// the focusingTab fallback — follows the window feedback was invoked from,
     /// not whichever window first created the (shared) feedback window.
-    func rebindHost(_ host: MainBrowserWindowController) {
+    func rebindHost(_ host: SpaceSessionController) {
         // Don't repoint an in-flight submit: submitFeedback already captured its
         // windowId and is awaiting Chromium logs; rebinding now would let the
         // enqueue mix this window's context with that submit's logs.

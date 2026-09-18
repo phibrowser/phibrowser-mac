@@ -888,7 +888,7 @@ final class KioskBrowserStateTests: XCTestCase {
         let window = makeWindow(
             frame: NSRect(x: 0, y: 0, width: 640, height: 480)
         )
-        let controller = MainBrowserWindowController(
+        let controller = SpaceSessionController(
             window: window,
             windowId: state.windowId,
             browserType: .kiosk,
@@ -922,7 +922,7 @@ final class KioskBrowserStateTests: XCTestCase {
         let window = makeWindow(
             frame: NSRect(x: 0, y: 0, width: 640, height: 480)
         )
-        let controller = MainBrowserWindowController(
+        let controller = SpaceSessionController(
             window: window,
             windowId: state.windowId,
             browserType: .kiosk,

@@ -624,7 +624,7 @@ final class TabGroupCellView: SidebarCellView {
 
     override func configureAppearance() {
         guard let groupItem = item as? TabGroupSidebarItem,
-              let state = MainBrowserWindowControllersManager.shared
+              let state = SpaceSessionControllersManager.shared
                 .controller(for: groupItem.windowId)?.browserState
         else { return }
 

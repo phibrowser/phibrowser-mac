@@ -205,7 +205,7 @@ extension AccountWebWindowController: WKNavigationDelegate {
         // When user clicks a link, open it in the main browser window instead of this WebView
         if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated {
             AppLogInfo("📄 [AccountWebWindow] Opening link in main browser: \(url.absoluteString)")
-            MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(url.absoluteString, focusAfterCreate: true)
+            SpaceSessionControllersManager.shared.activeWindowController?.browserState.createTab(url.absoluteString, focusAfterCreate: true)
             decisionHandler(.cancel)
         } else {
             decisionHandler(.allow)

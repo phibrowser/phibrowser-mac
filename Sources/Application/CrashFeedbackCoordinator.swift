@@ -74,7 +74,7 @@ final class CrashFeedbackCoordinator {
               !isTerminationInProgress, NSApp.isActive,
               ApplicationState.shared.isAuthenticated,
               AccountController.shared.account != nil else { return }
-        let manager = MainBrowserWindowControllersManager.shared
+        let manager = SpaceSessionControllersManager.shared
         let windows = manager.getAllWindows()
         let host = ([manager.activeWindowController].compactMap { $0 } + windows).first {
             $0.browserType == .normal && $0.window?.isVisible == true

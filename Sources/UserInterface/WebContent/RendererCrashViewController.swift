@@ -10,10 +10,10 @@ import SwiftUI
 final class RendererCrashViewController: NSViewController {
     private let tabId: Int
     private let data: CrashPageData
-    private weak var host: MainBrowserWindowController?
+    private weak var host: SpaceSessionController?
     private var hostingController: ThemedHostingController<RendererCrashView>?
 
-    init(tabId: Int, data: CrashPageData, host: MainBrowserWindowController) {
+    init(tabId: Int, data: CrashPageData, host: SpaceSessionController) {
         self.tabId = tabId
         self.data = data
         self.host = host

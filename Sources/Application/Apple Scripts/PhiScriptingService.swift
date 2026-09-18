@@ -549,7 +549,7 @@ extension PhiScriptingDependencies {
 
     private static func makeLiveSnapshot() -> PhiScriptingSnapshot {
         let spaceManager = SpaceManager.shared
-        let windowManager = MainBrowserWindowControllersManager.shared
+        let windowManager = SpaceSessionControllersManager.shared
         let userSpaces = spaceManager.userSpaces
         let userSpaceIds = Set(userSpaces.map(\.spaceId))
         let controllers = eligibleControllers(
@@ -757,9 +757,9 @@ extension PhiScriptingDependencies {
     }
 
     private static func eligibleControllers(
-        from controllers: [MainBrowserWindowController],
+        from controllers: [SpaceSessionController],
         userSpaceIds: Set<String>
-    ) -> [MainBrowserWindowController] {
+    ) -> [SpaceSessionController] {
         controllers.filter {
             $0.browserType == .normal && userSpaceIds.contains($0.spaceId)
         }
@@ -1152,7 +1152,7 @@ extension PhiScriptingDependencies {
               ),
               PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
               ApplicationState.shared.canUseBrowser,
-              !MainBrowserWindowControllersManager.shared.isGuestTransitionInteractionBlocked,
+              !SpaceSessionControllersManager.shared.isGuestTransitionInteractionBlocked,
               ChromiumLauncher.sharedInstance().bridge != nil,
               let appController = AppController.shared else {
             return .failed
@@ -1164,10 +1164,10 @@ extension PhiScriptingDependencies {
     private static func liveTab(
         windowId: String,
         tabId: String
-    ) -> (controller: MainBrowserWindowController, tab: Tab)? {
+    ) -> (controller: SpaceSessionController, tab: Tab)? {
         guard let numericWindowId = Int(windowId),
               let numericTabId = Int(tabId),
-              let controller = MainBrowserWindowControllersManager.shared.controller(for: numericWindowId),
+              let controller = SpaceSessionControllersManager.shared.controller(for: numericWindowId),
               controller.browserType == .normal,
               SpaceManager.shared.userSpaces.contains(where: { $0.spaceId == controller.spaceId }),
               let tab = controller.browserState.tabs.first(where: { $0.guid == numericTabId }) else {

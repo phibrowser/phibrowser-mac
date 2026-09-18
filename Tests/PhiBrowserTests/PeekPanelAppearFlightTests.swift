@@ -119,17 +119,17 @@ final class PeekPanelAppearFlightTests: XCTestCase {
     /// or a peek revealed minutes later flies out of an unrelated click.
     func testOnlyAFreshlyOpenedPeekMayFly() {
         // Nothing under this opener before: the user just opened it.
-        XCTAssertTrue(MainBrowserWindowController.isFreshlyOpenedPeek(
+        XCTAssertTrue(SpaceSessionController.isFreshlyOpenedPeek(
             previousPeekTabIdsByOpener: [:], openerTabId: 1, peekTabId: 10))
         // Another opener's peek existing changes nothing for this one.
-        XCTAssertTrue(MainBrowserWindowController.isFreshlyOpenedPeek(
+        XCTAssertTrue(SpaceSessionController.isFreshlyOpenedPeek(
             previousPeekTabIdsByOpener: [2: 20], openerTabId: 1, peekTabId: 10))
         // Switching back to a peek that was already mounted under its opener.
-        XCTAssertFalse(MainBrowserWindowController.isFreshlyOpenedPeek(
+        XCTAssertFalse(SpaceSessionController.isFreshlyOpenedPeek(
             previousPeekTabIdsByOpener: [1: 10, 2: 20], openerTabId: 1, peekTabId: 10))
         // Same opener, different peek — the old one ended and a new one
         // opened, so this one is fresh.
-        XCTAssertTrue(MainBrowserWindowController.isFreshlyOpenedPeek(
+        XCTAssertTrue(SpaceSessionController.isFreshlyOpenedPeek(
             previousPeekTabIdsByOpener: [1: 10], openerTabId: 1, peekTabId: 11))
     }
 

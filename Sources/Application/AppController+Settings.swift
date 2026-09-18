@@ -147,7 +147,7 @@ extension AppController {
 
     private func refreshSettingsPresentationState() {
         Task { @MainActor in
-            let isIncognito = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.isIncognito ?? false
+            let isIncognito = SpaceSessionControllersManager.shared.activeWindowController?.browserState.isIncognito ?? false
             SettingsPresentationState.shared.openedFromIncognito = isIncognito
         }
     }
@@ -281,7 +281,7 @@ extension AppController {
     /// without the user going anywhere.
     @objc private func windowDidBecomeKeyWhileSettingsOpen(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              window.windowController is MainBrowserWindowController else {
+              window.windowController is SpaceSessionController else {
             return
         }
         settingsActivationSource = nil

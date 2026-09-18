@@ -41,6 +41,17 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// no-ops.
     func rampSpaceTint(fromHex: String?, toHex: String?, duration: TimeInterval)
 
+    /// Hides everything this surface paints behind its band — the vibrancy
+    /// material, the themed fill, the per-Space tint — leaving only the
+    /// content. The live band slide (`SpaceWindowSlot.HostedBandSlide`)
+    /// sets this on the ENTERING surface while its tree slides in over the
+    /// leaving sidebar, so the leaving backdrop (ramping to the entering
+    /// Space's colors) shows through exactly as it did behind the old
+    /// content-only band snapshot; a vibrancy view sliding in with its own
+    /// material would instead blur whatever lies behind the window. Cleared
+    /// again when the slide lands.
+    func setSpaceSwitchBackdropHidden(_ hidden: Bool)
+
     /// The Spaces strip row's AppKit view — a `SpacesStripHostingView` when
     /// the strip is mounted, nil otherwise (incognito never mounts it). Both
     /// surfaces already expose it for the slot's pointer-vs-row test; the

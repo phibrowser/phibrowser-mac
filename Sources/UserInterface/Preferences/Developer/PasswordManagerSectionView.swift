@@ -286,7 +286,7 @@ struct PasswordManagerSectionView: View {
     /// missing (or its presence can't be determined), suggest the install and
     /// let the user decide.
     private func suggestExtensionInstallIfNeeded() {
-        guard let windowId = MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() else {
+        guard let windowId = SpaceSessionControllersManager.shared.getFirstAvailableWindowId() else {
             showInstallExtensionPrompt = true
             return
         }
@@ -300,7 +300,7 @@ struct PasswordManagerSectionView: View {
     }
 
     private func installBitwardenExtension() {
-        guard let windowId = MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() else {
+        guard let windowId = SpaceSessionControllersManager.shared.getFirstAvailableWindowId() else {
             AppLogWarn("[PasswordManager] No available window ID for Bitwarden extension install")
             return
         }

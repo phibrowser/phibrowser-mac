@@ -54,6 +54,15 @@ class SpaceSessionController: NSWindowController {
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
     var searchTabsContainerViewController: SearchTabsContainerViewController?
+
+    private var folioLibraryWindowController: FolioLibraryWindowController?
+
+    func openFolioLibrary() {
+        if folioLibraryWindowController == nil {
+            folioLibraryWindowController = FolioLibraryWindowController(owner: self)
+        }
+        folioLibraryWindowController?.present()
+    }
     
     private lazy var toastContainerViewController: OverlayToastViewController = {
         return OverlayToastViewController(state: browserState)
@@ -1370,6 +1379,8 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
+        folioLibraryWindowController?.close()
+        folioLibraryWindowController = nil
         // Defensive teardown for placeholder mode. In practice Chromium's
         // Browser::~Browser → HidePlaceholder fires first and clears state,
         // making this a no-op; kept as a backstop in case the destruction

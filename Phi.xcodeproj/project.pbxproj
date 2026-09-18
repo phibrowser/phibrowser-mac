@@ -657,6 +657,9 @@
 		49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV11.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV11.swift */; };
 		3908371DDE11819BEE6F447A /* ContentBlockingAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFBF4E016A9AE2F4AD2AC8D /* ContentBlockingAnalytics.swift */; };
 		FB0923000000000000000001 /* FeedbackLogSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0923000000000000000002 /* FeedbackLogSnapshot.swift */; };
+		FA1100000000000000000002 /* FolioLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000001 /* FolioLibrary.swift */; };
+		FA1100000000000000000004 /* FolioLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000003 /* FolioLibraryView.swift */; };
+		FA1100000000000000000006 /* FolioLibraryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000005 /* FolioLibraryWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1450,6 +1453,9 @@
 		79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV11.swift; sourceTree = "<group>"; };
 		4AFBF4E016A9AE2F4AD2AC8D /* ContentBlockingAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingAnalytics.swift; sourceTree = "<group>"; };
 		FB0923000000000000000002 /* FeedbackLogSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackLogSnapshot.swift; sourceTree = "<group>"; };
+		FA1100000000000000000001 /* FolioLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibrary.swift; sourceTree = "<group>"; };
+		FA1100000000000000000003 /* FolioLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibraryView.swift; sourceTree = "<group>"; };
+		FA1100000000000000000005 /* FolioLibraryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibraryWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -2493,6 +2499,7 @@
 				CCEF2D982E5F1A6E00FDDEB2 /* Chat */,
 				CCBF8F362E653A4200B9A99E /* Common */,
 				37C1B2802EE0394700DD4496 /* Downloads */,
+				FA1100000000000000000007 /* Folio */,
 				D10000000000000000000030 /* ExtensionDialog */,
 				CCBF8F672E65A9CB00B9A99E /* Extensions */,
 				37C1B1E22EDEA02100DD4496 /* Feedback */,
@@ -3013,6 +3020,7 @@
 				EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */,
 				EAD000000000000000000025 /* ReaderExportService.swift */,
 				EAD000000000000000000037 /* SaveForLaterService.swift */,
+				FA1100000000000000000001 /* FolioLibrary.swift */,
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
 				EAD000000000000000000031 /* ReaderExtensionBridge.swift */,
 				A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */,
@@ -3147,6 +3155,15 @@
 			);
 			name = Proto;
 			path = Proto;
+			sourceTree = "<group>";
+		};
+		FA1100000000000000000007 /* Folio */ = {
+			isa = PBXGroup;
+			children = (
+				FA1100000000000000000003 /* FolioLibraryView.swift */,
+				FA1100000000000000000005 /* FolioLibraryWindowController.swift */,
+			);
+			path = Folio;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -3819,6 +3836,9 @@
 				EAD00000000000000000001A /* ReaderAccessibilityExtractor.swift in Sources */,
 				EAD000000000000000000026 /* ReaderExportService.swift in Sources */,
 				EAD000000000000000000038 /* SaveForLaterService.swift in Sources */,
+				FA1100000000000000000006 /* FolioLibraryWindowController.swift in Sources */,
+				FA1100000000000000000004 /* FolioLibraryView.swift in Sources */,
+				FA1100000000000000000002 /* FolioLibrary.swift in Sources */,
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,
 				EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */,
 				A10A10000000000000000002 /* SidecarAIOutputStateStore.swift in Sources */,

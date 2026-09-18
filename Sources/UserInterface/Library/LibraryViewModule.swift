@@ -37,17 +37,19 @@ final class LibraryViewModule: NSViewController {
 
     private let browserState: BrowserState
     private let downloadsManager = DownloadsManager(profileIds: [])
+    private let folioModel: FolioLibraryModel
     var onDismiss: (() -> Void)?
 
     init(browserState: BrowserState) {
         self.browserState = browserState
+        folioModel = FolioLibraryModel(profileId: browserState.profileId)
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
-        let content = LibraryContentView(downloadsManager: downloadsManager) { [weak self] in
+        let content = LibraryContentView(browserState: browserState, downloadsManager: downloadsManager, folioModel: folioModel) { [weak self] in
             self?.onDismiss?()
         }
         let host = ThemedHostingController(rootView: content, themeSource: browserState.themeContext)
@@ -57,7 +59,9 @@ final class LibraryViewModule: NSViewController {
 }
 
 private struct LibraryContentView: View {
+    let browserState: BrowserState
     let downloadsManager: DownloadsManager
+    let folioModel: FolioLibraryModel
     let dismiss: () -> Void
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
@@ -66,6 +70,7 @@ private struct LibraryContentView: View {
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
     @State private var closeHovered = false
+    @State private var folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
 
     private func color(_ value: ThemedColor) -> Color {
         value.swiftUIColor(theme: theme, appearance: appearance)
@@ -88,6 +93,10 @@ private struct LibraryContentView: View {
                 if selection == .downloads {
                     AllDownloadsListView(downloadsManager: downloadsManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if selection == .folio {
+                    FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
+                        .clipShape(.rect(cornerRadius: 10))
+                        .onDisappear { folioModel.clear() }
                 } else {
                     placeholder
                 }
@@ -108,11 +117,26 @@ private struct LibraryContentView: View {
                 .strokeBorder(color(.border), lineWidth: 1)
                 .allowsHitTesting(false)
         }
+        .task(id: selection) {
+            while !Task.isCancelled {
+                folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
+                if selection == .folio {
+                    guard folioAvailable else {
+                        folioModel.clear()
+                        selection = .downloads
+                        return
+                    }
+                    await folioModel.refresh()
+                }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            }
+        }
+        .onDisappear { folioModel.clear() }
     }
 
     private var navigation: some View {
         VStack(spacing: 12) {
-            ForEach(LibraryViewModule.Section.allCases, id: \.self) { section in
+            ForEach(LibraryViewModule.Section.allCases.filter { $0 != .folio || folioAvailable }, id: \.self) { section in
                 Button {
                     selection = section
                     selectionAnimationTriggers[section, default: 0] += 1
@@ -193,5 +217,34 @@ private struct LibraryContentView: View {
                 .themedForeground(.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func openOriginal(_ url: URL) {
+        guard FolioLibrary.webURL(url.absoluteString) != nil,
+              SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        dismiss()
+        browserState.createTab(url.absoluteString, customGuid: nil, focusAfterCreate: true)
+    }
+
+    private func openArchive(_ item: FolioItem) {
+        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        do {
+            let url = try FolioLibrary.fileURL(basename: item.basename, ext: "mhtml", folder: folioModel.folder)
+            dismiss()
+            browserState.createTab(url.absoluteString, customGuid: nil, focusAfterCreate: true)
+        } catch { folioModel.error = error.localizedDescription }
+    }
+
+    private func reveal(_ item: FolioItem?) {
+        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        do {
+            if let item {
+                let url = try FolioLibrary.fileURL(basename: item.basename, ext: "md", folder: folioModel.folder)
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } else {
+                try FileManager.default.createDirectory(at: folioModel.folder, withIntermediateDirectories: true)
+                NSWorkspace.shared.open(folioModel.folder)
+            }
+        } catch { folioModel.error = error.localizedDescription }
     }
 }

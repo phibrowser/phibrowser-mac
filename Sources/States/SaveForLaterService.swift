@@ -381,13 +381,11 @@ enum SaveForLaterService {
 
     // MARK: - Library
 
-    /// Opens the Save for Later library — a Mirage extension page that lists
-    /// the saved items and renders their markdown with the reader's own
-    /// stylesheet. The page cannot touch the folder itself; the
-    /// `saveForLater.list/read/delete/reveal/openWebpage` handlers below are
-    /// its only access, and this service stays the authority on paths.
+    /// Opens the native library in the originating window's Profile.
+    /// Mirage still owns saving and can read the same files through the broker.
     static func openLibrary() {
-        openExtensionPage("library.html")
+        guard featureEnabled, !ApplicationState.shared.isGuest else { return }
+        MainBrowserWindowControllersManager.shared.activeWindowController?.openFolioLibrary()
     }
 
     /// The per-site auto-save list. The sites ARE the extension's trigger

@@ -67,7 +67,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     }
 
     /// 上一版写下的表——`formatVersion` 仍是 2，但没有 M3-3 新增的那四个 per-kind 标志键
-    /// ——必须照常解出来，四个标志读作 false。
+    /// （M3-4a 又加两个，共六个）——必须照常解出来，六个标志读作 false。
     ///
     /// 防的是什么：合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，**属性的
     /// 默认值一概不参与**。四个新字段一旦按合成解码走，每一台已装机的设备整张表都解不出来：
@@ -87,10 +87,18 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.spaceSectionEnabled = true
         table.lastDrainedBirthday = "b-1"
         table.unreadableTagHashes["abcd1234"] = 99
+        // M3-4a Task 6：第三条 kind 的两个标志也非默认，六个键一起验。
+        table.urlRulesHadRecords = true
+        table.urlRulesReplayedForEmptyTable = true
         let encoded = try JSONEncoder().encode(table)
+        // 正向：六个键都在的那份字节解出来两个新标志都是 true（合成 `CodingKeys` 自动覆盖）。
+        let full = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded)
+        XCTAssertTrue(full.urlRulesHadRecords)
+        XCTAssertTrue(full.urlRulesReplayedForEmptyTable)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         for key in ["bookmarksHadRecords", "pinsHadRecords",
-                    "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable"] {
+                    "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable",
+                    "urlRulesHadRecords", "urlRulesReplayedForEmptyTable"] {
             XCTAssertNotNil(object.removeValue(forKey: key), "\(key) 本该出现在编码里")
         }
         let legacy = try JSONSerialization.data(withJSONObject: object)
@@ -108,6 +116,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(decoded.pinsHadRecords)
         XCTAssertFalse(decoded.bookmarksReplayedForEmptyTable)
         XCTAssertFalse(decoded.pinsReplayedForEmptyTable)
+        XCTAssertFalse(decoded.urlRulesHadRecords)
+        XCTAssertFalse(decoded.urlRulesReplayedForEmptyTable)
         // 第二条受害路径：同一份字节不许被读成「格式偏低」而触发一次丢弃 + 配对向导。
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }

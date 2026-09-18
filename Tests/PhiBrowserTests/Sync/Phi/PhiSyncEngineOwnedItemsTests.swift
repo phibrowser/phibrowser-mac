@@ -149,6 +149,13 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         .pins(access: access, store: store)
     }
 
+    /// URL Rule 那一条（M3-4a Task 6），形状照上面两个。规则的引擎用例住在
+    /// `URLRuleKindTests.swift` 的 Task 6 段，这里只备着同款 helper。
+    private func urlRuleKind(_ access: FakeURLRuleAccess,
+                             _ store: MemoryOwnedItemStore) -> OwnedKindRegistration {
+        .urlRules(access: access, store: store)
+    }
+
     /// 一条 commit 的密文解出来的整条 pin 实体。
     private func committedPin(_ call: FakePhiSyncClient.CommitCall) -> Phi_PhiPinTabEntity? {
         guard let ciphertext = call.ciphertext,

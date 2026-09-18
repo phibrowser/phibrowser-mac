@@ -424,6 +424,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         case siblings(space: String)
         case liveOwners(count: Int)
         case apply(opCount: Int)
+        /// Task 6：落地提交之后那一次显式的路由表刷新（§6.6 / R-M3-4a-34）。
+        case refreshRoutingTable
     }
 
     /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
@@ -506,6 +508,11 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         }
         // 生产实现末尾会重读一次，于是落地后的复核在同一轮里就能做。
         snapshotIsLoaded = true
+    }
+
+    /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
+    func refreshRoutingTableAfterLanding() {
+        calls.append(.refreshRoutingTable)
     }
 
     private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {

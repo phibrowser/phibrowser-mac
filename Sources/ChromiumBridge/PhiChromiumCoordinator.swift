@@ -145,6 +145,9 @@ import SwiftUI
     private var phiBookmarksCancellable: AnyCancellable?
     /// 整账户 pin 编辑 -> 一轮归属项推送（§5.7）。形状同上。
     private var phiPinnedTabsCancellable: AnyCancellable?
+    /// 整账户 URL Rule 编辑 -> 一轮归属项推送（M3-4a §6.5）。形状同上；上游是 store 级的
+    /// `LocalStore.urlRuleChangesPublisher()`，**不是** UI 那条 `urlRulesPublisher()`。
+    private var phiURLRulesCancellable: AnyCancellable?
     /// 两条订阅要把各自 kind 的 `label` 交给引擎，而 `label` 是注册清单的唯一键
     /// （`OwnedKindRegistration.label`）。注册项在引擎构建那一处建，订阅在
     /// `startPhiSyncIfReady()` 里挂，所以把 label 从前者带到后者，而不是在第二处重写一遍
@@ -153,6 +156,8 @@ import SwiftUI
     private var phiBookmarkKindLabel: String?
     /// 同上，pin 那一条。
     private var phiPinKindLabel: String?
+    /// 同上，URL Rule 那一条（M3-4a）。
+    private var phiURLRuleKindLabel: String?
 
     /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
     /// invalidation, so this timer and the foreground pull are the only unattended triggers on
@@ -236,6 +241,11 @@ import SwiftUI
             fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
         let pinStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
+        // M3-4a：URL Rule 的游标表，第三张、同一个目录，字段集与另两张逐字相同（§3.5）。
+        // **不进** `ownedItemStores`：§9.1 的自撤销对规则的处置（连同「清 `syncId` 不覆盖规则」，
+        // §4.4 末段：规则的 `syncId` 清掉会造孤儿）是 Task 9 的。
+        let urlRuleStore = FileOwnedItemStateStore(
+            fileURL: syncDirectory.appendingPathComponent("urlrules-cursors.json"))
         // M3-4a §2.10：共享进度 marker 与 store birthday 也落在同一个目录（`marker.json`），
         // 于是一次用户数据导入把库、游标表与 marker 一起回退。**同样建在这里、而不是等
         // `buildPhiSyncEngine`**：§4.4 的自撤销要删的正是它指着的文件，而那一步与引擎建不建
@@ -335,7 +345,8 @@ import SwiftUI
         buildPhiSyncEngine(stack: stack, accountId: account.userID,
                            account: account, spaceStateStore: spaceStateStore,
                            bookmarkAccess: bookmarkAccess, bookmarkStore: bookmarkStore,
-                           pinStore: pinStore, markerStore: markerStore)
+                           pinStore: pinStore, urlRuleStore: urlRuleStore,
+                           markerStore: markerStore)
         return syncKeyController
     }
 
@@ -352,6 +363,7 @@ import SwiftUI
         bookmarkAccess: AccountPhiBookmarkAccess,
         bookmarkStore: FileOwnedItemStateStore,
         pinStore: FileOwnedItemStateStore,
+        urlRuleStore: FileOwnedItemStateStore,
         markerStore: FilePhiSyncMarkerStore
     ) {
         let deviceKeyId: String
@@ -430,10 +442,19 @@ import SwiftUI
         let bookmarkKind = OwnedKindRegistration.bookmarks(access: bookmarkAccess,
                                                            store: bookmarkStore)
         let pinKind = OwnedKindRegistration.pins(access: pinAccess, store: pinStore)
-        let ownedKinds = [bookmarkKind, pinKind]
-        // §5.7 的两条订阅在 `startPhiSyncIfReady()` 里挂，label 从这里带过去（见属性注释）。
+        // M3-4a：URL Rule 的 access 同样收 `LocalStore`（Task 8）。**注册次序即处理次序**：
+        // 规则排在最后（§5.2「设置 → Space → 书签 → pin → URL Rule」），B2-7b 的中止窗口
+        // 「最后一条 kind 落完但 marker 没写」落在它身上；第五种 kind 不需要引擎里任何新分支
+        // （§6.2）。落地后的路由表刷新经 `AccountPhiURLRuleAccess.refreshRoutingTableAfterLanding()`
+        // ——引擎不直调 `SpaceManager`；`ruleTieBreakKeyResolver` 的注入在上面（Task 10），不动。
+        let urlRuleAccess = AccountPhiURLRuleAccess(store: account.localStorage)
+        let urlRuleKind = OwnedKindRegistration.urlRules(access: urlRuleAccess,
+                                                         store: urlRuleStore)
+        let ownedKinds = [bookmarkKind, pinKind, urlRuleKind]
+        // §5.7 的三条订阅在 `startPhiSyncIfReady()` 里挂，label 从这里带过去（见属性注释）。
         phiBookmarkKindLabel = bookmarkKind.label
         phiPinKindLabel = pinKind.label
+        phiURLRuleKindLabel = urlRuleKind.label
         // A new engine starts from its own persisted `spaceSectionEnabled`, so the memo
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)
@@ -729,6 +750,18 @@ import SwiftUI
                         }
                     }
             }
+            // §6.5 的第三条订阅（M3-4a）。**接 store 级兄弟 `urlRuleChangesPublisher()`，不是
+            // `urlRulesPublisher()`**：后者发 model 对象、按 `l.id` 去重，而两侧是 SwiftData
+            // 就地刷新的同一批实例，一次真实字段编辑会被吞掉；它还是 UI 的 publisher，
+            // `SpaceManager` 已经订着它。防抖与值快照去重都在 store 侧，这里是裸 sink。
+            if let label = phiURLRuleKindLabel {
+                phiURLRulesCancellable = account.localStorage.urlRuleChangesPublisher()
+                    .sink { [weak self] _ in
+                        Task { @MainActor in
+                            await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
+                        }
+                    }
+            }
         }
 
         AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
@@ -874,9 +907,13 @@ import SwiftUI
         phiBookmarksCancellable = nil
         phiPinnedTabsCancellable?.cancel()
         phiPinnedTabsCancellable = nil
-        // 两个 label 描述的是下面正要丢掉的那个引擎的注册清单，跟着它一起清。
+        // 第三条（M3-4a）：漏掉它，换账户之后旧引擎会被一条死订阅吊住。
+        phiURLRulesCancellable?.cancel()
+        phiURLRulesCancellable = nil
+        // 三个 label 描述的是下面正要丢掉的那个引擎的注册清单，跟着它一起清。
         phiBookmarkKindLabel = nil
         phiPinKindLabel = nil
+        phiURLRuleKindLabel = nil
         if let observer = phiPinnedTabScopeObserver {
             NotificationCenter.default.removeObserver(observer)
             phiPinnedTabScopeObserver = nil

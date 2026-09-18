@@ -233,6 +233,13 @@ protocol PhiURLRuleLocalAccess: AnyObject {
 
     /// 一整页远端落地，**一个**事务（§5.5）。抛错 = 一条都没落，调用方不许写基线。
     func apply(_ batch: URLRuleApplyBatch) async throws
+
+    /// §6.6 / R-M3-4a-34：一页规则落地**提交之后**刷新 Chromium 那张路由表，**一页一次**。
+    /// 生产实现是一句 `SpaceManager.shared.reloadURLRulesFromStore()`（重读 + 换缓存 +
+    /// `pushRoutingTableToChromium()`）。放在 access 上而不是让引擎直调 `SpaceManager`，
+    /// 与 `PhiSpaceLocalAccess`（`applyRemoteHidden` / `closeSpaceWindows` / `clearThemeRecords`）
+    /// 落地副作用的形状逐字相同（Task 6 计划裁定一）。
+    func refreshRoutingTableAfterLanding()
 }
 
 // MARK: - 生产实现
@@ -317,6 +324,13 @@ final class AccountPhiURLRuleAccess: PhiURLRuleLocalAccess {
     func apply(_ batch: URLRuleApplyBatch) async throws {
         try await store.applyURLRuleSyncBatchThrowing(batch.ops)
         try rebuildCache()
+    }
+
+    /// 靠 `urlRulesPublisher` 自己发射是不够的：它按 SwiftData 就地刷新的同一批实例去重，一次
+    /// 只改 host 的落地会被吞掉（`LocalStore+SpaceURLRule.swift` 的 `removeDuplicates`）。
+    /// 一页一次、只在 `apply` 成功返回之后（引擎那一侧保证）。
+    func refreshRoutingTableAfterLanding() {
+        SpaceManager.shared.reloadURLRulesFromStore()
     }
 
     // MARK: - 私有

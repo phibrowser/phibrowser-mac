@@ -292,3 +292,96 @@ B2-17neg / B2-4d-x）。
 
 11. **compile-only**（`xcodebuild build-for-testing`）。三条新用例与翻转的那条没有在运行时跑过；
     两轮的走向（A0 自愈触发、update 支的 `applyThemeState`、去重后的 `.create` 计数）按代码推导。
+
+## Task 6
+
+游标表 / 两个标志 / `OwnedKindFlags.urlRules` / 注册项 `.urlRules` 全部成员 / 协调器接线与订阅 /
+`OwnedRoundCounters` 五字段 + `reportsRuleCounters` + `landsEmptyBatch` + 第二发射段 / B2 用例的
+规则半边 / U-18 两条 R-103 变体 / CASE U-11。汇合段第一条，基点 `154b3f39`。
+
+### brief 的「计划裁定」要求记档的
+
+1. **协议第七个成员 `refreshRoutingTableAfterLanding()` 归本任务**（spec §5.6 的协议清单里没有它，
+   Task 8 的 Produces 因此多一个成员）：`PhiURLRuleLocalAccess` + `AccountPhiURLRuleAccess`
+   （一句 `SpaceManager.shared.reloadURLRulesFromStore()`）+ `FakeURLRuleAccess.Call.refreshRoutingTable`。
+   引擎不直调 `SpaceManager`（`PhiSyncEngine.swift` 对它仍只有注释引用与 `URLRuleKind` 经由的
+   两个 static）。Task 8 评审点名的那条运行期未验证前提（主上下文合并可见性紧跟在一次已 await 的
+   后台保存之后）仍然成立：本任务的刷新调用在 `access.apply` 返回**之后**，经 access 成员进
+   `reloadURLRulesFromStore()`，前提本身没有在本任务里得到运行期验证（compile-only）。
+2. **`OwnedPlanOutput.normalized` 与 `OwnedLandingOutcome.ownerMoved`**：spec §11 没点名的两个字段。
+   `owner_moved` 由落地数批次里真的留下来的 `.move`（`URLRuleApplyBatch.init` 降级之后），不在
+   plan 里按 step 数；`normalized` 由 plan 闭包填。其余四个计数（`collapsed` / `transferred` /
+   `yieldNoPartner` 与 `adopted` 的规则半边）本任务恒 0，发射段照印。
+3. **spec §6.5 的 `Round` case 行号 `:684` 实为 `:687`（`c549c4c5`），入口名是
+   `handleLocalOwnedChange(label:)` 不是 `(kind:)`**；本任务的协调器订阅与用例都按后者。
+4. **U-27 ~ U-31 五个新 CASE 编号**（本计划新增，Task 12 写回 spec §12.1），全部落在
+   `URLRuleKindTests.swift` 的 Task 6 段；U-11 由控制者补派到本任务，也在那里。
+5. **`server = remote` 记归一化之前的字节**（计划裁定五）——`urlRulePlan` 在 `normalizeArrivals` 之前
+   写 `out.serverBytes`。
+6. **`tombstones` 闭包保持最小形**（计划裁定四）：一次 `allURLRulesIncludingDeleted()` + 一次
+   `SyncableOwnedItems.tombstones(... pendingClaims: [])`；`explicitDeletions`（Task 9）与
+   `deferredDeletions`（8b-3）的钩点是那个 `let rows = …` 绑定，注释里点名。
+7. **`landsEmptyBatch`**（R-M3-4a-99）：`OwnedKindRegistration` 的 `let` 成员，`.urlRules` 传 `true`、
+   `.bookmarks` / `.pins` 显式传 `false`；`applyOwnedKind` 那道空批次 guard 只加了
+   `|| registration.landsEmptyBatch`，早退支的 `if replayedAfterDelete > 0 { writeOwnedTable }` 原样。
+   用例在 8b-2 的 CASE M-35。**副作用**：规则每页都会走到 `applyOwnedKind` 末尾的
+   `writeOwnedTable`，即每一页多一次 `urlrules-cursors.json` 的原子写（表没变也写）——书签与 pin
+   的早退逐字不变，不受影响。
+
+### 与 brief 不同的实现判断
+
+8. **`localIdentities` 闭包读 `state.rows`，不再 fetch 第二次。** brief 写的是
+   `try? access.allURLRulesIncludingDeleted()` 回退到 `state.rows`。`beginOwnedRound` 里它紧跟在
+   `beginRound()` 之后、且只在 `beginRound` 没抛时才被调（同一个 `do` 块），`state.rows` 就是
+   「本轮已经读到的那些身份」，含软删行；再读一次只多一次主上下文 fetch。
+9. **`reloadAfterPage` 在生产实现上确实是一次 fetch。** brief 说「Task 8 的 `apply` 已经重建过 access
+   自己那份页内缓存，所以不是第二次 fetch」——但协议没有 `cachedRows()` 这样的读口
+   （pin 有 `cachedPins()`），`allURLRulesIncludingDeleted()` 在 `AccountPhiURLRuleAccess` 上必经
+   `rebuildCache()`。每落地一页多一次 fetch；`FakeURLRuleAccess` 上零成本。加一个不 fetch 的读口
+   属于 Task 8 的协议面，本任务不动。
+10. **落地后复核排在 `reloadAfterPage` 之前。** 生产 `rebuildCache()` 失败时先 `invalidateCache()`
+    再抛，之后 `isKnownLocalURLRule` 会 `assertionFailure`；`apply` 成功返回时缓存刚重建过，复核
+    放在它后面、重读前面，重读失败也不会把已落地的行读成「不在」（`pageReloadFailed` 只影响下一页
+    的投影）。同理 `siblings(inSpaceId:)` 在 `pageReloadFailed` 时退回 `state.live` 按 `spaceId` 分组。
+11. **翻译表对「有行的 `.create`」发 `.update` / `.move`，不发 `.create`**（§4.5「先按身份找本机行，
+    找不到才 create」，与 `landPins` 同一条）：定义域**含软删行**（R-M3-4a-42(a)），一次重放
+    （游标丢失、marker 回退）或一次救回软删行都是 update；桶变了就是 `.move`，两者一起交给
+    `URLRuleApplyBatch.init` 合并 / 降级。被触及的桶里其余兄弟各发一条 `.reorder`（只发下标真的
+    变了的那些），让 §8.3 的投影而不是批次入口的 `(sortOrder, id)` 收尾决定次序。
+12. **`logOwnedRounds` 的拼串拆成 `static func ownedRoundLogLine(_:counters:)`**（actor 的 static
+    成员不隔离，纯函数）：brief 的 U-27 要「按 `logOwnedRounds` 的拼串规则核对三条行文本」，而
+    `AppLogInfo` 没有测试面、全局约束又禁止新的驱动入口；一个纯格式化函数不是驱动入口。书签与
+    pin 的行**逐字节不变**（U-27 同时钉了 `bookmarks` / `pins` 两条行的形状）。
+13. **U-18 (f) 的第二轮不是「第 ① 步幂等零写 + 第 ② 步这次写成」。** 盘上 marker 已经是 nil，
+    guard 1（R-M3-4a-89，`pull` 入口）在**轮首**就武装 drain 并从头重放；重放页里的 `r1` 按身份
+    落地、游标在发布段那次 `loadOwnedTable(armsReplayOnLoss: true)` 之前已经重建 ⇒ 报损不再命中、
+    闩不需要再置位。brief 写的那一格只在「重放页不带任何规则」时可观测，于是拆成两条：
+    `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay`（(a) 形状，钉「可重来的落盘
+    失败没有变成永久失效」）与 `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`
+    （空账户，钉 `markerStore.saves` 不增、闩置位、drain 武装）。(f) 的 `failSaveOnCallNumber`
+    动态取 `saveCalls + 2`：页 1 那次无条件的 Space 表写是第 1 次，第 ② 步是第 2 次。
+14. **U-18 (e) 的 `MemorySpaceStore.saveCalls 不增` 写成 `≤ 1`**：页循环每页无条件 `writeSpaceTable`
+    一次，那个 +1 与第 ② 步无关；断言的是「页写之外没有第二次」+ 闩 / drain 标志逐字不变。
+15. **U-18 (a) ~ (d) 的 marker 用十进制 `"5"`、重放页水位 `"3"`**（brief 写 `"M5"`）：
+    `FakePhiSyncClient.pagesByMarker` 按十进制水位分页，非数字 marker 读成 0；水位 3 ≤ 5 让
+    「从 5 起拉不到、从 nil 重放才拉到」成立，正是 (a) 的「重放页里带 r1」。(c) 用不带 `syncId` 的
+    行、(d) 带——brief 说四段共用一份行，这里让 (c)/(d) 各自表达一半判据。
+16. **U-30 的游标多带 `deletedAtMs`**（照 CASE 6.18 / 6.21 的书签形状）：否则 reset 之后同一轮的
+    发布段会为它补键（有本机行）或差分为它发 tombstone（无本机行、`entityId == ""` ⇒ §9.1 第二道
+    闸就地写 `deletedAtMs` 并清 `reconciled`），断言读到的就不再是 reset 本身。
+17. **U-28 的次序探针是文件末尾的 `RecordingSpaceStore`**（记三个 `…HadRecords` 第一次为真的次序），
+    不是往三个假件里塞共享数组——假件没有那个钩子，全局约束又要求改既有假件显式声明。
+18. **U-29 的 sink 记 label、不调引擎**：形状逐字是协调器那一行（裸 sink、label 从注册项带来），
+    引擎调用本身没有可数的测试面；真 `LocalStore` 在临时目录上，`tearDown` 里删。
+19. **U-11 的 Space 段与设置段用 2b-L1 的办法静默**（三个已映射 Space 进 `unreadableTagHashes`、
+    预置空 `storedLastEntity`），两台引擎各自的 defaults suite 与 store；`v+1` 不写死，读
+    `client.stored[hash].version`。
+20. **`PhiSyncMarkerBoundaryTests` 只补了 brief 点名的三格**（B2-3 新用例、B2-7 / B2-7b 经五种 kind
+    的共享 fixture）。Task 2b 留下的其余 `— Task 6` 占位（B2-1c (d)、B2-6b、B2-13、B2-15、B2-16 的
+    规则版）**原样未动**，交 Task 12 收口决定。
+
+### 验证口径
+
+21. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰的文件零
+    warning）。十九条新用例与三处扩写没有在运行时跑过；每条的走向（`.create` 步落成 `.update`、
+    冲突后的限定重发、guard 1 的轮首重放、`hadRecordsSeen == [true, true]` 等）按代码推导。

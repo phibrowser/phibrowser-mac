@@ -11,6 +11,11 @@ import Foundation
 //
 //     <account.userDataStorage>/sync/bookmarks-cursors.json
 //     <account.userDataStorage>/sync/pins-cursors.json
+//     <account.userDataStorage>/sync/urlrules-cursors.json   （M3-4a，URL Rule）
+//
+// 第三张表的字段集与另两张**逐字相同**：`PhiOwnedItemTable` / `PhiOwnedItemCursor` 为规则
+// **一个字段都不加**（RR8-4 / §4.4）——规则的合并伙伴记在 V11 的行列 `mergePartnerSyncId`
+// 上，不进游标。
 //
 // `account.userDataStorage` 就是 `<App Support>/Phi/users/<userID>`（`Account.swift`），
 // 也就是 `localDB` 与 `defaults/` 的同级目录，所以这两个文件**随账户目录天然隔离**：
@@ -161,6 +166,8 @@ struct OwnedKindFlags {
                                           replayedForEmptyTable: \.bookmarksReplayedForEmptyTable)
     static let pins = OwnedKindFlags(hadRecords: \.pinsHadRecords,
                                      replayedForEmptyTable: \.pinsReplayedForEmptyTable)
+    static let urlRules = OwnedKindFlags(hadRecords: \.urlRulesHadRecords,
+                                         replayedForEmptyTable: \.urlRulesReplayedForEmptyTable)
 }
 
 /// 一张 per-kind 游标表的存储。

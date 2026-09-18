@@ -116,8 +116,12 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// 唯一判据。判据**不能**写成「该 kind 名下还有带 `syncId` 的本地行」：pin 没有 `syncId`
     /// 这一列，那条判据对 pin 恒为假，于是丢掉 `pins-cursors.json` 什么都不触发，下一轮
     /// push 就把账户里每一条 pin 用 `baseVersion == 0` 的 create 盲写覆盖。
+    /// `urlrules` 的判据**同样绝不能**写成「本机还有带 `syncId` 的规则行」，方向与 pin 那条
+    /// 相反：R-M3-4a-23 让每一条活行都有 `syncId`，那条判据对规则**恒真**，于是一台从没发布过
+    /// 规则的机器每一轮都会重放整个 data type（spec §10）。
     var bookmarksHadRecords = false
     var pinsHadRecords = false
+    var urlRulesHadRecords = false
 
     /// 每个 kind 自己的一次性重放闸（A2）。**绝不复用上面那个 `didReplayForEmptyTable`**：
     /// 那一个是永久闩，除了 `resetForNewStoreBirthday()` 之外任何东西都不重置它，而它的
@@ -132,8 +136,12 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// 报损本身就是那道闸，不需要第二个标志（M2）：报损做的第一件事就是丢 marker、重新
     /// 武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ① 读的正是
     /// `hasDrainedFullReplay`。所以从报损那一刻起，该 kind 在重放收尾之前一条都发不出去。
+    /// `urlrules` 那一道与上面两道**互不相干**（各自一次性、各自复位）：书签先花掉自己那道之后，
+    /// 规则的第一次文件丢失照样拿得到一次重放；判据也绝不能改成「本机还有带 `syncId` 的规则
+    /// 行」——它对规则恒真（R-M3-4a-23，见 `urlRulesHadRecords` 上的说明）。
     var bookmarksReplayedForEmptyTable = false
     var pinsReplayedForEmptyTable = false
+    var urlRulesReplayedForEmptyTable = false
 
     // MARK: - Derived sets
 
@@ -281,6 +289,11 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent(Bool.self, forKey: .bookmarksReplayedForEmptyTable) ?? false
         pinsReplayedForEmptyTable =
             try container.decodeIfPresent(Bool.self, forKey: .pinsReplayedForEmptyTable) ?? false
+        // M3-4a 新增的两个（URL Rule 那条 kind）：同一条理由，缺席 = 上一版写的表。
+        urlRulesHadRecords =
+            try container.decodeIfPresent(Bool.self, forKey: .urlRulesHadRecords) ?? false
+        urlRulesReplayedForEmptyTable =
+            try container.decodeIfPresent(Bool.self, forKey: .urlRulesReplayedForEmptyTable) ?? false
     }
 }
 

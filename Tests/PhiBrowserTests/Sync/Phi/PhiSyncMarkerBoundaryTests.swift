@@ -716,6 +716,26 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         ops.filter { if case .create = $0 { return true } else { return false } }.count
     }
 
+    // MARK: - Task 6：URL Rule 那一格的小工具
+
+    private func ruleTag(_ uuid: String) -> String { PhiSyncEntity.urlRuleClientTag(uuid) }
+
+    /// 一条能落地的规则实体：目标 `su-1` 映到 `makeSpaceAccess` 的 `s-1`。
+    private func urlRuleEntity(_ uuid: String, version: Int64, entityId: String? = nil,
+                               host: String = "github.com") -> PhiRemoteEntity {
+        remoteEntity(envelope(urlRulePayload(uuid: uuid, targetSpaceUuid: "su-1", host: host)),
+                     tag: ruleTag(uuid), version: version,
+                     entityId: entityId ?? "srv-\(uuid)", key: key)
+    }
+
+    private func ruleCreateCount(_ ops: [URLRuleSyncOp]) -> Int {
+        ops.filter { if case .create = $0 { return true } else { return false } }.count
+    }
+
+    private func ruleApplyCalls(_ access: FakeURLRuleAccess) -> Int {
+        access.calls.filter { if case .apply = $0 { return true } else { return false } }.count
+    }
+
     private func applyCalls(_ access: FakeBookmarkAccess) -> Int {
         access.calls.filter { if case .apply = $0 { return true } else { return false } }.count
     }
@@ -1056,7 +1076,61 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertNotNil(pinStore.table.cursors.values.first { $0.entityId == "e1" })
     }
 
-    // CASE B2-3: urlrules — Task 6
+    // MARK: - CASE B2-3（URL Rule 游标 save 失败 ⇒ marker 不推）
+
+    /// CASE B2-3（Task 6）— 规则游标 save 失败 ⇒ 本页 marker 不推、`cursor_save_failed`、零 commit
+    /// （落地先于游标，行已经建出来）；放行之后假件从 M0 重投同一页 ⇒ 行仍是一条、`syncId` /
+    /// `id` / 四个字段与第一次落地后逐字相同、第二轮零条 `.create`（走 update 支）、marker 推到 M1。
+    ///
+    /// 防的是什么：「游标写失败也把 marker 推过去」——服务端不会再发第二次，那条规则的基线永久
+    /// 缺席，下一轮发布段以 `baseVersion == 0` 盲写覆盖账户上那一条；以及重投走 create 支：账户
+    /// 上一条规则，本机变两行。
+    func testAURLRuleCursorSaveFailureHoldsTheMarkerAndTheReplayDoesNotDuplicateTheRow() async throws {
+        let access = FakeURLRuleAccess(rows: [])
+        let store = MemoryOwnedItemStore()
+        store.failNextSave = true
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([urlRuleEntity("r1", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore,
+                                     spaceStore: drainedSpaceStore(),
+                                     ownedKinds: [.urlRules(access: access, store: store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        let advanced = await engine.lastRoundMarkerAdvancedForTesting
+        let failures = await engine.lastRoundCursorSaveFailedCountForTesting
+        let counters = await engine.lastOwnedRoundCountersForTesting["urlrules"]
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertFalse(advanced)
+        XCTAssertEqual(failures, 1)
+        XCTAssertEqual(counters?.applied, 1)
+        XCTAssertEqual(counters?.pushed, 0)
+        XCTAssertTrue(client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName }.isEmpty)
+        XCTAssertEqual(markerStore.file.marker, Data("0".utf8))
+        XCTAssertEqual(access.rows.count, 1, "落地先于游标，行已经建出来")
+        let landed = try XCTUnwrap(access.rows.first)
+        XCTAssertEqual(landed.syncId, "r1")
+        XCTAssertEqual(landed.spaceId, "s-1")
+
+        store.failNextSave = false
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(access.rows.count, 1, "重投没有把 update 走成 create")
+        let replayed = try XCTUnwrap(access.rows.first)
+        XCTAssertEqual(replayed.id, landed.id)
+        XCTAssertEqual(replayed.syncId, "r1")
+        XCTAssertEqual(replayed.host, landed.host)
+        XCTAssertEqual(replayed.pathPrefix, landed.pathPrefix)
+        XCTAssertEqual(replayed.askBeforeRouting, landed.askBeforeRouting)
+        XCTAssertEqual(replayed.spaceId, landed.spaceId)
+        XCTAssertEqual(ruleCreateCount(access.lastAppliedOps), 0, "第二轮走 update 支")
+        XCTAssertEqual(markerStore.file.marker, Data("7".utf8))
+        XCTAssertEqual(store.table.cursors["r1"]?.entityId, "e1", "游标这才写下")
+    }
 
     // MARK: - CASE B2-4（Space 表 save 失败）
 
@@ -1390,7 +1464,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
     // MARK: - CASE B2-7 / 7b / 7c（多种 kind 同页）
 
-    /// 同一页：设置 1 + Space 1 + 书签 2 + pin 1（规则 1 条 —— Task 6 补）。
+    /// 同一页：设置 1 + Space 1 + 书签 2 + pin 1 + 规则 1（Task 6 补的第五种 kind，排最后）。
     private func fourKindPage(settingKey: String) -> FakePhiSyncClient.Page {
         page([
             boolSettingsEntity(key: settingKey, true, at: 300, version: 10),
@@ -1398,7 +1472,8 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
             bookmarkEntity("b1", version: 12),
             bookmarkEntity("b2", version: 13),
             pinEntity("lx", version: 14),
-        ], marker: "14")
+            urlRuleEntity("r1", version: 15),
+        ], marker: "15")
     }
 
     private struct FourKindFixture {
@@ -1408,6 +1483,8 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let bookmarkStore: MemoryOwnedItemStore
         let pinAccess: FakePinAccess
         let pinStore: MemoryOwnedItemStore
+        let urlRuleAccess: FakeURLRuleAccess
+        let urlRuleStore: MemoryOwnedItemStore
         let markerStore: MemoryMarkerStore
         let client: FakePhiSyncClient
         let settingKey: String
@@ -1420,15 +1497,20 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         return FourKindFixture(spaceAccess: makeSpaceAccess(), spaceStore: drainedSpaceStore(),
                                bookmarkAccess: FakeBookmarkAccess(), bookmarkStore: MemoryOwnedItemStore(),
                                pinAccess: FakePinAccess(scope: .profile, account: .profile),
-                               pinStore: MemoryOwnedItemStore(), markerStore: markerStore(marker: "0"),
+                               pinStore: MemoryOwnedItemStore(),
+                               urlRuleAccess: FakeURLRuleAccess(), urlRuleStore: MemoryOwnedItemStore(),
+                               markerStore: markerStore(marker: "0"),
                                client: client, settingKey: settingKey)
     }
 
+    /// 注册次序 `[bookmarks, pins, urlrules]`，与协调器的 `ownedKinds` 字面量逐字相同：规则排
+    /// 最后，B2-7b 的中止窗口「最后一条 kind 落完但 marker 没写」因此落在它身上（CASE U-28）。
     private func makeFourKindEngine(_ f: FourKindFixture) -> PhiSyncEngine {
         makeOwnedEngine(client: f.client, markerStore: f.markerStore, spaceStore: f.spaceStore,
                         spaceAccess: f.spaceAccess, settings: boolRegistry(f.settingKey),
                         ownedKinds: [.bookmarks(access: f.bookmarkAccess, store: f.bookmarkStore),
-                                     .pins(access: f.pinAccess, store: f.pinStore)])
+                                     .pins(access: f.pinAccess, store: f.pinStore),
+                                     .urlRules(access: f.urlRuleAccess, store: f.urlRuleStore)])
     }
 
     private func assertFourKindsLandedExactlyOnce(_ f: FourKindFixture,
@@ -1442,11 +1524,14 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(f.bookmarkAccess.rows.count, 2, "书签两行", file: file, line: line)
         XCTAssertEqual(Set(f.bookmarkAccess.rows.compactMap(\.syncId)), ["b1", "b2"], file: file, line: line)
         XCTAssertEqual(f.pinAccess.rows.count, 1, "pin 一行", file: file, line: line)
+        XCTAssertEqual(f.urlRuleAccess.rows.count, 1, "规则一行", file: file, line: line)
+        XCTAssertEqual(f.urlRuleAccess.rows.first?.syncId, "r1", file: file, line: line)
     }
 
-    /// CASE B2-7 — 只有 pin 的 store save 失败 ⇒ marker 不推，但**四种 kind 的落地都已发生**；
-    /// 重投整页 ⇒ 四种 kind 各自的行数与身份数不增、零 resurrected / refused / 出站 tombstone。
-    /// 规则那一格 Task 6 补。
+    /// CASE B2-7 — 只有 pin 的 store save 失败 ⇒ marker 不推，但**五种 kind 的落地都已发生**；
+    /// 重投整页 ⇒ 五种 kind 各自的行数与身份数不增、零 resurrected / refused / 出站 tombstone。
+    /// 规则那一格（Task 6）：行数 1、`syncId == "r1"`、`urlrules applied == 1`、规则的游标表 save
+    /// **成功**（一种 kind 失败不牵连别的 kind 的落盘）；第二轮零 `tombstones`、零 `.create`。
     func testOneKindsSaveFailureDoesNotUndoTheOtherKindsAndTheReplayAddsNothing() async throws {
         let f = makeFourKindFixture()
         f.pinStore.failNextSave = true
@@ -1456,12 +1541,18 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
         let advanced = await engine.lastRoundMarkerAdvancedForTesting
         let outcome = await engine.lastRoundOutcomeForTesting
+        let firstCounters = await engine.lastOwnedRoundCountersForTesting
         XCTAssertFalse(advanced)
         XCTAssertEqual(outcome, .cursorSaveFailed)
         assertFourKindsLandedExactlyOnce(f)
         XCTAssertNotNil(f.spaceStore.table.cursors["u1"], "Space 游标写成了（那张表没失败）")
         XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2)
         XCTAssertTrue(f.pinStore.table.cursors.isEmpty, "只有 pin 那次写没落盘")
+        // CASE B2-7 urlrules（Task 6）
+        XCTAssertEqual(firstCounters["urlrules"]?.applied, 1)
+        XCTAssertEqual(f.urlRuleStore.table.cursors.count, 1, "规则的游标表 save 成功")
+        XCTAssertEqual(f.urlRuleStore.table.cursors["r1"]?.entityId, "srv-r1")
+        let ruleApplyCallsAfterFirstRound = ruleApplyCalls(f.urlRuleAccess)
 
         f.pinStore.failNextSave = false
         await engine.pullOnce()
@@ -1472,18 +1563,26 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         assertFourKindsLandedExactlyOnce(f)
         XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2, "身份数不增")
         XCTAssertEqual(f.pinStore.table.cursors.count, 1)
-        for label in ["bookmarks", "pins"] {
+        XCTAssertEqual(f.urlRuleStore.table.cursors.count, 1, "规则身份数不增")
+        for label in ["bookmarks", "pins", "urlrules"] {
             XCTAssertEqual(counters[label]?.resurrected, 0, label)
             XCTAssertEqual(counters[label]?.refused, 0, label)
             XCTAssertEqual(counters[label]?.tombstones, 0, label)
         }
+        // 重收一条远端存活实体不产出任何 `.create`：游标在第一轮就写成了，第二轮要么零 op、
+        // 要么只走 update 支（R-M3-4a-16 后果 (b) 在规则上的探针）。
+        if ruleApplyCalls(f.urlRuleAccess) > ruleApplyCallsAfterFirstRound {
+            XCTAssertEqual(ruleCreateCount(f.urlRuleAccess.lastAppliedOps), 0)
+        }
         XCTAssertTrue(f.client.commitsAreFreeOfOutboundTombstones(), "重收不产出出站 tombstone")
-        XCTAssertEqual(f.markerStore.file.marker, Data("14".utf8))
-        // CASE B2-7 urlrules — Task 6
+        XCTAssertEqual(f.markerStore.file.marker, Data("15".utf8))
     }
 
-    /// CASE B2-7b — 同一页多种 kind 落地之后、marker 之前被杀：四个 store 全放行，marker 写失败；
-    /// 第二台引擎重投 ⇒ 四种 kind 的行数、身份数不增、内容与中止前逐字相同。
+    /// CASE B2-7b — 同一页多种 kind 落地之后、marker 之前被杀：五个 store 全放行，marker 写失败；
+    /// 第二台引擎重投 ⇒ 五种 kind 的行数、身份数不增、内容与中止前逐字相同。规则那一格（Task 6）：
+    /// `syncId` / `host` / `pathPrefix` / `spaceId` / `sortOrder` 与中止前逐字相同，`adopted` /
+    /// `resurrected` 都是 0。中止点是「最后一条 kind（规则）落完、marker 没写」——注册次序把规则
+    /// 排在 pin 之后，这条用例才覆盖得到那个唯一的跨 kind 窗口（CASE U-28）。
     func testARestartAfterAFullyLandedMultiKindPageReplaysItWithoutDuplicates() async throws {
         let f = makeFourKindFixture()
         f.markerStore.failSaveOnCallNumber = 1
@@ -1496,21 +1595,33 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let bookmarkTitles = f.bookmarkAccess.rows.map(\.title).sorted()
         let pinTitle = f.pinAccess.rows.first?.title
         let spaceName = f.spaceAccess.spaces.first { f.spaceAccess.spaceMappings[$0.spaceId] == "u1" }?.name
+        let ruleBeforeAbort = try XCTUnwrap(f.urlRuleAccess.rows.first)
 
         f.markerStore.failSaveOnCallNumber = nil
         let second = makeFourKindEngine(f)
         await second.pullOnce()
 
         let outcome = await second.lastRoundOutcomeForTesting
+        let counters = await second.lastOwnedRoundCountersForTesting
         XCTAssertEqual(outcome, .ok)
         assertFourKindsLandedExactlyOnce(f)
         XCTAssertEqual(f.bookmarkStore.table.cursors.count, 2)
         XCTAssertEqual(f.pinStore.table.cursors.count, 1)
+        XCTAssertEqual(f.urlRuleStore.table.cursors.count, 1)
         XCTAssertEqual(f.bookmarkAccess.rows.map(\.title).sorted(), bookmarkTitles)
         XCTAssertEqual(f.pinAccess.rows.first?.title, pinTitle)
         XCTAssertEqual(f.spaceAccess.spaces.first { f.spaceAccess.spaceMappings[$0.spaceId] == "u1" }?.name,
                        spaceName)
-        XCTAssertEqual(f.markerStore.file.marker, Data("14".utf8))
+        // CASE B2-7b urlrules（Task 6）
+        let ruleAfterReplay = try XCTUnwrap(f.urlRuleAccess.rows.first)
+        XCTAssertEqual(ruleAfterReplay.syncId, ruleBeforeAbort.syncId)
+        XCTAssertEqual(ruleAfterReplay.host, ruleBeforeAbort.host)
+        XCTAssertEqual(ruleAfterReplay.pathPrefix, ruleBeforeAbort.pathPrefix)
+        XCTAssertEqual(ruleAfterReplay.spaceId, ruleBeforeAbort.spaceId)
+        XCTAssertEqual(ruleAfterReplay.sortOrder, ruleBeforeAbort.sortOrder)
+        XCTAssertEqual(counters["urlrules"]?.adopted, 0)
+        XCTAssertEqual(counters["urlrules"]?.resurrected, 0)
+        XCTAssertEqual(f.markerStore.file.marker, Data("15".utf8))
     }
 
     /// CASE B2-7c — 重收一条远端 tombstone 不产出出站 tombstone：第一轮行被删、游标写失败、零

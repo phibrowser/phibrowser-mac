@@ -120,15 +120,26 @@ struct OwnedOwnerMaps {
         // 个洞。修在解析器这一侧，规则本身一个字都不用动（CASE 4b.4b 是这条的探针）。
         //
         // 对书签是恒等变换：书签的归属是 Space uuid 或父身份，两者都产不出这三个字母。
+        //
+        // **URL Rule 的保留常量 `"incognito-space"` 走同一条先例**（R-M3-4a-7 二次修订）：
+        // `ownerUuids(of:)` 对它返回真值、不开旁路，所以 `plan` / `classify` / `tombstones` /
+        // `.move` 四条路径读的是同一个东西；解析修在这里，差分的 `mapped` 判据因此认它，
+        // 用户删掉的 incognito 规则的 tombstone 才发得出去（CASE U-R1）。
         func selfMapped(_ uuid: String, _ table: [String: String]) -> String? {
-            uuid == Self.appOwnerKey ? Self.appOwnerKey : table[uuid]
+            if uuid == Self.appOwnerKey { return Self.appOwnerKey }
+            if uuid == SyncableSpaces.incognitoSpaceUuid { return SyncableSpaces.incognitoSpaceUuid }
+            return table[uuid]
         }
         return OwnerResolver(
             syncUuid: { maps.syncUuidBySpaceId[$0] },
             // **`localSpaceId` 不映射**：映了的话 `"app"` 会被当成一个 Space 归属，于是
             // `isEligibleSpace` 那道只对 Space 有意义的闸会一刀切掉整类 App 作用域的 pin。
+            // 规则这一侧同理：`"incognito-space"` 若映成一个本机 spaceId，同一道闸会一刀切掉
+            // 整类 incognito 规则，而它根本没有 `SpaceModel` 行、也没有 Space 游标。
             localSpaceId: { maps.localSpaceIdBySyncUuid[$0] },
-            isEligibleSpace: { $0 == Self.appOwnerKey || maps.eligibleSpaceUuids.contains($0) },
+            isEligibleSpace: { $0 == Self.appOwnerKey
+                               || $0 == SyncableSpaces.incognitoSpaceUuid
+                               || maps.eligibleSpaceUuids.contains($0) },
             globalUuid: { selfMapped($0, maps.globalUuidByProfileId) },
             localProfileId: { selfMapped($0, maps.localProfileIdByGlobalUuid) })
     }

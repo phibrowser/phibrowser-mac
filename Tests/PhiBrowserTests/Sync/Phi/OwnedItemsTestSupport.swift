@@ -459,6 +459,27 @@ extension PhiLocalPin {
     }
 }
 
+extension PhiLocalURLRule {
+    /// 默认目标 `space-a`（`OwnerResolver.fixture()` 映到 `su-1`）。`syncId` 默认 nil 与书签 /
+    /// pin 的 fixture 同款，投影用例自己传；两枚行戳默认 nil ⇒ 无基线投影退回 `createdDate`。
+    static func fixture(id: String = "i1", syncId: String? = nil,
+                        spaceId: String = "space-a", host: String = "github.com",
+                        pathPrefix: String? = nil, askBeforeRouting: Bool = false,
+                        sortOrder: Int = 0,
+                        createdDate: Date = Date(timeIntervalSince1970: 1_000),
+                        contentUpdatedDate: Date? = nil, targetUpdatedDate: Date? = nil,
+                        deletedDate: Date? = nil, pendingLocalEdit: Bool = false,
+                        mergePartnerSyncId: String? = nil) -> PhiLocalURLRule {
+        PhiLocalURLRule(id: id, syncId: syncId, spaceId: spaceId, host: host,
+                        pathPrefix: pathPrefix, askBeforeRouting: askBeforeRouting,
+                        sortOrder: sortOrder, createdDate: createdDate,
+                        contentUpdatedDate: contentUpdatedDate,
+                        targetUpdatedDate: targetUpdatedDate, deletedDate: deletedDate,
+                        pendingLocalEdit: pendingLocalEdit,
+                        mergePartnerSyncId: mergePartnerSyncId)
+    }
+}
+
 // MARK: - 载荷构造（返回生成的 proto 类型）
 
 /// `PhiSettingValue` 是这套 schema 的通用「值 + LWW 戳」标量，三种 `v` case 各一个重载。
@@ -551,6 +572,36 @@ func pinPayload(lineage: String,
     return entity
 }
 
+/// 一条 URL Rule 实体。
+///
+/// 三个合并单元各带自己的戳（§8.2）：内容组三个成员共用 `contentStamp`（载体是 `host`，
+/// 发送时写成相等）、`target_space_uuid` 带 `targetStamp`、`rank` 带 `rankStamp`。
+/// `path_prefix` 默认发显式的 `""`（线上的「匹配任意路径」编码，本机是 nil）——与
+/// `bookmarkPayload` 的 `secondary_url` 同一个理由：省略会让 fixture 与它自己的快照在
+/// `has_…` 上不同，每一条「这一轮不发布」的断言都会看到一次虚假 commit。
+func urlRulePayload(uuid: String,
+                    targetSpaceUuid: String = "su-1",
+                    host: String = "github.com",
+                    pathPrefix: String = "",
+                    ask: Bool = false,
+                    rank: String = "V",
+                    contentStamp: Int64 = 100,
+                    targetStamp: Int64 = 100,
+                    rankStamp: Int64 = 100,
+                    source: Int64 = 0,
+                    createdAtMs: Int64 = 1_000) -> Phi_PhiURLRuleEntity {
+    var entity = Phi_PhiURLRuleEntity()
+    entity.ruleUuid = uuid
+    entity.host = stamped(host, at: contentStamp)
+    entity.pathPrefix = stamped(pathPrefix, at: contentStamp)
+    entity.ask = stamped(ask, at: contentStamp)
+    entity.targetSpaceUuid = stamped(targetSpaceUuid, at: targetStamp)
+    entity.rank = stamped(rank, at: rankStamp)
+    entity.source = Int32(truncatingIfNeeded: source)
+    entity.createdAtMs = createdAtMs
+    return entity
+}
+
 /// 一条 Space 实体，书签解析 `space_uuid` 时当背景用。
 ///
 /// `profile_uuid` 没有参数，所以不发射；需要 profile 绑定的用例在返回值上自己设
@@ -595,6 +646,16 @@ func baselineBytes(_ payload: Phi_PhiBookmarkEntity) -> Data {
 }
 
 func baselineBytes(_ payload: Phi_PhiPinTabEntity) -> Data {
+    (try? envelope(payload).serializedData()) ?? Data()
+}
+
+func envelope(_ payload: Phi_PhiURLRuleEntity) -> Phi_PhiEntity {
+    var out = Phi_PhiEntity()
+    out.urlRule = payload
+    return out
+}
+
+func baselineBytes(_ payload: Phi_PhiURLRuleEntity) -> Data {
     (try? envelope(payload).serializedData()) ?? Data()
 }
 

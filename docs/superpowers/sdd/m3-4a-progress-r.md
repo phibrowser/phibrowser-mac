@@ -231,3 +231,65 @@ present in the built `PhiBrowserTests` bundle via `nm`, not executed.
      and `func applyURLRuleEditsThrowing(` is present.
   8. Test header comment now lists every case group Task 5 appended (the Task 4 wording said
      "C-6 ~ C-9" only).
+
+## Task 7
+
+Commit scope: `Sources/Sync/Phi/URLRuleKind.swift` (new), `Sources/Sync/Phi/PhiURLRuleLocalAccess.swift`
+(new, `PhiLocalURLRule` only), `SyncableOwnedItems.swift` (three refusal cases,
+`OwnedItemApplyStep.newOwnerUuid`, `OwnedItemKind.targetOwnerUuid(of:)` + default extension, the
+`.move` production site), `SyncableSpaces.swift` (`incognitoSpaceUuid`), `PhiSyncEngine.swift`
+(`OwnedOwnerMaps.resolver` only), `SpaceSyncMappingManager.swift` (two error cases, two guards),
+`project.pbxproj` (both new files, four entries each), `URLRuleKindTests.swift` (new),
+`OwnedItemsTestSupport.swift` (rule fixture builders), `SpaceSyncMappingManagerTests.swift`
+(U-R2 / U-R3), this ledger. Verification is compile-only (`build-for-testing`).
+
+- **计划裁定一 (`PhiURLRuleLocalAccess.swift` is created here, not in Task 8):** the plan's file
+  table put the whole file under Task 8; `URLRuleKind.Local` must compile in this task and
+  `PhiLocalURLRule` is its only candidate. The file holds exactly the 13-member value type; Task 8
+  appends the protocol and `AccountPhiURLRuleAccess` to the same file and registers nothing (both
+  new `Sources/` files were registered here with one gem script; 4 pbxproj hits each).
+
+- **计划裁定二 (`OwnedItemKind.targetOwnerUuid(of:)`, a protocol member spec §11 does not name):**
+  `plan` is generic and R-M3-4a-26 / RR-B5 forbid `ownerUuids(of:).first`, so the `.move` channel
+  is a new requirement with a default `nil` implementation in `extension OwnedItemKind`.
+  `BookmarkKind` / `PinKind` are untouched; their `.move` steps still carry `newOwnerUuid == nil`
+  (pinned by `testBookmarkMoveStepsStillCarryNoOwner`, which also proves the pre-existing
+  five-argument `OwnedItemApplyStep` construction still compiles). `.claim` / `.create` /
+  `.update` / `.delete` do not fill it.
+
+- **Controller ruling (guard placement):** the brief puts the two reserved-id guards after the
+  `defaultSpaceIsImplicit` guard; lane E is concurrently changing the tail of
+  `map(spaceId:toSyncUuid:)`, so both guards sit at the TOP of `map`, before all three existing
+  guards, for a textual merge on rebase. Order among the two: `reservedSpaceId` first, then
+  `reservedSyncUuid`. Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
+  Task 4).
+
+- **Spec tension recorded, brief followed:** `stamp`'s with-baseline branch stamps a changed
+  content group / target with the round's `now` (target change also restamps rank), exactly as
+  the brief's ruling and `BookmarkKind` prescribe. Spec §8.2's R-exec-14 paragraph (":1771",
+  "真的变了的才带 `contentUpdatedDate`") reads as if the changed unit should carry the row stamp
+  instead. Not resolved here; Task 12 should fold one wording into §15. The no-baseline branch is
+  the three-item R-M3-4a-12 form (CASE U-19) and does not use `now`.
+
+- **§5.4 "six criteria":** five are refusals (`invalidUuid`, `illegalRank`, `emptyHost`,
+  `degenerateHost`, `malformedHost`, evaluated in table order); the table's last two rows
+  (non-fixed-point `path_prefix`, unresolvable target) are explicitly non-refusals and live in
+  `normalizeArrivals` and `ownerUuids` respectively.
+
+- **Implementer deviations / additions (all additive):**
+  1. CASE U-3 as written in the brief (X and Y share `host`, all three member stamps equal per
+     side) is also satisfied by a per-field LWW. The test additionally raises X's `ask.updatedAtMs`
+     to 900 so that a per-field implementation would produce `(Y.path, X.ask)` and go red; the
+     brief's assertions are all present verbatim.
+  2. `normalizeArrivals` does not insert an empty identity into `normalized` (an empty
+     `rule_uuid` is refused by `plan` anyway); everything else is per the brief.
+  3. Extra probes beyond the brief's case list: `testEmptyTargetIsParkedNotLanded` (`ownerUuids`
+     returns `[""]`, the brief's third ruling), `testMoveStepCarriesTheMergedTargetAsNewOwner`
+     (retarget and pure reorder both carry the current target; degrade-to-reorder is Task 8's),
+     `testRankToSortOrderExcludesSoftDeletedRowsAndOrdersByRankThenIdentity` (§8.3, R-M3-4a-51),
+     `testEligibilityOwnerFollowsTheThreeCriteriaInOrder` (§5.3 incl. "hidden is not judged here").
+  4. U-R3 adds one assertion: `localSpaceId(forSyncUuid: incognitoSpaceUuid) == nil` (the
+     constant is not a Space identity; only the default-space constant branch exists).
+  5. `merge` is symmetric but, like the spec's rank rule itself, not associative in general when
+     three inputs disagree on target with interleaved stamps; U-5's three-way assertion is the
+     brief's `(A,B)+C == (B,A)+C` only.

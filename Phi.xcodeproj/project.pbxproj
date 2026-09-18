@@ -228,6 +228,7 @@
 		5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */; };
 		5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */; };
 		5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */; };
+		5D1FCB130435E47C4C7D387A /* PhiURLRuleLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */; };
 		5EA17ABC0000000000000100 /* SearchTabsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000110 /* SearchTabsModels.swift */; };
 		5EA17ABC0000000000000101 /* SearchTabsQueryMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */; };
 		5EA17ABC0000000000000102 /* SearchTabsChromiumProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */; };
@@ -275,6 +276,7 @@
 		89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */; };
 		8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */; };
 		8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */; };
+		8D581F000AB58C74FB7409F6 /* URLRuleKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */; };
 		8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10012FEA000000000001 /* OverlayToastModels.swift */; };
 		8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10022FEA000000000001 /* OverlayToastCenter.swift */; };
 		8E0A10072FEA000000000001 /* OverlayToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10032FEA000000000001 /* OverlayToastView.swift */; };
@@ -765,6 +767,7 @@
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelfRevokeStrings.swift; path = UI/SelfRevokeStrings.swift; sourceTree = "<group>"; };
+		0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiURLRuleLocalAccess.swift; sourceTree = "<group>"; };
 		0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiFaviconBackfillQueue.swift; sourceTree = "<group>"; };
 		0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiDomainKeyManager.swift; sourceTree = "<group>"; };
 		14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSpaceSyncState.swift; sourceTree = "<group>"; };
@@ -774,6 +777,7 @@
 		23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WaitingForApprovalView.swift; path = UI/WaitingForApprovalView.swift; sourceTree = "<group>"; };
 		254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyEnvelopeAPIClient.swift; sourceTree = "<group>"; };
 		26E0CB91197F4D9D6B21F51D /* KeyLayerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerView.swift; path = UI/KeyLayerView.swift; sourceTree = "<group>"; };
+		2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URLRuleKind.swift; sourceTree = "<group>"; };
 		2C7336AA246BCAF2A4BFD0F7 /* entity_specifics.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = entity_specifics.pb.swift; sourceTree = "<group>"; };
 		34C88E2EA8AD746676A4B111 /* SyncableOwnedItems.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableOwnedItems.swift; sourceTree = "<group>"; };
 		34F236AC381F208106EF9B34 /* BookmarkKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BookmarkKind.swift; sourceTree = "<group>"; };
@@ -2000,6 +2004,8 @@
 				69E9284FAF9F3D97D76D7072 /* PinKind.swift */,
 				60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */,
 				0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */,
+				0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */,
+				2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3900,6 +3906,8 @@
 				3E0CF4A966BCAA02B16EB715 /* PinnedTabScopeMirror.swift in Sources */,
 				DB3B811377A5EF1C83D51CA0 /* PhiFaviconBackfillQueue.swift in Sources */,
 				A26D0443C3C4667246975164 /* TabDataModelSchemaV11.swift in Sources */,
+				5D1FCB130435E47C4C7D387A /* PhiURLRuleLocalAccess.swift in Sources */,
+				8D581F000AB58C74FB7409F6 /* URLRuleKind.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

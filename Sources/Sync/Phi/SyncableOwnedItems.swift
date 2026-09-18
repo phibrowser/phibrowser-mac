@@ -109,6 +109,11 @@ struct OwnedItemApplyStep: Equatable {
     /// 都是 nil。非 nil 只发生在模块真的**决定**了一个父的时候：提升到根（`""`，§4.4
     /// 第 5 步）与挂到本轮一起落地的那个父之下。
     var newParentUuid: String?
+    /// 新增（M3-4a / R-M3-4a-26）。非 nil = 这一步把该身份搬到另一个归属桶。
+    /// 只有归属可变的 kind 会填它；书签的归属变化走 `newParentUuid` + `location`，
+    /// pin 的归属在 client tag 里、根本变不了。**默认 nil**，所以书签与 pin 的每一处
+    /// 构造点与每一条既有 `==` 断言逐字不变。
+    var newOwnerUuid: String? = nil
     var newRank: String?
     /// 落地后要写进 `reconciled` 的字节（`Phi_PhiEntity` 信封的序列化形式）。
     var payload: Data?
@@ -163,6 +168,12 @@ struct OwnedItemPlan {
 /// 排除）。
 enum OwnedItemRefusal: Equatable {
     case illegalRank, cycle, isFolderMismatch, selfReference, invalidUuid, invalidURL
+    /// §5.4：`host` 归一后为空。三处写路径与桥接层都把空 host 当成「丢弃这一行」。
+    case emptyHost
+    /// §5.4：`host` 归一后是 `"*"` 或 `"*."`。两个匹配器都显式判死。
+    case degenerateHost
+    /// §5.4：`host` 含 `/`；或含 `:` 且**不是**「以 `[` 开头、以 `]` 结尾」的 IPv6 字面量。
+    case malformedHost
 }
 
 struct OwnedItemSnapshotResult<Entity> {
@@ -302,6 +313,19 @@ protocol OwnedItemKind {
     /// 同义、同理由：判「要不要带一份字段补丁」只能看取值，看整条实体会把对端一次纯重盖戳
     /// 也算成一次内容变化，产出一条空补丁。位置与 rank **不在里面**——它们由 `.move` 承载。
     static func contentSignature(of entity: Entity) -> Data
+
+    /// 这条实体现在**指向**哪一个归属桶（规则的 `target_space_uuid` 字段值）。
+    /// nil = 这一 kind 的归属不可变、或不由单一字段承载 ⇒ `.move` 不带 `newOwnerUuid`。
+    ///
+    /// **不是 `ownerUuids(of:).first`**（R-M3-4a-26 / RR-B5）：那个成员的合同是「落地前必须
+    /// 解析出来的归属引用」，将来任何一条 kind 想把某个归属排除在停放判据外时又会返回空；
+    /// 而 `plan` 是泛型的，拿不到任何具体字段，所以通道只能是一个协议成员。
+    static func targetOwnerUuid(of entity: Entity) -> String?
+}
+
+extension OwnedItemKind {
+    /// 默认 nil：`BookmarkKind` 与 `PinKind` 一行不改、行为逐字不变。
+    static func targetOwnerUuid(of entity: Entity) -> String? { nil }
 }
 
 /// 一条归属引用在本轮里的状态（`plan` 第 3 步）。文件作用域而不是函数内的局部类型：
@@ -848,9 +872,12 @@ enum SyncableOwnedItems {
             let moved = wasLifted || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
                 || K.rank(of: merged) != K.rank(of: baseline)
             if moved {
+                // `newOwnerUuid` 从合并结果的归属字段填（R-M3-4a-26）：`.claim` / `.create` /
+                // `.update` / `.delete` 四处一律不填，`.create` 的目标在载荷里、由落地闭包自己读。
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .move,
-                                                newParentUuid: landingParent, newRank: rank,
-                                                payload: payload))
+                                                newParentUuid: landingParent,
+                                                newOwnerUuid: K.targetOwnerUuid(of: merged),
+                                                newRank: rank, payload: payload))
             }
             // **移动与内容改动是两条步骤，不是二选一。** 落地的 move 操作
             // （`BookmarkApplyOp.move`）不带字段补丁，内容只走 update；一条既搬了家又被改了

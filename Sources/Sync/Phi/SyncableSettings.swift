@@ -293,12 +293,14 @@ enum SyncableSettings {
     /// `UserDefaults.didChangeNotification` push trigger
     /// (`PhiChromiumCoordinator.startPhiSyncIfReady()`), and the reason it exists is that the
     /// notification does not say WHICH key changed. The engine writes the same preference
-    /// domain on every round — `phi.sync.marker` / `phi.sync.version` through `writeState`,
+    /// domain on every round — `phi.sync.version` / `phi.sync.entityId` through `writeState`,
     /// and the two `<key>.phiSync*` sidecars — so a raw subscription treats the engine's own
-    /// bookkeeping as a local edit. That was harmless only while a `.localChange` round could
-    /// not itself pull; M3-3's owned-item CONFLICT retry pulls inside the round, which turned
-    /// the pair into a 2.5 s hot loop (Mac B 2026-09-14): conflict -> in-round pull -> marker
-    /// write -> 2 s debounce -> another push -> the same conflict.
+    /// bookkeeping as a local edit. (The progress marker itself moved to the account
+    /// directory's `marker.json` in M3-4a; the cursor keys and the sidecars still land here,
+    /// so the dedupe is as necessary as before.) That was harmless only while a `.localChange`
+    /// round could not itself pull; M3-3's owned-item CONFLICT retry pulls inside the round,
+    /// which turned the pair into a 2.5 s hot loop (Mac B 2026-09-14): conflict -> in-round
+    /// pull -> cursor write -> 2 s debounce -> another push -> the same conflict.
     ///
     /// Neither the `phi.sync.*` state keys nor the sidecars are in here: it walks the REGISTRY
     /// and asks each setting for its own value, so only a real preference change moves it.

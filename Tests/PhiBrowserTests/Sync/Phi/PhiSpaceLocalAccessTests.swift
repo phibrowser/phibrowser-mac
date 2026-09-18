@@ -48,6 +48,13 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
     var pairableSpacesOverride: [PhiLocalSpace]?
     /// 下一次 `ensureMapped` / `mapSpace` 抛这个错，然后清空。
     var errorOnNextMapping: Error?
+    /// Task 3b（R-M3-4a-87）：`create(_:)` **先记 `.create` 调用、再抛**——模拟「行写发出去了、
+    /// 进程死在事务提交前」。**不自动清空**，用例自己置回 nil 放行。
+    var createError: Error?
+    /// Task 3b：`mapSpace(_:toSyncUuid:)` 在记调用与改 `spaceMappings` **之前**抛，早于
+    /// `errorOnNextMapping`、早于两道守卫。**不自动清空**——`errorOnNextMapping` 是一次性的
+    /// 且与 `ensureMapped` 共用，一轮里发布段的懒铸造会先把它吃掉，所以这个旋钮必须独立。
+    var mapSpaceError: Error?
     private(set) var calls: [Call] = []
     private(set) var droppedMappings: [String] = []
 
@@ -85,6 +92,7 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         return uuid
     }
     func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
+        if let mapSpaceError { throw mapSpaceError }
         if let error = errorOnNextMapping { errorOnNextMapping = nil; throw error }
         guard spaceMappings[spaceId] == nil else { throw SpaceSyncMappingError.alreadyMapped }
         guard !spaceMappings.values.contains(uuid) else {
@@ -119,7 +127,10 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
     }
 
     func create(_ space: PhiLocalSpace) async throws {
-        try failIfArmed(); calls.append(.create(space.spaceId)); spaces.append(space)
+        try failIfArmed()
+        calls.append(.create(space.spaceId))
+        if let createError { throw createError }
+        spaces.append(space)
     }
     func update(spaceId: String, name: String?, colorHex: String?,
                 iconName: String?, createdDate: Date?) async throws {

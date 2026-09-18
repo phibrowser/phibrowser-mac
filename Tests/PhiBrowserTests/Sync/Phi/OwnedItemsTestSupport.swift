@@ -412,6 +412,522 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     }
 }
 
+/// 内存版 `PhiURLRuleLocalAccess`（Task 8）。形状照 `FakeBookmarkAccess`：`apply(_:)` **真的把
+/// `ops` 施加到 `rows` 上**，含两桶稠密重排，好让 Task 6 的引擎用例在假件上看到与真库同形的结果。
+/// `readError` **每次都抛、不自动清零**（R-exec-3）；`snapshotIsLoaded` 与 `beginRound()` 守
+/// 与生产实现同一条契约：两个缓存读者只在本轮最后一次成功的读或 `apply` 之后有意义。
+@MainActor
+final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
+    enum Call: Equatable {
+        case allURLRules
+        case allURLRulesIncludingDeleted
+        case siblings(space: String)
+        case liveOwners(count: Int)
+        case apply(opCount: Int)
+        /// Task 6：落地提交之后那一次显式的路由表刷新（§6.6 / R-M3-4a-34）。
+        case refreshRoutingTable
+        /// 8b-1：两个就地更新口（R-M3-4a-62），记条数好让 CASE M-18 断言它们真的被调过。
+        case notePersistedClaims(count: Int)
+        case noteDeletedRows(count: Int)
+        /// 8b-4：§8.4.5 的两处清位。(a) 一条身份一次；(b) 一次事务一条（空集连调都不调）。
+        case clearPendingLocalEdit(syncId: String)
+        case clearPendingLocalEditIfUnchanged(count: Int)
+    }
+
+    /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
+    var rows: [PhiLocalURLRule]
+    /// 让两个读口与 `liveOwners` 抛。**每次都抛，不自动清零。**
+    var readError: Error?
+    private(set) var snapshotIsLoaded = false
+    /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
+    var failApplyOnce = false
+    /// 下一次 `apply` 抛这个错，然后清零。**一行都不改。**
+    var applyErrorOnce: Error?
+    private(set) var calls: [Call] = []
+    /// 最近一次 `apply` 收到的 `ops`（抛错的那次也记）。
+    private(set) var lastAppliedOps: [URLRuleSyncOp] = []
+    /// Task 9：出路 1 的每一次 `hardDeleteURLRule(syncId:)`，按调用序（行不在的那次也记）。
+    private(set) var hardDeleteCalls: [String] = []
+    /// Task 9：出路 2 的每一次 `purgeSoftDeletedURLRules(olderThan:)` 收到的 cutoff。
+    private(set) var purgeCalls: [Date] = []
+    /// 让两条出路抛。**每次都抛，不自动清零。**
+    var deleteError: Error?
+    /// 8b-2 / R-M3-4a-100（CASE M-36）：在 `apply(_:)` 真正落「落地写 + 尾钩」这一段**之前**
+    /// 被调一次，用来在 pre-pass 与落地事务之间注入一次**真实的**本机 Save
+    /// （`applyURLRuleEditsThrowing`，绝不手写行或游标）。生产实现里那个窗口是真实可达的：
+    /// pre-pass 跑在主 actor 上、落地事务跑在写队列上，中间隔着一次
+    /// `performBackgroundWriteAndWaitThrowing` 的排队。**只在假件上有**，生产协议一个字节不加。
+    var beforeLandingTransaction: (@MainActor () async -> Void)?
+    /// 最近一次 `apply` 里尾钩交回的那些 M2 op（没有尾钩的那次是空数组）。
+    private(set) var lastMergeOps: [URLRuleSyncOp] = []
+    /// 8b-4 / CASE M-7e：下一次 `clearPendingLocalEdit(syncId:ifProjectionEquals:)` **抛**
+    /// 一次 `LocalStoreWriteError.storeUnavailable`，然后清零。**一个字节都不写**——与
+    /// §8.4.5 那张表第 7 行「记一条 R12 日志、下一轮由 (b) 自愈」同形。
+    var failNextClearPendingLocalEdit = false
+    /// 8b-4 / CASE M-7e（R-M3-4a-91 / 裁定 14）的注入点：在
+    /// `clearPendingLocalEditIfUnchanged(entries:)` 真正落事务**之前**被调一次，用来在
+    /// 「判定」与「写入」之间注入一次**真实的**本机 Save（走 `applyEditorSave` 那条口，
+    /// 绝不手写行）。
+    ///
+    /// **只能放在假件上**：注册项闭包与引擎那一层此刻手上只有一个 `Set<String>`，钩子放在
+    /// 那里既够不到 `entries`、也测不到「判定与写入之间」这个真正的窗口。生产协议一个字节不加。
+    var beforeClearPendingLocalEditIfUnchanged: (@MainActor () async -> Void)?
+    /// 最近一次 `clearPendingLocalEditIfUnchanged` 收到的那张「身份 -> 基线」表。
+    private(set) var lastClearEntries: [String: RuleProjection] = [:]
+
+    init(rows: [PhiLocalURLRule] = []) {
+        self.rows = rows
+    }
+
+    /// 开新一轮：把快照标成「没读过」。
+    func beginRound() {
+        snapshotIsLoaded = false
+    }
+
+    /// 活行，按 `(spaceId, sortOrder, id)` 有序——喂给引擎的次序必须是生产实现真会产出的那个。
+    func allURLRules() throws -> [PhiLocalURLRule] {
+        calls.append(.allURLRules)
+        if let readError { throw readError }
+        snapshotIsLoaded = true
+        return Self.ordered(rows.filter { $0.deletedDate == nil })
+    }
+
+    /// 活行 ∪ 软删行，同一次序。
+    func allURLRulesIncludingDeleted() throws -> [PhiLocalURLRule] {
+        calls.append(.allURLRulesIncludingDeleted)
+        if let readError { throw readError }
+        snapshotIsLoaded = true
+        return Self.ordered(rows)
+    }
+
+    /// 本页快照按 `spaceId` 的分组：**软删行排除**（R-M3-4a-51），不按合格性过滤。
+    func siblings(inSpaceId spaceId: String) -> [PhiLocalURLRule] {
+        calls.append(.siblings(space: spaceId))
+        guard snapshotIsLoaded else { return [] }
+        return Self.ordered(rows.filter { $0.spaceId == spaceId && $0.deletedDate == nil })
+    }
+
+    /// 判据是 `syncId`、不是 `id`，定义域与 `allURLRules()` 同源（活行）。
+    func isKnownLocalURLRule(_ syncId: String) -> Bool {
+        guard snapshotIsLoaded else { return false }
+        return rows.contains { $0.syncId == syncId && $0.deletedDate == nil }
+    }
+
+    /// 生产实现自己做一次 fetch、不读本页缓存，所以这里也不看 `snapshotIsLoaded`。只填
+    /// `claimed`；`owners` 由 Task 6 的注册项闭包配 `OwnedOwnerMaps` 补。
+    func liveOwners(_ candidates: Set<String>) throws -> OwnedLiveRows {
+        calls.append(.liveOwners(count: candidates.count))
+        if let readError { throw readError }
+        let live = Set(rows.filter { $0.deletedDate == nil }.compactMap(\.syncId))
+        return OwnedLiveRows(claimed: candidates.intersection(live), owners: [:])
+    }
+
+    /// **`ops` 为空、只带尾钩的批次照样跑一遍**（8b-2 / R-M3-4a-56：一页没有任何规则落地时
+    /// M2 同样要跑）。块内次序与生产 body 逐字相同：落地 op ⇒ **尾钩** ⇒ 稠密重排。
+    @discardableResult
+    func apply(_ batch: URLRuleApplyBatch) async throws -> URLRuleBatchOutcome {
+        calls.append(.apply(opCount: batch.ops.count))
+        lastAppliedOps = batch.ops
+        lastMergeOps = []
+        if failApplyOnce {
+            failApplyOnce = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        if let applyErrorOnce {
+            self.applyErrorOnce = nil
+            throw applyErrorOnce
+        }
+        // R-M3-4a-100（CASE M-36）的注入点：**落地写之前**那一刻，pre-pass 已经跑完。
+        if let beforeLandingTransaction {
+            await beforeLandingTransaction()
+        }
+        // `.rekey` 的两条守卫与撞车检查照生产 body（`LocalStore.rekeyURLRuleBody`），**先整批校验
+        // 再动 `rows`**：假件没有事务，抛在半途会留下半应用状态，而 §5.5 的契约是「抛错 = 一条
+        // 都没落」。
+        for op in batch.ops {
+            guard case .rekey(let localId, let to, _) = op else { continue }
+            guard let row = rows.first(where: { $0.id == localId }), row.deletedDate == nil else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            if row.syncId != to, rows.contains(where: { $0.syncId == to && $0.id != localId }) {
+                throw LocalStoreWriteError.rowAlreadyMapped
+            }
+        }
+        var touchedBuckets: Set<String> = []
+        var outcome = URLRuleBatchOutcome()
+        // 8b-3 / R-M3-4a-102：**只有 (α) 那一对**做「来源行未变」复查，判别标准与生产 body
+        // 逐字相同——「这条 `.transfer` 的同身份 `.delete` 在不在同一批里」。
+        var alphaSources: Set<String> = []
+        for op in batch.ops {
+            if case .delete(let syncId) = op { alphaSources.insert(syncId) }
+        }
+        for op in batch.ops {
+            land(op, touchedBuckets: &touchedBuckets, outcome: &outcome,
+                 alphaSources: alphaSources)
+        }
+        // 尾钩：交给它的是此刻**含软删行**的那份投影（寻址要它），**排在稠密重排之前**——
+        // 排在之后的实现会在败者离开的桶里留下一个空洞下标。
+        if let mergeTail = batch.mergeTail {
+            let result = mergeTail.evaluate(Self.ordered(rows))
+            lastMergeOps = result.ops
+            for op in result.ops {
+                land(op, touchedBuckets: &touchedBuckets, outcome: &outcome,
+                     alphaSources: alphaSources)
+            }
+            touchedBuckets.formUnion(result.touchedBuckets)
+            outcome.collapsed = result.collapsed
+            outcome.mergeChangedRouting = result.changedRouting
+        }
+        for bucket in touchedBuckets {
+            densify(bucket)
+        }
+        // 生产实现末尾会重读一次，于是落地后的复核在同一轮里就能做。
+        snapshotIsLoaded = true
+        return outcome
+    }
+
+    /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
+    func refreshRoutingTableAfterLanding() {
+        calls.append(.refreshRoutingTable)
+    }
+
+    // MARK: 8b-1：D30 的四个只读查询 + 两个就地更新口
+
+    /// 四个查询建在 `rows` 上、逻辑与生产实现共用 `URLRuleSignatureQueries`（判据只有一份）。
+    /// 不看 `snapshotIsLoaded`：M-28 / M-29 直接构造假件就调。
+    func signatureIndex(resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]] {
+        URLRuleSignatureQueries.signatureIndex(rows: rows, resolve: resolve)
+    }
+
+    func pendingLocalEditIdentities(resolve: OwnerResolver) -> Set<String> {
+        URLRuleSignatureQueries.pendingLocalEditIdentities(rows: rows, resolve: resolve)
+    }
+
+    func unpublishedIdentities(table: PhiOwnedItemTable, resolve: OwnerResolver) -> Set<String> {
+        URLRuleSignatureQueries.unpublishedIdentities(rows: rows, table: table, resolve: resolve)
+    }
+
+    func mergePartners(table: PhiOwnedItemTable, resolve: OwnerResolver,
+                       tombstonesThisPage: Set<String>) -> [String: String] {
+        URLRuleSignatureQueries.mergePartners(rows: rows, table: table, resolve: resolve,
+                                              tombstonesThisPage: tombstonesThisPage)
+    }
+
+    /// 键方向：**本机行 id -> 新 syncId**（与书签那一侧相反）。`apply` 已经改过 `rows`，这里是
+    /// 一次幂等的补写；记一条调用。
+    func notePersistedClaims(_ claimed: [String: String]) {
+        calls.append(.notePersistedClaims(count: claimed.count))
+        for index in rows.indices {
+            if let syncId = claimed[rows[index].id] { rows[index].syncId = syncId }
+        }
+    }
+
+    func noteDeletedRows(_ syncIds: Set<String>) {
+        calls.append(.noteDeletedRows(count: syncIds.count))
+        rows.removeAll { row in
+            guard let syncId = row.syncId else { return false }
+            return syncIds.contains(syncId)
+        }
+    }
+
+    // MARK: 8b-4：§8.4.5 的两处清位
+
+    /// 清位 (a)，与生产 body（`LocalStore.clearPendingLocalEditBody`）逐字同形：
+    /// 寻址含软删行 ⇒ `mergePartnerSyncId` 非 nil 才清（值相同零写）⇒
+    /// `guard row.pendingLocalEdit` ⇒ 用**与生产同一个函数**算此刻的投影、逐单元比 ⇒
+    /// 相等才清标志。三件事一次完成（假件没有事务，但次序与判据必须一致）。
+    @discardableResult
+    func clearPendingLocalEdit(syncId: String,
+                               ifProjectionEquals confirmed: RuleProjection) async throws -> Bool {
+        calls.append(.clearPendingLocalEdit(syncId: syncId))
+        if failNextClearPendingLocalEdit {
+            failNextClearPendingLocalEdit = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return false }
+        if rows[index].mergePartnerSyncId != nil { rows[index].mergePartnerSyncId = nil }
+        guard rows[index].pendingLocalEdit else { return false }
+        let current = URLRuleKind.clearingProjection(of: rows[index])
+        guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+            return false
+        }
+        rows[index].pendingLocalEdit = false
+        return true
+    }
+
+    /// 清位 (b)，同样与生产 body 逐字同形，外加 M-7e 的注入钩子。
+    /// **`mergePartnerSyncId` 一个字节都不碰**。
+    func clearPendingLocalEditIfUnchanged(entries: [String: RuleProjection]) async throws {
+        calls.append(.clearPendingLocalEditIfUnchanged(count: entries.count))
+        lastClearEntries = entries
+        // 「判定」与「写入」之间的那个真实窗口（裁定 14）。
+        if let beforeClearPendingLocalEditIfUnchanged {
+            await beforeClearPendingLocalEditIfUnchanged()
+        }
+        for syncId in entries.keys.sorted() {
+            guard let confirmed = entries[syncId],
+                  let index = rows.firstIndex(where: { $0.syncId == syncId }) else { continue }
+            guard rows[index].pendingLocalEdit else { continue }
+            let current = URLRuleKind.clearingProjection(of: rows[index])
+            guard URLRuleKind.clearingProjectionMatches(row: current, confirmed: confirmed) else {
+                continue
+            }
+            rows[index].pendingLocalEdit = false
+        }
+    }
+
+    /// 出路 1：按 `syncId` 真删（活行与软删行都删——生产 body 同样不看 `deletedDate`）；
+    /// 行不在 = 无事可做。
+    func hardDeleteURLRule(syncId: String) async throws {
+        hardDeleteCalls.append(syncId)
+        if let deleteError { throw deleteError }
+        let buckets = Set(rows.filter { $0.syncId == syncId }.map(\.spaceId))
+        rows.removeAll { $0.syncId == syncId }
+        for bucket in buckets { densify(bucket) }
+    }
+
+    /// 出路 2：判据是**行上的** `deletedDate`，与游标无关；`syncId == nil` 的软删行不碰。
+    func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int {
+        purgeCalls.append(cutoff)
+        if let deleteError { throw deleteError }
+        let expired = rows.compactMap { row -> String? in
+            guard let deletedDate = row.deletedDate, deletedDate < cutoff else { return nil }
+            return row.syncId
+        }
+        for syncId in expired {
+            rows.removeAll { $0.syncId == syncId }
+        }
+        return expired.count
+    }
+
+    /// 一次**编辑器语义**的本机 Save，`LocalStore.applyURLRuleEditsBody` 第 4 / 9 步的假件
+    /// 等价物：内容组三个成员逐一比、有任何一个不同 ⇒ 写不同的那些 + `contentUpdatedDate`
+    /// + `pendingLocalEdit = true`；三个都相同 ⇒ 一个字节都不写、也不置位。
+    ///
+    /// **用例不许直接戳 `rows`**：假件背后没有 `LocalStore`，这个入口是「真实用户写」在假件上
+    /// 唯一的形状（R-M3-4a-100 / CASE M-36 的注入点靠它）。游标一个字节不碰——那次 Save 本来
+    /// 就没上账户。
+    func applyEditorSave(syncId: String, host: String? = nil, pathPrefix: String?? = nil,
+                         ask: Bool? = nil, at contentUpdatedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        var changed = false
+        if let host {
+            let normalized = LocalStore.normalizedHost(host)
+            if rows[index].host != normalized {
+                rows[index].host = normalized
+                changed = true
+            }
+        }
+        if let pathPrefix {
+            let normalized = LocalStore.normalizedPathPrefix(pathPrefix)
+            if rows[index].pathPrefix != normalized {
+                rows[index].pathPrefix = normalized
+                changed = true
+            }
+        }
+        if let ask, rows[index].askBeforeRouting != ask {
+            rows[index].askBeforeRouting = ask
+            changed = true
+        }
+        guard changed else { return }
+        rows[index].contentUpdatedDate = contentUpdatedDate
+        rows[index].pendingLocalEdit = true
+    }
+
+    /// 同一条入口的**改目标**半边（`LocalStore.applyURLRuleEditsBody` 第 5 / 9 步）：
+    /// 目标真的变了 ⇒ 写 `spaceId` + `targetUpdatedDate` + `pendingLocalEdit = true`；
+    /// 相同 ⇒ 一个字节都不写、也不置位。`deletedIds` 那一半是 `applyEditorDelete`。
+    func applyEditorRetarget(syncId: String, toSpaceId: String, at targetUpdatedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil, rows[index].spaceId != toSpaceId else { return }
+        rows[index].spaceId = toSpaceId
+        rows[index].targetUpdatedDate = targetUpdatedDate
+        rows[index].pendingLocalEdit = true
+    }
+
+    /// 同一条入口的**纯拖动**半边（`LocalStore.applyURLRuleEditsBody` 第 8 / 9 步）：把这一行
+    /// 挪到它那个桶里的 `sortOrder` 位，整桶按 0…n-1 稠密回写，**只给被拖动那一行置位**
+    /// （其余行的重编号是第 8 步的副产品，不在 `upsertedIds` 里 ⇒ 第 9 步不碰它们）。
+    /// **两枚戳一枚都不写**（§4.3 第 4 条：只有 `sortOrder` 变 ⇒ 内容戳与目标戳都不动）。
+    ///
+    /// 8b-4 fix round 1 / 裁定 3 的探针要它：清位比的是**三个**合并单元，rank 是第三个，而
+    /// `applyEditorSave` 造不出「取值全同、只有位置变了」这种编辑。
+    func applyEditorReorder(syncId: String, toSortOrder: Int) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        let bucket = rows[index].spaceId
+        let movedId = rows[index].id
+        var sequence = rows.filter { $0.spaceId == bucket && $0.deletedDate == nil && $0.id != movedId }
+            .sorted { ($0.sortOrder, $0.id) < ($1.sortOrder, $1.id) }
+        sequence.insert(rows[index], at: min(max(toSortOrder, 0), sequence.count))
+        for (position, row) in sequence.enumerated() {
+            guard let slot = rows.firstIndex(where: { $0.id == row.id }) else { continue }
+            rows[slot].sortOrder = position
+        }
+        rows[index].pendingLocalEdit = true
+    }
+
+    /// 编辑器删除集那一半（第 7 步）：**软删**，`pendingLocalEdit` 一个字节都不碰
+    /// （删除不是编辑，R-M3-4a-69）；`mergePartnerSyncId` 由调用方另行安排（M2 那条路径是
+    /// `.softDelete` op）。
+    func applyEditorDelete(syncId: String, at deletedDate: Date) {
+        guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+              rows[index].deletedDate == nil else { return }
+        rows[index].deletedDate = deletedDate
+    }
+
+    private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {
+        rows.sorted { ($0.spaceId, $0.sortOrder, $0.id) < ($1.spaceId, $1.sortOrder, $1.id) }
+    }
+
+    /// 与 `LocalStore.applyURLRuleSyncBatchBody` 同形：寻址含软删行；`.create` / `.update` /
+    /// `.move` 命中就写九个字段、**命中软删行时**才清 `deletedDate` / `mergePartnerSyncId`
+    /// （生产 body `upsertURLRuleBody` 同一条判据，RR10-8：落地不动活行的合并伙伴），不命中就
+    /// 建行；`.reorder` 只写 `sortOrder`；`.delete` 真删；`.rekey` 按 `id` 改 `syncId`、带
+    /// `values` 时紧接着走 `.update` 那一支。`pendingLocalEdit` 一个字节不碰。
+    private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>,
+                      outcome: inout URLRuleBatchOutcome, alphaSources: Set<String>) {
+        switch op {
+        case .rekey(let localId, let syncId, let values):
+            guard let index = rows.firstIndex(where: { $0.id == localId }) else { return }
+            rows[index].syncId = syncId
+            touchedBuckets.insert(rows[index].spaceId)
+            if let values {
+                land(.update(values), touchedBuckets: &touchedBuckets, outcome: &outcome,
+                     alphaSources: alphaSources)
+            }
+        case .create(let values), .update(let values), .move(let values):
+            let existing = rows.firstIndex { $0.syncId == values.syncId }
+            let sourceBucket = existing.map { rows[$0].spaceId }
+            // 与生产 body 同一条规则：建行或救回软删行都算「进了桶」，在写之前读。
+            let entersBucket = existing.map { rows[$0].deletedDate != nil } ?? true
+            if let index = existing {
+                rows[index].spaceId = values.spaceId
+                rows[index].host = values.host
+                rows[index].pathPrefix = values.pathPrefix
+                rows[index].askBeforeRouting = values.askBeforeRouting
+                rows[index].sortOrder = values.sortOrder
+                rows[index].createdDate = values.createdDate
+                rows[index].contentUpdatedDate = values.contentUpdatedDate
+                rows[index].targetUpdatedDate = values.targetUpdatedDate
+                if rows[index].deletedDate != nil {
+                    rows[index].deletedDate = nil
+                    rows[index].mergePartnerSyncId = nil
+                }
+            } else {
+                rows.append(PhiLocalURLRule(id: UUID().uuidString, syncId: values.syncId,
+                                            spaceId: values.spaceId, host: values.host,
+                                            pathPrefix: values.pathPrefix,
+                                            askBeforeRouting: values.askBeforeRouting,
+                                            sortOrder: values.sortOrder, createdDate: values.createdDate,
+                                            contentUpdatedDate: values.contentUpdatedDate,
+                                            targetUpdatedDate: values.targetUpdatedDate,
+                                            deletedDate: nil, pendingLocalEdit: false,
+                                            mergePartnerSyncId: nil))
+            }
+            switch op {
+            case .move:
+                if let sourceBucket { touchedBuckets.insert(sourceBucket) }
+                touchedBuckets.insert(values.spaceId)
+            case .create:
+                touchedBuckets.insert(values.spaceId)
+            default:
+                // `.update`：只有进了桶（建行 / 救回软删行）、或（防御）目标真的变了才记桶。
+                if entersBucket {
+                    touchedBuckets.insert(values.spaceId)
+                } else if let sourceBucket, sourceBucket != values.spaceId {
+                    touchedBuckets.insert(sourceBucket)
+                    touchedBuckets.insert(values.spaceId)
+                }
+            }
+        case .reorder(let syncId, _, let sortOrder):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            rows[index].sortOrder = sortOrder
+            touchedBuckets.insert(rows[index].spaceId)
+        case .delete(let syncId):
+            // R-M3-4a-102：(α) 的复查不过 ⇒ `.transfer` 与**同身份的 `.delete`** 两条都不执行
+            // （相序保证 `.transfer` 已经先跑过、集合已经填好）。
+            guard !outcome.deferredTombstones.contains(syncId) else { return }
+            for row in rows where row.syncId == syncId {
+                touchedBuckets.insert(row.spaceId)
+            }
+            rows.removeAll { $0.syncId == syncId }
+        // 8b-3：§8.4.4 的编辑转移。与生产 body 共用 `URLRuleKind` 那两个纯判定函数
+        // （`transferSourceUnchanged` / `transferDecision`），两处各写一份的实现迟早在「谁赢」
+        // 上分叉。
+        case .transfer(let fromSyncId, let toSyncId, let source, let stamps):
+            if alphaSources.contains(fromSyncId),
+               !URLRuleKind.transferSourceUnchanged(
+                   row: rows.first(where: { $0.syncId == fromSyncId }), source: source) {
+                outcome.deferredTombstones.insert(fromSyncId)
+                return
+            }
+            guard let index = rows.firstIndex(where: { $0.syncId == toSyncId }) else {
+                outcome.transferSupersededByDelete += 1
+                return
+            }
+            let decision = URLRuleKind.transferDecision(target: rows[index], source: source,
+                                                        targetEffectiveStamps: stamps)
+            if decision.writesContent {
+                let normalized = LocalStore.normalizedRule(host: source.host,
+                                                           pathPrefix: source.pathPrefix)
+                rows[index].host = normalized.host
+                rows[index].pathPrefix = normalized.pathPrefix
+                rows[index].askBeforeRouting = source.askBeforeRouting
+                rows[index].contentUpdatedDate = source.contentUpdatedDate
+            }
+            if decision.writesTarget, let spaceId = source.targetSpaceId {
+                if rows[index].spaceId != spaceId {
+                    touchedBuckets.insert(rows[index].spaceId)
+                    rows[index].spaceId = spaceId
+                    touchedBuckets.insert(spaceId)
+                }
+                rows[index].targetUpdatedDate = source.targetUpdatedDate
+            }
+            // §8.4.5：**`written > 0` 才置位**、才计一次 `transferred`。
+            if decision.written > 0 {
+                rows[index].pendingLocalEdit = true
+                outcome.transferred += 1
+            }
+            if decision.contentSuperseded { outcome.transferSupersededByDelete += 1 }
+        // 8b-2 的三条，与生产 body 的三个原语逐字同形（计划裁定五）：按 `syncId` 在**含软删行**
+        // 的定义域里寻址、找不到零写、值相同零写、**一律不碰 `pendingLocalEdit`**。
+        case .softDelete(let syncId, let mergePartnerSyncId):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            // 两列**同一次行写**（RR8-4）；已经软删的行不重写 `deletedDate`。
+            if rows[index].deletedDate == nil { rows[index].deletedDate = Date() }
+            rows[index].mergePartnerSyncId = mergePartnerSyncId
+            touchedBuckets.insert(rows[index].spaceId)
+        case .setMergePartner(let syncId, let mergePartnerSyncId):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
+                  rows[index].mergePartnerSyncId != mergePartnerSyncId else { return }
+            // **不记桶**：这一列不进路由表、不改次序。
+            rows[index].mergePartnerSyncId = mergePartnerSyncId
+        case .setContentGroup(let syncId, let host, let pathPrefix, let ask,
+                              let contentUpdatedDate):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            let normalized = LocalStore.normalizedRule(host: host, pathPrefix: pathPrefix)
+            // 三个字段 + 它们共用的那一枚戳；`sortOrder` / `targetUpdatedDate` / `deletedDate`
+            // 一个字节不碰。
+            rows[index].host = normalized.host
+            rows[index].pathPrefix = normalized.pathPrefix
+            rows[index].askBeforeRouting = ask
+            rows[index].contentUpdatedDate = contentUpdatedDate
+        }
+    }
+
+    /// 该桶的活行按 `(sortOrder, id)` 升序写 `0..<n`。
+    private func densify(_ bucket: String) {
+        let live = rows.indices
+            .filter { rows[$0].spaceId == bucket && rows[$0].deletedDate == nil }
+            .sorted { (rows[$0].sortOrder, rows[$0].id) < (rows[$1].sortOrder, rows[$1].id) }
+        for (position, index) in live.enumerated() {
+            rows[index].sortOrder = position
+        }
+    }
+}
+
 // MARK: - 值类型 fixture
 
 extension PhiLocalBookmark {
@@ -456,6 +972,41 @@ extension PhiLocalPin {
                     splitPartnerLineageId: splitPartnerLineageId, source: source,
                     createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
                     isDormant: isDormant)
+    }
+}
+
+extension PhiLocalURLRule {
+    /// 默认目标 `space-a`（`OwnerResolver.fixture()` 映到 `su-1`）。`syncId` 默认 nil 与书签 /
+    /// pin 的 fixture 同款，投影用例自己传；两枚行戳默认 nil ⇒ 无基线投影退回 `createdDate`。
+    static func fixture(id: String = "i1", syncId: String? = nil,
+                        spaceId: String = "space-a", host: String = "github.com",
+                        pathPrefix: String? = nil, askBeforeRouting: Bool = false,
+                        sortOrder: Int = 0,
+                        createdDate: Date = Date(timeIntervalSince1970: 1_000),
+                        contentUpdatedDate: Date? = nil, targetUpdatedDate: Date? = nil,
+                        deletedDate: Date? = nil, pendingLocalEdit: Bool = false,
+                        mergePartnerSyncId: String? = nil) -> PhiLocalURLRule {
+        PhiLocalURLRule(id: id, syncId: syncId, spaceId: spaceId, host: host,
+                        pathPrefix: pathPrefix, askBeforeRouting: askBeforeRouting,
+                        sortOrder: sortOrder, createdDate: createdDate,
+                        contentUpdatedDate: contentUpdatedDate,
+                        targetUpdatedDate: targetUpdatedDate, deletedDate: deletedDate,
+                        pendingLocalEdit: pendingLocalEdit,
+                        mergePartnerSyncId: mergePartnerSyncId)
+    }
+}
+
+extension URLRuleLandingValues {
+    /// 一次落地写的九个取值；三枚戳默认同一时刻，钉戳的用例自己传。
+    static func fixture(syncId: String = "R1", spaceId: String = "S1", host: String = "github.com",
+                        pathPrefix: String? = nil, askBeforeRouting: Bool = false, sortOrder: Int = 0,
+                        createdDate: Date = Date(timeIntervalSince1970: 1_000),
+                        contentUpdatedDate: Date = Date(timeIntervalSince1970: 1_000),
+                        targetUpdatedDate: Date = Date(timeIntervalSince1970: 1_000)) -> URLRuleLandingValues {
+        URLRuleLandingValues(syncId: syncId, spaceId: spaceId, host: host, pathPrefix: pathPrefix,
+                             askBeforeRouting: askBeforeRouting, sortOrder: sortOrder,
+                             createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
+                             targetUpdatedDate: targetUpdatedDate)
     }
 }
 
@@ -551,6 +1102,36 @@ func pinPayload(lineage: String,
     return entity
 }
 
+/// 一条 URL Rule 实体。
+///
+/// 三个合并单元各带自己的戳（§8.2）：内容组三个成员共用 `contentStamp`（载体是 `host`，
+/// 发送时写成相等）、`target_space_uuid` 带 `targetStamp`、`rank` 带 `rankStamp`。
+/// `path_prefix` 默认发显式的 `""`（线上的「匹配任意路径」编码，本机是 nil）——与
+/// `bookmarkPayload` 的 `secondary_url` 同一个理由：省略会让 fixture 与它自己的快照在
+/// `has_…` 上不同，每一条「这一轮不发布」的断言都会看到一次虚假 commit。
+func urlRulePayload(uuid: String,
+                    targetSpaceUuid: String = "su-1",
+                    host: String = "github.com",
+                    pathPrefix: String = "",
+                    ask: Bool = false,
+                    rank: String = "V",
+                    contentStamp: Int64 = 100,
+                    targetStamp: Int64 = 100,
+                    rankStamp: Int64 = 100,
+                    source: Int64 = 0,
+                    createdAtMs: Int64 = 1_000) -> Phi_PhiURLRuleEntity {
+    var entity = Phi_PhiURLRuleEntity()
+    entity.ruleUuid = uuid
+    entity.host = stamped(host, at: contentStamp)
+    entity.pathPrefix = stamped(pathPrefix, at: contentStamp)
+    entity.ask = stamped(ask, at: contentStamp)
+    entity.targetSpaceUuid = stamped(targetSpaceUuid, at: targetStamp)
+    entity.rank = stamped(rank, at: rankStamp)
+    entity.source = Int32(truncatingIfNeeded: source)
+    entity.createdAtMs = createdAtMs
+    return entity
+}
+
 /// 一条 Space 实体，书签解析 `space_uuid` 时当背景用。
 ///
 /// `profile_uuid` 没有参数，所以不发射；需要 profile 绑定的用例在返回值上自己设
@@ -595,6 +1176,16 @@ func baselineBytes(_ payload: Phi_PhiBookmarkEntity) -> Data {
 }
 
 func baselineBytes(_ payload: Phi_PhiPinTabEntity) -> Data {
+    (try? envelope(payload).serializedData()) ?? Data()
+}
+
+func envelope(_ payload: Phi_PhiURLRuleEntity) -> Phi_PhiEntity {
+    var out = Phi_PhiEntity()
+    out.urlRule = payload
+    return out
+}
+
+func baselineBytes(_ payload: Phi_PhiURLRuleEntity) -> Data {
     (try? envelope(payload).serializedData()) ?? Data()
 }
 
@@ -745,6 +1336,13 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     /// 每一次 `load` 收到的 `hadRecords`，按调用序。报损判据只随它变，断言它就是断言引擎
     /// 把哪一条 per-kind 标志喂了进来。
     private(set) var hadRecordsSeen: [Bool] = []
+    /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
+    /// 用例自己置回 false 放行。
+    var failNextSave = false
+    /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「最后一页那次
+    /// 落地写」「发布段那一次」这种精确注入。失败那一次同样**不改** `table`。
+    var failSaveOnCallNumber: Int?
+    private(set) var saveCalls = 0
 
     init(table: PhiOwnedItemTable = PhiOwnedItemTable()) {
         self.table = table
@@ -766,13 +1364,59 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
         return (PhiOwnedItemTable(), hadRecords)
     }
 
-    func save(_ table: PhiOwnedItemTable) {
+    @discardableResult
+    func save(_ table: PhiOwnedItemTable) -> Bool {
+        saveCalls += 1
+        guard !failNextSave, failSaveOnCallNumber != saveCalls else { return false }
         self.table = table
+        return true
     }
 
     func deleteFile() {
         deleted = true
         table = PhiOwnedItemTable()
+    }
+}
+
+/// 内存版 `PhiSyncMarkerStore`（M3-4a Task 3）。形状照上面的 `MemoryOwnedItemStore`，并且
+/// 同样是**顶层类型**：`PhiSyncMarkerBoundaryTests` 与 `SelfRevokeTests` 跨文件共用同一个
+/// 假件，不各抄一份。
+///
+/// `saves` 记**每一次** `save` 调用收到的表（失败的那一次也记），所以 `saves.count` 就是
+/// 调用计数，`failSaveOnCallNumber` 数的正是它；「一次写都没有」断言 `saves.isEmpty`。
+final class MemoryMarkerStore: PhiSyncMarkerStore {
+    var file: PhiSyncMarkerFile
+    /// 每次 `save` 都失败（= 盘满 / 目录不可写）。Task 2b 的第三个置位点用它。
+    var failSave = false
+    /// 只让第 N 次 `save` 失败（N 从 1 数）——逐页边界的用例要「第 3 页那一次写失败」。
+    var failSaveOnCallNumber: Int?
+    private(set) var saves: [PhiSyncMarkerFile] = []
+    private(set) var loadCount = 0
+    private(set) var deleted = false
+
+    init(file: PhiSyncMarkerFile = PhiSyncMarkerFile()) {
+        self.file = file
+    }
+
+    func load() -> PhiSyncMarkerFile {
+        loadCount += 1
+        return file
+    }
+
+    /// 失败那一路**不改 `file`**（R-M3-4a-83 的内存版）：内存与「磁盘」一起停在旧表上。
+    @discardableResult
+    func save(_ file: PhiSyncMarkerFile) -> Bool {
+        saves.append(file)
+        if failSave || failSaveOnCallNumber == saves.count { return false }
+        self.file = file
+        return true
+    }
+
+    /// 删，不是存一张空表：只置 `deleted`，`file` 复位成空表——下一次 `load` 交回的正是
+    /// 真 store「文件不存在」那一路的结论。
+    func deleteFile() {
+        deleted = true
+        file = PhiSyncMarkerFile()
     }
 }
 

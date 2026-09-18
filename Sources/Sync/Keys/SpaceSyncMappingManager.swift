@@ -17,6 +17,17 @@ enum SpaceSyncMappingError: Error, Equatable {
     /// 这个 `SyncKeyController` 根本没有映射层（`spaceKeys == nil`）。失败方向是
     /// 「一条都不发布」，由 §9.3 的 `unmapped=<n>` 暴露——绝不是「用一张内存表凑合」。
     case mappingLayerUnavailable
+    /// 写盘失败：store 已经把内存回滚回写之前那一份（R-M3-4a-83），所以这条错**不留痕迹**
+    /// ——抛出之后 `syncUuid(forSpaceId:)` 与 `localSpaceId(forSyncUuid:)` 都查不到这条映射。
+    case persistFailed
+    /// R-M3-4a-6：本机那一侧的保留 id（incognito 前缀下的任何 spaceId）。映上之后
+    /// `incognitoRuleTargetId` 就成了一个「真 Space」，它的规则会按 Space 归属走
+    /// `isEligibleSpace` 与保留期级联——而它根本没有 `SpaceModel` 行、没有 Space 游标。
+    case reservedSpaceId
+    /// R-M3-4a-6：账户那一侧的保留 uuid（`defaultSpaceUuid` / `incognitoSpaceUuid`）。
+    /// 映上之后保留常量就被某台机器绑到一个真 Space 上，两台对同一条 incognito 规则解析出
+    /// 不同目标，而没有任何日志会提示。
+    case reservedSyncUuid
 }
 
 /// 本地 `spaceId` <-> 账户级 syncUuid 的翻译层（D6 §2.1）。`ProfileKeyManager` 的
@@ -71,13 +82,27 @@ final class SpaceSyncMappingManager {
             throw SpaceSyncMappingError.alreadyMapped
         }
         let uuid = UUID().uuidString.lowercased()
-        store.setSyncUuid(uuid, forSpaceId: spaceId)
+        // 落盘失败 ⇒ 抛错，**在 `return uuid` 之前**：吞掉它会在内存里留下一个从没落盘的
+        // uuid，本轮 `pushSpaces` 拿它发布，重启后映射消失、下一轮再铸一个新的，同一个
+        // 本机 Space 在账户上占两条（§2.5 第 2 条）。
+        guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
+            throw SpaceSyncMappingError.persistFailed
+        }
         return uuid
     }
 
-    /// 向导的「对应到账户已有 Space」。三道闸：默认 Space、已有映射、该 uuid 已被
-    /// 别的本地 Space 认领。
+    /// 向导的「对应到账户已有 Space」。两条保留守卫在前（R-M3-4a-6，**两个参数在两个命名
+    /// 空间里**：`spaceId` 是本机大写 UUID 串，拿它去比保留 sync uuid 永远不成立，所以只写
+    /// 一条守卫必然漏掉另一半），随后是三道闸：默认 Space、已有映射、该 uuid 已被别的本地
+    /// Space 认领。
     func map(spaceId: String, toSyncUuid uuid: String) throws {
+        guard !SpaceManager.isIncognitoSpaceId(spaceId) else {
+            throw SpaceSyncMappingError.reservedSpaceId
+        }
+        guard uuid != SyncableSpaces.defaultSpaceUuid,
+              uuid != SyncableSpaces.incognitoSpaceUuid else {
+            throw SpaceSyncMappingError.reservedSyncUuid
+        }
         guard spaceId != LocalStore.defaultSpaceId else {
             throw SpaceSyncMappingError.defaultSpaceIsImplicit
         }
@@ -87,7 +112,10 @@ final class SpaceSyncMappingManager {
         guard !store.allMappings().values.contains(uuid) else {
             throw SpaceSyncMappingError.syncUuidAlreadyClaimed
         }
-        store.setSyncUuid(uuid, forSpaceId: spaceId)
+        // 三道既有闸之后同一句 guard（见 `mintSyncUuid`）。
+        guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
+            throw SpaceSyncMappingError.persistFailed
+        }
     }
 
     /// 引擎在首次 snapshot 前对每个同步合格 Space 调一次（R-D6-7 的懒铸造）。

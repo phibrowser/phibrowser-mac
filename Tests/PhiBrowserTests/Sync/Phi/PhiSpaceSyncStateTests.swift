@@ -6,8 +6,18 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     final class FakeStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
         private(set) var saves = 0
+        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
+        var failNextSave = false
+        private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
-        func save(_ table: PhiSpaceSyncTable) { self.table = table; saves += 1 }
+        @discardableResult
+        func save(_ table: PhiSpaceSyncTable) -> Bool {
+            saves += 1
+            saveCalls += 1
+            guard !failNextSave else { return false }
+            self.table = table
+            return true
+        }
     }
 
     private func published(_ uuid: String, entityId: String = "srv-1") -> PhiSpaceCursor {
@@ -57,7 +67,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     }
 
     /// 上一版写下的表——`formatVersion` 仍是 2，但没有 M3-3 新增的那四个 per-kind 标志键
-    /// ——必须照常解出来，四个标志读作 false。
+    /// （M3-4a 又加两个，共六个）——必须照常解出来，六个标志读作 false。
     ///
     /// 防的是什么：合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，**属性的
     /// 默认值一概不参与**。四个新字段一旦按合成解码走，每一台已装机的设备整张表都解不出来：
@@ -77,10 +87,18 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.spaceSectionEnabled = true
         table.lastDrainedBirthday = "b-1"
         table.unreadableTagHashes["abcd1234"] = 99
+        // M3-4a Task 6：第三条 kind 的两个标志也非默认，六个键一起验。
+        table.urlRulesHadRecords = true
+        table.urlRulesReplayedForEmptyTable = true
         let encoded = try JSONEncoder().encode(table)
+        // 正向：六个键都在的那份字节解出来两个新标志都是 true（合成 `CodingKeys` 自动覆盖）。
+        let full = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded)
+        XCTAssertTrue(full.urlRulesHadRecords)
+        XCTAssertTrue(full.urlRulesReplayedForEmptyTable)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         for key in ["bookmarksHadRecords", "pinsHadRecords",
-                    "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable"] {
+                    "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable",
+                    "urlRulesHadRecords", "urlRulesReplayedForEmptyTable"] {
             XCTAssertNotNil(object.removeValue(forKey: key), "\(key) 本该出现在编码里")
         }
         let legacy = try JSONSerialization.data(withJSONObject: object)
@@ -98,6 +116,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(decoded.pinsHadRecords)
         XCTAssertFalse(decoded.bookmarksReplayedForEmptyTable)
         XCTAssertFalse(decoded.pinsReplayedForEmptyTable)
+        XCTAssertFalse(decoded.urlRulesHadRecords)
+        XCTAssertFalse(decoded.urlRulesReplayedForEmptyTable)
         // 第二条受害路径：同一份字节不许被读成「格式偏低」而触发一次丢弃 + 配对向导。
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
@@ -149,6 +169,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
 
     override func tearDown() {
         for account in scratchAccounts {
+            // CASE 2a.8 把 `defaults/` 改成只读来注入落盘失败；**先恢复权限再删**。
+            try? Self.setDefaultsDirectoryWritable(true, for: account)
             try? FileManager.default.removeItem(at: account.userDataStorage)
         }
         scratchAccounts = []
@@ -156,9 +178,26 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     }
 
     private func makeAccountStateStore() -> (AccountPhiSpaceSyncStateStore, AccountUserDefaults) {
+        let (store, defaults, _) = makeAccountStateStoreWithAccount()
+        return (store, defaults)
+    }
+
+    /// CASE 2a.8 还要拿着 `Account` 去改目录权限，所以多一个返回 `Account` 的版本；
+    /// 上面那个保持原签名，既有三条用例一字不改。
+    private func makeAccountStateStoreWithAccount()
+        -> (AccountPhiSpaceSyncStateStore, AccountUserDefaults, Account) {
         let account = Account(userID: UUID().uuidString)
         scratchAccounts.append(account)
-        return (AccountPhiSpaceSyncStateStore(defaults: account.userDefaults), account.userDefaults)
+        return (AccountPhiSpaceSyncStateStore(defaults: account.userDefaults),
+                account.userDefaults, account)
+    }
+
+    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
+    private static func setDefaultsDirectoryWritable(_ writable: Bool, for account: Account) throws {
+        let directory = account.userDataStorage
+            .appendingPathComponent("defaults", isDirectory: true)
+        try FileManager.default.setAttributes([.posixPermissions: writable ? 0o700 : 0o500],
+                                              ofItemAtPath: directory.path)
     }
 
     func testAStaleTableOnDiskIsDiscardedIntoAnEmptyOne() throws {
@@ -512,5 +551,36 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         state.localSpaceProfileIds = { [] }
         state.syncUuidLookup = { _ in nil }
         XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 2"))
+    }
+
+    // MARK: - CASE 2a.8（R-M3-4a-83）
+
+    /// CASE 2a.8 — `PhiSpaceSyncStateStore.save` 回 `false` 之后 `load()` 还是旧表。
+    ///
+    /// 防的是什么：Space 表与三个 JSON 文件的对称性（§2.5 第 6 条第二段）。没有回滚，
+    /// `load()` 在第一次失败之后就回 `T2`，`mutateSpaceTable` 的 `guard table != before`
+    /// （`PhiSyncEngine.swift`）从此永久早退——`save` 根本不会被再调用一次。
+    func testAFailedSpaceTableSaveReportsItAndLeavesLoadOnTheOldTable() throws {
+        let (store, _, account) = makeAccountStateStoreWithAccount()
+        var t1 = PhiSpaceSyncTable()
+        t1.cursors["sync-1"] = published("sync-1")
+        XCTAssertTrue(store.save(t1), "一次成功的写回 true")
+        XCTAssertEqual(store.load(), t1)
+
+        var t2 = t1
+        t2.hasDrainedFullReplay = true
+        XCTAssertNotEqual(t1, t2, "前提：两张表确实不同")
+
+        try Self.setDefaultsDirectoryWritable(false, for: account)
+        XCTAssertFalse(store.save(t2), "写盘失败 ⇒ false")
+        XCTAssertEqual(store.load(), t1, "回滚可见：内存不领先磁盘")
+
+        try Self.setDefaultsDirectoryWritable(true, for: account)
+        XCTAssertTrue(store.save(t2))
+        XCTAssertEqual(store.load(), t2)
+        XCTAssertEqual(
+            AccountPhiSpaceSyncStateStore(defaults: AccountUserDefaults(account: account)).load(),
+            t2,
+            "同一个账户上新建的实例读盘，盘上确实是它")
     }
 }

@@ -304,7 +304,7 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     func purge(spaceId: String) async throws {
         SpaceManager.shared.closeSpaceWindows(spaceId: spaceId)
-        try await account.localStorage.deleteSpaceCascadeThrowing(spaceId: spaceId)
+        try await account.localStorage.deleteSpaceCascadeThrowing(spaceId: spaceId, origin: .retentionPurge)
         SpaceManager.shared.clearThemeRecords(forSpaceId: spaceId)
     }
 }

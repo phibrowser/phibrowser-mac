@@ -25,10 +25,25 @@ final class PhiOwnedItemStateTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        // CASE 2a.7 把 `sync/` 改成只读来注入落盘失败；**先恢复权限再删**，否则只读目录
+        // 删不掉，临时目录会一次次累积下来。
+        if let fileURL {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: fileURL.deletingLastPathComponent().path)
+        }
         if let directory { try? FileManager.default.removeItem(at: directory) }
         directory = nil
         fileURL = nil
         try super.tearDownWithError()
+    }
+
+    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
+    /// **测试进程不是 root**，所以这个注入是确定的。
+    private func setCursorDirectoryWritable(_ writable: Bool) throws {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: writable ? 0o700 : 0o500],
+            ofItemAtPath: fileURL.deletingLastPathComponent().path)
     }
 
     private func makeStore() -> FileOwnedItemStateStore {
@@ -468,5 +483,79 @@ final class PhiOwnedItemStateTests: XCTestCase {
             "bookmarksReplayedForEmptyTable",
             "pinsReplayedForEmptyTable",
         ])
+    }
+
+    // MARK: - CASE 2a.7（R-M3-4a-83）
+
+    /// CASE 2a.7 — `FileOwnedItemStateStore.save` 在不可写目录上回 `false` 且**不动文件**。
+    ///
+    /// 防的是什么：catch 分支忘了 `return false`、或者写成 `return true` 的实现——它让
+    /// Task 2b 的 `cursorSaveFailed` 永远为假，B-2 的整条保证在三个 JSON 文件上归零。
+    /// 同时钉住「写失败**不重试**」（§11.4）仍然成立：没有半截的重试队列，只有一个回传，
+    /// 上一份完整的表原封不动留在盘上。
+    func testAFailedCursorSaveReportsItAndLeavesTheFileUntouched() throws {
+        let store = makeStore()
+        var tableA = PhiOwnedItemTable()
+        var cursorA = PhiOwnedItemCursor()
+        cursorA.entityId = "srv-a"
+        cursorA.version = 4
+        cursorA.reconciled = Data([0x01])
+        tableA.cursors["b1"] = cursorA
+        XCTAssertTrue(store.save(tableA), "一次成功的写回 true")
+        let bytesAfterA = try Data(contentsOf: fileURL).count
+
+        var tableB = PhiOwnedItemTable()
+        var cursorB = PhiOwnedItemCursor()
+        cursorB.entityId = "srv-b"
+        cursorB.version = 9
+        cursorB.reconciled = Data([0x02, 0x03])
+        tableB.cursors["b2"] = cursorB
+
+        try setCursorDirectoryWritable(false)
+        XCTAssertFalse(store.save(tableB), "写盘失败 ⇒ false")
+
+        try setCursorDirectoryWritable(true)
+        let reloaded = store.load(hadRecords: true)
+        XCTAssertEqual(reloaded.table, tableA, "盘上仍然是上一份完整的表")
+        XCTAssertFalse(reloaded.reportedLoss, "读得出来就不是丢失")
+        XCTAssertEqual(try Data(contentsOf: fileURL).count, bytesAfterA,
+                       "失败那一次一个字节都没写出去")
+    }
+
+    // MARK: - CASE M-31（`removeCursor` 的文件往返，8b-1）
+
+    /// 防的是什么：把「删旧游标」实现成「写一条空 `PhiOwnedItemCursor()`」的实现在这里红：一条
+    /// `entityId == ""`、`reconciled == nil` 的游标会被补键判据与 §4.2 第 3b 条反复扫到，而它对应的
+    /// 本机行此刻挂在**另一个**身份上 ⇒ 每轮一次无主重发。`reportedLoss == false` 那一半钉住删一条
+    /// 游标不等于丢整表。
+    func testRemoveCursorDropsTheWholeEntryAndSurvivesAFileRoundTrip() throws {
+        var table = PhiOwnedItemTable()
+        var old = PhiOwnedItemCursor()
+        old.ownerUuid = "su-1"
+        table.cursors["old"] = old
+        var fresh = PhiOwnedItemCursor()
+        fresh.entityId = "srv-new"
+        fresh.version = 7
+        fresh.reconciled = Data([0x01, 0x02])
+        fresh.server = Data([0x01, 0x02])
+        fresh.ownerUuid = "su-1"
+        table.cursors["new"] = fresh
+        let formatVersion = table.formatVersion
+
+        table.removeCursor(identity: "old")
+        XCTAssertNil(table.cursors["old"], "整条不在，不是一条空游标")
+        XCTAssertEqual(table.cursors.count, 1)
+        XCTAssertTrue(makeStore().save(table))
+
+        let reloaded = makeStore().load(hadRecords: true)
+        XCTAssertNil(reloaded.table.cursors["old"])
+        XCTAssertEqual(reloaded.table.cursors["new"], fresh, "逐字段相等")
+        XCTAssertFalse(reloaded.reportedLoss)
+        XCTAssertEqual(reloaded.table.formatVersion, formatVersion)
+
+        // 幂等：对一条不存在的身份调 `removeCursor` ⇒ 表逐字不变。
+        var untouched = reloaded.table
+        untouched.removeCursor(identity: "missing")
+        XCTAssertEqual(untouched, reloaded.table)
     }
 }

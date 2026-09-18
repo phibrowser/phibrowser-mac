@@ -78,10 +78,12 @@ struct SpaceRoutingRule: Equatable, Identifiable {
     let askBeforeRouting: Bool
     let sortOrder: Int
     let createdDate: Date
+    let syncId: String?
+    let deletedDate: Date?
 
     init(id: String = UUID().uuidString, spaceId: String, host: String,
          pathPrefix: String? = nil, askBeforeRouting: Bool = false,
-         sortOrder: Int, createdDate: Date = Date()) {
+         sortOrder: Int, createdDate: Date = Date(), syncId: String? = nil, deletedDate: Date? = nil) {
         self.id = id
         self.spaceId = spaceId
         self.host = host
@@ -89,5 +91,7 @@ struct SpaceRoutingRule: Equatable, Identifiable {
         self.askBeforeRouting = askBeforeRouting
         self.sortOrder = sortOrder
         self.createdDate = createdDate
+        self.syncId = syncId
+        self.deletedDate = deletedDate
     }
 }

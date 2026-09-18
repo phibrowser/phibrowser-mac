@@ -11,6 +11,11 @@ import Foundation
 //
 //     <account.userDataStorage>/sync/bookmarks-cursors.json
 //     <account.userDataStorage>/sync/pins-cursors.json
+//     <account.userDataStorage>/sync/urlrules-cursors.json   （M3-4a，URL Rule）
+//
+// 第三张表的字段集与另两张**逐字相同**：`PhiOwnedItemTable` / `PhiOwnedItemCursor` 为规则
+// **一个字段都不加**（RR8-4 / §4.4）——规则的合并伙伴记在 V11 的行列 `mergePartnerSyncId`
+// 上，不进游标。
 //
 // `account.userDataStorage` 就是 `<App Support>/Phi/users/<userID>`（`Account.swift`），
 // 也就是 `localDB` 与 `defaults/` 的同级目录，所以这两个文件**随账户目录天然隔离**：
@@ -62,6 +67,17 @@ struct PhiOwnedItemTable: Codable, Equatable {
             return nowMs - deletedAtMs <= PhiSpaceSyncState.retentionMs
         }
     }
+}
+
+extension PhiOwnedItemTable {
+    /// §8.4.2 第 4 步 / R-M3-4a-53：认领之后**整条删掉**旧身份那条本机铸的游标。
+    /// 与 `dropExpiredTombstones(nowMs:)` 并列——两者都是「让一条身份**整条**退出
+    /// 这张表」，所以都是 `PhiOwnedItemTable` 上的 mutating 方法而不是调用方直接改
+    /// `cursors`：直接改的实现绕得过这一行注释，而这一行注释是「什么时候允许删游标」的
+    /// 唯一记录。**`PhiOwnedItemCursor` 一个字段都不加**（RR8-4）。
+    /// 不存在的身份 ⇒ 表逐字不变（幂等）。**绝不是**写一条空 `PhiOwnedItemCursor()`：那种
+    /// 游标会被 R-exec-13 的补键判据与 §4.2 第 3b 条反复扫到（CASE M-31）。
+    mutating func removeCursor(identity: String) { cursors.removeValue(forKey: identity) }
 }
 
 /// 一条归属项身份的同步影子。十四个字段，逐条都有文档注释——这些注释是这些字段**存在
@@ -161,6 +177,8 @@ struct OwnedKindFlags {
                                           replayedForEmptyTable: \.bookmarksReplayedForEmptyTable)
     static let pins = OwnedKindFlags(hadRecords: \.pinsHadRecords,
                                      replayedForEmptyTable: \.pinsReplayedForEmptyTable)
+    static let urlRules = OwnedKindFlags(hadRecords: \.urlRulesHadRecords,
+                                         replayedForEmptyTable: \.urlRulesReplayedForEmptyTable)
 }
 
 /// 一张 per-kind 游标表的存储。
@@ -173,12 +191,15 @@ protocol PhiOwnedItemStateStore: AnyObject {
     /// `hadRecords` 是该 kind 的 `…HadRecords` 标志，它住在 `PhiSpaceSyncTable` 里、store 看不到
     /// （§3.5 的单副本裁定）。做成入参 + 返回值，比让 store 去读另一张表干净，也让报损在类型上
     /// 无法被忽略——丢一个游标文件而不报损是一场**静默的灾难**：`syncId` 住在 SwiftData 行上、
-    /// marker 住在 `UserDefaults.standard`，两者都不在被丢掉的那个文件里，于是行仍然同步合格却
+    /// marker 住在同目录的 `marker.json` 里（M3-4a 之前在 `UserDefaults.standard`），两者都
+    /// 不在被丢掉的那个文件里，于是行仍然同步合格却
     /// 一条基线都没有，下一轮的组批器以 `entityId == "" / version == 0` 发出一批 create，而服务端
     /// 的 `ON CONFLICT (client_tag_hash) DO UPDATE` **没有版本检查**——整个账户的书签被这台机器
     /// 盲写覆盖，时间戳还赢下每个对端的 LWW。
     func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool)
-    func save(_ table: PhiOwnedItemTable)
+    /// false = 这张表**没有落盘**（R-M3-4a-83）。`@discardableResult` 是为了让本任务
+    /// 之外的调用方一行不改；引擎的两个写口已经把它接出来，Task 2b 才据此不推 marker。
+    @discardableResult func save(_ table: PhiOwnedItemTable) -> Bool
     /// §9.1 的自撤销：直接删文件，不是保存一张空表。
     func deleteFile()
 }
@@ -215,14 +236,21 @@ final class FileOwnedItemStateStore: PhiOwnedItemStateStore {
     ///
     /// 写失败**不重试**（§11.4）：下一轮的 `load` 读到的是上一份完整的表，或者读不出来而报损，
     /// 两条路都是收敛的；一个半截的重试队列不是。日志按 R12 只带条数与错误元数据。
-    func save(_ table: PhiOwnedItemTable) {
+    ///
+    /// 失败现在**回传**（R-M3-4a-83）：引擎据此不推本页的 marker（§2.5 第 6 条），于是
+    /// 那一页下一轮还会再来一次。这不是重试队列——重试的是**整轮**，store 自己仍然一次
+    /// 都不重试。
+    @discardableResult
+    func save(_ table: PhiOwnedItemTable) -> Bool {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try JSONEncoder().encode(table).write(to: fileURL, options: .atomic)
+            return true
         } catch {
             AppLogError("[phi-sync] owned-item cursor save failed cursors=\(table.cursors.count) "
                 + "(\(PhiSyncLog.describe(error)))")
+            return false
         }
     }
 

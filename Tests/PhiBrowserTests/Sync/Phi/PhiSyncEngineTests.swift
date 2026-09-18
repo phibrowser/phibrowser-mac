@@ -201,6 +201,17 @@ final class PhiSyncEngineTests: XCTestCase {
         /// cannot express it — it is a countdown, and the engine's follow-up rounds
         /// outlive any fixed number a test would pick.
         var keepReportingChangesRemaining = false
+        /// M3-4a / B-2：按**收到的 marker** 分页，而不是按调用次数发脚本。服务端按
+        /// `WHERE version > marker` 取下一页，所以每个 `Page.newMarker` 必须是十进制水位，
+        /// 且页内实体的 `version` 不得高于它。空 ⇒ 这个模式关闭，`scriptedPages` / `stored` 照旧。
+        /// R-M3-4a-76 的硬要求：没有这个模式，「内存 marker 不推进」那个死锁察觉不到（CASE B2-13）。
+        /// 同一个 marker 再来一次就再发同一页——这正是「本页没推 marker ⇒ 重投」的桩形状。
+        var pagesByMarker: [Page] = []
+        /// M3-4a / B-2：`arrivedInGetUpdates` / `getUpdatesGate` 只从第 N 次 `getUpdates`
+        /// 调用起生效（N 从 1 数）；nil = 每次都生效（既有语义）。用途只有一个：让一轮
+        /// `page_budget_exhausted` 之后引擎自己排进队列的**跟进轮**停在它的第一次请求里，
+        /// 于是本轮的结局行与 store 计数可以在跟进轮动手之前被确定地读到。
+        var gateGetUpdatesFromCall: Int?
 
         /// M3-3: a client whose drain never ends, for the guard ① cases. The key is
         /// taken so a caller can seed readable rows into it afterwards.
@@ -245,8 +256,10 @@ final class PhiSyncEngineTests: XCTestCase {
             -> (entities: [PhiRemoteEntity], newMarker: Data, storeBirthday: String, changesRemaining: Bool) {
             getUpdatesCalls.append((marker, storeBirthday))
             callLog.append("getUpdates.begin")
-            if let arrivedInGetUpdates { await arrivedInGetUpdates.open() }
-            if let getUpdatesGate { await getUpdatesGate.wait() }
+            if gateGetUpdatesFromCall.map({ getUpdatesCalls.count >= $0 }) ?? true {
+                if let arrivedInGetUpdates { await arrivedInGetUpdates.open() }
+                if let getUpdatesGate { await getUpdatesGate.wait() }
+            }
             defer { callLog.append("getUpdates.end") }
             if let error = getUpdatesErrorOnce {
                 getUpdatesErrorOnce = nil
@@ -264,6 +277,16 @@ final class PhiSyncEngineTests: XCTestCase {
                 scheduled.pages -= 1
                 getUpdatesErrorAfterPages = scheduled
             }
+            if !pagesByMarker.isEmpty {
+                // 排在 `scriptedPages` 之前、`getUpdatesErrorAfterPages` 之后：错误脚本仍然按
+                // 调用次数数，分页按水位取。一条都没有 ⇒ 空页、marker 原样交回、没有更多。
+                let from = Self.watermark(marker)
+                guard let page = pagesByMarker.first(where: { Self.watermark($0.newMarker) > from }) else {
+                    return ([], marker ?? Data(), self.storeBirthday, false)
+                }
+                return (page.entities, page.newMarker, self.storeBirthday,
+                        page.changesRemaining || keepReportingChangesRemaining)
+            }
             if !scriptedPages.isEmpty {
                 let page = scriptedPages.removeFirst()
                 return (page.entities, page.newMarker, self.storeBirthday,
@@ -280,9 +303,9 @@ final class PhiSyncEngineTests: XCTestCase {
             let newMarker = highest.map { Data(String($0).utf8) } ?? (marker ?? Data())
             if let budget = pageBudgetExhaustsAfter, budget > 0 {
                 pageBudgetExhaustsAfter = budget - 1
-                return (fresh, newMarker, storeBirthday, true)
+                return (fresh, newMarker, self.storeBirthday, true)
             }
-            return (fresh, newMarker, storeBirthday, keepReportingChangesRemaining)
+            return (fresh, newMarker, self.storeBirthday, keepReportingChangesRemaining)
         }
 
         /// One store write per entry, outcomes paired to `entries` by index — like the real
@@ -589,8 +612,8 @@ final class PhiSyncEngineTests: XCTestCase {
                       "the adopt is the point: none of this device's local defaults is published")
     }
 
-    /// The conflict retry reaches `push` with `allowInitialPull: false`, so the pull's
-    /// in-round `mayPublish` short circuit never covers it: only the durable guard does.
+    /// The peer changes the entity after preflight. The conflict pull must retain the
+    /// unreadable-entity guard when it reaches the scoped retry.
     func testConflictRetryRefusesToCommitOverAnEntityThePullCouldNotRead() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
@@ -602,6 +625,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let foreign = try ciphertext(settingEntity(settingKey, false, at: 3_000),
                                      key: SymmetricKey(size: .bits256))
         client.seed(ciphertext: foreign, version: 6)
+        client.scriptedPages = [.init(entities: [], newMarker: Data("5".utf8), changesRemaining: false)]
         client.forcedConflicts = 1
         defaults.set(false, forKey: settingKey)
 
@@ -916,6 +940,93 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: client.stored[PhiSyncEntity.settingsClientTagHash]!.version))
     }
 
+    func testEveryLocalPushPullsBeforeCommitting() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let clock = PhiSyncEngineSpaceTests.Clock()
+        clock.nowMs = 2_000
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: registry(settingKey),
+                                   now: { clock.read() })
+        await engine.pullOnce()
+
+        for value in [true, false] {
+            clock.nowMs += 1_000
+            defaults.set(value, forKey: settingKey)
+            let start = client.callLog.count
+            await engine.handleLocalDefaultsChange()
+            XCTAssertEqual(Array(client.callLog.dropFirst(start)),
+                           ["getUpdates.begin", "getUpdates.end", "commit"])
+        }
+    }
+
+    func testEstablishedPushStopsWhenPreflightPullFails() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        defaults.set(true, forKey: settingKey)
+        client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+
+        await engine.pushLocalSettings()
+
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertTrue(defaults.bool(forKey: settingKey), "The local edit must remain available for a later round")
+        await engine.pushLocalSettings()
+        XCTAssertEqual(client.commits.count, 1, "A later successful pull permits the pending edit")
+    }
+
+    func testPushAppliesNewerRemoteSettingsBeforeBuildingCommit() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        defaults.set(true, forKey: settingKey)
+        client.reseed(tagHash: PhiSyncEntity.settingsClientTagHash,
+                      ciphertext: try ciphertext(settingEntity(settingKey, false, at: 3_000), key: key), version: 6)
+
+        await engine.pushLocalSettings()
+
+        XCTAssertFalse(defaults.bool(forKey: settingKey))
+        XCTAssertTrue(client.commits.isEmpty, "Preflight must resolve the stale edit before any commit reaches the server")
+    }
+
+    func testConflictRetryStopsWhenItsPullFails() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        defaults.set(true, forKey: settingKey)
+        client.forcedConflicts = 1
+        client.getUpdatesErrorAfterPages = (1, URLError(.notConnectedToInternet))
+        let start = client.callLog.count
+
+        await engine.pushLocalSettings()
+
+        XCTAssertEqual(Array(client.callLog.dropFirst(start)),
+                       ["getUpdates.begin", "getUpdates.end", "commit", "getUpdates.begin", "getUpdates.end"])
+        XCTAssertEqual(client.commits.count, 1, "A failed conflict pull must not authorize another commit")
+    }
+
+    func testUnfinishedPullDoesNotPublishSettings() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        defaults.set(true, forKey: settingKey)
+        client.pageBudgetExhaustsAfter = 100_000
+
+        await engine.pushLocalSettings()
+        engine.shutdown()
+
+        XCTAssertTrue(client.commits.isEmpty, "Reaching the page budget is not a completed preflight")
+    }
+
     /// R5: exactly one commit per local change, and none at all when nothing changed.
     func testLocalChangeProducesExactlyOneCommit() async throws {
         let key = SymmetricKey(size: .bits256)
@@ -989,7 +1100,7 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.pushLocalSettings()
 
         XCTAssertEqual(client.commits.count, 2, "one conflicted commit plus one retry")
-        XCTAssertEqual(client.getUpdatesCalls.count, 2, "the conflict is resolved by pulling first")
+        XCTAssertEqual(client.getUpdatesCalls.count, 3, "initial pull, push preflight, and conflict recovery")
     }
 
     /// A conflict that survives the retry is abandoned for this round rather than looping.
@@ -1120,7 +1231,7 @@ final class PhiSyncEngineTests: XCTestCase {
 
         XCTAssertEqual(client.commits.count, 1)
         XCTAssertEqual(client.callLog.filter { $0 != "getUpdates.begin" },
-                       ["getUpdates.end", "getUpdates.end", "commit"],
+                       ["getUpdates.end", "getUpdates.end", "commit", "getUpdates.end"],
                        "the commit lands after the parked pull finished its round, not during it")
     }
 

@@ -17,10 +17,10 @@ final class AccountProfileSyncMappingStore: ProfileSyncMappingStore {
 
     func globalUuid(forProfileId profileId: String) -> String? { allMappings()[profileId] }
 
-    func setGlobalUuid(_ uuid: String, forProfileId profileId: String) {
+    func setGlobalUuid(_ uuid: String, forProfileId profileId: String) -> Bool {
         var map = allMappings()
         map[profileId] = uuid
-        defaults.set(map, forCodableKey: Self.defaultsKey)
+        return defaults.set(map, forCodableKey: Self.defaultsKey)
     }
 
     func allMappings() -> [String: String] {

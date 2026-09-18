@@ -70,6 +70,14 @@ enum PhiSyncEntity {
     }
     static let pinEntityName = "phi-pin"
 
+    /// 一条 URL Rule = 一条实体，tag `phi-urlrule:<rule_uuid>`。身份只有 `rule_uuid`
+    /// 一个成分（D13：目标 Space 不进身份），所以与 `spaceClientTag` / `bookmarkClientTag`
+    /// 同为单参数，不是 `pinClientTag(_:ownerKey:)` 那种双参数。
+    static let urlRuleTagPrefix = "phi-urlrule:"
+    static func urlRuleClientTag(_ uuid: String) -> String { urlRuleTagPrefix + uuid }
+    /// 服务端明文落库的 `entities.name`，每 kind 一个常量（零知识 + 幂等判据）。
+    static let urlRuleEntityName = "phi-urlrule"
+
     /// Chromium's rule: `base64(SHA1(<serialized empty specifics for the type> + client_tag))`.
     /// The server treats it as an opaque uniqueness key, but keeping the Chromium derivation
     /// means a fork client computing it the standard way lands on the same entity.
@@ -102,7 +110,7 @@ struct PhiCommitEntry {
     let entityId: String?      // nil on create
     let clientTagHash: String
     /// 服务端明文落库的 `entities.name`，每 kind 一个常量：`"phi-settings"`、`"phi-space"`、
-    /// `"phi-bookmark"`、`"phi-pin"`。
+    /// `"phi-bookmark"`、`"phi-pin"`、`"phi-urlrule"`。
     let name: String
     let ciphertext: Data?      // nil for a tombstone
     let deleted: Bool

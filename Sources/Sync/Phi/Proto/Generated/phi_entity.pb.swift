@@ -74,6 +74,15 @@ nonisolated struct Phi_PhiEntity: Sendable {
     set {kind = .pinTab(newValue)}
   }
 
+  /// M3-4a
+  var urlRule: Phi_PhiURLRuleEntity {
+    get {
+      if case .urlRule(let v)? = kind {return v}
+      return Phi_PhiURLRuleEntity()
+    }
+    set {kind = .urlRule(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   nonisolated enum OneOf_Kind: Equatable, Sendable {
@@ -84,6 +93,8 @@ nonisolated struct Phi_PhiEntity: Sendable {
     case bookmark(Phi_PhiBookmarkEntity)
     /// M3-3
     case pinTab(Phi_PhiPinTabEntity)
+    /// M3-4a
+    case urlRule(Phi_PhiURLRuleEntity)
 
   }
 
@@ -602,13 +613,157 @@ nonisolated struct Phi_PhiPinTabEntity: Sendable {
   fileprivate var _splitPartnerUuid: Phi_PhiSettingValue? = nil
 }
 
+/// One URL routing rule. Entity identity is the client tag
+/// "phi-urlrule:<rule_uuid>"; `rule_uuid` is repeated inside the payload
+/// because client_tag_hash is a one-way SHA1 and the receiver cannot recover
+/// the uuid from it.
+///
+/// Same conventions as PhiSpaceEntity / PhiBookmarkEntity: every MUTABLE field
+/// is a PhiSettingValue (M3-1's generic LWW-stamped scalar), always emitted,
+/// never omitted-when-empty. Immutable facts are plain fields and take no part
+/// in LWW.
+///
+/// THREE MERGE UNITS, three timestamps (design D15 as amended by R-M3-4a-40):
+///   1. THE CONTENT GROUP: `host` + `path_prefix` + `ask`, one shared timestamp
+///      carried by `host`. They are not merged field by field: `host` and
+///      `path_prefix` are two halves of one match key, and a field-level merge of
+///      "A changed the host" with "B changed the path" produces a rule neither
+///      user ever wrote. `ask` rides with them because it only makes sense
+///      against the key it qualifies.
+///   2. THE TARGET: `target_space_uuid` with its OWN timestamp. It is NOT part of
+///      the identity (D13) -- retargeting is a first-class edit and tombstone +
+///      create would re-mint the identity every time -- but it is also not part
+///      of the content group: it is this kind's LOCATION, it carries the
+///      single-argument `locationStamp` the owned-item module reads for the A9
+///      delete-vs-move arbitration, and keeping it separate lets a host edit on
+///      one device and a retarget on another BOTH survive.
+///   3. `rank`, its OWN timestamp: a pure reorder must not be able to revert a
+///      concurrent retarget.
+nonisolated struct Phi_PhiURLRuleEntity: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Lowercase uuid, minted on the device that first published this row, then
+  /// stored verbatim in SpaceURLRule.syncId. NEVER the local `id`, which is a
+  /// per-save handle (design §4.3).
+  var ruleUuid: String = String()
+
+  /// string_value. Match host in one of three forms: "github.com" (exact),
+  /// "*.figma.com" (suffix wildcard), "*git*" (contains). Normalized by the one
+  /// fixed-point function (design §8.1 / R-M3-4a-21), in exactly three steps:
+  ///   1. leading whitespace/newlines trimmed;
+  ///   2. the trailing run of {whitespace, newline, '.'} removed in ONE scan
+  ///      (NOT "strip dots then trim" -- that is not a fixed point: "a. ."
+  ///      would yield "a." and need another pass);
+  ///   3. lowercased (locale-independent).
+  /// No IDNA/punycode conversion (R-M3-4a-1).
+  /// CARRIES THE CONTENT GROUP'S TIMESTAMP.
+  var host: Phi_PhiSettingValue {
+    get {_host ?? Phi_PhiSettingValue()}
+    set {_host = newValue}
+  }
+  /// Returns true if `host` has been explicitly set.
+  var hasHost: Bool {self._host != nil}
+  /// Clears the value of `host`. Subsequent reads from it will return its default value.
+  mutating func clearHost() {self._host = nil}
+
+  /// string_value. Percent-encoded canonical path prefix, or "" for "any path"
+  /// (the explicit cleared encoding). "/" means "root path only" and is a
+  /// DISTINCT value from "" -- see design §8.1. Normalized by the same
+  /// fixed-point function; a payload that is not a fixed point of it is
+  /// normalized in the kind's plan closure and republished (R-M3-4a-2 /
+  /// R-M3-4a-29).
+  /// Content-group member: its timestamp is written equal to `host`'s and
+  /// IGNORED on receipt.
+  var pathPrefix: Phi_PhiSettingValue {
+    get {_pathPrefix ?? Phi_PhiSettingValue()}
+    set {_pathPrefix = newValue}
+  }
+  /// Returns true if `pathPrefix` has been explicitly set.
+  var hasPathPrefix: Bool {self._pathPrefix != nil}
+  /// Clears the value of `pathPrefix`. Subsequent reads from it will return its default value.
+  mutating func clearPathPrefix() {self._pathPrefix = nil}
+
+  /// bool_value. true = a matching navigation prompts for a Space instead of
+  /// routing silently; `target_space_uuid` degrades to the prompt's default.
+  /// Content-group member, same timestamp rule as `path_prefix`.
+  var ask: Phi_PhiSettingValue {
+    get {_ask ?? Phi_PhiSettingValue()}
+    set {_ask = newValue}
+  }
+  /// Returns true if `ask` has been explicitly set.
+  var hasAsk: Bool {self._ask != nil}
+  /// Clears the value of `ask`. Subsequent reads from it will return its default value.
+  mutating func clearAsk() {self._ask = nil}
+
+  /// string_value: the ACCOUNT-LEVEL Space sync uuid, resolved through
+  /// `sync.spaceGlobalUuids`; the literal "default-space" for the account's
+  /// default Space (D1); the literal "incognito-space" for the reserved
+  /// Incognito target (D12 / R-M3-4a-6). NEVER a local SpaceModel.spaceId and
+  /// NEVER a runtime "space.incognito.<uuid>".
+  /// ITS OWN timestamp (unit 2 above); this member is the LOCATION carrier.
+  /// An unresolvable value PARKS the entity; it is never rewritten (D16).
+  var targetSpaceUuid: Phi_PhiSettingValue {
+    get {_targetSpaceUuid ?? Phi_PhiSettingValue()}
+    set {_targetSpaceUuid = newValue}
+  }
+  /// Returns true if `targetSpaceUuid` has been explicitly set.
+  var hasTargetSpaceUuid: Bool {self._targetSpaceUuid != nil}
+  /// Clears the value of `targetSpaceUuid`. Subsequent reads from it will return its default value.
+  mutating func clearTargetSpaceUuid() {self._targetSpaceUuid = nil}
+
+  /// Ordering among rules that tie on specificity, with its OWN timestamp.
+  /// string_value: fractional index over "0-9A-Za-z" (ASCII-ascending, so byte
+  /// order == rank order); never ends in '0'. Ordering is PER TARGET SPACE.
+  /// Ties break on rule_uuid. The receiver projects rank onto the dense local
+  /// `sortOrder` (design §8.3).
+  var rank: Phi_PhiSettingValue {
+    get {_rank ?? Phi_PhiSettingValue()}
+    set {_rank = newValue}
+  }
+  /// Returns true if `rank` has been explicitly set.
+  var hasRank: Bool {self._rank != nil}
+  /// Clears the value of `rank`. Subsequent reads from it will return its default value.
+  mutating func clearRank() {self._rank = nil}
+
+  /// NOT last-writer-wins: merged with min(). Epoch ms of SpaceURLRule
+  /// .createdDate on the device that created the row.
+  ///
+  /// R-exec-16 / R-M3-4a-19: this field and `source` below CANNOT LAND on the
+  /// local row as-is, so the OUTBOUND PROJECTION must fold them against the
+  /// baseline before returning, or the two devices never converge (the raw-byte
+  /// publish compare re-differs every round). See BookmarkKind.swift:162-176.
+  var createdAtMs: Int64 = 0
+
+  /// NOT last-writer-wins: written once by the FIRST publisher and merged
+  /// DETERMINISTICALLY on disagreement -- a non-zero baseline is copied
+  /// verbatim, never overwritten from the local row. There is no `source`
+  /// column on SpaceURLRule (V11 adds only syncId + contentUpdatedDate), so
+  /// EVERY publisher this build ships emits 0; the field exists so a later
+  /// build that does distinguish authoring surfaces has a stable slot, and the
+  /// baseline fold keeps such a value stable across devices meanwhile.
+  /// Diagnostics only; no matching behaviour depends on it.
+  var source: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _host: Phi_PhiSettingValue? = nil
+  fileprivate var _pathPrefix: Phi_PhiSettingValue? = nil
+  fileprivate var _ask: Phi_PhiSettingValue? = nil
+  fileprivate var _targetSpaceUuid: Phi_PhiSettingValue? = nil
+  fileprivate var _rank: Phi_PhiSettingValue? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "phi"
 
 nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0\u{1}bookmark\0\u{3}pin_tab\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0\u{1}bookmark\0\u{3}pin_tab\0\u{3}url_rule\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -668,6 +823,19 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.kind = .pinTab(v)
         }
       }()
+      case 5: try {
+        var v: Phi_PhiURLRuleEntity?
+        var hadOneofValue = false
+        if let current = self.kind {
+          hadOneofValue = true
+          if case .urlRule(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.kind = .urlRule(v)
+        }
+      }()
       default: break
       }
     }
@@ -694,6 +862,10 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .pinTab?: try {
       guard case .pinTab(let v)? = self.kind else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .urlRule?: try {
+      guard case .urlRule(let v)? = self.kind else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
     }()
     case nil: break
     }
@@ -1171,6 +1343,75 @@ nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs._splitPartnerUuid != rhs._splitPartnerUuid {return false}
     if lhs.source != rhs.source {return false}
     if lhs.createdAtMs != rhs.createdAtMs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Phi_PhiURLRuleEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PhiURLRuleEntity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}rule_uuid\0\u{1}host\0\u{3}path_prefix\0\u{1}ask\0\u{3}target_space_uuid\0\u{1}rank\0\u{3}created_at_ms\0\u{1}source\0\u{c}\u{9}\u{4}")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.ruleUuid) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._host) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._pathPrefix) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._ask) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._targetSpaceUuid) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._rank) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self.createdAtMs) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.source) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.ruleUuid.isEmpty {
+      try visitor.visitSingularStringField(value: self.ruleUuid, fieldNumber: 1)
+    }
+    try { if let v = self._host {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try { if let v = self._pathPrefix {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
+    try { if let v = self._ask {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._targetSpaceUuid {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try { if let v = self._rank {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    if self.createdAtMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.createdAtMs, fieldNumber: 7)
+    }
+    if self.source != 0 {
+      try visitor.visitSingularInt32Field(value: self.source, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Phi_PhiURLRuleEntity, rhs: Phi_PhiURLRuleEntity) -> Bool {
+    if lhs.ruleUuid != rhs.ruleUuid {return false}
+    if lhs._host != rhs._host {return false}
+    if lhs._pathPrefix != rhs._pathPrefix {return false}
+    if lhs._ask != rhs._ask {return false}
+    if lhs._targetSpaceUuid != rhs._targetSpaceUuid {return false}
+    if lhs._rank != rhs._rank {return false}
+    if lhs.createdAtMs != rhs.createdAtMs {return false}
+    if lhs.source != rhs.source {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

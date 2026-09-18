@@ -46,7 +46,7 @@ struct OwnedItemArrival<Entity> {
 /// `plan` 的第六个参数：一次调用要带的全部轮内上下文。散成多个实参会让签名随着每一条新
 /// 规则而变。
 struct OwnedItemPlanContext {
-    /// `adopt` 的配对表：实体身份 -> 本机 guid。
+    /// `adopt` 的配对表：实体身份 -> 本机行的稳定本地 id（书签是 `guid`，规则是 `PhiLocalURLRule.id`）。
     var pairs: [String: String] = [:]
     /// `adopt` 按 §6.2 算好的**字段级合并结果**（身份 -> `Phi_PhiEntity` 信封字节），即
     /// `OwnedItemAdoptionResult.merges`。`plan` 用它替换这些身份的入站实体，于是落地的是
@@ -79,6 +79,19 @@ struct OwnedItemPlanContext {
     /// §7.3 的作用域不一致成立：`plan` 产出零 step、把入站实体**全部**塞进 `parked`。
     var localScope: PinnedTabScope? = nil
     var accountScope: PinnedTabScope? = nil
+    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1），由适配层的 pre-pass 填
+    /// （8b-2 计划裁定二）。`plan` 手上没有本机行（`localProjections` 是投影字节，不是行），
+    /// 算不出签名，所以它只在产出 `.move` / `.update` 的那一刻**照身份查一次**这张表并把命中的
+    /// 那些抄进 `OwnedItemPlan.preLandingSignatures`；查不到的身份**结构性地不在表里**
+    /// （不强解包、不填空值）。
+    ///
+    /// 类型逐字是 `[String: RuleSignature]`（8b-2 计划裁定一）：`AnyHashable` 会把第二遍指针的
+    /// 分组键从编译期类型退化成运行期强转（失败即**静默**空转，正是 RR12-1 点名的那种失效），
+    /// 而给 `OwnedItemKind` 加第三个关联类型会把非泛型的 `OwnedItemPlan` 也拖成泛型、牵动书签
+    /// 与 pin 的每一个调用点。本文件已经在 `localScope` / `accountScope` 上具名引用了 pin 专属
+    /// 的 `PinnedTabScope`，全仓又是**一个** Swift module，所以这里没有任何新的构建边。
+    /// **书签与 pin 那两条路径永不填它。**
+    var localSignatures: [String: RuleSignature] = [:]
     /// 轮首之后作用域**动过**（R-exec-12）：两个值在轮首取样时还一致，落地之前再读已经不是
     /// 那一对了。轮内那份本机投影因此过期，与「两者不相等」同等处理——差别只在它证明的是
     /// 「投影过期」而不是「本机与账户不一致」，而 §7.3 的处置对两者是同一个。
@@ -88,15 +101,75 @@ struct OwnedItemPlanContext {
         guard let localScope, let accountScope else { return false }
         return localScope != accountScope
     }
+
+    // MARK: §8.4.4 的四个具名输入（R-M3-4a-73，8b-3）。**书签与 pin 恒空集 / 空表**——
+    // 它们的 plan 上下文一个都不填，两个新分支因此在它们身上结构性不可达。
+    //
+    // 判定留在 kind 侧：签名与软删是规则特有的，`OwnedItemPlanContext` 承载不了行上的布尔。
+
+    /// 满足 (α) 前三个合取项（行在 ∧ `deletedDate == nil` ∧ **有签名**）**且**
+    /// `row.pendingLocalEdit == true` 的身份。
+    var pendingLocalEdits: Set<String> = []
+    /// 满足 (α) 前三个合取项**且**取值式 `server != nil && reconciled != nil &&
+    /// server != reconciled` 的身份（与发布段的 `pending` 集合逐字同源）。
+    var unpublished: Set<String> = []
+    /// 身份 -> 伙伴 W 的身份，**只收按三步查找次序真的拿到一条「静止」W 的那些**。
+    /// **定义域不受上面那三个合取项限制**（RR8-1）：(β) 的 X 按定义是软删态的。
+    var mergePartners: [String: String] = [:]
+    /// 三步查找次序走完拿不出静止 W、而这一组**确实有伙伴行**的身份（RR10-3）。
+    /// 与「根本没有伙伴」**必须分开**：一张字典用「键不在」表示两件事，会让实现在伙伴不静止
+    /// 时走 (ii) / A9 原语义。
+    var partnerNotAtRest: Set<String> = []
 }
 
-/// 一个落地步骤属于 §4.4 三相里的哪一相，由这个枚举决定——它同时是排序键：
-/// `.claim` / `.create` / `.move` 是第一相，`.update` 第二相，`.delete` 第三相。
+/// 一次转移的**取值源**，已经从它的来源里取出来（§8.4.4 / RR8-2）。落地只看这个值，不再
+/// 回头读行或实体。
+///
+/// §8.4.4 那份声明加了一格 `targetSpaceId`：落地写的是 `SpaceURLRule.spaceId` 这一**本机**
+/// 列，而 `targetOwnerUuid` 是账户级的量；反查由持有 resolver 的 kind 做，`LocalStore` 因此
+/// 不需要认识任何账户映射（裁定 3）。
+struct RuleProjection: Equatable, Sendable {
+    var host: String
+    var pathPrefix: String?
+    var askBeforeRouting: Bool
+    /// 内容组那一枚戳（载体 host，§8.2 第 1 条）。
+    var contentUpdatedDate: Date?
+    /// 账户级目标。
+    var targetOwnerUuid: String
+    /// 同一个目标反查出的本机 Space id；nil ⇒ 目标单元不转移。
+    var targetSpaceId: String?
+    /// 目标那一枚戳。
+    var targetUpdatedDate: Date?
+    /// rank 这个合并单元的**本机**取值（8b-4 / 裁定 3）。**只有 §8.4.5 的两处清位读它**：
+    /// 它们比的是「行此刻的三个合并单元」，而第三个单元在行上是 `sortOrder: Int`、在载荷里是
+    /// `SyncableSpaces.assignRanks` 出来的字典序串，两者在
+    /// store 里没法互算。少了这一项，「E1 改 `ask` 在途 + E2 纯拖动」会被判成相等 ⇒ 当场清位
+    /// ⇒ 那一轮的远端 tombstone 硬删、E2 的顺序连同规则一起没了。
+    ///
+    /// **`transferURLRuleEditThrowing` 一个字节都不看它**（rank 不转移，§8.4.4 那张表第三行），
+    /// 所以从实体折出来的 `transferSource(of:resolve:)` 让它保持 `nil` —— 而 `nil` 在清位那一侧
+    /// 恒不等（fail-closed，见 `URLRuleKind.clearingProjectionMatches`）。
+    var sortOrder: Int? = nil
+}
+
+/// 一个落地步骤属于 §4.4 四相里的哪一相，由这个枚举决定——它同时是排序键：
+/// `.claim` / `.create` / `.move` 是第一相，`.update` 第二相，**`.transfer` 第三相**，
+/// `.delete` 第四相（R-M3-4a-93）。
+///
+/// `.transfer` 必须排在 `.update` **之后**：它的每单元 LWW 要跟 W 的**当前值**比，
+/// 而「当前值」只有在本页那条普通 `.update(W)` 已经落下去之后才是真的当前值。
+/// 也必须排在 `.delete` **之前**：X 的硬删要在编辑被搬走之后才发生。
+/// **绝不能并进 `.update`**：两者取值源不同（`.update` 取入站载荷，`.transfer` 取
+/// X 的本机行投影并按单元比 LWW），并相就是把两套语义混成一套。
 enum StepKind: Equatable {
     case claim        // 认领：把账户身份写到一条已存在的本机行上（§6.3 第 ① 步）
     case create
     case move         // 改父 / 改 Space / 改位置
     case update       // 只改内容字段
+    /// §8.4.4 的编辑转移，**第三相**：把这条身份手上那次还没上账户的用户意图搬到 `to` 那一条
+    /// 合并伙伴上。`source` 是**值**（RR8-2）——两个落点的取值源不同，把取值留给落地闭包就
+    /// 等于让它去猜自己在哪一支。
+    case transfer(source: RuleProjection, to: String)
     case delete
 }
 
@@ -109,6 +182,11 @@ struct OwnedItemApplyStep: Equatable {
     /// 都是 nil。非 nil 只发生在模块真的**决定**了一个父的时候：提升到根（`""`，§4.4
     /// 第 5 步）与挂到本轮一起落地的那个父之下。
     var newParentUuid: String?
+    /// 新增（M3-4a / R-M3-4a-26）。非 nil = 这一步把该身份搬到另一个归属桶。
+    /// 只有归属可变的 kind 会填它；书签的归属变化走 `newParentUuid` + `location`，
+    /// pin 的归属在 client tag 里、根本变不了。**默认 nil**，所以书签与 pin 的每一处
+    /// 构造点与每一条既有 `==` 断言逐字不变。
+    var newOwnerUuid: String? = nil
     var newRank: String?
     /// 落地后要写进 `reconciled` 的字节（`Phi_PhiEntity` 信封的序列化形式）。
     var payload: Data?
@@ -122,7 +200,7 @@ struct ParkedOwnedItem: Equatable {
 }
 
 struct OwnedItemPlan {
-    var steps: [OwnedItemApplyStep]    // 已按 §4.4 三相排序
+    var steps: [OwnedItemApplyStep]    // 已按 §4.4 四相排序（R-M3-4a-93）
     var parked: [String: ParkedOwnedItem]
     var refused: Int
     var lifted: Int
@@ -137,14 +215,23 @@ struct OwnedItemPlan {
     /// 于是快照算出来的字节就是基线本身。不显式排进发布队列，本机赢下的那个值**永远**到不了
     /// 账户，而两台机器都认为自己收敛了。
     var mustRepublish: Set<String> = []
-    /// **本轮一条 step 都产不出、因此要连同存活实体一起停放的 tombstone 身份**（§7.3 的
-    /// 作用域不一致）。调用方把它们写成游标的 `pendingTombstone`，下一轮的工作集照常带上。
+    /// **这条身份本轮一条 step 都产不出、因此要连同它的 tombstone 一起停放的身份**（RR9-15）。
+    /// 调用方把它们写成游标的 `pendingTombstone`，下一轮的工作集照常带上。
     ///
-    /// 它与 `parked` 是同一件事的两半：那一支把入站的**存活**实体全部塞进 `parked`，而
-    /// tombstone 没有载荷可停（§2.5：它只有 tag hash），所以只能在这里报出身份。少了这半边，
-    /// 一次作用域不一致轮会把本轮到达的每一条远端删除**永久**丢掉——版本已经收割、游标看上去
-    /// 健康、marker 早已推过那一页，于是那条 pin 在本机永远不死，而账户上它早就没了。
+    /// **两个填充点**：§7.3 的作用域不一致**整批**早退，与 §8.4.4 (α) 的「W 在但不静止」。
+    /// 后者是**逐身份**的，要与同页别的身份照常落地并存，所以正常返回路径**必须**传这个参数
+    /// ——只在早退支上填、正常路径靠默认值 `[]` 的实现会让那次停放**静默丢失**：三元组已收割、
+    /// 游标看上去健康、marker 早已推过那一页，那条远端删除再也不会被投递第二次。
+    ///
+    /// 它与 `parked` 是同一件事的两半：那一支把入站的**存活**实体塞进 `parked`，而
+    /// tombstone 没有载荷可停（§2.5：它只有 tag hash），所以只能在这里报出身份。
     var parkedTombstones: Set<String> = []
+    /// §8.4.4 **(ii)** 支的身份（R-M3-4a-61）：**只收 (ii)**，转移与停放都不进。
+    ///
+    /// 调用方对它们的记账是「行留着、两份基线清 nil、写下并**保留** `deletedAtMs`、清掉三个
+    /// 待办位」，轮末的 3b 重发布据此把这条规则重新发回账户。**绝不进 `deleted`、绝不调
+    /// `noteDeletedRows`**——行留在盘上、也留在本页刷新之后的投影里，那正是 3b 的前提。
+    var yieldedTombstones: Set<String> = []
     /// 身份 -> 要写进 `reconciled` 的新字节，**而这条身份本轮一个 step 都没有**。
     ///
     /// LWW 比的是 `(值, 戳)` 这一对，所以一条**取值没变、戳更新**的入站实体照样要被吃下：
@@ -156,6 +243,17 @@ struct OwnedItemPlan {
     /// 这一位不破坏「apply → 基线」的次序（§4.5）：走到这里的身份按定义没有任何东西要落地，
     /// 合并结果与基线在**取值**上逐字相同，差的只是时间戳。
     var rebaselined: [String: Data] = [:]
+    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1 / R-M3-4a-73），
+    /// **只在产出 `.move` / `.update` 的那一刻**从 `OwnedItemPlanContext.localSignatures` 抄下来。
+    ///
+    /// §8.4.3 第 1 步的**第二遍**指针按它分组：一条本页被 `.move` 搬走目标的规则 Z，与一条
+    /// 留在旧目标上、本页什么都不落地的同签名重复 X，按**此刻**的签名已经不同组了，而那正是
+    /// 唯一需要写下指针的形状（R-M3-4a-74 / 75）。三条禁令：**绝不**落地之后重读行（那时行
+    /// 已经在新目标上，第二遍与第一遍逐字相同）；**绝不**用 `OwnedItemApplyStep.newOwnerUuid`
+    /// （那是**新**目标）；**绝不**在轮首冻结一次（pre-pass 每页跑一次，CASE M2-b）。
+    ///
+    /// **书签与 pin 恒空**（它们的 plan 上下文不填 `localSignatures`）。
+    var preLandingSignatures: [String: RuleSignature] = [:]
 }
 
 /// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
@@ -163,6 +261,12 @@ struct OwnedItemPlan {
 /// 排除）。
 enum OwnedItemRefusal: Equatable {
     case illegalRank, cycle, isFolderMismatch, selfReference, invalidUuid, invalidURL
+    /// §5.4：`host` 归一后为空。三处写路径与桥接层都把空 host 当成「丢弃这一行」。
+    case emptyHost
+    /// §5.4：`host` 归一后是 `"*"` 或 `"*."`。两个匹配器都显式判死。
+    case degenerateHost
+    /// §5.4：`host` 含 `/`；或含 `:` 且**不是**「以 `[` 开头、以 `]` 结尾」的 IPv6 字面量。
+    case malformedHost
 }
 
 struct OwnedItemSnapshotResult<Entity> {
@@ -187,6 +291,10 @@ struct OwnedItemTombstoneResult {
     var identities: [String]
     /// 身份 -> 该游标要被写成什么样（调用方 apply 到自己那份表上）。
     var cursorUpdates: [String: PhiOwnedItemCursor]
+    /// 入参 `deferredDeletions` 的**原样回传**（默认空集，R-M3-4a-84）。引擎的
+    /// `deleteCandidates` 据此再减一次：一条**上一轮就已经** `pendingDelete == true` 的身份
+    /// 本轮不产出 cursorUpdate，仍会按既有 filter 进候选。
+    var deferred: Set<String> = []
 }
 
 struct OwnedItemAdoptionResult {
@@ -302,6 +410,38 @@ protocol OwnedItemKind {
     /// 同义、同理由：判「要不要带一份字段补丁」只能看取值，看整条实体会把对端一次纯重盖戳
     /// 也算成一次内容变化，产出一条空补丁。位置与 rank **不在里面**——它们由 `.move` 承载。
     static func contentSignature(of entity: Entity) -> Data
+
+    /// 这条实体现在**指向**哪一个归属桶（规则的 `target_space_uuid` 字段值）。
+    /// nil = 这一 kind 的归属不可变、或不由单一字段承载 ⇒ `.move` 不带 `newOwnerUuid`。
+    ///
+    /// **不是 `ownerUuids(of:).first`**（R-M3-4a-26 / RR-B5）：那个成员的合同是「落地前必须
+    /// 解析出来的归属引用」，将来任何一条 kind 想把某个归属排除在停放判据外时又会返回空；
+    /// 而 `plan` 是泛型的，拿不到任何具体字段，所以通道只能是一个协议成员。
+    static func targetOwnerUuid(of entity: Entity) -> String?
+
+    /// §8.4.4 的开关：本 kind 的入站删除撞上一条**还没上账户的用户意图**时**让位**。
+    /// 规则 `true`，书签与 pin 本里程碑 `false`（§6.1 / §14.1）。
+    ///
+    /// 让位不是「所有 kind 共享」的：书签的数量级与删除频率与规则完全不同，把每一次远端
+    /// 删除都变成一次复活是另一种数据事故（§14.1）。
+    static var tombstoneYieldsToLocalEdits: Bool { get }
+
+    /// §8.4.4 的转移**取值源**：把一条实体折成 `RuleProjection`。两个落点喂给它的实体
+    /// 不同（(α) 是 X 的**本机行投影**，(β) 是本轮的 `merged`），所以取值留在 kind 侧、
+    /// 载荷是**值**（RR8-2）。`resolve` 只用来把账户级目标反查成本机 Space id。
+    ///
+    /// **不是第五个 `OwnedItemPlanContext` 成员**：R-M3-4a-73 与 §11 把新输入写死成四个，
+    /// 而这条是「模块问 kind 要一个值」，与 `locationStamp(of:)` / `contentSignature(of:)` 同族。
+    static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection?
+}
+
+extension OwnedItemKind {
+    /// 默认 nil：`BookmarkKind` 与 `PinKind` 一行不改、行为逐字不变。
+    static func targetOwnerUuid(of entity: Entity) -> String? { nil }
+    /// 默认关：书签与 pin 的两个新分支结构性不可达（计划裁定十）。
+    static var tombstoneYieldsToLocalEdits: Bool { false }
+    /// 默认 nil：同上。
+    static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection? { nil }
 }
 
 /// 一条归属引用在本轮里的状态（`plan` 第 3 步）。文件作用域而不是函数内的局部类型：
@@ -518,11 +658,36 @@ enum SyncableOwnedItems {
     /// **绝不能退化成「`pendingApply != nil` 就排除」**：一条认领**配不上**的停放游标
     /// （用户在重试窗口里改了那一行或把它删了）正是该被 tombstone 的那一类，靠 `pendingApply`
     /// 一刀切会把它永久留在账户上，而没有任何设备还能删掉它。
+    ///
+    /// **第七个入参 `explicitDeletions` 是规则这一 kind 的第二个 tombstone 起源**
+    /// （R-M3-4a-78）。上面那套判据是**跟随端保护**：账户说某个 Space 没了、或本机映射还没
+    /// 建起来，就不替别人发删除。而「用户在本机删掉一个 Space」恰好踩中两道归属门的中间
+    /// 态——`SpaceModel` 行已在同一次提交里删掉 ⇒ `isEligibleSpace(owner)` 假，sync-uuid
+    /// 映射却还在 ⇒ `localSpaceId(owner)` 非 nil ⇒ 合格门逐条 `continue` ⇒ 一条 tombstone
+    /// 都发不出来，本机没了、账户还在，那些实体成为**任何设备都删不掉**的孤儿。
+    ///
+    /// 落在这个集合里的身份**只跳过两道归属门**：它的软删**就是**用户这一次删除动作本身
+    /// 写下的，归属合不合格与「用户要不要删它」无关；而它已经在账户上（第一条判据）。
+    /// 其余三条判据、`pendingClaims` 排除与整段游标记账**逐字照旧**。
+    ///
+    /// **集合的来源必须是「一次删除决定」，不是「行不见了」**（R-M3-4a-85）：保留期 purge
+    /// 是跟随不是决定，它对规则行走硬删、绝不写 `deletedDate`，因此永远进不了这个集合。
     static func tombstones<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                              table: PhiOwnedItemTable, resolve: OwnerResolver,
                                              scope: PinnedTabScope?,
                                              nowMs: Int64,
-                                             pendingClaims: Set<String> = []) -> OwnedItemTombstoneResult {
+                                             pendingClaims: Set<String> = [],
+                                             explicitDeletions: Set<String> = [],
+                                             deferredDeletions: Set<String> = [])
+        -> OwnedItemTombstoneResult {
+        // 往后长的入参一律接在 `pendingClaims` 之后、一律带默认值，书签 / pin 的调用点与既有
+        // 用例一个字都不用改。
+        //
+        // **第八个入参 `deferredDeletions` 是 §8.4.4 (β) 的守卫**（R-M3-4a-84 / 计划裁定五）：
+        // 一条正在被重判的删除（本机用户删了它、而这一轮那条入站存活实体因为伙伴 W 不静止
+        // 被停放下来）**这一轮不发 tombstone**。守卫必须在**差分之前**——本函数对每条候选
+        // 在同一步清 `pendingApply` 并置 `pendingDelete`，而引擎先套用 `cursorUpdates`、之后
+        // 才构造 `deleteCandidates`，放在那里的守卫被读到时第二个合取项已经恒假。
         var liveIdentities: Set<String> = []
         for local in locals {
             if let identity = K.identity(of: local, resolve: resolve, scope: scope) {
@@ -533,23 +698,30 @@ enum SyncableOwnedItems {
         var identities: [String] = []
         var cursorUpdates: [String: PhiOwnedItemCursor] = [:]
         for (identity, cursor) in table.cursors {
+            // 第 0 道（R-M3-4a-84）：**不进 `identities`、零 `cursorUpdates`**——
+            // `pendingApply` / `pendingOwnerUuid` / `pendingDelete` / `deleteDecidedAtMs`
+            // 一个字节都不碰，所以它必须排在三条判据与整段游标记账**之前**。
+            guard !deferredDeletions.contains(identity) else { continue }
             guard cursor.reconciled != nil else { continue }
             guard cursor.deletedAtMs == nil else { continue }
             guard !liveIdentities.contains(identity) else { continue }
             // 本轮认领已经配上、只差一次成功的写回（R-exec-9）。
             guard !pendingClaims.contains(identity) else { continue }
-            // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
-            // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
-            // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
-            // 放行则可能删掉账户上一整个 Space 的书签。
-            guard let owner = cursor.ownerUuid else { continue }
-            // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
-            // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
-            // 由引擎的 resolver 把它映成自身。
-            let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
-            guard mapped else { continue }
-            // 归属不合格（hidden / purged）。
-            guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
+            // 两道**归属**门，起源 (b) 的身份从这里绕过去（R-M3-4a-78）。
+            if !explicitDeletions.contains(identity) {
+                // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
+                // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
+                // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
+                // 放行则可能删掉账户上一整个 Space 的书签。
+                guard let owner = cursor.ownerUuid else { continue }
+                // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
+                // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
+                // 由引擎的 resolver 把它映成自身。
+                let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
+                guard mapped else { continue }
+                // 归属不合格（hidden / purged）。
+                guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
+            }
             identities.append(identity)
             var updated = cursor
             updated.pendingApply = nil
@@ -579,12 +751,13 @@ enum SyncableOwnedItems {
             let left = depths[$0] ?? 0, right = depths[$1] ?? 0
             return left == right ? $0 < $1 : left > right
         }
-        return OwnedItemTombstoneResult(identities: identities, cursorUpdates: cursorUpdates)
+        return OwnedItemTombstoneResult(identities: identities, cursorUpdates: cursorUpdates,
+                                        deferred: deferredDeletions)
     }
 
     // MARK: - 入站：plan（§4.4）
 
-    /// 本轮到达 + 停放集 → 一个**分三相有序**的落地计划。
+    /// 本轮到达 + 停放集 → 一个**分四相有序**的落地计划（R-M3-4a-93）。
     ///
     /// 书签的依赖是**同一个 data type 内的兄弟实体**，而且可以任意深，所以这里先做一次
     /// 拓扑排序：一页里乱序到达的一棵树**一轮**落完，而不是每层一轮。
@@ -731,7 +904,12 @@ enum SyncableOwnedItems {
         var cancelledDeletes: Set<String> = []
         var mustRepublish: Set<String> = []
         var rebaselined: [String: Data] = [:]
+        var preLandingSignatures: [String: RuleSignature] = [:]
         var landedIdentities: Set<String> = []
+        // §8.4.4 的两个新局部量（8b-3）。两个落点各填各的：(α) 落在第 6 段，(β) 落在下面
+        // 的 A9 / L1 支。
+        var parkedTombstonesOut: Set<String> = []
+        var yieldedTombstones: Set<String> = []
 
         for item in ordered {
             let identity = item.identity
@@ -798,6 +976,44 @@ enum SyncableOwnedItems {
 
             // §5.6 的 L1 支：游标带 `pendingDelete` 时到达的**存活**实体。
             if cursor?.pendingDelete == true {
+                // §8.4.4 的落点 **(β)**（8b-3 / 计划裁定一）。谓词是 (β) 自己那四条：
+                // `cursor.pendingDelete == true` ∧ 行在（**软删态也算**）∧ **有签名** ∧
+                // 伙伴 W 静止；前三条已经折进 `mergePartners` / `partnerNotAtRest` 的定义域。
+                //
+                // **(α) 的 `deletedDate == nil` 与那条析取绝不照抄到这里**（RR8-1）：
+                // `pendingDelete == true` 蕴含「本机行不存在或已软删」，做收敛的那一台上败者
+                // 没有本机编辑、`.conflict` 又不写基线 ⇒ 两项在 (β) 上结构性恒假 ⇒ 这一支
+                // 永不让路 ⇒ 落回 `cancelledDeletes` ⇒ 终态两条签名不同的规则。
+                if K.tombstoneYieldsToLocalEdits {
+                    if let partner = context.mergePartners[identity],
+                       let source = K.transferSource(of: merged, resolve: resolve) {
+                        // (i) 编辑转移。取值源是**本轮这条入站 `merged`**，不是本机行：
+                        // 竞态 2 里本机那一行是 M2 软删下来的，目标还是旧的，用户那次 retarget
+                        // 只存在于入站实体里。
+                        //
+                        // 不 `cancelledDeletes.insert`、**这条入站实体不落地**：X 的软删态、
+                        // `mergePartnerSyncId` 与 `pendingDelete` 全部留着（RR9-1：落地会清掉
+                        // `deletedDate` 与指针，于是「下一轮重判回到转移」不可达，而游标那一侧
+                        // 的 `pendingDelete` 迟早 `.applied` ⇒ 硬删这一行）。
+                        steps.append(OwnedItemApplyStep(identity: identity,
+                                                        kind: .transfer(source: source,
+                                                                        to: partner),
+                                                        newParentUuid: nil, newRank: nil,
+                                                        payload: nil))
+                        continue
+                    }
+                    if context.partnerNotAtRest.contains(identity) {
+                        // W 在但不静止 ⇒ 停放**那条入站存活实体**（游标 `pendingApply`），
+                        // **绝不** `parkedTombstones`、**绝不置 `pendingTombstone`**
+                        // （那是 (α) 的位）。
+                        if let payload = payloadBytes(item.entity) {
+                            parkedOut[identity] = ParkedOwnedItem(
+                                payload: payload,
+                                pendingOwnerUuid: K.ownerUuids(of: item.entity).first)
+                        }
+                        continue
+                    }
+                }
                 let decidedAt = cursor?.deleteDecidedAtMs ?? 0
                 let newerThanDeletion = K.locationStamp(of: merged) > decidedAt
                 let parentIsLive = landingParent.map {
@@ -827,7 +1043,7 @@ enum SyncableOwnedItems {
             }
 
             if context.pairs[identity] != nil {
-                // §6.3：① 把账户身份写到那条本机行上，② 再按三相把字段落下去。两条 step
+                // §6.3：① 把账户身份写到那条本机行上，② 再按相序把字段落下去。两条 step
                 // 是因为落地的 claim 操作只写 `syncId`，内容只走 update。
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .claim,
                                                 newParentUuid: landingParent, newRank: rank,
@@ -848,9 +1064,17 @@ enum SyncableOwnedItems {
             let moved = wasLifted || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
                 || K.rank(of: merged) != K.rank(of: baseline)
             if moved {
+                // `newOwnerUuid` 从合并结果的归属字段填（R-M3-4a-26）：`.claim` / `.create` /
+                // `.update` / `.delete` 四处一律不填，`.create` 的目标在载荷里、由落地闭包自己读。
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .move,
-                                                newParentUuid: landingParent, newRank: rank,
-                                                payload: payload))
+                                                newParentUuid: landingParent,
+                                                newOwnerUuid: K.targetOwnerUuid(of: merged),
+                                                newRank: rank, payload: payload))
+                // D30 / §8.4.3 第 1 步的第二遍分组键：**产出 step 的这一刻**记下那一行落地前的
+                // 签名（8b-2 计划裁定二）。算不出的身份结构性地不在表里。
+                if let key = context.localSignatures[identity] {
+                    preLandingSignatures[identity] = key
+                }
             }
             // **移动与内容改动是两条步骤，不是二选一。** 落地的 move 操作
             // （`BookmarkApplyOp.move`）不带字段补丁，内容只走 update；一条既搬了家又被改了
@@ -863,6 +1087,11 @@ enum SyncableOwnedItems {
             if contentChanged {
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
                                                 newParentUuid: nil, newRank: nil, payload: payload))
+                // 同上（8b-2 计划裁定二）：`.move` 与 `.update` 是同一条身份的两条 step，记两次
+                // 是幂等的（值相同）。
+                if let key = context.localSignatures[identity] {
+                    preLandingSignatures[identity] = key
+                }
             }
             // 一条 step 都没有、而合并结果与基线仍然不同 ⇒ 只差时间戳，基线照样要跟上
             // （见 `OwnedItemPlan.rebaselined`）。判据是「本轮没有任何东西要落地」，所以它
@@ -873,7 +1102,7 @@ enum SyncableOwnedItems {
             }
         }
 
-        // 6. 本轮的远端 tombstone：子先于父（§4.4 的第三相）。
+        // 6. 本轮的远端 tombstone：子先于父（§4.4 的第四相）。
         var deleteParentOf: [String: String] = [:]
         for identity in context.tombstonedIdentities {
             var entity: K.Entity?
@@ -895,11 +1124,51 @@ enum SyncableOwnedItems {
             let left = depths[$0] ?? 0, right = depths[$1] ?? 0
             return left == right ? $0 < $1 : left > right
         }) {
+            // §8.4.4 的落点 **(α)**（8b-3 / 计划裁定一）：入站的是一条 **tombstone**，谓词是
+            // 行在 ∧ `deletedDate == nil` ∧ **有签名** ∧（`pendingLocalEdit` ∨ 取值式
+            // `unpublished`）——前三条已经折进那两个集合的定义域（§5.6），模块只读集合。
+            if K.tombstoneYieldsToLocalEdits,
+               context.pendingLocalEdits.contains(identity)
+                || context.unpublished.contains(identity) {
+                if let partner = context.mergePartners[identity] {
+                    // W 静止 ⇒ (i) 编辑转移。取值源 = X 的**本机行投影**（pre-pass 那一刻
+                    // 冻下来的）。**这份 `source` 在落地事务里还要被复查一次**
+                    // （R-M3-4a-102 / 裁定 11）：执行器按 `fromSyncId` 重读 X、与它逐格比，
+                    // 不等就把 `.transfer` 与下面那条 `.delete` 一起跳过并交回
+                    // `deferredTombstones`。**模块这一侧一个字节都不改**——判定权仍在 pre-pass，
+                    // 事务里做的只是一次相等比较。
+                    let projected: K.Entity? = context.localProjections[identity]
+                        .flatMap { try? Phi_PhiEntity(serializedBytes: $0) }
+                        .flatMap { K.entity(from: $0) }
+                    guard let source = projected
+                            .flatMap({ K.transferSource(of: $0, resolve: resolve) }) else {
+                        // 取值算不出（投影缺席 / 解不开）⇒ 按 (ii) 走：**保留行、零写**
+                        // （裁定 3 末段）。停放会置 `pendingTombstone` ⇒ 该身份进不了
+                        // `snapshot` ⇒ 3b 永远发不出去 ⇒ 死锁；硬删则丢掉用户那次编辑。
+                        yieldedTombstones.insert(identity)
+                        continue
+                    }
+                    steps.append(OwnedItemApplyStep(identity: identity,
+                                                    kind: .transfer(source: source, to: partner),
+                                                    newParentUuid: nil, newRank: nil,
+                                                    payload: nil))
+                    // **不 continue**：随后照常产出那条 `.delete`（**第四相**、同一个落地
+                    // 事务，RR8-5）。产出次序无所谓，`phase` 排序保证 `.transfer` 先执行。
+                } else if context.partnerNotAtRest.contains(identity) {
+                    // W 在但不静止 ⇒ 停放这条 tombstone，**不产出 `.delete`**，行一个字节不动。
+                    parkedTombstonesOut.insert(identity)
+                    continue
+                } else {
+                    // 根本没有伙伴行 ⇒ (ii) 3b 复活。**只有这一种情形走 (ii)。**
+                    yieldedTombstones.insert(identity)
+                    continue
+                }
+            }
             steps.append(OwnedItemApplyStep(identity: identity, kind: .delete,
                                             newParentUuid: nil, newRank: nil, payload: nil))
         }
 
-        // 7. 三相排序，相内**稳定**（保持上面攒出来的拓扑 / 反拓扑次序）。
+        // 7. 四相排序，相内**稳定**（保持上面攒出来的拓扑 / 反拓扑次序）。
         let sorted = steps.enumerated().sorted { lhs, rhs in
             let lhsPhase = phase(lhs.element.kind), rhsPhase = phase(rhs.element.kind)
             return lhsPhase == rhsPhase ? lhs.offset < rhs.offset : lhsPhase < rhsPhase
@@ -908,7 +1177,13 @@ enum SyncableOwnedItems {
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
-                             mustRepublish: mustRepublish, rebaselined: rebaselined)
+                             mustRepublish: mustRepublish,
+                             // RR9-15：正常返回路径**必须**传这两个集合——(α) 的停放是逐身份
+                             // 的，要与同页别的身份照常落地并存，靠默认值 `[]` 会让它静默丢失。
+                             parkedTombstones: parkedTombstonesOut,
+                             yieldedTombstones: yieldedTombstones,
+                             rebaselined: rebaselined,
+                             preLandingSignatures: preLandingSignatures)
     }
 
     // MARK: - 认领（§6 的规则 (i)）
@@ -1098,12 +1373,15 @@ enum SyncableOwnedItems {
 
     // MARK: - 私有工具
 
-    /// ① claim / create / move ② update ③ delete，与 `BookmarkApplyBatch.phase` 同义。
+    /// ① claim / create / move ② update ③ **transfer** ④ delete（R-M3-4a-93）。
+    /// `.transfer` 自成一相，夹在 `.update` 与 `.delete` 之间——见 `StepKind` 的注释：
+    /// 它要跟 W 落地**之后**的值比 LWW，又必须赶在 X 的硬删之前。
     private static func phase(_ kind: StepKind) -> Int {
         switch kind {
         case .claim, .create, .move: return 1
         case .update: return 2
-        case .delete: return 3
+        case .transfer: return 3
+        case .delete: return 4
         }
     }
 

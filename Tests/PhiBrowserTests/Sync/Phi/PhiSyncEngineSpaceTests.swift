@@ -12,8 +12,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     final class MemorySpaceStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
+        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`——「写盘失败之后内存与磁盘
+        /// 一起停在旧表上」的内存版（R-M3-4a-83）。用例自己置回 false 放行。
+        var failNextSave = false
+        /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「轮末那一次
+        /// 派生标志的写失败」这种精确注入。失败那一次同样**不改** `table`。
+        var failSaveOnCallNumber: Int?
+        private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
-        func save(_ table: PhiSpaceSyncTable) { self.table = table }
+        @discardableResult
+        func save(_ table: PhiSpaceSyncTable) -> Bool {
+            saveCalls += 1
+            guard !failNextSave, failSaveOnCallNumber != saveCalls else { return false }
+            self.table = table
+            return true
+        }
     }
 
     /// The engine's clock, so a test can step past `profileRefreshMinIntervalMs`
@@ -34,17 +47,32 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private let key = SymmetricKey(size: .bits256)
+    /// CASE 2a.9 换掉的那个进程级闭包在用例之前的值，`tearDown` 里原样放回去。
+    private var previousLocalSpaceIdLookup: ((String) -> String?)?
 
     override func setUp() {
         super.setUp()
         suiteName = "PhiSyncEngineSpaceTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        previousLocalSpaceIdLookup = PhiSpaceSyncState.shared.localSpaceIdLookup
     }
 
     override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil; suiteName = nil
+        // CASE 2a.9 把 `PhiSpaceSyncState.shared` 的解析闭包换成一个计数器；`shared` 是
+        // 进程级单例，留着会污染后面每一条用例。**恢复**而不是清成 nil：hosted 测试里那个
+        // 单例可能已经被宿主 app 接上了真正的解析器。
+        PhiSpaceSyncState.shared.localSpaceIdLookup = previousLocalSpaceIdLookup
+        previousLocalSpaceIdLookup = nil
         super.tearDown()
+    }
+
+    /// CASE 2a.9 的计数盒子。`localSpaceIdLookup` 是一个 escaping 闭包，装在一个引用类型
+    /// 里比捕获一个局部 `var` 更不容易随并发检查的收紧而变味。
+    final class LookupCounter {
+        private(set) var calls = 0
+        func bump() { calls += 1 }
     }
 
     // MARK: - Helpers
@@ -136,6 +164,112 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     }
 
     // MARK: - Routing (§5.2)
+
+    func testFailedPreflightBlocksEveryEntityKindAndPreservesPendingLocalData() async throws {
+        try await assertFailedPullBlocksPublication(afterConflict: false)
+    }
+
+    func testFailedSpaceConflictPullAlsoBlocksLaterOwnedKinds() async throws {
+        try await assertFailedPullBlocksPublication(afterConflict: true)
+    }
+
+    func testPreflightPreservesUnpublishedSpaceEditsAndOrder() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a", "Profile B": "uuid-b"]
+        access.profileIdByUuid = ["uuid-a": "Default", "uuid-b": "Profile B"]
+        access.spaces = ["s-1", "s-2"].enumerated().map { index, id in
+            PhiLocalSpace(spaceId: id, profileId: "Default", name: "Work", colorHex: "#3A6FF8",
+                          iconName: "emoji:1F4BC", sortOrder: index,
+                          createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                          opacityLight: nil, opacityDark: nil)
+        }
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "sync-1", "s-2": "sync-2"], access: access)
+        let client = FakePhiSyncClient()
+        let clock = Clock()
+        clock.nowMs = 1_000
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce() // Consume our own writes before the concurrent edit.
+        let peerRow = try XCTUnwrap(client.stored[spaceHash("sync-1")])
+        client.nextVersion += 10
+        client.reseed(tagHash: spaceHash("sync-1"), ciphertext: peerRow.ciphertext, version: client.nextVersion)
+        clock.nowMs = 2_000
+        access.spaces[0].name = "Renamed locally"
+        access.spaces[0].profileId = "Profile B"
+        access.spaces[0].sortOrder = 1
+        access.spaces[1].sortOrder = 0
+        access.spaces.sort { $0.sortOrder < $1.sortOrder }
+
+        await engine.handleLocalSpacesChange()
+
+        let local = try XCTUnwrap(access.spaces.first { $0.spaceId == "s-1" })
+        XCTAssertEqual(local.name, "Renamed locally")
+        XCTAssertEqual(local.profileId, "Profile B")
+        XCTAssertEqual(access.spaces.sorted { $0.sortOrder < $1.sortOrder }.map(\.spaceId), ["s-2", "s-1"])
+        let published = try XCTUnwrap(client.stored[spaceHash("sync-1")])
+        let entity = try PhiEntityCodec.decrypt(published.ciphertext, key: key).space
+        XCTAssertEqual(entity.name.stringValue, "Renamed locally")
+        XCTAssertEqual(entity.profileUuid.stringValue, "uuid-b")
+        let siblingRow = try XCTUnwrap(client.stored[spaceHash("sync-2")])
+        let sibling = try PhiEntityCodec.decrypt(siblingRow.ciphertext, key: key).space
+        XCTAssertLessThan(sibling.rank.stringValue, entity.rank.stringValue,
+                          "The locally dragged sibling must keep its order on the server too")
+    }
+
+    private func assertFailedPullBlocksPublication(afterConflict: Bool) async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [PhiLocalSpace(spaceId: "s-1", profileId: "Default", name: "Work",
+                                      colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                      createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                                      opacityLight: nil, opacityDark: nil)]
+        access.uuidByProfileId = ["Default": "pu-1"]
+        access.profileIdByUuid = ["pu-1": "Default"]
+        access.knownLocalProfileIds = ["Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "su-1"], access: access)
+        let bookmarks = FakeBookmarkAccess(rows: [.fixture(guid: "local-bookmark", spaceId: "s-1")])
+        let pins = FakePinAccess(scope: .space, account: .space,
+                                 rows: [.fixture(lineageId: "local-pin", spaceId: "s-1", profileId: nil)])
+        let client = FakePhiSyncClient()
+        let clock = Clock()
+        clock.nowMs = 2_000
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   spaceAccess: access, spaceStore: store,
+                                   ownedKinds: [.bookmarks(access: bookmarks, store: MemoryOwnedItemStore()),
+                                                .pins(access: pins, store: MemoryOwnedItemStore())],
+                                   now: { clock.read() })
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let published = client.commits.count
+        clock.nowMs = 3_000
+        access.spaces[0].name = "Renamed"
+        bookmarks.rows[0].title = "Renamed"
+        pins.rows[0].title = "Renamed"
+        if afterConflict {
+            client.conflictOnceForTagHashes = [spaceHash("su-1")]
+            client.getUpdatesErrorAfterPages = (1, URLError(.notConnectedToInternet))
+        } else {
+            client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        }
+
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+
+        let attempted = Array(client.commits.dropFirst(published))
+        XCTAssertEqual(attempted.count, afterConflict ? 1 : 0)
+        XCTAssertFalse(attempted.contains { $0.name == PhiSyncEntity.bookmarkEntityName || $0.name == PhiSyncEntity.pinEntityName },
+                       "A failed pull must also block later entity kinds")
+        XCTAssertEqual(bookmarks.rows.count, 1)
+        XCTAssertEqual(pins.rows.count, 1)
+        let beforeRecovery = client.commits.count
+        await engine.handleLocalSpacesChange()
+        let recovered = Array(client.commits.dropFirst(beforeRecovery))
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.spaceEntityName })
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.bookmarkEntityName })
+        XCTAssertTrue(recovered.contains { $0.name == PhiSyncEntity.pinEntityName })
+    }
 
     func testAGatedOffEngineNeverHandsSpaceEntitiesToTheSpaceSection() async throws {
         let access = FakePhiSpaceAccess()
@@ -486,17 +620,18 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     }
 
     /// ...and it must finish the drain by *replaying* it, not by continuing over the hole the
-    /// failure left. An interrupted round consumed its pages: the shared marker moved past
-    /// them for good, while everything the routing decoded from them (`SpacePullBatch.decoded`
-    /// / `.tombstones` — Task 9's apply input) died with the throw. A later round resuming
-    /// from that advanced marker would reach `drained == true` and stamp
-    /// `hasDrainedFullReplay = true` over the gap, and from then on *neither* disjunct in
-    /// `applySpaceGate` can re-arm the replay: `markerMovedWhileGateShut` is false (the gate
-    /// was open the whole time) and `hasDrainedFullReplay` is true. The Spaces page 1 carried
-    /// would be missing until some peer happened to touch them, and Task 9's `pushSpaces`
-    /// would publish against a Space set this device never fully received. Dropping the
-    /// marker on the failure path makes the drain restart instead; `drainInProgress` stays
-    /// true, so nothing in between may declare it complete.
+    /// failure left. Under the page-by-page boundary (M3-4a B-2) page 1 lands u1 *on the spot*
+    /// and the marker only ever walks past pages that landed in full, so the gap argument of
+    /// old no longer applies; what still does is the drain rule (Task 2b 计划裁定 10): a later
+    /// round resuming from the advanced marker would reach `drained == true` and stamp
+    /// `hasDrainedFullReplay = true` while this device never walked the whole type in one
+    /// armed drain, and from then on *neither* disjunct in `applySpaceGate` can re-arm the
+    /// replay: `markerMovedWhileGateShut` is false (the gate was open the whole time) and
+    /// `hasDrainedFullReplay` is true — the guard the owned kinds read before publishing.
+    /// So the failure path keeps dropping the marker while `drainInProgress` is armed; the
+    /// drain restarts from scratch, `drainInProgress` stays true, and nothing in between may
+    /// declare it complete. (The incremental-round twin, where the marker stays on the last
+    /// landed page, is CASE B2-8(a) in `PhiSyncMarkerBoundaryTests`.)
     func testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -515,7 +650,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()                               // page 1 lands u1; page 2 throws
         XCTAssertEqual(client.getUpdatesCalls.count, 2)
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
-                     "a gapped drain drops the marker instead of counting page 1 as delivered")
+                     "an interrupted armed drain drops the marker so the replay restarts")
         XCTAssertTrue(store.table.drainInProgress, "and stays armed until a whole replay lands")
         XCTAssertFalse(store.table.hasDrainedFullReplay)
 
@@ -829,13 +964,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(store.table.cursors["sync-1"]!.server,
-                       try rebound.serializedData(),
-                       "server must be the entity we pulled, not the merge result")
         let commits = spaceCommits(client)
         XCTAssertEqual(commits.count, 1)
+        let commit = try XCTUnwrap(commits.first)
         let sent = try Phi_PhiSpaceEntity(serializedBytes:
-            try PhiEntityCodec.decrypt(commits[0].ciphertext!, key: key).space.serializedData())
+            try PhiEntityCodec.decrypt(XCTUnwrap(commit.ciphertext), key: key).space.serializedData())
+        XCTAssertEqual(store.table.cursors["sync-1"]?.server, try sent.serializedData(),
+                       "After an accepted commit, the server baseline tracks the acknowledged payload")
         XCTAssertEqual(sent.name.stringValue, "Work2")
         XCTAssertEqual(sent.profileUuid.stringValue, "uuid-b")
         XCTAssertEqual(commits[0].baseVersion, 9)
@@ -943,6 +1078,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     func testALocalDeleteEmitsOneTombstoneAndFinalizesOnSuccess() async throws {
         let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "Default"]
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
@@ -952,22 +1088,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         cursor.pendingDelete = true
         store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        // The row the cursor points at, already tombstoned: the fake's update
-        // path THROWS on a missing row, which would abandon the whole batch
-        // before any outcome was applied. Seeding it as a tombstone also keeps
-        // the pull that precedes the push free of side effects — a deleted
-        // entity is routed to `batch.tombstones`, whose apply path is Task 14.
-        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
-                    version: 6, entityId: "srv-1", deleted: true)
+        // The remote row is still live. Preflight must retain the pending local deletion,
+        // rather than recreate the missing local Space from this incoming entity.
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(spaceEntity("sync-1")),
+                    version: 6, entityId: "srv-1")
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pushLocalSettings()
 
         let commits = spaceCommits(client)
         XCTAssertEqual(commits.count, 1)
-        XCTAssertTrue(commits[0].deleted)
-        XCTAssertNil(commits[0].ciphertext)
-        XCTAssertEqual(commits[0].name, PhiSyncEntity.spaceEntityName)
+        let commit = try XCTUnwrap(commits.first)
+        XCTAssertTrue(commit.deleted)
+        XCTAssertNil(commit.ciphertext)
+        XCTAssertEqual(commit.name, PhiSyncEntity.spaceEntityName)
+        XCTAssertTrue(access.spaces.isEmpty, "Preflight must not recreate a locally deleted Space")
         let after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertFalse(after.pendingDelete)
         XCTAssertNotNil(after.deletedAtMs)
@@ -987,8 +1122,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         cursor.pendingDelete = true
         store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
-                    version: 6, entityId: "srv-1", deleted: true)
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(spaceEntity("sync-1")),
+                    version: 6, entityId: "srv-1")
         client.forceInvalidMessage = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -1647,7 +1782,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - D6：入站身份翻译（§3.4）
 
-    /// 1. 账户里有、本机没有的 Space：新建一行本地 id，落地成功之后才写映射。
+    /// 1. 账户里有、本机没有的 Space：先写映射、再建行（R-M3-4a-87），本地 id 由引擎预铸。
     func testAnAccountSpaceWithNoLocalRowLandsUnderAFreshLocalIdAndThenMaps() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1667,9 +1802,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors["sync-new"]?.reconciled)
     }
 
-    /// 1b. `create` 抛错的那一版：映射**没有**被写、基线**没有**被写、实体留在
-    /// `pendingApply`。重试会再次走 create 分支，因为没有映射行、不会撞上半成品。
-    func testAFailedCreateWritesNeitherAMappingNorABaseline() async throws {
+    /// 1b. `create` 抛错的那一版：映射**已经写下**、行**未建**（映射先行，R-M3-4a-87）、
+    /// 基线**没有**被写、实体留在 `pendingApply`。盘上留下的正是一条悬空映射 ⇒ 下一轮 A0
+    /// 死映射自愈把它丢掉、再铸一次干净落地（CASE B2-17，`PhiSyncMarkerBoundaryTests`）。
+    func testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
@@ -1683,7 +1819,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertTrue(access.spaceMappings.isEmpty)
+        XCTAssertEqual(access.spaceMappings.count, 1, "映射已写（悬空，待自愈）")
+        XCTAssertEqual(access.spaceMappings.values.first, "sync-new")
+        XCTAssertTrue(access.spaces.isEmpty, "行未建")
         XCTAssertNil(store.table.cursors["sync-new"]?.reconciled)
         XCTAssertNotNil(store.table.cursors["sync-new"]?.pendingApply)
     }
@@ -2179,5 +2317,87 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(summary.overlayOpacityLightMilli, 850)
         XCTAssertEqual(summary.overlayOpacityDarkMilli, -1, "-1 哨兵原样带出，不换成 nil、不换成 0")
         XCTAssertEqual(summary.profileUuid, "uuid-a")
+    }
+
+    // MARK: - CASE 2a.9 / 2a.10(a)（R-M3-4a-83 / R-M3-4a-16）
+
+    /// CASE 2a.9 — `writeSpaceTable` 回 `false` 时 `refreshCaches` **零调用**。
+    ///
+    /// 接缝：`refreshCaches` 对表里每一个 `hiddenSyncUuids` 成员调一次
+    /// `localSpaceIdLookup`，这是它唯一的外部可观测副作用（`hiddenSpaceIds` /
+    /// `hasDrainedFullReplay` 都是 `private(set)`，而断言一个异步 `Task` 的**缺席**天生弱）。
+    ///
+    /// 驱动用的是**门关着**那条路：`recordsGatedMarkerMoves` 为真时第一页推进 marker 就写
+    /// 一次 Space 表，于是这一轮里 `writeSpaceTable` 的调用次数是确定的 1。
+    ///
+    /// 防的是什么：R-M3-4a-83 的第二个出口——把 `Task { @MainActor in refreshCaches(…) }`
+    /// 留在 `save` 外面的实现，会让主线程缓存展示一份**没落盘**的表：`hiddenSpaceIds` 会把
+    /// 一个盘上还活着的 Space 从侧栏漏斗里滤掉，重启后它又回来。**正向对照是必需的**：
+    /// 没有它，一个把 `refreshCaches` 整条删掉的实现同样绿。
+    func testAFailedSpaceTableWriteSkipsTheMainActorCacheRefresh() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var hidden = PhiSpaceCursor()
+        hidden.entityId = "srv-h"
+        hidden.version = 1
+        hidden.hidden = true
+        hidden.deletedAtMs = 1
+        store.table.cursors["sync-hidden"] = hidden
+        store.failNextSave = true
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "on",
+                                                           version: 10, key: key)],
+                                     marker: "m1")]
+        let counter = LookupCounter()
+        PhiSpaceSyncState.shared.localSpaceIdLookup = { _ in counter.bump(); return nil }
+        let drainedBefore = PhiSpaceSyncState.shared.hasDrainedFullReplay
+
+        // 门**关着**：不调 `setSpaceSyncEnabled(true)`。
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.pullOnce()
+        await Task.yield()   // 跨一次主 actor 跳，让那个 `Task { @MainActor … }` 有机会跑。
+
+        XCTAssertEqual(store.saveCalls, 1, "写口被调用过一次，没有内部重试")
+        XCTAssertEqual(counter.calls, 0, "写失败 ⇒ 主线程缓存一次都不刷新")
+        XCTAssertEqual(PhiSpaceSyncState.shared.hasDrainedFullReplay, drainedBefore,
+                       "失败那一轮没有任何东西被推进主线程缓存")
+
+        store.failNextSave = false
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "off",
+                                                           version: 11, key: key)],
+                                     marker: "m2")]
+        await engine.pullOnce()
+        await Task.yield()
+
+        XCTAssertEqual(store.saveCalls, 2, "第二轮真的又写了一次——回滚之后 guard 仍然正确")
+        XCTAssertGreaterThanOrEqual(counter.calls, 1, "正向对照：写成功 ⇒ 缓存照常刷新")
+    }
+
+    /// CASE 2a.10(a) — `spaceStore == nil` 的早退**不算失败**。
+    ///
+    /// 纯设置引擎（M3-1 形态）是 `spaceStore == nil` 的**正常形态**。把
+    /// `guard !isStopped, let spaceStore else { return true }` 写成 `return false` 的实现，
+    /// 会让它从 Task 2b 落地那一刻起再也不推 marker，设置同步整条死掉——所以这一条在 2a
+    /// 就要红，不能等到 2b。
+    ///
+    /// Bool 本身在本任务里还不可观测（引擎里两处返回值都被 `@discardableResult` 丢弃），
+    /// 能钉住的是它的两个前提：一轮设置同步逐字照旧跑完，并且**没有任何 Space store 调用**
+    /// 发生过（根本没有 store）。
+    func testASettingsOnlyEngineStillAdvancesItsMarkerWithNoSpaceStore() async throws {
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "on",
+                                                           version: 10, key: key)],
+                                     marker: "m1")]
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   spaceAccess: nil, spaceStore: nil,
+                                   now: { 1_700_000_000_000 })
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data("m1".utf8),
+                       "marker 照常推进")
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey),
+                        "设置段照常落位")
     }
 }

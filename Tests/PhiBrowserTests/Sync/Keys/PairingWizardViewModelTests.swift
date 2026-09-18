@@ -18,13 +18,15 @@ final class PairingWizardViewModelTests: XCTestCase {
         var map: [String: String] = [:]
         private(set) var writes: [(spaceId: String, uuid: String, pendingWhenWritten: Bool)] = []
         func syncUuid(forSpaceId spaceId: String) -> String? { map[spaceId] }
-        func setSyncUuid(_ uuid: String, forSpaceId spaceId: String) {
+        /// 这个假件的用例与落盘无关，所以只补签名、恒回 true，不加失败旋钮。
+        func setSyncUuid(_ uuid: String, forSpaceId spaceId: String) -> Bool {
             map[spaceId] = uuid
             // 嵌套类型不继承外层的 `@MainActor`，而 `joinPairingPending` 是主 actor 上的。
             // 写入口 `SpaceSyncMappingManager` 本身就是 `@MainActor`，所以这里断言而非
             // 跳板——跳板会把这条记录挪到写之后，顺序断言就不成立了。
             let pending = MainActor.assumeIsolated { ProfilePairingGate.joinPairingPending }
             writes.append((spaceId, uuid, pending))
+            return true
         }
         func allMappings() -> [String: String] { map }
         func removeMapping(forSpaceId spaceId: String) { map.removeValue(forKey: spaceId) }

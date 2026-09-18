@@ -108,3 +108,26 @@ Knowledge writeback: draft contract and evidence under
 `30-projects/phinomenon/sync-service/design/2026-09-16-m4-invalidation-implementation.md`
 in the company knowledge base, linked from its project/product entrypoints and
 catalog. Product work remains uncommitted and undeployed.
+
+## Local integration verification — 2026-09-19
+
+The owner requested local merges into Mac `feature/phi-sync`, Chromium
+`feature/phi-r150-sync`, and service `main`, without pushing. Chromium's URL Rule
+edits were initially uncommitted, then another task committed them as
+`62f157e59acd7` before integration. The M4 merge `4ae266d7194f1` preserves that
+commit and both bridge additions; the combined sources match the tested tree.
+Mac merge `d8ab019c` and service fast-forward `55d83a8` are local only.
+The M4 worktrees remain available.
+
+- Mac: the combined M3-4a/M4 tree passes `xcodebuild build-for-testing` with
+  isolated DerivedData and package copies, and the hostless stream suite.
+  No app-hosted tests were executed.
+- Service: fmt, vet, build, the full PostgreSQL-backed suite, and race tests for
+  data, invalidation, transport, and auth pass. Docker was stopped, so this run
+  used a fresh temporary PostgreSQL 17 database on loopback instead of Compose.
+- Chromium: all four affected translation units compile using the existing
+  Chromium toolchain; the bridge compile includes the pending URL Rule edits.
+  The rebuilt isolated Base/Mojo runner passes all 12 Phi sync service tests.
+
+Framework packaging, live ingress, and two-device acceptance remain release
+checks, as described above. No cluster or running browser is modified.

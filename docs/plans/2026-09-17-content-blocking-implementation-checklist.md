@@ -21,7 +21,7 @@ Keep this section current. A successor agent reads only this section first.
 | Chromium last commit | 6f7f6815c6b28 (D1 bridge); 8de66c077a042 (B4+C1+C2+C3); 6d59b997bfd21 (B1+B2+B3); c233424aa9817 (A4); 3b1122dfe8d60 (A3); 2f5e83f2faca7 (A2); a1c036958d7e2, 3affb848c5066 (A1) |
 | Mac branch | `feat/content-blocking` (off `origin/dev` 51fc5189), local only, never pushed |
 | Mac last commit | 8dd1cc6a (D2+D3+D4 code and all plan docs; Mac unit tests not yet executed) |
-| Build dirs | `out/PhiTest` built 2026-09-17 (chrome, components_unittests, unit_tests, browser_tests); later builds are incremental |
+| Build dirs | `out/PhiTest` (Phi), `out/Upstream` (non-Phi, gn gen fails on a pre-existing phi-r152 issue), `out/PhiProbe` (adblock crate only). Since 2026-09-18 the machine has Xcode 27 beta only; its SDK stubs list `arm64e.x1-macos`, which the pinned lld rejects, so `args.gn` sets `mac_sdk_path = "//out/PhiTest/sdk/xcode_links/MacOSX26.4.sdk"` (a symlink to `/Library/Developer/CommandLineTools/SDKs/MacOSX26.4.sdk`; recreate the symlink if `gn gen` ever drops it). The SDK switch forced a near-full rebuild. |
 | Blockers | Owner decision needed before release: `easylist-polish` header says CC BY-NC-SA 4.0 (non-commercial), `bulgarian` has no license header. Lists stay bundled meanwhile. |
 | Last updated | 2026-09-18, Phases A to C and D1 committed; D2 to D4 pending verification |
 

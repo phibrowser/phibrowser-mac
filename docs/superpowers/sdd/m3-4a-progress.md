@@ -1164,3 +1164,10 @@ Task 6 的进度条目 20 把 `PhiSyncMarkerBoundaryTests.swift` 里没填的 ur
    无关；`URLRuleKindTests` 的两条 R-103 变体（(e) / (f)）失败发生在 `urlrules` **自己**那次 load 里，
    delta ≠ 0 ⇒ 照旧跳过。CASE 2b-L1 逐字读过，语义不变。
 5. **构建**：`build-for-testing`（log 在 `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-build-4.log`）。
+6. **复审修正（仅测试字面量）**：两条探针原先的写序号前提「每页每种 kind 无条件写一次表」是错的——
+   空页上 `applyOwnedKind` 对 `landsEmptyBatch == false` 的 kind（书签 / pin）在早退处返回、连那次
+   `replayedAfterDelete` 的写也不发生，只有规则那条 kind 的空页才走 `plan` / `land`。(e) 的注入改成
+   `failSaveOnCallNumber = 1`、`saveCalls` 期望改成 1（唯一那次就是发布段的早退写，失败照旧触发 ⇒
+   修前仍红）；(f) 的 `saveCalls` 期望改成 0（发布段在任何写之前返回）。
+7. **CASE 2b-L1 一并更正**：`ownedStore.saveCalls` 的期望值同源错误（原为 1，注记「只有落地那一次」），
+   按同一条推导改成 0；断言的本意「发布段没有写出新文件」不变，语义没有放宽。

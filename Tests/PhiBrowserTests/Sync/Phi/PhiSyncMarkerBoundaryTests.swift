@@ -976,13 +976,15 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
     /// 的发布段整段吃掉——§2.5 第 6 条点名禁止把 R-exec-3 的 per-kind 语义扩成全局。轮级的那道闸
     /// 是 `canPublishThisRound`（本用例里它是真：失败发生在 push 段，不在任何一页里）。
     ///
-    /// 写序号的推导（同 2b-L1 / B2-1d）：空页那一次落地写是第 1 次（`applyOwnedKind` 每页每种
-    /// kind 无条件写一次表），发布段那一次是第 2 次；书签本机零行 ⇒ `work` 为空 ⇒ 它那次写正是
+    /// 写序号的推导：空页对书签**一次表写都没有**——`applyOwnedKind` 在 `landsEmptyBatch` 那道
+    /// 早退上返回（三者全空 ∧ `landsEmptyBatch == false`，`replayedAfterDelete == 0` ⇒ 连早退里
+    /// 那次写也不发生；只有规则那条 kind 的空页要走 `plan` / `land`）。于是书签这一轮的第 1 次、
+    /// 也是唯一一次 `save` 就是发布段那一次；书签本机零行 ⇒ `work` 为空 ⇒ 它正是
     /// `guard !work.isEmpty` 的早退写、零 commit。
     func testAPushSideCursorSaveFailureOfOneKindDoesNotSuppressTheLaterKinds() async throws {
         let bookmarkAccess = FakeBookmarkAccess()
         let bookmarkStore = MemoryOwnedItemStore()
-        bookmarkStore.failSaveOnCallNumber = 2
+        bookmarkStore.failSaveOnCallNumber = 1
         let pinAccess = FakePinAccess(scope: .profile, account: .profile,
                                       rows: [.fixture(lineageId: "lp", guid: "gp", profileId: "Default")])
         let pinStore = MemoryOwnedItemStore()
@@ -1004,7 +1006,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let counters = await engine.lastOwnedRoundCountersForTesting
         XCTAssertEqual(outcome, .cursorSaveFailed)
         XCTAssertEqual(failures, 1, "失败的恰好是书签发布段那一次写")
-        XCTAssertEqual(bookmarkStore.saveCalls, 2, "落地那次 + 发布段那次")
+        XCTAssertEqual(bookmarkStore.saveCalls, 1, "空页零落地写 ⇒ 唯一那次就是发布段那次")
         XCTAssertTrue(bookmarkCommits(client).isEmpty)
         XCTAssertEqual(counters["bookmarks"]?.pushed, 0)
         XCTAssertEqual(pinCommits(client).count, 1, "pin 不受书签那次写失败影响")
@@ -1050,7 +1052,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(outcome, .cursorSaveFailed)
         XCTAssertEqual(failures, 1)
         XCTAssertTrue(bookmarkCommits(client).isEmpty, "没有对着丢失的表发布")
-        XCTAssertEqual(bookmarkStore.saveCalls, 1, "只有落地那一次；发布段没有写出新文件")
+        XCTAssertEqual(bookmarkStore.saveCalls, 0, "空页零落地写、发布段又在任何写之前返回")
         XCTAssertTrue(bookmarkStore.table.cursors.isEmpty, "下一轮 load 照样报损")
         XCTAssertFalse(spaceStore.table.bookmarksReplayedForEmptyTable, "闩没置位")
         XCTAssertEqual(markerStore.file.marker, Data("7".utf8), "清 marker 那一步没成")
@@ -2551,7 +2553,9 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(failures, 1)
         XCTAssertTrue(client.commits.isEmpty, "零 commit 调用")
         XCTAssertTrue(client.callLog.filter { $0 == "commit" }.isEmpty)
-        XCTAssertEqual(ownedStore.saveCalls, 1, "只有落地那一次（空表）；发布段没有写出新文件")
+        // 空页对书签一次表写都没有（`applyOwnedKind` 的 `landsEmptyBatch` 早退，
+        // `replayedAfterDelete == 0`），而发布段在任何写之前就返回了 ⇒ 零 `save`。
+        XCTAssertEqual(ownedStore.saveCalls, 0, "发布段没有写出新文件")
         XCTAssertTrue(ownedStore.table.cursors.isEmpty, "没有游标被写下 ⇒ 下一轮 load 照样报损")
         XCTAssertEqual(ownedStore.hadRecordsSeen, [true, true], "轮首与发布段各报损一次")
         XCTAssertFalse(spaceStore.table.bookmarksReplayedForEmptyTable, "闩没置位")

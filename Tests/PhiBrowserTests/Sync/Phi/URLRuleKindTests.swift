@@ -586,4 +586,130 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertEqual(URLRuleKind.eligibilityOwner(of: PhiLocalURLRule.fixture(), resolve: hidden, scope: nil),
                        "su-1")
     }
+
+    // MARK: - Task 8 —— `URLRuleApplyBatch` 的合并与降级（纯值）、`FakeURLRuleAccess`（假件）
+
+    // CASE U-10b（纯值半边）—— 目标没变的 `.move` 降成 `.reorder`，不是 rehome。
+    //
+    // 防的是什么：把 `.move` 一律当 rehome 的实现会白重排两个桶，其中「另一个桶」这一轮根本
+    // 没被碰过——一次无意义的写经 §6.5 的 publisher 变成一次多余的推送轮。
+    func testMoveWithUnchangedTargetIsDemotedToReorder() {
+        let values = URLRuleLandingValues.fixture(syncId: "R1", spaceId: "S1", sortOrder: 2)
+        let batch = URLRuleApplyBatch(unordered: [.move(values)], currentSpaceIds: ["R1": "S1"])
+        XCTAssertEqual(batch.ops, [.reorder(syncId: "R1", spaceId: "S1", sortOrder: 2)])
+    }
+
+    // 目标真的变了 ⇒ 留 `.move`；本页快照里没有这条身份（现值未知）也按 rehome 处理。
+    func testMoveWithChangedOrUnknownTargetStaysAMove() {
+        let values = URLRuleLandingValues.fixture(syncId: "R1", spaceId: "S2", sortOrder: 0)
+        XCTAssertEqual(URLRuleApplyBatch(unordered: [.move(values)], currentSpaceIds: ["R1": "S1"]).ops,
+                       [.move(values)])
+        XCTAssertEqual(URLRuleApplyBatch(unordered: [.move(values)], currentSpaceIds: [:]).ops,
+                       [.move(values)])
+    }
+
+    // CASE U-10e ①（纯值半边）—— 同一身份的 `.move` + `.update` 合成**一条** `.move`，内容一个
+    // 字节不丢；目标没变时留 `.update`（内容要写），不降成 `.reorder`。
+    //
+    // 防的是什么：分两次写时 `.update` 会在 `.move` 之后再写一次归属，行落进一个从没被重排过的
+    // 桶（R-M3-4a-42(b) / RR-B9）；反向的错法是合并时丢掉 `.update` 的内容组。
+    func testMoveAndUpdateForOneIdentityCollapseIntoOneOpKeepingContent() throws {
+        let values = URLRuleLandingValues.fixture(syncId: "R1", spaceId: "S2", host: "new.example",
+                                                  sortOrder: 0)
+        let batch = URLRuleApplyBatch(unordered: [.move(values), .update(values)],
+                                      currentSpaceIds: ["R1": "S1"])
+        XCTAssertEqual(batch.ops.count, 1)
+        guard case .move(let merged) = try XCTUnwrap(batch.ops.first) else {
+            return XCTFail("expected .move, got \(batch.ops)")
+        }
+        XCTAssertEqual(merged.host, "new.example")
+        XCTAssertEqual(merged.spaceId, "S2")
+
+        let same = URLRuleLandingValues.fixture(syncId: "R1", spaceId: "S1", host: "new.example",
+                                                sortOrder: 1)
+        let unchanged = URLRuleApplyBatch(unordered: [.move(same), .update(same)],
+                                          currentSpaceIds: ["R1": "S1"])
+        XCTAssertEqual(unchanged.ops, [.update(same)])
+    }
+
+    // 相序：升级写在前、`.delete` 在后；相内保持传入次序（稳定）。
+    func testBatchOrdersDeletesLastAndKeepsArrivalOrderWithinAPhase() {
+        let a = URLRuleLandingValues.fixture(syncId: "A", spaceId: "S1", sortOrder: 0)
+        let b = URLRuleLandingValues.fixture(syncId: "B", spaceId: "S1", sortOrder: 1)
+        let batch = URLRuleApplyBatch(unordered: [.delete(syncId: "Z"), .update(a), .create(b),
+                                                  .delete(syncId: "Y")])
+        XCTAssertEqual(batch.ops, [.update(a), .create(b), .delete(syncId: "Z"), .delete(syncId: "Y")])
+    }
+
+    // CASE U-10e ③ —— 假件上同一批只有一次 `.apply`、`R1` 只出现一次，两桶都稠密。
+    func testFakeAccessLandsAMergedBatchOnceAndKeepsBothBucketsDense() async throws {
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "R1", spaceId: "S1", sortOrder: 0),
+            .fixture(id: "i2", syncId: "Ra", spaceId: "S1", sortOrder: 1),
+            .fixture(id: "i3", syncId: "Rb", spaceId: "S1", sortOrder: 2),
+            .fixture(id: "i4", syncId: "Rc", spaceId: "S2", sortOrder: 0),
+            .fixture(id: "i5", syncId: "Rd", spaceId: "S2", sortOrder: 1),
+        ])
+        let values = URLRuleLandingValues.fixture(syncId: "R1", spaceId: "S2", host: "new.example",
+                                                  sortOrder: 0)
+        let batch = URLRuleApplyBatch(unordered: [.move(values), .update(values)],
+                                      currentSpaceIds: ["R1": "S1"])
+        try await access.apply(batch)
+
+        XCTAssertEqual(access.calls, [.apply(opCount: 1)])
+        XCTAssertEqual(access.lastAppliedOps.filter { $0.syncId == "R1" }.count, 1)
+        let moved = try XCTUnwrap(access.rows.first { $0.syncId == "R1" })
+        XCTAssertEqual(moved.id, "i1", "rehome keeps the physical row")
+        XCTAssertEqual(moved.spaceId, "S2")
+        XCTAssertEqual(moved.host, "new.example")
+        XCTAssertEqual(access.rows.count, 5)
+        XCTAssertEqual(access.siblings(inSpaceId: "S1").map(\.sortOrder), [0, 1])
+        XCTAssertEqual(access.siblings(inSpaceId: "S2").map(\.sortOrder), [0, 1, 2])
+    }
+
+    // CASE U-8r —— 两个读口读失败一律抛，抛的是注入的那个错，`readError` 不自动清零。
+    //
+    // 防的是什么：差分对空集合的回答是给每一条游标发一条 tombstone——一次失败的 fetch 抹掉全
+    // 账户的规则（R-exec-3）；一次性的失败旋钮会让第二次读悄悄成功，用例就断言不到「整段跳过」。
+    func testFakeAccessReadErrorIsThrownByBothReadsAndDoesNotClear() {
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "R1", sortOrder: 0),
+            .fixture(id: "i2", syncId: "R2", sortOrder: 1),
+            .fixture(id: "i3", syncId: "R3", sortOrder: 2),
+        ])
+        access.readError = LocalStoreWriteError.storeUnavailable
+        for _ in 0..<2 {
+            XCTAssertThrowsError(try access.allURLRules()) {
+                XCTAssertEqual($0 as? LocalStoreWriteError, .storeUnavailable)
+            }
+            XCTAssertThrowsError(try access.allURLRulesIncludingDeleted()) {
+                XCTAssertEqual($0 as? LocalStoreWriteError, .storeUnavailable)
+            }
+        }
+        XCTAssertNotNil(access.readError, "readError must not clear itself")
+        XCTAssertFalse(access.snapshotIsLoaded)
+        XCTAssertEqual(access.calls, [.allURLRules, .allURLRulesIncludingDeleted,
+                                      .allURLRules, .allURLRulesIncludingDeleted])
+    }
+
+    // 假件的两个读口：`allURLRules()` 过滤软删行，`allURLRulesIncludingDeleted()` 不过滤；
+    // `siblings` / `isKnownLocalURLRule` 只认活行、判据是 `syncId`；`liveOwners` 只填 `claimed`。
+    func testFakeAccessReadsSeparateLiveRowsFromSoftDeletedOnes() throws {
+        let access = FakeURLRuleAccess(rows: [
+            .fixture(id: "i1", syncId: "R1", spaceId: "S1", sortOrder: 1),
+            .fixture(id: "i0", syncId: "R0", spaceId: "S1", sortOrder: 0),
+            .fixture(id: "i9", syncId: "R9", spaceId: "S1", sortOrder: 2,
+                     deletedDate: Date(timeIntervalSince1970: 2_000)),
+        ])
+        XCTAssertFalse(access.isKnownLocalURLRule("R1"), "no snapshot yet")
+        XCTAssertEqual(try access.allURLRules().map(\.id), ["i0", "i1"])
+        XCTAssertEqual(try access.allURLRulesIncludingDeleted().map(\.id), ["i0", "i1", "i9"])
+        XCTAssertEqual(access.siblings(inSpaceId: "S1").map(\.id), ["i0", "i1"])
+        XCTAssertTrue(access.isKnownLocalURLRule("R1"))
+        XCTAssertFalse(access.isKnownLocalURLRule("R9"), "soft-deleted rows are not known")
+        XCTAssertFalse(access.isKnownLocalURLRule("i1"), "the predicate is on syncId, not id")
+        let owners = try access.liveOwners(["R0", "R9", "R-none"])
+        XCTAssertEqual(owners.claimed, ["R0"])
+        XCTAssertTrue(owners.owners.isEmpty, "owners is Task 6's closure to fill")
+    }
 }

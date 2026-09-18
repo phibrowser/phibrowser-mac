@@ -958,6 +958,73 @@ extension LocalStore {
         .eraseToAnyPublisher()
     }
 
+    /// 整账户的 URL Rule 变化信号（§6.5）。**订阅当刻不发**；每次订阅各有一份基线
+    /// （`Deferred`）；**必须在主线程订阅**。三条理由与 `bookmarkChangesPublisher()` 逐字相同。
+    ///
+    /// **接的不是 `urlRulesPublisher()`**（`LocalStore+SpaceURLRule.swift`）：它发的是
+    /// `[SpaceURLRule]` **model 对象**、去重按 `l.id` 起手，而两侧是 SwiftData 就地刷新的同一批
+    /// 实例；而且它是 UI 的 publisher，`SpaceManager` 已经订着它。
+    ///
+    /// **值快照建在含软删行的那份定义域上**（R-M3-4a-51）：差分读的正是它，一次软删（本机
+    /// 删除意图的全部载体）必须发出信号。
+    ///
+    /// 防抖住在这里，协调器那一级不再加：§6.5 写的「节流 → 值快照去重 → 2 s 防抖」是这三级
+    /// 的整体形状，协调器再加一级就是 4 秒延迟。
+    @MainActor
+    func urlRuleChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
+            var lastSnapshot = self.urlRuleChangeSnapshot()
+
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: { $0.entity.name == SpaceURLRule.entityName }
+                    )
+                }
+                // 先上主队列再防抖，理由同书签那条。
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    // 读不出来就**不发信号**，绝不当成「全没了」。
+                    guard let self else { return nil }
+                    guard let snapshot = self.urlRuleChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
+    }
+
+    /// nil = 这一刻读不出来。定义域**含软删行**（R-M3-4a-51）：一次软删就是一次变化。
+    @MainActor
+    private func urlRuleChangeSnapshot() -> [URLRuleChangeSnapshot]? {
+        guard let context = mainContext else { return nil }
+        do {
+            return try allURLRuleModelsIncludingDeleted(in: context)
+                .map(URLRuleChangeSnapshot.init)
+                .sorted { $0.id < $1.id }
+        } catch {
+            // R12：只记类型与 domain/code，一个行内容的字节都不记。
+            AppLogError("[phi-sync] url rule change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+
     /// nil = 这一刻读不出来。调用方把它当成「不知道」，不是「一条都没有」。
     @MainActor
     private func bookmarkChangeSnapshot() -> [BookmarkChangeSnapshot]? {
@@ -1074,6 +1141,36 @@ private struct PinnedTabRowChangeSnapshot: Equatable {
 private struct PinnedTabChangeSnapshot: Equatable {
     let scope: PinnedTabScope
     let rows: [PinnedTabRowChangeSnapshot]
+}
+
+/// 一条规则行在**同步层眼里**的取值快照（§6.5），十列。`pendingLocalEdit` 与
+/// `mergePartnerSyncId` 有意不在这里：两者是本机状态、不上线、不进实体（R-M3-4a-71），一次只
+/// 改它们的写改不了引擎下一轮发出去的任何字节。`deletedDate` **在**：软删是本机删除意图的全部
+/// 载体，下一轮差分要靠它发 tombstone。
+private struct URLRuleChangeSnapshot: Equatable {
+    let id: String
+    let syncId: String?
+    let spaceId: String
+    let host: String
+    let pathPrefix: String?
+    let askBeforeRouting: Bool
+    let sortOrder: Int
+    let contentUpdatedDate: Date?
+    let targetUpdatedDate: Date?
+    let deletedDate: Date?
+
+    init(_ model: SpaceURLRule) {
+        id = model.id
+        syncId = model.syncId
+        spaceId = model.spaceId
+        host = model.host
+        pathPrefix = model.pathPrefix
+        askBeforeRouting = model.askBeforeRouting
+        sortOrder = model.sortOrder
+        contentUpdatedDate = model.contentUpdatedDate
+        targetUpdatedDate = model.targetUpdatedDate
+        deletedDate = model.deletedDate
+    }
 }
 
 /// Value snapshot of a pinned-tab row used by `pinnedTabsPublisher` for

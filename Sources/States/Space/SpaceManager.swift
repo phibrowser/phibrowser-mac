@@ -7707,6 +7707,29 @@ final class SpaceManager: ObservableObject {
         pushRoutingTableToChromium()
     }
 
+    /// 从 `LocalStore` 重新 fetch（软删行已被 `getAllURLRules()` 过滤掉，R-M3-4a-51）、
+    /// 替换 `cachedURLRules`、再走既有的 `pushRoutingTableToChromium()`。**非 private**：
+    /// §6.6 那张穷举表里的每一个写面都调它，同步的落地段经协调器在 main actor 上调它。
+    ///
+    /// **不调 `handleURLRulesUpdate(_:)`**（它是 private 而且收 model 对象，正是 §5.6 禁止
+    /// 同步层持有的东西），**也不只调 `pushRoutingTableToChromium()`**（它只从 `cachedURLRules`
+    /// 编译载荷，而那份缓存只由 publisher 的 sink 刷新，推出去的还是旧表），**更不依赖
+    /// `urlRulesPublisher` 自己发射**（`removeDuplicates` 比的是 SwiftData 就地刷新的同一批
+    /// 实例，一次只改 host 的落地会被它吞掉）。R-M3-4a-34 / RR-R3。
+    ///
+    /// **解析器不缓存**（R-M3-4a-46）：本函数只负责「重读 + 换缓存 + 推」，裁决键与
+    /// `ruleTieBreakKeyResolver` 接在 `pushRoutingTableToChromium` 里、每次载荷构建现算。
+    ///
+    /// `@MainActor` 是硬要求（见 `applyRemoteRebind` 上的规则）：`getAllURLRules()` 读的是
+    /// SwiftData 的主上下文。
+    @MainActor
+    func reloadURLRulesFromStore() {
+        guard let account = boundAccount else { return }
+        cachedURLRules = account.localStorage.getAllURLRules()
+        hasLoadedURLRules = true
+        pushRoutingTableToChromium()
+    }
+
     private func handleSpacesUpdate(_ storeSpaces: [Space]) {
         guard !isStoreBindingSuspended else { return }
         // Strip any synthetic entry from the input first: callers like
@@ -7753,6 +7776,8 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         updated = Space.reconcile(updated, with: spaces)
+        // 换掉 `spaces` 之前先记下旧的 id 集合：末尾那道路由表刷新的判据是「集合真的变了」。
+        let previousSpaceIds = Set(spaces.map(\.spaceId))
         spaces = updated
         let defaultSpaceId = currentDefaultSpaceId
         if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
@@ -7847,8 +7872,15 @@ final class SpaceManager: ObservableObject {
             slot.respawnWindow(forSpaceId: spaceId)
         }
 
-        // Space set / names / icons / order may have changed (routing rules
-        // didn't, so only the submenu list needs refreshing).
+        // R-M3-4a-50 第 6 行：Space 的出现 / 消失 / 隐藏就是路由表的输入（R-M3-4a-31 之后
+        // 过滤判据接上 `spaces` + hidden）。只在集合真的变了时刷新——名字 / 图标 / 次序变动
+        // 与路由无关，§6.6 明确把它们排除在刷新之外。
+        if validIds != previousSpaceIds {
+            MainActor.assumeIsolated { reloadURLRulesFromStore() }
+        }
+
+        // Space 集合变了时上面已经刷过路由表；这里只补提交单（names / icons / order changes
+        // only need the submenu list refreshed).
         pushOpenLinkSpaceMenuToChromium()
 
         // A cold-start repair adjudication deferred on an unresolved

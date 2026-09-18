@@ -412,6 +412,174 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     }
 }
 
+/// 内存版 `PhiURLRuleLocalAccess`（Task 8）。形状照 `FakeBookmarkAccess`：`apply(_:)` **真的把
+/// `ops` 施加到 `rows` 上**，含两桶稠密重排，好让 Task 6 的引擎用例在假件上看到与真库同形的结果。
+/// `readError` **每次都抛、不自动清零**（R-exec-3）；`snapshotIsLoaded` 与 `beginRound()` 守
+/// 与生产实现同一条契约：两个缓存读者只在本轮最后一次成功的读或 `apply` 之后有意义。
+@MainActor
+final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
+    enum Call: Equatable {
+        case allURLRules
+        case allURLRulesIncludingDeleted
+        case siblings(space: String)
+        case liveOwners(count: Int)
+        case apply(opCount: Int)
+    }
+
+    /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
+    var rows: [PhiLocalURLRule]
+    /// 让两个读口与 `liveOwners` 抛。**每次都抛，不自动清零。**
+    var readError: Error?
+    private(set) var snapshotIsLoaded = false
+    /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
+    var failApplyOnce = false
+    /// 下一次 `apply` 抛这个错，然后清零。**一行都不改。**
+    var applyErrorOnce: Error?
+    private(set) var calls: [Call] = []
+    /// 最近一次 `apply` 收到的 `ops`（抛错的那次也记）。
+    private(set) var lastAppliedOps: [URLRuleSyncOp] = []
+
+    init(rows: [PhiLocalURLRule] = []) {
+        self.rows = rows
+    }
+
+    /// 开新一轮：把快照标成「没读过」。
+    func beginRound() {
+        snapshotIsLoaded = false
+    }
+
+    /// 活行，按 `(spaceId, sortOrder, id)` 有序——喂给引擎的次序必须是生产实现真会产出的那个。
+    func allURLRules() throws -> [PhiLocalURLRule] {
+        calls.append(.allURLRules)
+        if let readError { throw readError }
+        snapshotIsLoaded = true
+        return Self.ordered(rows.filter { $0.deletedDate == nil })
+    }
+
+    /// 活行 ∪ 软删行，同一次序。
+    func allURLRulesIncludingDeleted() throws -> [PhiLocalURLRule] {
+        calls.append(.allURLRulesIncludingDeleted)
+        if let readError { throw readError }
+        snapshotIsLoaded = true
+        return Self.ordered(rows)
+    }
+
+    /// 本页快照按 `spaceId` 的分组：**软删行排除**（R-M3-4a-51），不按合格性过滤。
+    func siblings(inSpaceId spaceId: String) -> [PhiLocalURLRule] {
+        calls.append(.siblings(space: spaceId))
+        guard snapshotIsLoaded else { return [] }
+        return Self.ordered(rows.filter { $0.spaceId == spaceId && $0.deletedDate == nil })
+    }
+
+    /// 判据是 `syncId`、不是 `id`，定义域与 `allURLRules()` 同源（活行）。
+    func isKnownLocalURLRule(_ syncId: String) -> Bool {
+        guard snapshotIsLoaded else { return false }
+        return rows.contains { $0.syncId == syncId && $0.deletedDate == nil }
+    }
+
+    /// 生产实现自己做一次 fetch、不读本页缓存，所以这里也不看 `snapshotIsLoaded`。只填
+    /// `claimed`；`owners` 由 Task 6 的注册项闭包配 `OwnedOwnerMaps` 补。
+    func liveOwners(_ candidates: Set<String>) throws -> OwnedLiveRows {
+        calls.append(.liveOwners(count: candidates.count))
+        if let readError { throw readError }
+        let live = Set(rows.filter { $0.deletedDate == nil }.compactMap(\.syncId))
+        return OwnedLiveRows(claimed: candidates.intersection(live), owners: [:])
+    }
+
+    func apply(_ batch: URLRuleApplyBatch) async throws {
+        calls.append(.apply(opCount: batch.ops.count))
+        lastAppliedOps = batch.ops
+        if failApplyOnce {
+            failApplyOnce = false
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        if let applyErrorOnce {
+            self.applyErrorOnce = nil
+            throw applyErrorOnce
+        }
+        var touchedBuckets: Set<String> = []
+        for op in batch.ops {
+            land(op, touchedBuckets: &touchedBuckets)
+        }
+        for bucket in touchedBuckets {
+            densify(bucket)
+        }
+        // 生产实现末尾会重读一次，于是落地后的复核在同一轮里就能做。
+        snapshotIsLoaded = true
+    }
+
+    private static func ordered(_ rows: [PhiLocalURLRule]) -> [PhiLocalURLRule] {
+        rows.sorted { ($0.spaceId, $0.sortOrder, $0.id) < ($1.spaceId, $1.sortOrder, $1.id) }
+    }
+
+    /// 与 `LocalStore.applyURLRuleSyncBatchBody` 同形：寻址含软删行；`.create` / `.update` /
+    /// `.move` 命中就写九个字段并清 `deletedDate` / `mergePartnerSyncId`，不命中就建行；
+    /// `.reorder` 只写 `sortOrder`；`.delete` 真删。`pendingLocalEdit` 一个字节不碰。
+    private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>) {
+        switch op {
+        case .create(let values), .update(let values), .move(let values):
+            let existing = rows.firstIndex { $0.syncId == values.syncId }
+            let sourceBucket = existing.map { rows[$0].spaceId }
+            if let index = existing {
+                rows[index].spaceId = values.spaceId
+                rows[index].host = values.host
+                rows[index].pathPrefix = values.pathPrefix
+                rows[index].askBeforeRouting = values.askBeforeRouting
+                rows[index].sortOrder = values.sortOrder
+                rows[index].createdDate = values.createdDate
+                rows[index].contentUpdatedDate = values.contentUpdatedDate
+                rows[index].targetUpdatedDate = values.targetUpdatedDate
+                rows[index].deletedDate = nil
+                rows[index].mergePartnerSyncId = nil
+            } else {
+                rows.append(PhiLocalURLRule(id: UUID().uuidString, syncId: values.syncId,
+                                            spaceId: values.spaceId, host: values.host,
+                                            pathPrefix: values.pathPrefix,
+                                            askBeforeRouting: values.askBeforeRouting,
+                                            sortOrder: values.sortOrder, createdDate: values.createdDate,
+                                            contentUpdatedDate: values.contentUpdatedDate,
+                                            targetUpdatedDate: values.targetUpdatedDate,
+                                            deletedDate: nil, pendingLocalEdit: false,
+                                            mergePartnerSyncId: nil))
+            }
+            switch op {
+            case .move:
+                if let sourceBucket { touchedBuckets.insert(sourceBucket) }
+                touchedBuckets.insert(values.spaceId)
+            case .create:
+                touchedBuckets.insert(values.spaceId)
+            default:
+                // `.update`：只有建了新行、或（防御）目标真的变了才记桶。
+                if sourceBucket == nil {
+                    touchedBuckets.insert(values.spaceId)
+                } else if let sourceBucket, sourceBucket != values.spaceId {
+                    touchedBuckets.insert(sourceBucket)
+                    touchedBuckets.insert(values.spaceId)
+                }
+            }
+        case .reorder(let syncId, _, let sortOrder):
+            guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
+            rows[index].sortOrder = sortOrder
+            touchedBuckets.insert(rows[index].spaceId)
+        case .delete(let syncId):
+            for row in rows where row.syncId == syncId {
+                touchedBuckets.insert(row.spaceId)
+            }
+            rows.removeAll { $0.syncId == syncId }
+        }
+    }
+
+    /// 该桶的活行按 `(sortOrder, id)` 升序写 `0..<n`。
+    private func densify(_ bucket: String) {
+        let live = rows.indices
+            .filter { rows[$0].spaceId == bucket && rows[$0].deletedDate == nil }
+            .sorted { (rows[$0].sortOrder, rows[$0].id) < (rows[$1].sortOrder, rows[$1].id) }
+        for (position, index) in live.enumerated() {
+            rows[index].sortOrder = position
+        }
+    }
+}
+
 // MARK: - 值类型 fixture
 
 extension PhiLocalBookmark {
@@ -477,6 +645,20 @@ extension PhiLocalURLRule {
                         targetUpdatedDate: targetUpdatedDate, deletedDate: deletedDate,
                         pendingLocalEdit: pendingLocalEdit,
                         mergePartnerSyncId: mergePartnerSyncId)
+    }
+}
+
+extension URLRuleLandingValues {
+    /// 一次落地写的九个取值；三枚戳默认同一时刻，钉戳的用例自己传。
+    static func fixture(syncId: String = "R1", spaceId: String = "S1", host: String = "github.com",
+                        pathPrefix: String? = nil, askBeforeRouting: Bool = false, sortOrder: Int = 0,
+                        createdDate: Date = Date(timeIntervalSince1970: 1_000),
+                        contentUpdatedDate: Date = Date(timeIntervalSince1970: 1_000),
+                        targetUpdatedDate: Date = Date(timeIntervalSince1970: 1_000)) -> URLRuleLandingValues {
+        URLRuleLandingValues(syncId: syncId, spaceId: spaceId, host: host, pathPrefix: pathPrefix,
+                             askBeforeRouting: askBeforeRouting, sortOrder: sortOrder,
+                             createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
+                             targetUpdatedDate: targetUpdatedDate)
     }
 }
 

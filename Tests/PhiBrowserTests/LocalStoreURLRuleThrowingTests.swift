@@ -1143,6 +1143,428 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2])
     }
 
+    // MARK: - Task 8 —— 落地批次入口、`AccountPhiURLRuleAccess`、落地后的读、`urlRuleChangesPublisher`
+
+    // MARK: CASE U-10 —— owner 变化不换身份，两桶都重排（R-M3-4a-3 / R-M3-4a-51）
+
+    // 防的是什么：把 rehome 做成「删旧行 + 插新行」会换掉 `id` 与 `syncId`，下一轮差分把旧身份判成本机
+    // 删除并发一条 tombstone；只重排一个桶会在源桶留下一个空洞下标，而 `sortOrder` 是 `Specificity`
+    // 的第三项。
+    func testSyncMoveRehomesTheRowKeepingIdentityAndDensifiesBothBuckets() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        let before = try allRows(in: store)
+
+        let values = landing("R-s1-0", spaceId: Self.spaceTwo, host: "s1-0.example", sortOrder: 0)
+        let batch = URLRuleApplyBatch(unordered: [.move(values)],
+                                      currentSpaceIds: ["R-s1-0": Self.spaceOne])
+        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 5, "no second row for R-s1-0")
+        XCTAssertEqual(Set(after.keys), Set(before.keys))
+        XCTAssertEqual(after.values.filter { $0.syncId == "R-s1-0" }.count, 1)
+        let moved = try XCTUnwrap(after["s1-0"])
+        XCTAssertEqual(moved.id, "s1-0")
+        XCTAssertEqual(moved.syncId, "R-s1-0")
+        XCTAssertEqual(moved.spaceId, Self.spaceTwo)
+        XCTAssertEqual(moved.createdDate, before["s1-0"]?.createdDate)
+        XCTAssertFalse(moved.pendingLocalEdit, "engine writes never raise the edit flag")
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1])
+        XCTAssertEqual(bucketOrder(Self.spaceTwo, in: after), [0, 1, 2])
+    }
+
+    // MARK: CASE U-10b —— 纯重排不得被翻译成 rehome（真库半边）
+
+    // 防的是什么：把 `.move` 一律当 rehome 的实现会白重排一个这一页根本没被碰过的桶——一次无意义的
+    // 写经 §6.5 的 publisher 变成一次多余的推送轮，稳态 `pushed == 0` 当场破。
+    func testDemotedReorderTouchesOnlyItsOwnBucket() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        let before = try allRows(in: store)
+
+        let values = landing("R-s1-0", spaceId: Self.spaceOne, host: "s1-0.example", sortOrder: 2)
+        let batch = URLRuleApplyBatch(unordered: [.move(values)],
+                                      currentSpaceIds: ["R-s1-0": Self.spaceOne])
+        XCTAssertEqual(batch.ops, [.reorder(syncId: "R-s1-0", spaceId: Self.spaceOne, sortOrder: 2)])
+        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 5)
+        for id in ["s2-0", "s2-1"] {
+            XCTAssertEqual(after[id], before[id], "the untouched bucket must not be written (\(id))")
+        }
+        let reordered = try XCTUnwrap(after["s1-0"])
+        XCTAssertEqual(reordered.spaceId, Self.spaceOne)
+        XCTAssertEqual(reordered.host, before["s1-0"]?.host)
+        XCTAssertEqual(reordered.contentUpdatedDate, before["s1-0"]?.contentUpdatedDate)
+        XCTAssertEqual(reordered.targetUpdatedDate, before["s1-0"]?.targetUpdatedDate)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2])
+    }
+
+    // MARK: CASE U-10c —— 改目标到 Incognito：写的是裸前缀常量
+
+    // 防的是什么：把保留常量解析成某个活的 incognito 运行期 id 会让这条规则在下次启动后变成死目标
+    // （`isRoutableRuleTarget` 对它返回 false）。
+    func testSyncMoveToTheIncognitoTargetWritesTheBarePrefix() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        let before = try allRows(in: store)
+
+        let values = landing("R-s1-0", spaceId: SpaceManager.incognitoRuleTargetId,
+                             host: "s1-0.example", sortOrder: 0)
+        let batch = URLRuleApplyBatch(unordered: [.move(values)],
+                                      currentSpaceIds: ["R-s1-0": Self.spaceOne])
+        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+
+        let after = try allRows(in: store)
+        let moved = try XCTUnwrap(after["s1-0"])
+        XCTAssertEqual(moved.spaceId, "space.incognito")
+        XCTAssertEqual(moved.spaceId, SpaceManager.incognitoRuleTargetId)
+        XCTAssertFalse(moved.spaceId.hasPrefix("space.incognito."), "never a runtime Incognito id")
+        XCTAssertEqual(moved.syncId, before["s1-0"]?.syncId)
+        XCTAssertEqual(moved.id, before["s1-0"]?.id)
+        XCTAssertEqual(moved.createdDate, before["s1-0"]?.createdDate)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1])
+        XCTAssertEqual(bucketOrder(SpaceManager.incognitoRuleTargetId, in: after), [0])
+    }
+
+    // MARK: CASE U-10d —— Incognito 改回 Space：两个桶各重排一次
+
+    // 防的是什么：把保留常量那个桶当成「不是真桶」跳过的实现会在 incognito 桶里留下空洞。
+    func testSyncMoveFromIncognitoBackToASpaceDensifiesBothBuckets() async throws {
+        let store = try makeStore()
+        let incognito = SpaceManager.incognitoRuleTargetId
+        try await seed(Self.twoBucketSeeds + [
+            RuleSeed(id: "inc-0", spaceId: incognito, host: "inc-0.example", sortOrder: 0, syncId: "R-inc-0"),
+            RuleSeed(id: "inc-1", spaceId: incognito, host: "inc-1.example", sortOrder: 1, syncId: "R-inc-1"),
+            RuleSeed(id: "inc-2", spaceId: incognito, host: "inc-2.example", sortOrder: 2, syncId: "R-inc-2"),
+        ], in: store)
+
+        let values = landing("R-inc-1", spaceId: Self.spaceTwo, host: "inc-1.example", sortOrder: 1)
+        let batch = URLRuleApplyBatch(unordered: [.move(values)],
+                                      currentSpaceIds: ["R-inc-1": incognito])
+        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 8)
+        let moved = try XCTUnwrap(after["inc-1"])
+        XCTAssertEqual(moved.id, "inc-1")
+        XCTAssertEqual(moved.syncId, "R-inc-1")
+        XCTAssertEqual(moved.spaceId, Self.spaceTwo)
+        XCTAssertEqual(bucketOrder(incognito, in: after), [0, 1])
+        XCTAssertEqual(bucketOrder(Self.spaceTwo, in: after), [0, 1, 2])
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2], "S1 was not touched")
+    }
+
+    // MARK: CASE U-10e ② —— 一身份一页一次写，真库半边
+
+    func testMergedMoveAndUpdateLandsOnceWithBothBucketsDense() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+
+        let values = landing("R-s1-1", spaceId: Self.spaceTwo, host: "new.example", sortOrder: 0)
+        let batch = URLRuleApplyBatch(unordered: [.move(values), .update(values)],
+                                      currentSpaceIds: ["R-s1-1": Self.spaceOne])
+        XCTAssertEqual(batch.ops.count, 1)
+        try await store.applyURLRuleSyncBatchThrowing(batch.ops)
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 5)
+        XCTAssertEqual(after.values.filter { $0.syncId == "R-s1-1" }.count, 1)
+        let moved = try XCTUnwrap(after["s1-1"])
+        XCTAssertEqual(moved.host, "new.example", "the update's content group must not be lost")
+        XCTAssertEqual(moved.spaceId, Self.spaceTwo)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1])
+        XCTAssertEqual(bucketOrder(Self.spaceTwo, in: after), [0, 1, 2])
+    }
+
+    // MARK: CASE U-10f —— 行不存在时按载荷建行（R-M3-4a-42(a) / R-M3-4a-56）
+
+    // 防的是什么：抛 `rowNotFound` 的实现会让整批永久重试；按 `allURLRules()`（过滤软删）判定「行不
+    // 存在」的实现会插进第二条同 `syncId` 的行——`.unique` 只建在 `id` 上，数据库不会挡。
+    func testUpdateForAnUnknownIdentityCreatesTheRowFromThePayload() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        let created = Date(timeIntervalSince1970: 0.300)
+
+        let values = landing("R9", spaceId: Self.spaceOne, host: "r9.example", pathPrefix: "/docs",
+                             ask: true, sortOrder: 1, createdDate: created)
+        try await store.applyURLRuleSyncBatchThrowing([.update(values)])
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 6)
+        let rows = after.values.filter { $0.syncId == "R9" }
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.host, "r9.example")
+        XCTAssertEqual(row.pathPrefix, "/docs")
+        XCTAssertTrue(row.askBeforeRouting)
+        XCTAssertEqual(row.spaceId, Self.spaceOne)
+        XCTAssertEqual(row.createdDate, created)
+        XCTAssertNil(row.deletedDate)
+        XCTAssertFalse(row.pendingLocalEdit)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
+    }
+
+    func testUpdateHittingASoftDeletedRowRevivesItInPlaceWithoutASecondRow() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds + [
+            RuleSeed(id: "s1-9", spaceId: Self.spaceOne, host: "s1-9.example", sortOrder: 9, syncId: "R-s1-9",
+                     deletedDate: Self.t1, mergePartnerSyncId: "R-s1-0"),
+        ], in: store)
+
+        let values = landing("R-s1-9", spaceId: Self.spaceOne, host: "revived.example", sortOrder: 3)
+        try await store.applyURLRuleSyncBatchThrowing([.update(values)])
+
+        let after = try allRows(in: store)
+        XCTAssertEqual(after.count, 6, "no second row for R-s1-9")
+        XCTAssertEqual(after.values.filter { $0.syncId == "R-s1-9" }.count, 1)
+        let revived = try XCTUnwrap(after["s1-9"])
+        XCTAssertNil(revived.deletedDate)
+        XCTAssertNil(revived.mergePartnerSyncId)
+        XCTAssertEqual(revived.host, "revived.example")
+        XCTAssertFalse(revived.pendingLocalEdit)
+        XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
+    }
+
+    // MARK: CASE U-16 —— 稠密 `sortOrder` 的收尾重排，含无身份行与停放行（R-M3-4a-3 / §8.3）
+
+    // 防的是什么：只重排「本轮参与同步的那几条」会让被排除的兄弟留着旧下标并与新写的撞上。
+    func testTrailingDensificationRenumbersEveryLiveRowInTheBucket() async throws {
+        let store = try makeStore()
+        try await seed([
+            RuleSeed(id: "p0", spaceId: Self.spaceOne, host: "p0.example", sortOrder: 0, syncId: "R-p0"),
+            RuleSeed(id: "p1", spaceId: Self.spaceOne, host: "p1.example", sortOrder: 3, syncId: "R-p1"),
+            // 从没上过账户。
+            RuleSeed(id: "u2", spaceId: Self.spaceOne, host: "u2.example", sortOrder: 3, syncId: nil),
+            // 对应游标停放中：行在库里，同步侧这一轮不碰它。
+            RuleSeed(id: "p3", spaceId: Self.spaceOne, host: "p3.example", sortOrder: 7, syncId: "R-p3"),
+            RuleSeed(id: "p4", spaceId: Self.spaceOne, host: "p4.example", sortOrder: 9, syncId: "R-p4"),
+            RuleSeed(id: "s2-0", spaceId: Self.spaceTwo, host: "s2-0.example", sortOrder: 4, syncId: "R-s2-0"),
+        ], in: store)
+
+        try await store.applyURLRuleSyncBatchThrowing(
+            [.reorder(syncId: "R-p0", spaceId: Self.spaceOne, sortOrder: 0)]
+        )
+
+        let after = try allRows(in: store)
+        let bucket = ["p0", "p1", "u2", "p3", "p4"].compactMap { after[$0] }
+        XCTAssertEqual(bucket.count, 5)
+        XCTAssertEqual(bucket.map(\.sortOrder), [0, 1, 2, 3, 4],
+                       "a full permutation in the pre-landing (sortOrder, id) order")
+        XCTAssertEqual(after["s2-0"]?.sortOrder, 4, "an untouched bucket keeps its values")
+    }
+
+    // MARK: CASE U-26 —— 落地写远端戳，两个都写，一枚 `now` 都不铸（R-M3-4a-20 / R-M3-4a-48）
+
+    // 防的是什么：落地铸 `now` 会让跟随端那两列严格新于账户上的戳；一旦游标文件报损触发整类型重放，
+    // 它就以伪造的戳首发并赢下作者真正的编辑。两个戳只写一个的实现在第二段红。
+    func testLandingWritesBothRemoteStampsAndNeverNow() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+
+        let values = landing("R7", spaceId: Self.spaceOne, host: "r7.example", sortOrder: 3,
+                             createdDate: Date(timeIntervalSince1970: 0.300),
+                             contentUpdatedDate: Date(timeIntervalSince1970: 0.500),
+                             targetUpdatedDate: Date(timeIntervalSince1970: 0.700))
+        try await store.applyURLRuleSyncBatchThrowing([.create(values)])
+
+        let created = try XCTUnwrap(try allRows(in: store).values.first { $0.syncId == "R7" })
+        XCTAssertEqual(milliseconds(created.createdDate), 300)
+        XCTAssertEqual(milliseconds(created.contentUpdatedDate), 500)
+        XCTAssertEqual(milliseconds(created.targetUpdatedDate), 700)
+        let wallClock = Date()
+        XCTAssertLessThan(created.createdDate, wallClock.addingTimeInterval(-86_400))
+        XCTAssertLessThan(try XCTUnwrap(created.contentUpdatedDate), wallClock.addingTimeInterval(-86_400))
+        XCTAssertLessThan(try XCTUnwrap(created.targetUpdatedDate), wallClock.addingTimeInterval(-86_400))
+
+        // 第二段：只改内容的 `.update`，内容组戳 900、目标戳仍 700。
+        let contentOnly = landing("R7", spaceId: Self.spaceOne, host: "r7-edited.example", sortOrder: 3,
+                                  createdDate: Date(timeIntervalSince1970: 0.300),
+                                  contentUpdatedDate: Date(timeIntervalSince1970: 0.900),
+                                  targetUpdatedDate: Date(timeIntervalSince1970: 0.700))
+        try await store.applyURLRuleSyncBatchThrowing([.update(contentOnly)])
+
+        let updated = try XCTUnwrap(try allRows(in: store).values.first { $0.syncId == "R7" })
+        XCTAssertEqual(updated.id, created.id)
+        XCTAssertEqual(updated.host, "r7-edited.example")
+        XCTAssertEqual(milliseconds(updated.contentUpdatedDate), 900)
+        XCTAssertEqual(milliseconds(updated.targetUpdatedDate), 700, "target stamp untouched")
+        XCTAssertEqual(milliseconds(updated.createdDate), 300)
+    }
+
+    // MARK: CASE U-24 —— 落地之后的刷新读的是已提交的表（R-M3-4a-34 / R-M3-4a-49）
+
+    // 防的是什么：批次入口若走 `performBackgroundWrite`（返回时事务还没提交），紧跟其后的重新 fetch
+    // 读到的是旧值。先读一次让主上下文登记这几行（`SpaceManager.cachedURLRules` 持的正是它们），
+    // 再断言 `await` 返回后**立刻**读到新值。
+    func testReadRightAfterLandingSeesTheCommittedTable() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds + [
+            RuleSeed(id: "s1-9", spaceId: Self.spaceOne, host: "s1-9.example", sortOrder: 9, syncId: "R-s1-9",
+                     deletedDate: Self.t1),
+        ], in: store)
+        let registered = store.getAllURLRules()
+        XCTAssertEqual(registered.first { $0.id == "s1-0" }?.host, "s1-0.example")
+
+        let values = landing("R-s1-0", spaceId: Self.spaceOne, host: "new.example", sortOrder: 0)
+        try await store.applyURLRuleSyncBatchThrowing([.update(values)])
+        let rules = store.getAllURLRules()
+
+        XCTAssertEqual(rules.first { $0.id == "s1-0" }?.host, "new.example")
+        XCTAssertFalse(rules.contains { $0.id == "s1-9" }, "soft-deleted rows stay filtered")
+    }
+
+    // MARK: CASE U-24b —— 编辑器写面的刷新同样看见已提交的表
+
+    func testReadRightAfterAnEditorWriteSeesTheCommittedTable() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        _ = store.getAllURLRules()
+
+        try await store.applyURLRuleEditsThrowing(
+            upserts: [LocalStore.URLRuleDraft(id: "s1-0", syncId: "R-s1-0",
+                                              content: LocalStore.URLRuleDraft.ContentUnit(host: "new.example"),
+                                              spaceId: nil, sortOrder: nil)],
+            deletedIds: []
+        )
+        let rules = store.getAllURLRules()
+        XCTAssertEqual(rules.first { $0.id == "s1-0" }?.host, "new.example")
+    }
+
+    // MARK: CASE U-24c —— agent 三个写面共用同一块地板（新增 / 改 host / 删）
+
+    func testAgentWriteFacesShareTheCommittedFloorAndSoftDeleteStaysVisibleToSync() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        _ = store.getAllURLRules()
+
+        try await store.applyURLRuleEditsThrowing(
+            upserts: [LocalStore.URLRuleDraft(id: "new-1", host: "added.example", spaceId: Self.spaceOne)],
+            deletedIds: []
+        )
+        XCTAssertTrue(store.getAllURLRules().contains { $0.id == "new-1" })
+
+        try await store.applyURLRuleEditsThrowing(
+            upserts: [LocalStore.URLRuleDraft(id: "new-1", content: LocalStore.URLRuleDraft.ContentUnit(host: "changed.example"),
+                                              spaceId: nil, sortOrder: nil)],
+            deletedIds: []
+        )
+        XCTAssertEqual(store.getAllURLRules().first { $0.id == "new-1" }?.host, "changed.example")
+
+        try await store.applyURLRuleEditsThrowing(upserts: [], deletedIds: ["new-1"])
+        XCTAssertFalse(store.getAllURLRules().contains { $0.id == "new-1" }, "soft-deleted ⇒ filtered")
+        let unfiltered = try allRows(in: store)
+        XCTAssertNotNil(unfiltered["new-1"]?.deletedDate, "still in the unfiltered domain")
+        let access = AccountPhiURLRuleAccess(store: store)
+        XCTAssertNotNil(try access.allURLRulesIncludingDeleted().first { $0.id == "new-1" }?.deletedDate)
+        XCTAssertFalse(try access.allURLRules().contains { $0.id == "new-1" })
+    }
+
+    // MARK: CASE U-24d —— Space 集合变化也要刷新，真库半边（R-M3-4a-50 第 6 行）
+
+    func testUserIntentCascadeHidesTheSpacesRulesFromTheDefaultRead() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds, in: store)
+        _ = store.getAllURLRules()
+
+        try await store.deleteSpaceCascadeThrowing(spaceId: Self.spaceTwo, origin: .userIntent)
+        let rules = store.getAllURLRules()
+
+        XCTAssertFalse(rules.contains { $0.spaceId == Self.spaceTwo })
+        XCTAssertEqual(rules.count, 3)
+        let unfiltered = try allRows(in: store)
+        XCTAssertEqual(unfiltered.values.filter { $0.spaceId == Self.spaceTwo && $0.deletedDate != nil }.count, 2)
+    }
+
+    // MARK: `AccountPhiURLRuleAccess` —— 两个读口、缓存读者、`liveOwners`、`apply` 之后的重读
+
+    func testAccountAccessReadsFilterSoftDeletedRowsAndApplyRebuildsTheSnapshot() async throws {
+        let store = try makeStore()
+        try await seed(Self.twoBucketSeeds + [
+            RuleSeed(id: "s1-9", spaceId: Self.spaceOne, host: "s1-9.example", sortOrder: 9, syncId: "R-s1-9",
+                     deletedDate: Self.t1),
+        ], in: store)
+        let access = AccountPhiURLRuleAccess(store: store)
+
+        let live = try access.allURLRules()
+        XCTAssertEqual(live.map(\.id), ["s1-0", "s1-1", "s1-2", "s2-0", "s2-1"], "(spaceId, sortOrder, id)")
+        let all = try access.allURLRulesIncludingDeleted()
+        XCTAssertEqual(all.count, 6)
+        XCTAssertNotNil(all.first { $0.id == "s1-9" }?.deletedDate)
+        XCTAssertEqual(access.siblings(inSpaceId: Self.spaceOne).map(\.id), ["s1-0", "s1-1", "s1-2"])
+        XCTAssertTrue(access.isKnownLocalURLRule("R-s1-0"))
+        XCTAssertFalse(access.isKnownLocalURLRule("R-s1-9"), "soft-deleted rows are not known")
+        XCTAssertFalse(access.isKnownLocalURLRule("s1-0"), "the predicate is on syncId, not id")
+        let owners = try access.liveOwners(["R-s1-0", "R-s1-9", "R-none"])
+        XCTAssertEqual(owners.claimed, ["R-s1-0"])
+        XCTAssertTrue(owners.owners.isEmpty)
+
+        let values = landing("R-s1-0", spaceId: Self.spaceOne, host: "new.example", sortOrder: 0)
+        try await access.apply(URLRuleApplyBatch(unordered: [.update(values)],
+                                                 currentSpaceIds: ["R-s1-0": Self.spaceOne]))
+        XCTAssertEqual(access.siblings(inSpaceId: Self.spaceOne).first?.host, "new.example",
+                       "apply rebuilds the page snapshot")
+    }
+
+    // MARK: CASE U-8p —— store 级变化信号：塌缩成一次、订阅当刻不发、软删也发（§6.5 / R-M3-4a-51）
+
+    // 防的是什么：不塌缩时一次 30 条的落地会排 30 轮推送；seed 当前值会让每次挂订阅都凭空多一轮；
+    // 值快照建在过滤后的定义域上时一次软删（本机删除意图的全部载体）会被吞掉。软删的是桶尾那条，
+    // 于是这次写除了 `deletedDate` 之外一个字节都没改。
+    func testURLRuleChangesPublisherCollapsesBurstsDoesNotSeedAndEmitsForSoftDeletes() async throws {
+        let store = try makeStore()
+        var received = 0
+        let cancellable = store.urlRuleChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+            .sink { _ in received += 1 }
+        defer { cancellable.cancel() }
+
+        waitPastDebounceWindow(Self.shortDebounceWindow)
+        let afterQuietPeriod = received
+        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
+
+        for index in 0..<30 {
+            try await store.applyURLRuleEditsThrowing(
+                upserts: [LocalStore.URLRuleDraft(id: "burst-\(index)", host: "burst-\(index).example",
+                                                  spaceId: Self.spaceOne)],
+                deletedIds: []
+            )
+        }
+        waitPastDebounceWindow(Self.shortDebounceWindow)
+        let afterBurst = received
+        XCTAssertEqual(afterBurst, 1, "30 次写入在防抖窗口里塌成一次")
+
+        try await store.applyURLRuleEditsThrowing(upserts: [], deletedIds: ["burst-29"])
+        waitPastDebounceWindow(Self.shortDebounceWindow)
+        let afterSoftDelete = received
+        XCTAssertEqual(afterSoftDelete, 2, "a soft delete is a change the diff must see")
+    }
+
+    // MARK: - Task 8 fixtures
+
+    private static let shortDebounceWindow: TimeInterval = 0.2
+
+    /// 落地载荷；三枚戳默认 `t0`，用例要钉戳时自己传。
+    private func landing(_ syncId: String, spaceId: String, host: String, pathPrefix: String? = nil,
+                         ask: Bool = false, sortOrder: Int,
+                         createdDate: Date = LocalStoreURLRuleThrowingTests.t0,
+                         contentUpdatedDate: Date = LocalStoreURLRuleThrowingTests.t0,
+                         targetUpdatedDate: Date = LocalStoreURLRuleThrowingTests.t0) -> URLRuleLandingValues {
+        URLRuleLandingValues(syncId: syncId, spaceId: spaceId, host: host, pathPrefix: pathPrefix,
+                             askBeforeRouting: ask, sortOrder: sortOrder, createdDate: createdDate,
+                             contentUpdatedDate: contentUpdatedDate, targetUpdatedDate: targetUpdatedDate)
+    }
+
+    private func milliseconds(_ date: Date?) -> Int? {
+        date.map { Int(($0.timeIntervalSince1970 * 1_000).rounded()) }
+    }
+
+    /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地（照 `LocalStoreBookmarkThrowingTests`）。
+    private func waitPastDebounceWindow(_ window: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
+    }
+
     // MARK: - Task 5 fixtures
 
     /// 一条行的十三列，落进写块里再建 `SpaceURLRule`（`@Model` 实例不跨上下文）。

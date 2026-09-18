@@ -368,3 +368,115 @@ commit follows a green result (global constraints).
   and the two optimistic pushes keep their structure (Task 11); no Chromium build, no Chromium
   commit (controller). Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
   Tasks 4 / 5 / 7).
+
+## Task 8
+
+- **计划裁定 (protocol base only; seven D30 members deferred):** applied as ruled. `PhiURLRuleLocalAccess`
+  carries the six base members (`allURLRules()` / `allURLRulesIncludingDeleted()` / `siblings(inSpaceId:)` /
+  `isKnownLocalURLRule(_:)` / `liveOwners(_:)` / `apply(_:)`); the protocol's doc comment lists the deferred
+  members by owning task (Task 6, Task 9, 8b-1 x6, 8b-3, 8b-4 x2). `apply(_:)` returns `Void` here; 8b-2
+  changes it to `-> URLRuleBatchOutcome` (appendix C-5), not pre-empted.
+
+- **计划裁定 (`AccountPhiURLRuleAccess(store:)`, not `(account:)`):** applied as ruled. The real-store
+  cases U-10 / U-10f / U-16 / U-26 and the access-level case all run on a temp-directory `LocalStore`.
+
+- **计划裁定 (rank -> `sortOrder` projection lives above the protocol; the batch entry only re-densifies
+  the touched buckets):** applied as ruled. Touched-bucket bookkeeping is exactly the brief's table
+  (`.create` => target; `.move` => source read BEFORE the upsert + target; `.reorder` => the row's own
+  bucket; `.delete` => the bucket read before the delete; `.update` => none) with two additions:
+  `.update` DOES record the target bucket when it had to create the row (R-M3-4a-42(a); U-10f's expected
+  dense target bucket needs it), and, defensively, both buckets when the row's current `spaceId` differs
+  from the payload's (should never happen — the engine emits `.move` for a target change — but a hole in
+  a bucket is worse than one extra densify). Densification is `(sortOrder, id)` ascending over the live
+  rows, writing only rows whose value changes.
+
+- **计划裁定 (`.move` -> `.reorder` demotion in `URLRuleApplyBatch.init`):** applied as ruled. Per-identity
+  merge, first-seen order: a `.move` whose target differs from `currentSpaceIds[syncId]` (or whose identity
+  is absent from the page snapshot) stays `.move`; an unchanged target keeps `.update` if present, else
+  `.create` if present, else demotes to `.reorder(syncId:spaceId:sortOrder:)`; with no `.move` the priority
+  is `.create` > `.update` > `.reorder`. Deletes form phase 2. An identity carrying both an upgrade and a
+  `.delete` trips an `assert` (DEBUG) and keeps both in release with the delete last, so the terminal
+  state is deterministic; 8b-3's `.transfer` + `.delete` relaxes it.
+
+- **计划裁定 (Consumes gap: `…Body` halves):** confirmed on `b2d48194` — Task 5 already shipped both
+  primitives as throwing sibling + internal `…Body(…, in:)`. The Task 5 review minor (each body fetched
+  the whole table per call) is fixed here: both bodies now take `index: inout URLRuleTableIndex`, built
+  once per write block by `LocalStore.urlRuleTableIndex(in:)` (rows incl. soft-deleted, `bySyncId` for
+  rows with an identity); the throwing siblings build their own index. `upsertURLRuleBody` returns the
+  row and `hardDeleteURLRuleBody` returns the pre-delete bucket (both `@discardableResult`). No pbxproj
+  change; no new API surface beyond the index type and the batch entry.
+
+- **计划裁定 (landing writes both remote stamps; addresses in the soft-deleted-inclusive domain; clears
+  `deletedDate` / `mergePartnerSyncId` on a hit):** applied; Task 5's body text already did all three and is
+  otherwise unchanged. The (β) transfer / park branches do not exist here; the unconditional clearing
+  becomes conditional in 8b-3 (RR9-1).
+
+- **计划裁定 (`liveOwners` fills only `claimed`):** applied as ruled. `AccountPhiURLRuleAccess.liveOwners`
+  does its own fetch (does not read or replace the page cache), returns
+  `OwnedLiveRows(claimed: candidates ∩ live syncIds, owners: [:])`, throws on read failure. The §5.6
+  single-parameter signature cannot fill `owners` (no resolver on the protocol) — Task 6's `.urlRules`
+  closure fills it from `OwnedOwnerMaps`. Recorded as the §5.6 internal inconsistency the brief names.
+
+- **计划裁定 (the `SpaceManager` half is not XCTest-drivable):** applied as ruled. The "called exactly
+  once" halves of U-24 / U-24c / U-24d and the bridge payload belong to Tasks 6 / 11 (and Task 10's
+  `routingTablePayload()` seam if the review wants a payload assertion). The executable halves are pinned
+  on a real `LocalStore`: U-24 / U-24b / U-24c / U-24d read via `getAllURLRules()` immediately after the
+  awaited write.
+
+- **Implementer deviation — ledger file:** the brief's Step 7 `git add` names
+  `docs/superpowers/sdd/m3-4a-progress.md`; this lane's ledger is `m3-4a-progress-r.md` (controller ruling,
+  as in Tasks 4 / 5 / 7 / 10).
+
+- **Implementer deviation — the store-level second read port is spelled
+  `LocalStore.allURLRuleModelsIncludingDeleted(in:) throws -> [SpaceURLRule]`** (context-taking, throwing,
+  sorted `(spaceId, sortOrder, id)`), on the `allBookmarkModels(in:)` precedent that
+  `AccountPhiBookmarkAccess.rebuildCache()` uses. It is the single fetch behind
+  `AccountPhiURLRuleAccess.rebuildCache()`, `liveOwners(_:)` and `urlRuleChangeSnapshot()`. No
+  `[]`-returning store read was added (R-exec-3); the value-typed `allURLRulesIncludingDeleted()` lives on
+  the protocol.
+
+- **Implementer note — `URLRuleChangeSnapshot` is the brief's ten columns.** `pendingLocalEdit` and
+  `mergePartnerSyncId` are outside the snapshot by design (local state, not on the wire, R-M3-4a-71), so a
+  write that changes ONLY `mergePartnerSyncId` does not signal. The brief's rationale sentence about a
+  "已经软删、这次只是改了 `mergePartnerSyncId`" write is therefore not literally satisfied by its own column
+  list; in practice M2 (8b-2) writes the partner in the same row write as the soft delete, and
+  `deletedDate` carries the signal. Flagged for 8b-2 to decide whether the column joins the snapshot.
+
+- **Implementer note — `handleSpacesUpdate` is nonisolated;** the tail refresh is wrapped in
+  `MainActor.assumeIsolated { reloadURLRulesFromStore() }` like the existing `hidden` read in the same
+  function, because `reloadURLRulesFromStore()` is `@MainActor` (file rule above `applyRemoteRebind`;
+  `getAllURLRules()` reads the SwiftData main context). The refresh predicate is `validIds !=
+  previousSpaceIds` with `previousSpaceIds` captured before `spaces = updated`; the old "routing rules
+  didn't (change)" comment is rewritten as the brief asks. On the first `handleSpacesUpdate` after `bind`
+  the set goes from empty to the full list, so the refresh fires once there too (harmless: it is the
+  bind-time table push).
+
+- **Implementer note — `.reorder` on an identity with no row is skipped** (no payload to create from);
+  a same-value `.reorder` still marks its bucket touched — U-16 uses exactly this to trigger the trailing
+  densification without changing any value first. `.reorder` writes `sortOrder` only when it differs
+  (a same-value assignment would dirty the object and fire a phantom save).
+
+- **Implementer note — runtime-unverified assumption in the U-24 family:** the tests first read
+  `getAllURLRules()` (registering the rows in the main context, as `SpaceManager.cachedURLRules` does in
+  production), then await the write, then read again with no run-loop spin. This pins that the main
+  context's merge of the background save is enqueued on the main queue ahead of the awaiting
+  continuation. The gate is compile-only; if this is red at runtime, the finding is about
+  `reloadURLRulesFromStore()` reading stale registered objects (a Task 6 / production concern), not about
+  the batch entry's commit semantics.
+
+- **Implementer note — `FakeURLRuleAccess`:** `apply` lands ops on `rows` with the same addressing and
+  bucket rules as the store body (mints `UUID().uuidString` ids for created rows); `liveOwners` does not
+  consult `snapshotIsLoaded` (production does its own fetch); `siblings` / `isKnownLocalURLRule` read live
+  rows only. `URLRuleLandingValues.fixture(...)` added next to `PhiLocalURLRule.fixture`. Existing fakes
+  untouched. `URLRuleSyncOp.syncId` (pure accessor) added for the batch init and the tests.
+
+- **Tests:** 22 new — 7 in `URLRuleKindTests` (U-10b pure, changed/unknown-target move, U-10e ① + ③,
+  phase order, U-8r, fake read domains) and 15 in `LocalStoreURLRuleThrowingTests` (U-10, U-10b store,
+  U-10c, U-10d, U-10e ②, U-10f x2, U-16, U-26, U-24, U-24b, U-24c, U-24d, access-level reads + apply
+  rebuild, U-8p). U-8r's production side (`getMainContext()` nil => `.storeUnavailable`) is not pinned: a
+  temp-directory `LocalStore` cannot be made to have a nil main context without faking a compatibility
+  failure; the shape is the literal `AccountPhiBookmarkAccess.rebuildCache()` one.
+
+- **Not done here, by ruling:** no `PhiSyncEngine.swift` / `PhiChromiumCoordinator.swift` change (Task 6);
+  no `setAllRules` / `setRules` / optimistic-push change (Task 11); no `tieBreakKey` / filter change
+  (Task 10); no Chromium.

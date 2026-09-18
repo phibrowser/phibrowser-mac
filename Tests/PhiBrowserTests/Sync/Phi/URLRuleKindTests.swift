@@ -2894,14 +2894,14 @@ extension URLRuleKindTests {
     }
 
     /// spec §5.8 第 3 条的驱动糖（8b-4 fix round 1）：`URLRulesEditor.refreshFromStore()` 是
-    /// 视图私有的 `@State` 写入，纯判据整条住在 `refreshRows(rows:loaded:stored:dirty:)` 里
+    /// 视图私有的 `@State` 写入，纯判据整条住在 `refreshRows(rows:loaded:removed:stored:dirty:)` 里
     /// （与 `computeEditSet` 同一条纪律），用例驱动的就是它。
     /// `stored` 取 `liveRules(store)`，与视图那一侧的 `manager.allRules` 同一个读口。
-    private func refresh(rows: [Row], loaded: [Row],
+    private func refresh(rows: [Row], loaded: [Row], removed: [Row] = [],
                          dirty: [UUID: URLRulesEditor.RowDirty] = [:],
                          store: LocalStore) -> URLRulesEditor.RefreshResult {
-        URLRulesEditor.refreshRows(rows: rows, loaded: loaded, stored: liveRules(store),
-                                   dirty: dirty)
+        URLRulesEditor.refreshRows(rows: rows, loaded: loaded, removed: removed,
+                                   stored: liveRules(store), dirty: dirty)
     }
 
     private func landingValues(syncId: String, spaceId: String,
@@ -2988,6 +2988,8 @@ extension URLRuleKindTests {
             let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i2 })
             XCTAssertEqual(rows[index].targetSpaceId, Self.t11SpaceC,
                            "③ 非脏的目标选择器被刷新（正面对照）")
+            XCTAssertEqual(refreshed.changedIds, [rows[index].id],
+                           "③ 只有真的变了取值的那一行要重灌 cell")
             rows[index].value = "two-typed.example"
             let edits = editSet(rows: rows, loaded: refreshed.loaded,
                                 dirty: [rows[index].id: .value], store: store)
@@ -3024,6 +3026,8 @@ extension URLRuleKindTests {
             XCTAssertEqual(fourth.value, "three-remote.example",
                            "④ 非脏的文本框被刷新（正面对照）")
             XCTAssertEqual(fourth.matchType, .domain)
+            XCTAssertEqual(refreshed.changedIds, [fourth.id],
+                           "④ 另外四行一个字节都没变 ⇒ 一个 cell 都不重灌")
             let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i0 })
             rows[index].value = "zero-typed.example"
             let edits = editSet(rows: rows, loaded: refreshed.loaded,
@@ -3062,6 +3066,8 @@ extension URLRuleKindTests {
             // `RefreshResult` 里根本没有脏位这一格。这两条断言钉的是它的可观测推论。
             XCTAssertEqual(dirty[fifth.id], .value)
             XCTAssertTrue(refreshed.droppedIds.isEmpty, "⑤ 没有任何一行掉出 sheet")
+            XCTAssertTrue(refreshed.changedIds.isEmpty,
+                          "⑤ 唯一变了的那一行是脏的 ⇒ 不刷新 ⇒ 一个 cell 都不重灌")
             // 记脏基线**只对非脏单元**随库走：那一行的内容组是脏的 ⇒ 基线原样保留。
             let baseline = try XCTUnwrap(refreshed.loaded.first { $0.storeId == Self.i4 })
             XCTAssertEqual(baseline.value, "four.example", "⑤ 脏单元的基线不被刷新")
@@ -3104,6 +3110,8 @@ extension URLRuleKindTests {
                                          "库里新出现的行被追加进 sheet")
             XCTAssertNil(dirty[appended.id], "追加的新行不记脏位")
             XCTAssertEqual(refreshed.rows.count, 5, "5 − 1（干净的消失行）+ 1（新行）")
+            XCTAssertTrue(refreshed.changedIds.isEmpty,
+                          "掉出与追加改的是 id 序列 ⇒ 走结构性那一支，不进 `changedIds`")
         }
     }
 
@@ -3328,6 +3336,68 @@ extension URLRuleKindTests {
         XCTAssertEqual(after[Self.i1]?.syncId, "r1")
         XCTAssertEqual(after[Self.i1]?.host, "one-typed.example")
         XCTAssertEqual(after[Self.i1]?.pendingLocalEdit, true)
+    }
+
+
+    /// 8b-4 fix round 2：用户在本次 sheet 里删掉的行**还在库里**（软删要等这次 Save 才落），
+    /// 所以它照样出现在 `stored` 里。刷新的追加支因此必须把 `removed` 也算进「已有代表」的
+    /// 定义域，否则那一行会被当成「库里新出现的行」重新追加进 sheet ——用户那次删除在界面上
+    /// 被悄悄撤销，而 `removedRows` 还留着它，Save 之后那一行既被软删、又刚刚以新行出现过一次。
+    ///
+    /// 形状：删第 2 条 ⇒ 别的设备落地一条新规则 ⇒ 刷新 ⇒ 第 2 条**仍然不在 sheet 里**、新规则
+    /// 被追加；Save 时 `deletedIds` 照样是 `[I2]`，落库后那一行软删。
+    func testARowDeletedInTheSheetIsNotReAppendedByARefresh() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+
+        // 用户删掉第 2 条（走 coordinator 那条路的值级等价物：从 `rows` 摘出来、进 `removed`）。
+        var rows = loaded
+        let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+        let removed = [rows.remove(at: index)]
+        XCTAssertEqual(removed.first?.storeId, Self.i1)
+
+        // sheet 仍然开着：别的设备落地一条新规则。
+        try await landRemote([.create(landingValues(syncId: "r9", spaceId: Self.t11SpaceA,
+                                                    host: "nine.example", sortOrder: 9,
+                                                    stamp: 2_000))], in: store)
+
+        let refreshed = refresh(rows: rows, loaded: loaded, removed: removed, store: store)
+        let storeIds = refreshed.rows.compactMap(\.storeId)
+        XCTAssertFalse(storeIds.contains(Self.i1),
+                       "被删掉的那一行**不会**被重新追加（它还在库里，但 sheet 上已经没有它）")
+        XCTAssertTrue(refreshed.rows.contains { $0.value == "nine.example" },
+                      "真的新出现的行照样追加")
+        XCTAssertEqual(refreshed.rows.count, 3, "3 − 1（删掉的）+ 1（新的）")
+        XCTAssertTrue(refreshed.droppedIds.isEmpty)
+        XCTAssertTrue(refreshed.changedIds.isEmpty, "留下的两行取值一个字节没变")
+
+        // Save：`deletedIds` 照样带着那一行。
+        let edits = editSet(rows: refreshed.rows, loaded: refreshed.loaded, removed: removed,
+                            store: store)
+        XCTAssertEqual(edits.deletedIds, [Self.i1], "删除意图没有被刷新吃掉")
+        XCTAssertTrue(edits.upserts.isEmpty, "留下的行零脏位、新追加的行也零脏位")
+        try await apply(edits, to: store)
+
+        let after = try snapshot(store)
+        XCTAssertNotNil(after[Self.i1]?.deletedDate, "那一行软删了")
+        XCTAssertEqual(after[Self.i1]?.pendingLocalEdit, false, "删除不是编辑")
+        XCTAssertEqual(liveRules(store).count, 3, "I0 / I3 / 新落地的那一条")
+    }
+
+    /// **对照**：同一形状，但 `removed` 传空（= 修复前那一版的定义域）⇒ 被删掉的那一行被当成
+    /// 「库里新出现的行」重新追加。这一条钉住「`seen` 的定义域必须是 `rows` ∪ `removed`」。
+    func testTheRefreshWouldReAppendADeletedRowIfRemovedWereNotInTheDomain() async throws {
+        let store = try makeRuleStore()
+        try await seed(Self.threeSeeds, in: store)
+        let loaded = editorRows(store)
+        var rows = loaded
+        let index = try XCTUnwrap(rows.firstIndex { $0.storeId == Self.i1 })
+        rows.remove(at: index)
+
+        let refreshed = refresh(rows: rows, loaded: loaded, removed: [], store: store)
+        XCTAssertTrue(refreshed.rows.compactMap(\.storeId).contains(Self.i1),
+                      "定义域少了 `removed` ⇒ 那一行被重新追加（正是修复前的行为）")
     }
 
 }

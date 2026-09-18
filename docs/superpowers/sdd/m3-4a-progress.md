@@ -1009,3 +1009,34 @@ M4 `pendingLocalEdit` 生命周期的两处清位（R-M3-4a-79 / R-M3-4a-91 / R-
     F-2 / F-3 / F-4 只动测试与假件。两个原语、两处接线、`RuleProjection`、`computeEditSet` 的
     upsert 半边与恢复支**一个字节都没动**。
 26. F-5 / F-6 / F-7 / F-8 / F-9 五条 Minor 按控制者指示**不动**。
+
+### Fix round 2（re-review 判出的两条 Important，都在 `SpaceURLRulesEditor.swift`）
+
+27. **R2-1 —— 刷新的追加支会把用户刚删掉的行重新加回来。** `seen` 只从 `rows` 建，而用户在本次
+    sheet 里删掉的行**还在库里**（软删要等这次 Save 才落，`computeEditSet` 从 `removedRows` 里取
+    `storeId` 进 `deletedIds`），于是它照样出现在 `stored` 里 ⇒ 下一次刷新把它当成「库里新出现
+    的行」重新追加 ⇒ 用户那次删除在界面上被悄悄撤销，而 `removedRows` 还留着它，Save 之后那一行
+    既被软删、又刚刚以新行的形式出现过一次。**修法**：`refreshRows` 加 `removed: [Row]` 入参，
+    `seen = storeIds(rows) ∪ storeIds(removed)`。探针两条：
+    `testARowDeletedInTheSheetIsNotReAppendedByARefresh`（删一行 → 别的设备落地一条新规则 →
+    刷新 ⇒ 被删的那一行**不回来**、新规则照样追加、Save 时 `deletedIds` 仍是 `[I2]`、落库软删）
+    与对照 `testTheRefreshWouldReAppendADeletedRowIfRemovedWereNotInTheDomain`（`removed: []` ⇒
+    那一行被重新追加，正是修复前的行为）。
+28. **R2-2 —— `reconfigureMaterializedRows()` 重灌每一个已物化的 cell，会顶掉正在编辑的
+    field editor。** `RuleCellView.configure` 无条件写 `valueField.stringValue` 并**整块重建**目标
+    popup 的菜单，所以一次落在用户敲字期间的刷新会丢掉插入点与选区——那正是 `updateNSView` 那道
+    早退存在的理由。**修法两道，缺一不可**：
+    - `RefreshResult` 加 `changedIds: Set<UUID>`，只收**四个用户可见单元**（匹配类型 / 文本框 /
+      `ask` / 目标）真的变了的那几行；`reconfigureMaterializedRows(_:)` 只重灌它们。
+      **`syncId` / `createdDate` 不进 `changedIds`**：`configure` 根本不渲染它们，而一次入站落地
+      会照抄远端的 `created_at_ms`，那一列几乎每次都在变——按「整行不等」判会让几乎每次刷新都把
+      全表重灌一遍。`changed`（要不要换 `@State`）仍然按整行判，两者刻意不同。
+      掉出与追加的行也不进 `changedIds`：它们改的是 id 序列，`updateNSView` 走结构性那一支。
+    - `Coordinator.holdsFieldEditor(_:in:)`：**此刻持有 first responder 的那一个 cell 一律跳过**。
+      一个正在编辑的 `NSTextField` 自己**不是** first responder——窗口的 field editor（一个共享的
+      `NSTextView`）才是，它的 `delegate` 指回那个 field，所以两种形状都认。这一道是纯防御：
+      那一行按定义属于一个脏组（用户在敲字 ⇒ `.value` 已置位 ⇒ `refreshRows` 本来就不刷新它的
+      内容组），跳过的行等失去焦点、下一次刷新时自然跟上。
+    探针：U-15d ③ / ④ / ⑤ / ⑥ 各加一条 `changedIds` 断言（③ ④ 恰好那一行、⑤ 与 ⑥ 恒空）。
+29. **本轮只改了 `SpaceURLRulesEditor.swift` 与它的用例**：`SpaceManager` 的信号、两个清位原语、
+    两处引擎接线、`computeEditSet` 一个字节都没动。

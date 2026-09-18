@@ -16,11 +16,11 @@ Keep this section current. A successor agent reads only this section first.
 
 | Field | Value |
 | --- | --- |
-| Current task | D2/D3/D4 written and compiling (Mac `xcodebuild build-for-testing` succeeds); Mac unit tests NOT executed (Phi was running); D3/D4 not yet run in the app; nothing committed in the Mac repo (needs go-ahead) |
+| Current task | D2/D3/D4 written and compiling (Mac `xcodebuild build-for-testing` succeeds); Mac unit tests NOT executed (Phi was running); D3/D4 not yet run in the app; committed as 8dd1cc6a |
 | Chromium branch | `feature/phi-r152-content-blocking` (off `phi-r152` a493fbcf57fb5), local only, never pushed |
 | Chromium last commit | 6f7f6815c6b28 (D1 bridge); 8de66c077a042 (B4+C1+C2+C3); 6d59b997bfd21 (B1+B2+B3); c233424aa9817 (A4); 3b1122dfe8d60 (A3); 2f5e83f2faca7 (A2); a1c036958d7e2, 3affb848c5066 (A1) |
-| Mac branch | `feat/content-blocking` (off `origin/dev` 51fc5189), local only, never pushed; nothing committed yet (AGENTS.md: wait for explicit instruction) |
-| Mac last commit | none |
+| Mac branch | `feat/content-blocking` (off `origin/dev` 51fc5189), local only, never pushed |
+| Mac last commit | 8dd1cc6a (D2+D3+D4 code and all plan docs; Mac unit tests not yet executed) |
 | Build dirs | `out/PhiTest` built 2026-09-17 (chrome, components_unittests, unit_tests, browser_tests); later builds are incremental |
 | Blockers | Owner decision needed before release: `easylist-polish` header says CC BY-NC-SA 4.0 (non-commercial), `bulgarian` has no license header. Lists stay bundled meanwhile. |
 | Last updated | 2026-09-18, Phases A to C and D1 committed; D2 to D4 pending verification |

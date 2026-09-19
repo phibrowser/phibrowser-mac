@@ -388,7 +388,7 @@ extension AgentSpaceRouter {
 
     /// `spaceId`'s rows in bucket order (`sortOrder`, then `id` — the same
     /// order the store's dense renumbering would produce).
-    private static func bucket(_ spaceId: String, in all: [SpaceURLRule]) -> [SpaceURLRule] {
+    private static func bucket(_ spaceId: String, in all: [SpaceRoutingRule]) -> [SpaceRoutingRule] {
         all.filter { $0.spaceId == spaceId }
             .sorted { lhs, rhs in
                 if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
@@ -400,7 +400,7 @@ extension AgentSpaceRouter {
     /// full with its own ids (so nothing there misses the index) plus one new
     /// draft at the tail — no `id` / `syncId` on the new row, the store mints
     /// them at the insertion point (R-M3-4a-23). Buckets not touched send nothing.
-    static func urlRuleAddEdits(all: [SpaceURLRule], spaceId: String, host: String,
+    static func urlRuleAddEdits(all: [SpaceRoutingRule], spaceId: String, host: String,
                                 pathPrefix: String?, ask: Bool) -> URLRulesEditor.EditSet {
         let existing = bucket(spaceId, in: all)
         var upserts = existing.enumerated().map { index, rule in draft(from: rule, sortOrder: index) }
@@ -416,7 +416,7 @@ extension AgentSpaceRouter {
     /// re-sent in place with the edited row swapped in at its own index. A
     /// different Space ⇒ the source bucket is re-sent without the row and the
     /// target bucket with it appended; each bucket is indexed on its own.
-    static func urlRuleUpdateEdits(all: [SpaceURLRule], existing: SpaceURLRule, host: String,
+    static func urlRuleUpdateEdits(all: [SpaceRoutingRule], existing: SpaceRoutingRule, host: String,
                                    pathPrefix: String?, ask: Bool,
                                    spaceId: String) -> URLRulesEditor.EditSet {
         func edited(sortOrder: Int) -> LocalStore.URLRuleDraft {
@@ -511,10 +511,15 @@ extension AgentSpaceRouter {
                                         pathPrefix: obj["pathPrefix"] as? String,
                                         ask: obj["ask"] as? Bool ?? false)
             // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
+            }
             Task { @MainActor in
                 do {
                     try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
-                                                                 deletedIds: edits.deletedIds)
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
                     ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
                 } catch {
                     AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")
@@ -574,10 +579,15 @@ extension AgentSpaceRouter {
                                            ask: newAsk,
                                            spaceId: newSpace)
             // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
+            }
             Task { @MainActor in
                 do {
                     try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
-                                                                 deletedIds: edits.deletedIds)
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
                     ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
                 } catch {
                     AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")
@@ -606,10 +616,15 @@ extension AgentSpaceRouter {
             }
             let edits = URLRulesEditor.EditSet(upserts: [], deletedIds: [id])
             // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
+            }
             Task { @MainActor in
                 do {
                     try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
-                                                                 deletedIds: edits.deletedIds)
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
                     ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
                 } catch {
                     AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")

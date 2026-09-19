@@ -12,9 +12,9 @@ import XCTest
 // Task 5 往同一个文件里追加 C-6 ~ C-9、C-12、U-6、U-15e、置位表、U-13 / U-13c、U-14-legacy。
 //
 // 与 `LocalStoreCompatibilityTests` 的分工：那个文件整个跑在文本占位文件与两个一次性
-// schema 上，打不开一个真的 V10 库，也永远跑不到 `migrateV10toV11` 一行（RT-8）。全仓除
+// schema 上，打不开一个真的 V11 库，也永远跑不到 `migrateV11toV12` 一行（RT-8）。全仓除
 // `LocalStore.swift` 与 `AppController+UserDataBackup.swift` 两个生产引用外没有任何测试引用
-// `TabDataModelMigrationPlan`——这里的 C-1 / C-11 是整条 V10 → V11 迁移唯一的真库探针。
+// `TabDataModelMigrationPlan`——这里的 C-1 / C-11 是整条 V11 → V12 迁移唯一的真库探针。
 @MainActor
 final class LocalStoreURLRuleThrowingTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -26,13 +26,57 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         tempDirectories.removeAll()
     }
 
-    // MARK: - CASE C-1 —— 真库 V10 → V11 迁移
+    func testReleasedV10StoreRetainsIconsAndLayoutsAfterSyncMigration() throws {
+        let directory = try makeTemporaryDirectory()
+        try seedReleasedV10Store(at: directory)
+
+        let container = try openWithProductionMigrationPlan(at: directory)
+        let tabs = try container.mainContext.fetch(FetchDescriptor<TabDataModel>())
+        let tab = try XCTUnwrap(tabs.first)
+        XCTAssertEqual(tabs.count, 1)
+        XCTAssertEqual(tab.guid, "dev-tab")
+        XCTAssertEqual(tab.icon, "folder.work")
+        XCTAssertEqual(tab.layout, "horizontal")
+        XCTAssertEqual(tab.secondaryUrl, URL(string: "https://second.example"))
+        XCTAssertNil(tab.syncId)
+        let rules = try container.mainContext.fetch(FetchDescriptor<SpaceURLRule>())
+        let rule = try XCTUnwrap(rules.first)
+        XCTAssertEqual(rule.host, "dev.example")
+        XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(rule.syncId)))
+    }
+
+    private func seedReleasedV10Store(at directory: URL) throws {
+        let configuration = ModelConfiguration(url: directory.appendingPathComponent("LocalStore.sqlite"))
+        let container = try ModelContainer(
+            for: TabDataModelSchemaV10.ProfileModel.self,
+            TabDataModelSchemaV10.TabDataModel.self,
+            TabDataModelSchemaV10.SpaceModel.self,
+            TabDataModelSchemaV10.SpaceURLRule.self,
+            TabDataModelSchemaV10.BrowserDataSettingsModel.self,
+            configurations: configuration
+        )
+        let tab = TabDataModelSchemaV10.TabDataModel(
+            title: "Dev tab", guid: "dev-tab", index: 0,
+            url: try XCTUnwrap(URL(string: "https://dev.example")),
+            favicon: nil, createdDate: Date(), updatedDate: Date()
+        )
+        tab.icon = "folder.work"
+        tab.layout = "horizontal"
+        tab.secondaryUrl = URL(string: "https://second.example")
+        container.mainContext.insert(tab)
+        container.mainContext.insert(TabDataModelSchemaV10.SpaceURLRule(
+            id: "dev-rule", spaceId: "dev-space", host: "dev.example", sortOrder: 0
+        ))
+        try container.mainContext.save()
+    }
+
+    // MARK: - CASE C-1 —— 真库 V11 → V12 迁移
 
     // 防的是什么：没有这一条，「五个模型漏声明一个」「新列打错类型让 lightweight 退化成需要
     // 自定义映射」「回填铸的是大写 uuid」三种缺陷全部绿着上线。
-    func testV10StoreMigratesToV11PreservingEveryRuleAndBackfillingSyncId() throws {
+    func testV11StoreMigratesToV12PreservingEveryRuleAndBackfillingSyncId() throws {
         let directory = try makeTemporaryDirectory()
-        let seeded = try seedV10Store(at: directory, rules: Self.fourRules)
+        let seeded = try seedV11Store(at: directory, rules: Self.fourRules)
 
         let container = try openWithProductionMigrationPlan(at: directory)
         let context = container.mainContext
@@ -53,7 +97,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(Set(spaces.map(\.spaceId)), Set(seeded.spaceIds))
         XCTAssertEqual(Set(tabs.map(\.guid)), Set(seeded.tabGuids))
 
-        // 每条规则的七个 V10 字段逐字保留（含那条 `pathPrefix == nil`）。
+        // 每条规则的七个 V11 字段逐字保留（含那条 `pathPrefix == nil`）。
         let byId = Dictionary(uniqueKeysWithValues: rules.map { ($0.id, $0) })
         XCTAssertEqual(Set(byId.keys), Set(Self.fourRules.map(\.id)))
         for seed in Self.fourRules {
@@ -93,19 +137,19 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
 
     // MARK: - CASE C-2 —— 迁移计划的结构断言
 
-    // 防的是什么：漏把 `migrateV10toV11` 加进 `stages` 时今天没有任何东西会发现——`schemas`
-    // 里有 V11、typealias 指向 V11，SwiftData 会按 lightweight 推断跑通，于是 `didMigrate`
+    // 防的是什么：漏把 `migrateV11toV12` 加进 `stages` 时今天没有任何东西会发现——`schemas`
+    // 里有 V12、typealias 指向 V12，SwiftData 会按 lightweight 推断跑通，于是 `didMigrate`
     // 的 `syncId` 回填整个不执行。这一条是它唯一的探测器。
-    func testMigrationPlanEndsAtV11WithOneStagePerUpgrade() throws {
+    func testMigrationPlanEndsAtV12WithOneStagePerUpgrade() throws {
         let schemas = TabDataModelMigrationPlan.schemas
         let stages = TabDataModelMigrationPlan.stages
 
-        XCTAssertEqual(schemas.count, 11)
+        XCTAssertEqual(schemas.count, 12)
         XCTAssertEqual(stages.count, schemas.count - 1)
         let last = try XCTUnwrap(schemas.last)
-        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV11.self))
-        XCTAssertEqual(TabDataModelSchemaV11.versionIdentifier, Schema.Version(11, 0, 0))
-        XCTAssertEqual(TabDataModelSchemaV11.models.count, 5)
+        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV12.self))
+        XCTAssertEqual(TabDataModelSchemaV12.versionIdentifier, Schema.Version(12, 0, 0))
+        XCTAssertEqual(TabDataModelSchemaV12.models.count, 5)
     }
 
     // MARK: - CASE C-10 —— `deletedDate` 的默认读过滤（R-M3-4a-51）
@@ -124,7 +168,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         let context = try XCTUnwrap(store.getMainContext())
 
         // 先订阅并取到首发值（空库），再插行、再 save。
-        var emissions: [[SpaceURLRule]] = []
+        var emissions: [[SpaceRoutingRule]] = []
         let postSave = expectation(description: "urlRulesPublisher re-emits after the save")
         let cancellable = store.urlRulesPublisher()
             .sink { rules in
@@ -171,9 +215,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
     // 实体瞬间变成孤儿，终态两条规则且旧那条永远无人认领。
     func testSyncIdBackfillMintsDistinctLowercaseUUIDsAndIsIdempotent() throws {
         let directory = try makeTemporaryDirectory()
-        _ = try seedV10Store(at: directory, rules: Self.sixRules)
+        _ = try seedV11Store(at: directory, rules: Self.sixRules)
 
-        // ① 第一次打开：生产迁移计划跑 `migrateV10toV11`，记下六条行的 `syncId`。
+        // ① 第一次打开：生产迁移计划跑 `migrateV11toV12`，记下六条行的 `syncId`。
         let firstOpen = try readSyncIdsAfterProductionOpen(at: directory)
         XCTAssertEqual(firstOpen.count, 6)
         XCTAssertEqual(Set(firstOpen.values).count, 6)
@@ -182,7 +226,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             XCTAssertNotNil(UUID(uuidString: syncId))
         }
 
-        // ② 第二次打开：库已是 V11，`didMigrate` 不再被调用；在这个上下文里手工跑一遍回填
+        // ② 第二次打开：库已是 V12，`didMigrate` 不再被调用；在这个上下文里手工跑一遍回填
         // 闭包的等价读写，证明闭包本身幂等。
         let container = try openWithProductionMigrationPlan(at: directory)
         let context = container.mainContext
@@ -211,7 +255,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         let createdDate: Date
     }
 
-    private struct SeededV10Store {
+    private struct SeededV11Store {
         let profileIds: [String]
         let spaceIds: [String]
         let tabGuids: [String]
@@ -245,32 +289,32 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         return directory
     }
 
-    /// 用显式列出的 V10 模型类型建一个真的 `ModelContainer`（形状照
+    /// 用显式列出的 V11 模型类型建一个真的 `ModelContainer`（形状照
     /// `PinnedTabScopeTests.seedV8Store(at:)`），写 2 个 Profile、3 个 Space、`rules` 与
     /// 3 条 tab，`save()` 后释放容器。
     @discardableResult
-    private func seedV10Store(at directory: URL, rules: [SeedRule]) throws -> SeededV10Store {
+    private func seedV11Store(at directory: URL, rules: [SeedRule]) throws -> SeededV11Store {
         let configuration = ModelConfiguration(
             url: directory.appendingPathComponent("LocalStore.sqlite")
         )
         let container = try ModelContainer(
-            for: TabDataModelSchemaV10.ProfileModel.self,
-            TabDataModelSchemaV10.TabDataModel.self,
-            TabDataModelSchemaV10.SpaceModel.self,
-            TabDataModelSchemaV10.SpaceURLRule.self,
-            TabDataModelSchemaV10.BrowserDataSettingsModel.self,
+            for: TabDataModelSchemaV11.ProfileModel.self,
+            TabDataModelSchemaV11.TabDataModel.self,
+            TabDataModelSchemaV11.SpaceModel.self,
+            TabDataModelSchemaV11.SpaceURLRule.self,
+            TabDataModelSchemaV11.BrowserDataSettingsModel.self,
             configurations: configuration
         )
         let context = container.mainContext
 
         let profileIds = ["Default", "Work"]
         for profileId in profileIds {
-            context.insert(TabDataModelSchemaV10.ProfileModel(profileId: profileId))
+            context.insert(TabDataModelSchemaV11.ProfileModel(profileId: profileId))
         }
 
         let spaceIds = ["space-a", "space-b", "space-c"]
         for (index, spaceId) in spaceIds.enumerated() {
-            context.insert(TabDataModelSchemaV10.SpaceModel(
+            context.insert(TabDataModelSchemaV11.SpaceModel(
                 spaceId: spaceId,
                 profileId: index < 2 ? "Default" : "Work",
                 name: "Space \(index)",
@@ -284,7 +328,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
 
         let tabGuids = ["tab-0", "tab-1", "tab-2"]
         for (index, guid) in tabGuids.enumerated() {
-            let tab = TabDataModelSchemaV10.TabDataModel(
+            let tab = TabDataModelSchemaV11.TabDataModel(
                 title: "Tab \(index)",
                 guid: guid,
                 index: index,
@@ -298,7 +342,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
 
         for seed in rules {
-            context.insert(TabDataModelSchemaV10.SpaceURLRule(
+            context.insert(TabDataModelSchemaV11.SpaceURLRule(
                 id: seed.id,
                 spaceId: seed.spaceId,
                 host: seed.host,
@@ -309,10 +353,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             ))
         }
         try context.save()
-        return SeededV10Store(profileIds: profileIds, spaceIds: spaceIds, tabGuids: tabGuids)
+        return SeededV11Store(profileIds: profileIds, spaceIds: spaceIds, tabGuids: tabGuids)
     }
 
-    /// 用生产的 `TabDataModelMigrationPlan` 与 V11 typealias 重开同一份库；模型清单逐字照
+    /// 用生产的 `TabDataModelMigrationPlan` 与 V12 typealias 重开同一份库；模型清单逐字照
     /// `LocalStore.swift` 的 `ModelContainer(for:…)`。
     private func openWithProductionMigrationPlan(at directory: URL) throws -> ModelContainer {
         let configuration = ModelConfiguration(

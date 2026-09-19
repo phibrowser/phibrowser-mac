@@ -338,6 +338,7 @@ struct URLRulesEditor: View {
         // 写在 main actor 上等提交；失败只记一行（R12：错误走 `describe`，不带 host / id），
         // sheet 里的草稿一个字不动。路由表的刷新由 `applyRuleEdits` 在提交之后做（R-M3-4a-34）。
         Task { @MainActor in
+            guard manager.acceptsStoreAction(from: editingStoreIdentifier) else { return }
             // 裁定 8：比较基线是一次**新的** store 读（§5.8 第 4 条「记脏基线随库走」），落点是
             // `reloadURLRulesFromStore()` 之后的 `manager.allRules`。`load()` 那一刻的 `loadedRows`
             // 只用来回答「用户碰过没有」，绝不用来回答「与库里还差不差」。不直读 store 是因为
@@ -641,7 +642,7 @@ struct URLRulesEditor: View {
         /// split on exactly this, and the delete set addresses rows by it: `id` has
         /// already been recast for any non-UUID legacy id (`init(from:)`).
         let storeId: String?
-        /// Account-level identity (V11 `SpaceURLRule.syncId`), passed straight into the
+        /// Account-level identity (`SpaceURLRule.syncId`), passed straight into the
         /// draft so a row whose `id` got recast still lands on the same entity.
         var syncId: String?
         var targetSpaceId: String

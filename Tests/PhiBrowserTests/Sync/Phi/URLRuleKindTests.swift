@@ -2386,7 +2386,7 @@ extension URLRuleKindTests {
     }
 
     /// 默认读口（软删行已过滤），与编辑器 `load()` / agent `storedRules()` 读的是同一条路。
-    private func liveRules(_ store: LocalStore) -> [SpaceURLRule] {
+    private func liveRules(_ store: LocalStore) -> [SpaceRoutingRule] {
         drainMainQueue()
         return store.getAllURLRules()
     }
@@ -2731,7 +2731,7 @@ extension URLRuleKindTests {
     /// draft、`deletedIds` 空；delete ⇒ `upserts` 空、`deletedIds` 恰好那一个 id。
     /// 「三个 handler 各自恰好经过 `applyRuleEdits` 一次」由编译 + grep 兜住（CASE 11.1）。
     func testTheThreeAgentWriteFacesProduceRowAddressedEditSets() {
-        let existing = SpaceURLRule(id: Self.i1, spaceId: Self.t11SpaceA, host: "one.example",
+        let existing = SpaceRoutingRule(id: Self.i1, spaceId: Self.t11SpaceA, host: "one.example",
                                     sortOrder: 0, syncId: "r1")
 
         let add = AgentSpaceRouter.urlRuleAddEdits(all: [], spaceId: Self.t11SpaceA,
@@ -2755,7 +2755,7 @@ extension URLRuleKindTests {
         XCTAssertTrue(update.deletedIds.isEmpty)
 
         // 改目标：源桶少一条、目标桶多一条，两个桶各自成序。
-        let sibling = SpaceURLRule(id: Self.i0, spaceId: Self.t11SpaceA, host: "zero.example",
+        let sibling = SpaceRoutingRule(id: Self.i0, spaceId: Self.t11SpaceA, host: "zero.example",
                                    sortOrder: 1, syncId: "r0")
         let moved = AgentSpaceRouter.urlRuleUpdateEdits(all: [existing, sibling], existing: existing,
                                                         host: "one.example", pathPrefix: nil,

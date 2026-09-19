@@ -44,8 +44,8 @@ class LocalStore {
     static let willCloseNotification = Notification.Name("LocalStore.willClose")
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 11,
-        readableStoreFormatVersions: 1...11,
+        currentStoreFormatVersion: 12,
+        readableStoreFormatVersions: 1...12,
         storeFilename: "LocalStore.sqlite"
     )
 

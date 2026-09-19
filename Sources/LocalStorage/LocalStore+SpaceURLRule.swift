@@ -87,7 +87,8 @@ extension LocalStore {
                 SpaceRoutingRule(id: model.id, spaceId: model.spaceId, host: model.host,
                                  pathPrefix: model.pathPrefix,
                                  askBeforeRouting: model.askBeforeRouting,
-                                 sortOrder: model.sortOrder, createdDate: model.createdDate)
+                                 sortOrder: model.sortOrder, createdDate: model.createdDate,
+                                 syncId: model.syncId, deletedDate: model.deletedDate)
             }
         } catch {
             AppLogError("[LocalStore] getAllURLRules failed: \(error)")
@@ -107,7 +108,8 @@ extension LocalStore {
                 SpaceRoutingRule(id: model.id, spaceId: model.spaceId, host: model.host,
                                  pathPrefix: model.pathPrefix,
                                  askBeforeRouting: model.askBeforeRouting,
-                                 sortOrder: model.sortOrder, createdDate: model.createdDate)
+                                 sortOrder: model.sortOrder, createdDate: model.createdDate,
+                                 syncId: model.syncId, deletedDate: model.deletedDate)
             }
         } catch {
             AppLogError("[LocalStore] getURLRules(forSpaceId:) failed: \(error)")

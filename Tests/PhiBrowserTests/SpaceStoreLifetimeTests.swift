@@ -123,7 +123,13 @@ final class SpaceStoreLifetimeTests: XCTestCase {
         manager.bind(to: target)
         manager.renameSpace(spaceId: oldSpace.spaceId, to: "Stale write",
                             expectedStoreIdentifier: oldSpace.storeIdentifier)
-        manager.setAllRules([:], expectedStoreIdentifier: oldSpace.storeIdentifier)
+        do {
+            try await manager.applyRuleEdits(upserts: [], deletedIds: ["rule"],
+                                             expectedStoreIdentifier: oldSpace.storeIdentifier)
+            XCTFail("Expected the retired store action to be rejected.")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .storeUnavailable)
+        }
         try await flush(target.localStorage)
         XCTAssertEqual(target.localStorage.getAllSpaces().first?.name, "Target")
         XCTAssertEqual(target.localStorage.getAllURLRules().first?.host, "target.example")

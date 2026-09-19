@@ -344,9 +344,9 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         )
     }
 
-    // CASE 2a.24 / C-3 —— schema V11 的升级按 Compatibility/README.md 规则 3 走
+    // CASE 2a.24 / C-3 —— schema V12 的升级按 Compatibility/README.md 规则 3 走
     // `beforeSchemaUpgrade`：写一次 manifest、造一次备份，第二次打开不再造第二份。
-    func testUpgradeToStoreFormatElevenCreatesManifestAndBackupExactlyOnce() throws {
+    func testUpgradeToStoreFormatTwelveCreatesManifestAndBackupExactlyOnce() throws {
         let directory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: directory, contents: "v10")
         try writeManifest(
@@ -354,19 +354,19 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             to: directory
         )
         let controller = makeController(
-            currentStoreFormatVersion: 11,
-            readableStoreFormatVersions: 1...11,
+            currentStoreFormatVersion: 12,
+            readableStoreFormatVersions: 1...12,
             backupPolicy: .beforeSchemaUpgrade
         )
 
         let result = try controller.prepareStore(at: directory)
 
         guard case .ready(let plan) = result else {
-            return XCTFail("Expected the version ten store to prepare for a version eleven app.")
+            return XCTFail("Expected the version ten store to prepare for a version twelve app.")
         }
         let createdBackup = try XCTUnwrap(plan.createdBackup)
         XCTAssertEqual(createdBackup.storeFormatVersion, 10)
-        XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 11)
+        XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 12)
         XCTAssertNil(plan.restoredBackup)
         XCTAssertEqual(
             try readText(directory.appendingPathComponent(createdBackup.directoryName).appendingPathComponent("LocalStore.sqlite")),
@@ -376,7 +376,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         try controller.markStoreOpenedSuccessfully(plan, at: directory)
 
         let manifestAfterOpen = try readManifest(from: directory)
-        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 11)
+        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 12)
         XCTAssertEqual(manifestAfterOpen.backups.map(\.storeFormatVersion), [10])
 
         let secondResult = try controller.prepareStore(at: directory)
@@ -391,12 +391,12 @@ final class LocalStoreCompatibilityTests: XCTestCase {
     // CASE 2a.25 —— `readableStoreFormatVersions` 的上下界。
     func testShippingReadableStoreFormatVersionBounds() throws {
         // 这两处断言的是出厂配置本身，留字面量：它们是整条链的锚点。
-        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 11)
-        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...11)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 12)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...12)
 
         let controller = makeController(
-            currentStoreFormatVersion: 11,
-            readableStoreFormatVersions: 1...11
+            currentStoreFormatVersion: 12,
+            readableStoreFormatVersions: 1...12
         )
 
         // 「太新」那一组从出厂配置派生（`current + 1`），下一次版本提升不必再改这里。
@@ -412,7 +412,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             return XCTFail("Expected a store format above the readable range to require a newer app.")
         }
         XCTAssertEqual(issue.activeStoreFormatVersion, tooNewVersion)
-        XCTAssertEqual(issue.currentStoreFormatVersion, 11)
+        XCTAssertEqual(issue.currentStoreFormatVersion, 12)
 
         let oldestDirectory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: oldestDirectory, contents: "v1")
@@ -427,16 +427,16 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         XCTAssertEqual(plan.activeStoreFormatVersion, 1)
     }
 
-    // CASE 2a.25b / C-4 —— 降级路径：V11 的库被一个只认到 V10 的构建打开。用户在两个构建之间
-    // 来回切时，一次「打开即降级」会把 V11 写下的六列丢掉——那等于全库规则行的账户身份、软删
+    // CASE 2a.25b / C-4 —— 降级路径：V12 的库被一个只认到 V10 的构建打开。用户在两个构建之间
+    // 来回切时，一次「打开即降级」会把 V12 写下的六列丢掉——那等于全库规则行的账户身份、软删
     // 意图、合并伙伴同时消失：下一次再跑新构建时，差分把整张 `urlrules-cursors.json` 判成本机
     // 删除，一轮之内给账户上每一条规则发出 tombstone。所以按 README 规则 4 的降级语义：拒绝
     // 打开并保留那份库，不就地降级、不删除。
-    func testStoreFormatElevenIsPreservedWhenOpenedByAnAppThatOnlyReadsTen() throws {
+    func testStoreFormatTwelveIsPreservedWhenOpenedByAnAppThatOnlyReadsEleven() throws {
         let directory = try makeTemporaryStoreDirectory()
-        try writeStoreFiles(in: directory, contents: "v11")
+        try writeStoreFiles(in: directory, contents: "v12")
         try writeManifest(
-            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 11, backups: []),
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 12, backups: []),
             to: directory
         )
         // 「降级构建」那一组从出厂配置派生（`current - 1`）。
@@ -450,16 +450,16 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         let result = try olderBuildController.prepareStore(at: directory)
 
         guard case .requiresNewerApp(let issue) = result else {
-            return XCTFail("Expected a version eleven store to be refused by a version ten app.")
+            return XCTFail("Expected a version twelve store to be refused by a version eleven app.")
         }
-        XCTAssertEqual(issue.activeStoreFormatVersion, 11)
+        XCTAssertEqual(issue.activeStoreFormatVersion, 12)
         XCTAssertEqual(issue.currentStoreFormatVersion, olderBuildVersion)
 
-        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite")), "v11-main")
-        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-wal")), "v11-wal")
-        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-shm")), "v11-shm")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite")), "v12-main")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-wal")), "v12-wal")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-shm")), "v12-shm")
         let manifest = try readManifest(from: directory)
-        XCTAssertEqual(manifest.activeStoreFormatVersion, 11)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, 12)
         XCTAssertTrue(manifest.backups.isEmpty)
     }
 

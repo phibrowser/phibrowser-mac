@@ -240,7 +240,7 @@
 		747241560000000000000003 /* TravelBackMessageHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 747241560000000000000013 /* TravelBackMessageHandler.swift */; };
 		747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 747241560000000000000022 /* ProfileChatArchiveJournal.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
-		7A028801511A1C2A73DB1E91 /* ContentBlockingAdvancedSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4465FE5C60BB880C4931EAF6 /* ContentBlockingAdvancedSheet.swift */; };
+		7A028801511A1C2A73DB1E91 /* ContentBlockingCustomFiltersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4465FE5C60BB880C4931EAF6 /* ContentBlockingCustomFiltersSheet.swift */; };
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
 		7B00AAAA000000070000A7B7 /* PostHogConfig.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */; };
@@ -860,7 +860,7 @@
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
 		3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSharingPresenter.swift; sourceTree = "<group>"; };
-		4465FE5C60BB880C4931EAF6 /* ContentBlockingAdvancedSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingAdvancedSheet.swift; sourceTree = "<group>"; };
+		4465FE5C60BB880C4931EAF6 /* ContentBlockingCustomFiltersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingCustomFiltersSheet.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
 		457F461C0F164136A46FF641 /* GroupTabsTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTabsTableView.swift; sourceTree = "<group>"; };
 		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
@@ -1785,7 +1785,7 @@
 				5C1B0C0C0000000000000E12 /* ContentBlockingSettingsSection.swift */,
 				5C1B0C0E0000000000000E14 /* ContentBlockingCustomFilterSheet.swift */,
 				5C1B0C100000000000000E16 /* ContentBlockingRuleSetSheet.swift */,
-				4465FE5C60BB880C4931EAF6 /* ContentBlockingAdvancedSheet.swift */,
+				4465FE5C60BB880C4931EAF6 /* ContentBlockingCustomFiltersSheet.swift */,
 				A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */,
 			);
 			path = Profiles;
@@ -3097,7 +3097,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4A0B34B89EDDDD8EF26394E7 /* ContentBlockingListInfoPopover.swift in Sources */,
-				7A028801511A1C2A73DB1E91 /* ContentBlockingAdvancedSheet.swift in Sources */,
+				7A028801511A1C2A73DB1E91 /* ContentBlockingCustomFiltersSheet.swift in Sources */,
 				5C518564BC39D8D844BCA4EF /* ContentBlockingSettings.swift in Sources */,
 				5A454E000000000000000001 /* KioskBrowserState.swift in Sources */,
 				5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */,

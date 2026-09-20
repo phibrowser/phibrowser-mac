@@ -52,10 +52,17 @@ enum ContentBlockingRuleSets {
         if checked.isEmpty && custom.isEmpty {
             return NSLocalizedString("settings.privacy.contentBlocking.summary.noneSelected", value: "No rule sets selected", comment: "Profile settings - Line under a content blocking toggle when no filter list is checked for it")
         }
-        // A count keeps the line short however many lists are chosen.
-        var names = checked.isEmpty ? "" : String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.count", value: "%d rule sets selected", comment: "Profile settings - Line under a content blocking toggle counting the filter lists chosen for it; %d is the count"), checked.count)
+        // One list reads as its name; more become a count.
+        var names: String
+        switch checked.count {
+        case 0: names = ""
+        case 1: names = checked[0].title
+        default: names = String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.count", value: "%d rule sets", comment: "Profile settings - Line under a content blocking toggle when two or more filter lists are chosen for it; %d is the count"), checked.count)
+        }
         if !custom.isEmpty {
-            let customPart = String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.custom", value: "%d custom", comment: "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count"), custom.count)
+            let customPart = custom.count == 1
+                ? NSLocalizedString("settings.privacy.contentBlocking.summary.customOne", value: "1 custom list", comment: "Profile settings - Part of the line under a content blocking toggle when the user has one custom list, which applies to every toggle")
+                : String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.custom", value: "%d custom lists", comment: "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count"), custom.count)
             names = names.isEmpty ? customPart : names + " + " + customPart
         }
         if (checked + custom).contains(where: \.isDownloading) {
@@ -78,12 +85,12 @@ struct ContentBlockingRuleSetSheet: View {
     @ObservedObject var settings: ContentBlockingSettings
     let category: ContentBlockingCategory
     @Environment(\.dismiss) private var dismiss
-    @State private var showAddFilter = false
     @State private var waitingForDownloads = false
 
-    /// The checked lists of this sheet (the toggle's and the custom ones).
+    /// The checked lists of this sheet (the toggle's catalog lists; custom
+    /// lists are managed in the Custom Filters sheet).
     static func chosenLists(for category: ContentBlockingCategory, in state: ContentBlockingState) -> [ContentBlockingList] {
-        (ContentBlockingRuleSets.lists(for: category, in: state) + state.lists.filter(\.isCustom)).filter(\.checked)
+        ContentBlockingRuleSets.lists(for: category, in: state).filter(\.checked)
     }
 
     /// Checked lists Done still has to download.
@@ -106,37 +113,12 @@ struct ContentBlockingRuleSetSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             ScrollView(.vertical) {
                 if let state = settings.state {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SettingsDetailCard {
-                            ForEach(Array(ContentBlockingRuleSets.lists(for: category, in: state).enumerated()), id: \.element.id) { index, list in
-                                if index > 0 { Divider() }
-                                ContentBlockingListRow(list: list,
-                                                       onToggle: { checked in settings.setList(list.id, checked: checked) },
-                                                       onDownload: { settings.downloadList(list.id) })
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.customSection", value: "Your custom lists (apply to every toggle)", comment: "Choose rule sets sheet - Section title above the user's custom lists"))
-                                .font(.system(size: 12, weight: .semibold))
-                                .themedForeground(.textSecondary)
-                            SettingsDetailCard {
-                                let custom = state.lists.filter(\.isCustom)
-                                ForEach(Array(custom.enumerated()), id: \.element.id) { index, list in
-                                    if index > 0 { Divider() }
-                                    ContentBlockingListRow(list: list,
-                                                           onToggle: { checked in settings.setList(list.id, checked: checked) },
-                                                           onDownload: { settings.downloadList(list.id) },
-                                                           onRemove: { settings.removeCustomList(list.id) })
-                                }
-                                if !custom.isEmpty { Divider() }
-                                HStack {
-                                    Spacer()
-                                    Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.addFilter", value: "Add Filter…", comment: "Advanced ad block settings - Button opening the sheet that adds a custom filter list")) {
-                                        showAddFilter = true
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
+                    SettingsDetailCard {
+                        ForEach(Array(ContentBlockingRuleSets.lists(for: category, in: state).enumerated()), id: \.element.id) { index, list in
+                            if index > 0 { Divider() }
+                            ContentBlockingListRow(list: list,
+                                                   onToggle: { checked in settings.setList(list.id, checked: checked) },
+                                                   onDownload: { settings.downloadList(list.id) })
                         }
                     }
                 }
@@ -153,11 +135,8 @@ struct ContentBlockingRuleSetSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: 440)
         .themedBackground(PhiPreferences.fixedWindowBackground)
-        .sheet(isPresented: $showAddFilter) {
-            ContentBlockingCustomFilterSheet(settings: settings)
-        }
         .onChange(of: settings.state) { _, state in
             // Close once the downloads Done started have all landed.
             guard waitingForDownloads, let state, !Self.anyDownloading(for: category, in: state) else { return }

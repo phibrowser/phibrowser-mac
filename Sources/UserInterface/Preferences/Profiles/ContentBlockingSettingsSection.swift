@@ -74,12 +74,16 @@ struct ContentBlockingSettingsSection: View {
                     value: model.settings?.state?.blockTrackers)
                 SettingsRowDivider()
                 HStack {
+                    Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded", value: "Update Downloaded", comment: "Profile settings - Button that downloads every already-downloaded filter list again to pick up new rules")) {
+                        model.settings?.refreshLists()
+                    }
+                    .help(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded.help", value: "Fetch the latest rules for every list already downloaded", comment: "Profile settings - Tooltip of the Update Downloaded button"))
                     Spacer()
-                    Button(NSLocalizedString("settings.privacy.contentBlocking.advancedButton", value: "Advanced Settings", comment: "Profile settings - Button opening the Advanced Ad Block Settings sheet")) {
+                    Button(NSLocalizedString("settings.privacy.contentBlocking.customFiltersButton", value: "Custom Filters…", comment: "Profile settings - Button opening the Custom Filters sheet")) {
                         showAdvanced = true
                     }
-                    .disabled(model.settings?.state == nil)
                 }
+                .disabled(model.settings?.state == nil)
                 .padding(.vertical, 8)
             }
             ForEach(Self.diagnosticsLines(for: model.settings?.state), id: \.self) { line in
@@ -93,7 +97,7 @@ struct ContentBlockingSettingsSection: View {
         .onChange(of: profileId) { _, newProfileId in model.select(newProfileId) }
         .sheet(isPresented: $showAdvanced) {
             if let settings = model.settings {
-                ContentBlockingAdvancedSheet(settings: settings)
+                ContentBlockingCustomFiltersSheet(settings: settings)
             }
         }
         .sheet(item: $ruleSetChooser, onDismiss: chooserClosed) { chooser in

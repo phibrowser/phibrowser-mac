@@ -46,25 +46,28 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
 
     func testSummaryNamesTheCheckedListsAndTheirState() {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", checked: false)])), "No rule sets selected")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads")])), "2 rule sets selected")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("a", "ads"), list("b", "ads"), list("c", "regional")])), "3 rule sets selected")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads")])), "easylist")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads")])), "2 rule sets")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("a", "ads"), list("b", "ads"), list("c", "regional")])), "3 rule sets")
         // Custom lists apply to every toggle and are counted on each line.
         let withCustom = state([list("easylist", "ads"), list("custom-1", "custom", custom: true)])
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: withCustom), "1 rule sets selected + 1 custom")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .trackers, in: withCustom), "1 custom")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: withCustom), "easylist + 1 custom list")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .trackers, in: withCustom), "1 custom list")
+        let twoCustom = state([list("custom-1", "custom", custom: true), list("custom-2", "custom", custom: true)])
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: twoCustom), "2 custom lists")
         XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .trackers, in: withCustom), "Change…")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "1 rule sets selected · 1 not downloaded")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false, downloading: true)])), "1 rule sets selected · Downloading…")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "2 rule sets selected · 1 not downloaded")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "easylist · 1 not downloaded")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false, downloading: true)])), "easylist · Downloading…")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "2 rule sets · 1 not downloaded")
     }
 
     func testDoneDownloadsOnlyCheckedMissingLists() {
         let lists = [list("easylist", "ads", available: false), list("adguard-chinese", "regional", checked: false, available: false),
                      list("cookie", "cookies", available: false), list("custom-1", "custom", available: false, custom: true),
                      list("busy", "ads", available: false, downloading: true)]
-        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state(lists)), ["easylist", "custom-1"])
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state(lists)), ["easylist"])
         XCTAssertTrue(ContentBlockingRuleSetSheet.anyDownloading(for: .ads, in: state(lists)))
-        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .cookieBanners, in: state(lists)), ["cookie", "custom-1"])
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .cookieBanners, in: state(lists)), ["cookie"], "custom lists are managed in their own sheet")
         XCTAssertFalse(ContentBlockingRuleSetSheet.anyDownloading(for: .cookieBanners, in: state(lists)))
         XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state([list("easylist", "ads")])), [])
     }

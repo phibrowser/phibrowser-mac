@@ -69188,102 +69188,6 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.advanced.intro" : {
-      "comment" : "Advanced ad block settings - Introductory sentence under the sheet title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Check the filter lists this profile uses; Done downloads any that are missing. A section only takes effect while its switch is on. Nothing is downloaded until you ask."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.ads" : {
-      "comment" : "Advanced ad block settings - Section title for ad filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Ad Blockers"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.cookies" : {
-      "comment" : "Advanced ad block settings - Section title for cookie banner filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Cookie Banners"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.custom" : {
-      "comment" : "Advanced ad block settings - Section title for the user's own filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Custom"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.phi" : {
-      "comment" : "Advanced ad block settings - Section title for Phi's own filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Phi"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.regional" : {
-      "comment" : "Advanced ad block settings - Section title for language-specific filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Regional"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.section.trackers" : {
-      "comment" : "Advanced ad block settings - Section title for tracker filter lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Trackers"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.title" : {
-      "comment" : "Advanced ad block settings - Sheet title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Advanced Ad Block Settings"
-          }
-        }
-      }
-    },
     "settings.privacy.contentBlocking.advanced.updateDownloaded" : {
       "comment" : "Advanced ad block settings - Button that downloads every already-downloaded filter list again to pick up new rules",
       "extractionState" : "extracted_with_value",
@@ -69304,18 +69208,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Fetch the latest rules for every list already downloaded"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advancedButton" : {
-      "comment" : "Profile settings - Button opening the Advanced Ad Block Settings sheet",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Advanced Settings"
           }
         }
       }
@@ -69352,6 +69244,42 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Block trackers"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.custom.empty" : {
+      "comment" : "Custom filters sheet - Placeholder when the profile has no custom list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No custom filters yet."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.custom.intro" : {
+      "comment" : "Custom filters sheet - Introductory sentence",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your own filter lists, from a URL or pasted rules. They apply whenever any of the three switches is on."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.custom.title" : {
+      "comment" : "Custom filters sheet - Title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Custom Filters"
           }
         }
       }
@@ -69496,6 +69424,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "URL"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFiltersButton" : {
+      "comment" : "Profile settings - Button opening the Custom Filters sheet",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Custom Filters…"
           }
         }
       }
@@ -69872,18 +69812,6 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.ruleSets.customSection" : {
-      "comment" : "Choose rule sets sheet - Section title above the user's custom lists",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Your custom lists (apply to every toggle)"
-          }
-        }
-      }
-    },
     "settings.privacy.contentBlocking.ruleSets.done" : {
       "comment" : "Choose rule sets sheet - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
@@ -69999,7 +69927,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%d rule sets selected"
+            "value" : "%d rule sets"
           }
         }
       }
@@ -70011,7 +69939,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%d custom"
+            "value" : "%d custom lists"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.customOne" : {
+      "comment" : "Profile settings - Part of the line under a content blocking toggle when the user has one custom list, which applies to every toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1 custom list"
           }
         }
       }

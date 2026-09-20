@@ -52,10 +52,17 @@ struct ContentBlockingAdvancedSheet: View {
     /// Help page opened by "Learn more".
     static let learnMoreURL = URL(string: "https://phibrowser.com/help/content-blocking")!
 
+    /// Sections the sheet never shows. The Phi first-party list stays active
+    /// in the engine (it follows whichever pane toggle is on) but is not
+    /// user-selectable, so it is hidden rather than listed.
+    static let hiddenSections: Set<ContentBlockingSection> = [.phi]
+
     /// Groups `lists` by section in display order, keeping catalog order
-    /// inside each section; sections without lists are omitted.
+    /// inside each section; hidden sections and sections without lists are
+    /// omitted.
     static func groups(from lists: [ContentBlockingList]) -> [ContentBlockingSectionGroup] {
         ContentBlockingSection.allCases.compactMap { section in
+            if hiddenSections.contains(section) { return nil }
             let members = lists.filter { $0.category == section.rawValue }
             return members.isEmpty ? nil : ContentBlockingSectionGroup(section: section, lists: members)
         }

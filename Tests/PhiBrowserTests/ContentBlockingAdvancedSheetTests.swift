@@ -26,12 +26,17 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
             list("bulgarian", "regional"),
         ]
         let groups = ContentBlockingAdvancedSheet.groups(from: lists)
-        XCTAssertEqual(groups.map(\.section), [.ads, .trackers, .cookies, .regional, .phi])
+        XCTAssertEqual(groups.map(\.section), [.ads, .trackers, .cookies, .regional])
         XCTAssertEqual(groups[0].lists.map(\.id), ["easylist", "ublock-ads"])
         XCTAssertEqual(groups[1].lists.map(\.id), ["easyprivacy", "ublock-privacy"])
         XCTAssertEqual(groups[2].lists.map(\.id), ["easylist-cookie"])
         XCTAssertEqual(groups[3].lists.map(\.id), ["adguard-japanese", "bulgarian"])
-        XCTAssertEqual(groups[4].lists.map(\.id), ["phi-specific"])
+    }
+
+    func testPhiSectionIsHidden() {
+        // The first-party list is active but not user-selectable.
+        let groups = ContentBlockingAdvancedSheet.groups(from: [list("phi-specific", "phi"), list("x", "ads")])
+        XCTAssertEqual(groups.map(\.section), [.ads])
     }
 
     func testEmptySectionsAreOmittedAndUnknownCategoriesIgnored() {

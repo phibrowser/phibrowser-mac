@@ -52,6 +52,12 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "easylist, ublock-ads · 1 not downloaded")
     }
 
+    func testActionLabelInvitesAChoiceUntilSomethingIsUsable() {
+        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads", checked: false)])), "Choose rule sets…")
+        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads", available: false)])), "Choose rule sets…")
+        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads")])), "Change…")
+    }
+
     func testNoListsStatusShowsUnderTheToggles() {
         let lines = ContentBlockingSettingsSection.diagnosticsLines(for: state([], status: .noLists))
         XCTAssertEqual(lines, ["Nothing is blocked until a rule set is downloaded."])

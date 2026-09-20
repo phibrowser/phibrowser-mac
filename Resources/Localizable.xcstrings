@@ -69699,7 +69699,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Downloading… %@ of %@"
+            "value" : "Downloading… %1$@ of %2$@"
           }
         }
       }
@@ -69964,6 +69964,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Nothing is blocked until a rule set is downloaded."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.change" : {
+      "comment" : "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Change…"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.choose" : {
+      "comment" : "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose rule sets…"
           }
         }
       }

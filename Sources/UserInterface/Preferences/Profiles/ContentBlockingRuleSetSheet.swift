@@ -28,6 +28,14 @@ enum ContentBlockingRuleSets {
         return !usable.contains { $0.checked && $0.available }
     }
 
+    /// The action word after the summary: "Choose…" while the toggle has
+    /// nothing usable, "Change…" otherwise.
+    static func actionLabel(for category: ContentBlockingCategory, in state: ContentBlockingState) -> String {
+        needsDownload(for: category, in: state)
+            ? NSLocalizedString("settings.privacy.contentBlocking.summary.choose", value: "Choose rule sets…", comment: "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser")
+            : NSLocalizedString("settings.privacy.contentBlocking.summary.change", value: "Change…", comment: "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser")
+    }
+
     /// The line under a toggle: the checked lists and their state.
     static func summary(for category: ContentBlockingCategory, in state: ContentBlockingState) -> String {
         let checked = lists(for: category, in: state).filter(\.checked)

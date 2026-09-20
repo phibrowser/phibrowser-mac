@@ -154,11 +154,16 @@ struct ContentBlockingSettingsSection: View {
                 Button {
                     ruleSetChooser = RuleSetChooser(category: category, revertsOnCancel: false)
                 } label: {
-                    Text(ContentBlockingRuleSets.summary(for: category, in: state))
-                        .font(.system(size: 11))
-                        .themedForeground(.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 4) {
+                        Text(ContentBlockingRuleSets.summary(for: category, in: state))
+                            .themedForeground(.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(ContentBlockingRuleSets.actionLabel(for: category, in: state))
+                            .foregroundStyle(Color.accentColor)
+                            .fixedSize()
+                    }
+                    .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 34)

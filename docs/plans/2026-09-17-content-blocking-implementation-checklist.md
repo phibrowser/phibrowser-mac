@@ -12,6 +12,8 @@
 
 ## Handoff log
 
+- 2026-09-20 (Privacy pane folded into Profiles): per the owner, per-profile settings live under the Profiles tab, so the Privacy pane is gone. `ContentBlockingSettingsSection(profileId:)` (`Sources/UserInterface/Preferences/Profiles/`) renders the three toggles, the Advanced Settings button and the status small print inside `ProfileDetailSettingsView`, between the first card and "Your Data and Settings"; the selected profile comes from the Profiles list, so the profile picker and `PrivacySettingsModel` are deleted. `ContentBlockingAdvancedSheet` and `ContentBlockingListInfoPopover` moved to the Profiles folder. String keys keep the `settings.privacy.*` prefix; `settings.navigation.privacy` and `settings.privacy.profilePicker.label` were removed. Tests: `ContentBlockingSettingsSectionTests` (facade binding and swap) and `ContentBlockingDiagnosticsLinesTests`.
+
 - 2026-09-20 (D3, D4 verified in-app; E1, E2 written): the user confirmed pages render and the Privacy pane and Advanced sheet work on the Xcode-built Canary with everything default-on. Chromium `4286a31cb9dc2` commits the proxy lifetime fix (`MaybeDeleteSelf`), the move of the features to `components/phinomenon/content_blocking/features.{h,cc}`, the `PhiContentBlockingNetwork` / `PhiContentBlockingCosmetics` sub-switches and the default-on flip, with a regression test `RequestSurvivesFactoryDisconnect`. The Phi section is hidden from the Advanced sheet (Mac `18f4e653`; the list stays active). E1 deviations: no site-info UI exists, so the row lives in the address bar "..." menu (`SiteContentBlockingToggle` next to `WebContentAddressBarMenu`); the domain comes from a new synchronous bridge method `contentBlockingSiteExceptionDomainForURL:` backed by `SiteExceptionDomain()` in the service, so the toggle and the service share one eTLD+1 rule; private windows get no row because the bridge addresses a profile by its on-disk name and an exception set there would persist in the regular profile; the tab reloads after Chromium accepts the flip; no exceptions list was added to the Privacy pane (the menu row is the only surface). E2 deviations: `Diagnostics` is owned by the service (`service->diagnostics()`), counts on `UrlLoaderProxy::ShouldBlock` matches, keyed by the page's exception domain, session-only; `lastBuildLog` is one line of engine totals plus list ids (adblock-rust does not keep per-list skip counts). `out/PhiTest` still needs its near-full rebuild before the Chromium suites can run; the new tests were compiled (objects only) in `out/PhiMac`. Mac unit tests could not run because Phi was running; the new classes are `SiteContentBlockingToggleTests` and `PrivacySettingsDiagnosticsTests`.
 
 Keep this section current. A successor agent reads only this section first.
@@ -438,7 +440,7 @@ The facade updates `state` optimistically and reverts on failure. Delegate callb
 - [x] **Step 4:** Ask the user for commit go-ahead if not yet given this session; commit: `feat: add the content blocking settings facade`.
 - [x] **Done when:** five tests pass.
 
-### Task D3: Privacy pane
+### Task D3: Privacy pane (superseded 2026-09-20: the section now lives in the Profiles detail panel, see the Handoff log)
 
 **Files:**
 - Modify: `Sources/UserInterface/Preferences/Settings.swift` (add `static let privacy = Self("privacy")`)

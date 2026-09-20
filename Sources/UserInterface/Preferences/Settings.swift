@@ -9,7 +9,6 @@ extension Settings.PaneIdentifier {
     static let advanced = Self("advanced")
     static let navigations = Self("navigation")
     static let account = Self("account")
-    static let privacy = Self("privacy")
     static let aisettings = Self("aisettings")
     static let shortcuts = Self("shortcuts")
     static let profiles = Self("profiles")

@@ -38,44 +38,14 @@ private final class RecordingBridge: ContentBlockingBridging {
     }
 }
 
-final class PrivacySettingsViewTests: XCTestCase {
-    private func profile(_ id: String) -> PhiBrowserProfile {
-        PhiBrowserProfile(profileId: id, displayName: id, isLoaded: true, isInUse: false)
-    }
-
-    func testInitialSelectionPrefersTheActiveProfile() {
-        let profiles = [profile(LocalStore.defaultProfileId), profile("Work")]
-        XCTAssertEqual(PrivacySettingsModel.initialProfileId(profiles: profiles, activeProfileId: "Work"), "Work")
-    }
-
-    func testIncognitoOrUnknownActiveProfileFallsBackToDefault() {
-        let profiles = [profile("Work"), profile(LocalStore.defaultProfileId)]
-        XCTAssertEqual(PrivacySettingsModel.initialProfileId(profiles: profiles,
-                                                             activeProfileId: SpaceManager.incognitoProfileId),
-                       LocalStore.defaultProfileId)
-        XCTAssertEqual(PrivacySettingsModel.initialProfileId(profiles: profiles, activeProfileId: "Gone"),
-                       LocalStore.defaultProfileId)
-        XCTAssertEqual(PrivacySettingsModel.initialProfileId(profiles: [profile("Only")], activeProfileId: nil),
-                       "Only")
-        XCTAssertNil(PrivacySettingsModel.initialProfileId(profiles: [], activeProfileId: nil))
-    }
-
-    func testReconcileKeepsAValidSelection() {
-        let model = PrivacySettingsModel(makeSettings: { ContentBlockingSettings(profileId: $0, bridge: nil) })
-        model.reconcile(profiles: [profile("A"), profile("B")], activeProfileId: "B")
-        XCTAssertEqual(model.selectedProfileId, "B")
-        model.reconcile(profiles: [profile("A"), profile("B")], activeProfileId: "A")
-        XCTAssertEqual(model.selectedProfileId, "B", "an existing valid selection is kept")
-        model.reconcile(profiles: [profile("A")], activeProfileId: nil)
-        XCTAssertEqual(model.selectedProfileId, "A", "a deleted profile's selection moves on")
-    }
-
-    func testTogglesBindToTheSelectedProfileFacade() {
+@MainActor
+final class ContentBlockingSettingsSectionTests: XCTestCase {
+    func testSelectingAProfileBindsTheTogglesToItsFacade() {
         let bridge = RecordingBridge()
-        let model = PrivacySettingsModel(makeSettings: {
+        let model = ContentBlockingSectionModel(makeSettings: {
             ContentBlockingSettings(profileId: $0, bridge: bridge, notificationCenter: NotificationCenter())
         })
-        model.reconcile(profiles: [profile("Work")], activeProfileId: "Work")
+        model.select("Work")
         let drained = expectation(description: "refresh delivered")
         DispatchQueue.main.async { drained.fulfill() }
         wait(for: [drained], timeout: 2)
@@ -89,9 +59,20 @@ final class PrivacySettingsViewTests: XCTestCase {
         XCTAssertEqual(bridge.categoryCalls.first?.1, .trackers)
         XCTAssertEqual(bridge.categoryCalls.first?.2, false)
     }
+
+    func testReselectingTheSameProfileKeepsTheFacade() {
+        let model = ContentBlockingSectionModel(makeSettings: { ContentBlockingSettings(profileId: $0, bridge: nil) })
+        model.select("A")
+        let first = model.settings
+        model.select("A")
+        XCTAssertTrue(model.settings === first)
+        model.select("B")
+        XCTAssertEqual(model.settings?.profileId, "B")
+        XCTAssertFalse(model.settings === first)
+    }
 }
 
-final class PrivacySettingsDiagnosticsTests: XCTestCase {
+final class ContentBlockingDiagnosticsLinesTests: XCTestCase {
     private func state(_ status: ContentBlockingState.Status, blocked: Int = 0, detail: String = "") -> ContentBlockingState {
         ContentBlockingState(blockAds: true, blockCookieBanners: true, blockTrackers: true,
                              lists: [], siteExceptions: [], status: status, statusDetail: detail,
@@ -99,24 +80,24 @@ final class PrivacySettingsDiagnosticsTests: XCTestCase {
     }
 
     func testNothingWhileStateIsUnknownOrBuilding() {
-        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: nil), [])
-        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.building)), [])
+        XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: nil), [])
+        XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: state(.building)), [])
     }
 
     func testActiveShowsNothingAndHidesTheSessionCount() {
-        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.active, blocked: 42)), [])
+        XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: state(.active, blocked: 42)), [])
     }
 
     func testDegradedShowsStatusAndDetail() {
-        let lines = PrivacySettingsView.diagnosticsLines(for: state(.degraded, blocked: 3, detail: "cache unreadable"))
+        let lines = ContentBlockingSettingsSection.diagnosticsLines(for: state(.degraded, blocked: 3, detail: "cache unreadable"))
         XCTAssertEqual(lines.count, 2)
         XCTAssertFalse(lines[0].contains("3"))
         XCTAssertEqual(lines[1], "cache unreadable")
-        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.degraded)).count, 1)
+        XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: state(.degraded)).count, 1)
     }
 
     func testDisabledShowsOnlyTheOffLine() {
-        let lines = PrivacySettingsView.diagnosticsLines(for: state(.disabled, blocked: 9))
+        let lines = ContentBlockingSettingsSection.diagnosticsLines(for: state(.disabled, blocked: 9))
         XCTAssertEqual(lines.count, 1)
         XCTAssertFalse(lines[0].contains("9"))
     }

@@ -241,6 +241,8 @@ the other lists do. Users can uncheck it in the sheet.
 
 ## 6. Policy and defaults
 
+Placement (2026-09-20): the toggles and the Advanced sheet live in the Profiles settings tab, in the selected profile's detail panel, with the other per-profile settings. There is no separate Privacy tab.
+
 | Setting | Pref | Default |
 | --- | --- | --- |
 | Block ads | `phi.content_blocking.block_ads` | false |

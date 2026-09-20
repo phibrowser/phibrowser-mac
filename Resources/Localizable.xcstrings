@@ -65441,18 +65441,6 @@
         }
       }
     },
-    "settings.navigation.privacy" : {
-      "comment" : "Settings - Tab title for the privacy pane",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Privacy"
-          }
-        }
-      }
-    },
     "settings.navigation.profilesTitle" : {
       "comment" : "Settings - Tab title for profiles management",
       "extractionState" : "extracted_with_value",
@@ -69661,18 +69649,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Content blocking"
-          }
-        }
-      }
-    },
-    "settings.privacy.profilePicker.label" : {
-      "comment" : "Privacy settings - Label of the picker choosing which profile the privacy settings apply to",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Settings for profile"
           }
         }
       }

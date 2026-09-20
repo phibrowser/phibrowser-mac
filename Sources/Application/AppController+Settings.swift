@@ -42,7 +42,6 @@ extension AppController {
          AISettingsViewController(),
          ShortcutsSettingViewController(),
          AdvancedSettingViewController(),
-         PrivacySettingViewController(),
         ]
         settingsPanesIncludeDeveloper = PhiPreferences.AgentSpaces.developerModeEnabled
         if settingsPanesIncludeDeveloper {

@@ -72,10 +72,18 @@ struct ContentBlockingAdvancedSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.title", value: "Advanced Ad Block Settings", comment: "Advanced ad block settings - Sheet title"))
-                .font(.system(size: 15, weight: .semibold))
-                .themedForeground(.textPrimary)
-            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists Phi applies. Lists in a section only take effect while that section's switch is on in Privacy settings.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
+            HStack(alignment: .firstTextBaseline) {
+                Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.title", value: "Advanced Ad Block Settings", comment: "Advanced ad block settings - Sheet title"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .themedForeground(.textPrimary)
+                Spacer()
+                Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateAll", value: "Update All", comment: "Advanced ad block settings - Button that downloads every enabled filter list again")) {
+                    settings.refreshLists()
+                }
+                .controlSize(.small)
+                .disabled(settings.state == nil)
+            }
+            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists this profile uses. Checked lists are downloaded from their publishers and refreshed daily; a section only takes effect while its switch is on. You can also add your own lists.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -115,7 +123,9 @@ struct ContentBlockingAdvancedSheet: View {
                     if index > 0 { Divider() }
                     ContentBlockingListRow(list: list, enabled: enabled,
                                            onToggle: { checked in settings.setList(list.id, checked: checked) },
-                                           onRemove: list.isCustom ? { settings.removeCustomList(list.id) } : nil)
+                                           onDownload: { settings.downloadList(list.id) },
+                                           onDeleteDownload: { settings.deleteListDownload(list.id) },
+                                           onRemove: { settings.removeCustomList(list.id) })
                 }
                 if group.section == .custom {
                     if !group.lists.isEmpty { Divider() }
@@ -133,14 +143,42 @@ struct ContentBlockingAdvancedSheet: View {
 }
 
 /// One list row: checkbox, title, a download-state line when the list is
-/// not on disk, an info button with the details popover, and a remove
-/// button for custom lists.
+/// not on disk, one download control (see `Control`) and the info button
+/// with the details popover.
 struct ContentBlockingListRow: View {
+    /// The single control at the end of a row, chosen from the list's state.
+    enum Control: Equatable {
+        /// Nothing to manage: the list ships with Phi.
+        case none
+        /// Not on disk and not being fetched: offer to download it.
+        case download
+        /// A fetch is in progress.
+        case downloading
+        /// On disk: offer to delete the downloaded text (the list is unchecked).
+        case deleteDownload
+        /// A custom list: offer to remove it entirely.
+        case removeCustom
+    }
+
     let list: ContentBlockingList
     let enabled: Bool
     let onToggle: (Bool) -> Void
-    var onRemove: (() -> Void)? = nil
+    var onDownload: () -> Void = {}
+    var onDeleteDownload: () -> Void = {}
+    var onRemove: () -> Void = {}
     @State private var showInfo = false
+
+    static func control(for list: ContentBlockingList) -> Control {
+        if list.isCustom {
+            // A pasted list is always on disk; a URL list downloads first but
+            // its only management action is removing it.
+            return list.available || list.sourceURL == nil || !list.lastError.isEmpty ? .removeCustom : .downloading
+        }
+        if list.available {
+            return list.fetchedAt == nil ? .none : .deleteDownload
+        }
+        return list.lastError.isEmpty ? .downloading : .download
+    }
 
     /// The line under a list that has no text on disk yet; nil once it does.
     static func availabilityLine(for list: ContentBlockingList) -> String? {
@@ -156,6 +194,7 @@ struct ContentBlockingListRow: View {
             Toggle("", isOn: Binding(get: { list.checked }, set: onToggle))
                 .labelsHidden()
                 .toggleStyle(.checkbox)
+                .disabled(!enabled)
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.title)
                     .font(.system(size: 13))
@@ -168,7 +207,27 @@ struct ContentBlockingListRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let onRemove {
+            switch Self.control(for: list) {
+            case .none:
+                EmptyView()
+            case .download:
+                Button(action: onDownload) {
+                    Image(systemName: "arrow.down.circle")
+                        .themedForeground(.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.list.download", value: "Download this list", comment: "Advanced ad block settings - Tooltip of the button downloading a filter list"))
+            case .downloading:
+                ProgressView()
+                    .controlSize(.small)
+            case .deleteDownload:
+                Button(action: onDeleteDownload) {
+                    Image(systemName: "trash")
+                        .themedForeground(.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.list.deleteDownload", value: "Delete the downloaded rules", comment: "Advanced ad block settings - Tooltip of the button deleting a filter list's downloaded text; the list is unchecked"))
+            case .removeCustom:
                 Button(action: onRemove) {
                     Image(systemName: "trash")
                         .themedForeground(.textSecondary)
@@ -188,6 +247,5 @@ struct ContentBlockingListRow: View {
             }
         }
         .padding(.vertical, 8)
-        .disabled(!enabled)
     }
 }

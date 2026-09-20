@@ -42339,6 +42339,9 @@
         }
       }
     },
+    "https://example.com/filters.txt" : {
+
+    },
     "https://vault.example.com" : {
       "localizations" : {
         "de" : {
@@ -69192,7 +69195,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose the filter lists Phi applies. Lists in a section only take effect while that section's switch is on in Privacy settings."
+            "value" : "Choose the filter lists this profile uses. Checked lists are downloaded from their publishers and refreshed daily; a section only takes effect while its switch is on. You can also add your own lists."
           }
         }
       }
@@ -69277,6 +69280,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Advanced Ad Block Settings"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.updateAll" : {
+      "comment" : "Advanced ad block settings - Button that downloads every enabled filter list again",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Update All"
           }
         }
       }
@@ -69565,6 +69580,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Bulgarian List"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.deleteDownload" : {
+      "comment" : "Advanced ad block settings - Tooltip of the button deleting a filter list's downloaded text; the list is unchecked",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete the downloaded rules"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.download" : {
+      "comment" : "Advanced ad block settings - Tooltip of the button downloading a filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Download this list"
           }
         }
       }

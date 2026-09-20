@@ -68,6 +68,21 @@ private final class FakeContentBlockingBridge: ContentBlockingBridging {
         refreshCalls += 1
         completion(true, nil)
     }
+
+    var downloadCalls: [String] = []
+    var deleteDownloadCalls: [String] = []
+
+    func downloadContentBlockingList(_ profileId: String, listId: String,
+                                     completion: @escaping (Bool, String?) -> Void) {
+        downloadCalls.append(listId)
+        completion(!failWrites, failWrites ? "nope" : nil)
+    }
+
+    func deleteContentBlockingListDownload(_ profileId: String, listId: String,
+                                           completion: @escaping (Bool, String?) -> Void) {
+        deleteDownloadCalls.append(listId)
+        completion(!failWrites, failWrites ? "nope" : nil)
+    }
 }
 
 /// Swift stand-ins for the framework's protocol-typed snapshot objects.
@@ -150,6 +165,29 @@ final class ContentBlockingSettingsTests: XCTestCase {
         let done = expectation(description: "main queue drained")
         DispatchQueue.main.async { done.fulfill() }
         wait(for: [done], timeout: 2)
+    }
+
+    func testDownloadAndDeleteDownloadUpdateTheRowOptimistically() {
+        let facade = makeFacade()
+        facade.refresh()
+        waitForMain()
+        facade.deleteListDownload("easylist")
+        var list = facade.state?.lists.first { $0.id == "easylist" }
+        XCTAssertEqual(bridge.deleteDownloadCalls, ["easylist"])
+        XCTAssertEqual(list?.available, false)
+        XCTAssertEqual(list?.checked, false)
+
+        facade.downloadList("easylist")
+        list = facade.state?.lists.first { $0.id == "easylist" }
+        XCTAssertEqual(bridge.downloadCalls, ["easylist"])
+        XCTAssertEqual(list?.available, false)
+        XCTAssertEqual(list?.lastError, "")
+
+        bridge.failWrites = true
+        let before = facade.state
+        facade.deleteListDownload("adguard-japanese")
+        waitForMain()
+        XCTAssertEqual(facade.state, before, "a refused delete reverts the row")
     }
 
     func testRefreshMapsBridgePayload() {

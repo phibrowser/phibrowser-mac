@@ -1895,6 +1895,18 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)refreshContentBlockingLists:(NSString *)profileId
                          completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
 
+/// Downloads one list now, whether or not it is checked. Fails for the
+/// bundled Phi list and unknown ids.
+- (void)downloadContentBlockingList:(NSString *)profileId
+                             listId:(NSString *)listId
+                         completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Deletes a list's downloaded text and unchecks it so it is not fetched
+/// again until the user asks. Fails for the bundled Phi list and unknown ids.
+- (void)deleteContentBlockingListDownload:(NSString *)profileId
+                                   listId:(NSString *)listId
+                               completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
 /// Adds (`enabled` YES) or removes a registrable-domain exception where
 /// blocking is off for `profileId`.
 - (void)setContentBlockingSiteException:(NSString *)profileId

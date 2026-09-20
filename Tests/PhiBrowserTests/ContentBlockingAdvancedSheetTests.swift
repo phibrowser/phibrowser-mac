@@ -61,6 +61,35 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         XCTAssertNil(ContentBlockingListRow.availabilityLine(for: list("easylist", "ads")))
     }
 
+    func testRowControlFollowsTheListState() {
+        var bundled = list("phi-specific", "phi")
+        bundled.fetchedAt = nil
+        XCTAssertEqual(ContentBlockingListRow.control(for: bundled), .none)
+
+        var downloaded = list("easylist", "ads")
+        downloaded.fetchedAt = Date()
+        XCTAssertEqual(ContentBlockingListRow.control(for: downloaded), .deleteDownload)
+
+        var pending = list("easylist", "ads")
+        pending.available = false
+        XCTAssertEqual(ContentBlockingListRow.control(for: pending), .downloading)
+
+        var failed = pending
+        failed.lastError = "HTTP 404"
+        XCTAssertEqual(ContentBlockingListRow.control(for: failed), .download)
+
+        var pasted = list("custom-1", "custom")
+        pasted.isCustom = true
+        XCTAssertEqual(ContentBlockingListRow.control(for: pasted), .removeCustom)
+
+        var remote = pasted
+        remote.sourceURL = URL(string: "https://a.example/l.txt")
+        remote.available = false
+        XCTAssertEqual(ContentBlockingListRow.control(for: remote), .downloading)
+        remote.lastError = "HTTP 500"
+        XCTAssertEqual(ContentBlockingListRow.control(for: remote), .removeCustom)
+    }
+
     func testInfoPopoverUpdateLine() {
         let now = Date()
         var fetched = list("easylist", "ads")

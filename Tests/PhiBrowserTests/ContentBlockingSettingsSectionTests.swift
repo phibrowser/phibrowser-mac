@@ -50,6 +50,16 @@ private final class RecordingBridge: ContentBlockingBridging {
     func refreshContentBlockingLists(_ profileId: String, completion: @escaping (Bool, String?) -> Void) {
         completion(false, "unsupported")
     }
+
+    func downloadContentBlockingList(_ profileId: String, listId: String,
+                                     completion: @escaping (Bool, String?) -> Void) {
+        completion(false, "unsupported")
+    }
+
+    func deleteContentBlockingListDownload(_ profileId: String, listId: String,
+                                           completion: @escaping (Bool, String?) -> Void) {
+        completion(false, "unsupported")
+    }
 }
 
 @MainActor

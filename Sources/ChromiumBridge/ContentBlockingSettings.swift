@@ -95,6 +95,14 @@ protocol ContentBlockingBridging {
                                          completion: @escaping (Bool, String?) -> Void)
     func refreshContentBlockingLists(_ profileId: String,
                                      completion: @escaping (Bool, String?) -> Void)
+    /// Downloads one list now, checked or not.
+    func downloadContentBlockingList(_ profileId: String,
+                                     listId: String,
+                                     completion: @escaping (Bool, String?) -> Void)
+    /// Deletes a list's downloaded text; Chromium also unchecks it.
+    func deleteContentBlockingListDownload(_ profileId: String,
+                                           listId: String,
+                                           completion: @escaping (Bool, String?) -> Void)
 }
 
 /// Adapts the live Chromium bridge to `ContentBlockingBridging`. Every call
@@ -190,6 +198,26 @@ struct LiveContentBlockingBridge: ContentBlockingBridging {
             return
         }
         bridge.refreshContentBlockingLists(profileId, completion: completion)
+    }
+
+    func downloadContentBlockingList(_ profileId: String,
+                                     listId: String,
+                                     completion: @escaping (Bool, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.downloadContentBlockingList(_:listId:completion:))) else {
+            completion(false, "bridge too old")
+            return
+        }
+        bridge.downloadContentBlockingList(profileId, listId: listId, completion: completion)
+    }
+
+    func deleteContentBlockingListDownload(_ profileId: String,
+                                           listId: String,
+                                           completion: @escaping (Bool, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.deleteContentBlockingListDownload(_:listId:completion:))) else {
+            completion(false, "bridge too old")
+            return
+        }
+        bridge.deleteContentBlockingListDownload(profileId, listId: listId, completion: completion)
     }
 }
 
@@ -338,6 +366,48 @@ final class ContentBlockingSettings: ObservableObject {
         updated.lists.removeAll { $0.id == id }
         state = updated
         bridge.removeContentBlockingCustomList(profileId, listId: id) { [weak self] success, _ in
+            DispatchQueue.main.async {
+                if !success { self?.state = previous }
+                completion(success)
+            }
+        }
+    }
+
+    /// Downloads one list now. The row shows "Downloading…" until the state
+    /// is re-read after Chromium reports the change.
+    func downloadList(_ id: String, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard let bridge, var updated = state,
+              let index = updated.lists.firstIndex(where: { $0.id == id }) else {
+            completion(false)
+            return
+        }
+        let previous = state
+        updated.lists[index].available = false
+        updated.lists[index].lastError = ""
+        state = updated
+        bridge.downloadContentBlockingList(profileId, listId: id) { [weak self] success, _ in
+            DispatchQueue.main.async {
+                if !success { self?.state = previous }
+                completion(success)
+            }
+        }
+    }
+
+    /// Deletes a list's downloaded text; the row shows it unchecked and not
+    /// downloaded right away and reverts if Chromium refuses.
+    func deleteListDownload(_ id: String, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard let bridge, var updated = state,
+              let index = updated.lists.firstIndex(where: { $0.id == id }) else {
+            completion(false)
+            return
+        }
+        let previous = state
+        updated.lists[index].available = false
+        updated.lists[index].checked = false
+        updated.lists[index].fetchedAt = nil
+        updated.lists[index].lastError = ""
+        state = updated
+        bridge.deleteContentBlockingListDownload(profileId, listId: id) { [weak self] success, _ in
             DispatchQueue.main.async {
                 if !success { self?.state = previous }
                 completion(success)

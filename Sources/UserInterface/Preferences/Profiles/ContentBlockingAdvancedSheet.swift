@@ -216,19 +216,9 @@ struct ContentBlockingListRow: View {
                 .toggleStyle(.checkbox)
                 .disabled(!enabled)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(list.title)
-                        .font(.system(size: 13))
-                        .themedForeground(enabled ? .textPrimary : .textTertiary)
-                    if list.isRecommended && !list.available {
-                        Text(NSLocalizedString("settings.privacy.contentBlocking.list.recommended", value: "Recommended", comment: "Advanced ad block settings - Tag on a filter list the catalog recommends, shown until it is downloaded"))
-                            .font(.system(size: 10, weight: .medium))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
+                Text(list.title)
+                    .font(.system(size: 13))
+                    .themedForeground(enabled ? .textPrimary : .textTertiary)
                 if let line = Self.availabilityLine(for: list) {
                     Text(line)
                         .font(.system(size: 11))

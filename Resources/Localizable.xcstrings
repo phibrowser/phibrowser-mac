@@ -69800,18 +69800,6 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.list.recommended" : {
-      "comment" : "Advanced ad block settings - Tag on a filter list the catalog recommends, shown until it is downloaded",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Recommended"
-          }
-        }
-      }
-    },
     "settings.privacy.contentBlocking.list.remove" : {
       "comment" : "Advanced ad block settings - Tooltip of the button removing a custom filter list",
       "extractionState" : "extracted_with_value",
@@ -69999,19 +69987,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose rule sets…"
+            "value" : "Choose…"
           }
         }
       }
     },
     "settings.privacy.contentBlocking.summary.count" : {
-      "comment" : "Profile settings - Line under a content blocking toggle when three or more filter lists are checked; %d is the count",
+      "comment" : "Profile settings - Line under a content blocking toggle counting the filter lists chosen for it; %d is the count",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%d rule sets"
+            "value" : "%d rule sets selected"
           }
         }
       }

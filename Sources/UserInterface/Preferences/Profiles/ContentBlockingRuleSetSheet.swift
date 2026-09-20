@@ -32,7 +32,7 @@ enum ContentBlockingRuleSets {
     /// nothing usable, "Change…" otherwise.
     static func actionLabel(for category: ContentBlockingCategory, in state: ContentBlockingState) -> String {
         needsDownload(for: category, in: state)
-            ? NSLocalizedString("settings.privacy.contentBlocking.summary.choose", value: "Choose rule sets…", comment: "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser")
+            ? NSLocalizedString("settings.privacy.contentBlocking.summary.choose", value: "Choose…", comment: "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser")
             : NSLocalizedString("settings.privacy.contentBlocking.summary.change", value: "Change…", comment: "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser")
     }
 
@@ -44,10 +44,8 @@ enum ContentBlockingRuleSets {
         if checked.isEmpty && custom.isEmpty {
             return NSLocalizedString("settings.privacy.contentBlocking.summary.noneSelected", value: "No rule sets selected", comment: "Profile settings - Line under a content blocking toggle when no filter list is checked for it")
         }
-        // Up to two names read well; more become a count.
-        var names = checked.count <= 2
-            ? checked.map(\.title).joined(separator: ", ")
-            : String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.count", value: "%d rule sets", comment: "Profile settings - Line under a content blocking toggle when three or more filter lists are checked; %d is the count"), checked.count)
+        // A count keeps the line short however many lists are chosen.
+        var names = checked.isEmpty ? "" : String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.count", value: "%d rule sets selected", comment: "Profile settings - Line under a content blocking toggle counting the filter lists chosen for it; %d is the count"), checked.count)
         if !custom.isEmpty {
             let customPart = String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.custom", value: "%d custom", comment: "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count"), custom.count)
             names = names.isEmpty ? customPart : names + " + " + customPart

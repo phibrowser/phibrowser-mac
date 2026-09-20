@@ -36,6 +36,20 @@ private final class RecordingBridge: ContentBlockingBridging {
     func contentBlockingSiteExceptionDomain(forURL url: String) -> String {
         URL(string: url)?.host ?? ""
     }
+
+    func addContentBlockingCustomList(_ profileId: String, name: String, url: String?, rules: String?,
+                                      completion: @escaping (String?, String?) -> Void) {
+        completion(nil, "unsupported")
+    }
+
+    func removeContentBlockingCustomList(_ profileId: String, listId: String,
+                                         completion: @escaping (Bool, String?) -> Void) {
+        completion(false, "unsupported")
+    }
+
+    func refreshContentBlockingLists(_ profileId: String, completion: @escaping (Bool, String?) -> Void) {
+        completion(false, "unsupported")
+    }
 }
 
 @MainActor

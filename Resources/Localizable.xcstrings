@@ -69161,6 +69161,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.advanced.addFilter" : {
+      "comment" : "Advanced ad block settings - Button opening the sheet that adds a custom filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Filter…"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.advanced.done" : {
       "comment" : "Advanced ad block settings - Button closing the sheet",
       "extractionState" : "extracted_with_value",
@@ -69205,6 +69217,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Cookie Banners"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.section.custom" : {
+      "comment" : "Advanced ad block settings - Section title for the user's own filter lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Custom"
           }
         }
       }
@@ -69305,6 +69329,150 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.customFilter.add" : {
+      "comment" : "Custom filter sheet - Button that adds the filter",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.cancel" : {
+      "comment" : "Custom filter sheet - Cancel button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.error.name" : {
+      "comment" : "Custom filter sheet - Validation message when the name is empty",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Give the filter a name."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.error.rules" : {
+      "comment" : "Custom filter sheet - Validation message when the rules text is empty",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enter at least one filter rule."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.error.url" : {
+      "comment" : "Custom filter sheet - Validation message when the URL is missing or not http(s)",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enter a full http(s) URL."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.kind.rules" : {
+      "comment" : "Custom filter sheet - Segment for pasted filter rules",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Custom"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.kind.url" : {
+      "comment" : "Custom filter sheet - Segment for a filter list downloaded from a URL",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "URL"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.name" : {
+      "comment" : "Custom filter sheet - Label of the name field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.namePlaceholder" : {
+      "comment" : "Custom filter sheet - Placeholder of the name field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "e.g. My filter"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.rules" : {
+      "comment" : "Custom filter sheet - Label of the rules text area",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Filter rules"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.title" : {
+      "comment" : "Custom filter sheet - Title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Custom filter"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.customFilter.url" : {
+      "comment" : "Custom filter sheet - Label of the URL field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "URL"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.list.adguardChinese.desc" : {
       "comment" : "Privacy settings - Description of the AdGuard Chinese regional filter list",
       "extractionState" : "extracted_with_value",
@@ -69397,6 +69565,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Bulgarian List"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.downloadFailed" : {
+      "comment" : "Advanced ad block settings - Line under a filter list whose download failed; %@ is the error",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not downloaded: %@"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.downloading" : {
+      "comment" : "Advanced ad block settings - Line under a filter list whose first download is in progress",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloading…"
           }
         }
       }
@@ -69521,6 +69713,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.list.remove" : {
+      "comment" : "Advanced ad block settings - Tooltip of the button removing a custom filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove this filter"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.list.ublockAds.desc" : {
       "comment" : "Privacy settings - Description of the uBlock Origin ads filter list",
       "extractionState" : "extracted_with_value",
@@ -69593,6 +69797,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.listInfo.builtIn" : {
+      "comment" : "Advanced ad block settings - Details line for a filter list shipped with the browser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Built into Phi"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.listInfo.license" : {
       "comment" : "Advanced ad block settings - License line in a filter list's details; %@ is the license name",
       "extractionState" : "extracted_with_value",
@@ -69605,6 +69821,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.listInfo.notDownloaded" : {
+      "comment" : "Advanced ad block settings - Details line for a filter list that has not been downloaded",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not downloaded yet"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.listInfo.source" : {
       "comment" : "Advanced ad block settings - Link label pointing at a filter list's home page",
       "extractionState" : "extracted_with_value",
@@ -69613,6 +69841,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Source"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.listInfo.updated" : {
+      "comment" : "Advanced ad block settings - Details line with when a filter list was last downloaded; %@ is a relative time like '3 hours ago'",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Updated %@"
           }
         }
       }

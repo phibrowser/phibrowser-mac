@@ -47,6 +47,27 @@ private final class FakeContentBlockingBridge: ContentBlockingBridging {
     func contentBlockingSiteExceptionDomain(forURL url: String) -> String {
         URL(string: url)?.host ?? ""
     }
+
+    var customCalls: [(String, String?, String?)] = []
+    var removeCalls: [String] = []
+    var refreshCalls = 0
+
+    func addContentBlockingCustomList(_ profileId: String, name: String, url: String?, rules: String?,
+                                      completion: @escaping (String?, String?) -> Void) {
+        customCalls.append((name, url, rules))
+        completion(failWrites ? nil : "custom-1", failWrites ? "nope" : nil)
+    }
+
+    func removeContentBlockingCustomList(_ profileId: String, listId: String,
+                                         completion: @escaping (Bool, String?) -> Void) {
+        removeCalls.append(listId)
+        completion(!failWrites, failWrites ? "nope" : nil)
+    }
+
+    func refreshContentBlockingLists(_ profileId: String, completion: @escaping (Bool, String?) -> Void) {
+        refreshCalls += 1
+        completion(true, nil)
+    }
 }
 
 /// Swift stand-ins for the framework's protocol-typed snapshot objects.
@@ -58,6 +79,12 @@ final class FakeListInfo: NSObject, PhiContentBlockingListInfo {
     let langs: [String]
     let checked: Bool
     let defaultChecked: Bool
+    var name = ""
+    var custom = false
+    var sourceURL = ""
+    var available = true
+    var fetchedAt: TimeInterval = 0
+    var lastError = ""
 
     init(_ id: String, category: String, checked: Bool) {
         listId = id

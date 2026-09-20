@@ -26,7 +26,8 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
             list("bulgarian", "regional"),
         ]
         let groups = ContentBlockingAdvancedSheet.groups(from: lists)
-        XCTAssertEqual(groups.map(\.section), [.ads, .trackers, .cookies, .regional])
+        XCTAssertEqual(groups.map(\.section), [.ads, .trackers, .cookies, .regional, .custom])
+        XCTAssertTrue(groups[4].lists.isEmpty, "the Custom section always shows so a filter can be added")
         XCTAssertEqual(groups[0].lists.map(\.id), ["easylist", "ublock-ads"])
         XCTAssertEqual(groups[1].lists.map(\.id), ["easyprivacy", "ublock-privacy"])
         XCTAssertEqual(groups[2].lists.map(\.id), ["easylist-cookie"])
@@ -41,7 +42,34 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
 
     func testEmptySectionsAreOmittedAndUnknownCategoriesIgnored() {
         let groups = ContentBlockingAdvancedSheet.groups(from: [list("x", "ads"), list("y", "mystery")])
-        XCTAssertEqual(groups.map(\.section), [.ads])
+        XCTAssertEqual(groups.map(\.section), [.ads, .custom])
+    }
+
+    func testCustomListsGroupTogetherAndReadTheirDownloadState() {
+        var remote = list("custom-1", "custom")
+        remote.isCustom = true
+        remote.available = false
+        var failed = list("custom-2", "custom")
+        failed.isCustom = true
+        failed.available = false
+        failed.lastError = "HTTP 404"
+        let groups = ContentBlockingAdvancedSheet.groups(from: [list("easylist", "ads"), remote, failed])
+        XCTAssertEqual(groups.map(\.section), [.ads, .custom])
+        XCTAssertEqual(groups[1].lists.map(\.id), ["custom-1", "custom-2"])
+        XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: remote), "Downloading…")
+        XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: failed), "Not downloaded: HTTP 404")
+        XCTAssertNil(ContentBlockingListRow.availabilityLine(for: list("easylist", "ads")))
+    }
+
+    func testInfoPopoverUpdateLine() {
+        let now = Date()
+        var fetched = list("easylist", "ads")
+        fetched.fetchedAt = now.addingTimeInterval(-3 * 3600)
+        XCTAssertTrue(ContentBlockingListInfoPopover.updateLine(for: fetched, now: now).hasPrefix("Updated "))
+        XCTAssertEqual(ContentBlockingListInfoPopover.updateLine(for: list("phi-specific", "phi"), now: now), "Built into Phi")
+        var pending = list("x", "ads")
+        pending.available = false
+        XCTAssertEqual(ContentBlockingListInfoPopover.updateLine(for: pending, now: now), "Not downloaded yet")
     }
 
     func testSectionsFollowThePaneToggles() {

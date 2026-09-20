@@ -38,6 +38,17 @@ typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
 /// The checkbox state (user override, else catalog/language default).
 @property (nonatomic, assign, readonly) BOOL checked;
 @property (nonatomic, assign, readonly) BOOL defaultChecked;
+/// Custom lists (`category` @"custom"): the user's name and, when the list
+/// is downloaded, its URL (empty for pasted rules).
+@property (nonatomic, copy, readonly) NSString *name;
+@property (nonatomic, assign, readonly) BOOL custom;
+@property (nonatomic, copy, readonly) NSString *sourceURL;
+/// Whether the list's text is on disk. Downloaded lists start unavailable
+/// until the first fetch completes; `fetchedAt` is Unix seconds (0 while
+/// never fetched) and `lastError` the last download failure, if any.
+@property (nonatomic, assign, readonly) BOOL available;
+@property (nonatomic, assign, readonly) NSTimeInterval fetchedAt;
+@property (nonatomic, copy, readonly) NSString *lastError;
 @end
 
 /// A snapshot of one profile's content blocking state.
@@ -1863,6 +1874,26 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                         listId:(NSString *)listId
                        enabled:(BOOL)enabled
                     completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Adds a custom filter list to `profileId`: either `url` (http(s), downloaded
+/// and refreshed daily) or `rules` (filter text stored as given), exactly one
+/// non-empty. `completion` fires on the UI thread with the new list id, or nil
+/// and an error.
+- (void)addContentBlockingCustomList:(NSString *)profileId
+                                name:(NSString *)name
+                                 url:(NSString * _Nullable)url
+                               rules:(NSString * _Nullable)rules
+                          completion:(void (^)(NSString * _Nullable listId, NSString * _Nullable error))completion;
+
+/// Removes a custom list and its stored text. Unknown ids fail.
+- (void)removeContentBlockingCustomList:(NSString *)profileId
+                                 listId:(NSString *)listId
+                             completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Downloads every enabled downloadable list again now; `contentBlockingStatusChanged:`
+/// reports the rebuild when one changed.
+- (void)refreshContentBlockingLists:(NSString *)profileId
+                         completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
 
 /// Adds (`enabled` YES) or removes a registrable-domain exception where
 /// blocking is off for `profileId`.

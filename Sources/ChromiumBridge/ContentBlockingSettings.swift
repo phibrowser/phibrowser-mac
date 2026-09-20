@@ -23,13 +23,24 @@ enum ContentBlockingCategory {
 /// `description` are Mac-side strings keyed by the list id.
 struct ContentBlockingList: Identifiable, Hashable {
     let id: String
-    /// One of "ads", "trackers", "cookies", "regional", "phi".
+    /// One of "ads", "trackers", "cookies", "regional", "phi", "custom".
     let category: String
     let title: String
     let description: String
     let homepage: URL?
     let license: String
     var checked: Bool
+    /// True for lists the user added; `title` is then the user's name.
+    var isCustom = false
+    /// The download URL of a custom list; nil for pasted rules.
+    var sourceURL: URL? = nil
+    /// Whether the list's text is on disk. Downloaded lists start out
+    /// unavailable until the first fetch completes.
+    var available = true
+    /// When the list was last downloaded or confirmed current; nil if never.
+    var fetchedAt: Date? = nil
+    /// The last download failure, empty when the last fetch succeeded.
+    var lastError = ""
 }
 
 /// A profile's content blocking state as read through the bridge.
@@ -72,6 +83,18 @@ protocol ContentBlockingBridging {
     /// Chromium computes it. Empty when the URL is not a site or the bridge
     /// cannot say.
     func contentBlockingSiteExceptionDomain(forURL url: String) -> String
+    /// Adds a custom list from `url` or `rules` (exactly one non-nil) and
+    /// reports the new id, or an error.
+    func addContentBlockingCustomList(_ profileId: String,
+                                      name: String,
+                                      url: String?,
+                                      rules: String?,
+                                      completion: @escaping (String?, String?) -> Void)
+    func removeContentBlockingCustomList(_ profileId: String,
+                                         listId: String,
+                                         completion: @escaping (Bool, String?) -> Void)
+    func refreshContentBlockingLists(_ profileId: String,
+                                     completion: @escaping (Bool, String?) -> Void)
 }
 
 /// Adapts the live Chromium bridge to `ContentBlockingBridging`. Every call
@@ -135,6 +158,38 @@ struct LiveContentBlockingBridge: ContentBlockingBridging {
             return ""
         }
         return bridge.contentBlockingSiteExceptionDomain(forURL: url)
+    }
+
+    func addContentBlockingCustomList(_ profileId: String,
+                                      name: String,
+                                      url: String?,
+                                      rules: String?,
+                                      completion: @escaping (String?, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.addContentBlockingCustomList(_:name:url:rules:completion:))) else {
+            completion(nil, "bridge too old")
+            return
+        }
+        bridge.addContentBlockingCustomList(profileId, name: name, url: url, rules: rules,
+                                            completion: completion)
+    }
+
+    func removeContentBlockingCustomList(_ profileId: String,
+                                         listId: String,
+                                         completion: @escaping (Bool, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.removeContentBlockingCustomList(_:listId:completion:))) else {
+            completion(false, "bridge too old")
+            return
+        }
+        bridge.removeContentBlockingCustomList(profileId, listId: listId, completion: completion)
+    }
+
+    func refreshContentBlockingLists(_ profileId: String,
+                                     completion: @escaping (Bool, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.refreshContentBlockingLists(_:completion:))) else {
+            completion(false, "bridge too old")
+            return
+        }
+        bridge.refreshContentBlockingLists(profileId, completion: completion)
     }
 }
 
@@ -254,6 +309,53 @@ final class ContentBlockingSettings: ObservableObject {
         }
     }
 
+    /// Adds a custom list and re-reads the state once Chromium accepted it.
+    /// `completion` gets the error message on failure.
+    func addCustomList(name: String,
+                       url: String?,
+                       rules: String?,
+                       completion: @escaping (String?) -> Void) {
+        guard let bridge else {
+            completion("bridge unavailable")
+            return
+        }
+        bridge.addContentBlockingCustomList(profileId, name: name, url: url, rules: rules) { [weak self] _, error in
+            DispatchQueue.main.async {
+                if error == nil { self?.refresh() }
+                completion(error)
+            }
+        }
+    }
+
+    /// Removes a custom list; the row disappears optimistically and comes
+    /// back if Chromium refuses.
+    func removeCustomList(_ id: String, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard let bridge, var updated = state else {
+            completion(false)
+            return
+        }
+        let previous = state
+        updated.lists.removeAll { $0.id == id }
+        state = updated
+        bridge.removeContentBlockingCustomList(profileId, listId: id) { [weak self] success, _ in
+            DispatchQueue.main.async {
+                if !success { self?.state = previous }
+                completion(success)
+            }
+        }
+    }
+
+    /// Downloads the enabled lists again now.
+    func refreshLists(completion: @escaping (Bool) -> Void = { _ in }) {
+        guard let bridge else {
+            completion(false)
+            return
+        }
+        bridge.refreshContentBlockingLists(profileId) { success, _ in
+            DispatchQueue.main.async { completion(success) }
+        }
+    }
+
     /// The exception key for the page at `url`, or nil when the page is not
     /// a site (chrome://, file:, an empty URL) or the bridge is unavailable.
     func siteExceptionDomain(forURL url: String) -> String? {
@@ -273,11 +375,16 @@ final class ContentBlockingSettings: ObservableObject {
                 ContentBlockingList(
                     id: info.listId,
                     category: info.category,
-                    title: ContentBlockingListStrings.title(for: info.listId),
-                    description: ContentBlockingListStrings.description(for: info.listId),
+                    title: info.custom ? info.name : ContentBlockingListStrings.title(for: info.listId),
+                    description: info.custom ? "" : ContentBlockingListStrings.description(for: info.listId),
                     homepage: info.homepage.isEmpty ? nil : URL(string: info.homepage),
                     license: info.license,
-                    checked: info.checked)
+                    checked: info.checked,
+                    isCustom: info.custom,
+                    sourceURL: info.sourceURL.isEmpty ? nil : URL(string: info.sourceURL),
+                    available: info.available,
+                    fetchedAt: info.fetchedAt > 0 ? Date(timeIntervalSince1970: info.fetchedAt) : nil,
+                    lastError: info.lastError)
             },
             siteExceptions: settings.siteExceptions,
             status: ContentBlockingState.Status(rawValue: settings.status) ?? .disabled,

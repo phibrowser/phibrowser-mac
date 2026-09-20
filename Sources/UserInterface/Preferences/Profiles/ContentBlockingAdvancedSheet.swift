@@ -9,7 +9,7 @@ import SwiftUI
 /// The catalog sections of the Advanced Ad Block Settings sheet, in display
 /// order. `regional` lists count as ads and follow the Block ads toggle.
 enum ContentBlockingSection: String, CaseIterable, Identifiable {
-    case ads, trackers, cookies, regional, phi
+    case ads, trackers, cookies, regional, custom, phi
 
     var id: String { rawValue }
 
@@ -23,6 +23,8 @@ enum ContentBlockingSection: String, CaseIterable, Identifiable {
             return NSLocalizedString("settings.privacy.contentBlocking.advanced.section.cookies", value: "Cookie Banners", comment: "Advanced ad block settings - Section title for cookie banner filter lists")
         case .regional:
             return NSLocalizedString("settings.privacy.contentBlocking.advanced.section.regional", value: "Regional", comment: "Advanced ad block settings - Section title for language-specific filter lists")
+        case .custom:
+            return NSLocalizedString("settings.privacy.contentBlocking.advanced.section.custom", value: "Custom", comment: "Advanced ad block settings - Section title for the user's own filter lists")
         case .phi:
             return NSLocalizedString("settings.privacy.contentBlocking.advanced.section.phi", value: "Phi", comment: "Advanced ad block settings - Section title for Phi's own filter lists")
         }
@@ -34,7 +36,7 @@ enum ContentBlockingSection: String, CaseIterable, Identifiable {
         case .ads, .regional: return state.blockAds
         case .trackers: return state.blockTrackers
         case .cookies: return state.blockCookieBanners
-        case .phi: return state.blockAds || state.blockTrackers || state.blockCookieBanners
+        case .custom, .phi: return state.blockAds || state.blockTrackers || state.blockCookieBanners
         }
     }
 }
@@ -56,14 +58,17 @@ struct ContentBlockingAdvancedSheet: View {
 
     /// Groups `lists` by section in display order, keeping catalog order
     /// inside each section; hidden sections and sections without lists are
-    /// omitted.
+    /// omitted, except Custom, which always shows so the user can add one.
     static func groups(from lists: [ContentBlockingList]) -> [ContentBlockingSectionGroup] {
         ContentBlockingSection.allCases.compactMap { section in
             if hiddenSections.contains(section) { return nil }
             let members = lists.filter { $0.category == section.rawValue }
-            return members.isEmpty ? nil : ContentBlockingSectionGroup(section: section, lists: members)
+            if members.isEmpty && section != .custom { return nil }
+            return ContentBlockingSectionGroup(section: section, lists: members)
         }
     }
+
+    @State private var showAddFilter = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -95,6 +100,9 @@ struct ContentBlockingAdvancedSheet: View {
         .padding(24)
         .frame(width: 520, height: 560)
         .themedBackground(PhiPreferences.fixedWindowBackground)
+        .sheet(isPresented: $showAddFilter) {
+            ContentBlockingCustomFilterSheet(settings: settings)
+        }
     }
 
     private func sectionView(_ group: ContentBlockingSectionGroup, enabled: Bool) -> some View {
@@ -105,31 +113,69 @@ struct ContentBlockingAdvancedSheet: View {
             SettingsDetailCard {
                 ForEach(Array(group.lists.enumerated()), id: \.element.id) { index, list in
                     if index > 0 { Divider() }
-                    ContentBlockingListRow(list: list, enabled: enabled) { checked in
-                        settings.setList(list.id, checked: checked)
+                    ContentBlockingListRow(list: list, enabled: enabled,
+                                           onToggle: { checked in settings.setList(list.id, checked: checked) },
+                                           onRemove: list.isCustom ? { settings.removeCustomList(list.id) } : nil)
+                }
+                if group.section == .custom {
+                    if !group.lists.isEmpty { Divider() }
+                    HStack {
+                        Spacer()
+                        Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.addFilter", value: "Add Filter…", comment: "Advanced ad block settings - Button opening the sheet that adds a custom filter list")) {
+                            showAddFilter = true
+                        }
                     }
+                    .padding(.vertical, 8)
                 }
             }
         }
     }
 }
 
-/// One list row: checkbox, title, and an info button with the details popover.
+/// One list row: checkbox, title, a download-state line when the list is
+/// not on disk, an info button with the details popover, and a remove
+/// button for custom lists.
 struct ContentBlockingListRow: View {
     let list: ContentBlockingList
     let enabled: Bool
     let onToggle: (Bool) -> Void
+    var onRemove: (() -> Void)? = nil
     @State private var showInfo = false
+
+    /// The line under a list that has no text on disk yet; nil once it does.
+    static func availabilityLine(for list: ContentBlockingList) -> String? {
+        if list.available { return nil }
+        if list.lastError.isEmpty {
+            return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose first download is in progress")
+        }
+        return String(format: NSLocalizedString("settings.privacy.contentBlocking.list.downloadFailed", value: "Not downloaded: %@", comment: "Advanced ad block settings - Line under a filter list whose download failed; %@ is the error"), list.lastError)
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             Toggle("", isOn: Binding(get: { list.checked }, set: onToggle))
                 .labelsHidden()
                 .toggleStyle(.checkbox)
-            Text(list.title)
-                .font(.system(size: 13))
-                .themedForeground(enabled ? .textPrimary : .textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(list.title)
+                    .font(.system(size: 13))
+                    .themedForeground(enabled ? .textPrimary : .textTertiary)
+                if let line = Self.availabilityLine(for: list) {
+                    Text(line)
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "trash")
+                        .themedForeground(.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.list.remove", value: "Remove this filter", comment: "Advanced ad block settings - Tooltip of the button removing a custom filter list"))
+            }
             Button {
                 showInfo.toggle()
             } label: {

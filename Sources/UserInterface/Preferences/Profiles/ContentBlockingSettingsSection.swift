@@ -40,13 +40,11 @@ struct ContentBlockingSettingsSection: View {
 
     @StateObject private var model = ContentBlockingSectionModel()
     @State private var showAdvanced = false
-    /// The toggle whose rule sets the chooser sheet shows, and whether Cancel
-    /// turns that toggle back off (it was just switched on).
+    /// The toggle whose rule sets the chooser sheet shows.
     @State private var ruleSetChooser: RuleSetChooser?
 
     struct RuleSetChooser: Identifiable {
         let category: ContentBlockingCategory
-        let revertsOnCancel: Bool
         var id: String { "\(category)" }
     }
 
@@ -97,8 +95,7 @@ struct ContentBlockingSettingsSection: View {
         }
         .sheet(item: $ruleSetChooser) { chooser in
             if let settings = model.settings {
-                ContentBlockingRuleSetSheet(settings: settings, category: chooser.category,
-                                            revertsToggleOnCancel: chooser.revertsOnCancel)
+                ContentBlockingRuleSetSheet(settings: settings, category: chooser.category)
             }
         }
     }
@@ -110,7 +107,7 @@ struct ContentBlockingSettingsSection: View {
         settings.setCategory(category, enabled: enabled)
         if enabled, let state = settings.state,
            ContentBlockingRuleSets.needsDownload(for: category, in: state) {
-            ruleSetChooser = RuleSetChooser(category: category, revertsOnCancel: true)
+            ruleSetChooser = RuleSetChooser(category: category)
         }
     }
 
@@ -152,7 +149,7 @@ struct ContentBlockingSettingsSection: View {
             }
             if value == true, let state = model.settings?.state {
                 Button {
-                    ruleSetChooser = RuleSetChooser(category: category, revertsOnCancel: false)
+                    ruleSetChooser = RuleSetChooser(category: category)
                 } label: {
                     HStack(spacing: 4) {
                         Text(ContentBlockingRuleSets.summary(for: category, in: state))

@@ -30,6 +30,8 @@ struct ContentBlockingList: Identifiable, Hashable {
     let homepage: URL?
     let license: String
     var checked: Bool
+    /// The catalog recommends this list (it is used as soon as downloaded).
+    var isRecommended = false
     /// True for lists the user added; `title` is then the user's name.
     var isCustom = false
     /// The download URL of a custom list; nil for pasted rules.
@@ -465,6 +467,7 @@ final class ContentBlockingSettings: ObservableObject {
                     homepage: info.homepage.isEmpty ? nil : URL(string: info.homepage),
                     license: info.license,
                     checked: info.checked,
+                    isRecommended: info.defaultChecked && !info.custom,
                     isCustom: info.custom,
                     sourceURL: info.sourceURL.isEmpty ? nil : URL(string: info.sourceURL),
                     available: info.available,

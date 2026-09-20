@@ -63,14 +63,12 @@ enum ContentBlockingRuleSets {
     }
 }
 
-/// "Choose rule sets": the lists a toggle uses, each with a checkbox and its
-/// download state, and a Download button for the checked ones that are
-/// missing. Cancel turns the toggle back off when it was just switched on.
+/// "Choose rule sets": the lists a toggle uses, each with a checkbox (use
+/// it) and a download button (fetch its text). Choices apply as they are
+/// made; Done just closes.
 struct ContentBlockingRuleSetSheet: View {
     @ObservedObject var settings: ContentBlockingSettings
     let category: ContentBlockingCategory
-    /// Set when the sheet opened because the toggle was just turned on.
-    let revertsToggleOnCancel: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var showAddFilter = false
 
@@ -79,7 +77,7 @@ struct ContentBlockingRuleSetSheet: View {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
                 .themedForeground(.textPrimary)
-            Text(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.intro", value: "Rule sets are downloaded from their publishers only when you ask. Choose which to use, then download the ones that are missing.", comment: "Choose rule sets sheet - Introductory sentence"))
+            Text(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.intro", value: "Rule sets are downloaded from their publishers only when you ask: use ↓ to download one, and the checkbox to use it. Recommended rule sets are used as soon as they are downloaded.", comment: "Choose rule sets sheet - Introductory sentence"))
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -124,19 +122,10 @@ struct ContentBlockingRuleSetSheet: View {
             }
             HStack {
                 Spacer()
-                Button(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.cancel", value: "Cancel", comment: "Choose rule sets sheet - Cancel button")) {
-                    if revertsToggleOnCancel {
-                        settings.setCategory(category, enabled: false)
-                    }
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-                Button(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.download", value: "Download", comment: "Choose rule sets sheet - Button that downloads the checked lists that are missing")) {
-                    settings.downloadLists(missingCheckedIds)
+                Button(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.done", value: "Done", comment: "Choose rule sets sheet - Button closing the sheet; choices are saved as they are made")) {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(missingCheckedIds.isEmpty)
             }
         }
         .padding(24)
@@ -145,12 +134,6 @@ struct ContentBlockingRuleSetSheet: View {
         .sheet(isPresented: $showAddFilter) {
             ContentBlockingCustomFilterSheet(settings: settings)
         }
-    }
-
-    private var missingCheckedIds: [String] {
-        guard let state = settings.state else { return [] }
-        let candidates = ContentBlockingRuleSets.lists(for: category, in: state) + state.lists.filter(\.isCustom)
-        return candidates.filter { $0.checked && !$0.available }.map(\.id)
     }
 
     private var title: String {

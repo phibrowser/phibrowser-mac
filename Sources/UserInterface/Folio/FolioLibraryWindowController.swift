@@ -9,12 +9,12 @@ import SwiftUI
 /// that window's Profile even while another browser window is frontmost.
 @MainActor
 final class FolioLibraryWindowController: NSWindowController, NSWindowDelegate {
-    private weak var browserOwner: MainBrowserWindowController?
+    private weak var browserOwner: SpaceSessionController?
     private let model: FolioLibraryModel
     private var refreshTask: Task<Void, Never>?
     private var themeSubscription: AnyCancellable?
 
-    init(owner: MainBrowserWindowController) {
+    init(owner: SpaceSessionController) {
         self.browserOwner = owner
         model = FolioLibraryModel(profileId: owner.browserState.profileId)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 780),

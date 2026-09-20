@@ -243,6 +243,9 @@ class SideBarOutlineView: DiffableOutlineView {
 
     var dragAutoscrollTopObstructionHeight: CGFloat = 0
 
+    /// Embedded management lists keep blank-area clicks inside the list.
+    var dragsWindowFromBlankArea = true
+
     /// Keeps contextual clicks on the outline view so AppKit asks this view for
     /// its menu before any row-level click or drag handling begins.
     var capturesContextMenuClicks = false
@@ -436,7 +439,7 @@ class SideBarOutlineView: DiffableOutlineView {
             AppLogDebug(
                 "[SIDEBAR_TAB_DRAG_THRESHOLD] super mouseDown returned row=\(index)"
             )
-        } else if let window {
+        } else if dragsWindowFromBlankArea, let window {
             let mouseDownLocation = window.convertPoint(toScreen: event.locationInWindow)
             AppLogDebug("[SIDEBAR_TAB_DRAG_THRESHOLD] dragging window from empty area")
             window.performDrag(with: event)

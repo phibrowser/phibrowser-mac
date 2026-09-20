@@ -626,6 +626,10 @@
 		DEBE00000000000000000006 /* DeveloperSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */; };
 		DEBE00000000000000000007 /* DeveloperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000004 /* DeveloperSettingsView.swift */; };
 		EA9211000000000000000001 /* LibraryOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211000000000000000002 /* LibraryOverlayController.swift */; };
+		EA9211180000000000000001 /* LibrarySpacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211180000000000000002 /* LibrarySpacesView.swift */; };
+		EA9211180000000000000003 /* LibrarySpaceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211180000000000000004 /* LibrarySpaceCard.swift */; };
+		EA9211180000000000000005 /* LibrarySpaceContents.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211180000000000000006 /* LibrarySpaceContents.swift */; };
+		EA9211180000000000000007 /* LibrarySpaceDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9211180000000000000008 /* LibrarySpaceDragHandle.swift */; };
 		EAD000000000000000000012 /* ReaderExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000011 /* ReaderExtractionService.swift */; };
 		EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000013 /* BrowserState+Reader.swift */; };
 		EAD000000000000000000016 /* ReaderDocumentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000015 /* ReaderDocumentBuilder.swift */; };
@@ -660,6 +664,7 @@
 		FA1100000000000000000002 /* FolioLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000001 /* FolioLibrary.swift */; };
 		FA1100000000000000000004 /* FolioLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000003 /* FolioLibraryView.swift */; };
 		FA1100000000000000000006 /* FolioLibraryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100000000000000000005 /* FolioLibraryWindowController.swift */; };
+		EA9211180000000000000009 /* LibrarySpaceManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA921118000000000000000A /* LibrarySpaceManagementView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1414,6 +1419,10 @@
 		2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV13.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-OpenSource.entitlements"; sourceTree = "<group>"; };
 		EA9211000000000000000002 /* LibraryOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryOverlayController.swift; sourceTree = "<group>"; };
+		EA9211180000000000000002 /* LibrarySpacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySpacesView.swift; sourceTree = "<group>"; };
+		EA9211180000000000000004 /* LibrarySpaceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySpaceCard.swift; sourceTree = "<group>"; };
+		EA9211180000000000000006 /* LibrarySpaceContents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySpaceContents.swift; sourceTree = "<group>"; };
+		EA9211180000000000000008 /* LibrarySpaceDragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySpaceDragHandle.swift; sourceTree = "<group>"; };
 		EAD000000000000000000011 /* ReaderExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtractionService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000013 /* BrowserState+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+Reader.swift"; sourceTree = "<group>"; };
 		EAD000000000000000000015 /* ReaderDocumentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDocumentBuilder.swift; sourceTree = "<group>"; };
@@ -1456,6 +1465,7 @@
 		FA1100000000000000000001 /* FolioLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibrary.swift; sourceTree = "<group>"; };
 		FA1100000000000000000003 /* FolioLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibraryView.swift; sourceTree = "<group>"; };
 		FA1100000000000000000005 /* FolioLibraryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolioLibraryWindowController.swift; sourceTree = "<group>"; };
+		EA921118000000000000000A /* LibrarySpaceManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySpaceManagementView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -1600,6 +1610,11 @@
 		3751E6B5305D39B8004D82C7 /* Space */ = {
 			isa = PBXGroup;
 			children = (
+				EA921118000000000000000A /* LibrarySpaceManagementView.swift */,
+				EA9211180000000000000008 /* LibrarySpaceDragHandle.swift */,
+				EA9211180000000000000006 /* LibrarySpaceContents.swift */,
+				EA9211180000000000000004 /* LibrarySpaceCard.swift */,
+				EA9211180000000000000002 /* LibrarySpacesView.swift */,
 			);
 			path = Space;
 			sourceTree = "<group>";
@@ -3962,6 +3977,11 @@
 				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
 				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
 				3751E249305D18AE004D82C7 /* LibraryViewModule.swift in Sources */,
+				EA9211180000000000000009 /* LibrarySpaceManagementView.swift in Sources */,
+				EA9211180000000000000007 /* LibrarySpaceDragHandle.swift in Sources */,
+				EA9211180000000000000005 /* LibrarySpaceContents.swift in Sources */,
+				EA9211180000000000000003 /* LibrarySpaceCard.swift in Sources */,
+				EA9211180000000000000001 /* LibrarySpacesView.swift in Sources */,
 				EA9211000000000000000001 /* LibraryOverlayController.swift in Sources */,
 				5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */,
 				AB7090710000000000000002 /* SiteMemoryService.swift in Sources */,

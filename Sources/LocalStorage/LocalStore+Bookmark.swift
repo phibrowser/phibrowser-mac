@@ -806,7 +806,8 @@ extension LocalStore {
     func moveSelectedBookmarks(_ guids: [String],
                                profileId: String,
                                to parentId: String?,
-                               newIndex: Int?) {
+                               newIndex: Int?,
+                               expectedSpaceId: String? = nil) {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
@@ -820,6 +821,7 @@ extension LocalStore {
                 var nodes: [TabDataModel] = []
                 for guid in uniqueGuids {
                     guard let node = try self.bookmarkNode(with: guid, in: context),
+                          expectedSpaceId == nil || (node.spaceId == expectedSpaceId && node.profileId == profileId),
                           try !self.isBookmarkRoot(node, in: context) else {
                         continue
                     }
@@ -913,7 +915,10 @@ extension LocalStore {
     func moveBookmarks(_ guids: [String],
                        sourceProfileId: String,
                        toSpaceId targetSpaceId: String,
-                       targetProfileId: String) {
+                       targetProfileId: String,
+                       sourceSpaceId: String? = nil,
+                       targetParentId: String? = nil,
+                       destinationIndex: Int? = nil) {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
@@ -926,6 +931,9 @@ extension LocalStore {
                                            targetProfileId: targetProfileId,
                                            readOnlyTargetRoot: false,
                                            recordsLocationEdit: true,
+                                           sourceSpaceId: sourceSpaceId,
+                                           targetParentId: targetParentId,
+                                           destinationIndex: destinationIndex,
                                            in: context)
             } catch {
                 AppLogError("Failed to move bookmarks to Space: \(error)")
@@ -959,6 +967,9 @@ extension LocalStore {
                                    targetProfileId: String,
                                    readOnlyTargetRoot: Bool,
                                    recordsLocationEdit: Bool,
+                                   sourceSpaceId: String? = nil,
+                                   targetParentId: String? = nil,
+                                   destinationIndex: Int? = nil,
                                    in context: ModelContext) throws {
         // An empty list is a caller bug, not a successful no-op.
         guard !guids.isEmpty else {
@@ -988,7 +999,25 @@ extension LocalStore {
             throw LocalStoreWriteError.rowNotFound
         }
 
+        let destination: TabDataModel
+        if let targetParentId {
+            guard let folder = try bookmarkNode(with: targetParentId, in: context),
+                  folder.dataType == .bookmarkFolder,
+                  folder.profileId == targetProfileId,
+                  folder.spaceId == targetSpaceId else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            destination = folder
+        } else {
+            destination = targetRoot
+        }
+
         let requestedGuids = Set(guids)
+        guard !requestedGuids.contains(destination.guid),
+              !hasAncestor(of: destination, in: requestedGuids) else {
+            throw LocalStoreWriteError.noCandidateSurvived
+        }
+        let originalSiblings = try children(of: destination, in: context)
         var sourceParentsByGuid: [String: TabDataModel] = [:]
         var movedNodes: [TabDataModel] = []
         var movedGuids = Set<String>()
@@ -997,18 +1026,20 @@ extension LocalStore {
         for guid in guids {
             guard let node = try bookmarkNode(with: guid, in: context),
                   node.profileId == sourceProfileId,
+                  sourceSpaceId == nil || node.spaceId == sourceSpaceId,
                   try !isBookmarkRoot(node, in: context),
                   !hasAncestor(of: node, in: requestedGuids) else {
                 continue
             }
-            if node.spaceId == targetSpaceId && node.profileId == targetProfileId {
+            if node.spaceId == targetSpaceId && node.profileId == targetProfileId
+                && targetParentId == nil && destinationIndex == nil {
                 continue
             }
 
             if let parent = node.parent {
                 sourceParentsByGuid[parent.guid] = parent
             }
-            node.parent = targetRoot
+            node.parent = destination
             // Only the moved row: `retagBookmarkSubtree` also rewrites every descendant's Space, and a
             // descendant's space_uuid is diagnostic and never republished (R-M3-3-18).
             if recordsLocationEdit { node.locationUpdatedDate = now }
@@ -1027,14 +1058,21 @@ extension LocalStore {
         guard !movedNodes.isEmpty else {
             throw LocalStoreWriteError.noCandidateSurvived
         }
-        for parent in sourceParentsByGuid.values where parent.guid != targetRoot.guid {
+        for parent in sourceParentsByGuid.values where parent.guid != destination.guid {
             let siblings = try children(of: parent, in: context)
             normalizeIndexes(for: siblings)
         }
 
-        var targetSiblings = try children(of: targetRoot, in: context)
+        var targetSiblings = try children(of: destination, in: context)
             .filter { !movedGuids.contains($0.guid) }
-        targetSiblings.append(contentsOf: movedNodes)
+        if let destinationIndex {
+            let bounded = min(max(destinationIndex, 0), originalSiblings.count)
+            let removedBefore = originalSiblings.prefix(bounded).filter { movedGuids.contains($0.guid) }.count
+            let insertion = min(max(bounded - removedBefore, 0), targetSiblings.count)
+            targetSiblings.insert(contentsOf: movedNodes, at: insertion)
+        } else {
+            targetSiblings.append(contentsOf: movedNodes)
+        }
         normalizeIndexes(for: targetSiblings)
 
         for node in movedNodes where node.dataType == .bookmarkFolder {
@@ -1048,7 +1086,7 @@ extension LocalStore {
                                            in: context)
             }
         }
-        targetRoot.updatedDate = now
+        destination.updatedDate = now
     }
 
     /// Clones an explicit bookmark selection into another Space's bookmark
@@ -1129,7 +1167,9 @@ extension LocalStore {
                         title: String?,
                         url: String?,
                         secondaryUrl: String?? = nil,
-                        secondaryTitle: String?? = nil) {
+                        secondaryTitle: String?? = nil,
+                        iconName: String? = nil,
+                        expectedSpaceId: String? = nil) {
         // Preserve UI behavior by treating an empty title as no title update. The shared body's empty-title
         // behavior with `allowsEmptyTitle == false` substitutes the URL, matching create, while UI updates
         // have always ignored empty titles.
@@ -1144,6 +1184,8 @@ extension LocalStore {
                                             secondaryUrl: secondaryUrl,
                                             secondaryTitle: secondaryTitle,
                                             allowsEmptyTitle: false,
+                                            iconName: iconName,
+                                            expectedSpaceId: expectedSpaceId,
                                             in: context)
             } catch {
                 AppLogError("Failed to update bookmark: \(error)")
@@ -1204,8 +1246,11 @@ extension LocalStore {
                                     secondaryUrl: String??,
                                     secondaryTitle: String??,
                                     allowsEmptyTitle: Bool,
+                                    iconName: String? = nil,
+                                    expectedSpaceId: String? = nil,
                                     in context: ModelContext) throws {
-        guard let node = try bookmarkNode(with: guid, in: context) else {
+        guard let node = try bookmarkNode(with: guid, in: context),
+              expectedSpaceId == nil || (node.spaceId == expectedSpaceId && node.profileId == profileId) else {
             throw LocalStoreWriteError.rowNotFound
         }
 
@@ -1268,6 +1313,10 @@ extension LocalStore {
                 contentDidChange = true
             }
         }
+        if let iconName, node.dataType == .bookmarkFolder, node.icon != iconName {
+            node.icon = iconName
+            contentDidChange = true
+        }
 
         let now = Date()
         // Stamp only actual content changes; saving an identical title must not outrank a peer's edit.
@@ -1278,11 +1327,12 @@ extension LocalStore {
     }
 
     /// Deletes a bookmark or folder and compacts sibling indexes.
-    func deleteBookmark(_ guid: String, profileId: String) {
+    func deleteBookmark(_ guid: String, profileId: String, expectedSpaceId: String? = nil) {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                try self.deleteBookmarkBody(guid, profileId: profileId, in: context)
+                try self.deleteBookmarkBody(guid, profileId: profileId,
+                                            expectedSpaceId: expectedSpaceId, in: context)
             } catch {
                 AppLogError("Failed to delete bookmark: \(error)")
             }
@@ -1299,8 +1349,10 @@ extension LocalStore {
     /// Single implementation shared by both entry points.
     private func deleteBookmarkBody(_ guid: String,
                                     profileId: String,
+                                    expectedSpaceId: String? = nil,
                                     in context: ModelContext) throws {
-        guard let node = try bookmarkNode(with: guid, in: context) else {
+        guard let node = try bookmarkNode(with: guid, in: context),
+              expectedSpaceId == nil || (node.spaceId == expectedSpaceId && node.profileId == profileId) else {
             throw LocalStoreWriteError.rowNotFound
         }
         guard try !isBookmarkRoot(node, in: context) else {

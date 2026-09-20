@@ -385,7 +385,7 @@ enum SaveForLaterService {
     /// Mirage still owns saving and can read the same files through the broker.
     static func openLibrary() {
         guard featureEnabled, !ApplicationState.shared.isGuest else { return }
-        MainBrowserWindowControllersManager.shared.activeWindowController?.openFolioLibrary()
+        SpaceSessionControllersManager.shared.activeWindowController?.openFolioLibrary()
     }
 
     /// The per-site auto-save list. The sites ARE the extension's trigger

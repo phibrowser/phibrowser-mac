@@ -15,28 +15,17 @@ struct AllDownloadsListView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 profileFilter
-                Text(downloadsManager.downloads.count, format: .number)
-                    .monospacedDigit()
-                    .themedForeground(.textSecondary)
                 Spacer()
                 if downloadsManager.isLoading {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Button(action: refresh) {
-                    Label(
-                        NSLocalizedString("downloads.all.refresh", value: "Refresh", comment: "All downloads window - Refresh download history"),
-                        systemImage: "arrow.clockwise"
-                    )
-                }
-                .disabled(downloadsManager.isLoading)
             }
             .padding(16)
-            Divider()
 
             if !downloadsManager.failedProfileIds.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(NSLocalizedString("downloads.all.loadFailure", value: "Some profiles could not be loaded. Try refreshing.", comment: "All downloads window - Partial failure while loading profile download histories"))
+                    Text(NSLocalizedString("downloads.all.loadFailure", value: "Some profiles could not be loaded.", comment: "All downloads window - Partial failure while loading profile download histories"))
                     Text(verbatim: downloadsManager.failedProfileIds.map(profileName).joined(separator: ", "))
                         .font(.caption)
                 }
@@ -57,26 +46,38 @@ struct AllDownloadsListView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(downloadsManager.downloads, id: \.profileScopedId) { item in
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(verbatim: profileName(item.profileId))
-                                    .font(.caption)
-                                    .themedForeground(.textSecondary)
-                                    .padding(.top, 12)
-                                DownloadItemRow(
-                                    item: item,
-                                    isLast: false,
-                                    onCopyLink: downloadsManager.copyLink,
-                                    onOpen: downloadsManager.openDownload,
-                                    onShowInFinder: downloadsManager.showInFinder,
-                                    onPause: downloadsManager.pauseDownload,
-                                    onResume: downloadsManager.resumeDownload,
-                                    onCancel: downloadsManager.cancelDownload,
-                                    onRemove: downloadsManager.removeDownload,
-                                    onKeep: downloadsManager.keepDownload,
-                                    onDiscard: downloadsManager.discardDownload
-                                )
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(downloadGroups, id: \.date) { group in
+                            Section {
+                                ForEach(group.items, id: \.profileScopedId) { item in
+                                    DownloadItemRow(
+                                        item: item,
+                                        isLast: true,
+                                        usesHoverAppearance: true,
+                                        onCopyLink: downloadsManager.copyLink,
+                                        onOpen: downloadsManager.openDownload,
+                                        onShowInFinder: downloadsManager.showInFinder,
+                                        onPause: downloadsManager.pauseDownload,
+                                        onResume: downloadsManager.resumeDownload,
+                                        onCancel: downloadsManager.cancelDownload,
+                                        onRemove: downloadsManager.removeDownload,
+                                        onKeep: downloadsManager.keepDownload,
+                                        onDiscard: downloadsManager.discardDownload
+                                    )
+                                }
+                            } header: {
+                                Group {
+                                    if let date = group.date {
+                                        Text(date, format: .dateTime.year().month(.wide).day())
+                                    } else {
+                                        Text(NSLocalizedString("downloads.all.unknownDate", value: "Unknown Date", comment: "All downloads window - Section heading for downloads without a start date"))
+                                    }
+                                }
+                                .font(.system(size: 13, weight: .semibold))
+                                .themedForeground(.textSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 16)
+                                .padding(.bottom, 4)
                             }
                         }
                     }
@@ -92,6 +93,15 @@ struct AllDownloadsListView: View {
                 applyFilter()
             }
         }
+    }
+
+    private var downloadGroups: [(date: Date?, items: [DownloadItem])] {
+        let calendar = Calendar.current
+        return Dictionary(grouping: downloadsManager.downloads) { item in
+            item.startTime.map { calendar.startOfDay(for: $0) }
+        }
+        .map { (date: $0.key, items: $0.value) }
+        .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
     }
 
     private var profileFilter: some View {

@@ -178,6 +178,9 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     var itemClicked: ((Tab?, NSEvent.ModifierFlags) -> Void)?
     var itemDoubleClicked: ((Tab?, NSEvent.ModifierFlags) -> Void)?
     // Shared context menu bound to the entire pinned item.
+    /// An embedding surface supplies actions with its own explicit owner.
+    var populateContextMenu: ((NSMenu) -> Void)?
+
     private lazy var contextMenu: NSMenu = {
         let menu = NSMenu()
         menu.delegate = self
@@ -195,6 +198,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        populateContextMenu = nil
         cancellables.removeAll()
         peekFaviconCancellables.removeAll()
         faviconLoadHandle?.cancel()
@@ -372,7 +376,8 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         // Selection state is driven by the view controller.
         self.isSelected = tab.isActive
         if let menu = view.menu {
-            tab.makeContextMenu(on: menu)
+            if let populateContextMenu { populateContextMenu(menu) }
+            else { tab.makeContextMenu(on: menu) }
         }
         
         tab.$liveFaviconData
@@ -564,6 +569,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     
     func menuNeedsUpdate(_ menu: NSMenu) {
         tabPreviewRegistration.cancelForInteraction()
-        tab?.makeContextMenu(on: menu)
+        if let populateContextMenu { populateContextMenu(menu) }
+        else { tab?.makeContextMenu(on: menu) }
     }
 }

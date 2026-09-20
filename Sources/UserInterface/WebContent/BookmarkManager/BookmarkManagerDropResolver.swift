@@ -57,7 +57,8 @@ enum BookmarkManagerDropResolver {
         orderedBookmarkGuids: [String],
         target: BookmarkManagerDropTarget,
         rootFolder: Bookmark,
-        isSearchActive: Bool
+        isSearchActive: Bool,
+        destinationRootFolder: Bookmark? = nil
     ) -> BookmarkManagerDropResolution {
         guard !isSearchActive else {
             return .rejected(.searchActive)
@@ -78,13 +79,16 @@ enum BookmarkManagerDropResolver {
             }
         }
 
+        guard let destinationTree = TreeIndex(rootFolder: destinationRootFolder ?? rootFolder) else {
+            return .rejected(.invalidRoot)
+        }
         let destination: Destination
         switch target {
         case .onFolder(let guid):
-            guard guid != tree.rootGuid,
-                  let folder = tree.nodesByGuid[guid],
+            guard guid != destinationTree.rootGuid,
+                  let folder = destinationTree.nodesByGuid[guid],
                   folder.isFolder,
-                  let children = tree.childrenByParentGuid[guid] else {
+                  let children = destinationTree.childrenByParentGuid[guid] else {
                 return .rejected(.invalidTarget)
             }
             destination = Destination(
@@ -94,10 +98,10 @@ enum BookmarkManagerDropResolver {
             )
 
         case .betweenSiblings(let parentGuid, let index):
-            guard parentGuid != tree.rootGuid,
-                  let parent = tree.nodesByGuid[parentGuid],
+            guard parentGuid != destinationTree.rootGuid,
+                  let parent = destinationTree.nodesByGuid[parentGuid],
                   parent.isFolder,
-                  let children = tree.childrenByParentGuid[parentGuid] else {
+                  let children = destinationTree.childrenByParentGuid[parentGuid] else {
                 return .rejected(.invalidTarget)
             }
             guard (0...children.count).contains(index) else {
@@ -110,12 +114,12 @@ enum BookmarkManagerDropResolver {
             )
 
         case .atRoot(let index):
-            let children = tree.childrenByParentGuid[tree.rootGuid] ?? []
+            let children = destinationTree.childrenByParentGuid[destinationTree.rootGuid] ?? []
             guard (0...children.count).contains(index) else {
                 return .rejected(.invalidIndex)
             }
             destination = Destination(
-                treeParentGuid: tree.rootGuid,
+                treeParentGuid: destinationTree.rootGuid,
                 persistedParentGuid: nil,
                 index: index
             )
@@ -141,7 +145,7 @@ enum BookmarkManagerDropResolver {
             from: orderedGuids,
             selectedGuids: selectedGuids
         )
-        if tree.isNoOp(
+        if tree.rootGuid == destinationTree.rootGuid, tree.isNoOp(
             selectedRootGuids: selectedRootGuids,
             destinationParentGuid: destination.treeParentGuid,
             destinationIndex: destination.index

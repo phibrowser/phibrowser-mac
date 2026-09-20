@@ -662,6 +662,95 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         )).first
     }
 
+    func testOwnerIdentityAcrossScopes() {
+        func owner(_ scope: PinnedTabScope, _ profile: String, _ space: String) -> PinnedTabTransferOwner {
+            LocalStore.pinnedTransferOwner(scope: scope, profileId: profile, spaceId: space)
+        }
+        XCTAssertNotEqual(owner(.space, "p", "a"), owner(.space, "p", "b"))
+        XCTAssertEqual(owner(.profile, "p", "a"), owner(.profile, "p", "b"))
+        XCTAssertNotEqual(owner(.profile, "p", "a"), owner(.profile, "q", "b"))
+        XCTAssertEqual(owner(.app, "p", "a"), owner(.app, "q", "b"))
+    }
+
+    func testAppMirrorsReorderSplitWithoutCopyingOrRemovingRows() async throws {
+        let store = try makeStoreWithSpaces()
+        for (index, id) in ["left", "right", "solo"].enumerated() {
+            try insertPinned(in: store, guid: id, profileId: "Default", spaceId: nil,
+                title: id, url: "https://example.com/\(id)", index: index) {
+                    if id != "solo" { $0.splitPartnerGuid = id == "left" ? "right" : "left" }
+                }
+        }
+        try await store.changePinnedTabScope(to: .app)
+        drainMainQueue()
+        let before = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        let left = try XCTUnwrap(before.first { $0.title == "left" }?.guid)
+        let right = try XCTUnwrap(before.first { $0.title == "right" }?.guid)
+        let solo = try XCTUnwrap(before.first { $0.title == "solo" }?.guid)
+        let result = try await store.transferPinnedTab(guid: left,
+            sourceProfileId: "Default", sourceSpaceId: "space-a",
+            targetProfileId: "Other", targetSpaceId: "space-b", destinationIndex: 3,
+            destinationIndexIncludesSourceUnit: true)
+        drainMainQueue()
+        XCTAssertEqual(result.guidMapping, [left: left, right: right])
+        XCTAssertEqual(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").map(\.guid), [solo, left, right])
+        XCTAssertEqual(store.getAllPinnedTabs(for: "Other", spaceId: "space-b").map(\.guid), [solo, left, right])
+        XCTAssertEqual(store.getAllPinnedTabs(for: "Other", spaceId: "space-b")[1].splitPartnerGuid, right)
+    }
+
+    func testProfileScopeTransfersSplitAcrossDifferentProfiles() async throws {
+        let store = try makeStoreWithSpaces()
+        let context = try XCTUnwrap(store.getMainContext())
+        context.insert(ProfileModel(profileId: "Other"))
+        context.insert(SpaceModel(spaceId: "other-space", profileId: "Other", name: "Other",
+                                  colorHex: "#000000", iconName: "star", sortOrder: 2))
+        try context.save()
+        for (index, id) in ["left", "right"].enumerated() {
+            try insertPinned(in: store, guid: id, profileId: "Default", spaceId: nil,
+                title: id, url: "https://example.com/\(id)", index: index) {
+                    $0.splitPartnerGuid = id == "left" ? "right" : "left"
+                }
+        }
+        let result = try await store.transferPinnedTab(guid: "left", sourceProfileId: "Default",
+            sourceSpaceId: "space-a", targetProfileId: "Other", targetSpaceId: "other-space", destinationIndex: 0)
+        drainMainQueue()
+        XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").isEmpty)
+        XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-b").isEmpty)
+        let target = store.getAllPinnedTabs(for: "Other", spaceId: "other-space")
+        XCTAssertEqual(target.count, 2)
+        XCTAssertTrue(result.isSplit)
+        XCTAssertNotEqual(result.guidMapping["left"], "left")
+        XCTAssertEqual(target.first?.profileId, "Other")
+        XCTAssertNil(target.first?.spaceId)
+    }
+
+    func testDeletePinnedUnitRemovesBothPanesFromMirrors() async throws {
+        let store = try makeStoreWithSpaces()
+        for (index, id) in ["left", "right", "solo"].enumerated() {
+            try insertPinned(in: store, guid: id, profileId: "Default", spaceId: nil,
+                             title: id, url: "https://example.com/\(id)", index: index) {
+                if id != "solo" { $0.splitPartnerGuid = id == "left" ? "right" : "left" }
+            }
+        }
+        let removed = try await store.removePinnedTabUnit(guid: "left", profileId: "Default", spaceId: "space-a")
+        drainMainQueue()
+        XCTAssertEqual(removed, ["left", "right"])
+        for space in ["space-a", "space-b"] {
+            let rows = store.getAllPinnedTabs(for: "Default", spaceId: space)
+            XCTAssertEqual(rows.map(\.guid), ["solo"])
+            XCTAssertEqual(rows.first?.index, 0)
+        }
+    }
+
+    func testDanglingPinnedSplitCanStillBeDeleted() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "orphan", profileId: "Default", spaceId: nil,
+                         title: "Orphan", url: "https://example.com") { $0.splitPartnerGuid = "missing" }
+        let removed = try await store.removePinnedTabUnit(guid: "orphan", profileId: "Default", spaceId: "space-a")
+        drainMainQueue()
+        XCTAssertEqual(removed, ["orphan"])
+        XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").isEmpty)
+    }
+
     private func makeStoreWithSpaces() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

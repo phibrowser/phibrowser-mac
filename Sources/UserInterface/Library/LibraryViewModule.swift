@@ -69,7 +69,6 @@ private struct LibraryContentView: View {
     @State private var selection: LibraryViewModule.Section = .downloads
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
-    @State private var closeHovered = false
     @State private var folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
 
     private func color(_ value: ThemedColor) -> Color {
@@ -82,26 +81,17 @@ private struct LibraryContentView: View {
             Rectangle()
                 .fill(color(.separator))
                 .frame(width: 1)
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Text(selection.title)
-                        .font(.system(size: 20, weight: .semibold))
-                        .themedForeground(.textPrimaryStrong)
-                    Spacer()
-                    closeButton
-                }
+            VStack(spacing: 0) {
                 if selection == .downloads {
                     AllDownloadsListView(downloadsManager: downloadsManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if selection == .folio {
-                    FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
-                        .clipShape(.rect(cornerRadius: 10))
-                        .onDisappear { folioModel.clear() }
+                } else if selection == .spaces {
+                    LibrarySpacesView(browserState: browserState)
                 } else {
-                    placeholder
+                    FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
+                        .onDisappear { folioModel.clear() }
                 }
             }
-            .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 color(.contentOverlayBackground)
@@ -188,35 +178,6 @@ private struct LibraryContentView: View {
         .background(color(.windowBackground.withAlphaComponent(1)))
         .onHover { if !$0 { hoveredSection = nil } }
         .onDisappear { hoveredSection = nil }
-    }
-
-    private var closeButton: some View {
-        Button(action: dismiss) {
-            Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
-                .themedForeground(.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(color(.hover).opacity(closeHovered ? 1 : 0), in: .rect(cornerRadius: 7))
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onHover { closeHovered = $0 }
-        .help(NSLocalizedString("library.navigation.close", value: "Back to browsing", comment: "Library - Close button label"))
-        .accessibilityLabel(NSLocalizedString("library.navigation.close", value: "Back to browsing", comment: "Library - Close button label"))
-    }
-
-    private var placeholder: some View {
-        VStack(spacing: 14) {
-            Image(systemName: selection.symbol)
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(color(.themeColor))
-                .frame(width: 64, height: 64)
-                .background(color(.themeColor).opacity(0.08), in: .rect(cornerRadius: 18))
-            Text(NSLocalizedString("library.content.comingSoon", value: "Coming soon", comment: "Library - Placeholder for a category not yet available"))
-                .font(.system(size: 12))
-                .themedForeground(.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func openOriginal(_ url: URL) {

@@ -350,6 +350,28 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
                        "No object appears twice", file: file, line: line)
     }
 
+    func testRemovedPinBindingsLeaveLiveSplitAccessibleAsNormalTabs() throws {
+        let store = try makeStore()
+        let profile = try seedProfileAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "left", lineageId: "left", profile: profile,
+                            title: "Left", url: "https://left.example")
+        try insertPinnedTab(in: store, guid: "right", lineageId: "right", profile: profile,
+                            title: "Right", url: "https://right.example")
+        let state = BrowserState(windowId: 77, localStore: store, profileId: "Default", spaceId: "space-a")
+        let left = bindLiveTab(try XCTUnwrap(state.pinnedTabs.first { $0.guidInLocalDB == "left" }), to: state, chromiumGuid: 501)
+        let right = bindLiveTab(try XCTUnwrap(state.pinnedTabs.first { $0.guidInLocalDB == "right" }), to: state, chromiumGuid: 502)
+        state.splits = [SplitGroup(id: "split", primaryTabId: 501, secondaryTabId: 502,
+                                  layout: .horizontal, ratio: 0.5, isPinned: true)]
+        state.detachLiveTabsFromRemovedPins(["left", "right"])
+        XCTAssertEqual(state.tabs.count, 2)
+        XCTAssertNil(left.liveTab.guidInLocalDB)
+        XCTAssertNil(right.liveTab.guidInLocalDB)
+        XCTAssertFalse(left.liveTab.isPinned)
+        XCTAssertFalse(right.liveTab.isPinned)
+        XCTAssertFalse(try XCTUnwrap(state.splits.first).isPinned)
+        XCTAssertEqual(state.splits.first?.layout, .horizontal)
+    }
+
     private func makeStore() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

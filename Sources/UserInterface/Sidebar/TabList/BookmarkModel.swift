@@ -289,12 +289,25 @@ class BookmarkManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     private weak var browserState: BrowserState?
+    private let subscribes: Bool
     
-    init(with browseState: BrowserState) {
-        self.browserState = browseState
-        self.scope = BookmarkManagementScope(browserState: browseState)
+    private(set) weak var localStore: LocalStore?
+
+    convenience init(with browseState: BrowserState) {
+        self.init(store: browseState.localStore,
+                  scope: BookmarkManagementScope(browserState: browseState),
+                  browserState: browseState, subscribes: !browseState.isIncognito)
+    }
+
+    /// Management surfaces use the same tree reconciliation without opening a window.
+    init(store: LocalStore, scope: BookmarkManagementScope,
+         browserState: BrowserState? = nil, subscribes: Bool = true) {
+        self.browserState = browserState
+        self.subscribes = subscribes
+        self.localStore = store
+        self.scope = scope
         self.rootFolder = Bookmark(folderTitle: "Bookmarks")
-        guard !browseState.isAgentSpace || !browseState.profileId.isEmpty else { return }
+        guard browserState?.isAgentSpace != true || !scope.profileId.isEmpty else { return }
         bindStore()
     }
 
@@ -307,40 +320,43 @@ class BookmarkManager: ObservableObject {
     }
 
     private func bindStore() {
-        guard let browseState = browserState else { return }
-        guard !browseState.isIncognito else {
+        guard subscribes, let store = localStore,
+              scope.accountId == store.account.userID else {
             // Incognito never subscribes, so nothing would ever flip the
             // delivery signal. Report it satisfied instead of leaving every
             // consumer waiting on a payload that cannot arrive.
             didApplyFirstStoreDelivery = true
             return
         }
-        browseState.localStore.createDefaultRootDir(profileId: browseState.profileId, spaceId: browseState.spaceId)
-        Task { @MainActor in
-            browseState.localStore.bookmarksPublisher(profileId: browseState.profileId, spaceId: browseState.spaceId)
-                .receive(on: DispatchQueue.main)
+        store.createDefaultRootDir(profileId: scope.profileId, spaceId: scope.spaceId)
+        Task { @MainActor [weak self, weak store] in
+            guard let self, let store, self.localStore != nil else { return }
+            store.bookmarksPublisher(profileId: scope.profileId, spaceId: scope.spaceId)
                 .sink { [weak self] bookmarkModels in
-                    guard let self else { return }
+                    guard let self, self.localStore != nil else { return }
                     let bookmarks = self.mappedModels(from: bookmarkModels)
                     if self.hasSameSidebarTree(as: bookmarks) {
                         self.applyNonLayoutUpdates(from: bookmarks)
-                        self.browserState?.syncAllBookmarksOpenedState()
-                        self.browserState?.pruneMultiSelectionBookmarks()
-                        self.noteFirstStoreDelivery()
-                        return
+                    } else {
+                        self.saveExpandedState()
+                        let reused = self.mappedModels(from: bookmarkModels, reusingExistingBookmarks: true)
+                        self.rootFolder = Bookmark(title: "Bookmarks", children: reused)
+                        self.rebuildIndex()
                     }
-
-                    self.saveExpandedState()
-                    let reusedBookmarks = self.mappedModels(from: bookmarkModels, reusingExistingBookmarks: true)
-                    self.rootFolder = Bookmark(title: "Bookmarks", children: reusedBookmarks)
-                    self.rebuildIndex()
                     self.browserState?.syncAllBookmarksOpenedState()
                     self.browserState?.pruneMultiSelectionBookmarks()
                     self.noteFirstStoreDelivery()
                 }
                 .store(in: &cancellables)
         }
-
+        NotificationCenter.default.publisher(for: LocalStore.willCloseNotification, object: store)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                localStore = nil
+                cancellables.removeAll()
+                bookmarkIndex.removeAll()
+                rootFolder = Bookmark(folderTitle: "Bookmarks")
+            }.store(in: &cancellables)
     }
 
     /// Records that the store's first payload has been applied. Called last
@@ -423,7 +439,8 @@ class BookmarkManager: ObservableObject {
         guard let bookmark = bookmarkIndex[guid], bookmark.isFolder else { return }
         guard bookmark.folderIconName != iconName else { return }
         bookmark.folderIconName = iconName
-        browserState?.localStore.updateTabIcon(guid, icon: iconName)
+        localStore?.updateBookmark(guid, profileId: scope.profileId, title: nil, url: nil,
+                                   iconName: iconName, expectedSpaceId: scope.spaceId)
     }
 
     func updateSplitLayout(guid: String, layout: SplitLayout) {
@@ -433,7 +450,7 @@ class BookmarkManager: ObservableObject {
             return
         }
         bookmark.layout = layout
-        browserState?.localStore.updateBookmarkSplitLayout(guid, layout: layout.rawValue)
+        localStore?.updateBookmarkSplitLayout(guid, layout: layout.rawValue)
     }
     
     func updateBookmark(guid: String,
@@ -441,13 +458,15 @@ class BookmarkManager: ObservableObject {
                         url: String? = nil,
                         secondaryUrl: String?? = nil,
                         secondaryTitle: String?? = nil) {
-        guard let profileId = browserState?.profileId else { return }
-        browserState?.localStore.updateBookmark(guid,
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        localStore?.updateBookmark(guid,
                                                 profileId: profileId,
                                                 title: title,
                                                 url: url,
                                                 secondaryUrl: secondaryUrl,
-                                                secondaryTitle: secondaryTitle)
+                                                secondaryTitle: secondaryTitle,
+                                                expectedSpaceId: scope.spaceId)
 
         guard let state = browserState else { return }
 
@@ -567,9 +586,10 @@ class BookmarkManager: ObservableObject {
                      toParentGuid parentGuid: String?,
                      targetIndex: Int? = nil,
                      faviconData: Data? = nil) {
-        guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
-        browserState?.localStore.createBookmark(url: url,
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        let spaceId = scope.spaceId
+        localStore?.createBookmark(url: url,
                                                 title: title,
                                                 profileId: profileId,
                                                 parentId: parentGuid,
@@ -590,9 +610,10 @@ class BookmarkManager: ObservableObject {
                           to parent: Bookmark? = nil,
                           targetIndex: Int? = nil,
                           primaryFaviconData: Data? = nil) {
-        guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
-        browserState?.localStore.createBookmark(url: primaryURL,
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        let spaceId = scope.spaceId
+        localStore?.createBookmark(url: primaryURL,
                                                 title: title,
                                                 profileId: profileId,
                                                 parentId: parent?.guid,
@@ -608,9 +629,10 @@ class BookmarkManager: ObservableObject {
                    to parent: Bookmark? = nil,
                    guid: String? = nil,
                    targetIndex: Int? = nil) {
-        guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
-        browserState?.localStore.createDirectory(title: title,
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        let spaceId = scope.spaceId
+        localStore?.createDirectory(title: title,
                                                  profileId: profileId,
                                                  parentId: parent?.guid,
                                                  index: targetIndex,
@@ -622,9 +644,10 @@ class BookmarkManager: ObservableObject {
     func addFolderWithEditing(title: String, to parent: Bookmark? = nil) {
         let newGuid = UUID().uuidString
         pendingEditGuid = newGuid
-        guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
-        browserState?.localStore.createDirectory(title: title, profileId: profileId, parentId: parent?.guid, guid: newGuid, spaceId: spaceId)
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        let spaceId = scope.spaceId
+        localStore?.createDirectory(title: title, profileId: profileId, parentId: parent?.guid, guid: newGuid, spaceId: spaceId)
     }
 
     /// Creates a folder and inserts the bookmark without triggering sidebar inline editing.
@@ -635,9 +658,10 @@ class BookmarkManager: ObservableObject {
                               bookmarkFaviconData: Data? = nil,
                               completion: @escaping (Bool, String) -> Void) {
         let newGuid = UUID().uuidString
-        guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
-        browserState?.localStore.createDirectoryWithBookmark(folderTitle: title,
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        let spaceId = scope.spaceId
+        localStore?.createDirectoryWithBookmark(folderTitle: title,
                                                              folderGuid: newGuid,
                                                              profileId: profileId,
                                                              parentId: parent?.guid,
@@ -679,13 +703,14 @@ class BookmarkManager: ObservableObject {
     }
     
     func removeBookmark(_ bookmark: Bookmark) {
-        guard let profileId = browserState?.profileId else { return }
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
         browserState?.closeOpenTabsForRemovedBookmark(bookmark)
-        browserState?.localStore.deleteBookmark(bookmark.guid, profileId: profileId)
+        localStore?.deleteBookmark(bookmark.guid, profileId: profileId, expectedSpaceId: scope.spaceId)
     }
     
     func findBookmark(byURL url: String) -> Bookmark? {
-        guard let normalized = browserState?.localStore.normalizedURL(from: url)?.absoluteString else { return nil }
+        guard let normalized = localStore?.normalizedURL(from: url)?.absoluteString else { return nil }
         return getAllBookmarks().first { !$0.isFolder && $0.url == normalized }
     }
 
@@ -694,17 +719,23 @@ class BookmarkManager: ObservableObject {
     /// secondary URL, so a split's Cmd+D toggle won't collide with a plain
     /// single-page bookmark sharing the same primary URL.
     func findSplitBookmark(byPrimaryURL url: String) -> Bookmark? {
-        guard let normalized = browserState?.localStore.normalizedURL(from: url)?.absoluteString else { return nil }
+        guard let normalized = localStore?.normalizedURL(from: url)?.absoluteString else { return nil }
         return getAllBookmarks().first {
             !$0.isFolder && $0.url == normalized && $0.secondaryUrl?.isEmpty == false
         }
     }
 
     func moveBookmark(_ bookmark: Bookmark, to newParent: Bookmark, at index: Int? = nil) {
-        guard let profileId = browserState?.profileId else { return }
-        browserState?.localStore.moveBookmark(bookmark.guid, profileId: profileId, to: newParent.guid, newIndex: index ?? Int.max)
+        guard localStore != nil else { return }
+        let profileId = scope.profileId
+        localStore?.moveBookmark(bookmark.guid, profileId: profileId, to: newParent.guid, newIndex: index ?? Int.max)
     }
     
+    func moveBookmarks(_ plan: BookmarkManagerDropPlan) {
+        localStore?.moveSelectedBookmarks(plan.orderedBookmarkGuids, profileId: scope.profileId,
+                                         to: plan.destinationParentGuid, newIndex: plan.destinationIndex, expectedSpaceId: scope.spaceId)
+    }
+
     func getAllBookmarks() -> [Bookmark] {
         var allBookmarks: [Bookmark] = []
         
@@ -763,7 +794,7 @@ extension BookmarkManager {
             let bookmark = reusableBookmark(for: model, reusingExistingBookmarks: reusingExistingBookmarks) ?? Bookmark(model)
             bookmark.updateSidebarFields(from: model)
             bookmark.setFaviconSnapshotUpdater { [weak self, guid = model.guid] data in
-                self?.browserState?.localStore.updateTabFavicon(guid, favicon: data)
+                self?.localStore?.updateTabFavicon(guid, favicon: data)
             }
             bookmarkMap[model.guid] = bookmark
         }

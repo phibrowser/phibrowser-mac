@@ -1967,6 +1967,11 @@ extension AppController {
             item.representedObject = space.spaceId
             item.state = (space.spaceId == activeSpaceId) ? .on : .off
             item.image = spaceMenuIcon(for: space)
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                item.preferredImageVisibility = .visible
+            }
+            #endif
             item.attributedTitle = spaceMenuTitle(name: space.name, profileId: space.profileId)
             menu.addItem(item)
         }
@@ -1996,6 +2001,11 @@ extension AppController {
             if let command {
                 item.tag = command.rawValue
                 applyEffectiveShortcut(command, to: item)
+                #if compiler(>=6.4)
+                if #available(macOS 27.0, *), command == .IDC_OPTIONS {
+                    item.preferredImageVisibility = .hidden
+                }
+                #endif
             }
             menu.addItem(item)
         }
@@ -2203,6 +2213,11 @@ extension AppController {
                 item.representedObject = space.spaceId
                 item.state = (space.spaceId == activeSpaceId) ? .on : .off
                 item.image = spaceMenuIcon(for: space)
+                #if compiler(>=6.4)
+                if #available(macOS 27.0, *) {
+                    item.preferredImageVisibility = .visible
+                }
+                #endif
                 menu.addItem(item)
             }
         }
@@ -2396,7 +2411,12 @@ extension AppController {
     @objc func selectSpaceProfile(_ sender: Any?) {
         guard let menuItem = sender as? NSMenuItem,
               let profileId = menuItem.representedObject as? String,
-              let space = currentActiveSpace(),
+              let space = currentActiveSpace() else { return }
+        confirmSpaceProfileChange(space, to: profileId)
+    }
+
+    func confirmSpaceProfileChange(_ space: Space, to profileId: String) {
+        guard SpaceManager.shared.acceptsStoreAction(from: space.storeIdentifier),
               space.spaceId != LocalStore.defaultSpaceId,
               space.profileId != profileId,
               let profile = ProfileManager.shared.profile(for: profileId) else { return }
@@ -2433,7 +2453,12 @@ extension AppController {
     }
 
     @objc func deleteActiveSpace(_ sender: Any?) {
-        guard let space = currentActiveSpace(),
+        guard let space = currentActiveSpace() else { return }
+        confirmSpaceDeletion(space)
+    }
+
+    func confirmSpaceDeletion(_ space: Space) {
+        guard SpaceManager.shared.acceptsStoreAction(from: space.storeIdentifier),
               SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId) else { return }
         let alert = NSAlert()
         alert.messageText = String(

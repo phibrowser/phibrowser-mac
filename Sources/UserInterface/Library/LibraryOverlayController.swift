@@ -188,6 +188,16 @@ final class LibraryOverlayController {
                 return Self.isBackgroundTrackingArea(event.trackingArea, in: content, overlay: self.overlay) ? nil : event
             }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 53, modifiers.isEmpty,
+               let handle = self.parent?.firstResponder as? LibrarySpaceDragHandle.Handle, handle.isDragging {
+                handle.cancelOperation(nil)
+                return nil
+            }
+            // Let inline editors consume Escape to cancel their draft first.
+            if event.keyCode == 53, modifiers.isEmpty,
+               let editor = self.parent?.firstResponder as? NSTextView, editor.isFieldEditor {
+                return event
+            }
             if (event.keyCode == 53 && modifiers.isEmpty)
                 || (event.charactersIgnoringModifiers == "w" && modifiers == .command) {
                 self.dismiss()

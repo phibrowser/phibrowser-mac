@@ -1,6 +1,234 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "library.spaces.moreActions": {
+    "comment": "Library Space card - more actions button",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "More Actions"
+        }
+      }
+    }
+  },
+  "library.spaces.setProfile": {
+    "comment": "Library Space menu - choose the Space profile",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Set Profile"
+        }
+      }
+    }
+  },
+  "library.spaces.deleteSpace": {
+    "comment": "Library Space menu - delete this Space after confirmation",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete Space…"
+        }
+      }
+    }
+  },
+    "library.spaces.editTheme" : {
+      "comment" : "Library Space card - theme editor button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Theme"
+          }
+        }
+      }
+    },
+  "library.spaces.moveToSpace": {
+    "comment": "Library Space menu - move items to another Space",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Move to Space"
+        }
+      }
+    }
+  },
+  "library.spaces.deleteItem": {
+    "comment": "Library Space menu - delete item",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete"
+        }
+      }
+    }
+  },
+  "library.spaces.editItem": {
+    "comment": "Library Space menu - edit item",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edit…"
+        }
+      }
+    }
+  },
+  "library.spaces.openItem": {
+    "comment": "Library Space menu - open item",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Open"
+        }
+      }
+    }
+  },
+  "library.spaces.newFolder": {
+    "comment": "Library Space menu - create folder",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "New Folder…"
+        }
+      }
+    }
+  },
+  "library.spaces.newBookmark": {
+    "comment": "Library Space menu - create bookmark",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "New Bookmark…"
+        }
+      }
+    }
+  },
+  "library.spaces.newPin": {
+    "comment": "Library Space menu - create pinned tab",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "New Pinned Tab…"
+        }
+      }
+    }
+  },
+  "library.spaces.addItem": {
+    "comment": "Library Space card - add item button",
+    "extractionState": "manual",
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Add pinned tab, bookmark or folder"
+        }
+      }
+    }
+  },
+    "library.spaces.create" : {
+      "comment" : "Library Spaces - add card button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Space"
+          }
+        }
+      }
+    },
+    "library.spaces.pins" : {
+      "comment" : "Library Space card - pinned tabs section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned Tabs"
+          }
+        }
+      }
+    },
+    "library.spaces.bookmarks" : {
+      "comment" : "Library Space card - bookmarks section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmarks"
+          }
+        }
+      }
+    },
+    "library.spaces.empty" : {
+      "comment" : "Library Space card - empty contents message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your pinned tabs and bookmarks will appear here."
+          }
+        }
+      }
+    },
+    "library.spaces.editIcon" : {
+      "comment" : "Library Space card - icon picker button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Space icon"
+          }
+        }
+      }
+    },
+    "library.spaces.name" : {
+      "comment" : "Library Space card - inline name editor",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space name"
+          }
+        }
+      }
+    },
+    "library.spaces.reorder" : {
+      "comment" : "Library Spaces - card drag handle tooltip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to reorder Space"
+          }
+        }
+      }
+    },
     "library.content.comingSoon" : {
       "comment" : "Library - Placeholder for a category not yet available",
       "extractionState" : "manual",
@@ -37765,7 +37993,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Some profiles could not be loaded. Try refreshing."
+            "value" : "Some profiles could not be loaded."
           }
         }
       }
@@ -37782,18 +38010,6 @@
         }
       }
     },
-    "downloads.all.refresh" : {
-      "comment" : "All downloads window - Refresh download history",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh"
-          }
-        }
-      }
-    },
     "downloads.all.selectedProfiles" : {
       "comment" : "All downloads window - Profile filter menu with a custom selection",
       "extractionState" : "manual",
@@ -37802,6 +38018,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Selected Profiles"
+          }
+        }
+      }
+    },
+    "downloads.all.unknownDate" : {
+      "comment" : "All downloads window - Section heading for downloads without a start date",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown Date"
           }
         }
       }

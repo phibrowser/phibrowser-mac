@@ -98,6 +98,7 @@ final class FakeListInfo: NSObject, PhiContentBlockingListInfo {
     var custom = false
     var sourceURL = ""
     var available = true
+    var downloading = false
     var fetchedAt: TimeInterval = 0
     var lastError = ""
 
@@ -180,7 +181,7 @@ final class ContentBlockingSettingsTests: XCTestCase {
         facade.downloadList("easylist")
         list = facade.state?.lists.first { $0.id == "easylist" }
         XCTAssertEqual(bridge.downloadCalls, ["easylist"])
-        XCTAssertEqual(list?.available, false)
+        XCTAssertEqual(list?.isDownloading, true)
         XCTAssertEqual(list?.lastError, "")
 
         bridge.failWrites = true

@@ -46,6 +46,9 @@ struct ContentBlockingListInfoPopover: View {
 
     /// "Updated 3 hours ago", "Not downloaded yet" or the last error.
     static func updateLine(for list: ContentBlockingList, now: Date) -> String {
+        if list.isDownloading {
+            return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose download is in progress")
+        }
         if !list.available {
             if list.lastError.isEmpty {
                 return NSLocalizedString("settings.privacy.contentBlocking.listInfo.notDownloaded", value: "Not downloaded yet", comment: "Advanced ad block settings - Details line for a filter list that has not been downloaded")

@@ -56,6 +56,8 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         let groups = ContentBlockingAdvancedSheet.groups(from: [list("easylist", "ads"), remote, failed])
         XCTAssertEqual(groups.map(\.section), [.ads, .custom])
         XCTAssertEqual(groups[1].lists.map(\.id), ["custom-1", "custom-2"])
+        XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: remote), "Not downloaded yet")
+        remote.isDownloading = true
         XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: remote), "Downloading…")
         XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: failed), "Not downloaded: HTTP 404")
         XCTAssertNil(ContentBlockingListRow.availabilityLine(for: list("easylist", "ads")))
@@ -70,11 +72,16 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         downloaded.fetchedAt = Date()
         XCTAssertEqual(ContentBlockingListRow.control(for: downloaded), .deleteDownload)
 
-        var pending = list("easylist", "ads")
-        pending.available = false
-        XCTAssertEqual(ContentBlockingListRow.control(for: pending), .downloading)
+        var missing = list("easylist", "ads")
+        missing.available = false
+        XCTAssertEqual(ContentBlockingListRow.control(for: missing), .download,
+                       "a missing list is idle until the user downloads it")
 
-        var failed = pending
+        var fetching = missing
+        fetching.isDownloading = true
+        XCTAssertEqual(ContentBlockingListRow.control(for: fetching), .downloading)
+
+        var failed = missing
         failed.lastError = "HTTP 404"
         XCTAssertEqual(ContentBlockingListRow.control(for: failed), .download)
 
@@ -85,9 +92,9 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         var remote = pasted
         remote.sourceURL = URL(string: "https://a.example/l.txt")
         remote.available = false
-        XCTAssertEqual(ContentBlockingListRow.control(for: remote), .downloading)
-        remote.lastError = "HTTP 500"
         XCTAssertEqual(ContentBlockingListRow.control(for: remote), .removeCustom)
+        remote.isDownloading = true
+        XCTAssertEqual(ContentBlockingListRow.control(for: remote), .downloading)
     }
 
     func testInfoPopoverUpdateLine() {

@@ -35,8 +35,8 @@ enum ContentBlockingRuleSets {
             return NSLocalizedString("settings.privacy.contentBlocking.summary.noneSelected", value: "No rule sets selected", comment: "Profile settings - Line under a content blocking toggle when no filter list is checked for it")
         }
         let names = checked.map(\.title).joined(separator: ", ")
-        if checked.contains(where: { !$0.available && $0.lastError.isEmpty && needsDownload(for: category, in: state) }) {
-            return names + " · " + NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose first download is in progress")
+        if checked.contains(where: \.isDownloading) {
+            return names + " · " + NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose download is in progress")
         }
         let missing = checked.filter { !$0.available }
         if !missing.isEmpty {

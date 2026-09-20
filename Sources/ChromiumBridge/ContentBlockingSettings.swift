@@ -35,8 +35,10 @@ struct ContentBlockingList: Identifiable, Hashable {
     /// The download URL of a custom list; nil for pasted rules.
     var sourceURL: URL? = nil
     /// Whether the list's text is on disk. Downloaded lists start out
-    /// unavailable until the first fetch completes.
+    /// unavailable until the user downloads them.
     var available = true
+    /// A download the user asked for is in progress.
+    var isDownloading = false
     /// When the list was last downloaded or confirmed current; nil if never.
     var fetchedAt: Date? = nil
     /// The last download failure, empty when the last fetch succeeded.
@@ -386,7 +388,7 @@ final class ContentBlockingSettings: ObservableObject {
         }
         let previous = state
         for index in updated.lists.indices where ids.contains(updated.lists[index].id) {
-            updated.lists[index].available = false
+            updated.lists[index].isDownloading = true
             updated.lists[index].lastError = ""
         }
         state = updated
@@ -412,6 +414,7 @@ final class ContentBlockingSettings: ObservableObject {
         }
         let previous = state
         updated.lists[index].available = false
+        updated.lists[index].isDownloading = false
         updated.lists[index].checked = false
         updated.lists[index].fetchedAt = nil
         updated.lists[index].lastError = ""
@@ -462,6 +465,7 @@ final class ContentBlockingSettings: ObservableObject {
                     isCustom: info.custom,
                     sourceURL: info.sourceURL.isEmpty ? nil : URL(string: info.sourceURL),
                     available: info.available,
+                    isDownloading: info.downloading,
                     fetchedAt: info.fetchedAt > 0 ? Date(timeIntervalSince1970: info.fetchedAt) : nil,
                     lastError: info.lastError)
             },

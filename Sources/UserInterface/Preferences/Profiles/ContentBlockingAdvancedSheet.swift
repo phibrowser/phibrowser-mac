@@ -169,22 +169,27 @@ struct ContentBlockingListRow: View {
     @State private var showInfo = false
 
     static func control(for list: ContentBlockingList) -> Control {
+        if list.isDownloading { return .downloading }
         if list.isCustom {
-            // A pasted list is always on disk; a URL list downloads first but
-            // its only management action is removing it.
-            return list.available || list.sourceURL == nil || !list.lastError.isEmpty ? .removeCustom : .downloading
+            // A pasted list is always on disk; a URL list is managed only by
+            // removing it, its download button being the ↓ in the state line.
+            return .removeCustom
         }
         if list.available {
             return list.fetchedAt == nil ? .none : .deleteDownload
         }
-        return list.lastError.isEmpty ? .downloading : .download
+        return .download
     }
 
-    /// The line under a list that has no text on disk yet; nil once it does.
+    /// The line under a list that is downloading or has no text on disk;
+    /// nil once it does.
     static func availabilityLine(for list: ContentBlockingList) -> String? {
+        if list.isDownloading {
+            return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose download is in progress")
+        }
         if list.available { return nil }
         if list.lastError.isEmpty {
-            return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose first download is in progress")
+            return NSLocalizedString("settings.privacy.contentBlocking.listInfo.notDownloaded", value: "Not downloaded yet", comment: "Advanced ad block settings - Details line for a filter list that has not been downloaded")
         }
         return String(format: NSLocalizedString("settings.privacy.contentBlocking.list.downloadFailed", value: "Not downloaded: %@", comment: "Advanced ad block settings - Line under a filter list whose download failed; %@ is the error"), list.lastError)
     }

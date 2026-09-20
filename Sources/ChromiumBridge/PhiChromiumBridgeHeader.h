@@ -47,6 +47,8 @@ typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
 /// until the first fetch completes; `fetchedAt` is Unix seconds (0 while
 /// never fetched) and `lastError` the last download failure, if any.
 @property (nonatomic, assign, readonly) BOOL available;
+/// A download the user asked for is in progress.
+@property (nonatomic, assign, readonly) BOOL downloading;
 @property (nonatomic, assign, readonly) NSTimeInterval fetchedAt;
 @property (nonatomic, copy, readonly) NSString *lastError;
 @end

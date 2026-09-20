@@ -8,12 +8,13 @@ import XCTest
 
 final class ContentBlockingRuleSetSheetTests: XCTestCase {
     private func list(_ id: String, _ category: String, checked: Bool = true, available: Bool = true,
-                      error: String = "", custom: Bool = false) -> ContentBlockingList {
+                      error: String = "", custom: Bool = false, downloading: Bool = false) -> ContentBlockingList {
         var list = ContentBlockingList(id: id, category: category, title: id, description: "",
                                        homepage: nil, license: "", checked: checked)
         list.available = available
         list.lastError = error
         list.isCustom = custom
+        list.isDownloading = downloading
         return list
     }
 
@@ -46,7 +47,8 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
     func testSummaryNamesTheCheckedListsAndTheirState() {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", checked: false)])), "No rule sets selected")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads")])), "easylist, ublock-ads")
-        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "easylist · Downloading…")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "easylist · 1 not downloaded")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false, downloading: true)])), "easylist · Downloading…")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "easylist, ublock-ads · 1 not downloaded")
     }
 

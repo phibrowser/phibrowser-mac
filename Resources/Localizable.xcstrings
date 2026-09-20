@@ -69680,6 +69680,30 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.list.downloadingBytes" : {
+      "comment" : "Advanced ad block settings - Line under a filter list being downloaded when the total size is unknown; the value is bytes received",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloading… %@"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.downloadingOf" : {
+      "comment" : "Advanced ad block settings - Line under a filter list being downloaded; the two values are bytes received and the total size",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloading… %@ of %@"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.list.easylist.desc" : {
       "comment" : "Privacy settings - Description of the EasyList ad filter list",
       "extractionState" : "extracted_with_value",

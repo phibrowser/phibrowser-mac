@@ -37,8 +37,11 @@ struct ContentBlockingList: Identifiable, Hashable {
     /// Whether the list's text is on disk. Downloaded lists start out
     /// unavailable until the user downloads them.
     var available = true
-    /// A download the user asked for is in progress.
+    /// A download the user asked for is in progress; `downloadedBytes` of
+    /// `totalBytes` so far (`totalBytes` nil when the server gave no size).
     var isDownloading = false
+    var downloadedBytes: Int64 = 0
+    var totalBytes: Int64? = nil
     /// When the list was last downloaded or confirmed current; nil if never.
     var fetchedAt: Date? = nil
     /// The last download failure, empty when the last fetch succeeded.
@@ -466,6 +469,8 @@ final class ContentBlockingSettings: ObservableObject {
                     sourceURL: info.sourceURL.isEmpty ? nil : URL(string: info.sourceURL),
                     available: info.available,
                     isDownloading: info.downloading,
+                    downloadedBytes: info.downloadedBytes,
+                    totalBytes: info.totalBytes >= 0 ? info.totalBytes : nil,
                     fetchedAt: info.fetchedAt > 0 ? Date(timeIntervalSince1970: info.fetchedAt) : nil,
                     lastError: info.lastError)
             },

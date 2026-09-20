@@ -185,13 +185,28 @@ struct ContentBlockingListRow: View {
     /// nil once it does.
     static func availabilityLine(for list: ContentBlockingList) -> String? {
         if list.isDownloading {
-            return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose download is in progress")
+            return downloadingLine(for: list)
         }
         if list.available { return nil }
         if list.lastError.isEmpty {
             return NSLocalizedString("settings.privacy.contentBlocking.listInfo.notDownloaded", value: "Not downloaded yet", comment: "Advanced ad block settings - Details line for a filter list that has not been downloaded")
         }
         return String(format: NSLocalizedString("settings.privacy.contentBlocking.list.downloadFailed", value: "Not downloaded: %@", comment: "Advanced ad block settings - Line under a filter list whose download failed; %@ is the error"), list.lastError)
+    }
+
+    /// "Downloading…" with the bytes so far, and the total when the server
+    /// announced one.
+    static func downloadingLine(for list: ContentBlockingList) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        let received = formatter.string(fromByteCount: list.downloadedBytes)
+        if let total = list.totalBytes, total > 0 {
+            return String(format: NSLocalizedString("settings.privacy.contentBlocking.list.downloadingOf", value: "Downloading… %@ of %@", comment: "Advanced ad block settings - Line under a filter list being downloaded; the two values are bytes received and the total size"), received, formatter.string(fromByteCount: total))
+        }
+        if list.downloadedBytes > 0 {
+            return String(format: NSLocalizedString("settings.privacy.contentBlocking.list.downloadingBytes", value: "Downloading… %@", comment: "Advanced ad block settings - Line under a filter list being downloaded when the total size is unknown; the value is bytes received"), received)
+        }
+        return NSLocalizedString("settings.privacy.contentBlocking.list.downloading", value: "Downloading…", comment: "Advanced ad block settings - Line under a filter list whose download is in progress")
     }
 
     var body: some View {
@@ -223,8 +238,14 @@ struct ContentBlockingListRow: View {
                 .buttonStyle(.plain)
                 .help(NSLocalizedString("settings.privacy.contentBlocking.list.download", value: "Download this list", comment: "Advanced ad block settings - Tooltip of the button downloading a filter list"))
             case .downloading:
-                ProgressView()
-                    .controlSize(.small)
+                if let total = list.totalBytes, total > 0 {
+                    ProgressView(value: Double(list.downloadedBytes), total: Double(total))
+                        .progressViewStyle(.linear)
+                        .frame(width: 72)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             case .deleteDownload:
                 Button(action: onDeleteDownload) {
                     Image(systemName: "trash")

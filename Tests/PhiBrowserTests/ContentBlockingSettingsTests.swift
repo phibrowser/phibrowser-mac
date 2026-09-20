@@ -99,6 +99,8 @@ final class FakeListInfo: NSObject, PhiContentBlockingListInfo {
     var sourceURL = ""
     var available = true
     var downloading = false
+    var downloadedBytes: Int64 = 0
+    var totalBytes: Int64 = -1
     var fetchedAt: TimeInterval = 0
     var lastError = ""
 

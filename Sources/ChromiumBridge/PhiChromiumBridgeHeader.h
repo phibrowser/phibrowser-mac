@@ -47,8 +47,12 @@ typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
 /// until the first fetch completes; `fetchedAt` is Unix seconds (0 while
 /// never fetched) and `lastError` the last download failure, if any.
 @property (nonatomic, assign, readonly) BOOL available;
-/// A download the user asked for is in progress.
+/// A download the user asked for is in progress; `downloadedBytes` of
+/// `totalBytes` received so far (`totalBytes` is -1 when the server did not
+/// announce a size). `contentBlockingStatusChanged:` fires as they change.
 @property (nonatomic, assign, readonly) BOOL downloading;
+@property (nonatomic, assign, readonly) int64_t downloadedBytes;
+@property (nonatomic, assign, readonly) int64_t totalBytes;
 @property (nonatomic, assign, readonly) NSTimeInterval fetchedAt;
 @property (nonatomic, copy, readonly) NSString *lastError;
 @end

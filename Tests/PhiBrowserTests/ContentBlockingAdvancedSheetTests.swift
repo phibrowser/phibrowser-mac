@@ -97,6 +97,18 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         XCTAssertEqual(ContentBlockingListRow.control(for: remote), .downloading)
     }
 
+    func testDownloadingLineShowsBytes() {
+        var list = list("easylist", "ads")
+        list.available = false
+        list.isDownloading = true
+        XCTAssertEqual(ContentBlockingListRow.availabilityLine(for: list), "Downloading…")
+        list.downloadedBytes = 512_000
+        XCTAssertTrue(ContentBlockingListRow.availabilityLine(for: list)!.hasPrefix("Downloading… "))
+        XCTAssertFalse(ContentBlockingListRow.availabilityLine(for: list)!.contains(" of "))
+        list.totalBytes = 2_048_000
+        XCTAssertTrue(ContentBlockingListRow.availabilityLine(for: list)!.contains(" of "))
+    }
+
     func testInfoPopoverUpdateLine() {
         let now = Date()
         var fetched = list("easylist", "ads")

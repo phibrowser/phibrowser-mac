@@ -241,6 +241,10 @@ the other lists do. Users can uncheck it in the sheet.
 
 ## 6. Policy and defaults
 
+Distribution (2026-09-20): third-party lists are downloaded by the browser
+(see the checklist's Phase F), not shipped; only `phi-specific` is bundled.
+Users can add custom lists (URL or pasted rules) per Profile.
+
 Placement (2026-09-20): the toggles and the Advanced sheet live in the Profiles settings tab, in the selected profile's detail panel, with the other per-profile settings. There is no separate Privacy tab.
 
 | Setting | Pref | Default |

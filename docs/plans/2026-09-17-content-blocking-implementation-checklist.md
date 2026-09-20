@@ -12,6 +12,8 @@
 
 ## Handoff log
 
+- 2026-09-20 (Phase F written): lists are downloaded, custom lists exist end to end. Chromium: `ListStore` (`list_store.{h,cc}`, 13 unit tests), the service builds from store files with the cache key over each input's sha256 (`ListFile::sha256`), `SetURLLoaderFactoryForTesting` stubs downloads in every fixture, the catalog lost `snapshot`, eleven list files, their grd entries and `tools/snapshot_lists.py`. Custom lists: pref `phi.content_blocking.custom_lists`, `ContentBlockingService::{custom_lists, AddCustomList, RemoveCustomList, RefreshLists}`, `AppendCustomListIds` in the list mask, bridge `ListInfo` fields `name/custom/source_url/available/fetched_at/last_error` and methods `addContentBlockingCustomList`, `removeContentBlockingCustomList`, `refreshContentBlockingLists`. Mac: `ContentBlockingCustomFilterSheet` (URL / Custom segments, validation in `ContentBlockingCustomFilterInput`), a Custom section that always shows with an "Add Filter…" button, per-row download state, popover "Updated … ago". Deviations: pasted rules bypass the store (the service writes them and records the sha in the pref); conditional GET is used only for single-source lists; the hourly store timer re-checks every id any service asked for. NOT yet run: all Chromium tests (the `out/PhiTest` rebuild was in progress) and the Mac unit tests (Phi running). The Chinese overview artifact still describes bundled lists in its sections 2 and 8 and needs a refresh.
+
 - 2026-09-20 (Privacy pane folded into Profiles): per the owner, per-profile settings live under the Profiles tab, so the Privacy pane is gone. `ContentBlockingSettingsSection(profileId:)` (`Sources/UserInterface/Preferences/Profiles/`) renders the three toggles, the Advanced Settings button and the status small print inside `ProfileDetailSettingsView`, between the first card and "Your Data and Settings"; the selected profile comes from the Profiles list, so the profile picker and `PrivacySettingsModel` are deleted. `ContentBlockingAdvancedSheet` and `ContentBlockingListInfoPopover` moved to the Profiles folder. String keys keep the `settings.privacy.*` prefix; `settings.navigation.privacy` and `settings.privacy.profilePicker.label` were removed. Tests: `ContentBlockingSettingsSectionTests` (facade binding and swap) and `ContentBlockingDiagnosticsLinesTests`.
 
 - 2026-09-20 (D3, D4 verified in-app; E1, E2 written): the user confirmed pages render and the Privacy pane and Advanced sheet work on the Xcode-built Canary with everything default-on. Chromium `4286a31cb9dc2` commits the proxy lifetime fix (`MaybeDeleteSelf`), the move of the features to `components/phinomenon/content_blocking/features.{h,cc}`, the `PhiContentBlockingNetwork` / `PhiContentBlockingCosmetics` sub-switches and the default-on flip, with a regression test `RequestSurvivesFactoryDisconnect`. The Phi section is hidden from the Advanced sheet (Mac `18f4e653`; the list stays active). E1 deviations: no site-info UI exists, so the row lives in the address bar "..." menu (`SiteContentBlockingToggle` next to `WebContentAddressBarMenu`); the domain comes from a new synchronous bridge method `contentBlockingSiteExceptionDomainForURL:` backed by `SiteExceptionDomain()` in the service, so the toggle and the service share one eTLD+1 rule; private windows get no row because the bridge addresses a profile by its on-disk name and an exception set there would persist in the regular profile; the tab reloads after Chromium accepts the flip; no exceptions list was added to the Privacy pane (the menu row is the only surface). E2 deviations: `Diagnostics` is owned by the service (`service->diagnostics()`), counts on `UrlLoaderProxy::ShouldBlock` matches, keyed by the page's exception domain, session-only; `lastBuildLog` is one line of engine totals plus list ids (adblock-rust does not keep per-list skip counts). `out/PhiTest` still needs its near-full rebuild before the Chromium suites can run; the new tests were compiled (objects only) in `out/PhiMac`. Mac unit tests could not run because Phi was running; the new classes are `SiteContentBlockingToggleTests` and `PrivacySettingsDiagnosticsTests`.
@@ -531,29 +533,29 @@ Design:
 
 ### Task F1: ListStore and downloader
 
-- [ ] Unit tests (`list_store_unittest.cc`, `network::TestURLLoaderFactory`): `DownloadsMissingList`, `ConcatenatesMultiSourceInOrder`, `PartialMultiSourceFailureKeepsOldFile`, `NotModifiedKeepsFileAndBumpsFetchedAt`, `StaleListIsRefreshed`, `FreshListIsNotFetched`, `OversizeBodyRejected`, `FailureBacksOff`, `ManifestRoundTrips`, `ObserverNotified`.
-- [ ] Implement; PASS. Commit `feat(phi): download content blocking lists into a per-browser list store`.
+- [x] Unit tests (`list_store_unittest.cc`, `network::TestURLLoaderFactory`): `DownloadsMissingList`, `ConcatenatesMultiSourceInOrder`, `PartialMultiSourceFailureKeepsOldFile`, `NotModifiedKeepsFileAndBumpsFetchedAt`, `StaleListIsRefreshed`, `FreshListIsNotFetched`, `OversizeBodyRejected`, `FailureBacksOff`, `ManifestRoundTrips`, `ObserverNotified`.
+- [x] Implement; PASS (pending the `out/PhiTest` rebuild). Commit `feat(phi): download content blocking lists into a per-browser list store`.
 
 ### Task F2: service builds from downloaded files
 
-- [ ] Update `content_blocking_service_unittest.cc` fixture to seed the store directory with small list files (no network); tests `BuildsFromStoreFiles`, `WaitsForDownloadWhenNoFile`, `RebuildsWhenAListUpdates`, `AllDownloadsFailedIsDegraded`; keep the cache tests.
-- [ ] Remove the bundled lists, grd entries, resource ids, snapshot tool, `bundled` / `snapshot_sha256`; update `catalog_unittest.cc`.
-- [ ] Browser test fixtures unchanged (extra rules); bridge test `GetSettingsReportsState` checks `available` is false with no network.
-- [ ] Commit `feat(phi): build content blocking engines from downloaded lists`.
+- [x] Update `content_blocking_service_unittest.cc` fixture to seed the store directory with small list files (no network); tests `BuildsFromStoreFiles`, `WaitsForDownloadWhenNoFile`, `RebuildsWhenAListUpdates`, `AllDownloadsFailedIsDegraded`; keep the cache tests.
+- [x] Remove the bundled lists, grd entries, resource ids, snapshot tool, `bundled` / `snapshot_sha256`; update `catalog_unittest.cc`.
+- [x] Browser test fixtures stub the network with `SetURLLoaderFactoryForTesting` (extra rules build the engine); bridge test `GetSettingsReportsState` checks `available` is false with no network.
+- [x] Commit `feat(phi): build content blocking engines from downloaded lists`.
 
 ### Task F3: custom lists
 
-- [ ] Prefs, `CustomLists` helper in the service (`Add`, `Remove`, enumerate), list mask includes custom ids, bridge fields and methods, bridge browser tests `AddCustomRulesListBlocks` (pasted rule blocks a test-server URL), `RemoveCustomListRebuilds`, `CustomUrlListDownloads` (embedded test server as the source).
-- [ ] Commit `feat(phi): add custom content blocking filter lists`.
+- [x] Prefs, `CustomLists` helper in the service (`Add`, `Remove`, enumerate), list mask includes custom ids, bridge fields and methods, bridge browser tests `AddCustomRulesListBlocks` (pasted rule blocks a test-server URL), `RemoveCustomListRebuilds`, `CustomUrlListDownloads` (embedded test server as the source).
+- [x] Commit `feat(phi): add custom content blocking filter lists`.
 
 ### Task F4: Mac UI
 
-- [ ] `ContentBlockingList` gains the new fields; facade `addCustomList` / `removeCustomList` / `refreshLists`; Advanced sheet "Custom" section and `ContentBlockingCustomFilterSheet`; tests `CustomFilterSheetValidation` (name required, URL must be http(s), rules non-empty), `CustomSectionListsCustomEntries`.
-- [ ] Commit `Add custom filter lists and download state to Advanced Ad Block Settings`.
+- [x] `ContentBlockingList` gains the new fields; facade `addCustomList` / `removeCustomList` / `refreshLists`; Advanced sheet "Custom" section and `ContentBlockingCustomFilterSheet`; tests `CustomFilterSheetValidation` (name required, URL must be http(s), rules non-empty), `CustomSectionListsCustomEntries`.
+- [x] Commit `Add custom filter lists and download state to Advanced Ad Block Settings`.
 
 ### Task F5: docs and cleanup
 
-- [ ] README: replace the bundled-list section with the download design and the per-list source table (id, sources, homepage, license as declared upstream); plan v2 §5/§6 notes; this checklist's Handoff log.
+- [x] README: replace the bundled-list section with the download design and the per-list source table (id, sources, homepage, license as declared upstream); plan v2 §5/§6 notes; this checklist's Handoff log.
 
 ## Self-review record
 

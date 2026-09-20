@@ -69195,7 +69195,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose the filter lists this profile uses. Checked lists are downloaded from their publishers and refreshed daily; a section only takes effect while its switch is on. You can also add your own lists."
+            "value" : "Choose the filter lists this profile uses. Lists are downloaded from their publishers only when you ask, with the download buttons or Update All; a section only takes effect while its switch is on. You can also add your own lists."
           }
         }
       }
@@ -69896,6 +69896,78 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.ruleSets.cancel" : {
+      "comment" : "Choose rule sets sheet - Cancel button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.download" : {
+      "comment" : "Choose rule sets sheet - Button that downloads the checked lists that are missing",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Download"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.intro" : {
+      "comment" : "Choose rule sets sheet - Introductory sentence",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rule sets are downloaded from their publishers only when you ask. Choose which to use, then download the ones that are missing."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.title.ads" : {
+      "comment" : "Choose rule sets sheet - Title for the ads toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rule sets for blocking ads"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.title.cookies" : {
+      "comment" : "Choose rule sets sheet - Title for the cookie banners toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rule sets for blocking cookie banners"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.title.trackers" : {
+      "comment" : "Choose rule sets sheet - Title for the trackers toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rule sets for blocking trackers"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.status.degraded" : {
       "comment" : "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use",
       "extractionState" : "extracted_with_value",
@@ -69904,6 +69976,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Filtering is running with the last good rules"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.status.noLists" : {
+      "comment" : "Profile settings - Status line shown when a toggle is on but none of its filter lists has been downloaded",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Nothing is blocked until a rule set is downloaded."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.help" : {
+      "comment" : "Profile settings - Tooltip of the line under a content blocking toggle that opens the rule set chooser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose and download rule sets"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.noneSelected" : {
+      "comment" : "Profile settings - Line under a content blocking toggle when no filter list is checked for it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No rule sets selected"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.notDownloaded" : {
+      "comment" : "Profile settings - Suffix under a content blocking toggle; %d is how many of its checked lists are not downloaded",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d not downloaded"
           }
         }
       }

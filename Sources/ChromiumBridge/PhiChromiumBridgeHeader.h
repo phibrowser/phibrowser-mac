@@ -59,7 +59,9 @@ typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
 @property (nonatomic, copy, readonly) NSArray<id<PhiContentBlockingListInfo>> *lists;
 /// Registrable domains where blocking is off.
 @property (nonatomic, copy, readonly) NSArray<NSString *> *siteExceptions;
-/// One of @"active", @"building", @"degraded", @"disabled".
+/// One of @"active", @"building", @"degraded", @"disabled", @"no_lists"
+/// (a toggle is on but none of its lists is downloaded; `statusDetail` has
+/// the last download error, if any).
 @property (nonatomic, copy, readonly) NSString *status;
 /// Human-readable reason when `status` is @"degraded"; empty otherwise.
 @property (nonatomic, copy, readonly) NSString *statusDetail;
@@ -1895,11 +1897,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)refreshContentBlockingLists:(NSString *)profileId
                          completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
 
-/// Downloads one list now, whether or not it is checked. Fails for the
-/// bundled Phi list and unknown ids.
-- (void)downloadContentBlockingList:(NSString *)profileId
-                             listId:(NSString *)listId
-                         completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+/// Downloads the given lists now, whether or not they are checked. Every
+/// download is an explicit user action: Chromium never fetches a list on its
+/// own. Fails when none of the ids is a downloadable list.
+- (void)downloadContentBlockingLists:(NSString *)profileId
+                             listIds:(NSArray<NSString *> *)listIds
+                          completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
 
 /// Deletes a list's downloaded text and unchecks it so it is not fetched
 /// again until the user asks. Fails for the bundled Phi list and unknown ids.

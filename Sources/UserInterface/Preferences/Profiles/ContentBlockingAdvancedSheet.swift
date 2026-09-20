@@ -83,7 +83,7 @@ struct ContentBlockingAdvancedSheet: View {
                 .controlSize(.small)
                 .disabled(settings.state == nil)
             }
-            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists this profile uses. Checked lists are downloaded from their publishers and refreshed daily; a section only takes effect while its switch is on. You can also add your own lists.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
+            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists this profile uses. Lists are downloaded from their publishers only when you ask, with the download buttons or Update All; a section only takes effect while its switch is on. You can also add your own lists.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

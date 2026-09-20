@@ -47,6 +47,9 @@ struct ContentBlockingList: Identifiable, Hashable {
 struct ContentBlockingState: Equatable {
     enum Status: String {
         case active, building, degraded, disabled
+        /// A toggle is on but none of its lists is downloaded; downloads are
+        /// explicit user actions, so this waits for one.
+        case noLists = "no_lists"
     }
 
     var blockAds: Bool
@@ -95,10 +98,11 @@ protocol ContentBlockingBridging {
                                          completion: @escaping (Bool, String?) -> Void)
     func refreshContentBlockingLists(_ profileId: String,
                                      completion: @escaping (Bool, String?) -> Void)
-    /// Downloads one list now, checked or not.
-    func downloadContentBlockingList(_ profileId: String,
-                                     listId: String,
-                                     completion: @escaping (Bool, String?) -> Void)
+    /// Downloads the given lists now, checked or not. Chromium never fetches
+    /// a list on its own; this is the user's action.
+    func downloadContentBlockingLists(_ profileId: String,
+                                      listIds: [String],
+                                      completion: @escaping (Bool, String?) -> Void)
     /// Deletes a list's downloaded text; Chromium also unchecks it.
     func deleteContentBlockingListDownload(_ profileId: String,
                                            listId: String,
@@ -200,14 +204,14 @@ struct LiveContentBlockingBridge: ContentBlockingBridging {
         bridge.refreshContentBlockingLists(profileId, completion: completion)
     }
 
-    func downloadContentBlockingList(_ profileId: String,
-                                     listId: String,
-                                     completion: @escaping (Bool, String?) -> Void) {
-        guard supports(#selector(PhiChromiumBridgeProtocol.downloadContentBlockingList(_:listId:completion:))) else {
+    func downloadContentBlockingLists(_ profileId: String,
+                                      listIds: [String],
+                                      completion: @escaping (Bool, String?) -> Void) {
+        guard supports(#selector(PhiChromiumBridgeProtocol.downloadContentBlockingLists(_:listIds:completion:))) else {
             completion(false, "bridge too old")
             return
         }
-        bridge.downloadContentBlockingList(profileId, listId: listId, completion: completion)
+        bridge.downloadContentBlockingLists(profileId, listIds: listIds, completion: completion)
     }
 
     func deleteContentBlockingListDownload(_ profileId: String,
@@ -373,24 +377,29 @@ final class ContentBlockingSettings: ObservableObject {
         }
     }
 
-    /// Downloads one list now. The row shows "Downloading…" until the state
-    /// is re-read after Chromium reports the change.
-    func downloadList(_ id: String, completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let bridge, var updated = state,
-              let index = updated.lists.firstIndex(where: { $0.id == id }) else {
+    /// Downloads the given lists now. Their rows show "Downloading…" until
+    /// the state is re-read after Chromium reports the change.
+    func downloadLists(_ ids: [String], completion: @escaping (Bool) -> Void = { _ in }) {
+        guard let bridge, var updated = state, !ids.isEmpty else {
             completion(false)
             return
         }
         let previous = state
-        updated.lists[index].available = false
-        updated.lists[index].lastError = ""
+        for index in updated.lists.indices where ids.contains(updated.lists[index].id) {
+            updated.lists[index].available = false
+            updated.lists[index].lastError = ""
+        }
         state = updated
-        bridge.downloadContentBlockingList(profileId, listId: id) { [weak self] success, _ in
+        bridge.downloadContentBlockingLists(profileId, listIds: ids) { [weak self] success, _ in
             DispatchQueue.main.async {
                 if !success { self?.state = previous }
                 completion(success)
             }
         }
+    }
+
+    func downloadList(_ id: String, completion: @escaping (Bool) -> Void = { _ in }) {
+        downloadLists([id], completion: completion)
     }
 
     /// Deletes a list's downloaded text; the row shows it unchecked and not

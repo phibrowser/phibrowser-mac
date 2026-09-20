@@ -40,6 +40,15 @@ struct ContentBlockingSettingsSection: View {
 
     @StateObject private var model = ContentBlockingSectionModel()
     @State private var showAdvanced = false
+    /// The toggle whose rule sets the chooser sheet shows, and whether Cancel
+    /// turns that toggle back off (it was just switched on).
+    @State private var ruleSetChooser: RuleSetChooser?
+
+    struct RuleSetChooser: Identifiable {
+        let category: ContentBlockingCategory
+        let revertsOnCancel: Bool
+        var id: String { "\(category)" }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -86,35 +95,76 @@ struct ContentBlockingSettingsSection: View {
                 ContentBlockingAdvancedSheet(settings: settings)
             }
         }
+        .sheet(item: $ruleSetChooser) { chooser in
+            if let settings = model.settings {
+                ContentBlockingRuleSetSheet(settings: settings, category: chooser.category,
+                                            revertsToggleOnCancel: chooser.revertsOnCancel)
+            }
+        }
     }
 
-    /// The small print under the card, shown only when the rule build failed
-    /// and the previous rules stay in use. Nothing is shown for the normal
-    /// states, including all toggles off (the switches say that already), and
-    /// the session's blocked count stays in the state for diagnosis only
+    /// Turning a toggle on whose lists are not downloaded opens the chooser;
+    /// downloads never start on their own.
+    private func setCategory(_ category: ContentBlockingCategory, enabled: Bool) {
+        guard let settings = model.settings else { return }
+        settings.setCategory(category, enabled: enabled)
+        if enabled, let state = settings.state,
+           ContentBlockingRuleSets.needsDownload(for: category, in: state) {
+            ruleSetChooser = RuleSetChooser(category: category, revertsOnCancel: true)
+        }
+    }
+
+    /// The small print under the card: the rule build failed and the previous
+    /// rules stay in use, or a toggle is on with nothing downloaded (then the
+    /// last download error, if any). Nothing is shown for the normal states,
+    /// and the session's blocked count stays in the state for diagnosis only
     /// (owner decisions, 2026-09-20).
     static func diagnosticsLines(for state: ContentBlockingState?) -> [String] {
-        guard let state, state.status == .degraded else { return [] }
-        var lines = [NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use")]
-        if !state.statusDetail.isEmpty {
-            lines.append(state.statusDetail)
+        guard let state else { return [] }
+        switch state.status {
+        case .degraded:
+            var lines = [NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use")]
+            if !state.statusDetail.isEmpty {
+                lines.append(state.statusDetail)
+            }
+            return lines
+        case .noLists:
+            return [NSLocalizedString("settings.privacy.contentBlocking.status.noLists", value: "Nothing is blocked until a rule set is downloaded.", comment: "Profile settings - Status line shown when a toggle is on but none of its filter lists has been downloaded")]
+        case .active, .building, .disabled:
+            return []
         }
-        return lines
     }
 
     private func toggleRow(title: String,
                            symbol: String,
                            category: ContentBlockingCategory,
                            value: Bool?) -> some View {
-        SettingsDetailRow(title, systemImage: symbol) {
-            Toggle("", isOn: Binding(
-                get: { value ?? false },
-                set: { newValue in model.settings?.setCategory(category, enabled: newValue) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .themedTint(.themeColor)
-                .disabled(value == nil)
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsDetailRow(title, systemImage: symbol) {
+                Toggle("", isOn: Binding(
+                    get: { value ?? false },
+                    set: { newValue in setCategory(category, enabled: newValue) }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .disabled(value == nil)
+            }
+            if value == true, let state = model.settings?.state {
+                Button {
+                    ruleSetChooser = RuleSetChooser(category: category, revertsOnCancel: false)
+                } label: {
+                    Text(ContentBlockingRuleSets.summary(for: category, in: state))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 34)
+                .padding(.bottom, 8)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.summary.help", value: "Choose and download rule sets", comment: "Profile settings - Tooltip of the line under a content blocking toggle that opens the rule set chooser"))
+            }
         }
     }
 }

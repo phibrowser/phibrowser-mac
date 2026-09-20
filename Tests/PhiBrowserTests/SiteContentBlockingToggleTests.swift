@@ -56,8 +56,8 @@ private final class DomainBridge: ContentBlockingBridging {
         completion(false, "unsupported")
     }
 
-    func downloadContentBlockingList(_ profileId: String, listId: String,
-                                     completion: @escaping (Bool, String?) -> Void) {
+    func downloadContentBlockingLists(_ profileId: String, listIds: [String],
+                                      completion: @escaping (Bool, String?) -> Void) {
         completion(false, "unsupported")
     }
 

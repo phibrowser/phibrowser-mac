@@ -208,6 +208,7 @@
 		5C1B0C0B0000000000000E11 /* SiteContentBlockingToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1B0C0A0000000000000E10 /* SiteContentBlockingToggle.swift */; };
 		5C1B0C0D0000000000000E13 /* ContentBlockingSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1B0C0C0000000000000E12 /* ContentBlockingSettingsSection.swift */; };
 		5C1B0C0F0000000000000E15 /* ContentBlockingCustomFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1B0C0E0000000000000E14 /* ContentBlockingCustomFilterSheet.swift */; };
+		5C1B0C110000000000000E17 /* ContentBlockingRuleSetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1B0C100000000000000E16 /* ContentBlockingRuleSetSheet.swift */; };
 		5C518564BC39D8D844BCA4EF /* ContentBlockingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99F8238F606FE6A51B5B631 /* ContentBlockingSettings.swift */; };
 		5EA17ABC0000000000000100 /* SearchTabsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000110 /* SearchTabsModels.swift */; };
 		5EA17ABC0000000000000101 /* SearchTabsQueryMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */; };
@@ -907,6 +908,7 @@
 		5C1B0C0A0000000000000E10 /* SiteContentBlockingToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteContentBlockingToggle.swift; sourceTree = "<group>"; };
 		5C1B0C0C0000000000000E12 /* ContentBlockingSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingSettingsSection.swift; sourceTree = "<group>"; };
 		5C1B0C0E0000000000000E14 /* ContentBlockingCustomFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingCustomFilterSheet.swift; sourceTree = "<group>"; };
+		5C1B0C100000000000000E16 /* ContentBlockingRuleSetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingRuleSetSheet.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000110 /* SearchTabsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsModels.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsQueryMatcher.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsChromiumProvider.swift; sourceTree = "<group>"; };
@@ -1782,6 +1784,7 @@
 				5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */,
 				5C1B0C0C0000000000000E12 /* ContentBlockingSettingsSection.swift */,
 				5C1B0C0E0000000000000E14 /* ContentBlockingCustomFilterSheet.swift */,
+				5C1B0C100000000000000E16 /* ContentBlockingRuleSetSheet.swift */,
 				4465FE5C60BB880C4931EAF6 /* ContentBlockingAdvancedSheet.swift */,
 				A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */,
 			);
@@ -3508,6 +3511,7 @@
 				5C1B0C0B0000000000000E11 /* SiteContentBlockingToggle.swift in Sources */,
 				5C1B0C0D0000000000000E13 /* ContentBlockingSettingsSection.swift in Sources */,
 				5C1B0C0F0000000000000E15 /* ContentBlockingCustomFilterSheet.swift in Sources */,
+				5C1B0C110000000000000E17 /* ContentBlockingRuleSetSheet.swift in Sources */,
 				3AC0FFEE00000000000000A1 /* PageSharingPresenter.swift in Sources */,
 				CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */,
 				376CE4092F28917C0093D937 /* NotificationMessageCardView.swift in Sources */,

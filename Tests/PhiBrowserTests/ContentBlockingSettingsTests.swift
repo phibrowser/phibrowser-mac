@@ -72,9 +72,9 @@ private final class FakeContentBlockingBridge: ContentBlockingBridging {
     var downloadCalls: [String] = []
     var deleteDownloadCalls: [String] = []
 
-    func downloadContentBlockingList(_ profileId: String, listId: String,
-                                     completion: @escaping (Bool, String?) -> Void) {
-        downloadCalls.append(listId)
+    func downloadContentBlockingLists(_ profileId: String, listIds: [String],
+                                      completion: @escaping (Bool, String?) -> Void) {
+        downloadCalls.append(contentsOf: listIds)
         completion(!failWrites, failWrites ? "nope" : nil)
     }
 

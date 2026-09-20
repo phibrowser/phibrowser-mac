@@ -1,5 +1,15 @@
 # Phi sync publishing
 
+## Chromium sync endpoint
+
+`ChromiumLauncher` supplies a default `--sync-url` when starting the embedded
+framework. Canary builds (`NIGHTLY_BUILD=1`) use
+`https://sync.stag.phibrowser.com/chromium-sync`; release builds
+(`NIGHTLY_BUILD=0`) use `https://sync.phibrowser.com/chromium-sync`.
+The build channel selects this default independently of `DEBUG`. Explicit
+launch arguments are appended afterwards, so a supplied `--sync-url=...`
+overrides the channel default.
+
 ## Pull before commit
 
 The `feature/phi-sync` branch has no invalidation channel. Every round that may

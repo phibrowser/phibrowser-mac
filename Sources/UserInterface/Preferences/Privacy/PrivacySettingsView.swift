@@ -47,8 +47,13 @@ struct PrivacySettingsView: View {
     private var profilePicker: some View {
         SettingsDetailCard {
             SettingsDetailRow(NSLocalizedString("settings.privacy.profilePicker.label", value: "Settings for profile", comment: "Privacy settings - Label of the picker choosing which profile the privacy settings apply to")) {
+                // Before the model has reconciled, fall back to the first
+                // profile so the Picker never holds a selection without a tag.
                 Picker("", selection: Binding(
-                    get: { model.selectedProfileId ?? "" },
+                    get: {
+                        model.selectedProfileId
+                            ?? profileManager.userAssignableProfiles.first?.profileId ?? ""
+                    },
                     set: { model.select($0.isEmpty ? nil : $0) })) {
                     ForEach(profileManager.userAssignableProfiles) { profile in
                         Text(profile.displayName).tag(profile.profileId)

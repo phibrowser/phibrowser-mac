@@ -35,7 +35,6 @@ extension AppController {
     private func panes() -> [SettingsPane] {
         var panes: [SettingsPane] =
         [AccountSettingViewController(),
-         PrivacySettingViewController(),
          GeneralSettingViewController(),
          ProfilesSettingViewController(),
          SpacesSettingViewController(),
@@ -43,6 +42,7 @@ extension AppController {
          AISettingsViewController(),
          ShortcutsSettingViewController(),
          AdvancedSettingViewController(),
+         PrivacySettingViewController(),
         ]
         settingsPanesIncludeDeveloper = PhiPreferences.AgentSpaces.developerModeEnabled
         if settingsPanesIncludeDeveloper {

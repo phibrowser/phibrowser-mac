@@ -443,7 +443,7 @@ The facade updates `state` optimistically and reverts on failure. Delegate callb
 **Files:**
 - Modify: `Sources/UserInterface/Preferences/Settings.swift` (add `static let privacy = Self("privacy")`)
 - Create: `Sources/UserInterface/Preferences/Privacy/PrivacySettingViewController.swift`, `PrivacySettingHostingViewController.swift`, `PrivacySettingsView.swift` (mirror the Profiles trio; 680×561)
-- Modify: `Sources/Application/AppController+Settings.swift` `panes()` (insert after Account)
+- Modify: `Sources/Application/AppController+Settings.swift` `panes()` (after Advanced, before the optional Developer pane; the owner moved it there from second position on 2026-09-20)
 - Modify: `Resources/Localizable.xcstrings`: `settings.navigation.privacy` = "Privacy", `settings.privacy.contentBlocking.title` = "Content blocking", `settings.privacy.contentBlocking.blockAds` = "Block ads", `settings.privacy.contentBlocking.blockCookieBanners` = "Block cookie banners", `settings.privacy.contentBlocking.blockTrackers` = "Block trackers", `settings.privacy.contentBlocking.advancedButton` = "Advanced Settings", `settings.privacy.contentBlocking.status.degraded` = "Filtering is running with the last good rules", `settings.privacy.contentBlocking.status.disabled` = "Content blocking is off".
 - Create: `PhiBrowserTests/PrivacySettingsViewTests.swift` (view model level: which profile is selected, toggles bound)
 

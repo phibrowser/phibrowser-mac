@@ -2013,6 +2013,23 @@ extension AppController {
         add(NSLocalizedString("profile.menu.newIncognitoSpace", value: "New Incognito Space", comment: "Profile menu - New Incognito Space action"),
             action: #selector(newIncognitoSpaceFromMenu(_:)), command: .PHI_NEW_INCOGNITO_SPACE, target: self)
         menu.addItem(.separator())
+        if let space = currentActiveSpace() {
+            let themeItem = NSMenuItem()
+            let editor = SpaceThemeEditorView(spaceId: space.spaceId, isEmbeddedInMenu: true) { [weak menu] in
+                menu?.cancelTracking()
+            }
+            .disabled(focusedSpaceIsAgentControlled())
+            let themeSource = currentSpacesSlot()?.visibleController?.browserState.themeContext
+            let hostingView = ThemedHostingView(rootView: editor, themeSource: themeSource)
+            // Menu windows have no browser controller; retain the owning Space's theme.
+            hostingView.subtreeThemeSource = themeSource
+            hostingView.sizingOptions = []
+            hostingView.autoresizingMask = [.width]
+            hostingView.frame = NSRect(origin: .zero, size: SpaceThemeEditorView.menuContentSize)
+            themeItem.view = hostingView
+            menu.addItem(themeItem)
+            menu.addItem(.separator())
+        }
         add(NSLocalizedString("profile.menu.downloads", value: "Download List", comment: "Profile menu - Download List action"),
             action: #selector(commandDispatch(_:)), command: .IDC_SHOW_DOWNLOADS, target: nil)
         add(NSLocalizedString("profile.menu.bookmarks", value: "Manage Bookmarks", comment: "Profile menu - Manage Bookmarks action"),

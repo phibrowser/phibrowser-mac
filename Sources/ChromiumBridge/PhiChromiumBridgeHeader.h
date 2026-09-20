@@ -699,6 +699,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// thread per settings page load — must not block (answer from cache).
 - (NSDictionary<NSString *, id> * _Nullable)getPhiAccountInfo;
 
+/// Stable native sync identity, independent of access-token renewal or reauth.
+/// Return {subject: NSString, email: NSString (optional)} when signed in, an
+/// empty dictionary for confirmed sign-out, and nil while restoring a session.
+/// Optional for older clients. Called synchronously on the UI thread.
+- (nullable NSDictionary<NSString *, id> *)getPhiSyncAccountInfo;
+
 /// The user pressed "export account data" on the Phi account subpage in
 /// chrome://settings. Mac owns the verification UI and all authenticated
 /// network calls; Chromium only relays the action. Called on the UI thread —

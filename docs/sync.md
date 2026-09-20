@@ -10,6 +10,42 @@ The build channel selects this default independently of `DEBUG`. Explicit
 launch arguments are appended afterwards, so a supplied `--sync-url=...`
 overrides the channel default.
 
+## Phi Chat profile exclusion
+
+The dedicated `PhiChat` Chromium profile is local-only. It must not participate
+in Profile pairing, Profile key registration, or browser data sync. Identify it
+by its reserved directory basename, never by the user-visible display name.
+
+Chromium's `phi::ListProfiles()` excludes this profile before returning the
+bridge list. `ProfileManager.userAssignableProfiles` supplies that list to
+`SyncKeyController`, so the Chat profile receives no account-global UUID or
+resolved sync key. Chromium may construct a `SyncService` for the loaded Chat
+profile, but `SyncServiceImpl::GetDisableReasons()` blocks the engine while its
+`PhiSyncKeyProvider` has no ready UUID/key pair. Preserve both boundaries when
+changing Profile enumeration or sync startup.
+
+This describes the browser sync domains; conversation storage has its own
+ownership and lifecycle.
+
+## Chromium account and key lifecycle
+
+The optional `getPhiSyncAccountInfo` delegate query exposes stable native session
+identity independently of `getAuth0AccessTokenSyncly`. A signed-in session returns
+`subject` and optional `email`; confirmed sign-out returns an empty dictionary;
+restoration still in progress returns `nil`. Reauthentication grace preserves the
+account identity while withholding its bearer token. Publish these state changes
+before sending `notifyPhiAuthStateChanged`.
+
+Chromium suspends an unresolved account without clearing sync metadata. Older
+clients without the query can establish identity from a valid JWT, but a missing
+JWT is treated as unresolved, never as evidence of sign-out. Confirmed sign-out
+still clears metadata, and the next native sign-in restores full-sync setup even
+when the Profile UUID and key have not changed.
+
+Withdrawing a Profile key stops the Chromium engine, including initialization,
+without clearing its metadata. Returning the same UUID/key resumes the existing
+sync state; changing the UUID retains the existing namespace-reset behavior.
+
 ## Pull before commit
 
 The `feature/phi-sync` branch has no invalidation channel. Every round that may

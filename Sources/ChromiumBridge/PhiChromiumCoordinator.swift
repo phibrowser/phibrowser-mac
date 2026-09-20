@@ -1442,6 +1442,27 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         return info.isEmpty ? nil : info
     }
 
+    /// Sync identity belongs to the native session, not to its renewable bearer
+    /// token. In particular, a reauthentication grace session remains signed in.
+    func getPhiSyncAccountInfo() -> [String: Any]? {
+        guard Thread.isMainThread else {
+            assertionFailure("getPhiSyncAccountInfo off the main thread")
+            return nil
+        }
+        return MainActor.assumeIsolated {
+            guard PhiBuildCapabilities.supportsAuthentication,
+                  !ApplicationState.shared.isGuest,
+                  !AuthManager.shared.isAccountDeletionInProgress else { return [:] }
+            if ApplicationState.shared.isAuthenticated,
+               let account = AccountController.shared.account {
+                return ["subject": account.userID, "email": account.userInfo?.email ?? ""]
+            }
+            // During launch the persisted session can precede AccountController
+            // hydration. Do not report a sign-out while it is being restored.
+            return AuthManager.shared.hasRecoverableLoginSession() ? nil : [:]
+        }
+    }
+
     /// Hot path: Chromium pulls per-profile sync info synchronously on the UI
     /// thread. Mirror `showCrashPage`'s assert-and-skip convention rather than
     /// trapping if it ever arrives off-main.

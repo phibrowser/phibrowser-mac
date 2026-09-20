@@ -484,26 +484,22 @@ enum ContentBlockingListStrings {
         switch id {
         case "easylist":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easylist.title", value: "EasyList", comment: "Privacy settings - Name of the EasyList ad filter list")
-        case "ublock-ads":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockAds.title", value: "uBlock - Ads", comment: "Privacy settings - Name of the uBlock Origin ads filter list")
-        case "ublock-unbreak":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockUnbreak.title", value: "uBlock - Unbreak", comment: "Privacy settings - Name of the uBlock Origin list that fixes sites broken by blocking")
         case "easyprivacy":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easyprivacy.title", value: "EasyPrivacy", comment: "Privacy settings - Name of the EasyPrivacy tracker filter list")
-        case "ublock-privacy":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockPrivacy.title", value: "uBlock - Privacy", comment: "Privacy settings - Name of the uBlock Origin privacy filter list")
         case "easylist-cookie":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easylistCookie.title", value: "EasyList - Cookie Notices", comment: "Privacy settings - Name of the EasyList cookie notice filter list")
-        case "easylist-polish":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.easylistPolish.title", value: "EasyList - Polska lista", comment: "Privacy settings - Name of the Polish regional filter list")
-        case "adguard-russian":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardRussian.title", value: "AdGuard Russian", comment: "Privacy settings - Name of the AdGuard Russian regional filter list")
+        case "adguard-german":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardGerman.title", value: "AdGuard German (Deutsch)", comment: "Privacy settings - Name of the AdGuard German regional filter list")
+        case "adguard-french":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardFrench.title", value: "AdGuard French (Français)", comment: "Privacy settings - Name of the AdGuard French regional filter list")
+        case "adguard-dutch":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardDutch.title", value: "AdGuard Dutch (Nederlands)", comment: "Privacy settings - Name of the AdGuard Dutch regional filter list")
+        case "adguard-spanish":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardSpanish.title", value: "AdGuard Spanish/Portuguese (Español/Português)", comment: "Privacy settings - Name of the AdGuard Spanish and Portuguese regional filter list")
         case "adguard-chinese":
             return NSLocalizedString("settings.privacy.contentBlocking.list.adguardChinese.title", value: "AdGuard Chinese (中文)", comment: "Privacy settings - Name of the AdGuard Chinese regional filter list")
         case "adguard-japanese":
             return NSLocalizedString("settings.privacy.contentBlocking.list.adguardJapanese.title", value: "AdGuard Japanese (日本語)", comment: "Privacy settings - Name of the AdGuard Japanese regional filter list")
-        case "bulgarian":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.bulgarian.title", value: "Bulgarian List", comment: "Privacy settings - Name of the Bulgarian regional filter list")
         case "phi-specific":
             return NSLocalizedString("settings.privacy.contentBlocking.list.phiSpecific.title", value: "Phi Blocklists", comment: "Privacy settings - Name of Phi's own first-party filter list")
         default:
@@ -515,26 +511,22 @@ enum ContentBlockingListStrings {
         switch id {
         case "easylist":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easylist.desc", value: "The most widely used list of ad servers and ad elements.", comment: "Privacy settings - Description of the EasyList ad filter list")
-        case "ublock-ads":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockAds.desc", value: "Additional ad rules maintained by the uBlock Origin project.", comment: "Privacy settings - Description of the uBlock Origin ads filter list")
-        case "ublock-unbreak":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockUnbreak.desc", value: "Fixes for sites that other rules would break.", comment: "Privacy settings - Description of the uBlock Origin unbreak list")
         case "easyprivacy":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easyprivacy.desc", value: "Blocks tracking scripts, beacons and analytics.", comment: "Privacy settings - Description of the EasyPrivacy tracker filter list")
-        case "ublock-privacy":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.ublockPrivacy.desc", value: "Extra tracker rules from the uBlock Origin project. May affect some sites.", comment: "Privacy settings - Description of the uBlock Origin privacy filter list")
         case "easylist-cookie":
             return NSLocalizedString("settings.privacy.contentBlocking.list.easylistCookie.desc", value: "Hides cookie consent banners and unlocks scrolling behind them.", comment: "Privacy settings - Description of the EasyList cookie notice filter list")
-        case "easylist-polish":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.easylistPolish.desc", value: "Ads and trackers on Polish websites.", comment: "Privacy settings - Description of the Polish regional filter list")
-        case "adguard-russian":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardRussian.desc", value: "Ads and trackers on Russian websites.", comment: "Privacy settings - Description of the AdGuard Russian regional filter list")
+        case "adguard-german":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardGerman.desc", value: "Ads and trackers on German websites.", comment: "Privacy settings - Description of the AdGuard German regional filter list")
+        case "adguard-french":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardFrench.desc", value: "Ads and trackers on French websites.", comment: "Privacy settings - Description of the AdGuard French regional filter list")
+        case "adguard-dutch":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardDutch.desc", value: "Ads and trackers on Dutch websites.", comment: "Privacy settings - Description of the AdGuard Dutch regional filter list")
+        case "adguard-spanish":
+            return NSLocalizedString("settings.privacy.contentBlocking.list.adguardSpanish.desc", value: "Ads and trackers on Spanish and Portuguese websites.", comment: "Privacy settings - Description of the AdGuard Spanish and Portuguese regional filter list")
         case "adguard-chinese":
             return NSLocalizedString("settings.privacy.contentBlocking.list.adguardChinese.desc", value: "Ads and trackers on Chinese websites.", comment: "Privacy settings - Description of the AdGuard Chinese regional filter list")
         case "adguard-japanese":
             return NSLocalizedString("settings.privacy.contentBlocking.list.adguardJapanese.desc", value: "Ads and trackers on Japanese websites.", comment: "Privacy settings - Description of the AdGuard Japanese regional filter list")
-        case "bulgarian":
-            return NSLocalizedString("settings.privacy.contentBlocking.list.bulgarian.desc", value: "Ads and trackers on Bulgarian websites.", comment: "Privacy settings - Description of the Bulgarian regional filter list")
         case "phi-specific":
             return NSLocalizedString("settings.privacy.contentBlocking.list.phiSpecific.desc", value: "Fixes and rules maintained by Phi. Keep this on unless a site misbehaves.", comment: "Privacy settings - Description of Phi's own first-party filter list")
         default:

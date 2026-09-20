@@ -69512,6 +69512,78 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.list.adguardDutch.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard Dutch regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on Dutch websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardDutch.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard Dutch regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard Dutch (Nederlands)"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardFrench.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard French regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on French websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardFrench.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard French regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard French (Français)"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardGerman.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard German regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ads and trackers on German websites."
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.list.adguardGerman.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard German regional filter list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AdGuard German (Deutsch)"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.list.adguardJapanese.desc" : {
       "comment" : "Privacy settings - Description of the AdGuard Japanese regional filter list",
       "extractionState" : "extracted_with_value",
@@ -69536,50 +69608,26 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.list.adguardRussian.desc" : {
-      "comment" : "Privacy settings - Description of the AdGuard Russian regional filter list",
+    "settings.privacy.contentBlocking.list.adguardSpanish.desc" : {
+      "comment" : "Privacy settings - Description of the AdGuard Spanish and Portuguese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ads and trackers on Russian websites."
+            "value" : "Ads and trackers on Spanish and Portuguese websites."
           }
         }
       }
     },
-    "settings.privacy.contentBlocking.list.adguardRussian.title" : {
-      "comment" : "Privacy settings - Name of the AdGuard Russian regional filter list",
+    "settings.privacy.contentBlocking.list.adguardSpanish.title" : {
+      "comment" : "Privacy settings - Name of the AdGuard Spanish and Portuguese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "AdGuard Russian"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.bulgarian.desc" : {
-      "comment" : "Privacy settings - Description of the Bulgarian regional filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Ads and trackers on Bulgarian websites."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.bulgarian.title" : {
-      "comment" : "Privacy settings - Name of the Bulgarian regional filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Bulgarian List"
+            "value" : "AdGuard Spanish/Portuguese (Español/Português)"
           }
         }
       }
@@ -69621,7 +69669,7 @@
       }
     },
     "settings.privacy.contentBlocking.list.downloading" : {
-      "comment" : "Advanced ad block settings - Line under a filter list whose first download is in progress",
+      "comment" : "Advanced ad block settings - Line under a filter list whose download is in progress",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69676,30 +69724,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "EasyList - Cookie Notices"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.easylistPolish.desc" : {
-      "comment" : "Privacy settings - Description of the Polish regional filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Ads and trackers on Polish websites."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.easylistPolish.title" : {
-      "comment" : "Privacy settings - Name of the Polish regional filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "EasyList - Polska lista"
           }
         }
       }
@@ -69760,78 +69784,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Remove this filter"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockAds.desc" : {
-      "comment" : "Privacy settings - Description of the uBlock Origin ads filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Additional ad rules maintained by the uBlock Origin project."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockAds.title" : {
-      "comment" : "Privacy settings - Name of the uBlock Origin ads filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "uBlock - Ads"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockPrivacy.desc" : {
-      "comment" : "Privacy settings - Description of the uBlock Origin privacy filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Extra tracker rules from the uBlock Origin project. May affect some sites."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockPrivacy.title" : {
-      "comment" : "Privacy settings - Name of the uBlock Origin privacy filter list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "uBlock - Privacy"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockUnbreak.desc" : {
-      "comment" : "Privacy settings - Description of the uBlock Origin unbreak list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Fixes for sites that other rules would break."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.ublockUnbreak.title" : {
-      "comment" : "Privacy settings - Name of the uBlock Origin list that fixes sites broken by blocking",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "uBlock - Unbreak"
           }
         }
       }

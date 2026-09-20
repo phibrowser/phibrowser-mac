@@ -18,20 +18,20 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         let lists = [
             list("easylist", "ads"),
             list("easyprivacy", "trackers"),
-            list("ublock-ads", "ads"),
+            list("adguard-german", "regional"),
             list("easylist-cookie", "cookies"),
             list("adguard-japanese", "regional"),
             list("phi-specific", "phi"),
-            list("ublock-privacy", "trackers"),
-            list("bulgarian", "regional"),
+            list("custom-2", "custom"),
+            list("adguard-chinese", "regional"),
         ]
         let groups = ContentBlockingAdvancedSheet.groups(from: lists)
         XCTAssertEqual(groups.map(\.section), [.ads, .trackers, .cookies, .regional, .custom])
-        XCTAssertTrue(groups[4].lists.isEmpty, "the Custom section always shows so a filter can be added")
-        XCTAssertEqual(groups[0].lists.map(\.id), ["easylist", "ublock-ads"])
-        XCTAssertEqual(groups[1].lists.map(\.id), ["easyprivacy", "ublock-privacy"])
+        XCTAssertEqual(groups[0].lists.map(\.id), ["easylist"])
+        XCTAssertEqual(groups[1].lists.map(\.id), ["easyprivacy"])
         XCTAssertEqual(groups[2].lists.map(\.id), ["easylist-cookie"])
-        XCTAssertEqual(groups[3].lists.map(\.id), ["adguard-japanese", "bulgarian"])
+        XCTAssertEqual(groups[3].lists.map(\.id), ["adguard-german", "adguard-japanese", "adguard-chinese"])
+        XCTAssertEqual(groups[4].lists.map(\.id), ["custom-2"])
     }
 
     func testPhiSectionIsHidden() {

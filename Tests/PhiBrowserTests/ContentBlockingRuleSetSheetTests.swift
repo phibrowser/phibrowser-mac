@@ -55,7 +55,6 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .trackers, in: withCustom), "1 custom list")
         let twoCustom = state([list("custom-1", "custom", custom: true), list("custom-2", "custom", custom: true)])
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: twoCustom), "2 custom lists")
-        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .trackers, in: withCustom), "Change…")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "easylist · 1 not downloaded")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false, downloading: true)])), "easylist · Downloading…")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "2 rule sets · 1 not downloaded")

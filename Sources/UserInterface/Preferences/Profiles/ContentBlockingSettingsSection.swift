@@ -146,38 +146,53 @@ struct ContentBlockingSettingsSection: View {
                            symbol: String,
                            category: ContentBlockingCategory,
                            value: Bool?) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsDetailRow(title, systemImage: symbol) {
-                Toggle("", isOn: Binding(
-                    get: { value ?? false },
-                    set: { newValue in setCategory(category, enabled: newValue) }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .themedTint(.themeColor)
-                    .disabled(value == nil)
+        // The same geometry as SettingsDetailRow (24pt icon column, 12pt
+        // gaps, 12pt vertical inset) with a subtitle under the title and an
+        // options button before the switch.
+        let state = model.settings?.state
+        let subtitle: String? = {
+            guard value == true, let state,
+                  !ContentBlockingRuleSets.needsDownload(for: category, in: state) else { return nil }
+            return ContentBlockingRuleSets.summary(for: category, in: state)
+        }()
+        return HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .regular))
+                .themedForeground(.textSecondary)
+                .frame(width: 24, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13))
+                    .themedForeground(.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
-            if value == true, let state = model.settings?.state,
-               !ContentBlockingRuleSets.needsDownload(for: category, in: state) {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if state != nil {
                 Button {
                     ruleSetChooser = RuleSetChooser(category: category, enablesOnClose: false)
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(ContentBlockingRuleSets.summary(for: category, in: state))
-                            .themedForeground(.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text(ContentBlockingRuleSets.actionLabel(for: category, in: state))
-                            .foregroundStyle(Color.accentColor)
-                            .fixedSize()
-                    }
-                    .font(.system(size: 11))
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 34)
-                .padding(.bottom, 8)
-                .help(NSLocalizedString("settings.privacy.contentBlocking.summary.help", value: "Choose and download rule sets", comment: "Profile settings - Tooltip of the line under a content blocking toggle that opens the rule set chooser"))
+                .controlSize(.small)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.summary.help", value: "Choose and download rule sets", comment: "Profile settings - Tooltip of the options button next to a content blocking toggle that opens the rule set chooser"))
             }
+            Toggle("", isOn: Binding(
+                get: { value ?? false },
+                set: { newValue in setCategory(category, enabled: newValue) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .themedTint(.themeColor)
+                .disabled(value == nil)
         }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

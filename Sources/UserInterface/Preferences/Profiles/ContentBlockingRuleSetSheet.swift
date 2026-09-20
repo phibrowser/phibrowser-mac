@@ -28,12 +28,6 @@ enum ContentBlockingRuleSets {
         return !usable.contains { $0.checked && $0.available }
     }
 
-    /// The action word after the summary; the line only shows while the
-    /// toggle has something usable.
-    static func actionLabel(for category: ContentBlockingCategory, in state: ContentBlockingState) -> String {
-        NSLocalizedString("settings.privacy.contentBlocking.summary.change", value: "Change…", comment: "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser")
-    }
-
     /// Toggles that are on without a usable rule set (their last list was
     /// deleted or unchecked); the pane turns them off.
     static func togglesToTurnOff(in state: ContentBlockingState) -> [ContentBlockingCategory] {

@@ -69165,25 +69165,13 @@
       }
     },
     "settings.privacy.contentBlocking.advanced.addFilter" : {
-      "comment" : "Custom filters sheet - Button opening the sheet that adds a custom filter list",
+      "comment" : "Choose rule sets sheet - Button opening the sheet that adds a custom filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Add Filter…"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.done" : {
-      "comment" : "Custom filters sheet - Button that downloads the chosen lists still missing and closes the sheet",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Done"
           }
         }
       }
@@ -69825,7 +69813,7 @@
       }
     },
     "settings.privacy.contentBlocking.ruleSets.update" : {
-      "comment" : "Rule set sheets - Button at the bottom left that downloads the sheet's already-downloaded lists again to pick up new rules",
+      "comment" : "Choose rule sets sheet - Button at the bottom left that downloads the sheet's already-downloaded lists again to pick up new rules",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69837,7 +69825,7 @@
       }
     },
     "settings.privacy.contentBlocking.ruleSets.update.help" : {
-      "comment" : "Rule set sheets - Tooltip of the Update Downloaded button",
+      "comment" : "Choose rule sets sheet - Tooltip of the Update Downloaded button",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69868,18 +69856,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Nothing is blocked until a rule set is downloaded."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.summary.change" : {
-      "comment" : "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Change…"
           }
         }
       }
@@ -69921,7 +69897,7 @@
       }
     },
     "settings.privacy.contentBlocking.summary.help" : {
-      "comment" : "Profile settings - Tooltip of the line under a content blocking toggle that opens the rule set chooser",
+      "comment" : "Profile settings - Tooltip of the options button next to a content blocking toggle that opens the rule set chooser",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {

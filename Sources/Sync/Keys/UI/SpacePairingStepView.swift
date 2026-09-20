@@ -54,7 +54,47 @@ struct SpacePairingStepView: View {
             }
             .padding(.horizontal, 12)
             .settingsCardChrome()
+
+            if !model.unassignedAccountSpaces.isEmpty {
+                Text(NSLocalizedString(
+                    "sync.pairing.spacesToAdd",
+                    value: "Spaces to add from your account",
+                    comment: "Space pairing - heading for account Spaces that will be created on this Mac"))
+                    .font(.headline)
+                    .themedForeground(.textPrimaryStrong)
+                Text(NSLocalizedString(
+                    "sync.pairing.spacesToAddExplanation",
+                    value: "These Spaces will be added automatically when you finish pairing.",
+                    comment: "Space pairing - explanation for account Spaces not matched to a local Space"))
+                    .font(.body)
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 0) {
+                    ForEach(Array(model.unassignedAccountSpaces.enumerated()), id: \.element.syncUuid) { index, summary in
+                        if index > 0 { SettingsRowDivider() }
+                        accountSpaceToAdd(summary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .settingsCardChrome()
+            }
         }
+    }
+
+    private func accountSpaceToAdd(_ summary: PhiAccountSpaceSummary) -> some View {
+        HStack(spacing: 8) {
+            SpaceIconView(storedValue: summary.iconName, size: 16,
+                          symbolWeight: .regular, tint: Color.primary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(summary.name).font(.body).themedForeground(.textPrimary)
+                Text(model.profileName(for: summary) ?? Self.unresolvedName)
+                    .font(.caption).themedForeground(.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
     }
 
     private func row(_ local: PhiLocalSpace) -> some View {

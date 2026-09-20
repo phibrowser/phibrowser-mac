@@ -1,6 +1,30 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "sync.pairing.spacesToAdd" : {
+      "comment" : "Space pairing - heading for account Spaces that will be created on this Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces to add from your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.spacesToAddExplanation" : {
+      "comment" : "Space pairing - explanation for account Spaces not matched to a local Space",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These Spaces will be added automatically when you finish pairing."
+          }
+        }
+      }
+    },
     "Phi is counting the Spaces in your account. This can take up to two minutes." : {
       "comment" : "Pairing wizard - loading page progress detail"
     },

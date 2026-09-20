@@ -671,7 +671,15 @@ import SwiftUI
         // the engine at both ends of its life.
         guard lastSpaceGateEnabled != enabled else { return }
         lastSpaceGateEnabled = enabled
-        Task { await engine.setSpaceSyncEnabled(enabled) }
+        let invalidation = phiInvalidationCoordinator
+        Task {
+            await engine.setSpaceSyncEnabled(enabled)
+            // A joining device may have no edits or incoming hints after pairing.
+            // Drain the replay as soon as its queued gate opens, rather than
+            // waiting for the healthy-stream fallback interval. Keep the original
+            // coordinator: a retired account's completion must not wake a new one.
+            if enabled { invalidation?.requestCatchUp() }
+        }
     }
 
     /// Starts the settings sync schedule once the key layer is actually unlocked: a login

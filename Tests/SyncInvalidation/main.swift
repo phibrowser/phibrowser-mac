@@ -178,6 +178,80 @@ struct InvalidationTests {
     }
 
     @MainActor
+    static func pairingCatchUpTests() async throws {
+        let transport = Transport()
+        let state = PullState()
+        let engine = SpaceGateEngine()
+        let fixture = SpaceGateFixture()
+        var config = PhiSyncInvalidationCoordinator.Configuration()
+        config.tickInterval = 3600
+        config.coalescingInterval = 0.01
+        let coordinator = PhiSyncInvalidationCoordinator(configuration: config, now: { 100 },
+            stream: { receive in try await transport.run(receive: receive) },
+            pull: { demand in state.demands.append(demand) })
+        fixture.phiSyncEngine = engine
+        fixture.phiInvalidationCoordinator = coordinator
+        defer {
+            coordinator.stop()
+            engine.release?.resume()
+            ProfilePairingGate.joinPairingPending = true
+        }
+        coordinator.start()
+        try await eventually("Initial catch-up") {
+            let connections = await transport.count
+            return state.demands.count == 1 && connections == 1
+        }
+        try await transport.send("event: ready\ndata: {}\n\n")
+        try await eventually("Healthy stream catch-up") { state.demands.count == 2 }
+        fixture.refresh()
+        try await eventually("Pairing gate did not close") { engine.transitions == 1 }
+
+        // A clean joining Mac has no local edits or peer hint to wake it.
+        // Hold the engine queue to ensure catch-up cannot overtake the gate.
+        engine.hold = true
+        ProfilePairingGate.joinPairingPending = false
+        fixture.refresh()
+        try await eventually("Opening gate was not queued") { engine.release != nil }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try expect(state.demands.count == 2, "Catch-up overtook the queued gate")
+        engine.hold = false
+        let release = engine.release; engine.release = nil; release?.resume()
+        try await eventually("Finishing pairing must pull without a hint or polling tick") {
+            state.demands.count == 3 && engine.enabled
+        }
+        try expect(state.demands.last == .catchUp, "Pairing requested only a partial refresh")
+        fixture.refresh(); fixture.refresh()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try expect(state.demands.count == 3 && engine.transitions == 2, "Repeated notifications caused replay churn")
+
+        // A gate queued for a departed account cannot wake a replacement engine.
+        ProfilePairingGate.joinPairingPending = true
+        fixture.refresh()
+        try await eventually("Gate did not close again") { !engine.enabled }
+        engine.hold = true
+        ProfilePairingGate.joinPairingPending = false
+        fixture.refresh()
+        try await eventually("Second gate was not queued") { engine.release != nil }
+        coordinator.stop()
+        let replacementState = PullState()
+        let replacementTransport = Transport()
+        let replacement = PhiSyncInvalidationCoordinator(configuration: config, now: { 100 },
+            stream: { receive in try await replacementTransport.run(receive: receive) },
+            pull: { demand in replacementState.demands.append(demand) })
+        defer { replacement.stop() }
+        fixture.phiInvalidationCoordinator = replacement
+        fixture.phiSyncEngine = SpaceGateEngine()
+        replacement.start()
+        try await eventually("Replacement account did not start") { replacementState.demands.count == 1 }
+        engine.hold = false
+        let retired = engine.release; engine.release = nil; retired?.resume()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try expect(state.demands.count == 3, "Retired coordinator scheduled a catch-up")
+        try expect(replacementState.demands.count == 1, "Old gate completion woke the replacement account")
+        print("PASS pairing: immediate ordered catch-up, unchanged-gate deduplication and retirement")
+    }
+
+    @MainActor
     static func unavailableServerTests() async throws {
         let transport = RejectedTransport()
         let state = PullState()
@@ -291,6 +365,7 @@ struct InvalidationTests {
         do {
             try parserTests()
             try await schedulerTests()
+            try await pairingCatchUpTests()
             try await unavailableServerTests()
             try await httpTests()
             guard CommandLine.arguments.count == 2 else { throw Failure.assertion("Missing loopback fixture URL") }

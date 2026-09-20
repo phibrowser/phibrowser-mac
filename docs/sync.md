@@ -46,9 +46,23 @@ Withdrawing a Profile key stops the Chromium engine, including initialization,
 without clearing its metadata. Returning the same UUID/key resumes the existing
 sync state; changing the UUID retains the existing namespace-reset behavior.
 
+## Pairing and initial catch-up
+
+The Space pairing page lists unmatched account Spaces even when this Mac has
+only its default Space. Those account Spaces are added automatically after
+pairing; they do not require placeholder local Spaces or manual mappings.
+
+When the Space gate opens, the coordinator waits for the engine's queued gate
+transition before requesting catch-up through the invalidation scheduler. A
+healthy SSE stream uses a 300-second fallback interval, so relying on its next
+tick can leave a newly joined device empty for almost five minutes. Repeated
+mapping notifications do not schedule more work when the gate is unchanged.
+Capture the same invalidation coordinator as the engine, so an old account's
+completion cannot wake its replacement after teardown.
+
 ## Pull before commit
 
-The `feature/phi-sync` branch has no invalidation channel. Every round that may
+Invalidation schedules refreshes but does not bypass preflight. Every round that may
 publish local settings, Spaces, bookmarks, or pinned tabs must first complete
 GetUpdates and process the received updates. Local change notifications use the
 same prerequisite as explicit pushes. A completed pull can authorize multiple
@@ -72,7 +86,7 @@ commit batches in that round; each batch does not need a separate GetUpdates.
 - Commit versions and conflict detection remain necessary: another device can
   write after GetUpdates and before Commit.
 
-When M4 invalidation is integrated, skipping this prerequisite requires both a
+Any future optimization that skips this prerequisite requires both a
 healthy notification channel and successful catch-up, with no pending refresh,
 invalidation, or conflict. Receiving SSE `ready` alone does not establish that
 state. Disabled or lost notification delivery must restore pull-before-commit.

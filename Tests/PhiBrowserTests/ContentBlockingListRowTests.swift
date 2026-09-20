@@ -6,7 +6,7 @@
 import XCTest
 @testable import Phi
 
-final class ContentBlockingCustomFiltersSheetTests: XCTestCase {
+final class ContentBlockingListRowTests: XCTestCase {
     private func list(_ id: String, _ category: String) -> ContentBlockingList {
         ContentBlockingList(id: id, category: category, title: id, description: "",
                             homepage: nil, license: "", checked: true)
@@ -15,25 +15,6 @@ final class ContentBlockingCustomFiltersSheetTests: XCTestCase {
     private func state(_ lists: [ContentBlockingList]) -> ContentBlockingState {
         ContentBlockingState(blockAds: true, blockCookieBanners: true, blockTrackers: true,
                              lists: lists, siteExceptions: [], status: .active, statusDetail: "")
-    }
-
-    func testDoneDownloadsOnlyCheckedMissingCustomLists() {
-        var missingCustom = list("custom-1", "custom")
-        missingCustom.isCustom = true
-        missingCustom.available = false
-        var uncheckedCustom = list("custom-2", "custom")
-        uncheckedCustom.isCustom = true
-        uncheckedCustom.available = false
-        uncheckedCustom.checked = false
-        var missingCatalog = list("easylist", "ads")
-        missingCatalog.available = false
-        var busy = list("custom-3", "custom")
-        busy.isCustom = true
-        busy.available = false
-        busy.isDownloading = true
-        let state = state([missingCustom, uncheckedCustom, missingCatalog, busy])
-        XCTAssertEqual(ContentBlockingCustomFiltersSheet.missingIds(in: state), ["custom-1"])
-        XCTAssertTrue(ContentBlockingCustomFiltersSheet.anyDownloading(in: state))
     }
 
     func testRowControlFollowsTheListState() {

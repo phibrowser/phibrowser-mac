@@ -65,11 +65,21 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
         let lists = [list("easylist", "ads", available: false), list("adguard-chinese", "regional", checked: false, available: false),
                      list("cookie", "cookies", available: false), list("custom-1", "custom", available: false, custom: true),
                      list("busy", "ads", available: false, downloading: true)]
-        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state(lists)), ["easylist"])
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state(lists)), ["easylist", "custom-1"])
         XCTAssertTrue(ContentBlockingRuleSetSheet.anyDownloading(for: .ads, in: state(lists)))
-        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .cookieBanners, in: state(lists)), ["cookie"], "custom lists are managed in their own sheet")
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .cookieBanners, in: state(lists)), ["cookie", "custom-1"], "custom lists show in every sheet")
         XCTAssertFalse(ContentBlockingRuleSetSheet.anyDownloading(for: .cookieBanners, in: state(lists)))
         XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state([list("easylist", "ads")])), [])
+    }
+
+    func testUpdateDownloadedCoversFetchableListsOnDisk() {
+        var pasted = list("custom-1", "custom", custom: true)
+        pasted.sourceURL = nil
+        var remote = list("custom-2", "custom", custom: true)
+        remote.sourceURL = URL(string: "https://a.example/l.txt")
+        let lists = [list("easylist", "ads"), list("adguard-chinese", "regional", checked: false),
+                     list("easyprivacy", "trackers"), list("missing", "ads", available: false), pasted, remote]
+        XCTAssertEqual(ContentBlockingRuleSetSheet.downloadedIds(for: .ads, in: state(lists)), ["easylist", "adguard-chinese", "custom-2"])
     }
 
     func testTogglesWithoutAUsableRuleSetTurnOff() {

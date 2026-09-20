@@ -39,7 +39,6 @@ struct ContentBlockingSettingsSection: View {
     let profileId: String
 
     @StateObject private var model = ContentBlockingSectionModel()
-    @State private var showAdvanced = false
     /// The toggle whose rule sets the chooser sheet shows, and whether the
     /// toggle should turn on when the sheet closes with a usable rule set
     /// (the user just tried to switch it on).
@@ -72,19 +71,6 @@ struct ContentBlockingSettingsSection: View {
                     title: NSLocalizedString("settings.privacy.contentBlocking.blockTrackers", value: "Block trackers", comment: "Profile settings - Toggle title for blocking trackers"),
                     symbol: "eyeglasses", category: .trackers,
                     value: model.settings?.state?.blockTrackers)
-                SettingsRowDivider()
-                HStack {
-                    Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded", value: "Update Downloaded", comment: "Profile settings - Button that downloads every already-downloaded filter list again to pick up new rules")) {
-                        model.settings?.refreshLists()
-                    }
-                    .help(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded.help", value: "Fetch the latest rules for every list already downloaded", comment: "Profile settings - Tooltip of the Update Downloaded button"))
-                    Spacer()
-                    Button(NSLocalizedString("settings.privacy.contentBlocking.customFiltersButton", value: "Custom Filters…", comment: "Profile settings - Button opening the Custom Filters sheet")) {
-                        showAdvanced = true
-                    }
-                }
-                .disabled(model.settings?.state == nil)
-                .padding(.vertical, 8)
             }
             ForEach(Self.diagnosticsLines(for: model.settings?.state), id: \.self) { line in
                 Text(line)
@@ -95,11 +81,6 @@ struct ContentBlockingSettingsSection: View {
         }
         .onAppear { model.select(profileId) }
         .onChange(of: profileId) { _, newProfileId in model.select(newProfileId) }
-        .sheet(isPresented: $showAdvanced) {
-            if let settings = model.settings {
-                ContentBlockingCustomFiltersSheet(settings: settings)
-            }
-        }
         .sheet(item: $ruleSetChooser, onDismiss: chooserClosed) { chooser in
             if let settings = model.settings {
                 ContentBlockingRuleSetSheet(settings: settings, category: chooser.category)

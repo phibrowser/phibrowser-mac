@@ -69165,7 +69165,7 @@
       }
     },
     "settings.privacy.contentBlocking.advanced.addFilter" : {
-      "comment" : "Advanced ad block settings - Button opening the sheet that adds a custom filter list",
+      "comment" : "Custom filters sheet - Button opening the sheet that adds a custom filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69177,37 +69177,13 @@
       }
     },
     "settings.privacy.contentBlocking.advanced.done" : {
-      "comment" : "Advanced ad block settings - Button that downloads the chosen lists still missing and closes the sheet",
+      "comment" : "Custom filters sheet - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Done"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.updateDownloaded" : {
-      "comment" : "Advanced ad block settings - Button that downloads every already-downloaded filter list again to pick up new rules",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Update Downloaded"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.advanced.updateDownloaded.help" : {
-      "comment" : "Advanced ad block settings - Tooltip of the Update Downloaded button",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Fetch the latest rules for every list already downloaded"
           }
         }
       }
@@ -69244,42 +69220,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Block trackers"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.custom.empty" : {
-      "comment" : "Custom filters sheet - Placeholder when the profile has no custom list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No custom filters yet."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.custom.intro" : {
-      "comment" : "Custom filters sheet - Introductory sentence",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Your own filter lists, from a URL or pasted rules. They apply whenever any of the three switches is on."
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.custom.title" : {
-      "comment" : "Custom filters sheet - Title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Custom Filters"
           }
         }
       }
@@ -69424,18 +69364,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "URL"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.customFiltersButton" : {
-      "comment" : "Profile settings - Button opening the Custom Filters sheet",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Custom Filters…"
           }
         }
       }
@@ -69812,6 +69740,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.ruleSets.customSection" : {
+      "comment" : "Choose rule sets sheet - Section title above the user's custom lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your custom lists (apply to every switch)"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.ruleSets.done" : {
       "comment" : "Choose rule sets sheet - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
@@ -69843,7 +69783,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Check the rule sets to use. Done downloads any that are missing from their publishers; nothing is downloaded until you ask."
+            "value" : "Check the rule sets to use. Done downloads any that are missing from their publishers; nothing is downloaded until you ask. Custom lists apply to all three switches."
           }
         }
       }
@@ -69880,6 +69820,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Rule sets for blocking trackers"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.update" : {
+      "comment" : "Rule set sheets - Button at the bottom left that downloads the sheet's already-downloaded lists again to pick up new rules",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Update Downloaded"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.update.help" : {
+      "comment" : "Rule set sheets - Tooltip of the Update Downloaded button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Fetch the latest rules for the lists downloaded here"
           }
         }
       }
@@ -69921,7 +69885,7 @@
       }
     },
     "settings.privacy.contentBlocking.summary.count" : {
-      "comment" : "Profile settings - Line under a content blocking toggle counting the filter lists chosen for it; %d is the count",
+      "comment" : "Profile settings - Line under a content blocking toggle when two or more filter lists are chosen for it; %d is the count",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {

@@ -516,6 +516,45 @@ Rows: checkbox `Toggle(.checkbox)`, title, spacer, `info.circle` button opening 
 
 ---
 
+## Phase F: downloaded lists and custom filters
+
+Decided by the owner on 2026-09-20: filter lists are no longer shipped in the binary. The browser downloads them from the catalog's `sources` on demand, refreshes them daily, and the user can add custom filters (a URL or pasted rules). Reasons: the bundled GPL / CC lists carried attribution duties and two lists (Polish CC BY-NC-SA, Bulgarian unlicensed) could not ship at all; downloaded lists also solve rule freshness. The toggles default to off, so first run has no blocking to lose; the first download starts when a toggle is turned on.
+
+Design:
+
+- `ListStore` (`chrome/browser/phinomenon/content_blocking/list_store.{h,cc}`): one per browser process, owns `<user data dir>/PhiContentBlocking/lists/<id>.txt` plus `manifest.json` (per id: `fetched_at`, `etag`, `last_modified`, `sha256`, `size`). Sources are registered by id with their URLs and target directory: catalog entries at init, custom URL lists by each Profile's service (target: `<profile>/content_blocking/custom/<id>.txt`). `EnsureFresh(ids)` downloads missing files at once and refreshes files older than 24 hours; a multi-source entry (uBlock Ads has ten) updates only when every source succeeds, else the old file stays. Conditional GET with `If-None-Match` / `If-Modified-Since`; 50 MB cap; 60 s timeout; retry backoff 1 min, 5 min, 30 min; `SimpleURLLoader` on the system network context with a traffic annotation `phi_content_blocking_lists`. Observers get `OnListUpdated(id)`; services rebuild when the id is in their set. Text is read on the build sequence from the file path.
+- `ContentBlockingService`: `BuildOnPool` takes `{id, path}` inputs instead of bundled ids; `phi-specific` stays a bundled resource; the cache key hashes each file's manifest sha256. When no list file exists yet the status is `kBuilding` with detail "Downloading filter lists"; when every download failed and nothing is cached the status is `kDegraded` with the network error. `SetExtraRulesForTesting` still builds an engine on its own, so browser tests do not need network.
+- Custom lists: per-Profile pref `phi.content_blocking.custom_lists` (list of dicts `id` = `custom-<16 hex>`, `name`, `url` (empty for pasted rules), `added_at`); rule text lives at `<profile>/content_blocking/custom/<id>.txt` (written on add for pasted rules, downloaded for URL entries). Category `custom` follows `toggles.any()` like `phi`; `list_overrides` keyed by the custom id lets the user uncheck one. Off-the-record Profiles mirror the parent.
+- Bridge: `ListInfo` gains `name`, `custom`, `source_url`, `available`, `fetched_at`; new methods `addContentBlockingCustomList:name:url:rules:completion:` (returns the new id), `removeContentBlockingCustomList:listId:completion:`, `refreshContentBlockingLists:completion:`.
+- Mac: the Advanced sheet gets a "Custom" section listing custom lists with a remove button and an "Add filter…" button opening `ContentBlockingCustomFilterSheet` (segmented URL / Custom, Name, URL or rules text, Cancel / Add, modeled on the owner's reference screenshots); rows of lists not downloaded yet show "Downloading…" or "Not downloaded" and the info popover shows the last update time.
+- Removed: `resources/lists/*.txt` except `phi-specific.txt`, their grd entries and resource ids, `tools/snapshot_lists.py`, `CatalogEntry::bundled` / `snapshot_sha256`, the README license table (replaced by a note that lists are downloaded by the user's browser).
+
+### Task F1: ListStore and downloader
+
+- [ ] Unit tests (`list_store_unittest.cc`, `network::TestURLLoaderFactory`): `DownloadsMissingList`, `ConcatenatesMultiSourceInOrder`, `PartialMultiSourceFailureKeepsOldFile`, `NotModifiedKeepsFileAndBumpsFetchedAt`, `StaleListIsRefreshed`, `FreshListIsNotFetched`, `OversizeBodyRejected`, `FailureBacksOff`, `ManifestRoundTrips`, `ObserverNotified`.
+- [ ] Implement; PASS. Commit `feat(phi): download content blocking lists into a per-browser list store`.
+
+### Task F2: service builds from downloaded files
+
+- [ ] Update `content_blocking_service_unittest.cc` fixture to seed the store directory with small list files (no network); tests `BuildsFromStoreFiles`, `WaitsForDownloadWhenNoFile`, `RebuildsWhenAListUpdates`, `AllDownloadsFailedIsDegraded`; keep the cache tests.
+- [ ] Remove the bundled lists, grd entries, resource ids, snapshot tool, `bundled` / `snapshot_sha256`; update `catalog_unittest.cc`.
+- [ ] Browser test fixtures unchanged (extra rules); bridge test `GetSettingsReportsState` checks `available` is false with no network.
+- [ ] Commit `feat(phi): build content blocking engines from downloaded lists`.
+
+### Task F3: custom lists
+
+- [ ] Prefs, `CustomLists` helper in the service (`Add`, `Remove`, enumerate), list mask includes custom ids, bridge fields and methods, bridge browser tests `AddCustomRulesListBlocks` (pasted rule blocks a test-server URL), `RemoveCustomListRebuilds`, `CustomUrlListDownloads` (embedded test server as the source).
+- [ ] Commit `feat(phi): add custom content blocking filter lists`.
+
+### Task F4: Mac UI
+
+- [ ] `ContentBlockingList` gains the new fields; facade `addCustomList` / `removeCustomList` / `refreshLists`; Advanced sheet "Custom" section and `ContentBlockingCustomFilterSheet`; tests `CustomFilterSheetValidation` (name required, URL must be http(s), rules non-empty), `CustomSectionListsCustomEntries`.
+- [ ] Commit `Add custom filter lists and download state to Advanced Ad Block Settings`.
+
+### Task F5: docs and cleanup
+
+- [ ] README: replace the bundled-list section with the download design and the per-list source table (id, sources, homepage, license as declared upstream); plan v2 §5/§6 notes; this checklist's Handoff log.
+
 ## Self-review record
 
 - Spec coverage: plan v2 §1 to §10 map to D3/D4 (surface), B2 (§4), A3 (§5), B1/B3 (§6), A1/A2/A4 (§7), C1 to C3 (§8), A3 (§9 bundled baseline; remote packages reserved, no task by decision), D1/D2 (§10), D5 (§12), every task's tests (§13). Requirements acceptance criteria 1 to 12 are covered by B4 (1, 2, 5, 6, 10), C2 (3), B2 (4), B3 (7, 8, 9), D5 (11, 12).

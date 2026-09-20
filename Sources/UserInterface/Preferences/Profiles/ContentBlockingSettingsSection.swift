@@ -88,22 +88,16 @@ struct ContentBlockingSettingsSection: View {
         }
     }
 
-    /// The small print under the card: the status and its detail when
-    /// something is off. The session's blocked count stays in the state for
-    /// diagnosis but is not shown (owner decision, 2026-09-20).
+    /// The small print under the card, shown only when the rule build failed
+    /// and the previous rules stay in use. Nothing is shown for the normal
+    /// states, including all toggles off (the switches say that already), and
+    /// the session's blocked count stays in the state for diagnosis only
+    /// (owner decisions, 2026-09-20).
     static func diagnosticsLines(for state: ContentBlockingState?) -> [String] {
-        guard let state else { return [] }
-        var lines: [String] = []
-        switch state.status {
-        case .degraded:
-            lines.append(NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use"))
-            if !state.statusDetail.isEmpty {
-                lines.append(state.statusDetail)
-            }
-        case .disabled:
-            lines.append(NSLocalizedString("settings.privacy.contentBlocking.status.disabled", value: "Content blocking is off", comment: "Profile settings - Status line shown when every content blocking toggle is off"))
-        case .active, .building:
-            break
+        guard let state, state.status == .degraded else { return [] }
+        var lines = [NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use")]
+        if !state.statusDetail.isEmpty {
+            lines.append(state.statusDetail)
         }
         return lines
     }

@@ -96,9 +96,7 @@ final class ContentBlockingDiagnosticsLinesTests: XCTestCase {
         XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: state(.degraded)).count, 1)
     }
 
-    func testDisabledShowsOnlyTheOffLine() {
-        let lines = ContentBlockingSettingsSection.diagnosticsLines(for: state(.disabled, blocked: 9))
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertFalse(lines[0].contains("9"))
+    func testDisabledShowsNothing() {
+        XCTAssertEqual(ContentBlockingSettingsSection.diagnosticsLines(for: state(.disabled, blocked: 9)), [])
     }
 }

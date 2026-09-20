@@ -69258,7 +69258,7 @@
       }
     },
     "settings.privacy.contentBlocking.advancedButton" : {
-      "comment" : "Privacy settings - Button opening the Advanced Ad Block Settings sheet",
+      "comment" : "Profile settings - Button opening the Advanced Ad Block Settings sheet",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69270,7 +69270,7 @@
       }
     },
     "settings.privacy.contentBlocking.blockAds" : {
-      "comment" : "Privacy settings - Toggle title for blocking ads",
+      "comment" : "Profile settings - Toggle title for blocking ads",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69282,7 +69282,7 @@
       }
     },
     "settings.privacy.contentBlocking.blockCookieBanners" : {
-      "comment" : "Privacy settings - Toggle title for hiding cookie consent banners",
+      "comment" : "Profile settings - Toggle title for hiding cookie consent banners",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69294,7 +69294,7 @@
       }
     },
     "settings.privacy.contentBlocking.blockTrackers" : {
-      "comment" : "Privacy settings - Toggle title for blocking trackers",
+      "comment" : "Profile settings - Toggle title for blocking trackers",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69618,7 +69618,7 @@
       }
     },
     "settings.privacy.contentBlocking.status.degraded" : {
-      "comment" : "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use",
+      "comment" : "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69629,20 +69629,8 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.status.disabled" : {
-      "comment" : "Privacy settings - Status line shown when every content blocking toggle is off",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Content blocking is off"
-          }
-        }
-      }
-    },
     "settings.privacy.contentBlocking.title" : {
-      "comment" : "Privacy settings - Section title above the ad, cookie banner and tracker toggles",
+      "comment" : "Profile settings - Section title above the ad, cookie banner and tracker toggles",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {

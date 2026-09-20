@@ -69,6 +69,16 @@ struct ContentBlockingAdvancedSheet: View {
     }
 
     @State private var showAddFilter = false
+    @State private var waitingForDownloads = false
+
+    /// Checked lists Done still has to download, across every section.
+    static func missingIds(in state: ContentBlockingState) -> [String] {
+        state.lists.filter { $0.checked && $0.category != "phi" && !$0.available && !$0.isDownloading }.map(\.id)
+    }
+
+    static func anyDownloading(in state: ContentBlockingState) -> Bool {
+        state.lists.contains { $0.checked && $0.isDownloading }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -77,13 +87,14 @@ struct ContentBlockingAdvancedSheet: View {
                     .font(.system(size: 15, weight: .semibold))
                     .themedForeground(.textPrimary)
                 Spacer()
-                Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateAll", value: "Update All", comment: "Advanced ad block settings - Button that downloads every enabled filter list again")) {
+                Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded", value: "Update Downloaded", comment: "Advanced ad block settings - Button that downloads every already-downloaded filter list again to pick up new rules")) {
                     settings.refreshLists()
                 }
                 .controlSize(.small)
                 .disabled(settings.state == nil)
+                .help(NSLocalizedString("settings.privacy.contentBlocking.advanced.updateDownloaded.help", value: "Fetch the latest rules for every list already downloaded", comment: "Advanced ad block settings - Tooltip of the Update Downloaded button"))
             }
-            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists this profile uses. Lists are downloaded from their publishers only when you ask, with the download buttons or Update All; a section only takes effect while its switch is on. You can also add your own lists.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
+            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Check the filter lists this profile uses; Done downloads any that are missing. A section only takes effect while its switch is on. Nothing is downloaded until you ask.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -91,7 +102,7 @@ struct ContentBlockingAdvancedSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if let state = settings.state {
                         ForEach(Self.groups(from: state.lists)) { group in
-                            sectionView(group, enabled: group.section.isEnabled(in: state))
+                            sectionView(group)
                         }
                     }
                 }
@@ -99,10 +110,13 @@ struct ContentBlockingAdvancedSheet: View {
             }
             HStack {
                 Spacer()
-                Button(NSLocalizedString("settings.privacy.contentBlocking.advanced.done", value: "Done", comment: "Advanced ad block settings - Button closing the sheet")) {
-                    dismiss()
+                Button(downloading
+                       ? NSLocalizedString("settings.privacy.contentBlocking.ruleSets.downloading", value: "Downloading…", comment: "Choose rule sets sheet - Done button label while the chosen lists are being downloaded")
+                       : NSLocalizedString("settings.privacy.contentBlocking.advanced.done", value: "Done", comment: "Advanced ad block settings - Button that downloads the chosen lists still missing and closes the sheet")) {
+                    done()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(downloading)
             }
         }
         .padding(24)
@@ -111,9 +125,35 @@ struct ContentBlockingAdvancedSheet: View {
         .sheet(isPresented: $showAddFilter) {
             ContentBlockingCustomFilterSheet(settings: settings)
         }
+        .onChange(of: settings.state) { _, state in
+            guard waitingForDownloads, let state, !Self.anyDownloading(in: state) else { return }
+            waitingForDownloads = false
+            if Self.missingIds(in: state).isEmpty {
+                dismiss()
+            }
+        }
     }
 
-    private func sectionView(_ group: ContentBlockingSectionGroup, enabled: Bool) -> some View {
+    private var downloading: Bool {
+        guard let state = settings.state else { return false }
+        return Self.anyDownloading(in: state)
+    }
+
+    private func done() {
+        guard let state = settings.state else {
+            dismiss()
+            return
+        }
+        let missing = Self.missingIds(in: state)
+        if missing.isEmpty {
+            dismiss()
+            return
+        }
+        waitingForDownloads = true
+        settings.downloadLists(missing)
+    }
+
+    private func sectionView(_ group: ContentBlockingSectionGroup) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(group.section.title)
                 .font(.system(size: 12, weight: .semibold))
@@ -121,10 +161,9 @@ struct ContentBlockingAdvancedSheet: View {
             SettingsDetailCard {
                 ForEach(Array(group.lists.enumerated()), id: \.element.id) { index, list in
                     if index > 0 { Divider() }
-                    ContentBlockingListRow(list: list, enabled: enabled,
+                    ContentBlockingListRow(list: list,
                                            onToggle: { checked in settings.setList(list.id, checked: checked) },
                                            onDownload: { settings.downloadList(list.id) },
-                                           onDeleteDownload: { settings.deleteListDownload(list.id) },
                                            onRemove: { settings.removeCustomList(list.id) })
                 }
                 if group.section == .custom {
@@ -142,43 +181,34 @@ struct ContentBlockingAdvancedSheet: View {
     }
 }
 
-/// One list row: checkbox, title, a download-state line when the list is
-/// not on disk, one download control (see `Control`) and the info button
-/// with the details popover.
+/// One list row: checkbox (use it), title, a download-state line when the
+/// list is not on disk, one control (see `Control`) and the info button with
+/// the details popover. Downloaded catalog lists are never deleted from
+/// here: the files are shared by every profile, so removing one would
+/// silently switch other profiles' blocking off; unchecking is enough.
 struct ContentBlockingListRow: View {
     /// The single control at the end of a row, chosen from the list's state.
     enum Control: Equatable {
-        /// Nothing to manage: the list ships with Phi.
+        /// Nothing to manage: bundled, or downloaded.
         case none
         /// Not on disk and not being fetched: offer to download it.
         case download
         /// A fetch is in progress.
         case downloading
-        /// On disk: offer to delete the downloaded text (the list is unchecked).
-        case deleteDownload
         /// A custom list: offer to remove it entirely.
         case removeCustom
     }
 
     let list: ContentBlockingList
-    let enabled: Bool
     let onToggle: (Bool) -> Void
     var onDownload: () -> Void = {}
-    var onDeleteDownload: () -> Void = {}
     var onRemove: () -> Void = {}
     @State private var showInfo = false
 
     static func control(for list: ContentBlockingList) -> Control {
         if list.isDownloading { return .downloading }
-        if list.isCustom {
-            // A pasted list is always on disk; a URL list is managed only by
-            // removing it, its download button being the ↓ in the state line.
-            return .removeCustom
-        }
-        if list.available {
-            return list.fetchedAt == nil ? .none : .deleteDownload
-        }
-        return .download
+        if list.isCustom { return .removeCustom }
+        return list.available ? .none : .download
     }
 
     /// The line under a list that is downloading or has no text on disk;
@@ -214,11 +244,10 @@ struct ContentBlockingListRow: View {
             Toggle("", isOn: Binding(get: { list.checked }, set: onToggle))
                 .labelsHidden()
                 .toggleStyle(.checkbox)
-                .disabled(!enabled)
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.title)
                     .font(.system(size: 13))
-                    .themedForeground(enabled ? .textPrimary : .textTertiary)
+                    .themedForeground(.textPrimary)
                 if let line = Self.availabilityLine(for: list) {
                     Text(line)
                         .font(.system(size: 11))
@@ -246,13 +275,6 @@ struct ContentBlockingListRow: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-            case .deleteDownload:
-                Button(action: onDeleteDownload) {
-                    Image(systemName: "trash")
-                        .themedForeground(.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .help(NSLocalizedString("settings.privacy.contentBlocking.list.deleteDownload", value: "Delete the downloaded rules", comment: "Advanced ad block settings - Tooltip of the button deleting a filter list's downloaded text; the list is unchecked"))
             case .removeCustom:
                 Button(action: onRemove) {
                     Image(systemName: "trash")

@@ -70,7 +70,8 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
 
         var downloaded = list("easylist", "ads")
         downloaded.fetchedAt = Date()
-        XCTAssertEqual(ContentBlockingListRow.control(for: downloaded), .deleteDownload)
+        XCTAssertEqual(ContentBlockingListRow.control(for: downloaded), .none,
+                       "downloaded files are shared by every profile and are not deleted from here")
 
         var missing = list("easylist", "ads")
         missing.available = false
@@ -95,6 +96,22 @@ final class ContentBlockingAdvancedSheetTests: XCTestCase {
         XCTAssertEqual(ContentBlockingListRow.control(for: remote), .removeCustom)
         remote.isDownloading = true
         XCTAssertEqual(ContentBlockingListRow.control(for: remote), .downloading)
+    }
+
+    func testDoneDownloadsCheckedMissingListsAcrossSections() {
+        var missing = list("easylist", "ads")
+        missing.available = false
+        var unchecked = list("adguard-chinese", "regional")
+        unchecked.available = false
+        unchecked.checked = false
+        var busy = list("easyprivacy", "trackers")
+        busy.available = false
+        busy.isDownloading = true
+        let state = ContentBlockingState(blockAds: true, blockCookieBanners: true, blockTrackers: true,
+                                         lists: [missing, unchecked, busy, list("phi-specific", "phi")],
+                                         siteExceptions: [], status: .active, statusDetail: "")
+        XCTAssertEqual(ContentBlockingAdvancedSheet.missingIds(in: state), ["easylist"])
+        XCTAssertTrue(ContentBlockingAdvancedSheet.anyDownloading(in: state))
     }
 
     func testDownloadingLineShowsBytes() {

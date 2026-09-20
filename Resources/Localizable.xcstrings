@@ -69177,7 +69177,7 @@
       }
     },
     "settings.privacy.contentBlocking.advanced.done" : {
-      "comment" : "Advanced ad block settings - Button closing the sheet",
+      "comment" : "Advanced ad block settings - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -69195,7 +69195,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose the filter lists this profile uses. Lists are downloaded from their publishers only when you ask, with the download buttons or Update All; a section only takes effect while its switch is on. You can also add your own lists."
+            "value" : "Check the filter lists this profile uses; Done downloads any that are missing. A section only takes effect while its switch is on. Nothing is downloaded until you ask."
           }
         }
       }
@@ -69284,14 +69284,26 @@
         }
       }
     },
-    "settings.privacy.contentBlocking.advanced.updateAll" : {
-      "comment" : "Advanced ad block settings - Button that downloads every enabled filter list again",
+    "settings.privacy.contentBlocking.advanced.updateDownloaded" : {
+      "comment" : "Advanced ad block settings - Button that downloads every already-downloaded filter list again to pick up new rules",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Update All"
+            "value" : "Update Downloaded"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.advanced.updateDownloaded.help" : {
+      "comment" : "Advanced ad block settings - Tooltip of the Update Downloaded button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Fetch the latest rules for every list already downloaded"
           }
         }
       }
@@ -69628,18 +69640,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.list.deleteDownload" : {
-      "comment" : "Advanced ad block settings - Tooltip of the button deleting a filter list's downloaded text; the list is unchecked",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Delete the downloaded rules"
           }
         }
       }

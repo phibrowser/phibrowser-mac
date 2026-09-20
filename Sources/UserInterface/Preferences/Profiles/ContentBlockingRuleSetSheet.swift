@@ -110,10 +110,9 @@ struct ContentBlockingRuleSetSheet: View {
                         SettingsDetailCard {
                             ForEach(Array(ContentBlockingRuleSets.lists(for: category, in: state).enumerated()), id: \.element.id) { index, list in
                                 if index > 0 { Divider() }
-                                ContentBlockingListRow(list: list, enabled: true,
+                                ContentBlockingListRow(list: list,
                                                        onToggle: { checked in settings.setList(list.id, checked: checked) },
-                                                       onDownload: { settings.downloadList(list.id) },
-                                                       onDeleteDownload: { settings.deleteListDownload(list.id) })
+                                                       onDownload: { settings.downloadList(list.id) })
                             }
                         }
                         VStack(alignment: .leading, spacing: 6) {
@@ -124,10 +123,9 @@ struct ContentBlockingRuleSetSheet: View {
                                 let custom = state.lists.filter(\.isCustom)
                                 ForEach(Array(custom.enumerated()), id: \.element.id) { index, list in
                                     if index > 0 { Divider() }
-                                    ContentBlockingListRow(list: list, enabled: true,
+                                    ContentBlockingListRow(list: list,
                                                            onToggle: { checked in settings.setList(list.id, checked: checked) },
                                                            onDownload: { settings.downloadList(list.id) },
-                                                           onDeleteDownload: { settings.deleteListDownload(list.id) },
                                                            onRemove: { settings.removeCustomList(list.id) })
                                 }
                                 if !custom.isEmpty { Divider() }

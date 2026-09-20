@@ -28,12 +28,20 @@ enum ContentBlockingRuleSets {
         return !usable.contains { $0.checked && $0.available }
     }
 
-    /// The action word after the summary: "Choose…" while the toggle has
-    /// nothing usable, "Change…" otherwise.
+    /// The action word after the summary; the line only shows while the
+    /// toggle has something usable.
     static func actionLabel(for category: ContentBlockingCategory, in state: ContentBlockingState) -> String {
-        needsDownload(for: category, in: state)
-            ? NSLocalizedString("settings.privacy.contentBlocking.summary.choose", value: "Choose…", comment: "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser")
-            : NSLocalizedString("settings.privacy.contentBlocking.summary.change", value: "Change…", comment: "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser")
+        NSLocalizedString("settings.privacy.contentBlocking.summary.change", value: "Change…", comment: "Profile settings - Action after the line under a content blocking toggle; opens the rule set chooser")
+    }
+
+    /// Toggles that are on without a usable rule set (their last list was
+    /// deleted or unchecked); the pane turns them off.
+    static func togglesToTurnOff(in state: ContentBlockingState) -> [ContentBlockingCategory] {
+        var off: [ContentBlockingCategory] = []
+        if state.blockAds && needsDownload(for: .ads, in: state) { off.append(.ads) }
+        if state.blockCookieBanners && needsDownload(for: .cookieBanners, in: state) { off.append(.cookieBanners) }
+        if state.blockTrackers && needsDownload(for: .trackers, in: state) { off.append(.trackers) }
+        return off
     }
 
     /// The line under a toggle: the checked lists, the custom lists (which
@@ -63,19 +71,36 @@ enum ContentBlockingRuleSets {
 
 /// "Choose rule sets": the lists a toggle uses, each with a checkbox (use
 /// it) and a download button (fetch its text). Choices apply as they are
-/// made; Done just closes.
+/// made. Done downloads every checked list that is still missing and closes
+/// once they are all on disk; a failed download keeps the sheet open with
+/// the error so Done can retry.
 struct ContentBlockingRuleSetSheet: View {
     @ObservedObject var settings: ContentBlockingSettings
     let category: ContentBlockingCategory
     @Environment(\.dismiss) private var dismiss
     @State private var showAddFilter = false
+    @State private var waitingForDownloads = false
+
+    /// The checked lists of this sheet (the toggle's and the custom ones).
+    static func chosenLists(for category: ContentBlockingCategory, in state: ContentBlockingState) -> [ContentBlockingList] {
+        (ContentBlockingRuleSets.lists(for: category, in: state) + state.lists.filter(\.isCustom)).filter(\.checked)
+    }
+
+    /// Checked lists Done still has to download.
+    static func missingIds(for category: ContentBlockingCategory, in state: ContentBlockingState) -> [String] {
+        chosenLists(for: category, in: state).filter { !$0.available && !$0.isDownloading }.map(\.id)
+    }
+
+    static func anyDownloading(for category: ContentBlockingCategory, in state: ContentBlockingState) -> Bool {
+        chosenLists(for: category, in: state).contains(where: \.isDownloading)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
                 .themedForeground(.textPrimary)
-            Text(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.intro", value: "Rule sets are downloaded from their publishers only when you ask: use ↓ to download one, and the checkbox to use it. Recommended rule sets are used as soon as they are downloaded.", comment: "Choose rule sets sheet - Introductory sentence"))
+            Text(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.intro", value: "Check the rule sets to use. Done downloads any that are missing from their publishers; nothing is downloaded until you ask.", comment: "Choose rule sets sheet - Introductory sentence"))
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -120,10 +145,13 @@ struct ContentBlockingRuleSetSheet: View {
             }
             HStack {
                 Spacer()
-                Button(NSLocalizedString("settings.privacy.contentBlocking.ruleSets.done", value: "Done", comment: "Choose rule sets sheet - Button closing the sheet; choices are saved as they are made")) {
-                    dismiss()
+                Button(downloading
+                       ? NSLocalizedString("settings.privacy.contentBlocking.ruleSets.downloading", value: "Downloading…", comment: "Choose rule sets sheet - Done button label while the chosen lists are being downloaded")
+                       : NSLocalizedString("settings.privacy.contentBlocking.ruleSets.done", value: "Done", comment: "Choose rule sets sheet - Button that downloads the chosen lists still missing and closes the sheet")) {
+                    done()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(downloading)
             }
         }
         .padding(24)
@@ -132,6 +160,33 @@ struct ContentBlockingRuleSetSheet: View {
         .sheet(isPresented: $showAddFilter) {
             ContentBlockingCustomFilterSheet(settings: settings)
         }
+        .onChange(of: settings.state) { _, state in
+            // Close once the downloads Done started have all landed.
+            guard waitingForDownloads, let state, !Self.anyDownloading(for: category, in: state) else { return }
+            waitingForDownloads = false
+            if Self.missingIds(for: category, in: state).isEmpty {
+                dismiss()
+            }
+        }
+    }
+
+    private var downloading: Bool {
+        guard let state = settings.state else { return false }
+        return Self.anyDownloading(for: category, in: state)
+    }
+
+    private func done() {
+        guard let state = settings.state else {
+            dismiss()
+            return
+        }
+        let missing = Self.missingIds(for: category, in: state)
+        if missing.isEmpty {
+            dismiss()
+            return
+        }
+        waitingForDownloads = true
+        settings.downloadLists(missing)
     }
 
     private var title: String {

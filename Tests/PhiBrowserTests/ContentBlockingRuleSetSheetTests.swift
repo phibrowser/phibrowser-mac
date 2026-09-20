@@ -58,10 +58,26 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "2 rule sets selected · 1 not downloaded")
     }
 
-    func testActionLabelInvitesAChoiceUntilSomethingIsUsable() {
-        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads", checked: false)])), "Choose…")
-        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads", available: false)])), "Choose…")
-        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .ads, in: state([list("easylist", "ads")])), "Change…")
+    func testDoneDownloadsOnlyCheckedMissingLists() {
+        let lists = [list("easylist", "ads", available: false), list("adguard-chinese", "regional", checked: false, available: false),
+                     list("cookie", "cookies", available: false), list("custom-1", "custom", available: false, custom: true),
+                     list("busy", "ads", available: false, downloading: true)]
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state(lists)), ["easylist", "custom-1"])
+        XCTAssertTrue(ContentBlockingRuleSetSheet.anyDownloading(for: .ads, in: state(lists)))
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .cookieBanners, in: state(lists)), ["cookie", "custom-1"])
+        XCTAssertFalse(ContentBlockingRuleSetSheet.anyDownloading(for: .cookieBanners, in: state(lists)))
+        XCTAssertEqual(ContentBlockingRuleSetSheet.missingIds(for: .ads, in: state([list("easylist", "ads")])), [])
+    }
+
+    func testTogglesWithoutAUsableRuleSetTurnOff() {
+        XCTAssertEqual(ContentBlockingRuleSets.togglesToTurnOff(in: state([])), [.ads, .cookieBanners, .trackers])
+        XCTAssertEqual(ContentBlockingRuleSets.togglesToTurnOff(in: state([list("easylist", "ads"), list("cookie", "cookies")])), [.trackers])
+        XCTAssertEqual(ContentBlockingRuleSets.togglesToTurnOff(in: state([list("custom-1", "custom", custom: true)])), [])
+        var off = state([list("easylist", "ads")])
+        off.blockAds = false
+        off.blockCookieBanners = false
+        off.blockTrackers = false
+        XCTAssertEqual(ContentBlockingRuleSets.togglesToTurnOff(in: off), [], "off toggles are left alone")
     }
 
     func testNoListsStatusShowsUnderTheToggles() {

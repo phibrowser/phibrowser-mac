@@ -69885,13 +69885,25 @@
       }
     },
     "settings.privacy.contentBlocking.ruleSets.done" : {
-      "comment" : "Choose rule sets sheet - Button closing the sheet; choices are saved as they are made",
+      "comment" : "Choose rule sets sheet - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Done"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.ruleSets.downloading" : {
+      "comment" : "Choose rule sets sheet - Done button label while the chosen lists are being downloaded",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloading…"
           }
         }
       }
@@ -69903,7 +69915,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Rule sets are downloaded from their publishers only when you ask: use ↓ to download one, and the checkbox to use it. Recommended rule sets are used as soon as they are downloaded."
+            "value" : "Check the rule sets to use. Done downloads any that are missing from their publishers; nothing is downloaded until you ask."
           }
         }
       }
@@ -69976,18 +69988,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Change…"
-          }
-        }
-      }
-    },
-    "settings.privacy.contentBlocking.summary.choose" : {
-      "comment" : "Profile settings - Action after the line under a content blocking toggle when it has no usable rule set; opens the rule set chooser",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose…"
           }
         }
       }

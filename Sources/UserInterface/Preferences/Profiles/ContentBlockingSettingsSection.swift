@@ -40,11 +40,14 @@ struct ContentBlockingSettingsSection: View {
 
     @StateObject private var model = ContentBlockingSectionModel()
     @State private var showAdvanced = false
-    /// The toggle whose rule sets the chooser sheet shows.
+    /// The toggle whose rule sets the chooser sheet shows, and whether the
+    /// toggle should turn on when the sheet closes with a usable rule set
+    /// (the user just tried to switch it on).
     @State private var ruleSetChooser: RuleSetChooser?
 
     struct RuleSetChooser: Identifiable {
         let category: ContentBlockingCategory
+        let enablesOnClose: Bool
         var id: String { "\(category)" }
     }
 
@@ -93,23 +96,45 @@ struct ContentBlockingSettingsSection: View {
                 ContentBlockingAdvancedSheet(settings: settings)
             }
         }
-        .sheet(item: $ruleSetChooser) { chooser in
+        .sheet(item: $ruleSetChooser, onDismiss: chooserClosed) { chooser in
             if let settings = model.settings {
                 ContentBlockingRuleSetSheet(settings: settings, category: chooser.category)
             }
         }
-    }
-
-    /// Turning a toggle on whose lists are not downloaded opens the chooser;
-    /// downloads never start on their own.
-    private func setCategory(_ category: ContentBlockingCategory, enabled: Bool) {
-        guard let settings = model.settings else { return }
-        settings.setCategory(category, enabled: enabled)
-        if enabled, let state = settings.state,
-           ContentBlockingRuleSets.needsDownload(for: category, in: state) {
-            ruleSetChooser = RuleSetChooser(category: category)
+        .onChange(of: ruleSetChooser?.id) { _, _ in
+            if let ruleSetChooser { lastChooser = ruleSetChooser }
+        }
+        .onChange(of: model.settings?.state) { _, state in
+            // A toggle is only on while it has something to apply.
+            guard let settings = model.settings, let state else { return }
+            for category in ContentBlockingRuleSets.togglesToTurnOff(in: state) {
+                settings.setCategory(category, enabled: false)
+            }
         }
     }
+
+    /// A toggle turns on only with a usable rule set: otherwise the chooser
+    /// opens first and the toggle follows what the user picked there.
+    private func setCategory(_ category: ContentBlockingCategory, enabled: Bool) {
+        guard let settings = model.settings else { return }
+        if enabled, let state = settings.state,
+           ContentBlockingRuleSets.needsDownload(for: category, in: state) {
+            ruleSetChooser = RuleSetChooser(category: category, enablesOnClose: true)
+            return
+        }
+        settings.setCategory(category, enabled: enabled)
+    }
+
+    private func chooserClosed() {
+        guard let chooser = lastChooser, chooser.enablesOnClose,
+              let settings = model.settings, let state = settings.state,
+              !ContentBlockingRuleSets.needsDownload(for: chooser.category, in: state) else { return }
+        settings.setCategory(chooser.category, enabled: true)
+    }
+
+    /// The chooser that was open last; `sheet(item:)` clears the item before
+    /// `onDismiss` runs.
+    @State private var lastChooser: RuleSetChooser?
 
     /// The small print under the card: the rule build failed and the previous
     /// rules stay in use, or a toggle is on with nothing downloaded (then the
@@ -147,9 +172,10 @@ struct ContentBlockingSettingsSection: View {
                     .themedTint(.themeColor)
                     .disabled(value == nil)
             }
-            if value == true, let state = model.settings?.state {
+            if value == true, let state = model.settings?.state,
+               !ContentBlockingRuleSets.needsDownload(for: category, in: state) {
                 Button {
-                    ruleSetChooser = RuleSetChooser(category: category)
+                    ruleSetChooser = RuleSetChooser(category: category, enablesOnClose: false)
                 } label: {
                     HStack(spacing: 4) {
                         Text(ContentBlockingRuleSets.summary(for: category, in: state))

@@ -70,7 +70,8 @@ struct ContentBlockingCustomFilterSheet: View {
             switch input.kind {
             case .url:
                 field(NSLocalizedString("settings.privacy.contentBlocking.customFilter.url", value: "URL", comment: "Custom filter sheet - Label of the URL field")) {
-                    TextField("https://example.com/filters.txt", text: $input.url)
+                    // The example URL is not a translatable string.
+                    TextField("", text: $input.url, prompt: Text(verbatim: "https://example.com/filters.txt"))
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                 }

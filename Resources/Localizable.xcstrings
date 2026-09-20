@@ -42339,9 +42339,6 @@
         }
       }
     },
-    "https://example.com/filters.txt" : {
-
-    },
     "https://vault.example.com" : {
       "localizations" : {
         "de" : {

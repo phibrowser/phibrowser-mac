@@ -325,14 +325,12 @@ final class AppModalPairingHost: ProfilePairingModalHost {
     private(set) weak var viewModel: PairingWizardViewModel?
     private weak var presentedController: SyncKeyController?
 
-    /// Every seam carries its production default, so `AppModalPairingHost()`
-    /// stays the one call the app makes (`PhiChromiumCoordinator`).
+    /// Every seam has a production default, preserving AppModalPairingHost() as the application's sole
+    /// construction call in PhiChromiumCoordinator.
     ///
-    /// 后三条是 M3-2b 新加的：向导 VM 的三条外部依赖。放在这里而不是
-    /// `present()` 体内，`ProfilePairingGateTests` 才不会在 `present()` 时把
-    /// `PhiChromiumCoordinator.shared` 与它背后的 `AccountController.shared` 拉起来
-    /// ——那正是向导 VM 收注入闭包想避免的耦合，直接写在 `present()` 里等于把单例
-    /// 从 VM 搬进了宿主。
+    /// The last three are M3-2b wizard dependencies. Inject here rather than inside present so
+    /// ProfilePairingGateTests do not initialize PhiChromiumCoordinator.shared and AccountController.shared.
+    /// Otherwise singleton coupling would merely move from VM to host.
     init(scheduler: @escaping @MainActor (@escaping () -> Void) -> Void = { block in
              RunLoop.main.perform(inModes: AppModalPairingHost.presentationModes) { block() }
          },
@@ -340,9 +338,9 @@ final class AppModalPairingHost: ProfilePairingModalHost {
          stopModal: @escaping @MainActor () -> Void = { NSApp.stopModal() },
          previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
              = { await PhiChromiumCoordinator.shared.previewAccountSpaces() },
-         // 非隔离闭包：`themeDisplayName` 要原样传给纯函数 `SpaceOverwriteDiff.diffs`
-         // （一个 `@MainActor` 闭包无法转换过去），两条都只会被 `@MainActor` 的向导 VM
-         // 调用，所以 `assumeIsolated` 成立。
+         // Use nonisolated closures because themeDisplayName is passed to the pure SpaceOverwriteDiff.diffs
+         // and cannot be MainActor-isolated. Only the MainActor wizard VM calls them, so assumeIsolated is
+         // valid.
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace]
              = { MainActor.assumeIsolated { PhiChromiumCoordinator.shared.pairableLocalSpaces() } },
          themeDisplayName: @escaping (String) -> String?
@@ -374,8 +372,7 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         let root = PairingWizardView(viewModel: viewModel, controller: controller,
                                      onDismiss: { [weak self] in self?.dismiss() })
         let window = NSWindow(contentViewController: ThemedHostingController(rootView: root))
-        // 仍然没有 `.closable`（与今天的理由一致）；`.resizable` 是新的：可放大、
-        // 不可缩到 720×560 以下。
+        // Keep the window nonclosable. Resizing may enlarge it, but cannot shrink below 720×560.
         window.styleMask = [.titled, .resizable]
         window.title = NSLocalizedString("Finish setting up sync",
                                          comment: "Pairing wizard - window title")
@@ -428,18 +425,11 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
     }
 
-    /// 一个 re-drive 是对**卡住的加载**的救援，不是刷新（R-D6-11）。
-    ///
-    /// **只有 `.loading` 与 `.error(_, .reload)` 允许**；四个交互态
-    /// （`.profiles` / `.spaces` / `.confirmOverwrite` / `.submitting`）与 `.done`
-    /// 一律拒绝——gate 每一趟 `.measured` 都会对已呈现的模态调 `reloadPresented()`，
-    /// 大约一分钟一次。两处相对 `KeyLayerPhase` 时代新加的拒绝，理由各不相同：
-    ///  - **`.confirmOverwrite`**：确认页是交互态，一次重驱会把用户正在读的那页差异
-    ///    连同他的选择一起冲掉；
-    ///  - **`.error(_, .backToSpaces)`**：Space 侧应用失败停下来的那个 `.error`，
-    ///    背后是一份用户已经做完的第 2 步选择。`.error` 整类允许重驱是
-    ///    `KeyLayerPhase` 时代的口径（那时 `.error` 只可能是一次加载失败），在向导里
-    ///    照抄就会每分钟重跑一次 `start()`，把 `spacesInput` 与第 2 步的指派一起冲掉。
+    /// Re-drive rescues stuck loading, not refreshes user input (R-D6-11). Allow only loading and
+    /// error/reload; reject profiles, spaces, confirmOverwrite, submitting and done. The gate re-drives
+    /// presented modals roughly every minute. Confirmation is interactive and must retain
+    /// differences/selections; error/backToSpaces also holds completed step-2 choices. Reusing KeyLayerPhase's
+    /// broad error rule would call start each minute and erase that state.
     static func reloadAllowed(for phase: PairingWizardPhase) -> Bool {
         switch phase {
         case .loading: return true

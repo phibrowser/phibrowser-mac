@@ -6,7 +6,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     final class FakeStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
         private(set) var saves = 0
-        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
+        /// When true, every save returns false without changing table, modeling R-M3-4a-83.
         var failNextSave = false
         private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
@@ -61,20 +61,19 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         let back = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: bytes)
         XCTAssertEqual(back, table)
         XCTAssertEqual(back.formatVersion, PhiSpaceSyncTable.currentFormatVersion)
-        // 14 个游标字段一个不落：Equatable 是合成的，所以「逐个赋非默认值再比」就是
-        // 逐字段断言；一个被漏掉的字段会让上面的 `back == table` 在它变化时仍然为真。
+        // Assign nondefault values to all fourteen cursor fields. Synthesized Equatable
+        // then makes back == table a field-by-field assertion; omitted fields could otherwise escape detection.
         XCTAssertEqual(back.cursors["sync-u1"], cursor)
     }
 
-    /// 上一版写下的表——`formatVersion` 仍是 2，但没有 M3-3 新增的那四个 per-kind 标志键
-    /// （M3-4a 又加两个，共六个）——必须照常解出来，六个标志读作 false。
-    ///
-    /// 防的是什么：合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，**属性的
-    /// 默认值一概不参与**。四个新字段一旦按合成解码走，每一台已装机的设备整张表都解不出来：
-    /// `AccountUserDefaults.codableValue` 把失败吞成 nil、`loaded(from:)` 换成一张空表（游标、
-    /// 两份基线、`hadRecords`、`lastDrainedBirthday`、`unreadableTagHashes` 全没了），而
-    /// `isStaleFormat(rawData:)` 的 `try?` 还把同一次失败读成「格式偏低」，覆盖掉盘上那份并把
-    /// 设备推回配对向导。`formatVersion` 拦不住它——加字段不改格式版本。
+    /// Previous formatVersion=2 tables lack M3-3's four per-kind flags plus M3-4a's
+    /// two additions. They must decode normally with all six false. Synthesized
+    /// Decodable ignores property defaults for required fields; new required keys
+    /// could invalidate every installed device's table. codableValue swallows failure
+    /// as nil, loaded returns an empty table losing cursors, both baselines, hadRecords,
+    /// lastDrainedBirthday, and unreadableTagHashes. isStaleFormat can then misclassify
+    /// the same failure as old format, overwrite the file, and reopen pairing.
+    /// formatVersion cannot prevent this because field additions do not bump it.
     func testATableWrittenBeforeThePerKindFlagsStillDecodes() throws {
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"
@@ -87,11 +86,11 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.spaceSectionEnabled = true
         table.lastDrainedBirthday = "b-1"
         table.unreadableTagHashes["abcd1234"] = 99
-        // M3-4a Task 6：第三条 kind 的两个标志也非默认，六个键一起验。
+        // M3-4a Task 6: give the third kind's two flags nondefault values and check all six keys.
         table.urlRulesHadRecords = true
         table.urlRulesReplayedForEmptyTable = true
         let encoded = try JSONEncoder().encode(table)
-        // 正向：六个键都在的那份字节解出来两个新标志都是 true（合成 `CodingKeys` 自动覆盖）。
+        // Positive case: all six keys decode, with both new flags true; synthesized CodingKeys includes them.
         let full = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded)
         XCTAssertTrue(full.urlRulesHadRecords)
         XCTAssertTrue(full.urlRulesReplayedForEmptyTable)
@@ -99,7 +98,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         for key in ["bookmarksHadRecords", "pinsHadRecords",
                     "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable",
                     "urlRulesHadRecords", "urlRulesReplayedForEmptyTable"] {
-            XCTAssertNotNil(object.removeValue(forKey: key), "\(key) 本该出现在编码里")
+            XCTAssertNotNil(object.removeValue(forKey: key), "\(key) must be present in the encoding")
         }
         let legacy = try JSONSerialization.data(withJSONObject: object)
 
@@ -118,11 +117,11 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(decoded.pinsReplayedForEmptyTable)
         XCTAssertFalse(decoded.urlRulesHadRecords)
         XCTAssertFalse(decoded.urlRulesReplayedForEmptyTable)
-        // 第二条受害路径：同一份字节不许被读成「格式偏低」而触发一次丢弃 + 配对向导。
+        // Also ensure these bytes are not treated as stale format, discarded, and sent to pairing.
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
 
-    // MARK: - formatVersion 硬切（§3.6）
+    // MARK: - formatVersion reset (§3.6)
 
     func testAnOlderFormatIsDiscardedIntoAnEmptyTable() throws {
         var old = PhiSpaceSyncTable()
@@ -139,9 +138,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: try JSONEncoder().encode(current)))
     }
 
-    /// f7f37725 写下的 plist 里没有 `formatVersion` 键，合成的 `Decodable` 因此抛
-    /// `keyNotFound` —— 这是硬切**实际生效**的那条路径，`>= 2` 那一句只是把规则
-    /// 显式写出来。
+    /// The plist written by f7f37725 lacks formatVersion, so synthesized decoding
+    /// throws keyNotFound. This is the actual reset path; the >= 2 check states the rule explicitly.
     func testATableWithNoFormatVersionKeyCannotEvenDecode() {
         let raw = Data(#"{"cursors":{},"drainInProgress":false}"#.utf8)
         XCTAssertNil(try? JSONDecoder().decode(PhiSpaceSyncTable.self, from: raw))
@@ -149,10 +147,10 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(PhiSpaceSyncTable.loaded(from: nil), PhiSpaceSyncTable())
     }
 
-    /// **没有键**（从没同步过的机器、刚登录的机器、ARK 一直锁着的机器）不是「旧表」。
-    /// 缺了这一条，每一台首次启动的机器都会被判成「已丢弃」并把
-    /// `ProfilePairingGate.joinPairingPending` 置真，而那个标志只能由一趟 `.measured`
-    /// 退休 —— 离线的那次启动会让 Space 同步就此关上，既不弹模态也没有任何信号。
+    /// A missing key is not an old table: newly signed-in, never-synced, or persistently
+    /// ARK-locked machines may have none. Otherwise every first launch appears discarded
+    /// and sets joinPairingPending, which only a measured pass can retire. An offline
+    /// launch would silently leave Space sync closed without showing a modal.
     func testAbsentDataIsNotAStaleTable() {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: nil))
     }
@@ -161,15 +159,15 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertTrue(PhiSpaceSyncTable.isStaleFormat(rawData: Data([0x00, 0x01, 0x02])))
     }
 
-    // MARK: - discardIfStaleFormat 的三条（§10.3）
+    // MARK: - Three discardIfStaleFormat cases (§10.3)
 
-    /// 每条用例一个全新的随机 userID，副作用是
-    /// `FileSystemUtils.phiBrowserDataDirectory()/users/<uuid>/`，在 `tearDown` 里删掉。
+    /// Use a fresh random userID per case and remove its users/<uuid>/ subtree
+    /// under phiBrowserDataDirectory in tearDown.
     private var scratchAccounts: [Account] = []
 
     override func tearDown() {
         for account in scratchAccounts {
-            // CASE 2a.8 把 `defaults/` 改成只读来注入落盘失败；**先恢复权限再删**。
+            // CASE 2a.8 makes defaults/ read-only to force persistence failure; restore permissions before deletion.
             try? Self.setDefaultsDirectoryWritable(true, for: account)
             try? FileManager.default.removeItem(at: account.userDataStorage)
         }
@@ -182,8 +180,8 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         return (store, defaults)
     }
 
-    /// CASE 2a.8 还要拿着 `Account` 去改目录权限，所以多一个返回 `Account` 的版本；
-    /// 上面那个保持原签名，既有三条用例一字不改。
+    /// CASE 2a.8 needs Account to change directory permissions, so add a version
+    /// returning it while preserving the original helper and its three existing callers.
     private func makeAccountStateStoreWithAccount()
         -> (AccountPhiSpaceSyncStateStore, AccountUserDefaults, Account) {
         let account = Account(userID: UUID().uuidString)
@@ -192,7 +190,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
                 account.userDefaults, account)
     }
 
-    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
+    /// 0o500 allows reads/traversal but prevents the same-directory temporary file required by atomic writes.
     private static func setDefaultsDirectoryWritable(_ writable: Bool, for account: Account) throws {
         let directory = account.userDataStorage
             .appendingPathComponent("defaults", isDirectory: true)
@@ -208,7 +206,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         defaults.set(old, forCodableKey: AccountPhiSpaceSyncStateStore.defaultsKey)
 
         XCTAssertTrue(store.discardIfStaleFormat())
-        XCTAssertEqual(store.load(), PhiSpaceSyncTable(), "丢弃 = 写成一张当前版本的空表")
+        XCTAssertEqual(store.load(), PhiSpaceSyncTable(), "Discard writes an empty table in the current format")
     }
 
     func testUndecodableBytesOnDiskAreDiscardedToo() {
@@ -218,9 +216,9 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(store.load(), PhiSpaceSyncTable())
     }
 
-    /// (c)：**键根本不存在** ⇒ 返回 false、`save` **零调用**（键在调用之后仍然不存在，
-    /// 这就是「零调用」在这个 store 上唯一可观测的形式）、`joinPairingPending` 未被碰。
-    /// 缺了这一条，每一台首次启动的机器都会被判成「已丢弃」而把 Space 段的门永久关上。
+    /// (c) Missing key returns false with no save; the key remaining absent is this
+    /// store's observable no-save evidence. Leave joinPairingPending unchanged or every
+    /// first launch could be treated as discarded and permanently close Space sync.
     @MainActor
     func testAnAbsentKeyIsNotDiscardedAndWritesNothing() {
         ProfilePairingGate.staticPendingOverride = false
@@ -231,9 +229,9 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(store.discardIfStaleFormat())
 
         XCTAssertNil(defaults.data(forKey: AccountPhiSpaceSyncStateStore.defaultsKey),
-                     "guard 必须在 save 之前：没有键就一个字节都不许写")
+                     "Guard before save: a missing key must cause zero writes")
         XCTAssertFalse(ProfilePairingGate.joinPairingPending,
-                       "store 永远不碰那个标志——置真是协调器 `if` 的事（Step 5）")
+                       "The store never changes this flag; the coordinator sets it in step 5")
     }
 
     // MARK: - recordLocalDeletion (§9.1: the criterion is entityId, not "has a cursor")
@@ -287,11 +285,11 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(table.hiddenSyncUuids, ["sync-gone"])
     }
 
-    // MARK: - hidden ⇒ deletedAtMs != nil（R-D6-9 的新不变量）
+    // MARK: - hidden implies deletedAtMs is nonnil (R-D6-9)
 
-    /// D6 之后 `hidden` 只剩一种含义：远端软删。D2 是唯一一个只写 `hidden` 不写
-    /// `deletedAtMs` 的生产者，它随 Task 9 消失。一旦这条被破坏，那些行会从 strip
-    /// 里静默消失，而 D2 时代的救援出口（设置段落）已经不在了。
+    /// After D6, hidden means only remote soft deletion. D2 was the sole producer
+    /// of hidden without deletedAtMs and disappears in Task 9. Violations silently
+    /// remove rows from the strip, with no remaining settings-section D2 rescue path.
     func assertHiddenImpliesDeleted(_ table: PhiSpaceSyncTable,
                                     file: StaticString = #filePath, line: UInt = #line) {
         for (uuid, cursor) in table.cursors where cursor.hidden {
@@ -319,7 +317,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         assertHiddenImpliesDeleted(table)
     }
 
-    // MARK: - 派生集合（§3.5）
+    // MARK: - Derived sets (§3.5)
 
     func testPublishedSyncUuidsHoldsOnlyCursorsWithAnEntityId() {
         var table = PhiSpaceSyncTable()
@@ -347,7 +345,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         }
         state.refreshCaches(from: table)
         XCTAssertEqual(state.hiddenSpaceIds, ["LOCAL-A"],
-                       "交给 SpaceManager 漏斗的必须是一组本地 id；解析不到的丢弃")
+                       "SpaceManager receives local ids only; omit unresolved identities")
         XCTAssertTrue(state.isHidden("LOCAL-A"))
     }
 
@@ -366,7 +364,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.cursors["sync-pub"] = published
         state.refreshCaches(from: table)
         XCTAssertEqual(state.publishedSyncUuids, ["sync-pub"])
-        XCTAssertEqual(posts, 0, "`.phiSpaceHiddenSetDidChange` 的语义不变：只看 hidden")
+        XCTAssertEqual(posts, 0, "phiSpaceHiddenSetDidChange still depends only on hidden")
     }
 
     // MARK: - 30-day sweep (§9.2)
@@ -463,9 +461,9 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(store.saves, 1)
     }
 
-    /// R-D6-9：第三条判据从「hidden 的本地 Space」改成「**有映射且其实体已发布**的
-    /// 本地 Space」。D6 之后 hidden 只剩远端软删一种含义，而软删的行不该再挡着一个
-    /// Profile 被删。
+    /// R-D6-9 changes the third criterion from hidden local Spaces to mapped local
+    /// Spaces whose entities have published. Hidden now means remote soft deletion,
+    /// and those rows must no longer block Profile deletion.
     @MainActor
     func testBlocksProfileDeletionCoversMappedAndPublishedLocalSpaces() {
         let state = PhiSpaceSyncState()
@@ -474,7 +472,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         var published = PhiSpaceCursor()
         published.entityId = "srv-1"
         table.cursors["sync-pub"] = published
-        table.cursors["sync-never"] = PhiSpaceCursor()   // 有映射但从未发布
+        table.cursors["sync-never"] = PhiSpaceCursor()   // Mapped but never published
         state.refreshCaches(from: table)
         state.globalUuidLookup = { _ in nil }
         state.syncUuidLookup = { spaceId in
@@ -487,18 +485,18 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         }
         XCTAssertTrue(state.blocksProfileDeletion(localProfileId: "Profile 2"))
         XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 3"),
-                       "有映射但从未发布 ⇒ 账户里没有它，删 Profile 不会孤立任何东西")
-        XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 4"), "无映射 ⇒ 不阻止")
+                       "Mapped but unpublished Spaces have no account entity to orphan on Profile deletion")
+        XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 4"), "Unmapped Spaces do not block deletion")
 
-        // §10.3 的末半句：`hasDrainedFullReplay == false` ⇒ **一律 false**（fail-open，
-        // 不变）。第三条判据是新加的，它必须和前两条一样落在同一个 `guard` 后面——
-        // 一次「还没排空重放就开始挡删除」会把一台刚加入的机器上的 Profile 删除口
-        // 永久卡住，而这个 guard 是唯一的防线。
+        // §10.3 final clause: hasDrainedFullReplay=false always returns false, preserving
+        // fail-open behavior. The new third criterion must follow the same guard as the
+        // first two; blocking before replay drains could permanently disable Profile
+        // deletion on a newly joined machine.
         var undrained = table
         undrained.hasDrainedFullReplay = false
         state.refreshCaches(from: undrained)
         XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 2"),
-                       "重放没排空 ⇒ fail-open，第三条判据也不例外")
+                       "Undrained replay remains fail-open for the third criterion too")
     }
 
     /// R4: `blocksProfileDeletion` and `referencesProfileUuid` must be reading
@@ -555,25 +553,24 @@ final class PhiSpaceSyncStateTests: XCTestCase {
 
     // MARK: - CASE 2a.8（R-M3-4a-83）
 
-    /// CASE 2a.8 — `PhiSpaceSyncStateStore.save` 回 `false` 之后 `load()` 还是旧表。
-    ///
-    /// 防的是什么：Space 表与三个 JSON 文件的对称性（§2.5 第 6 条第二段）。没有回滚，
-    /// `load()` 在第一次失败之后就回 `T2`，`mutateSpaceTable` 的 `guard table != before`
-    /// （`PhiSyncEngine.swift`）从此永久早退——`save` 根本不会被再调用一次。
+    /// CASE 2a.8: load returns the old table after save returns false. Preserve
+    /// symmetry with the three JSON stores (§2.5 rule 6, paragraph 2). Without rollback,
+    /// load returns T2 after failure, and mutateSpaceTable's table != before guard
+    /// then exits forever without another save attempt.
     func testAFailedSpaceTableSaveReportsItAndLeavesLoadOnTheOldTable() throws {
         let (store, _, account) = makeAccountStateStoreWithAccount()
         var t1 = PhiSpaceSyncTable()
         t1.cursors["sync-1"] = published("sync-1")
-        XCTAssertTrue(store.save(t1), "一次成功的写回 true")
+        XCTAssertTrue(store.save(t1), "A successful write returns true")
         XCTAssertEqual(store.load(), t1)
 
         var t2 = t1
         t2.hasDrainedFullReplay = true
-        XCTAssertNotEqual(t1, t2, "前提：两张表确实不同")
+        XCTAssertNotEqual(t1, t2, "Precondition: the tables differ")
 
         try Self.setDefaultsDirectoryWritable(false, for: account)
-        XCTAssertFalse(store.save(t2), "写盘失败 ⇒ false")
-        XCTAssertEqual(store.load(), t1, "回滚可见：内存不领先磁盘")
+        XCTAssertFalse(store.save(t2), "A failed disk write returns false")
+        XCTAssertEqual(store.load(), t1, "Rollback keeps memory from getting ahead of disk")
 
         try Self.setDefaultsDirectoryWritable(true, for: account)
         XCTAssertTrue(store.save(t2))
@@ -581,6 +578,6 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(
             AccountPhiSpaceSyncStateStore(defaults: AccountUserDefaults(account: account)).load(),
             t2,
-            "同一个账户上新建的实例读盘，盘上确实是它")
+            "A fresh instance for the same account reads the persisted value")
     }
 }

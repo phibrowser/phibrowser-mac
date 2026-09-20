@@ -28,7 +28,7 @@ final class ProfilePairingModelTests: XCTestCase {
                        file: file, line: line)
     }
 
-    // MARK: - "指派给 X" on a remote row
+    // MARK: - Assign to X on a remote row
 
     /// The headline new option, in its simplest shape. The local's own picker is
     /// still `registerNew` (no name match), so the naive build emits BOTH a
@@ -142,8 +142,8 @@ final class ProfilePairingModelTests: XCTestCase {
 
     // MARK: - The gate's own shape
 
-    /// `locals == []`: every row is an unclaimed account profile, the assign
-    /// option disappears, and "在这台 Mac 上创建" is still submittable.
+    /// With no locals, every row is an unclaimed account Profile. Assignment disappears,
+    /// but Create on this Mac remains submittable.
     func testRemotesOnlySheetIsDecidableAndSubmittable() {
         let model = makeModel(locals: [], remotes: [home],
                               remoteChoices: ["R1": .createLocal])

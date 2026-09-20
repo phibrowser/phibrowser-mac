@@ -12,11 +12,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     final class MemorySpaceStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
-        /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`——「写盘失败之后内存与磁盘
-        /// 一起停在旧表上」的内存版（R-M3-4a-83）。用例自己置回 false 放行。
+        /// When true, save returns false without changing table, modeling memory and
+        /// disk retaining the old table after failure (R-M3-4a-83). Tests reset it to allow writes.
         var failNextSave = false
-        /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「轮末那一次
-        /// 派生标志的写失败」这种精确注入。失败那一次同样**不改** `table`。
+        /// Fail only save number N, counting saveCalls from 1, without changing table.
+        /// B-2 needs precise failures such as the derived-flag write at round end.
         var failSaveOnCallNumber: Int?
         private(set) var saveCalls = 0
         func load() -> PhiSpaceSyncTable { table }
@@ -33,9 +33,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     /// instead of sleeping. `now:` is already an init parameter.
     final class Clock {
         var nowMs: Int64 = 1_700_000_000_000
-        /// 每读一次就推进这么多毫秒（默认 0 = 冻结，与之前逐字同义）。只有预览期限那条
-        /// 用例需要它：预览的预算判在页边界上，让时钟随每次读推进是表达「网络很慢」最
-        /// 省事、也最确定的办法。
+        /// Advance this many milliseconds per clock read; default zero preserves the
+        /// frozen clock. Preview deadline tests use this deterministic slow-network model
+        /// because the preview checks its budget at page boundaries.
         var advancePerRead: Int64 = 0
 
         func read() -> Int64 {
@@ -47,7 +47,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private let key = SymmetricKey(size: .bits256)
-    /// CASE 2a.9 换掉的那个进程级闭包在用例之前的值，`tearDown` 里原样放回去。
+    /// The process-wide closure replaced by CASE 2a.9, restored unchanged in tearDown.
     private var previousLocalSpaceIdLookup: ((String) -> String?)?
 
     override func setUp() {
@@ -60,16 +60,16 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil; suiteName = nil
-        // CASE 2a.9 把 `PhiSpaceSyncState.shared` 的解析闭包换成一个计数器；`shared` 是
-        // 进程级单例，留着会污染后面每一条用例。**恢复**而不是清成 nil：hosted 测试里那个
-        // 单例可能已经被宿主 app 接上了真正的解析器。
+        // CASE 2a.9 installs a counting resolver on PhiSpaceSyncState.shared. Restore
+        // the previous resolver, not nil: this process-wide singleton may already have
+        // a real resolver installed by the host app, and leaving the fake pollutes later tests.
         PhiSpaceSyncState.shared.localSpaceIdLookup = previousLocalSpaceIdLookup
         previousLocalSpaceIdLookup = nil
         super.tearDown()
     }
 
-    /// CASE 2a.9 的计数盒子。`localSpaceIdLookup` 是一个 escaping 闭包，装在一个引用类型
-    /// 里比捕获一个局部 `var` 更不容易随并发检查的收紧而变味。
+    /// Reference box for CASE 2a.9's escaping localSpaceIdLookup counter, avoiding
+    /// mutable local captures that stricter concurrency checks could reject.
     final class LookupCounter {
         private(set) var calls = 0
         func bump() { calls += 1 }
@@ -123,12 +123,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
     }
 
-    /// M3-2b：游标按 syncUuid 键，本地行按本地 spaceId 键，两者由 `access` 上的
-    /// 映射表连起来。凡是带「身份」的 fixture 一律经这个辅助建，于是「这条 fixture
-    /// 到底用的哪个空间」在每一个用例里都是显式的。
-    ///
-    /// 排水位是写死的，所以**断言它的反面**的 fixture 不经这里，仍手写
-    /// `PhiSpaceSyncTable()`：drain / marker 用例断言 `hasDrainedFullReplay == false`。
+    /// M3-2b: cursors use syncUuid keys, local rows use spaceId, and access mappings
+    /// connect them. Build identity-bearing fixtures here so the Space is explicit
+    /// in every case. The drain flag is fixed here; tests of its false value use
+    /// PhiSpaceSyncTable directly, including drain/marker cases.
     private func makeSpaceTable(mappings: [String: String] = [:],
                                 access: FakePhiSpaceAccess? = nil) -> PhiSpaceSyncTable {
         access?.spaceMappings = mappings
@@ -619,19 +617,17 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertFalse(store.table.drainInProgress)
     }
 
-    /// ...and it must finish the drain by *replaying* it, not by continuing over the hole the
-    /// failure left. Under the page-by-page boundary (M3-4a B-2) page 1 lands u1 *on the spot*
-    /// and the marker only ever walks past pages that landed in full, so the gap argument of
-    /// old no longer applies; what still does is the drain rule (Task 2b 计划裁定 10): a later
-    /// round resuming from the advanced marker would reach `drained == true` and stamp
-    /// `hasDrainedFullReplay = true` while this device never walked the whole type in one
-    /// armed drain, and from then on *neither* disjunct in `applySpaceGate` can re-arm the
-    /// replay: `markerMovedWhileGateShut` is false (the gate was open the whole time) and
-    /// `hasDrainedFullReplay` is true — the guard the owned kinds read before publishing.
-    /// So the failure path keeps dropping the marker while `drainInProgress` is armed; the
-    /// drain restarts from scratch, `drainInProgress` stays true, and nothing in between may
-    /// declare it complete. (The incremental-round twin, where the marker stays on the last
-    /// landed page, is CASE B2-8(a) in `PhiSyncMarkerBoundaryTests`.)
+    /// Finish the drain by replaying, rather than continuing past the failure.
+    /// Under M3-4a B-2's page boundary, page 1 applies u1 immediately and the marker
+    /// passes only fully applied pages, so the old gap argument no longer applies.
+    /// Task 2b ruling 10 still requires one complete armed drain: resuming from the
+    /// advanced marker could mark hasDrainedFullReplay=true without traversing the
+    /// entire type. Neither applySpaceGate disjunct could then re-arm replay, since
+    /// markerMovedWhileGateShut=false and hasDrainedFullReplay=true. Owned kinds
+    /// read this guard before publishing.
+    /// Keep dropping the marker while drainInProgress is armed; restart from the
+    /// beginning and never declare completion between failed rounds. The incremental
+    /// variant retaining the last applied marker is CASE B2-8(a), PhiSyncMarkerBoundaryTests.
     func testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -747,10 +743,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(access.calls.contains(.rebind(spaceId: "LOCAL-1", toProfileId: "Profile 3")))
     }
 
-    /// §6.2 A0 / §3.6's "唯一的例外, 也是死映射的唯一自愈路径". The reverse
-    /// lookup resolves, but the local Chromium profile behind the mapping was
-    /// deleted, so every landing would throw on a profileId that no longer
-    /// exists and the entity would park forever with no self-heal path.
+    /// §6.2 A0 / §3.6's sole exception and only dead-mapping repair path. Reverse
+    /// lookup succeeds, but its local Chromium Profile was deleted. Otherwise every
+    /// application throws for a nonexistent profileId and parks the entity forever.
     func testADeadMappingIsDroppedAndTheProfileIsRebuiltNextRound() async throws {
         let access = FakePhiSpaceAccess()
         access.profileIdByUuid = ["uuid-a": "P-deleted"]   // the mapping is still there
@@ -810,20 +805,20 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         store.table.cursors["sync-1"] = seeded
 
         let client = FakePhiSyncClient()
-        var rebound = spaceEntity("sync-1", profileUuid: "uuid-新")
+        var rebound = spaceEntity("sync-1", profileUuid: "uuid-\u{65b0}")
         rebound.profileUuid.updatedAtMs = 500
         client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(rebound), version: 8)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertEqual(store.table.cursors["sync-1"]?.heldProfileUuid, "uuid-新")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.heldProfileUuid, "uuid-\u{65b0}")
         XCTAssertEqual(store.table.cursors["sync-1"]?.heldForLocalProfileId, "Default")
         XCTAssertTrue(spaceCommits(client).isEmpty, "a held binding never produces a commit")
 
         // §3.6 creates the profile on the next round. Driven directly here for
         // the same reason as the dead-mapping case above.
-        access.profileIdByUuid["uuid-新"] = "P-new"
-        access.uuidByProfileId["P-new"] = "uuid-新"
+        access.profileIdByUuid["uuid-\u{65b0}"] = "P-new"
+        access.uuidByProfileId["P-new"] = "uuid-\u{65b0}"
         access.knownLocalProfileIds = ["Default", "P-new"]
         await engine.pullOnce()
         XCTAssertTrue(access.calls.contains(.rebind(spaceId: "LOCAL-1", toProfileId: "P-new")))
@@ -841,8 +836,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     /// re-entered through the re-park.
     func testAReParkedHeldBaselineDoesNotOverwriteWhatTheServerHolds() async throws {
         let access = FakePhiSpaceAccess()
-        access.uuidByProfileId = ["Default": "uuid-a", "P-new": "uuid-新"]
-        access.profileIdByUuid = ["uuid-a": "Default", "uuid-新": "P-new"]
+        access.uuidByProfileId = ["Default": "uuid-a", "P-new": "uuid-\u{65b0}"]
+        access.profileIdByUuid = ["uuid-a": "Default", "uuid-\u{65b0}": "P-new"]
         access.knownLocalProfileIds = ["Default", "P-new"]
         access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work2",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
@@ -860,16 +855,16 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         // Nothing is seeded on the wire on purpose: the re-park must be the only
         // entity the apply loop sees this round, or an arrival for the same uuid
         // would write `server` itself and mask the bug under test.
-        var baseline = spaceEntity("sync-1", name: "Work2", profileUuid: "uuid-新")
+        var baseline = spaceEntity("sync-1", name: "Work2", profileUuid: "uuid-\u{65b0}")
         baseline.name.updatedAtMs = 800
         baseline.profileUuid.updatedAtMs = 900
-        var rebound = spaceEntity("sync-1", name: "Work", profileUuid: "uuid-新")
+        var rebound = spaceEntity("sync-1", name: "Work", profileUuid: "uuid-\u{65b0}")
         rebound.profileUuid.updatedAtMs = 900
         var seeded = PhiSpaceCursor()
         seeded.entityId = "srv-1"; seeded.version = 9
         seeded.reconciled = try baseline.serializedData()
         seeded.server = try rebound.serializedData()
-        seeded.heldProfileUuid = "uuid-新"
+        seeded.heldProfileUuid = "uuid-\u{65b0}"
         seeded.heldForLocalProfileId = "Default"
         store.table.cursors["sync-1"] = seeded
 
@@ -894,7 +889,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let sent = try Phi_PhiSpaceEntity(serializedBytes:
             try PhiEntityCodec.decrypt(commits[0].ciphertext!, key: key).space.serializedData())
         XCTAssertEqual(sent.name.stringValue, "Work2")
-        XCTAssertEqual(sent.profileUuid.stringValue, "uuid-新")
+        XCTAssertEqual(sent.profileUuid.stringValue, "uuid-\u{65b0}")
     }
 
     /// §5.6's invariant, and the reason every write in `PhiSpaceLocalAccess` throws.
@@ -976,10 +971,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(commits[0].baseVersion, 9)
     }
 
-    /// §5.2 改动三, in the direction the settings path used to swallow: the
-    /// Space section must publish even when the account's SETTINGS entity is
-    /// unreadable. `maySettingsPublish == false` and `pushSettings`'s early
-    /// returns are statements about one settings row, not about Spaces.
+    /// §5.2 change 3 covers the direction formerly swallowed by settings: Space
+    /// publication proceeds even when the account settings entity is unreadable.
+    /// maySettingsPublish=false and pushSettings early returns concern one settings
+    /// row, not Spaces.
     func testAnUnreadableSettingsEntityDoesNotStopSpaceCommits() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1572,9 +1567,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - Retention sweep (§9.2)
 
-    /// 7b. 30 天清理：`purge` 收到**本地** id、映射行被删、游标仍在且带 `purgedAtMs`。
-    /// （这条就是原来的 `testTheSweepCascadesTheDataAndKeepsThePermanentTombstone`，
-    /// 改键之后连同映射生命周期一起断言；`reconciled` 那一条原样保留。）
+    /// 7b. Thirty-day cleanup passes local id to purge, removes the mapping, and
+    /// retains the cursor with purgedAtMs. This extends
+    /// testTheSweepCascadesTheDataAndKeepsThePermanentTombstone to the mapping lifecycle
+    /// after rekeying, preserving its reconciled assertion.
     func testTheRetentionPurgeUsesTheLocalIdThenDropsTheMappingAndKeepsTheCursor() async throws {
         let clock = Clock()
         let access = FakePhiSpaceAccess()
@@ -1598,17 +1594,17 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(access.calls.contains(.purge("LOCAL-1")))
         XCTAssertFalse(access.currentSpaces().contains { $0.spaceId == "LOCAL-1" })
         XCTAssertNil(access.spaceMappings["LOCAL-1"])
-        let cursor = try XCTUnwrap(store.table.cursors["sync-1"], "游标是永久 tombstone 记录")
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"], "The cursor is the permanent tombstone record")
         XCTAssertNotNil(cursor.purgedAtMs)
         XCTAssertNotNil(cursor.deletedAtMs)
-        XCTAssertNil(cursor.reconciled, "`purgeExpired` 一并清掉基线")
+        XCTAssertNil(cursor.reconciled, "purgeExpired also clears the baseline")
     }
 
-    /// 7d. 级联失败 ⇒ 映射**不许**被删。删了就等于让下一趟 `pushSpaces` 拿这条还在
-    /// 盘上的本地行走懒铸造（`ensureMapped`）铸一个**新** syncUuid，把一条刚被清理掉
-    /// 的 Space 以新身份重新发布出去；而 Phase 1 已经盖上 `purgedAtMs`，清理不会再来
-    /// 第二次，复活是永久的。D6 之前同一处 `try?` 无害：游标那时按本地 id 键，
-    /// `snapshot` 的 `cursor.deletedAtMs == nil` 过滤永远排除它。
+    /// 7d. Failed cascade must retain the mapping. Removing it lets pushSpaces
+    /// lazily mint a new syncUuid for the surviving disk row, permanently republishing
+    /// the purged Space: phase 1 already set purgedAtMs, so cleanup never retries.
+    /// Before D6, the same try? was harmless because local-id-keyed cursors let
+    /// snapshot's deletedAtMs filter always exclude the row.
     func testAFailedRetentionPurgeKeepsTheMappingSoTheRowCannotComeBack() async throws {
         struct Boom: Error {}
         let clock = Clock()
@@ -1632,10 +1628,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.runRetentionSweep()
 
         XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1",
-                       "purge 失败 ⇒ 映射留着，syncUuid 仍指向那条带 deletedAtMs 的游标")
-        await engine.pushLocalSettings()   // 引擎里唯一的公开 push 入口
+                       "Failed purge retains the mapping to the cursor with deletedAtMs")
+        await engine.pushLocalSettings()   // The engine's only public push entry point
         XCTAssertTrue(spaceCommits(client).isEmpty,
-                      "那条还在盘上的本地行不许以任何身份被重新发布")
+                      "The surviving disk row must not be republished under any identity")
     }
 
     // MARK: - Delete origin (§9.1)
@@ -1685,19 +1681,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                       || store.table.cursors["sync-1"]!.deletedAtMs != nil)
     }
 
-    /// §5.3's single writer, in the shape the spec names verbatim: "一轮 snapshot
-    /// 读表 → 用户删除一个 Space → 引擎用手里的旧快照 writeSpaceTable"。
-    ///
-    /// `pushSpaces` loads the table before its batch loop and writes it back
-    /// after `client.commit`, so a delete that ran *inside* that window on the
-    /// reentrant actor would be erased by the tail write -- permanently and
-    /// silently: no `pendingDelete` means the uuid never enters
-    /// `spaceCommitEntries`' union again, so no tombstone is ever sent and, with
-    /// no `deletedAtMs` either, the next delivery of that entity re-creates the
-    /// Space the user deleted. Routing the intent through `roundQueue` is what
-    /// makes that impossible, and both assertions below are about the queue: the
-    /// intent must not have landed while the round is parked, and it must have
-    /// landed once the round is done.
+    /// §5.3 single writer: a round reads a snapshot, the user deletes a Space, then
+    /// the engine writes its stale table. pushSpaces loads before its batch loop
+    /// and saves after commit, so a reentrant deletion in between would be silently
+    /// and permanently erased. Without pendingDelete, the UUID never enters the
+    /// commit union; without deletedAtMs, later delivery recreates the deleted Space.
+    /// Route intent through roundQueue: assert it has not applied while the round
+    /// is parked and has applied when the round completes.
     func testADeleteRaisedWhileACommitIsInFlightIsNotOverwrittenByTheRoundsTail() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1780,9 +1770,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                        "the 30-day window runs from the delete, never from an echo of it")
     }
 
-    // MARK: - D6：入站身份翻译（§3.4）
+    // MARK: - D6: Inbound identity translation (§3.4)
 
-    /// 1. 账户里有、本机没有的 Space：先写映射、再建行（R-M3-4a-87），本地 id 由引擎预铸。
+    /// 1. A remote-only Space writes its mapping before creating the row (R-M3-4a-87),
+    /// using a local id preminted by the engine.
     func testAnAccountSpaceWithNoLocalRowLandsUnderAFreshLocalIdAndThenMaps() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1797,14 +1788,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
 
         let created = try XCTUnwrap(access.spaces.first)
-        XCTAssertNotEqual(created.spaceId, "sync-new", "线上 uuid 绝不当本地行 id 用")
+        XCTAssertNotEqual(created.spaceId, "sync-new", "Never use a wire UUID as a local row id")
         XCTAssertEqual(access.spaceMappings[created.spaceId], "sync-new")
         XCTAssertNotNil(store.table.cursors["sync-new"]?.reconciled)
     }
 
-    /// 1b. `create` 抛错的那一版：映射**已经写下**、行**未建**（映射先行，R-M3-4a-87）、
-    /// 基线**没有**被写、实体留在 `pendingApply`。盘上留下的正是一条悬空映射 ⇒ 下一轮 A0
-    /// 死映射自愈把它丢掉、再铸一次干净落地（CASE B2-17，`PhiSyncMarkerBoundaryTests`）。
+    /// 1b. If create throws, the mapping is already persisted but no row or baseline
+    /// exists, and the entity remains pendingApply (R-M3-4a-87). Next round's A0
+    /// dead-mapping repair drops that dangling mapping and retries clean application
+    /// (CASE B2-17, PhiSyncMarkerBoundaryTests).
     func testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1819,14 +1811,14 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(access.spaceMappings.count, 1, "映射已写（悬空，待自愈）")
+        XCTAssertEqual(access.spaceMappings.count, 1, "The dangling mapping is persisted and awaits repair")
         XCTAssertEqual(access.spaceMappings.values.first, "sync-new")
-        XCTAssertTrue(access.spaces.isEmpty, "行未建")
+        XCTAssertTrue(access.spaces.isEmpty, "No row was created")
         XCTAssertNil(store.table.cursors["sync-new"]?.reconciled)
         XCTAssertNotNil(store.table.cursors["sync-new"]?.pendingApply)
     }
 
-    /// 2. 已映射的 Space：`create` 零调用，三个写方法收到的都是**本地** id。
+    /// 2. Mapped Space: no create calls; all three write APIs receive local ids.
     func testAMappedSpaceUpdatesTheLocalRowAndNeverCreates() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1846,8 +1838,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(access.spaces.first?.name, "New")
     }
 
-    /// 3. 反查落空 ⇒ 新建而不是复活：本机有一个同名 Space（无映射）时，引擎**不**去
-    /// 认领它——认领是向导的职责，引擎不猜。
+    /// 3. Failed reverse lookup creates a new Space without claiming an unmapped
+    /// local namesake. Claiming belongs to the wizard; the engine must not guess.
     func testAnUnmappedSameNamedLocalSpaceIsNeverAdoptedByTheEngine() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1862,13 +1854,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(access.spaces.count, 2, "同名不是身份")
-        // 本轮尾部的 push 会给这条从未上过账户的本地行**懒铸**一个自己的 uuid
-        // （R-D6-7），所以判据是「它没有被账户里那条实体认领」，不是「它没有映射」。
+        XCTAssertEqual(access.spaces.count, 2, "Matching names do not establish identity")
+        // The round-end push lazily mints this unpublished local row's own UUID
+        // (R-D6-7). Assert it was not claimed by the remote entity, rather than that it has no mapping.
         XCTAssertNotEqual(access.spaceMappings["LOCAL-1"], "sync-x")
     }
 
-    /// 4. 两个本地 Space 永远不会映射到同一个 syncUuid：预置一条，再落地同一个 uuid。
+    /// 4. Two local Spaces never map to one syncUuid: seed a mapping and apply that UUID again.
     func testLandingAnAlreadyMappedUuidTakesTheUpdatePathAndAddsNoSecondMapping() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1887,13 +1879,14 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(access.spaces.count, 1)
     }
 
-    /// 4b. 死映射自愈：反查命中但本地行不在 ⇒ 丢映射、按无映射处理、当新 Space 落地。
+    /// 4b. Dead-mapping repair: reverse lookup without a local row drops the mapping
+    /// and applies the entity as a new, unmapped Space.
     func testADeadSpaceMappingIsDroppedAndTheEntityLandsAsANewSpace() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
-        access.spaces = []                       // 本地行没了
-        access.knownLocalSpaceIds = []           // `getAllSpaces()` 里也没有
+        access.spaces = []                       // The local row is gone
+        access.knownLocalSpaceIds = []           // It is also absent from getAllSpaces()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(mappings: ["LOCAL-GONE": "sync-1"], access: access)
         let client = FakePhiSyncClient()
@@ -1909,9 +1902,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNil(access.spaceMappings["LOCAL-GONE"])
     }
 
-    /// 5. ranks 的边界翻译：`applyOrder` 收到的必须是一串**本地** id。
-    ///    把翻译去掉的那一版是**静默 no-op**，所以这条用例的反证在
-    ///    `SyncableSpacesTests.testPlannedOrderIsASilentNoOpWhenHandedSyncUuidKeys`。
+    /// 5. Rank translation: applyOrder must receive local ids. Omitting translation
+    /// is a silent no-op, demonstrated by
+    /// SyncableSpacesTests.testPlannedOrderIsASilentNoOpWhenHandedSyncUuidKeys.
     func testTheAccountWideReorderIsAppliedWithLocalIds() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1921,7 +1914,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1", "LOCAL-2": "sync-2"],
                                      access: access)
         let client = FakePhiSyncClient()
-        // "F" < "V"：账户里 sync-2 排在 sync-1 前面。
+        // F precedes V: account sync-2 sorts before sync-1.
         client.seed(tagHash: spaceHash("sync-1"),
                     ciphertext: try ciphertext(spaceEntity("sync-1", name: "A")), version: 3)
         client.seed(tagHash: spaceHash("sync-2"),
@@ -1934,7 +1927,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(order, ["LOCAL-2", "LOCAL-1"])
     }
 
-    /// 6a. tombstone：syncUuid 有本地行 ⇒ `hide` 收到**本地** id。
+    /// 6a. A tombstone with a local row calls hide using the local id.
     func testARemoteTombstoneHidesTheLocalRowWhenOneExists() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1960,12 +1953,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(cursor.hidden)
         XCTAssertNotNil(cursor.deletedAtMs)
         XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1",
-                       "远端软删**保留**映射：它是 30 天里「这一行属于账户的哪条实体」的唯一记录")
+                       "Remote soft deletion retains the mapping as the sole account-identity record for 30 days")
     }
 
-    /// 6b. syncUuid **没有**本地行 ⇒ `hide` 零调用，游标**照样**写 `hidden` +
-    ///     `deletedAtMs`：账户里那条确实被删了，这台机器只是本来就没有它，游标必须
-    ///     记住，否则同一条实体的 create 重放会把它复活。
+    /// 6b. Without a local row, skip hide but still record hidden and deletedAtMs.
+    /// The account entity was deleted even if this device never had it; the cursor
+    /// must remember that or replaying a create would resurrect it.
     func testARemoteTombstoneWithNoLocalRowStillWritesTheCursorGuard() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1986,12 +1979,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(access.calls.filter { if case .hide = $0 { return true }; return false }.isEmpty)
         let cursor = try XCTUnwrap(store.table.cursors["sync-orphan"])
         XCTAssertTrue(cursor.hidden)
-        XCTAssertNotNil(cursor.deletedAtMs, "防复活守卫读的就是它")
+        XCTAssertNotNil(cursor.deletedAtMs, "The resurrection guard reads deletedAtMs")
     }
 
     func testTheTagIndexIsSeededFromTheMappingTableSoAnUncommittedSpaceCanBeTombstoned() async throws {
-        // 一个刚被向导映射、还没 commit 过的 Space（有映射行、没有游标）的 tombstone
-        // 必须能被识别。
+        // Recognize a tombstone for a just-paired Space that has a mapping but no cursor or prior commit.
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -2009,15 +2001,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors["sync-1"]?.deletedAtMs)
     }
 
-    /// 7a. 本地删除 → tombstone `.applied` ⇒ **映射行被删、游标留下**（R-D6-10）。
+    /// 7a. Accepted local-deletion tombstone removes the mapping but retains the cursor (R-D6-10).
     func testALocalDeleteDropsTheMappingWhenItsTombstoneIsAccepted() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
-        // 本地行下面会从 `spaces` 里删掉，但映射不是死映射：否则 Task 3 的自愈
-        // （`applySpaces` 的 `isKnownLocalSpace` 分支）会抢先删掉映射，本用例就
-        // 测不到 Step 4 的那一段。
+        // Remove the local row from spaces below while keeping the mapping known.
+        // Otherwise applySpaces' isKnownLocalSpace repair deletes it first and this case
+        // never exercises step 4.
         access.knownLocalSpaceIds = ["LOCAL-1"]
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
@@ -2032,24 +2024,24 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                     ciphertext: try ciphertext(spaceEntity("sync-1")), version: 4, entityId: "srv-1")
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        // 先跑一轮，让共享 marker 越过这条实体：下一轮 push 的初始 pull 就不会把它
-        // 重放回来，本地行也不会被重新落地。
+        // Run a round first to advance the shared marker past the entity, preventing
+        // the next push's initial pull from replaying it and recreating the local row.
         await engine.pullOnce()
 
-        access.spaces = []                                   // 本地行已经删了
-        await engine.recordLocalDeletion(spaceId: "LOCAL-1") // 门面收的是**本地** id
-        await engine.handleLocalSpacesChange()               // 一轮 push：tombstone 发出并被接受
+        access.spaces = []                                   // The local row is already deleted
+        await engine.recordLocalDeletion(spaceId: "LOCAL-1") // The facade accepts a local id
+        await engine.handleLocalSpacesChange()               // One push sends and accepts the tombstone
 
         XCTAssertTrue(spaceCommits(client).contains { $0.deleted })
         XCTAssertTrue(access.calls.filter { if case .create = $0 { return true }; return false }.isEmpty,
-                      "映射是被 `.applied` 的 tombstone 删掉的，不是被死映射自愈顺手删掉的")
-        XCTAssertNil(access.spaceMappings["LOCAL-1"], "映射行随 `.applied` 一起删")
+                      "The accepted tombstone removes the mapping, not dead-mapping repair")
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "The mapping is removed when the tombstone is applied")
         let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
-        XCTAssertNotNil(cursor.deletedAtMs, "游标留下：永久 tombstone 记录")
+        XCTAssertNotNil(cursor.deletedAtMs, "The cursor remains as a permanent tombstone record")
         XCTAssertFalse(cursor.pendingDelete)
     }
 
-    /// 7c. 清理之后重放同一条 tombstone 是 no-op，snapshot 也不复活该 uuid。
+    /// 7c. Replaying the tombstone after cleanup is a no-op; snapshot cannot resurrect its UUID.
     func testAPurgedUuidIsNeverResurrected() async throws {
         let clock = Clock()
         let access = FakePhiSpaceAccess()
@@ -2071,12 +2063,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertTrue(access.spaces.isEmpty, "软删过的 uuid 不会被一次 create 重放复活")
+        XCTAssertTrue(access.spaces.isEmpty, "Create replay cannot resurrect a soft-deleted UUID")
         XCTAssertTrue(spaceCommits(client).isEmpty)
     }
 
-    /// 8. `recordLocalDeletion` 的边界翻译：门面传本地 id；无映射 ⇒ **no-op**
-    ///    （不建游标、不发 commit）。
+    /// 8. recordLocalDeletion receives local id at the boundary. Without a mapping,
+    /// it is a no-op: no cursor creation and no commit.
     func testRecordLocalDeletionTranslatesTheLocalIdAndNoOpsWithNoMapping() async throws {
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0),
@@ -2093,11 +2085,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.recordLocalDeletion(spaceId: "LOCAL-1")
         XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete)
 
-        await engine.recordLocalDeletion(spaceId: "LOCAL-2")   // 从来没发布过
-        XCTAssertEqual(store.table.cursors.count, 1, "无映射 = 无 tombstone 可发，不建游标")
+        await engine.recordLocalDeletion(spaceId: "LOCAL-2")   // Never published
+        XCTAssertEqual(store.table.cursors.count, 1, "Without a mapping there is no tombstone to send or cursor to create")
     }
 
-    /// 9. 懒铸造（R-D6-7）：向导之后本机新建的 Space 恰好铸一次，第二轮不再铸。
+    /// 9. Lazy minting (R-D6-7): a Space created locally after pairing mints once, never again next round.
     func testANewLocalSpaceIsMintedExactlyOnceAndThenPublished() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -2116,19 +2108,20 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
         await engine.pullOnce()
         XCTAssertEqual(access.calls.filter { $0 == .ensureMapped("LOCAL-NEW") }.count, 1,
-                       "第二轮不再铸——`ensureMapped` 命中既有映射就直接返回")
+                       "The second round reuses the mapping through ensureMapped")
     }
 
-    /// 10. `formatVersion` 重置后的自愈（§3.6）：空表 + 非 nil marker ⇒ 门开边沿丢
-    ///     marker、重放整类型、`drainInProgress` 置真、回放收尾前一条 commit 都不发；
-    ///     `hadRecords == false` 所以保护② **不**同时触发（只回放一次，不是两次）。
+    /// 10. Repair after formatVersion reset (§3.6): an empty table with a marker
+    /// drops the marker on the gate-open edge, replays the whole type, arms
+    /// drainInProgress, and sends no commits until drain completion. hadRecords=false
+    /// prevents guard ② from triggering a second replay.
     func testAnEmptyTableAfterTheFormatCutReplaysExactlyOnce() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
-        // 硬切之后的盘上状态：空表（`hadRecords == false`、`hasDrainedFullReplay ==
-        // false`）+ 一个上个版本留下的 marker。
+        // Post-reset disk state: empty table with hadRecords=false and
+        // hasDrainedFullReplay=false, plus the previous version's marker.
         defaults.set(Data([0xAB]), forKey: PhiSyncEngine.markerStateKey)
         let store = MemorySpaceStore()
         store.table = PhiSpaceSyncTable()
@@ -2139,10 +2132,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
         await engine.setSpaceSyncEnabled(true)
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
-                     "门开边沿丢 marker 并重放整个 data type")
+                     "Opening the gate drops the marker and replays the entire type")
         XCTAssertTrue(store.table.drainInProgress)
         XCTAssertFalse(store.table.didReplayForEmptyTable,
-                       "`hadRecords == false` ⇒ 保护② 不参与，只回放一次")
+                       "hadRecords=false excludes guard ②, so replay happens once")
 
         await engine.pullOnce()
         XCTAssertTrue(store.table.hasDrainedFullReplay)
@@ -2150,9 +2143,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(client.getUpdatesCalls.first?.marker, nil)
     }
 
-    // MARK: - 预览（§4）
+    // MARK: - Preview (§4)
 
-    /// 11. 预览什么都不写。
+    /// 11. Preview writes nothing.
     func testThePreviewPersistsNothingAtAll() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -2161,7 +2154,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         client.seed(tagHash: spaceHash("sync-1"),
                     ciphertext: try ciphertext(spaceEntity("sync-1", name: "Work")), version: 3)
         let engine = makeEngine(access: access, store: store, client: client)
-        // 门**关着**：预览是唯一一条允许在门关着时执行的 Space 形状的读。
+        // Keep the gate closed: preview is the only Space-shaped read permitted in this state.
         defaults.set(Data([0xAB]), forKey: PhiSyncEngine.markerStateKey)
         let tableBefore = store.table
 
@@ -2170,21 +2163,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(summaries.map(\.syncUuid), ["sync-1"])
 
         XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data([0xAB]),
-                       "marker 一个字节都不动")
+                       "The marker remains byte-for-byte unchanged")
         XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey))
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.versionStateKey))
-        XCTAssertEqual(store.table, tableBefore, "Space 表 Equatable 意义上完全未变")
-        XCTAssertTrue(access.calls.isEmpty, "`PhiSpaceLocalAccess` 零调用")
-        XCTAssertTrue(client.commits.isEmpty, "零 commit")
+        XCTAssertEqual(store.table, tableBefore, "The Space table remains equal in every field")
+        XCTAssertTrue(access.calls.isEmpty, "No PhiSpaceLocalAccess calls")
+        XCTAssertTrue(client.commits.isEmpty, "No commits")
 
-        // 紧接着一次正常 pull 仍从**原来的** marker 出发。
+        // The next normal pull still starts from the original marker.
         await engine.setSpaceSyncEnabled(false)
         await engine.pullOnce()
         XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data([0xAB]))
     }
 
-    /// 12. 预览排在同一条 round 队列上：一次设置 pull 停在 `getUpdates` 上时，预览的
-    ///     第一个 `getUpdates` 严格在那次 pull 完成之后才发出。
+    /// 12. Preview uses the same round queue. If a settings pull blocks in getUpdates,
+    /// preview's first getUpdates begins only after that pull completes.
     func testThePreviewRunsOnTheRoundQueueAndNeverInterleaves() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -2197,49 +2190,50 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
 
         let pull = Task { await engine.pullOnce() }
-        await arrived.wait()                       // 一轮 pull 已经停在 getUpdates 里
+        await arrived.wait()                       // The pull round is blocked in getUpdates
         let preview = Task { await engine.previewAccountSpaces() }
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(client.getUpdatesCalls.count, 1, "预览没有插进去")
+        XCTAssertEqual(client.getUpdatesCalls.count, 1, "Preview did not interleave with the pull")
         await release.open()
         _ = await pull.value
         _ = await preview.value
         XCTAssertGreaterThan(client.getUpdatesCalls.count, 1)
     }
 
-    /// §4.5 的期限判在**轮体里**，不是只判在向导里。向导那一侧取消不掉这一轮
-    /// （`serialized(_:)` 把它放进一个非结构化 `Task {}`），所以没有这条守卫，一次抖动
-    /// 的网络会让预览按「`previewMaxPages` 页 × 每请求 60 s」一直跑下去，并且一直占着
-    /// round 队列。**页预算从 64 抬到 400 之后这一条更重要，不是更不重要**：真正封顶
-    /// 一次预览的是期限。
+    /// Enforce §4.5's deadline inside the round, not only in the wizard. serialized
+    /// uses an unstructured Task that wizard cancellation cannot stop. Without this
+    /// guard, slow networking occupies the queue for previewMaxPages times 60 seconds
+    /// per request. Raising the page budget from 64 to 400 makes the actual elapsed-time
+    /// cap more essential.
     func testThePreviewStopsPagingOnceItsOwnDeadlineHasPassed() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.pageBudgetExhaustsAfter = 1_000     // 永远 changesRemaining == true
+        client.pageBudgetExhaustsAfter = 1_000     // Always report changesRemaining=true
         client.seed(tagHash: spaceHash("sync-1"),
                     ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
         let clock = Clock()
-        clock.advancePerRead = 50_000              // 每读一次推进 50 s
+        clock.advancePerRead = 50_000              // Advance 50 seconds per clock read
         let engine = makeEngine(access: access, store: store, client: client, clock: clock)
 
         let result = await engine.previewAccountSpaces()
         guard case .failure(let error) = result else { return XCTFail("expected failure") }
-        XCTAssertEqual(error, .timedOut, "`.truncated` 是页预算用尽，期限是另一回事")
-        // 120 s / 50 s ⇒ 两页之后就超了；断言留一页余量，免得多一次 `now()` 读取就红。
+        XCTAssertEqual(error, .timedOut, "truncated means page-budget exhaustion; timeout is distinct")
+        // 120/50 seconds exceeds the deadline after two pages; allow one extra page
+        // to avoid failing merely because another now() read was added.
         XCTAssertGreaterThan(client.getUpdatesCalls.count, 0)
         XCTAssertLessThanOrEqual(client.getUpdatesCalls.count, 3,
-                                 "期限必须远在 400 页的页预算之前把分页停下来")
+                                 "The deadline must stop pagination well before the 400-page budget")
     }
 
-    /// 13. 页预算用尽 ⇒ `.truncated`，**没有部分结果**。
+    /// 13. Exhausting the page budget returns truncated, without partial results.
     func testAnExhaustedPageBudgetReturnsTruncatedWithNoPartialResult() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.pageBudgetExhaustsAfter = 1_000     // 永远 changesRemaining == true
+        client.pageBudgetExhaustsAfter = 1_000     // Always report changesRemaining=true
         client.seed(tagHash: spaceHash("sync-1"),
                     ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
         let engine = makeEngine(access: access, store: store, client: client)
@@ -2249,23 +2243,22 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(error, .truncated)
     }
 
-    /// 14. 过滤：设置实体 / tombstone / 解不开的实体 / 两种 agent 特征 /
-    ///     `spaceUuid == "default-space"` 各一条都不出现，`unreadableTagHashes` 未被写。
-    ///     **这里不断言 incognito**：§3.4 删掉了 `refuses` 里的 uuid 判据（Task 3），
-    ///     一条「incognito 形状」的载荷本来就过得去。
+    /// 14. Filter settings, tombstones, undecryptable entities, both agent signatures,
+    /// and default-space without writing unreadableTagHashes. Do not assert incognito:
+    /// §3.4 removed refuses' UUID criterion in Task 3, so incognito-shaped payloads can pass.
     func testThePreviewFiltersSettingsTombstonesUnreadablesAgentsAndTheDefaultSpace() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.seed(ciphertext: Data([0x01]), version: 2)                        // 设置实体
+        client.seed(ciphertext: Data([0x01]), version: 2)                        // Settings entity
         client.seed(tagHash: spaceHash("sync-dead"), ciphertext: Data(), version: 3,
                     deleted: true)                                               // tombstone
-        client.seed(tagHash: "garbage-hash", ciphertext: Data([0x09]), version: 3) // 解不开
+        client.seed(tagHash: "garbage-hash", ciphertext: Data([0x09]), version: 3) // Undecryptable
         client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid),
                     ciphertext: try ciphertext(spaceEntity(SyncableSpaces.defaultSpaceUuid)),
-                    version: 3)                                                  // 默认 Space
-        // 两条 agent 特征（值与 `SyncableSpacesTests` 里钉住的那对完全一致）。
+                    version: 3)                                                  // Default Space
+        // Both agent signatures exactly match the pair asserted in SyncableSpacesTests.
         func agentShaped(_ uuid: String, name: String, color: String) throws -> Data {
             var entity = spaceEntity(uuid, name: name)
             var icon = Phi_PhiSettingValue(); icon.updatedAtMs = 100; icon.stringValue = "emoji:1F916"
@@ -2288,12 +2281,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         guard case .success(let summaries) = result else { return XCTFail("expected success") }
         XCTAssertEqual(summaries.map(\.syncUuid), ["sync-ok"])
         XCTAssertFalse(summaries.contains { $0.isDefault },
-                       "`isDefault` 在返回值里恒为 false —— 默认 Space 整条被丢掉（§4.3 第 6 条）")
-        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty, "预览不写任何持久状态")
+                       "isDefault is always false because default Spaces are excluded (§4.3 rule 6)")
+        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty, "Preview writes no persistent state")
     }
 
-    /// 15. D7 要的三个字段**逐字**搬运，不做任何归一化。一次错误的归一化在界面上表现
-    ///     为「什么差异都算不出来」，没有任何其它信号。
+    /// 15. Copy D7's three fields exactly without normalization. Incorrect normalization
+    /// can silently hide every difference in the UI.
     func testThePreviewCarriesTheThemeAndOpacityEncodingsVerbatim() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -2315,25 +2308,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         }
         XCTAssertEqual(summary.themeId, "coral")
         XCTAssertEqual(summary.overlayOpacityLightMilli, 850)
-        XCTAssertEqual(summary.overlayOpacityDarkMilli, -1, "-1 哨兵原样带出，不换成 nil、不换成 0")
+        XCTAssertEqual(summary.overlayOpacityDarkMilli, -1, "Preserve the -1 sentinel without converting it to nil or zero")
         XCTAssertEqual(summary.profileUuid, "uuid-a")
     }
 
     // MARK: - CASE 2a.9 / 2a.10(a)（R-M3-4a-83 / R-M3-4a-16）
 
-    /// CASE 2a.9 — `writeSpaceTable` 回 `false` 时 `refreshCaches` **零调用**。
-    ///
-    /// 接缝：`refreshCaches` 对表里每一个 `hiddenSyncUuids` 成员调一次
-    /// `localSpaceIdLookup`，这是它唯一的外部可观测副作用（`hiddenSpaceIds` /
-    /// `hasDrainedFullReplay` 都是 `private(set)`，而断言一个异步 `Task` 的**缺席**天生弱）。
-    ///
-    /// 驱动用的是**门关着**那条路：`recordsGatedMarkerMoves` 为真时第一页推进 marker 就写
-    /// 一次 Space 表，于是这一轮里 `writeSpaceTable` 的调用次数是确定的 1。
-    ///
-    /// 防的是什么：R-M3-4a-83 的第二个出口——把 `Task { @MainActor in refreshCaches(…) }`
-    /// 留在 `save` 外面的实现，会让主线程缓存展示一份**没落盘**的表：`hiddenSpaceIds` 会把
-    /// 一个盘上还活着的 Space 从侧栏漏斗里滤掉，重启后它又回来。**正向对照是必需的**：
-    /// 没有它，一个把 `refreshCaches` 整条删掉的实现同样绿。
+    /// CASE 2a.9: refreshCaches is never called when writeSpaceTable returns false.
+    /// Observe localSpaceIdLookup, called once per hiddenSyncUuids member: it is
+    /// refreshCaches' only externally observable side effect, while cached properties
+    /// are private(set) and proving an async Task absent is weak.
+    /// Use the closed-gate path with recordsGatedMarkerMoves: advancing the first
+    /// page's marker writes the Space table exactly once. This checks R-M3-4a-83's
+    /// second boundary. Scheduling refreshCaches outside successful save would expose
+    /// unpersisted hiddenSpaceIds and hide a live Space until restart. Include the
+    /// positive control, or deleting refreshCaches altogether would also pass.
     func testAFailedSpaceTableWriteSkipsTheMainActorCacheRefresh() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
@@ -2352,15 +2341,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         PhiSpaceSyncState.shared.localSpaceIdLookup = { _ in counter.bump(); return nil }
         let drainedBefore = PhiSpaceSyncState.shared.hasDrainedFullReplay
 
-        // 门**关着**：不调 `setSpaceSyncEnabled(true)`。
+        // Keep the gate closed; do not enable Space sync.
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.pullOnce()
-        await Task.yield()   // 跨一次主 actor 跳，让那个 `Task { @MainActor … }` 有机会跑。
+        await Task.yield()   // Yield the main actor so the scheduled refresh task can run
 
-        XCTAssertEqual(store.saveCalls, 1, "写口被调用过一次，没有内部重试")
-        XCTAssertEqual(counter.calls, 0, "写失败 ⇒ 主线程缓存一次都不刷新")
+        XCTAssertEqual(store.saveCalls, 1, "One write attempt without internal retry")
+        XCTAssertEqual(counter.calls, 0, "A failed write never refreshes main-thread caches")
         XCTAssertEqual(PhiSpaceSyncState.shared.hasDrainedFullReplay, drainedBefore,
-                       "失败那一轮没有任何东西被推进主线程缓存")
+                       "The failed round advances no main-thread cache state")
 
         store.failNextSave = false
         client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "off",
@@ -2369,20 +2358,16 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
         await Task.yield()
 
-        XCTAssertEqual(store.saveCalls, 2, "第二轮真的又写了一次——回滚之后 guard 仍然正确")
-        XCTAssertGreaterThanOrEqual(counter.calls, 1, "正向对照：写成功 ⇒ 缓存照常刷新")
+        XCTAssertEqual(store.saveCalls, 2, "Rollback keeps the guard correct and permits a second write attempt")
+        XCTAssertGreaterThanOrEqual(counter.calls, 1, "Positive control: successful persistence refreshes caches")
     }
 
-    /// CASE 2a.10(a) — `spaceStore == nil` 的早退**不算失败**。
-    ///
-    /// 纯设置引擎（M3-1 形态）是 `spaceStore == nil` 的**正常形态**。把
-    /// `guard !isStopped, let spaceStore else { return true }` 写成 `return false` 的实现，
-    /// 会让它从 Task 2b 落地那一刻起再也不推 marker，设置同步整条死掉——所以这一条在 2a
-    /// 就要红，不能等到 2b。
-    ///
-    /// Bool 本身在本任务里还不可观测（引擎里两处返回值都被 `@discardableResult` 丢弃），
-    /// 能钉住的是它的两个前提：一轮设置同步逐字照旧跑完，并且**没有任何 Space store 调用**
-    /// 发生过（根本没有 store）。
+    /// CASE 2a.10(a): early return for nil spaceStore is not failure. A settings-only
+    /// M3-1 engine legitimately has none. Returning false from the nil-store guard
+    /// would stop marker advancement and settings sync when Task 2b lands, so this
+    /// regression must be covered already in 2a. The Bool is not yet observable
+    /// because both callers discard it; assert a normal completed settings round
+    /// and zero Space-store calls, since no store exists.
     func testASettingsOnlyEngineStillAdvancesItsMarkerWithNoSpaceStore() async throws {
         let client = FakePhiSyncClient()
         client.scriptedPages = [page([remoteSettingsEntity(key: "theme.dark", value: "on",
@@ -2396,8 +2381,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
 
         XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data("m1".utf8),
-                       "marker 照常推进")
+                       "The marker advances normally")
         XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey),
-                        "设置段照常落位")
+                        "Settings apply normally")
     }
 }

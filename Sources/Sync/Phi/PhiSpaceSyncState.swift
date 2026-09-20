@@ -33,13 +33,10 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// profile (§3.5 fallback A). Echoed back with `reconciled`'s own
     /// timestamp, never stamped `now`.
     var heldProfileUuid: String?
-    /// The LOCAL profile the hold above was taken against. §3.5: "本机之后主动
-    /// 换绑该 Space 时清掉它并按普通字段盖 `now`" -- without this the snapshot
-    /// cannot tell "the user has since rebound this Space locally" from "nothing
-    /// changed", because the `reconciled` baseline records the REMOTE value and
-    /// the local side has no baseline of its own. When this no longer equals the
-    /// row's `profileId`, the hold is stale and the local binding is published
-    /// normally.
+    /// Local Profile against which the hold was taken (§3.5). When the user rebinds this Space, clear the hold
+    /// and stamp the local binding normally with now. reconciled contains the remote value, so this field is
+    /// necessary to distinguish a subsequent local rebind from no change. A mismatch with current profileId
+    /// makes the hold stale.
     var heldForLocalProfileId: String?
     var pendingDelete = false
     /// Consecutive INVALID_MESSAGE rejections of this tombstone (§5.1).
@@ -47,8 +44,8 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// A remote tombstone identified by hash but not landed yet (import lock).
     var pendingTombstone = false
     var deletedAtMs: Int64?
-    /// 远端软删（§9.2）。D6 之后只剩这一种含义，且 `hidden ⇒ deletedAtMs != nil`
-    /// 是不变量（Task 2 的测试钉住它）。
+    /// Remote soft deletion (§9.2), the sole hidden meaning after D6. Invariant: hidden implies nonnil
+    /// deletedAtMs, pinned by Task 2 tests.
     var hidden = false
     /// Agent / incognito / excluded: recorded so it is not decrypted and
     /// refused again every round. Such a cursor has NO `entityId`, which is
@@ -59,40 +56,29 @@ struct PhiSpaceCursor: Codable, Equatable {
     var purgedAtMs: Int64?
 }
 
-/// 每个 **syncUuid** 一张游标（M3-2b §3.1，R-D6-8）。**键是账户级同步 uuid，不是
-/// 本地 spaceId**，三条理由缺一不可：
-///  1. 游标本来就会为没有本地行的 uuid 存在（被 §6.5 拒绝的 agent 实体只带
-///     `refusedAtMs`；清理过的 tombstone 游标在本地数据级联删除后仍永久保留）；
-///  2. tag hash 从 syncUuid 派生（`PhiSyncEntity.spaceClientTag`），tombstone 的
-///     身份反查只有这一条路；
-///  3. 防复活守卫必须在映射行被删之后继续有效。
-///
-/// 整张表在账户 plist 的 `sync.phiSpaces` 下，所以它按账户隔离，不需要进
-/// `PhiSyncEngine.stateKeys`。
+/// One cursor per account syncUuid, never local spaceId (M3-2b §3.1 / R-D6-8). Cursors can exist without rows
+/// (refused entities or retained tombstones); tag hashes derive from syncUuid for tombstone identity
+/// resolution; and resurrection guards must survive mapping deletion. Persist in account-scoped sync.phiSpaces
+/// plist, outside PhiSyncEngine.stateKeys.
 struct PhiSpaceSyncTable: Codable, Equatable {
-    /// M3-2 未发布，所以**不写迁移代码**：低于这个版本的表整张丢掉（§3.6）。
+    /// M3-2 was unreleased: discard lower-version tables without migration (§3.6).
     static let currentFormatVersion = 2
     var formatVersion: Int = currentFormatVersion
-    /// 按 **syncUuid** 键。
+    /// Keyed by account syncUuid.
     var cursors: [String: PhiSpaceCursor] = [:]
 
-    // MARK: - 共享 marker 派生状态（四种 kind 共用，单副本）
+    // MARK: - Shared marker-derived state (one copy across kinds)
     //
-    // 下面这一段字段描述的不是 Space，而是**这台机器与那一个共享 marker 的关系**。
-    // 一个 data type、一个 marker、一份 drain 状态：设置 / Space / 书签 / pin 四种 kind
-    // 骑在同一个 data type 上，所以任何一份 per-kind 的「我 drain 完了」都是谎言——drain
-    // 是整类型的。它们因此**只在这里有一份**，M3-4 加第五、第六种 kind 时仍然只有一份，
-    // 一条都不许复制进 per-kind 的游标文件（`PhiOwnedItemTable`，§3.5）里去。
+    // These fields describe this device's relation to the shared marker, not only Spaces. One datatype/marker
+    // has one drain state across settings, Spaces, bookmarks, pins and future kinds. Never duplicate it in
+    // per-kind PhiOwnedItemTable files (§3.5).
     //
-    // 集合是 12 个字段，spec §3.5 说的「十一项 marker 派生状态」不含 `spaceSectionEnabled`：
-    // 那一个是**门的持久化值**，不是从 marker 派生出来的。`PhiOwnedItemStateTests` 的
-    // CASE 3.12 按 12 个名字钉住整个集合——加第十三个字段的人必须先读完这一段。
+    // There are 12 fields: spec §3.5's eleven marker-derived values plus spaceSectionEnabled, a persisted gate
+    // value. CASE 3.12 in PhiOwnedItemStateTests pins their names; review this contract before adding more.
     //
-    // **往这张表上加字段的硬规则：新字段必须在下面那个显式 `init(from:)` 里用
-    // `decodeIfPresent(…) ?? <默认值>` 解**。合成的 `Decodable` 对一个非可选存储属性发的是
-    // `decode(_:forKey:)`，**属性的默认值一概不参与**：键缺席就抛 `keyNotFound`，于是每一台
-    // 已经装过上一版的机器整张表解不出来、被当成损坏丢掉（连带 `isStaleFormat` 误报「格式
-    // 偏低」并把用户推回配对向导）。`formatVersion` 拦不住这件事——加字段不改格式版本。
+    // New fields must use decodeIfPresent with defaults in explicit init(from:). Synthesized decoding ignores
+    // property defaults for missing nonoptional keys, invalidating older tables and potentially sending users
+    // back to pairing. Unchanged formatVersion does not prevent this.
     var drainInProgress = false
     var hasDrainedFullReplay = false
     var hadRecords = false
@@ -106,55 +92,40 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// commit any entry whose tag hash is in here (§5.5).
     var unreadableTagHashes: [String: Int64] = [:]
 
-    /// 这台机器**曾经**为该 kind 写下过一条带 `entityId` 的游标（§3.5，N2 / R-M3-3-13）。
-    /// 与 `hadRecords` 同一个角色，只是按 kind 分开；它们描述的仍然是这台机器与**共享
-    /// marker** 的关系，所以住在这张表里，per-kind 的文件里**没有**副本——「那个文件没了」
-    /// 这件事不可能由那个文件自己来记。
+    /// Whether this device ever persisted a nonempty entityId cursor for each kind (§3.5 / N2 / R-M3-3-13).
+    /// Set once and never clear. Store these outside the per-kind file whose loss they detect, as part of
+    /// shared-marker state. They distinguish missing/invalid/old/empty cursor files from never-published
+    /// kinds.
     ///
-    /// 第一次为该 kind 写下 `entityId` 非空的游标时置真，**此后不再改**。它是该 kind 游标
-    /// 文件缺失 / 解不开 / 版本偏低 / 读回来是空表时「这是一次丢失，不是从来没发布过」的
-    /// 唯一判据。判据**不能**写成「该 kind 名下还有带 `syncId` 的本地行」：pin 没有 `syncId`
-    /// 这一列，那条判据对 pin 恒为假，于是丢掉 `pins-cursors.json` 什么都不触发，下一轮
-    /// push 就把账户里每一条 pin 用 `baseVersion == 0` 的 create 盲写覆盖。
-    /// `urlrules` 的判据**同样绝不能**写成「本机还有带 `syncId` 的规则行」，方向与 pin 那条
-    /// 相反：R-M3-4a-23 让每一条活行都有 `syncId`，那条判据对规则**恒真**，于是一台从没发布过
-    /// 规则的机器每一轮都会重放整个 data type（spec §10）。
+    /// Do not infer this from local syncId rows: pins have no such column, hiding loss and permitting
+    /// version-0 blind overwrites. URL Rules always have syncId after insertion (R-M3-4a-23), so that
+    /// inference would force full replay every round even before publication (spec §10).
     var bookmarksHadRecords = false
     var pinsHadRecords = false
     var urlRulesHadRecords = false
 
-    /// 每个 kind 自己的一次性重放闸（A2）。**绝不复用上面那个 `didReplayForEmptyTable`**：
-    /// 那一个是永久闩，除了 `resetForNewStoreBirthday()` 之外任何东西都不重置它，而它的
-    /// 理由（一个所有实体都解不开的账户否则会每轮重放）与 kind 无关——Space 段先花掉它
-    /// 之后，书签或 pin 的第一次文件丢失就**一次重放都得不到**，而那正是 §3.5 这条规则要
-    /// 挡的灾难。
+    /// Independent per-kind one-time replay gates (A2), never reuse permanent didReplayForEmptyTable, which
+    /// resets only for a new store birthday. Otherwise Space could consume the only replay and leave
+    /// bookmark/pin loss unrecoverable.
     ///
-    /// 与 Space 侧不同的是它**可以重新武装**：文件丢失是一个有明确「我恢复了」边沿的事件，
-    /// 所以该 kind 的游标表重新拿到任何一条已发布游标时就复位，下一次文件丢失仍然有一次
-    /// 重放；Space 侧那个空表条件没有这种边沿，才必须永久闩住。
-    ///
-    /// 报损本身就是那道闸，不需要第二个标志（M2）：报损做的第一件事就是丢 marker、重新
-    /// 武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ① 读的正是
-    /// `hasDrainedFullReplay`。所以从报损那一刻起，该 kind 在重放收尾之前一条都发不出去。
-    /// `urlrules` 那一道与上面两道**互不相干**（各自一次性、各自复位）：书签先花掉自己那道之后，
-    /// 规则的第一次文件丢失照样拿得到一次重放；判据也绝不能改成「本机还有带 `syncId` 的规则
-    /// 行」——它对规则恒真（R-M3-4a-23，见 `urlRulesHadRecords` 上的说明）。
+    /// These gates rearm when a published cursor is restored: file-loss recovery has a clear edge, unlike the
+    /// Space empty-table condition. Reporting loss itself closes publication by dropping the marker, rearming
+    /// drainInProgress and clearing hasDrainedFullReplay; no second flag is needed (M2). URL Rules have their
+    /// own independent gate, never inferred from always-present local syncId rows (R-M3-4a-23).
     var bookmarksReplayedForEmptyTable = false
     var pinsReplayedForEmptyTable = false
     var urlRulesReplayedForEmptyTable = false
 
     // MARK: - Derived sets
 
-    /// `cursor.hidden` 的全集，**按 syncUuid**。D6 之后 hidden 只剩一种含义：远端
-    /// 软删（`hidden ⇒ deletedAtMs != nil` 是不变量）。翻回本地 id 是
-    /// `PhiSpaceSyncState.refreshCaches` 的事（§3.5）。
+    /// All hidden cursor syncUuids. After D6, hidden means remote soft deletion and implies deletedAtMs.
+    /// PhiSpaceSyncState.refreshCaches translates to local IDs (§3.5).
     var hiddenSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.hidden }.keys)
     }
 
-    /// 账户里**确实存在**这条实体的 syncUuid 全集（`entityId != nil`）。
-    /// `blocksProfileDeletion` 的第三条判据要的那半句（§3.5）：它跑在主 actor 上、
-    /// 手里没有表，所以这半句只能在这里算好推回去。
+    /// syncUuids actually present on the account (entityId != nil), precomputed for blocksProfileDeletion's
+    /// third predicate (§3.5), whose main-actor caller does not own the table.
     var publishedSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.entityId != nil }.keys)
     }
@@ -162,15 +133,13 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     // MARK: - Mutations (the engine runs these on its round queue; the facade
     // runs the same code directly only when no engine exists -- §5.3)
 
-    /// §9.1: mark ONLY a uuid that has actually been published to the account
-    /// and still belongs to it. The criterion is `entityId`, NOT "the table has
-    /// a cursor": agent / incognito entities refused by §6.5 own a cursor with
-    /// only `refusedAtMs`. Returns whether anything changed.
+    /// §9.1: mark only UUIDs actually published and still on the account, using entityId rather than mere
+    /// cursor presence; refused agent/incognito cursors may contain only refusedAtMs. Return whether state
+    /// changed.
     ///
-    /// D6：**参数是 syncUuid**（表按 syncUuid 键）。本地 id 在两条边界上翻译，
-    /// 两条都在这个文件之外：引擎的 `PhiSyncEngine.run(_:)` 的 `.recordLocalDeletion`
-    /// 分支，以及无引擎回退路径 `PhiSpaceSyncState.deliver(_:)`。翻不出来就是
-    /// 「从来没发布过」，两条边界都直接返回，不会走到这里。
+    /// D6: despite the parameter name, this takes syncUuid. Both engine recordLocalDeletion and fallback
+    /// PhiSpaceSyncState.deliver translate local IDs before calling; unmapped means never published and
+    /// returns early at those boundaries.
     @discardableResult
     mutating func recordLocalDeletion(spaceId: String) -> Bool {
         guard var cursor = cursors[spaceId],
@@ -230,8 +199,7 @@ struct PhiSpaceSyncTable: Codable, Equatable {
         referencedProfileUuids().contains(uuid)
     }
 
-    /// `load()` 的版本闸。`nil`（键不存在，或 `codableValue` 解码失败）与低版本走
-    /// 同一条路：一张空表。
+    /// load version gate: missing/undecodable data and older formats all become an empty table.
     static func loaded(from decoded: PhiSpaceSyncTable?) -> PhiSpaceSyncTable {
         guard let decoded, decoded.formatVersion >= currentFormatVersion else {
             return PhiSpaceSyncTable()
@@ -239,12 +207,9 @@ struct PhiSpaceSyncTable: Codable, Equatable {
         return decoded
     }
 
-    /// 判据定义在**原始值**上，不是在 `load()` 上。`AccountUserDefaults.codableValue`
-    /// 对「键不存在」与「解码失败」返回同一个 nil，而 `load()` 把两者一起塌成一张空
-    /// 表——于是「表是旧的」与「从来没有表」在 `load()` 之后不可区分，照那样实现会让
-    /// 每一台首次启动的机器都报「已丢弃」。
-    ///
-    /// **没有键 ⇒ false，什么都不写。**
+    /// Check raw data, not load output: codableValue merges missing-key and decoding failure into nil, then
+    /// load makes both empty. Testing that result would falsely report discard on every first launch. Missing
+    /// raw key returns false without writes.
     static func isStaleFormat(rawData: Data?) -> Bool {
         guard let rawData else { return false }
         guard let decoded = try? JSONDecoder().decode(PhiSpaceSyncTable.self, from: rawData) else {
@@ -254,19 +219,15 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     }
 }
 
-// `init(from:)` 在**扩展**里而不是在 struct 体内：在体内声明任何 init 都会掐掉合成的
-// `PhiSpaceSyncTable()`，而那个无参 init 是全仓库建空表的唯一写法。`encode(to:)` 与
-// `CodingKeys` 仍然由编译器合成，所以新增字段自动进编码侧，只有解码侧要手写一行。
+// Define init(from:) in an extension to preserve synthesized PhiSpaceSyncTable(), the repository's empty-table
+// initializer. Compiler-synthesized encode/CodingKeys still include new fields; only decoding needs an
+// explicit line.
 extension PhiSpaceSyncTable {
-    /// **只为向后兼容而存在。** 合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，
-    /// 属性默认值一概不参与：一张由上一版写下的表（`formatVersion` 仍是 2，只是没有后来新增
-    /// 的那几个键）会整张解不出来，被 `AccountUserDefaults.codableValue` 吞成 nil、被
-    /// `loaded(from:)` 换成空表，而 `isStaleFormat(rawData:)` 的 `try?` 还会把同一次失败读成
-    /// 「格式偏低」，于是覆盖掉盘上那份并把设备推回配对向导。
-    ///
-    /// 所以：**这一版新增的四个 per-kind 标志用 `decodeIfPresent(…) ?? false` 解**（`false`
-    /// 对一台从没发布过书签 / pin 的机器本来就是正确值，不需要任何迁移），其余字段逐字保持
-    /// 合成解码器今天的行为——它们从 `formatVersion` 2 起就一直在，缺席就是真损坏。
+    /// Backward-compatible decoding only. Synthesized decoding requires nonoptional keys regardless of
+    /// defaults, so older format-2 tables missing added flags would decode as nil/empty and falsely appear
+    /// stale, overwriting state and reopening pairing. Decode new per-kind flags with decodeIfPresent ??
+    /// false, correct for never-published kinds without migration. Keep original format-2 fields required:
+    /// missing originals indicate corruption.
     init(from decoder: Decoder) throws {
         self.init()
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -280,7 +241,7 @@ extension PhiSpaceSyncTable {
         didReplayForEmptyTable = try container.decode(Bool.self, forKey: .didReplayForEmptyTable)
         lastDrainedBirthday = try container.decodeIfPresent(String.self, forKey: .lastDrainedBirthday)
         unreadableTagHashes = try container.decode([String: Int64].self, forKey: .unreadableTagHashes)
-        // 本里程碑新增的四个：缺席 = 上一版写的表，不是损坏。
+        // Four milestone additions: absent keys mean an older valid table, not corruption.
         bookmarksHadRecords =
             try container.decodeIfPresent(Bool.self, forKey: .bookmarksHadRecords) ?? false
         pinsHadRecords =
@@ -289,7 +250,7 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent(Bool.self, forKey: .bookmarksReplayedForEmptyTable) ?? false
         pinsReplayedForEmptyTable =
             try container.decodeIfPresent(Bool.self, forKey: .pinsReplayedForEmptyTable) ?? false
-        // M3-4a 新增的两个（URL Rule 那条 kind）：同一条理由，缺席 = 上一版写的表。
+        // M3-4a adds two URL Rule flags; absent keys likewise mean an older table.
         urlRulesHadRecords =
             try container.decodeIfPresent(Bool.self, forKey: .urlRulesHadRecords) ?? false
         urlRulesReplayedForEmptyTable =
@@ -299,8 +260,8 @@ extension PhiSpaceSyncTable {
 
 protocol PhiSpaceSyncStateStore: AnyObject {
     func load() -> PhiSpaceSyncTable
-    /// false = 这张表**没有落盘**（R-M3-4a-83），与三个 per-kind JSON 文件对称。
-    /// `@discardableResult` 让 `discardIfStaleFormat` 那一处既有的忽略保持不变。
+    /// False means table persistence failed (R-M3-4a-83), matching per-kind JSON stores. Discardable result
+    /// preserves discardIfStaleFormat's existing ignored return.
     @discardableResult func save(_ table: PhiSpaceSyncTable) -> Bool
 }
 
@@ -317,17 +278,15 @@ final class AccountPhiSpaceSyncStateStore: PhiSpaceSyncStateStore {
         PhiSpaceSyncTable.loaded(from: defaults.codableValue(forKey: Self.defaultsKey))
     }
 
-    /// 整条链的 Bool 都是 `AccountUserDefaults.set(_:forCodableKey:)` 那一个的转出：
-    /// 它失败时内存已经回滚，所以「没落盘」与「`load()` 还是旧表」在这里是同一句话。
+    /// Forward AccountUserDefaults.set's result throughout. Its rollback ensures failed persistence means load
+    /// still returns the old table.
     @discardableResult
     func save(_ table: PhiSpaceSyncTable) -> Bool {
         defaults.set(table, forCodableKey: Self.defaultsKey)
     }
 
-    /// true = 盘上确实有一张旧表、已被丢弃（§3.6）。**没有键**（从没同步过的机器、
-    /// 刚登录的机器、ARK 一直锁着的机器）返回 **false**，什么都不写。
-    /// 判据与写入分开在 `PhiSpaceSyncTable.isStaleFormat(rawData:)` 里，这里只有
-    /// 一次读、一个 guard 和一次写，没有自己的分支。
+    /// True means a stored old table was discarded (§3.6). No key on new/login/always-locked devices returns
+    /// false without writes. isStaleFormat owns the predicate; this wrapper only reads, guards and writes.
     @discardableResult
     func discardIfStaleFormat() -> Bool {
         guard PhiSpaceSyncTable.isStaleFormat(rawData: defaults.data(forKey: Self.defaultsKey)) else {
@@ -367,23 +326,21 @@ final class PhiSpaceSyncState {
     var directStore: PhiSpaceSyncStateStore?
     /// localProfileId -> account-global uuid (`ProfileKeyManager` mapping).
     var globalUuidLookup: ((String) -> String?)?
-    /// syncUuid -> 本地 spaceId。`refreshCaches` 把 `hiddenSyncUuids` 翻回本地 id
-    /// 的唯一入口（§3.5）。
+    /// syncUuid → local spaceId, the sole reverse resolver used by refreshCaches for hiddenSyncUuids (§3.5).
     var localSpaceIdLookup: ((String) -> String?)?
-    /// 本地 spaceId -> syncUuid。**反方向**，两个消费者：`blocksProfileDeletion`
-    /// 的第三条判据——它跑在主 actor 上、手里没有表，`localSpaceIdLookup` 方向反了，
-    /// 用不上（§2.2 / §3.5）；以及 `deliver` 的无引擎回退路径，它要在写进按 syncUuid
-    /// 键的表之前把本地 id 翻过去（与引擎边界同一条规则，§3.4）。
+    /// Local spaceId → syncUuid for blocksProfileDeletion's third predicate (§2.2 / §3.5) and deliver's
+    /// no-engine fallback before writing the syncUuid-keyed table (§3.4). localSpaceIdLookup goes the opposite
+    /// direction and cannot serve either caller.
     var syncUuidLookup: ((String) -> String?)?
     /// Every LOCAL Space row with its profile, unfiltered by §6.6's funnel --
     /// `account.localStorage.getAllSpaces()` in production. Needed for §9.4's
     /// third criterion (hidden local Spaces have no cursor `profile_uuid`).
     var localSpaceProfileIds: (() -> [(spaceId: String, profileId: String)])?
 
-    /// 一组**本地** spaceId（语义不变）：`SpaceManager.handleSpacesUpdate` 的漏斗
-    /// 过滤（SpaceManager.swift:2691-2692）读的就是它，那一处零改动。
+    /// Local Space IDs for SpaceManager.handleSpacesUpdate filtering (SpaceManager.swift:2691-2692),
+    /// preserving its existing semantics.
     private(set) var hiddenSpaceIds: Set<String> = []
-    /// 账户里确实存在其实体的 syncUuid（§3.5）。**不参与** `changed` 比较。
+    /// syncUuids with real account entities (§3.5); excluded from changed comparison.
     private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
     private var referencedProfileUuids: Set<String> = []
@@ -392,9 +349,8 @@ final class PhiSpaceSyncState {
 
     /// Called by the engine after every table write, and by the fallback path.
     func refreshCaches(from table: PhiSpaceSyncTable) {
-        // 边界翻译（§3.5）：表按 syncUuid 键，而漏斗过滤要的是一组**本地** id。
-        // 解析不到的丢弃——那是没有本地行的软删／拒绝游标，本来也不该出现在过滤
-        // 集合里。
+        // Translate table syncUuids to local IDs at this boundary (§3.5). Ignore unresolved hidden/refused
+        // cursors with no local rows; they do not belong in the UI filter.
         let hidden = Set(table.hiddenSyncUuids.compactMap { localSpaceIdLookup?($0) })
         // One implementation of the reference rule, on the table (R4).
         let referenced = table.referencedProfileUuids()
@@ -420,11 +376,9 @@ final class PhiSpaceSyncState {
         if let uuid = globalUuidLookup?(localProfileId), referencedProfileUuids.contains(uuid) {
             return true
         }
-        // 第三条判据（R-D6-9）：**有映射且其实体已发布**的本地 Space。它必须走两件
-        // 新件——`publishedSyncUuids`（这半句只能在 `refreshCaches` 里算好推回来：
-        // 这个方法手上没有 `table`，也没有任何按游标键的视图）与 `syncUuidLookup`
-        // （`localSpaceIdLookup` 是 syncUuid -> 本地 id，方向反了）。
-        // D6 之前这里问的是「hidden 的本地 Space」。
+        // Third predicate (R-D6-9): mapped local Spaces whose entities were published. Use publishedSyncUuids
+        // precomputed by refreshCaches because this method has no table/cursor view, and forward
+        // syncUuidLookup rather than the reverse resolver. Before D6 this checked hidden local Spaces.
         let rows = localSpaceProfileIds?() ?? []
         return rows.contains { row in
             guard row.profileId == localProfileId,
@@ -442,8 +396,8 @@ final class PhiSpaceSyncState {
         var table = directStore.load()
         switch intent {
         case .recordLocalDeletion(let spaceId):
-            // 与引擎边界同一件事（§3.4）：表按 syncUuid 键，来的是本地 id。没有
-            // resolver 或翻不出来 = 从来没发布过 = 无 tombstone 可发。
+            // Translate local ID to the table's syncUuid key, as at the engine boundary (§3.4). Missing
+            // resolver/mapping means never published and no tombstone to send.
             guard let uuid = syncUuidLookup?(spaceId) else { return }
             table.recordLocalDeletion(spaceId: uuid)
         case .runRetentionSweep:
@@ -451,8 +405,8 @@ final class PhiSpaceSyncState {
             // business driving; the sweep runs for real at the next engine start.
             return
         }
-        // 与引擎的 `writeSpaceTable` 同一条规则（R-M3-4a-83）：只有落盘成功才刷新主线程缓存，
-        // 否则缓存展示一份没落盘的表，重启后又回来。
+        // Match engine writeSpaceTable (R-M3-4a-83): refresh main-thread caches only after persistence
+        // succeeds, avoiding display of state that vanishes after restart.
         guard directStore.save(table) else { return }
         refreshCaches(from: table)
     }

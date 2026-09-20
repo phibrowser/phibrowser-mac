@@ -208,11 +208,9 @@ struct ProfilePairingModel {
     }
 }
 
-/// `.settings` 上下文（Devices pane）的状态壳。§5.3 把这两份状态上提到了向导 VM 上
-/// （页脚要读 `allRowsDecided` 与 `decisions()`，而它已经不在这个 view 里了），
-/// Devices pane 没有向导 VM，所以由这里持一个最小的壳。**渲染结果逐字不变**，
-/// 种子与今天 `init` 里那句 `State(initialValue: ProfilePairingModel.initialSelections(…))`
-/// 是同一句，只是搬到了外面。
+/// Minimal Devices-pane settings selection store. §5.3 lifted these values into the wizard VM so its footer
+/// can read allRowsDecided/decisions, but Devices has no wizard VM. Rendering and initialSelections seeding
+/// remain unchanged; only state ownership moves outward.
 @MainActor
 final class ProfilePairingSelectionStore: ObservableObject {
     @Published var selections: [String: ProfilePairingModel.Choice] = [:]
@@ -277,12 +275,9 @@ struct ProfilePairingView: View {
                             selections: selections, remoteChoices: remoteChoices)
     }
 
-    /// `.gate` 上下文下这三样归向导 chrome（§5.3），所以这里只剩 `.settings` 一支。
-    ///
-    /// **internal `static`，不是 `private var`**：§10.7 第 5 条要求把 Devices pane 的
-    /// 文案「用一条显式断言钉住，而不是靠肉眼看 diff」，而 `private` 的计算属性在
-    /// `@testable import` 下也够不着。值与今天 `titleText` / `bodyText` /
-    /// `primaryTitle` 的 `.settings` 分支逐字相同。
+    /// In gate context the wizard chrome owns these three strings (§5.3); only settings uses them here.
+    /// Internal static values allow §10.7 item 5's explicit Devices-copy assertions, unlike private computed
+    /// properties even under testable import. Values match the prior settings title/body/primary branches.
     static let settingsTitle = NSLocalizedString("Match your profiles",
                                                  comment: "Profile pairing - title")
     static let settingsBody = NSLocalizedString(
@@ -329,7 +324,7 @@ struct ProfilePairingView: View {
         }
     }
 
-    /// 两个上下文共享的行列表（`localRow` / `remoteRow` 与那条 header 一字不动）。
+    /// Shared row list for both contexts; localRow, remoteRow and header are unchanged.
     @ViewBuilder
     private var rows: some View {
         ForEach(locals) { local in localRow(local) }
@@ -462,21 +457,18 @@ struct ProfilePairingView: View {
     }
 }
 
-/// 行卡片的背景，**按上下文分叉**：`.gate` 走向导的 `settingsCardChrome()`，
-/// `.settings` **逐字保留今天那两句**。不能一刀切换掉：这两个行构造器与 Devices pane
-/// 的 `.settings` 表面是同一份代码，而 §5.3 / §6.8 / §11 都把 `.settings` 的渲染结果
-/// 钉成「逐字不变」。
+/// Context-specific row background: gate uses wizard settingsCardChrome(), while settings preserves its
+/// original two modifiers. Shared row constructors also serve Devices, whose rendering must remain unchanged
+/// (§5.3 / §6.8 / §11).
 struct RowChrome: ViewModifier {
     let context: ProfilePairingContext
 
-    /// 分叉判据抽成一个**纯**函数，视图与测试读同一个 switch。§10.7 第 5 条要的
-    /// 「显式断言」钉的就是它：`ViewModifier` 的求值结果没法在 XCTest 里比较，能钉住
-    /// 的是「`.settings` 走的仍然是今天那条腿」，而这正是唯一会退化的东西。
+    /// Pure selection function shared by view and tests. §10.7 item 5 asserts the settings branch remains
+    /// unchanged; XCTest cannot compare evaluated ViewModifier results directly.
     enum Kind: Equatable {
-        /// 向导的卡片 chrome（`settingsCardChrome()`）。
+        /// Wizard settingsCardChrome().
         case wizardCard
-        /// **今天那两句，逐字**：`.background(Color(nsColor: .textBackgroundColor))`
-        /// + `.cornerRadius(8)`。Devices pane 只能是这一条。
+        /// Preserve background(Color(nsColor: .textBackgroundColor)) plus cornerRadius(8) exactly for Devices.
         case legacyTextBackground
     }
 
@@ -498,8 +490,8 @@ struct RowChrome: ViewModifier {
 }
 
 #if DEBUG
-/// 预览宿主：两个 `@Binding` 现在是必填参数，而 `.constant([:])` 写不回去（Picker 要
-/// 能写），所以预览自己持一个 `ProfilePairingSelectionStore` 并交出它的 binding。
+/// Preview host owns ProfilePairingSelectionStore and supplies writable bindings. The two bindings are
+/// required; constant empty dictionaries cannot support Picker changes.
 private struct ProfilePairingPreviewHost: View {
     @StateObject private var store = ProfilePairingSelectionStore()
     let locals: [PairingLocal]

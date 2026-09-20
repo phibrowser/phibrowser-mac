@@ -279,32 +279,28 @@ extension LocalStore {
     }
 }
 
-/// 一次 Space 级联删除的**来源**（R-M3-4a-85）。它只决定规则行那一段：
-/// `.userIntent` ⇒ 软删（`deletedDate = now`，这是一次「这条规则要在账户上消失」的
-/// 决定）；`.retentionPurge` ⇒ `context.delete`（保留期清理是**跟随**不是决定，
-/// R-M3-4a-5，写 `deletedDate` 会让 §5.7 的 `explicitDeletions` 把它当显式意图、
-/// 绕过两道归属门、删掉对端此刻仍然有效的规则）。**两个 origin 都不置位
-/// `pendingLocalEdit`**（R-M3-4a-69 按入口判，不按共享 body 判）。
-/// `TabDataModel` 与 `SpaceModel` 两段在两个 origin 下逐字相同。
+/// Origin of a Space cascade deletion (R-M3-4a-85), affecting rules only. `.userIntent` soft-deletes with
+/// `deletedDate = now`, expressing account deletion intent. `.retentionPurge` uses `context.delete`: retention
+/// follows prior decisions (R-M3-4a-5); setting `deletedDate` would make §5.7 `explicitDeletions` bypass both
+/// owner gates and delete still-valid remote rules. Neither origin sets `pendingLocalEdit` (R-M3-4a-69
+/// classifies entry points, not shared bodies). TabDataModel and SpaceModel deletion is identical for both
+/// origins.
 enum SpaceCascadeOrigin {
     case userIntent
     case retentionPurge
 }
 
 extension LocalStore {
-    /// Atomically removes a Space and everything tagged to it — the
-    /// `SpaceModel` row, its tagged pinned tabs / bookmarks (`TabDataModel`),
-    /// and its URL routing rules (`SpaceURLRule`) — in a single write/save.
-    /// `SpaceManager.deleteSpace` uses this instead of issuing the three
-    /// deletes as separate transactions: a crash between separate saves would
-    /// otherwise leave a content-less ghost Space (or orphaned tagged rows),
-    /// and the intermediate saves would briefly publish an inconsistent
-    /// strip/bookmark state. `deleteSpace` / `deleteTaggedRows` /
-    /// `applyURLRuleEditsThrowing` stay separate for callers that want a
+    /// Atomically removes a Space and everything tagged to it — the `SpaceModel` row, its tagged pinned tabs /
+    /// bookmarks (`TabDataModel`), and its URL routing rules (`SpaceURLRule`) — in a single write/save.
+    /// `SpaceManager.deleteSpace` uses this instead of issuing the three deletes as separate transactions: a
+    /// crash between separate saves would otherwise leave a content-less ghost Space (or orphaned tagged
+    /// rows), and the intermediate saves would briefly publish an inconsistent strip/bookmark state.
+    /// `deleteSpace` / `deleteTaggedRows` / `applyURLRuleEditsThrowing` stay separate for callers that want a
     /// non-cascade or reassign-to-default flow.
     ///
-    /// `origin` 无默认值：两个调用方（`SpaceManager.deleteSpace` 与
-    /// `PhiSpaceLocalAccess.purge`）必须各自表态（R-M3-4a-85）。
+    /// `origin` has no default: `SpaceManager.deleteSpace` and `PhiSpaceLocalAccess.purge` must each choose
+    /// explicitly (R-M3-4a-85).
     func deleteSpaceCascade(spaceId: String, origin: SpaceCascadeOrigin) {
         performBackgroundWrite { context in
             do {
@@ -322,12 +318,12 @@ extension LocalStore {
         }
     }
 
-    /// Single implementation shared by both entry points. 只有规则那一段按
-    /// `origin` 分支；`TabDataModel` 与 `SpaceModel` 两段与从前逐字相同。
+    /// Single implementation shared by both entry points. Only rules branch on `origin`; TabDataModel and
+    /// SpaceModel handling remains unchanged.
     private func deleteSpaceCascadeBody(spaceId: String,
                                         origin: SpaceCascadeOrigin,
                                         in context: ModelContext) throws {
-        // 同一次级联里全部规则行共用这一枚 `now`。
+        // All rule rows in this cascade share one `now` stamp.
         let now = Date()
         for row in try context.fetch(FetchDescriptor<TabDataModel>(
             predicate: #Predicate { $0.spaceId == spaceId }
@@ -341,8 +337,8 @@ extension LocalStore {
             case .retentionPurge:
                 context.delete(rule)
             case .userIntent:
-                // 软删（R-M3-4a-41）。已经软删的行跳过，不刷新它的 `deletedDate`；
-                // `pendingLocalEdit` 一个字节不碰（删除不是编辑，R-M3-4a-69）。
+                // Soft-delete (R-M3-4a-41), leaving existing deletion dates unchanged. Never touch
+                // `pendingLocalEdit`: deletion is not editing (R-M3-4a-69).
                 if rule.deletedDate == nil {
                     rule.deletedDate = now
                 }

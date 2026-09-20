@@ -25,10 +25,10 @@ final class ProfilePairingGateTests: XCTestCase {
         func reloadPresented() { reloadCount += 1 }
     }
 
-    /// A real, never-unlocked controller: enough to post the announcement
-    /// variants through `NotificationCenter` without a key stack.
-    /// 第 1 条新用例要断言「Space 映射一条没写」，所以那条用例要能拿到映射 store。
-    /// 默认 `nil` = 今天的行为（`spaceKeys == nil`），既有调用点一个不改。
+    /// A real, never-unlocked controller can post announcement variants through
+    /// NotificationCenter without a key stack. The first new case needs access to the
+    /// mapping store to assert zero Space writes. Default nil preserves spaceKeys == nil
+    /// and leaves existing callers unchanged.
     private func makeController(spaceStore: SpaceSyncMappingStore? = nil) -> SyncKeyController {
         makeController(api: FakeAPI(), provider: FakeDeviceKeyProvider(), spaceStore: spaceStore)
     }
@@ -503,9 +503,9 @@ final class ProfilePairingGateTests: XCTestCase {
         }
     }
 
-    /// 三条新接缝（Step 7 的 (e)）在这里**必须**被打桩：不打的话每一次
-    /// `host.present(...)` 都会去拉 `PhiChromiumCoordinator.shared` 与它背后的
-    /// `AccountController.shared`——今天的 gate 测试一个单例都不碰，向导不该改变这一点。
+    /// Stub all three new seams from Step 7(e). Otherwise host.present reaches
+    /// PhiChromiumCoordinator.shared and AccountController.shared. Gate tests currently
+    /// avoid all singletons, and the wizard must preserve that isolation.
     private func makeHost(
         _ recorder: ModalSessionRecorder,
         previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
@@ -607,16 +607,13 @@ final class ProfilePairingGateTests: XCTestCase {
 
     // MARK: - A re-drive must not throw away a form the user is filling in
 
-    /// The gate re-drives a presented modal on EVERY `.measured` pass, and
-    /// `resolveMappings()` runs about once a minute, so a modal left open gets
-    /// a fresh load roughly that often. In every INTERACTIVE phase that would
-    /// swap the list out from under the user and discard the selections they
-    /// have already made -- a re-drive is a rescue for a load that stalled, not
-    /// a refresh of a form.
+    /// The gate re-drives a presented modal on every measured pass; resolveMappings runs
+    /// about once a minute. Refreshing an interactive form would replace its list and
+    /// discard user selections. Re-drive rescues a stalled load, not an interactive form.
     ///
-    /// 2. `.measured` 重驱在**每一个交互态**被拒，只有 `.loading` 与
-    ///    `.error(_, .reload)` 允许。`.error` 的两个 `resume` 各一条：它们是同一个
-    ///    case、相反的期望，写一条会漏掉真正危险的那一支。
+    /// 2. Reject measured re-drive in every interactive phase; allow only loading and
+    /// error(_, .reload). Test both error resume values because they share a case but
+    /// require opposite outcomes; one assertion would miss the dangerous branch.
     func testARedriveIsRefusedInEveryInteractivePhase() {
         let input = SpacePairingModel.Input(locals: [], accountSpaces: [],
                                             localProfileNames: [:], accountProfileNames: [:])
@@ -634,24 +631,21 @@ final class ProfilePairingGateTests: XCTestCase {
         ]
         for phase in interactive {
             XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: phase),
-                           "\(phase) 背后是用户已经做完的选择，一次重驱会把它冲掉")
+                           "\(phase) contains user selections that a re-drive would erase")
         }
         XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: .loading))
         XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: .error(message: "boom", resume: .reload)))
     }
 
-    // MARK: - 向导（M3-2b §10.7）
+    // MARK: - Wizard (M3-2b §10.7)
 
-    /// 1. 窗口活过第 1 步：**真的按一次 Continue**，`stopModal` 零调用、窗口仍在。
-    ///    回归那条拆模态陷阱——在第 1 步就提交，模态会在两步之间被拆掉，而且更糟：
-    ///    `joinPairingPending` 一清，Space 段的门就开了，这台 Mac 会在用户还没作任何
-    ///    Space 决定之前开始发布。
+    /// 1. The window survives step 1: actually press Continue, with no stopModal call.
+    /// Submitting in step 1 would tear down the modal between steps and clear
+    /// joinPairingPending, letting this Mac publish before the user makes Space decisions.
     ///
-    ///    **必须真的按下去**：一条只 `present()` 就断言 `stopModalCount == 0` 的用例，
-    ///    在缺陷被重新引入（Continue → `submitPairing` → 清 `joinPairingPending` →
-    ///    `resolveMappings()` → `dismiss()`）之后**照样绿**——它从来没走到那条路上。
-    ///    三条断言合起来才是「模态没有在两步之间被拆掉」：会话没被停、门还关着、
-    ///    Space 映射一条没写。
+    /// Merely calling present then checking stopModalCount == 0 cannot catch the broken
+    /// Continue → submitPairing → clear gate → resolveMappings → dismiss path. Together
+    /// assert an active session, a closed gate, and zero Space mapping writes.
     func testTheWindowSurvivesStepOne() async throws {
         ProfilePairingGate.staticPendingOverride = true
         defer { ProfilePairingGate.staticPendingOverride = nil }
@@ -664,25 +658,25 @@ final class ProfilePairingGateTests: XCTestCase {
         host.present(controller: controller)
         recorder.runScheduled()
 
-        // `present()` 把首次加载交给一个 `Task`。这里直接再驱一次 `start()`：它是
-        // 幂等的（`keyLayer.startPairing` 会取消在飞的那一趟），而且下面三条断言全是
-        // 「什么都没发生」型的，一次多余的重载动不了它们中的任何一条。
+        // present starts loading in a Task. Drive start() again directly: it is idempotent
+        // because keyLayer.startPairing cancels the in-flight load, and an extra reload
+        // cannot affect the three no-side-effect assertions below.
         let wizard = try XCTUnwrap(host.viewModel)
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
 
-        XCTAssertEqual(recorder.stopModalCount, 0, "第 1 步的 Continue 不经过宿主的任何出口")
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "门必须还关着")
-        XCTAssertTrue(spaceStore.map.isEmpty, "Space 映射一条都还没写")
+        XCTAssertEqual(recorder.stopModalCount, 0, "Step 1 Continue does not invoke a host exit")
+        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "The gate must stay closed")
+        XCTAssertTrue(spaceStore.map.isEmpty, "No Space mappings have been written")
 
-        // 「窗口仍在」的可执行版本：宿主的 weak `viewModel` 只在 `dismiss()` 里被清掉。
-        XCTAssertNotNil(host.viewModel, "第 1 步之后窗口必须还在")
+        // Executable window-lifetime check: the host clears its weak viewModel only in dismiss().
+        XCTAssertNotNil(host.viewModel, "The window must survive step 1")
         host.dismiss()
         XCTAssertNil(host.viewModel)
     }
 
-    /// 4. T21：`present()` 仍把 modal session 交给 scheduler，不在调用者栈上进入
-    ///    （既有断言，确认未被向导改动破坏）。
+    /// 4. T21: present still schedules the modal session instead of entering it on the
+    /// caller's stack; retain the existing assertion through the wizard change.
     func testTheModalSessionIsStillScheduledAfterTheWizardLanded() {
         let recorder = ModalSessionRecorder()
         let host = makeHost(recorder)

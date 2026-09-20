@@ -40,20 +40,20 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
     /// Runs inside `refreshAccountProfiles()`, the way §3.6's auto-create does.
     var onRefresh: (() -> Void)?
     var errorOnNextWrite: Error?
-    /// M3-2b: 本地 spaceId -> syncUuid。测试直接预置它来表达「这台机器已经配过对」。
+    /// M3-2b: local spaceId to syncUuid. Tests seed this to represent an already-paired machine.
     var spaceMappings: [String: String] = [:]
-    /// `getAllSpaces()` 里还有没有这一行；nil = 「`spaces` 里有就算有」。
+    /// Whether getAllSpaces still contains the row; nil uses membership in spaces.
     var knownLocalSpaceIds: Set<String>?
-    /// 第 2 步左列；nil = 与 `spaces` 相同。
+    /// Step 2 left column; nil uses spaces.
     var pairableSpacesOverride: [PhiLocalSpace]?
-    /// 下一次 `ensureMapped` / `mapSpace` 抛这个错，然后清空。
+    /// The next ensureMapped/mapSpace throws this error, then clears it.
     var errorOnNextMapping: Error?
-    /// Task 3b（R-M3-4a-87）：`create(_:)` **先记 `.create` 调用、再抛**——模拟「行写发出去了、
-    /// 进程死在事务提交前」。**不自动清空**，用例自己置回 nil 放行。
+    /// Task 3b (R-M3-4a-87): create records its call before throwing, modeling a row
+    /// write issued before process death prior to commit. Persistent until the test resets it.
     var createError: Error?
-    /// Task 3b：`mapSpace(_:toSyncUuid:)` 在记调用与改 `spaceMappings` **之前**抛，早于
-    /// `errorOnNextMapping`、早于两道守卫。**不自动清空**——`errorOnNextMapping` 是一次性的
-    /// 且与 `ensureMapped` 共用，一轮里发布段的懒铸造会先把它吃掉，所以这个旋钮必须独立。
+    /// Task 3b: mapSpace throws before recording or mutating mappings, before
+    /// errorOnNextMapping and both guards. Keep it persistent and independent: the
+    /// one-shot error is shared with ensureMapped and can be consumed by publication's lazy minting first.
     var mapSpaceError: Error?
     private(set) var calls: [Call] = []
     private(set) var droppedMappings: [String] = []
@@ -82,7 +82,7 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         if uuid == SyncableSpaces.defaultSpaceUuid { return LocalStore.defaultSpaceId }
         return spaceMappings.filter { $0.value == uuid }.keys.sorted().first
     }
-    /// 铸出来的 uuid 是确定的（`sync-<localId>`），所以断言不必猜一个随机 UUID。
+    /// Mint deterministic sync-<localId> UUIDs so assertions need not guess random values.
     func ensureMapped(spaceId: String) throws -> String {
         if let uuid = syncUuid(forSpaceId: spaceId) { return uuid }
         if let error = errorOnNextMapping { errorOnNextMapping = nil; throw error }

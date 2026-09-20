@@ -454,7 +454,7 @@ nonisolated struct Phi_PhiBookmarkEntity: @unchecked Sendable {
   /// NOT last-writer-wins: written once by the creating device and merged
   /// DETERMINISTICALLY on disagreement -- the non-zero side wins; if both are
   /// non-zero and differ, the smaller wins. TabSource raw value
-  /// (0 phi / 1 chromium / 2 safari / 3 arc). approved §1 calls it "只写一次";
+  /// (0 phi / 1 chromium / 2 safari / 3 arc). approved §1 calls it "write once";
   /// the merge rule covers only the two-device-disagreement case.
   var source: Int32 {
     get {_storage._source}

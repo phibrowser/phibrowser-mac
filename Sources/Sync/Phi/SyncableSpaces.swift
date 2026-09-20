@@ -5,13 +5,11 @@
 
 import Foundation
 
-/// `land` 里唯一一条「什么都没做」的路径的显式编码（§3.4）。
-///
-/// **必须是抛出而不是返回 optional**：非 Void 返回让裸 `return` 直接编译不过，而
-/// 调用方的 `catch` 已经把实体停回 `pendingApply`，那正是这一支想要的行为；改成
-/// 返回 `String?` 会把「什么都没落地」和「落地了但没拿到 id」压成同一个值，而引擎
-/// 正是拿返回值去写映射的。理论上这一支到不了（无基线且 profile 未解析的实体在
-/// §3.5 兜底 B 就已经停放）。
+/// Explicit error for land's only no-op path (§3.4).
+/// Throw rather than return an optional: a non-Void result disallows bare return, and the caller's catch
+/// already parks the entity in pendingApply. String? would conflate no landing with landing without an id, yet
+/// the engine uses the result to write mappings. This should be unreachable because §3.5 fallback B already
+/// parks entities with no baseline and an unresolved profile.
 enum SyncableSpacesError: Error, Equatable {
     case unresolvedProfile
 }
@@ -51,8 +49,8 @@ enum SyncableSpaces {
     ///   the only room left is under the prefix. Trapping here is the same
     ///   honesty as the `a == b` case -- silently returning a value ABOVE the
     ///   bound would corrupt the account's order.
-    /// 第二个调用方是 `SyncableOwnedItems`（M3-3）：书签与 pin 的 rank 通道复用这一份
-    /// 实现，绝不另写一份（R4 单一实现）。
+    /// SyncableOwnedItems (M3-3) also uses this implementation for bookmark and
+    /// pin ranks; keep one shared implementation (R4).
     static func rankBetween(_ a: String?, _ b: String?) -> String {
         if let a, let b { precondition(a < b, "rankBetween requires a < b") }
         precondition(b.map { !$0.isEmpty && !$0.hasSuffix("0") } ?? true,
@@ -96,7 +94,7 @@ enum SyncableSpaces {
     /// rank (brand new, or a device snapshotting an old Space for the first
     /// time) never join it, so they always land in the complement and get a
     /// rank from the interval rule. Patience sorting, O(n log n).
-    /// 第二个调用方是 `SyncableOwnedItems`（M3-3），逐字复用。
+    /// SyncableOwnedItems (M3-3) also uses this implementation unchanged.
     static func longestIncreasingKeptSet(_ keys: [(rank: String?, uuid: String)]) -> Set<Int> {
         struct Key: Comparable {
             let rank: String
@@ -147,13 +145,14 @@ enum SyncableSpaces {
     /// Spaces with their shadow ranks. Elements inside the kept set are absent
     /// from the result: they are not rewritten, get no new timestamp and do not
     /// enter this round's commit batch.
-    /// 第二个调用方是 `SyncableOwnedItems`（M3-3）：书签按「同一个父」分组、pin 按 owner
-    /// 分组，各自把自己那一组的次序喂进来。
+    /// SyncableOwnedItems (M3-3) also calls this per group: bookmarks by parent,
+    /// pins by owner, passing each group's order.
     ///
-    /// `rankBetween` 是**带默认值的注入点**，默认就是本类型那一个，所以本文件的既有调用方
-    /// 与行为逐字不变。它存在的唯一理由是让 `SyncableOwnedItems` 的 rank 生成经过自己那个
-    /// 转发器，于是 `RankProbe` 数得到真实的调用次数——一个数不到任何东西的探针会让
-    /// 「非法 rank 永不到达 `precondition`」那条断言恒真。
+    /// rankBetween is injectable and defaults to this type's implementation,
+    /// preserving existing callers and behavior. It lets SyncableOwnedItems route
+    /// generation through its forwarder so RankProbe counts actual calls; an
+    /// unconnected probe would vacuously pass the assertion that invalid ranks
+    /// never reach precondition.
     static func assignRanks(order: [(uuid: String, rank: String?)],
                             rankBetween: (String?, String?) -> String
                                 = SyncableSpaces.rankBetween) -> [String: String] {
@@ -205,17 +204,16 @@ enum SyncableSpaces {
 
 extension SyncableSpaces {
 
-    /// D1：账户级同步 uuid。它与 `LocalStore.defaultSpaceId` 取值相同**纯属约定**，
-    /// 不是同一个命名空间——D6 之后本地 id 与 syncUuid 是两个空间，不要把它写回
-    /// `= LocalStore.defaultSpaceId`：那等于在定义处把两个空间又焊回去。两者取值
-    /// 相等由 `SpaceSyncMappingManagerTests` 的一条断言钉住。
+    /// D1: account sync uuid. Equality with LocalStore.defaultSpaceId is a convention, not a shared namespace:
+    /// D6 separates local ids from syncUuid. Do not assign it from LocalStore.defaultSpaceId and couple them
+    /// again. SpaceSyncMappingManagerTests asserts the matching values.
     static let defaultSpaceUuid = "default-space"
 
-    /// D12 / R-M3-4a-6：URL Rule 的 Incognito 目标在账户上的保留常量。先例是
-    /// `defaultSpaceUuid`（上面那一行）——一个不在映射表里、双向不可摧毁的字面量。
-    /// **它不是一个 Space 身份**：不会出现在 `PhiSpaceEntity` 的任何字段里，Space 段
-    /// 永远看不到它，只服务规则这一种 kind。解析由 `OwnedOwnerMaps.resolver` 的自映射
-    /// 负责（与 `"app"` 同一条先例），映射表两侧都拒收它（`SpaceSyncMappingManager.map`）。
+    /// D12 / R-M3-4a-6: reserved account constant for URL rules targeting Incognito. Like defaultSpaceUuid, it
+    /// is a literal outside the mapping table that cannot be destroyed in either direction. It is not a Space
+    /// identity and never appears in PhiSpaceEntity fields or the Space phase; only rules use it.
+    /// OwnedOwnerMaps.resolver resolves it to itself, following app's precedent, and
+    /// SpaceSyncMappingManager.map rejects it on both sides.
     static let incognitoSpaceUuid = "incognito-space"
 
     // MARK: - Snapshot (§6.2 S1-S4)
@@ -225,10 +223,10 @@ extension SyncableSpaces {
     /// PURE: unlike M3-1's `SyncableSettings.snapshot`, this writes nothing at
     /// all. Baselines move only at the five write points in §6.2.
     ///
-    /// D6：`syncUuid` 是本地 spaceId -> 账户级同步 uuid 的 resolver。**没有映射的
-    /// Space 整条跳过**——与下面「profile 没有映射就 `continue`」是同一条规则的第二
-    /// 个实例：本地 id 绝不上线。返回值因此整体在 syncUuid 空间里，下游
-    /// （`spaceCommitEntries`、冲突重试集合）一字不改。
+    /// D6: syncUuid resolves local spaceId to account sync uuid. Skip unmapped
+    /// Spaces entirely, just as an unmapped profile triggers continue below:
+    /// local ids never reach the wire. Results use only syncUuid, leaving
+    /// spaceCommitEntries and conflict-retry sets unchanged.
     static func snapshot(spaces: [PhiLocalSpace],
                          table: PhiSpaceSyncTable,
                          globalUuid: (String) -> String?,
@@ -292,7 +290,7 @@ extension SyncableSpaces {
             guard let rank = baselines[uuid]?.rank.stringValue, isLegalRank(rank) else { return nil }
             return rank
         }
-        // Rank channel: one pass over the CURRENT local order (§7)，整条在 syncUuid 空间。
+        // Rank channel: one pass over the CURRENT local order (§7), entirely in the syncUuid namespace.
         let newRanks = assignRanks(order: eligible.map {
             (uuid: $0.uuid, rank: baselineRank($0.uuid))
         })
@@ -334,8 +332,8 @@ extension SyncableSpaces {
                 // binding is a normal field write and gets stamped `now`. Without
                 // the `heldForLocalProfileId` check the held branch would win
                 // forever and this device could never publish a binding for that
-                // Space again. `heldForLocalProfileId` 比的仍是 **本地** profile
-                // id，与身份翻译无关。
+                // Space again. heldForLocalProfileId still compares local
+                // profile ids, independently of identity translation.
                 let cursor = table.cursors[uuid]
                 let heldAgainst: String? = cursor?.heldForLocalProfileId
                 let holdStillApplies = heldAgainst == space.profileId
@@ -380,9 +378,10 @@ extension SyncableSpaces {
     ///   reads an unknown character as the lowest digit, which breaks the
     ///   lexicographic == numeric equivalence the whole channel rests on -- the
     ///   "midpoint" it computes need not lie between the bounds it was given.
-    /// **internal 而不是 private**：第二个调用方是 `SyncableOwnedItems`（M3-3）。书签的
-    /// rank 只在同一个父下可比，一次非法 rank 能污染的是一整个文件夹，所以那一侧同样要
-    /// 拿这一个解码边界去挡 `rankBetween` 的 `precondition`。
+    /// Internal for reuse by SyncableOwnedItems (M3-3). Bookmark ranks are
+    /// comparable only within a parent, and one invalid rank can corrupt the
+    /// whole folder. Both callers use this decoding boundary to protect
+    /// rankBetween's precondition.
     static func isLegalRank(_ rank: String) -> Bool {
         !rank.isEmpty && !rank.hasSuffix("0") && rank.allSatisfy(rankCharacters.contains)
     }
@@ -393,10 +392,9 @@ extension SyncableSpaces {
         return v
     }
 
-    /// 千分单位编码，**一份实现两个调用方**：出站的 `milli(_:)` 与 D7 覆盖确认页的
-    /// 差异（§5.7）。下一次改精度只改这一处。
-    /// `-1` = 「没有自定义透明度」，而读回那一侧判的是 `< 0`（`opacity(_:)`），所以
-    /// **任何负数**都被当成「清掉自定义透明度」。
+    /// Thousandths encoding shared by outbound milli(_:) and D7 overwrite-confirmation diffs (§5.7). Change
+    /// precision only here.
+    /// -1 means no custom opacity; opacity(_:) checks < 0, so any negative value clears custom opacity.
     static func opacityMilliUnits(_ value: Double?) -> Int64 {
         value.map { Int64(($0 * 1000).rounded()) } ?? -1
     }
@@ -431,8 +429,8 @@ extension SyncableSpaces {
     /// `created_at_ms`, identity for `space_uuid`.
     ///
     /// Starts from `remote`, and that is the whole point of merging at all
-    /// (§6.2: "与 server 合并而不是裸发 snapshot，是为了保住更新版客户端写在预留
-    /// 字段 11-14 上的内容"). A fresh `Phi_PhiSpaceEntity()` would carry no
+    /// (§6.2: merging with the server preserves newer clients' reserved fields
+    /// 11–14, unlike sending the snapshot alone). A fresh `Phi_PhiSpaceEntity()` would carry no
     /// `unknownFields`, so every reserved field a newer client wrote would be
     /// stripped on the way through this build -- and worse than once: after a
     /// pull, `cursor.server` holds the unknown bytes while the merged entity does
@@ -472,11 +470,11 @@ extension SyncableSpaces {
     /// Refusing is NOT a claim that the account should not hold it, so nothing
     /// here ever pushes a tombstone (§9.2).
     ///
-    /// D6：**不再看 `space_uuid`**。线上 uuid 是随机 syncUuid，incognito 前缀这条
-    /// 判据永远不会为真，留着是误导（读者会以为 incognito 有一条线上防线）。本机的
-    /// incognito / agent Space 在源头就拿不到映射行（`AccountPhiSpaceAccess` 的排除
-    /// 表，`currentSpaces()` / `pairableSpaces()` 共用），所以它们**从不进入
-    /// snapshot，也从不产生 syncUuid**。
+    /// D6: do not inspect space_uuid. Wire uuids are random syncUuids, so an
+    /// incognito-prefix check could never match and would imply nonexistent
+    /// protection. Local incognito/agent Spaces cannot obtain mappings: the
+    /// AccountPhiSpaceAccess exclusion list serves both currentSpaces() and
+    /// pairableSpaces(). They never enter snapshot or acquire syncUuids.
     static func refuses(_ entity: Phi_PhiSpaceEntity) -> Bool {
         let name = entity.name.stringValue
         let icon = entity.iconName.stringValue
@@ -497,8 +495,9 @@ extension SyncableSpaces {
     /// Every step is awaited and may throw; the caller writes NO baseline until
     /// this returns without throwing (§5.6).
     ///
-    /// D6：`localSpaceId` 是已经解析好的本地行 id，`nil` = 本机没有这条。返回值是
-    /// **落地用的本地 spaceId**，引擎拿它去写映射（§3.4）。
+    /// D6: localSpaceId is the resolved local row id; nil means locally absent.
+    /// Return the local spaceId used for landing so the engine can write the
+    /// mapping (§3.4).
     @discardableResult
     static func land(_ merged: Phi_PhiSpaceEntity,
                      existing: PhiLocalSpace?,
@@ -516,8 +515,8 @@ extension SyncableSpaces {
             // only ever a genuinely new Space; its profile must resolve or the
             // caller parked it (§3.5 fallback B) before getting here.
             guard let profileId else { throw SyncableSpacesError.unresolvedProfile }
-            // **绝不是 `merged.spaceUuid`**（§2.4）：本地行 id 与 syncUuid 是两个
-            // 空间，而 `SpaceModel.spaceId` 是 `@Attribute(.unique)`。
+            // Never use merged.spaceUuid (§2.4): local row ids and syncUuid are separate namespaces, and
+            // SpaceModel.spaceId has @Attribute(.unique).
             let newId = localSpaceId ?? UUID().uuidString
             try await access.create(PhiLocalSpace(
                 spaceId: newId, profileId: profileId,
@@ -528,8 +527,8 @@ extension SyncableSpaces {
                 opacityLight: opacity(merged.overlayOpacityLight),
                 opacityDark: opacity(merged.overlayOpacityDark)))
             if !isDefault {
-                // 这一支正是 `localSpaceId == nil` 的常态路径（账户里有、本机没有的
-                // Space，R-D6-7 的主新增路径），所以这里收的必须是 `newId`。
+                // This is the normal localSpaceId == nil path: an account Space absent locally (R-D6-7's main
+                // creation path). Use newId here.
                 try await access.applyThemeState(
                     spaceId: newId, themeId: themeId(merged),
                     opacityLight: opacity(merged.overlayOpacityLight),
@@ -538,9 +537,8 @@ extension SyncableSpaces {
             return newId
         }
 
-        // `existing` 本身就是从 `localSpaceId` 查出来的，所以两者必然一致；写成 `??`
-        // 而不是 `localSpaceId!` 是因为这条路径挂在一个 App 级阻断流程上，一次强解包
-        // 换不来任何东西。
+        // existing was looked up by localSpaceId, so they agree. Use ?? instead of a force unwrap: this path
+        // can block the App, and unwrapping provides no benefit.
         let localId = localSpaceId ?? existing.spaceId
 
         if !isDefault || opacity(merged.overlayOpacityLight) != existing.opacityLight
@@ -602,9 +600,9 @@ extension SyncableSpaces {
     /// a stale value while the synced ones are renumbered 0..n-1 -- which is
     /// the opposite of the promise in the paragraph above.
     ///
-    /// **`syncedRanks` 按本地 spaceId 键**（D6）。半翻译在这里是**静默失效**：每次
-    /// 查表都是 nil，账户级重排整体变成 no-op，没有任何错误。翻译点在引擎里
-    /// （`applySpaces` 的 ranks 组装，§3.4）。
+    /// syncedRanks is keyed by local spaceId (D6). Partial identity translation
+    /// silently makes every lookup nil and the entire account reorder a no-op.
+    /// The engine translates when assembling ranks in applySpaces (§3.4).
     static func plannedOrder(localOrder: [PhiLocalSpace],
                              syncedRanks: [String: String]) -> [String] {
         let syncedSlots = localOrder.enumerated()

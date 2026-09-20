@@ -16,11 +16,9 @@ actor LocalStoreActor {
             try modelContext.save()
         } catch {
             AppLogError("[LocalStore] save error: \(error)")
-            // **回滚，与 `performThrowing` 同款。** `LocalStoreActor` 是一个
-            // `@ModelActor`，整个进程的后台写共用它这**一个** `modelContext`；一次失败的
-            // save 把那一批改动原样留在上下文里，于是此后每一次 save 都带着同一批坏对象
-            // 重试并同样失败——一条 fire-and-forget 的 UI 写就此让**全部**后台写（同步落
-            // 地也在内）持续失败，直到别处某个 throwing 写碰巧 rollback 了它。
+            // Roll back as performThrowing does. All background writes share this ModelActor's modelContext;
+            // failed saves otherwise retain invalid pending models and poison every subsequent write,
+            // including sync landing, until some throwing operation happens to roll back.
             modelContext.rollback()
         }
     }
@@ -161,10 +159,9 @@ class LocalStore {
             } catch {
                 AppLogError("[LocalStore] Failed to record opened local store format: \(error)")
             }
-            // 一次性自愈，排在写队列的最前面：一个库里若已经躺着重复的 pin 行，
-            // 任何按 guid 建字典的读者都会 trap（见
-            // `healDuplicatePinnedTabRows()`）。它是 fire-and-forget 的，所以那些读者
-            // **同时**也必须对重复键宽容——两件事都要，谁也替不了谁。
+            // Queue one-time duplicate-pin repair first: GUID-indexed readers can trap on existing duplicate
+            // rows. Since repair is fire-and-forget, readers must also tolerate duplicate keys; both
+            // protections are necessary (see healDuplicatePinnedTabRows).
             healDuplicatePinnedTabRows()
         } catch {
             AppLogError("Failed to create ModelContainer: \(error)")
@@ -552,16 +549,9 @@ extension LocalStore {
         }
     }
     
-    /// 一轮图标回填的若干条**合成一次**后台写（Phi sync M3-3 §8.2 / Task 10）。
-    ///
-    /// 与上面那条 `updateTabFavicon(_:favicon:)` 的区别有两处，两处都是必须的：
-    ///  1. **一个事务**。逐条调那一条是 N 次 `performBackgroundWrite`，一轮 20 条就是 20 次
-    ///     写事务，而这些字节全是同一轮回填的产物。
-    ///  2. **会抛**。那一条是 fire-and-forget 的，调用方看不出写成没成；回填队列要据此把
-    ///     这一批记成成功还是失败。
-    ///
-    /// 与被写行完全相同的字节跳过（不写 `updatedDate`），于是一次重复回填不会在 UI 上
-    /// 制造一批假的「刚刚更新」。
+    /// Coalesce one favicon-backfill round into one throwing background transaction (Phi sync M3-3 §8.2 / Task
+    /// 10). Unlike updateTabFavicon, this avoids N transactions and reports success/failure to the queue. Skip
+    /// identical bytes, including updatedDate, so repeated backfill does not falsely mark rows newly updated.
     func updateTabFaviconsThrowing(_ writes: [(guid: String, favicon: Data)]) async throws {
         guard !writes.isEmpty else { return }
         try await performBackgroundWriteAndWaitThrowing { context in
@@ -801,64 +791,46 @@ extension LocalStore {
             .eraseToAnyPublisher()
     }
 
-    // MARK: - 整账户的变化信号（M3-3 §5.7）
+    // MARK: - Account-wide change signals (M3-3 §5.7)
     //
-    // 与上面那个 `pinnedTabsPublisher` 以及 `bookmarksPublisher(profileId:spaceId:)` 是
-    // 两类东西，别把它们混成一个：
+    // These are separate from per-window pinnedTabsPublisher/bookmarksPublisher(profileId:spaceId:). UI
+    // publishers carry current model arrays per profile/Space and emit initially. These account-wide signals
+    // carry Void for engine snapshot reads and emit only changes; initial emission would enqueue a needless
+    // push. Preserve existing UI publisher behavior.
     //
-    // - **作用域**。那两个是按 (profile, space) 的，每个窗口订阅一份，下游是 UI；这两个是
-    //   整账户的一条信号，下游是同步引擎。改那两个的语义会波及全部 UI，所以这里是**新增
-    //   兄弟**，一个字节都不碰既有那两个。
-    // - **载荷**。那两个交出当前值（`[TabDataModel]`）；这两个交出的是 `Void`——引擎要的是
-    //   「有东西变了」，拿到之后自己按注册清单去读快照。
-    // - **订阅当刻不发**。`spacesPublisher` / `bookmarksPublisher` 的上游是
-    //   `CurrentValueSubject` 并在订阅当刻立刻 `send(fetch())`，因为 UI 需要一个初值。变化
-    //   通知不需要，照抄那个形状就是每次挂上订阅都白推一轮。
+    // Deduplicate value snapshot arrays, never model objects: SwiftData refreshes the same instances in place,
+    // so object comparisons can swallow real field edits. spacesPublisher and PinnedTabSnapshot document the
+    // same trap.
     //
-    // 去重比的是**取值快照数组**，不是 model 对象：SwiftData 在保存的上下文里**就地刷新**
-    // 同一批实例，所以一次重取拿回来的是上一次那些对象，按对象比较恒等、真实的字段编辑会
-    // 被整个吞掉。`spacesPublisher`（LocalStore+Space.swift）与上面的 `PinnedTabSnapshot`
-    // 都为此栽过跟头并留了注释。
+    // Snapshots intentionally form a superset of sync's domain: no canonical-root filter for bookmarks, no
+    // scope filter for pins. Extra signals yield empty pushes, while narrower or divergent predicates miss
+    // real edits (§4.8). Sort by GUID to avoid false changes from unstable fetch order.
     //
-    // 快照**有意取成同步层那份的超集**：书签不做 canonical root 过滤，pin 不做作用域过滤。
-    // 超集只会多发一次信号（引擎那一轮比下来零字段变化 ⇒ 零提交），而子集会**漏**掉真实的
-    // 变化——同一个过滤口径在两处各写一遍、然后慢慢走偏，正是 §4.8 点名要躲的那件事。
-    // 行的次序按 `guid` 排定：两次 fetch 都没有排序保证，不排就会有一批「同一批行、不同
-    // 次序」的伪变化。
-    //
-    // **级的次序是「类型过滤 → 2 s 防抖 → 投影一次 → 去重」，防抖在投影之前**（§5.7 第 1
-    // 条）。反过来（每条 save 各投影一遍、再按值去重）只塌掉**发射**、塌不掉**工作量**：
-    // 一次导入或一次多行拖拽就是每条 save 一次全表 fetch、一次 map、一次排序，全在主 actor
-    // 上。去重仍然留着，因为防抖只保证「安静了 2 秒」，不保证「真的变了」——favicon 回填照样
-    // 起计时器，安静期过后那唯一一次投影比下来逐字节相同，于是什么都不发。
+    // Order stages as type filter → 2 s debounce → one projection → deduplication (§5.7 item 1). Debouncing
+    // after projection reduces emissions but still performs a main-actor full fetch/map/sort for every save
+    // during imports or multi-row drags. Keep deduplication too: favicon backfill may start the timer but
+    // leave an equal snapshot after the quiet period.
 
-    /// 两条信号默认的防抖窗口。与 `PhiChromiumCoordinator.phiSyncPushDebounce` 是同一个 2 秒
-    /// 窗口，但**有意各存一份**：把协调器那个常量引进 `LocalStorage` 就是一条新的跨层依赖，
-    /// 而这一层本来就不认识那一层。窗口挪进 publisher 之后协调器那两条订阅不再自己防抖，
-    /// 否则端到端延迟会变成 4 秒。
+    /// Default debounce window, equal to PhiChromiumCoordinator.phiSyncPushDebounce but intentionally stored
+    /// here to avoid a LocalStorage-to-coordinator dependency. The coordinator must not debounce these signals
+    /// again, which would double latency to 4 s.
     ///
-    /// 两个 publisher 都收一个 `debounceWindow` 参数并默认到它，**只为用例**：一条用例要么
-    /// 量的是「窗口本身」（那就用默认值，别人改了常量它要跟着动），要么量的是窗口之外的性质
-    /// （去重、过滤、作用域进不进快照），后者没有理由为每次断言各空转两秒。生产调用一律走
-    /// 默认值。
+    /// Both publishers accept debounceWindow for tests: use the default when measuring the window itself;
+    /// shorten it for unrelated filtering/deduplication/scope assertions. Production always uses the default.
     static let changeSignalDebounce: TimeInterval = 2
 
-    /// 整账户的书签 / 文件夹变化信号（§5.7）。订阅当刻不发。
+    /// Account-wide bookmark/folder change signal (§5.7), with no initial emission. Debounce here before any
+    /// projection, not in the coordinator.
     ///
-    /// 防抖在这里，不在协调器：一连串 save 要在**任何一次投影发生之前**塌掉。
+    /// Subscribe on the main thread (enforced in Deferred), since the initial baseline reads mainContext.
+    /// Off-main concurrent reads may silently return partial data; coordinator and tests subscribe on the main
+    /// actor.
     ///
-    /// **必须在主线程订阅**（`Deferred` 体内有 `dispatchPrecondition`）。基线快照在订阅当刻
-    /// 现取，而它读 `mainContext`；从别的线程订阅会在 SwiftData 的主上下文上并发读，那是
-    /// 一类不会当场报错、只会偶尔交出半截数据的错误。协调器与用例都在主 actor 上订阅。
+    /// Exclude favicon, lastSeen and updatedDate: their writes can start the timer but yield identical
+    /// snapshots and no signal, preventing Task 10 backfill from triggering redundant pushes.
     ///
-    /// **favicon、`lastSeen` 与 `updatedDate` 不进快照**，所以一次 `updateTabFavicon` /
-    /// `updateLastSeen` 起了防抖计时器、但安静期过后那唯一一次投影比下来逐字节相同，什么都
-    /// 不发。Task 10 的图标回填队列每写回一条就触发一次推送、而每次推送的内容与账户上的完全
-    /// 相同，是这条规则挡掉的那个自激。
-    ///
-    /// 返回的 publisher **每次订阅各有一份基线**（`Deferred`）：基线是订阅当刻那一份快照，
-    /// 同一个返回值被订两次就必须各自记各自的，否则第二个订阅者永远比不出差别、一个信号都
-    /// 收不到。协调器在 `stopPhiSync()` 之后会重新挂订阅，所以这不是理论情形。
+    /// Deferred gives each subscription its own baseline captured at subscription time. Shared baselines would
+    /// starve later subscribers, including coordinator resubscription after stopPhiSync().
     @MainActor
     func bookmarkChangesPublisher(
         debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
@@ -872,7 +844,7 @@ extension LocalStore {
             guard let self else {
                 return Empty(completeImmediately: true).eraseToAnyPublisher()
             }
-            // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
+            // Capture the baseline at subscription without emitting: it is the previous state, not a change.
             var lastSnapshot = self.bookmarkChangeSnapshot()
 
             return NotificationCenter.default
@@ -888,15 +860,14 @@ extension LocalStore {
                         }
                     )
                 }
-                // **先上主队列，再防抖。** 通知是保存那个上下文的线程发的（写走后台 actor），
-                // 而 `debounce` 是有状态的：它自己攒着「上一个值」与一只计时器。让它在若干条
-                // 后台线程上收值，就是在无锁状态上并发读写。上面那个 `filter` 不怕，它只碰两个
-                // 静态纯函数。
+                // Move to the main queue before stateful debounce. Save notifications originate on background
+                // context threads; concurrent delivery could race debounce's last value/timer. The preceding
+                // filter is safe because its two helpers are pure static functions.
                 .receive(on: DispatchQueue.main)
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
-                    // 读不出来就**不发信号**，绝不当成「全没了」：下游是一次推送轮，而 §4.7
-                    // 的差分对空集合的回答是给每一条游标发 tombstone。
+                    // On read failure emit no signal, never interpret it as empty: downstream diff would
+                    // tombstone every cursor (§4.7).
                     guard let self else { return nil }
                     guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
                     guard snapshot != lastSnapshot else { return nil }
@@ -908,12 +879,10 @@ extension LocalStore {
         .eraseToAnyPublisher()
     }
 
-    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发；每次订阅各有一份基线、必须在主线程订阅，
-    /// 两条理由都同上。
-    ///
-    /// 过滤器把 `BrowserDataSettingsModel` 算进来，与 `pinnedTabsPublisher` 今天那条同款：
-    /// 作用域一翻，同一批物理行里「同步层认领哪些」整个换一遍，而那次 save 碰的不是
-    /// `TabDataModel`。作用域本身也进快照，否则一次纯翻转在行上看不出任何差别。
+    /// Account-wide pin change signal (§5.7). No initial emission; each subscription has its own baseline and
+    /// must start on the main thread, as above. Include BrowserDataSettingsModel in the filter, matching
+    /// pinnedTabsPublisher: scope changes alter claimed rows without touching TabDataModel. Include scope in
+    /// the snapshot too, since a pure scope change leaves physical rows unchanged.
     @MainActor
     func pinnedTabChangesPublisher(
         debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
@@ -943,7 +912,7 @@ extension LocalStore {
                         }
                     )
                 }
-                // 先上主队列再防抖，理由同书签那条。
+                // Move to the main queue before debounce, as for bookmarks.
                 .receive(on: DispatchQueue.main)
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
@@ -958,18 +927,15 @@ extension LocalStore {
         .eraseToAnyPublisher()
     }
 
-    /// 整账户的 URL Rule 变化信号（§6.5）。**订阅当刻不发**；每次订阅各有一份基线
-    /// （`Deferred`）；**必须在主线程订阅**。三条理由与 `bookmarkChangesPublisher()` 逐字相同。
+    /// Account-wide URL Rule change signal (§6.5). No initial emission; Deferred supplies a per-subscription
+    /// baseline, and subscription must start on the main thread, as for bookmarks.
     ///
-    /// **接的不是 `urlRulesPublisher()`**（`LocalStore+SpaceURLRule.swift`）：它发的是
-    /// `[SpaceURLRule]` **model 对象**、去重按 `l.id` 起手，而两侧是 SwiftData 就地刷新的同一批
-    /// 实例；而且它是 UI 的 publisher，`SpaceManager` 已经订着它。
+    /// Do not derive from UI urlRulesPublisher(), which passes mutable SwiftData models and deduplicates by
+    /// IDs; SpaceManager already consumes it. Snapshot the domain including soft-deleted rows (R-M3-4a-51),
+    /// matching diff: soft deletion carries local deletion intent and must emit.
     ///
-    /// **值快照建在含软删行的那份定义域上**（R-M3-4a-51）：差分读的正是它，一次软删（本机
-    /// 删除意图的全部载体）必须发出信号。
-    ///
-    /// 防抖住在这里，协调器那一级不再加：§6.5 写的「节流 → 值快照去重 → 2 s 防抖」是这三级
-    /// 的整体形状，协调器再加一级就是 4 秒延迟。
+    /// Keep debounce here. §6.5 describes the overall throttle/snapshot-deduplication/2 s debounce pipeline;
+    /// adding another coordinator debounce doubles latency to 4 s.
     @MainActor
     func urlRuleChangesPublisher(
         debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
@@ -983,7 +949,7 @@ extension LocalStore {
             guard let self else {
                 return Empty(completeImmediately: true).eraseToAnyPublisher()
             }
-            // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
+            // Capture the baseline at subscription without emitting: it is the previous state, not a change.
             var lastSnapshot = self.urlRuleChangeSnapshot()
 
             return NotificationCenter.default
@@ -994,11 +960,11 @@ extension LocalStore {
                         matching: { $0.entity.name == SpaceURLRule.entityName }
                     )
                 }
-                // 先上主队列再防抖，理由同书签那条。
+                // Move to the main queue before debounce, as for bookmarks.
                 .receive(on: DispatchQueue.main)
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
-                    // 读不出来就**不发信号**，绝不当成「全没了」。
+                    // On read failure emit no signal; never interpret it as all rows deleted.
                     guard let self else { return nil }
                     guard let snapshot = self.urlRuleChangeSnapshot() else { return nil }
                     guard snapshot != lastSnapshot else { return nil }
@@ -1010,7 +976,7 @@ extension LocalStore {
         .eraseToAnyPublisher()
     }
 
-    /// nil = 这一刻读不出来。定义域**含软删行**（R-M3-4a-51）：一次软删就是一次变化。
+    /// nil means unreadable now. Include soft-deleted rows (R-M3-4a-51): soft deletion is a change.
     @MainActor
     private func urlRuleChangeSnapshot() -> [URLRuleChangeSnapshot]? {
         guard let context = mainContext else { return nil }
@@ -1019,13 +985,13 @@ extension LocalStore {
                 .map(URLRuleChangeSnapshot.init)
                 .sorted { $0.id < $1.id }
         } catch {
-            // R12：只记类型与 domain/code，一个行内容的字节都不记。
+            // R12: log only type and domain/code, never row content.
             AppLogError("[phi-sync] url rule change snapshot failed: \(PhiSyncLog.describe(error))")
             return nil
         }
     }
 
-    /// nil = 这一刻读不出来。调用方把它当成「不知道」，不是「一条都没有」。
+    /// nil means unreadable now: unknown, not an empty collection.
     @MainActor
     private func bookmarkChangeSnapshot() -> [BookmarkChangeSnapshot]? {
         guard let context = mainContext else { return nil }
@@ -1034,19 +1000,16 @@ extension LocalStore {
                 .map(BookmarkChangeSnapshot.init)
                 .sorted { $0.guid < $1.guid }
         } catch {
-            // R12：只记类型与 domain/code，一个行内容的字节都不记。
+            // R12: log only type and domain/code, never row content.
             AppLogError("[phi-sync] bookmark change snapshot failed: \(PhiSyncLog.describe(error))")
             return nil
         }
     }
 
-    /// 同上。作用域读失败也算「不知道」——把它回落成 `.profile` 会在一台 Space 作用域的
-    /// 机器上伪造出一次作用域翻转。
-    ///
-    /// **不走 `pinSyncFetch(in:)`**：那个函数自己再读一次作用域，还要按 `(ownerKey, index,
-    /// guid)` 排出一份 `active` 数组——而 owner 是每次比较现算的。这里要的是**未经作用域
-    /// 过滤**的那一半，那份排序整个是白做的。所以作用域读一次，行集合走两边共用的
-    /// `nonDormantPinModels(in:)`——那条判据必须只有一份，理由写在它自己身上。
+    /// Likewise, failed scope reads mean unknown; defaulting to profile would fabricate a scope change on a
+    /// Space-scoped device. Avoid pinSyncFetch(in:), which rereads scope and sorts active rows by
+    /// owner/index/GUID with repeated owner derivation. This snapshot needs the unfiltered domain only: read
+    /// scope once and use shared nonDormantPinModels(in:) so both predicates stay identical.
     @MainActor
     private func pinnedTabChangeSnapshot() -> PinnedTabChangeSnapshot? {
         guard let context = mainContext else { return nil }
@@ -1063,11 +1026,9 @@ extension LocalStore {
     }
 }
 
-/// 一条书签 / 文件夹行在**同步层眼里**的取值快照（§5.7）。字段照 `PhiLocalBookmark`
-/// 取，因为「变了没有」问的就是「引擎下一轮发出去的字节会不会不同」。
-///
-/// **`favicon` / `lastSeen` / `updatedDate` 有意不在这里**：前两个不是用户对内容的编辑，
-/// 第三个每一次写都会动（`updateLastSeen` 与 `updateTabFavicon` 都写它）。
+/// Sync-visible bookmark/folder value snapshot (§5.7), matching PhiLocalBookmark fields: would the engine's
+/// next outbound bytes change? Deliberately exclude favicon/lastSeen (not content edits) and updatedDate (also
+/// advanced by those non-edit writes).
 private struct BookmarkChangeSnapshot: Equatable {
     let syncId: String?
     let guid: String
@@ -1102,10 +1063,9 @@ private struct BookmarkChangeSnapshot: Equatable {
     }
 }
 
-/// 一条 pin 行的取值快照，字段照 `PhiLocalPin` 取。
-///
-/// `splitPartnerGuid` 而不是伙伴的 lineage：换算要第二张表，而伙伴行本身也在这个数组里，
-/// 它改 lineage 的那一刻数组已经不同了——超集，不漏。
+/// Pin value snapshot matching PhiLocalPin. Keep splitPartnerGuid rather than resolving partner lineage
+/// through another index: the partner row is also in this array, so its lineage change already changes the
+/// snapshot. This superset misses no changes.
 private struct PinnedTabRowChangeSnapshot: Equatable {
     let lineageId: String?
     let guid: String
@@ -1136,17 +1096,16 @@ private struct PinnedTabRowChangeSnapshot: Equatable {
     }
 }
 
-/// pin 侧比的是「作用域 + 行」这一对。行一个字节没动但作用域翻了，同步层认领的那一批就
-/// 整个换了，所以它是快照的一部分而不是订阅之外的东西。
+/// Pin snapshots compare scope plus rows. A scope change can alter every claimed row without changing any
+/// physical row, so scope belongs in the snapshot.
 private struct PinnedTabChangeSnapshot: Equatable {
     let scope: PinnedTabScope
     let rows: [PinnedTabRowChangeSnapshot]
 }
 
-/// 一条规则行在**同步层眼里**的取值快照（§6.5），十列。`pendingLocalEdit` 与
-/// `mergePartnerSyncId` 有意不在这里：两者是本机状态、不上线、不进实体（R-M3-4a-71），一次只
-/// 改它们的写改不了引擎下一轮发出去的任何字节。`deletedDate` **在**：软删是本机删除意图的全部
-/// 载体，下一轮差分要靠它发 tombstone。
+/// Ten-column sync-visible rule snapshot (§6.5). Exclude local-only pendingLocalEdit and mergePartnerSyncId,
+/// which never affect entity bytes (R-M3-4a-71). Include deletedDate: soft deletion carries local deletion
+/// intent for next round's tombstone diff.
 private struct URLRuleChangeSnapshot: Equatable {
     let id: String
     let syncId: String?
@@ -1309,8 +1268,8 @@ extension LocalStore {
                                              index: index,
                                              lineageId: lineageId,
                                              createdDate: nil,
-                                             // 与今天逐字相同：`TabDataModel.source` 的
-                                             // 默认值就是 0，这条路径从不设它。
+                                             // Preserve existing behavior: TabDataModel.source defaults to 0
+                                             // and this path never sets it.
                                              source: 0,
                                              in: context)
             } catch {
@@ -1328,8 +1287,8 @@ extension LocalStore {
         let tabGuid = tab.guidInLocalDB ?? UUID().uuidString
         let tabLineageId = tab.pinnedLineageId
         let tabTitle = tab.title
-        // URL 的解析必须留在共享 body 的 create 分支里：提到这里会让「URL 非法但行已存在」
-        // 的那一次**移动**也失败，而今天它是成功的。这里只做一次无副作用的转换。
+        // Keep URL validation on the shared body's create branch: moving an existing row must still succeed
+        // with an invalid URL. This conversion has no side effects.
         let tabURL = tab.url.flatMap { URL(string: $0) }
         performBackgroundWrite { context in
             do {

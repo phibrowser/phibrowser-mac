@@ -510,7 +510,8 @@ extension AgentSpaceRouter {
                                         host: host,
                                         pathPrefix: obj["pathPrefix"] as? String,
                                         ask: obj["ask"] as? Bool ?? false)
-            // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
             guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
                 ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
                 return
@@ -578,7 +579,8 @@ extension AgentSpaceRouter {
                                            pathPrefix: newPath,
                                            ask: newAsk,
                                            spaceId: newSpace)
-            // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
             guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
                 ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
                 return
@@ -615,7 +617,8 @@ extension AgentSpaceRouter {
                 return
             }
             let edits = URLRulesEditor.EditSet(upserts: [], deletedIds: [id])
-            // 延迟回执：`ok` 意味着已提交；写失败回 `write_failed`（R-M3-3-14，与「没写」不同形）。
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
             guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
                 ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
                 return

@@ -5,45 +5,41 @@
 
 import Foundation
 
-/// `alreadyMapped` 与 `ProfileKeyManagerError.alreadyMapped`（ProfileKeyManager.swift:5-10）
-/// 是同一条防线：它不是失败，是**拒绝铸造**——调用方把一次瞬时查表失败当成了「没有
-/// 映射」，再铸一个就等于把账户里那条实体丢掉，两台设备从此永久分叉。
+/// alreadyMapped is the same protection as ProfileKeyManagerError.alreadyMapped
+/// (ProfileKeyManager.swift:5-10): refuse minting after a transient lookup failure is mistaken for no mapping.
+/// Minting again would abandon the existing account entity and permanently split devices.
 enum SpaceSyncMappingError: Error, Equatable {
     case alreadyMapped
-    /// 该 syncUuid 已被另一个本地 Space 认领：单射性由写入口保证，不靠事后 tie-break 补救。
+    /// Another local Space already claimed this syncUuid. Enforce injectivity at the write boundary, not
+    /// through later tie-breaks.
     case syncUuidAlreadyClaimed
-    /// 默认 Space 的身份是常量，不存映射行（R-D6-2）。
+    /// Default Space uses a constant identity without a stored mapping (R-D6-2).
     case defaultSpaceIsImplicit
-    /// 这个 `SyncKeyController` 根本没有映射层（`spaceKeys == nil`）。失败方向是
-    /// 「一条都不发布」，由 §9.3 的 `unmapped=<n>` 暴露——绝不是「用一张内存表凑合」。
+    /// This controller has no mapping layer (spaceKeys == nil). Publish nothing and expose unmapped counts
+    /// (§9.3); never substitute an in-memory table.
     case mappingLayerUnavailable
-    /// 写盘失败：store 已经把内存回滚回写之前那一份（R-M3-4a-83），所以这条错**不留痕迹**
-    /// ——抛出之后 `syncUuid(forSpaceId:)` 与 `localSpaceId(forSyncUuid:)` 都查不到这条映射。
+    /// Persistence failure restores the prior in-memory store (R-M3-4a-83). The failed mapping is absent from
+    /// both forward and reverse lookup after throwing.
     case persistFailed
-    /// R-M3-4a-6：本机那一侧的保留 id（incognito 前缀下的任何 spaceId）。映上之后
-    /// `incognitoRuleTargetId` 就成了一个「真 Space」，它的规则会按 Space 归属走
-    /// `isEligibleSpace` 与保留期级联——而它根本没有 `SpaceModel` 行、没有 Space 游标。
+    /// Reserved local IDs under the incognito prefix (R-M3-4a-6). Mapping one would treat
+    /// incognitoRuleTargetId as a real Space for eligibility/retention cascade despite having no SpaceModel
+    /// row or cursor.
     case reservedSpaceId
-    /// R-M3-4a-6：账户那一侧的保留 uuid（`defaultSpaceUuid` / `incognitoSpaceUuid`）。
-    /// 映上之后保留常量就被某台机器绑到一个真 Space 上，两台对同一条 incognito 规则解析出
-    /// 不同目标，而没有任何日志会提示。
+    /// Reserved account UUIDs defaultSpaceUuid/incognitoSpaceUuid (R-M3-4a-6). Binding one to a real local
+    /// Space would silently make devices resolve the same incognito rule to different targets.
     case reservedSyncUuid
 }
 
-/// 本地 `spaceId` <-> 账户级 syncUuid 的翻译层（D6 §2.1）。`ProfileKeyManager` 的
-/// 类比物，无 api、无 keyManager。
+/// Local spaceId ↔ account syncUuid translation (D6 §2.1), analogous to ProfileKeyManager without API/key
+/// management.
 ///
-/// **不变量（§2.4）：本地 `spaceId` 永不被改写；syncUuid 永不写进任何本地行。**
-/// （spec §2.4 要求这两句进**两个**文件的头注释；另一份在
-/// `AccountSpaceSyncMappingStore.swift` 的协议注释上。这里是唯一会把两个空间的字符串
-/// 同时拿在手里的类型，读者在这里最容易把它们混起来。）
+/// Invariants (§2.4): never rewrite local spaceId; never put syncUuid in local rows. The spec requires these
+/// in both this type and AccountSpaceSyncMappingStore's protocol header, because this type holds strings from
+/// both namespaces.
 ///
-/// **默认 Space 的处理是「两个 resolver 里的常量分支」，不是一行映射（R-D6-2）。**
-/// 理由是自撤销：`removeAllMappings()` 会把整表写空，一行
-/// `"default-space" -> "default-space"` 会被一起删掉，而重新加入时若有任何一条路径
-/// 先于重新播种去查表，默认 Space 就会被当成「没有映射」而在 snapshot 里被 `continue`
-/// 掉——账户里那条 `default-space` 实体从此再也收不到这台机器的更新。常量分支让它
-/// 不可摧毁，代价是每个 resolver 一个 `if`，两处，都在本文件里。
+/// Default Space uses constant branches in both resolvers, never a mapping row (R-D6-2). Self-revocation
+/// clears all mappings; a stored default mapping could disappear and be queried before reseeding on rejoin,
+/// permanently skipping default-Space updates. Two local constant branches make its identity indestructible.
 @MainActor
 final class SpaceSyncMappingManager {
     private let store: any SpaceSyncMappingStore
@@ -52,15 +48,15 @@ final class SpaceSyncMappingManager {
         self.store = store
     }
 
-    /// 出站翻译。默认 Space 直接给常量，不查表。
+    /// Outbound translation: return the default-Space constant without a table lookup.
     func syncUuid(forSpaceId spaceId: String) -> String? {
         if spaceId == LocalStore.defaultSpaceId { return SyncableSpaces.defaultSpaceUuid }
         return store.syncUuid(forSpaceId: spaceId)
     }
 
-    /// 入站翻译。命中多条时取字典序最小者并记一条 warn（诊断，不是修复；单射性由
-    /// `map(spaceId:toSyncUuid:)` 保证）。形状照 `ProfileKeyManager.localProfileId`
-    /// （ProfileKeyManager.swift:183-192）。
+    /// Inbound translation: for duplicate matches, warn and choose the lexicographically smallest local ID.
+    /// This diagnoses rather than repairs; map(spaceId:toSyncUuid:) enforces injectivity. Matches
+    /// ProfileKeyManager.localProfileId (ProfileKeyManager.swift:183-192).
     func localSpaceId(forSyncUuid uuid: String) -> String? {
         if uuid == SyncableSpaces.defaultSpaceUuid { return LocalStore.defaultSpaceId }
         let matches = store.allMappings().filter { $0.value == uuid }.keys.sorted()
@@ -70,10 +66,8 @@ final class SpaceSyncMappingManager {
         return matches.first
     }
 
-    /// 向导的「作为新 Space 加入」，以及 §3.2 的懒铸造。
-    /// **绝不复用本地 spaceId**：本地 id 是 `UUID().uuidString`（大写，
-    /// SpaceManager.swift:960），syncUuid 一律小写，于是两者混用在日志与 plist 里
-    /// 肉眼可辨。
+    /// Wizard join-as-new and §3.2 lazy minting. Never reuse local spaceId: local UUIDs are uppercase
+    /// (SpaceManager.swift:960), while syncUuid is lowercase, keeping namespace mixups visible in logs/plists.
     func mintSyncUuid(forSpaceId spaceId: String) throws -> String {
         guard spaceId != LocalStore.defaultSpaceId else {
             throw SpaceSyncMappingError.defaultSpaceIsImplicit
@@ -82,19 +76,17 @@ final class SpaceSyncMappingManager {
             throw SpaceSyncMappingError.alreadyMapped
         }
         let uuid = UUID().uuidString.lowercased()
-        // 落盘失败 ⇒ 抛错，**在 `return uuid` 之前**：吞掉它会在内存里留下一个从没落盘的
-        // uuid，本轮 `pushSpaces` 拿它发布，重启后映射消失、下一轮再铸一个新的，同一个
-        // 本机 Space 在账户上占两条（§2.5 第 2 条）。
+        // Throw on failed persistence before returning the UUID (§2.5 item 2). Publishing it without a durable
+        // mapping would mint a duplicate account Space after restart.
         guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
             throw SpaceSyncMappingError.persistFailed
         }
         return uuid
     }
 
-    /// 向导的「对应到账户已有 Space」。两条保留守卫在前（R-M3-4a-6，**两个参数在两个命名
-    /// 空间里**：`spaceId` 是本机大写 UUID 串，拿它去比保留 sync uuid 永远不成立，所以只写
-    /// 一条守卫必然漏掉另一半），随后是三道闸：默认 Space、已有映射、该 uuid 已被别的本地
-    /// Space 认领。
+    /// Wizard mapping to an existing account Space. Guard both reserved namespaces first (R-M3-4a-6): local
+    /// uppercase spaceId cannot substitute for checking account UUIDs. Then reject default Space, existing
+    /// mapping and a UUID claimed by another local Space.
     func map(spaceId: String, toSyncUuid uuid: String) throws {
         guard !SpaceManager.isIncognitoSpaceId(spaceId) else {
             throw SpaceSyncMappingError.reservedSpaceId
@@ -112,20 +104,20 @@ final class SpaceSyncMappingManager {
         guard !store.allMappings().values.contains(uuid) else {
             throw SpaceSyncMappingError.syncUuidAlreadyClaimed
         }
-        // 三道既有闸之后同一句 guard（见 `mintSyncUuid`）。
+        // After the existing three gates, apply the same persistence guard as mintSyncUuid.
         guard store.setSyncUuid(uuid, forSpaceId: spaceId) else {
             throw SpaceSyncMappingError.persistFailed
         }
     }
 
-    /// 引擎在首次 snapshot 前对每个同步合格 Space 调一次（R-D6-7 的懒铸造）。
+    /// Called once per eligible Space before the first snapshot for R-D6-7 lazy minting.
     @discardableResult
     func ensureMapped(spaceId: String) throws -> String {
         if let uuid = syncUuid(forSpaceId: spaceId) { return uuid }
         return try mintSyncUuid(forSpaceId: spaceId)
     }
 
-    /// 默认 Space 是 no-op（本来就没有行）。
+    /// Default Space is a no-op because it has no stored mapping.
     func removeMapping(forSpaceId spaceId: String) {
         store.removeMapping(forSpaceId: spaceId)
     }

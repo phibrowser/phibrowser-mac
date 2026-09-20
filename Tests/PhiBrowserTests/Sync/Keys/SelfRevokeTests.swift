@@ -26,8 +26,8 @@ final class SelfRevokeTests: XCTestCase {
         }
     }
 
-    /// `ownedItemStores` / `markerStore` 默认为空 / nil，与生产 `init` 的默认值同义——「这个
-    /// controller 没有归属项段 / 没有 marker 文件」；既有三条用例一字不改。
+    /// ownedItemStores defaults to empty and markerStore to nil, matching production:
+    /// this controller has no owned-item sections or marker file. Preserve the three existing cases.
     private func makeController(api: FakeAPI, ledger: Ledger, store: MemoryMappingStore,
                                 rotator: RecordingDeviceKeyStore,
                                 spaceStore: PhiSpaceSyncStateStore,
@@ -147,13 +147,14 @@ final class SelfRevokeTests: XCTestCase {
         XCTAssertFalse(controller.needsPairing)
     }
 
-    /// CASE 3.2（M3-4a §4.4）— 自撤销第 4 步在两张游标表之外多删一次 `marker.json`：删，不是
-    /// 存一张空表；第 1 步仍然严格先于一切清理；第 5 步的擦除面连两个 legacy 键一起擦。
+    /// CASE 3.2 (M3-4a §4.4): self-revoke step 4 deletes marker.json alongside both
+    /// cursor tables, rather than saving an empty table. Step 1 precedes all cleanup;
+    /// step 5 also erases both legacy keys.
     ///
-    /// 防的是什么：三张游标表删了而 marker 留着，正好凑出 §4.4 论证里那个**灾难**方向的同族：
-    /// 重新加入时 marker 说「我已经越过账户的全部历史」，于是那一次本该按身份把实体认回本机
-    /// 行的整类型重放**一条实体都收不到**，而游标表是空的 ⇒ §5.7 的差分把整张表判成「本机
-    /// 已删」⇒ 发出一批 tombstone，删掉账户上每一台设备的书签 / pin / 规则。
+    /// Deleting cursor tables but retaining the marker reproduces §4.4's destructive
+    /// failure: rejoin sees a marker beyond account history and replays no entities,
+    /// so identities are not reclaimed. Empty cursors then make §5.7's diff treat the
+    /// entire table as locally deleted and tombstone every device's bookmarks, pins, and rules.
     func testSelfRevocationDeletesTheMarkerFileAlongsideBothCursorTables() async throws {
         let api = FakeAPI()
         let ledger = Ledger()
@@ -163,7 +164,7 @@ final class SelfRevokeTests: XCTestCase {
         let spaceStore = PhiSyncEngineSpaceTests.MemorySpaceStore()
         let markerStore = MemoryMarkerStore(
             file: PhiSyncMarkerFile(marker: Data("m".utf8), storeBirthday: "B"))
-        // 两张游标表都非空。
+        // Both cursor tables are nonempty.
         var cursors = PhiOwnedItemTable()
         cursors.cursors["b1"] = PhiOwnedItemCursor()
         let bookmarkStore = MemoryOwnedItemStore(table: cursors)
@@ -172,7 +173,7 @@ final class SelfRevokeTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
-        // 一台迁移写失败的机器：两个 legacy 键还在（计划裁定 3 的擦除面要连它们一起擦）。
+        // Simulate failed migration persistence, leaving both legacy keys for step 5 to erase (ruling 3).
         for key in PhiSyncEngine.legacyMarkerStateKeys { defaults.set("x", forKey: key) }
         ProfilePairingGate.staticPendingOverride = true
         defer { ProfilePairingGate.staticPendingOverride = nil }
@@ -184,13 +185,13 @@ final class SelfRevokeTests: XCTestCase {
                                                   markerStore: markerStore)
         try await controller.removeThisDeviceFromSync()
 
-        XCTAssertTrue(markerStore.deleted, "`marker.json` 被删")
+        XCTAssertTrue(markerStore.deleted, "marker.json is deleted")
         XCTAssertTrue(bookmarkStore.deleted)
         XCTAssertTrue(pinStore.deleted)
-        XCTAssertEqual(ledger.steps.first, "retire", "第 1 步仍然严格先于一切清理")
-        XCTAssertTrue(markerStore.saves.isEmpty, "删，不是存一张空表")
+        XCTAssertEqual(ledger.steps.first, "retire", "Step 1 precedes all cleanup")
+        XCTAssertTrue(markerStore.saves.isEmpty, "Delete the file instead of saving an empty table")
         XCTAssertTrue(PhiSyncEngine.stateKeys.allSatisfy { defaults.object(forKey: $0) == nil })
         XCTAssertTrue(PhiSyncEngine.legacyMarkerStateKeys.allSatisfy { defaults.object(forKey: $0) == nil },
-                      "第 5 步的擦除面连迁移残留一起擦")
+                      "Step 5 also erases migration leftovers")
     }
 }

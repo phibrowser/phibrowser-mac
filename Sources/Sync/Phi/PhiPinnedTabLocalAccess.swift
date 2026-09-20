@@ -5,73 +5,61 @@
 
 import Foundation
 
-/// 一条本机 pin 在同步层眼里的取值快照。与 `PhiLocalBookmark` 同款：不依赖
-/// `LocalStorage`。
+/// Sync-visible value snapshot of a local pin, independent of LocalStorage like PhiLocalBookmark.
 struct PhiLocalPin: Equatable, Sendable {
-    /// 本机 `pinLineageId` 的**原样字节**。**不是**身份的全部——身份是
-    /// `(lineageId, owner)` 这一对（R-M3-3-15），一条 lineage 在 N 个 Space 里就是 N 条
-    /// 实体。
+    /// Raw local pinLineageId bytes, only half the identity: (lineageId, owner) identifies a pin (R-M3-3-15),
+    /// so one lineage in N Spaces is N entities.
     ///
-    /// **计划裁定（P11）：这一列不保证是小写，每一处比较都要先过 `PinKind.lineageKey(_:)`。**
-    /// 那一列的来源有三条：`normalizeVariants` 写进去的是 `UUID().uuidString`（**大写**）；
-    /// 既有行回落到自己的 `guid`（**大写**）；线上来的才是已归一的小写。投影时**不改写**
-    /// 它（保持与 SwiftData 里的字节一致，免得每次读都产生一次伪变化）——归一的责任全部
-    /// 在比较入口上。
+    /// P11: not necessarily lowercase; normalize every comparison with PinKind.lineageKey. normalizeVariants
+    /// mints uppercase UUIDs, legacy rows fall back to uppercase GUIDs, and only wire input is already
+    /// lowercase. Preserve stored bytes during projection to avoid false read-time changes; normalize at
+    /// comparison boundaries.
     var lineageId: String
-    /// 本机物理行的 id。落地的每一个操作都按它定位。
+    /// Physical local row ID used by every landing operation.
     var guid: String
-    /// 三个作用域，两个字段，按 §7.2 的表：
-    /// **Space 作用域 = `spaceId` 与 `profileId` 都非 nil**（一条 Space 作用域的行既知道
-    /// 自己在哪个 Space，也知道那个 Space 绑在哪个 profile 上）；Profile 作用域 =
-    /// `spaceId` 为 nil、`profileId` 非 nil；App 作用域 = 两者都为 nil。
-    ///
-    /// 于是 owner 的判据是**先看 `spaceId` 再看 `profileId`**，不是「哪个非 nil 用哪个」。
+    /// §7.2 scope shape: Space has both spaceId and profileId; Profile has only profileId; App has neither.
+    /// Resolve owner by checking spaceId before profileId, not arbitrarily choosing a nonnil value.
     var spaceId: String?
-    /// 见 `spaceId` 上那张表：Space 与 Profile 两个作用域下都非 nil，只有 App 作用域为 nil。
+    /// Present for Space and Profile scopes, absent only for App; see spaceId.
     var profileId: String?
     var index: Int
     var title: String
     var url: URL
-    /// 对半的 lineage id，nil = 不是 split 的一半。**永远不是**对半的物理
-    /// `splitPartnerGuid`（按设备、按副本）。
+    /// Partner lineage, nil when not split. Never the device/copy-specific physical splitPartnerGuid.
     var splitPartnerLineageId: String?
-    /// `TabSource` 的 raw value。
+    /// TabSource raw value.
     var source: Int
     var createdDate: Date
-    /// nil = 从未改过内容，比较戳退回 `createdDate`（§6.2）。
+    /// nil means never content-edited; fall back to createdDate for comparison (§6.2).
     var contentUpdatedDate: Date?
-    /// 休眠行不进快照，也不参与差分。
+    /// Dormant rows participate in neither snapshots nor diff.
     var isDormant: Bool
 }
 
-/// 一次 pin 字段更新要改哪些字段、改成什么。双层可选的读法同
-/// `BookmarkFieldPatch`：外层「改不改」，内层「改成什么，nil = 清空」。
+/// Pin field patch, using BookmarkFieldPatch's nested-optionals contract: outer selects whether to change;
+/// inner selects the value, with nil clearing it.
 struct PinFieldPatch: Equatable {
     var title: String?? = nil
     var url: URL?? = nil
     var splitPartnerLineageId: String?? = nil
 }
 
-/// 落地一条远端 pin 所需的**单个**本机写操作。
+/// One local write for landing a remote pin.
 enum PinApplyOp: Equatable {
     case create(PhiLocalPin)
-    /// 把一条已存在的本机行改挂到另一个 lineage 上。**不是**换 owner——换 owner 是老
-    /// tag 下的 tombstone 加新 tag 下的 create，永远不是字段变更（§7.2）。
+    /// Assign a different lineage to an existing row. This is not owner change: changing owner always
+    /// tombstones the old tag and creates a new tag, never updates fields (§7.2).
     case relineage(guid: String, newLineageId: String)
     case move(guid: String, index: Int)
     case update(guid: String, fields: PinFieldPatch)
     case delete(guid: String)
 }
 
-/// 一轮远端落地要施加的**全部** pin 操作，已排好序。理由同 `BookmarkApplyBatch`：
-/// 一轮多条行要走一个事务。
+/// All ordered pin operations for one remote round in one transaction, as with BookmarkApplyBatch.
 struct PinApplyBatch {
     private(set) var ops: [PinApplyOp]
 
-    /// 与书签同一个三相排序，只是没有父子关系那一层——pin 是平的：
-    /// ① create / relineage / move ② update ③ delete。
-    ///
-    /// 每相内**稳定**（保持传入次序）。
+    /// Stable three-phase order, like bookmarks without parent depth: create/relineage/move → update → delete.
     init(unordered: [PinApplyOp]) {
         self.ops = unordered.enumerated().sorted { lhs, rhs in
             let lhsPhase = Self.phase(lhs.element)
@@ -90,149 +78,97 @@ struct PinApplyBatch {
     }
 }
 
-/// 引擎读写本机 pin 的**唯一**接缝。isolation 与抛出约定同 `PhiBookmarkLocalAccess`。
-///
-/// **精化 `PhiFaviconWriting`**（§8.2 / Task 10）：理由与 `PhiBookmarkLocalAccess` 上那段
-/// 逐字相同——图标回填只需要一个窄写入口，不该经过 `PinApplyOp`。
-///
-/// 生产实现是本文件末尾的 `AccountPhiPinnedTabAccess`。
+/// Sole engine/local-pin boundary, with PhiBookmarkLocalAccess's isolation and throwing guarantees. Refine
+/// PhiFaviconWriting for narrow backfill access (§8.2 / Task 10), never a PinApplyOp.
+/// AccountPhiPinnedTabAccess below is production.
 @MainActor
 protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
-    /// 本机 SwiftData 单例行上的作用域。
+    /// Scope stored in the local SwiftData singleton row.
     func currentScope() -> PinnedTabScope
 
-    /// **账户**作用域：读 Task 8 的镜像偏好键；从未落地过账户值时返回 nil。
-    ///
-    /// §7.3 的判据是这两个方法的比较，引擎不去够 `LocalStore` 也不去够 UserDefaults。
+    /// Account scope from Task 8's mirror preference, nil before an account value lands. §7.3 compares these
+    /// two APIs; the engine never accesses LocalStore/UserDefaults directly.
     func accountScope() -> PinnedTabScope?
 
-    /// 当前作用域内、**非休眠**的**全部**行，按 `(ownerKey, index, guid)` 有序。
-    ///
-    /// **不做「每条 lineage 挑一个代表」**——挑代表会把剩下那些行悄悄排除在同步之外，
-    /// 而它们从没发布过，差分也永远不会为它们产出任何东西。
-    ///
-    /// **读失败一律抛，绝不返回空数组**（R-exec-3，与 `allBookmarks()` 同一条）。一次读不
-    /// 出来与「这个账户一条 pin 都没有」在值上是同一个 `[]`，而 §4.7 的差分对空集合的回答
-    /// 是**给每一条游标发 tombstone**——一次失败的 fetch 会删掉账户上全部 pin，且此后每台
-    /// 设备都跟着删。返回一份悄悄过期的旧快照是同一类 bug 的另一种写法，所以也不做。
+    /// All non-dormant rows in current scope, ordered by ownerKey/index/GUID. Never choose just one
+    /// representative per lineage: other unpublished variants would silently escape both snapshot and diff.
+    /// Throw on read failure (R-exec-3), never return [] or stale data: §4.7 interprets empty as tombstones
+    /// for every cursor and deletes all account pins.
     func allPins() throws -> [PhiLocalPin]
 
-    /// 差分与 §9.3 级联的定义域来源：本机**所有**非休眠 pin 行，**不做作用域过滤**
-    /// （R-exec-4，与 `allSyncIds()` 同一条）。
+    /// Diff and §9.3 cascade domain: every non-dormant local pin row without scope filtering (R-exec-4).
+    /// Unlike allPins' claimed rows, this answers whether an identity still has a local row (§4.7). Keep
+    /// out-of-scope migration backups protected, but exclude dormant rows per contract.
     ///
-    /// §4.7 的「这条身份在本机还有没有行」用它，不用 `allPins()`：后者回答的是「同步层这
-    /// 一轮认领哪些行」。一次作用域迁移把旧集合的物理行原地留下当备份，它们不在 `allPins()`
-    /// 里，但**永远不会被判成删除**——「同步层不认领它」与「账户应该忘掉它」是两句不同的
-    /// 话。休眠行仍然排除在外：`isDormant` 的契约明写它不参与差分。
+    /// Return rows, not bare lineages (R-exec-11). Callers own OwnerResolver and derive the full (lineage,
+    /// owner) identity with the same PinKind.identity helper as outbound snapshots. Each row protects only its
+    /// own owner-specific identity; a Profile backup must not protect a missing Space pin, as happened on Mac
+    /// B on 2026-09-14.
     ///
-    /// **交的是行，不是身份，而且判据是身份不是 lineage（R-exec-11）。** 身份是
-    /// `(lineage, owner)` 这一对，而 owner 那一半要过 `OwnerResolver` 才算得出来——那张映射
-    /// 表在引擎手上，不在这一层。所以这里交行，由调用方按**与出站快照逐字相同**的那条
-    /// 推导（`PinKind.identity(of local:resolve:scope:)`）各自算出身份。
-    ///
-    /// 于是**每一条行只保护它自己那一条身份**：一条 profile 形状的备份行保护
-    /// `(L, profileUuid)`，挡不住 `(L, spaceX)` 被判成删除。旧口径交的是**裸 lineage**，
-    /// 一条 lineage 只要还剩任何一行就把它名下**全部** owner 的游标一起保护住——Mac B
-    /// 2026-09-14 丢掉的那条 default-space pin 就是这样既不落地也不发 tombstone 的。
-    /// R-exec-4 的本意（备份行不被判成删除）照旧成立：它们的身份**在集合里**。
-    ///
-    /// **与快照同一次 fetch**（L9）：它读的是 `allPins()` 那一次**未经作用域过滤**的行，
-    /// 不是第二次查询。因此本轮没有成功读过时它**抛**，而不是自己补一次 fetch，更不是交出
-    /// 一个空数组——空集合正是 R-exec-4 要防的那个形状。
+    /// Reuse the snapshot's pre-scope-filter fetch (L9). If no successful read exists this round, throw; never
+    /// refetch or return an empty domain.
     func allPinRows() throws -> [PhiLocalPin]
 
-    /// **本轮最后一次成功的 `allPins()` 或 `apply(_:)` 留下的那份行快照**，**不再 fetch**
-    /// （§5.7 第 2 条硬要求）。次序、作用域过滤与休眠过滤都与 `allPins()` 交出的那一份相同。
-    ///
-    /// 理由与 `PhiBookmarkLocalAccess.cachedBookmarks()` 逐字相同：一次落地改了行之后，
-    /// 同一轮的出站快照必须看见落地后的那份投影，否则旧值配上一个新鲜的 `now` 被发回账户，
-    /// 把对端刚做的编辑原地撤销。
-    ///
-    /// **`nil` = 本轮没有一份可用的快照**，调用方原样留着轮内那份投影，绝不清空。
+    /// Latest successful allPins/apply snapshot this round, with identical scope/dormancy filtering and order,
+    /// without fetching (§5.7 item 2). Outbound projection must see landed values; stale values with a fresh
+    /// now stamp would undo remote edits, as for cachedBookmarks. Nil means unavailable; preserve the caller's
+    /// existing projection rather than emptying it.
     func cachedPins() -> [PhiLocalPin]?
 
-    /// 本机还有没有**这条身份**的行。理由同 `isKnownLocalBookmark`。
+    /// Whether this full (lineage, owner) identity has a local row (R-M3-3-15), never lineage alone. Otherwise
+    /// a row in Space Y could falsely validate a missing Space X landing or indefinitely park its deletion.
     ///
-    /// **问的是 `(lineage, owner)` 这一对，不是裸 lineage**（R-M3-3-15）。一条 lineage 在
-    /// N 个 Space 里就是 N 条实体，只按 lineage 问的话，一条 `(L, spaceX)` 的行明明已经没
-    /// 了，只要 `(L, spaceY)` 还在就照样答「在」——§4.5 的落地后复核于是给一条根本没落地
-    /// 的身份写基线，而一条本该落地的 `(L, spaceX)` 删除会被永远停放。
+    /// ownerKey uses local IDs via PinKind.localOwnerKey (Space, then Profile, then app), not account UUIDs.
+    /// Callers reverse-resolve first; nil means no corresponding local owner and therefore absent. Exclude
+    /// out-of-scope backups, matching allPins: this validates claimed rows, while allPinRows protects the
+    /// broader diff domain.
     ///
-    /// `ownerKey` 是**本机那一侧**的 owner id（`PinKind.localOwnerKey(_:)`：先 `spaceId`
-    /// 再 `profileId`，都没有才是 `"app"`），不是账户级 uuid——两者是两个命名空间，调用方
-    /// 负责先过 `OwnerResolver` 的反查。反查不出本机形状时传 **nil**：那意味着本机根本不
-    /// 存在能坐出这条身份的 owner，于是答案是「不在」。
-    ///
-    /// **作用域之外的备份行不算「在」**：`allPins()` 的契约已经把它们滤掉，这里跟着它。
-    /// 那与 `allPinRows()`（R-exec-4，**不做**作用域过滤）是两个问题——「同步层这一轮认领
-    /// 哪些行」与「账户应该忘掉哪些身份」。两侧如今都按完整身份判，只是定义域一宽一窄。
-    ///
-    /// **收到的是线上归一过的小写 lineage**（P11）：实现必须把本机那一列也过一遍
-    /// `PinKind.lineageKey(_:)` 再比。拿它直接与一个大写的列值比恒为假，后果是每一条本机
-    /// pin 都被判成「本机没有这一行」，于是整批发 tombstone。
-    ///
-    /// **契约**：它读的是**本轮最后一次成功的 `allPins()` 或 `apply(_:)`** 留下的那份快照。
-    /// 三种情况下那份快照不存在——本轮还没读过、`allPins()` 抛了、`apply` 落地成功但它末尾
-    /// 那次重读抛了（那一批**已经提交**，只是快照跟不上了）。此时它返回 false 并在 DEBUG 下
-    /// `assertionFailure`：非抛出的签名表达不了「我这次没读到」，而「每一条都答不在」正是
-    /// 会让引擎整批发 tombstone 的那个静默默认值。
+    /// Normalize local lineage through lineageKey before comparing wire lowercase input (P11), avoiding false
+    /// absence for uppercase UUIDs. Read only this round's latest successful allPins/apply cache. If unread,
+    /// failed or unavailable after committed apply's reread failure, return false and assert in DEBUG;
+    /// nonthrowing absence defaults must not silently trigger mass tombstones.
     func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool
 
-    /// 一整轮远端落地，一个事务。抛错 = 一条都没落。
+    /// One remote landing round in one transaction. Throw means none landed.
     func apply(_ batch: PinApplyBatch) async throws
 
-    /// 作用域迁移。
-    ///
-    /// **计划裁定：带两个 `preferred` 参数，与 spec §4.8 的 `changeScope(to:)` 不同。**
-    /// §7.1 明确要求落地观察者传的两个 preferred 参数与 UI 路径逐字一致
-    /// （`SpacesSettingsView.swift:501-512`），因为 `sourceCollections` 按 `isPreferred`
-    /// 排序、`mergeCandidates` 取第一个集合当 `candidate.source`；不带这两个参数，同一次
-    /// 作用域变更在「本机操作」与「远端落地」两条路上会产出不同的 pin 集合与顺序。
+    /// Scope migration takes both preferred arguments by plan ruling, extending spec §4.8's signature. §7.1
+    /// requires matching UI arguments (SpacesSettingsView.swift:501-512): sourceCollections sorts preferred
+    /// first and mergeCandidates takes that source. Omitting them could yield different pins/order for local
+    /// versus remote changes.
     func changeScope(to scope: PinnedTabScope,
                      preferredProfileId: String?,
                      preferredSpaceId: String?) async throws
 }
 
-/// 生产实现，与 `AccountPhiBookmarkAccess`（`PhiBookmarkLocalAccess.swift`）并列：
-/// `@MainActor`，读是纯查询，写一律 `async throws`。
+/// Main-actor production counterpart of AccountPhiBookmarkAccess, with pure reads and async throwing writes.
+/// Inject LocalStore directly rather than Account: its lazy localStorage opens real user data, preventing
+/// production-access tests on the bookmark side. The coordinator already has the store, so behavior is
+/// unchanged; bookmark injection remains follow-up.
 ///
-/// **依赖从 `init` 注入，收的是 `LocalStore` 而不是 `Account`。** 书签那一侧收一个
-/// `Account` 再经 `account.localStorage` 去够 store，而那个属性是懒加载的、指向**真实用户
-/// 目录**——于是那个生产类在测试里根本没法驱动，5a 的用例因此只覆盖到假件与纯函数，生产
-/// 实现那一层是空白的。协调器在 `buildPhiSyncEngine` 里本来就拿得到 `account.localStorage`，
-/// 传进来即可，生产行为一字不变。（给书签 access 补同样的注入是一条 follow-up。）
-///
-/// **每轮一次 fetch**（§4.8 / §5.7）：`allPins()` 跑那一次读并把结果投影成值快照，顺手建好
-/// 两份派生物；`allPinRows()` 与 `isKnownLocalPin(_:ownerKey:)` 读的都是那一份缓存，
-/// **不再 fetch**。
+/// One fetch per round (§4.8 / §5.7): allPins builds value snapshots and both derived caches;
+/// allPinRows/isKnownLocalPin reuse them.
 @MainActor
 final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     private let store: LocalStore
     private let defaults: UserDefaults
 
-    /// Task 8 写的镜像偏好键。键缺失或值不认识 ⇒ `accountScope()` 返回 nil，引擎按「账户
-    /// 还没发过作用域」处理、不判不一致。**这里只读**，写那一侧在 `PinnedTabScopeMirror`。
-    ///
-    /// 引的是那边的常量，不另写一份同样的字面量：两份字符串分头改掉一份，这一侧会静默地
-    /// 永远答 nil（「账户还没发过作用域」），于是 §7.3 的不一致判据整条失效，而没有任何一条
-    /// 计数会变色。
+    /// Read-only Task 8 scope mirror: missing/unrecognized values return nil, meaning no published account
+    /// scope and no mismatch. PinnedTabScopeMirror owns writes and the shared key constant. Duplicating its
+    /// literal could silently disable §7.3 mismatch checks without unhealthy counters.
     private static var accountScopeKey: String { PinnedTabScopeMirror.key }
 
-    /// 本轮那一次 fetch 的投影结果。`allPins()` 重建，其余两个读者复用。
+    /// This round's fetch projection, rebuilt by allPins and reused by other readers.
     private var cachedRows: [PhiLocalPin] = []
-    /// 快照里那些行的**完整身份** `<归一 lineage>:<本机 ownerKey>`——
-    /// `isKnownLocalPin(_:ownerKey:)` 的判据。
-    ///
-    /// 与下面那份定义域的两处差别都是有意的：这一份出自**作用域过滤之后**的 `active`
-    /// （问的是「同步层这一轮认领的行里还有没有它」），而且**带 owner**（身份是
-    /// `(lineage, owner)` 这一对）。
+    /// Full normalized-lineage:local-owner identities for isKnownLocalPin. Derived from scope-filtered active
+    /// rows and includes owner: both are intentional, answering whether this round's claimed domain contains
+    /// the identity.
     private var cachedIdentityPairs: Set<String> = []
-    /// 差分与级联的定义域来源：那一次 fetch 里**未经作用域过滤**的非休眠行
-    /// （L9 / R-exec-4 / R-exec-11）。上面那一份是它按作用域过滤之后的子集。
+    /// Non-dormant rows before scope filtering from the same fetch, for diff/cascade (L9 / R-exec-4 /
+    /// R-exec-11). Active snapshot rows are a subset.
     private var cachedFullStoreRows: [PhiLocalPin] = []
-    /// 本轮有没有一份可用的快照。区分「读到了，就是空的」与「没读到」——后者让
-    /// `isKnownLocalPin(_:ownerKey:)` 答「不在」，而那正是会让引擎整批发 tombstone 的静默
-    /// 默认值。
+    /// Distinguish a valid empty snapshot from unreadability; silent false isKnownLocalPin defaults could
+    /// trigger tombstones for the whole batch.
     private var snapshotIsLoaded = false
 
     init(store: LocalStore, defaults: UserDefaults = .standard) {
@@ -240,31 +176,28 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         self.defaults = defaults
     }
 
-    // MARK: - 读
+    // MARK: - Reads
 
     func currentScope() -> PinnedTabScope {
         store.pinnedTabScope()
     }
 
-    /// 键缺失、或者值不是三个 `PinnedTabScope` 之一 ⇒ nil。**不回落成 `.profile`**：
-    /// 那会把「账户还没发过作用域」伪装成一次真实的账户取值，于是一台本机在 Space 作用域
-    /// 的机器会把这当成 §7.3 的不一致并停掉整个 pin 段。
+    /// Missing/invalid scope key returns nil, never profile. A fallback would fabricate an account value and
+    /// make a Space-scoped device stop all pin sync for a false §7.3 mismatch.
     func accountScope() -> PinnedTabScope? {
         guard let raw = defaults.string(forKey: Self.accountScopeKey) else { return nil }
         return PinnedTabScope(rawValue: raw)
     }
 
-    /// 一次 fetch（带 `\.profile` 预取）+ 一次作用域读，其余全在内存里。读不出来就抛
-    /// （R-exec-3）。缓存在这条路径上已经被清空，所以不存在「抛了之后还有人读到一份旧值」。
+    /// One profile-prefetched fetch plus one scope read; remaining work is in memory. Throw on failure after
+    /// clearing caches, never expose stale values (R-exec-3).
     func allPins() throws -> [PhiLocalPin] {
         try rebuildCache()
         return cachedRows
     }
 
-    /// 与快照**同一次** fetch 的产物，在作用域过滤**之前**取（R-exec-4 / L9）。
-    ///
-    /// 本轮没成功读过就抛，绝不返回一个空数组：空集合在 §4.7 那边的含义是「本机一条 pin
-    /// 都没有了」，回答是给每一条游标发 tombstone。
+    /// Same snapshot fetch before scope filtering (R-exec-4 / L9). Throw without a successful round read: []
+    /// means no local pins and triggers §4.7 tombstones for every cursor.
     func allPinRows() throws -> [PhiLocalPin] {
         guard snapshotIsLoaded else {
             AppLogError("[phi-sync] pin identities read before a successful snapshot")
@@ -273,79 +206,60 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         return cachedFullStoreRows
     }
 
-    /// 那一次 fetch 的行快照本身，**不再 fetch**。`apply(_:)` 收尾已经重建过它，所以落地
-    /// 之后同一轮的出站快照拿它就能看见落地后的世界。
-    ///
-    /// **本轮没读到就交 nil，不交 `[]`**：调用方拿它去换掉轮内那份本机投影，一个空数组会
-    /// 让整轮的出站快照变空（见协议上的契约）。
+    /// Return the fetch snapshot without refetching. Apply rebuilds it so same-round outbound projection sees
+    /// landed values. Unavailable returns nil, never [] that would empty outbound state.
     func cachedPins() -> [PhiLocalPin]? {
         guard snapshotIsLoaded else { return nil }
         return cachedRows
     }
 
-    /// **两边都过 `PinKind.lineageKey`**（P11）：传进来的是线上归一过的小写 lineage，而本机
-    /// 那一列可能是 `UUID().uuidString`（大写）或一条回落成 guid 的旧值。直接比恒为假。
-    ///
-    /// `ownerKey` 为 nil ⇒ 调用方反查不出本机 owner，本机不可能有这条身份的行 ⇒ 「不在」。
-    /// 这与「本轮没读到快照」那个 false 是两件事，所以它排在
-    /// `requireLoadedSnapshot()` 之后：误用仍然要在 DEBUG 下当场现形。
+    /// Normalize both sides with lineageKey (P11): local UUID/GUID fallbacks may be uppercase, unlike wire
+    /// input. Nil owner means reverse resolution found no possible local owner, hence absent. Check snapshot
+    /// validity first so this legitimate absence cannot hide misuse in DEBUG.
     func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool {
         guard requireLoadedSnapshot() else { return false }
         guard let ownerKey else { return false }
         return cachedIdentityPairs.contains(PinKind.lineageKey(lineageId) + ":" + ownerKey)
     }
 
-    // MARK: - 写
+    // MARK: - Writes
 
-    /// 一整轮远端落地，**一个**事务（§4.5）。抛错 = 一条都没落，调用方不许写基线。
-    ///
-    /// 薄转发：事务、三相次序的执行、导入锁的块内重读与末尾的每 owner 一次重排，全在
-    /// `LocalStore.applyPinSyncBatchThrowing`（`LocalStore+PinnedTabScope.swift`）里。那些活儿
-    /// 够不到这一层——`updateActivePinnedTabBody` / `removeActivePinnedTabBody` /
-    /// `relineagePinnedTabBody` 与 `pinnedTab(_:belongsTo:)`、`owner(of:at:)` 都是 `private`，
-    /// 而挨个调 throwing 兄弟是 N 个事务，部分成功就成立了（R-exec-2）。
+    /// One remote round in one transaction (§4.5), with failure forbidding baselines. Thin forwarding to
+    /// LocalStore.applyPinSyncBatchThrowing owns phase execution, in-write import recheck and per-owner
+    /// normalization. Private storage helpers are inaccessible here; separate throwing calls would create
+    /// partial success across N transactions (R-exec-2).
     func apply(_ batch: PinApplyBatch) async throws {
         try await store.applyPinSyncBatchThrowing(batch.ops)
-        // 落地改了行，本轮那份快照已经过期。**就地重读一遍**，不是清空了事：§4.5 要求
-        // 「落地之后、写基线之前，按计划复核一次」，而复核用的正是上面那两个读者。清空之后
-        // `isKnownLocalPin` 对每一条 lineage 都答「不在」，于是引擎把每条身份都判成死映射
-        // 并整批发 tombstone。
-        //
-        // 这次重读抛了就原样上抛，**但那一批已经提交了**——调用方必须把它当成「落地成功、
-        // 快照跟不上」，而不是「没落地」。此后两个读者在下一次成功的 `allPins()` 之前一律
-        // 无效（见协议上的契约）。
+        // Rebuild after landing, not merely invalidate: §4.5 validates before baseline writes through cached
+        // readers. False isKnownLocalPin results would make identities look dead and emit tombstones. A reread
+        // error propagates after the batch committed; callers must distinguish landed-but-unreadable from
+        // unapplied. Readers remain invalid until the next successful allPins.
         try rebuildCache()
     }
 
-    /// 回填专用的窄写入口（§8.2 / Task 10）。一轮的若干条**合成一次**后台写。
-    ///
-    /// **不碰任何缓存**：`favicon` 不是 `PhiLocalPin` 的字段，这次写改不了本轮那份快照的
-    /// 任何一个取值，所以它对差分与游标全都不可见。
+    /// Narrow favicon backfill write (§8.2 / Task 10), one background transaction per round. Leave caches
+    /// untouched: favicon is absent from PhiLocalPin and invisible to diff/cursors.
     func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
         try await store.updateTabFaviconsThrowing(
             writes.map { (guid: $0.guid, favicon: $0.data) })
     }
 
-    /// 作用域迁移。两个 `preferred` 参数与 UI 路径逐字一致（§7.1）：
-    /// `sourceCollections` 按 `isPreferred` 排序、`mergeCandidates` 取第一个集合当
-    /// `candidate.source`，不带它们的话同一次作用域变更在「本机操作」与「远端落地」两条路上
-    /// 会产出不同的 pin 集合与顺序。
+    /// Scope migration passes both preferred arguments exactly as UI (§7.1). Preferred source ordering
+    /// controls merged pin values/order, so omitting them could diverge local and remote application.
     func changeScope(to scope: PinnedTabScope,
                      preferredProfileId: String?,
                      preferredSpaceId: String?) async throws {
         try await store.changePinnedTabScope(to: scope,
                                              preferredProfileId: preferredProfileId,
                                              preferredSpaceId: preferredSpaceId)
-        // 迁移重建了整批物理行（新 guid、新归属），本轮那份快照与它已经没有关系了。
-        // **只清不重读**：§7.3 让作用域收敛的那一轮整个发布段都不跑，所以这一轮之后没有
-        // 读者；重读只会多一次没人用的 fetch。
+        // Migration recreated physical rows with new GUIDs/owners, invalidating this snapshot. Clear without
+        // rereading: §7.3 skips publication in the scope-convergence round, so no readers need another fetch.
         invalidateCache()
     }
 
-    // MARK: - 私有
+    // MARK: - Private helpers
 
-    /// **清空而不是留着**：留着就等于让 `isKnownLocalPin` 继续回答一份过期的形状，而调用方
-    /// 看不出区别。
+    /// Clear rather than retain: isKnownLocalPin must not silently report stale state.
     private func invalidateCache() {
         cachedRows = []
         cachedIdentityPairs = []
@@ -353,9 +267,8 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         snapshotIsLoaded = false
     }
 
-    /// 非抛出读者的前置判断。返回 false 时调用方交出「不在」那个值——它是**错的**，只是
-    /// 签名里没有别的东西可交，所以 DEBUG 下直接炸，让误用当场现形，而不是变成一批
-    /// tombstone。
+    /// Nonthrowing reader precondition. False forces an absent default its signature cannot distinguish from
+    /// unknown; assert in DEBUG to expose misuse before it becomes mass tombstones.
     private func requireLoadedSnapshot() -> Bool {
         if !snapshotIsLoaded {
             assertionFailure("read the pin snapshot before a successful allPins()/apply()")
@@ -363,7 +276,7 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         return snapshotIsLoaded
     }
 
-    /// **失败一律抛，而且先把缓存清干净**（R-exec-3）。
+    /// Clear caches first and throw on every failure (R-exec-3).
     private func rebuildCache() throws {
         invalidateCache()
         guard let context = store.getMainContext() else {
@@ -374,39 +287,37 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         do {
             fetched = try store.pinSyncFetch(in: context)
         } catch {
-            // R12：只记类型与 domain/code，不记任何行内容。
+            // R12: log only type/domain/code, never row content.
             AppLogError("[phi-sync] pin snapshot fetch failed: \(PhiSyncLog.describe(error))")
             throw error
         }
 
-        // 拆分伙伴在本机是一个**物理 guid**，而线上那一半是 lineage（按设备、按副本的 guid
-        // 到不了别的机器）。翻译表出自同一批 models，所以不需要第二次查询。
+        // Local split links use physical GUIDs, while wire links use lineage. Build the translation from the
+        // same models without another query.
         var lineageByGuid: [String: String] = [:]
         for model in fetched.nonDormant {
             lineageByGuid[model.guid] = model.pinLineageId ?? model.guid
         }
 
         let rows = fetched.active.map { Self.project($0, lineageByGuid: lineageByGuid) }
-        // 两份索引与快照一起换上，中间没有任何一刻是「行在、索引不在」。
+        // Replace both indices and snapshot together with no intermediate mismatch.
         cachedRows = rows
-        // 判据是**完整身份**：只按 lineage 建索引的话，一条 `(L, spaceX)` 的行没了、而
-        // `(L, spaceY)` 还在时，复核照样答「在」（R-M3-3-15）。
+        // Index full identity: lineage alone would falsely confirm a missing Space-X row when the same lineage
+        // remains in Space Y (R-M3-3-15).
         cachedIdentityPairs = Set(rows.map {
             PinKind.lineageKey($0.lineageId) + ":" + PinKind.localOwnerKey($0)
         })
-        // 定义域交的是**行**：身份由调用方按 `PinKind.identity(of local:)` 算，与出站快照
-        // 同一条推导，于是每一条行只保护它自己那一条 `(lineage, owner)`（R-exec-11）。
+        // Return domain rows so callers derive identity through the same PinKind.identity helper as snapshots.
+        // Each row protects only its own lineage/owner pair (R-exec-11).
         cachedFullStoreRows = fetched.nonDormant.map {
             Self.project($0, lineageByGuid: lineageByGuid)
         }
         snapshotIsLoaded = true
     }
 
-    /// 取值快照，绝不是 model 对象：SwiftData 就地刷新同一批实例，按对象比较的去重会吞掉
-    /// 真实的字段编辑（§4.8）。
-    ///
-    /// `lineageId` **原样投影**（P11）：归一只发生在比较入口，写回那一列会让每一次读都产生
-    /// 一次伪变化。
+    /// Value snapshots, never model objects: SwiftData refreshes instances in place and object deduplication
+    /// would swallow edits (§4.8). Preserve raw lineage bytes (P11); normalize only at comparison boundaries
+    /// to avoid false read-time changes.
     private static func project(_ model: TabDataModel,
                                 lineageByGuid: [String: String]) -> PhiLocalPin {
         PhiLocalPin(lineageId: model.pinLineageId ?? model.guid,

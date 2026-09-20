@@ -1,9 +1,9 @@
 import XCTest
 @testable import Phi
 
-/// 第 2 步的决定核与 D7 的覆盖差异。对照 `ProfilePairingModelTests`：每一条都是
-/// 安全性质，不是渲染细节——一个账户 Space 被两行认领会在账户里焊死两个本机 Space，
-/// 而一条假差异会让确认页对用户说一件不会发生的事。
+/// Step 2 decisions and D7 overwrite differences. Like ProfilePairingModelTests,
+/// these test safety properties rather than rendering: duplicate claims permanently
+/// fuse two local Spaces in the account; false differences promise an overwrite that will not happen.
 final class SpacePairingModelTests: XCTestCase {
 
     private func local(_ id: String, name: String = "Work", profile: String = "Default",
@@ -35,7 +35,7 @@ final class SpacePairingModelTests: XCTestCase {
             selections: selections)
     }
 
-    // MARK: - 1. 一个账户 Space 至多被一行认领
+    // MARK: - 1. At most one row claims each account Space
 
     func testAnAccountSpaceLeavesTheOtherRowsListsButStaysInItsOwn() {
         let a = local("A"), b = local("B", name: "Reading")
@@ -43,33 +43,33 @@ final class SpacePairingModelTests: XCTestCase {
                       selections: ["A": .existing(syncUuid: "acct-1")])
         XCTAssertEqual(m.assignableAccountSpaces(for: b).map(\.syncUuid), ["acct-2"])
         XCTAssertEqual(m.assignableAccountSpaces(for: a).map(\.syncUuid), ["acct-1", "acct-2"],
-                       "自己那条永远留在自己的列表里，否则 Picker 的 selected tag 缺失会渲染成空白")
+                       "Keep the row's own selection available or Picker renders a blank missing tag")
     }
 
-    // MARK: - 2. 过期的选择读回「未决定」
+    // MARK: - 2. Stale selections read as undecided
 
     func testAStaleSelectionReadsBackAsUndecided() {
         let a = local("A")
-        let m = model(locals: [a], accounts: [],   // 账户列表变了，acct-1 没了
+        let m = model(locals: [a], accounts: [],   // The account list changed and acct-1 disappeared
                       selections: ["A": .existing(syncUuid: "acct-1")])
         XCTAssertNil(m.assignment(for: a))
         XCTAssertFalse(m.allRowsDecided)
-        XCTAssertTrue(m.decisions().isEmpty, "显示为空白的行不产出决定")
+        XCTAssertTrue(m.decisions().isEmpty, "A row displayed as blank produces no decision")
     }
 
-    // MARK: - 3. 「Add all as new」是快捷方式，不是重置
+    // MARK: - 3. Add all as new is a shortcut, not a reset
 
     func testAddAllAsNewOnlyFillsTheUndecidedRows() {
         let a = local("A"), b = local("B", name: "Reading"), c = local("C", name: "Notes")
         let m = model(locals: [a, b, c], accounts: [account("acct-1")],
                       selections: ["A": .existing(syncUuid: "acct-1")])
         let after = m.addAllAsNew()
-        XCTAssertEqual(after["A"], .existing(syncUuid: "acct-1"), "已决定的行不动")
+        XCTAssertEqual(after["A"], .existing(syncUuid: "acct-1"), "Already-decided rows remain unchanged")
         XCTAssertEqual(after["B"], .addAsNew)
         XCTAssertEqual(after["C"], .addAsNew)
     }
 
-    // MARK: - 4/5. 默认 Space 与 decisions()
+    // MARK: - 4/5. Default Space and decisions()
 
     func testTheDefaultSpaceIsNeitherARowNorADecision() {
         let def = local(LocalStore.defaultSpaceId, name: "Default")
@@ -79,7 +79,7 @@ final class SpacePairingModelTests: XCTestCase {
                                    LocalStore.defaultSpaceId: .existing(syncUuid: "acct-1")])
         XCTAssertEqual(m.rows.map(\.spaceId), ["A"])
         XCTAssertEqual(m.defaultRow?.spaceId, LocalStore.defaultSpaceId)
-        XCTAssertTrue(m.allRowsDecided, "默认 Space 不计入")
+        XCTAssertTrue(m.allRowsDecided, "The default Space is excluded")
         XCTAssertEqual(m.decisions().map(\.localSpaceId), ["A"])
     }
 
@@ -93,10 +93,10 @@ final class SpacePairingModelTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(Set(claimed).count, claimed.count,
-                       "第二行的选择已经不在它的可选列表里，读回未决定")
+                       "The second row's unavailable selection reads as undecided")
     }
 
-    // MARK: - 6. 空账户
+    // MARK: - 6. Empty account
 
     func testAnEmptyAccountIsDecidableInOneClick() {
         let a = local("A"), b = local("B", name: "Reading")
@@ -107,15 +107,15 @@ final class SpacePairingModelTests: XCTestCase {
         XCTAssertTrue(model(locals: [a, b], accounts: [], selections: after).allRowsDecided)
     }
 
-    // MARK: - 7. 左列的口径（§5.4 那条注释的可执行版本）
+    // MARK: - 7. Left-column membership (executable §5.4 comment)
 
-    /// fixture 里放一个 profile **没有映射**的本地 Space（`pairableSpaces()` 会给出、
-    /// `currentSpaces()` 不会）。把左列接到 `currentSpaces()` 上就会让这条用例红。
+    /// Include a local Space with an unmapped Profile: pairableSpaces includes it,
+    /// currentSpaces does not. Using currentSpaces for the left column makes this test fail.
     func testARowSurvivesEvenWhenItsProfileHasNoMappingYet() {
         let unmapped = local("A", name: "Work", profile: "Profile 7")
         let m = model(locals: [unmapped], accounts: [])
         XCTAssertEqual(m.rows.map(\.spaceId), ["A"])
-        XCTAssertNil(m.profileName(for: unmapped), "名字解析不出来不影响它是一行")
+        XCTAssertNil(m.profileName(for: unmapped), "An unresolved Profile name does not exclude the row")
     }
 
     // MARK: - D7：SpaceOverwriteDiff（§5.7）
@@ -145,7 +145,7 @@ final class SpacePairingModelTests: XCTestCase {
                         locals: [local("A", name: "Job")],
                         accounts: [account("acct-1", name: "Work")])
         let diff = try XCTUnwrap(out.first)
-        XCTAssertEqual(diff.spaceName, "Job", "节标题是**本机**这一行的名称")
+        XCTAssertEqual(diff.spaceName, "Job", "The section title is the local Space name")
         XCTAssertEqual(diff.changes.count, 1)
         XCTAssertEqual(diff.changes[0].field, .name)
         XCTAssertEqual(diff.changes[0].local, .text("Job"))
@@ -164,10 +164,10 @@ final class SpacePairingModelTests: XCTestCase {
                             locals: [local("A", themeId: nil)],
                             accounts: [account("acct-1", themeId: "moss")])
         XCTAssertEqual(unknown.first?.changes.first?.account, .text("moss"),
-                       "解析不出显示名就用 id 本身")
+                       "Use the id when no display name resolves")
 
-        // `""` 与 `"default"` 都是「无 pin」：这条同时钉住「界面上不可能出现
-        // `Theme: No custom value → No custom value`」。
+        // Empty string and default both mean no pin; the UI must never display
+        // Theme: No custom value → No custom value.
         let sentinel = diffs(["A": .existing(syncUuid: "acct-1")],
                              locals: [local("A", themeId: nil)],
                              accounts: [account("acct-1", themeId: "default")])
@@ -176,7 +176,7 @@ final class SpacePairingModelTests: XCTestCase {
 
     // 11
     func testOpacityIsComparedInMilliUnitsAndNegativesAreAllCleared() throws {
-        // 浮点往返不造假差异。
+        // A floating-point round trip must not create a false difference.
         XCTAssertTrue(diffs(["A": .existing(syncUuid: "acct-1")],
                             locals: [local("A", light: 0.85)],
                             accounts: [account("acct-1", light: 850)]).isEmpty)
@@ -194,20 +194,20 @@ final class SpacePairingModelTests: XCTestCase {
         XCTAssertEqual(gained.first?.changes.first?.local, .defaultValue)
         XCTAssertEqual(gained.first?.changes.first?.account, .percent(milliUnits: 700))
 
-        // 连续滑杆造出的一对：`Int(milli / 10)` 会把它压成 `45% → 45%`。
+        // Continuous-slider values that Int(milli / 10) would incorrectly display as 45% → 45%.
         let slider = diffs(["A": .existing(syncUuid: "acct-1")],
                            locals: [local("A", light: 0.4489)],
                            accounts: [account("acct-1", light: 451)])
         XCTAssertEqual(slider.first?.changes.first?.local, .percent(milliUnits: 449))
         XCTAssertEqual(slider.first?.changes.first?.account, .percent(milliUnits: 451))
 
-        // 负数哨兵不止 -1：落地那侧 `opacity(_:)` 判的是 `< 0`。
+        // Any negative value is a sentinel, not only -1: application-side opacity checks < 0.
         XCTAssertTrue(diffs(["A": .existing(syncUuid: "acct-1")],
                             locals: [local("A", light: nil)],
                             accounts: [account("acct-1", light: -5)]).isEmpty)
     }
 
-    // 12（D7 的「顺序除外」，不是 §7）
+    // 12: D7's order exception, not §7.
     func testRankAndSortOrderAreNotPartOfTheOverwriteDiffPerD7() {
         var localRow = local("A")
         localRow.sortOrder = 9
@@ -220,7 +220,7 @@ final class SpacePairingModelTests: XCTestCase {
         let out = diffs(["A": .addAsNew],
                         locals: [local("A", name: "Totally different", color: "#000000")],
                         accounts: [account("acct-1")])
-        XCTAssertTrue(out.isEmpty, "`.addAsNew` 不覆盖任何东西")
+        XCTAssertTrue(out.isEmpty, "addAsNew overwrites nothing")
     }
 
     // 14
@@ -233,12 +233,12 @@ final class SpacePairingModelTests: XCTestCase {
                         account("acct-1", name: "M")]
         let out = diffs(["A": .existing(syncUuid: "acct-2"), "B": .existing(syncUuid: "acct-1")],
                         locals: locals, accounts: accounts)
-        XCTAssertEqual(out.map(\.localSpaceId), ["A", "B"], "节的顺序 = decisions() 的顺序")
+        XCTAssertEqual(out.map(\.localSpaceId), ["A", "B"], "Section order matches decisions() order")
         XCTAssertEqual(out[0].changes.map(\.field),
                        [.name, .icon, .color, .theme, .opacityLight, .opacityDark])
     }
 
-    // 15（不是笔误：Swift 的 `String ==` 区分大小写，而 `land` 用的就是这个运算符）
+    // 15: Intentional: Swift String equality is case-sensitive, and land uses that operator.
     func testColorHexCaseIsARealDifferenceBecauseLandUsesTheSameOperator() {
         let out = diffs(["A": .existing(syncUuid: "acct-1")],
                         locals: [local("A", color: "#AABBCC")],
@@ -256,6 +256,6 @@ final class SpacePairingModelTests: XCTestCase {
             accountSpaces: [account("acct-1")],
             themeDisplayName: { _ in nil })
         XCTAssertEqual(out.map(\.localSpaceId), ["B"],
-                       "解析不到的行跳过、不 trap、不影响其余行")
+                       "Skip unresolved rows without trapping or affecting other rows")
     }
 }

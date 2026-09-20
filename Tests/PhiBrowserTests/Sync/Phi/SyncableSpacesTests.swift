@@ -374,40 +374,40 @@ final class SyncableSpacesTests: XCTestCase {
         baseline.spaceUuid = "u1"
         var binding = Phi_PhiSettingValue()
         binding.updatedAtMs = 4_242
-        binding.stringValue = "uuid-远端"
+        binding.stringValue = "uuid-\u{8fdc}\u{7aef}"
         baseline.profileUuid = binding
 
         var table = PhiSpaceSyncTable()
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv"
         cursor.reconciled = try baseline.serializedData()
-        cursor.heldProfileUuid = "uuid-远端"
+        cursor.heldProfileUuid = "uuid-\u{8fdc}\u{7aef}"
         cursor.heldForLocalProfileId = "Default"
         table.cursors["u1"] = cursor
 
         let entity = SyncableSpaces.snapshot(
             spaces: [local("u1")], table: table,
             globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 900_000)["u1"]!
-        XCTAssertEqual(entity.profileUuid.stringValue, "uuid-远端")
+        XCTAssertEqual(entity.profileUuid.stringValue, "uuid-\u{8fdc}\u{7aef}")
         XCTAssertEqual(entity.profileUuid.updatedAtMs, 4_242)
     }
 
-    /// §3.5's second clause: "本机之后主动换绑该 Space 时清掉它并按普通字段盖
-    /// `now`". A hold that outlived the binding it was taken against would make
-    /// this device unable to publish a binding for that Space ever again.
+    /// §3.5's second clause: when the user later rebinds the Space, clear the hold
+    /// and stamp now as for ordinary fields. A hold surviving its original binding
+    /// would permanently prevent this device from publishing a new binding.
     func testALocalRebindOverridesAStaleHeldBinding() throws {
         var baseline = Phi_PhiSpaceEntity()
         baseline.spaceUuid = "u1"
         var binding = Phi_PhiSettingValue()
         binding.updatedAtMs = 4_242
-        binding.stringValue = "uuid-远端"
+        binding.stringValue = "uuid-\u{8fdc}\u{7aef}"
         baseline.profileUuid = binding
 
         var table = PhiSpaceSyncTable()
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv"
         cursor.reconciled = try baseline.serializedData()
-        cursor.heldProfileUuid = "uuid-远端"
+        cursor.heldProfileUuid = "uuid-\u{8fdc}\u{7aef}"
         cursor.heldForLocalProfileId = "Default"
         table.cursors["u1"] = cursor
 
@@ -439,10 +439,10 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(second, first)
     }
 
-    // MARK: - D6：出站翻译（§3.2）
+    // MARK: - D6: Outbound translation (§3.2)
 
-    /// 本地 id 与 syncUuid 取成两个**不同**字符串，然后断言结果里任何地方都不出现
-    /// 本地 id。这是整条出站通道的总闸。
+    /// Use distinct local id and syncUuid strings, then assert the local id never
+    /// appears anywhere in the result: the outbound channel's identity boundary.
     func testSnapshotPutsSyncUuidsOnTheWireAndNeverTheLocalSpaceId() throws {
         let local = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                   colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
@@ -457,10 +457,10 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(entity.spaceUuid, "sync-1")
         let bytes = try entity.serializedData()
         XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("LOCAL-1"),
-                       "本地 spaceId 绝不上线")
+                       "Local spaceId never goes on the wire")
     }
 
-    /// 「无映射就跳过」与「profile 没有映射就 continue」是同一条规则的两个实例。
+    /// Skipping unmapped Spaces and skipping unmapped Profiles are instances of the same rule.
     func testSnapshotSkipsASpaceWithNoMappingEntirely() {
         let mapped = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                    colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
@@ -475,8 +475,8 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(Set(out.keys), ["sync-1"])
     }
 
-    /// 游标、基线与 rank 通道整条在 syncUuid 空间里：一张按 syncUuid 键的表里
-    /// `hidden` 的那一条不出现在结果里，基线的时间戳被沿用（没有被重新盖 `now`）。
+    /// Cursors, baselines, and ranks all use syncUuid: a hidden cursor is excluded
+    /// and baseline timestamps are retained without restamping now.
     func testSnapshotReadsCursorsAndBaselinesBySyncUuid() throws {
         let local = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                   colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
@@ -495,7 +495,7 @@ final class SyncableSpacesTests: XCTestCase {
         let out = SyncableSpaces.snapshot(spaces: [local], table: table,
                                           globalUuid: { _ in "uuid-a" },
                                           syncUuid: { _ in "sync-1" }, now: 900)
-        XCTAssertEqual(out["sync-1"]?.name.updatedAtMs, 42, "基线按 syncUuid 命中，没有被重新盖 now")
+        XCTAssertEqual(out["sync-1"]?.name.updatedAtMs, 42, "The baseline matches by syncUuid and is not restamped with now")
 
         var hidden = cursor
         hidden.hidden = true
@@ -506,7 +506,7 @@ final class SyncableSpacesTests: XCTestCase {
                                               syncUuid: { _ in "sync-1" }, now: 900).isEmpty)
     }
 
-    /// 默认 Space：本地 id 与 syncUuid 都是 `"default-space"`，`isDefault` 判据仍成立。
+    /// Default Space uses default-space for both local id and syncUuid; isDefault still holds.
     func testTheDefaultSpaceStillSuppressesProfileAndTheme() throws {
         let def = PhiLocalSpace(spaceId: LocalStore.defaultSpaceId, profileId: "Default",
                                 name: "Default", colorHex: "#3A6FF8", iconName: "phi:x",
@@ -544,13 +544,10 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(ab.spaceUuid, "u1")
     }
 
-    /// §6.2's stated reason for merging against `server` at all: "与 server 合并
-    /// 而不是裸发 snapshot，是为了保住更新版客户端写在预留字段 11-14 上的内容".
-    /// That only holds if the unknown bytes ride through the merge, which they do
-    /// only because it starts from `remote`. Building a fresh entity instead
-    /// stripped them on every round trip -- and, because `cursor.server` keeps
-    /// them while the merged entity would not, `toSend != server` would fire a
-    /// commit that strips them again every single round.
+    /// §6.2 merges against server to preserve reserved fields 11–14 written by newer
+    /// clients. Unknown bytes survive only because merge starts from remote. Building
+    /// a fresh entity strips them; since cursor.server retains them, toSend != server
+    /// then triggers another stripping commit every round.
     func testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient() throws {
         var newer = Phi_PhiSpaceEntity()
         newer.spaceUuid = "u1"
@@ -591,17 +588,17 @@ final class SyncableSpacesTests: XCTestCase {
         var v = Phi_PhiSettingValue(); v.updatedAtMs = ts; v.stringValue = s; return v
     }
 
-    // MARK: - `refuses` 不再对线上 uuid 做 incognito 判据（§3.4）
+    // MARK: - refuses no longer applies incognito checks to wire UUIDs (§3.4)
 
-    /// D6 之后线上 uuid 是随机 syncUuid，这条判据永远不会为真，留着是误导（读者会
-    /// 以为 incognito 有线上防线）。本机的 incognito Space 在源头（`currentSpaces()` /
-    /// `pairableSpaces()` 的排除表）就拿不到映射行，从不产生 syncUuid。
-    /// **两条 agent 特征仍被拒**——那条判据看的是名称/图标/颜色的形状，与 uuid 无关。
+    /// After D6, wire UUIDs are random, so the incognito UUID check is unreachable
+    /// and misleading. Local incognito Spaces are excluded by currentSpaces/pairableSpaces
+    /// before mapping and never receive syncUuid. Both agent signatures remain rejected
+    /// by name/icon/color criteria independent of UUID.
     func testRefusesNoLongerLooksAtTheUuidButStillRefusesBothAgentShapes() {
         var incognitoShaped = Phi_PhiSpaceEntity()
         incognitoShaped.spaceUuid = "space.incognito.7"
         XCTAssertFalse(SyncableSpaces.refuses(incognitoShaped),
-                       "D6：`refuses` 不再看 `space_uuid`")
+                       "D6: refuses no longer checks space_uuid")
 
         var ephemeral = Phi_PhiSpaceEntity()
         ephemeral.spaceUuid = "u-agent"
@@ -659,8 +656,8 @@ final class SyncableSpacesTests: XCTestCase {
         merged.colorHex = lww("#222222", 10)
         merged.iconName = lww("phi:y", 10)
         merged.createdAtMs = 700
-        // D6：`localSpaceId: nil` 走 create 分支，本地行 id 是新铸的，**不是**
-        // `merged.spaceUuid`，所以断言的是返回值而不是 `"u2"`。
+        // D6: nil localSpaceId creates a newly minted local row id, distinct from
+        // merged.spaceUuid. Assert the returned id rather than u2.
         let landed = try await SyncableSpaces.land(merged, existing: nil, localSpaceId: nil,
                                                    profileId: "Default", access: access)
         XCTAssertEqual(access.calls.first, .create(landed))
@@ -668,9 +665,9 @@ final class SyncableSpacesTests: XCTestCase {
                        Date(timeIntervalSince1970: 0.7))
     }
 
-    // MARK: - D6：落地（§3.4）
+    // MARK: - D6: Application (§3.4)
 
-    /// 账户里有、本机没有的 Space —— R-D6-7 的主新增路径。
+    /// A remote-only Space: R-D6-7's primary creation path.
     @MainActor
     func testLandingANewSpaceMintsAFreshLocalIdAndNeverUsesTheWireUuid() async throws {
         let access = FakePhiSpaceAccess()
@@ -683,14 +680,14 @@ final class SyncableSpacesTests: XCTestCase {
 
         let landed = try await SyncableSpaces.land(entity, existing: nil, localSpaceId: nil,
                                                    profileId: "Default", access: access)
-        XCTAssertNotEqual(landed, "sync-new", "线上 uuid 绝不当本地行 id 用")
-        XCTAssertNotNil(UUID(uuidString: landed), "新铸的是一个本地 UUID")
+        XCTAssertNotEqual(landed, "sync-new", "Never use a wire UUID as a local row id")
+        XCTAssertNotNil(UUID(uuidString: landed), "Mint a valid local UUID")
         XCTAssertEqual(access.calls, [.create(landed), .themeState(landed)],
-                       "create 分支内部的 applyThemeState 收到的也是新铸的本地 id，不是 localSpaceId!")
+                       "Create's applyThemeState also receives the minted local id, not localSpaceId!")
         XCTAssertEqual(access.spaces.first?.spaceId, landed)
     }
 
-    /// 非 Void 返回让裸 `return` 编译不过；调用方的 catch 会把实体停回 `pendingApply`。
+    /// A non-Void result prevents bare return; the caller catches failures and restores pendingApply.
     @MainActor
     func testLandingWithNoProfileThrowsAndWritesNothing() async {
         let access = FakePhiSpaceAccess()
@@ -706,7 +703,7 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertTrue(access.calls.isEmpty)
     }
 
-    /// update 分支：三处写方法收到的都是**本地** id，一次都没收到 `merged.spaceUuid`。
+    /// Update: all three write APIs receive local id, never merged.spaceUuid.
     @MainActor
     func testLandingAnExistingSpaceOnlyEverWritesTheLocalId() async throws {
         let access = FakePhiSpaceAccess()
@@ -756,10 +753,10 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(order.count, 4, "every local Space must be renumbered in one write")
     }
 
-    // MARK: - `plannedOrder` 的键空间（§3.4 的静默失效回归）
+    // MARK: - plannedOrder key namespace (§3.4 silent-failure regression)
 
-    /// `syncedRanks` 按**本地** spaceId 键。半翻译在这里没有任何错误信号：每次查表
-    /// 都是 nil，账户级重排整体变成 no-op。
+    /// syncedRanks uses local spaceId keys. Partial translation silently makes
+    /// every lookup nil and turns the entire account reorder into a no-op.
     func testPlannedOrderIsASilentNoOpWhenHandedSyncUuidKeys() {
         let locals = ["LOCAL-1", "LOCAL-2", "LOCAL-3"].enumerated().map { index, id in
             PhiLocalSpace(spaceId: id, profileId: "Default", name: id, colorHex: "#000000",
@@ -773,10 +770,10 @@ final class SyncableSpacesTests: XCTestCase {
         let bySyncUuid = ["sync-1": "V", "sync-2": "F", "sync-3": "k"]
         XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: bySyncUuid),
                        ["LOCAL-1", "LOCAL-2", "LOCAL-3"],
-                       "半翻译 = 静默 no-op：翻译点必须留在引擎里")
+                       "Partial translation silently does nothing; keep translation in the engine")
     }
 
-    // MARK: - 千分单位编码只有一份（§5.7）
+    // MARK: - One thousandths-unit encoder (§5.7)
 
     func testOpacityMilliUnitsIsTheOneEncodingBothSidesUse() {
         XCTAssertEqual(SyncableSpaces.opacityMilliUnits(nil), -1)

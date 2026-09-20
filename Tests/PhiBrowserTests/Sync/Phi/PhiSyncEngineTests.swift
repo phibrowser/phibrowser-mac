@@ -201,16 +201,16 @@ final class PhiSyncEngineTests: XCTestCase {
         /// cannot express it — it is a countdown, and the engine's follow-up rounds
         /// outlive any fixed number a test would pick.
         var keepReportingChangesRemaining = false
-        /// M3-4a / B-2：按**收到的 marker** 分页，而不是按调用次数发脚本。服务端按
-        /// `WHERE version > marker` 取下一页，所以每个 `Page.newMarker` 必须是十进制水位，
-        /// 且页内实体的 `version` 不得高于它。空 ⇒ 这个模式关闭，`scriptedPages` / `stored` 照旧。
-        /// R-M3-4a-76 的硬要求：没有这个模式，「内存 marker 不推进」那个死锁察觉不到（CASE B2-13）。
-        /// 同一个 marker 再来一次就再发同一页——这正是「本页没推 marker ⇒ 重投」的桩形状。
+        /// M3-4a / B-2: paginate by received marker, matching WHERE version > marker,
+        /// rather than call count. Each newMarker is a decimal watermark at least as high
+        /// as every entity version on its page. Empty disables this mode and preserves
+        /// scriptedPages/stored behavior. Repeated markers return the same page, modeling
+        /// replay without marker advancement and detecting CASE B2-13's deadlock (R-M3-4a-76).
         var pagesByMarker: [Page] = []
-        /// M3-4a / B-2：`arrivedInGetUpdates` / `getUpdatesGate` 只从第 N 次 `getUpdates`
-        /// 调用起生效（N 从 1 数）；nil = 每次都生效（既有语义）。用途只有一个：让一轮
-        /// `page_budget_exhausted` 之后引擎自己排进队列的**跟进轮**停在它的第一次请求里，
-        /// 于是本轮的结局行与 store 计数可以在跟进轮动手之前被确定地读到。
+        /// M3-4a / B-2: arrivedInGetUpdates/getUpdatesGate apply from call N, counting
+        /// from 1; nil preserves every-call behavior. Block the automatic follow-up
+        /// round after page_budget_exhausted at its first request so the preceding
+        /// round's outcome and store counts can be read deterministically before further work.
         var gateGetUpdatesFromCall: Int?
 
         /// M3-3: a client whose drain never ends, for the guard ① cases. The key is
@@ -278,8 +278,8 @@ final class PhiSyncEngineTests: XCTestCase {
                 getUpdatesErrorAfterPages = scheduled
             }
             if !pagesByMarker.isEmpty {
-                // 排在 `scriptedPages` 之前、`getUpdatesErrorAfterPages` 之后：错误脚本仍然按
-                // 调用次数数，分页按水位取。一条都没有 ⇒ 空页、marker 原样交回、没有更多。
+                // After getUpdatesErrorAfterPages but before scriptedPages: errors count calls,
+                // pagination uses watermarks. No matching page returns empty with the unchanged marker and no more changes.
                 let from = Self.watermark(marker)
                 guard let page = pagesByMarker.first(where: { Self.watermark($0.newMarker) > from }) else {
                     return ([], marker ?? Data(), self.storeBirthday, false)

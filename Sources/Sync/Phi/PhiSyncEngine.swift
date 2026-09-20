@@ -44,87 +44,73 @@ enum PhiSyncLog {
     }
 }
 
-/// 配对向导第 2 步 Account 列的一行（R-D6-1）。**这是一次性的、只给 UI 看的东西，
-/// 不是同步状态**。
+/// A row in the pairing wizard's step-2 Account column (R-D6-1). This is a transient UI preview,
+/// not persisted sync state.
 struct PhiAccountSpaceSummary: Equatable, Sendable {
     let syncUuid: String
     let name: String
     let iconName: String
     let colorHex: String
-    /// 账户级 profile uuid；默认 Space 为 `""`。
+    /// Account-global Profile UUID; the default Space uses an empty string.
     let profileUuid: String
-    /// 返回值里**恒为 false**：§4.3 第 6 条把账户里的默认 Space 整条丢掉了。保留这个
-    /// 字段只为让那个过滤点在类型上可读，并让测试能直接断言它。
+    /// Always false in returned previews: section 4.3(6) excludes the entire default Space.
+    /// Retained to make the filtering boundary explicit and directly testable.
     let isDefault: Bool
-    // D7 / R-D7-1：覆盖确认页比较的字段集比第 2 步的两列表多三个。第 2 步不渲染它们，
-    // 确认页（§6.9）渲染由它们算出的账户侧值。一律保留**线上编码**，不在这里解释——
-    // 归一化与显示是 `SpaceOverwriteDiff` 与视图的事，否则「什么算默认」要在两个地方
-    // 各判一次。
-    /// 线上 `theme_id`，`""` = 无主题 pin。
+    // D7 / R-D7-1: the overwrite confirmation compares three additional wire fields that step 2
+    // does not render. SpaceOverwriteDiff and the view own normalization and display, keeping
+    // default-value interpretation in one place. Wire theme_id; an empty string means no pinned
+    // theme.
     let themeId: String
-    /// 线上千分单位；**负数** = 无自定义透明度（本 build 发 -1，但落地那侧判的是 `< 0`）。
+    /// Wire opacity in thousandths. Any negative value means no custom opacity; this build sends
+    /// -1, while landing accepts all values below zero.
     let overlayOpacityLightMilli: Int64
     let overlayOpacityDarkMilli: Int64
 }
 
 enum PhiSpacePreviewError: Error, Equatable {
-    /// 协调器手上没有引擎。
+    /// The coordinator has no engine.
     case engineUnavailable
     case retired
-    /// 页预算用尽，账户视图不完整。**不返回部分结果**。
+    /// The page budget expired before the account preview was complete. Never return partial
+    /// results.
     case truncated
-    /// §4.5 的期限到了（`PhiSyncEngine.previewDeadlineMs`）。**期限必须在轮体里判**：
-    /// 向导那一侧取消不掉这一轮（`serialized(_:)` 把它放进一个非结构化 `Task {}`），
-    /// 所以只在向导里赛跑一个 `Task.sleep` 只能改变「报什么」，改变不了「什么时候
-    /// 报」——分页拉取会一直跑下去，还继续占着 round 队列。
+    /// The section 4.5 deadline (PhiSyncEngine.previewDeadlineMs) expired. Check it inside the
+    /// round: serialized(_:) uses an unstructured Task that wizard cancellation cannot stop. Racing
+    /// Task.sleep only in the UI would leave pagination occupying the round queue.
     case timedOut
-    /// `PhiSyncLog.describe` 之后的元数据字符串（R12：不含任何载荷）。
+    /// Metadata rendered by PhiSyncLog.describe; never includes payloads (R12).
     case transport(String)
 }
 
-// MARK: - 归属项（书签 / pin）的引擎接缝（M3-3 §5）
-//
-// 引擎对归属 kind 是**泛型**的：它按一张注册清单驱动一切，清单里有什么就跑什么。下面这
-// 一组类型就是那张清单的元素与它进出的值。**没有任何一处提到书签或 pin**，除了文件末尾
-// 那个把 `BookmarkKind` 绑上去的工厂。
+// MARK: - Owned-item engine integration (M3-3 section 5)
+// The engine drives a registry of generic owned kinds. These types describe registry inputs and
+// outputs; concrete bookmark/pin behavior belongs in the registration factories below.
 
-/// 轮首算好一次的身份翻译表。
-///
-/// 它是 `OwnerResolver` 的**数据**版本。`OwnerResolver` 装的是闭包，而这些值要交给跑在
-/// main actor 上的适配闭包，所以跨边界的那一份必须是纯值；两者的关系只有一条 `resolver`。
-/// 纯函数模块因此也不必自己去够 `PhiSpaceSyncTable` 或映射表（`SyncableOwnedItems.swift` 的
-/// 自述）。
+/// Identity mappings captured once at round start. This is the value representation of
+/// OwnerResolver, whose closures are built by resolver. Values cross into main-actor adapters
+/// without requiring the pure-function module to access PhiSpaceSyncTable or mapping stores.
 struct OwnedOwnerMaps {
     var syncUuidBySpaceId: [String: String] = [:]
     var localSpaceIdBySyncUuid: [String: String] = [:]
-    /// §4.2 规则 1 那三条判据的**合取**已经算好：在 `currentSpaces()` 里 ∧ 有 syncUuid ∧
-    /// 该 Space 的游标既不 `hidden` 也没有 `purgedAtMs`。
+    /// Precomputed conjunction from section 4.2 rule 1: present in currentSpaces(), has a syncUuid,
+    /// and its cursor is neither hidden nor purged.
     var eligibleSpaceUuids: Set<String> = []
     var globalUuidByProfileId: [String: String] = [:]
     var localProfileIdByGlobalUuid: [String: String] = [:]
 
-    /// App 作用域的 pin 在 client tag 第三段与 `ownerUuid` 上写的字面量（§2.4 / §2.5）。
-    /// 它不是一个 uuid，两张映射表里都没有它。
+    /// Literal used in the third client-tag segment and ownerUuid for app-scoped pins (sections
+    /// 2.4/2.5). It is not a UUID and appears in neither mapping table.
     static let appOwnerKey = "app"
 
     var resolver: OwnerResolver {
         let maps = self
-        // **字面量 `"app"` 映射回它自己**（P1）。App 作用域的 pin 的归属就是这个字符串，
-        // 而它不在任何一张映射表里：不映射的话 `SyncableOwnedItems` 的三处判据
-        // （`plan` 的归属分类、`tombstones` 的「归属未映射」排除、`snapshot` 的合格性）
-        // 都把它读成「解析不出来」——入站的 App 作用域 pin 永远停放，用户删掉的 App 作用域
-        // pin 永远发不出 tombstone，在账户上不死，每台新设备加入都把它拉回来。
-        //
-        // **绝不在 `tombstones` 里特判这个字符串**：那条「归属解析不出来就跳过」的规则正是
-        // §4.7 用来防「一次映射抖动删掉整个 Space 的书签」的，给它开例外等于在 pin 侧凿一
-        // 个洞。修在解析器这一侧，规则本身一个字都不用动（CASE 4b.4b 是这条的探针）。
-        //
-        // 对书签是恒等变换：书签的归属是 Space uuid 或父身份，两者都产不出这三个字母。
-        //
-        // **URL Rule 的保留常量 `"incognito-space"` 走同一条先例**（R-M3-4a-7 二次修订）：
-        // `ownerUuids(of:)` 对它返回真值、不开旁路，所以 `plan` / `classify` / `tombstones` /
-        // `.move` 四条路径读的是同一个东西；解析修在这里，差分的 `mapped` 判据因此认它，
-        // 用户删掉的 incognito 规则的 tombstone 才发得出去（CASE U-R1）。
+        // Map the app-owner literal to itself (P1). Otherwise plan, tombstones and snapshot treat
+        // app-scoped pins as unresolved: incoming pins remain parked and deleted pins can never
+        // publish tombstones. Fix resolution here, not the section 4.7 unresolved-owner deletion
+        // safeguard (CASE 4b.4b). Bookmark owners cannot equal this literal.
+        // The reserved URL-rule owner incognito-space follows the same rule (R-M3-4a-7, revised):
+        // plan, classify, tombstones and move share normal resolution, allowing deleted incognito
+        // rules to publish tombstones (CASE U-R1).
         func selfMapped(_ uuid: String, _ table: [String: String]) -> String? {
             if uuid == Self.appOwnerKey { return Self.appOwnerKey }
             if uuid == SyncableSpaces.incognitoSpaceUuid { return SyncableSpaces.incognitoSpaceUuid }
@@ -132,10 +118,10 @@ struct OwnedOwnerMaps {
         }
         return OwnerResolver(
             syncUuid: { maps.syncUuidBySpaceId[$0] },
-            // **`localSpaceId` 不映射**：映了的话 `"app"` 会被当成一个 Space 归属，于是
-            // `isEligibleSpace` 那道只对 Space 有意义的闸会一刀切掉整类 App 作用域的 pin。
-            // 规则这一侧同理：`"incognito-space"` 若映成一个本机 spaceId，同一道闸会一刀切掉
-            // 整类 incognito 规则，而它根本没有 `SpaceModel` 行、也没有 Space 游标。
+            // Do not map these literals through localSpaceId. Treating app or incognito-space as a
+            // local Space would incorrectly subject all app-scoped pins or incognito rules to the
+            // Space eligibility gate. Incognito rules have neither a SpaceModel row nor a Space
+            // cursor.
             localSpaceId: { maps.localSpaceIdBySyncUuid[$0] },
             isEligibleSpace: { $0 == Self.appOwnerKey
                                || $0 == SyncableSpaces.incognitoSpaceUuid
@@ -145,98 +131,92 @@ struct OwnedOwnerMaps {
     }
 }
 
-/// 一轮出站快照的**类型擦除**形态：实体已经序列化成 `Phi_PhiEntity` 信封字节，所以这个
-/// 结构不带 kind 的泛型参数。变更检测就是拿这些字节与游标的 `reconciled` 比（§4.2）。
+/// Type-erased outbound snapshot. Entities are serialized Phi_PhiEntity envelopes, compared with
+/// each cursor's reconciled bytes for change detection (section 4.2).
 struct OwnedSnapshotBytes {
     var entities: [String: Data] = [:]
-    /// 身份 -> 这条本机行**当前所在的归属**（A12 / §3.5）。引擎每轮把它刷进游标的
-    /// `ownerUuid`，差分的归属判据与保留期级联都只读那一个字段。
+    /// Identity to the local row's current owner (A12 / section 3.5). Refreshed into
+    /// cursor.ownerUuid each round; deletion eligibility and retention cascades read that field.
     var ownerUuids: [String: String] = [:]
-    /// 本轮在内存里**铸出**候选身份的那些行：身份 -> 本机行 id。真正写进本机行是在提交被
-    /// 接受之后（§6.4「铸造在提交那一刻」）。
+    /// Identities minted provisionally in memory this round, mapped to local row IDs. Persist only
+    /// after the commit is accepted (section 6.4).
     var minted: [String: String] = [:]
     var skippedUnmappedOwner = 0
     var skippedIneligibleOwner = 0
-    /// 这份空快照是不是 §7.3 的「作用域不一致 ⇒ 发布半边整段跳过」的产物。**只有 pin 会置
-    /// 它**（书签没有作用域这个概念）。它是那种轮次里唯一的诊断：一次纯 push 轮不跑 `plan`，
-    /// 于是计数行上的 `scope_mismatch` 只能从这里来。
+    /// Whether section 7.3 scope mismatch produced an empty snapshot and suppressed publication.
+    /// Only pins set this. Pure push rounds do not run plan, so their scope_mismatch diagnostic
+    /// must come from this snapshot.
     var scopeMismatch = false
 }
 
-/// §9.3 的保留期级联问本机那两件事的答案，擦除了 kind。
-///
-/// **两件事必须分开交**，合成一张 `[String: String]` 是一条数据丢失路径：一条活行的归属
-/// 此刻解析不出来（Space 映射抖动）时它仍然**有活行**，只是这一轮没有新归属可写；合成一张
-/// 字典之后它读起来与「没有活行」一模一样，于是那条游标被删掉——而删掉一条活行的游标正是
-/// A12 的 fail-safe 要防的那一件事（下一轮以 `baseVersion == 0` 的 create 盲写覆盖账户上
-/// 那一条）。
+/// Type-erased local answers for the section 9.3 retention cascade. Keep live claims separate from
+/// resolvable owners: a mapping failure must not make a live row appear absent and delete its
+/// cursor. Losing that cursor would allow a baseVersion-zero create to overwrite account data,
+/// violating A12.
 struct OwnedLiveRows {
-    /// 交进去的候选里，**本机还有活行认领**的那些身份。§9.3 判据 (b) 只读这一个集合。
+    /// Candidate identities still claimed by a live local row. Section 9.3 condition (b) reads only
+    /// this set.
     var claimed: Set<String> = []
-    /// 上面那些身份里归属解析得出来的那些 -> 它**此刻所在的**归属，即 rehome 要写的值。
+    /// Resolvable current owners of those live identities; these are the values used for rehoming.
     var owners: [String: String] = [:]
 }
 
-/// `plan` 的入参，擦除了 kind：到达项是信封字节。
+/// Type-erased plan input; incoming entities are envelope bytes.
 struct OwnedPlanInput {
     var arrivals: [(payload: Data, entityId: String, version: Int64)] = []
     var parked: [String: ParkedOwnedItem] = [:]
     var table = PhiOwnedItemTable()
     var maps = OwnedOwnerMaps()
-    /// 本轮到达的 tombstone 身份 ∪ 表里还停着的 `pendingTombstone`。
+    /// Union of this round's incoming tombstone identities and cursors already marked
+    /// pendingTombstone.
     var tombstoned: Set<String> = []
-    /// 本轮那一次时钟读数。适配层拿它按 §4.2 第 4 条给本机行的投影盖戳——入站合并的本机
-    /// 那一侧必须是「这一轮的快照会发布的那一份」（`OwnedItemPlanContext.localProjections`），
-    /// 而那份投影里**变过的字段盖 `now`**。
+    /// The round's single clock reading. Adapters stamp changed local projection fields with now
+    /// under section 4.2 rule 4, so the local side of an incoming merge matches what this round's
+    /// snapshot would publish (OwnedItemPlanContext.localProjections).
     var now: Int64 = 0
 }
 
-/// `plan` 的产出，外加只有适配层算得出的那几个计数。
+/// Plan output plus counters that only the adapter can compute.
 struct OwnedPlanOutput {
     var plan = OwnedItemPlan(steps: [], parked: [:], refused: 0, lifted: 0,
                              supersededByDelete: 0, cancelledDeletes: [], harvest: [:])
     var adopted = 0
     var unmatchedFolders = 0
     var unmergeablePairs = 0
-    /// 认领的合并结果里本机赢了字段的那些身份：**必须重新发布**。
+    /// Claimed identities whose merge contains locally winning fields; these must be republished.
     var mustRepublish: Set<String> = []
-    /// §5.3 / §6.4 的**尽力而为的推迟**：本轮的 pull 里**收到过本 kind 实体**的那些归属。
-    /// 这些归属下本轮新铸身份的行不进发布切片——它们在第一个没有该归属实体到达的轮次里提交。
-    ///
-    /// **它是优化，不是正确性规则**，而且不引入任何窗口状态：判据就是「这一轮这个归属有没有
-    /// 到达过实体」，一个轮内的局部量，不落盘、不跨轮记忆（R-M3-3-22 / CASE 7.4）。
-    /// 值的口径与 `OwnedSnapshotBytes.ownerUuids` 相同（书签是**这一行坐在哪个 Space**），
-    /// 不是 `owners(_:)` 那个绑定引用——后者对一条子孙书签交出的是它的父。
+    /// Owners with incoming entities of this kind in the current pull. Newly minted rows under them
+    /// wait until a round with no arrivals for that owner (sections 5.3/6.4). This is a best-effort
+    /// optimization, not a correctness gate or persistent window (R-M3-3-22 / CASE 7.4). Values are
+    /// the containing Space UUIDs from OwnedSnapshotBytes.ownerUuids, not owners(_:) parent
+    /// references.
     var deferredOwners: Set<String> = []
     var scopeMismatch = false
-    /// 身份 -> 本轮**拉到的那一条远端实体**的信封字节。§4.5 的 `server = remote`，
-    /// **永远不是 merge 结果**。
+    /// Identity to the remote envelope received this round. The server baseline is always the
+    /// remote entity, never the merge result (section 4.5).
     var serverBytes: [String: Data] = [:]
-    /// §13.2 / R-M3-4a-29：本轮入站里被 `normalizeArrivals` 就地归一的身份数。只有规则填。
+    /// URL-rule identities normalized in place by normalizeArrivals this page (section 13.2 /
+    /// R-M3-4a-29). Other kinds leave this zero.
     var normalized = 0
-    /// M1 配对的落地寻址表：**身份 -> 本机行 `id`**（= `OwnedItemPlanContext.pairs`）。
-    /// 落地闭包按它把 `.claim` 翻成 `.rekey(localId:to:values:)`。书签与 pin 恒空。
+    /// M1 landing addresses: identity to local row ID, from OwnedItemPlanContext.pairs. Landing
+    /// converts claim into rekey(localId:to:values:). Empty for bookmarks and pins.
     var claimedLocalIds: [String: String] = [:]
-    /// M1 认领之后要**整条删掉**的那条旧游标：**新身份 -> 被它取代的旧 `syncId`**。
-    /// 引擎只对**真的落了地**的身份删（整批回滚时 re-key 没发生、旧 `syncId` 还在行上）。
+    /// New identity to the old syncId retired by its M1 claim. Remove the old cursor only when
+    /// landing actually succeeded; a rolled-back batch still has the old identity on its row.
     var retiredIdentities: [String: String] = [:]
-    /// D30 / §8.4.1：本页那一次 pre-pass 算出的**静止**身份（十个合取项，R-M3-4a-86）。
-    /// 求值时刻是硬的——kind 的 pre-pass、用**本页那一次** `allURLRulesIncludingDeleted()` 与
-    /// 当时的游标表，**每页一次**：尾钩跑在落地写之后、手上那份行投影已经变过，而第 10 项要读
-    /// **本页 `arrivals`**（尾钩根本拿不到），在尾钩里重算既违反求值时刻、又结构性地少一个
-    /// 合取项（CASE M-27）。
-    ///
-    /// 语义是 **M2 第 2 步候选集的上界**（计划裁定六）：`land` 闭包减掉本页 `.transfer` 的目标
-    /// （R-M3-4a-90），尾钩在事务里再减掉此刻 `pendingLocalEdit` / 已软删 / 已消失的那些
-    /// （R-M3-4a-100）。**书签与 pin 恒空集。**
+    /// At-rest identities from the page's kind pre-pass (D30 / section 8.4.1; ten conjuncts,
+    /// R-M3-4a-86). Evaluate once using that page's allURLRulesIncludingDeleted(), cursor table and
+    /// arrivals. The post-write hook cannot recompute it: rows have changed and arrivals are
+    /// unavailable (CASE M-27).
+    /// This is an upper bound for M2 step-2 candidates (ruling 6). Landing excludes this page's
+    /// transfer targets (R-M3-4a-90); the transactional hook excludes newly dirty, soft-deleted or
+    /// missing rows (R-M3-4a-100). Empty for bookmarks and pins.
     var atRestIdentities: Set<String> = []
-    /// §13.2 的 `yield_no_partner`（R-M3-4a-75(3)）：本页走 §8.4.4 **(ii)** 的身份里，
-    /// 判定那一刻行上 `mergePartnerSyncId == nil` **且** `baselineSignature(X)` 查找未命中的
-    /// 条数。残留与缺陷的现场判别全靠它（§14.3 / §12.2 13e）。
-    ///
-    /// **由 kind 的 plan 闭包自己数**（模块看不见行与签名索引），用**同一次 pre-pass** 的那份
-    /// 行与游标表——与「在判定点上求值」逐字等价。**绝不**按 `resurrected` 反推：那一项对两种
-    /// 成因一视同仁，正是它要分开的东西。书签与 pin 恒 0。
+    /// Count of section 8.4.4(ii) decisions with neither mergePartnerSyncId nor a
+    /// baselineSignature(X) match (section 13.2 / R-M3-4a-75(3)). Distinguishes expected residuals
+    /// from defects (section 14.3 / case 13e). The kind's plan closure counts against the same
+    /// pre-pass rows/table at decision time. Never infer this from resurrected, which combines both
+    /// causes. Zero for bookmarks and pins.
     var yieldNoPartner = 0
 }
 
@@ -244,101 +224,100 @@ struct OwnedLandingInput {
     var steps: [OwnedItemApplyStep] = []
     var table = PhiOwnedItemTable()
     var maps = OwnedOwnerMaps()
-    /// `OwnedPlanOutput.claimedLocalIds`，原样交给落地闭包。默认空 ⇒ 书签与 pin 的每一处
-    /// 构造点逐字不变（计划裁定二：不走轮内状态盒、也不给 `OwnedItemApplyStep` 加成员）。
+    /// OwnedPlanOutput.claimedLocalIds forwarded directly to landing. Empty defaults preserve
+    /// bookmark/pin construction sites without a round-state box or new OwnedItemApplyStep field
+    /// (ruling 2).
     var claimedLocalIds: [String: String] = [:]
 
-    // MARK: D30 M2 的四条通道（8b-2）。四个都带默认值 ⇒ 书签与 pin 的落地闭包一个都不读，
-    // 行为逐字不变。
+    // MARK: D30 M2's four data channels (8b-2)
+    // Defaults keep bookmark and pin landing behavior unchanged; neither kind reads these fields.
 
-    /// `OwnedItemPlan.preLandingSignatures`，原样转（§8.4.3 第 1 步第二遍的分组键）。
+    /// Forwarded OwnedItemPlan.preLandingSignatures; grouping key for the second pass of section
+    /// 8.4.3 step 1.
     var preLandingSignatures: [String: RuleSignature] = [:]
-    /// `OwnedPlanOutput.atRestIdentities`，原样转。语义 = **M2 第 2 步候选集的上界**：
-    /// `land` 闭包在拼尾钩之前减掉本页 `.transfer` 的目标（R-M3-4a-90），尾钩在事务里再减掉
-    /// 新变脏 / 新软删 / 已消失的那些（R-M3-4a-100）。
+    /// Forwarded OwnedPlanOutput.atRestIdentities, an upper bound for M2 step-2 candidates. Landing
+    /// excludes this page's transfer targets (R-M3-4a-90); the hook excludes newly dirty,
+    /// soft-deleted and missing rows transactionally (R-M3-4a-100).
     var atRestIdentities: Set<String> = []
-    /// `ownedItemsPublishAllowed`（含 `hasDrainedFullReplay`）。§8.4.3 **第 2 步**的闸
-    /// （R-M3-4a-74(3)）：第 1 步的指针与所有查表都不在它后面。闸是引擎的 `private var`、
-    /// `land` 闭包读不到它，这个具名入参是唯一自洽的接缝。
+    /// ownedItemsPublishAllowed, including hasDrainedFullReplay, gates section 8.4.3 step 2 only
+    /// (R-M3-4a-74(3)). Step-1 pointers and lookups remain outside it. Landing receives this
+    /// explicit input because the engine property is private.
     var convergeAllowed = false
-    /// `OwnedItemPlan.rebaselined`（R-M3-4a-97）：有效账户戳的**第二层**。引擎自己要等 `land`
-    /// 返回之后才把它写进游标，所以落地闭包只能从这里拿——`input.table` 里那一条仍然是更旧的
-    /// 那一枚戳（CASE M-33 变体 (d)）。
+    /// OwnedItemPlan.rebaselined, the second effective-account-stamp source (R-M3-4a-97). The
+    /// engine updates cursors only after land returns; input.table still holds the older stamp
+    /// (CASE M-33(d)).
     var rebaselined: [String: Data] = [:]
 }
 
-/// 一次落地的结果。三条出路**方向相反**，所以它们是三个集合而不是一个笼统的失败位
-/// （CASE 6.10c-3）。
+/// Landing results have three distinct outcomes with different recovery directions; a single
+/// failure flag cannot represent them (CASE 6.10c-3).
 struct OwnedLandingOutcome {
-    /// 真的落了地、并且通过了 §4.5 的落地后复核。只有这些身份可以写基线。
+    /// Identities actually landed and passed the section 4.5 post-landing recheck. Only these may
+    /// advance baselines.
     var landed: Set<String> = []
-    /// 归属被占（导入锁）或落地抛了别的错 ⇒ 停放，下一轮重试。
+    /// An import lock or another landing error deferred these identities for retry next round.
     var parked: Set<String> = []
-    /// 这一批算错了（`.folderNotEmpty` / `.rowAlreadyMapped` / 物理行类型不符）⇒ 拒收，
-    /// **不停放、不建游标**。
+    /// Invalid batch plans, such as folderNotEmpty, rowAlreadyMapped or incompatible physical row
+    /// types. Refuse without parking or creating cursors.
     var refused: Set<String> = []
-    /// 身份 -> 落地之后要写进 `reconciled` 的字节（合并结果）。
+    /// Identity to merged bytes to persist as reconciled after landing.
     var reconciled: [String: Data] = [:]
-    /// 被删掉的身份（远端 tombstone 落地）。
+    /// Identities deleted by successfully landed remote tombstones.
     var deleted: Set<String> = []
-    /// §7.4 的半落地拆分对：身份 -> 它还在等的那条伙伴 lineage。引擎把它写进游标的
-    /// `pendingPartnerLineage`，于是 §7.4 的表副本（`doctoredOwnedTable`）认得出「这一条
-    /// 确实在等伙伴」并照抄基线，而不是把 `""` 发出去拆散对端那一半。
-    ///
-    /// **空值（`""`）是「不再等了」**：伙伴这一轮落地了，或者这条实体已经没有伙伴。引擎据此
-    /// 清掉那一位。用 `nil`（不出现在字典里）表达不了这件事——不出现的含义是「本轮没这条
-    /// 身份的消息」。书签没有拆分伙伴这个概念，那一侧这张字典恒空。
+    /// Partially landed split pairs: identity to the partner lineage still awaited (section 7.4).
+    /// Stored as pendingPartnerLineage so doctoredOwnedTable preserves the baseline instead of
+    /// publishing an empty link that splits the peer.
+    /// An empty string explicitly clears the wait when the partner lands or is removed. A missing
+    /// dictionary entry means no update this round, not a cleared wait. Bookmarks leave this empty.
     var pendingPartnerLineages: [String: String] = [:]
-    /// §7.2 / A11 的变体重铸本轮改了几行（`relineaged` 计数）。书签恒为 0。
+    /// Rows whose variant lineage was reminted this round under section 7.2 / A11; zero for
+    /// bookmarks.
     var relineaged = 0
-    /// §13.2 的 `owner_moved`：这一批里**真的留下来**的 `.move`（改目标的 rehome）条数。
-    /// **由落地填、不在 plan 里数**：`URLRuleApplyBatch.init` 会把目标没动的 `.move` 降级成
-    /// `.reorder`，按 step 数会高估（计划裁定三）。书签与 pin 恒为 0。
+    /// Actual surviving move operations that changed the target owner (section 13.2). Count during
+    /// landing: URLRuleApplyBatch downgrades unchanged-target moves to reorder, so counting plan
+    /// steps overstates this (ruling 3). Zero for bookmarks and pins.
     var ownerMoved = 0
-    /// §8.2 / Task 10：本轮由落地**新建**出来、并且通过了落地后复核的那些本机行。
-    ///
-    /// 判据是「新建」而不是「读一次本机的 `favicon` 列」：同步载荷里根本没有 favicon 这个
-    /// 字段，所以一条由落地新建的行**按构造**没有图标；认领 / 更新命中的是本机早就有的行，
-    /// 它们自己的图标不该被一次回填盖掉。于是回填的投喂源不需要任何新的本机读。
-    ///
-    /// 书签那一侧填这个，pin 那一侧填 `createdPins`。
+    /// Local bookmark rows newly created by landing and accepted by its post-check (section 8.2 /
+    /// Task 10). New rows have no favicon because payloads do not contain one; existing
+    /// claimed/updated rows retain their local icons. This criterion avoids extra local reads
+    /// solely for backfill. Pins use createdPins instead.
     var createdRows: [PhiLocalBookmark] = []
-    /// §8.2 / Task 10 的 pin 半边。同一条判据（「本轮新建」⇒ 按构造没有图标）；spec §8.2
-    /// 开头那句是「落地的书签**与 pin** 没有图标时」，所以两种 kind 都投喂。
+    /// Newly landed pins eligible for favicon backfill under the same section 8.2 / Task 10 rule.
+    /// Both bookmarks and pins are included by the specification.
     var createdPins: [PhiLocalPin] = []
-    /// §8.4.3 第 2 步 (b)：这一页的落地事务尾部真的被软删掉的败者条数（R-M3-4a-54）。
-    /// 引擎按它回填 `OwnedRoundCounters.collapsed`。书签与 pin 恒为 0。
+    /// Losers actually soft-deleted by the page's transaction-tail M2 pass (section 8.4.3 step
+    /// 2(b), R-M3-4a-54). Feeds OwnedRoundCounters.collapsed; zero for bookmarks and pins.
     var collapsed = 0
-    /// §6.6 第 8 行：M2 真的写了**软删或内容组** ⇒ 这一页要刷一次路由表，哪怕它一条远端实体
-    /// 都没落地。**指针写不算**（`mergePartnerSyncId` 不进路由表，CASE M-7 钉住零刷新）。
-    /// 书签与 pin 恒 `false`。
+    /// M2 changed a soft-delete or content group, requiring one routing refresh for this page even
+    /// if no remote entity landed (section 6.6 row 8). Pointer-only writes do not affect routing
+    /// (CASE M-7). False for bookmarks and pins.
     var mergeChangedRouting = false
-    /// §13.2 的 `transferred`（8b-3 / 裁定 9）：这一页真的写进了 ≥ 1 个合并单元的 `.transfer`
-    /// 条数。零单元的转移不计。书签与 pin 恒 0。
+    /// Transfers that wrote at least one merge unit this page (section 13.2, 8b-3 / ruling 9).
+    /// Zero-unit transfers do not count; zero for bookmarks and pins.
     var transferred = 0
-    /// §13.3：这一页的 `.transfer` 里**内容组输掉**的条数，引擎并进 `superseded_by_delete`。
-    /// 书签与 pin 恒 0。
+    /// Transfers whose content group lost this page (section 13.3), included in
+    /// superseded_by_delete. Zero for bookmarks and pins.
     var supersededByDelete = 0
-    /// **R-M3-4a-102**（裁定 11）：事务里发现来源行已经变了 ⇒ `.transfer` 与 `.delete(X)`
-    /// 两条 op 都没执行的那些身份。原样来自 `URLRuleBatchOutcome.deferredTombstones`，
-    /// 引擎按 `plan.parkedTombstones` **一模一样地**记账：游标 `pendingTombstone = true`、
-    /// 行一个字节不动。
-    /// **绝不进 `landed`、绝不进 `deleted`**（进了 `deleted` 就等于承认那次硬删发生过，游标
-    /// 会被写成「已删」而行还在，下一轮差分为这条身份重发一条 create）。书签与 pin 恒空集。
+    /// Source rows changed before the transaction, so neither transfer nor delete(X) ran
+    /// (R-M3-4a-102 / ruling 11). Forward URLRuleBatchOutcome.deferredTombstones and account for
+    /// them exactly like plan.parkedTombstones: pendingTombstone=true, no row changes. Never
+    /// classify as landed or deleted; that would acknowledge a deletion that did not occur and
+    /// allow a new create next round. Empty for bookmarks and pins.
     var deferredTombstones: Set<String> = []
 }
 
-/// 一次停放项重试的结果（§3 / R-exec-10）。
+/// Result of retrying parked claims (section 3 / R-exec-10).
 struct OwnedParkedClaimResult {
-    /// 本轮 §6 的认领**配上**的身份，写回成没成都算。差分的 `pendingClaims` 豁免读它，
-    /// 出站快照的「这一行本轮不铸新身份」也读它。
+    /// Identities matched by section 6 claims this round, regardless of write-back success. Used by
+    /// the pendingClaims deletion exemption and to avoid minting another identity for the matched
+    /// row.
     var paired: Set<String> = []
-    /// 真的把身份写回了本机行的那些。引擎清它们的 `pendingApply`。
+    /// Identities successfully written to local rows; clear pendingApply for these.
     var persisted: Set<String> = []
 }
 
-/// §11.2 的一行。**一个**结构体，引擎按注册项各持一份；每条 kind 只填它有的字段，
-/// 日志行也只印它有的字段。
+/// One section 11.2 counter record per registered kind. Each kind populates and logs only its
+/// applicable fields.
 struct OwnedRoundCounters {
     var pulled = 0
     var applied = 0
@@ -358,10 +337,10 @@ struct OwnedRoundCounters {
     var localReadFailed = 0
     var relineaged = 0
     var scopeMismatch = false
-    // §13.2 的规则专属计数（`reportsRuleCounters` 那一组）。`adopted` 已经在上面，不重复。
-    // 本任务只接得通 `normalized`（plan 闭包）与 `ownerMoved`（落地）；`collapsed` 由 8b-2 的
-    // M2 pass 填、`transferred` / `yieldNoPartner` 由 8b-3 的 (ii) 支自己填（R-M3-4a-75(3)：
-    // 绝不在引擎侧按 `resurrected` 事后推断）。稳态 0 本来就是判据，发射段照印。
+    // Rule-only section 13.2 counters, selected by reportsRuleCounters; adopted is shared above.
+    // Plan reports normalized, landing reports ownerMoved, M2 reports collapsed, and the 8b-3(ii)
+    // branch reports transferred/yieldNoPartner. Never derive yieldNoPartner from resurrected
+    // afterwards (R-M3-4a-75(3)); steady-state zeros must still be logged.
     var normalized = 0
     var ownerMoved = 0
     var collapsed = 0
@@ -369,149 +348,120 @@ struct OwnedRoundCounters {
     var yieldNoPartner = 0
 }
 
-/// 一条归属 kind 的注册项。引擎只认这个：它不知道有几种 kind，也不知道是哪几种。
-///
-/// 存在类型包装（`OwnedItemKind` 是带两个 associatedtype 的泛型协议，
-/// `[any OwnedItemKind.Type]` 装不下它），实现上是一个**持闭包的 struct**：把 kind 的纯
-/// 函数与它那一侧的本地访问各自绑好。触本机的闭包一律 `@MainActor`——两个访问协议都是
-/// `@MainActor`，引擎照既有的 `spaceAccess` 一样 hop 过去。
-///
-/// **tag 索引不在这里**：注册项全是 `let`，装不下一张每轮都在长的表（随学随加，§5.1）。
-/// 那张表是引擎自己的可变状态 `ownedTagIndices`。
+/// Type-erased owned-kind registration. The engine depends only on these registrations, not a fixed
+/// set of kinds. Closures bind each OwnedItemKind's pure functions and local access; local closures
+/// are MainActor-isolated, matching spaceAccess. Mutable, incrementally learned tag indices belong
+/// to engine.ownedTagIndices, not this immutable registration (section 5.1).
 struct OwnedKindRegistration {
-    /// 日志与计数行的行名，注册清单里的唯一键，也是查 `ownedTableForTesting(_:)` /
-    /// `lastOwnedRoundCountersForTesting` 的键。
+    /// Unique registry key, log/counter label, and key for ownedTableForTesting and
+    /// lastOwnedRoundCountersForTesting.
     let label: String
     let tagPrefix: String
     let entityName: String
     let store: any PhiOwnedItemStateStore
-    /// 该 kind 的 `…HadRecords` / `…ReplayedForEmptyTable` 两个标志在 `PhiSpaceSyncTable`
-    /// 上的读写口（§3.5 的单副本裁定）。
+    /// Accessors for this kind's HadRecords/ReplayedForEmptyTable flags in PhiSpaceSyncTable
+    /// (section 3.5 single-copy ruling).
     let flags: OwnedKindFlags
-    /// 这条 kind 的计数行印不印认领那三项（`adopted` / `unmatched_folders` /
-    /// `unmergeable_pairs`）。§11.2：只有书签行有，pin 完全不走 §6。
+    /// Whether to log adopted, unmatched_folders and unmergeable_pairs. Section 11.2 exposes these
+    /// only for bookmarks; pins do not use section 6 adoption.
     let reportsAdoption: Bool
-    /// 这条 kind 的计数行印不印 `relineaged` / `scope_mismatch`。
+    /// Whether to log relineaged and scope_mismatch.
     let reportsScope: Bool
-    /// 这条 kind 的计数行印不印 §13.2 那六项规则专属计数（`normalized` / `owner_moved` /
-    /// `adopted` / `collapsed` / `transferred` / `yield_no_partner`）。三条 kind 里只有
-    /// `.urlRules` 为真（R-M3-4a-55）。**绝不**用 `!reportsAdoption && !reportsScope` 代替：
-    /// 那个组合今天碰巧只对规则成立，加第六种 kind 时会静默失效。
+    /// Whether to log the six section 13.2 rule counters: normalized, owner_moved, adopted,
+    /// collapsed, transferred and yield_no_partner. Only urlRules enables this (R-M3-4a-55). Do not
+    /// infer it from other reporting flags; adding another kind could silently break that
+    /// assumption.
     let reportsRuleCounters: Bool
-    /// §6.1 / §8.4.4：这条 kind 的入站删除撞上一条还没上账户的用户意图时**让位**。
-    /// `.urlRules` 传 `URLRuleKind.tombstoneYieldsToLocalEdits`，`.bookmarks` / `.pins`
-    /// 传 `false`。**引擎只用它给轮末 3b 复查开关**——两个让位分支本身由模块按 kind 的同名
-    /// 静态成员决定，这一个是同一件事在注册项这一侧的镜像（书签与 pin 恒不进那一段）。
+    /// Incoming deletion yields to unpublished local intent for this kind (sections 6.1/8.4.4).
+    /// urlRules mirrors URLRuleKind.tombstoneYieldsToLocalEdits; bookmarks and pins use false. The
+    /// engine uses this only to enable the round-end rule-3b recheck; the pure module selects
+    /// yielding branches from the kind's static property.
     let tombstoneYieldsToLocalEdits: Bool
-    /// R-M3-4a-99 / R-M3-4a-56：一页里到达、tombstone、停放**三者全空**时，这条 kind 的
-    /// `plan` / `land` 还跑不跑。三条 kind 里只有 `.urlRules` 为真：规则落地段里的本机
-    /// 收敛（8b-2 的 M2 pass）不依赖任何入站实体，不跑的话首次 drain 之后纯本机重复永不
-    /// 收敛。书签与 pin 的那条早退**逐字不变**。
+    /// Whether plan/land runs when arrivals, tombstones and parked entities are all empty
+    /// (R-M3-4a-99/56). Only urlRules enables this because M2 convergence must also resolve purely
+    /// local duplicates after the initial drain. Bookmark/pin early returns remain unchanged.
     let landsEmptyBatch: Bool
 
-    // MARK: 纯函数（不隔离）
+    // MARK: Pure functions (nonisolated)
 
-    /// 一份信封是不是本 kind 的载荷；是就交出它的身份，不是就 nil。
+    /// Return the identity when this envelope contains this kind's payload; otherwise nil.
     let identity: (Phi_PhiEntity) -> String?
-    /// 身份 -> client tag（`identity(of:)` 的逆），接收端 §2.5 校验与组批都用它。
+    /// Identity to client tag, inverse to identity(of:); used by section 2.5 receiver validation
+    /// and batching.
     let clientTag: (String) -> String
-    /// 一份信封字节里那条实体的归属引用（书签是父 / Space，pin 是 owner）。切片的拓扑序
-    /// 与 tombstone 的反拓扑序都从它算深度。
+    /// Owner references in an envelope: parent/Space for bookmarks, owner for pins. Determine
+    /// topological publication and reverse-topological tombstone depth.
     let owners: (Data) -> [String]
-    /// §7.4 的「本机主动解除拆分」：把一批基线字节里的拆分伙伴清空，并**给清空后的那个值
-    /// 盖上本轮的 `now`**（第二个参数）。第三个参数是轮首那份身份翻译表，与 `snapshot` /
-    /// `tombstones` 收的是同一份——这条 kind 要拿它把基线的身份对回本机行。
-    ///
-    /// **成员本身是可选的**：`nil` = 这条 kind 没有拆分伙伴这个概念（书签），调用方连
-    /// main actor 那一跳与整个循环都跳过。
-    ///
-    /// **收一批、回一批**，不是一条一条问：它触本机（要读本轮那份行快照），所以是
-    /// `@MainActor`，而 `doctoredOwnedTable` 要遍历这条 kind 的**每一条**游标——逐条问就是
-    /// 每条游标一次 actor 跃迁，书签账户上那是每轮几千次主线程跳转。收进来的是引擎按通用
-    /// 规则筛过的候选（没有 `pendingPartnerLineage`、有基线），交回去的只有真的被改写的那几
-    /// 条；不在返回值里的身份原样沿用基线。
-    ///
-    /// **时间戳必须在这里盖。** 盖戳函数（`PinKind.stamp`）分不出「表副本刚刚抹掉了一个真实
-    /// 的伙伴」与「这条 pin 从来就没有伙伴」——两种情形到它手上都是「空投影对空基线」，于是
-    /// 它按签名相等沿用基线的戳。发出去的 `("", t_基线)` 与对端手上的 `("<伙伴>", t_基线)`
-    /// 戳相同，LWW 按字节序破平手，空串**输**，对端于是永远保留那条链接：用户每解除一次、
-    /// 每同步一次又被拼回去，正是 §7.4 要防的那件事。
-    ///
-    /// **反过来，「不是解除的那些一个字节都不许动」同样是硬要求。** 一对两半都链好的拆分
-    /// pin 的游标也没有 `pendingPartnerLineage`（伙伴早就落地了），清掉它的基线会让投影
-    /// （带着伙伴）与基线（空）签名不同，于是那个字段每轮重盖一次 `now`、每轮重发一次，
-    /// 两台设备互相看不出变化又各自重发，**每一条拆分 pin 每一轮都在发**，还吃掉 250 条的
-    /// 发布预算。判据因此是「本机那一行还挂不挂着这条链接」，不是「游标有没有在等伙伴」。
-    ///
-    /// 判据要读本轮那份本机行快照，所以它**触本机**，与下面那一组同属 main actor。
+    /// Section 7.4 local split removal: clear removed partner links in baseline bytes and stamp
+    /// them with this round's now. The third argument is the round-start mapping snapshot also used
+    /// by snapshot/tombstones. A nil closure means the kind has no split partners, avoiding all
+    /// actor hops and iteration.
+    /// Process candidates in one MainActor batch to avoid one hop per cursor. Candidates have a
+    /// baseline and no pendingPartnerLineage; return only changed entries, preserving all others.
+    /// Check the actual local row: an already landed intact pair also has no pendingPartnerLineage.
+    /// Clearing intact links would restamp and republish them every round, exhausting the 250-item
+    /// budget.
+    /// Stamp removals here: PinKind.stamp cannot distinguish a newly cleared link from an
+    /// always-empty projection/baseline. Reusing the old stamp would let the peer's nonempty link
+    /// win the lexical tie and restore the split after every sync.
     let clearedSplitPartners: (@MainActor ([String: Data], Int64, OwnedOwnerMaps)
         -> [String: Data])?
 
-    // MARK: 触本机的（main actor）
+    // MARK: Local access (main actor)
 
-    /// 轮首那一次读（`allBookmarks()` / `allPins()`）。**抛错 ⇒ R-exec-3**：本轮这条 kind
-    /// 的快照、差分与发布整段不跑，游标表一个字节都不写。
+    /// Read allBookmarks()/allPins() once at round start. If it throws, skip this kind's snapshot,
+    /// diff and publishing without writing its cursor table (R-exec-3).
     let beginRound: @MainActor () throws -> Void
-    /// 本轮已经读到的那些身份，用来给 tag 索引播种（§5.1）。
+    /// Identities read this round, used to seed the tag index (section 5.1).
     let localIdentities: @MainActor () -> Set<String>
     let snapshot: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) -> OwnedSnapshotBytes
-    /// §4.7 的差分。**定义域问的是 `allSyncIds()` / `allPinRows()`**，不是快照
-    /// （R-exec-4）；本轮没成功读过时它抛。
+    /// Section 4.7 deletion diff uses allSyncIds()/allPinRows(), not the snapshot, as its domain
+    /// (R-exec-4). Throws if this round's local read failed.
     let tombstones: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) throws
         -> OwnedItemTombstoneResult
-    /// §3 的「每一轮开头都重试停放项」里归属项这一半（R-exec-10）：把还没能写回本机行的
-    /// 那些身份重新认领一次，并把配上的那些立刻写回去。**每一种轮次都跑**——一次纯 push 轮
-    /// （设置推送、本地变化）也会走到发布段，而发布段的铸造与差分都要先知道「这一行已经
-    /// 配上了一个账户身份」。
+    /// Retry parked owned-item claims at every round start (section 3 / R-exec-10), immediately
+    /// writing matched identities back. Pure push rounds must also do this before publication,
+    /// minting and deletion diff can decide whether a row already has an account identity.
     let retryParkedClaims: @MainActor ([String: ParkedOwnedItem], OwnedOwnerMaps) async
         -> OwnedParkedClaimResult
     let plan: @MainActor (OwnedPlanInput) -> OwnedPlanOutput
     let land: @MainActor (OwnedLandingInput) async -> OwnedLandingOutcome
-    /// §6.4：提交被接受之后才把铸出来的身份写进本机行。返回真的写下去了的那些身份。
+    /// Persist minted identities to local rows only after the commit is accepted (section 6.4).
+    /// Return identities actually written.
     let claimIdentities: @MainActor ([String: String]) async -> Set<String>
 
-    /// §8.4.5 清位 (a)：本趟提交里**存活**发布拿到 `.applied` 的那些身份（tombstone 的 `.applied`
-    /// 与它无关——收集点的 `item.payload != nil` 是硬条件）。实现方在同一次行写事务里重读行、
-    /// 比三个合并单元、相等才清 `pendingLocalEdit`，`mergePartnerSyncId` 那一半照清。
-    /// `.bookmarks` / `.pins` 取「关闭」值 `{ _ in }`，两条 kind 的行为逐字不变。
+    /// Section 8.4.5(a): identities whose live publication was applied; applied tombstones are
+    /// excluded by the item.payload != nil guard. Re-read and compare all three merge units in the
+    /// same row transaction before clearing pendingLocalEdit; clear mergePartnerSyncId as well.
+    /// Bookmark and pin registrations use a no-op closure.
     let notePublishApplied: @MainActor (Set<String>) async -> Void
-    /// §8.4.5 清位 (b)：发布段算出的候选**身份集**。
-    ///
-    /// **入参就是 `Set<String>`，不是「身份 -> 基线」（R-M3-4a-96）**：比较基线住在
-    /// `.urlRules` 工厂那个**闭包捕获**的每轮状态对象 `state.publishBaseline` 里，而
-    /// `publishOwnedKind` 是 kind-generic 的、**够不到那个局部对象**（写 `state.publishBaseline`
-    /// 编译不过）。所以分工写死：泛型函数只算候选身份（它手上只有游标与 `snapshot`），
-    /// **基线的查表留在闭包里**——闭包自己把每个 id 映到 `state.publishBaseline[id]`、映不出的
-    /// **丢掉**（fail-closed），再按 `pendingLocalEditIdentities(resolve:)` 过滤，最后调
-    /// `access.clearPendingLocalEditIfUnchanged(entries:)`。R-M3-4a-91 的「原语带比较基线」一个字
-    /// 不改：变的只是基线在**哪一层**被查出来。
+    /// Section 8.4.5(b) receives candidate identities, not baselines (R-M3-4a-96). Generic
+    /// publication can compute candidates from cursors/snapshot but cannot access the URL-rule
+    /// factory's captured state.publishBaseline. The closure resolves each baseline, drops missing
+    /// entries fail-closed, filters pendingLocalEditIdentities, then calls
+    /// clearPendingLocalEditIfUnchanged(entries:). The primitive still receives comparison
+    /// baselines as required by R-M3-4a-91.
     let clearPendingLocalEdits: @MainActor (Set<String>) async -> Void
 
-    /// §9.3 保留期级联在本机这一侧的唯一读口：收本轮命中判据 (a) 的那批候选身份，交回其中
-    /// **本机还有活行认领**的那些（判据 (b)）以及它们此刻所在的归属（rehome 要写的值）。
-    ///
-    /// **为什么不复用已有的两个口。** `localIdentities` 在 pin 那一条按设计交空集合（身份的
-    /// 后半段是账户级 ownerKey，那个闭包按接缝的形状拿不到本轮的解析器），拿它当判据 (b)
-    /// 会把**每一条** pin 游标都判成「没有活行认领」而删掉。`snapshot` 则会为未同步行铸候选
-    /// 身份，并在 pin 作用域不一致时整段交一份空快照——两件事在一次清理里都不该发生。
-    ///
-    /// **抛 ⇒ 这条 kind 的级联整段不跑**（R-exec-3 同一条）：一次读不出来与「本机一条行都
-    /// 没有了」在值上同形，而后者的回答是删掉命中 (a) 的每一条游标。
-    ///
-    /// 判据 (b) 的定义域是 `allSyncIds()` / `allPinRows()`（**整库**那一次读），不是
-    /// 快照（R-exec-4 / R-exec-8）：孤儿根下面的行、作用域迁移原地留下的备份行都不发布，但
-    /// 它们是**活的本地行**，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话。
+    /// The only local read for the section 9.3 retention cascade. Given candidates satisfying (a),
+    /// return live claims for (b) separately from their current resolvable owners. Do not use
+    /// localIdentities: pins return no identities there because that callback lacks an owner
+    /// resolver. Do not use snapshot: it can mint identities or return empty on scope mismatch.
+    /// A read failure skips this kind's cascade (R-exec-3), never treating unreadable storage as an
+    /// empty database. The domain is the complete allSyncIds()/allPinRows() read (R-exec-4/8),
+    /// including unpublished orphan-root and scope-migration backup rows. Such rows are still live
+    /// claims.
     let liveOwners: @MainActor (Set<String>, OwnedOwnerMaps) throws -> OwnedLiveRows
 
-    /// §5.7 软删行的**第一条**出路（规则专属）：本轮 tombstone 被服务端 `.applied` 的那些
-    /// 身份，在游标表落盘之后把本机那条软删行**硬删**。`nil` = 这条 kind 的本机删除本来
-    /// 就是硬删（书签 / pin），调用方整段跳过、行为逐字不变。
-    /// 失败只记日志（R12：kind + 条数）——那一行由第二条出路的 30 天清扫兜住。
+    /// First URL-rule soft-delete exit (section 5.7): after persisting the applied tombstone
+    /// cursor, hard-delete its local soft-deleted row. Nil means local deletion is already hard for
+    /// bookmarks/pins. Failures log only kind/count (R12); the 30-day sweep provides the second
+    /// exit.
     var hardDeleteAfterTombstone: (@MainActor (Set<String>) async -> Void)? = nil
-    /// §5.7 软删行的**第二条**出路（规则专属）：`.retentionSweep` 里按**行上的**
-    /// `deletedDate` 清掉超过 30 天的软删行，返回清掉的条数。判据不是游标上的
-    /// `deletedAtMs`：一条永远发不出 tombstone 的软删行（三轮被拒放弃、或从来没有
-    /// `entityId`）的游标已经被 `dropExpiredOwnedTombstones` 丢掉。
+    /// Second URL-rule soft-delete exit (section 5.7): retentionSweep removes rows older than 30
+    /// days using the row's deletedDate, not cursor.deletedAtMs. A permanently unpublished
+    /// tombstone may already have lost its cursor after three rejected retries or never had an
+    /// entityId.
     var purgeSoftDeletedRows: (@MainActor (Date) async -> Int)? = nil
 }
 
@@ -606,9 +556,9 @@ actor PhiSyncEngine {
     /// (§5.1). Same shape as `tombstoneHealAfterRounds`.
     private static let tombstoneRejectGiveUpRounds = 3
 
-    /// R-exec-13：补键自愈连续被拒多少轮之后**不再重新武装**。与上面那条同一个数字、同一条
-    /// 理由（一次瞬时失败不该定案，一条永远失败的条目不该每轮重发一遍），但放弃的动作完全
-    /// 不同——见 `PhiOwnedItemCursor.rekeyRejectRounds`。
+    /// Stop rearming key-repair after this many consecutive rejected rounds (R-exec-13). As with
+    /// deletion retries, tolerate transient failures without republishing permanent failures
+    /// forever; the give-up action differs, as documented by PhiOwnedItemCursor.rekeyRejectRounds.
     private static let rekeyRejectGiveUpRounds = 3
 
     /// The server's `MaxCommitEntries` default is 500; batching well under it keeps one bad
@@ -630,15 +580,15 @@ actor PhiSyncEngine {
     private let domainKeys: any PhiDomainKeyProviding
     private let client: PhiSyncProtocolClient
     private let defaults: UserDefaults
-    /// marker / birthday 的落点（M3-4a §2.10）。`init` 的 `markerStore` 为 nil 时回落成
-    /// `DefaultsBackedPhiSyncMarkerStore(defaults:)`——读写两个旧键，只给测试与还没接线的
-    /// 构造点用；生产的唯一构造点 `PhiChromiumCoordinator.buildPhiSyncEngine` 必传
-    /// `FilePhiSyncMarkerStore`。引擎里只有这一条代码路径：两个访问器一律走它，没有 kind 分支。
+    /// Marker/birthday storage (M3-4a section 2.10). A nil init argument uses
+    /// DefaultsBackedPhiSyncMarkerStore for tests or unwired construction sites, reading the two
+    /// legacy keys. The production buildPhiSyncEngine constructor supplies FilePhiSyncMarkerStore.
+    /// Both accessors share this single engine path without kind-specific branches.
     private let markerStore: any PhiSyncMarkerStore
-    /// marker / birthday 的内存镜像：`load()` 只在 `init` 跑一次，之后 `storedMarker` /
-    /// `storedBirthday` 的 get 读它，set 经 `persistMarkerState` 写穿、失败回滚。每次 get 读
-    /// 一次文件会给一轮加上十几次磁盘读，而且一次瞬时读失败会被解读成「marker 为 nil」⇒
-    /// 整类型重放。
+    /// In-memory marker/birthday mirror loaded once during init. Reads use this mirror;
+    /// persistMarkerState writes through with rollback on failure. Reading the file per accessor
+    /// would add repeated I/O and misinterpret transient read failures as a nil marker requiring
+    /// full replay.
     private var markerState: PhiSyncMarkerFile
     private let deviceKeyId: String
     private let settings: [SyncableSetting]
@@ -654,80 +604,71 @@ actor PhiSyncEngine {
     /// detectable inside one process too.
     private var spaceSectionEnabled = false
 
-    /// 归属 kind 的注册清单（M3-3 §5）。空数组 = 这台机器 / 这个构建没有归属项同步，
-    /// 下面每一个归属分支都在它为空时整段跳过，所以 M3-1 / M3-2 的行为逐字节不变。
+    /// Owned-kind registry (M3-3 section 5). An empty registry skips every owned-item section and
+    /// preserves the M3-1/M3-2 behavior of builds without owned-item sync.
     private let ownedKinds: [OwnedKindRegistration]
 
-    /// §8.2 / Task 10：图标回填队列。nil = 这个引擎不回填（设置-only 的构建与绝大多数
-    /// 用例）。
-    ///
-    /// **它对同步状态完全不可见**：favicon 不在快照里，回填那次写在 §5.7 的值快照去重那里
-    /// 就被吃掉，所以它不碰游标、不写基线、不触发推送。引擎与它的关系只有两条——每轮末尾
-    /// 投喂一次，`shutdown()` 时停。
+    /// Optional favicon backfill queue (section 8.2 / Task 10); nil disables backfill. Favicons are
+    /// excluded from sync snapshots, so value deduplication absorbs backfill writes without
+    /// touching cursors/baselines or triggering publication. The engine feeds it at round end and
+    /// stops it during shutdown.
     private let faviconBackfill: PhiFaviconBackfillQueue?
 
-    /// 本轮新落地、要回填图标的行。**每轮清零**（`run`），轮末一次交给队列。两种 kind 各
-    /// 一个篮子：队列按 kind 分开写回（两个 access 协议实例是两个写入口）。
+    /// Newly landed favicon candidates collected per round, cleared in run and submitted together
+    /// at round end. Bookmark and pin candidates use separate local-access writers.
     private var faviconCandidatesThisRound: [PhiLocalBookmark] = []
     private var faviconPinCandidatesThisRound: [PhiLocalPin] = []
 
-    /// §5.8：配对预览的分页预算。它与拉取的 `maxPullPages` 分开，因为两种 kind 之后
-    /// 一次预览要走过整个账户的书签与 pin 才能数清账户里有几个 Space。
+    /// Separate page budget for pairing previews (section 5.8), which must scan account bookmarks
+    /// and pins to enumerate all Spaces.
     private let previewMaxPages: Int
 
-    /// 上一条的默认值，**与 init 的默认实参同源**。拉取的 64 页 × 每页 500 条 = 32 000 条
-    /// 实体，横跨全部 kind 并且把 tombstone 也算进去（M5 之前永不回收）；书签与 pin 落地
-    /// 之后，一个普通账户就能在数清 Space 之前把它吃完，于是配对向导拿到的是一次
-    /// `.truncated`。预览的预算因此单独放大到 400 页；真正封顶这次预览的是
-    /// `previewDeadlineMs`，页预算只是兜底。
+    /// Shared default for init. The normal 64 x 500 pull budget spans every kind and tombstones, so
+    /// an ordinary account can exhaust it before all Spaces are counted. Preview allows 400 pages;
+    /// previewDeadlineMs is the primary bound and the page cap is a fallback.
     static let defaultPreviewMaxPages = 400
 
-    /// 最近一次预览的页数与实体数（§9.1）。`runPreview` **轮首清零、每一条出口都写它**，
-    /// 所以它永远是最近那一次预览的计数，不会是上一次的残值。
-    /// 只有这两个数字：没有它们，一次线上截断在日志里与一次网络失败无法区分，而
-    /// `PhiSpacePreviewError.truncated` **不带载荷**（给它加 associated value 会同时改坏
-    /// 向导与两个测试文件里既有的 `case .truncated`），所以计数走这条独立的只读接缝。
+    /// Latest preview page/entity counts (section 9.1). Reset at entry and written on every exit,
+    /// including early failures. This read-only diagnostic distinguishes truncation from transport
+    /// failure without adding payloads to the existing truncated error case.
     private var lastPreviewStats: (pages: Int, entities: Int) = (0, 0)
 
-    /// label -> (`client_tag_hash` -> 身份)。**随学随加**：每当一条带密文的实体被解密并
-    /// 归位，它的身份立刻插进它那条 kind 的索引，同一次 drain 的后续页就能路由它的
-    /// tombstone。每轮开头从游标表与本机身份重建，轮内只增不减。
-    ///
-    /// 写成注册项上的一个字段是行不通的——那个 struct 全是 `let`，而这张表每页都在长。
+    /// Kind label to client_tag_hash-to-identity index. Rebuilt from cursors/local identities at
+    /// round start, then only grows as ciphertext is decoded, allowing later pages in the same
+    /// drain to route tombstones. This mutable per-page state cannot live in immutable
+    /// registrations.
     private var ownedTagIndices: [String: [String: String]] = [:]
 
-    /// label -> 这一轮该 kind 的游标表。轮首从 store 读一次、apply 段写回，发布段再读一次
-    /// （CASE 6.26 的 `loseOnLoadNumber = 2` 数的就是这两次）。它同时是
-    /// `ownedTableForTesting(_:)` 的数据源，所以那个只读访问器不会多打一次 `load`。
+    /// Per-kind cursor tables. Load at round start, write after apply, then reload for publication
+    /// (CASE 6.26 counts these two loads). Also backs ownedTableForTesting without an extra store
+    /// load.
     private var ownedTables: [String: PhiOwnedItemTable] = [:]
 
-    /// 本轮轮首读本机行抛错的那些 kind（R-exec-3）。它们的快照、差分、发布与落地整段不跑。
+    /// Kinds whose round-start local read failed (R-exec-3); skip their snapshot, diff, publication
+    /// and landing.
     private var ownedReadFailed: Set<String> = []
 
-    /// 本轮每条注册 kind 的计数（§11.2）。
+    /// Per-registered-kind counters for this round (section 11.2).
     private var ownedCounters: [String: OwnedRoundCounters] = [:]
 
-    /// 本轮已经重试过停放项的 kind。一轮**一次**，在归属段的最前面——`pull` 与
-    /// `pushOwnedItems` 都可能是第一个到达那里的。
+    /// Kinds whose parked claims have already been retried this round. Run once at the start of
+    /// owned processing, regardless of whether pull or pushOwnedItems reaches it first.
     private var ownedParkedRetryDone: Set<String> = []
 
-    /// 本轮已经跑过轮首的 kind。一轮至多一次 fetch（§5.7 第 2 条硬要求），而一轮里
-    /// `pull` 与 `push` 都可能第一个到达轮首。
+    /// Kinds already initialized this round. Enforces at most one fetch (section 5.7(2)) when
+    /// either pull or push can enter first.
     private var ownedRoundStarted: Set<String> = []
 
-    /// 本轮那份身份翻译表，算一次用到底（它是几次主 actor 往返）。
+    /// Cached identity mappings for this round, avoiding repeated main-actor round trips.
     private var ownedMapsThisRound: OwnedOwnerMaps?
 
-    /// 认领的合并结果里本机赢了字段的那些身份（`OwnedItemAdoptionResult.mustRepublish`）。
-    /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
+    /// Claimed identities with locally winning fields (OwnedItemAdoptionResult.mustRepublish).
+    /// Without republishing, peers keep the old value while both sides believe they converged.
     private var ownedMustRepublish: [String: Set<String>] = [:]
 
-    /// §5.3 的尽力推迟：本轮收到过该 kind 实体的那些归属（`OwnedPlanOutput.deferredOwners`）。
-    ///
-    /// **累加，不覆盖**：一轮里可以有不止一次 pull（`NOT_MY_BIRTHDAY` 的重来、发布前的那次
-    /// 初始 pull、`.conflict` 的限定重试各带一次），而「这一轮这个归属有没有到达过实体」问的
-    /// 是整轮的并集。每轮清零，**绝不落盘**——落盘的那一刻它就成了一个跨轮的窗口状态，而
-    /// R-M3-3-22 明令这张表里不许有窗口。
+    /// Best-effort deferred owners from OwnedPlanOutput (section 5.3). Accumulate the union across
+    /// all pulls in this round, including birthday and conflict retries. Reset each round and never
+    /// persist it: persistence would introduce the cross-round window forbidden by R-M3-3-22.
     private var ownedDeferredOwners: [String: Set<String>] = [:]
 
     /// §3.6's per-round account profile refresh. `GET /keys/v1/profiles` is small, but App
@@ -751,28 +692,26 @@ actor PhiSyncEngine {
     /// so a failed retry cannot leave later entity kinds publishing against stale state.
     private var canPublishThisRound = false
 
-    // ── B-2 的轮级状态（M3-4a Task 2b，§2.5 / §2.8）。全部在 `run(_:)` 的复位段清零。──
-    //
-    // `cursorSaveFailures` 是 §2.5 第 4 条那个布尔的计数形态：四个置位点全在**写口内部**
-    // （`writeSpaceTable` / `writeOwnedTable` / `persistMarkerState` 的 `false` 支，以及
-    // `applySpaces` create 支里 `mapSpace` 抛 `persistFailed` 的那个 catch），不在调用点。
-    // 它同时是发布闸的第三个合取项（R-M3-4a-88 / 92）：本轮任何一次游标落盘失败 ⇒ 零发布。
+    // B-2 round state (M3-4a Task 2b, sections 2.5/2.8), reset by run. cursorSaveFailures counts
+    // failures inside writeSpaceTable, writeOwnedTable, persistMarkerState and the applySpaces
+    // mapSpace persistFailed catch. Any such failure blocks publication for the entire round
+    // (R-M3-4a-88/92), not merely at the caller that observed it.
     private var cursorSaveFailures = 0
-    /// §2.8 的具名结局。`pull` 自己只写五个（`.cursorSaveFailed` / `.pullFailed` /
-    /// `.unusableSettings` / `.pageBudgetExhausted` / `.notMyBirthday`），其余三个由结局行
-    /// 发射前按固定优先级派生。一轮里多次 pull 时后写覆盖先写。
+    /// Named section 2.8 outcome. Pull directly assigns cursorSaveFailed, pullFailed,
+    /// unusableSettings, pageBudgetExhausted or notMyBirthday; logging derives the other three by
+    /// fixed precedence. Later pulls in the same round overwrite earlier assignments.
     private var roundOutcome: RoundOutcome = .ok
-    /// 本轮取回的页数，跨同一轮内的多次 pull 累加。
+    /// Pages fetched across all pulls in this round.
     private var roundPages = 0
-    /// 「**盘上**那个 marker 本轮动过」：只在 `persistStoredMarker` 成功之后按
-    /// `storedMarker != markerAtEntry` 置真（计划裁定 7）。
+    /// Whether the on-disk marker changed this round. Set only after persistStoredMarker succeeds
+    /// and storedMarker differs from markerAtEntry (ruling 7).
     private var roundMarkerAdvanced = false
-    /// 结局行**发射时**写下的那一份快照；轮首不清（`nil` 只表示「这个引擎还没跑完过一轮」）。
-    /// 快照而不是活值：一次 `page_budget_exhausted` 会把跟进轮排进队列，而跟进轮的
-    /// `run(_:)` 一进门就把四个活计数清零——测试接缝读活值会读到下一轮的残值。
+    /// Snapshot captured when logging the round outcome. Not reset at round entry; nil means no
+    /// completed round yet. A queued page-budget continuation resets live counters immediately, so
+    /// exposing them would make tests observe the next round instead.
     private var lastLoggedRound: LoggedRound?
 
-    /// 结局行的四个字段，原样冻结。
+    /// The four round-log fields, frozen at emission.
     struct LoggedRound {
         let outcome: RoundOutcome
         let pages: Int
@@ -842,12 +781,13 @@ actor PhiSyncEngine {
     /// Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
     nonisolated func shutdown() {
         stopSignal.stop()
-        // §8.2 / Task 10：回填与引擎同生命周期。它自己的退休位也住在一个锁盒子里，所以这
-        // 一跳是同步的——退出账户那条主线程路径上等不起一次 actor hop。
+        // Backfill shares engine lifetime (section 8.2 / Task 10). Its lock-protected retirement
+        // flag supports synchronous stop; main-thread sign-out cannot wait for an actor hop.
         faviconBackfill?.stop()
     }
 
-    /// 结果的一次性信箱（§4.3）。`final class` 而不是 `inout`：它要跨 `Task` 边界。
+    /// Single-use result mailbox (section 4.3). A class, rather than inout, can cross the Task
+    /// boundary.
     final class PreviewBox {
         var result: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
     }
@@ -874,17 +814,14 @@ actor PhiSyncEngine {
         /// entity. The queue is the only thing that makes the single writer real.
         case retentionSweep
         case recordLocalDeletion(String)
-        /// 一条归属 kind 的本地变化（M3-3 §5.7）。载荷是注册项的 `label`——**kind 是数据
-        /// 不是代码**，所以这里是一个 case 而不是每种 kind 一个。
-        ///
-        /// **归属项没有 `.recordLocal…Deletion`**（R-M3-3-5）：删除起源是 §4.7 的差分而不是
-        /// 钩子。M3-4 若真给书签或 pin 加一条删除钩子（例如让一次 `deleteSpaceCascade`
-        /// 立刻发 tombstone 而不必等下一轮差分），那个入口**必须**是一个排进 `roundQueue`
-        /// 的 Round，而不是一次普通的 actor 方法调用：一个在轮次挂起窗口里落地的意图会被
-        /// 盲写覆盖，`pendingDelete` 就此永久丢失（M3-2 §5.3 的整段论证）。
+        /// Local owned-kind change (M3-3 section 5.7), identified by registry label rather than one
+        /// case per kind. Owned deletion originates in the section 4.7 diff, not deletion hooks
+        /// (R-M3-3-5). Any future bookmark/pin deletion hook must enqueue a Round: an ordinary
+        /// actor call could interleave at suspension and lose pendingDelete to a stale round write
+        /// (M3-2 section 5.3).
         case localOwnedChange(String)
-        /// 配对向导的只读账户预览（R-D6-1）。排同一条队列，所以它不可能与一轮设置
-        /// 同步交错。
+        /// Read-only account preview for pairing (R-D6-1), serialized on the same queue so it
+        /// cannot interleave with settings sync.
         case preview(PreviewBox)
     }
 
@@ -911,8 +848,8 @@ actor PhiSyncEngine {
         self.faviconBackfill = faviconBackfill
         self.previewMaxPages = previewMaxPages
         self.now = now
-        // nil ⇒ 回落到两个旧键（见 `markerStore` 的属性注释），不是内存 store、也不是引擎里
-        // 留一条 `if markerStore == nil` 的旧分支。镜像必须在任何一轮之前就位。
+        // Nil selects the two legacy-key fallback, not an in-memory store or a second engine
+        // branch. Initialize the mirror before any round runs.
         let resolvedMarkerStore: any PhiSyncMarkerStore =
             markerStore ?? DefaultsBackedPhiSyncMarkerStore(defaults: defaults)
         self.markerStore = resolvedMarkerStore
@@ -961,42 +898,26 @@ actor PhiSyncEngine {
         await serialized(.spaceGate(enabled))
     }
 
-    /// 配对向导第 2 步的 Account 列（R-D6-1）。
-    ///
-    /// **它持久化的东西是：没有。** 不写 `storedMarker`、不写 `storedBirthday`、不建
-    /// 也不改任何游标、不写任何基线、不动 `unreadableTagHashes`、不动
-    /// `hasDrainedFullReplay` / `drainInProgress` / `hadRecords` /
-    /// `didReplayForEmptyTable`、不写映射、不 commit 任何东西。它不是 `push`，
-    /// `pushSpaces` 的四道守卫一处都没碰。`run(_:)` 的这一支还**提前返回**，所以
-    /// §11 的 `logSpaceRound()` 也不跑：预览不是一轮 Space，不该在计数行里留下一条
-    /// 全零记录，也不该为此多两次主 actor 往返。
-    ///
-    /// **它也不看 `spaceSectionEnabled`。** 这是唯一一条允许在门关着时执行的 Space
-    /// 形状的读，允许的理由恰恰是「它什么都不写」。
-    ///
-    /// 拿到的东西是一次性的、只给 UI 看的，**不是同步状态**：它从不推进共享 marker，
-    /// 所以门开边沿仍然会丢一次 marker 并重放整个 data type，账户里每一条 Space 都会
-    /// 在门开后再走一遍正式路径。
+    /// Read-only Account-column preview for pairing step 2 (R-D6-1). It persists nothing: no
+    /// marker/birthday, cursor/baseline, unreadable tags, replay/drain flags, mappings or commits.
+    /// It returns before Space counters/outcome logging, avoiding a misleading all-zero Space round
+    /// and extra actor hops.
+    /// This is the sole Space-shaped read allowed with spaceSectionEnabled closed because it writes
+    /// nothing. Results are transient UI data. Opening the gate still clears the marker and replays
+    /// the full type through the normal landing path.
     func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
         let box = PreviewBox()
         await serialized(.preview(box))
         return box.result ?? .failure(.retired)
     }
 
-    /// §4.5 的期限，**判在轮体里**（`runPreview` 的分页循环），不是只判在向导里。
-    ///
-    /// 向导那一侧的赛跑管不住这一轮：`serialized(_:)` 把轮体放进一个**非结构化**
-    /// `Task {}`，它既不继承取消，`await task.value`（非 throwing Task）也不会因为
-    /// 调用方被取消而提前返回。所以没有这个预算，一次抖动的网络会让预览按
-    /// 「`previewMaxPages` 页 × URLSession 每请求 60 s」跑下去，并且一直占着 round
-    /// 队列，把设置同步一起拖住。向导侧仍然有自己的硬期限（见
-    /// `PairingWizardViewModel.loadAccountSpaces`），两者取值相同：那一条保证**界面**
-    /// 不卡，这一条保证**工作**真的停下来。
-    ///
-    /// **它才是真正封顶一次预览的那个数**：`defaultPreviewMaxPages` 放大到 400 页之后，
-    /// 一个慢账户会先撞上期限、而不是先撞上页预算。120 s 是「大账户也数得完」与「卡住的
-    /// 网络不会一直占着 round 队列」之间的取值；向导的加载页为此有一条明说要等多久的
-    /// 进度文案。
+    /// Section 4.5 deadline, enforced inside runPreview as well as in the wizard. serialized(_:)
+    /// creates an unstructured nonthrowing Task: caller cancellation neither stops it nor unblocks
+    /// awaiting its value. Without an engine deadline, repeated 60-second requests could monopolize
+    /// the round queue and delay settings sync.
+    /// The wizard's matching deadline keeps the UI responsive; this one stops further work. With
+    /// the 400-page cap, 120 seconds balances large-account enumeration against queue occupancy,
+    /// and the loading UI communicates the wait.
     static let previewDeadlineMs: Int64 = 120_000
 
     /// The gate edge itself. Runs as a queued round; never call it directly.
@@ -1055,23 +976,11 @@ actor PhiSyncEngine {
         await serialized(.localOwnedChange(label))
     }
 
-    /// Delivered by `PhiSpaceSyncState.shared` and executed as a QUEUED ROUND --
-    /// the table has exactly one writer (§5.3: "全部 async, 全部排进同一条
-    /// roundQueue").
-    ///
-    /// Running the read-modify-write "on the engine actor" is not enough, and
-    /// the failure is the one §5.3 names: a round reads the table, the user
-    /// deletes a Space during one of that round's suspensions, and the round
-    /// then writes its pre-delete copy back. `pushSpaces` holds its copy across
-    /// `client.commit` (a full network round trip) and `pull`'s apply section
-    /// holds one across every landing's main-actor hop, so the window is wide
-    /// and ordinary. The lost `pendingDelete` is permanent and silent: the uuid
-    /// never enters `spaceCommitEntries`' union again, no tombstone is ever
-    /// committed, and with no `deletedAtMs` on the cursor the anti-resurrection
-    /// guard cannot fire either -- the next delivery of that entity re-creates
-    /// the Space the user deleted.
-    ///
-    /// Must be called from *outside* a round, like `setSpaceSyncEnabled`.
+    /// Delivered by PhiSpaceSyncState.shared as a queued round, preserving the single writer
+    /// required by section 5.3. Actor isolation alone is insufficient: pull and pushSpaces hold
+    /// table copies across network/main-actor suspensions. An interleaved deletion would be
+    /// overwritten, permanently losing pendingDelete and allowing the next incoming entity to
+    /// recreate the Space. Call only from outside a round, like setSpaceSyncEnabled.
     func recordLocalDeletion(spaceId: String) async {
         await serialized(.recordLocalDeletion(spaceId))
     }
@@ -1095,23 +1004,21 @@ actor PhiSyncEngine {
     /// sweep runs as a round AND keeps no stale copy across a suspension.
     private func applyRetentionSweep() async {
         await applySpaceRetentionSweep()
-        // §3.6 的 tombstone 游标丢弃，**排在级联之前**：一条已经到期的游标不该再进级联的
-        // 候选集，那只会让同一条记录被两段逻辑各判一次。
+        // Drop expired tombstone cursors before the cascade (section 3.6), so the same expired
+        // record is not classified by both passes.
         await dropExpiredOwnedTombstones()
-        // §9.3 的游标级联，**每一次清理轮都跑，与上面这趟有没有清出东西无关**。它不是
-        // `applySpaceRetentionSweep` 的尾巴：那一趟的 `expired` 是「这一次**新**清理掉的
-        // uuid」，而 `purgeExpired` 在 phase 1 就盖上 `purgedAtMs` 并立刻落盘、它自己的守卫
-        // 又是 `purgedAtMs == nil`，所以一个 uuid **再也不会被返回第二次**。把级联挂在那份
-        // 返回值上，一次「数据删成功、游标文件写失败」就永久留下一批孤儿游标——而 §11.4
-        // 明说游标文件写失败**不重试**。幂等重算一遍不需要任何新状态。
+        // Recompute the idempotent cursor cascade on every retention round (section 9.3),
+        // regardless of newly purged Spaces. purgeExpired marks purgedAtMs durably in phase 1 and
+        // never returns that UUID again; tying the cascade only to that result would permanently
+        // orphan cursors after a file-save failure. Section 11.4 does not retry such saves.
         await applyOwnedRetentionCascade()
         await purgeExpiredSoftDeletedOwnedRows()
     }
 
-    /// §5.7 软删行的第二条出路。与 `dropExpiredOwnedTombstones` **同一轮、排在
-    /// 游标级联之后**：那一趟按游标的 `deletedAtMs` 丢**游标**，这一趟按行的 `deletedDate`
-    /// 删**行**，两个判据分属两个 store，谁也覆盖不了谁——一条永远发不出 tombstone 的软删
-    /// 行（三轮被拒放弃、或从来没有 `entityId`）的游标早已被上一趟丢掉。
+    /// Second soft-delete exit (section 5.7), after the cursor cascade in the same retention round.
+    /// Cursor expiry reads deletedAtMs; row expiry reads deletedDate in a different store. Neither
+    /// substitutes for the other: permanently unpublished tombstones may already have lost their
+    /// cursors.
     private func purgeExpiredSoftDeletedOwnedRows() async {
         let cutoff = Date(timeIntervalSince1970:
                             Double(now() - PhiSpaceSyncState.retentionMs) / 1000)
@@ -1119,7 +1026,7 @@ actor PhiSyncEngine {
             guard !isStopped else { return }
             guard let purge = registration.purgeSoftDeletedRows else { continue }
             let purged = await purge(cutoff)
-            // R12：只带 kind 与条数。
+            // R12: log only kind and count.
             if purged > 0 {
                 AppLogInfo("[phi-sync] purged soft-deleted rows "
                            + "kind=\(registration.label) count=\(purged)")
@@ -1127,7 +1034,7 @@ actor PhiSyncEngine {
         }
     }
 
-    /// 上面那两段说的 Space 那一半：`purgeExpired` + 数据级联。
+    /// Space-side retention: purgeExpired followed by the local data cascade.
     private func applySpaceRetentionSweep() async {
         guard let spaceAccess, spaceStore != nil else { return }
         var table = loadSpaceTable()
@@ -1143,45 +1050,36 @@ actor PhiSyncEngine {
         // Phase 2: cascade the data. No table copy is held across these awaits.
         for uuid in expired {
             guard !isStopped else { return }
-            // D6：`purgeExpired` 返回的是 syncUuid，`purge` 收的是本地 id。解析不到
-            // ⇒ 无事可做（本机本来就没有这条），游标留下的 tombstone 已经在 Phase 1
-            // 写好了。
+            // D6: purgeExpired returns syncUuid, while purge accepts a local ID. Unresolved means
+            // no local row to remove; phase 1 already persisted the tombstone cursor.
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
             do {
                 try await spaceAccess.purge(spaceId: local)
-                // **purge 成功之后**才删映射行；游标留下（它是永久 tombstone 记录，
-                // 这一点只有在按 syncUuid 键时才自洽）。
+                // Remove the mapping only after purge succeeds. Keep the permanent tombstone cursor
+                // keyed by syncUuid.
                 await spaceAccess.dropSpaceMapping(forSpaceId: local)
             } catch {
-                // 级联失败 ⇒ **映射必须留着**（R12：只记 describe 出来的那一串）。
-                // 无条件删掉是一条复活路径：`currentSpaces()` 直读本地行、不经
-                // `hiddenSpaceIds` 过滤，那条还在盘上的行会进下一趟 `pushSpaces`，
-                // 懒铸造给它铸一个**全新的** syncUuid，账户里因此多出一条谁也合不掉
-                // 的 Space；而 Phase 1 已经盖上 `purgedAtMs`，清理不会再来第二次。
-                // 留着映射就留住了「syncUuid → 已 tombstone 的游标」这条链，
-                // `snapshot` 的 eligible 过滤照旧把它排除在外。
+                // Keep the mapping if the cascade fails; log only sanitized metadata (R12).
+                // currentSpaces reads remaining local rows without hiddenSpaceIds filtering.
+                // Dropping the mapping would let lazy minting publish a fresh UUID, resurrecting a
+                // Space that phase 1 will never purge again. Retaining the mapping preserves the
+                // tombstoned cursor and snapshot eligibility exclusion.
                 AppLogWarn("[phi-sync] retention purge failed; keeping the mapping so the row cannot be republished (\(PhiSyncLog.describe(error)))")
             }
         }
     }
 
-    /// §3.6：删除定案满 30 天的 tombstone 游标整条丢弃，两条 kind 都过一趟。
-    ///
-    /// 丢弃为什么安全，论证在 `PhiOwnedItemTable.dropExpiredTombstones` 上（服务端每个
-    /// `entity_id` 只有一行且只下发最新版本，所以一条身份被再次投递时投到的要么仍是那条
-    /// tombstone、要么是一次更新的复活，两种在没有游标时的结论都与有游标时逐字一样）。
-    /// 这里只负责**什么时候**跑它：`.retentionSweep` 是唯一一种「与任何实体流动无关、纯粹
-    /// 按时间收尾」的轮次，Space 侧的 30 天清理也在这一轮。
-    ///
-    /// **不看 `ownedReadFailed`**：判据只有游标自己的 `deletedAtMs` 与本轮的 `now`，一次
-    /// 本机读失败改变不了其中任何一个。`beginOwnedRound()` 在读抛错之前就已经把游标表载进
-    /// `ownedTables` 了，所以这一趟照常成立。
+    /// Drop owned tombstone cursors finalized at least 30 days ago (section 3.6). PhiOwnedItemTable
+    /// documents safety: the server only returns the latest version per entity ID, so future
+    /// delivery is either the same tombstone or a newer resurrection, with the same result even
+    /// without the cursor.
+    /// Run only in retentionSweep, alongside Space expiry. Local read failure does not affect the
+    /// cursor-only deletedAtMs/now criterion; beginOwnedRound loads cursor tables before attempting
+    /// local reads.
     private func dropExpiredOwnedTombstones() async {
-        // 与归属段的其余部分同一道门（`ownedItemsPublishAllowed` / `pushOwnedItems` / 落地段
-        // 的 `spaceLive`）。门关着时这一趟不可能有产出——没有任何一轮写过游标表，所以也没有
-        // 到期的 tombstone 可丢——而 `beginOwnedRound()` 是一整趟主线程书签树读 + pin 读。
-        // 关着门的用户因此不必为一次必然空转的清理付这个代价。判据只有游标自己的
-        // `deletedAtMs` 与 `now`，都不随门开关变化：门再开时下一趟清理轮照常把它们丢掉。
+        // Use the common owned-item gate. While closed, no expired cursor work can have
+        // accumulated, so avoid the otherwise wasted bookmark/pin reads. Expiry depends only on
+        // deletedAtMs and now; the next sweep after reopening still removes eligible cursors.
         guard spaceSectionEnabled, !ownedKinds.isEmpty, spaceStore != nil else { return }
         await beginOwnedRound()
         let nowMs = now()
@@ -1192,41 +1090,28 @@ actor PhiSyncEngine {
             table.dropExpiredTombstones(nowMs: nowMs)
             let dropped = before - table.cursors.count
             guard dropped > 0 else { continue }
-            // R12：只记 kind 与条数。
+            // R12: log only kind and count.
             AppLogInfo("[phi-sync] expired tombstone cursors dropped "
                        + "kind=\(registration.label) dropped=\(dropped)")
             writeOwnedTable(registration, table)
         }
     }
 
-    /// §9.3：一个 Space 被 30 天清理掉之后，把两张归属项表里指着它的游标级联处理掉。
-    ///
-    /// **幂等，每次清理轮重算一遍，并且对活行 fail-safe**（E11 + A12）。两条判据**都**成立
-    /// 才删一条游标：
-    ///
-    /// - (a) 它的 `ownerUuid` 指向的那个 Space 的 Space 游标带 `purgedAtMs`；
-    /// - (b) **没有任何活的本地行认领这条身份**。
-    ///
-    /// 不级联的后果：那些游标成为「有基线、无本地行」的孤儿，而 §4.7 的差分把它们**全部
-    /// 判成本地删除**并发出一批 tombstone——删的是账户上别人可能还需要的实体。
-    ///
-    /// (b) 是 A12 的 fail-safe。`ownerUuid` 在门关着、drain 未完、pin 作用域不一致这几种
-    /// 情况下会落后于本地行（它的刷新在发布段的 pre-pass 里），而删掉一条**活行**的游标
-    /// 等于让那条行此后被差分判成从未发布过，下一轮以 `baseVersion == 0` 的 create 盲写
-    /// 覆盖账户上那一条——服务端的 `ON CONFLICT (client_tag_hash) DO UPDATE` 没有版本检查。
-    /// 命中 (a) 但违反 (b) ⇒ **不删**，就地把 `ownerUuid` 按本地行改写并计一次
-    /// `rehomed_cursors`，把一整类「级联键过期」从账户级覆盖降级成一条日志。
-    ///
-    /// 判据只读游标上那一个字段，所以它不必把几千条基线解码一遍，也不会读到一个过期的
-    /// Space：`reconciled` 在「行改了 Space 而发布还排在切片后面」的窗口里是旧值，而
-    /// `ownerUuid` 每一轮 snapshot 的预处理都为表里每一条**在本机有对应行**的游标刷新一次
-    /// （N3 / I9 / R-exec-8）。
+    /// Idempotent retention cascade for owned cursors after a Space's 30-day purge (section 9.3,
+    /// E11/A12). Delete only if (a) cursor.ownerUuid names a purged Space and (b) no live local row
+    /// claims the identity. Otherwise orphaned baselines would look like local deletions and
+    /// publish tombstones for account entities still needed elsewhere.
+    /// Condition (b) prevents deleting live-row cursors when ownerUuid lags behind gated, undrained
+    /// or scope-mismatched local state. Losing such a cursor would permit a baseVersion-zero create
+    /// to overwrite the account row. Retain and rehome live claims instead. Read ownerUuid,
+    /// refreshed by the snapshot pre-pass, rather than decoding potentially stale reconciled
+    /// baselines (N3/I9/R-exec-8).
     private func applyOwnedRetentionCascade() async {
-        // 同上那道门。门关着时候选集恒为空：判据 (a) 要求 `purgedAtMs != nil`，而 Space 那
-        // 半趟清理自己就卡在 `guard let spaceAccess` 上、从来没有清掉过任何一个 Space。
+        // Use the same gate. Closed-gate candidates are empty: condition (a) requires purgedAtMs,
+        // and the Space sweep cannot purge without spaceAccess.
         guard spaceSectionEnabled, !ownedKinds.isEmpty, spaceStore != nil else { return }
-        // 轮首那一次本机读 + 游标表读。它自己按 kind 记 `ownedReadFailed`（R-exec-3），
-        // 一轮至多跑一次，所以这里与别的轮次共用同一个入口而不是自己再读一遍。
+        // Share the round-start local/table read, which records ownedReadFailed per kind and runs
+        // at most once per round.
         await beginOwnedRound()
         let spaceTable = loadSpaceTable()
         let maps = await ownedRoundMaps()
@@ -1234,9 +1119,8 @@ actor PhiSyncEngine {
             guard !isStopped else { return }
             guard !ownedReadFailed.contains(registration.label) else { continue }
             var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
-            // (a)。`ownerUuid == nil` 的游标不进候选：它要么是一条账户上有、本机从没有过
-            // 行的实体（归属永远解析不出来），要么是刚建出来还没被发布段刷过归属的——两种
-            // 都没有「指向一个被清理掉的 Space」这回事。
+            // Condition (a) excludes nil ownerUuid: those cursors either never had resolvable local
+            // rows or have not yet had an owner refreshed. Neither points to a purged Space.
             let candidates = Set(table.cursors.compactMap { identity, cursor -> String? in
                 guard let owner = cursor.ownerUuid,
                       spaceTable.cursors[owner]?.purgedAtMs != nil else { return nil }
@@ -1247,28 +1131,25 @@ actor PhiSyncEngine {
             do {
                 live = try await registration.liveOwners(candidates, maps)
             } catch {
-                // 读不出来 ⇒ 这条 kind 这一轮整段不跑。下一次清理轮重算，判据没有任何
-                // 一次性状态。
+                // A failed read skips this kind's cascade for this round. The next sweep recomputes
+                // all criteria without one-shot state.
                 AppLogWarn("[phi-sync] retention cascade skipped kind=\(registration.label): "
                            + "the local rows could not be read (\(PhiSyncLog.describe(error)))")
                 continue
             }
-            // 两个**本地**增量，不读 `counters.rehomedCursors` 的既有值：那一项在别的轮次
-            // 里由发布段写，拿它当「这一趟有没有改过东西」的判据会在一轮里既发布又清理时
-            // 多写一次盘。
+            // Track changes in local counters, not the existing counters.rehomedCursors value,
+            // which publication may already have changed in this round and would cause an
+            // unnecessary save.
             var dropped = 0
             var rehomed = 0
             var parked = 0
             for identity in candidates.sorted() {
-                // **R-M3-4a-27 的停放豁免，排在判据 (b) 之前。** 一条**停放中**的改目标
-                // 移动不了本机行 ⇒ 游标的 `ownerUuid` 停在**旧** Space 上 ⇒ 旧 Space 被
-                // purge 时命中候选 ⇒ 本机那一行也被 purge 级联硬删掉 ⇒ `live.claimed`
-                // 不含它 ⇒ 下面那个 `removeValue` 连同 `pendingApply` 载荷与已收割的三元组
-                // 一起丢掉整条游标。共享 marker 早已推过那一页，那条改目标**永不重投**：
-                // 账户上规则在新 Space，本机既没有行也没有游标。
-                // **豁免留下的组合状态（游标在、行没了）由 R-M3-4a-42(a)「行不存在 ⇒ 按
-                // 载荷建行」兜住**，`ownerUuid` 这一轮**不刷**：那条行已经没了，
-                // `live.owners[identity]` 必然缺席，而猜一个值正是下面那段注释禁止的事。
+                // Apply the parked-payload exemption before condition (b) (R-M3-4a-27). A parked
+                // retarget retains the old owner; purging that Space can remove its row. Deleting
+                // the cursor would then lose pendingApply and harvested identity after the shared
+                // marker passed the page, so the retarget would never replay. Keep the cursor:
+                // R-M3-4a-42(a) recreates a missing row from the payload. Do not guess a new owner
+                // when no live row remains.
                 if table.cursors[identity]?.pendingApply != nil {
                     parked += 1
                     continue
@@ -1278,9 +1159,9 @@ actor PhiSyncEngine {
                     dropped += 1
                     continue
                 }
-                // (b) 违反 ⇒ 不删。归属这一轮解析不出来时连改写也不做：保留上一次已知的
-                // 归属，下一轮重算——把它刷成一个猜测值会让差分的 tombstone 判据读到一条
-                // 本机从没成立过的归属。
+                // A live claim fails condition (b), so keep it. If its current owner is unresolved,
+                // retain the last known owner and retry next sweep rather than inventing an owner
+                // that would mislead the tombstone diff.
                 guard let current = live.owners[identity],
                       table.cursors[identity]?.ownerUuid != current else { continue }
                 table.cursors[identity]?.ownerUuid = current
@@ -1294,8 +1175,8 @@ actor PhiSyncEngine {
                            + "kind=\(registration.label) parked=\(parked)")
             }
             guard dropped > 0 || rehomed > 0 else { continue }
-            // R12：只记 kind 与条数。写一律走 `writeOwnedTable`（`guard !isStopped` + 两个
-            // per-kind 标志的维护都在那里），绝不直接 `store.save`。
+            // R12: kind/count only. Always write through writeOwnedTable, which enforces retirement
+            // and maintains per-kind flags; never call store.save directly.
             AppLogInfo("[phi-sync] retention cascade kind=\(registration.label) "
                        + "dropped=\(dropped) rehomed=\(rehomed)")
             writeOwnedTable(registration, table)
@@ -1331,9 +1212,9 @@ actor PhiSyncEngine {
         guard !isStopped else { return }
         canPublishThisRound = false
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
-        // marker / birthday 住在账户目录的 `marker.json` 里（§2.10），不在 `stateKeys` 里；
-        // 「Drops every account-scoped cursor」这句合同要它们也一起走。删文件而不是存一张
-        // 空表（§4.4），镜像同步复位。
+        // Marker/birthday live in the account's marker.json, outside stateKeys (section 2.10).
+        // Resetting all account cursors must delete that file and reset its mirror, not save an
+        // empty table (section 4.4).
         markerState = PhiSyncMarkerFile()
         markerStore.deleteFile()
     }
@@ -1362,23 +1243,22 @@ actor PhiSyncEngine {
         // retry, and `pushSpaces` runs after the pull's tail has already finished.
         spaceCounters = SpaceRoundCounters()
         canPublishThisRound = false
-        // 同上，同范围：归属 kind 的计数、轮首读的成功与否、以及随学随加的 tag 索引都是
-        // **每轮**的，不是每次 pull 的。
+        // Owned counters, local-read results and learned tag indices are per-round, not per-pull.
         ownedCounters = [:]
         ownedReadFailed = []
         ownedTagIndices = [:]
         ownedRoundStarted = []
         ownedParkedRetryDone = []
         ownedMapsThisRound = nil
-        // B-2 的四个轮级计数（§2.5 / §2.8）同范围：一轮之内的每一次 pull 累加，轮首清零。
+        // Reset B-2 round counters here (sections 2.5/2.8); pulls within a round accumulate them.
         cursorSaveFailures = 0
         roundOutcome = .ok
         roundPages = 0
         roundMarkerAdvanced = false
         ownedTables = [:]
         ownedMustRepublish = [:]
-        // §8.2 / Task 10：投喂源也是**每轮**的。上一轮没来得及交出去的行由队列自己留着，
-        // 这里清的只是本轮的收集篮。
+        // Reset only this round's favicon collection (section 8.2 / Task 10). The queue retains
+        // prior candidates that have not yet been processed.
         faviconCandidatesThisRound = []
         faviconPinCandidatesThisRound = []
         ownedDeferredOwners = [:]
@@ -1402,25 +1282,25 @@ actor PhiSyncEngine {
         case .retentionSweep:
             await applyRetentionSweep()
         case .recordLocalDeletion(let localSpaceId):
-            // 边界翻译（§3.4）：`SpaceManager` 交来的是**本地** id，游标按 syncUuid
-            // 键。解析不到 = 从来没发布过 = 无 tombstone 可发，这与
-            // `PhiSpaceSyncTable.recordLocalDeletion` 既有的 `entityId != nil` 判据
-            // 是同一件事的两个说法。门面 `PhiSpaceSyncState.recordLocalDeletion(spaceId:)`
-            // 的签名与语义**不变**，仍收本地 id。
+            // Translate the local SpaceManager ID to the cursor's syncUuid at this boundary
+            // (section 3.4). No mapping means never published and hence no tombstone to send,
+            // matching recordLocalDeletion's entityId guard. The PhiSpaceSyncState facade still
+            // accepts local IDs.
             if let uuid = await spaceAccess?.syncUuid(forSpaceId: localSpaceId) {
                 runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
             } else {
                 AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
             }
         case .localOwnedChange(let label):
-            // 回声抑制与 `.localSpaceChange` 逐字同款。`label` 只进日志：发布段按注册清单
-            // 跑完全部 kind，所以一条 kind 的本地变化就是一次普通的 push round。
+            // Suppress echoes as for localSpaceChange. The label is diagnostic only: publication
+            // visits every registered kind, so any owned-kind change schedules an ordinary push
+            // round.
             guard !isApplyingRemote else { return }
             AppLogInfo("[phi-sync] local change for owned kind=\(label)")
             await push(retryOnConflict: true)
         case .preview(let box):
             await runPreview(into: box)
-            return          // 预览不是 Space 轮：不参与 §11 的计数行，也不发结局行
+            return          // Preview is not a Space round: emit neither §11 counters nor an outcome.
         }
         logRoundOutcome()
         await logSpaceRound()
@@ -1428,19 +1308,12 @@ actor PhiSyncEngine {
         await runFaviconBackfill()
     }
 
-    /// §2.8 / §13.2 的结局行（B-2）。发射点在这里而不是 `serialized(_:)`：后者只是排队壳。
-    /// **不带** `logSpaceRound` / `logOwnedRounds` 那道 `spaceSectionEnabled` 守卫——门关轮次与
-    /// M3-1 纯设置引擎正是要读这一行的两种形态。
-    ///
-    /// 发射前按固定优先级收口（计划裁定 6）：
-    /// 1. `.notMyBirthday` 已置 ⇒ 不被覆盖；
-    /// 2. `cursorSaveFailures > 0` ⇒ `.cursorSaveFailed`（这条让 push 段自己的游标写失败也收口成
-    ///    `cursor_save_failed`，§2.5 第 8 条）；
-    /// 3. 仍是 `.ok` 且本轮有 kind 的本机读失败 ⇒ `.localReadFailed`；
-    /// 4. 仍是 `.ok` 且 Space 段有 store 但门关着 ⇒ `.gated`（`spaceStore == nil` 不算 gated，
-    ///    那是 M3-1 纯设置引擎的正常形态，RR-B10）。
-    ///
-    /// R12：只有枚举名、计数与布尔，没有实体内容。
+    /// Emit the B-2 outcome here (sections 2.8/13.2), not in the queue-only serialized wrapper.
+    /// Unlike Space/owned counters, this must run for closed gates and settings-only engines.
+    /// Precedence: preserve notMyBirthday; any cursor save failure wins next; otherwise local read
+    /// failure replaces ok; otherwise a present-but-disabled Space store yields gated (no Space
+    /// store is a normal settings-only engine, RR-B10). R12 permits only enum names, counts and
+    /// booleans.
     private func logRoundOutcome() {
         var outcome = roundOutcome
         if outcome != .notMyBirthday {
@@ -1459,12 +1332,10 @@ actor PhiSyncEngine {
                    + "marker_advanced=\(roundMarkerAdvanced) cursor_save_failed=\(cursorSaveFailures)")
     }
 
-    /// §8.2 / Task 10：每轮末尾的一趟图标回填。
-    ///
-    /// 放在计数落定之后，因为它**不是同步的一部分**：它不碰游标、不写基线、不触发推送，
-    /// 一次失败在 §11.2 的计数行里不该留下任何痕迹。队列自己有界（每轮 20 条），所以本轮
-    /// 交进去多少与本轮真的取多少是两件事——排不上的行留到下一轮，而下一轮即使一条新行都
-    /// 没有也照样排空一次。
+    /// Run favicon backfill after finalizing round counters (section 8.2 / Task 10). It does not
+    /// affect sync cursors, baselines or publication, so failures do not alter sync counts. The
+    /// queue processes up to 20 per round and retains overflow; drain it again even when the next
+    /// round adds no candidates.
     private func runFaviconBackfill() async {
         guard let queue = faviconBackfill, !isStopped else { return }
         let rows = faviconCandidatesThisRound
@@ -1476,15 +1347,14 @@ actor PhiSyncEngine {
         _ = await queue.drainOnce()
     }
 
-    // MARK: - 配对向导的只读账户预览（§4）
+    // MARK: - Read-only pairing account preview (section 4)
 
-    /// §4.3 的轮体。跑在引擎 actor 的同一条 round 队列上；never call it directly.
+    /// Section 4.3 round body, serialized on the engine's round queue. Never call directly.
     private func runPreview(into box: PreviewBox) async {
         let startedAt = now()
-        // 轮首清零。`lastPreviewStats` 是**这一次**预览的计数：不清零的话，一次在拿域密钥
-        // 上就失败的预览会让只读接缝与日志继续报上一次的页数，而那两个数字唯一的用处就是
-        // 分辨「这次截断了」与「这次根本没跑起来」。下面每一条出口都写它，前置失败那几条
-        // 写的就是这里的 (0, 0)。
+        // Reset latest-preview statistics before early failures. Every exit records this preview's
+        // counts, including zero when startup fails, so diagnostics never reuse an earlier
+        // preview's pagination totals.
         lastPreviewStats = (0, 0)
         guard !isStopped else { box.result = .failure(.retired); return }
         let key: SymmetricKey
@@ -1502,19 +1372,19 @@ actor PhiSyncEngine {
         var entities = 0
         var refused = 0
         var unreadable = 0
-        // **局部** marker：响应里的 marker 与 birthday 都不写回。首次加入时
-        // `storedBirthday` 可能还是 ""（设置同步的第一轮尚未收尾），这是正常输入——
-        // 服务端会回一个真的，预览照旧不写回。
+        // Local marker only; never persist response marker or birthday. An empty storedBirthday is
+        // valid before initial settings sync completes; the server supplies one and the preview
+        // still does not write it back.
         var marker: Data?
         var more = true
         do {
-            // 预算是**预览自己的**那一个，不是拉取的 `maxPullPages`：后者 64 页 × 500 条
-            // 要横跨全部 kind、并且把 tombstone 一起数进去，书签与 pin 落地之后它在一个
-            // 普通账户上就不够用了（§5.8）。
+            // Use the independent preview budget. The normal 64 x 500 pull cap includes all entity
+            // kinds and tombstones, which can exhaust it before enumerating an ordinary account's
+            // Spaces (section 5.8).
             while more, pages < previewMaxPages {
-                // §4.5 的期限，判在**发下一页之前**。这是唯一能真正停下这次预览的地方
-                // （见 `previewDeadlineMs`）；判在页边界上，所以最坏还要等当前这一页的
-                // `URLSession` 超时，但分页不会再往下走，round 队列也随之让开。
+                // Check the engine deadline before requesting the next page (section 4.5). An
+                // in-flight request may still take its URLSession timeout, but no further page
+                // starts, releasing the round queue afterwards.
                 guard now() - startedAt < Self.previewDeadlineMs else {
                     lastPreviewStats = (pages, entities)
                     AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
@@ -1533,31 +1403,32 @@ actor PhiSyncEngine {
                 more = response.changesRemaining
                 for entity in response.entities {
                     entities += 1
-                    // 设置实体不关它的事；tombstone 不需要（账户里已经删掉的 Space
-                    // 不该出现在配对列表里）。
+                    // Ignore settings entities and tombstones; deleted account Spaces must not
+                    // appear as pairing choices.
                     guard entity.clientTagHash != PhiSyncEntity.settingsClientTagHash,
                           !entity.deleted else { continue }
                     guard let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key) else {
-                        unreadable += 1     // 只计数，**不**记进 `unreadableTagHashes`
+                        unreadable += 1     // Count only; do not add to `unreadableTagHashes`.
                         continue
                     }
                     guard case .space(let space)? = decoded.kind else { continue }
                     let expected = PhiSyncEntity.clientTagHash(
                         for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
                     guard expected == entity.clientTagHash else { unreadable += 1; continue }
-                    // 两条 agent 特征匹配的载荷绝不能出现在配对选项里；默认 Space 的
-                    // 身份由 D1 固定，绝不可在配对列表里被选中。
+                    // Reject both agent-pattern payload variants. D1 fixes the default Space
+                    // identity, which must never be selectable for pairing.
                     guard !SyncableSpaces.refuses(space) else { refused += 1; continue }
                     guard space.spaceUuid != SyncableSpaces.defaultSpaceUuid else { continue }
-                    // 一次全量重放里每个实体只出现一次；去重取 version 较大者是防御性的。
+                    // Full replay normally delivers each entity once; defensively retain the
+                    // highest version when duplicates occur.
                     if let seen = summaries[space.spaceUuid], seen.version >= entity.version { continue }
                     summaries[space.spaceUuid] = (space, entity.version)
                 }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            // 预览不做任何游标清理，那是正式 pull 的职责。**这不是死路**：设置同步照常
-            // 按 60 s 跑，它自己的 birthday 重试会把 `storedBirthday` 修好，下一次
-            // Retry 就能过。
+            // Preview does not repair cursors; regular pull owns that work. Its normal
+            // settings-sync birthday retry can repair storedBirthday so a later preview retry
+            // succeeds.
             lastPreviewStats = (pages, entities)
             AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                        + "error=not_my_birthday")
@@ -1572,9 +1443,9 @@ actor PhiSyncEngine {
         }
 
         guard !more else {
-            // **不返回部分结果**：Account 列缺一条，用户就可能把一个账户里已经存在的
-            // Space 选成「Add as new」，铸出第二条实体——而那正是这个向导要消灭的状态。
-            // 计数走 `lastPreviewStats`，**不挂在 `.truncated` 上**：那个 case 不带载荷。
+            // Never return partial choices: missing an existing account Space could make the user
+            // select Add as new and mint a duplicate. Record counts through lastPreviewStats;
+            // truncated remains a payload-free error.
             lastPreviewStats = (pages, entities)
             AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                        + "error=truncated")
@@ -1594,9 +1465,9 @@ actor PhiSyncEngine {
                 themeId: entity.themeID.stringValue,
                 overlayOpacityLightMilli: entity.overlayOpacityLight.intValue,
                 overlayOpacityDarkMilli: entity.overlayOpacityDark.intValue)
-        }.sorted { $0.syncUuid < $1.syncUuid }   // 顺序确定，便于测试与两机对照
+        }.sorted { $0.syncUuid < $1.syncUuid }   // Deterministic order for tests and two-device comparisons.
         lastPreviewStats = (pages, entities)
-        // §9.1 第一条。R12：只有计数。
+        // Section 9.1(1); R12 allows counts only.
         AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                    + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
                    + "ms=\(now() - startedAt)")
@@ -1633,12 +1504,11 @@ actor PhiSyncEngine {
         let table = loadSpaceTable()
         let held = table.cursors.values.filter { $0.heldProfileUuid != nil }.count
         let parked = table.cursors.values.filter { $0.pendingApply != nil }.count
-        // §9.3：`mapped` 是映射表的行数（不含默认 Space 的隐式常量）；`unmapped` 是
-        // 「本机同步合格、但还没有映射」的条数。**稳态应为 0**——长期非零 = 懒铸造
-        // 一直失败，这是唯一能把「这台 Mac 的某个 Space 从来没上过账户」暴露出来的
-        // 信号（D6 之前那个设置段落没了，这就是它的替代物：一个计数器，不是一个界面）。
-        // R12：两个都是计数，不是 uuid 列表。
-        // `filter` 的闭包里不能 `await`，所以映射表一次读完再在本地比。
+        // Section 9.3: mapped counts explicit mappings, excluding the implicit default-Space
+        // constant. Unmapped counts eligible local Spaces lacking mappings; steady state is zero.
+        // Persistent nonzero indicates lazy identity minting failures, exposing Spaces that never
+        // reached the account. Report counts, not UUIDs (R12). Fetch mappings once because filter
+        // cannot await.
         var mapped = 0
         var unmapped = 0
         if let spaceAccess {
@@ -1684,15 +1554,14 @@ actor PhiSyncEngine {
         case unusable(reason: UnusableReason)
     }
 
-    /// R-M3-4a-37：逐页边界下的 marker 抑制是**轮级状态**，不是 `break`。
-    ///
-    /// `.resetToNil` 之后本轮**内存里的** marker 照常逐页推进（下一次请求带什么，R-M3-4a-76），
-    /// 只是不再持久化任何一页，轮末把盘上的 marker 写成 nil。两个来源：guard 2 的空表重放、
-    /// 设置实体 `.unusable`。
+    /// Marker suppression is round-level state, not a loop break (R-M3-4a-37). With resetToNil,
+    /// advance the in-memory request marker page by page (R-M3-4a-76), suppress all page
+    /// persistence, then persist nil at round end. Triggered by guard-2 empty-table replay or
+    /// unusable settings.
     private enum MarkerSuppression { case none, resetToNil }
 
-    /// §2.8 的八个具名结局。每一个都对应引擎里一条**已经存在**的早退或失败路径，
-    /// 本里程碑只给它们起名字，不新增路径。`rawValue` 直接进 R12 日志行。
+    /// The eight named section 2.8 outcomes describe existing early-return/failure paths, not new
+    /// behavior. rawValue is safe for R12 logs.
     enum RoundOutcome: String {
         case ok
         case gated
@@ -1704,8 +1573,8 @@ actor PhiSyncEngine {
         case notMyBirthday = "not_my_birthday"
     }
 
-    /// 两个 debug 中止点（§12.2 Q-12）。调用点只说「哪一个」，于是 release 构建里既没有键名
-    /// 字符串也不需要 `#if`（计划裁定 8）。
+    /// Named debug abort points (section 12.2 Q-12), keeping preference-key strings and conditional
+    /// compilation out of call sites (ruling 8).
     private enum DebugAbortPoint { case afterApply, betweenKinds }
 
     #if DEBUG || PHI_SYNC_DEBUG_SWITCHES
@@ -1713,10 +1582,9 @@ actor PhiSyncEngine {
     static let abortBetweenKindsKey = "phi.sync.debug.abortBetweenKinds"
     #endif
 
-    /// 一次性：读到真值先清键再 `abort()`，否则重启后的第一轮立刻再自杀。
-    /// Release 构建里整个方法体为空（计划裁定 8），调用点因此不需要 `#if`。编译条件是
-    /// `#if DEBUG || PHI_SYNC_DEBUG_SWITCHES`：后者只由 Task 12 的验收构建配方经
-    /// `OTHER_SWIFT_FLAGS` 传入，本仓库的工程设置里没有它。
+    /// One-shot abort: clear the enabled key before aborting to avoid crashing again on restart.
+    /// Release builds have an empty body. PHI_SYNC_DEBUG_SWITCHES is supplied only by
+    /// acceptance-build OTHER_SWIFT_FLAGS, not project defaults; DEBUG also enables it (ruling 8).
     private func abortIfRequested(_ point: DebugAbortPoint) {
         #if DEBUG || PHI_SYNC_DEBUG_SWITCHES
         let key: String
@@ -1732,13 +1600,11 @@ actor PhiSyncEngine {
         #endif
     }
 
-    /// Returns whether all pages were downloaded and processed. A page-budget stop is not
-    /// success: callers must wait for a drained pull before publishing any entity kind.
-    ///
-    /// M3-4a B-2（spec §2.4）：**逐页边界**。每一页的次序是 路由 → 设置落地 → Space 落地 →
-    /// 归属 kind 落地 → （派生标志）→ marker；marker 是全页最后一次写，只越过已经完整落地的
-    /// 页。任何一次游标 / 表 / 映射 / marker 文件写失败（`cursorSaveFailures`）都让本页的 marker
-    /// 不推、本轮零发布，下一轮从上一个完整落盘的页重收——重收一页是幂等的（§2.7）。
+    /// Return true only when every page has been downloaded and processed; budget exhaustion cannot
+    /// authorize publishing. Under M3-4a B-2 (section 2.4), each page routes, lands
+    /// settings/Spaces/owned kinds, writes derived flags, then persists its marker last. Any
+    /// cursor/table/mapping/marker failure blocks marker advancement and all publication this
+    /// round. Next round idempotently replays from the last fully persisted page (section 2.7).
     private func pull(retryOnBirthday: Bool, thenPush: Bool) async -> Bool {
         canPublishThisRound = false
         guard !isStopped else { return false }
@@ -1807,23 +1673,19 @@ actor PhiSyncEngine {
                 spaceCounters.profilesCreated = await spaceAccess.profilesCreatedInLastRefresh()
             }
         }
-        // 归属 kind 的轮首：读本机行、载入该 kind 的游标表、按游标键 ∪ 本机身份建 tag 索引。
-        // 次序是固定的（§4.8 的契约）：轮首 `allBookmarks()` → 落地 → 复核 → 写基线 →
-        // 差分与发布。
-        //
-        // **这一次 load 不武装重放**（`armsReplayOnLoss: false`）。报损由发布段那一次 load
-        // 观察并处理：它在那里丢 marker、把 `hasDrainedFullReplay` 置假，于是**下一轮**才是
-        // 那次整类型重放，而这一轮的发布就地中止（CASE 6.26）。
+        // Initialize owned kinds by reading local rows/tables and seeding tag indices from cursor
+        // keys plus local identities. Section 4.8 fixes ordering: local read, landing, recheck,
+        // baseline write, then diff/publication. This initial load does not arm loss replay;
+        // publication's reload detects loss, clears the marker/drain state and stops this round's
+        // publication so the next round replays the full type (CASE 6.26).
         if spaceLive { await beginOwnedRound() }
         // A snapshot, used for the cursor keys it carries and never written back.
         let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
-        // ── 轮级状态，全部在页循环之外声明（RR-B11）──
-        //
-        // A pull with no marker replays the whole type, so "the entity was not in the response"
-        // is only evidence of absence when we started from scratch and drained every page.
-        // 读的是 guard 2 生效**之前**的 marker（计划裁定 1）：guard 2 排在下面，所以一次
-        // 「空表重放 + 账户里确实没有设置实体」的轮次不会多丢一次设置游标。
+        // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
+        // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
+        // (ruling 1), so empty-table replay against an account with no settings entity does not
+        // redundantly clear its settings cursor.
         let startedFromScratch = storedMarker == nil
         // What guard 2's first trigger compares against. `storedMarker`'s setter maps an empty
         // marker to *absent*, so "the marker did not move" is spelled "unchanged", never
@@ -1836,42 +1698,39 @@ actor PhiSyncEngine {
         // Space table entirely.
         let recordsGatedMarkerMoves = !spaceLive && spaceStore != nil
         var markerMoveRecorded = false
-        // R-M3-4a-38：设置实体的视图是**轮级**的——一条 drain 里它至多出现一次，而 `.absent`
-        // 的动作（清设置游标）问的是「整条 drain 一页都没带设置实体吗」，逐页求值会在最后一页
-        // 把刚建立的游标丢掉。`sawSettingsEntity` 就是那个轮级谓词。
+        // Settings visibility is round-scoped (R-M3-4a-38). The entity appears at most once in a
+        // drain; absent means no page carried it. Evaluating absence per page would discard the
+        // cursor created on an earlier page. sawSettingsEntity tracks the full drain.
         var view = RemoteView.absent
         var sawSettingsEntity = false
         var markerSuppression = MarkerSuppression.none
         var maySettingsPublish = true
-        // R-M3-4a-76：内存里这个 marker 永远逐页推进，它回答的是「下一次请求带什么」，与
-        // 「要不要持久化」无关；抑制只作用在 `storedMarker` 上。
+        // Always advance the in-memory request marker page by page (R-M3-4a-76). Suppression
+        // controls storedMarker persistence, not which page to request next.
         var marker = storedMarker
         var pages = 0
         var more = true
         var drained = false
 
-        // Guard 2, trigger 2 (空表重放) 是**轮级**判定，留在页循环之外（R-M3-4a-37 / 47）：它
-        // 描述的是「这台机器的 Space 表整份丢了」，与页无关；判据只读 `spaceTableAtEntry`。
-        // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`: an
-        // account whose Space entities all fail to decrypt keeps `cursors` empty and
-        // `hadRecords` true forever, and would drop the marker and replay on every round.
-        //
-        // **先清 marker、确认写成之后才烧闩**（R-M3-4a-89，计划裁定 3）：marker 在 `marker.json`、
-        // 闩在 plist，两份文件不可能原子写，所以次序必须是「可重来的那一步在前」。失败一律
-        // 收口成 `.cursorSaveFailed`：闩没烧、drain 标志没动、零页、零发布，下一轮 guard 2 再
-        // 触发一次。「旧 marker + 已烧闩」那一格由此不可达——闩的全仓唯一复位点是
-        // `resetForNewStoreBirthday()`，那一格一旦可达就是永久失效。
+        // Guard 2's empty-table replay is round-scoped, outside pagination, and reads
+        // spaceTableAtEntry (R-M3-4a-37/47). Use a one-shot flag, not
+        // hadRecords/hasDrainedFullReplay, to avoid endless replay when all Space entities are
+        // unreadable.
+        // Persist the nil marker before consuming the latch (R-M3-4a-89 / ruling 3). JSON and plist
+        // cannot commit atomically, so perform the retryable step first. Any failure yields
+        // cursorSaveFailed with zero pages/publication. The unsafe old-marker/consumed-latch state
+        // must be unreachable: only resetForNewStoreBirthday resets that permanent latch.
         if spaceLive, spaceTableAtEntry.cursors.isEmpty, spaceTableAtEntry.hadRecords,
            !spaceTableAtEntry.didReplayForEmptyTable {
-            // ① 先把盘上的 marker 清成 nil。写不成 ⇒ 什么都没发生，本轮到此为止：返回值就是
-            //    `canPublishThisRound`，它在函数入口已经复位成 `false` ⇒ 零页、零发布。
+            // First persist a nil marker. On failure, stop with canPublishThisRound still false: no
+            // pages or publication, and replay remains retryable.
             guard persistStoredMarker(nil) else {
                 roundOutcome = .cursorSaveFailed
                 return false
             }
-            // ② marker 已确认落盘，这才烧闩 + 武装 drain。写不成 ⇒ 盘上是「marker 已清、闩未烧」，
-            //    R-M3-4a-83 的回滚让内存与盘一致 ⇒ 下一轮 guard 2 判据仍成立 ⇒ 再清一次 marker
-            //    （幂等，`persistMarkerState` 的 `updated == markerState` 短路成零写）⇒ 收敛。
+            // Only after the marker write succeeds, consume the latch and arm the drain. A failed
+            // flag write rolls memory back (R-M3-4a-83), leaving nil marker/unconsumed latch so
+            // guard 2 retries safely. Re-clearing an already nil marker is a no-write success.
             guard mutateSpaceTable({ table in
                 table.didReplayForEmptyTable = true
                 table.hasDrainedFullReplay = false
@@ -1881,14 +1740,14 @@ actor PhiSyncEngine {
                 return false
             }
             AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
-            // ③ 两次写都确认之后才动内存。
-            marker = nil                                    // 本轮从头拉
-            markerSuppression = .resetToNil                 // 此后任何一页都不再持久化 marker
+            // Update in-memory round state only after both durable writes succeed.
+            marker = nil                                    // Restart this round from the beginning.
+            markerSuppression = .resetToNil                 // Do not persist markers on subsequent pages.
         }
-        // `hadRecords` 的维护跟着 guard 2 走到页循环之前（计划裁定 2），读的是 `spaceTableAtEntry`
-        // 那一刻的 `cursors`：留在每一页里的话，第 1 页落地的游标会让第 2 页当场置真，同一轮内
-        // 改变 guard 2 第二个触发条件的语义。本轮新建的游标要下一轮才置 `hadRecords`，这是无害
-        // 的：`hadRecords` 描述的是一张曾经有过内容、后来丢了的表。
+        // Maintain hadRecords before pagination using the entry snapshot (ruling 2). Setting it
+        // after page 1 lands would change guard 2's meaning within the same round. Newly created
+        // cursors set it next round, which is sufficient to detect a formerly populated table that
+        // was lost.
         if spaceLive, !spaceTableAtEntry.cursors.isEmpty, !spaceTableAtEntry.hadRecords {
             mutateSpaceTable { $0.hadRecords = true }
         }
@@ -1897,34 +1756,32 @@ actor PhiSyncEngine {
             pageLoop: while more, pages < Self.maxPullPages {
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
                 guard !isStopped else { return false }
-                // 逐页落盘（§2.4 说明 1）：birthday 变了 ⇒ marker 作废，两者住同一个文件。写失败
-                // 由 `persistMarkerState` 计数，本页末统一收口——本页照常落地，只是不推 marker。
+                // Persist birthday changes page by page; a changed birthday invalidates the marker
+                // in the same file (section 2.4 note 1). persistMarkerState counts failures. This
+                // page can still land, but its marker cannot advance on failure.
                 storedBirthday = response.storeBirthday
-                // 先不落盘（R-M3-4a-18）：它是全页的最后一次写。
+                // Defer marker persistence until the page's final write (R-M3-4a-18).
                 let pageMarker = response.newMarker
                 more = response.changesRemaining
                 pages += 1
                 roundPages += 1
 
-                // 本页的两个收集篮。逐页落地之后它们不再跨页：一页落完就没有「收到了但还没
-                // 放下去」的实体，所以中途抛错（只可能发生在 `getUpdates`）不再需要停放。
+                // Page-local arrival batches. Once each page lands, no consumed entities remain
+                // unlanded across pages; a later getUpdates error therefore has nothing to park.
                 var batch = SpacePullBatch()
                 var ownedBatches: [String: OwnedPullBatch] = [:]
                 var pageCarriedSettingsEntity = false
                 for entity in response.entities {
                     guard entity.clientTagHash == PhiSyncEntity.settingsClientTagHash else {
-                        // Not the settings entity. With two kinds live on data type 2000 the
-                        // response is no longer "our row or noise": everything else is routed
-                        // to the Space section, and only while the gate is open.
-                        //
-                        // §5.1 的真分发：按 tag hash 查索引，**绝不是「先解密再 switch」**
-                        // ——tombstone 没有密文，解密必然抛错，而 marker 已经推过那一页。
+                        // Route non-settings entities only with the Space gate open. Section 5.1
+                        // routes by tag-hash indices before decrypting: tombstones contain no
+                        // ciphertext and cannot be classified by a decrypt-then-switch path.
                         guard spaceLive else { continue }
                         if tagIndex[entity.clientTagHash] != nil {
                             routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
                             continue
                         }
-                        // 按注册清单逐条试；索引是引擎自己的 `ownedTagIndices[label]`。
+                        // Try registered kinds against their engine-owned ownedTagIndices[label].
                         if let registration = ownedKinds.first(where: {
                             ownedTagIndices[$0.label]?[entity.clientTagHash] != nil
                         }) {
@@ -1932,11 +1789,11 @@ actor PhiSyncEngine {
                                              decoded: nil, into: &ownedBatches)
                             continue
                         }
-                        // 都不认。**带密文的**实体还有一条路：解开之后按 `decoded.kind` 找
-                        // 注册项——一条 create 先于本机建立它的索引项到达就是这个形状。
-                        // tombstone、解不开的密文与仍然认不出的载荷一律交回 Space 段，于是
-                        // 「未知 tag」的处置与今天逐字相同（未知 tombstone 记 info、解不开
-                        // 的进隔离区、别的 kind 只忽略这一条）。
+                        // An unknown ciphertext-bearing create can still be decoded and matched to
+                        // a registration before its local index exists. Return tombstones,
+                        // unreadable ciphertext and unrecognized payloads to Space routing,
+                        // preserving its unknown-tag behavior: log unknown tombstones, quarantine
+                        // unreadable payloads and ignore other kinds.
                         if !entity.deleted, !ownedKinds.isEmpty,
                            let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key),
                            let registration = ownedKinds.first(where: {
@@ -1951,8 +1808,8 @@ actor PhiSyncEngine {
                     }
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
                     storedVersion = entity.version
-                    // 设置那一条只更新**轮级** `view`，不在页内求值（R-M3-4a-38）；四个子支都算
-                    // 「本页带了设置实体」。
+                    // Update the round-level settings view; all four branches count as this page
+                    // carrying a settings entity (R-M3-4a-38).
                     sawSettingsEntity = true
                     pageCarriedSettingsEntity = true
                     guard !entity.deleted else {
@@ -1980,7 +1837,7 @@ actor PhiSyncEngine {
                     }
                 }
 
-                // ── 这一页的落地段。次序与整轮粒度时的轮末段逐字相同，只是作用域变成一页 ──
+                // Land this page in the same order formerly used at round end.
                 switch view {
                 case .usable(let remote) where pageCarriedSettingsEntity:
                     tombstoneRounds = 0
@@ -1990,18 +1847,12 @@ actor PhiSyncEngine {
                     // this device its local timestamps. See `apply` and `hasAdopted`.
                     apply(remote, adopt: !hasAdopted)
                 case .unusable(let reason) where pageCarriedSettingsEntity:
-                    // The server holds bytes under our client tag that this build cannot read.
-                    // Not applying them is only half the job: the trailing push must not run
-                    // either, because it would commit this device's snapshot against the id
-                    // and version we just harvested from that very entity and replace it for
-                    // every other device — including the keys of a newer client that this
-                    // build does not understand. Rewinding the marker makes the next round see
-                    // the entity again, so a re-minted domain key or a newer build heals this
-                    // instead of it being terminal.
-                    //
-                    // R-M3-4a-37：抑制是轮级状态，取代原地的 `storedMarker = nil`。drain 照常走完
-                    // 剩下的页（内存 marker 继续推进，R-M3-4a-76），轮末才把盘上的 marker 写成
-                    // nil——`break` 会让版本高于这一条的一切实体永久收不到。
+                    // Unreadable settings must neither land nor authorize a settings push using the
+                    // harvested ID/version, which could overwrite data from a newer client. Rewind
+                    // so a repaired domain key or newer build can retry.
+                    // Use round-level suppression (R-M3-4a-37), continue all remaining pages with
+                    // the in-memory marker (R-M3-4a-76), then persist nil at round end. Breaking
+                    // here would permanently miss higher-version entities.
                     markerSuppression = .resetToNil
                     // The baseline goes with the marker, and that is what makes the refusal
                     // durable rather than a one-round suppression. `push`'s guard reads "an
@@ -2020,38 +1871,28 @@ actor PhiSyncEngine {
                     maySettingsPublish = false
                     noteUnusable(reason)
                 default:
-                    break                       // `.absent` 的动作是**轮级**的，见循环之后
+                    break                       // Handle `.absent` at round scope after the loop.
                 }
 
                 if spaceLive {
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
-                    // The apply path is the one Space write that cannot be expressed as a
-                    // `mutateSpaceTable` delta: `applySpaces` hops to the main actor on
-                    // every landing, so its table copy necessarily spans suspension
-                    // points. One load / apply / write per page is safe *here* and only
-                    // here — rounds are serialized (`serialized(_:)` chains them; the gate
-                    // edge and BOTH main-thread Space intents are themselves rounds), and
-                    // nothing else touches the table between this load and this write.
-                    //
-                    // It MUST sit after `flushSpaceObservations(batch)`: `applySpaces`
-                    // clears `unreadableTagHashes` for every uuid it lands, and loading
-                    // after the flush is what makes "the refusal lifts by itself" true
-                    // instead of racing this page's own record of the same hash. (Guard 2
-                    // no longer needs an ordering here: it is a round-level check that
-                    // reads `spaceTableAtEntry` before the first page, §2.4 说明 6.)
+                    // One load/apply/write per page is safe only in this serialized path:
+                    // applySpaces spans main-actor suspensions, but gate changes and both local
+                    // Space intents are queued rounds, so no other writer interleaves. Load after
+                    // flushSpaceObservations because landing clears unreadableTagHashes; loading
+                    // earlier would restore this page's quarantine state. Guard 2 reads its entry
+                    // snapshot before pagination (section 2.4 note 6).
                     var spaceTable = loadSpaceTable()
                     spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
                     await applySpaces(batch, table: &spaceTable)
                     await applySpaceTombstones(batch, table: &spaceTable)
                     writeSpaceTable(spaceTable)
 
-                    // §5.2 的轮次顺序：设置 → Space → 归属 kind（注册清单的次序）。放在同一页
-                    // 的后段，账户里本机没有的 Space 与它下面的树因此**通常在一页内**全部落地。
-                    //
-                    // R-M3-4a-39：身份翻译表**每页失效一次**。这一页刚落地的 Space 写下了新映射，
-                    // 归属于它的书签 / pin 在同一页里就要解析得出，否则 `classify` 用的是上一页
-                    // 那一刻的表 ⇒ 停放一轮。
+                    // Land settings, Spaces, then registered owned kinds (section 5.2), allowing a
+                    // new Space and its tree to land in the same page. Invalidate mappings per page
+                    // (R-M3-4a-39) so owned rows can resolve Spaces just created here rather than
+                    // parking on an older snapshot.
                     ownedMapsThisRound = nil
                     let ownedMaps = await ownedRoundMaps()
                     for registration in ownedKinds {
@@ -2061,43 +1902,39 @@ actor PhiSyncEngine {
                         await applyOwnedKind(registration,
                                              batch: ownedBatches[registration.label] ?? OwnedPullBatch(),
                                              maps: ownedMaps)
-                        // §12.2 Q-12：第 1 条 kind 落完、第 2 条还没跑 —— 「一页跨 kind 半落地」
-                        // 的那个窗口。Release 里是空调用。
+                        // Section 12.2 Q-12: crash window after kind 1 lands but before kind 2,
+                        // exercising partial cross-kind page landing. No-op in release builds.
                         if index == 0 { abortIfRequested(.betweenKinds) }
                     }
                 }
-                // §12.2 Q-12：落地全部完成、marker 还没写。
+                // Section 12.2 Q-12: all landing finished, marker not yet persisted.
                 abortIfRequested(.afterApply)
 
-                // ── 这一页的 marker。全页最后一次写（§2.5）──
-                // 本页任何一次游标 / 表 / 映射 / marker 文件写失败 ⇒ 本页不推、本轮不发、前面各页
-                // 保留（它们各自的 marker 早已落盘）。
+                // Persist the marker last (section 2.5). Any cursor/table/mapping/marker failure
+                // blocks this page's advancement and the round's publication. Earlier fully
+                // persisted pages remain committed.
                 if cursorSaveFailures > 0 {
                     roundOutcome = .cursorSaveFailed
                     break pageLoop
                 }
-                // R-M3-4a-76：**内存里这个 marker 永远推进**（下一次请求带什么），与「要不要
-                // 持久化」无关；抑制只作用在 storedMarker 上。
+                // Always advance the in-memory request marker (R-M3-4a-76); only storedMarker is
+                // subject to suppression.
                 marker = pageMarker
                 if markerSuppression == .none {
                     if recordsGatedMarkerMoves, !markerMoveRecorded,
                        Self.normalizedMarker(marker) != markerAtEntry {
-                        // A page that advanced the shared marker while the gate was shut.
-                        // Recorded without inspecting its contents on purpose: deciding "did
-                        // this page hold a Space?" needs a decrypt, and an entity this build
-                        // cannot decrypt is exactly one of the things that gets missed.
-                        //
-                        // R-M3-4a-77：门关期间的重放标志**先落盘**，那次写确认之后才轮到
-                        // `storedMarker`。反过来（marker 先落盘、标志后写）在「marker 写成、标志
-                        // 写失败」下留下「marker 已推进、标志丢失」⇒ 下次开门两个析取项都不成立
-                        // ⇒ 门关期间越过的页永久丢失。假阴不可逆，假阳只是一次重收。
+                        // Record marker movement with the gate closed without inspecting page
+                        // content, because unreadable entities are precisely what may be missed.
+                        // Persist the replay flag before the marker (R-M3-4a-77). The opposite
+                        // order could permanently skip a page if the flag write fails; a false
+                        // positive only causes safe replay.
                         guard mutateSpaceTable({ $0.markerMovedWhileGateShut = true }) else {
                             roundOutcome = .cursorSaveFailed
                             break pageLoop
                         }
-                        markerMoveRecorded = true       // 只在那次写确认之后才置
+                        markerMoveRecorded = true       // Set only after the write is acknowledged.
                     }
-                    // R-M3-4a-18：写的是 `marker.json`。
+                    // Persist to marker.json (R-M3-4a-18).
                     guard persistStoredMarker(marker) else {
                         roundOutcome = .cursorSaveFailed
                         break pageLoop
@@ -2107,8 +1944,9 @@ actor PhiSyncEngine {
             }
             drained = !more
             if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }
-            // 轮末的 drain 收尾。两条新前置（RR2-11）：抑制中的一轮没有把任何一页的 marker 落盘，
-            // 它不能宣称 drain 完成；游标落盘失败的一轮同理。
+            // Finalize drain only if no marker suppression or cursor-save failure occurred
+            // (RR2-11). A round that did not persist its page markers cannot claim a complete
+            // replay.
             if spaceLive, drained, markerSuppression == .none, roundOutcome != .cursorSaveFailed {
                 let stamped = mutateSpaceTable { table in
                     guard table.drainInProgress else { return }
@@ -2116,7 +1954,8 @@ actor PhiSyncEngine {
                     table.hasDrainedFullReplay = true
                     table.lastDrainedBirthday = storedBirthday
                 }
-                // 派生状态那次写失败也要被捕获（CASE B2-4b）：写口已经计数，这里只收口结局。
+                // A derived-state save failure also fails the round (CASE B2-4b); the write helper
+                // already counted it.
                 if !stamped { roundOutcome = .cursorSaveFailed }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
@@ -2130,16 +1969,11 @@ actor PhiSyncEngine {
         } catch {
             roundOutcome = .pullFailed
             AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
-            // 逐页边界之后这里**尊重抑制状态、别的什么都不写**（R-M3-4a-47）：抛错只可能发生在
-            // `getUpdates`，那时前面每一页都已经完整落地并推过自己的 marker，而抛错的这一页
-            // 根本没到——没有什么需要停放或冲刷。marker 只越过已经完整落地的页；下面这一句留给
-            // `drainInProgress` 仍然武装着、而本轮没能把 drain 走完的那些情形（计划裁定 10）：
-            // 一次**从头开始**的 drain 被打断时，一个从推进过的 marker 续拉的后续轮次会到达
-            // `drained == true` 并把 `hasDrainedFullReplay = true` 盖在洞上——从那一刻起
-            // `applySpaceGate` 的两个析取项都再也不能重新武装重放（门没关过、drain 已「完成」），
-            // 而归属 kind 的发布闸读的正是那个标志。丢掉 marker 让重放从头再来：`drainInProgress`
-            // 刻意保持为真，所以中间没有任何一轮可以宣称 drain 完成，假阳的代价只是重读本机
-            // 已经见过的页。
+            // On getUpdates failure, honor suppression and perform no other page cleanup
+            // (R-M3-4a-47): prior pages fully landed, and this page never arrived. If a full drain
+            // is still armed, rewind the marker so a later incremental continuation cannot
+            // incorrectly mark a gapped replay complete. Keep drainInProgress true; rereading old
+            // pages is preferable to enabling owned publication across a gap (ruling 10).
             if spaceLive, loadSpaceTable().drainInProgress {
                 AppLogWarn("[phi-sync] a drain of data type \(PhiSyncEntity.dataTypeID) was interrupted; replaying it rather than resuming past the gap")
                 storedMarker = nil
@@ -2147,7 +1981,7 @@ actor PhiSyncEngine {
             return false
         }
 
-        // `.absent` 的轮级动作（R-M3-4a-38）：整条 drain 一页都没带设置实体。
+        // Round-level absent handling: no page in the drain carried settings (R-M3-4a-38).
         if !sawSettingsEntity, roundOutcome != .cursorSaveFailed {
             tombstoneRounds = 0
             if drained, startedFromScratch, storedEntityId != nil {
@@ -2160,38 +1994,28 @@ actor PhiSyncEngine {
             }
         }
         if markerSuppression == .resetToNil {
-            // 幂等：guard 2 那一支已经写过一次；`.unusable` 那一支在这里才第一次写。
+            // Idempotent for guard-2 suppression; the first nil-marker write for unusable settings.
             storedMarker = nil
             if roundOutcome == .ok, case .unusable = view { roundOutcome = .unusableSettings }
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
         // persisted by the page that observed it, before that page's marker (R-M3-4a-77).
 
-        // Publish whatever the merge left the server short of (a locally newer value, or a
-        // registered key the remote entity did not carry). `push` decides by comparison, so a
-        // pure remote apply commits nothing. Settings only: whether the Space section may
-        // publish is its own question (§5.5 guard 1), and the two must not be able to silence
-        // each other — an unreadable settings entity says nothing about the Spaces.
-        // So the two halves are called separately here rather than through the `push` wrapper:
-        // `maySettingsPublish == false` means "the SETTINGS row on the server is bytes this
-        // build cannot read", and letting it gate the Space section too is exactly the coupling
-        // §5.2 改动三 forbids. `pushSpaces` carries every Space-side guard of its own (the gate,
-        // the drain, guard 3), so calling it unconditionally is safe — on a settings-only
-        // engine (`spaceStore == nil`) it returns on its first line.
-        //
-        // 第三项是 B-2 的本地落盘闸（R-M3-4a-88 / 92）：三项各管一件互不相干的事，必须是合取
-        // ——`drained` 回答「远端这一轮拿全了吗」，`!isStopped` 回答「这台机器还在这个账户上吗」，
-        // `cursorSaveFailures == 0` 回答「本地这一轮落盘全成了吗」。落点必须是这一次赋值而不是
-        // 下面那个 `if`：`pull` 的返回值就是这个布尔，`push(retryOnConflict:)` 与三条冲突重试
-        // 都写成 `guard await pull(…) else { return }` 然后直接发布，五个发布入口查的也只是它。
+        // Publish locally winning/missing settings fields by comparing with the remote baseline, so
+        // a pure remote apply sends nothing. Settings and Space publication remain independent
+        // (section 5.2 change 3); unreadable settings do not invalidate Space guards.
+        // The shared prerequisite is the conjunction of drained, !isStopped and zero
+        // cursorSaveFailures (R-M3-4a-88/92): complete remote view, current account, and successful
+        // local persistence. Set it here, not only in the following if, because pull returns it to
+        // push and all conflict-retry publication paths.
         canPublishThisRound = drained && !isStopped && cursorSaveFailures == 0
         if thenPush, canPublishThisRound {
             if maySettingsPublish {
                 await pushSettings(retryOnConflict: false)
             }
             await pushSpaces(retryOnConflict: false)
-            // 归属 kind 的发布段排在 Space 之后（§5.2）。它自己带全部守卫（门、drain、
-            // R-exec-3 的跳过），所以无条件调用是安全的；清单为空时第一行就返回。
+            // Publish owned kinds after Spaces (section 5.2). Their gate, drain and failed-read
+            // guards are internal; an empty registry returns immediately.
             await pushOwnedItems(retryOnConflict: true)
         }
 
@@ -2228,15 +2052,10 @@ actor PhiSyncEngine {
         }
     }
 
-    /// `client_tag_hash -> space_uuid`, rebuilt once per pull. A tombstone carries no
-    /// ciphertext and no `space_uuid`, and SHA1 is one-way, so a remote delete can only be
-    /// identified by looking its hash up in a table this device builds from the uuids it
-    /// already knows.
-    ///
-    /// D6：种子是**游标键 ∪ 映射表的值 ∪ 常量 `"default-space"`**。映射值那一项是
-    /// 必须的：一个刚被向导映射、还没 commit 过的 Space 没有游标，而账户里那条实体
-    /// 的 tombstone 随时可能先到。**本地 Space 列表不再进种子**——D6 之后它塞进去的
-    /// 是永远不会出现在线上的本地 id，只会让索引变大且误导读者。
+    /// Rebuild client_tag_hash-to-space_uuid routing once per pull. Tombstones lack ciphertext/UUID
+    /// and SHA1 is one-way. Seed with cursor keys, mapping values and default-space (D6): a freshly
+    /// paired Space can receive a tombstone before its first commit creates a cursor. Never seed
+    /// local Space IDs, which are not wire identities.
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         var uuids = Set(table.cursors.keys)
         uuids.insert(SyncableSpaces.defaultSpaceUuid)
@@ -2419,18 +2238,16 @@ actor PhiSyncEngine {
             // earlier in the SAME round (§5.2), so a Space bound to a profile the
             // peer just created lands without waiting for the next one.
             let isDefault = item.uuid == SyncableSpaces.defaultSpaceUuid
-            // D6：把线上 uuid 翻成本机的行 id。解析不到 = 账户里有、本机没有，
-            // 落地时新建一行并回写映射（R-D6-7）。
+            // D6: resolve the wire UUID to a local row ID. Unresolved account Spaces are created
+            // locally and mapped during landing (R-D6-7).
             var localSpaceId = await spaceAccess.localSpaceId(forSyncUuid: item.uuid)
-            // 默认 Space 的身份是 resolver 里的常量分支（SpaceSyncMappingManager.swift:53-60），
-            // 没有映射行可丢；对它跑自愈只会把它当成新 Space 重铸一个本地 id。
+            // The default Space resolves through a constant, not a mapping row. Dead-mapping repair
+            // would incorrectly remint its local ID.
             if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
-                // 死映射：反查命中，但本地那一行已经没了（用户删了 Space 而清理路径
-                // 被打断）。就地丢掉并按「无映射」处理，下一轮当作新 Space 落地。
-                // 第二个同样可达的成因：映射先行的 create 在两次写之间死掉（R-M3-4a-87，
-                // 下面 create 支的新块），留下的悬空映射走同一条出口——R-87 的整条可恢复性
-                // 压在这一段上，它不是一条只服务于删除路径的补丁，重构时不可顺手删掉。
-                // 形状与 profile 侧的 A0 逐字对应。
+                // Drop a mapping whose local row no longer exists and treat the entity as unmapped.
+                // This repairs both interrupted deletion and a crash between mapping-first
+                // creation's two writes (R-M3-4a-87). Preserve this recovery path during
+                // refactoring; it mirrors Profile-side A0.
                 AppLogInfo("[phi-sync] dropping a dead space mapping; the entity will land as a new Space")
                 await spaceAccess.dropSpaceMapping(forSpaceId: resolved)
                 localSpaceId = nil
@@ -2440,20 +2257,11 @@ actor PhiSyncEngine {
                 let remoteUuid = item.entity.profileUuid.stringValue
                 profileId = await spaceAccess.localProfileId(forGlobalUuid: remoteUuid)
                 if let resolved = profileId, await !spaceAccess.isKnownLocalProfile(resolved) {
-                    // A DEAD MAPPING: the reverse lookup resolved, but the local
-                    // Chromium profile behind it was deleted (§3.6's "唯一的例外,
-                    // 也是死映射的唯一自愈路径"). The criterion has to be "is it
-                    // still in `userAssignableProfiles`" -- asking
-                    // `globalUuid(forProfileId:)` would read back the very mapping
-                    // the reverse lookup just resolved FROM and always say yes,
-                    // i.e. never fire.
-                    //
-                    // Drop the entry here and treat the binding as unresolved.
-                    // Next round §3.6's `missing` set contains that uuid again and
-                    // rebuilds the profile under its registered name; without the
-                    // drop, every landing throws on a profileId that no longer
-                    // exists, the entity parks forever, and `parked` sits non-zero
-                    // with no self-heal path at all.
+                    // A reverse mapping whose Chromium Profile was deleted must be dropped (section
+                    // 3.6's sole dead-mapping repair). Check userAssignableProfiles, not
+                    // globalUuid(forProfileId:), which would merely reread the same stale mapping.
+                    // Next round's missing set recreates the Profile under its registered name;
+                    // otherwise every landing parks forever against a nonexistent local Profile.
                     AppLogInfo("[phi-sync] dropping a dead profile mapping; the account profile will be rebuilt next round")
                     await spaceAccess.dropMapping(forProfileId: resolved)
                     profileId = nil
@@ -2506,23 +2314,21 @@ actor PhiSyncEngine {
                 }
             }
 
-            // R-M3-4a-87：create 支的两次写反序、映射先行。行在 SwiftData、映射在账户
-            // plist，两个 store 之间没有事务（§2.6），所以这里要的不是原子性而是可恢复性：
-            // 留下的唯一中间态是「映射已写、行未建」，由上面 A0 段的死映射自愈收口。
-            // 本机 id 在这里预铸（形状同 SpaceManager.swift:960），`land` 一行不改——
-            // 它的 create 支本来就接受显式 id（SyncableSpaces.swift:514）。
-            // `!isDefault` 与 A0 的守卫同形：默认 Space 的 `localSpaceId` 永不为 nil，写出来
-            // 是为了挡住 `map` 的 `defaultSpaceIsImplicit`——否则默认 Space 每轮停放。
+            // Persist the mapping before creating the row (R-M3-4a-87). SwiftData and the account
+            // plist have no shared transaction, so allow only the recoverable
+            // mapping-present/row-absent intermediate state repaired above. Premint the local ID;
+            // land already accepts it. Exclude the implicit default Space to avoid
+            // defaultSpaceIsImplicit failures that would park it every round.
             if localSpaceId == nil, !isDefault {
                 let newId = UUID().uuidString
                 do {
                     try await spaceAccess.mapSpace(newId, toSyncUuid: item.uuid)
                 } catch {
                     AppLogWarn("[phi-sync] could not map a new space tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
-                    // 第四个 `cursorSaveFailed` 置位点（计划裁定 7 / §13.2）：映射不走
-                    // `writeSpaceTable` 那条链，它的落盘失败面是 Task 2a 的 `persistFailed`
-                    // （抛出后 store 已回滚，盘上零映射、零行，`land` 还没被调到）。其余映射
-                    // 错误是裁决，不是落盘失败，只停放不计。
+                    // Fourth cursorSaveFailed source (ruling 7 / section 13.2). mapSpace
+                    // persistence failure is persistFailed; its store already rolled back, leaving
+                    // neither mapping nor row, and land has not run. Other mapping errors are
+                    // decisions that park without counting a persistence failure.
                     if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }
                     if item.fromServer {
                         cursor.pendingApply = try? item.entity.serializedData()
@@ -2593,9 +2399,9 @@ actor PhiSyncEngine {
 
         // One account-wide reorder after every entity landed (§7).
         if landedAny {
-            // D6 的翻译点在这里，不在 `plannedOrder` 里：`ranks` 由游标键构建
-            // （syncUuid），而 `plannedOrder` 拿 `syncedRanks[spaceId]` 与**本地** id
-            // 比。半翻译是静默失效——每次查表都是 nil，账户级重排整体变成 no-op。
+            // Translate syncUuid cursor keys to local IDs here, before plannedOrder reads
+            // syncedRanks[spaceId]. Partial translation would silently miss every lookup and make
+            // account reordering a no-op (D6).
             var ranks: [String: String] = [:]
             for (uuid, cursor) in table.cursors {
                 guard cursor.hidden == false, cursor.deletedAtMs == nil,
@@ -2661,9 +2467,9 @@ actor PhiSyncEngine {
                 continue
             }
 
-            // D6：先把线上 uuid 翻成本机的行 id。**解析不到就跳过导入锁检查与
-            // hide**，直接走游标收尾——账户里那条确实被删了，这台机器只是本来就没有
-            // 它，游标必须记住，否则同一条实体的 create 重放会把它复活。
+            // D6: resolve the wire UUID first. With no local row, skip import-lock/hide work but
+            // still finalize the tombstone cursor, preventing a future create replay from
+            // resurrecting the deleted account entity.
             let localSpaceId = await spaceAccess.localSpaceId(forSyncUuid: item.uuid)
             if let localSpaceId {
                 if await spaceAccess.isImporting(intoSpaceId: localSpaceId) {
@@ -2682,9 +2488,9 @@ actor PhiSyncEngine {
                     continue
                 }
             }
-            // R-D6-10：**这里不删映射行**。远端软删保留映射——它是那 30 天里「这一行
-            // 属于账户的哪条实体」的唯一记录，也是 `snapshot` 的 eligible 过滤能把这
-            // 一行排除在外的唯一依据；30 天清理成功之后才删（`applyRetentionSweep`）。
+            // Retain the mapping on remote soft deletion (R-D6-10). During the 30-day window it
+            // connects the row to its tombstone and lets snapshot eligibility exclude it. Remove
+            // only after successful retention purge.
             cursor.hidden = true
             cursor.deletedAtMs = now()
             cursor.pendingTombstone = false
@@ -2777,15 +2583,9 @@ actor PhiSyncEngine {
 
     // MARK: - Push
 
-    /// Pull first, then publish settings, Spaces, and owned items. The publishers stay
-    /// independent when settings are unchanged or unreadable, but share the pull prerequisite.
-    ///
-    /// The two must be siblings rather than one appended to the other. Every
-    /// early return in `pushSettings` is a statement about the SETTINGS entity,
-    /// and one of them is the steady state: `if let last, outgoing == last` fires
-    /// on almost every round, because the user changed a Space and not a setting.
-    /// A Space push hanging off the end of that function would therefore never
-    /// run in exactly the case it exists for (§5.2 改动三).
+    /// Pull first, then publish settings, Spaces and owned items independently under the same pull
+    /// prerequisite. A steady-state settings early return must not suppress a Space-only change;
+    /// sibling publication avoids the coupling forbidden by section 5.2 change 3.
     private func push(retryOnConflict: Bool) async {
         guard await pull(retryOnBirthday: true, thenPush: false) else { return }
         await pushSettings(retryOnConflict: retryOnConflict)
@@ -3014,11 +2814,10 @@ actor PhiSyncEngine {
                 uuidByProfile[space.profileId] = await spaceAccess.globalUuid(forProfileId: space.profileId)
             }
         }
-        // R-D6-7 的懒铸造。`currentSpaces()` 已经在源头排除 incognito / 两种 agent
-        // 特征 / profile 未映射的 Space，所以这里铸的每一个 uuid 都属于一个该发布的
-        // Space。铸造失败（`alreadyMapped` 不可能，`defaultSpaceIsImplicit` 由
-        // resolver 的常量分支吸收）只会让该 Space 本轮不发布，下一轮重试——这就是
-        // 「至多一轮无映射」。
+        // Lazy identity minting (R-D6-7). currentSpaces already excludes incognito, both agent
+        // patterns and unmapped Profiles, so every candidate is publishable. A mint failure skips
+        // only that Space this round and retries next round; existing/default mappings are handled
+        // by the resolver.
         var syncUuidBySpaceId: [String: String] = [:]
         for space in spaces {
             syncUuidBySpaceId[space.spaceId] = try? await spaceAccess.ensureMapped(spaceId: space.spaceId)
@@ -3043,9 +2842,8 @@ actor PhiSyncEngine {
         guard !work.isEmpty else { writeSpaceTable(table); return }
 
         var conflicted: Set<String> = []
-        // R-D6-10：这一轮被账户接受的自发 tombstone。收集在
-        // `applySpaceCommitOutcome` 里，删映射在批处理循环之后——那个方法是同步的，
-        // 而映射写在主 actor 上。
+        // Locally originated tombstones accepted this round (R-D6-10). Collect synchronously in
+        // applySpaceCommitOutcome, then remove mappings after batching via their main-actor writer.
         var tombstonedThisRound: Set<String> = []
         var encryptionFailed = false
         while !work.isEmpty {
@@ -3097,20 +2895,18 @@ actor PhiSyncEngine {
                                         tombstoned: &tombstonedThisRound)
             }
         }
-        // R-D6-10：这一轮被账户接受的自发 tombstone，映射行随之删除（本地行已经没
-        // 了，映射留着只会让下一次反查交出一个不存在的 spaceId）。游标留下：它是永久
-        // tombstone 记录。收集在 `applySpaceCommitOutcome` 里，删除在这里——那个方法
-        // 是同步的，而映射写在主 actor 上。
+        // Remove mappings for accepted local tombstones (R-D6-10); the local rows are already
+        // absent, so retaining mappings would return dead IDs. Keep permanent tombstone cursors.
+        // Collection occurred in synchronous applySpaceCommitOutcome; mapping writes happen here on
+        // the main actor.
         for uuid in tombstonedThisRound {
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
             await spaceAccess.dropSpaceMapping(forSpaceId: local)
         }
         writeSpaceTable(table)
 
-        // One pull, then re-send ONLY the entities that conflicted -- the retry
-        // is scoped by `onlyUuids`, so a single conflicting Space never drags
-        // the other twenty back through the wire (§5.1: "一次 pull 后只重发冲突的
-        // 那几条; 二次冲突放弃这几条, 本轮其余已生效").
+        // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
+        // abandons only those entries; already applied entries remain valid (section 5.1).
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(retryOnBirthday: true, thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
@@ -3188,11 +2984,11 @@ actor PhiSyncEngine {
         table.cursors[item.uuid] = cursor
     }
 
-    // MARK: - 归属项：轮首、分发、落地、发布（M3-3 §5）
+    // MARK: - Owned items: round initialization, routing, landing and publication (M3-3 section 5)
 
-    /// **每轮每种 kind 最多发布 250 条 = 10 批 × 25**（§5.3）。批大小沿用
-    /// `maxCommitEntriesPerBatch`，远低于服务端 500 的上限；250 条就是 10 次顺序 HTTP 往返，
-    /// 整个期间这一轮占着 `roundQueue`，所以上限存在的理由是让设置与 Space 每轮都能插进来。
+    /// At most 250 publications per kind per round: ten batches of 25 (section 5.3). Reuse
+    /// maxCommitEntriesPerBatch below the server's 500-item limit. Ten sequential HTTP trips
+    /// already occupy roundQueue; the cap leaves time for settings and Spaces each round.
     private static let maxOwnedCommitsPerRound = 250
 
     /// What one pull collected for ONE owned kind.
@@ -3203,7 +2999,7 @@ actor PhiSyncEngine {
         var unreadable = 0
     }
 
-    /// 轮首那份身份翻译表，算一次用到底。
+    /// Compute and cache the round's identity mappings.
     private func ownedRoundMaps() async -> OwnedOwnerMaps {
         if let ownedMapsThisRound { return ownedMapsThisRound }
         var maps = OwnedOwnerMaps()
@@ -3213,14 +3009,14 @@ actor PhiSyncEngine {
             maps.syncUuidBySpaceId[localId] = uuid
             maps.localSpaceIdBySyncUuid[uuid] = localId
         }
-        // 默认 Space 的身份由 D1 固定成一个常量，映射表里没有它（R-D6-14 ⑥：翻译只走
-        // `PhiSpaceLocalAccess` 既有的那四个方法，这里是它们的值快照）。
+        // D1 assigns a constant default-Space identity absent from mapping stores. This snapshots
+        // PhiSpaceLocalAccess's existing translation methods (R-D6-14(6)).
         maps.syncUuidBySpaceId[LocalStore.defaultSpaceId] = SyncableSpaces.defaultSpaceUuid
         maps.localSpaceIdBySyncUuid[SyncableSpaces.defaultSpaceUuid] = LocalStore.defaultSpaceId
         let spaces = await spaceAccess.currentSpaces()
         for space in spaces {
-            // §4.2 规则 1 的三条判据的合取：在 `currentSpaces()` 里 ∧ 有 syncUuid ∧ 游标
-            // 既不 hidden 也没有 purgedAtMs。
+            // Section 4.2 rule 1: present in currentSpaces(), mapped to a syncUuid, and neither
+            // hidden nor purged.
             if let uuid = maps.syncUuidBySpaceId[space.spaceId] {
                 let cursor = table.cursors[uuid]
                 if cursor?.hidden != true, cursor?.purgedAtMs == nil {
@@ -3237,12 +3033,11 @@ actor PhiSyncEngine {
         return maps
     }
 
-    /// 每条注册 kind 的轮首：**一次**本机读 + 一次游标表读 + 建 tag 索引。
-    ///
-    /// 一轮至多一次（§5.7 第 2 条硬要求）：`pull` 与 `push` 都可能第一个到达这里。
-    /// 读抛错 ⇒ R-exec-3：把这条 kind 标成本轮失效，它的快照、差分、发布与落地整段不跑，
-    /// 游标表一个字节都不写。**绝不把失败的读当成零行继续**——差分对空集合的回答是给账户上
-    /// 每一条已发布身份各发一条 tombstone。
+    /// Initialize each registered kind once per round: one local read, one cursor-table load and
+    /// tag-index construction (section 5.7(2)). Either pull or push can arrive first. A failed
+    /// local read disables snapshot, diff, publication and landing without cursor writes
+    /// (R-exec-3). Never treat failure as empty rows, which would tombstone every published account
+    /// identity.
     private func beginOwnedRound() async {
         guard !ownedKinds.isEmpty, spaceStore != nil else { return }
         for registration in ownedKinds {
@@ -3261,7 +3056,8 @@ actor PhiSyncEngine {
                 AppLogError("[phi-sync] owned-item local read failed kind=\(registration.label) "
                             + "(\(PhiSyncLog.describe(error)))")
             }
-            // 种子 = 游标键 ∪ 本机身份（§5.1）。索引在轮内**只增不减**，随学随加。
+            // Seed from cursor keys plus local identities (section 5.1), then only add learned
+            // identities during the round.
             var index: [String: String] = [:]
             for identity in Set(table.cursors.keys).union(identities) where !identity.isEmpty {
                 index[PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))] = identity
@@ -3270,20 +3066,13 @@ actor PhiSyncEngine {
         }
     }
 
-    /// 读一条 kind 的游标表，并按 R-M3-3-13 处理报损。
-    ///
-    /// `armsReplayOnLoss` 只在**发布段**那一次为真（CASE 6.26）：报损做的第一件事是丢
-    /// marker、重新武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ①
-    /// 读的正是 `hasDrainedFullReplay`——所以从报损那一刻起，该 kind 在重放收尾之前一条都
-    /// 发不出去。不需要第二个 `publishBlocked` 标志（M2 裁定）：两步之一写不成时本轮已经
-    /// `cursorSaveFailed`，发布闸（`canPublishThisRound`）在这一轮关掉了整个发布段，
-    /// `publishOwnedKind` 根本走不到这里（R-M3-4a-103）。
-    ///
-    /// **报损支是两步确认，次序是 marker 先、闩后**（R-M3-4a-103，计划裁定 3b）：与 guard 2 同一个
-    /// 缺陷的第二处现场。反过来（闩先写、marker 后写）在 marker 写失败时留下「旧 marker +
-    /// 已置位的 per-kind 闩 + 已武装的 drain」：下一轮从旧 marker 增量拉、一页空页就让 drain
-    /// 「完成」、闩此后直接 `return (table, true)` 再也不报损、而闩的复位判据（一次成功的 load
-    /// 交回带已发布游标的表）永远不成立——那条 kind 的整类型重放**永久丢失**。
+    /// Load a kind's cursor table and handle loss (R-M3-3-13). Only publication enables
+    /// armsReplayOnLoss (CASE 6.26), clearing the marker and arming an incomplete full drain that
+    /// blocks publication until replay finishes. No extra publishBlocked flag is needed: failed
+    /// recovery writes already close canPublishThisRound (R-M3-4a-103).
+    /// Persist marker reset before the per-kind latch/drain flags. Reversing them could leave an
+    /// old marker with a consumed latch: an empty incremental response would falsely complete
+    /// replay, and an unreadable table could never rearm its latch. Both writes must be confirmed.
     private func loadOwnedTable(_ registration: OwnedKindRegistration,
                                 armsReplayOnLoss: Bool)
         -> (table: PhiOwnedItemTable, lost: Bool) {
@@ -3292,13 +3081,9 @@ actor PhiSyncEngine {
             .load(hadRecords: spaceTable[keyPath: registration.flags.hadRecords])
         ownedTables[registration.label] = table
         guard reportedLoss else {
-            // per-kind 闸**可以重新武装**，判据是一次成功的 **load** 交回了一张带已发布游标
-            // 的表——这是它与 Space 那个永久闩唯一的行为差别（A2）。
-            //
-            // 绝不能改成「一次成功的 save」：save 写回去的是引擎在内存里刚建出来的那张表，
-            // 而一个**每次都读不出来**的文件（权限、或解析器永远拒绝的 JSON）会在「报损 →
-            // 重放 → 重建游标 → save 清闸 → 再报损」之间无限循环，此后每一轮都是一次整个
-            // data type 的重放——正是 Space 那个一次性闩存在的理由。
+            // Unlike the permanent Space latch, the per-kind latch rearms after a successful load
+            // returns published cursors (A2). Never rearm after save: a permanently unreadable file
+            // could repeatedly lose/replay/rebuild/save and trigger a full-type replay every round.
             if table.cursors.values.contains(where: { !$0.entityId.isEmpty }),
                spaceTable[keyPath: registration.flags.replayedForEmptyTable] {
                 mutateSpaceTable { $0[keyPath: registration.flags.replayedForEmptyTable] = false }
@@ -3306,24 +3091,21 @@ actor PhiSyncEngine {
             return (table, false)
         }
         guard armsReplayOnLoss else { return (table, false) }
-        // per-kind 的一次性闸（A2）。**绝不复用 Space 那个永久闩 `didReplayForEmptyTable`**：
-        // Space 段先花掉它之后，书签或 pin 的第一次文件丢失就一次重放都得不到。
+        // Use this kind's one-shot latch (A2), never the permanent Space didReplayForEmptyTable
+        // latch, which may already have been consumed before the first bookmark/pin file loss.
         guard !spaceTable[keyPath: registration.flags.replayedForEmptyTable] else {
             return (table, true)
         }
-        // ① 先把盘上的 marker 清成 nil。写不成 ⇒ 闩不置位、三个 drain 标志一个不动，本轮收口成
-        //    `.cursorSaveFailed`（发布闸 R-M3-4a-88 / 92 自动关掉这一轮的发布）。盘上与进入
-        //    这一轮之前逐字节相同 ⇒ 下一轮报损检查**照样触发**。
-        //    写的是**引擎属性**而不是 `pull` 的局部量：这个函数在 `pull` 之外也被调（轮首那次
-        //    `armsReplayOnLoss: false`，那条路径不写任何东西）。`cursorSaveFailures` 由写口自己加。
+        // First persist the nil marker. Failure leaves the latch/drain flags unchanged, reports
+        // cursorSaveFailed and closes publication, so next round can retry. Update the engine
+        // property because this helper also runs outside pull; the write helper counts failures.
         guard persistStoredMarker(nil) else {
             roundOutcome = .cursorSaveFailed
             return (table, false)
         }
-        // ② marker 已确认落盘，这才置位 per-kind 闩 + 武装 drain。写不成 ⇒ 盘上是「marker 已清、
-        //    闩未置位」，R-M3-4a-83 的回滚让内存镜像跟着退回 ⇒ 下一轮报损检查再触发一次，第 ① 步
-        //    幂等（`persistMarkerState` 的 `updated == markerState` 短路成零写、不计
-        //    `cursorSaveFailures`）⇒ 收敛。
+        // After confirmed marker reset, persist the per-kind latch and drain flags. Failure rolls
+        // the mirror back (R-M3-4a-83), leaving reset-marker/unconsumed-latch for retry. Repeating
+        // step 1 is an idempotent no-write success (R-M3-4a-103).
         guard mutateSpaceTable({ updated in
             updated[keyPath: registration.flags.replayedForEmptyTable] = true
             updated.hasDrainedFullReplay = false
@@ -3332,50 +3114,43 @@ actor PhiSyncEngine {
             roundOutcome = .cursorSaveFailed
             return (table, false)
         }
-        // 两个失败支都回 `(table, false)`：`lost == true` 的含义是「这一次真的换来了一次重放」，
-        // 而那两支什么都没换来——所以这句日志也只在两步都确认之后才说。
+        // Both failure branches return (table, false): lost=true means this attempt successfully
+        // armed replay. Log only after both writes succeed.
         AppLogWarn("[phi-sync] owned-item cursor table lost kind=\(registration.label); "
                    + "replaying data type \(PhiSyncEntity.dataTypeID) once")
         return (table, true)
     }
 
-    /// 落盘一条 kind 的游标表，顺带维护两个 per-kind 标志。
-    ///
-    /// `…HadRecords` 第一次写下 `entityId` 非空的游标时置真，此后不再改。
-    ///
-    /// **一次性重放闸的复位不在这里**，它的判据是一次成功的 `load`（见 `loadOwnedTable`）：
-    /// 这里看到的表是引擎刚在内存里建出来的，用它当「文件恢复了」的证据，会让一个永远读不
-    /// 出来的文件每一轮都重放整个 data type。
-    ///
-    /// **返回值 = 这张表已落盘**（R-M3-4a-83）。退休那条早退**不算失败**（R-M3-4a-16 的
-    /// 判据是「某个 store 的 `save` 被调用过且回报了失败」）：把它写成 `return false` 会让
-    /// 一个已退休的引擎在 Task 2b 落地之后再也不推 marker。
+    /// Persist the kind's table and maintain per-kind flags. HadRecords becomes true on the first
+    /// persisted cursor with a nonempty entityId. Reset the replay latch only after a successful
+    /// load, never save, to avoid endless replay of permanently unreadable files.
+    /// Return whether persistence succeeded (R-M3-4a-83). Retirement is a successful no-op: failure
+    /// means an invoked save reported failure, not an early exit (R-M3-4a-16).
     @discardableResult
     private func writeOwnedTable(_ registration: OwnedKindRegistration,
                                  _ table: PhiOwnedItemTable) -> Bool {
-        // 早退，不是失败（R-M3-4a-16）。
+        // Retirement is an early return, not a persistence failure (R-M3-4a-16).
         guard !isStopped else { return true }
         ownedTables[registration.label] = table
-        // §2.5 第 4 条的置位点之一：判据「某个 store 的 `save` 被调用过且回报了失败」属于写口。
-        // （内存镜像 `ownedTables` 在 guard 之前赋值，所以一个失败轮次里镜像领先文件；B-2 让
-        // 这一轮跳过发布、下一轮重新 load，所以这一步的先后不构成问题。）
+        // Count an invoked save returning failure inside the write boundary (section 2.5(4)).
+        // ownedTables is updated first, so its mirror can temporarily lead disk; B-2 blocks
+        // publication this round and reloads next round.
         guard registration.store.save(table) else {
             cursorSaveFailures += 1
             return false
         }
         let hasPublished = table.cursors.values.contains { !$0.entityId.isEmpty }
         guard hasPublished else { return true }
-        // 两个 per-kind 标志排在 `save` **之后**（§2.5 第 7 条）：`…HadRecords` 的含义是
-        // 「这台机器曾经为该 kind **写下过**一条带 `entityId` 的游标」。一次没落盘的写提前
-        // 置真，会让下一次真正的文件丢失被 `load(hadRecords:)` 读成「本来就是空的」而拿不到
-        // 整类型重放——而那次重放是唯一能把账户的书签树重新对齐的机制。
+        // Update per-kind flags only after save (section 2.5(7)). HadRecords records that a
+        // published cursor was actually persisted. Prematurely setting it on failure could
+        // invalidate later loss detection and prevent the full replay needed to restore the account
+        // tree.
         mutateSpaceTable { $0[keyPath: registration.flags.hadRecords] = true }
         return true
     }
 
-    /// §5.2 步骤 2-5，次序固定为 **路由 → 解密 → 反推 tag → 比对 → 落位**。
-    ///
-    /// `decoded` 非 nil = 分发的兜底支已经解过一次，别再解第二遍。
+    /// Section 5.2 steps 2-5: route, decrypt, derive the tag, compare, then place. A supplied
+    /// decoded envelope came from fallback routing and must not be decrypted twice.
     private func routeOwnedEntity(_ registration: OwnedKindRegistration,
                                   _ entity: PhiRemoteEntity,
                                   key: SymmetricKey,
@@ -3385,10 +3160,9 @@ actor PhiSyncEngine {
         var batch = batches[registration.label] ?? OwnedPullBatch()
         defer { batches[registration.label] = batch }
 
-        // 2. tombstone FIRST，先于任何解密尝试。tombstone 没有密文，解密必然抛错；把它归进
-        // 「解不开」会让每一条远端删除**永久丢失**——marker 已经推过那一页，服务端再也不会
-        // 重发。分发循环里那个 `guard !entity.deleted` 是**设置分支**里的，路由路径上的这
-        // 一道必须自己带（V35）。
+        // Handle tombstones before decryption: they have no ciphertext. Misclassifying them as
+        // unreadable permanently loses remote deletions once the marker passes their page. The
+        // settings branch's deletion guard does not protect this route (V35).
         guard !entity.deleted else {
             guard let identity = ownedTagIndices[registration.label]?[entity.clientTagHash] else {
                 AppLogInfo("[phi-sync] ignoring an owned-item tombstone for an unknown tag "
@@ -3400,7 +3174,7 @@ actor PhiSyncEngine {
             return
         }
 
-        // 3. 解密。
+        // Step 3: decrypt.
         let payload: Phi_PhiEntity
         if let decoded {
             payload = decoded
@@ -3417,12 +3191,12 @@ actor PhiSyncEngine {
             }
         }
 
-        // 4. 不是本 kind 的载荷 ⇒ 只忽略这一条。
+        // Step 4: ignore payloads that do not belong to this kind.
         guard let identity = registration.identity(payload) else { return }
 
-        // 5. 载荷必须 hash 回它到达时用的那个 tag（§2.5）。校验只比**身份**，不比归属：
-        // 一次跨 Space 的移动是合法的，把归属一起比会把每一次移动都判成伪造载荷。
-        // **tombstone 不走这条校验**——它没有载荷可反推（上面已经 return 了）。
+        // Step 5: the payload identity must hash to its incoming tag (section 2.5). Do not compare
+        // ownership, since cross-Space moves are valid. Tombstones already returned and have no
+        // payload from which to derive a tag.
         let expected = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
         guard expected == entity.clientTagHash else {
             AppLogError("[phi-sync] an owned-item payload does not hash back to its "
@@ -3434,12 +3208,12 @@ actor PhiSyncEngine {
         guard let bytes = try? payload.serializedData() else { return }
         batch.arrivals.append((identity: identity, payload: bytes,
                                entityId: entity.entityId, version: entity.version))
-        // 随学随加：同一次 drain 的后续页就能路由这条身份的 tombstone。
+        // Learn immediately so later pages in this drain can route the identity's tombstone.
         ownedTagIndices[registration.label, default: [:]][entity.clientTagHash] = identity
     }
 
-    /// 与 `flushSpaceObservations` 同一条理由：marker 推进是durable的，所以这一轮学到的
-    /// 「这条 tag 本机读不出来」必须跟着落盘，否则后面那次抛错会把它一起带走。
+    /// Persist unreadable-tag observations alongside durable marker advancement, as
+    /// flushSpaceObservations does, so a later error cannot discard learned quarantine state.
     private func flushOwnedObservations(_ batches: [String: OwnedPullBatch]) {
         let hashes = batches.values.flatMap(\.unreadableHashes)
         guard !hashes.isEmpty else { return }
@@ -3449,38 +3223,17 @@ actor PhiSyncEngine {
         }
     }
 
-    /// （B-2 之后 `pull` 的 catch 不再调用这里：逐页落地让「收到了但还没放下去」的实体不再跨
-    /// 页存在，抛错只可能发生在 `getUpdates`，那一页根本没到。剩下的唯一调用点是下面说的
-    /// `applyOwnedKind` 的 `ownedReadFailed` 提前返回。下面这段是它原本的成因，留作理由。）
-    ///
-    /// 一次**中途抛错**的 pull 已经把它读过的那些页永久消费掉了：共享 marker 一页一页落盘
-    /// （`storedMarker = marker` 就在页循环里），而路由从那些页上解出来的实体活在这一轮的
-    /// 局部变量 `ownedBatches` 里，随抛错一起消失。对归属 kind 来说这不是「下一轮再拉一次」
-    /// ——服务端只从推进过的 marker 之后发货，页 1 上那些 create / update / delete **再也不会
-    /// 被投递**：那条书签在本机永远不出现，那次远端删除在本机永远不发生，而每一个计数器都是
-    /// 健康值。
-    ///
-    /// 所以这里把它们写进游标自己那条**持久**的待办通道，形状与落地段那两个停放循环逐字相同：
-    /// 存活实体进 `pendingApply` + `pendingOwnerUuid`（§4.4 第 4 步），远端 tombstone 进
-    /// `pendingTombstone`（§5.6 T4），**两者都先收割服务端三元组**（A6——不收割的话那条游标
-    /// 以 `entityId == ""` 落盘，而那一版实体永不重投，R-exec-1 的双向坏掉）。下一轮的
-    /// `applyOwnedKind` 把这两处原样读回工作集（`parked` 与 `tombstoned` 的定义里已经有它们），
-    /// 于是那些页的内容照常落地，只晚一轮。
-    ///
-    /// **为什么不像 Space 段那样丢 marker 重放整个 data type**：那条路是 Space 段唯一能走的
-    /// （它没有「收到了但还没放下去」的持久位），代价是把设置与全部 kind 一起拖进一次整类型
-    /// 重放，而且只在一次**从头开始**的 drain 被打断时才武装（`drainInProgress` 的前置是
-    /// `storedMarker == nil`）——一次普通增量拉取中途失败根本不触发它。归属 kind 手上正好有
-    /// 那条持久通道，用它既不要求对端重发，也不动 marker。
-    ///
-    /// **`ownedReadFailed` 不挡这一趟**：R-exec-3 关的是该 kind 的快照、差分与发布（出站
-    /// 半边），而这里写的全是入站记账——本机行读不出来，一点也不会让这批已经收下的字节更
-    /// 不值得留着。
-    ///
-    /// **第二个调用点是 `applyOwnedKind` 的 `ownedReadFailed` 提前返回**：那一支的触发条件
-    /// 不同（轮首那次本机读抛了），但被消费掉的东西与后果逐字相同。R-exec-3 关的是这条 kind
-    /// 的**出站**半边（快照、差分、发布）——「本机行读不出来」一点也不会让这一批已经收下的
-    /// 字节更不值得留着。
+    /// Durably park received owned entities when applyOwnedKind cannot read local rows. Under B-2,
+    /// pull's catch no longer calls this: completed pages have already landed and a failed
+    /// getUpdates page never arrived.
+    /// Use the existing cursor channels rather than relying on server redelivery after marker
+    /// advancement: live payloads use pendingApply/pendingOwnerUuid; tombstones use
+    /// pendingTombstone. Harvest server identity/version first for both (A6), including newly
+    /// created cursors, or later local deletion and editing would misclassify them as never
+    /// published. Next round includes these channels in its work set.
+    /// Unlike resetting the whole data type, this preserves incremental arrivals without involving
+    /// settings and unrelated kinds. ownedReadFailed suppresses outbound snapshot/diff/publication,
+    /// not durable accounting of bytes already received.
     private func parkUndeliveredOwnedEntities(_ batches: [String: OwnedPullBatch],
                                               reason: String) {
         guard !isStopped, spaceStore != nil else { return }
@@ -3498,9 +3251,9 @@ actor PhiSyncEngine {
                 var cursor = table.cursors[item.identity] ?? PhiOwnedItemCursor()
                 let known = cursor.version
                 harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
-                // §5.6 的 L2 支在这里同样成立，判据也同样是**版本**：一条比本机那条 tombstone
-                // 更旧的重放版本不许被停放，否则下一轮它会把一条用户明确删掉的行建回来。
-                // 收割照做（A6）——那条待发的 tombstone 还要拿这个三元组去提交。
+                // Apply the version-based section 5.6 L2 guard here too: do not park a replay older
+                // than the local tombstone, which would recreate a deleted row next round. Still
+                // harvest its server identity/version for the pending tombstone (A6).
                 if cursor.deletedAtMs == nil || item.version > known {
                     cursor.pendingApply = item.payload
                     cursor.pendingOwnerUuid = registration.owners(item.payload).first
@@ -3514,16 +3267,11 @@ actor PhiSyncEngine {
         }
     }
 
-    /// 归属段的最前面：重试停放项（§3 / R-exec-10）。
-    ///
-    /// **每一种轮次都跑，一轮一次。** 一次纯 push 轮（`pushLocalSettings()` /
-    /// `handleLocalDefaultsChange()` / `handleLocalSpacesChange()`）没有落地段，却照样走到
-    /// 发布段——而发布段的两件事都要先知道「这一行本轮已经配上了一个账户身份」：出站快照
-    /// 据此**不为它铸新身份**，差分据此**不把那条身份判成缺席**。少了这一趟，用户在重试
-    /// 窗口里改一次设置就足以让账户上那条实体被删掉、同一条本机行再铸一个新身份重新建一条。
-    ///
-    /// 它**不往游标上加任何状态**（§3.5 禁止窗口状态 / 本地铸造标志 / 去重残留）：重试的
-    /// 输入就是 `pendingApply`，配对每轮从本机行现算。
+    /// Retry parked claims once at the start of owned processing in every round type (section 3 /
+    /// R-exec-10). Pure push rounds also need matches before snapshot minting and absence
+    /// detection; otherwise a settings edit could delete the account identity and remint the same
+    /// row. Use existing pendingApply and freshly computed matches, without adding persistent
+    /// window/mint/dedup state (section 3.5).
     private func retryParkedOwnedClaims(_ registration: OwnedKindRegistration,
                                         maps: OwnedOwnerMaps) async {
         guard !isStopped, !ownedParkedRetryDone.contains(registration.label) else { return }
@@ -3542,19 +3290,12 @@ actor PhiSyncEngine {
         var changed = false
         for identity in result.persisted {
             guard var cursor = table.cursors[identity] else { continue }
-            // **只有「写回重试」那一种形状可以解除停放。** 它的停放载荷就是 `reconciled` 的
-            // 一份拷贝——那条实体早就落过地了，认领写下身份之后没有任何东西剩下要落地。
-            //
-            // 另一种形状是一条**真正的入站实体**被导入锁挡下（§5.6 T4）：它从没落过地，
-            // `reconciled` 还是 nil，而 `.claim` **只写身份、不写任何字段**
-            // （`LocalStore+Bookmark.swift`：「认领不是一次编辑」）。清掉它的载荷等于把
-            // `adopt` 算出来的那份字段级合并结果扔掉，而那条实体永远不会再来一次——共享
-            // marker 早已推过那一页，`pendingApply` 存在的全部理由就是这个。下一轮的快照
-            // 会拿本机那一行的全部字段盖掉账户上那一条，远端的位置就此丢失，正是 §6.2
-            // 点名禁止的「整体采纳本机」。
-            //
-            // 留着载荷是安全的：停放中的游标不进快照（§4.2 第 3 条），所以在落地段把那份
-            // 合并结果放下去之前，没有任何东西会被发布到它上面。
+            // Only a write-back retry can clear parking here: its pendingApply equals an already
+            // landed reconciled baseline, leaving no content to land after identity claim. A
+            // genuinely incoming entity blocked by an import lock still has unlanded field merges;
+            // claim writes identity only. Clearing that payload would lose remote fields
+            // permanently after marker advancement and publish the whole local row instead (section
+            // 6.2). Keeping it is safe because pendingApply excludes publication until landing.
             guard cursor.reconciled == cursor.pendingApply else { continue }
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
@@ -3565,18 +3306,11 @@ actor PhiSyncEngine {
         writeOwnedTable(registration, table)
     }
 
-    /// A6 的收割**唯一的写入点**：入站那一侧每一处「把服务端三元组写进游标」都走这里。
-    ///
-    /// 三件事绑在一起，而第三件是 F-PK-4：收到一个非空 entity id 就把 R-exec-13 的连败计数
-    /// 清零，与 `applyOwnedCommitOutcome` 的 `.applied` 支逐字同款。**理由是那个计数的含义**
-    /// ——「补键这条通路连着失败了几轮」——而一条被对端的更新收割回身份的游标此刻根本不需要
-    /// 补键：它已经有 id 了。留着旧账的后果是延迟很久才现形的那一种：这条身份哪天再一次
-    /// 丢掉 id（一次 `.invalidMessage`、一次 NOT_MY_BIRTHDAY 之后的 reset），三次机会里已经
-    /// 用掉了两次，于是它一轮就放弃，而那一轮的失败与很久以前那两次毫无关系。
-    ///
-    /// `entityId` 为空**什么都不写**（A6 的老规矩）：服务端偶尔在一条更新里不回 id，写进去会
-    /// 把这条身份降级成「从没在账户上出现过」，下一轮以 `baseVersion == 0` 盲写覆盖。
-    /// 版本取 `max`，不是直接赋值——同一轮里同一条身份可以被收割不止一次（分页、停放重试）。
+    /// Single incoming write point for the A6 server triple. A nonempty entityId also resets
+    /// consecutive rekey failures (F-PK-4), matching applied commits: an identity recovered from an
+    /// incoming update no longer needs repair, and old failures must not consume a future repair
+    /// budget. Empty IDs change nothing, avoiding demotion to an unversioned create. Take
+    /// max(version), since pagination and parked retries can harvest the same identity repeatedly.
     private func harvestTriple(into cursor: inout PhiOwnedItemCursor,
                                entityId: String, version: Int64) {
         if !entityId.isEmpty {
@@ -3586,7 +3320,7 @@ actor PhiSyncEngine {
         cursor.version = max(cursor.version, version)
     }
 
-    /// 一条 kind 的入站落地段。**apply → 基线，顺序即不变量**（§4.5）。
+    /// Owned-kind incoming landing: apply before baseline updates is the section 4.5 invariant.
     private func applyOwnedKind(_ registration: OwnedKindRegistration,
                                 batch: OwnedPullBatch, maps: OwnedOwnerMaps) async {
         guard !isStopped else { return }
@@ -3595,27 +3329,24 @@ actor PhiSyncEngine {
         counters.unreadable += batch.unreadable
         counters.tombstones += batch.tombstones.count
         ownedCounters[registration.label] = counters
-        // R-exec-3：轮首那次本机读抛了 ⇒ 这条 kind 的快照、差分与发布整段不跑。**但入站
-        // 这一批不能跟着蒸发**：共享 marker 已经一页一页推过它们，服务端不会再发第二次，
-        // 就地返回等于把那条 create 与那条远端删除永久丢掉（与一次中途失败的 pull 同一种
-        // 损失，只是触发条件不同）。走同一条持久通路把它们停下来，下一轮读得出来时照常落地。
+        // A round-start local read failure suppresses outbound work (R-exec-3), but must not
+        // discard this incoming batch. Persist it through the shared parked channel so later
+        // successful reads can land changes even after the marker has passed their page.
         guard !ownedReadFailed.contains(registration.label) else {
             parkUndeliveredOwnedEntities([registration.label: batch], reason: "local-read-failed")
             return
         }
 
         var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
-        // 工作集 = 本轮到达的 tombstone ∪ 表里全部 `pendingTombstone` 的游标（§5.6）。
-        // 重投是不存在的——共享 marker 早已推过那一页。
+        // Work set: incoming tombstones plus every persisted pendingTombstone cursor (section 5.6).
+        // The shared marker may already prevent server redelivery.
         var tombstoned = Set(batch.tombstones.map(\.identity))
         for (identity, cursor) in table.cursors where cursor.pendingTombstone {
             tombstoned.insert(identity)
         }
-        // A6：**每一条能走到游标的入站实体**都先收割服务端三元组，tombstone 也不例外。
-        //
-        // 三元组同时留一份在 `tombstoneTriples` 里：下面那两个停放循环会**新建**游标，而这
-        // 个循环只更新已经存在的那些（T1 支不为一条认不出来的 tombstone 建游标）。新建的
-        // 那一条必须带上三元组，理由与 `plan.harvest` 那一份逐字相同（见停放循环）。
+        // Harvest every incoming entity's server triple, including tombstones (A6). Keep
+        // tombstoneTriples for the parking paths that create new cursors; this loop updates
+        // existing cursors only, since T1 does not create cursors for unknown tombstones.
         var tombstoneTriples: [String: (entityId: String, version: Int64)] = [:]
         for item in batch.tombstones {
             let previous = tombstoneTriples[item.identity]
@@ -3626,17 +3357,12 @@ actor PhiSyncEngine {
             harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
             table.cursors[item.identity] = cursor
         }
-        // §5.6 的 L2 支：游标带 `deletedAtMs` 时到达的**存活**实体，判据是**版本**。
-        //
-        // **这道闸必须在 `plan` 之前。** `plan` 不看这条身份自己的 `deletedAtMs`，一条重放的
-        // 旧版本照样会让它产出 `.move` / `.update`，把用户明确删掉的那一行搬回来；闸放在
-        // `plan` 之后就来不及了。
-        //
-        // 服务端对每个 `entity_id` 只保存一行、且只下发最新版本，所以一个**比那条 tombstone
-        // 更新**的存活版本按定义是删除之后发生的事（R-M3-3-23 的合法复活）；版本不新于它的
-        // 那一条是一次删除**之前**版本的重放——整类型重放、门开边沿的回放、设置侧 `.unusable`
-        // 的 marker 回退都产得出它，而那条实体的字段戳当然比本机刚写的 tombstone 早，按时间戳
-        // 判的实现会让一条用户明确删掉的行自己回来。
+        // Before plan, filter live arrivals against deletedAtMs cursors using server version
+        // (section 5.6 L2). plan does not check that cursor field and could otherwise move/update a
+        // deleted row. A newer live version is a legitimate post-tombstone resurrection
+        // (R-M3-3-23); an equal/older version is replay and must not restore the row. The server
+        // stores only the latest entity version; field timestamps are not a substitute for this
+        // ordering.
         var arrivals = batch.arrivals
         var resurrecting: Set<String> = []
         var replayedAfterDelete = 0
@@ -3648,7 +3374,8 @@ actor PhiSyncEngine {
                     kept.append(item)
                     continue
                 }
-                // A6 在这里同样成立：收割先于判定，两支都收。判据比的是收割**之前**那个版本。
+                // Harvest in both branches (A6), but compare against the version captured before
+                // harvesting.
                 let known = cursor.version
                 harvestTriple(into: &cursor, entityId: item.entityId, version: item.version)
                 table.cursors[item.identity] = cursor
@@ -3669,12 +3396,12 @@ actor PhiSyncEngine {
             parked[identity] = ParkedOwnedItem(payload: payload,
                                                pendingOwnerUuid: cursor.pendingOwnerUuid)
         }
-        // R-M3-4a-99：第四个析取项只对 `landsEmptyBatch` 的 kind（规则）放行——三者全空的页
-        // 对它也要走 `plan` / `land`（R-M3-4a-56）。另两条 kind 的早退逐字不变。
+        // landsEmptyBatch adds the empty-page path only for URL rules, allowing their M2
+        // convergence pass (R-M3-4a-99/56). Other kinds retain their early return.
         guard !arrivals.isEmpty || !tombstoned.isEmpty || !parked.isEmpty
                 || registration.landsEmptyBatch else {
-            // 被 L2 丢掉的那些实体的收割**必须落盘**：共享 marker 已经推过那一页，这一条
-            // 版本再也不会被投递第二次，而本机那条待发的 tombstone 还要拿它去提交。
+            // Persist triples harvested from L2-rejected replays. This version may never be
+            // delivered again, and the local pending tombstone needs it for publication.
             if replayedAfterDelete > 0 { writeOwnedTable(registration, table) }
             return
         }
@@ -3688,19 +3415,19 @@ actor PhiSyncEngine {
         counters.adopted += output.adopted
         counters.unmatchedFolders += output.unmatchedFolders
         counters.unmergeablePairs += output.unmergeablePairs
-        // §13.2 的 `normalized`：只有规则的 plan 闭包填它，另两条 kind 恒 0。
+        // Only URL-rule planning reports normalized (section 13.2); other kinds remain zero.
         counters.normalized += output.normalized
         counters.refused += output.plan.refused
         counters.supersededByDelete += output.plan.supersededByDelete
         counters.scopeMismatch = counters.scopeMismatch || output.scopeMismatch
         ownedMustRepublish[registration.label] = output.mustRepublish
-        // §5.3 的尽力推迟，**并集**：一轮里可以有不止一次 pull，而判据问的是整轮。
+        // Union deferred owners across every pull in this round (section 5.3).
         ownedDeferredOwners[registration.label, default: []]
             .formUnion(output.deferredOwners)
 
-        // **只更新已存在的游标**（P5）：`plan` 先收割再判 `refuses`，所以一条被拒的实体
-        // 照样在 `harvest` 里留一条记录，而它的身份可能根本没有对应游标。照着 harvest 建
-        // 游标，会让一个持续发畸形载荷的对端每一轮把本机的游标表撑大一圈。
+        // Update existing cursors only (P5). Plan harvests before refusing malformed payloads, so
+        // constructing a cursor for every harvested identity would let repeated invalid arrivals
+        // grow the cursor table indefinitely.
         for (identity, harvested) in output.plan.harvest {
             guard var cursor = table.cursors[identity] else { continue }
             harvestTriple(into: &cursor, entityId: harvested.entityId,
@@ -3708,14 +3435,11 @@ actor PhiSyncEngine {
             table.cursors[identity] = cursor
         }
 
-        /// A6 的收割，**写进一条这一轮才建出来的游标**。
-        ///
-        /// 上面那个循环按 P5 只更新已经存在的游标，于是「本轮新建游标」的三条路——落地、
-        /// §4.4 的停放、导入锁的停放——各自要再收割一次，否则那条游标以
-        /// `entityId == "" / version == 0` 落盘，而共享 marker 早已推过那一页、这一版实体
-        /// **永不重投**。两个来源按到达的种类取：存活实体的三元组在 `plan.harvest` 里
-        /// （停放的那些也收割，见 `SyncableOwnedItems.plan` 的第一段），远端 tombstone 的在
-        /// `tombstoneTriples` 里。
+        /// Harvest A6 data into newly created cursors. The P5 loop above updates existing cursors
+        /// only, so landing and both owner/import-lock parking paths must initialize server
+        /// identity/version separately. Otherwise the consumed version will never replay and the
+        /// cursor persists as never published. Live triples come from plan.harvest; tombstones come
+        /// from tombstoneTriples.
         func harvestServerTriple(into cursor: inout PhiOwnedItemCursor, _ identity: String) {
             guard let triple = output.plan.harvest[identity] ?? tombstoneTriples[identity] else {
                 return
@@ -3726,28 +3450,32 @@ actor PhiSyncEngine {
         let outcome = await registration.land(
             OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps,
                               claimedLocalIds: output.claimedLocalIds,
-                              // D30 M2 的四条通道（8b-2）。书签与 pin 的落地闭包一个都不读。
+                              // D30 M2 data channels (8b-2); bookmark and pin landing ignores them.
                               preLandingSignatures: output.plan.preLandingSignatures,
                               atRestIdentities: output.atRestIdentities,
-                              // C-15：闸只管 §8.4.3 的**第 2 步**。
+                              // C-15: convergence gating applies only to section 8.4.3 step 2.
                               convergeAllowed: ownedItemsPublishAllowed,
-                              // R-M3-4a-97：这一趟的 `rebaselined` 要到下面才写进游标，
-                              // 落地闭包只能从这个入参拿到它。
+                              // Pass rebaselined explicitly because cursor write-back occurs only
+                              // after landing (R-M3-4a-97).
                               rebaselined: output.plan.rebaselined))
         guard !isStopped else { return }
-        // §7.2 / A11 的变体重铸跑在落地那一批里，所以它的条数跟着落地结果回来。
+        // Variant reminting runs inside the landing batch; take its count from the outcome (section
+        // 7.2 / A11).
         counters.relineaged += outcome.relineaged
-        // §13.2 的 `collapsed`：M2 在落地事务尾部真的软删掉的败者（R-M3-4a-54）。
+        // Count M2 losers actually soft-deleted at the transaction tail (section 13.2 /
+        // R-M3-4a-54).
         counters.collapsed += outcome.collapsed
-        // §13.2 的 `owner_moved` 同一条通路：数的是批次里真的留下来的 `.move`（计划裁定三）。
+        // Count move operations actually retained in the landing batch (section 13.2 / ruling 3).
         counters.ownerMoved += outcome.ownerMoved
-        // §13.2 的 `transferred` 与 §13.3 的那一格：两者都在**落地事务里**求值（裁定 9 的
-        // 每单元 LWW 要拿 `max(W 的行戳, W 的有效账户戳)` 去比，plan 闭包手上两样都没有）。
+        // transferred and the section 13.3 deletion count are evaluated transactionally. Per-unit
+        // LWW needs max(winner row stamp, effective account stamp), neither of which the plan
+        // closure owns (ruling 9).
         counters.transferred += outcome.transferred
         counters.supersededByDelete += outcome.supersededByDelete
-        // §13.2 的 `yield_no_partner`（R-M3-4a-75(3)）：由 kind 的 plan 闭包在判定点上数好。
+        // The kind's plan closure counts yield_no_partner at its decision point (section 13.2 /
+        // R-M3-4a-75(3)).
         counters.yieldNoPartner += output.yieldNoPartner
-        // §8.2 / Task 10：本轮新建出来的行攒进收集篮，轮末一次交给回填队列。
+        // Collect newly created rows for one round-end favicon submission (section 8.2 / Task 10).
         faviconCandidatesThisRound.append(contentsOf: outcome.createdRows)
         faviconPinCandidatesThisRound.append(contentsOf: outcome.createdPins)
 
@@ -3757,20 +3485,20 @@ actor PhiSyncEngine {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
             harvestServerTriple(into: &cursor, identity)
             if outcome.deleted.contains(identity) {
-                // §5.6 T1–T3：清三个待办位、写 `deletedAtMs`，于是同一轮的差分不可能把这次
-                // 远端删除改写成一次本机删除再发回去。
+                // Section 5.6 T1-T3: clear pending work and stamp deletedAtMs so this round's diff
+                // cannot echo a remote deletion as a local tombstone.
                 cursor.reconciled = nil
                 cursor.server = nil
                 cursor.deletedAtMs = now()
                 cursor.pendingDelete = false
             } else {
                 if let bytes = outcome.reconciled[identity] { cursor.reconciled = bytes }
-                // §4.5：`server` **永远是 remote，不是 merged**。把合并结果写进去，下一轮
-                // 就会把一个服务端从没见过的字节当成服务端的现状。
+                // The server baseline is always remote bytes, never the merge result, which the
+                // server may not yet hold (section 4.5).
                 if let server = output.serverBytes[identity] { cursor.server = server }
-                // §5.6 的 L2 支后半：一次合法的复活**落地之后**才清 `deletedAtMs`。不清的
-                // 话，§4.2 第 3b 条每一轮都会看见「有 `deletedAtMs` + 有活行」而再复活发布
-                // 一次，每轮换来一次 `.conflict` 加一次限定重发。
+                // Clear deletedAtMs only after a legitimate L2 resurrection lands. Otherwise rule
+                // 3b sees a live row plus tombstone every round and repeatedly republishes with
+                // conflict/retry churn (section 5.6).
                 if resurrecting.contains(identity), cursor.deletedAtMs != nil {
                     cursor.deletedAtMs = nil
                     counters.resurrected += 1
@@ -3779,45 +3507,36 @@ actor PhiSyncEngine {
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
             cursor.pendingTombstone = false
-            // §7.4：这一条的拆分伙伴解析出来了没有，只有落地那一侧知道（它手上才有本机
-            // 那一批行）。`""` = 不再等了，于是 `doctoredOwnedTable` 下一轮会如实把一次
-            // 本机解除发出去；非空 = 还在等，快照照抄基线。
+            // Only landing can tell whether a split partner resolved (section 7.4). Empty clears
+            // the wait, allowing future local unlink publication; nonempty preserves the baseline
+            // while waiting.
             if let waiting = outcome.pendingPartnerLineages[identity] {
                 cursor.pendingPartnerLineage = waiting.isEmpty ? nil : waiting
             }
             table.cursors[identity] = cursor
-            // 一次成功的落地就是对这条 tag 的一次成功解读（§4.5 末条）：不清的话，一次
-            // **瞬时**解密失败会让这条实体在本机**永久**失去发布权。
+            // Successful landing also proves this tag readable. Clear quarantine or a transient
+            // decryption failure would permanently deny publication (section 4.5).
             let hash = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
             if spaceTable.unreadableTagHashes.removeValue(forKey: hash) != nil {
                 spaceTableChanged = true
             }
             counters.applied += 1
         }
-        // §8.4.2 第 4 步 / R-M3-4a-53：认领提交之后**整条删掉**旧身份那条本机铸的游标。
-        // 按「从未发布」三合取项它 `entityId` 为空、`server` 与 `reconciled` 都是 nil，删掉不丢
-        // 任何账户状态。**只对真的落了地的身份删**：整批回滚时 re-key 没发生，旧 `syncId` 还在
-        // 行上，删了它下一轮那条行会被差分当成从未发布过、以 `baseVersion == 0` 盲写覆盖账户。
-        // `retired == identity` 是幂等 re-key 那一格（行的 `syncId` 本来就等于新身份），删它会把
-        // **刚写下的基线**删掉。
+        // After a successful M1 claim, remove the retired locally minted cursor (section 8.4.2(4) /
+        // R-M3-4a-53). Its never-published predicate guarantees no server state is lost. Do not
+        // remove it after rolled-back landing, or the surviving local identity could publish a
+        // blind create. Skip retired==identity too, which would delete the baseline just written by
+        // an idempotent rekey.
         for (identity, retired) in output.retiredIdentities
         where outcome.landed.contains(identity) && retired != identity {
             table.removeCursor(identity: retired)
         }
-        // §4.4 第 4 步的停放：归属还没落地。
-        //
-        // **停放建出来的游标同样要带上服务端三元组**（A6）。一条身份第一次到达就被停放
-        // （作用域不一致的整轮停放、归属还没落地、导入锁）时它还没有游标，而上面那个
-        // harvest 循环按 P5 只更新已经存在的那些：少了这一趟收割，游标以
-        // `entityId == "" / version == 0` 落盘，而共享 marker 早已推过那一页、这一版实体
-        // 永不重投——下一轮停放项落了地、写下基线，游标却仍然没有身份。
-        //
-        // 那条游标此后是**双向坏掉**的（Mac B 2026-09-14，build 822）：R-exec-1 说
-        // `entityId == ""` 的含义是「这条身份还没在账户上出现过」，于是本机的一次删除在
-        // §9.1 的第二道闸上被就地收尾（一条 tombstone 都发不出去，账户上那条实体没有任何
-        // 设备还能删掉），而一次本机编辑会以 `baseVersion == 0` 的 create 盲写覆盖账户上
-        // 那一条。形状与 `applySpaceUpdates` 的 fallback B 逐字相同——Space 侧停放时同样
-        // 写这两行。
+        // Park while the owner remains unlanded (section 4.4(4)), harvesting the server triple even
+        // when this creates a new cursor (A6). P5's earlier loop updates existing cursors only.
+        // Without identity/version, this consumed arrival can never repair itself: local deletion
+        // is suppressed as never published, while editing sends a baseVersion-zero create that
+        // overwrites account data (R-exec-1; reproduced on Mac B build 822). This mirrors Space
+        // fallback-B parking.
         for (identity, item) in output.plan.parked {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
             harvestServerTriple(into: &cursor, identity)
@@ -3825,24 +3544,20 @@ actor PhiSyncEngine {
             cursor.pendingOwnerUuid = item.pendingOwnerUuid
             table.cursors[identity] = cursor
         }
-        // §7.3 的另一半：作用域不一致轮里那批**没有载荷可停**的 tombstone（`plan` 一条 step
-        // 都产不出，所以它们既不在 `outcome.parked` 里也不在 `plan.parked` 里）。不记下来的
-        // 话，那条远端删除就此消失——三元组已经收割、游标看上去健康、marker 早已推过那一页，
-        // 于是那条 pin 在本机永远不死，而账户上它早就没了（`pendingTombstone` 存在的全部
-        // 理由就是这个）。
+        // Persist payload-free tombstones parked by scope mismatch (section 7.3). They produce no
+        // plan step or landing outcome, so omitting pendingTombstone would silently lose the
+        // deletion after marker advancement despite a healthy-looking harvested cursor.
         for identity in output.plan.parkedTombstones {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
             harvestServerTriple(into: &cursor, identity)
             cursor.pendingTombstone = true
             table.cursors[identity] = cursor
         }
-        // §8.4.4 (α) 的 (ii) 支：**让位**（R-M3-4a-61 / 计划裁定六）。行留在盘上、两份基线
-        // 清 nil、写下 `deletedAtMs` **并保留它**，三个待办位清掉。
-        //
-        // **绝不提前清 `deletedAtMs`**（RR5-3）：它是轮末 3b 重发布的**唯一**入口条件，也是
-        // L2 重放保护的判据。**不进 `outcome.deleted`、不调 `noteDeletedRows`**——行留在盘上、
-        // 也留在本页刷新之后的投影里，那正是 3b 的前提。三元组照常由 `harvestServerTriple`
-        // 收割：轮末那次 3b 的 `base_version` 取的就是这条 tombstone 那一版。
+        // Section 8.4.4(alpha)(ii) yields deletion to local intent (R-M3-4a-61 / ruling 6). Keep
+        // the row, clear both baselines/pending work, and retain deletedAtMs: it is the sole
+        // round-end rule-3b reentry condition and L2 replay guard (RR5-3). Do not classify as
+        // outcome.deleted or call noteDeletedRows. Harvest the tombstone version for the later
+        // resurrection's base_version.
         for identity in output.plan.yieldedTombstones {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
             harvestServerTriple(into: &cursor, identity)
@@ -3855,9 +3570,9 @@ actor PhiSyncEngine {
             cursor.pendingDelete = false
             table.cursors[identity] = cursor
         }
-        // R-M3-4a-102（裁定 11）：事务里发现来源行已经变了 ⇒ `.transfer` 与 `.delete(X)` 两条
-        // op 都没执行 ⇒ 按 `plan.parkedTombstones` **同一段代码路径**记账：收割三元组、
-        // `pendingTombstone = true`、行与 `reconciled` / `server` / `deletedAtMs` 一个字节不动。
+        // A transaction-time source change prevented both transfer and delete(X) (R-M3-4a-102 /
+        // ruling 11). Account exactly as parkedTombstones: harvest identity/version and set
+        // pendingTombstone without changing rows, baselines or deletedAtMs.
         for identity in outcome.deferredTombstones {
             assert(!outcome.landed.contains(identity) && !outcome.deleted.contains(identity),
                    "a deferred tombstone must be in neither landed nor deleted")
@@ -3866,7 +3581,7 @@ actor PhiSyncEngine {
             cursor.pendingTombstone = true
             table.cursors[identity] = cursor
         }
-        // 落地被导入锁挡住的那一组（§4.9 第 3 条 / §5.6 T4）。同上，这一支也**新建**游标。
+        // Import-lock parking also creates cursors as needed (sections 4.9(3)/5.6 T4).
         for identity in outcome.parked {
             var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
             harvestServerTriple(into: &cursor, identity)
@@ -3876,25 +3591,21 @@ actor PhiSyncEngine {
             if tombstoned.contains(identity) { cursor.pendingTombstone = true }
             table.cursors[identity] = cursor
         }
-        // 拒收：**不落地、不停放、不建游标**（CASE 6.6b / 6.11b）。
+        // Refusal neither lands nor parks nor creates cursors (CASE 6.6b / 6.11b).
         counters.refused += outcome.refused.count
-        // A9 取消了本机那条待发删除。
+        // A9 cancelled the pending local deletion.
         for identity in output.plan.cancelledDeletes {
             guard var cursor = table.cursors[identity] else { continue }
             cursor.pendingDelete = false
             cursor.deleteDecidedAtMs = 0
             table.cursors[identity] = cursor
         }
-        // §7.4 的另一半（spec item 16 的后半）：伙伴那一条身份**本轮没有实体到达**，所以它
-        // 不在 `landed` 里；落地却在同一个事务里替它链上了反方向，于是它游标上那一位也要
-        // 跟着清。只写到达的那一侧，反方向要等下一次本地变化才被发现，中间那段时间两台机器
-        // 对同一对 pin 的显示不一致。
-        //
-        // **四个集合一个都不能少。** `landed` 那一半由上面那个循环负责；`parked` 与 `refused`
-        // 则是**落地后复核没过**或整批算错了的那些身份——这一轮对它们的本机状态没有把握，
-        // 而这一位的含义恰恰是「本机那一行还挂不挂着伙伴」。清掉一条其实没落地的身份的
-        // `pendingPartnerLineage`，下一轮的表副本就会把它的基线判成一次本机解除，把对端好好
-        // 的拆分对拆散——正是 §7.4 要防的那件事，只是换了一条到达路径。
+        // Section 7.4 also updates a partner with no incoming entity this round when landing links
+        // its reverse side in the same transaction. Otherwise peers display different split pairs
+        // until another local change. Exclude all four outcome categories: landed is handled above,
+        // and parked/refused/unverified identities must not clear waits without proven local state.
+        // Incorrectly clearing pendingPartnerLineage would make next round interpret a valid remote
+        // split as a local unlink.
         for (identity, waiting) in outcome.pendingPartnerLineages
         where !outcome.landed.contains(identity) && !outcome.parked.contains(identity)
             && !outcome.refused.contains(identity) {
@@ -3904,30 +3615,25 @@ actor PhiSyncEngine {
             cursor.pendingPartnerLineage = updated
             table.cursors[identity] = cursor
         }
-        // 本轮**没有任何东西要落地**、但合并结果与基线仍然不同的那些身份：只差时间戳
-        // （`OwnedItemPlan.rebaselined`）。不写的话，本机基线永远停在那个更旧的戳上，而一条
-        // 后到的、取值不同却更旧的实体会拿它去比并**赢下**，把账户上更新的那个值覆盖掉。
-        //
-        // **这不是「没落地就写基线」的例外**（§4.5）：走到这里的身份按定义没有任何东西要
-        // 落地——本机那一行的取值与合并结果逐字相同，`plan` 因此一条 step 都没产出。三个
-        // 排除是深度防御：这一轮被停放 / 拒收 / 落地过的身份各有自己的写回路径。
+        // Adopt newer baseline stamps even when equal values require no landing steps
+        // (OwnedItemPlan.rebaselined). An older baseline could otherwise let a later, older
+        // conflicting value win. This respects apply-before-baseline: these identities have nothing
+        // to apply. Exclude parked, refused and landed identities, whose own paths handle
+        // write-back.
         for (identity, bytes) in output.plan.rebaselined {
             guard var cursor = table.cursors[identity], cursor.reconciled != nil,
                   cursor.pendingApply == nil, !cursor.pendingTombstone,
                   !outcome.landed.contains(identity), !outcome.parked.contains(identity),
                   !outcome.refused.contains(identity) else { continue }
             cursor.reconciled = bytes
-            // §4.5：`server` 永远是**拉到的那条远端实体**，不是合并结果。
+            // server is the fetched remote entity, never merged bytes (section 4.5).
             if let server = output.serverBytes[identity] { cursor.server = server }
             table.cursors[identity] = cursor
         }
-        // 本机赢下了字段、却一个 step 都没产出的那些身份（一条更旧的远端值输给了本机手上
-        // 这一份，取值与基线相同所以没什么要落地）。它们不进 `landed`，上面两个循环都不会
-        // 替它们刷新 `server`——不刷的话，发布段那条**持久**判据（`server != reconciled`）
-        // 看不见这次分歧，而账户上那一份确实不是本机手上这一份。
-        //
-        // 只写 `server`：它记的是「账户手上是什么」，这一轮刚拉到，与「本机落地了什么」
-        // （`reconciled`，§4.5 要求它排在落地之后）是两件事。
+        // For locally winning identities that produced no landing step, refresh server so the
+        // durable server!=reconciled predicate can detect the disagreement and republish. Change
+        // only server, which describes account state; reconciled describes successfully landed
+        // local state (section 4.5).
         for identity in output.mustRepublish where !outcome.landed.contains(identity) {
             guard var cursor = table.cursors[identity], cursor.reconciled != nil,
                   cursor.pendingApply == nil, !cursor.pendingTombstone,
@@ -3943,29 +3649,25 @@ actor PhiSyncEngine {
         writeOwnedTable(registration, table)
     }
 
-    /// 归属项发布的门（PR6）。
-    ///
-    /// **只看 `spaceSectionEnabled` 与 `hasDrainedFullReplay`。** `sync.joinPairingPending`
-    /// 引擎取不到——它是 `@MainActor ProfilePairingGate` 上的静态属性，而这是一个非 MainActor
-    /// 的 actor；配对进行中协调器已经在调 `setSpaceSyncEnabled(false)`，那个值经 `.spaceGate`
-    /// 排队进来并存进 `spaceSectionEnabled`，所以归属项跟 Space 段走的是同一道门。
-    /// 第三条 `hasDrainedFullReplay` 是 Space 侧早就有、两种新 kind 绝不能漏掉的发布闸：
-    /// 漏掉它，一台刚加入、还没拉完账户树的机器会先把自己的整棵树发上去，同时把每一行都铸上
-    /// `syncId`，D10 的认领条件从此永假。
+    /// Owned publication shares the Space gate (PR6). The coordinator queues
+    /// setSpaceSyncEnabled(false) while pairing; the engine cannot directly read MainActor
+    /// ProfilePairingGate state. Also require hasDrainedFullReplay: a newly joined device must
+    /// download the account tree before minting/publishing local identities, or D10 adoption
+    /// becomes permanently ineligible.
     private var ownedItemsPublishAllowed: Bool {
         guard spaceSectionEnabled, spaceStore != nil, !ownedKinds.isEmpty else { return false }
         return loadSpaceTable().hasDrainedFullReplay
     }
 
     private func pushOwnedItems(retryOnConflict: Bool) async {
-        // 判据与 `spaceLive` 同构，`spaceAccess` 那一项也在里面：没有它，身份翻译表整张是空
-        // 的，发布段会拿一份「什么都解析不出来」的映射跑完一轮。
+        // Match spaceLive, including spaceAccess. Without it, all identity mappings would be empty
+        // and publication would proceed with unresolved ownership.
         guard !isStopped, canPublishThisRound, !ownedKinds.isEmpty, spaceSectionEnabled,
               spaceStore != nil, spaceAccess != nil else { return }
         await beginOwnedRound()
         let maps = await ownedRoundMaps()
-        // 归属段的最前面，**每一种轮次都跑**。在 pull 轮里这一趟已经在落地段之前跑过了，
-        // `ownedParkedRetryDone` 让它一轮只发生一次。
+        // Retry parked claims first for every round type. Pull already did so before landing;
+        // ownedParkedRetryDone keeps it once per round.
         for registration in ownedKinds {
             await retryParkedOwnedClaims(registration, maps: maps)
         }
@@ -3974,63 +3676,58 @@ actor PhiSyncEngine {
         }
     }
 
-    /// 一条 kind 的发布段：快照 → 差分 → 两段切片 → 组批 → 写回。
-    ///
-    /// `onlyIdentities` 非 nil 时把这一批限定到那几条，这正是 `.conflict` 的限定重发传进来的
-    /// 东西——一条冲突的实体绝不该把同一轮其余两百多条再拖过一次线。
+    /// Publish one kind: snapshot, deletion diff, two ordered slices, batching, write-back.
+    /// onlyIdentities limits conflict retries so one conflict does not retransmit hundreds of
+    /// unrelated entities.
     private func publishOwnedKind(_ registration: OwnedKindRegistration,
                                   maps: OwnedOwnerMaps,
                                   retryOnConflict: Bool,
                                   onlyIdentities: Set<String>? = nil) async {
         guard !isStopped, canPublishThisRound else { return }
-        // R-exec-3：轮首读失败 ⇒ 快照、差分、发布**全部没跑**，不是「少发了几条」。
+        // A failed round-start read suppresses the entire snapshot/diff/publication section
+        // (R-exec-3), not just some entries.
         guard !ownedReadFailed.contains(registration.label) else { return }
         guard ownedItemsPublishAllowed else { return }
-        // 计数**快照在这一次 load 之前**：下面那道 guard 问的是「**这一条 kind** 的重放武装刚刚
-        // 写失败了吗」，不是「本轮有没有任何一条 kind 写失败过」。读绝对值会把 R-M3-4a-103 的
-        // per-kind 语义扩成全局——`ownedKinds` 是 `bookmarks → pins → urlrules`，书签的一次推送
-        // 侧写失败会连带吃掉后面两条 kind 的整个发布段（含 §8.4.5 清位 (b) 与 3b 重新准入复检），
-        // 正是 §2.5 第 6 条点名禁止的那一格。轮级的那道闸是 `canPublishThisRound`
-        // （`… && cursorSaveFailures == 0`，轮首折叠），与这里是两件事。
+        // Snapshot save-failure count before this load. Test whether this kind's replay arming just
+        // failed, not whether any earlier kind failed. A global check would suppress later kinds'
+        // publication housekeeping, including pendingLocalEdit clearing and rule-3b rechecks,
+        // contrary to section 2.5(6). The round-entry canPublishThisRound prerequisite is separate
+        // (R-M3-4a-103).
         let failuresBeforeLoad = cursorSaveFailures
         let loaded = loadOwnedTable(registration, armsReplayOnLoss: true)
         guard !loaded.lost else { return }
-        // R-M3-4a-103（Task 2b fix round 1）：报损重放的两步之一写不成时 `loadOwnedTable` 回的是
-        // `(table, false)`——上面那道 guard 放行，而这里已经过了轮首的 `canPublishThisRound`。
-        // 不拦的话，发布段会拿一张**空的**游标表跑快照 → 差分 → commit，并在末尾
-        // `writeOwnedTable` 写出一份新文件：下一轮的 load 不再报损，per-kind 闩再也不会置位，
-        // 那条 kind 的整类型重放**永久丢失**——正是两步次序要防的那一格。一次失败的重放武装
-        // 既不许对着丢失的表发布，也不许重建它的文件；下一轮报损检查照样触发。
+        // If either replay-arming write failed, loadOwnedTable returns lost=false and the earlier
+        // guards would allow publication against an empty table. Stop here without publishing or
+        // recreating its file, preserving loss detection next round. Rebuilding the file would
+        // prevent the latch from ever arming and permanently lose full replay (R-M3-4a-103).
         guard cursorSaveFailures == failuresBeforeLoad else { return }
         var table = loaded.table
         var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
 
-        // 1. 快照。喂进去的是一份**篡改过的表副本**（§7.4 / P4）：凡是没有
-        // `pendingPartnerLineage` 的游标，其基线里的拆分伙伴被清空**并盖上本轮的 `now`**，
-        // 于是一次真正的本机解除拆分会如实发出去、并且赢得下那次 LWW；确实在等伙伴的那些
-        // 原样保留。**发布比较仍然用真表。**
-        //
-        // 时钟只读一次：`now()` 在测试里可以按读推进，两次读会让表副本的戳与快照的戳不同，
-        // 而这两个值必须是同一个时刻。
+        // Snapshot using a doctored table copy (section 7.4 / P4): clear genuinely removed split
+        // partners when no pendingPartnerLineage remains, and stamp removals with this round's now
+        // so LWW propagates the unlink. Preserve unresolved partners; publication still compares
+        // against the real table. Read the clock once for both doctoring and snapshot, since test
+        // clocks can advance on every read.
         let roundNow = now()
         let doctored = await doctoredOwnedTable(registration, table, maps: maps, now: roundNow)
         let snapshot = await registration.snapshot(doctored, maps, roundNow)
         counters.excludedUnmappedOwner +=
             snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
-        // §7.3 / §11.2：作用域不一致时发布半边整段跳过，而那个跳过在**每一种轮次**里都会
-        // 发生——包括没有任何入站、因此 `plan` 根本不跑的那一种。计数只从 `plan` 那边取的话，
-        // 恰恰是唯一没有别的信号的那种轮次缺了诊断。
+        // Scope mismatch suppresses publication in every round type (sections 7.3/11.2), including
+        // pure pushes with no plan execution. Collect its diagnostic from the snapshot too.
         counters.scopeMismatch = counters.scopeMismatch || snapshot.scopeMismatch
 
-        // 2. A12：为表里每一条游标刷新 `ownerUuid`——包括本轮因为切片而排不上队的那些。
+        // A12: refresh ownerUuid for every existing cursor represented in the snapshot, including
+        // entries excluded by this round's slice budget.
         for (identity, owner) in snapshot.ownerUuids {
             guard var cursor = table.cursors[identity], cursor.ownerUuid != owner else { continue }
             cursor.ownerUuid = owner
             table.cursors[identity] = cursor
         }
 
-        // 3. 差分（§4.7）。它的第三条判据问的是 `allSyncIds()` / `allPinRows()`，
-        // **不是快照**（R-exec-4）：孤儿根下的行不发布，但永远不会被判成删除。
+        // Section 4.7 deletion diff uses allSyncIds()/allPinRows(), not the outbound snapshot
+        // (R-exec-4). Unpublished orphan-root rows must not be mistaken for deletions.
         let diff: OwnedItemTombstoneResult
         do {
             diff = try await registration.tombstones(table, maps, now())
@@ -4040,12 +3737,13 @@ actor PhiSyncEngine {
             ownedCounters[registration.label] = counters
             AppLogError("[phi-sync] owned-item diff domain unavailable kind=\(registration.label) "
                         + "(\(PhiSyncLog.describe(error)))")
-            return          // 游标表一个字节都不写
+            return          // Do not write any cursor-table bytes.
         }
         for (identity, cursor) in diff.cursorUpdates { table.cursors[identity] = cursor }
 
-        // §9.1 第二道闸的记账半边：一条发不出去的 `pendingDelete`（没有 entityId / 版本 0）
-        // 就地收尾并写 `deletedAtMs`，而不是每轮重发一条服务端必判非法的条目。
+        // Finalize an unsendable pendingDelete lacking entityId/version locally and stamp
+        // deletedAtMs, rather than repeatedly submitting an entry the server must reject (section
+        // 9.1 second gate).
         for (identity, var cursor) in table.cursors where cursor.pendingDelete {
             guard cursor.entityId.isEmpty || cursor.version == 0 else { continue }
             cursor.pendingDelete = false
@@ -4055,18 +3753,14 @@ actor PhiSyncEngine {
             table.cursors[identity] = cursor
         }
 
-        // 3b. §8.4.4 (ii) 的**轮末准入复查**（计划裁定七）。
-        //
-        // **挂在入口条件上，不挂在本轮的集合上**（RR9-7）：3b 的唯一入口条件是游标状态，而
-        // 那次 3b 提交完全可能拿 `.conflict`、传输失败、或进程在轮末之前死掉——下一轮走的仍是
-        // 这个通用入口，而那一轮的 `yieldedTombstones` 是空集。所以**每一轮的发布段都先求一次
-        // 准入**；整段包在 `tombstoneYieldsToLocalEdits` 里（书签与 pin 恒不进）。
-        //
-        // 定义域三个合取项（RR10-2 / RR11-4 / RR12-3）：`deletedAtMs != nil` ∧ 本机有活行 ∧
-        // **`cursor.reconciled == nil`**。前两条对规则等价于「曾经走过 (ii)」（用户重建会铸
-        // 新 `syncId`，R-M3-4a-23）；第三条把一次**停放之后正当的复活**挡在定义域外（它落地时
-        // 写下了 `reconciled`）。**绝不**把第三项写成「`pendingLocalEdit` ∨ `unpublished`」：
-        // (ii) 的记账已经把两份基线清 nil，那一项恒假 ⇒ 这一类身份被**永久**排除在复查之外。
+        // Recheck section 8.4.4(ii) rule-3b admission on every publication round for yielding kinds
+        // only (ruling 7 / RR9-7). Key this on durable cursor state, not this round's
+        // yieldedTombstones, because conflicts, transport failures and crashes can defer
+        // publication into later rounds.
+        // The domain is deletedAtMs present, a live local row, and reconciled nil
+        // (RR10-2/11-4/12-3). The third condition excludes legitimately landed resurrections after
+        // parking. Do not replace it with pendingLocalEdit or unpublished: yielding already cleared
+        // both baselines, making that test permanently false.
         var yieldWithheld: Set<String> = []
         if registration.tombstoneYieldsToLocalEdits {
             let liveIdentities = await registration.localIdentities()
@@ -4074,32 +3768,31 @@ actor PhiSyncEngine {
             for identity in table.cursors.keys.sorted() {
                 guard let cursor = table.cursors[identity], cursor.deletedAtMs != nil,
                       cursor.reconciled == nil, liveIdentities.contains(identity) else { continue }
-                // 准入的等价式，一行：两道归属门由快照自己判，三个待办位由它的第 3 条判据
-                // 排除。**过了 ⇒ 什么都不做**，它按既有的 3b 通路进 `liveCandidates`
-                // （`reconciled == nil` ⇒ 判据恒真），`base_version` 取 `cursor.version`。
+                // Snapshot membership proves both owner gates and absence of pending work. An
+                // admitted identity follows existing rule 3b into liveCandidates with
+                // cursor.version as base_version; no additional action is needed.
                 if snapshot.entities[identity] != nil { continue }
-                // 成因一：游标上**没有可用的服务端三元组**（RR13-6，**不是**
-                // 「`pendingDelete == false`」——(ii) 的记账已经把那三个待办位清掉了，按它判
-                // 会让撤销支整个变成死代码）⇒ **零写**，它把这条身份推进下面第二支。
+                // Without a usable server triple, withhold this identity without writes (RR13-6).
+                // Do not test pendingDelete: yielding already cleared all pending flags, which
+                // would make revocation unreachable.
                 guard !cursor.entityId.isEmpty, cursor.version > 0 else {
                     yieldWithheld.insert(identity)
                     continue
                 }
-                // 成因二：目标 Space 的游标真的带 `hidden` 或 `purgedAtMs` ⇒ **撤销这次让位**。
-                // 那条规则本来就要随它的 Space 级联消失。
-                //
-                // **其余一切成因**（归属解析不出、Space 不在 `currentSpaces()` 里、映射 store
-                // 一次瞬时读失败、Space 列表还没加载、三个待办位里任何一个被后面的页置上）
-                // ⇒ **什么都不做**：行留着、`deletedAtMs` 留着、`pendingLocalEdit` 一个字节不动、
-                // 不发任何 tombstone、这一轮也不发 3b，下一轮重判。
+                // Revoke the yield only when the target Space cursor is actually hidden or purged:
+                // the rule should disappear with its Space. All other causes, including unresolved
+                // mappings, unloaded Space lists or newly pending work, retain the row, deletedAtMs
+                // and pendingLocalEdit unchanged, with no tombstone or rule-3b publication this
+                // round. Reevaluate next round.
                 guard let owner = cursor.ownerUuid, let spaceCursor = spaceCursors[owner],
                       spaceCursor.hidden || spaceCursor.purgedAtMs != nil else {
                     yieldWithheld.insert(identity)
                     continue
                 }
-                // 用 `registration.land` 做那次硬删，而不是新开一个注册项成员：`.delete` step
-                // 的落地翻译（`hardDeleteURLRule`）早就有了，泛型发布段因此不需要认识
-                // `PhiURLRuleLocalAccess`（与 R-M3-4a-84 撤回 `deleteGuard` 同一条理由）。
+                // Reuse registration.land's existing delete-to-hardDeleteURLRule translation
+                // instead of adding another registration member. Generic publication need not
+                // depend on PhiURLRuleLocalAccess, matching the withdrawal of deleteGuard in
+                // R-M3-4a-84.
                 let revoked = await registration.land(
                     OwnedLandingInput(steps: [OwnedItemApplyStep(identity: identity, kind: .delete,
                                                                  newParentUuid: nil, newRank: nil,
@@ -4116,44 +3809,30 @@ actor PhiSyncEngine {
             }
         }
 
-        // 4. 两段切片，方向相反（§5.3）。
+        // Build two slices in opposite dependency orders (section 5.3).
         var budget = Self.maxOwnedCommitsPerRound
-        // 第三个合取项是 R-M3-4a-84 / 计划裁定五的守卫：一条**上一轮就已经**
-        // `pendingDelete == true` 的身份本轮不产出 cursorUpdate，仍会按前两项进候选。
+        // The third conjunct protects identities already pendingDelete before this round, which may
+        // have no new cursorUpdate but still enter through the first two conditions (R-M3-4a-84 /
+        // ruling 5).
         let deleteCandidates = table.cursors
             .filter { $0.value.pendingDelete && $0.value.deletedAtMs == nil
                         && !diff.deferred.contains($0.key) }
             .keys.sorted()
         let tombstoneSlice = ownedTombstoneSlice(registration, table: table,
                                                  candidates: deleteCandidates, budget: &budget)
-        // R-exec-1 的自愈，**一次性**：`entityId == ""` 的含义是「这条身份还没在账户上出现
-        // 过」，而 `reconciled != nil` 的含义是「账户上那一条的某一版已经在本机落过地」。
-        // 两者同时成立是一条不变量破坏，build 822 及更早会写出它——停放为一条身份新建游标
-        // 时不收割服务端三元组（`applyOwnedKind` 那两个停放循环，已修）。
-        //
-        // 表已经这样落盘的机器**自己修不好**：那一版实体永不重投，游标再也收不到 id，于是
-        // 本机对这一行的删除在上面那道闸上被就地收尾（账户上那条实体没有任何设备还能删掉），
-        // 而一次本机编辑会以 `baseVersion == 0` 盲写覆盖它。
-        //
-        // 唯一的补键通路是**把它当成一次 create 重发**：服务端的
-        // `ON CONFLICT (client_tag_hash) DO UPDATE` 按 tag 认行，而这条身份的 tag 与账户上
-        // 那一条逐字相同，于是这次提交打在同一行上，回来的 `.applied` 带着真正的 entity id
-        // 与版本（`applyOwnedCommitOutcome`）。Space 侧对同族状态（`.invalidMessage` 之后
-        // 丢掉服务端三元组）走的就是这条通路，注释见 `applySpaceCommitOutcome`。
-        //
-        // **第二个触发点是 `resetForNewStoreBirthday()`**（F-PK-1，不是缺陷）：NOT_MY_BIRTHDAY
-        // 之后它把每一条归属游标的 `entityId` / `version` / `server` 归零而**保留
-        // `reconciled`**，于是全表都进入这里的判据。这正是要的行为——新 store 上这些身份要么
-        // 不存在、要么是另一行，都该经 client tag 重新认一次。次序上也安全：同一次 reset 把
-        // `hasDrainedFullReplay` 置假，而 `ownedItemsPublishAllowed` 读的就是它，所以补键一条
-        // 都发不出去，直到新 store 的整类型重放排干；重放里到达的那些身份在 `harvest` 里就把
-        // 三元组补回去了（`applyOwnedKind`），真正走到补键的只剩**新 store 确实没有**的那些。
-        //
-        // 四条限制让它不会变成一条常驻的重发规则：只碰**本机还有合格行**的身份（与快照取
-        // 交集）、只碰没有停放载荷也没有待发删除的游标（那两种本轮各有自己的出路）、补上
-        // 之后判据不再成立、连续三轮被拒之后**不再重新武装**（R-exec-13 的放弃，见
-        // `PhiOwnedItemCursor.rekeyRejectRounds`）。本机没有行的那些补不了键——没有载荷可发；
-        // 它们由对端的下一次更新收割，或者随保留期过期。
+        // Repair a cursor with reconciled data but no entityId (R-exec-1). Older builds could
+        // create this inconsistent state by parking without harvesting server identity; consumed
+        // versions would never redeliver, suppressing local tombstones and permitting blind creates
+        // on edits. Resubmit using the unchanged client tag so the server's unique-tag upsert
+        // returns the real identity/version, as Space repair does.
+        // A store-birthday reset intentionally produces the same shape by clearing server
+        // identity/version/baseline while retaining reconciled history (F-PK-1). Its full-replay
+        // gate prevents repair until the new store has drained; incoming replay harvests existing
+        // identities first, leaving only truly absent ones to recreate.
+        // Restrict repair to eligible live snapshot rows without parked payloads or pending
+        // deletion. Successful repair removes the predicate; three consecutive repair rejections
+        // stop rearming (R-exec-13). Rows no longer local cannot supply repair payloads and await
+        // peer updates or retention expiry.
         let unkeyed = Set(table.cursors.filter {
             $0.value.entityId.isEmpty && $0.value.reconciled != nil
                 && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
@@ -4162,63 +3841,45 @@ actor PhiSyncEngine {
                 && snapshot.entities[$0.key] != nil
         }.keys)
         if !unkeyed.isEmpty, onlyIdentities == nil {
-            // R12：只报条数与 kind，不报身份。
+            // R12: report kind/count, not identities.
             AppLogWarn("[phi-sync] owned-item cursors carry a baseline but no entity id "
                        + "kind=\(registration.label) count=\(unkeyed.count); "
                        + "republishing them to re-key through the client tag")
         }
-        // §6.2 的「本机赢了字段就要发布出去」**必须是持久的需求，不是轮内记忆**。
-        // `ownedMustRepublish` 每轮清零（`run(_:)`），而这条需求跨得过一轮的概率一点都不低：
-        // 那条身份可能排不进这一轮 250 条的切片（§5.3），或者这一轮在落地与发布之间停了
-        // （退休、sign-out、进程退出）。一旦丢掉就再也回不来——落地之后本机那一行与
-        // `reconciled` 逐字相等，字节差分永远不会再为它说话，而账户永远停在旧值上。
-        //
-        // 游标上已经durable地记着同一件事：`server` 是**账户手上**那一份（§4.5：永远是拉到
-        // 的远端字节，不是合并结果），`reconciled` 是**本机落地**的那一份。两者不同 ⇒ 账户
-        // 还没有这条实体的当前值。
-        //
-        // **`server == nil` 不算**：那是「本机不知道账户手上是什么」（NOT_MY_BIRTHDAY 之后
-        // 的 reset、§9.1 的收尾），由上面 `unkeyed` 那条补键通路处理——而它带着 R-exec-13 的
-        // 三次放弃。把 nil 也读成「不同」会绕过那个放弃计数，让一条服务端每轮都拒的实体永远
-        // 重发。
-        //
-        // **`pendingTombstone` 同样不算**（F-CX-4）：那条游标上停着一次**远端删除**，等的只是
-        // 一次落得下去的落地。这时把它排进发布切片，提交带的 `baseVersion` 正是从那条
-        // tombstone 上收割来的版本——服务端于是接受，账户上那条实体**原地复活**，而下一轮那条
-        // 停放的 tombstone 一落地，本机这一行就没了：账户多一条没有任何设备认领的实体，用户
-        // 在别的设备上看见一条自己刚删掉的书签又回来了。
+        // Republishing locally winning fields must be durable (section 6.2). A per-round set can be
+        // lost to slice limits, retirement or process exit; after landing, local bytes equal
+        // reconciled and ordinary diff no longer exposes the account disagreement. Use nonnil
+        // server and reconciled baselines that differ.
+        // Nil server means unknown account state, handled by the bounded unkeyed repair path;
+        // treating nil as disagreement would bypass its three-rejection limit. Exclude
+        // pendingTombstone too (F-CX-4): an update using the harvested tombstone version would
+        // resurrect the account entity just before its parked deletion removes the local row.
         let pending = Set(table.cursors.filter {
             $0.value.reconciled != nil && $0.value.server != nil
                 && $0.value.server != $0.value.reconciled
                 && $0.value.deletedAtMs == nil && $0.value.pendingApply == nil
                 && !$0.value.pendingDelete && !$0.value.pendingTombstone
         }.keys)
-        // 轮内那一份留着当**优化**：它覆盖游标还来不及记下分歧的那一类（本轮由停放项落地的
-        // 合并——那一轮没有到达实体，`server` 因此没有刷新过）。
+        // Keep the in-round set as an optimization for newly landed parked merges with no incoming
+        // entity to refresh the durable server baseline.
         let republish = (ownedMustRepublish[registration.label] ?? []).union(unkeyed)
             .union(pending)
-        // §5.3 / §6.4 的尽力而为的推迟：某个归属在**本轮的 pull 里收到过本 kind 的实体**时，
-        // 该归属下**本轮新铸身份**的行不进这一轮的切片；它们在第一个没有该归属实体到达的
-        // 轮次里提交。这只是把加入期「本机先铸、对端的同一条随后才到」的窗口压窄——§6 的
-        // 规则 (i) 是无状态的，谁先谁后都不丢东西，最坏是多一条重复（§6.5 的残留竞态）。
-        //
-        // **判据只碰本轮铸出来的身份。** 一条已经有身份的行照常发布：它在账户上已经存在，
-        // 推迟它只会让一次真实的本机编辑白等一轮。已经在配对表里的行本轮根本不铸身份，
-        // 所以它们也不在 `minted` 里。
-        //
-        // **口径是 `snapshot.ownerUuids`**（这一行坐在哪个归属里），与 `plan` 交回来的那一份
-        // 同源；拿 `owners(_:)` 那个绑定引用去比，一条子孙书签比的会是它的父身份。
+        // Best-effort deferral applies only to identities minted this round under owners with
+        // incoming entities of this kind (sections 5.3/6.4). It narrows join-time duplicate races;
+        // stateless adoption remains safe in either order, with duplication as the residual race
+        // (section 6.5). Existing identities publish real edits normally. Compare
+        // snapshot.ownerUuids, the containing owner, not owners(_:) parent references.
         let deferredOwners = ownedDeferredOwners[registration.label] ?? []
         var liveCandidates: [String] = []
         for (identity, bytes) in snapshot.entities {
             guard table.cursors[identity]?.pendingDelete != true else { continue }
-            // §8.4.4 (ii) 的准入复查没过：撤销支那一条的行已经没了，而 `snapshot.entities` 是
-            // **之前**算的（会拿一份陈旧字节去发布）；零写支按定义这一轮不发 3b。
+            // Withhold failed rule-3b admission: revocation may already have deleted the row while
+            // this snapshot still holds stale bytes; the no-write branch must also skip publication
+            // this round.
             guard !yieldWithheld.contains(identity) else { continue }
-            // **停着一条远端 tombstone 的身份一律不发**（F-CX-4）。§4.2 第 3 条已经把
-            // `pendingTombstone` 的游标挡在快照之外，但那张快照是**适配层**算的，而这道闸
-            // 守的是发布这一侧的同一件事：那条游标上等着的是一次删除，任何发出去的更新都会
-            // 带着收割来的版本被服务端接受，把那条实体原地复活。判据与 `pending` 那一条同源。
+            // Never publish an identity with a parked remote tombstone (F-CX-4). Keep this
+            // publisher-side guard even though adapters also exclude it from snapshots: sending an
+            // update with the harvested tombstone version would resurrect it on the server.
             guard table.cursors[identity]?.pendingTombstone != true else { continue }
             if snapshot.minted[identity] != nil,
                let owner = snapshot.ownerUuids[identity], deferredOwners.contains(owner) {
@@ -4229,29 +3890,18 @@ actor PhiSyncEngine {
             }
         }
 
-        // 4b. §8.4.5 清位 (b)（8b-4）：`pendingLocalEdit` 的自愈网，**每一轮发布段都重算一次**。
-        //
-        // **落点写死在这里**（裁定 6）：`liveCandidates` 那个循环之后、`ownedLiveSlice` 之前，
-        // 也就是 `guard !work.isEmpty` 那道早退**之前**——一轮「没有任何东西可发」正是 (b) 唯一
-        // 要工作的那种轮次（CASE M-19 的 (a) / (b) / (d) 全是这种形状），排在早退之后等于整条
-        // 自愈永不执行。**只在 `onlyIdentities == nil` 那一趟跑**：限定重发那一趟重跑了同一轮的
-        // 快照与差分，在那里再跑一遍是纯重复（判据与上面 `pendingPublish` 记账同源）。
-        //
-        // 这一层**只算候选身份集**，不查基线（R-M3-4a-96：`state` 是 `.urlRules` 工厂的局部对象，
-        // 这个 kind-generic 的作用域里没有它）。四个合取项一律**取值式**，缺值不清（fail-closed）：
-        // **绝不写 `cursor.server == cursor.reconciled`** —— 两个 `nil` 在 Optional 比较里相等，
-        // 那一版会恒真地清一片（CASE M-19x (x2)）。
-        //
-        // 第四个合取项是「本轮快照的字节 == `reconciled`」，**裸字节比较**：
-        // **绝不**换成 `urlRuleLocalProjections` 的字节，也**绝不**写成「不在本轮候选 / `republish`
-        // 里」（RR8-8 / RR9-2）。一次未发布的纯重排必须留住标志，而拖动不碰游标 ⇒
-        // `server == reconciled` 成立；`urlRuleLocalProjections` 的 rank **取基线**（§5.6 第 1 条）
-        // ⇒ 拿它的字节判会判成「零变化」⇒ 当轮清位。同一轮的 `snapshot` 走
-        // `SyncableSpaces.assignRanks` ⇒ 字节与
-        // `reconciled` **不等** ⇒ 这一项不成立、标志留住，直到那次 rank 提交 `.applied` 走清位 (a)。
-        //
-        // 不在 `snapshot.entities` 里的身份根本进不了这个循环 ⇒ 没有签名的惰性行、
-        // `pendingTombstone` / `pendingApply` / `pendingDelete` 的行永远不被清位（CASE M-19x (x1)）。
+        // Recompute pendingLocalEdit recovery on each unrestricted publication pass (section
+        // 8.4.5(b), 8b-4). It must run after liveCandidates but before slicing and the empty-work
+        // return: no-work rounds are precisely where recovery matters (CASE M-19). Do not repeat it
+        // during scoped conflict retries.
+        // The generic layer computes candidate IDs only; the URL-rule closure owns comparison
+        // baselines (R-M3-4a-96). Unwrap every required value and fail closed; Optional nil==nil
+        // must not clear flags (CASE M-19x(x2)).
+        // Compare this round's snapshot bytes directly with reconciled, not urlRuleLocalProjections
+        // or candidate-set membership (RR8-8/9-2). The projection retains baseline rank and would
+        // hide an unpublished reorder; snapshot assignRanks exposes it, preserving the flag until
+        // applied publication. Rows absent from snapshot, including pending-work or unsigned lazy
+        // rows, never qualify (CASE M-19x(x1)).
         if onlyIdentities == nil {
             var clearCandidates: Set<String> = []
             for (identity, bytes) in snapshot.entities {
@@ -4268,15 +3918,15 @@ actor PhiSyncEngine {
 
         let liveSlice = ownedLiveSlice(registration, snapshot: snapshot,
                                        candidates: liveCandidates, budget: &budget)
-        // 限定重发那一趟**不再累加**：它重跑了同一轮的快照与差分，把剩余队列再数一遍会让
-        // 同一批未发布的实体在这一轮的计数行上出现两次。
+        // Do not recount pending publication during a scoped retry of the same round's
+        // snapshot/diff, which would double-count the remaining queue.
         if onlyIdentities == nil {
             counters.pendingPublish += (deleteCandidates.count - tombstoneSlice.count)
                 + (liveCandidates.count - liveSlice.count)
         }
 
-        // 5. 组批。`unreadableTagHashes` 命中 ⇒ 该条目就地丢弃、不发送（§5.5）：服务端的
-        // `ON CONFLICT (client_tag_hash) DO UPDATE` **没有版本检查**，一次盲写就是整体覆盖。
+        // Batch only readable tags (section 5.5). Skip quarantined hashes: the server's client-tag
+        // upsert lacks a version check and a blind write could replace unreadable account data.
         let spaceTableNow = loadSpaceTable()
         var work: [(identity: String, entry: PhiCommitEntry, payload: Data?)] = []
         for identity in tombstoneSlice {
@@ -4319,9 +3969,9 @@ actor PhiSyncEngine {
 
         var conflicted: Set<String> = []
         var appliedMinted: [String: String] = [:]
-        // §5.7 第一条出路的收集：本轮被服务端 `.applied` 的 tombstone 身份。
+        // Collect applied tombstone identities for the first section 5.7 soft-delete exit.
         var appliedTombstones: Set<String> = []
-        // §8.4.5 清位 (a) 的收集（8b-4）：**存活**发布拿到 `.applied` 的那些身份。
+        // Collect applied live identities for section 8.4.5(a) flag clearing (8b-4).
         var appliedLive: Set<String> = []
         var encryptionFailed = false
         var queue = work
@@ -4337,9 +3987,9 @@ actor PhiSyncEngine {
                 guard let envelope = try? Phi_PhiEntity(serializedBytes: payload),
                       let key = try? await domainKeys.domainKey(),
                       let ciphertext = try? PhiEntityCodec.encrypt(envelope, key: key) else {
-                    // `break`，不是 `return`：这一轮前面切片已经写进 `table` 的 outcome
-                    // 必须照样落盘，否则一个已被服务端接受的提交的基线被静默扔掉，那些
-                    // 实体下一轮带着过期基线重新发布。
+                    // Break rather than return on encryption failure, so outcomes from earlier
+                    // accepted slices are still persisted. Losing those baselines would republish
+                    // with stale state next round.
                     encryptionFailed = true
                     break
                 }
@@ -4360,14 +4010,14 @@ actor PhiSyncEngine {
             do {
                 outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
             } catch PhiSyncProtocolError.notMyBirthday {
-                // reset 已经重写了每一条游标表，手上这一份是 reset **之前**的副本。
+                // Birthday reset rewrites every table; this local copy predates that reset.
                 resetForNewStoreBirthday()
                 ownedCounters[registration.label] = counters
                 return
             } catch {
                 AppLogError("[phi-sync] owned-item commit failed kind=\(registration.label) "
                             + "(\(PhiSyncLog.describe(error)))")
-                break    // 留住前面切片已经产出的 outcome
+                break    // Preserve outcomes from earlier slices.
             }
             guard !isStopped else { return }
             for (item, outcome) in zip(sent, outcomes) {
@@ -4383,28 +4033,22 @@ actor PhiSyncEngine {
                 if case .applied = outcome, item.entry.deleted {
                     appliedTombstones.insert(item.identity)
                 }
-                // §8.4.5 清位 (a)：**`item.payload != nil` 是硬条件**——tombstone 的 `.applied`
-                // 与 `pendingLocalEdit` 这一列无关（§8.4.5 那张表第一行）。
+                // Require item.payload != nil for section 8.4.5(a): applied tombstones do not clear
+                // pendingLocalEdit.
                 if case .applied = outcome, item.payload != nil {
                     appliedLive.insert(item.identity)
                 }
             }
         }
 
-        // §6.4：铸造在提交那一刻。**写不下去的那几条把游标留着，并停放那一份载荷。**
-        //
-        // 撤掉游标是灾难性的：服务端**已经接受**了这些实体，所以账户上那几条真实存在；游标
-        // 一删，这台机器对它们再无任何记录，而本机那些行的 `syncId` 仍然是 nil——下一轮它们
-        // 重铸一批新身份、再建一批新实体，第一批就此变成**没有任何设备持有游标**的幽灵，
-        // §4.7 的差分永远产不出它们的 tombstone，每一个对端都把它们物化成重复书签。
-        //
-        // 留着游标之后，那几条身份走的是正常的收敛路径：`pendingApply` 让 §4.2 第 3 条把它们
-        // 排除在快照之外（不会重复发布），停放项在下一轮由 §6 的规则 (i) 认领回那条仍然
-        // 未认领的本机行；真的认领不上时（用户在重试窗口里改了那一行、或把它删了），下一轮的
-        // 差分判它「本机没有这一行」并发一条 tombstone——那是**正确的清理**，不是危险。
-        //
-        // **那条后路只有在游标带着归属时才走得通**：`SyncableOwnedItems.tombstones` 在
-        // `ownerUuid == nil` 上保守地放弃，所以这里再钉一次。
+        // Persist minted identities only after server acceptance (section 6.4). If local claim
+        // write-back fails, keep the cursor and park its payload: removing it would lose the only
+        // record of an accepted entity while the local row remains unclaimed, causing a new
+        // identity and an undeletable account duplicate next round.
+        // PendingApply suppresses repeat publication and enables later stateless adoption. If the
+        // row changes or disappears before retry, the deletion diff can correctly remove the
+        // account entity. Preserve ownerUuid too, since the diff conservatively skips unresolved
+        // ownership.
         if !appliedMinted.isEmpty {
             let persisted = await registration.claimIdentities(appliedMinted)
             for identity in appliedMinted.keys where !persisted.contains(identity) {
@@ -4415,15 +4059,11 @@ actor PhiSyncEngine {
             }
         }
 
-        // §8.4.5 清位 (a)（8b-4）。**排在 `claimIdentities` 回写之后、`writeOwnedTable` 之前**
-        // （裁定 5）：(a) 按 `syncId` 寻址，而本轮铸出来的身份要等那次回写才写进本机行；排在
-        // 前面的话，每一条**新建**规则的第一次 `.applied` 都寻不到行、标志永远只能靠 (b) 清。
-        // 认领没写下去的那些（`!persisted.contains`）在 (a) 里同样寻不到行 ⇒ 零写，正是
-        // fail-closed 要的。
-        //
-        // 一次让位之后的 3b 重新发布**同样走这里，而且必须比**（裁定 13）：那一次 `.applied`
-        // 正是「用户那次编辑终于上账户了」。给 3b 开「无条件清位」的例外必须判红——它的输入恰恰
-        // 是一条刚刚证明过自己带着未发布用户编辑的行（CASE M-7d）。
+        // Clear section 8.4.5(a) flags after claimIdentities and before writeOwnedTable (8b-4 /
+        // ruling 5). New rules can only be addressed by syncId after write-back; failed claims
+        // remain safe no-ops. Rule-3b republishing after a yield must use the same comparison
+        // guard, never unconditional clearing, because it represents an unpublished local edit
+        // finally accepted (ruling 13 / CASE M-7d).
         if !appliedLive.isEmpty {
             await registration.notePublishApplied(appliedLive)
         }
@@ -4431,19 +4071,18 @@ actor PhiSyncEngine {
         ownedCounters[registration.label] = counters
         let saved = writeOwnedTable(registration, table)
 
-        // §5.7 软删行的第一条出路：tombstone 被 `.applied`（`applyOwnedCommitOutcome` 刚给游标
-        // 写下 `deletedAtMs`）⇒ 账户上那条实体没了 ⇒ 本机那条软删行硬删。**排在
-        // `writeOwnedTable` 之后、且只在它落盘成功之后**：崩在中间只剩一条孤立的软删行，由
-        // 第二条出路兜住；反过来（行先没、`deletedAtMs` 没落盘——崩在中间或写盘失败都是这一格），
-        // 下一轮从盘上重读的游标停在「有基线、无 `deletedAtMs`、本机无行」上，差分三条判据全
-        // 成立 ⇒ 为它再发一条无谓的 tombstone。写盘失败时行原样留着（软删、对每个读口不可见），
-        // 下一轮 `.applied` 之后再删，或由第二条出路兜住。`mergePartnerSyncId` 随行消失。
+        // Hard-delete local soft-deleted rows only after the applied tombstone cursor is
+        // successfully persisted (section 5.7). A crash after that leaves an orphaned soft-deleted
+        // row for retention cleanup. Reversing the order leaves a baseline without deletedAtMs or a
+        // local row, causing another tombstone next round. Failed saves leave the invisible row
+        // intact for retry or the second exit; its mergePartnerSyncId disappears with the row.
         if saved, !appliedTombstones.isEmpty,
            let hardDelete = registration.hardDeleteAfterTombstone {
             await hardDelete(appliedTombstones)
         }
 
-        // 一次 pull 加一次**限定到那几条**的重发；二次冲突就本轮放弃这几条（§5.3）。
+        // One pull and one retry restricted to conflicted identities; a second conflict abandons
+        // only those entries for this round (section 5.3).
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(retryOnBirthday: true, thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
@@ -4451,11 +4090,9 @@ actor PhiSyncEngine {
         }
     }
 
-    /// 发布段的五个基线写入点，与 `applySpaceCommitOutcome` 同一个形状。
-    ///
-    /// `rekeying` = 这一条是不是本轮 R-exec-13 的补键自愈**排进去**的（而不是一次普通的
-    /// 内容发布）。判据放在调用方而不是这里重算：`unkeyed` 是那一轮真正武装过的集合，而
-    /// 这个函数看到的游标此刻可能已经被同一批里更早的一条 outcome 改过。
+    /// Publication outcome write-back, matching applySpaceCommitOutcome. The caller supplies
+    /// rekeying from the set actually armed this round; do not recompute from a cursor that earlier
+    /// outcomes in this batch may already have changed.
     private func applyOwnedCommitOutcome(
         _ outcome: PhiCommitOutcome,
         for item: (identity: String, entry: PhiCommitEntry, payload: Data?),
@@ -4475,8 +4112,8 @@ actor PhiSyncEngine {
             cursor.version = version
             storedBirthday = storeBirthday
             if isTombstone {
-                // R-M3-3-7：一条游标离开「活着」这个状态时，必定带上 `deletedAtMs`——
-                // §3.6 的 30 天丢弃扫描赖以工作的就是这条不变量。
+                // Every cursor leaving the live state receives deletedAtMs, which drives the 30-day
+                // expiry scan (R-M3-3-7 / section 3.6).
                 cursor.pendingDelete = false
                 cursor.deleteRejectRounds = 0
                 cursor.reconciled = nil
@@ -4484,43 +4121,32 @@ actor PhiSyncEngine {
                 cursor.deletedAtMs = now()
                 counters.tombstones += 1
             } else if let payload = item.payload {
-                // **两份基线都写**（R-exec-7，与 `applySpaceCommitOutcome` 逐字同款）：服务端
-                // 手上那一版**现在就是我们刚发出去的这一份**。只更新 `reconciled` 会让
-                // `server` 永远停在发布之前那一版——`PhiOwnedItemState.swift` 说它的用途是
-                // 「压掉一次多余的发布」，而一个永远过期的 `server` 让那句话对这台机器发布过的
-                // 每一条实体都不成立。
+                // Update both reconciled and server after acceptance: the server now holds exactly
+                // the submitted bytes. Updating only reconciled leaves server stale and defeats
+                // redundant-publication suppression (R-exec-7).
                 cursor.reconciled = payload
                 cursor.server = payload
-                // A12：**一条本轮刚建出来的游标也要带上归属**。它是 §4.7 差分的前置条件
-                // （`tombstones` 在 `ownerUuid == nil` 上保守地放弃），而发布段那次归属刷新
-                // 跑在提交循环**之前**、只碰已经存在的游标。少了这一行，一条为铸出来的身份
-                // 新建的游标永远 `ownerUuid == nil`：账户上那条实体此后既没有本地行认领它，
-                // 也永远发不出它的 tombstone。
+                // Newly created cursors also need ownerUuid (A12). The pre-commit owner refresh
+                // only touched existing cursors; omitting ownership here would permanently prevent
+                // deletion diff from removing an accepted minted identity whose local row was never
+                // claimed.
                 if let owner { cursor.ownerUuid = owner }
                 if cursor.deletedAtMs != nil {
-                    cursor.deletedAtMs = nil        // §4.2 规则 3b 的复活
+                    cursor.deletedAtMs = nil        // Resurrection under §4.2 rule 3b.
                     counters.resurrected += 1
                 }
                 cursor.deleteRejectRounds = 0
-                // 一次被接受的发布就是「这条身份此刻有 id 了」（上面刚写下）：R-exec-13 的
-                // 连败计数清零，与 `deleteRejectRounds` 逐字同款。补键成功走的正是这一支。
+                // Successful publication restored a real ID, so reset consecutive rekey failures,
+                // matching deletion retry accounting (R-exec-13).
                 cursor.rekeyRejectRounds = nil
                 counters.pushed += 1
             }
         case .conflict(let serverVersion):
-            // **不写任何基线**：当成 `.applied` 处理会记下一条服务端从未接受的基线并静默丢掉
-            // 本机的编辑。
-            //
-            // R-exec-17：**唯独响应带回来的 `server_version` 要收下**。紧接着那一次限定重发
-            // （`publishOwnedKind` 末尾的「一次 pull + 一次重发」）用的是游标里的
-            // `version` 当 `base_version`，而中间那次 pull 在服务端这一行没有新版本可派时
-            // 什么都不会改——于是重试原样带着**同一个**过期版本再撞一次，`.conflict` 这一支
-            // 又不记任何日志，整轮悄悄地以两条 commit 收场。Mac B 2026-09-14 那次 2.5 s
-            // 的提交风暴，放大器就是这个。
-            //
-            // **`existing != nil` 是硬条件**：游标本来不存在时写回去，等于为一个服务端从没
-            // 接受过的身份长出一条空游标（P5 的同一族缺陷）。版本只准往前走（`max` 语义）：
-            // 一个比本机还旧的服务端版本是坏对端，退回去只会让下一次提交更旧。
+            // Conflicts do not acknowledge baselines; doing so would silently lose local edits.
+            // However, accept a newer returned server_version for an existing cursor (R-exec-17).
+            // The intervening pull may return no update, so ignoring this version makes the scoped
+            // retry repeat the same stale base_version and amplify commit storms. Never create an
+            // empty cursor for an unaccepted identity, and never move version backwards.
             if let serverVersion, existing != nil, serverVersion > cursor.version {
                 cursor.version = serverVersion
                 table.cursors[item.identity] = cursor
@@ -4528,36 +4154,35 @@ actor PhiSyncEngine {
             conflicted.insert(item.identity)
             return
         case .invalidMessage:
-            // 本来就没有游标的身份不该因为一次被拒而长出一条。
+            // A rejection must not create a cursor where none existed.
             guard existing != nil else { return }
             guard isTombstone else {
-                // 「服务端没有这一行」：丢掉服务端三元组，下一轮经 client_tag 的唯一索引
-                // 重新建出来。`reconciled` 留着——它是这台机器的时间戳历史，不是关于服务端
-                // 的断言。**下一轮真的会重发**：`publishOwnedKind` 的补键自愈把「有基线、
-                // 没有 entityId」的游标无条件排进发布切片，不再依赖「快照字节恰好与基线不等」。
+                // The server lacks this row: clear its server triple and recreate by client tag
+                // next round. Retain reconciled as local timestamp history, not a statement about
+                // the server. The unkeyed repair path explicitly republishes this state without
+                // requiring a changed snapshot.
                 cursor.entityId = ""
                 cursor.version = 0
                 cursor.server = nil
-                // R-exec-13 的放弃（F-PK-2）。**只数补键自愈武装出来的那些**：一次普通的
-                // 内容发布被拒同样落到这一支，把它算进去会让一条正常工作的身份在三次无关的
-                // 瞬时拒绝之后失去补键资格。三轮之后不再重新武装，于是一条服务端**始终**判
-                // 非法的条目不会变成一条每 60 s 重发一次的永动机；放弃只停这一条自愈通路，
-                // 本机那一行、它的基线与它的归属一个字都不动（见 `rekeyRejectRounds`）。
+                // Count only attempts armed as rekey repair (R-exec-13 / F-PK-2), not unrelated
+                // transient rejections of normal edits. Stop rearming after three failures to avoid
+                // endless periodic retries. Keep the local row, baseline and ownership; only the
+                // repair path is disabled.
                 guard rekeying else { break }
                 let rejected = (cursor.rekeyRejectRounds ?? 0) + 1
                 cursor.rekeyRejectRounds = rejected
                 if rejected == Self.rekeyRejectGiveUpRounds {
-                    // **一条，只在跨过那道线的那一轮**：此后这条身份不再进切片，也就不再有
-                    // 新的 outcome 落到这里，所以不需要「放弃之后不再每轮警告」的额外判断。
-                    // R12：只带 kind、tag 前缀与次数。
+                    // Log once when the threshold is crossed; the identity will no longer enter
+                    // repair slices afterwards. R12 permits kind, tag prefix and count only.
                     AppLogWarn("[phi-sync] giving up on re-keying an owned-item cursor after "
                                + "\(rejected) rejections kind=\(registration.label) "
                                + "tag=\(String(item.entry.clientTagHash.prefix(8)))")
                 }
                 break
             }
-            // 一条被拒的 tombstone 什么都不能证明：服务端在提交事务**之外**解析 tombstone 的
-            // data type，任何瞬时失败都返回同一个码。原样重发，三轮之后才就地收尾。
+            // A rejected tombstone does not prove absence: server data-type parsing outside the
+            // transaction can fail transiently with the same code. Retry unchanged, then finalize
+            // locally after three rejected rounds.
             cursor.deleteRejectRounds += 1
             if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
                 AppLogError("[phi-sync] giving up on an owned-item tombstone after "
@@ -4569,7 +4194,8 @@ actor PhiSyncEngine {
                 cursor.deletedAtMs = now()
             }
         case .rejected(let type):
-            // 同 `.conflict`：这条 outcome 对游标什么都没说，写回一条默认值只会造一条幽灵。
+            // Like conflict, this outcome provides no cursor-state evidence. Writing defaults would
+            // create a ghost cursor.
             AppLogError("[phi-sync] owned-item commit rejected response_type=\(type) "
                         + "tag=\(String(item.entry.clientTagHash.prefix(8)))")
             return
@@ -4577,18 +4203,11 @@ actor PhiSyncEngine {
         table.cursors[item.identity] = cursor
     }
 
-    /// §7.4 的「本机主动解除拆分」。**只改喂给 `snapshot` 的那一份副本**。
-    ///
-    /// `now` 是**本轮那一个**时刻，与喂给 `snapshot` 的是同一个值：清空后的那个值就盖它，
-    /// 于是一次真正的解除以「现在」出门并赢下对端手上那条链接（见 `clearedSplitPartners`）。
-    ///
-    /// `maps` 与 `snapshot` 收的是同一份：注册项要拿它把基线的身份对回本机行，才分得出
-    /// 「本机已经解除」与「两半都还链着」——后者**不能**被清，否则它每轮重发一次。
-    ///
-    /// **一条 kind 一轮一跳。** 候选的筛选（通用规则：没有 `pendingPartnerLineage`、有基线）
-    /// 留在这里，整批交给注册项在 main actor 上过一遍；没有这个概念的 kind（`nil`）连这一跳
-    /// 与整个循环都不走。逐条问的写法是每条游标一次 actor 跃迁，而这个循环遍历的是这条 kind
-    /// 的**每一条**游标。
+    /// Doctor only the table copy passed to snapshot for local split removal (section 7.4). Use the
+    /// same round timestamp and mappings as snapshot, distinguishing genuine local unlink from
+    /// intact pairs. Batch candidates with baselines and no pendingPartnerLineage into one
+    /// MainActor call per kind, avoiding one hop per cursor; kinds without split semantics skip the
+    /// whole operation.
     private func doctoredOwnedTable(_ registration: OwnedKindRegistration,
                                     _ table: PhiOwnedItemTable,
                                     maps: OwnedOwnerMaps,
@@ -4609,8 +4228,9 @@ actor PhiSyncEngine {
         return doctored
     }
 
-    /// 存活段：拓扑序 + **前缀闭包**（F2）。一条子项只在它的父也在这一片里、或父不在候选集里
-    /// 时才进片，片内父排在子之前——于是对端在任何切片边界上收到的都是一棵前缀闭合的树。
+    /// Live slice: topological order with prefix closure (F2). Include a child only if its
+    /// candidate parent is already in the slice or outside the candidate set, and order parents
+    /// first so every delivered boundary forms a prefix-closed tree.
     private func ownedLiveSlice(_ registration: OwnedKindRegistration,
                                 snapshot: OwnedSnapshotBytes,
                                 candidates: [String],
@@ -4640,22 +4260,19 @@ actor PhiSyncEngine {
         return out
     }
 
-    /// tombstone 段：反拓扑（子先于父）、**子树整取**、前置条件**只认 `.applied`**。
-    ///
-    /// 一个文件夹的 tombstone 推迟到它全部后代的 tombstone 已经被服务端接受之后才发
-    /// （R-M3-3-24）。「排在后面」不等于「已经被接受」：二次冲突会让那几条本轮放弃，而同一轮
-    /// 后面的批次照发——于是文件夹的 tombstone 带着一批没落地的后代出门，接收端回到那场提升
-    /// 风暴。判据绝不认 `deletedAtMs`：§5.6 有两条路径会在服务端**没有**接受的情况下写下它。
-    ///
-    /// **例外，且是有意的**（B8）：一条后代走完三轮被拒的放弃支之后不再会被接受，祖先不能
-    /// 因此永久卡住——此时祖先照常出门，并记一条 warning。
+    /// Tombstone slice: children first, whole-subtree grouping, and dependencies satisfied only by
+    /// applied outcomes (R-M3-3-24). Merely placing descendants earlier is insufficient because
+    /// repeated conflicts can abandon them while later parent batches still run. deletedAtMs is not
+    /// proof of server acceptance.
+    /// Intentional B8 exception: after a descendant exhausts three rejection retries, allow its
+    /// ancestor and emit a warning rather than block forever.
     private func ownedTombstoneSlice(_ registration: OwnedKindRegistration,
                                      table: PhiOwnedItemTable,
                                      candidates: [String],
                                      budget: inout Int) -> [String] {
         guard !candidates.isEmpty else { return [] }
         let candidateSet = Set(candidates)
-        // 父子关系只能从基线里解出来——tombstone 没有载荷。
+        // Decode parent relationships from baselines; tombstones have no payload.
         var parentOf: [String: String] = [:]
         for identity in candidates {
             guard let bytes = table.cursors[identity]?.reconciled else { continue }
@@ -4668,16 +4285,16 @@ actor PhiSyncEngine {
         var childrenOf: [String: [String]] = [:]
         for (child, parent) in parentOf { childrenOf[parent, default: []].append(child) }
 
-        // 后代还没被接受 ⇒ 祖先这一轮不出门。
+        // Withhold ancestors while descendant tombstones remain unaccepted.
         var blocked: Set<String> = []
         var gaveUp = 0
         for identity in candidates {
             var stack = childrenOf[identity] ?? []
             while let child = stack.popLast() {
                 stack.append(contentsOf: childrenOf[child] ?? [])
-                // 走到这里的后代必定是本轮的候选（`childrenOf` 只从候选集建），而候选已经
-                // 按 `deletedAtMs == nil` 筛过——一条上一轮就被接受的后代根本不在这张图里，
-                // 所以它的祖先天然不被它挡住。
+                // childrenOf contains only current candidates, already filtered to deletedAtMs nil.
+                // Previously accepted descendants are absent from this graph and cannot block
+                // ancestors.
                 guard let cursor = table.cursors[child] else { continue }
                 if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
                     gaveUp += 1
@@ -4692,9 +4309,9 @@ actor PhiSyncEngine {
                        + "kind=\(registration.label)")
         }
 
-        // 子树整取：按**顶层被删祖先**分组，组要么整组进片、要么一条都不发（V16）。拆开
-        // 之后，对端在两轮之间看到的是「一个文件夹里的一部分没了、另一部分还在」，而它同时
-        // 还会把那个仍然存在的文件夹当成活的。
+        // Group by the highest deleted ancestor and take each subtree entirely or not at all (V16).
+        // Splitting it would expose a partially removed subtree under a still-live folder between
+        // rounds.
         var rootOf: [String: String] = [:]
         for identity in candidates {
             var cursor = identity
@@ -4713,11 +4330,12 @@ actor PhiSyncEngine {
         for root in groups.keys.sorted() {
             let members = (groups[root] ?? []).filter { !blocked.contains($0) }.sorted {
                 let left = depths[$0] ?? 0, right = depths[$1] ?? 0
-                return left == right ? $0 < $1 : left > right        // 子先于父
+                return left == right ? $0 < $1 : left > right        // Children before parents.
             }
             guard !members.isEmpty else { continue }
-            // 单独一棵子树就超过整轮预算时照发不误：否则它每一轮都发不出去，删除永远落不
-            // 了地，而切片上界存在的理由是「别把一轮堵死」，不是「宁可永远不发」。
+            // Allow a single subtree larger than the whole-round budget. Otherwise that deletion
+            // could never progress; the cap limits queue occupancy rather than permanently
+            // suppressing work.
             guard out.isEmpty || out.count + members.count <= budget else { continue }
             out.append(contentsOf: members)
         }
@@ -4725,8 +4343,8 @@ actor PhiSyncEngine {
         return out
     }
 
-    /// 从 `parentOf` 往上走到没有父为止，`parentOf.count` 当跳数上限（环被截断成一个有限
-    /// 深度，而不是把排序挂死）。
+    /// Walk parentOf to the root, bounded by parentOf.count hops. Cycles therefore produce finite
+    /// depths instead of hanging sorting.
     private static func ownedDepths(of identities: [String],
                                     parentOf: [String: String]) -> [String: Int] {
         var out: [String: Int] = [:]
@@ -4743,14 +4361,15 @@ actor PhiSyncEngine {
         return out
     }
 
-    /// §11.2：每条注册 kind **一行**，行名就是 `label`。字段顺序即输出顺序。
+    /// One section 11.2 log line per registered kind, named by label. Field declaration order
+    /// determines output order.
     private func logOwnedRounds() {
         guard spaceSectionEnabled, spaceStore != nil else { return }
         for registration in ownedKinds {
             var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
             let table = ownedTables[registration.label] ?? PhiOwnedItemTable()
-            // `parked` 是**表的状态**，不是一个轮内增量（§11.2），所以它在这里从最终的
-            // 那张表上数一次，并写回计数结构——测试面读到的与日志行印出来的是同一个数。
+            // parked is final table state, not a round increment (section 11.2). Count it here and
+            // store the same value for test access and logging.
             let parked = table.cursors.values
                 .filter { $0.pendingApply != nil || $0.pendingTombstone }.count
             counters.parked = parked
@@ -4759,10 +4378,9 @@ actor PhiSyncEngine {
         }
     }
 
-    /// §11.2 / §13.2 的计数行拼串。**纯函数**（actor 的 static 成员不隔离），从 `logOwnedRounds`
-    /// 里拆出来只为让 CASE U-27 能按字段核对三条行的文本——书签与 pin 的行**逐字节不变**。
-    /// `parked` 读 `counters.parked`，调用方在拼串之前已经把表上数出来的值写回计数结构。
-    /// R12：这一行只有 kind 与计数，零用户内容。
+    /// Pure formatter for section 11.2/13.2 counters. Extracted so CASE U-27 can verify field-level
+    /// text while preserving bookmark/pin lines byte-for-byte. The caller sets counters.parked from
+    /// the table first. R12 permits kind/counts only, never user content.
     static func ownedRoundLogLine(_ registration: OwnedKindRegistration,
                                   counters: OwnedRoundCounters) -> String {
         let unreadable = counters.unreadable
@@ -4781,8 +4399,8 @@ actor PhiSyncEngine {
             + "rehomed_cursors=\(counters.rehomedCursors) unreadable=\(unreadable) "
             + "excluded_unmapped_owner=\(counters.excludedUnmappedOwner) "
             + "local_read_failed=\(counters.localReadFailed)"
-        // §13.2 的第二个发射段，印在行尾（R-M3-4a-55）。两段互斥（没有一条 kind 同时
-        // 为 `reportsScope` 与 `reportsRuleCounters`），所以先后无所谓，取行尾。
+        // Append rule counters at the tail (section 13.2 / R-M3-4a-55). Rule and scope reporting
+        // are mutually exclusive.
         if registration.reportsRuleCounters {
             line += " normalized=\(counters.normalized)"
                 + " owner_moved=\(counters.ownerMoved) adopted=\(counters.adopted)"
@@ -4818,22 +4436,18 @@ actor PhiSyncEngine {
         spaceStore?.load() ?? PhiSpaceSyncTable()
     }
 
-    /// Single write path for `sync.phiSpaces`, with the same retirement check every other
-    /// engine write takes — a round that resumes after `shutdown()` must not write the previous
-    /// account's Space shadow back over a freshly cleared table (§3.3 step 2.0).
-    ///
-    /// **返回值 = 这张表已落盘**（R-M3-4a-83）。两条早退**不算失败**（R-M3-4a-16）：
-    /// `spaceStore == nil` 是纯设置引擎（M3-1）的**正常形态**，把它读成失败会让设置同步
-    /// 从 Task 2b 落地那一刻起再也不推 marker。
-    ///
-    /// 主线程缓存的刷新搬进成功分支：留在 `save` 外面会让主线程展示一份**没落盘**的表
-    /// ——`hiddenSpaceIds` 会把一个盘上还活着的 Space 从侧栏漏斗里滤掉，重启后它又回来。
+    /// Single sync.phiSpaces write path, guarded against retirement so an old round cannot
+    /// overwrite freshly cleared account state (section 3.3 step 2.0). Return confirmed
+    /// persistence; retirement and absent store are successful no-ops, since settings-only engines
+    /// normally have no Space store (R-M3-4a-83/16). Refresh main-thread caches only after save
+    /// succeeds, avoiding sidebar state that differs from disk and reappears on restart.
     @discardableResult
     private func writeSpaceTable(_ table: PhiSpaceSyncTable) -> Bool {
-        // 两条早退，都不是失败（R-M3-4a-16）。
+        // Both early returns are successful no-ops (R-M3-4a-16).
         guard !isStopped, let spaceStore else { return true }
-        // §2.5 第 4 条的置位点之一（计划裁定 4）：派生状态的每一次写（`markerMovedWhileGateShut`、
-        // 三个 drain 标志、guard 2 的闩）都经 `mutateSpaceTable` ⇒ 这里 ⇒ 自动被覆盖。
+        // This write boundary also counts every derived-state failure, including gate-closed marker
+        // tracking, drain flags and guard-2 latches, because they all use mutateSpaceTable (section
+        // 2.5(4) / ruling 4).
         guard spaceStore.save(table) else {
             cursorSaveFailures += 1
             return false
@@ -4842,31 +4456,15 @@ actor PhiSyncEngine {
         return true
     }
 
-    /// Read-modify-write against `sync.phiSpaces`, and the only way a round is allowed to
-    /// change it. Two reasons, both of which a load-once/write-once round gets wrong:
-    ///
-    /// 1. **Durability.** A pull persists the shared marker page by page. Anything derived
-    ///    from that marker therefore has to be persisted page by page too — and before that
-    ///    page's marker (R-M3-4a-77) — or an error on page 2 throws away the record of what
-    ///    page 1 already walked past, while the marker itself stays advanced. Small deltas
-    ///    written where they are observed, never a whole table written at the end.
-    /// 2. **Freshness.** `body` sees the table as it is *now*, not as it was before the last
-    ///    suspension point, so a round can only overwrite the fields it actually touches.
-    ///    The gate edge runs as its own round (`setSpaceSyncEnabled`) so it cannot interleave
-    ///    in the first place; this is the belt to that suspenders, and it is what keeps
-    ///    Task 9's apply path from having to think about either question again.
-    ///
-    /// Writes only when `body` changed something, so a no-op mutation costs no plist write and
-    /// no main-actor cache refresh.
-    ///
-    /// **回滚之后这道 `guard table != before` 仍然正确**（R-M3-4a-83 / §2.5 第 3 条）：
-    /// 一次失败的写把 `AccountUserDefaults.storage` 还原成写之前那一份，于是内存等于磁盘，
-    /// 下一轮的 `loadSpaceTable()` 读到的是**旧表**，同一个改动照样被判成「变了」而重写。
-    /// 少了回滚，第二轮就会在这里当场早退，`save` 根本不会被调用。
-    ///
-    /// **返回值 = 这次改动已落盘**（R-M3-4a-77 的「确认」靠它）：guard 2 与 per-kind 报损重放的
-    /// 第 ② 步、门关记账、轮末 drain 收尾都要看它。「没变化」回 `true`——R-M3-4a-83 的回滚让
-    /// 「没变化」真的等于「盘上就是这样」，所以它不是失败、也不计 `cursorSaveFailures`。
+    /// Apply fresh deltas to sync.phiSpaces. Marker-derived state must persist per page and before
+    /// that page's marker (R-M3-4a-77); a round-end write would lose page-1 observations if page 2
+    /// fails. The closure reads current state, avoiding stale copies across suspension; gate edges
+    /// are serialized rounds too.
+    /// Skip unchanged mutations without a plist write or cache refresh. AccountUserDefaults
+    /// rollback ensures memory still equals disk after failed writes, so a later retry sees the
+    /// delta and saves again (R-M3-4a-83 / section 2.5(3)). Return confirmed persistence for
+    /// replay-arming, gate bookkeeping and drain finalization. An unchanged durable value is
+    /// success, not cursorSaveFailure.
     @discardableResult
     private func mutateSpaceTable(_ body: (inout PhiSpaceSyncTable) -> Void) -> Bool {
         var table = loadSpaceTable()
@@ -5015,14 +4613,14 @@ actor PhiSyncEngine {
             table.unreadableTagHashes = [:]
             table.bookmarksReplayedForEmptyTable = false
             table.pinsReplayedForEmptyTable = false
-            // spec §10 那一行：换过 store 的机器此后第一次丢 `urlrules-cursors.json` 仍要拿得到
-            // 重放。`urlRulesHadRecords` **不清**——它描述的是「这台机器曾经发布过」，换 store 不
-            // 改变这句话；`reconciled` 同样不清（见上面那段注释）。
+            // Reset the URL-rule replay latch after changing stores, allowing future file-loss
+            // replay (section 10). Keep urlRulesHadRecords and reconciled: changing stores does not
+            // erase this device's publication history.
             table.urlRulesReplayedForEmptyTable = false
         }
-        // 归属 kind 的游标表同理，逐字同一条界线：**服务端那一侧的三元组归零，本机对
-        // 「我上次与账户对齐到什么」的记忆原样保留**。清表或删文件会毁掉每一份 `reconciled`
-        // 基线，而 §3.5 说那正是触发账户级盲写覆盖的状态。
+        // For owned cursors, clear only server identity/version/state while retaining local
+        // reconciled history. Clearing tables/files would destroy baselines and enable blind
+        // account overwrites (section 3.5).
         for registration in ownedKinds {
             var table = ownedTables[registration.label] ?? registration.store
                 .load(hadRecords: loadSpaceTable()[keyPath: registration.flags.hadRecords]).table
@@ -5031,9 +4629,9 @@ actor PhiSyncEngine {
                 cursor.version = 0
                 cursor.server = nil
                 cursor.deleteRejectRounds = 0
-                // R-exec-13：换了 store，之前那几次拒绝什么都不再证明。不清的话，一台在旧
-                // store 上放弃过补键的机器**在新 store 上**也永远不会去认那几行——而 reset
-                // 刚刚把全表的 `entityId` 清空，补键正是它们回到账户上的唯一通路。
+                // Reset rekey failures on store change (R-exec-13): old rejections say nothing
+                // about the new store. Reset just cleared all entity IDs, so repair must remain
+                // available to recover them.
                 cursor.rekeyRejectRounds = nil
                 table.cursors[identity] = cursor
             }
@@ -5051,22 +4649,18 @@ actor PhiSyncEngine {
         set { writeState(newValue.map { NSNumber(value: $0) }, forKey: Self.versionStateKey) }
     }
 
-    /// marker / birthday 的唯一写穿口（M3-4a §2.10）：镜像先改、再落盘，落盘失败就回滚镜像。
-    ///
-    /// `guard !isStopped` 是从 `writeState` 原样继承过来的，**不可省**：`stateKeys` 收缩之后
-    /// 「shutdown 之后没有 state key 被写」那两条既有断言不再覆盖 marker，而一个已退休的
-    /// 引擎恰好还持着**上一个账户目录**的 store（自撤销第 1 步退休引擎、第 4 步删文件，一个
-    /// 还挂在 `getUpdates` 里的轮次醒来若把 marker 写回去，就把 §4.4 防的那个灾难原样造出来）。
-    ///
-    /// 失败回滚是 R-M3-4a-83 的同一条理由搬到 marker 上：不回滚 ⇒ 镜像领先磁盘 ⇒ 第 N+1 轮
-    /// 重投同一页时 `updated != markerState` 不成立 ⇒ 连 `save` 都不调 ⇒ marker「推进」了而
-    /// 盘上没有。两个 setter 仍然丢掉返回值；`cursorSaveFailed` 的第三个置位点就在这里的
-    /// `false` 支（计划裁定 4）：marker 或 birthday 任一写失败都算这一轮落盘失败，页循环在页末
-    /// 读 `cursorSaveFailures` 收口。要看 Bool 的调用点走 `persistStoredMarker(_:)`。
+    /// The sole marker/birthday write-through path (M3-4a section 2.10): update the mirror, save,
+    /// and roll back on failure. Preserve the retirement guard inherited from writeState; retired
+    /// engines still reference the previous account store and must not recreate a file deleted
+    /// during self-revocation.
+    /// Without rollback, replaying the same page could appear unchanged in memory and skip
+    /// persistence while disk remains stale. Count failed marker or birthday saves here for B-2's
+    /// page-end gate (R-M3-4a-83 / ruling 4). Call persistStoredMarker when the caller needs the
+    /// Bool result.
     @discardableResult
     private func persistMarkerState(_ updated: PhiSyncMarkerFile) -> Bool {
-        guard !isStopped else { return true }              // §2.5 第 4 条：早退不算失败
-        guard updated != markerState else { return true }  // 没变化就不调 save，同上
+        guard !isStopped else { return true }              // §2.5 rule 4: early return is not a failure.
+        guard updated != markerState else { return true }  // No change means no save; likewise not a failure.
         let previous = markerState
         markerState = updated
         guard markerStore.save(updated) else {
@@ -5077,8 +4671,8 @@ actor PhiSyncEngine {
         return true
     }
 
-    /// `storedMarker` setter 的带回传版本：页末的 marker 写、guard 2 与 per-kind 报损重放的
-    /// 第 ① 步都要看它的 Bool。归一化与 setter 相同（空 marker 存成 nil）。
+    /// Result-returning storedMarker setter for page-end persistence and step 1 of both
+    /// replay-recovery paths. Normalize empty markers to nil exactly as the setter does.
     @discardableResult
     private func persistStoredMarker(_ newValue: Data?) -> Bool {
         var updated = markerState
@@ -5131,36 +4725,29 @@ actor PhiSyncEngine {
     }
 }
 
-// MARK: - 书签那一条注册项
-//
-// **这是整个引擎里唯一知道「书签」这个词的地方。** 上面的引擎代码一条 kind 分支都没有：
-// 它按注册清单驱动一切，清单里有什么就跑什么。pin 那一条由 Task 5b-2 以同样的形状追加。
+// MARK: - Bookmark registration
+// Concrete bookmark behavior is isolated in this registration; the engine above drives generic
+// kinds through the registry. Pin registration follows the same pattern.
 
-/// 书签适配的轮内可变状态。
-///
-/// 它存在的理由与 `AccountPhiBookmarkAccess` 那份缓存一样：轮首那一次 fetch 的结果要交给
-/// 快照、差分、index 投影与落地四个消费者复用（§5.7 第 2 条硬要求）。
+/// Main-actor bookmark state for a round. Reuse the single initial fetch across snapshot, diff,
+/// index projection and landing, matching AccountPhiBookmarkAccess's cache (section 5.7(2)).
 @MainActor
 final class BookmarkSyncRoundState {
     private(set) var locals: [PhiLocalBookmark] = []
     private(set) var identityToGuid: [String: String] = [:]
     private(set) var rowByGuid: [String: PhiLocalBookmark] = [:]
-    /// 本轮 §6 的认领配对：实体身份 -> 本机 guid。
-    ///
-    /// **累加，不覆盖**：归属段最前面那一趟停放项重试与落地段的 `plan` 都会往里写，而出站
-    /// 快照的「这一行本轮不铸新身份」与差分的 `pendingClaims` 豁免读的是两者的并集。
+    /// Section 6 claim pairs: entity identity to local GUID. Accumulate parked retries and incoming
+    /// planning so snapshot mint suppression and pendingClaims exemptions see their union.
     private(set) var pairs: [String: String] = [:]
 
     func mergePairs(_ pairs: [String: String]) {
         for (identity, guid) in pairs { self.pairs[identity] = guid }
     }
 
-    /// 把本轮**中途真的写回本机行**的那些身份折回轮首那份快照。
-    ///
-    /// 一轮至多一次 fetch 的规则不变：这里改的是内存里那份投影，不是再读一次库。不折回去，
-    /// 同一轮的落地段看到的还是「这一行没有身份」，于是它可能把**第二个**身份配给同一条行
-    /// ——`applyBookmarkSyncBatchThrowing` 会用 `rowAlreadyMapped` 拒掉那个 Space 的**整批**
-    /// （拒收而不是停放），那些入站实体既没有游标也永远不会重投。
+    /// Reflect identities successfully written mid-round in the cached local projection without
+    /// another fetch. Otherwise later planning could assign a second identity to the same
+    /// apparently unclaimed row and cause rowAlreadyMapped to refuse the whole Space batch
+    /// permanently.
     func notePersistedClaims(_ pairs: [String: String]) {
         for (identity, guid) in pairs {
             guard let index = locals.firstIndex(where: { $0.guid == guid }) else { continue }
@@ -5170,13 +4757,9 @@ final class BookmarkSyncRoundState {
         }
     }
 
-    /// 把本轮**真的被删掉**的那些行从轮内投影里拿掉。
-    ///
-    /// 与 `notePersistedClaims` 同一条纪律（改的是内存里那份投影，不是再读一次库），方向
-    /// 相反。不拿掉的话，同一轮的**发布段**仍然看得见那一行：它的游标此刻是「有
-    /// `deletedAtMs`、没有 `reconciled`」，而 §4.2 第 3b 条对「有 `deletedAtMs` + 有活行」的
-    /// 回答是**复活并重新发布**——一次远端删除会被同一轮的发布段原地撤销掉，对端下一轮收到
-    /// 的是一条它刚刚删过的书签又回来了（CASE 6b.8）。
+    /// Remove actually deleted rows from the in-memory round projection, without rereading storage.
+    /// Otherwise publication would still see a live row plus deletedAtMs and use rule 3b to
+    /// resurrect the remote deletion in the same round (CASE 6b.8).
     func noteDeletedRows(_ guids: Set<String>) {
         guard !guids.isEmpty else { return }
         for guid in guids {
@@ -5197,19 +4780,10 @@ final class BookmarkSyncRoundState {
         pairs = [:]
     }
 
-    /// 一次落地之后把轮内那份本机投影换成**落地后**的行（Step 3）。
-    ///
-    /// 交进来的是 access 那份缓存（`apply(_:)` 收尾已经重建过它），**不是第二次 fetch**：
-    /// 一轮至多一次 fetch 的规则一个字不变。
-    ///
-    /// **内容与位置一起换。** 只换标题与 URL 的实现会在每一次入站搬家之后把**旧位置**配上
-    /// 一个新鲜的 `now` 发回去，把对端刚做的移动原地撤销——`parentGuid` / `spaceId` /
-    /// `index` 三项因此都在这一次替换里。
-    ///
-    /// **`pairs` 不动。** 它是本轮 §6 的认领配对，出站快照的「这一行本轮不铸新身份」与差分
-    /// 的 `pendingClaims` 豁免都读它；清掉它，一条刚被认领的行会在同一轮里再被铸一个身份，
-    /// 而账户上从此多一条没有本地所有者的实体。`reload` 清它是因为那是**新一轮**的开始，
-    /// 这里是同一轮的中途。
+    /// Replace the round projection with access's post-landing cache, not another fetch (Step 3).
+    /// Refresh content and location together, including parentGuid, spaceId and index, or the old
+    /// location would be restamped and undo the incoming move. Keep pairs during this round to
+    /// prevent reminting just-claimed rows; only reload at a new round clears them.
     func refreshLandedRows(_ rows: [PhiLocalBookmark]) {
         locals = rows
         identityToGuid = [:]
@@ -5221,15 +4795,15 @@ final class BookmarkSyncRoundState {
     }
 }
 
-/// 同级分组的键。`parentGuid == nil` = 直接挂在这个 Space 的 canonical root 下。
+/// Sibling-group key. A nil parentGuid means a direct child of this Space's canonical root.
 private struct BookmarkSiblingGroup: Hashable {
     var spaceId: String
     var parentGuid: String?
 }
 
 private extension PhiLocalBookmark {
-    /// 差分只问 `identity(of local:)`（书签就是 `syncId`），所以 §4.7 的定义域可以用一组
-    /// 只带身份的壳表达——它来自 `allSyncIds()`，**不是**快照（R-exec-4）。
+    /// Deletion diff reads only local identity, so represent its allSyncIds() domain with
+    /// identity-only shells, not snapshot rows (section 4.7 / R-exec-4).
     static func identityOnly(_ syncId: String) -> PhiLocalBookmark {
         PhiLocalBookmark(syncId: syncId, guid: syncId, spaceId: "", profileId: "",
                          parentGuid: nil, index: 0, isFolder: false, title: "",
@@ -5240,7 +4814,7 @@ private extension PhiLocalBookmark {
 }
 
 extension OwnedKindRegistration {
-    /// `BookmarkKind` 那一条注册项。
+    /// BookmarkKind registration.
     @MainActor
     static func bookmarks(access: any PhiBookmarkLocalAccess,
                           store: any PhiOwnedItemStateStore) -> OwnedKindRegistration {
@@ -5254,7 +4828,8 @@ extension OwnedKindRegistration {
             reportsAdoption: true,
             reportsScope: false,
             reportsRuleCounters: false,
-            // §6.1：书签与 pin 本里程碑**不让位**（§14.1），轮末 3b 复查那一段结构性不进。
+            // Bookmarks and pins do not yield tombstones in this milestone and never enter the
+            // round-end rule-3b recheck (sections 6.1/14.1).
             tombstoneYieldsToLocalEdits: false,
             landsEmptyBatch: false,
             identity: { envelope in
@@ -5268,13 +4843,13 @@ extension OwnedKindRegistration {
                       let entity = BookmarkKind.entity(from: envelope) else { return [] }
                 return BookmarkKind.ownerUuids(of: entity)
             },
-            // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换：`nil` 让那一段连 main
-            // actor 那一跳与整个循环都不走。
+            // Bookmarks have no split partners; nil makes section 7.4 doctoring an identity
+            // operation without any main-actor hop or loop.
             clearedSplitPartners: nil,
             beginRound: { state.reload(try access.allBookmarks()) },
-            // §5.1 的索引种子：游标键 ∪ **本机全部非 nil 的 `syncId`**——问的是
-            // `allSyncIds()` 而不是快照，于是孤儿根下面那些行的 tombstone 也路由得到。
-            // 轮首那次读失败时它落回快照里的身份（此时快照也是空的）。
+            // Seed from all nonnil local syncIds, not the snapshot, so tombstones beneath orphan
+            // roots remain routable (section 5.1). On read failure, fall back to the already-empty
+            // round snapshot.
             localIdentities: {
                 (try? access.allSyncIds()) ?? Set(state.locals.compactMap(\.syncId))
             },
@@ -5282,15 +4857,14 @@ extension OwnedKindRegistration {
                 bookmarkSnapshot(table: table, maps: maps, now: now, state: state)
             },
             tombstones: { table, maps, now in
-                // R-exec-4：定义域问 `allSyncIds()`，**不问快照**。两者的差集是孤儿根 /
-                // 重复根下面的整棵子树——那些行在库里、`syncId` 也在，但快照按契约把它们整棵
-                // 排除。用快照当判据，它们会被逐条判成「本机没有」而各发一条 tombstone，
-                // 把账户上一整棵真实存在的子树删掉，而本机那些行还在原地。
+                // Use allSyncIds as the deletion domain (R-exec-4). Snapshot excludes
+                // orphan/duplicate-root subtrees even though their rows and identities still exist.
+                // Using it would tombstone real account subtrees while leaving local rows intact.
                 let live = try access.allSyncIds()
-                // R-exec-9：本轮 §6 的认领配上了、但 `syncId` 的写回还没落盘的那些身份不进
-                // 删除集。**配上了**是判据，`pendingApply` 不是：一条认领**配不上**的停放
-                // 游标正是该被差分清理掉的那一类。认领成功写回的那些身份此刻已经在
-                // `allSyncIds()` 里，所以整张配对表交进去与「只交没写回去的那几条」等价。
+                // Exclude identities matched by this round's claims even if syncId write-back
+                // failed (R-exec-9). Matching, not pendingApply, is the criterion: unmatched parked
+                // cursors may legitimately require deletion. Successfully persisted matches already
+                // appear in allSyncIds, so passing the full pair set is equivalent.
                 return SyncableOwnedItems.tombstones(
                     BookmarkKind.self, locals: live.map(PhiLocalBookmark.identityOnly),
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
@@ -5304,20 +4878,20 @@ extension OwnedKindRegistration {
             claimIdentities: { minted in
                 await claimBookmarkIdentities(minted, access: access, state: state)
             },
-            // §8.4.5 的两处清位是**规则专属**的（`pendingLocalEdit` 这一列只有 `SpaceURLRule`
-            // 有）。书签取「关闭」值，两个调用点因此在它身上是两次空 await、零行为变化。
+            // Both pendingLocalEdit clearing hooks are URL-rule-only (section 8.4.5). Bookmark
+            // registrations use no-op closures because their rows have no such field.
             notePublishApplied: { _ in },
             clearPendingLocalEdits: { _ in },
-            // §9.3 的级联。判据 (b) 问 `allSyncIds()`——本机**所有**带身份的行，不做根过滤
-            // （R-exec-4，与差分的定义域同一条）：孤儿根下面那些行不进快照、永远不发布，
-            // 但它们是活的本地行，删掉它们的游标与删掉任何一条活行的游标后果相同。
+            // Retention condition (b) uses allSyncIds without root filtering (section 9.3 /
+            // R-exec-4). Orphan-root rows remain live local claims even though snapshots never
+            // publish them; their cursors need the same protection as any live row.
             liveOwners: { candidates, maps in
                 let resolve = maps.resolver
                 var out = OwnedLiveRows()
                 out.claimed = try candidates.intersection(access.allSyncIds())
-                // rehome 要写的值与发布段每轮刷进 `ownerUuid` 的是**同一个函数**
-                // （`eligibilityOwner`：这一行坐在哪个 Space 里），所以级联改写出来的值与
-                // 下一轮 pre-pass 刷出来的值不可能分叉（A12 / §3.5 的一个实现点）。
+                // Use the same eligibilityOwner function as the publication pre-pass for rehoming,
+                // so cascade and next-round refresh cannot disagree on the containing Space (A12 /
+                // section 3.5).
                 for row in state.locals {
                     guard let identity = row.syncId, out.claimed.contains(identity),
                           let owner = BookmarkKind.eligibilityOwner(of: row, resolve: resolve,
@@ -5330,19 +4904,17 @@ extension OwnedKindRegistration {
     }
 }
 
-/// §4.2 的出站快照 + §6.4 的候选身份铸造（**只在内存里**）。
+/// Outbound snapshot and provisional identity minting in memory only (sections 4.2/6.4).
 @MainActor
 private func bookmarkSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
                               state: BookmarkSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
     let resolve = maps.resolver
-    // §4.2 第 2 条：未同步行的候选身份在内存里填进 `syncId`，真正写回本机行要等提交被
-    // 接受（§6.4）。铸在这里而不是在提交那一刻算，是因为同一份候选身份既要进快照的
-    // `bookmark_uuid`，又要进它孩子的 `parent_uuid`。
-    // **本轮已经被 §6 认领配对的行不铸新身份。** 那条行正在（或正准备）接过一个账户上
-    // 已经存在的身份；再给它铸一个，账户上就会多出第二条实体，而本机只有一行能认领其中
-    // 一个——另一个从此没有本地所有者。`state.locals` 是轮首那份快照，认领写回 `syncId`
-    // 之后它并不会自己变新，所以这条判据必须读配对表而不是读 `syncId`。
+    // Mint provisional identities before snapshotting so both bookmark_uuid and child parent_uuid
+    // refer to the same candidate; persist only after accepted commits (sections 4.2(2)/6.4). Do
+    // not mint for rows already matched by section 6. Consult pairs, since the round-start locals
+    // may still lack a newly claimed syncId; reminting would create an account entity with no local
+    // owner.
     let claimedGuids = Set(state.pairs.values)
     var locals = state.locals
     for index in locals.indices
@@ -5359,20 +4931,22 @@ private func bookmarkSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, no
         guard let bytes = try? BookmarkKind.envelope(entity).serializedData() else { continue }
         out.entities[identity] = bytes
     }
-    // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。
+    // Map identity to its current containing owner for the engine's per-round ownerUuid refresh
+    // (A12 / section 3.5).
     for row in locals {
         guard let identity = row.syncId,
               let owner = BookmarkKind.eligibilityOwner(of: row, resolve: resolve, scope: nil)
         else { continue }
         out.ownerUuids[identity] = owner
     }
-    // 铸出来却没进快照的身份（归属不合格、或祖先链不合格）不留铸造记录：那一条这一轮不会
-    // 提交，下一轮重铸。留着会让一次 `.applied` 之外的路径把身份写回本机行。
+    // Discard minted candidates excluded from the snapshot by owner/ancestor eligibility. They
+    // cannot commit this round and must not gain local identities through any non-applied path;
+    // remint next round.
     out.minted = out.minted.filter { out.entities[$0.key] != nil }
     return out
 }
 
-/// §4.4 的入站计划 + §6 的认领。
+/// Incoming planning and adoption (sections 4.4/6).
 @MainActor
 private func bookmarkPlan(_ input: OwnedPlanInput,
                           state: BookmarkSyncRoundState) -> OwnedPlanOutput {
@@ -5385,23 +4959,17 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
         arrivals.append(OwnedItemArrival(entity: entity, entityId: item.entityId,
                                          version: item.version))
         out.serverBytes[BookmarkKind.identity(of: entity)] = item.payload
-        // §5.3 的尽力推迟：**只数这一轮真的到达过的实体**，停放项不算。一条停着的实体是
-        // 上一轮的消息，拿它当「这个 Space 正在到货」会让一条永远落不了地的停放项把整个
-        // Space 的未同步行永久压在切片外面。
-        //
-        // 归属取实体自己的 `space_uuid`（**不是** `parent_uuid`）：判据说的是 Space，而一条
-        // 子孙实体的绑定引用是它的父。子孙的 `space_uuid` 永不重发（R-M3-3-18），所以它可能
-        // 停在搬家之前的那个 Space 上——**这条推迟是优化而不是正确性规则**，一个过期的 uuid
-        // 最坏只是让某个 Space 的未同步行多等一轮，不会让任何东西丢失或重复。真正守住「不丢」
-        // 的是 §6 那条无状态的认领规则。
+        // Defer only owners with actual arrivals this round, not parked payloads from older rounds,
+        // which could otherwise block local unsynced rows forever (section 5.3). Use
+        // entity.space_uuid, not its parent reference. A descendant's stale Space UUID can at worst
+        // delay an owner for one round; this is only an optimization, while stateless adoption
+        // provides correctness (R-M3-3-18 / section 6.5).
         let spaceUuid = entity.spaceUuid.stringValue
         if !spaceUuid.isEmpty { out.deferredOwners.insert(spaceUuid) }
     }
-    // D10 的规则 (i)。它**从不删除任何东西**，也不会让任何入站实体被丢掉。
-    //
-    // **停放项也进认领**：§6.1 那条规则是无状态、连续的，而一条停放着的实体与一条刚到达的
-    // 实体对它没有区别。少了这一半，一条身份已经被账户接受、但 `syncId` 还没能写回本机行的
-    // 实体（写回被导入锁挡住）会在下一轮被当成一条全新的实体建出第二行来。
+    // D10 rule (i) never deletes or discards incoming entities. Include parked payloads in
+    // continuous, stateless adoption (section 6.1), allowing accepted identities whose write-back
+    // was blocked to reclaim the local row rather than create a duplicate next round.
     var candidates = arrivals.map(\.entity)
     let arrivedIdentities = Set(candidates.map(BookmarkKind.identity(of:)))
     for identity in input.parked.keys.sorted() where !arrivedIdentities.contains(identity) {
@@ -5430,25 +4998,19 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     out.adopted = adoption.adopted
     out.unmatchedFolders = adoption.unmatchedFolders
     out.unmergeablePairs = adoption.unmergeablePairs
-    // 两条来源、同一条规则（§6.2 的「本机赢了字段就要发布出去」）：认领那一批由 `adopt`
-    // 算，已经在账户上的那些由 `plan` 算。
+    // Combine locally winning fields found by adoption and by normal planning; both require
+    // republication (section 6.2).
     out.mustRepublish = adoption.mustRepublish.union(out.plan.mustRepublish)
     return out
 }
 
-/// 身份 -> 本机那一行**此刻**的出站投影，喂给 `OwnedItemPlanContext.localProjections`。
-///
-/// 盖戳走的是 `snapshot` 那一条路（`BookmarkKind.stamp` + 基线），不是 `adopt` 那一条：
-/// **变过的字段盖 `now`、没变的沿用基线的戳**（§4.2 第 4 条）。用 `adopt` 那条无基线规则
-/// （整组内容字段一起盖 `contentUpdatedDate`）会让一条**没被本机动过**的字段也带上一个新鲜
-/// 的戳，于是对端刚做的改名被一个本机从没改过的旧值赢掉——方向与它要修的缺陷正好相反。
-///
-/// 三处跳过，每一处都让那条身份退回「与基线合并」的老路：
-/// - 本机没有这一行（纯远端新建 / 已被删）；
-/// - 游标没有基线（认领那一批、以及游标文件丢失后的重放）——没有基线时 `stamp` 会把
-///   `location` / `rank` 盖成 0，那是 §4.2 第 5 条给**未同步行**的规则；
-/// - 父行还没有身份：那条子行的 `parent_uuid` 填不出来，投影出来的会是一条根级实体，
-///   它的 `location` 值与真实位置不同，合并出来的位置于是是错的。
+/// Current local outbound projections for OwnedItemPlanContext. Use snapshot stamping with
+/// BookmarkKind.stamp and the baseline: changed fields receive now, unchanged fields retain their
+/// stamps (section 4.2(4)). Adoption's no-baseline contentUpdatedDate stamping could falsely make
+/// untouched fields beat remote edits.
+/// Fall back to baseline merging when the local row is absent, the cursor has no baseline, or the
+/// parent lacks an identity. Without a baseline, unsynced location/rank stamps are zero; without a
+/// parent identity, projecting at root would misrepresent the actual location.
 @MainActor
 private func bookmarkLocalProjections(for identities: Set<String>,
                                       table: PhiOwnedItemTable,
@@ -5468,9 +5030,10 @@ private func bookmarkLocalProjections(for identities: Set<String>,
         }
         guard let projected = BookmarkKind.project(row, resolve: resolve, scope: nil,
                                                    parentIdentity: parentIdentity) else { continue }
-        // rank 取基线那一个：本轮的 rank 只有 `snapshot` 的 `assignRanks` 算得出来，而入站
-        // 这一侧不该为了合并去跑一次账户级排序。于是一次**还没发布**的本机纯排序在这一轮
-        // 输给对端的 rank——下一轮的快照照常把它当成一次本机变化重新发出去。
+        // Use baseline rank; snapshot assignRanks alone computes current outbound ordering. An
+        // unpublished local-only reorder can lose to incoming rank this round, then publish as a
+        // local change on the next snapshot, without running account ordering inside incoming
+        // merge.
         let stamped = BookmarkKind.stamp(projected, baseline: baseline, local: row,
                                          rank: BookmarkKind.rank(of: baseline), now: now)
         guard let bytes = try? BookmarkKind.envelope(stamped).serializedData() else { continue }
@@ -5479,10 +5042,8 @@ private func bookmarkLocalProjections(for identities: Set<String>,
     return out
 }
 
-/// §6.4 的身份写回，**按 Space 切开**。
-///
-/// 导入锁是 fail-closed 的：一批横跨两个 Space、其中一个正在导入的写回会被整批拒掉，于是另一个
-/// Space 里那些**服务端已经接受**的身份也写不回本机行。返回真的写下去了的那些身份。
+/// Write claimed identities per Space (section 6.4). A fail-closed import lock on one Space must
+/// not block already accepted identities in another. Return only successfully persisted identities.
 @MainActor
 private func claimBookmarkIdentities(_ pairs: [String: String],
                                      access: any PhiBookmarkLocalAccess,
@@ -5508,12 +5069,9 @@ private func claimBookmarkIdentities(_ pairs: [String: String],
     return persisted
 }
 
-/// §3 / R-exec-10 的停放项重试，书签这一半：拿停放着的那些载荷重新走一次 §6 的认领，配上的
-/// 立刻写回本机行。
-///
-/// 它跑在**每一种轮次**的归属段最前面，所以一次纯 push 轮也能把「这一行已经配上一个账户身份」
-/// 这件事告诉后面的快照与差分。配不上的原样留着停放——那条身份下一轮再试，真的一直配不上就由
-/// 差分按「本机没有这一行」清理掉（R-exec-9 的另一半）。
+/// Bookmark parked-claim retry (section 3 / R-exec-10): rerun section 6 adoption and persist
+/// matches before any round's snapshot/diff, including pure pushes. Keep unmatched payloads parked
+/// for retry; if no local row can claim them, deletion diff provides cleanup (R-exec-9).
 @MainActor
 private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
                                        maps: OwnedOwnerMaps,
@@ -5544,7 +5102,7 @@ private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
     return out
 }
 
-/// A9 的第三个合取项：本轮因为一条远端文件夹 tombstone 而要消失的身份。
+/// A9's third conjunct: identities disappearing under remote folder tombstones this round.
 @MainActor
 private func bookmarkDeletedSubtree(_ tombstoned: Set<String>,
                                     state: BookmarkSyncRoundState) -> Set<String> {
@@ -5567,7 +5125,8 @@ private func bookmarkDeletedSubtree(_ tombstoned: Set<String>,
     return out
 }
 
-/// §4.4 / §4.5 的落地：按 Space 切开、rank → index 投影、三相批次、落地后复核。
+/// Bookmark landing (sections 4.4/4.5): split by Space, project ranks to indices, apply three-phase
+/// batches, then recheck.
 @MainActor
 private func landBookmarks(_ input: OwnedLandingInput,
                            access: any PhiBookmarkLocalAccess,
@@ -5589,7 +5148,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         planned.append(Planned(step: step, entity: entity))
     }
 
-    // 身份 -> 本轮要用的本机 guid。
+    // Identity to the local GUID used this round.
     var guidOf: [String: String] = [:]
     for item in planned {
         if let guid = state.pairs[item.step.identity] ?? state.identityToGuid[item.step.identity] {
@@ -5597,26 +5156,19 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
     }
 
-    // §6.1 / CASE 6b.13：**这里没有「配对表指着一条已被认领的行」的降级支，因为那个状态到不
-    // 了这里。** 一条 `.claim` step 只在 `context.pairs[身份] != nil` 时产出，而那张配对表来自
-    // `SyncableOwnedItems.adopt`——它的 `localChildren` 只收 `syncId == nil` 的行，且组内按位
-    // 一对一配（两条同键的入站实体对一条本机行只配得上第一条，第二条落进 `leftOver` 并走
-    // create）。`bookmarkPlan` 在返回前把那批配对并进 `state.pairs`，所以 `guidOf` 对每一条
-    // `.claim` 都解析自 `state.pairs`；而 `state.rowByGuid` 由 `reload` 与
-    // `notePersistedClaims` 与 `state.locals` 同步维护，`plan` 与这里之间没有任何东西改过它。
-    //
-    // 真 store 那道 `rowAlreadyMapped`（`LocalStore+Bookmark.swift` 的
-    // `node.syncId == nil || node.syncId == syncId`，R-M3-3-14 要求的「静默结果必须变成抛错」）
-    // 因此是**深度防御**，接的是另一种形状：目标行**在这一批之前**就已经带着另一个身份。
-    // 同一批里的两条 `.claim` 打在同一条尚未认领的行上不走它——真 store 边走边写
-    // （第二条会看见第一条刚写下的 `syncId` 而抛），而假件是拿施加任何 op 之前的 `rows` 先扫
-    // 一遍整批，两条都看见 `syncId == nil`。落地这一侧因此没有一条能自愈的路，写一条降级支
-    // 只会是永远跑不到的死代码；真正守住这条不变量的是上面那条配对规则，CASE 6b.13 断的也是
-    // 它（那一行最后带的是第一条身份、本机多出一条新行）。
+    // No fallback for a claim targeting an already claimed row is needed here (section 6.1 / CASE
+    // 6b.13). Adoption considers only syncId-nil local children and pairs one-to-one; a second
+    // same-key arrival becomes create. bookmarkPlan merges pairs into state, and rowByGuid stays
+    // synchronized through reload/notePersistedClaims.
+    // The real store's rowAlreadyMapped guard is defense in depth against a previously mapped
+    // target, not the pairing rule itself. Real storage applies operations sequentially, while the
+    // fake prechecks original rows and would not catch two claims to the same initially unmapped
+    // row. Preserve the actual one-to-one adoption invariant rather than adding unreachable repair
+    // code.
 
-    // §4.6 的**物理行**判据（`refuses(_:baseline:)` 够不着它——那一个比的是游标基线，而这条
-    // 身份本机可能根本没有基线）。落地会把一条书签行原地变成文件夹，它的 URL 随即失去意义；
-    // 反方向则让一个文件夹变成书签，**它的孩子当场失去父**。
+    // Check physical row type (section 4.6), which baseline-only refuses cannot establish when no
+    // baseline exists. Converting a bookmark to a folder discards URL semantics; converting a
+    // folder to a bookmark would orphan its children.
     var work: [Planned] = []
     for item in planned {
         if let entity = item.entity, let guid = guidOf[item.step.identity],
@@ -5626,7 +5178,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
         work.append(item)
     }
-    // 排在前面的 create 先铸 guid，后面的孩子才解析得到父。
+    // Premint GUIDs for earlier creates so later children can resolve their parent.
     for item in work where item.step.kind == .create && guidOf[item.step.identity] == nil {
         guidOf[item.step.identity] = UUID().uuidString
     }
@@ -5635,8 +5187,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
     let deletedIdentities = Set(work.filter { $0.step.kind == .delete }.map(\.step.identity))
     let deletedGuids = Set(deletedIdentities.compactMap { guidOf[$0] })
 
-    // 本轮的落地投影：从轮首那份快照起手，逐条把位置改成计划里的位置。它同时是「父在哪个
-    // Space」这个问题的答案来源——一条行的父必定与它同 Space。
+    // Start from the round snapshot and apply planned locations to an in-memory projection. It also
+    // resolves the parent's Space; every child shares its parent's Space.
     var projected = state.rowByGuid
     var rankOf: [String: String] = [:]
     for (identity, cursor) in input.table.cursors {
@@ -5656,11 +5208,10 @@ private func landBookmarks(_ input: OwnedLandingInput,
         if let payload = item.step.payload { payloadOf[identity] = payload }
         if let rank = item.step.newRank { rankOf[identity] = rank }
 
-        // §5.6 T3：反查到身份、**本机没有行** ⇒ 什么都不删，但游标照样写 `deletedAtMs`。
-        // 这一支必须排在 `guidOf` 的 guard **之前**：T3 说的正是「身份反查不到本机行」，
-        // 而那恰恰是 `guidOf` 交不出 guid 的情形。漏掉它，那条游标永远停在「活着」的状态，
-        // §3.6 那个按 `deletedAtMs` 扫描的 30 天丢弃永远收不走它，而同一轮的差分还会为它
-        // 发一条多余的 tombstone（`tombstones` 计数因此一次事件被记两遍）。
+        // Section 5.6 T3: a known identity with no local row requires no physical deletion but
+        // still finalizes deletedAtMs. Handle before requiring guidOf, because absence is exactly
+        // the case that lacks a GUID. Otherwise its cursor never expires and this round emits a
+        // redundant tombstone.
         let resolvedGuid = guidOf[identity]
         if item.step.kind == .delete, resolvedGuid.flatMap({ projected[$0] }) == nil {
             outcome.landed.insert(identity)
@@ -5677,8 +5228,9 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
 
         guard let entity = item.entity else { continue }
-        // `newParentUuid == nil` **不是「挂到 Space 根」**，而是「按载荷自己的 `parent_uuid`
-        // 落」。它只在模块替你决定了父的时候非 nil：提升到根（值是 `""`）、或父就在同一批里。
+        // A nil newParentUuid means use the payload's parent_uuid, not move to Space root. Non-nil
+        // overrides are supplied only when planning chose the parent, including an empty string for
+        // root or a parent in the same batch.
         let parentIdentity = item.step.newParentUuid ?? entity.parentUuid.stringValue
         var group: BookmarkSiblingGroup
         if parentIdentity.isEmpty {
@@ -5698,9 +5250,9 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
 
         if var row = projected[guid] {
-            // §4.5：**先按 `syncId` 找本机行，找不到才 create**。R-M3-3-13 的重放路径、D10
-            // 的认领路径与普通的更新路径全部依赖这一条——照着计划里的 `.create` 建一遍，会
-            // 让本机每一条书签在一次重放之后变成两条，而两条都带身份、都不会被差分判成删除。
+            // Find the local row by syncId before creating (section 4.5). Replay, adoption and
+            // ordinary updates depend on this; blindly executing a planned create would duplicate
+            // every existing bookmark after replay.
             row.syncId = identity
             row.spaceId = group.spaceId
             row.parentGuid = group.parentGuid
@@ -5725,7 +5277,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         placed.append((item, guid, group))
     }
 
-    // R-M3-3-17 的三步，第 2 步在空集合上必须是**零操作**（CASE 6.10c）。
+    // R-M3-3-17's three steps: step 2 must be a no-op for an empty set (CASE 6.10c).
     var childrenOf: [String: [String]] = [:]
     for (guid, row) in projected {
         guard let parent = row.parentGuid else { continue }
@@ -5738,7 +5290,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
             hops += 1
             stack.append(contentsOf: childrenOf[child] ?? [])
             guard !deletedGuids.contains(child), var row = projected[child] else { continue }
-            // 其余每一个后代**先提升到该 Space 的根**；文件夹行本身排在第 3 相删掉。
+            // Lift every remaining descendant to its Space root before deleting the folder itself
+            // in phase 3.
             row.parentGuid = nil
             projected[child] = row
             parentOf.removeValue(forKey: child)
@@ -5747,10 +5300,9 @@ private func landBookmarks(_ input: OwnedLandingInput,
     }
     for guid in deletedGuids { projected.removeValue(forKey: guid) }
 
-    // §4.10 的 rank → index 投影，**跑在这里而不是 access 里**（R-exec-2）：它要拿整批入站
-    // 实体的 rank 一起算，而 access 只看得见本机行。`.move` 发出的是**整组的完整置换**——
-    // 批次入口写的是裸 index，它不会替你把兄弟们往后挪，只发被移动的那一条会让它与某个没被
-    // 碰的兄弟撞上同一个 index。
+    // Project rank to index here, where all incoming ranks are available, not in local access
+    // (section 4.10 / R-exec-2). Moves must emit a full sibling permutation: the batch writer
+    // assigns raw indices and does not shift untouched siblings automatically.
     var indexOf: [String: Int] = [:]
     for group in touched {
         var members = access.siblings(ofParent: group.parentGuid, inSpaceId: group.spaceId)
@@ -5768,13 +5320,12 @@ private func landBookmarks(_ input: OwnedLandingInput,
 
     var opsBySpace: [String: [BookmarkApplyOp]] = [:]
     var identitiesBySpace: [String: Set<String>] = [:]
-    // 已经**带着最终 index 出门**的那些 guid。只有 `.create`（index 写在行里）与 `.move`
-    // 算数：`.claim` 只写 `syncId`，`.update` 只写字段，两者都不带 index，所以它们必须留给
-    // 下面那趟置换。漏掉这一条，一次纯改名或一次认领会把同一个父下的兄弟们重新编号，而它
-    // 自己留着旧 index——两条行撞在同一个 index 上，那个文件夹的顺序此后随 fetch 而变。
+    // Only create and move operations already carry final indices. Claims write identity and
+    // updates write fields, so both must join the remaining permutation. Otherwise a rename/claim
+    // can retain an old index while siblings are renumbered, creating unstable duplicate positions.
     var indexed: Set<String> = []
-    // §8.2 / Task 10：本轮真的**新建**出来的那些行，落地后复核通过的会跟着 outcome 交给
-    // 图标回填队列。
+    // Track genuinely new rows; successful post-landing checks pass them to favicon backfill
+    // (section 8.2 / Task 10).
     var createdRowsByIdentity: [String: PhiLocalBookmark] = [:]
     func emit(_ op: BookmarkApplyOp, in spaceId: String) {
         opsBySpace[spaceId, default: []].append(op)
@@ -5788,7 +5339,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
             emit(.claim(guid: entry.guid, syncId: identity), in: entry.group.spaceId)
         case .create:
             if state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
-                // 本机已经有这条身份的行：一次重放 / 一次认领，不是一次新建。
+                // An existing identity is replay/adoption, not a new row.
                 emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
                            inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),
                      in: entry.group.spaceId)
@@ -5814,17 +5365,16 @@ private func landBookmarks(_ input: OwnedLandingInput,
                      in: entry.group.spaceId)
             }
         case .transfer:
-            // §8.4.4 的编辑转移只有规则这一 kind 会产出（`tombstoneYieldsToLocalEdits`
-            // 在书签上恒假，8b-3 计划裁定十）⇒ 这一支结构性不可达，真出现了就跳过，
-            // 绝不去猜它在书签上的意思。
+            // Only URL rules produce edit-transfer steps under tombstone yielding (section 8.4.4 /
+            // 8b-3 ruling 10). This is unreachable for bookmarks; skip rather than invent bookmark
+            // semantics.
             continue
         case .delete:
             emit(.delete(guid: entry.guid), in: entry.group.spaceId)
         }
     }
-    // 组内的其余兄弟：**组内按目标 index 升序发**，于是顺序在任何一次 fetch 之后都一样。
-    // 「其余」= 这一组里所有已经存在于本机、而这一轮还没有拿到最终 index 的行——被认领的
-    // 那一条、被改名的那一条，以及完全没被这一轮碰过的那些，都在里面。
+    // Emit the remaining existing siblings in ascending final-index order for deterministic fetch
+    // results, including claimed, renamed and otherwise untouched rows.
     for group in touched {
         let movers = projected.values
             .filter { $0.spaceId == group.spaceId && $0.parentGuid == group.parentGuid
@@ -5837,13 +5387,10 @@ private func landBookmarks(_ input: OwnedLandingInput,
         }
     }
 
-    // **一次 `apply(_:)` 是一个事务，而导入锁是 fail-closed 的**：一批横跨两个 Space、其中
-    // 一个正在被导入的落地会把另一个 Space 的行也一起回滚——那些行本来没有任何理由等。
-    // 所以调用之前先按 Space 把批次切开，每个被触及的 Space 一次调用。跨 Space 的父子关系
-    // 不受影响：一条行的父必定与它同 Space。
-    //
-    // `didApply` = 这一轮有没有**真的**落下去过一批。Step 3 的重取只在它为真时发生：一轮
-    // 至多一次 fetch 的规则对「一行都没落」的轮次一个字不让。
+    // Split landing into one transaction per touched Space so a fail-closed import lock in one
+    // cannot roll back unrelated Spaces. Parent/child rows always share a Space. Only refresh from
+    // access after at least one batch actually applied, preserving the one-fetch rule for
+    // no-landing rounds.
     var didApply = false
     for spaceId in opsBySpace.keys.sorted() {
         let ops = opsBySpace[spaceId] ?? []
@@ -5853,18 +5400,18 @@ private func landBookmarks(_ input: OwnedLandingInput,
             try await access.apply(BookmarkApplyBatch(unordered: ops, parentOf: parentOf))
             didApply = true
         } catch LocalStoreWriteError.folderNotEmpty, LocalStoreWriteError.rowAlreadyMapped {
-            // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远
-            // 不会好，而 `pendingApply` 里堆着一批永远落不了地的实体。
+            // Refuse an invalid batch plan rather than parking it for identical, permanently
+            // failing retries.
             outcome.refused.formUnion(identities)
             continue
         } catch {
-            // 导入锁（`.spaceImporting`）与其余一切瞬时失败：**停放**，下一轮重试。
+            // Park import-lock and other transient failures for the next round.
             outcome.parked.formUnion(identities)
             continue
         }
-        // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply`
-        // 收尾会自己重建一次缓存，所以这三个读者此刻答的是新世界。没有这次复核，任何残留的
-        // 静默拒绝都会被记成一次成功落地。
+        // Recheck the plan after landing but before baseline updates (section 4.5). apply rebuilds
+        // its cache, so these reads observe post-landing rows and cannot silently count a refused
+        // write as success.
         for identity in identities {
             guard let guid = guidOf[identity] else { continue }
             let known = access.isKnownLocalBookmark(guid)
@@ -5877,32 +5424,29 @@ private func landBookmarks(_ input: OwnedLandingInput,
             }
             guard known else { outcome.parked.insert(identity); continue }
             outcome.landed.insert(identity)
-            // §8.2 / Task 10：这一条是本轮**新建**出来的 ⇒ 它按构造没有图标，交给回填队列。
+            // New rows have no favicon by construction; submit them for backfill (section 8.2 /
+            // Task 10).
             if let created = createdRowsByIdentity[identity] { outcome.createdRows.append(created) }
             if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
         }
     }
     outcome.parked.subtract(outcome.landed)
     outcome.refused.subtract(outcome.landed)
-    // 本轮真的被删掉的那些行立刻退出轮内投影，于是同一轮的发布段不会把它们复活（CASE 6b.8）。
+    // Immediately remove deleted rows from the round projection so publication cannot resurrect
+    // them (CASE 6b.8).
     state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
-    // Step 3：落地过至少一批 ⇒ 出站快照之前把轮内那份本机投影换成**落地后**的行。
-    //
-    // 取的是 access 那份缓存（`apply` 收尾已经重建过它），**不是再 fetch 一次**。不换的
-    // 后果有两层：其一，每一次入站内容变化都多一条无谓的 commit——快照拿的是落地**前**那
-    // 一行，与刚写好的 `reconciled` 不同，差分判成「本机改了」；其二，那条 commit 带的是
-    // **旧值**配上一个**新鲜的 `now`**，它比对端刚才那次真实编辑更晚，于是在一次并发编辑
-    // 里旧值盖掉新值——一次读写时序问题就此变成一次数据回滚（CASE 7.6 / 7.7）。
-    //
-    // `nil` = 本轮没有一份可用的快照（`apply` 落了地但它收尾那次重读抛了）。此时**原样
-    // 留着**轮内那份投影：交出一个空数组会让整轮的出站快照变空。
+    // After any successful batch, refresh from access's rebuilt cache before outbound snapshotting,
+    // without another fetch (Step 3). Otherwise stale pre-landing values differ from reconciled,
+    // causing redundant commits stamped with a newer now that can overwrite genuine remote edits
+    // (CASE 7.6/7.7). Nil means the post-apply read failed: retain the existing projection rather
+    // than replace it with an empty snapshot.
     if didApply, let refreshed = access.cachedBookmarks() {
         state.refreshLandedRows(refreshed)
     }
     return outcome
 }
 
-/// 一条实体的四个内容字段 → 一次字段更新。
+/// Convert the entity's four content fields to one local field patch.
 @MainActor
 private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatch {
     BookmarkFieldPatch(
@@ -5913,41 +5457,35 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
                               ? nil : entity.secondaryTitle.stringValue))
 }
 
-// MARK: - PinKind 的适配层
+// MARK: - PinKind adapter
 
-/// 一轮 pin 同步的轮内状态。形状照 `BookmarkSyncRoundState`，**少了认领配对那一半**
-/// （§6.7：pin 完全不走 §6——身份是 `(lineage, owner)` 推导出来的，本机行上没有一列
-/// 要写回，所以既没有铸造也没有配对表）。
-///
-/// **`@MainActor`，与 `BookmarkSyncRoundState` 同款。** 两个访问协议都是 main actor 的，注册项
-/// 里每一个触本机的闭包也都是，所以这份轮内状态只在 main actor 上被读写——包括 §7.4 的表副本
-/// 那一路：`clearedSplitPartners` 因此也是 `@MainActor`，由 `doctoredOwnedTable` 每轮跳一次。
-///
-/// 隔离**不能**为了省那一跳而摘掉。今天它只有 `reload` 一个写者，串行的轮次确实排除了竞争，
-/// 但那是一条靠人读代码才成立的不变量：编译器看不见一个只经不透明闭包捕获跨越隔离域的对象，
-/// 于是「摘掉 `@MainActor`」把一条编译期保证换成了没有任何东西检查的运行期保证——而 Task 6b
-/// 正要往这个类里加轮中写者（A11 的重铸）。
+/// Main-actor pin state mirrors BookmarkSyncRoundState without adoption pairs: pin identity derives
+/// from lineage/owner, so no local syncId mint/write-back exists (section 6.7). Keep
+/// compiler-enforced MainActor isolation for all local access and doctoring callbacks, including
+/// future mid-round writers. Serialized rounds alone are not a substitute for that isolation
+/// guarantee.
 @MainActor
 final class PinSyncRoundState {
-    /// 轮首那一次 `allPins()`：当前作用域内、非休眠的全部行。
+    /// The round-start allPins() snapshot: every active, non-dormant row in the current scope.
     private(set) var locals: [PhiLocalPin] = []
     private(set) var rowByGuid: [String: PhiLocalPin] = [:]
-    /// §7.3 的两个判据，轮首各读一次。**账户值为 nil = 账户还没发过作用域**，此时不判
-    /// 不一致（`accountScope()` 的契约）。
+    /// Capture both section 7.3 scopes once at round start. Nil account scope means not yet
+    /// published and does not count as a mismatch.
     private(set) var localScope: PinnedTabScope = .profile
     private(set) var accountScope: PinnedTabScope?
 
-    /// §7.3：两者都已知且不相等 ⇒ 这一轮 pin 的**发布半边整段不跑**，入站半边全部停放。
+    /// If both scopes are known and differ, skip all pin publication and park all incoming pins
+    /// this round (section 7.3).
     var scopeMismatch: Bool {
         guard let accountScope else { return false }
         return localScope != accountScope
     }
 
-    /// 轮首取样**之后**这两个值动过没有（R-exec-12）。见 `rescanScopes(localScope:accountScope:)`。
+    /// Whether either scope changed after the initial sample (R-exec-12); see rescanScopes.
     private(set) var scopeMovedMidRound = false
 
-    /// §7.3 的跳过判据，两支合一：轮首就不一致，**或者**轮首一致但作用域在轮中动了。
-    /// 发布段的三处守卫与落地段读的都是这一个。
+    /// Block when scopes initially mismatched or changed mid-round. All publication guards and
+    /// landing share this predicate (section 7.3).
     var scopeBlocked: Bool { scopeMismatch || scopeMovedMidRound }
 
     func reload(_ rows: [PhiLocalPin], localScope: PinnedTabScope,
@@ -5957,60 +5495,43 @@ final class PinSyncRoundState {
         for row in rows { rowByGuid[row.guid] = row }
         self.localScope = localScope
         self.accountScope = accountScope
-        // 新的一轮从「没动过」开始：轮内状态跨轮复用（注册项持有它），不清零的话一次轮中
-        // 迁移会把此后**每一轮**的 pin 段都关掉。
+        // Reset the flag at each round start; this registration-owned state is reused, so a sticky
+        // cross-round flag would disable pin sync forever after one migration.
         scopeMovedMidRound = false
     }
 
-    /// 轮首之后再取样一次两个作用域值；任一与轮首那一对不同 ⇒ 这一轮按 §7.3 处理。
-    ///
-    /// **为什么必须有这一趟（R-exec-12 / D-A）。** 轮内状态是 `beginRound` 一次性冻结的：
-    /// `locals` 与两个作用域都取自 `pull` **翻第一页之前**那一刻。而作用域变更是**跟着那一页
-    /// 到达的**——远端设置落地把镜像键改成新值，Task 8 的跟随迁移（`applyAccountPinnedTabScope`）
-    /// 在一个 detached `Task` 里重建全部物理行。于是落地段执行时，库已经是新形状，而
-    /// `state.locals` 还是旧形状：入站实体的 `(lineage, ownerKey)` 配不上任何一条**旧形状**
-    /// 行算出来的身份，`landPins` 于是走 create 那一支，在迁移刚建好的行旁边**再建一遍**
-    /// ——Mac B 2026-09-14 那四条重复。§7.3 原本的守卫挡不住它：两个作用域都是在它们还一致
-    /// 的时候取样的。
-    ///
-    /// **只置标志，不更新那两个值。** `localScope` 是 `PinKind.identity(of local:)` 解读
-    /// `state.locals` 的参数，把它换成新值而行还是旧的，等于用另一个作用域的规则去读这一批
-    /// 行——那是比过期更糟的一种错。这一轮什么都不做，下一轮的 `beginRound` 会读到一致的
-    /// 「新行 + 新作用域」。
-    ///
-    /// **粘性**：一轮里往返变回去也照样算动过——`locals` 无论如何都已经和库脱节了。
+    /// Resample both scopes after round start (R-exec-12 / D-A). Incoming settings can trigger
+    /// detached scope migration after locals were captured but before pin landing, replacing
+    /// physical rows while cached identities still describe the old scope. Landing against that
+    /// cache would duplicate migrated pins.
+    /// Set a sticky round flag without replacing the original scope values: those values still
+    /// interpret the cached rows. Even a change back leaves the cache suspect. Skip this round; the
+    /// next beginRound reads consistent new rows and scopes.
     func rescanScopes(localScope: PinnedTabScope, accountScope: PinnedTabScope?) {
         guard localScope != self.localScope || accountScope != self.accountScope else { return }
         scopeMovedMidRound = true
     }
 
-    /// 一次落地之后把轮内那份本机投影换成**落地后**的行（Step 3）。形状与理由都照
-    /// `BookmarkSyncRoundState.refreshLandedRows`：交进来的是 access 那份缓存
-    /// （`apply(_:)` 收尾已经重建过它），**不是第二次 fetch**。
-    ///
-    /// **两个作用域不动**：它们是 §7.3 的判据，轮首各读一次，落地一次也改不了它们。
+    /// Refresh from access's post-landing cache without a second fetch, matching
+    /// BookmarkSyncRoundState (Step 3). Keep both originally sampled scopes unchanged for the
+    /// section 7.3 checks.
     func refreshLandedRows(_ rows: [PhiLocalPin]) {
         locals = rows
         rowByGuid = [:]
         for row in rows { rowByGuid[row.guid] = row }
     }
 
-    /// 本轮真的被删掉的那些行立刻从轮内投影里消失。理由与
-    /// `BookmarkSyncRoundState.noteDeletedRows` 逐字相同：留着它，同一轮的发布段会按 §4.2
-    /// 第 3b 条把一条刚被远端删掉的 pin 复活发回账户。
+    /// Remove actually deleted rows from the round projection immediately, preventing rule 3b from
+    /// republishing a just-deleted remote pin in the same round.
     func noteDeletedRows(_ guids: Set<String>) {
         guard !guids.isEmpty else { return }
         for guid in guids { rowByGuid.removeValue(forKey: guid) }
         locals.removeAll { guids.contains($0.guid) }
     }
 
-    /// 把本轮**真的写下去**的那些拆分链接折回轮内投影。
-    ///
-    /// 与 `BookmarkSyncRoundState.notePersistedClaims` 同一条纪律：一轮至多一次 fetch，这里
-    /// 改的是内存里那份投影而不是再读一次库。不折回去，同一轮的发布段读到的还是「这一行没有
-    /// 伙伴」，而 §7.4 的表副本恰好把「基线里有伙伴 ∧ 本机行没有链接」判成**一次本机解除**
-    /// ——于是这台机器刚刚接收下来的那条链接会在同一轮里被当成解除重新发回账户，把对端好好
-    /// 的拆分对拆散，而这台机器只是接收了它。
+    /// Reflect persisted split links in the in-memory projection without another fetch. Otherwise
+    /// snapshot doctoring would see the newly accepted baseline link but an old unlinked local row,
+    /// misclassify it as a local unlink, and split the peer's pair in the same round.
     func noteSplitPartnerWrites(linked: [String: String], cleared: Set<String>) {
         guard !linked.isEmpty || !cleared.isEmpty else { return }
         for index in locals.indices {
@@ -6026,12 +5547,9 @@ final class PinSyncRoundState {
         }
     }
 
-    /// 这条账户身份的本机行**还挂着**拆分链接没有（§7.4 的表副本判据）。
-    ///
-    /// 判据精确到**身份**而不是 lineage：一条 lineage 在 N 个 owner 下是 N 条行，其中一条
-    /// 被解除、另一条还链着是完全合法的状态，按 lineage 判会让那次解除永远发不出去。
-    ///
-    /// 只扫还挂着链接的那些行——拆分 pin 在任何一个账户上都是少数。
+    /// Whether the exact account identity still has a local split link (section 7.4). Check full
+    /// identity, not lineage: different owners can legitimately have linked and unlinked variants.
+    /// Scan linked rows only, which are a small subset.
     func stillCarriesSplitLink(_ identity: String, maps: OwnedOwnerMaps) -> Bool {
         let resolve = maps.resolver
         for row in locals where row.splitPartnerLineageId != nil {
@@ -6043,29 +5561,25 @@ final class PinSyncRoundState {
     }
 }
 
-/// pin 身份 `<lineage>:<ownerKey>` 的两半。
-///
-/// **第一个冒号就是分界**：`PinKind.isNormalizedLineage` 明确拒掉带 `:` 的 lineage，正是
-/// 为了让这个拼接可逆——否则 `("a:b", "c")` 与 `("a", "b:c")` 算出同一个身份。
+/// Split pin identity lineage:ownerKey at the first colon. isNormalizedLineage rejects colons so
+/// the composition remains reversible and cannot alias distinct lineage/owner pairs.
 func pinIdentityHalves(_ identity: String) -> (lineage: String, ownerKey: String) {
     guard let separator = identity.firstIndex(of: ":") else { return (identity, "") }
     return (String(identity[..<separator]),
             String(identity[identity.index(after: separator)...]))
 }
 
-/// 身份 -> client tag（§2.5）。
-///
-/// **经 `pinClientTag(lineageKey(…), ownerKey:)` 构造**：那个函数自己不做任何大小写归一，
-/// 归一的责任全在调用方（§3.2）。少了这一步，算出的 hash 与线上那条永不相等，接收端校验
-/// 会把每一条 pin 实体都判成伪造载荷。
+/// Build the client tag through pinClientTag(lineageKey(...), ownerKey:) (section 2.5). The
+/// lower-level tag function does not normalize case; callers own normalization (section 3.2), or
+/// receiver hash validation would reject every such entity.
 func pinClientTag(for identity: String) -> String {
     let halves = pinIdentityHalves(identity)
     return PhiSyncEntity.pinClientTag(PinKind.lineageKey(halves.lineage),
                                       ownerKey: halves.ownerKey)
 }
 
-/// §7.4 的表副本，pin 这一批。**一轮一跳**：引擎把这条 kind 的全部候选（通用规则已经筛过）
-/// 一次交进来，返回的只有真的被改写的那几条，不在返回值里的身份原样沿用基线。
+/// Batch pin baseline doctoring in one main-actor hop per kind per round (section 7.4). Return only
+/// genuinely modified baselines; missing entries keep their original bytes.
 @MainActor
 func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: OwnedOwnerMaps,
                              state: PinSyncRoundState) -> [String: Data] {
@@ -6078,34 +5592,21 @@ func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: Owne
     return out
 }
 
-/// §7.4：把一份基线字节里的拆分伙伴清空，交给 `doctoredOwnedTable` 当表副本用。
-///
-/// **取值清空、时间戳盖本轮的 `now`**。`PinKind.stamp` 的重盖判据是字段的**签名**（取值，
-/// 不含时间戳），而清空之后投影值与基线值都是空串、签名相等——于是它沿用基线的戳。那条
-/// `("", t_基线)` 与对端手上的 `("<伙伴>", t_基线)` 戳相同，`SyncableSettings.lwwWinner`
-/// 按序列化字节破平手，而 proto3 省略空字符串字段，空串是对方的前缀、排在前面、**输掉**
-/// 平手——对端于是永远保留那条链接，用户每解除一次、每同步一次又被拼回去。盖上 `now` 之后
-/// 这条解除以「现在」出门，正常赢下对端那一版。
-///
-/// 盖戳只能在这里做：`stamp` 分不出「表副本刚抹掉一个真实的伙伴」与「这条 pin 从来没有
-/// 伙伴」——两者到它手上都是空投影对空基线。
-///
-/// nil = 这份字节不是一条 pin、它本来就没有伙伴、或者**本机那一行还挂着这条链接**——三种
-/// 情形下调用方都原样沿用基线，于是只有真正的解除会被改写。
-///
-/// 最后那一条是必需的，而且它才是常见的那一类：一对**两半都链好**的拆分 pin，它的游标同样
-/// 没有 `pendingPartnerLineage`（伙伴早就落地了）。清掉它的基线之后，投影（带着伙伴）与基线
-/// （空）签名不同 ⇒ `restamped` 每轮盖一次 `now` ⇒ 与真表比每轮都「有变化」⇒ 每轮重发。
-/// 对端收到的值与它手上那条相等，`plan` 因此产不出任何 step，它的 `reconciled` 也就永不刷新,
-/// 于是它下一轮同样重发——**两台设备把每一条拆分 pin 每一轮都发一遍**，还吃掉每轮 250 条的
-/// 发布预算，真正的改动被挤出去。
+/// Clear a genuinely removed split partner in the snapshot-only baseline and stamp it with this
+/// round's now (section 7.4). PinKind.stamp compares value signatures, so empty projection versus
+/// newly emptied baseline otherwise retains the old stamp. At equal timestamps, proto3's omitted
+/// empty field loses the serialized-byte tie to a nonempty link, repeatedly restoring the split.
+/// Return nil for non-pin bytes, an already empty partner, or a local row that still carries its
+/// link. Do not clear intact pairs merely because pendingPartnerLineage is nil: they also finished
+/// waiting. Doing so would restamp/rebroadcast every intact pair each round, consuming the
+/// publication budget on both devices.
 @MainActor
 func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
                             state: PinSyncRoundState) -> Data? {
     guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
           var entity = PinKind.entity(from: envelope),
           !entity.splitPartnerUuid.stringValue.isEmpty else { return nil }
-    // 本机那一行还挂着链接 ⇒ 这不是一次解除，一个字节都不动。
+    // A locally intact link is not an unlink; preserve its bytes.
     guard !state.stillCarriesSplitLink(PinKind.identity(of: entity), maps: maps) else {
         return nil
     }
@@ -6117,7 +5618,7 @@ func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
 }
 
 extension OwnedKindRegistration {
-    /// `PinKind` 那一条注册项。
+    /// PinKind registration.
     @MainActor
     static func pins(access: any PhiPinnedTabLocalAccess,
                      store: any PhiOwnedItemStateStore) -> OwnedKindRegistration {
@@ -6128,12 +5629,14 @@ extension OwnedKindRegistration {
             entityName: PhiSyncEntity.pinEntityName,
             store: store,
             flags: .pins,
-            // §11.2：认领那三项**只有书签行有**——pin 完全不走 §6（§6.7）。
+            // Adoption counters belong only to bookmarks; pins do not use section 6 adoption
+            // (sections 11.2/6.7).
             reportsAdoption: false,
-            // 反过来 `relineaged` 与 `scope_mismatch` 只有 pin 行有。
+            // Only pin counters expose relineaged and scope_mismatch.
             reportsScope: true,
             reportsRuleCounters: false,
-            // §6.1：书签与 pin 本里程碑**不让位**（§14.1），轮末 3b 复查那一段结构性不进。
+            // Bookmarks and pins do not yield tombstones or enter the rule-3b recheck in this
+            // milestone (sections 6.1/14.1).
             tombstoneYieldsToLocalEdits: false,
             landsEmptyBatch: false,
             identity: { envelope in
@@ -6155,15 +5658,10 @@ extension OwnedKindRegistration {
                              localScope: access.currentScope(),
                              accountScope: access.accountScope())
             },
-            // §5.1 的索引种子，pin 这一侧**只有游标键**。
-            //
-            // 本机那一半交不出来：身份的后半段是**账户级** ownerKey，要由本轮的解析器从
-            // `spaceId` / `profileId` 翻出来，而这个闭包按接缝的形状拿不到那份映射表；
-            // 这个闭包也拿不到 `allPinRows()` 那份行（它不抛、也不在轮内状态里），直接拿
-            // 裸 lineage 拼 tag 会往索引里塞一批线上永不存在的 hash。交空集合是保守的那一
-            // 侧：索引少一条种子只会让一条
-            // **游标已经丢失**的身份的远端 tombstone 被当成「不认识的 hash」忽略掉，而那条
-            // 路径本来就要靠 R-M3-3-13 的整类型重放兜底。
+            // Pin tag indices seed from cursor keys only (section 5.1). This callback lacks round
+            // owner mappings and the throwing allPinRows read; raw lineage cannot construct valid
+            // account tags. An empty local seed is conservative: unknown tombstones for lost
+            // cursors rely on the existing full-type replay recovery (R-M3-3-13).
             localIdentities: { [] },
             snapshot: { table, maps, now in
                 pinSnapshot(table: table, maps: maps, now: now, access: access, state: state)
@@ -6172,38 +5670,31 @@ extension OwnedKindRegistration {
                 try pinTombstones(table: table, maps: maps, now: now,
                                   access: access, state: state)
             },
-            // §6.7：pin 不走认领，所以这一趟没有任何身份可以配、也没有任何东西要写回本机
-            // 行。它仍然存在并照书签那一条接线，于是引擎那个 helper 不需要为 kind 开分支
-            // （R-exec-10）。
+            // Pins have no claim matching or identity write-back (section 6.7). Keep a no-op
+            // callback so generic engine retry code needs no kind-specific branch (R-exec-10).
             retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
             plan: { input in pinPlan(input, access: access, state: state) },
             land: { input in await landPins(input, access: access, state: state) },
-            // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
+            // No minting means no identity write-back; pin snapshots always have an empty minted
+            // map.
             claimIdentities: { _ in [] },
-            // §8.4.5 的两处清位是**规则专属**的（见 `.bookmarks` 那一段）。pin 取「关闭」值。
+            // Both section 8.4.5 flag-clearing hooks are URL-rule-only; pins use no-op callbacks.
             notePublishApplied: { _ in },
             clearPendingLocalEdits: { _ in },
-            // §9.3 的级联。判据 (b) 的粒度是**完整身份**（`<lineage>:<ownerKey>`），不是裸
-            // lineage——域的构造与 `pinTombstones` 逐字同源，同样两个来源：
-            //
-            // 1. 当前作用域内的行交出**完整身份**（`PinKind.identity(of local:)`）；
-            // 2. `allPins()` 一条都看不见、但 `allPinRows()` 还交得出来的那些行，各自按
-            //    **自己那条身份**只认领、不改写归属——作用域迁移原地留下的备份行属于这一
-            //    类，本机确实还有物理行，只是这一轮的快照不认领它们（R-exec-4 / R-exec-11）。
-            //    唯一的例外是**归属反查不出来**的那些行：这一轮算不出它们坐在哪，也就证不了
-            //    它们不是某条游标的那一行，于是退回按 lineage 保护（A12 的 fail-safe）。
-            //
-            // **按裸 lineage 判是错的**（T9a-2）：一条 lineage 在 N 个 owner 下是 N 条身份，
-            // 于是一条 owner 已被清理的游标会被**另一个 owner 下**的行保护住——它既不会被删
-            // （看起来有活行认领），也不会被改写（它的身份配不上任何本机行），于是永远带着
-            // 一个指向已清理 Space 的 `ownerUuid` 留在表里。换 owner 按 §7.2 是「旧身份
-            // tombstone + 新身份 create」，旧身份那一条本来就不该由新 owner 下的行来认领。
+            // Retention claims use full lineage:ownerKey identities, matching pinTombstones
+            // (section 9.3). Current-scope rows claim exact derived identities and provide current
+            // owners. Extra allPinRows backup rows outside allPins claim only their own identities
+            // without rehoming (R-exec-4/11). Only unresolved owners in that backup set fall back
+            // to lineage protection under A12.
+            // Using lineage for all rows would let a different owner's variant indefinitely protect
+            // an obsolete cursor pointing at a purged Space. Changing owner requires tombstoning
+            // the old identity and creating the new one (section 7.2), not claiming both (T9a-2).
             liveOwners: { candidates, maps in
                 let resolve = maps.resolver
                 let scope = state.localScope
                 let fullStoreRows = try access.allPinRows()
-                // 读的是 `eligibilityOwner`，**不是**身份的后半段：`identity(of local:)` 在
-                // 归属解析不出来时交的是一个占位后半段，截它等于把占位值写进游标。
+                // Use eligibilityOwner, not the identity suffix, which can be an unresolved-owner
+                // placeholder and must never be persisted as ownership.
                 var ownerByIdentity: [String: String] = [:]
                 for row in state.locals {
                     guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope),
@@ -6212,24 +5703,16 @@ extension OwnedKindRegistration {
                     else { continue }
                     ownerByIdentity[identity] = owner
                 }
-                // 来源 2 的定义域，同 `pinTombstones` 逐字同源：轮内投影没覆盖到的那些
-                // 全库行，**各自贡献自己那条身份**（R-exec-11）。
+                // Second claim source matches pinTombstones: full-store rows absent from the round
+                // projection each contribute their own identity (R-exec-11).
                 let claimedGuids = Set(state.locals.map(\.guid))
                 var outOfScopeIdentities: Set<String> = []
-                // **归属反查不出来的那些行退回按 lineage 保护**（A12 的 fail-safe）。判据不是
-                // `identity(of local:)` 返回 nil——它在归属解析不出来时交的是一个 NUL 打头的
-                // 占位后半段，那个身份与任何一条游标都不相等，于是「配不上」会被静默地读成
-                // 「不认领」。问的是 `eligibilityOwner`，它为 nil 才是「这一轮算不出这条行
-                // 坐在哪」。
-                //
-                // 为什么这一支必须保守：判据 (b) 保护的是「本机还有活行」的游标，而一条
-                // 归属未映射的行恰恰是**证不了它不是那条游标的那一行**的状态——一次 Space
-                // 映射抖动就会让它名下的游标被这一趟扫掉，而那条行还在用户的机器上。删错
-                // 的代价是那条行下一轮被判成从未发布过，以 `baseVersion == 0` 的 create 盲写
-                // 覆盖账户上那一条；留错的代价只是一条游标多活一个保留期。
-                //
-                // **只在来源 2 里退回**：作用域内的行由来源 1 按身份各自表态，它们归属算不
-                // 出来时本来就一个身份都不贡献（这一点与 R-exec-11 之前逐字相同）。
+                // For backup rows with unresolved owners, conservatively protect by lineage (A12).
+                // Query eligibilityOwner, not identity(of:), which returns a NUL-prefixed
+                // placeholder rather than nil. Unresolved ownership cannot prove a live row is
+                // unrelated to a cursor; deleting that cursor risks a blind create overwrite,
+                // whereas keeping it only extends retention. Apply this fallback only to source 2;
+                // current-scope rows retain their exact-identity behavior.
                 var unresolvedOwnerLineages: Set<String> = []
                 for row in fullStoreRows where !claimedGuids.contains(row.guid) {
                     guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope)
@@ -6248,10 +5731,9 @@ extension OwnedKindRegistration {
                         out.owners[identity] = owner
                         continue
                     }
-                    // 来源 2。**按完整身份匹配**：当前作用域下还有行的那些身份已经由来源 1
-                    // 各自表过态，而作用域之外的备份行只认领**它自己**那一条。按裸 lineage
-                    // 兜一次就把上面那条论证撤销了。归属这里不改写 ⇒ 保留上一次已知的归属
-                    // （来源 1 才是唯一的 `ownerUuid` 写入方）。
+                    // Backup rows claim their own full identities, except the explicit
+                    // unresolved-owner lineage fallback. Do not rehome them; only source 1 supplies
+                    // current ownerUuid values.
                     guard outOfScopeIdentities.contains(identity)
                             || unresolvedOwnerLineages.contains(
                                 pinIdentityHalves(identity).lineage)
@@ -6263,21 +5745,19 @@ extension OwnedKindRegistration {
     }
 }
 
-/// §4.2 的出站快照。**没有铸造那一步**：pin 的身份由 `(lineage, owner)` 推导，不需要在
-/// 内存里先铸一个再等提交写回（§6.4 对 pin 退化成空操作）。
+/// Outbound pin snapshot (section 4.2). Identity derives from lineage/owner, so no provisional
+/// minting or later identity write-back is needed; section 6.4 is a no-op for pins.
 @MainActor
 private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
                          access: any PhiPinnedTabLocalAccess,
                          state: PinSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
-    // R-exec-12：发布之前再取样一次两个作用域值。纯 push 轮不跑 `plan` 也不跑落地，所以
-    // 这一处是那种轮次里唯一一次复查。
+    // Resample scopes before publication (R-exec-12). A pure push has no plan or landing path, so
+    // this is its only recheck.
     state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
-    // §7.3：作用域不一致 ⇒ 发布半边**整段**跳过——不铸造、不快照、不发任何 commit。
-    // 一份空快照就是「这一轮没有任何 pin 要发布」；入站那一半由 `plan` 全部停放。
-    //
-    // 跳过的同时把 §11.2 的 `scope_mismatch` 带回去：这个跳过在**每一种轮次**里都发生，
-    // 而 `plan` 只在有入站的轮次里跑，光靠它那一路，一次纯 push 轮会悄无声息地不发布。
+    // On blocked scopes, skip all pin snapshot/publication work and return an empty snapshot; plan
+    // parks the incoming half (section 7.3). Carry scope_mismatch diagnostics from here too,
+    // because a pure push never runs plan (section 11.2).
     guard !state.scopeBlocked else {
         out.scopeMismatch = true
         return out
@@ -6292,9 +5772,8 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
         guard let bytes = try? PinKind.envelope(entity).serializedData() else { continue }
         out.entities[identity] = bytes
     }
-    // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。
-    // 读的是 `eligibilityOwner`，**不是**身份的后半段（`identity(of local:)` 在归属解析
-    // 不出来时交的是一个占位后半段，截它等于把占位值写进游标）。
+    // Map identity to its actual current eligibilityOwner for cursor refresh (A12 / section 3.5).
+    // Never use an identity suffix that may contain an unresolved-owner placeholder.
     for row in state.locals {
         guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope),
               let owner = PinKind.eligibilityOwner(of: row, resolve: resolve, scope: scope)
@@ -6304,54 +5783,49 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
     return out
 }
 
-/// §4.7 的差分。
+/// Pin deletion diff (section 4.7).
 @MainActor
 private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
                            access: any PhiPinnedTabLocalAccess,
                            state: PinSyncRoundState) throws -> OwnedItemTombstoneResult {
-    // R-exec-12：同 `pinSnapshot`。**必须排在 `allPinRows()` 之前**——轮中迁移会让 access
-    // 那份快照失效（`changeScope` 只清不重读），此刻去读它只会抛，而这一轮本来就什么都
-    // 不该做。
+    // Resample before allPinRows (R-exec-12). Mid-round migration invalidates access's cache
+    // without rereading it, and this round should be skipped rather than throw while reading that
+    // stale cache.
     state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
-    // §7.3：作用域不一致的那一轮发布半边整段不跑，差分是它的一半。
+    // Deletion diff is part of the publication half suppressed by scope mismatch (section 7.3).
     guard !state.scopeBlocked else {
         return OwnedItemTombstoneResult(identities: [], cursorUpdates: [:])
     }
     let resolve = maps.resolver
     let scope = state.localScope
-    // R-exec-4：定义域问 `allPinRows()`（**全库**那一次读），**不问快照**。本轮没成功读过时
-    // 它抛，于是这一条 kind 的发布段整段不跑——空集合的回答是给账户上每一条已发布身份发
-    // tombstone。
+    // Use the full-store allPinRows domain, not the snapshot (R-exec-4). A failed read throws and
+    // skips publication; interpreting failure as empty would tombstone every published identity.
     let fullStoreRows = try access.allPinRows()
-    // 定义域 = 轮内那份本机投影（当前作用域内的行，已按本轮落地刷新过）+ 全库里**它没有
-    // 覆盖到**的那些行，也就是作用域迁移原地留下的备份行。两段按 `guid` 去重，轮内那一份
-    // 优先——它才是落地之后的样子。
-    //
-    // **每一条行各自贡献自己那条 `(lineage, owner)` 身份**（R-exec-11），身份由
-    // `SyncableOwnedItems.tombstones` 按 `PinKind.identity(of local:)` 算，与出站快照逐字
-    // 同一条推导。于是一条 profile 形状的备份行保护的是 `(L, profileUuid)` 这一条，**挡不
-    // 住** `(L, spaceX)` 被判成删除——换 owner 按 §7.2 就是「旧身份 tombstone + 新身份
-    // create」。旧口径在这里补的是一批**只按裸 lineage 匹配**的壳，一条 lineage 只要还剩
-    // 任何一行就把它名下全部 owner 的游标一起保护住；Mac B 2026-09-14 被吞掉的那次
-    // default-space 取消固定就是这么永远发不出去的。
+    // Domain is the refreshed current-scope projection plus full-store rows it does not cover,
+    // deduplicated by GUID in favor of the post-landing projection. Each row contributes its own
+    // lineage/owner identity (R-exec-11), matching snapshot derivation. A Profile backup protects
+    // its Profile identity, not the same lineage's old Space identity; changing owners is
+    // old-delete plus new-create. Broad lineage-only protection previously swallowed legitimate
+    // unpin deletions.
     var domain = state.locals
     let claimedGuids = Set(state.locals.map(\.guid))
     for row in fullStoreRows where !claimedGuids.contains(row.guid) {
         domain.append(row)
     }
-    // R-exec-9 的豁免集合对 pin 恒空：没有认领就没有「配上了但还没写回」这个中间态。
+    // Pins have no matched-but-unpersisted adoption state, so pendingClaims is empty (R-exec-9).
     return SyncableOwnedItems.tombstones(PinKind.self, locals: domain, table: table,
                                          resolve: resolve, scope: scope, nowMs: now,
                                          pendingClaims: [])
 }
 
-/// §4.4 的入站计划。**没有 §6 的认领**（§6.7：首次同步时两边的 pin 取并集）。
+/// Incoming pin planning (section 4.4), without section 6 adoption: initial sync unions pins from
+/// both devices (section 6.7).
 @MainActor
 private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAccess,
                      state: PinSyncRoundState) -> OwnedPlanOutput {
     var out = OwnedPlanOutput()
-    // R-exec-12：入站的处置在这里定，所以复查要排在建 `context` 之前。作用域动过 ⇒ 这一轮
-    // 的入站实体**全部停放**，等下一轮那份「新行 + 新作用域」的一致投影来落。
+    // Resample before building plan context (R-exec-12). If scopes changed, park every incoming
+    // entity until next round captures consistent rows and scopes.
     state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
     var arrivals: [OwnedItemArrival<Phi_PhiPinTabEntity>] = []
     for item in input.arrivals {
@@ -6366,25 +5840,26 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     context.localProjections = pinLocalProjections(
         for: Set(arrivals.map { PinKind.identity(of: $0.entity) }).union(input.parked.keys),
         table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
-    // §7.3 的判据交给纯函数模块：不一致 ⇒ 零 step、入站实体全部停放。**`liveLocalParents`
-    // 与 `deletedSubtree` 留空**：pin 是平的，没有父，A9 的那两个合取项对它退化。
+    // Pass scope mismatch to the pure planner, yielding no steps and parking all arrivals (section
+    // 7.3). Pins are flat, so liveLocalParents and deletedSubtree stay empty and those A9
+    // conditions are vacuous.
     context.localScope = state.localScope
     context.accountScope = state.accountScope
     context.scopeMovedMidRound = state.scopeMovedMidRound
     out.plan = SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: input.parked,
                                        table: input.table, resolve: input.maps.resolver,
                                        context: context)
-    // §11.2 的 `scope_mismatch`：这一轮 pin 段的发布半边有没有因为作用域不一致被跳过。
+    // Report whether section 7.3 suppressed pin publication this round (section 11.2).
     out.scopeMismatch = context.scopeMismatch
-    // §6.2 的那条规则对 pin 同样成立（pin 不走 §6 的**认领**，但「本机赢了字段就要发布
-    // 出去」讲的是合并，不是认领）。
+    // Locally winning fields still require republication (section 6.2). Pins skip adoption, not the
+    // merge rule itself.
     out.mustRepublish = out.plan.mustRepublish
     return out
 }
 
-/// `bookmarkLocalProjections` 的 pin 半边，三点差别都来自「pin 是平的」：没有父身份要解，
-/// 身份是**算出来**的（所以同一条身份可能有多条行——与 `landPins` 逐字同一条「留第一条」
-/// 判据），rank 同样取基线那一个。
+/// Pin counterpart to bookmarkLocalProjections: pins are flat, need no parent resolution, derive
+/// identities and retain the first row for duplicate identities as landPins does. Rank likewise
+/// comes from the baseline.
 @MainActor
 private func pinLocalProjections(for identities: Set<String>,
                                  table: PhiOwnedItemTable,
@@ -6413,11 +5888,9 @@ private func pinLocalProjections(for identities: Set<String>,
     return out
 }
 
-/// §4.4 / §4.5 的落地：变体重铸 + 三相批次 + 落地后复核，**一个事务**。
-///
-/// 与书签那边的两点差别都来自「pin 是平的、按 owner 分组」：没有父子关系要排，所以没有
-/// 提升；批次不按 Space 切开，因为一条 pin 操作的归属由 store 自己从行上读（`.create`
-/// 之外的四种 op 只带 guid）。
+/// Pin landing in one transaction: variant normalization, three-phase batch, then post-check
+/// (sections 4.4/4.5). Pins are flat and owner-grouped, so no lifting or per-Space split is needed;
+/// non-create operations identify rows by GUID and the store derives their ownership.
 @MainActor
 private func landPins(_ input: OwnedLandingInput,
                       access: any PhiPinnedTabLocalAccess,
@@ -6426,29 +5899,23 @@ private func landPins(_ input: OwnedLandingInput,
     let resolve = input.maps.resolver
     let scope = state.localScope
 
-    // R-exec-12：落地之前再取样一次两个作用域值，动过就整段不跑，入站原样停放。
-    //
-    // **这一趟是这个 fix 的要害。** 轮内那份本机投影是迁移**之前**的形状，按它算出来的身份
-    // 配不上任何一条迁移后的行——照着落下去，`landPins` 会在刚迁好的行旁边把每一条 pin 再建
-    // 一遍（Mac B 2026-09-14）。A11 的重铸同样不能跑：它按 guid 定位，而迁移已经把那批物理行
-    // 换掉了。停放不丢东西——marker 已经推过那一页，但载荷记在游标的 `pendingApply` 上，下一轮
-    // 的 `beginRound` 会带着一致的「新行 + 新作用域」把它们当成 `.update` 落下去。
+    // Resample immediately before landing (R-exec-12). Scope migration may have replaced the
+    // physical rows behind the cached identities/GUIDs, so both creates and A11 reminting would be
+    // unsafe. Park all input instead. pendingApply retains consumed payloads; next round's
+    // consistent projection can update existing migrated rows without duplication.
     state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
     guard !state.scopeBlocked else {
         for step in input.steps { outcome.parked.insert(step.identity) }
         return outcome
     }
 
-    // §7.2 / A11 的变体重铸：同 owner 下多条同 lineage 的活动行，先折叠掉签名相同的精确
-    // 重复，再给剩下的每一条（`index` 最小的那一条除外）重铸 `pinLineageId`。它是一次
-    // **本地写**，所以它在这一轮的 `PinApplyBatch` 里、与落地同一个事务（W14），**不在**
-    // 发布段那个只读的 pre-pass 里。
+    // Normalize same-owner lineage variants (section 7.2 / A11): collapse exact signature
+    // duplicates, then remint remaining variants except the lowest-index row. This is a local write
+    // in the same PinApplyBatch transaction as landing, never the read-only publication pre-pass
+    // (W14).
     var ops = PinKind.normalizeVariants(locals: state.locals).ops
-    // **条数在批次提交之后才记**（见下面那次 `apply` 的后面）：批次是一个事务，被拒或被
-    // 停放时一行都没改，此刻就计数会让计数行报出一批没有发生过的重铸。
-    //
-    // 数的是 `.relineage` 那一种，**不是 `ops.count`**：A11 现在同时产出折叠用的 `.delete`，
-    // 把它们算进 `relineaged` 会让 §11.2 的计数行报出一批没有发生过的重铸。
+    // Count reminting only after the batch commits; refused/parked transactions changed no rows.
+    // Count relineage operations, not all ops, since A11 also emits duplicate-removal deletes.
     var relineaged = 0
     var collapsedDuplicates = 0
     for op in ops {
@@ -6460,13 +5927,10 @@ private func landPins(_ input: OwnedLandingInput,
     }
     guard !input.steps.isEmpty || !ops.isEmpty else { return outcome }
 
-    // 身份 -> 本机行。pin 没有 `syncId` 那一列，身份是**算出来**的，所以两条行算出同一条
-    // 身份是可能的（`SyncableOwnedItems.snapshot` 的去重与 A11 的折叠讲的是同一件事）。
-    //
-    // 留**第一条**，与那两处逐字同一个判据：`allPins()` 按 `(ownerKey, index, guid)` 有序，
-    // 于是这里认的行 = 快照发布的那一行 = A11 折叠时留下的那一行。写成后者覆盖前者的话，
-    // 同一轮里一条入站 `.update` 会打在 A11 正要删掉的那个副本上（补丁是第二相、删除是第三
-    // 相），于是那次远端编辑连同被删的行一起消失，而幸存的那一行还是旧值。
+    // Keep the first row per derived identity, matching snapshot deduplication and A11 collapse.
+    // allPins sorts by ownerKey/index/GUID, so all three select the same survivor. Last-wins
+    // indexing could apply an incoming update to the duplicate deleted later in the transaction,
+    // losing the edit.
     var rowOf: [String: PhiLocalPin] = [:]
     for row in state.locals {
         guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope) else {
@@ -6475,29 +5939,21 @@ private func landPins(_ input: OwnedLandingInput,
         if rowOf[identity] == nil { rowOf[identity] = row }
     }
 
-    /// 账户级 ownerKey -> 本机那一侧的两个字段（§7.2 的表反过来读）。
+    /// Resolve account ownerKey into local Space/Profile fields, reversing the section 7.2 mapping.
     func localOwner(_ ownerKey: String) -> (spaceId: String?, profileId: String?)? {
-        // **归属的形状必须与本机当前作用域相符，不符就是「反推不出本机形状」。**
-        //
-        // 三种形状与三种作用域一一对应（§7.2 的表）：App 归属只在 App 作用域下有本机形状，
-        // Space 归属只在 Space 作用域下有，Profile 归属只在 Profile 作用域下有。不带这三条
-        // 守卫的话，一条**账户上还没跟着改过来的旧形状实体**照样交得出一对字段，而
-        // `applyPinSyncBatchBody` 会把缺掉的那一半按 `?? defaultSpaceId` 补齐、
-        // `applyCurrentPinnedTabOwner` 再按**当前**作用域盖一次归属——于是一条 Profile 归属
-        // 的实体在 Space 作用域下落成了**默认 Space 里**的一行，正正压在那个 Space 本来就
-        // 有的同 lineage 行旁边（Mac B 2026-09-14 23:49）。引擎那一侧的投影还以为它落在
-        // profile 归属上，两边从此对不上：落地后复核按 profile 归属问「本机有这条身份吗」，
-        // 答案永远是「没有」，这条身份于是每一轮都重新落地一次、每一轮都再多一行。
-        //
-        // **停放而不是拒收**：账户作用域收敛之后对端会用新形状重发，那时它自己就好了。
+        // Require the owner's shape to match the current local scope: app, Space and Profile each
+        // resolve only in their matching scope (section 7.2). Otherwise an old-shape account entity
+        // can fall through defaultSpaceId/current-owner normalization, duplicate a migrated row,
+        // and fail post-check on every replay. Park mismatches rather than refuse them; they can
+        // heal as account scope converges.
         if ownerKey == OwnedOwnerMaps.appOwnerKey {
             guard scope == .app else { return nil }
             return (nil, nil)
         }
         if let spaceId = resolve.localSpaceId(ownerKey) {
             guard scope == .space else { return nil }
-            // 一条 Space 作用域的行两个字段都非 nil；profile 取同 Space 的既有行，没有就
-            // 落到默认 profile（与书签落地同一条兜底）。
+            // A Space-scoped pin has both fields. Reuse another row's Profile in that Space, or the
+            // default Profile if none exists, matching bookmark landing's fallback.
             let profileId = state.locals.first { $0.spaceId == spaceId }?.profileId
                 ?? LocalStore.defaultProfileId
             return (spaceId, profileId)
@@ -6517,7 +5973,8 @@ private func landPins(_ input: OwnedLandingInput,
     }
     var planned: [Planned] = []
     for step in input.steps {
-        // §6.7：pin 不走认领，`plan` 因此产不出 `.claim`。真出现了就跳过，不去猜它的意思。
+        // Pins do not adopt, so claim is structurally unreachable. Skip rather than invent
+        // semantics (section 6.7).
         guard step.kind != .claim else { continue }
         let entity = step.payload.flatMap { bytes -> Phi_PhiPinTabEntity? in
             guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
@@ -6527,8 +5984,8 @@ private func landPins(_ input: OwnedLandingInput,
                                ownerKey: pinIdentityHalves(step.identity).ownerKey))
     }
 
-    // 本轮的落地投影：轮首那份快照 + 这一轮新建的行。它同时回答两个问题——「这条身份有没有
-    // 本机行」与「这个 owner 下现在有哪些行」（rank → index 与拆分伙伴解析都要）。
+    // Round landing projection includes initial rows and newly created rows. It answers identity
+    // existence and owner membership for rank projection and split-partner resolution.
     var projected: [String: PhiLocalPin] = state.rowByGuid
     var guidOf: [String: String] = [:]
     for (identity, row) in rowOf { guidOf[identity] = row.guid }
@@ -6554,11 +6011,9 @@ private func landPins(_ input: OwnedLandingInput,
         let identity = item.identity
         if let payload = item.step.payload { payloadOf[identity] = payload }
         if let rank = item.step.newRank { rankOf[identity] = rank }
-        // **纯内容更新不碰这个 owner 的次序。** rank 变了的时候 `plan` 会另发一条 `.move`
-        // （`moved` 的判据里就有 rank），所以只带 `.update` 的那条身份按定义没有位置变化；
-        // 把它的 owner 算进「被触及」，一次改名或一次拆分链接的落地会顺手为整组兄弟发一份
-        // 完整的稠密置换，同一批里于是混进一堆与这次落地无关的 `.move`。书签那一侧对同一类
-        // 步骤同样不重排（`landBookmarks` 只在 create 与提升时 `touched`）。
+        // Content-only updates do not touch owner ordering. Rank changes already produce a separate
+        // move step; adding every update's owner here would emit unrelated full sibling
+        // permutations for renames or split links. Bookmark landing follows the same principle.
         if item.step.kind != .update { touchedOwners.insert(item.ownerKey) }
 
         if item.step.kind == .delete {
@@ -6569,24 +6024,16 @@ private func landPins(_ input: OwnedLandingInput,
         }
         guard let entity = item.entity else { continue }
         if guidOf[identity] == nil {
-            // 归属反推不出本机形状 ⇒ 停放，等那个 Space / profile 的映射到位。
+            // Park unresolved local owner shapes until Space/Profile mappings become available.
             guard let owner = localOwner(item.ownerKey) else {
                 outcome.parked.insert(identity)
                 continue
             }
-            // §7：身份是 `(lineage, owner)` 这一对，**一条身份一行**——而落地真正写进去的
-            // 是本机那一侧的 owner。这里再按**本机 owner** 问一次「这条 lineage 已经有行了
-            // 吗」，问的与上面 `guidOf` 那一问**不是同一件事**：`guidOf` 走的是
-            // `PinKind.identity(of local:)`，它把本机行的归属**正向**解析成账户 uuid，解析
-            // 不出来（Space 映射还没到）或解析出**另一种形状**（账户上那条实体还是 Profile
-            // 归属，而本机已经迁到 Space 作用域）时，它给出的身份与入站那一条永不相等，于是
-            // 这一支会在一条**本来就在的行旁边**再建一遍。Mac B 2026-09-14 23:49 的第二、
-            // 第三条重复行就是这么来的：迁移刚在 default Space 建好的 `c0020f0d` 行还在，
-            // 一条 Profile 归属的旧实体照样落了下来，`spaceId` 走 `.create` 的默认值回落到
-            // 默认 Space，正正压在它旁边。
-            //
-            // **停放而不是拒收**：这一类里有可以自己好起来的一种（Space 映射晚到一轮），
-            // 停放让它下一轮以 `.update` 落在那条既有行上；拒收会把它永久丢掉。
+            // Enforce one row per lineage/owner at the actual local landing boundary (section 7).
+            // guidOf derives account identities through forward mappings, which may be missing or
+            // describe an old owner shape after scope migration. Recheck lineage under the resolved
+            // local owner before create to avoid duplicating an existing migrated row. Park rather
+            // than refuse: delayed mappings can heal next round and turn this into an update.
             let landingLineage = PinKind.lineageKey(pinIdentityHalves(identity).lineage)
             let landingOwnerKey = owner.spaceId ?? owner.profileId ?? OwnedOwnerMaps.appOwnerKey
             let ownerAlreadyHasLineage = projected.values.contains { row in
@@ -6610,13 +6057,10 @@ private func landPins(_ input: OwnedLandingInput,
                     ?? URL(string: "https://pin.phi/placeholder")!,
                 splitPartnerLineageId: nil, source: Int(entity.source),
                 createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
-                // R-exec-5：内容戳照实体的内容戳落，**不是 nil、也不是落地时刻**。留 nil
-                // 的话下一轮的本机比较戳回落到 `createdDate` = 落地那一刻，这条刚从对端拿
-                // 来的 pin 会在下一次字段冲突里凭一个假的「我更新」赢掉对端的真实编辑。
-                //
-                // **两个内容字段取较大的那个戳**：`PinKind.stamp` 的无基线支拿这一个值同时
-                // 盖 `title` 与 `url`（§4.2 第 5 条），只取标题的话，一次「先改标题、后改
-                // 网址」的对端编辑在这台机器上会以标题那个更早的时刻重新发布。
+                // Persist the incoming content timestamp, not nil or landing time (R-exec-5). Nil
+                // would fall back to the newly created row's date and falsely beat later remote
+                // edits. Use max(title stamp, URL stamp), since the no-baseline PinKind stamping
+                // path applies this shared time to both content fields (section 4.2(5)).
                 contentUpdatedDate: Date(timeIntervalSince1970:
                                             Double(max(entity.title.updatedAtMs,
                                                        entity.url.updatedAtMs)) / 1000),
@@ -6624,9 +6068,9 @@ private func landPins(_ input: OwnedLandingInput,
         }
     }
 
-    // §4.10 的 rank → index 投影，**按 owner 分组**（pin 没有父）。每个被触及的 owner 发
-    // 一份**完整的稠密置换**：批次入口写的是裸 index，它不会替你把兄弟们往后挪（M7）。
-    // 本机 guid -> 它这一轮的 rank：步骤里的新 rank 优先，否则基线那一条。
+    // Project ranks to indices per owner, since pins are flat (section 4.10). Emit a full dense
+    // permutation for every touched owner; raw index writes do not shift siblings (M7). Prefer
+    // planned ranks, otherwise baseline ranks.
     var rankByGuid: [String: String] = [:]
     for (identity, guid) in guidOf {
         guard let rank = rankOf[identity] else { continue }
@@ -6639,16 +6083,14 @@ private func landPins(_ input: OwnedLandingInput,
             .sorted { lhs, rhs in
                 switch (rankByGuid[lhs.guid], rankByGuid[rhs.guid]) {
                 case let (left?, right?):
-                    // §2.4：rank 平手**按 `pin_uuid`（= 归一后的 lineage）破，绝不按本机
-                    // `guid`**。`guid` 是每台设备各铸的，两台机器于是对同一对同 rank 的 pin
-                    // 排出相反的次序，各自把自己那份 rank 发回账户——它们互相覆盖、**永不
-                    // 收敛**，每一轮各发一条 commit，用户看到两台机器上的 pin 顺序不停对调。
-                    // `pin_uuid` 是这一对里唯一两端都认得的键。
+                    // Break rank ties by normalized pin_uuid/lineage, never device-local GUID
+                    // (section 2.4). GUID ordering differs across devices and can cause endless
+                    // opposing reorder commits; lineage is shared.
                     return left == right
                         ? PinKind.lineageKey(lhs.lineageId) < PinKind.lineageKey(rhs.lineageId)
                         : left < right
-                // **没有 rank 的排在后面**：那是一条从没发布过、这一轮也没被碰过的本机行，
-                // 把它排到前面会让每一次落地都顺手重排一遍与本轮无关的行。
+                // Place rankless, untouched and never-published local rows last to avoid reordering
+                // unrelated rows on every landing.
                 case (nil, _?): return false
                 case (_?, nil): return true
                 case (nil, nil):
@@ -6658,27 +6100,20 @@ private func landPins(_ input: OwnedLandingInput,
         for (position, row) in members.enumerated() { indexOf[row.guid] = position }
     }
 
-    // 三相里的第一相：create / relineage / move。
+    // Phase 1: create, relineage and move.
     var indexed: Set<String> = []
-    // §8.2 / Task 10：本轮真的**新建**出来的那些 pin，落地后复核通过的会跟着 outcome 交给
-    // 图标回填队列。
+    // Track genuinely new pins for favicon backfill after successful landing checks (section 8.2 /
+    // Task 10).
     var createdPinsByIdentity: [String: PhiLocalPin] = [:]
     for item in planned where item.step.kind != .delete {
         guard let guid = guidOf[item.identity], !outcome.parked.contains(item.identity) else {
             continue
         }
         if created.contains(item.identity), var row = projected[guid] {
-            // **一条身份最多产出一条 `.create`，哪怕它在计划里有两条 step。**
-            //
-            // `plan` 对一条**有基线**的身份同时产出 `.move` 与 `.update`（位置与内容是
-            // 两条步骤，见那里的注释），而 `created` 与 `guidOf` 都是**按身份**记的：上面
-            // 那趟循环只铸一个 guid、只 `insert` 一次。这一趟却是**按 step** 走的，不挡的话
-            // 两条 step 各自把同一行 append 一遍，`applyPinSyncBatchBody` 于是拿同一个 guid
-            // 调两次 `createPinnedTabBody`——库里多出一条**与前一条 guid 完全相同**的 pin 行。
-            // 那不是一次可以靠 A11 收拾的变体：两行共享 guid，此后任何按 guid 定位的写
-            // （`.move` / `.update` / `.delete`）都只碰得到其中一条，而侧栏那本按
-            // `guidInLocalDB` 建的字典会在重复键上直接 trap（Mac B 2026-09-14 23:49 那次
-            // 崩溃，`PinnedTabViewController.swift:601`）。
+            // Emit at most one create per identity even when plan supplies both move and update.
+            // created/guidOf are identity-keyed, while this loop visits steps; emitting twice would
+            // create duplicate physical rows sharing a GUID. A11 cannot safely repair shared GUIDs,
+            // and sidebar dictionaries can trap on the duplicate key.
             guard createdPinsByIdentity[item.identity] == nil else { continue }
             row.index = indexOf[guid] ?? 0
             projected[guid] = row
@@ -6686,14 +6121,13 @@ private func landPins(_ input: OwnedLandingInput,
             createdPinsByIdentity[item.identity] = row
             indexed.insert(guid)
         } else if item.step.kind == .create || item.step.kind == .move {
-            // §4.5：**先按身份找本机行，找不到才 create**。本机已经有这条身份的行时，一条
-            // 计划里的 `.create` 是一次重放而不是一次新建——照着建一遍会让本机每条 pin 在
-            // 一次重放之后变成两条，而两条都算得出身份、都不会被差分判成删除。
+            // Resolve identity before create (section 4.5). An already existing local pin makes a
+            // planned create a replay/update, not a second physical row.
             ops.append(.move(guid: guid, index: indexOf[guid] ?? 0))
             indexed.insert(guid)
         }
     }
-    // 其余兄弟：被触及的 owner 里所有**已经存在于本机**、这一轮还没拿到最终 index 的行。
+    // Assign final indices to remaining existing rows under touched owners.
     for owner in touchedOwners {
         let movers = projected.values
             .filter { ownerOfGuid[$0.guid] == owner && !indexed.contains($0.guid)
@@ -6704,10 +6138,10 @@ private func landPins(_ input: OwnedLandingInput,
         }
     }
 
-    // 第二相：字段补丁。**拆分伙伴在这里预解析**（§7.4）——伙伴行在同一个 owner 下存在
-    // 就把 lineage 交给 store（它在同一个事务里写两个方向），不存在就不写本地链接，并把
-    // 那条 lineage 记进游标的 `pendingPartnerLineage`：没有这一半，下一次快照会判出「这个
-    // 字段变了」并把 `""` 发出去，**把对端好好的拆分对拆散**，而这台机器只是接收了它。
+    // Phase 2: content patches and split-partner resolution (section 7.4). If a same-owner partner
+    // exists, write both directions transactionally. Otherwise leave the local link untouched and
+    // persist pendingPartnerLineage so the next snapshot does not publish an empty link that breaks
+    // the peer's intact split.
     var reverseLinks: [PinApplyOp] = []
     var linkedPartners: [String: String] = [:]
     var clearedPartners: Set<String> = []
@@ -6721,9 +6155,8 @@ private func landPins(_ input: OwnedLandingInput,
         }
         let partner = PinKind.lineageKey(entity.splitPartnerUuid.stringValue)
         if partner.isEmpty {
-            // 对端解除了这一对：清掉本地链接，游标那一位也跟着清。**本机本来就没有链接时
-            // 一个字都不写**——一条刚建出来的行没有伙伴可解，那一条补丁只会在事务里多跑
-            // 一次 `applyPinSplitPartnerBody` 并盖一遍 `updatedDate`。
+            // A remote unlink clears the local link and pending wait. If the row is already
+            // unlinked, avoid a redundant patch and updatedDate write.
             if state.rowByGuid[guid]?.splitPartnerLineageId != nil {
                 fields.splitPartnerLineageId = .some(nil)
                 clearedPartners.insert(guid)
@@ -6736,12 +6169,12 @@ private func landPins(_ input: OwnedLandingInput,
             }
             fields.splitPartnerLineageId = .some(partner)
             linkedPartners[guid] = partner
-            // 伙伴还没有本地行 ⇒ 这一条是半落地的那一半，记下它在等谁。
+            // Record the missing partner lineage for a partially landed pair; empty means no longer
+            // waiting.
             outcome.pendingPartnerLineages[item.identity] = partnerRow == nil ? partner : ""
-            // §7.4 的另一半：拆分对是**双向**的，而伙伴那一半的实体这一轮没有到达——它上一轮
-            // 就落了地，只是那时这一条还不在本机，于是它的游标记下了 `pendingPartnerLineage`。
-            // 反方向那一步必须**在同一个事务里**补上：只写到达的这一侧，另一侧要等下一次本地
-            // 变化才被发现，中间那段时间两台机器对同一对 pin 的显示不一致。
+            // Repair the reverse link in the same transaction (section 7.4). The partner may have
+            // arrived in an earlier round and still be waiting; updating only this arrival would
+            // leave peer displays inconsistent until another local change.
             let thisLineage = PinKind.lineageKey(pinIdentityHalves(item.identity).lineage)
             if let partnerRow {
                 let partnerIdentity = PinKind.lineageKey(partnerRow.lineageId) + ":"
@@ -6760,12 +6193,13 @@ private func landPins(_ input: OwnedLandingInput,
         else { continue }
         ops.append(.update(guid: guid, fields: fields))
     }
-    // 反方向那几条也是第二相，跟在到达的那一侧后面进同一批。
+    // Append reverse-link patches in phase 2 after patches for the arriving side.
     ops.append(contentsOf: reverseLinks)
 
-    // 第三相：删除。
+    // Phase 3: deletion.
     for item in planned where item.step.kind == .delete {
-        // §5.6 T3：反查到身份、**本机没有行** ⇒ 什么都不删，但游标照样写 `deletedAtMs`。
+        // Section 5.6 T3: a known identity without a local row needs no physical deletion, but
+        // still finalizes deletedAtMs.
         guard let guid = guidOf[item.identity], state.rowByGuid[guid] != nil else {
             outcome.landed.insert(item.identity)
             outcome.deleted.insert(item.identity)
@@ -6782,45 +6216,45 @@ private func landPins(_ input: OwnedLandingInput,
         try await access.apply(PinApplyBatch(unordered: ops))
     } catch LocalStoreWriteError.rowAlreadyMapped, LocalStoreWriteError.rowNotFound,
             LocalStoreWriteError.rowNotInActiveScope, LocalStoreWriteError.noCandidateSurvived {
-        // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远不会好。
+        // Refuse an invalid batch rather than parking it for endless identical retries.
         outcome.refused.formUnion(identities)
-        // 一条 op 都没落，伙伴那几位当然也没写成——同停放那一支，交回空的那张表。
+        // No operation committed, so no partner-state updates can be acknowledged; return an empty
+        // map as for parking.
         outcome.pendingPartnerLineages = [:]
         return outcome
     } catch {
-        // 导入锁（`.spaceImporting`）与其余一切瞬时失败：**停放**，下一轮重试。
+        // Park import-lock and other transient failures for retry next round.
         outcome.parked.formUnion(identities)
         outcome.pendingPartnerLineages = [:]
         return outcome
     }
-    // 事务提交了，重铸这才真的发生过。
+    // Only a committed transaction can report reminting.
     outcome.relineaged = relineaged
-    // 折叠掉的精确重复没有自己的账户身份，于是差分、游标、每一个计数器都看不见它们——
-    // 一条不会被任何人注意到的本机删除。留一行告警，下一次这类竞态是一次 grep 而不是
-    // 「用户一小时后发现 pin 重复了」。R12：只有条数与 kind，没有任何行内容。
+    // Exact duplicates have no distinct account identities, so their local removal is invisible to
+    // cursor/diff counters. Emit one metadata-only warning with kind/count (R12) to make future
+    // races diagnosable.
     if collapsedDuplicates > 0 {
         AppLogWarn("[phi-sync] pins: collapsed \(collapsedDuplicates) exact duplicate row(s) "
                    + "sharing an identity; a round landed beside rows it could not see")
     }
-    // 同一个事务里写下去的拆分链接立刻折回轮内投影，于是同一轮的发布段不会把这台机器刚刚
-    // **接收**下来的那条链接当成一次本机解除再发回账户（§7.4）。
+    // Reflect transactionally written split links in the round projection immediately, preventing
+    // publication from misreading a newly received link as a local unlink (section 7.4).
     state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners)
 
-    // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply` 收尾
-    // 会自己重建一次缓存，所以这个读者此刻答的是新世界。
+    // Recheck post-landing rows before baseline write-back (section 4.5). apply rebuilds its cache,
+    // so this observes committed state.
     for identity in identities {
         let halves = pinIdentityHalves(identity)
-        // **问的是完整身份，不是裸 lineage**（R-M3-3-15）。`isKnownLocalPin` 收的是**本机
-        // 那一侧**的 ownerKey，而身份后半段是账户级 uuid，中间必须过 `localOwner` 的反查
-        // ——直接把 uuid 传下去，本机那一列永不相等，于是每一条都被判成「不在」。反查不出
-        // 本机形状 ⇒ nil ⇒ 本机不可能有这条身份的行。
+        // Check full identity, not lineage (R-M3-3-15). isKnownLocalPin requires a local owner key,
+        // so reverse-resolve the account UUID through localOwner first. An unresolvable local shape
+        // cannot have a matching row.
         let localOwnerKey = localOwner(halves.ownerKey)
             .map { $0.spaceId ?? $0.profileId ?? OwnedOwnerMaps.appOwnerKey }
         let known = access.isKnownLocalPin(halves.lineage, ownerKey: localOwnerKey)
         if deletedIdentities.contains(identity) {
-            // 只按 lineage 问的旧判据在「同一条 lineage 在别的 owner 下还有行」时答「在」，
-            // 于是这条删除被无限期停放——账户上那条实体永远死不掉，而本机那一行早就没了。
-            // 按完整身份问之后，答「在」就真的是这个 owner 下还有行，停放才是对的。
+            // Lineage alone could indefinitely park a deletion because a different owner's variant
+            // still exists. Exact-identity presence means this specific owner's row really remains,
+            // making parking appropriate.
             if known { outcome.parked.insert(identity) } else {
                 outcome.landed.insert(identity)
                 outcome.deleted.insert(identity)
@@ -6829,56 +6263,56 @@ private func landPins(_ input: OwnedLandingInput,
         }
         guard known else { outcome.parked.insert(identity); continue }
         outcome.landed.insert(identity)
-        // §8.2 / Task 10：这一条是本轮**新建**出来的 ⇒ 它按构造没有图标，交给回填队列。
+        // New pins lack favicons by construction; submit them for backfill (section 8.2 / Task 10).
         if let created = createdPinsByIdentity[identity] { outcome.createdPins.append(created) }
         if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
     }
     outcome.parked.subtract(outcome.landed)
     outcome.refused.subtract(outcome.landed)
-    // 本轮真的被删掉的那些行立刻退出轮内投影，理由同 `landBookmarks`（CASE 6b.8）。
+    // Remove actually deleted rows from the round projection immediately, as for bookmarks (CASE
+    // 6b.8).
     state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
-    // Step 3，pin 这一半：走到这里意味着上面那次 `apply` 提交了，于是出站快照之前把轮内
-    // 那份本机投影换成**落地后**的行。理由与 `landBookmarks` 逐字相同——不换的话，一次
-    // 远端赢下的标题或一次远端重排之后，旧值会配上一个新鲜的 `now` 被发回账户。
+    // After committed pin landing, refresh the projection from access's post-apply cache (Step 3).
+    // Otherwise stale title/order values would be stamped with a new now and sent back over the
+    // remote edit.
     if let refreshed = access.cachedPins() { state.refreshLandedRows(refreshed) }
     return outcome
 }
 
 // MARK: - URL Rule（M3-4a Task 6）
 
-/// 规则的轮内投影。**不是轮首冻结**（R-M3-4a-62）：`beginRound` 只做本轮第一页那一次读，
-/// 每一页落地段提交之后由 `landURLRules` 重读一次。
+/// URL-rule round projection is refreshed per page, not frozen at round start (R-M3-4a-62).
+/// beginRound reads the first page's state; landURLRules refreshes after each committed landing
+/// batch.
 @MainActor
 final class URLRuleSyncRoundState {
-    /// 本页那一次读的**全部**行，含软删（差分要看见它们，§5.7）。
+    /// All rows from this page's read, including soft-deleted rows needed by deletion diff (section
+    /// 5.7).
     private(set) var rows: [PhiLocalURLRule] = []
-    /// `rows` 里 `deletedDate == nil` 的那些：出站快照与稠密重排的定义域（R-M3-4a-51）。
+    /// Rows with deletedDate nil: the outbound snapshot and dense-reorder domain (R-M3-4a-51).
     private(set) var live: [PhiLocalURLRule] = []
-    /// 最近一次**页内重读**失败过。那一批已经提交，投影原样沿用上一页那份——**绝不当成
-    /// 零行**（与 R-exec-3 同一个方向）。
+    /// The latest page reload failed after committing its batch. Retain the previous projection;
+    /// never interpret the failure as zero rows, matching R-exec-3.
     private(set) var pageReloadFailed = false
-    /// §8.4.5 清位 (a) **与 (b)** 共用的比较基线（裁定 2 / R-M3-4a-91）：`snapshot` 闭包产出
-    /// 每一条身份的字节时，**在同一趟**记下那一行此刻的三个合并单元。
-    ///
-    /// 它与「刚被账户确认的那份载荷」是**同一份东西**——提交发的正是 `snapshot.entities[identity]`。
-    /// 拿解码回来的载荷直接与行比，等式**永远不成立**（载荷里三枚戳是 `Int64` 毫秒、行上的是
-    /// `Date()` 带亚毫秒）⇒ (a) 恒不清位，而缺陷的表现是「标志只靠 (b) 清」这种极难察觉的形状。
-    ///
-    /// **每轮（每次进 `publishOwnedKind`）开头清空**：`urlRuleSnapshot` 是发布段的第一步。
+    /// Shared row-side comparison baseline for section 8.4.5(a)/(b) (ruling 2 / R-M3-4a-91).
+    /// Capture all three merge units at the same time snapshot emits each identity's bytes. This
+    /// represents the submitted payload while retaining Date submillisecond precision; comparing
+    /// decoded Int64-millisecond payload stamps directly with rows would never match. Clear at
+    /// every publication snapshot entry.
     var publishBaseline: [String: RuleProjection] = [:]
-    /// 清位 (b) 那个闭包做 `pendingLocalEditIdentities(resolve:)` 过滤要用的 resolver。
-    /// 注册项闭包的类型写死成 `(Set<String>) async -> Void`（R-M3-4a-96），拿不到 `maps`，
-    /// 所以与 `publishBaseline` **同一趟**记下。`nil` ⇒ 这一轮不清位（fail-closed）。
+    /// Resolver captured with publishBaseline for pendingLocalEditIdentities filtering in hook (b).
+    /// Its Set<String>-only callback cannot receive maps directly (R-M3-4a-96). Nil skips clearing
+    /// fail-closed.
     private(set) var publishResolver: OwnerResolver?
 
-    /// `snapshot` 闭包每轮开头调一次：换上这一轮的 resolver、清空上一轮的基线。
+    /// At publication snapshot start, replace the resolver and discard the previous baseline.
     func beginPublishBaseline(resolve: OwnerResolver) {
         publishBaseline = [:]
         publishResolver = resolve
     }
 
-    /// `URLRuleApplyBatch.init` 的 `currentSpaceIds`：身份 -> 行**现值** `spaceId`。活行优先
-    /// （一条身份至多一条活行；软删行只在没有活行时代表这条身份）。
+    /// Current row spaceId by identity for URLRuleApplyBatch. Prefer the sole live row; a
+    /// soft-deleted row represents the identity only if no live row exists.
     var currentSpaceIds: [String: String] {
         var out: [String: String] = [:]
         for row in live {
@@ -6898,10 +6332,9 @@ final class URLRuleSyncRoundState {
         pageReloadFailed = false
     }
 
-    /// 每一页落地段提交之后那一次重读（R-M3-4a-62）：`access.apply(_:)` 成功返回时它自己
-    /// 那份页内缓存已经重建过，这里把同一份行接进轮内投影。
-    /// `notePersistedClaims` / `noteDeletedRows` 两个就地更新口由 `landURLRules` 在 `apply`
-    /// 返回之后、调这里之前先调（8b-1）；这一次重读是它们之上的兜底。
+    /// Refresh after each committed page (R-M3-4a-62). apply already rebuilt access's page cache;
+    /// adopt those same rows. landURLRules first reflects persisted claims/deletions after apply,
+    /// then uses this reload as a fallback (8b-1).
     func reloadAfterPage(_ access: any PhiURLRuleLocalAccess) {
         guard let rows = try? access.allURLRulesIncludingDeleted() else {
             pageReloadFailed = true
@@ -6912,7 +6345,7 @@ final class URLRuleSyncRoundState {
 }
 
 extension OwnedKindRegistration {
-    /// `URLRuleKind` 那一条注册项（§6.1）。形状照 `.pins` 与 `.bookmarks`。
+    /// URLRuleKind registration (section 6.1), following bookmark/pin registration structure.
     @MainActor
     static func urlRules(access: any PhiURLRuleLocalAccess,
                          store: any PhiOwnedItemStateStore) -> OwnedKindRegistration {
@@ -6923,13 +6356,16 @@ extension OwnedKindRegistration {
             entityName: PhiSyncEntity.urlRuleEntityName,
             store: store,
             flags: .urlRules,
-            // 规则不走 §6 的书签配对器（M1 认领是 §8.4.2 的落地期 re-key），也没有作用域。
+            // Rules do not use bookmark adoption or pin scopes. M1 claims rekey during section
+            // 8.4.2 landing.
             reportsAdoption: false,
             reportsScope: false,
             reportsRuleCounters: true,
-            // §6.1 / §8.4.4：规则让位。引擎据此开轮末 3b 准入复查（计划裁定七）。
+            // Rules yield tombstones, enabling the engine's round-end rule-3b admission recheck
+            // (sections 6.1/8.4.4, ruling 7).
             tombstoneYieldsToLocalEdits: URLRuleKind.tombstoneYieldsToLocalEdits,
-            // R-M3-4a-99 / 56：三者全空的页对规则也要走 `plan` / `land`。
+            // Rules run plan/land even when arrivals, tombstones and parked sets are all empty
+            // (R-M3-4a-99/56).
             landsEmptyBatch: true,
             identity: { envelope in
                 guard let entity = URLRuleKind.entity(from: envelope) else { return nil }
@@ -6942,48 +6378,47 @@ extension OwnedKindRegistration {
                       let entity = URLRuleKind.entity(from: envelope) else { return [] }
                 return URLRuleKind.ownerUuids(of: entity)
             },
-            // 规则没有拆分伙伴（与书签相同，§4.4）：`nil` 跳过 §7.4 整段与那一跳。
+            // Rules have no split partners; nil skips section 7.4 doctoring and its actor hop, as
+            // for bookmarks.
             clearedSplitPartners: nil,
-            // **不冻结**（R-M3-4a-62）：这只是本轮第一页的投影。抛错 ⇒ R-exec-3。
+            // This initializes only the first page's projection, not a frozen round snapshot
+            // (R-M3-4a-62). Read failure follows R-exec-3.
             beginRound: { state.reload(try access.allURLRulesIncludingDeleted()) },
-            // §5.1 的索引种子：本机全部非 nil 的 `syncId`（R-M3-4a-23 让每条活行都有），
-            // 域**含软删行**——一条软删行的远端 tombstone 也要路由得到。读的是 `beginRound`
-            // 刚刚在同一个 `beginOwnedRound` 里放进 `state` 的那份行（`beginRound` 抛了这个
-            // 闭包根本不会被调），不再 fetch 第二次。
+            // Seed tags from every local syncId, including soft-deleted rows whose remote
+            // tombstones must route (section 5.1 / R-M3-4a-23). Reuse rows just loaded by
+            // beginRound without a second fetch; this callback is not called when that read throws.
             localIdentities: { Set(state.rows.compactMap(\.syncId)) },
             snapshot: { table, maps, now in
                 urlRuleSnapshot(table: table, maps: maps, now: now, state: state)
             },
             tombstones: { table, maps, now in
-                // 轮末唯一那一次**含软删行**的读（R-M3-4a-51）。抛出去 ⇒ 引擎既有的
-                // `publishOwnedKind` fail-closed：本轮这条 kind 的快照 / 差分 / 发布整段不跑、
-                // `local_read_failed` +1、游标表零字节写入。**绝不吞成空集**。
+                // Use the single round-end read including soft-deleted rows (R-M3-4a-51). Let
+                // failure propagate so publication fails closed, increments local_read_failed and
+                // writes no cursor bytes. Never substitute an empty collection.
                 let rows = try access.allURLRulesIncludingDeleted()
-                // 一次读、三个集合（不多读一次库）。
+                // Derive three sets from one read, without extra storage access.
                 var locals: [PhiLocalURLRule] = []
                 var explicitDeletions: Set<String> = []
                 for row in rows {
                     guard let syncId = row.syncId else { continue }
                     if row.deletedDate == nil {
-                        // **定义域不做任何归属过滤**（R-M3-4a-51）：归属过滤在 `snapshot`
-                        // 内部。目标 hidden / purged（R-M3-4a-5）与 agent / 过期 incognito
-                        // （R-M3-4a-8）的行**留在这里**，靠 `URLRuleKind.identity(of local:)`
-                        // 恒交 `syncId` 进 `liveIdentities`，于是「本机没有这一行」对它们不成立。
+                        // Do not filter this deletion domain by ownership (R-M3-4a-51).
+                        // Hidden/purged targets, agent rules and obsolete incognito bindings still
+                        // contribute their syncId as live identities, preventing false absence.
+                        // Snapshot owns eligibility filtering (R-M3-4a-5/8).
                         locals.append(row)
                     } else if table.cursors[syncId]?.reconciled != nil {
-                        // 起源 (b)：软删 + 有身份 + 账户上真有这条实体（R-M3-4a-78）。
+                        // Deletion origin (b): soft-deleted row with an identity and an actual
+                        // account baseline (R-M3-4a-78).
                         explicitDeletions.insert(syncId)
                     }
                 }
-                // §8.4.4 (β) 的守卫（R-M3-4a-84 / 计划裁定五），**同一次读**上算：
-                // 「伙伴 W 此刻不静止」∧「游标上停着一条入站实体」。两个合取项缺一不可——
-                // 只写 `pendingApply == nil` 会把 §5.5 第 4 步的 **owner 形状停放**圈进来、
-                // 一条正当的用户删除被**无界**地挡住；只写成因集合会把一条 W 暂时不静止的普通
-                // M2 收敛败者圈进来（它的 `pendingApply` 恒为 nil，第二项干净地放行它）。
-                //
-                // `rows` 是含软删行的那一份（(β) 的 X 结构性是软删态的；取 `allURLRules()`
-                // 的实现让守卫恒空）。`tombstonesThisPage` 传**空集**：发布段跑在页循环之外，
-                // 此刻「本页将死」那一项对它恒假。
+                // Section 8.4.4(beta) guard requires both a non-at-rest partner and pending
+                // incoming apply, evaluated from this same read (R-M3-4a-84 / ruling 5). Omitting
+                // the cause check would indefinitely block legitimate owner-shape-parked user
+                // deletions; omitting pendingApply would block ordinary M2 losers. Include
+                // soft-deleted rows because X is necessarily soft-deleted here. Publication runs
+                // outside pagination, so tombstonesThisPage is empty.
                 let notAtRest = access.partnerNotAtRest(table: table, rows: rows,
                                                         resolve: maps.resolver,
                                                         tombstonesThisPage: [])
@@ -6991,21 +6426,23 @@ extension OwnedKindRegistration {
                 return SyncableOwnedItems.tombstones(
                     URLRuleKind.self, locals: locals,
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
-                    // 规则的 `claimIdentities` 是空实现（spec §5.1），没有待写回的认领。
+                    // Rules have no pending identity write-back claims (section 5.1).
                     pendingClaims: [],
                     explicitDeletions: explicitDeletions,
                     deferredDeletions: deferredDeletions)
             },
-            // §6.1：空实现。规则的认领是**落地事务内**的一次 re-key，「配上了、身份还没写回
-            // 本机行」那个中间态在结构上不存在（R-M3-4a-53）。它必须显式存在（R-exec-10）。
+            // Rule claims rekey inside the landing transaction, so no matched-but-unpersisted state
+            // exists (section 6.1 / R-M3-4a-53). Keep an explicit no-op callback for generic retry
+            // wiring (R-exec-10).
             retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
             plan: { input in urlRulePlan(input, access: access, state: state) },
             land: { input in await landURLRules(input, access: access, state: state) },
-            // 同上：身份在 `LocalStore` 的插入点铸造，push 侧没有身份写回窗口（R-M3-4a-53）。
+            // Rule identities are minted at LocalStore insertion; publication has no identity
+            // write-back window (R-M3-4a-53).
             claimIdentities: { _ in [] },
-            // §8.4.5 清位 (a)：**存活**发布拿到 `.applied` 的那些身份，逐条比基线。
-            // **算不出基线 ⇒ 跳过**（fail-closed）：`publishBaseline` 只记本轮真的进了快照的
-            // 那些身份，别的身份这一轮根本没被发布过。
+            // For applied live publications, compare each captured baseline before clearing
+            // pendingLocalEdit (section 8.4.5(a)). Missing baselines fail closed: only actual
+            // snapshot entries were published this round.
             notePublishApplied: { identities in
                 for identity in identities.sorted() {
                     guard let baseline = state.publishBaseline[identity] else { continue }
@@ -7013,24 +6450,20 @@ extension OwnedKindRegistration {
                         _ = try await access.clearPendingLocalEdit(syncId: identity,
                                                                    ifProjectionEquals: baseline)
                     } catch {
-                        // R12：只记 kind 与错误类型，不记身份、host、path_prefix。这一次写失败
-                        // **不影响本轮别的写**——下一轮由清位 (b) 自愈（§8.4.5 那张表最后一行）。
+                        // Log kind and sanitized error type only, never identity/host/path_prefix
+                        // (R12). Failure does not block other writes; hook (b) recomputes recovery
+                        // next round (section 8.4.5).
                         AppLogWarn("[phi-sync] clearing a rule pending-local-edit flag failed "
                                    + "kind=urlrules (\(PhiSyncLog.describe(error)))")
                     }
                 }
             },
-            // §8.4.5 清位 (b) 的**第二层**（R-M3-4a-96）。泛型的 `publishOwnedKind` 只交候选
-            // 身份集；基线在这里才查得到——`state` 是本工厂的局部对象，只被这几个闭包捕获。
-            //
-            // 四件事，次序是三道防御的前两道（RR12-7 同款；第三道是原语在**同一个事务**里
-            // 再比一次投影）：
-            // ① 每个 id 映到**捕获的** `state.publishBaseline[id]`（清位 (a) 那一趟记下的行侧
-            //    投影，裁定 2，**不开第二条通道**），映不出的**丢掉**（fail-closed）；
-            // ② 按 `pendingLocalEditIdentities(resolve:)`（与 `OwnedItemPlanContext.pendingLocalEdits`
-            //    **同一个函数**）过滤键——此刻没置位的一律剔掉；
-            // ③ 空集 ⇒ **连原语都不调**（零事务，CASE M-19x (x3)）；
-            // ④ 否则 `access.clearPendingLocalEditIfUnchanged(entries:)`。
+            // Second layer of section 8.4.5(b) (R-M3-4a-96). Generic publication supplies IDs; this
+            // factory closure owns state and baselines. Resolve captured publishBaseline entries,
+            // dropping missing values; filter through the same pendingLocalEditIdentities function
+            // as plan; return without a transaction for an empty set (CASE M-19x(x3)); otherwise
+            // call clearPendingLocalEditIfUnchanged. The primitive performs the final projection
+            // comparison inside its transaction (RR12-7), reusing hook (a)'s baseline channel.
             clearPendingLocalEdits: { candidates in
                 guard !candidates.isEmpty, let resolve = state.publishResolver else { return }
                 var entries: [String: RuleProjection] = [:]
@@ -7044,16 +6477,17 @@ extension OwnedKindRegistration {
                 do {
                     try await access.clearPendingLocalEditIfUnchanged(entries: entries)
                 } catch {
-                    // R12：同上。下一轮重算，不需要任何跨 store 原子性。
+                    // R12 metadata only. Recompute next round; no cross-store atomic transaction is
+                    // needed.
                     AppLogWarn("[phi-sync] the rule pending-local-edit self-heal failed "
                                + "kind=urlrules (\(PhiSyncLog.describe(error)))")
                 }
             },
             liveOwners: { candidates, maps in
-                // `access.liveOwners(_:)` 只填 `claimed`（判据 (b)）；`owners`（rehome 要写
-                // 的值）在这里用与 `snapshot` **同一个** `eligibilityOwner` 填，两处分叉不了
-                // （A12）。R-M3-4a-36：`eligibilityOwner == nil` 的活行照样护住自己那条游标，
-                // 只是 `owners` 留空 ⇒「这一轮解析不出，别改写」。
+                // access.liveOwners supplies claimed identities for condition (b). Resolve current
+                // owners with the same eligibilityOwner as snapshot (A12). A live row with
+                // unresolved ownership still protects its cursor; omit its owner so no guessed
+                // rehome is written (R-M3-4a-36).
                 var out = try access.liveOwners(candidates)
                 let resolve = maps.resolver
                 for row in state.live {
@@ -7083,14 +6517,15 @@ extension OwnedKindRegistration {
     }
 }
 
-/// §4.2 的出站快照，规则那一半。**`minted` 恒空**（R-M3-4a-23：身份在插入点铸造，与
-/// `pinSnapshot` 同一条理由），`scopeMismatch` 恒 `false`（规则没有作用域）。
+/// URL-rule outbound snapshot (section 4.2). minted stays empty because insertion already assigned
+/// identity (R-M3-4a-23); scopeMismatch stays false because rules have no scope.
 @MainActor
 private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
                              state: URLRuleSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
     let resolve = maps.resolver
-    // §8.4.5 清位 (a) / (b) 的比较基线，每轮重记（裁定 2）。
+    // Capture fresh comparison baselines for both section 8.4.5 clearing paths on every publication
+    // pass (ruling 2).
     state.beginPublishBaseline(resolve: resolve)
     var rowsByIdentity: [String: PhiLocalURLRule] = [:]
     for row in state.live {
@@ -7104,14 +6539,14 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
     for (identity, entity) in result.entities {
         guard let bytes = try? URLRuleKind.envelope(entity).serializedData() else { continue }
         out.entities[identity] = bytes
-        // **同一趟**（裁定 2）：这一条身份的字节与它那一行此刻的三个合并单元一起记下。
-        // 序列化失败的那些身份既不进快照、也不进基线 —— 两处清位于是对它们 fail-closed。
+        // Capture the row's three merge units together with its snapshot bytes (ruling 2). Failed
+        // serialization enters neither snapshot nor baseline, so both clearing hooks fail closed.
         if let row = rowsByIdentity[identity] {
             state.publishBaseline[identity] = URLRuleKind.clearingProjection(of: row)
         }
     }
-    // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。与
-    // 注册项的 `liveOwners` 闭包用同一个 `eligibilityOwner`。
+    // Refresh identity-to-current-owner values using the same eligibilityOwner as the liveOwners
+    // callback (A12 / section 3.5).
     for row in state.live {
         guard let identity = row.syncId,
               let owner = URLRuleKind.eligibilityOwner(of: row, resolve: resolve, scope: nil)
@@ -7121,8 +6556,8 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
     return out
 }
 
-/// §4.4 的入站计划，规则那一半：解码 → 记 `server` 字节 → 归一（§8.1）→ M1 认领 pre-pass
-/// （§8.4.2）→ 投影 → 模块的 `plan`。
+/// Incoming rule plan: decode, preserve server bytes, normalize (section 8.1), run M1 adoption
+/// pre-pass (section 8.4.2), project local rows, then invoke the pure planner.
 @MainActor
 private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAccess,
                          state: URLRuleSyncRoundState) -> OwnedPlanOutput {
@@ -7133,15 +6568,17 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
               let entity = URLRuleKind.entity(from: envelope) else { continue }
         arrivals.append(OwnedItemArrival(entity: entity, entityId: item.entityId,
                                          version: item.version))
-        // 计划裁定五：`server = remote` 记的是**归一化之前**的原始字节。记归一之后那一版，
-        // 下一轮发布段比下来会判成「与账户一致」，`mustRepublish` 的那次重发永远发不出去，
-        // `normalized` 在两台之间来回非零。
+        // Preserve raw pre-normalization bytes as server (ruling 5). Storing normalized bytes would
+        // falsely claim account equality, suppress needed republication and leave normalized counts
+        // oscillating between peers.
         out.serverBytes[URLRuleKind.identity(of: entity)] = item.payload
-        // §5.3 的尽力推迟：口径与 `ownerUuids` 相同（这一条实体指向哪个目标）。
+        // Best-effort deferred owners use the incoming entity's target, matching ownerUuids
+        // (section 5.3).
         let target = entity.targetSpaceUuid.stringValue
         if !target.isEmpty { out.deferredOwners.insert(target) }
     }
-    // §8.1 / R-M3-4a-29：入站就地归一，字节变了的那些身份要重新发布，模块自己算不出这一半。
+    // Normalize arrivals in place (section 8.1 / R-M3-4a-29). Changed bytes require republication,
+    // which the pure planner cannot infer alone.
     let normalized = URLRuleKind.normalizeArrivals(arrivals) {
         LocalStore.normalizedRule(host: $0, pathPrefix: $1)
     }
@@ -7149,9 +6586,10 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     out.normalized = normalized.normalized.count
     var context = OwnedItemPlanContext()
     context.tombstonedIdentities = input.tombstoned
-    // §8.4.2 M1：认领 pre-pass 紧接归一化**之后**（签名读的是归一化之后的值）。**不受
-    // `ownedItemsPublishAllowed` 闸约束**（计划裁定四：闸只管 §8.4.3 第 2 步，M1 必须在
-    // drain 里跑，CASE M-11）。三个 context 成员是 M3-3 就有的，这里只**填**不建。
+    // §8.4.2 M1: run the claim pre-pass immediately after normalization so signatures use
+    // normalized values. `ownedItemsPublishAllowed` does not gate this pass: plan ruling 4 gates
+    // only §8.4.3 step 2, while M1 must run during drain (CASE M-11). Populate the three context
+    // members introduced in M3-3.
     let claims = urlRuleClaims(arrivals: arrivals, parked: input.parked, table: input.table,
                                resolve: input.maps.resolver, now: input.now,
                                access: access, state: state)
@@ -7161,16 +6599,17 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     out.claimedLocalIds = claims.pairs
     out.retiredIdentities = claims.retired
     out.adopted = claims.pairs.count
-    // 定义域是「本页到达 ∪ 停放 ∪ **本页的 tombstone**」（§5.6 末段 / §11）：少了最后那一格，
-    // §8.4.4 (α) 的转移取不到值（它的取值源就是 `context.localProjections[X]`）。
-    // **书签那一处一个字不改**——第 6 段不碰 `localProjections`，那些条目在书签这一侧读不到。
+    // The domain is arrivals ∪ parked identities ∪ this page's tombstones (§5.6 final paragraph /
+    // §11). The last set supplies `context.localProjections[X]` for §8.4.4 (α) transfers. Bookmark
+    // behavior stays unchanged: section 6 never reads these projections.
     context.localProjections = urlRuleLocalProjections(
         for: Set(arrivals.map { URLRuleKind.identity(of: $0.entity) })
             .union(input.parked.keys).union(input.tombstoned),
         table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
-    // §8.4.4 的四个具名输入（R-M3-4a-73，8b-3），与 `signatureIndex` 同源、**同一次 pre-pass**、
-    // 同一份行（`state.rows` = 本页那一次 `allURLRulesIncludingDeleted()`）与同一份游标表。
-    // 判定留在 kind 侧：签名与软删是规则特有的，`OwnedItemPlanContext` 承载不了行上的布尔。
+    // The four named §8.4.4 inputs (R-M3-4a-73, 8b-3) share the signature index's pre-pass, cursor
+    // table, and rows (`state.rows` from this page's `allURLRulesIncludingDeleted()`). Keep the
+    // predicates in the kind: signatures and soft deletion are rule-specific, and
+    // `OwnedItemPlanContext` cannot carry row-level booleans.
     context.pendingLocalEdits = access.pendingLocalEditIdentities(resolve: input.maps.resolver)
     context.unpublished = access.unpublishedIdentities(table: input.table,
                                                        resolve: input.maps.resolver)
@@ -7179,18 +6618,20 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     context.partnerNotAtRest = access.partnerNotAtRest(table: input.table, rows: state.rows,
                                                        resolve: input.maps.resolver,
                                                        tombstonesThisPage: input.tombstoned)
-    // D30 M2 的两条 pre-pass 通道（8b-2 计划裁定二 / 六）。**必须在调 `SyncableOwnedItems.plan`
-    // 之前**、用**本页那一次**行投影（`state.live`，`beginRound` / `reloadAfterPage` 每页刷新
-    // 一次，R-M3-4a-62）与**当时**的游标表算：
-    // - `localSignatures`：`plan` 在产出 `.move` / `.update` 的那一刻照身份查它，抄进
-    //   `OwnedItemPlan.preLandingSignatures`（第二遍指针的分组键）。**每页重算**——第 N+1 页读
-    //   到的是第 N 页落地**之后**的行，CASE M2-b 钉这一格。
-    // - `atRestIdentities`：十个合取项的静止集，第 10 项读的就是**本页**那份 `tombstoned`
-    //   （尾钩拿不到它，所以绝不能挪到尾钩里重算，CASE M-27）。
+    // D30 M2's two pre-pass inputs (8b-2 rulings 2 / 6) must be computed before
+    // `SyncableOwnedItems.plan`, using this page's `state.live` projection and current cursor
+    // table. `beginRound` / `reloadAfterPage` refresh the projection per page (R-M3-4a-62).
+    // `localSignatures` is copied by identity into `OwnedItemPlan.preLandingSignatures` when
+    // planning `.move` / `.update`; it supplies the second pointer pass's grouping key. Recompute
+    // each page so page N+1 sees page N's landed rows (CASE M2-b).
+    // `atRestIdentities` applies all ten predicates. Predicate 10 reads this page's `tombstoned`
+    // set, which the tail hook cannot access; never move that computation into the hook (CASE
+    // M-27).
     let resolve = input.maps.resolver
     let normalize = URLRuleSignatureQueries.normalize
-    // 同一趟顺手建的第三张表：**当前**签名 -> 这一组的活行身份。`yield_no_partner` 的第二个
-    // 合取项（「`baselineSignature(X)` 查找未命中」）读它，零额外读、同一份 pre-pass。
+    // Build a third table in the same pass: current signature -> live identities in that group. The
+    // second `yield_no_partner` condition (`baselineSignature(X)` lookup misses) reads it without
+    // another store read.
     var liveBySignature: [RuleSignature: [String]] = [:]
     for row in state.live {
         guard let identity = row.syncId,
@@ -7209,11 +6650,11 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     out.mustRepublish = normalized.normalized.union(out.plan.mustRepublish)
         .union(claims.mustRepublish)
 
-    // §13.2 的 `yield_no_partner`（R-M3-4a-75(3)）：判据是「**当时**行上
-    // `mergePartnerSyncId == nil` **且** `baselineSignature(X)` 查找未命中」。模块看不见这两样，
-    // 所以在这里用**同一次 pre-pass 的那份行与签名索引**数一遍——两者是同一页、同一份输入，
-    // 与「在判定点上求值」逐字等价。**绝不**按 `resurrected` 反推（那一项对两种成因一视同仁）。
-    var rowBySyncId: [String: PhiLocalURLRule] = [:]      // 含软删行
+    // §13.2 `yield_no_partner` (R-M3-4a-75(3)) requires both `mergePartnerSyncId == nil` on the
+    // current row and a failed `baselineSignature(X)` lookup. The module cannot see either input,
+    // so count here using the same pre-pass rows and signature index. These are the exact inputs at
+    // the decision point. Never infer this count from `resurrected`, which combines both causes.
+    var rowBySyncId: [String: PhiLocalURLRule] = [:]      // Include soft-deleted rows.
     for row in state.rows {
         guard let identity = row.syncId, rowBySyncId[identity] == nil else { continue }
         rowBySyncId[identity] = row
@@ -7227,17 +6668,16 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
         if !anchored { out.yieldNoPartner += 1 }
     }
 
-    // §8.4.4 的 `.transfer` 两件收尾。
-    //
-    // ① `serverBytes` 的剔除（裁定 8）：一次由**停放载荷**解开的 (β) 转移要靠交回
-    //    `outcome.landed` 清掉 `pendingApply`，而那一支**不写 `reconciled`、不写 `server`**。
-    //    引擎那两行都是 `if let` 取值，缺席即不写——(α) 那一半是无害的（X 走 `outcome.deleted`
-    //    分支，那一支根本不读 `serverBytes`），(β) 那一半是必需的：不剔的话那份载荷永远留在
-    //    游标上，每轮重建工作集、每轮重判，`parked` 长期非零。
-    // ② `transferred` 与 §13.3 那一格**不在这里数**：裁定 9 的每单元 LWW 要拿
-    //    `max(W 的行戳, W 的有效账户戳)` 去比，而这一刻本页那条 `.update(W)` 还没落地、
-    //    有效账户戳那张表也还没算（CASE M-34 的变体 (b) 与 (c) 各钉住其中一半）。两者都由
-    //    落地事务交回（`OwnedLandingOutcome.transferred` / `.supersededByDelete`）。
+    // Two §8.4.4 `.transfer` details:
+    // 1. Remove `serverBytes` (ruling 8). A (β) transfer resolved from a parked payload must return
+    // `outcome.landed` to clear `pendingApply` without writing `reconciled` or `server`. The engine
+    // writes each only when present. Removing bytes is harmless for (α), whose `outcome.deleted`
+    // path never reads them, and essential for (β); otherwise the payload remains in the cursor and
+    // is reconsidered every round, keeping `parked` nonzero.
+    // 2. Do not count `transferred` or §13.3 here. Ruling 9's per-unit LWW compares against `max(W
+    // row stamp, W effective account stamp)`, but this page's `.update(W)` has not landed and
+    // effective account stamps are not computed yet (CASE M-34 variants b / c). The landing
+    // transaction returns both `OwnedLandingOutcome.transferred` and `.supersededByDelete`.
     for step in out.plan.steps {
         guard case .transfer = step.kind else { continue }
         out.serverBytes.removeValue(forKey: step.identity)
@@ -7245,36 +6685,41 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     return out
 }
 
-/// §8.4.2 M1 的产物：四张表一个集合，全部按身份索引。
+/// §8.4.2 M1 claim output, keyed by identity.
 private struct URLRuleClaimPlan {
-    /// 身份 -> 本机行 `id`（= `context.pairs` = `OwnedPlanOutput.claimedLocalIds`）。
+    /// Identity -> local row `id` (`context.pairs` / `OwnedPlanOutput.claimedLocalIds`).
     var pairs: [String: String] = [:]
-    /// 身份 -> 被它取代的旧 `syncId`（`OwnedPlanOutput.retiredIdentities`）。
+    /// Identity -> superseded old `syncId` (`OwnedPlanOutput.retiredIdentities`).
     var retired: [String: String] = [:]
-    /// 身份 -> §8.2 无基线分支的合并结果（`context.adoptedMerges`）。
+    /// Identity -> §8.2 merge without a baseline (`context.adoptedMerges`).
     var merges: [String: Data] = [:]
-    /// 合并结果 ≠ 行现值投影的那些（`context.adoptedFieldWrites`，计划裁定五按表）。
+    /// Identities whose merged values differ from the current row projection
+    /// (`context.adoptedFieldWrites`, plan ruling 5).
     var fieldWrites: Set<String> = []
-    /// 合并结果 ≠ 入站实体的那些（本机赢下任何一个单元 ⇒ 必须重新发布）。
+    /// Identities whose merged values differ from the inbound entity: any locally winning unit
+    /// requires republishing.
     var mustRepublish: Set<String> = []
 }
 
-/// §8.4.2 M1 的认领 pre-pass，逐步：
-/// ① `access.signatureIndex(resolve:)`（本页那一次读，减软删行，组内按 `(syncId ?? "", id)`）；
-/// ② 对每条到达（∪ 停放；到达覆盖同身份的停放）算实体侧签名，按签名分组；
-/// ③ 组内 remote 按 `identity` 字典序、local 沿用索引的序，**照 `pairWithinGroups` 的形状按位
-///    1:1 配对**，多出来的两侧都不配（RR3-4 / RR3-16，CASE M-13）；
-/// ④ local 侧的候选过「从未发布」三合取项：`table.cursors[syncId] == nil`，或
-///    `entityId.isEmpty && server == nil && reconciled == nil`（CASE M-2 / M-2b：有基线的、
-///    birthday 重置留下的都不可认领）；
-/// ⑤ 配上的每一对填 `pairs` / `retired`；
-/// ⑥ 按 §8.2 的**无基线分支**合并（本机那一侧 `stamp(project(row), baseline: nil, …)`，R-M3-4a-12
-///    的三项），结果进 `merges`；
-/// ⑦ 合并结果 ≠ 行现值投影 ⇒ `fieldWrites`；≠ 入站实体 ⇒ `mustRepublish`。
-///
-/// 两条定义域上的排除，都是为了让「同一身份」走它本来的路而不是一次多余的 re-key：本机已有
-/// 对应行（含软删行）的到达身份不是认领候选（它按身份落地，一次重放绝不新建第二行）；`syncId`
-/// 正在本页到达的本机行也不是候选（它被那条到达按身份命中）。
+/// §8.4.2 M1 claim pre-pass:
+/// 1. Build `access.signatureIndex(resolve:)` from this page's read, excluding soft-deleted rows
+/// and sorting each group by `(syncId ?? "", id)`.
+/// 2. Compute entity signatures for arrivals ∪ parked entities; arrivals override parked payloads
+/// with the same identity. Group by signature.
+/// 3. Sort remote identities lexically, retain local index order, and pair 1:1 by position as in
+/// `pairWithinGroups`. Leave both sides' surplus unpaired (RR3-4 / RR3-16, CASE M-13).
+/// 4. Require each local candidate to be unpublished: no cursor, or `entityId.isEmpty && server ==
+/// nil && reconciled == nil`. Rows with baselines or cursors retained after birthday reset cannot
+/// be claimed (CASE M-2 / M-2b).
+/// 5. Populate `pairs` / `retired` for each match.
+/// 6. Merge through §8.2's no-baseline branch, stamping the local projection with `baseline: nil`
+/// under R-M3-4a-12's three rules; store the result in `merges`.
+/// 7. Record differences from the row projection in `fieldWrites`, and differences from the inbound
+/// entity in `mustRepublish`.
+/// Exclude inbound identities already represented locally, including soft-deleted rows:
+/// identity-based landing must never create a second row on replay. Also exclude local rows whose
+/// `syncId` arrives on this page, because that arrival already addresses them by identity. Both
+/// exclusions avoid redundant re-keying.
 @MainActor
 private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
                            parked: [String: ParkedOwnedItem],
@@ -7320,9 +6765,10 @@ private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
                   let projected = URLRuleKind.project(row, resolve: resolve, scope: nil,
                                                       parentIdentity: nil) else { continue }
             let rank = URLRuleKind.rank(of: remote.entity)
-            // 本机那一侧：无基线投影（R-M3-4a-12 三项），身份换成要认领的那一个——合并结果
-            // 与基线都要以账户身份落笔，否则 `reconciled` 带着旧 `syncId`，下一轮的快照永远
-            // 与它不等。
+            // Stamp the local projection without a baseline (R-M3-4a-12), then replace its identity
+            // with the claimed account identity. Both the merge and baseline must use that
+            // identity; retaining the old `syncId` in `reconciled` would make every later snapshot
+            // differ.
             var local = URLRuleKind.stamp(projected, baseline: nil, local: row, rank: rank, now: now)
             local.ruleUuid = remote.identity
             let merged = URLRuleKind.merge(local: local, remote: remote.entity)
@@ -7341,10 +6787,10 @@ private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
     return out
 }
 
-/// `bookmarkLocalProjections` 的规则半边：身份 -> 本机那一行此刻的出站投影，盖戳走
-/// `URLRuleKind.stamp` + 基线那条路（**不是** `adopt` 那条无基线规则）。两处跳过：本机没有
-/// 这一行（定义域是出站快照的定义域，即活行）；游标没有基线。书签那条「父行还没有身份」
-/// 的第三处跳过对规则**不存在**（规则没有父）。
+/// The URL-rule counterpart of `bookmarkLocalProjections`: identity -> current outbound row
+/// projection, using `URLRuleKind.stamp` with a baseline, not the no-baseline adoption rule. Skip
+/// identities without a live local row or cursor baseline. The bookmark exclusion for a parent
+/// lacking identity does not apply: rules have no parent.
 @MainActor
 private func urlRuleLocalProjections(for identities: Set<String>,
                                      table: PhiOwnedItemTable,
@@ -7360,7 +6806,8 @@ private func urlRuleLocalProjections(for identities: Set<String>,
               let baseline = URLRuleKind.entity(from: baselineEnvelope),
               let projected = URLRuleKind.project(row, resolve: resolve, scope: nil,
                                                   parentIdentity: nil) else { continue }
-        // rank 取基线那一个，理由同书签：入站这一侧不该为了合并去跑一次账户级排序。
+        // Use the baseline rank, as for bookmarks: inbound merging must not trigger account-wide
+        // ordering.
         let stamped = URLRuleKind.stamp(projected, baseline: baseline, local: row,
                                         rank: URLRuleKind.rank(of: baseline), now: now)
         guard let bytes = try? URLRuleKind.envelope(stamped).serializedData() else { continue }
@@ -7369,13 +6816,13 @@ private func urlRuleLocalProjections(for identities: Set<String>,
     return out
 }
 
-/// §8.4.3 的落地段尾钩装配点（8b-2 计划裁定三）。
-///
-/// **刻意不带 `@MainActor`**：这个闭包在**写队列**上、落地事务的尾部被调，而 `landURLRules`
-/// 是 `@MainActor` 的——在那里直接形成闭包会被推断成 `@MainActor` 闭包，转成
-/// `URLRuleMergeTail.evaluate` 那个非隔离函数类型就要丢掉全局 actor。捕获的全是值类型
-/// （游标表、两张字典、三个集合、`OwnerResolver` 那几个读不可变字典的闭包），闭包体是
-/// `URLRuleKind.mergePass` 这个纯函数，所以跨执行器求值没有任何共享可变状态。
+/// §8.4.3 landing tail-hook assembly (8b-2 ruling 3).
+/// Intentionally not `@MainActor`: this closure runs on the write queue at the end of the landing
+/// transaction. Creating it inside `@MainActor landURLRules` would infer actor isolation that
+/// cannot be retained by `URLRuleMergeTail.evaluate`'s nonisolated function type. Captures are
+/// values (cursor table, two dictionaries, three sets, and resolver closures reading immutable
+/// dictionaries), and `URLRuleKind.mergePass` is pure, so evaluation across executors shares no
+/// mutable state.
 private func makeURLRuleMergeTail(landedThisPage: Set<String>,
                                   publishedIdentities: Set<String>,
                                   preLandingSignatures: [String: RuleSignature],
@@ -7399,33 +6846,35 @@ private func makeURLRuleMergeTail(landedThisPage: Set<String>,
     }
 }
 
-/// §4.4 / §4.5 的落地，规则那一半：翻译表 + 两桶稠密投影 + **一个事务** + 落地后复核。
-///
-/// 翻译表（每条 step 一条 op，`identity` 就是 `syncId`）：`.create` ⇒ 本机**没有**这条身份的
-/// 行才 `.create`，有行（含软删行，R-M3-4a-42(a)）就是一次 `.update` / `.move`——一次重放
-/// （游标丢失、marker 回退）绝不新建第二行；`.update` ⇒ `.update`；`.move` ⇒ `.move`，目标取
-/// `step.newOwnerUuid`（R-M3-4a-26）；`.delete` ⇒ `.delete(syncId:)`；`.claim` ⇒
-/// `.rekey(localId:to:values:)`，本机行按 `input.claimedLocalIds[identity]` 定位（§8.4.2 M1，
-/// 计划裁定二）。同一身份的 `.move` + `.update` 交给 `URLRuleApplyBatch.init` 合成一条，
-/// 目标没动的 `.move` 由它降成 `.reorder`（CASE U-10b），`.claim` + `.update` 由它折成一条
-/// `.rekey`（R-M3-4a-42(b)）。
+/// §4.4 / §4.5 URL-rule landing: translate steps, project dense order in both buckets, apply one
+/// transaction, then verify.
+/// Each step becomes an operation addressed by `identity` / `syncId`. `.create` creates only when
+/// no local row exists; an existing row, including a soft-deleted one, becomes `.update` / `.move`
+/// (R-M3-4a-42(a)), preventing duplicates after cursor loss or marker rollback. `.update` maps
+/// directly; `.move` uses `step.newOwnerUuid` (R-M3-4a-26); `.delete` uses `syncId`; `.claim`
+/// becomes `.rekey(localId:to:values:)` using `input.claimedLocalIds[identity]` (§8.4.2 M1, ruling
+/// 2).
+/// `URLRuleApplyBatch.init` combines same-identity `.move` + `.update`, reduces a same-target move
+/// to `.reorder` (CASE U-10b), and folds `.claim` + `.update` into one `.rekey` (R-M3-4a-42(b)).
 @MainActor
 private func landURLRules(_ input: OwnedLandingInput,
                           access: any PhiURLRuleLocalAccess,
                           state: URLRuleSyncRoundState) async -> OwnedLandingOutcome {
     var out = OwnedLandingOutcome()
-    // **没有「本页没有规则 step 就早退」那一条**（8b-2 / R-M3-4a-56）：一页没有任何规则落地时
-    // M2 同样要跑，那一页单开一次同形事务。漏掉它，纯本机重复与「只带别的 kind 的页」两类页
-    // 永远不收敛——而 drain 结束之后的稳态里绝大多数页正是这两类（CASE M-35）。
+    // Do not return early when this page has no rule steps (8b-2 / R-M3-4a-56). M2 still needs its
+    // transaction. Otherwise local-only duplicates and pages containing only other kinds never
+    // converge; those pages dominate steady state after drain (CASE M-35).
     let resolve = input.maps.resolver
 
-    /// 账户级目标 -> 本机 `spaceId`。保留常量映回裸 Incognito 前缀（R-M3-4a-7）。
+    /// Account target -> local `spaceId`. Map the reserved constant back to the bare Incognito
+    /// prefix (R-M3-4a-7).
     func localSpaceId(_ target: String) -> String? {
         if target == SyncableSpaces.incognitoSpaceUuid { return SpaceManager.incognitoRuleTargetId }
         return resolve.localSpaceId(target)
     }
 
-    // 身份 -> 本机行，**含软删行**：落地按 `syncId` 寻址，软删行救回也是一次 update。活行优先。
+    // Identity -> local row, including soft-deleted rows. Landing addresses `syncId`, so
+    // resurrection is an update. Prefer live rows.
     var rowOf: [String: PhiLocalURLRule] = [:]
     for row in state.live {
         guard let identity = row.syncId, rowOf[identity] == nil else { continue }
@@ -7435,11 +6884,13 @@ private func landURLRules(_ input: OwnedLandingInput,
         guard let identity = row.syncId, rowOf[identity] == nil else { continue }
         rowOf[identity] = row
     }
-    // 本机行 id -> 行：`.claim` 按本机 id 寻址（§8.4.2），那一行此刻挂在**旧**身份上。
+    // Local row id -> row. `.claim` addresses the local id (§8.4.2), while the row still carries
+    // its old identity.
     var rowById: [String: PhiLocalURLRule] = [:]
     for row in state.rows { rowById[row.id] = row }
-    // 身份 -> 本轮的 rank：先基线，再被本页的合并结果覆盖。被触及的桶里没有 step 的兄弟按
-    // 基线排；从没发布过的行没有 rank，`rankToSortOrder` 把它们排最前。
+    // Identity -> rank for this round: start with baselines, then override with this page's merged
+    // results. Untouched siblings in affected buckets use baseline ranks. Unpublished rows lack
+    // ranks and `rankToSortOrder` puts them first.
     var rankOf: [String: String] = [:]
     for (identity, cursor) in input.table.cursors {
         guard let bytes = cursor.reconciled,
@@ -7455,14 +6906,15 @@ private func landURLRules(_ input: OwnedLandingInput,
         var row: PhiLocalURLRule?
         var moves = false
         var writesContent = false
-        /// §8.4.2 M1：这条身份要认领的本机行 `id`；`row` 就是那一行（还挂着旧 `syncId`）。
+        /// §8.4.2 M1: local row `id` to claim for this identity; `row` still carries the old
+        /// `syncId`.
         var claimsLocalId: String?
     }
     var order: [String] = []
     var landing: [String: Landing] = [:]
     var deleteIdentities: [String] = []
-    /// §8.4.4 的编辑转移（8b-3）：X 的身份、取值源、伙伴 W 的身份。**不进 `landing`**——
-    /// 它写的是 W 那一行，载荷是值，与「落地一条远端实体」不是一回事。
+    /// §8.4.4 edit transfers (8b-3): X's identity, source projection, and partner W's identity.
+    /// Keep these outside `landing`: they write values into W, rather than landing a remote entity.
     var transfers: [(identity: String, source: RuleProjection, to: String)] = []
 
     for step in input.steps {
@@ -7477,8 +6929,9 @@ private func landURLRules(_ input: OwnedLandingInput,
             transfers.append((identity: identity, source: source, to: to))
             continue
         case .claim:
-            // §8.4.2 M1：本机行按 `claimedLocalIds` 定位；表里没有、行不在、或行已软删 = 这一批
-            // 算错了 ⇒ 拒收，不停放（停放会每轮原样重试同一条错误的配对）。
+            // §8.4.2 M1: locate the local row through `claimedLocalIds`. A missing mapping, missing
+            // row, or soft-deleted row indicates an invalid batch. Refuse it; parking would retry
+            // the same invalid pairing every round.
             guard let localId = input.claimedLocalIds[identity],
                   let row = rowById[localId], row.deletedDate == nil else {
                 out.refused.insert(identity)
@@ -7494,7 +6947,8 @@ private func landURLRules(_ input: OwnedLandingInput,
         guard let payload = step.payload,
               let envelope = try? Phi_PhiEntity(serializedBytes: payload),
               let entity = URLRuleKind.entity(from: envelope) else {
-            // 计划交来的载荷解不出来 = 这一批算错了：拒收，不停放（停放会每轮原样重试）。
+            // An undecodable planned payload indicates an invalid batch. Refuse it instead of
+            // parking the same failure for every round.
             out.refused.insert(identity)
             landing.removeValue(forKey: identity)
             continue
@@ -7502,7 +6956,8 @@ private func landURLRules(_ input: OwnedLandingInput,
         let target: String
         if step.kind == .move {
             guard let newOwner = step.newOwnerUuid else {
-                // Task 7 为每条 `.move` 填 `targetOwnerUuid(of: merged)`（R-M3-4a-26），nil 不可达。
+                // Task 7 populates every `.move` with `targetOwnerUuid(of: merged)` (R-M3-4a-26);
+                // nil is unreachable.
                 assertionFailure("url rules: .move without newOwnerUuid for \(identity.prefix(8))")
                 out.refused.insert(identity)
                 landing.removeValue(forKey: identity)
@@ -7512,7 +6967,8 @@ private func landURLRules(_ input: OwnedLandingInput,
         } else {
             target = URLRuleKind.targetOwnerUuid(of: entity) ?? ""
         }
-        // 归属还没落地（Space 映射晚到一轮）⇒ 停放，下一轮以既有行的 update 落地。
+        // If the owner has not landed yet (Space mapping arrives a round later), park the entity
+        // and update the existing row next round.
         guard let spaceId = localSpaceId(target) else {
             out.parked.insert(identity)
             landing.removeValue(forKey: identity)
@@ -7524,20 +6980,22 @@ private func landURLRules(_ input: OwnedLandingInput,
                                         row: claimedRow ?? rowOf[identity],
                                         claimsLocalId: claimedLocalId)
         }
-        // 同一身份的两条 step 带的是同一份合并结果，后到的覆盖先到的。
+        // Steps for the same identity carry the same merge result; the later step overwrites the
+        // earlier one.
         landing[identity]?.entity = entity
         landing[identity]?.payload = payload
         landing[identity]?.spaceId = spaceId
         switch step.kind {
         case .move: landing[identity]?.moves = true
-        case .claim: break      // 只写身份；内容只走 `.update`（`adoptedFieldWrites` 那条）
+        case .claim: break      // Write identity only; content uses `.update` via `adoptedFieldWrites`.
         default: landing[identity]?.writesContent = true
         }
         rankOf[identity] = URLRuleKind.rank(of: entity)
     }
     let active = order.filter { landing[$0] != nil }
 
-    // 第三相：删除。§5.6 T3：反查到身份、**本机没有行** ⇒ 什么都不删，游标照样写 `deletedAtMs`。
+    // Phase 3: deletion. §5.6 T3: if identity lookup succeeds but no local row exists, delete
+    // nothing and still record cursor `deletedAtMs`.
     var deleteOps: [URLRuleSyncOp] = []
     var deletedWithRow: Set<String> = []
     var touched: Set<String> = []
@@ -7552,9 +7010,10 @@ private func landURLRules(_ input: OwnedLandingInput,
         touched.insert(row.spaceId)
     }
 
-    // 被触及的桶：新建 / 救回软删行 / 纯重排进目标桶；rehome 进**源桶与目标桶**（R-M3-4a-3）。
-    // 纯内容更新不碰桶的次序（与 `landPins` 同一条判据）。
-    // 认领的行第一次拿到账户级 rank（§8.4.2），与新建同一条理由进目标桶。
+    // Affected buckets: creates, resurrections, and reorders affect the target; rehomes affect both
+    // source and target (R-M3-4a-3). Content-only updates leave ordering unchanged, as in
+    // `landPins`. Claimed rows receive an account rank for the first time (§8.4.2), so they affect
+    // the target just like creates.
     for identity in active {
         guard let item = landing[identity] else { continue }
         if let row = item.row {
@@ -7569,9 +7028,11 @@ private func landURLRules(_ input: OwnedLandingInput,
         }
     }
 
-    // §8.3 的投影：每个被触及的桶各跑一次 `rankToSortOrder`。定义域 = 本页那一次读里活在该桶
-    // 的行 − 本页搬走 / 删掉的 + 本页搬进来 / 新建 / 救回的；软删行由投影函数自己排除。
-    // 页内重读失败过时 `siblings` 那份缓存不可用（生产实现会断言），退回轮内投影的同一份行。
+    // §8.3 projection: run `rankToSortOrder` once per affected bucket. Its domain is rows in that
+    // bucket from this page's read, minus rows moved out or deleted, plus rows moved in, created,
+    // or resurrected. The projection itself excludes soft-deleted rows. If a page reread failed,
+    // the siblings cache is unavailable (the production implementation asserts); use the round
+    // projection's same rows instead.
     var sortOrderOf: [String: Int] = [:]
     let claimedLocalIds = Set(active.compactMap { landing[$0]?.claimsLocalId })
     for bucket in touched {
@@ -7579,7 +7040,8 @@ private func landURLRules(_ input: OwnedLandingInput,
             ? state.live.filter { $0.spaceId == bucket }
             : access.siblings(inSpaceId: bucket)
         members.removeAll { row in
-            // 认领的行在快照里还挂着旧 `syncId`：先摘掉，下面按新身份重新加入。
+            // The snapshot still carries claimed rows under their old `syncId`; remove them here
+            // and reinsert them below with the new identity.
             if claimedLocalIds.contains(row.id) { return true }
             guard let identity = row.syncId else { return false }
             if deletedWithRow.contains(identity) { return true }
@@ -7597,7 +7059,8 @@ private func landURLRules(_ input: OwnedLandingInput,
                 row.syncId = identity
                 members.append(row)
             } else {
-                // 新建的行还没有本机 id；投影按 `(rank, syncId ?? id)` 排，占位 id 取身份本身。
+                // New rows have no local id yet. Projection sorts by `(rank, syncId ?? id)`, so use
+                // the identity as a placeholder id.
                 members.append(PhiLocalURLRule(
                     id: identity, syncId: identity, spaceId: bucket,
                     host: item.entity.host.stringValue, pathPrefix: nil, askBeforeRouting: false,
@@ -7613,16 +7076,17 @@ private func landURLRules(_ input: OwnedLandingInput,
         }
     }
 
-    /// 毫秒戳 -> `Date`，与 `URLRuleKind.milliseconds` 互为逆。
+    /// Convert milliseconds to `Date`, the inverse of `URLRuleKind.milliseconds`.
     func date(_ ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }
 
-    // 第一 / 二相：create / move / update。每条身份一份取值，op 的种类由「本机有没有行」与
-    // 「桶变没变」定，`URLRuleApplyBatch.init` 再按身份合并。
+    // Phases 1 / 2: create / move / update. Each identity supplies one value set; local row
+    // existence and bucket changes determine operation kinds, which `URLRuleApplyBatch.init`
+    // coalesces by identity.
     var ops: [URLRuleSyncOp] = []
     var payloadOf: [String: Data] = [:]
-    /// R-M3-4a-94 的**第一层**：身份 -> 它这一页的落地值。那份取值里的两枚戳与马上要写进
-    /// 游标 `reconciled` 的字节是同一枚，所以它就是账户此刻的值——而游标里还是**落地前**那
-    /// 一份（记账排在 `land(...)` 之后）。
+    /// R-M3-4a-94 layer 1: identity -> values landed on this page. Their two stamps match the bytes
+    /// about to enter cursor `reconciled`, so they represent the current account values. The cursor
+    /// still contains pre-landing values because bookkeeping follows `land(...)`.
     var landedValues: [String: URLRuleLandingValues] = [:]
     for identity in active {
         guard let item = landing[identity] else { continue }
@@ -7631,12 +7095,13 @@ private func landURLRules(_ input: OwnedLandingInput,
         let values = URLRuleLandingValues(
             syncId: identity, spaceId: item.spaceId,
             host: item.entity.host.stringValue,
-            // 线上 `""` ⇔ 本机 nil（§8.1）。
+            // Wire empty string maps to local nil (§8.1).
             pathPrefix: wirePath.isEmpty ? nil : wirePath,
             askBeforeRouting: item.entity.ask.boolValue,
             sortOrder: sortOrderOf[identity] ?? item.row?.sortOrder ?? 0,
             createdDate: date(item.entity.createdAtMs),
-            // 两枚远端戳照合并结果落，**不是 `now`**（R-M3-4a-20 / 48：引擎不铸戳）。
+            // Persist both remote stamps from the merge result, not `now` (R-M3-4a-20 / 48: the
+            // engine does not mint stamps).
             contentUpdatedDate: date(item.entity.host.updatedAtMs),
             targetUpdatedDate: date(item.entity.targetSpaceUuid.updatedAtMs))
         landedValues[identity] = values
@@ -7645,19 +7110,22 @@ private func landURLRules(_ input: OwnedLandingInput,
             continue
         }
         if let localId = item.claimsLocalId {
-            // §8.4.2 M1：re-key 按本机 id；字段合并结果（`.update` 那条）由 `URLRuleApplyBatch.init`
-            // 折进同一条 `.rekey`。行的投影下标变了也要写（认领的行第一次按账户级 rank 排位），
-            // 走的同样是那一次 `values` 写，不另发一条 `.reorder`。
+            // §8.4.2 M1: re-key by local id. `URLRuleApplyBatch.init` folds the `.update` field
+            // values into the same `.rekey`. A changed projected index also requires writing
+            // values: the claimed row receives its first account-ranked position. Use the same
+            // values write without a separate `.reorder`.
             ops.append(.rekey(localId: localId, to: identity, values: nil))
             let repositioned = sortOrderOf[identity].map { $0 != row.sortOrder } ?? false
             if item.writesContent || repositioned { ops.append(.update(values)) }
             continue
         }
-        // §4.5：**先按身份找本机行，找不到才 create**。有行的一律是 update / move。
+        // §4.5: look up the local row by identity before creating. Every existing row uses update /
+        // move.
         if item.moves || row.spaceId != item.spaceId { ops.append(.move(values)) }
         if item.writesContent { ops.append(.update(values)) }
     }
-    // 其余兄弟：被触及的桶里已经存在于本机、这一页拿到了新下标的行，各发一条纯重排。
+    // Other siblings: emit a reorder for each existing local row whose index changed in an affected
+    // bucket on this page.
     for (identity, position) in sortOrderOf where landing[identity] == nil {
         guard let row = rowOf[identity], row.deletedDate == nil, row.sortOrder != position else {
             continue
@@ -7666,19 +7134,18 @@ private func landURLRules(_ input: OwnedLandingInput,
     }
     ops.append(contentsOf: deleteOps)
 
-    // §8.4.3 M2 的装配（8b-2）。**`ops` 为空也照走**：这一页仍然要开一次同形事务跑尾钩
-    // （R-M3-4a-56 / CASE M-35）。
-    //
-    // 三件事在拼批次**之前**算好：
-    // ① 候选集的**第一次**减法（计划裁定六 (1) / R-M3-4a-90）：本页 `.transfer` 相真的写进过
-    //    单元的那些目标此刻都带 `pendingLocalEdit`，按静止判据第 3 项它们本来就不该静止，
-    //    pre-pass 只是算得太早。传进 `mergePass(atRest:)` 的**必须**是减完的那一份（CASE M-33）。
-    //    第二次减法在尾钩里、事务内（R-M3-4a-100 / CASE M-36）。
-    // ② `publishedIdentities`（R-M3-4a-95）：`syncId != nil` **不等于**「已发布」——一条本机新建
-    //    的行在 M1 认领那一刻就有了 `syncId`，却要等这一轮的发布段才有服务端三元组。
-    // ③ 有效账户戳那**一张**表（R-M3-4a-94 / 97 / 98）：`.transfer` 的目标侧戳与尾钩共用它。
-    //    尾钩那一侧的 `mergePass` 拿着**同样的三个入参**再算一次——纯函数、输入逐字相同 ⇒
-    //    两处取值不可能分叉。
+    // §8.4.3 M2 assembly (8b-2). Even with empty `ops`, open the same transaction to run the tail
+    // hook (R-M3-4a-56 / CASE M-35).
+    // Compute three inputs before assembling the batch:
+    // 1. First candidate subtraction (ruling 6(1) / R-M3-4a-90): transfer targets whose units are
+    // written on this page acquire `pendingLocalEdit`, so at-rest predicate 3 excludes them. The
+    // pre-pass ran too early to see that; pass the reduced set to `mergePass(atRest:)` (CASE M-33).
+    // The second subtraction runs in the transactional tail hook (R-M3-4a-100 / CASE M-36).
+    // 2. `publishedIdentities` (R-M3-4a-95): a non-nil `syncId` does not imply publication. M1
+    // assigns an identity during claim, before the round's publish phase obtains the server tuple.
+    // 3. The shared effective account-stamp table (R-M3-4a-94 / 97 / 98), used by transfer targets
+    // and the tail hook. The hook's `mergePass` recomputes it from the same three arguments; pure
+    // evaluation with identical inputs guarantees matching values.
     let landedThisPage = URLRuleKind.landedIdentities(in: input.steps)
     let transferTargets = URLRuleKind.transferTargets(in: input.steps)
     let mergeCandidates = input.atRestIdentities.subtracting(transferTargets)
@@ -7689,10 +7156,11 @@ private func landURLRules(_ input: OwnedLandingInput,
                                                            rebaselined: input.rebaselined,
                                                            table: input.table,
                                                            identities: stampIdentities)
-    // §8.4.4 的第三相（R-M3-4a-93）：一条 step 一条 op。目标侧的那两枚戳从**同一张**有效账户
-    // 戳表里取 W 那一条（R-M3-4a-98 的通道，**不开新的协议成员、也不自己去翻游标表**）；
-    // 表里没有这个身份 ⇒ 交一份空的，`max` 在原语里退化成行戳。
-    // `fromSyncId` 是 R-M3-4a-102 的那一格：事务内的「来源行未变」复查按它重读 X。
+    // §8.4.4 phase 3 (R-M3-4a-93): one operation per step. Read W's target stamps from the shared
+    // effective account-stamp table through the R-M3-4a-98 input; add no protocol member or
+    // independent cursor lookup. If W is absent, pass an empty value so the primitive's `max`
+    // reduces to the row stamp. `fromSyncId` supplies R-M3-4a-102's transactional reread of X to
+    // verify that the source row is unchanged.
     for transfer in transfers.sorted(by: { $0.identity < $1.identity }) {
         ops.append(.transfer(fromSyncId: transfer.identity, toSyncId: transfer.to,
                              source: transfer.source,
@@ -7708,8 +7176,9 @@ private func landURLRules(_ input: OwnedLandingInput,
                                          table: input.table,
                                          convergeAllowed: input.convergeAllowed,
                                          resolve: resolve)
-    // §5.5：抛错 = 一条都没落 ⇒ 整批停放。转移的那些身份也在里面——(α) 的 X 在
-    // `tombstoned` 里，停放会把它的 `pendingTombstone` 置上，下一轮重判。
+    // §5.5: a thrown transaction lands nothing, so park the whole batch, including transfer
+    // identities. In (α), X is tombstoned; parking sets its `pendingTombstone` for reevaluation
+    // next round.
     let identities = Set(active).union(deletedWithRow).union(transfers.map(\.identity))
     let batch = URLRuleApplyBatch(unordered: ops, currentSpaceIds: state.currentSpaceIds,
                                   mergeTail: mergeTail, accountStamps: accountStamps)
@@ -7717,8 +7186,9 @@ private func landURLRules(_ input: OwnedLandingInput,
     do {
         batchOutcome = try await access.apply(batch)
     } catch {
-        // §5.5：一个事务，抛错 = 一条都没落 ⇒ 整批停放，下一轮重试。落地算错那一类
-        // （`rowAlreadyMapped`）走 `refused`，与 `landPins` 逐字同一条分流。
+        // §5.5: one transaction; a throw lands nothing, so park the batch for retry. Invalid
+        // landing plans (`rowAlreadyMapped`) are refused instead, using the same classification as
+        // `landPins`.
         if case LocalStoreWriteError.rowAlreadyMapped = error {
             out.refused.formUnion(identities)
         } else {
@@ -7726,24 +7196,26 @@ private func landURLRules(_ input: OwnedLandingInput,
         }
         return out
     }
-    // §8.4.3 M2 的结局，两个字段（8b-2）。
+    // §8.4.3 M2 outcome: two fields (8b-2).
     out.collapsed = batchOutcome.collapsed
     out.mergeChangedRouting = batchOutcome.mergeChangedRouting
-    // §8.4.4 M3 的结局，三个字段（8b-3）。`deferredTombstones` 由引擎按
-    // `plan.parkedTombstones` 记账；那些身份**从 `landed` 与 `deleted` 两个集合里都不出现**
-    // （下面两个循环各自跳过它们）。
+    // §8.4.4 M3 outcome: three fields (8b-3). The engine accounts for `deferredTombstones` through
+    // `plan.parkedTombstones`; those identities appear in neither `landed` nor `deleted`, and both
+    // loops below skip them.
     out.transferred = batchOutcome.transferred
     out.supersededByDelete = batchOutcome.transferSupersededByDelete
     out.deferredTombstones = batchOutcome.deferredTombstones
-    // R-M3-4a-62 的第一个就地更新口：真的提交了的 re-key **立刻**折回轮内投影
-    // （**本机行 id -> 新 syncId**，与书签那一侧方向相反，计划裁定三）。
+    // R-M3-4a-62 first incremental update: immediately fold committed re-keys into the round
+    // projection as local row id -> new syncId, opposite to the bookmark mapping direction (ruling
+    // 3).
     var persisted: [String: String] = [:]
     for op in batch.ops {
         if case .rekey(let localId, let to, _) = op { persisted[localId] = to }
     }
     if !persisted.isEmpty { access.notePersistedClaims(persisted) }
-    // §4.5：落地之后、写基线之前，按计划复核一次。`apply` 收尾自己重建过一次缓存，所以这个
-    // 读者此刻答的是新世界；复核排在下面那次重读之前，重读失败也不会把已落地的行读成「不在」。
+    // §4.5: verify the plan after landing and before writing baselines. `apply` has already rebuilt
+    // its cache, so this lookup sees committed rows. Verify before the reread below, so a failed
+    // reread cannot make landed rows appear absent.
     for identity in active {
         guard access.isKnownLocalURLRule(identity) else {
             out.parked.insert(identity)
@@ -7754,10 +7226,10 @@ private func landURLRules(_ input: OwnedLandingInput,
     }
     var deletedRows: Set<String> = []
     for identity in deletedWithRow {
-        // R-M3-4a-102：来源行变了 ⇒ `.transfer` 与 `.delete(X)` 两条 op 都没执行。这条身份
-        // **既不进 `landed` 也不进 `deleted`**（进了 `deleted` 就等于承认那次硬删发生过，
-        // 游标会被写成「已删」而行还在，下一轮差分为它重发一条 create），也**不进 `parked`**
-        // ——它走 `deferredTombstones` 那条停放记账。
+        // R-M3-4a-102: if the source changed, neither `.transfer` nor `.delete(X)` ran. Exclude X
+        // from `landed` and `deleted`; marking it deleted would acknowledge a hard delete that
+        // never happened, causing the next diff to recreate its surviving row. Also exclude it from
+        // `parked`: `deferredTombstones` supplies its retry bookkeeping.
         guard !batchOutcome.deferredTombstones.contains(identity) else { continue }
         if access.isKnownLocalURLRule(identity) {
             out.parked.insert(identity)
@@ -7767,81 +7239,81 @@ private func landURLRules(_ input: OwnedLandingInput,
             deletedRows.insert(identity)
         }
     }
-    // §8.4.4 (β) 的清位（裁定 8）：一次由**停放载荷**解开的转移，同一次落地必须清掉
-    // `X.cursor.pendingApply` 与 `pendingOwnerUuid`——做法是把这条身份交回 `outcome.landed`
-    // （引擎在那里清这两位），而 `outcome.reconciled[X]` 与 `output.serverBytes[X]` **都缺席**
-    // （plan 闭包已经剔掉后者）⇒ 不写 `reconciled`、不写 `server`、不清 `deletedDate`、
-    // 不清 `pendingDelete`。
-    //
-    // (α) 那一半不进这里：它的 X 走上面那条 `.delete` 通路（`deleted`）或 `deferredTombstones`。
+    // §8.4.4 (β) cleanup (ruling 8): a transfer resolved from a parked payload must clear
+    // `X.cursor.pendingApply` and `pendingOwnerUuid` in the same landing. Return the identity in
+    // `outcome.landed`, where the engine clears both. Omit `outcome.reconciled[X]` and
+    // `output.serverBytes[X]` (already removed by the plan closure), so neither baseline is written
+    // and neither `deletedDate` nor `pendingDelete` is cleared.
+    // (α) does not use this path: X follows the deletion path above or `deferredTombstones`.
     for transfer in transfers {
         guard !deleteIdentities.contains(transfer.identity) else { continue }
         out.landed.insert(transfer.identity)
     }
-    // R-M3-4a-62 的第二个就地更新口：本页**真的被删掉**的行立刻退出投影。**让位的身份绝不进
-    // 这里**（R-M3-4a-61）——让位是 8b-3 的 (ii) 支，它软删的行仍在投影里等自己的 tombstone。
+    // R-M3-4a-62 second incremental update: immediately remove rows actually deleted on this page
+    // from the projection. Never remove yielding identities here (R-M3-4a-61): 8b-3 branch (ii)
+    // soft-deletes them, and they remain in the projection awaiting their own tombstones.
     if !deletedRows.isEmpty { access.noteDeletedRows(deletedRows) }
-    // R-M3-4a-62：这一页的行投影在提交之后重读一次。
+    // R-M3-4a-62: reread this page's row projection once after commit.
     state.reloadAfterPage(access)
-    // §6.6 第 1 行 / R-M3-4a-34：落地**显式**触发一次路由表刷新，**一页一次**。
-    //
-    // §6.6 **第 8 行**（8b-2 计划裁定七 / R-M3-4a-56）：第二个析取项。纯收敛的页（零落地）上
-    // 败者已经软删，而 Chromium 那张表里还留着它——少了这个 `||` 就要等下一次有落地的轮次才
-    // 纠正，与「远端删掉一个 Space 之后规则留在表里」逐字同形。**指针写不进这个条件**
-    // （`mergePartnerSyncId` 不进路由表，为它刷一次是白刷，CASE M-7 钉住零刷新）。
-    // M3 的编辑转移不需要第 9 行：它发生在落地段里，第一个析取项已经覆盖（§8.4.7）。
+    // §6.6 row 1 / R-M3-4a-34: landing explicitly refreshes routing once per page.
+    // §6.6 row 8 (8b-2 ruling 7 / R-M3-4a-56) supplies the second disjunct. On convergence-only
+    // pages with no landing, losers are already soft-deleted but remain in Chromium's routing
+    // table. Without this condition, correction waits for another landing, just as with rules
+    // retained after a remote Space deletion. Pointer-only writes must not trigger refresh:
+    // `mergePartnerSyncId` is absent from the routing table (CASE M-7 asserts zero refreshes). M3
+    // edit transfers need no ninth row because they occur during landing and the first disjunct
+    // covers them (§8.4.7).
     if !ops.isEmpty || out.mergeChangedRouting {
         access.refreshRoutingTableAfterLanding()
     }
-    // §13.2 的 `owner_moved`：数批次里真的留下来的 `.move`（计划裁定三）。
+    // §13.2 `owner_moved`: count `.move` operations that survive batch coalescing (ruling 3).
     out.ownerMoved = batch.ops.reduce(into: 0) { sum, op in
         if case .move = op { sum += 1 }
     }
-    // `createdRows` / `createdPins` 对规则恒空（没有图标回填），`pendingPartnerLineages` 恒空，
-    // `relineaged` 恒 0。
+    // Rules always leave `createdRows` / `createdPins` empty (no icon backfill),
+    // `pendingPartnerLineages` empty, and `relineaged` zero.
     return out
 }
 
 #if DEBUG
 extension PhiSyncEngine {
-    /// 只读测试面。**没有任何新的驱动入口**：测试照旧用 `pullOnce()` /
-    /// `setSpaceSyncEnabled(_:)` / `previewAccountSpaces()` 等既有入口驱动引擎，
-    /// 这里暴露的只是它们跑完之后的状态。
-    ///
-    /// 每一个都是 actor 隔离的，调用方必须 `await` 并**先取值再断言**（`XCTAssert*`
-    /// 的参数是 autoclosure，直接把 `await` 表达式塞进去取不到值）。
-    ///
-    /// 游标表与计数器的访问器由 Task 6 追加进这一段（那时引擎才持有它们）。
+    /// Read-only test access. Tests drive the engine through existing entries such as `pullOnce()`,
+    /// `setSpaceSyncEnabled(_:)`, and `previewAccountSpaces()`; these expose only the resulting
+    /// state.
+    /// All accessors are actor-isolated. Await each value before asserting: `XCTAssert*` uses
+    /// autoclosures that cannot directly evaluate `await`. Task 6 adds cursor-table and counter
+    /// accessors here once the engine owns that state.
     var spaceTableForTesting: PhiSpaceSyncTable { loadSpaceTable() }
 
-    /// 一条注册 kind 本轮那张游标表，按 `label` 取。读的是引擎手上那一份**内存镜像**，
-    /// 不是 store——否则一次断言就会多打一次 `load`，把 `MemoryOwnedItemStore` 的
-    /// `loseOnLoadNumber` / `hadRecordsSeen` 这两条脚本化语义搅乱。
+    /// Get a registered kind's cursor table for this round by label. Read the engine's in-memory
+    /// mirror, not the store: an assertion must not add a load that disrupts
+    /// `MemoryOwnedItemStore.loseOnLoadNumber` or `hadRecordsSeen` scripts.
     func ownedTableForTesting(_ label: String) -> PhiOwnedItemTable {
         ownedTables[label] ?? PhiOwnedItemTable()
     }
 
-    /// 最近一轮每条注册 kind 的计数行（§11.2），按 `label` 索引。
+    /// Latest round's per-kind counters (§11.2), keyed by label.
     var lastOwnedRoundCountersForTesting: [String: OwnedRoundCounters] { ownedCounters }
 
-    /// 最近一次预览翻过几页、数过几条实体（§5.8）。轮首清零，成功 / 截断 / 超期 / 退休 /
-    /// 传输失败每一条出口都写它，所以读到的绝不会是上一次预览的残值。
-    ///
-    /// **这是一条独立的只读接缝，不是 `.truncated` 的载荷**：给那个 case 加 associated
-    /// value 会同时改坏向导里的两处 `case .truncated:` 与两个测试文件里既有的断言，而
-    /// 它们要表达的东西一个字都没变。
+    /// Pages visited and entities counted by the latest preview (§5.8). Reset at round start and
+    /// written on every exit: success, truncation, deadline, retirement, and transport failure.
+    /// This prevents stale values from a previous preview.
+    /// This independent read-only accessor is not a `.truncated` associated value. Adding one would
+    /// break the wizard's two existing `case .truncated:` matches and assertions in two test files
+    /// without changing what they represent.
     var lastPreviewStatsForTesting: (pages: Int, entities: Int) { lastPreviewStats }
 
-    /// B-2 结局行的四个只读接缝（Task 2b，§2.8）。读的是 `run(_:)` 发射结局行那一刻的**快照**
-    /// （`LoggedRound`），不是活的轮级计数：一次 `page_budget_exhausted` 会把跟进轮排进队列，
-    /// 而跟进轮的 `run(_:)` 一进门就把活计数清零——活值在断言那一刻读到的可能已经是下一轮的。
-    /// `nil` / 0 / false 只表示「这个引擎还没跑完过一轮」。只读，不是新的驱动入口。
+    /// Four read-only B-2 outcome accessors (Task 2b, §2.8). Read the `LoggedRound` snapshot
+    /// captured when `run(_:)` emits its outcome, rather than live counters. A
+    /// `page_budget_exhausted` outcome queues a follow-up whose `run(_:)` resets live counters;
+    /// assertions might otherwise observe the next round's values. nil / 0 / false mean this engine
+    /// has not completed a round yet. These add no driving entry points.
     var lastRoundOutcomeForTesting: RoundOutcome? { lastLoggedRound?.outcome }
-    /// 最近一轮取回的页数（同一轮内多次 pull 累加）。只读。
+    /// Pages fetched in the latest round, accumulated across pulls within that round. Read-only.
     var lastRoundPagesForTesting: Int { lastLoggedRound?.pages ?? 0 }
-    /// 最近一轮**盘上**的 marker 是否动过（计划裁定 7）。只读。
+    /// Whether the persisted marker moved in the latest round (plan ruling 7). Read-only.
     var lastRoundMarkerAdvancedForTesting: Bool { lastLoggedRound?.markerAdvanced ?? false }
-    /// 最近一轮四个写口回报失败的次数。只读。
+    /// Failure count reported by the four persistence paths in the latest round. Read-only.
     var lastRoundCursorSaveFailedCountForTesting: Int { lastLoggedRound?.cursorSaveFailures ?? 0 }
 }
 #endif

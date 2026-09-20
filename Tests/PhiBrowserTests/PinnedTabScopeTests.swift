@@ -14,8 +14,8 @@ final class PinnedTabScopeTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
 
     override func tearDownWithError() throws {
-        // 这个类驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在 hosted
-        // 测试里那就是 Phi 自己的偏好域。
+        // This class runs real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
         clearPinnedTabScopeMirrorDefaults()
         cancellables.removeAll()
         for directory in tempDirectories {
@@ -119,25 +119,21 @@ final class PinnedTabScopeTests: XCTestCase {
         )
     }
 
-    /// 迁移之后，**同一个后台写上下文上的第二次写必须还能提交**，而且一条必填列为空的
-    /// `TabDataModel` 都不存在。
+    /// After migration, a second write on the same background context must commit, and
+    /// no TabDataModel may have empty required columns.
     ///
-    /// 防的是什么：`insertPinnedTabs` 里 `applyPinnedTabOwner`（它写 `model.profile`）一度
-    /// 排在 `context.insert(model)` **之前**。`ProfileModel.tabs` 是那一笔的 inverse，于是
-    /// 每建一条 pin，SwiftData 就为那条 inverse 现造一个六个必填列全空的 `TabDataModel`
-    /// 替身登记进上下文。**迁移那一次 save 照样可能过**（Mac B 2026-09-14 的现场就是这样），
-    /// 坏在此后：替身留在上下文里，此后每一次 save 都把它们物化一遍并整批校验失败
-    /// （NSCocoaErrorDomain 1560），直到有人 rollback。所以**第二次写**才是这条用例的载荷。
+    /// insertPinnedTabs formerly called applyPinnedTabOwner (setting model.profile) before
+    /// context.insert(model). The ProfileModel.tabs inverse caused SwiftData to register
+    /// a placeholder with six empty required columns for each pin. Migration could still
+    /// save successfully (Mac B, 2026-09-14), but later saves materialized the placeholders
+    /// and failed validation (NSCocoaErrorDomain 1560) until rollback. The second write
+    /// is therefore the key assertion. Three lineages across space-a/space-b under Default
+    /// produce six rows, matching the incident's six placeholders.
     ///
-    /// 3 条 lineage × 2 个 Space（`Default` 名下的 `space-a` / `space-b`）= 6 条新行，与现场
-    /// 那六个替身同一个规模。
-    ///
-    /// **这是一条 characterisation 用例，不是探针。** 它钉的是「迁移之后这个上下文仍然可
-    /// 写」这条不变量，但**不能证明**它在修复之前会红：现场那六个替身是在迁移的 save 成功
-    /// 之后大约 100 秒才开始让每一次 save 失败的，而是什么把它们从 SwiftData 的待插集合推
-    /// 进 Core Data 上下文的，调查（§6）没能定位。第二次写里那一下 `profile.tabs` 是按那个
-    /// 方向做的**尽力一击**——读这条关系会把 inverse 那一侧展开，理论上正是替身现形的时刻
-    /// ——但在触发条件被确认之前，它仍然只是尽力，不是证明。
+    /// This characterizes continued writability; it does not guarantee a pre-fix failure.
+    /// The incident started about 100 seconds after migration saved, and investigation §6
+    /// did not locate the materialization trigger. Reading profile.tabs in the second write
+    /// is a best-effort attempt to materialize the inverse, not proof of that trigger.
     func testASecondWriteStillCommitsAfterAProfileToSpaceMigration() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)
@@ -168,20 +164,19 @@ final class PinnedTabScopeTests: XCTestCase {
             store.getAllPinnedTabs(for: "Default", spaceId: "space-b").count, 3
         )
 
-        // 载荷①：同一个后台上下文上的**第二次**写还能提交。走 throwing 那条入口，save 失败
-        // 会抛出来而不是只留一行日志。
+        // Key assertion ①: a second write on the same context commits. Use the throwing
+        // entry point so save failures surface instead of merely being logged.
         let target = try XCTUnwrap(
             store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first
         )
         let targetGuid = target.guid
         try await store.performBackgroundWriteAndWaitThrowing { context in
-            // 先把 `ProfileModel.tabs` 展开一次。那正是 `model.profile = …` 写进去的 inverse
-            // 那一侧，也是替身（如果有）唯一的藏身处；读它会强制这个上下文把那一侧物化。
-            // 修复之后这一下什么也读不出来，save 照常提交。
+            // Read ProfileModel.tabs to materialize the inverse set by model.profile, the only
+            // place placeholders could be hiding. After the fix, none are found and save succeeds.
             let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
             for profile in profiles {
                 XCTAssertTrue(profile.tabs.allSatisfy { !$0.guid.isEmpty },
-                              "inverse 那一侧没有必填列为空的替身")
+                              "The inverse contains no placeholders with empty required columns")
             }
             let descriptor = FetchDescriptor<TabDataModel>(
                 predicate: #Predicate<TabDataModel> { $0.guid == targetGuid }
@@ -192,13 +187,13 @@ final class PinnedTabScopeTests: XCTestCase {
         try drainMainQueue()
 
         XCTAssertEqual(store.getTab(by: targetGuid)?.title, "After migration",
-                       "第二次写必须真的落盘")
+                       "The second write must persist")
 
-        // ②是**兜底，不是载荷**：按调查的结论，替身在两种结局下都到不了盘上——save 失败
-        // 什么都不写，save 成功说明当时根本没有替身。留着它是因为「空 guid 落了盘」这件事
-        // 一旦真的发生，这里是唯一会喊出来的地方。真正的载荷是①。
+        // ② is a fallback, not the key assertion: investigation found placeholders cannot
+        // persist in either outcome. Failed saves write nothing; successful saves imply none
+        // were present. Keep this check to detect any persisted empty guid; ① carries the test.
         XCTAssertTrue(store.getAllTabs().allSatisfy { !$0.guid.isEmpty },
-                      "没有任何一条必填列为空的 TabDataModel 替身")
+                      "No TabDataModel placeholders have empty required columns")
     }
 
     func testProfilePinsWithoutDestinationSpaceSurviveScopeRoundTrip() async throws {
@@ -821,13 +816,11 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").isEmpty)
     }
 
-    /// CASE 8.5d — 一次带着**已有 guid** 的 create 被库拒收，而不是安静地多出一条行。
-    ///
-    /// 防的是什么：`guid` 在 schema 上不是唯一列，所以在这道守卫之前，同一个 guid 写两遍
-    /// 是成功的。两条共享 guid 的行此后既改不动也删不掉（`.move` / `.update` / `.delete`
-    /// 都按 guid 取第一条），而侧栏那本按 `guidInLocalDB` 建的字典会直接 trap
-    /// （Mac B 2026-09-14 23:49）。`rowAlreadyMapped` 正是同步落地那条「这一批算错了 ⇒
-    /// 整批拒收」认得的错误，于是一个字都不落库。
+    /// CASE 8.5d: creating an existing guid is rejected instead of silently adding a row.
+    /// guid is not schema-unique, so duplicate writes previously succeeded. move/update/delete
+    /// address only the first matching row, leaving duplicates unmanageable; the sidebar's
+    /// guidInLocalDB dictionary traps (Mac B, 2026-09-14 23:49). rowAlreadyMapped tells
+    /// sync application to reject the miscomputed batch atomically, without persistence.
     func testASecondPinnedCreateOnAnExistingGuidIsRefused() async throws {
         let store = try makeStore()
         try seedProfilesAndSpaces(in: store)
@@ -838,7 +831,7 @@ final class PinnedTabScopeTests: XCTestCase {
         do {
             try await store.createPinnedTabThrowing(guid: "shared-guid", url: url,
                                                     title: "Second", profileId: "Default")
-            XCTFail("第二次 create 必须抛，不许安静地多出一条行")
+            XCTFail("The second create must throw instead of silently adding a row")
         } catch {
             XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
         }
@@ -846,21 +839,18 @@ final class PinnedTabScopeTests: XCTestCase {
 
         let rows = store.getAllPinnedTabs(for: "Default")
         XCTAssertEqual(rows.filter { $0.guid == "shared-guid" }.count, 1,
-                       "库里那个 guid 始终只有一条行")
-        XCTAssertEqual(rows.first?.title, "First", "被拒的那一条一个字段都没写进去")
+                       "The store always contains exactly one row for this guid")
+        XCTAssertEqual(rows.first?.title, "First", "No fields from the rejected create were written")
     }
 
-    /// CASE B2-2b（M3-4a Task 2b）— `rowAlreadyMapped` 的正面用例：一次**同步落地**的批次里带着
-    /// 一条已有 guid 的 create ⇒ 整批被拒、一个字都不落库。
-    ///
-    /// 走的是生产的落地入口 `AccountPhiPinnedTabAccess.apply(_:)` → `applyPinSyncBatchThrowing`
-    /// （一个写块、一个事务），不是 8.5d 那个单条 throwing 入口：B2-2 断言的「重投一页零抛出」
-    /// 可以被一个根本不检查的实现满足，这里钉住 pin 侧幂等性的唯一实现点
-    /// （`LocalStore+PinnedTabScope.swift` 的 `createPinnedTabBody`）真的在批次路径上生效，且
-    /// 同批的另一条 create 也随事务回滚。
-    ///
-    /// 防的是什么：那道守卫被悄悄绕开——两条共享 guid 的行此后既改不动也删不掉，而引擎在
-    /// 「重投把 update 走成 create」时靠的正是这一次拒收把整批打回去。
+    /// CASE B2-2b (M3-4a Task 2b): a sync batch creating an existing guid throws
+    /// rowAlreadyMapped and rolls back every write.
+    /// Use AccountPhiPinnedTabAccess.apply → applyPinSyncBatchThrowing, one write block
+    /// and transaction, rather than 8.5d's single-row API. B2-2's no-throw replay assertion
+    /// could pass with no guard at all; here createPinnedTabBody in LocalStore+PinnedTabScope.swift
+    /// must enforce pin idempotence on the batch path and roll back the companion create.
+    /// Bypassing that guard leaves duplicate guids unmanageable. Replay that mistakes an
+    /// update for a create relies on this rejection to roll back the entire batch.
     func testASyncLandingBatchWithAnExistingGuidIsRefusedAsAWhole() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)
@@ -882,7 +872,7 @@ final class PinnedTabScopeTests: XCTestCase {
         ])
         do {
             try await access.apply(batch)
-            XCTFail("带着已有 guid 的 create 必须让整批抛出")
+            XCTFail("Creating an existing guid must make the entire batch throw")
         } catch {
             XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
         }
@@ -890,33 +880,33 @@ final class PinnedTabScopeTests: XCTestCase {
 
         let rows = store.getAllPinnedTabs(for: "Default")
         let sharedGuidRows = rows.filter { $0.guid == "G" }
-        XCTAssertEqual(sharedGuidRows.count, 1, "库里那个 guid 始终只有一条行")
-        XCTAssertEqual(sharedGuidRows.first?.title, "First", "被拒的那一条一个字段都没写进去")
-        XCTAssertFalse(rows.contains { $0.guid == "H" }, "同批其它落地项随事务一起回滚")
+        XCTAssertEqual(sharedGuidRows.count, 1, "The store always contains exactly one row for this guid")
+        XCTAssertEqual(sharedGuidRows.first?.title, "First", "No fields from the rejected create were written")
+        XCTAssertFalse(rows.contains { $0.guid == "H" }, "Other operations in the batch roll back with the transaction")
     }
 
-    /// CASE 8.5e — 启动自愈把一个**已经**坏掉的库收拾干净。
-    ///
-    /// 两类各一条：共享 guid 的两行留一条（`index` 最小者），同身份的精确重复留一条。
-    /// 内容分歧的变体**不动**——A11 给它们各铸一条新 lineage，删掉就是销毁用户数据。
+    /// CASE 8.5e: startup repair cleans an already-corrupt store.
+    /// Keep the lowest-index row among shared guids and one exact same-identity duplicate.
+    /// Preserve content-divergent variants: A11 mints separate lineages for them, and deleting
+    /// them would destroy user data.
     func testStartupSelfHealCollapsesDuplicatePinnedRows() async throws {
         let store = try makeStore()
-        // `LocalStore.init` 自己排了一次自愈进写队列。空等一个 no-op 写把它排干，于是
-        // 下面那次直接调用面对的是一个确定的、没人动过的库。
+        // LocalStore.init queues a repair itself. Drain it with a no-op write so the direct
+        // call below starts from a deterministic, untouched fixture.
         await store.performBackgroundWriteAndWait { _ in }
         let fixture = try seedProfilesAndSpaces(in: store)
-        // 共享 guid 的两行（Mac B 那次落地的形状：同 lineage、同内容、两个 index）。
+        // Two rows share a guid, matching Mac B's incident: same lineage/content, different indexes.
         try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
                             profile: fixture.defaultProfile, title: "YouTube",
                             url: "https://youtube.example", index: 1)
         try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
                             profile: fixture.defaultProfile, title: "YouTube",
                             url: "https://youtube.example", index: 3)
-        // 同一条身份的第三行，guid 不同、内容逐字相同 ⇒ 精确重复。
+        // A third same-identity row has a different guid but identical content: an exact duplicate.
         try insertPinnedTab(in: store, guid: "third-guid", lineageId: "yt-lineage",
                             profile: fixture.defaultProfile, title: "YouTube",
                             url: "https://youtube.example", index: 4)
-        // 同身份但**内容分歧**的变体：A11 的地盘，自愈不许碰它。
+        // A content-divergent variant belongs to A11; repair must preserve it.
         try insertPinnedTab(in: store, guid: "variant-guid", lineageId: "yt-lineage",
                             profile: fixture.defaultProfile, title: "YouTube Renamed",
                             url: "https://youtube.example", index: 5)
@@ -925,26 +915,25 @@ final class PinnedTabScopeTests: XCTestCase {
         let counts = try store.healDuplicatePinnedTabRowsBody(in: context)
         try context.save()
 
-        XCTAssertEqual(counts.sharedGuid, 1, "① 共享 guid 的那一对折成一条")
-        XCTAssertEqual(counts.sharedIdentity, 1, "② 同身份的精确重复也折成一条")
+        XCTAssertEqual(counts.sharedGuid, 1, "① The shared-guid pair collapses to one row")
+        XCTAssertEqual(counts.sharedIdentity, 1, "② The exact same-identity duplicate also collapses")
         let rows = store.getAllPinnedTabs(for: "Default")
         XCTAssertEqual(rows.filter { $0.guid == "dup-guid" }.count, 1,
-                       "③ 那个 guid 只剩一条行")
+                       "③ Only one row retains this guid")
         XCTAssertEqual(rows.first { $0.guid == "dup-guid" }?.index, 1,
-                       "④ 留下的是 index 最小的那一条")
+                       "④ The lowest-index row survives")
         XCTAssertNil(rows.first { $0.guid == "third-guid" },
-                     "⑤ 精确重复的第三条没了")
+                     "⑤ The third exact duplicate is removed")
         XCTAssertNotNil(rows.first { $0.guid == "variant-guid" },
-                        "⑥ 内容分歧的变体一个字都没动")
+                        "⑥ The content-divergent variant remains unchanged")
         XCTAssertEqual(Set(rows.map(\.guid)).count, rows.count,
-                       "⑦ 收尾之后没有任何两行共享 guid")
+                       "⑦ No two rows share a guid after repair")
     }
 
-    /// CASE 8.6 — a scope migration carries `contentUpdatedDate` across.
-    ///
-    /// 迁移过去只复制 `createdDate`，把 `contentUpdatedDate` 丢在原行上。丢掉的后果是：用户
-    /// 切一次作用域，本机每一条 pin 的比较戳从「上次真实编辑」塌回 `createdDate`，于是它们
-    /// 在下一轮全部输给对端任意一次旧编辑——一次作用域切换变成一次账户级的内容回滚。
+    /// CASE 8.6: scope migration preserves contentUpdatedDate.
+    /// Previously only createdDate was copied. Each pin's comparison stamp then fell back
+    /// from its last real edit to creation time, losing to any old remote edit next round.
+    /// A scope change could thus roll back content across the account.
     func testScopeMigrationCarriesTheContentEditTimestampToTheMigratedRow() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)
@@ -976,12 +965,11 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertEqual(row.createdDate, created)
     }
 
-    /// CASE 8.9 — merging two copies keeps the LATER content edit stamp, not whichever copy
-    /// happened to sort first.
-    ///
-    /// 只有内容签名相等的副本才会合并，所以合出来那一行的内容取谁都一样；它们各自的编辑戳
-    /// 却可以不同。只取第一个集合那一份的话，两台把集合排成不同顺序的机器会为同一份内容发布
-    /// 不同的比较戳，下一轮互相盖来盖去。取最大值与顺序无关，`lastSeen` 早就是这么取的。
+    /// CASE 8.9: merging copies retains the later content edit stamp, independent of order.
+    /// Only equal content signatures merge, so either copy supplies the same content, but
+    /// stamps can differ. Taking the first set's stamp lets devices publish different stamps
+    /// for identical content and overwrite one another. Taking the maximum is order-independent,
+    /// as already done for lastSeen.
     func testMergingCopiesKeepsTheLatestContentEditTimestamp() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)

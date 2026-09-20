@@ -19,7 +19,7 @@ import SwiftProtobuf
 //   goes through `NamespaceForProfile` (internal/transport/sync_handler.go) like any other and
 //   comes out as `chromium:phi`. That is the namespace M3-1 ships (ruling R6), and it is what
 //   sync-service now documents: docs/database.md §namespace (the `chromium:phi` row) and
-//   docs/architecture.md §协议要点.
+//   docs/architecture.md §Protocol essentials.
 //   The consequence both sides record: **`phi` is a RESERVED profile segment.**
 //   `profileIDPattern` accepts it as an ordinary profile id, so a Chromium profile literally
 //   named `phi` would land in this same namespace. Real profile segments are UUIDs, so nothing
@@ -51,31 +51,28 @@ enum PhiSyncEntity {
     /// and the server's `IS DISTINCT FROM` idempotence check still works.
     static let spaceEntityName = "phi-space"
 
-    /// 一条书签 / 文件夹 = 一条实体，tag `phi-bookmark:<bookmark_uuid>`。
-    /// SHA1 前缀（空 `EntitySpecifics{phi:{}}`）是按 DATA TYPE 的，三种 kind 共用。
+    /// One bookmark/folder per entity, tagged phi-bookmark:bookmark_uuid. The SHA1 prefix from empty
+    /// EntitySpecifics{phi:{}} is datatype-wide and shared by kinds.
     static let bookmarkTagPrefix = "phi-bookmark:"
     static func bookmarkClientTag(_ uuid: String) -> String { bookmarkTagPrefix + uuid }
-    /// 服务端明文落库的 `entities.name`，每 kind 一个常量（零知识 + 幂等判据）。
+    /// Constant per-kind plaintext entities.name on the server, preserving zero knowledge and idempotency.
     static let bookmarkEntityName = "phi-bookmark"
 
-    /// 一条 pin 的身份是 `(lineage, owner)` 这一对（R-M3-3-15），两者都进 tag：
-    /// 一条 lineage 在 N 个 Space 里就是 N 条实体。
-    ///
-    /// `lineage` **必须已经过 `PinKind.lineageKey(_:)` 归一（小写）**，与索引种子、
-    /// 落地匹配用的是同一个 helper；拿到未归一的大写 lineage 会算出一个线上永远对不上的
-    /// hash，于是每一条 pin 实体都被 §2.5 的接收端校验判成伪造载荷。
+    /// Pin identity includes lineage and owner (R-M3-3-15), so both enter the tag; one lineage across N Spaces
+    /// means N entities. Normalize lineage with PinKind.lineageKey first, matching index seeds and landing.
+    /// Uppercase input yields an incompatible hash and §2.5 rejects every pin as forged.
     static let pinTagPrefix = "phi-pin:"
     static func pinClientTag(_ lineage: String, ownerKey: String) -> String {
         pinTagPrefix + lineage + ":" + ownerKey
     }
     static let pinEntityName = "phi-pin"
 
-    /// 一条 URL Rule = 一条实体，tag `phi-urlrule:<rule_uuid>`。身份只有 `rule_uuid`
-    /// 一个成分（D13：目标 Space 不进身份），所以与 `spaceClientTag` / `bookmarkClientTag`
-    /// 同为单参数，不是 `pinClientTag(_:ownerKey:)` 那种双参数。
+    /// One URL Rule per entity, tagged phi-urlrule:rule_uuid. Identity is only rule_uuid, excluding target
+    /// Space (D13), so this single-argument API matches Space/bookmark tags rather than pin's owner-dependent
+    /// tag.
     static let urlRuleTagPrefix = "phi-urlrule:"
     static func urlRuleClientTag(_ uuid: String) -> String { urlRuleTagPrefix + uuid }
-    /// 服务端明文落库的 `entities.name`，每 kind 一个常量（零知识 + 幂等判据）。
+    /// Constant per-kind plaintext entities.name on the server, preserving zero knowledge and idempotency.
     static let urlRuleEntityName = "phi-urlrule"
 
     /// Chromium's rule: `base64(SHA1(<serialized empty specifics for the type> + client_tag))`.
@@ -109,8 +106,8 @@ struct PhiRemoteEntity {
 struct PhiCommitEntry {
     let entityId: String?      // nil on create
     let clientTagHash: String
-    /// 服务端明文落库的 `entities.name`，每 kind 一个常量：`"phi-settings"`、`"phi-space"`、
-    /// `"phi-bookmark"`、`"phi-pin"`、`"phi-urlrule"`。
+    /// Per-kind plaintext server entities.name constant: phi-settings, phi-space, phi-bookmark, phi-pin or
+    /// phi-urlrule.
     let name: String
     let ciphertext: Data?      // nil for a tombstone
     let deleted: Bool

@@ -12,8 +12,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {
-        // 这个类驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在 hosted
-        // 测试里那就是 Phi 自己的偏好域。
+        // This class runs real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
         clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -259,13 +259,12 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(target[1].layout, SplitLayout.horizontal.rawValue)
     }
 
-    // MARK: - 作用域迁移的合并键（R-M3-3-16）
+    // MARK: - Scope migration merge key (R-M3-3-16)
 
-    // CASE 2b.1 —— `contentSignature(for:)` 今天是 `(title, url, favicon)`，而
-    // `mergeCandidates` 只在签名相等时才合并同 lineage 的两份副本。D9 让 favicon 留在
-    // 设备本地并各自回填，所以两台机器对同一条 pin 合法地持有不同的 favicon 字节——于是
-    // 同一次账户级作用域变更在 A 上合出 1 行、在 B 上合出 2 行，两台机器的 pin 数量从此
-    // 不同，且各自都认为自己是对的。
+    // CASE 2b.1: contentSignature(for:) included title, URL, and favicon; mergeCandidates
+    // merges same-lineage copies only when signatures match. D9 keeps favicons device-local,
+    // so identical pins can legitimately have different favicon bytes. Including them lets the
+    // same account scope change produce one row on A and two on B, permanently diverging pin counts.
     func testScopeMigrationMergesLineageAcrossDifferingFaviconBytes() async throws {
         let store = try makeStoreWithSpaces()
         try await store.changePinnedTabScope(to: .space)
@@ -305,16 +304,14 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(merged.count, 1)
     }
 
-    // CASE 5b.5 —— R-M3-3-16 的双 fixture 回归：**两台机器**的 favicon 不同，同一次作用域
-    // 迁移的结果逐行相同。
-    //
-    // 防的是什么：CASE 2b.1 只测了「同一台机器上两份变体合成一条」，那是必要条件不是充分
-    // 条件。真正的故障形状是**两台机器合出不同的结果**，而那要两份 fixture 才看得见。D9 让
-    // favicon 留在本地并各自回填，所以「同一条 pin 在两台机器上有不同的 favicon」是**常态**；
-    // 合并键一旦沾上它，两台机器的 pin 数量会从此不同，且各自都认为自己是对的。
+    // CASE 5b.5: two-fixture regression for R-M3-3-16. Different favicons on two machines
+    // must produce identical rows after the same scope migration. CASE 2b.1 only checks
+    // merging variants on one machine, a necessary but insufficient condition. D9 makes
+    // device-local favicon differences normal; including them in the merge key can permanently
+    // diverge the machines' pin counts while each considers its own result correct.
     func testTwoDevicesWithDifferentFaviconBytesMigrateToIdenticalRows() async throws {
-        // A：每一条都有图。B：每一条都是 nil。其余字段（lineage / title / url / index）逐字
-        // 相同——两台机器本来就该在这里一致。
+        // A has favicons everywhere; B has nil everywhere. Lineage, title, URL, and index match
+        // exactly, so both machines must agree.
         let deviceA = try await makeMigrationFixtureStore(favicons: [Data([0x1]), Data([0x2])])
         let deviceB = try await makeMigrationFixtureStore(favicons: [nil, nil])
 
@@ -329,7 +326,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
 
         let rowsA = migratedRows(in: deviceA)
         let rowsB = migratedRows(in: deviceB)
-        XCTAssertEqual(rowsA.count, rowsB.count, "两台机器合出的条数必须相同")
+        XCTAssertEqual(rowsA.count, rowsB.count, "Both machines must produce the same number of merged rows")
         XCTAssertEqual(rowsA.map(\.lineage), rowsB.map(\.lineage))
         XCTAssertEqual(rowsA.map(\.index), rowsB.map(\.index))
         XCTAssertEqual(rowsA.map(\.title), rowsB.map(\.title))
@@ -338,10 +335,9 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
 
     // MARK: - applyPinSyncBatchThrowing（Task 5b）
 
-    // CASE 5b.4b ③ 的 store 级对应物 —— 整批一个事务：中途一条 op 失败，前面那些也回滚。
-    //
-    // 防的是什么：那五个 throwing 兄弟各自开一个写块，挨个调就是 N 个事务、部分成功于是
-    // 成立，而引擎会为一批只落了一半的操作写下基线（R-exec-2）。
+    // Store equivalent of CASE 5b.4b ③: the whole batch is one transaction; any failed op
+    // rolls back earlier operations. Calling the five throwing APIs separately creates N
+    // transactions and allows partial success, for which the engine would record a baseline (R-exec-2).
     func testAFailingOpRollsBackEveryEarlierOpInTheSameBatch() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-a", profileId: "Default", spaceId: nil,
@@ -355,14 +351,12 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
 
         let title = try pinRow("p-a", in: store)?.title
-        XCTAssertEqual(title, "A", "部分成功不存在")
+        XCTAssertEqual(title, "A", "Partial success is impossible")
     }
 
-    // 末尾按被触及的每个 **owner** 跑一次 index 重排（pin 按 owner 分组，不是按父）。
-    //
-    // 防的是什么：一批操作可能反复动同一个 owner，每条各自那次重排只保证它自己那一刻是
-    // 稠密的。留下的空位会让下一轮的 rank → index 投影算出与对端不同的次序，两台机器的 pin
-    // 顺序就此分歧。
+    // Normalize indexes once per touched owner at the end; pins group by owner, not parent.
+    // A batch can touch one owner repeatedly, so per-op normalization only guarantees density
+    // at that instant. Remaining gaps change the next rank-to-index projection and diverge devices' order.
     func testTheBatchLeavesEveryTouchedOwnerDenselyNumbered() async throws {
         let store = try makeStoreWithSpaces()
         for (index, guid) in ["p-0", "p-1", "p-2"].enumerated() {
@@ -370,21 +364,20 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                              title: guid, url: "https://\(guid).example", index: index)
         }
 
-        // 中间那条被删掉，于是 0 / 2 之间留下一个空位，收尾那次重排要把它补上。
+        // Deleting the middle row leaves indexes 0 and 2; final normalization must close the gap.
         try await store.applyPinSyncBatchThrowing([.delete(guid: "p-1")])
         drainMainQueue()
 
         let remaining = store.getAllPinnedTabs(for: "Default")
             .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
         XCTAssertEqual(remaining.map(\.guid), ["p-0", "p-2"])
-        XCTAssertEqual(remaining.map(\.index), [0, 1], "空位被补上")
+        XCTAssertEqual(remaining.map(\.index), [0, 1], "The index gap is closed")
     }
 
-    // 导入中的 Space 抛的是那个**专属**的 case，不是 `targetNotWritable`，而且一个字节都不落。
-    //
-    // 防的是什么：`targetNotWritable` 的含义是「Space 被删了或换了 Profile」，那是结构性
-    // 失败；导入是瞬时状态，引擎该按停放处理、下一轮重试。两者混用之后 §11.2 的 `parked`
-    // 计数分不清一次该重试的停放与一次不该重试的失败。
+    // An importing Space throws its dedicated case, not targetNotWritable, without any writes.
+    // targetNotWritable means a deleted Space or changed Profile, a structural failure; import
+    // is transient and parks for retry. Conflating them makes §11.2's parked count unable
+    // to distinguish retryable parking from permanent failure.
     func testABatchTargetingAnImportingSpaceThrowsTheDedicatedCase() async throws {
         let store = try makeStoreWithSpaces()
         try await store.changePinnedTabScope(to: .space)
@@ -400,14 +393,12 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
 
         let title = try pinRow("p-a", in: store)?.title
-        XCTAssertEqual(title, "A", "锁住时一个字节都不落")
+        XCTAssertEqual(title, "A", "No bytes are written while locked")
     }
 
-    // `.create` 的 `source` 一路落到物理行上（Step 2）。
-    //
-    // 防的是什么：`PhiPinTabEntity` 的字段 8 就是 `source`，`PinKind.merge` 按「取非零一侧」
-    // 合并它。缺这个参数，一条远端 pin 落地时它只能落成默认值 0，下一轮的快照把 0 当成本机
-    // 的值发回去，把对端记录的导入来源抹掉。
+    // The create operation carries source through to the physical row (Step 2).
+    // PhiPinTabEntity field 8 is source, merged by PinKind.merge using the nonzero side.
+    // Omitting it writes the default 0; the next snapshot republishes 0 and erases the remote import origin.
     func testCreateCarriesSourceAndLineageAndCreatedDateOntoTheRow() async throws {
         let store = try makeStoreWithSpaces()
         let born = Date(timeIntervalSince1970: 7_777)
@@ -425,15 +416,14 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
 
         let landed = try XCTUnwrap(try pinRow("p-new", in: store))
         XCTAssertEqual(landed.source, TabSource.safari.rawValue)
-        XCTAssertEqual(landed.pinLineageId, "l-remote", "线上身份原样写回，不重铸")
+        XCTAssertEqual(landed.pinLineageId, "l-remote", "Preserve the wire identity without minting a replacement")
         XCTAssertEqual(landed.createdDate, born)
     }
 
-    // 一条拆分补丁把**两个**方向写在同一个事务里（§7.4 / I11），伙伴按归一后的 lineage 解析。
-    //
-    // 防的是什么：`reconcilePinnedSplitPartners()` 遍历的是活动窗口里的 `SplitGroup`，而一对
-    // 由同步落地的拆分 pin 没有任何活动 group——只写一个方向的话，另一半永远不知道自己被
-    // 配了对。本机那一列可能是大写，直接比恒为假，于是每一次链接都抛 `rowNotFound`。
+    // A split patch writes both directions in one transaction (§7.4 / I11), resolving partners
+    // by normalized lineage. reconcilePinnedSplitPartners only visits active SplitGroups,
+    // which newly synced split pins lack. A one-way write would never repair its partner;
+    // comparing lowercase wire lineage directly with uppercase local lineage always yields rowNotFound.
     func testASplitPartnerPatchLinksBothDirectionsThroughTheNormalisedLineage() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
@@ -443,7 +433,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                          title: "Right", url: "https://right.example", index: 1,
                          configure: { $0.pinLineageId = "L-RIGHT" })
 
-        // 补丁带的是线上归一过的小写 lineage，而本机那一列是大写。
+        // The patch carries normalized lowercase wire lineage; the local column is uppercase.
         try await store.applyPinSyncBatchThrowing([
             .update(guid: "p-left", fields: PinFieldPatch(splitPartnerLineageId: "l-right")),
         ])
@@ -451,33 +441,31 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
 
         XCTAssertEqual(try pinRow("p-left", in: store)?.splitPartnerGuid, "p-right")
         XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-left",
-                       "反向也在同一个事务里写了")
+                       "The reverse link is written in the same transaction")
     }
 
-    // I1 —— 伙伴还没落地时，那一半照样落地，本地链接留 nil（spec §7.4 落地规则 3）。
-    //
-    // 防的是什么：整个批次是一个事务，所以在这里抛错会把同一轮里其余每一条 pin 操作一起
-    // 回滚——而「一对拆分 pin 只到了一半」正是 §7.4 视为**常态**的情形。基线于是永不写下、
-    // 同一批每轮重放，pin 段就此停摆。补偿是引擎在游标上记 `pendingPartnerLineage`，伙伴
-    // 落地的那一轮再把两个方向补齐。
+    // I1: a half whose partner has not arrived still applies, with a nil local link (§7.4 rule 3).
+    // Throwing rolls back the entire pin batch, prevents baselines, and replays it forever,
+    // stalling pin sync even though partial arrival is normal. The engine records
+    // pendingPartnerLineage on the cursor and repairs both directions when the partner arrives.
     func testAHalfWhoseSplitPartnerHasNotLandedStillLandsWithANilLink() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
                          title: "Left", url: "https://left.example", index: 0,
                          configure: { $0.pinLineageId = "L-LEFT" })
 
-        // 第一轮：只到了左边这一半，而补丁里带着右边那一半的 lineage。
+        // Round 1: only the left half arrives; its patch names the right half's lineage.
         try await store.applyPinSyncBatchThrowing([
             .update(guid: "p-left", fields: PinFieldPatch(title: "Renamed",
                                                           splitPartnerLineageId: "l-right")),
         ])
         drainMainQueue()
 
-        XCTAssertNil(try pinRow("p-left", in: store)?.splitPartnerGuid, "链接留 nil")
+        XCTAssertNil(try pinRow("p-left", in: store)?.splitPartnerGuid, "The link remains nil")
         XCTAssertEqual(try pinRow("p-left", in: store)?.title, "Renamed",
-                       "同批的其余操作没有被一次「伙伴还没到」回滚")
+                       "A missing partner does not roll back other operations in the batch")
 
-        // 第二轮：伙伴落地，两个方向一起补齐。
+        // Round 2: the partner arrives and both directions are repaired together.
         try await store.applyPinSyncBatchThrowing([
             .create(PhiLocalPin.fixture(lineageId: "l-right",
                                         guid: "p-right",
@@ -493,10 +481,9 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-left")
     }
 
-    // M4 —— 一条什么都不改的补丁抛错，而不是悄悄成功。
-    //
-    // 防的是什么：这是批次里唯一一处「不抛错」曾经不等于「真的落地了」的地方，而 §4.9 的
-    // 整套保证就建立在那句等价上——引擎会为一次根本没发生的写落下基线。
+    // M4: a patch changing nothing throws instead of silently succeeding.
+    // This was the only batch path where no error did not imply a write; that violates
+    // §4.9 and lets the engine record a baseline for a write that never happened.
     func testAPatchThatChangesNothingThrowsInsteadOfSilentlySucceeding() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-a", profileId: "Default", spaceId: nil,
@@ -508,7 +495,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             ])
         }
 
-        // `url` 的外层 some、内层 nil 表达的是「不动」，所以只带它的一条补丁同样什么都不改。
+        // Outer some with inner nil for URL means unchanged; a patch containing only this also changes nothing.
         await assertThrows(.noCandidateSurvived) {
             try await store.applyPinSyncBatchThrowing([
                 .update(guid: "p-a", fields: PinFieldPatch(url: .some(nil))),
@@ -516,12 +503,10 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
     }
 
-    // M6 —— 删掉一半，幸存的那一半在**同一个事务**里断掉反向链接。
-    //
-    // 防的是什么：UI 路径从来配不出这一幕——它删一对拆分 pin 时两条一起删——但引擎会按
-    // §7.2 只删一条（对端取消固定了其中一半）。留着那条链接，幸存的行就指着一条不存在的
-    // guid：作用域迁移的变体签名拿不到伙伴、把它当成一条普通 pin 合并，而 UI 的合并单元格
-    // 会去渲染一个查不到的对半。
+    // M6: deleting one half clears the survivor's reverse link in the same transaction.
+    // The UI deletes split pins together, but §7.2 lets the engine delete just the remotely
+    // unpinned half. A dangling partner guid makes migration signatures treat the survivor
+    // as an ordinary pin and makes the merged UI cell try to render a nonexistent half.
     func testDeletingOneHalfOfASplitPairClearsTheSurvivorsLink() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
@@ -536,19 +521,18 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
 
         XCTAssertNil(try pinRow("p-left", in: store))
         XCTAssertNil(try pinRow("p-right", in: store)?.splitPartnerGuid,
-                     "幸存的一半不再指着一条不存在的行")
+                     "The surviving half no longer references a nonexistent row")
     }
 
-    // M6 的另一半 —— 只在伙伴**确实**回指本行时才断。
-    //
-    // 防的是什么：一条单向的陈旧链接（本行指着它、它已经改配给别人）不该被这次删除顺手
-    // 改掉，那会把另一对正常的拆分拆散。
+    // M6, other half: clear the partner only when it points back to this row.
+    // A stale one-way link may point to a pin already paired elsewhere; clearing that pin
+    // would break another valid split pair.
     func testDeletingAHalfLeavesAPartnerThatPointsSomewhereElseAlone() async throws {
         let store = try makeStoreWithSpaces()
         try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
                          title: "Left", url: "https://left.example", index: 0,
                          configure: { $0.splitPartnerGuid = "p-right" })
-        // 右边这一条已经和 `p-other` 配成了一对，它不回指 `p-left`。
+        // The right pin is now paired with p-other and no longer points back to p-left.
         try insertPinned(in: store, guid: "p-right", profileId: "Default", spaceId: nil,
                          title: "Right", url: "https://right.example", index: 1,
                          configure: { $0.splitPartnerGuid = "p-other" })
@@ -560,14 +544,14 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         drainMainQueue()
 
         XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-other",
-                       "另一对正常的拆分没有被波及")
+                       "The other valid split pair is unaffected")
         XCTAssertEqual(try pinRow("p-other", in: store)?.splitPartnerGuid, "p-right")
     }
 
     // MARK: - updateActivePinnedTabThrowing / removeActivePinnedTabThrowing
 
-    // CASE 2b.2 —— 「guid 不在当前作用域」是 fail-closed 的设计、不是 bug，但对同步层
-    // 必须可见：引擎会把一次没发生的写当成落地并写下基线。
+    // CASE 2b.2: refusing a guid outside the current scope is intentional fail-closed behavior.
+    // Sync must observe the refusal or it will record a baseline for a write that never happened.
     func testUpdateActivePinnedTabThrowingRejectsARowOutsideTheActiveScope() async throws {
         let store = try await makeStoreWithAnInactiveSpaceBPin()
 
@@ -580,8 +564,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
     }
 
-    // CASE 2b.3 —— 与 2b.2 是两个不同的入口，各测一次（§4.9 穷举的是「两个
-    // `…ActivePinnedTab` 各一条」）。
+    // CASE 2b.3: separate entry point from 2b.2; §4.9 requires one case for each ActivePinnedTab API.
     func testRemoveActivePinnedTabThrowingRejectsARowOutsideTheActiveScope() async throws {
         let store = try await makeStoreWithAnInactiveSpaceBPin()
 
@@ -600,9 +583,9 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
     }
 
-    // 一条属于 `space-b` 的 pin，在一次以 `space-a` 为 preferred 的作用域变更之后被留成
-    // 作用域外的备份行：`migratePinnedTabs` 保留源行、另建新的 Profile 形状物理行，所以
-    // 一个在这次交接期间排好队的 UI 动作仍然会带着旧 guid 打过来。
+    // A space-b pin becomes an out-of-scope backup after migration preferring space-a.
+    // migratePinnedTabs retains source rows and creates new Profile-shaped physical rows,
+    // so a UI action queued during the handoff can still arrive with the old guid.
     private func makeStoreWithAnInactiveSpaceBPin() async throws -> LocalStore {
         let store = try makeStoreWithSpaces()
         try await store.changePinnedTabScope(to: .space)
@@ -637,8 +620,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
     }
 
-    /// 一台机器的迁移 fixture：Space 作用域，`space-a` / `space-b` 各一条同 lineage、同
-    /// title、同 url、同 index 的 pin，**唯一差别是 favicon 字节**。
+    /// One machine's fixture: Space scope, one pin in each of space-a and space-b with
+    /// identical lineage, title, URL, and index; only favicon bytes differ.
     private func makeMigrationFixtureStore(favicons: [Data?]) async throws -> LocalStore {
         let store = try makeStoreWithSpaces()
         try await store.changePinnedTabScope(to: .space)
@@ -659,8 +642,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         return store
     }
 
-    /// 迁移之后那个 Profile 集合的逐行取值，按 `(index, guid)` 有序。**只取参与身份与顺序
-    /// 的字段**：favicon 按 D9 本来就该在两台机器上不同。
+    /// Read the migrated Profile collection ordered by (index, guid), comparing only identity
+    /// and order fields: D9 explicitly permits different favicons across machines.
     private func migratedRows(in store: LocalStore)
         -> [(lineage: String, index: Int, title: String, url: String)] {
         store.getAllPinnedTabs(for: "Default")

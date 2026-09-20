@@ -147,9 +147,9 @@ extension LocalStore {
                     throw PinnedTabTransferError.sourceNotFound(sourceTab.guid)
                 }
                 let copied = Self.copyPinnedTab(sourceTab, newGuid: newGuid)
-                // 先 insert 再写归属：`applyCurrentPinnedTabOwner` 写的 `profile` 会经
-                // `ProfileModel.tabs` 这条 inverse 反向登记，model 还不在上下文里时被登记
-                // 进去的是一个必填列全空的替身，此后每一次 save 都会整批校验失败（1560）。
+                // Insert before assigning ownership: the inverse `ProfileModel.tabs` would otherwise register
+                // a placeholder with missing required fields, causing every later save to fail validation
+                // (1560).
                 context.insert(copied)
                 try self.applyCurrentPinnedTabOwner(
                     profileId: targetProfileId,
@@ -236,7 +236,7 @@ extension LocalStore {
                 model.isOpenned = false
                 model.isCreatedByChromium = false
                 model.pinLineageId = guid
-                // 先 insert 再写归属，理由同上面那处跨 owner 复制。
+                // Insert before assigning ownership, as for the cross-owner copy above.
                 context.insert(model)
                 try self.applyCurrentPinnedTabOwner(
                     profileId: targetProfileId,

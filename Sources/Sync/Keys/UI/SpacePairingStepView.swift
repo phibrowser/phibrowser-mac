@@ -5,17 +5,13 @@
 
 import SwiftUI
 
-/// 第 2 步的两列表（§6.4）。两列的行必须**逐行对齐**，所以结构是「一行 = 左半 +
-/// 右半」而不是两个独立的列。
-///
-/// **这个 view 不持有任何 `@State`**：第 2 步的选择活在 `PairingWizardViewModel` 上，
-/// 因为页脚要读 `allRowsDecided`、Back 要保住它们、`.error` → Retry 之后要原样回到
-/// 这一步（§5.2）。
+/// Step-2 two-column table (§6.4), structured as paired row halves to align columns. Own no State:
+/// PairingWizardViewModel retains selections for footer enablement, Back and error/Retry (§5.2).
 struct SpacePairingStepView: View {
     @ObservedObject var viewModel: PairingWizardViewModel
     let model: SpacePairingModel
 
-    /// 解析不出名字时上屏的那一条。纯逻辑层交出 nil，本地化在这里。
+    /// Localized unresolved-name display; pure logic returns nil.
     static let unresolvedName = NSLocalizedString(
         "—", comment: "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)")
 
@@ -138,8 +134,8 @@ struct SpacePairingStepView: View {
                                                           comment: "Pairing wizard - an account Space named %1$@ in profile %2$@"),
                                 summary.name, model.profileName(for: summary) ?? Self.unresolvedName))
                         } icon: {
-                            // 图标与左列同一个组件：第 2 步的全部意思就是「这台 Mac
-                            // 的 Work 就是账户里的 Work」，图标是最快的那条视觉线索。
+                            // Reuse the left column's icon component: icons quickly show that a local Space
+                            // corresponds to the account Space.
                             SpaceIconView(storedValue: summary.iconName, size: 14,
                                           symbolWeight: .regular, tint: Color.primary)
                         }
@@ -157,7 +153,7 @@ struct SpacePairingStepView: View {
                 if model.assignment(for: local) != nil {
                     Image(systemName: "checkmark.circle.fill")
                         .themedForeground(.textSecondary)
-                        .accessibilityHidden(true)   // 信息已经在 Picker 的值里
+                        .accessibilityHidden(true)   // Already conveyed by the Picker value.
                 }
             }
             if model.assignment(for: local) == nil {
@@ -170,8 +166,8 @@ struct SpacePairingStepView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 默认 Space 是一条**只读**行：右列固定文本，没有下拉、不计入 `allRowsDecided`、
-    /// 不产出决定。D1 说了它的身份是常量，这一行只是把这件事说给用户听。
+    /// Default Space is read-only with fixed account text: no picker, no allRowsDecided contribution or
+    /// decision. It explains D1's constant identity.
     private func defaultSpaceRow(_ local: PhiLocalSpace) -> some View {
         HStack(alignment: .top, spacing: 16) {
             HStack(spacing: 8) {
@@ -197,8 +193,8 @@ struct SpacePairingStepView: View {
             local.name))
     }
 
-    /// 读经 `model.assignment(for:)`，所以一个过期的选择显示成 "Choose…" 而不是空白
-    /// Picker（与 `ProfilePairingView.remoteChoiceBinding` 同款理由）。
+    /// Read via model.assignment(for:) so stale selections display Choose… rather than a blank Picker, as with
+    /// ProfilePairingView.remoteChoiceBinding.
     private func binding(for local: PhiLocalSpace) -> Binding<SpacePairingModel.Assignment?> {
         Binding(get: { model.assignment(for: local) },
                 set: { viewModel.assign($0, to: local.spaceId) })

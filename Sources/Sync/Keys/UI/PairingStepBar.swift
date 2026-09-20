@@ -5,10 +5,9 @@
 
 import SwiftUI
 
-/// 两段步骤条（§6.3）。三态：current / complete / upcoming，complete 段的序号换成
-/// `checkmark`。**只读，不可点**——回退走页脚的 Back，一个动作只有一个入口。
-///
-/// 仓库里没有任何 step / wizard 形状的组件可复用，所以这是第一个。
+/// Two-step indicator (§6.3), with current/complete/upcoming states and checkmarks for completed steps.
+/// Read-only: Back in the footer is the sole navigation action. The repository has no reusable step/wizard
+/// component.
 struct PairingStepBar: View {
     let step: PairingWizardStep
 

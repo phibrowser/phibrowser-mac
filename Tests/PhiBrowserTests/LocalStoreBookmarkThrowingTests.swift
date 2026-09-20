@@ -8,18 +8,17 @@ import SwiftData
 import XCTest
 @testable import Phi
 
-// 书签写入口的 throwing 兄弟（§4.9）。这些用例共同防的是同一件事：
-// `performBackgroundWriteAndWaitThrowing` 只在块抛错或 `save()` 抛错时才抛，
-// 静默 return 与成功落地在调用方看来一模一样，而引擎会为一次根本没发生的写入
-// 落下 `reconciled` / `server` 基线——那条行此后既不会被差分判成删除（它还在），
-// 也不会被快照重发（基线说它已同步）。
+// Throwing bookmark write APIs (§4.9). performBackgroundWriteAndWaitThrowing throws only
+// when its body or save() throws. A silent return looks like a successful write, letting the
+// engine record a reconciled/server baseline for work that never happened. The row then
+// escapes both deletion diffing (it still exists) and snapshot retry (the baseline says synced).
 @MainActor
 final class LocalStoreBookmarkThrowingTests: XCTestCase {
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {
-        // 这个类里有用例驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在
-        // hosted 测试里那就是 Phi 自己的偏好域。
+        // Some cases run real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
         clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -76,9 +75,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.20 —— 一次调用完成重打子树 + 重挂到任意文件夹。既有的两个原语都表达不了
-    // 这件事：`moveBookmark` 从行自己身上取 Space，`moveBookmarks` 永远落到目标 Space 的
-    // root。而「移动是一次字段变化，不是删+建」是 R-D6-14 ③ 的要求。
+    // CASE 2a.20: retag a subtree and reparent it to any folder in one call. Neither existing
+    // primitive supports this: moveBookmark takes the Space from the row, while moveBookmarks
+    // always targets the Space root. R-D6-14 ③ requires a field change, not delete plus create.
     func testMoveBookmarkThrowingRetagsSubtreeAndReparentsIntoAnyFolder() async throws {
         let store = try await makeStoreWithSpaces()
         let source = try await store.createDirectoryThrowing(title: "Source",
@@ -111,7 +110,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - moveBookmarksThrowing
 
-    // CASE 2a.4 —— 空清单是调用方的 bug，不是一次成功的空操作。
+    // CASE 2a.4: an empty list is a caller bug, not a successful no-op.
     func testMoveBookmarksThrowingThrowsOnAnEmptyGuidList() async throws {
         let store = try await makeStoreWithSpaces()
 
@@ -137,8 +136,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.6 —— 只有在 body 改走 `existingBookmarkRoot` 之后才可达：用
-    // `createIfNeeded: true` 的实现会悄悄重建一个空 root 并「成功」返回。
+    // CASE 2a.6: reachable only through existingBookmarkRoot; createIfNeeded: true would
+    // silently recreate an empty root and report success.
     func testMoveBookmarksThrowingThrowsWhenTargetRootIsMissing() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -154,8 +153,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.7 —— 两处 `continue` 今天完全静默（连日志都没有），整批被跳过时旧代码
-    // 「成功」返回，同步层据此写下基线。
+    // CASE 2a.7: the two formerly silent continue paths could skip the entire batch,
+    // report success, and make sync record a baseline without any writes.
     func testMoveBookmarksThrowingThrowsWhenEveryCandidateIsSkipped() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -185,8 +184,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.9 —— 一个既有的半应用状态：标题先写进 model，URL 守卫才 return。
-    // 抽 body 时必须先校验后写。
+    // CASE 2a.9: previously the title changed before the URL guard returned.
+    // Validate before mutating when extracting the body.
     func testUpdateBookmarkThrowingRollsBackTheTitleWhenThePrimaryURLIsInvalid() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -223,7 +222,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.16b —— §4.9 规则 1 要求 `allowsEmptyTitle` 贯穿 create 与 update。
+    // CASE 2a.16b: §4.9 rule 1 requires allowsEmptyTitle in both create and update.
     func testUpdateBookmarkThrowingHonoursAllowsEmptyTitleOnBothSides() async throws {
         let store = try await makeStoreWithSpaces()
         let allowed = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -254,7 +253,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - deleteBookmarkThrowing
 
-    // CASE 2a.11 —— 这条守卫今天完全静默。
+    // CASE 2a.11: this guard was previously silent.
     func testDeleteBookmarkThrowingThrowsWhenRowIsMissing() async throws {
         let store = try await makeStoreWithSpaces()
 
@@ -275,9 +274,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - createBookmarkThrowing
 
-    // CASE 2a.13 —— `resolveParent` 在父解析不到 / 不是文件夹时无日志地落回 Space root。
-    // 对 UI 这是善意容错；对同步层它意味着把一条书签建到了账户没要求的位置，而下一轮差分
-    // 会把这个位置当成本机意图发回去，覆盖对端正确的 `parent_uuid`。
+    // CASE 2a.13: resolveParent silently falls back to the Space root for a missing or nonfolder
+    // parent. Useful for UI input, this puts synced bookmarks in an unrequested location; the
+    // next diff treats that location as local intent and overwrites the remote parent_uuid.
     func testCreateBookmarkThrowingThrowsWhenTheParentIsNotAFolder() async throws {
         let store = try await makeStoreWithSpaces()
         let leaf = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -293,7 +292,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
     }
 
-    // CASE 2a.15 —— 全部创建路径都经 `insertBookmarkNode`，它把空标题替换成 URL 字符串。
+    // CASE 2a.15: all creation paths use insertBookmarkNode, which replaces empty titles with the URL.
     func testCreateBookmarkThrowingKeepsAnEmptyTitleWhenAllowed() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -306,7 +305,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(try row(bookmark, in: store)).title, "")
     }
 
-    // CASE 2a.16 —— UI 路径行为不变。
+    // CASE 2a.16: UI behavior remains unchanged.
     func testCreateBookmarkThrowingReplacesAnEmptyTitleWhenNotAllowed() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -320,8 +319,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                        Self.exampleURL.absoluteString)
     }
 
-    // CASE 2a.17 —— `createBookmark` 对 URL 跑 `URLProcessor.processUserInput`，那是给
-    // 用户输入准备的（会把不像 URL 的东西变成搜索）。throwing 兄弟收 `URL`，不走那条路径。
+    // CASE 2a.17: createBookmark uses URLProcessor.processUserInput, which can turn non-URLs
+    // into searches. The throwing API accepts URL and bypasses that user-input processing.
     func testCreateBookmarkThrowingDoesNotRunUserInputProcessing() async throws {
         let store = try await makeStoreWithSpaces()
         let escaped = try XCTUnwrap(URL(string: "https://example.com/a%20b?q=c%20d"))
@@ -337,8 +336,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - contentUpdatedDate
 
-    // CASE 2a.18 —— `updateLastSeen` / `updateTabFavicon` 会把 `updatedDate` 往前推，而
-    // 「往前推」正是让一个没人动过的本机旧值赢下对端刚做的编辑的那个方向（§6.2）。
+    // CASE 2a.18: updateLastSeen/updateTabFavicon advance updatedDate, letting an untouched
+    // old local value win against a recent remote edit (§6.2).
     func testContentEditsStampContentUpdatedDateAndReadsDoNot() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -364,7 +363,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(try row(bookmark, in: store)).contentUpdatedDate, afterEdit)
     }
 
-    // CASE 2a.19 —— 把标题改成同样文字的一次保存，不该让这一行赢下对端的编辑。
+    // CASE 2a.19: saving an unchanged title must not make the row win against a remote edit.
     func testWritingTheSameTitleIsNotAnEdit() async throws {
         let store = try await makeStoreWithSpaces()
         let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -381,9 +380,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(try row(bookmark, in: store)).contentUpdatedDate)
     }
 
-    // MARK: - fire-and-forget 入口
+    // MARK: - Fire-and-forget APIs
 
-    // CASE 2a.14 —— 抽 body 时把 UI 路径也改成抛出，会让每一次用户侧的竞态变成一次崩溃。
+    // CASE 2a.14: making the UI path throw during body extraction would turn user-side races into crashes.
     func testFireAndForgetUpdateStillSwallowsAMissingRow() async throws {
         let store = try await makeStoreWithSpaces()
 
@@ -396,11 +395,11 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertNil(try row("no-such-guid", in: store))
     }
 
-    // MARK: - 批量插入与次键
+    // MARK: - Batch insertion and secondary sort keys
 
-    // CASE 2a.21 —— `insert(node:to:at:in:)` 每插一行就 fetch 一次该父的孩子并对整个
-    // 兄弟列表跑一次 `normalizeIndexes`：250 条落进同一个文件夹是 250 次 fetch 加 250 次
-    // 全量重排，全在同一个事务里、整轮都放不掉。
+    // CASE 2a.21: insert(node:to:at:in:) fetches the parent's children and normalizes all sibling
+    // indexes for each row. Adding 250 rows to one folder therefore causes 250 fetches and
+    // 250 complete reorderings in a single transaction that cannot yield during the round.
     func testBulkInsertNormalizesEachTouchedParentExactlyOnce() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Bulk",
@@ -425,9 +424,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(store.fetchBookmarks(parentId: folder, profileId: Self.profileId).count, 20)
     }
 
-    // CASE 2a.22 —— 一条被排除的兄弟（停放 / 待删 / 还没身份）会留着过期的 `index` 与新写
-    // 的撞上；`children(of:)` 今天只按单个 `SortDescriptor(\.index)` 排，撞上的两行顺序
-    // 随 fetch 而变，于是每轮两条无谓的 commit。
+    // CASE 2a.22: excluded siblings (parked, pending deletion, or unidentified) retain stale
+    // indexes that can collide with new writes. Sorting children only by index makes ties
+    // fetch-dependent and causes two unnecessary commits every round.
     func testChildrenOrderingHasAStableSecondaryKey() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Folder",
@@ -443,9 +442,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - existingBookmarkRoot
 
-    // CASE 2a.23 —— `bookmarkRoot` 在 `guard createIfNeeded` 之前就会写
-    // `space?.bookmarkRoot = primary` 并 `context.delete(duplicate)`。放进每轮都跑的读
-    // 路径等于每轮都可能在主 context 上删行。
+    // CASE 2a.23: bookmarkRoot sets space?.bookmarkRoot = primary and deletes duplicates
+    // before its createIfNeeded guard. Using it in every round's read path can delete main-context rows.
     func testExistingBookmarkRootNeitherHealsNorWrites() async throws {
         let store = try await makeStoreWithSpaces()
         _ = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -474,20 +472,18 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - applyBookmarkSyncBatchThrowing（Task 5a fix round）
 
-    // F2 —— 要删的文件夹底下还有这一批从没点名过的孩子 ⇒ 整批回滚。
+    // F2: a folder containing children absent from the delete batch must roll back the entire batch.
     //
-    // 防的是什么：`deleteBookmarkBody` 就是一句 `context.delete(node)`，而
-    // `TabDataModel.children` 带 `@Relationship(deleteRule: .cascade)`，所以一次删除会把
-    // 整棵子树无声地带走。R-M3-3-17 要求引擎先把每一个不该死的后代删掉或提到 Space root，
-    // 而最容易漏的正是本地独有、从没发布过的行（`syncId == nil`）——它们不在游标表里，
-    // 按游标建提升清单的实现根本看不见它们。漏一个就在这个事务里静默死掉，没有计数也没有
-    // 日志，用户只看见书签少了。
+    // deleteBookmarkBody calls context.delete(node), and TabDataModel.children cascades deletion
+    // through the subtree. R-M3-3-17 requires deleting or promoting every surviving descendant
+    // to the Space root first. Local-only rows (syncId == nil) are absent from cursors, so a
+    // cursor-derived promotion list misses them and silently destroys user bookmarks.
     func testDeletingAFolderThatStillHasUnnamedChildrenRollsTheWholeBatchBack() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Folder",
                                                              profileId: Self.profileId,
                                                              parentId: nil)
-        // 本机独有的一条：没有 syncId，所以任何按游标算出来的提升清单都不会包含它。
+        // This local-only row has no syncId and cannot appear in a cursor-derived promotion list.
         let localOnly = try await store.createBookmarkThrowing(url: Self.exampleURL,
                                                                title: "Local only",
                                                                profileId: Self.profileId,
@@ -505,16 +501,16 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
             ])
         }
 
-        // 整批回滚：那条本机独有的行还在，而同一批里排在 delete 之前的 update 也没落。
+        // Full rollback preserves the local-only row and undoes the update preceding the delete.
         let survivor = try row(localOnly, in: store)
         let folderRow = try row(folder, in: store)
         let siblingTitle = try row(sibling, in: store)?.title
-        XCTAssertNotNil(survivor, "级联没有把这条从没发布过的行带走")
+        XCTAssertNotNil(survivor, "Cascade deletion preserves this unpublished row")
         XCTAssertNotNil(folderRow)
-        XCTAssertEqual(siblingTitle, "Sibling", "部分成功不存在：同批的 update 也回滚了")
+        XCTAssertEqual(siblingTitle, "Sibling", "No partial success: the update in the same batch also rolls back")
     }
 
-    // F2 的另一半 —— 空文件夹照删，守卫不挡正常路径。
+    // F2, positive control: empty folders remain deletable.
     func testDeletingAnEmptyFolderStillSucceeds() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Folder",
@@ -527,13 +523,12 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertNil(deleted)
     }
 
-    // G3 —— 同一批里先删孩子再删父，必须成功。
-    //
-    // 防的是什么：`.folderNotEmpty` 那道守卫是在**这一批已经删过该文件夹的后代之后**才问
-    // 「它还有孩子吗」。它只有在「带待定变更的 fetch 会滤掉同一个块里刚 `context.delete`
-    // 标记过的行」这条语义成立时才对，而本里程碑只编译不跑测试，§4.4 还有一句顺带的话说得
-    // 正相反。赌错的代价是每一次远端删除非空文件夹都永远抛 `folderNotEmpty`，文件夹删除在
-    // 任何设备上都再也落不了地。这条用例把那个赌注变成一条断言。
+    // G3: deleting children before their parent in one batch must succeed.
+    // The folderNotEmpty guard runs after descendants are deleted in this batch; it relies on
+    // fetches including pending changes but excluding rows just marked by context.delete.
+    // This milestone only compiled tests, while §4.4 suggested the opposite fetch behavior.
+    // If that assumption is wrong, every remote nonempty-folder deletion fails forever.
+    // This case makes the assumption explicit and verifiable.
     func testDeletingAChildAndThenItsParentFolderInOneBatchSucceeds() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Folder",
@@ -544,7 +539,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                            profileId: Self.profileId,
                                                            parentId: folder)
 
-        // 三相排序里 delete 相是子先于父，这正是引擎会交出来的次序。
+        // The delete phase orders children before parents, exactly as the engine does.
         try await store.applyBookmarkSyncBatchThrowing([
             .delete(guid: child),
             .delete(guid: folder),
@@ -553,13 +548,12 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         let childRow = try row(child, in: store)
         let folderRow = try row(folder, in: store)
         XCTAssertNil(childRow)
-        XCTAssertNil(folderRow, "守卫不该把一次合法的整棵删除挡下来")
+        XCTAssertNil(folderRow, "The guard must allow a valid whole-subtree deletion")
     }
 
-    // F3 —— 一条已经带着别的身份的行不许被重新认领。
-    //
-    // 防的是什么：覆盖写会让旧身份在本机瞬间失去对应行，而 §4.7 的差分对「没有本机行」的
-    // 回答是发一条 tombstone——把对端那条实体删掉。一条行的身份只认领一次（§6.1 / 13d）。
+    // F3: a row with another identity cannot be reclaimed.
+    // Overwriting its identity removes the old local association; §4.7 would publish a tombstone
+    // for the apparently missing row, deleting the remote entity. Identity is claimed once (§6.1 / 13d).
     func testClaimingARowThatAlreadyCarriesADifferentIdentityRollsTheBatchBack() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -575,10 +569,10 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
 
         let identity = try row(guid, in: store)?.syncId
-        XCTAssertEqual(identity, "b-first", "旧身份原封不动")
+        XCTAssertEqual(identity, "b-first", "The original identity remains unchanged")
     }
 
-    // F3 —— 认领一条还没有身份的行是正常路径；重复认领同一个 uuid 是幂等的。
+    // F3: claiming an unidentified row succeeds; reclaiming the same uuid is idempotent.
     func testClaimingIsIdempotentForTheSameIdentityAndWritesAnUnclaimedRow() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -593,11 +587,10 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(identity, "b1")
     }
 
-    // F7 —— 导入中的 Space 抛的是一个**专属**的 case，不是 `targetNotWritable`。
-    //
-    // 防的是什么：`targetNotWritable` 的含义是「Space 被删了或换了 Profile」，那是结构性
-    // 失败；导入是瞬时状态，引擎该按停放处理、下一轮重试。两者混用之后 §11.2 的 `parked`
-    // 计数分不清一次该重试的停放与一次不该重试的失败。
+    // F7: a Space being imported throws a dedicated case, not targetNotWritable.
+    // targetNotWritable means a deleted Space or changed Profile, a structural failure. Import
+    // is transient and should park for retry. Conflating them makes §11.2's parked count
+    // unable to distinguish retryable parking from permanent failure.
     func testABatchTargetingAnImportingSpaceThrowsTheDedicatedCase() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -614,17 +607,15 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
 
         let title = try row(guid, in: store)?.title
-        XCTAssertEqual(title, "A", "锁住时一个字节都不落")
+        XCTAssertEqual(title, "A", "No bytes are written while locked")
     }
 
-    // MARK: - 差分定义域的那一次 fetch（R-exec-4）
+    // MARK: - Fetching the diff domain (R-exec-4)
 
-    // F4 —— 孤儿根下面那条行不在快照的定义域里，但**在**差分的定义域里。
-    //
-    // 防的是什么：`allBookmarkModels` + `canonicalRootGuids` 的递归把孤儿根整棵排除（那是
-    // 对的，它不该发布），可 §4.7 的 `locals` 要回答的是另一个问题——「这条身份在本机还有
-    // 没有行」。拿快照当差分的定义域，这条行连同整棵子树会被判成删除，账户上那一片就没了，
-    // 而本机其实一行都没少。
+    // F4: a row under an orphan root is outside the snapshot domain but inside the diff domain.
+    // allBookmarkModels plus canonicalRootGuids recursion correctly excludes orphan subtrees
+    // from publication. But §4.7 locals asks whether an identity still has a local row. Using
+    // the snapshot for that answer tombstones an entire account subtree that still exists locally.
     func testIdentitiesUnderAnOrphanRootStayInTheDiffDomainAfterTheRootIsDetached() async throws {
         let store = try await makeStoreWithSpaces()
         let folder = try await store.createDirectoryThrowing(title: "Folder",
@@ -641,9 +632,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         let rootGuid = try await rootGuid(in: store, spaceId: Self.otherSpaceId)
         try await store.detachBookmarkRootRelationshipForTesting(spaceId: Self.otherSpaceId)
 
-        // 生产实现从 `allBookmarkModels(in:)` 这一次**未经根过滤**的行里取身份，再对同一份
-        // 结果跑根递归产出快照（`AccountPhiBookmarkAccess.rebuildCache`），所以这里断言的
-        // 正是它读的那两样东西。
+        // AccountPhiBookmarkAccess.rebuildCache reads identities from the unfiltered
+        // allBookmarkModels(in:) result, then traverses roots over the same result for the snapshot.
+        // These assertions check those two inputs.
         let observed = try await store.performBackgroundWriteAndWaitThrowing { context -> ObservedDomain in
             let models = try store.allBookmarkModels(in: context)
             return ObservedDomain(canonicalRoots: try store.canonicalRootGuids(in: context),
@@ -651,23 +642,21 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         }
 
         XCTAssertFalse(observed.canonicalRoots.contains(rootGuid),
-                       "根的关系断了，递归再也够不到这棵子树")
+                       "A broken root relationship makes the subtree unreachable by recursion")
         XCTAssertTrue(observed.identities.isSuperset(of: ["b-folder", "b-child"]),
-                      "但这两条身份在本机还有行，绝不能被差分判成删除")
+                      "Both identities still have local rows and must not be classified as deleted")
     }
 
-    // MARK: - store 级的变化 publisher（§5.7）
+    // MARK: - Store change publisher (§5.7)
 
-    // CASE 6c.1 —— 一连串写入塌缩成一次下游信号，而且订阅当刻不发。
+    // CASE 6c.1: a burst of writes emits once, with no initial emission on subscription.
+    // Subscribe directly: LocalStore.changeSignalDebounce belongs to the publisher. Adding a
+    // test debounce would verify a custom pipeline. This is the only case using the production
+    // window because it measures that window and must track changes to the constant.
     //
-    // 防抖住在 publisher 里（`LocalStore.changeSignalDebounce`），所以这里**直接订阅**，
-    // 不再自己拼一级 `.debounce`——断言量的是出厂形状，不是用例里组装出来的形状。这也是四条
-    // 用例里**唯一**用出厂窗口的一条：它量的就是窗口本身，别人把那个常量改了它要跟着动。
-    //
-    // 「订阅当刻不发」这一半必须在**安静期跑完之后**才量得到，不能只 `drainMainQueue()` 一下
-    // 就断言 0：订阅当刻真发了一次的话，那一次也要过完整个防抖窗口才到得了 sink，0.05 秒之后
-    // 去数它必然是 0，断言于是永远成立、永远发现不了问题。先空等过一整个窗口、确认零发射，
-    // 再放那 30 条写入，两半才都是真的。
+    // Wait a complete quiet period before checking zero emissions: even an incorrect initial
+    // emission must pass through debounce. Checking after a 0.05-second main-queue drain
+    // always sees zero and misses the bug. Verify quiet first, then issue the 30 writes.
     func testBookmarkChangesPublisherCollapsesABurstOfWritesIntoOneSignal() async throws {
         let store = try await makeStoreWithSpaces()
 
@@ -675,10 +664,10 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         let cancellable = store.bookmarkChangesPublisher().sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
-        // 一个字节都没写，跑过整个防抖窗口：seed 的那一次发射会在这里现形。
+        // Wait a full debounce window without writes to expose an initial seed emission.
         waitPastDebounceWindow()
         let afterQuietPeriod = received
-        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
+        XCTAssertEqual(afterQuietPeriod, 0, "Subscription does not emit the current value")
 
         for index in 0..<30 {
             let url = try XCTUnwrap(URL(string: "https://example.com/burst-\(index)"))
@@ -690,16 +679,15 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         waitPastDebounceWindow()
 
         let observed = received
-        XCTAssertEqual(observed, 1, "30 次写入在防抖窗口里塌成一次推送")
+        XCTAssertEqual(observed, 1, "Thirty writes collapse into one debounced emission")
     }
 
-    // CASE 6c.2 —— favicon 与 lastSeen 的写入零发射。
-    //
-    // 防的是什么：这两个字段不在 `PhiLocalBookmark` 里，所以它们进不了值快照。真让它们进
-    // 去，Task 10 的回填队列每写回一条图标就触发一次推送，而那次推送发的内容与账户上的
-    // 完全相同——一台机器每轮空跑几十次提交。两次写都会发 `NSManagedObjectContextDidSave`
-    // 并通过类型过滤、也确实会起防抖计时器，被吃掉的地方是安静期之后那一次投影比出来逐字节
-    // 相同，不是过滤器。把 `updatedDate` 加进 `BookmarkChangeSnapshot` 这条用例立刻转红。
+    // CASE 6c.2: favicon and lastSeen writes emit nothing.
+    // Neither field belongs to PhiLocalBookmark's value snapshot. Including them would make
+    // Task 10's favicon backfill trigger dozens of redundant commits per round. Both writes
+    // emit NSManagedObjectContextDidSave, pass the type filter, and start the debounce timer;
+    // the identical projection after the quiet period suppresses them. Adding updatedDate
+    // to BookmarkChangeSnapshot makes this test fail.
     func testBookmarkChangesPublisherIgnoresFaviconAndLastSeenWrites() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -714,24 +702,20 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
         store.updateTabFavicon(guid, favicon: Data([0x01, 0x02, 0x03]))
         store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
-        // 先把两次写挤过写队列，再等窗口：不这么做，短窗口下这条用例会因为「写还没发生」
-        // 而通过。
+        // Drain both writes through the write queue before waiting; with a short window,
+        // otherwise the assertion could pass simply because the writes have not happened.
         await flushWrites(store)
         waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
-        XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
+        XCTAssertEqual(observed, 0, "Favicon and lastSeen are absent from the snapshot and must emit nothing")
     }
 
-    // 作用域本身进快照（T6c-6 / ledger 4）。
-    //
-    // 防的是什么：一次纯作用域翻转在**每一条** `TabDataModel` 上一个字节都不改，而「同步层
-    // 这一轮认领哪一批行」整个换了。快照里只放行、把作用域留在外面的话，过滤器虽然放行了
-    // 那次 `BrowserDataSettingsModel` 的 save，去重却会把它当成「什么都没变」吃掉，引擎于是
-    // 永远不知道作用域翻过。
-    //
-    // 用例**一条 pin 都不建**，正是为了让这次翻转除了作用域之外无事可改：真有 pin 在，
-    // `migratePinnedTabs` 会顺手改行，那样即使作用域不在快照里断言也照样通过。
+    // Scope itself belongs to the snapshot (T6c-6 / ledger 4).
+    // A pure scope flip changes no TabDataModel bytes but changes which rows sync claims.
+    // If scope is omitted, the filter accepts the BrowserDataSettingsModel save but deduplication
+    // suppresses it as unchanged, and the engine never learns about the scope change.
+    // Create no pins: otherwise migratePinnedTabs also changes rows and hides the missing scope field.
     func testPinnedTabChangesPublisherEmitsWhenOnlyTheScopeChanges() async throws {
         let store = try await makeStoreWithSpaces()
 
@@ -742,7 +726,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
         waitPastDebounceWindow(Self.shortDebounceWindow)
         let afterQuietPeriod = received
-        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
+        XCTAssertEqual(afterQuietPeriod, 0, "Subscription does not emit the current value")
 
         try await store.changePinnedTabScope(to: .space,
                                              preferredProfileId: Self.profileId,
@@ -750,11 +734,11 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
-        XCTAssertEqual(observed, 1, "一行 pin 都没有，变的只有作用域——它必须在快照里")
+        XCTAssertEqual(observed, 1, "With no pins, only scope changes; it must be in the snapshot")
     }
 
-    // pin 侧的 6c.2。`updateLastSeen` 对 `.pinnedTab` 与 `.bookmark` 都写，所以这条路在 pin
-    // 上同样成立，而 Task 10 的图标回填两种行都碰。
+    // Pin equivalent of 6c.2. updateLastSeen writes both pinnedTab and bookmark rows,
+    // and Task 10 backfills favicons for both kinds.
     func testPinnedTabChangesPublisherIgnoresFaviconAndLastSeenWrites() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = "pin-favicon"
@@ -774,7 +758,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
-        XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
+        XCTAssertEqual(observed, 0, "Favicon and lastSeen are absent from the snapshot and must emit nothing")
     }
 
     // MARK: - Fixtures
@@ -836,7 +820,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         return try context.fetch(descriptor).first
     }
 
-    // 断言是 autoclosure，先取值再断言。
+    // Assertions use autoclosures; read values before asserting.
     private func assertThrows(_ expected: LocalStoreWriteError,
                               file: StaticString = #filePath,
                               line: UInt = #line,
@@ -855,22 +839,21 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
-    /// 量「窗口之外的性质」的用例用的短窗口：去重、过滤、作用域进不进快照都与窗口多长无关，
-    /// 没有理由为每次断言各空转两秒。**只有 CASE 6c.1 用出厂的
-    /// `LocalStore.changeSignalDebounce`**——它量的就是窗口本身。
+    /// Short window for properties independent of duration: deduplication, filtering, and scope
+    /// inclusion. Only CASE 6c.1 uses LocalStore.changeSignalDebounce because it measures
+    /// the production window itself; other assertions need not wait two seconds each.
     private static let shortDebounceWindow: TimeInterval = 0.2
 
-    /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地。
+    /// Wait the debounce window plus a small allowance for main-queue delivery.
     private func waitPastDebounceWindow(
         _ window: TimeInterval = LocalStore.changeSignalDebounce
     ) {
         RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
     }
 
-    /// 把 fire-and-forget 的写入（`updateTabFavicon` / `updateLastSeen`）挤过那条 FIFO 写队列。
-    ///
-    /// 断言「零发射」的用例**必须**先做这一步，否则短窗口下它会因为写入根本还没落地而通过
-    /// ——一条永远绿、什么都没测的用例。
+    /// Drain fire-and-forget updateTabFavicon/updateLastSeen writes through the FIFO write queue.
+    /// Zero-emission assertions must do this first; otherwise a short window may pass before
+    /// any write happens, verifying nothing.
     private func flushWrites(_ store: LocalStore) async {
         await store.performBackgroundWriteAndWait { _ in }
     }

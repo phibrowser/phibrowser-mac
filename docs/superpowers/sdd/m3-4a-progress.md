@@ -1,1173 +1,1011 @@
 # M3-4a lane E — implementer deviation ledger
 
-每个任务一节，只记**与 task brief / spec 不同**的地方，以及 brief 的「计划裁定」里要求
-记档的那几条。相同的部分不记——差异表读起来才有意义。
+Each task records only departures from its brief or specification, plus decisions that the
+brief explicitly requires documenting. Matching behavior is omitted so the ledger remains useful.
 
 ## Task 2a
 
-四类 store 的 `save -> Bool` 回传 + `AccountUserDefaults` 六个写入面的回滚（R-M3-4a-83）
-+ `SpaceSyncMappingManager` 失败转抛错。
+Propagate `save -> Bool` from four store types, roll back all six `AccountUserDefaults` write
+entry points (R-M3-4a-83), and throw on `SpaceSyncMappingManager` persistence failures.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **六个写入面里只有四个自带 `queue.sync`。** `removeObject(forKey:)` 与
-   `set(_:forCodableKey:)` 是转发面，**不各开一个 `queue.sync` 块**，快照与回滚发生在被
-   转发的那个块里。spec §2.5 第 3 条「六个写入面在同一个 `queue.sync` 块内先
-   `let previous = storage`」在转发形态下逐字成立，但字面读起来像是六个块都要自己写一遍。
-   **措辞层面的偏离，语义无偏离**；理由是原子性——再套一层会让快照跨两次入队，中间可以
-   插进另一个写者，回滚就会把别人的写一起抹掉。
-2. **Profile 侧只接回传，不转抛错。** `ProfileSyncMappingStore.setGlobalUuid` 改成
-   `-> Bool` 但**不带** `@discardableResult`，`ProfileKeyManager` 的两个写点写成
-   `_ = mappingStore.setGlobalUuid(...)` 并各带一行注释。§13.3 只要求「必须单独接上回传」，
-   §11 只把「失败转抛错」派给 `SpaceSyncMappingManager`；改成抛错会改掉
-   `registerLocalProfile` / `adoptRemoteProfile` 的失败面与 `SyncKeyController` 的调用序。
-3. **`removeMapping` / `removeAllMappings` 不加 `-> Bool`。** 回滚已经把它们保护住了
-   （写盘失败 ⇒ 内存回到「映射还在」，内存与磁盘一致），两个消费者也都已经有收敛论证。
+1. **Only four write entry points own a `queue.sync` block.** `removeObject(forKey:)` and
+   `set(_:forCodableKey:)` forward to another entry point; snapshots and rollback occur inside
+   that callee's block. This satisfies §2.5 rule 3 semantically, although its wording suggests
+   six separate blocks. A second queue entry would break atomicity: another writer could
+   intervene between snapshot and write, and rollback could erase that writer's changes.
+2. **Profile mappings consume the result without throwing.** `ProfileSyncMappingStore.setGlobalUuid`
+   returns `Bool` without `@discardableResult`. Both `ProfileKeyManager` callers explicitly use
+   `_ = mappingStore.setGlobalUuid(...)` with explanatory comments. §13.3 requires consuming the
+   result; §11 assigns throwing only to `SpaceSyncMappingManager`. Throwing here would change
+   the failure contracts of `registerLocalProfile` / `adoptRemoteProfile` and controller call order.
+3. **`removeMapping` / `removeAllMappings` keep their signatures.** Rollback already preserves
+   memory/disk agreement on failure, and both consumers have convergence arguments.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-4. **`PhiSyncEngine.writeState` 那一处「编译修正」没有做——brief 的前提不成立。**
-   brief 说 `guard let value else { return defaults.removeObject(forKey: key) }` 会随
-   `removeObject` 回 `Bool` 而变成编译断点。实际上 `PhiSyncEngine` 的 `defaults` 是
-   **`UserDefaults`**（`PhiSyncEngine.swift` 的 `private let defaults: UserDefaults`），不是
-   `AccountUserDefaults`：那一行调的是 `UserDefaults.removeObject(forKey:)`，返回值仍是
-   `Void`，本任务一个字都没碰到它。按最小改动原则原样保留。
-   （同族误判：brief 与 spec 把 `SentinelVersionGuard.swift:234-235` 与
-   `PhiChromiumCoordinator.swift:188` 也算进「`AccountUserDefaults` 的非同步调用方」，这两
-   处同样是纯 `UserDefaults`。结论不变——它们本来就不需要改。）
-5. **CASE 2a.1 – 2a.6 的宿主文件 brief 没有指定**（Files 列表里没有任何
-   `AccountUserDefaults` 的测试文件，仓库里也不存在一个）。新建
-   `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift`，一并进 `git add`。
-   `Tests/PhiBrowserTests/` 下的文件不需要任何 `project.pbxproj` 改动。
-6. **CASE 2a.7 – 2a.10 的宿主**：2a.7 → `PhiOwnedItemStateTests`；2a.8 →
-   `PhiSpaceSyncStateTests`；2a.9 与 2a.10(a) → `PhiSyncEngineSpaceTests`；2a.10(b) →
-   `PhiSyncEngineOwnedItemsTests`（脚手架在哪就写在哪，不复制一份 `private` 辅助）。
-7. **B2-18 的变体 (b) 与 (c) 不在 `PhiSyncMarkerBoundaryTests.swift` 里。** (b) 与 CASE 2a.9
-   是同一条用例（同一个接缝、同一份正向对照），写在 `PhiSyncEngineSpaceTests`；(c) 写在
-   `SpaceSyncMappingManagerTests` 既有的「生产 store」一节里。新文件的头注释指名了这两处。
-8. **CASE B2-10 的 `ownedStore.saveCalls == 1` 放宽成 `>= 1`。** `writeOwnedTable` 在一轮
-   pull 里有不止一个调用点（落地段末尾一次，发布段 `publishOwnedKind` 至少一次——它在
-   `work.isEmpty` 的早退分支里也写），所以一个精确的整数会把这条用例钉在与 R-M3-4a-83
-   无关的引擎结构上。brief 想要的「没有内部重试」由 B2-4d 的 `setCalls == 1` 与 CASE 2a.7
-   （文件 store 失败一次就回传、不重试）各自钉住；精确计数是 Task 2b 的事。
-9. **CASE 2a.10 的「两个写口都回 `true`」在本任务不可观测**：两处返回值此刻在引擎里全部
-   被 `@discardableResult` 丢弃。能钉住的是那条判据的前半句——退休 / 无 store 时 `save`
-   **一次都没有被调用**，所以它不可能是一次失败。Bool 本身留给 Task 2b。
-10. **`failNextSave` / `failNextSet` 实现成「粘滞」而不是一次性**：置真之后每一次调用都
-    失败，直到用例自己置回 false。brief 的全部 case spec 都显式写了「放行（置 false）」，
-    一次性语义会让同一轮里的第二个写入点悄悄成功。
-11. **既有测试代码的四处小改动**（都是签名变化或新用例的直接后果，不是行为改动）：
-    - `SpaceSyncMappingManagerTests` 里两处既有的 `store.setSyncUuid(...)` 包成
-      `XCTAssertTrue(...)`——`setSyncUuid` 去掉 `@discardableResult` 之后它们会产生
-      「未使用的结果」警告。
-    - `PhiOwnedItemStateTests` / `PhiSpaceSyncStateTests` / `SpaceSyncMappingManagerTests`
-      的 `tearDown` 各补一句「**先恢复目录权限再删**」——只读目录删不掉，残留会累积。
-    - `PhiSyncEngineSpaceTests.tearDown` 补一句把 `PhiSpaceSyncState.shared.localSpaceIdLookup`
-      还原成 `nil`（`shared` 是进程级单例）。
-    - `PhiSpaceSyncStateTests` 多一个返回 `Account` 的 store 构造器；原来那个签名一字不改，
-      既有三条用例不受影响。
+4. **No compilation fix was needed in `PhiSyncEngine.writeState`.** Its `defaults` is
+   `UserDefaults`, not `AccountUserDefaults`, so `removeObject(forKey:)` still returns `Void`.
+   Leave the existing guard unchanged. The brief/spec similarly misclassify
+   `SentinelVersionGuard.swift:234-235` and `PhiChromiumCoordinator.swift:188`; both also use
+   plain `UserDefaults` and need no change.
+5. **CASE 2a.1–2a.6 need a new host file.** Neither the brief's file list nor the repository
+   provided an `AccountUserDefaults` test file. Add
+   `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift`; files in that directory require
+   no `project.pbxproj` change.
+6. **CASE 2a.7–2a.10 use existing fixtures:** 2a.7 in `PhiOwnedItemStateTests`, 2a.8 in
+   `PhiSpaceSyncStateTests`, 2a.9 and 2a.10(a) in `PhiSyncEngineSpaceTests`, and 2a.10(b) in
+   `PhiSyncEngineOwnedItemsTests`. Do not duplicate private helpers.
+7. **B2-18 variants (b) and (c) live outside `PhiSyncMarkerBoundaryTests.swift`.** Variant (b)
+   shares CASE 2a.9's input and positive control in `PhiSyncEngineSpaceTests`; (c) uses the
+   existing production-store section of `SpaceSyncMappingManagerTests`. The new file names both.
+8. **CASE B2-10 accepts `ownedStore.saveCalls >= 1`.** A pull writes the table after landing and
+   again in `publishOwnedKind`, including its empty-work return. An exact count would couple the
+   test to structure unrelated to R-M3-4a-83. B2-4d's `setCalls == 1` and CASE 2a.7 already prove
+   no internal retry. Task 2b owns precise failure counting.
+9. **CASE 2a.10 cannot yet observe both write helpers returning `true`.** The engine discards
+   those results through `@discardableResult`. It can assert zero `save` calls when retired or
+   without a store, proving that those paths cannot represent failed saves. Task 2b tests the Bool.
+10. **`failNextSave` / `failNextSet` are sticky.** Once true, every call fails until the test
+    clears the flag. Every case explicitly releases failure this way; one-shot failure would
+    allow a second write in the same round to succeed silently.
+11. **Four small existing-test adjustments follow directly from this task:** wrap two
+    `store.setSyncUuid(...)` calls in `XCTAssertTrue` to consume the result; restore directory
+    permissions before cleanup in the three store suites; reset
+    `PhiSpaceSyncState.shared.localSpaceIdLookup` in engine-test teardown; and add a store
+    constructor returning `Account` without changing the existing constructor or its three cases.
 
-### 验证口径
+### Validation scope
 
-12. **本任务的验证是 compile-only**（`xcodebuild build-for-testing`，全局约束）。
-    用 `chmod 0o500` 注入落盘失败的那七条用例（2a.1 – 2a.8、B2-18 主探针与变体 (a)/(c)）
-    **没有在运行时跑过**。注入手法本身是确定的（测试进程不是 root，`.atomic` 写要在同目录
-    建临时文件），但「断言的那个值」没有被实测。
+12. **Compile-only**, under the global constraint (`xcodebuild build-for-testing`). The cases
+    using `chmod 0o500` for persistence failure (2a.1–2a.8 and B2-18's main probe / variants
+    a and c) were not run. The injection is expected to be deterministic for a non-root process
+    because `.atomic` needs a temporary file in the same directory; assertion values remain unmeasured.
 
 ## Task 3
 
-`PhiSyncMarkerStore` / `marker.json`（§2.10 / R-M3-4a-18）+ 一次性迁移 + `stateKeys` 收缩
-+ 引擎 init 参数 `markerStore` + 自撤销与 `resetSyncState()` 多删一个文件。
+Add `PhiSyncMarkerStore` / `marker.json` (§2.10 / R-M3-4a-18), one-time migration, a smaller
+`stateKeys`, engine `markerStore` injection, and marker-file deletion during self-revocation/reset.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **`PhiSyncEngine.legacyMarkerStateKeys`（计划裁定 3，spec 未写）。** `stateKeys` 收缩成
-   五项，但账户切换（`resetPhiSyncCursorIfAccountChanged`）与自撤销第 5 步的擦除面改成
-   `stateKeys + legacyMarkerStateKeys`，`hadCursor` 的判据同样认它们；迁移调用点排在那次擦除
-   **之后**。理由：一台迁移写失败的机器换账户之后，否则会把上一个账户的 `phi.sync.marker`
-   迁进新账户的 `marker.json`。`DefaultsBackedPhiSyncMarkerStore.deleteFile()` 也是把这两个
-   键去掉，所以回落实现上的 `resetSyncState()` 与收缩之前可观察行为一致。
-2. **两个 spec §11 Task 3 行没列的文件各改一行注释（计划裁定 6）**：
-   `PhiOwnedItemState.swift`（「marker 住在 `UserDefaults.standard`」→ 同目录的 `marker.json`）
-   与 `SyncableSettings.swift`（`valueSignature` 去重的例子从 `phi.sync.marker` 换成
-   `phi.sync.version` / `phi.sync.entityId`；去重本身照旧必要）。`PhiChromiumCoordinator`
-   的 debounce 订阅注释同款改法。
+1. **Add `PhiSyncEngine.legacyMarkerStateKeys` (ruling 3, absent from the spec).** `stateKeys`
+   shrinks to five entries, but account switching and self-revocation step 5 erase
+   `stateKeys + legacyMarkerStateKeys`; `hadCursor` recognizes both. Migration runs after that
+   erase. Otherwise a failed migration followed by account switching could migrate the previous
+   account's marker into the new account's file. The defaults-backed store's `deleteFile()` also
+   removes both legacy keys, preserving reset behavior.
+2. **Update comments in two files omitted by §11's Task 3 list (ruling 6).**
+   `PhiOwnedItemState.swift` now locates the marker in adjacent `marker.json`.
+   `SyncableSettings.swift` uses `phi.sync.version` / `phi.sync.entityId` as `valueSignature`
+   deduplication examples; deduplication remains necessary. Update the coordinator debounce
+   subscription comment in the same way.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-3. **`PhiSyncMarkerBoundaryTests.swift` 不是新建的**——Task 2a 已经建了它（B2-4d / B2-10 /
-   B2-18）。本任务**追加** B2-11a…d、3.1、3.3、3.4、3.5，头注释补一段 Task 3 的清单。
-4. **`SelfRevokeTests.makeController` 多了两个参数**，不是一个：`ownedItemStores`（默认 `[]`）
-   与 `markerStore`（默认 nil）。CASE 3.2 的 spec 本身要传两张非空游标表，而原来的
-   `makeController` 没有 `ownedItemStores` 这个口。既有三条用例一字不改。
-5. **Step 1 的「红」没有单独编译一次。** 本机一次 `build-for-testing` 是多分钟级；红的结论
-   由「类型不存在」保证（`cannot find type 'PhiSyncMarkerFile'`），不需要实测。最终只跑了
-   一次绿的编译（两次：第一次全量、第二次增量取退出码 0）。
-6. **`MemoryMarkerStore.saves` 记每一次调用，失败的那一次也记**（brief 只给了字段名）。与
-   `MemoryOwnedItemStore.saveCalls` 同义：`saves.count` 就是调用计数，`failSaveOnCallNumber`
-   数的正是它；「一次写都没有」断言 `saves.isEmpty`，两者不冲突。
-7. **迁移先看两个旧键、再 `store.load()`**（brief 没定次序）：稳态（键早已清掉）零磁盘读。
-   结论集合与 brief 逐字相同。
-8. **用例比 case spec 多几条断言**，都是同一条判据的直接后果：
-   - CASE 3.3 多断言 `getUpdatesCalls[0].marker == "4"`（读的是注入的文件）与
-     `saves.contains(PhiSyncMarkerFile())`（`marker == nil` 是一次真正的写，钉的正是「防的是
-     什么」的 ②）。
-   - CASE 3.5B 多一个第二阶段：只剩 legacy 键时 `hadCursor` 也为真。
-   - CASE 3.2 多断言第 5 步把两个 legacy 键也擦掉（那一行改动的唯一探针）。
-   - CASE 3.1 拆出一条 `testAZeroLengthMarkerIsNotTheSameAsNoMarkerOnDisk`：store 层
-     `Data()` 与 nil 分得开（brief「防的是什么」里的后半句）。
-9. **`persistMarkerState` 对「没变化」早退**（brief 逐字给的形状）带来一个与 M3-4a 之前不同
-   的可观察细节：回落实现上，birthday 逐页不变时两个旧键不再每页重写一次。没有任何既有断言
-   看这一点（只有 `didChangeNotification` 能看到），生产上反而是少一次无意义的落盘。
-10. **既有 marker 断言清单重 grep 过一遍**（Task 2a 之后行号已漂）：seed 两个键的十处里九处
-    在建引擎**之前**，唯一在之后的一处（`PhiSyncEngineSpaceTests` 的预览用例）只断言键未被
-    改动，而预览路径根本不读 `storedMarker`——镜像设计对它无影响。
+3. **Append to the existing marker boundary test file.** Task 2a already created it for B2-4d,
+   B2-10, and B2-18. Add B2-11a…d and 3.1 / 3.3 / 3.4 / 3.5, plus their header inventory.
+4. **`SelfRevokeTests.makeController` needs two new arguments:** `ownedItemStores = []` and
+   `markerStore = nil`. CASE 3.2 needs two nonempty cursor tables, but the former argument was
+   missing. Existing cases remain unchanged.
+5. **No separate failing compilation for step 1.** The missing `PhiSyncMarkerFile` type already
+   establishes the expected compile failure; a local build takes minutes. Final compilation used
+   a full build followed by an incremental run to obtain exit code 0.
+6. **`MemoryMarkerStore.saves` records failed calls too.** Like `MemoryOwnedItemStore.saveCalls`,
+   it is an invocation count; `failSaveOnCallNumber` uses that count and `saves.isEmpty` proves no write.
+7. **Check legacy keys before loading the store.** The brief leaves order open. Once keys are
+   removed, the steady path avoids a disk read while retaining the same outcomes.
+8. **Additional assertions follow directly from existing criteria:** CASE 3.3 verifies request
+   marker `"4"` and a real empty-marker-file write; 3.5B also checks legacy-only `hadCursor`;
+   3.2 verifies legacy-key erasure; and 3.1 separately proves `Data()` differs from nil on disk.
+9. **Unchanged-state early return reduces defaults writes.** With an unchanged birthday, the
+   fallback no longer rewrites both legacy keys on every page. Existing assertions do not observe
+   this; only change notifications could, and production avoids unnecessary persistence.
+10. **Rechecked every existing marker assertion after line shifts.** Nine of ten key-seeding
+    sites run before engine creation. The one later site is a preview test that checks unchanged
+    keys; preview never reads `storedMarker`, so the in-memory mirror does not affect it.
 
-### 验证口径
+### Validation scope
 
-11. **compile-only**。新增的十三条用例（B2-11a…d、3.1 ×2、3.2、3.3、3.4、3.5A、3.5B）**没有
-    在运行时跑过**；`FilePhiSyncMarkerStore` 的 `load` 不写回、`save` 的 `.atomic` 落盘、
-    `Gate` 驱动的 3.5A，都是按既有同形用例（`FileOwnedItemStateStore` / CASE 2a.7、
-    `PhiSyncEngineTests` 的 shutdown 用例）推断为确定的。
+11. **Compile-only.** The thirteen listed cases (B2-11a…d, 3.1 ×2, 3.2, 3.3, 3.4, 3.5A / B)
+    were not run. Non-writing loads, atomic saves, and Gate-driven 3.5A are expected to behave
+    deterministically based on equivalent existing file-store and shutdown cases.
 
 ## Task 2b
 
-B-2 逐页边界：`markerSuppression` / 轮级 `RemoteView` / guard 2 前移 / `ownedMapsThisRound`
-每页失效 / `cursorSaveFailed` 四个置位点 / 结局行 / 两个 debug abort 开关 / 发布闸合取 /
-per-kind 报损重放两步确认。
+Implement B-2 page boundaries: marker suppression, round-scoped `RemoteView`, earlier guard 2,
+per-page owner-map invalidation, four save-failure sites, outcome logging, debug abort switches,
+publish gating, and the two acknowledged writes that arm per-kind loss replay.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **裁定 3（R-M3-4a-89）**：guard 2 前移到 `recordsGatedMarkerMoves` 之后、`do {` 之前，判据只读
-   `spaceTableAtEntry`；`c549c4c5` `:1690` 闩 / `:1691` marker 的相对次序**被颠倒**，两步之间加确认
-   （① `persistStoredMarker(nil)` ② `mutateSpaceTable { 三个标志 }` ③ 才动内存）。R-M3-4a-47 的
-   「闩与 marker 在同一个闭包」措辞按 R-89 改写；R-47 其余部分照旧。`hadRecords` 的维护跟着前移，
-   但写成**独立的一次** `mutateSpaceTable`（第 ② 步的闭包只在 `cursors.isEmpty` 时才跑，放进去
-   永远不会置真）。
-2. **裁定 3b（R-M3-4a-103）**：`loadOwnedTable` 报损支的「闩先写、marker 后写」被颠倒，两步之间加
-   确认，两个失败支回 `(table, false)` 并把**引擎属性** `roundOutcome` 收口成 `.cursorSaveFailed`；
-   `AppLogWarn` 挪到第 ② 步成功之后；函数头注释「不需要第二个 `publishBlocked` 标志」的理由改成
-   「发布闸在 `cursorSaveFailed` 那一轮已经关掉整个发布段」。探针留给 Task 6 的 CASE U-18。
-3. **裁定 5**：置位点由三个变成**四个**——`applySpaces` create 支 `mapSpace` 的 catch 里错误恰为
-   `SpaceSyncMappingError.persistFailed` 时计数，其余映射错误不计；Profile 映射（`refreshAccountProfiles`）
-   按 §13.2 字面该计而**不计**，理由是它跑在页循环之前、不描述任何一页，失败仍由
-   `spaceCounters.profileRefresh = "failed"` 报告。
-4. **裁定 6**：§2.8 写的是 `serialized(_:)`，实际发射点在 `run(_:)` 的 `logSpaceRound()` 之前
-   （`logRoundOutcome()`），`.preview` 不发；一轮多次 pull 时结局取最后一次，`pages` /
-   `cursorSaveFailures` 全轮累加。优先级 2（`cursorSaveFailures > 0 ⇒ .cursorSaveFailed`）对
-   `.notMyBirthday` 之外的**全部**结局生效（含 `.pageBudgetExhausted` / `.unusableSettings`），不只
-   brief 点名的三个——任一游标写失败的一轮都该以它命名。
-5. **裁定 8**：编译条件是 `#if DEBUG || PHI_SYNC_DEBUG_SWITCHES`，没有 `ADHOC`，`project.pbxproj`
-   零改动；本仓库里只在 `DEBUG` 下编译。**签名偏离**：`abortIfRequested(_:)` 收的是
-   `DebugAbortPoint`（`.afterApply` / `.betweenKinds`）而不是 `String` 键——两个键常量与函数体同在
-   `#if` 段里（release 零字符串常量、零 `UserDefaults` 读），而调用点仍然不需要 `#if`；brief 的
-   「键常量同段」与「调用点不需要 `#if`」用 `String` 参数无法同时成立。键名逐字不变。
-6. **裁定 10**：catch 里 `if loadSpaceTable().drainInProgress { storedMarker = nil }` **保留**，注释
-   按 §2.4 说明 4 改写；B2-8 拆成 B2-8(a)（增量轮，marker 停在第 3 页）与 B2-8(b)（drain 轮，
-   整条重放）。
-7. **裁定 11**：既有断言**一条不改**。改了注释与断言**消息**：`PhiSyncEngineSpaceTests.
-   testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap` 的文档注释与那条
-   `XCTAssertNil` 的 message（「instead of counting page 1 as delivered」在逐页边界下不再成立）；
-   引擎侧 guard 1 上方「shared marker is written page by page」段、`applySpaces` 前的次序注释
-   （guard 2 不再需要那个次序理由）、门关记账的「persisted by the page that observed it」补
-   「before that page's marker」、`mutateSpaceTable` 的 Durability 段补「and before that page's marker」。
-8. **裁定 12（R-M3-4a-88 / 92）**：第三个合取项折进 `canPublishThisRound` 的**唯一一次赋值**，
-   `if thenPush, canPublishThisRound` 与五个发布入口、`push(retryOnConflict:)` 与三条冲突重试的
-   `guard await pull(…)` 一行不改。**偏离**：第三项写成 `cursorSaveFailures == 0`（计数）而不是
-   brief Step 6 的 `roundOutcome != .cursorSaveFailed`——guard 1 / `hadRecords` / NOT_MY_BIRTHDAY
-   复位那几次写失败时 `roundOutcome` 可能还不是 `.cursorSaveFailed`，而「本地这一轮落盘全成了吗」
-   问的正是计数；伪码里的局部 `cursorSaveFailed` 与它同义。轮末 drain 收尾的写失败也收口成
-   `.cursorSaveFailed`（CASE B2-4b）。
+1. **Ruling 3 (R-M3-4a-89):** move guard 2 after `recordsGatedMarkerMoves` and before `do`, reading
+   only `spaceTableAtEntry`. Reverse the latch/marker order from `c549c4c5:1690-1691`: first
+   acknowledge `persistStoredMarker(nil)`, then persist the three flags through `mutateSpaceTable`,
+   then update memory. R-89 replaces R-47's shared-closure wording only. Maintain `hadRecords`
+   earlier too, in a separate mutation: the flag closure runs only with empty cursors and could
+   never set it true.
+2. **Ruling 3b (R-M3-4a-103):** similarly reverse and acknowledge both loss-replay writes in
+   `loadOwnedTable`. Both failure branches return `(table, false)` and set the engine's
+   `roundOutcome` to `.cursorSaveFailed`. Log only after step 2 succeeds. Explain that no separate
+   `publishBlocked` flag is needed because this outcome gates the entire publish phase. Task 6
+   supplies CASE U-18 probes.
+3. **Ruling 5:** there are four failure sites, not three. Count only `SpaceSyncMappingError.persistFailed`
+   in the Space create mapping catch; other mapping errors do not count. Profile refresh failures
+   do not count despite §13.2's literal wording: refresh precedes page processing and belongs to
+   no page. `spaceCounters.profileRefresh = "failed"` still reports it.
+4. **Ruling 6:** emit `logRoundOutcome()` from `run(_:)` before `logSpaceRound()`, rather than the
+   spec's `serialized(_:)`; preview emits none. Multiple pulls use the last outcome and accumulate
+   pages/failures across the round. Save failure overrides every outcome except `.notMyBirthday`,
+   including budget exhaustion and unusable settings, not merely the brief's three named outcomes.
+5. **Ruling 8:** use `#if DEBUG || PHI_SYNC_DEBUG_SWITCHES`, without `ADHOC` or project changes;
+   this repository enables only `DEBUG`. `abortIfRequested` takes `DebugAbortPoint`, not a string,
+   allowing both key constants/body to disappear in release while call sites need no `#if`.
+   Key spellings remain unchanged.
+6. **Ruling 10:** retain the catch's drain-triggered marker clear and update its §2.4 note 4
+   explanation. Split B2-8 into incremental marker-at-page-3 and drain/full-replay variants.
+7. **Ruling 11:** preserve existing assertion conditions. Update the interrupted-drain test's
+   documentation and nil-assertion message for page boundaries, plus engine guard/order,
+   gate-bookkeeping, and durability comments to state persistence precedes that page's marker.
+8. **Ruling 12 (R-M3-4a-88 / 92):** add the third conjunct to the sole `canPublishThisRound`
+   assignment, leaving downstream publish entries and conflict retry guards unchanged. Use
+   `cursorSaveFailures == 0`, not an outcome comparison: early guard/reset failures may precede
+   outcome assignment, and the predicate asks whether all local persistence succeeded. Drain
+   finalization failure also yields `.cursorSaveFailed` (B2-4b).
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-9. **四个测试接缝读的是结局行发射时的快照**（`LoggedRound`），不是活的 `roundPages` /
-   `roundMarkerAdvanced` / `cursorSaveFailures`：一轮 `page_budget_exhausted` 会把跟进轮排进队列，
-   跟进轮的 `run(_:)` 一进门就清零活计数，断言那一刻读到的会是下一轮的残值。
-10. **`FakePhiSyncClient.gateGetUpdatesFromCall`**（brief 之外的第二个假件旋钮）：让 `getUpdatesGate`
-    只从第 N 次调用起生效，用来把引擎自己排进队列、不可 await 的跟进轮停在它的第一次请求里
-    （B2-1c(c) / B2-8b / B2-9 另一半方向）；放行后再排一轮 `pullOnce()` 等它跑完。既有两种
-    gate 用法语义不变（nil = 每次都生效）。
-11. **B2-4d 的「本机 Space 行仍是 1 条」在 HEAD 上不断言**：今天的 create 支先建行、后写映射，
-    `persistFailed` 留下一条无映射的行、重投再建一条——那正是 Task 3b 的映射先行（R-M3-4a-87）
-    要消掉的形状，3b 的 CASE B2-4d-x 断言它。本任务的 B2-4d 断言第四个置位点、marker 不推、停放、
-    第二轮映射写下并解析得出。
-12. **B2-2b 住在 `PinnedTabScopeTests`**（真 `LocalStore` 的脚手架在那里），走生产的
-    `AccountPhiPinnedTabAccess.apply(_:)` → `applyPinSyncBatchThrowing` 批次路径；该文件进 `git add`。
-13. **B2-7c 不断言 `counters.tombstones == 0` 与 `applied == 1`**：`tombstones` 数的是**入站**远端
-    tombstone（`applyOwnedKind` 头三行），一条入站 tombstone 的轮次它就是 1；「零出站 tombstone」
-    用 `client.commits` 里零条 `deleted` 与 `pushed == 0` 钉。
-14. **B2-13 的 fixture 预置 `drainInProgress = true`**（与 `hasDrainedFullReplay = true` 并存）：
-    入口 marker 为 nil 时 guard 1 否则会把 `hasDrainedFullReplay` 置假，归属 kind 的发布段在
-    guard ① 就返回，brief 要的 `hadRecordsSeen.count == 2` 观察不到。
-15. **B2-5b 的「重投」用第二台引擎**：引擎持有 marker 的内存镜像，直接改 `markerStore.file` 对
-    第一台不可见；第二台在回退后的文件上建，等价于重启后重投。
-16. **B2-14 (d)** 按「第一台的第 2 次写从未发生（页 1 被抑制）、第二台在放行后的同一组 store 上
-    从头重放并正常收尾」写；brief 那一句的字面读法（第二台带着 `failSaveOnCallNumber = 2`）会让
-    第二台页 1 的 marker 写失败，与它自己的期望冲突。
-17. **`pull` 的 catch 不再调 `flushSpaceObservations` / `flushOwnedObservations` /
-    `parkUndeliveredOwnedEntities`**：逐页落地之后两个收集篮是页内局部量，抛错只可能发生在
-    `getUpdates`，那一页根本没到；`parkUndeliveredOwnedEntities` 只剩 `applyOwnedKind` 的
-    `ownedReadFailed` 那个调用点，头注释加一段说明。
-18. 新增私有辅助 `persistStoredMarker(_:) -> Bool` 与 `normalizedMarker(_:)`：`storedMarker` setter
-    经它写穿，页末 / guard 2 / 报损重放读它的 Bool。
-19. **控制者交办的两条 2a 尾项**：`PhiSpaceSyncState.deliver` 无引擎路径 `directStore.save` 失败
-    时不再 `refreshCaches`；`PhiSyncEngineSpaceTests` 的 `setUp` 捕获、`tearDown` 恢复
-    `PhiSpaceSyncState.shared.localSpaceIdLookup`。2a 已知的「`ownedTables[label] = table` 先于
-    save guard」按交办**不改**，写口注释说明理由。
-20. `cursorSaveFailures` 在 `pull` 之外的写口失败（`.spaceGate` 轮的 `applySpaceGate`、reset 的
-    表写）同样计数并在**那一轮**的结局行上报告——它是引擎属性、按 `run(_:)` 清零。
+9. **Four test accessors read `LoggedRound`,** captured at outcome emission. Live counters can
+   already belong to a queued follow-up round, whose `run` resets them immediately.
+10. **Add `FakePhiSyncClient.gateGetUpdatesFromCall`.** It activates the existing gate only from
+    request N, allowing tests to stop an automatically queued, non-awaitable follow-up at its
+    first request. Used by B2-1c(c), B2-8b, and B2-9's reverse direction; after release, enqueue
+    `pullOnce()` to await completion. Nil preserves both existing gate behaviors.
+11. **B2-4d does not yet assert one local Space row.** At this stage create precedes mapping;
+    failed mapping leaves an unmapped row that retry duplicates. Task 3b's mapping-first change
+    and B2-4d-x address that. This probe checks failure counting, unchanged marker, parking,
+    and a durable/resolvable mapping on retry.
+12. **B2-2b lives in `PinnedTabScopeTests`** to reuse its real `LocalStore` fixture and production
+    `AccountPhiPinnedTabAccess.apply` → `applyPinSyncBatchThrowing` path.
+13. **B2-7c does not assert zero inbound tombstones or `applied == 1`.** `tombstones` counts the
+    received tombstone, so it is 1. Zero outbound tombstones are established by no deleted commits
+    and `pushed == 0`.
+14. **B2-13 seeds both `drainInProgress` and `hasDrainedFullReplay`.** Otherwise a nil entry marker
+    makes guard 1 clear the latter, and the owned publish guard prevents the intended two loads.
+15. **B2-5b replays through a second engine.** Direct file mutation cannot update the first engine's
+    marker mirror; creating another engine models restart from the rolled-back file.
+16. **B2-14(d) releases failure before the second engine's full replay.** Page-1 suppression means
+    the first engine never performs write 2. Keeping `failSaveOnCallNumber = 2` in the second
+    engine would fail its first-page marker write and contradict the expected successful replay.
+17. **The pull catch no longer flushes observations or parks undelivered entities.** Those
+    collections are page-local, and the only throw is a `getUpdates` failure before that page
+    arrives. `parkUndeliveredOwnedEntities` remains only for `ownedReadFailed`; document this.
+18. Add private `persistStoredMarker(_:) -> Bool` and `normalizedMarker(_:)`. The property setter
+    writes through the former; page boundaries, guard 2, and loss replay consume its result.
+19. **Two assigned Task 2a follow-ups:** skip direct-delivery cache refresh on failed store save;
+    capture/restore the shared local-Space lookup in setup/teardown. Keep the known pre-save
+    `ownedTables[label] = table` assignment as directed, with its rationale in the write helper.
+20. Count failures outside `pull` too, including `.spaceGate` and reset-table writes, and report
+    them in that round's outcome. The counter is engine state reset by `run`.
 
-### 验证口径
+### Validation scope
 
-21. **compile-only**（`xcodebuild build-for-testing`）。本任务新增的 31 条用例（B2-1 … B2-18 的引擎
-    半边、B2-2b）**没有在运行时跑过**；跟进轮 / 冲突重试的写序号（B2-1e 的第 4 次、B2-4b 的
-    `saveCalls + 2`）按代码推导，未实测。
+21. **Compile-only** (`xcodebuild build-for-testing`). The 31 new cases were not run. Follow-up
+    and conflict-retry write indices, including B2-1e's fourth write and B2-4b's `saveCalls + 2`,
+    were derived from code rather than measured.
 
-### Fix round 1（review 的一条 Important）
+### Fix round 1 — one Important review finding
 
-22. **R-M3-4a-103 的控制者裁定**：报损重放的第 ① / ② 步任一写不成 ⇒ 那条 kind **本轮不发布**、
-    报损检查下一轮再触发。`loadOwnedTable` 的两个 `(table, false)` 失败支不改、函数内不加闸；改在
-    `publishOwnedKind` 的 `guard !loaded.lost` 之后加 `guard cursorSaveFailures == 0 else { return }`。
-    理由：那两支回到的 `publishOwnedKind` 已经过了轮首的 `canPublishThisRound`，不拦的话发布段会对着
-    **空的**游标表跑快照 → 差分 → commit，并用 `writeOwnedTable` 重建文件 ⇒ 下一轮不再报损、per-kind
-    闩永不置位、整类型重放永久丢失——正是两步次序要防的那一格。探针 CASE 2b-L1
-    （`PhiSyncMarkerBoundaryTests.testAFailedLossReplayArmDoesNotPublishAgainstTheLostTableNorRecreateItsFile`，
-    设置半边靠预置空 `storedLastEntity` 早退、Space 半边靠 guard 3 的 `unreadableTagHashes` 跳过，
-    于是「零 `commit` 调用」只说书签那一半）；Task 6 的 U-18 两条 R-103 变体为 urlrules 再钉。
+22. **Controller ruling for R-M3-4a-103:** failure of either replay-arming write prevents that kind
+    from publishing this round and leaves loss detection retryable next round. Keep both
+    `(table, false)` returns and add no load-helper gate. Instead, immediately after
+    `guard !loaded.lost` in `publishOwnedKind`, guard `cursorSaveFailures == 0`.
+    Otherwise the caller has already passed the round's publish gate and can diff/commit against
+    an empty table, recreate its file, suppress future loss detection, and permanently lose replay.
+    CASE 2b-L1 is
+    `PhiSyncMarkerBoundaryTests.testAFailedLossReplayArmDoesNotPublishAgainstTheLostTableNorRecreateItsFile`.
+    An empty settings entity and unreadable Space hashes isolate the zero-commit assertion to
+    bookmarks. Task 6's two U-18 R-103 variants cover URL rules.
 
 ## Task 3b
 
-`applySpaces` create 支的映射先行（R-M3-4a-87）+ 死映射自愈的重投证明（CASE B2-17 / B2-17a /
-B2-17neg / B2-4d-x）。
+Move Space creation mappings before row creation (R-M3-4a-87), and prove dangling-mapping
+recovery with B2-17 / B2-17a / B2-17neg / B2-4d-x.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **既有用例里唯一一条断言方向被 R-87 翻转的**：
-   `PhiSyncEngineSpaceTests.testAFailedCreateWritesNeitherAMappingNorABaseline` → 改名
-   `testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal`，断言从
-   「`spaceMappings.isEmpty`」翻成「映射恰一条（value 为 `sync-new`）、行零条、`reconciled` nil、
-   `pendingApply` 非 nil」；用例 1 的头注释「落地成功之后才写映射」改成「先写映射、再建行」。
-   其余 create 路径用例逐条核过不变（brief Step 4 列的那几条；
-   `testAFailedLandingWritesNoBaselineAndParksTheEntity` 用 `errorOnNextWrite` 让 `create` 抛错，
-   两轮断言在新次序下仍成立——第 2 轮由 A0 自愈接管）；全仓 `.mapSpace` 这个 `Call` case 零既有
-   断言，`PhiSpaceLocalAccessTests:171` 的 exact-array 不受影响（两个新 knob 默认 nil）。
-2. **裁定 7 的控制者裁定**：`mapSpace` 的 `persistFailed` 是第四个 `cursorSaveFailed` 置位点
-   （§2.5 第 4 条待改成**四个**）。Task 2b 落地；本任务把那个 catch 连同新块搬到 `land` 之前，
-   「`persistFailed` ⇒ 停放 + 计数、其余 `SpaceSyncMappingError` 只停放」的语义逐字保留，
-   CASE B2-4d-x 验它。
-3. **B2-17neg 不写成代码**：B2-17 上方的注释块 + 本条。旧次序（先建行、后写映射）下 B2-17 会红的
-   三条断言：「行数 1」、「value 为 `sync-new` 的映射恰一条」、`.dropSpaceMapping` 的 `contains`。
-4. **裁定 6 的第三条路径（自愈里 `dropSpaceMapping` 写失败 ⇒ 随后 `mapSpace` 撞
-   `syncUuidAlreadyClaimed` ⇒ 停放 ⇒ 再下一轮）只是论证**，记在 B2-17 的注释里；假件的
-   `dropSpaceMapping` 不可能失败。
+1. **One existing test changes its expectation under R-87.** Rename
+   `testAFailedCreateWritesNeitherAMappingNorABaseline` to
+   `testAFailedCreateLeavesADanglingMappingAndNoRowForTheNextRoundToHeal` and assert one mapping
+   to `sync-new`, zero rows, nil `reconciled`, and non-nil `pendingApply`. Update the creation
+   ordering comment. Other creation tests retain their assertions: A0 recovery handles the
+   second round of failed landing. No existing test asserts the `.mapSpace` call case;
+   `PhiSpaceLocalAccessTests:171` remains unchanged with both new knobs defaulting to nil.
+2. **Controller ruling 7:** mapping `persistFailed` is the fourth save-failure site; §2.5 rule 4
+   needs that count updated. Move Task 2b's catch before landing while preserving parking for
+   all mapping errors and counting only persistence failures. B2-4d-x verifies it.
+3. **B2-17neg is explanatory, not executable.** The comment above B2-17 and this entry identify
+   the three assertions that fail under the old order: one row, one mapping to `sync-new`, and
+   a recorded `.dropSpaceMapping`.
+4. **Ruling 6's third recovery path is reasoned only:** failed mapping removal leaves a collision
+   on remap, so the entity parks until another round. The fake cannot fail removal; document
+   the argument in B2-17.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-5. **新块插在 `// A2 + A3` 注释之前，不是 `merged` 求值的 `}` 之后**：`c9ab5806` 之后两者之间多了
-   一段「按 `merged.profileUuid` 重解析 `profileId`」的块（`c549c4c5` 里没有）。新块只用
-   `localSpaceId` / `isDefault` / `item` / `cursor` / `table` / `tag`，放在紧挨 `land` 之前更贴近
-   「映射写在行之前那一刻」的意图，语义无差别。
-6. **新块的 catch 带 Task 2b 的计数行**：brief 裁定 1 的逐字代码没有 `cursorSaveFailures += 1`
-   （它写于 Task 2b 之前）；按任务交办与裁定 7 保留
-   `if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }`。
-7. **B2-17a 的「走 update 支」不用 `.update(id)` 断言**：`SyncableSpaces.land` 的 update 支只在
-   名字 / 颜色 / 图标 / 创建时间有差异时才调 `access.update`，而重投的是同一页、行是上一轮照它建的，
-   四个字段零差异 ⇒ `.update` **结构上不会出现**。改用第 2 轮调用切片里的 `.themeState(newId)`
-   （update 支对非默认 Space 无条件调 `applyThemeState`）+ `.create` 总数仍 1 + `.dropSpaceMapping`
-   不出现，钉「走了 update 支、没有再建行、没有自愈」。
-8. **三条新用例的 fixture 用 `PhiSyncMarkerBoundaryTests` 自己的脚手架**（`makeSpaceAccess([:])` +
-   `spaceCreateEntity` + `pagesByMarker` + `makeOwnedEngine` + `drainedSpaceStore` +
-   `markerStore(marker:)`），不是 brief 写的 `PhiSyncEngineSpaceTests` 那一组（那些是 `private`，
-   且 brief 自己要求追加进本文件）。profile uuid 因此是 `pu-1` 而不是 `uuid-a`，Space 名是 `S`
-   而不是 `Reading`；两者都不进任何断言。
-9. **B2-17 多钉了几条 brief 没写的**：第 1 轮 `markerStore.file.marker == "3"`（`land` 抛错不是
-   持久化失败 ⇒ marker 照推，裁定 7 第三条的另一半）；第 2 轮 `getUpdatesCalls.last?.marker == "3"`
-   （假 client 本轮零新页，重投确实来自停放）与 `rowId != newId`（自愈之后重铸，不复用悬空 id）。
-   B2-17a / B2-4d-x 同理钉 `getUpdatesCalls.last?.marker == "0"`（同一 marker 重投同一页）。
-10. **`spaceCommits` 在本文件按 `name == PhiSyncEntity.spaceEntityName` 过滤**
-    （`PhiSyncEngineSpaceTests` 那份是 `!= settingsClientTagHash`，且 `private`）。
+5. **Insert immediately before `// A2 + A3`,** close to landing. Since `c9ab5806`, a profile-id
+   resolution block intervenes after merged-value construction; the brief's earlier placement
+   would be semantically equivalent, but this better expresses mapping immediately before row creation.
+6. **Retain Task 2b's persistence-failure increment in the moved catch.** The brief's literal
+   snippet predates it; task assignment and ruling 7 require it.
+7. **B2-17a proves the update branch through `.themeState(newId)`, not `.update(id)`.** Replaying
+   identical values produces no field differences, so `access.update` cannot occur. Theme-state
+   application is unconditional for a non-default Space; combine it with one total create and
+   no mapping removal to prove update without duplication or recovery.
+8. **Reuse this file's marker-boundary fixtures.** The brief names private fixtures from another
+   file while requiring cases here. Use `makeSpaceAccess`, `spaceCreateEntity`, `pagesByMarker`,
+   `makeOwnedEngine`, `drainedSpaceStore`, and `markerStore`; incidental profile/Space names
+   differ (`pu-1` / `S`) but appear in no assertion.
+9. **Extra replay assertions:** B2-17 checks marker `"3"` after non-persistence landing failure,
+   request marker `"3"` with no new page on retry, and a newly minted row id after recovery.
+   B2-17a / B2-4d-x similarly verify marker `"0"` for same-page replay.
+10. **Filter `spaceCommits` by `PhiSyncEntity.spaceEntityName`.** The other file's helper uses
+    a settings-hash exclusion and is private.
 
-### 验证口径
+### Validation scope
 
-11. **compile-only**（`xcodebuild build-for-testing`）。三条新用例与翻转的那条没有在运行时跑过；
-    两轮的走向（A0 自愈触发、update 支的 `applyThemeState`、去重后的 `.create` 计数）按代码推导。
+11. **Compile-only.** The three new cases and changed existing case were not run. Recovery,
+    update-branch theme application, and create deduplication are inferred from the code paths.
 
 ## Task 6
 
-游标表 / 两个标志 / `OwnedKindFlags.urlRules` / 注册项 `.urlRules` 全部成员 / 协调器接线与订阅 /
-`OwnedRoundCounters` 五字段 + `reportsRuleCounters` + `landsEmptyBatch` + 第二发射段 / B2 用例的
-规则半边 / U-18 两条 R-103 变体 / CASE U-11。汇合段第一条，基点 `154b3f39`。
+First integration task, based on `154b3f39`: URL-rule cursor table and flags, registration and
+coordinator wiring, subscriptions, five rule counters, `reportsRuleCounters`, `landsEmptyBatch`,
+rule-side B2 cases, U-18's R-103 variants, and U-11.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **协议第七个成员 `refreshRoutingTableAfterLanding()` 归本任务**（spec §5.6 的协议清单里没有它，
-   Task 8 的 Produces 因此多一个成员）：`PhiURLRuleLocalAccess` + `AccountPhiURLRuleAccess`
-   （一句 `SpaceManager.shared.reloadURLRulesFromStore()`）+ `FakeURLRuleAccess.Call.refreshRoutingTable`。
-   引擎不直调 `SpaceManager`（`PhiSyncEngine.swift` 对它仍只有注释引用与 `URLRuleKind` 经由的
-   两个 static）。Task 8 评审点名的那条运行期未验证前提（主上下文合并可见性紧跟在一次已 await 的
-   后台保存之后）仍然成立：本任务的刷新调用在 `access.apply` 返回**之后**，经 access 成员进
-   `reloadURLRulesFromStore()`，前提本身没有在本任务里得到运行期验证（compile-only）。
-2. **`OwnedPlanOutput.normalized` 与 `OwnedLandingOutcome.ownerMoved`**：spec §11 没点名的两个字段。
-   `owner_moved` 由落地数批次里真的留下来的 `.move`（`URLRuleApplyBatch.init` 降级之后），不在
-   plan 里按 step 数；`normalized` 由 plan 闭包填。其余四个计数（`collapsed` / `transferred` /
-   `yieldNoPartner` 与 `adopted` 的规则半边）本任务恒 0，发射段照印。
-3. **spec §6.5 的 `Round` case 行号 `:684` 实为 `:687`（`c549c4c5`），入口名是
-   `handleLocalOwnedChange(label:)` 不是 `(kind:)`**；本任务的协调器订阅与用例都按后者。
-4. **U-27 ~ U-31 五个新 CASE 编号**（本计划新增，Task 12 写回 spec §12.1），全部落在
-   `URLRuleKindTests.swift` 的 Task 6 段；U-11 由控制者补派到本任务，也在那里。
-5. **`server = remote` 记归一化之前的字节**（计划裁定五）——`urlRulePlan` 在 `normalizeArrivals` 之前
-   写 `out.serverBytes`。
-6. **`tombstones` 闭包保持最小形**（计划裁定四）：一次 `allURLRulesIncludingDeleted()` + 一次
-   `SyncableOwnedItems.tombstones(... pendingClaims: [])`；`explicitDeletions`（Task 9）与
-   `deferredDeletions`（8b-3）的钩点是那个 `let rows = …` 绑定，注释里点名。
-7. **`landsEmptyBatch`**（R-M3-4a-99）：`OwnedKindRegistration` 的 `let` 成员，`.urlRules` 传 `true`、
-   `.bookmarks` / `.pins` 显式传 `false`；`applyOwnedKind` 那道空批次 guard 只加了
-   `|| registration.landsEmptyBatch`，早退支的 `if replayedAfterDelete > 0 { writeOwnedTable }` 原样。
-   用例在 8b-2 的 CASE M-35。**副作用**：规则每页都会走到 `applyOwnedKind` 末尾的
-   `writeOwnedTable`，即每一页多一次 `urlrules-cursors.json` 的原子写（表没变也写）——书签与 pin
-   的早退逐字不变，不受影响。
+1. **This task owns the seventh access member, `refreshRoutingTableAfterLanding()`.** It is absent
+   from §5.6's protocol inventory. Add it to the protocol, production access (calling
+   `SpaceManager.shared.reloadURLRulesFromStore()`), and fake call log. The engine uses the access
+   member rather than calling the manager directly. Task 8's unverified assumption remains:
+   the main context must see the awaited background save. Refresh follows `access.apply`, but
+   compile-only validation does not establish runtime visibility.
+2. **Add `OwnedPlanOutput.normalized` and `OwnedLandingOutcome.ownerMoved`,** neither named in
+   §11. Count surviving `.move` operations after batch demotion; the plan supplies normalization
+   count. `collapsed`, `transferred`, `yieldNoPartner`, and rule adoption remain zero here but
+   are included in logging.
+3. **Correct brief references:** the `Round` case is at `c549c4c5:687`, not 684, and the entry
+   is `handleLocalOwnedChange(label:)`, not `(kind:)`. Wiring/tests use the actual API.
+4. **New CASE U-27–U-31** live in the Task 6 section of `URLRuleKindTests`; Task 12 adds their
+   numbers to §12.1. The controller-assigned U-11 lives there too.
+5. **Store pre-normalization remote bytes in `server`.** `urlRulePlan` fills `serverBytes`
+   before `normalizeArrivals` (ruling 5).
+6. **Keep tombstone assembly minimal:** one inclusive read and a call with `pendingClaims: []`.
+   The `rows` binding is documented as the Task 9 `explicitDeletions` / 8b-3 `deferredDeletions` hook.
+7. **`landsEmptyBatch` (R-M3-4a-99)** is true for rules and explicitly false for bookmarks/pins.
+   Add only that disjunct to the empty-batch guard, preserving its replay bookkeeping.
+   M-35 tests the behavior in 8b-2. Consequently every rule page reaches `writeOwnedTable`,
+   adding an atomic rule-cursor write even when unchanged; other kinds retain their early return.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-8. **`localIdentities` 闭包读 `state.rows`，不再 fetch 第二次。** brief 写的是
-   `try? access.allURLRulesIncludingDeleted()` 回退到 `state.rows`。`beginOwnedRound` 里它紧跟在
-   `beginRound()` 之后、且只在 `beginRound` 没抛时才被调（同一个 `do` 块），`state.rows` 就是
-   「本轮已经读到的那些身份」，含软删行；再读一次只多一次主上下文 fetch。
-9. **`reloadAfterPage` 在生产实现上确实是一次 fetch。** brief 说「Task 8 的 `apply` 已经重建过 access
-   自己那份页内缓存，所以不是第二次 fetch」——但协议没有 `cachedRows()` 这样的读口
-   （pin 有 `cachedPins()`），`allURLRulesIncludingDeleted()` 在 `AccountPhiURLRuleAccess` 上必经
-   `rebuildCache()`。每落地一页多一次 fetch；`FakeURLRuleAccess` 上零成本。加一个不 fetch 的读口
-   属于 Task 8 的协议面，本任务不动。
-10. **落地后复核排在 `reloadAfterPage` 之前。** 生产 `rebuildCache()` 失败时先 `invalidateCache()`
-    再抛，之后 `isKnownLocalURLRule` 会 `assertionFailure`；`apply` 成功返回时缓存刚重建过，复核
-    放在它后面、重读前面，重读失败也不会把已落地的行读成「不在」（`pageReloadFailed` 只影响下一页
-    的投影）。同理 `siblings(inSpaceId:)` 在 `pageReloadFailed` 时退回 `state.live` 按 `spaceId` 分组。
-11. **翻译表对「有行的 `.create`」发 `.update` / `.move`，不发 `.create`**（§4.5「先按身份找本机行，
-    找不到才 create」，与 `landPins` 同一条）：定义域**含软删行**（R-M3-4a-42(a)），一次重放
-    （游标丢失、marker 回退）或一次救回软删行都是 update；桶变了就是 `.move`，两者一起交给
-    `URLRuleApplyBatch.init` 合并 / 降级。被触及的桶里其余兄弟各发一条 `.reorder`（只发下标真的
-    变了的那些），让 §8.3 的投影而不是批次入口的 `(sortOrder, id)` 收尾决定次序。
-12. **`logOwnedRounds` 的拼串拆成 `static func ownedRoundLogLine(_:counters:)`**（actor 的 static
-    成员不隔离，纯函数）：brief 的 U-27 要「按 `logOwnedRounds` 的拼串规则核对三条行文本」，而
-    `AppLogInfo` 没有测试面、全局约束又禁止新的驱动入口；一个纯格式化函数不是驱动入口。书签与
-    pin 的行**逐字节不变**（U-27 同时钉了 `bookmarks` / `pins` 两条行的形状）。
-13. **U-18 (f) 的第二轮不是「第 ① 步幂等零写 + 第 ② 步这次写成」。** 盘上 marker 已经是 nil，
-    guard 1（R-M3-4a-89，`pull` 入口）在**轮首**就武装 drain 并从头重放；重放页里的 `r1` 按身份
-    落地、游标在发布段那次 `loadOwnedTable(armsReplayOnLoss: true)` 之前已经重建 ⇒ 报损不再命中、
-    闩不需要再置位。brief 写的那一格只在「重放页不带任何规则」时可观测，于是拆成两条：
-    `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay`（(a) 形状，钉「可重来的落盘
-    失败没有变成永久失效」）与 `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`
-    （空账户，钉 `markerStore.saves` 不增、闩置位、drain 武装）。(f) 的 `failSaveOnCallNumber`
-    动态取 `saveCalls + 2`：页 1 那次无条件的 Space 表写是第 1 次，第 ② 步是第 2 次。
-14. **U-18 (e) 的 `MemorySpaceStore.saveCalls 不增` 写成 `≤ 1`**：页循环每页无条件 `writeSpaceTable`
-    一次，那个 +1 与第 ② 步无关；断言的是「页写之外没有第二次」+ 闩 / drain 标志逐字不变。
-15. **U-18 (a) ~ (d) 的 marker 用十进制 `"5"`、重放页水位 `"3"`**（brief 写 `"M5"`）：
-    `FakePhiSyncClient.pagesByMarker` 按十进制水位分页，非数字 marker 读成 0；水位 3 ≤ 5 让
-    「从 5 起拉不到、从 nil 重放才拉到」成立，正是 (a) 的「重放页里带 r1」。(c) 用不带 `syncId` 的
-    行、(d) 带——brief 说四段共用一份行，这里让 (c)/(d) 各自表达一半判据。
-16. **U-30 的游标多带 `deletedAtMs`**（照 CASE 6.18 / 6.21 的书签形状）：否则 reset 之后同一轮的
-    发布段会为它补键（有本机行）或差分为它发 tombstone（无本机行、`entityId == ""` ⇒ §9.1 第二道
-    闸就地写 `deletedAtMs` 并清 `reconciled`），断言读到的就不再是 reset 本身。
-17. **U-28 的次序探针是文件末尾的 `RecordingSpaceStore`**（记三个 `…HadRecords` 第一次为真的次序），
-    不是往三个假件里塞共享数组——假件没有那个钩子，全局约束又要求改既有假件显式声明。
-18. **U-29 的 sink 记 label、不调引擎**：形状逐字是协调器那一行（裸 sink、label 从注册项带来），
-    引擎调用本身没有可数的测试面；真 `LocalStore` 在临时目录上，`tearDown` 里删。
-19. **U-11 的 Space 段与设置段用 2b-L1 的办法静默**（三个已映射 Space 进 `unreadableTagHashes`、
-    预置空 `storedLastEntity`），两台引擎各自的 defaults suite 与 store；`v+1` 不写死，读
-    `client.stored[hash].version`。
-20. **`PhiSyncMarkerBoundaryTests` 只补了 brief 点名的三格**（B2-3 新用例、B2-7 / B2-7b 经五种 kind
-    的共享 fixture）。Task 2b 留下的其余 `— Task 6` 占位（B2-1c (d)、B2-6b、B2-13、B2-15、B2-16 的
-    规则版）**原样未动**，交 Task 12 收口决定。
+8. **`localIdentities` reads `state.rows`, without another fetch.** It runs immediately after
+   successful `beginRound` in the same `do` block, so that inclusive projection already has the
+   required identities. The brief's second read adds no information.
+9. **Production `reloadAfterPage` really performs another fetch.** Despite the brief's claim,
+   the protocol has no cached-row accessor; `allURLRulesIncludingDeleted()` calls `rebuildCache()`.
+   A cache-only API belongs to Task 8's protocol scope and is not added here.
+10. **Verify landing before `reloadAfterPage`.** Failed cache rebuilding invalidates the cache,
+    after which identity lookup asserts. A successful `apply` has already refreshed it; verify
+    then, so a later reread failure cannot make committed rows look absent. On such failure,
+    sibling projection falls back to `state.live` grouped by `spaceId`.
+11. **An existing-row `.create` becomes `.update` / `.move`.** Lookup includes soft-deleted rows
+    (R-M3-4a-42(a)), making replay and resurrection updates rather than duplicates. Batch assembly
+    combines/demotes operations. Emit reorders only for other affected siblings whose indices
+    changed, preserving §8.3 rank projection rather than relying on final `(sortOrder, id)` order.
+12. **Extract pure `ownedRoundLogLine(_:counters:)`.** U-27 needs to inspect formatting, while
+    `AppLogInfo` has no test interface and new driving entries are prohibited. A static pure
+    formatter supplies observability without driving behavior. Bookmark/pin lines remain byte-identical.
+13. **U-18(f)'s retry differs when replay contains a rule.** With a nil disk marker, guard 1
+    arms drain at round start; replay lands `r1` and recreates its cursor before loss detection,
+    so no latch retry is needed. Split coverage into
+    `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay` and the empty-account
+    `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`. The latter checks unchanged marker
+    save count, armed latch, and drain. Initially use `saveCalls + 2` for the latch write because
+    the page writes the Space table first; the review correction below supersedes this count.
+14. **U-18(e) initially permits one Space-table write.** Every page writes the table independently
+    of replay step 2; assert no additional write and unchanged latch/drain flags. See review correction.
+15. **U-18(a)–(d) use decimal marker `"5"` and replay watermark `"3"`.** The fake parses decimal
+    watermarks, so the brief's `"M5"` would mean zero. This makes the rule visible only on full
+    replay. Variant (c) uses a row without `syncId`, (d) one with it, to cover both criteria.
+16. **U-30 also seeds `deletedAtMs`,** following bookmark cases 6.18 / 6.21. Otherwise the same
+    round's publish phase can mint keys or process a tombstone after reset, obscuring reset state.
+17. **U-28 uses `RecordingSpaceStore`** to record the first true values of the three had-records
+    flags. Existing fakes lack a shared recording hook, and changing them requires explicit declaration.
+18. **U-29's sink records the registration label without driving the engine.** It matches the
+    coordinator subscription shape; engine invocation has no countable test interface. Its real
+    store uses a temporary directory cleaned by teardown.
+19. **U-11 silences other sections as in 2b-L1.** Mark three mapped Spaces unreadable and seed an
+    empty settings entity. Each engine has separate defaults/stores; read the actual committed
+    server version instead of hard-coding `v+1`.
+20. **Only the three named marker-boundary additions are made:** B2-3 and the shared five-kind
+    B2-7 / B2-7b fixture. Other Task 6 placeholders remain for Task 12 to resolve.
 
-### 验证口径
+### Validation scope
 
-21. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰的文件零
-    warning）。十九条新用例与三处扩写没有在运行时跑过；每条的走向（`.create` 步落成 `.update`、
-    冲突后的限定重发、guard 1 的轮首重放、`hadRecordsSeen == [true, true]` 等）按代码推导。
+21. **Compile-only:** quiet `build-for-testing`, exit 0, no errors or warnings in touched files.
+    Nineteen new cases and three extensions were not run. Landing conversion, conflict retry,
+    round-entry replay, and `hadRecordsSeen == [true, true]` are inferred from code.
 
-### Fix round 1（review 的一条 Important，tests only）
+### Fix round 1 — one Important review finding, tests only
 
-22. **U-18 (e) / (f) / (f-empty) 没有静默设置段与 Space 段。** `makeSpaceAccess()` 映了三个没有游标的
-    Space，`hasDrainedFullReplay == true` 时 `pushSpaces` 在 `pushOwnedItems` 之前把三条 create 发
-    出去并写一次 Space 表：(e) 的「零 commit」与「Space 表写次数」两条断言、(f)/(f-empty) 的
-    `failSaveOnCallNumber = saveCalls + 2` 旋钮都被它打偏（旋钮打在 Space 段的表写上，步骤 ② 反而
-    成功，断言在引擎正确时变红）。修法：`makeLossFixture` 内调本文件自己的
-    `silenceOtherSections`（与 U-16 / U-11 同一个 helper），函数改成 `throws`、七个调用点加 `try`。
-23. **序号重新推导**：静默之后 `pushSpaces` 仍然写**一次**表（guard 3 在 `spaceCommitEntries` 里
-    `continue` 掉三条 ⇒ `work` 为空 ⇒ `guard !work.isEmpty else { writeSpaceTable(table); return }`
-    那一支），`push` 的次序是 settings → spaces → owned。于是 Space 表写：页 1 无条件表写 #1、
-    `pushSpaces` 写回 #2、报损重放第 ② 步 #3。(f)/(f-empty) 的旋钮改成 `saveCalls + 3`；(e) 的
-    Space 表断言改成精确 `== 2`（没有第三次 = 步骤 ② 没跑）。(a)–(d) 的断言逐条复核，静默不改变
-    它们的走向（`hadRecordsSeen == [true, true]`、零 rule commit、marker / drain 标志同前）。
-24. **顺手清掉同文件唯一的编译 warning**：U-29 的 `RunLoop.main.run(until:)` 直接在 async 上下文里
-    调（Swift 6 下是 error），改经同步 helper `waitPastDebounceWindow(_:)`（照
-    `LocalStoreURLRuleThrowingTests` 的形状）。
-25. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零
-    warning。覆盖的用例：`testAFailedMarkerClearLeavesTheLossUnarmedAndRetriggersNextRound`、
-    `testAFailedLatchWriteAfterAClearedMarkerStillEndsInAFullReplay`、
-    `testAFailedLatchWriteIsRetriedWithAnIdempotentMarkerClear`（以及经同一 fixture 的 (a)–(d) 四条）。
+22. **Silence settings and Spaces in U-18(e), (f), and (f-empty).** Their fixture maps three
+    cursorless Spaces; otherwise Space creates and a table write precede owned publishing,
+    invalidating zero-commit assertions and hitting the wrong failure index. Call
+    `silenceOtherSections` from `makeLossFixture`, make it throwing, and add `try` at seven callers.
+23. **Recalculate write indices after silencing.** `pushSpaces` still writes its empty-work table:
+    page write #1, Space publish write #2, replay latch write #3. Use `saveCalls + 3` in both
+    (f) variants; (e) asserts exactly two writes, proving step 2 never ran. Recheck (a)–(d): their
+    replay, zero-rule-commit, marker, and drain expectations remain unchanged.
+24. **Remove the file's sole compilation warning.** U-29 calls `RunLoop.main.run` through
+    synchronous `waitPastDebounceWindow`, matching the local-store test pattern; direct use in
+    async context becomes an error in Swift 6.
+25. Validation remains compile-only, exit 0 with no touched-file errors/warnings. Coverage comprises
+    the failed-marker-clear case, both failed-latch-write cases, and the four shared-fixture variants.
 
 ## Task 9
 
-生命周期汇合段：`SyncableOwnedItems.tombstones` 的第七个入参 `explicitDeletions`（R-M3-4a-78）、`.urlRules` 的
-`tombstones` 闭包（一次读、两个集合）、`applyOwnedRetentionCascade` 的停放豁免（R-M3-4a-27）、软删行的两条
-清理出路（`hardDeleteAfterTombstone` / `purgeSoftDeletedRows` 两个 `= nil` 注册项成员 + 协议两成员 + 假件 +
-生产实现 + `purgeExpiredSoftDeletedOwnedRows` 第四步）、`SyncKeyController.ownedItemStores` 第三个元素、
-`resetForNewStoreBirthday` 核对。
+Integrate lifecycle handling: `explicitDeletions` (R-M3-4a-78), rule tombstone inputs, parked-row
+retention exemption (R-M3-4a-27), two soft-delete cleanup exits, protocol/registration/fake wiring,
+the third controller-owned store, and birthday-reset verification.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **`explicitDeletions` 只跳两道归属门**：模块里三条判据、`pendingClaims` 排除、整段游标记账逐字照旧，两道门
-   包进 `if !explicitDeletions.contains(identity) { … }`。入参排在 `pendingClaims` 之后、带默认空集；书签 / pin 的
-   两个调用点与 `SyncableOwnedItemsTests` 的八处调用一个字没改。循环最前面留了一句 `//` 指路：8b-3 的
-   `deferredDeletions` 的 `continue` 排在判据 1 之前。
-2. **三条规则侧例外的落点**：闭包构造 `locals` 时不做任何归属过滤，靠 `identity(of local:) == syncId` 让 hidden /
-   purged / agent / 过期 incognito 目标的活行进 `liveIdentities`（判据 3）；两道门是第二道防线。U-12 两个变体钉住。
-3. **停放豁免不刷 `ownerUuid`**：`if table.cursors[identity]?.pendingApply != nil { parked += 1; continue }` 排在
-   `guard live.claimed.contains` 之前；`parked > 0` 时一条 info（kind + 条数）。
-4. **出路 1 排在 `writeOwnedTable` 之后、冲突重试之前**；`appliedTombstones` 在 `applyOwnedCommitOutcome` 循环里与
-   `appliedMinted` 并列收集（`if case .applied = outcome, item.entry.deleted`）。硬删抛错只记 warn（kind），不回滚。
-5. **出路 2 不碰 `LocalStore+SpaceURLRule.swift`**：`AccountPhiURLRuleAccess.purgeSoftDeletedURLRules(olderThan:)` =
-   一次 `allURLRulesIncludingDeleted()` 筛 `deletedDate < cutoff && syncId != nil` + 逐条 `hardDeleteURLRuleThrowing`
-   （一行一事务，特性不是妥协）。判据是行上的 `deletedDate`；`syncId == nil` 的软删行按 R-M3-4a-23 不可达，accepted。
-6. **两个注册项成员 `var … = nil`**：合成 memberwise init 给默认实参，`.bookmarks` / `.pins` 工厂零改动。
-7. **自撤销**：`SyncKeyController.swift` 的 `for store in ownedItemStores` 一字未改，协调器数组加 `urlRuleStore`
-   （Task 6 建的同一个对象）；`clearAllSyncIds` 闭包仍只覆盖书签，理由写进协调器闭包旁与 controller 第 4 步注释；
-   `PhiURLRuleLocalAccess` 里加了一句注释钉住「没有、也不许有 `clearAllSyncIds`」。
-8. **`resetForNewStoreBirthday` 核对通过**：`for registration in ownedKinds` 覆盖第三条 kind、逐条 `writeOwnedTable`，
-   Task 6 已把 `urlRulesReplayedForEmptyTable = false` 加进 Space 表那一批；本任务零代码，CASE 9.3 钉住。
+1. **`explicitDeletions` bypasses only the two owner gates.** Preserve all three predicates,
+   pending-claim exclusion, and cursor bookkeeping. Add the default-empty argument after
+   `pendingClaims`; existing bookmark/pin callers and eight module-test calls remain unchanged.
+   Document the future deferred-deletion exclusion before predicate 1.
+2. **Three rule exceptions:** build locals without owner filtering so live rows targeting hidden,
+   purged, agent, or stale-incognito Spaces remain in `liveIdentities` by `syncId`. Predicate 3
+   protects them, with the two owner gates as a second defense; U-12 variants cover this.
+3. **Parked exemption does not refresh `ownerUuid`.** Check `pendingApply` before claimed-owner
+   eligibility, count and skip the cursor, and log one kind/count info line when any are parked.
+4. **Cleanup exit 1 follows table persistence and precedes conflict retry.** Collect applied
+   tombstones alongside minted identities in commit-outcome processing. A hard-delete error logs
+   the kind without rollback. The review below adds a successful-save requirement.
+5. **Exit 2 needs no store-file change.** Production access reads all rows once, selects
+   `deletedDate < cutoff && syncId != nil`, and hard-deletes each in its own transaction. Per-row
+   transactions are intentional. Soft-deleted rows without identity are unreachable under R-23.
+6. **Both optional registration hooks default to nil,** preserving synthesized initializer
+   defaults and requiring no bookmark/pin factory changes.
+7. **Self-revocation:** keep the controller's store loop unchanged and append the existing
+   `urlRuleStore` in coordinator wiring. Identity clearing remains bookmark-only, with comments
+   at the closure and controller step 4. The rule protocol explicitly forbids `clearAllSyncIds`.
+8. **Birthday reset already covers the third kind.** The registration loop writes each table;
+   Task 6 already resets `urlRulesReplayedForEmptyTable`. No implementation change; CASE 9.3 verifies it.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-9. **U-13c 的「purge 级联硬删 X 的行」按 store 半边的产物建模**：`FakePhiSpaceAccess.purge` 不级联到
-   `FakeURLRuleAccess.rows`（也不想为此改 `PhiSpaceLocalAccessTests.swift` 那个假件），所以 fixture 直接以「行不存在」
-   开局；引擎半边（映射被 `dropSpaceMapping` 删、游标豁免、零 tombstone、③ 按载荷建行）逐条断言。
-10. **U-13b 的第一页同时带 Space tombstone 与三条规则更新**：只有 Space tombstone 的页不会让规则游标长出
-    `pendingApply`（没有入站实体就没有停放），brief 的期望要三条规则更新与 tombstone 同页到达（Space 段先落 ⇒ hidden
-    ⇒ 规则段目标不合格 ⇒ 停放）。`su-1` 给一条已落地的 Space 游标，并从 `silenceOtherSections` 的 `unreadableTagHashes`
-    里摘掉它；撤销变体直接把 `su-1` 游标从 hidden 改回活着。
-11. **U-13 的 RR-B6 重启探针**：第一轮 `client.commitErrorOnce = Boom()` 模拟「发出去之前进程没了」，第二台引擎复用
-    同一个 access / store / client；断言行上的 `deletedDate` 与游标上的 `deleteDecidedAtMs` 都活过重启、值只写一次。
-12. **CASE 9.3 抛在 owned commit 上**：`r1` 的行改过 host ⇒ 发布段真的发一次规则 commit；设置段与 Space 段按 2b-L1
-    静默，`commitErrorOnce = .notMyBirthday` 于是落在那一次上（U-30 用的是 getUpdates 侧的 `throwNotMyBirthdayOnce`）。
-13. **U-20 (a) 的 agent Space 用过期 incognito 运行期 id 代替**（`SpaceManager.incognitoRuleTargetId + ".stale-runtime"`，
-    `isRoutableRuleTarget` 假 ⇒ `eligibilityOwner` nil），同一条 R-M3-4a-8 判据、不需要真的 agent Space id 形状。
-14. **`FakeURLRuleAccess` 多了 `deleteError`**（让两条出路抛，与 `readError` 同款）；本任务的用例没用它，留给 review /
-    8b 的失败路径用例。
-15. **`purgeExpiredSoftDeletedOwnedRows` 不带 `spaceSectionEnabled` 门**（照 brief ⑥ 原文）：清的是本机 30 天前的软删
-    垃圾，与门无关；门关着超过 30 天的软删行会在没发出 tombstone 的情况下被清掉，这一格由既有的起源 (a) 差分（行没了、
-    归属合格 ⇒ tombstone）兜住，只有「目标 Space 同时不合格」才会留一条账户孤儿——与 M3-3 书签硬删的既有行为同形。
-16. **`URLRuleKindTests.makeEngine` 加了 `clock: Clock? = nil`**（`PhiSyncEngineSpaceTests.Clock`），9.1 / U-13c 推时钟；
-    不传时仍是冻结的 `Self.now`。
+9. **U-13c models completed store-side cascade by starting without X's row.** The Space fake does
+   not cascade into the rule fake, and modifying it is unnecessary. Assert the engine's mapping
+   removal, cursor exemption, zero tombstones, and payload-based recreation separately.
+10. **U-13b's first page includes the Space tombstone and three rule updates.** A tombstone alone
+    cannot create rule `pendingApply`. Same-page Space-first landing makes rule targets ineligible
+    and parks the updates. Seed a landed `su-1` cursor and remove it from unreadable hashes;
+    the undo variant restores that cursor to live state.
+11. **U-13's RR-B6 restart probe** throws `Boom()` on the first commit to model process loss before
+    send, then reuses access/store/client in a new engine. Row `deletedDate` and cursor
+    `deleteDecidedAtMs` must survive restart and be written only once.
+12. **CASE 9.3 throws on owned commit.** Edit `r1.host`, silence settings/Spaces, and inject
+    `.notMyBirthday` into that commit. U-30 instead injects it during GetUpdates.
+13. **U-20(a) uses a stale incognito runtime id as the ineligible target.** It exercises the same
+    R-8 predicate as an agent Space without needing an actual agent id shape.
+14. **Add fake `deleteError`** for both cleanup exits, analogous to `readError`. This task does
+    not use it; it is available for review and later failure-path probes.
+15. **Expired soft-row purge is independent of `spaceSectionEnabled`,** as specified. Rows older
+    than 30 days may be removed before sending their tombstone while the gate is closed. Existing
+    origin-(a) diff later emits it if the owner is eligible. An ineligible owner can leave an
+    account orphan, matching existing M3-3 bookmark hard-delete behavior.
+16. **Add optional `clock` to the rule-test engine factory** for 9.1 / U-13c; omitted clocks
+    remain frozen at `Self.now`.
 
-### 验证口径
+### Validation scope
 
-17. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰的文件零 warning）。十六条新用例
-    没有在运行时跑过；每条的走向（判据 3 挡住活行、`explicitDeletions` 绕过两道门、`.applied` ⇒ 硬删、豁免保游标、
-    `dropExpiredOwnedTombstones` 先丢游标再由出路 2 按行清）按代码推导。U-22 的「另外两条零 commit」依赖 rank 投影
-    在次序一致时沿用基线 rank（U-18 (a) 的零 commit 是同一条前提）。
+17. **Compile-only:** exit 0, no errors or touched-file warnings. Sixteen new cases were not run.
+    Live-row protection, explicit-deletion gate bypass, applied-tombstone cleanup, parked retention,
+    and cursor-before-row expiry are inferred. U-22's other two zero commits assume stable ordering
+    reuses baseline ranks, as does U-18(a).
 
-### Fix round 1（review 的一条 Important + 一条 Minor）
+### Fix round 1 — one Important and one Minor review finding
 
-18. **出路 1 只在游标表落盘成功之后跑**：`let saved = writeOwnedTable(registration, table)`，硬删加 `saved` 合取。
-    写盘失败时行原样留着（软删、对每个读口不可见），下一轮从盘上重读的游标再发一条 tombstone、`.applied` 之后
-    才删。CASE 9.4 `test9_4_exit1IsSkippedWhenTheCursorTableSaveFails`（`PhiSyncEngineOwnedItemsTests`）钉住：
-    发布段那一次 save 的序号**不写死**——规则是 `landsEmptyBatch` 的 kind，空页的落地段末尾也无条件写一次表，
-    所以先跑一轮行还活着的校准轮数出「一轮几次 save」，再 `failSaveOnCallNumber = saveCalls + N`；断言本轮
-    `.cursorSaveFailed` 且 tombstone 已发出（证明失败的是发布段那一次而不是更早的那次）。
-19. **`purgeSoftDeletedURLRules` 一行失败不中断**：逐行 `do/catch`，数成功条数，末尾一条 R12 warn（kind + 失败
-    条数），返回成功条数；只有那一次读抛出去。
-20. **9.3 / 9.4 的假 client 用 `scriptedPages` 喂空页**：种下的服务端行（空密文、只给 commit 的更新路径用）
-    否则会在默认 marker 下被拉回来当成一条解不开的入站实体、进 `unreadableTagHashes`、把那次 commit 挡掉。
-21. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。
+18. **Run exit 1 only after a successful cursor save.** Capture `writeOwnedTable`'s Bool and gate
+    hard deletion. On failure, the invisible soft-deleted row survives; next round reloads the
+    durable cursor and retries its tombstone before deleting. CASE 9.4
+    `test9_4_exit1IsSkippedWhenTheCursorTableSaveFails` calibrates saves in a live-row round, then
+    fails the publish write at `saveCalls + N`. Rule empty-page landing also writes the table, so
+    a fixed index would be wrong. Assert both `.cursorSaveFailed` and a sent tombstone.
+19. **A row-level purge failure does not abort later rows.** Catch per row, count successes, log
+    one R12 warning with kind/failure count, and return successes. Only the initial read can throw.
+20. **9.3 / 9.4 script empty pages.** Seeded server rows have empty ciphertext solely for commit
+    updates; allowing the default pull to receive them would mark them unreadable and suppress commits.
+21. Validation remains compile-only, exit 0, no errors or touched-file warnings.
 
 ## Task 11
 
-汇合段：`SpaceManager.applyRuleEdits(upserts:deletedIds:)` 成为四个写面（编辑器 Save、agent `urlRules.add` /
-`.update` / `.delete`）共用的唯一入口，`setAllRules` / `setRules` 与两条乐观推送删除；编辑器改成显式编辑集
-（`URLRulesEditor.computeEditSet`，行级脏判据 + 「清空即删除」+ 拖动排序整桶只带 `sortOrder`），两处本地改写
-（失效目标回退到 `ruleTargetSpaces.first` / 整条丢掉）拿掉；agent 四处 draft 构造点都带 `id` / `syncId` /
-`spaceId` / `sortOrder`，三个写面改成延迟回执。Commit：见 task-11-report.md。
+Unify editor Save and agent add/update/delete through `SpaceManager.applyRuleEdits`; remove both
+replacement wrappers and optimistic pushes. The editor computes explicit row edits, clears rows
+as deletions, and sends only order units for bucket reorder. Remove stale-target fallback/drop
+behavior. Agent drafts preserve identity/target/order, and write replies wait for commit.
+Commit reference: `task-11-report.md`.
 
-### brief 的四条计划裁定（要求记档的）
+### Four decisions the brief requires documenting
 
-1. **裁定 1（`URLRuleDraft.spaceId` / `.sortOrder`）**：Task 5 已经落地（两个 `Optional` 合并单元，`nil` = 这次
-   upsert 不带），没有 BLOCKED；本任务按 `spaceId: String?` + `sortOrder: Int?` 消费。Task 12 收进 spec §15。
-2. **裁定 3（store 的 `syncId` 兜底）**：Task 5 的 `applyURLRuleEditsBody` 第 2 步已实现「`id` 命中不到、
-   `draft.syncId` 命中 ⇒ 同一条行、`row.id` 改写成 `draft.id`」；U-14 legacy 变体正面钉住。spec §4.3 第 3 条
-   仍缺这一句，登记待 Task 12 补。
-3. **裁定 5（`ExtensionMessageRouter.swift` 不在 spec §11 文件表；新错误码 `write_failed`）**：三条注册改成
-   `return nil  // async reply via ExtensionMessaging`（形状照 `profiles.create` / `.rename`）。`ok` 从此意味着
-   已提交。全仓没有 agent 协议错误码表，`write_failed` 只在 handler 注释里描述。
-4. **裁定 6（§6.6 第 5 行）**：`SpaceManager.deleteSpace` 的级联改成 `Task { @MainActor in try await
-   deleteSpaceCascadeThrowing(spaceId:origin: .userIntent); reloadURLRulesFromStore() }`，失败一条 R12 log。
-   代价：级联从「同步入队」变成「一个 Task hop 之后入队」；`deleteSpace` 之后没有任何同步的 store 写依赖这个
-   顺序（其后只清 userDefaults 的 theme 记录）。
+1. **Ruling 1:** Task 5 already supplies optional `URLRuleDraft.spaceId` / `.sortOrder`, where nil
+   means omitted. Consume them directly; no blocker. Task 12 updates §15.
+2. **Ruling 3:** Task 5 already resolves a missed local id through `syncId` and rewrites `row.id`
+   to the draft id. U-14 legacy covers it; §4.3 rule 3 still needs this added by Task 12.
+3. **Ruling 5:** the router file is absent from §11, and `write_failed` is a new error code.
+   All three registrations return nil for asynchronous `ExtensionMessaging` replies, following
+   profile handlers. `ok` now means committed. No repository-wide protocol error-code table
+   exists, so handler comments document the code.
+4. **Ruling 6 / §6.6 row 5:** Space deletion launches a main-actor task that awaits the throwing
+   user-intent cascade and refreshes rules; failure emits one R12 log. This adds a Task hop before
+   enqueueing, but no subsequent synchronous store write depends on the old order; only defaults
+   theme cleanup follows.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-5. **`SpaceManager.makeForTesting(boundTo:)`（控制者已批准）**：`SpaceManager` 是 `private init()` + `shared`
-   + `private bind(to:)`，brief 的 U-24c (a)「一个绑在临时目录 store 上的 SpaceManager、不碰单例」无法成立。
-   加了一个 internal 的 `@MainActor static func makeForTesting(boundTo: Account?)`，只置 `boundAccount`
-   （不接 publisher、不跑 `ensureDefaultSpace`、不碰 `shared`），带 `//` 注释钉「仅供测试、生产代码绝不能调」；
-   `Sources/` 里除定义外零引用（grep 核对）。测试经 `Account.localStorage`（可赋值的 lazy var）指到临时 store。
-6. **裁定 4 的重排 draft 用 `content: nil` / `spaceId: nil`**（brief 写的是「四单元原样带库里的值」）：Task 5
-   落地后 `nil` 单元的字面含义就是「不碰」，比回填 `stored` 现值更稳（缓存滞后时不会把陈旧内容写回去）；
-   body 于是只写 `sortOrder`、两枚戳不动，与裁定 4 的目的逐字相同。序列比较只看**既有行**（`storeId != nil`）
-   且 `loaded` 侧只数仍留在同一桶里的 id：单纯删一行 / 清空一行不触发整桶重排（U-15c / U-22 的 `upserts` 为空），
-   新行插入或从别的桶搬进来才触发。
-7. **恢复支（R-M3-4a-101 / 104）**：行在 (a) 上脏、但 `stored` 里已经没有 ⇒ draft 带原 `id`、`syncId = nil`
-   （store 的 2b 步对 `syncId != nil` 命中软删行会抛 `rowAlreadyMapped`）。brief 裁定 2 把「`syncId` 该不该复用」
-   留给 8b-4；本任务按控制者的自查清单取 `nil`，用例 `testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId`。
-8. **`Row.init(from:)` 对小写 uuid 形的 id 也会「重铸」**（`UUID(uuidString:).uuidString` 输出大写）：这种行的
-   upsert 走 store 的 `syncId` 兜底并把 `row.id` 改写成大写。功能正确（身份由 `syncId` 兜住、`deletedIds` 走
-   `storeId`），只是多一次 `id` 改写；U-14 主变体的种子用大写 UUID 串以便正面断言 `id` 不变。若要消掉这次
-   改写，draft 的 `id` 应传 `row.storeId ?? row.id.uuidString`——但那与 brief 裁定 3 / U-14 legacy 变体
-   「`id` 变了」的正面断言冲突，本任务照 brief。
-9. **三处「陈旧注释」外的残留提及**：`git grep 'setAllRules\|setRules\|pushOptimistic…' -- Sources` 的代码符号
-   零命中，但三条 doc 注释仍提到旧名：`LocalStore+SpaceURLRule.swift:697`（Task 5 的扁平 init 注释；brief
-   点名本任务不碰该文件）、`TabDataModelSchemaV7.swift:135` / `V8.swift:137`（冻结的历史 schema 文档）。
-   都不在 Files 表里，留给 Task 12 的收尾扫。
-10. **`URLRuleDraft` 的三个兼容读口（`host` / `pathPrefix` / `askBeforeRouting`）保留**：`Sources/` 里已无
-    使用者，但 `Tests/PhiBrowserTests/URLRouterTests.swift:600` 还在用；按 dispatch 的规则不删、记档。
-11. **`AgentSpaceRouter.bucket(_:in:)`**：agent 侧的桶序按 `(sortOrder, id)` 排（`storedRules()` 本来就按
-    `(spaceId, sortOrder)` 读出来；纯函数的入参可能无序，测试直接构造）。
-12. **U-15b 的「下一轮差分 tombstones == 0」与 U-15c 的「tombstones == 1」没有在本任务的用例里跑引擎**：
-    真 store 与引擎的 `FakeURLRuleAccess` 不是同一个对象；本任务只断言行状态，tombstone 半边由 Task 9 的
-    U-22 / U-12 用例覆盖。
-13. **U-24c (b) 多断言了一次改目标的 update**（源桶 / 目标桶各自成序）；delete 面按 brief 直接构造 `EditSet`。
+5. **Controller-approved `SpaceManager.makeForTesting(boundTo:)`:** private initialization/binding
+   otherwise make U-24c(a)'s isolated manager impossible. The internal main-actor factory sets only
+   `boundAccount`, without publishers, default-Space setup, or the singleton. Mark it test-only;
+   source search confirms no production call. Tests assign the account's lazy storage to a temporary store.
+6. **Reorder drafts omit content and target units.** Task 5 defines nil as untouched, which is
+   safer than copying possibly stale cached values. Only `sortOrder` changes; stamps remain intact.
+   Compare existing rows and loaded ids retained in the same bucket: deletion/clearing alone does
+   not reorder the bucket, whereas insertion or movement into it does.
+7. **Restoration (R-101 / 104):** a dirty row missing from the current store retains its local id
+   but gets nil `syncId`, avoiding the soft-deleted identity collision in store step 2b. The brief
+   deferred identity reuse to 8b-4; the controller checklist specifies nil. Covered by
+   `testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId`.
+8. **`Row.init(from:)` uppercases lowercase UUID-shaped ids.** Upsert then resolves through `syncId`
+   and rewrites the local id. Identity and deletion still work, but this adds a write. U-14's main
+   seed uses uppercase UUID to assert unchanged id. Using `storeId` in the draft would avoid it
+   but conflict with the brief's legacy-case expectation, so retain the specified behavior.
+9. **Three comments still mention removed symbols:** the Task 5 flat initializer comment and
+   frozen V7/V8 schema documentation. Code searches find no old symbols. Those files are outside
+   this task's allowed files; Task 12 owns final cleanup.
+10. **Keep draft compatibility accessors** `host`, `pathPrefix`, and `askBeforeRouting`: production
+    no longer uses them, but `URLRouterTests.swift:600` does.
+11. **Agent bucket ordering uses `(sortOrder, id)`.** Store output is normally ordered, but the pure
+    helper accepts arbitrary input and tests construct it directly.
+12. **U-15b/c do not run the engine for tombstone counts.** The real store and fake rule access are
+    different objects. Assert row state here; Task 9's U-22 / U-12 cover zero/one tombstone outcomes.
+13. **U-24c(b) additionally tests target-changing update,** checking both source and target bucket
+    ordering. Delete uses a directly constructed edit set as specified.
 
-### 验证口径
+### Validation scope
 
-14. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，触碰文件零 warning）。九条新
-    用例没有在运行时跑过；U-14 / U-22 / U-24c (a) 依赖 Task 8 记的那条运行期未验证前提（一次已 await 的
-    后台写之后主上下文 fetch 可见），用例照 `LocalStoreURLRuleThrowingTests` 的 `drainMainQueue()` 形状。
-15. CASE 11.1 的三条 grep：代码符号零命中（见第 9 条的注释残留）；`applyRuleEdits(` 在
-    `AgentSpaceRouter+Management.swift` 恰好 3；`localStorage.` 只在 `storedRules()` 一处、三个 handler 段内零命中。
+14. **Compile-only:** exit 0, no errors or touched-file warnings. Nine new cases were not run.
+    U-14 / U-22 / U-24c(a) rely on Task 8's unverified main-context visibility after awaited
+    background save, using the existing `drainMainQueue()` pattern.
+15. CASE 11.1 searches find no removed code symbols, exactly three agent `applyRuleEdits` calls,
+    and `localStorage` only in `storedRules()`, never inside the three handlers. Comment leftovers
+    are listed in item 9.
 
-### Fix round 1（review 的两条 Important + 一条 Minor）
+### Fix round 1 — two Important and one Minor review finding
 
-16. **`makeForTesting(boundTo:)` 改走新的 `private init(testAccount:)`**：从前它调 `private init()`，而那个 init
-    无条件 `bind(to: AccountController.shared.account ?? defaultAccount)`（`ensureDefaultSpace` 写真库、订阅
-    publisher、`handleSpacesUpdate` 末尾的 `reloadURLRulesFromStore()` 让 U-22 / U-24c (a) 的计数断言依赖时序）。
-    新 init 不注册观察者、不绑任何账号、只置 `boundAccount`；第 5 条的「只置 `boundAccount`」从此为真。
-    U-22 期望计数 1、U-24c (a) 期望 0 → 1 → 2 → 3，对 bind-nothing 的实例只有 `applyRuleEdits` 会自增，成立。
-17. **裁定 4 的重排 draft 跳过已从 `stored` 消失的兄弟行**：pass 3 加 `storedByStoreId[storeId] != nil` 守卫。
-    没这条时，远端硬删 / tombstone 掉的兄弟行会以 `content: nil` 的 draft 撞进 store 的插入支
-    （`noCandidateSurvived` / `rowAlreadyMapped`），整次 Save 回滚。CASE 11.2
-    `testAReorderStillCommitsWhenASiblingVanishedBehindTheSheet` 钉住（重排 + 一条兄弟行硬删 ⇒ `upserts`
-    不含它、写入提交、桶稠密）。
-18. `computeEditSet` 的中文契约块从 `///` 改成 `//`（首行英文 `///` 保留）。
-19. 验证仍是 compile-only：`xcodebuild build-for-testing … -quiet` exit 0，零 error，触碰文件零 warning。
+16. **Use a new private `init(testAccount:)` for the test factory.** The old default initializer
+    bound the real account, ensured its default Space, subscribed to publishers, and refreshed
+    routing, making count assertions timing-dependent. The new initializer only sets the account.
+    Thus U-22's count 1 and U-24c(a)'s 0 → 1 → 2 → 3 are driven only by `applyRuleEdits`.
+17. **Skip vanished siblings in reorder drafts.** Pass 3 requires `storedByStoreId[storeId] != nil`.
+    Otherwise a remotely deleted sibling enters the insert path with nil content and rolls back
+    Save through `noCandidateSurvived` / `rowAlreadyMapped`. CASE 11.2
+    `testAReorderStillCommitsWhenASiblingVanishedBehindTheSheet` verifies omission, successful
+    commit, and dense order.
+18. Change `computeEditSet`'s detailed contract block from doc comments to ordinary comments,
+    retaining the first English doc-comment line.
+19. Validation remains compile-only, exit 0, no errors or touched-file warnings.
 
 ## Task 8b-1
 
-D30 的定义段 + M1 认领：`RuleSignature` / `URLRuleKind.signature(of:)`（行、实体两个重载）/
-`baselineSignature` / `isAtRest`（十项，R-M3-4a-86）；协议六个 D30 成员（`signatureIndex` /
-`pendingLocalEditIdentities` / `unpublishedIdentities` / `mergePartners` / `notePersistedClaims` /
-`noteDeletedRows`）+ `AccountPhiURLRuleAccess` / `FakeURLRuleAccess` 实现；`URLRuleSyncOp.rekey` +
-`LocalStore.rekeyURLRuleThrowing` / `rekeyURLRuleBody(localId:to:index:in:)`；`PhiOwnedItemTable.removeCursor`；
-`urlRulePlan` 的 M1 pre-pass、`landURLRules` 的 `.claim` → `.rekey` 翻译与两个就地更新口、
-`applyOwnedKind` 提交后删旧游标。Commit：见 task-8b-1-report.md。
+Define D30 signatures/rest predicates and M1 claims; add six access queries/update hooks,
+production/fake implementations, re-key operations and store bodies, cursor removal, M1 pre-pass,
+claim landing, projection updates, and post-commit retirement of old cursors.
+Commit reference: `task-8b-1-report.md`.
 
-### brief 的五条计划裁定（要求记档的）
+### Five decisions the brief requires documenting
 
-1. **`OwnedItemPlanContext` 三个成员已存在**：`pairs` / `adoptedMerges` / `adoptedFieldWrites` 只**填**不建，
-   `SyncableOwnedItems.swift` 只改 `pairs` 那一行注释（「实体身份 -> 本机行的稳定本地 id（书签是 `guid`，
-   规则是 `PhiLocalURLRule.id`）」）。`.claim` 的本机 id 走 `OwnedPlanOutput.claimedLocalIds` →
-   `OwnedLandingInput.claimedLocalIds`（都带默认空值，书签 / pin 构造点逐字不变）。
-2. **`notePersistedClaims` 的参数方向与书签相反**：规则收 **本机行 id -> 新 syncId**（§5.6），
-   `BookmarkSyncRoundState.notePersistedClaims` 收的是身份 -> guid。协议注释与两处实现都钉了方向。
-3. **M1 不受 `ownedItemsPublishAllowed` 闸约束**：pre-pass 住在 `urlRulePlan`（落地段），`:3811` 的闸一个字节
-   没碰；CASE M-11 用 `MemorySpaceStore()`（`hasDrainedFullReplay == false`）验收 `adopted == 3`。
-4. **`adoptedFieldWrites` 按 §8.4.2 那张成员表**：判据 `payloadBytes(merged) != payloadBytes(本机行此刻的投影)`；
-   `mustRepublish` 判据 `payloadBytes(merged) != payloadBytes(arrival.entity)`。spec 第 2 步那句「本机赢下任何一个
-   单元 ⇒ 进 `adoptedFieldWrites`」与表不等价，**spec 内部不自洽，登记待 Task 12 收进 §15**。
-5. **`normalize` 显式入参、不给默认值**：三个 `URLRuleKind` 静态函数都收 `normalize:`；调用方一律传
-   `URLRuleSignatureQueries.normalize`（= `LocalStore.normalizedRule`）。`signature(of row:)` 自己跑一次归一化
-   （CASE M-8 的本机行是 `"GitHub.com."`）。
+1. **Populate the three existing context members:** `pairs`, `adoptedMerges`, and
+   `adoptedFieldWrites`. Only clarify the `pairs` comment: entity identity -> stable local id,
+   bookmark `guid` or rule `id`. Carry claimed ids through default-empty output/landing maps,
+   preserving bookmark/pin construction sites.
+2. **Rule `notePersistedClaims` maps local row id -> new syncId,** opposite to bookmark
+   identity -> guid. State this in the protocol and both implementations.
+3. **M1 is not publish-gated.** It runs in landing's `urlRulePlan`; the existing publish gate is
+   unchanged. M-11 uses an undrained `MemorySpaceStore` and expects three adoptions.
+4. **Follow §8.4.2's member table:** `adoptedFieldWrites` means merged bytes differ from the
+   current local projection; `mustRepublish` means they differ from the arrival. The spec's
+   step-2 prose instead ties the first set to any locally winning unit, which is inconsistent.
+   Task 12 must record this in §15.
+5. **Normalization is an explicit required argument** to all three signature helpers. Every
+   caller passes `URLRuleSignatureQueries.normalize` / `LocalStore.normalizedRule`. Row
+   signatures normalize independently, including M-8's `"GitHub.com."` fixture.
 
-### 与 brief 不同的实现判断
+### Implementation decisions that differ from the brief
 
-6. **`mergePartners` 多一个入参 `tombstonesThisPage: Set<String>`**（brief 写的是 `mergePartners(table:resolve:)`）。
-   brief 内部矛盾：同一段要求「W 必须静止（十个合取项，**含第 10 项**）」且 CASE M-28 (a) 断言变体 10
-   （`tombstonesThisPage == ["r"]`）下不交回——第 10 项只能从本页 tombstone 集合算，协议成员没有别的来源可读它。
-   8b-3 接线时从 `input.tombstoned` 传。
-7. **四个只读查询的逻辑只有一份**：`URLRuleSignatureQueries`（`PhiURLRuleLocalAccess.swift`，internal enum）承载
-   纯函数半边，`AccountPhiURLRuleAccess` 喂 `cachedRows` / `cachedLive`、`FakeURLRuleAccess` 喂 `rows`。
-   两处各写一份会在「谁算静止」上分叉。
-8. **M1 的候选定义域是「本页到达 ∪ 停放」**（brief ② 只写「每条 arrival」）：与模块 `plan` 的工作集同域。
-   CASE M-1 ⑤ 的落地失败 ⇒ 整批停放，下一轮停放项重试时走同一条认领通路收敛到 ①（用例末尾多跑一轮断言）；
-   只看 arrival 的实现会在重试轮把它建成第二条行。两条排除：本机已有对应行（含软删行）的到达身份不是候选
-   （它按身份落地）；`syncId` 正在本页到达的本机行也不是候选（它被那条到达按身份命中）。
-9. **认领的行按账户级 rank 重新排位**：`landURLRules` 把认领当成「进了桶」（与 `.create` 同一条理由）；
-   投影下标变了而又没有字段写时，那一次写仍走 `values`（`.update` 折进 `.rekey`），不另发 `.reorder`
-   （R-M3-4a-42(b) 一身份一次落地写）。批次入口 `.rekey` 带 `values` 时同样记目标桶。
-10. **`URLRuleApplyBatch.init` 对 `.rekey` 按 `localId` 去重**：同一条本机行的第二条 `.rekey` 丢弃（DEBUG 断言），
-    留第一条；后到的那条身份落地后复核不过 ⇒ 停放。
-11. **`FakeURLRuleAccess.land` 的 `.update` 不再对活行清 `mergePartnerSyncId`**：Task 8 的假件无条件清，与生产
-    `upsertURLRuleBody`（只在命中软删行时清）不同形；CASE M-20 第二段（认领带字段写、`mergePartnerSyncId`
-    一个字节不动）要求假件与生产同判据。假件的 `.rekey` 照生产 body 做两条守卫 + 撞车检查，**先整批校验再改
-    `rows`**（假件没有事务）。
-12. **`urlRulePlan` 多一个入参 `access:`**（`signatureIndex` 住在 access 上），注册项闭包跟着传。
-13. **CASE M-2b 用 `getUpdatesErrorAfterPages = (1, Boom)` 让本轮止于 pull**：`drainedSpaceStore()` 下发布段的
-    补键通路（`unkeyed`）会为这种形状的游标经 client tag 重新认一次身份并收割三元组——那是它的正当行为，但会
-    遮住「认领 pre-pass 一个字节没动它」这条断言；R-exec-8 的 `ownerUuid` 刷新同理（fixture 预置 `"su-1"`）。
-14. **CASE M-18 主变体第 2 页是空页**（brief 写「别的 kind 的内容」）：本引擎只注册规则 kind，空页对规则照样
-    走 `plan` / `land`（`landsEmptyBatch`）；跨页重复认领变体第 2 页带同签名的第二条规则实体。
-15. **远端戳一律 5_000_000 ms**（比 fixture 行的 `createdDate` 1_000_000 ms 新），且同桶到达 rank 递增
-    （`V` / `W` / `X`）：合并结果 == 入站实体、零 `mustRepublish`、认领后 `sortOrder` 序与基线 rank 序一致 ⇒
-    `pushed == 0` 的断言只说认领这一件事。默认戳（100）下本机会按 R-M3-4a-12 赢下三个单元并正当地重新发布一次。
-16. **`adopted` 在整批回滚时仍计 `pairs.count`**（`counters.adopted += output.adopted` 在 `land` 之前），与书签
-    `adopt` 同形；CASE M-1 ⑤ 不断言它。
-17. **测试文件不需要工程改动**：`Tests/PhiBrowserTests` 是 `fileSystemSynchronizedGroups`（Task 7 的
-    `URLRuleKindTests.swift` 也不在 pbxproj 里），dispatch 里「照 Task 7 的 gem 脚本注册」那一句不适用。
+6. **Add `tombstonesThisPage` to `mergePartners`.** The brief requires all ten at-rest predicates
+   and M-28(a) variant 10, but its signature provides no source for page tombstones. 8b-3 wires
+   `input.tombstoned` into this argument.
+7. **Share four query implementations in `URLRuleSignatureQueries`.** Production supplies cached
+   rows/live rows, and the fake supplies its rows. Duplicating predicates risks divergent rest decisions.
+8. **Claim candidates include parked entities as well as arrivals,** matching the planner's
+   work set. Otherwise M-1(5)'s failed landing could create a duplicate on parked retry. Exclude
+   remote identities already represented locally, including soft-deleted rows, and local rows
+   whose identity arrives on this page; both already have an identity-based landing path.
+9. **Claims enter account-ranked bucket projection.** Treat them like creates. A changed position
+   still writes values even without changed fields; fold the update into re-key rather than
+   emitting a second reorder (R-42(b)). A value-bearing batch re-key records its target bucket.
+10. **Deduplicate re-key by local id.** Keep the first operation and assert in DEBUG on later
+    ones. A later conflicting identity fails post-landing verification and parks.
+11. **Fake updates clear merge partners only on resurrection,** matching production rather than
+    clearing every live row's pointer. M-20's field-writing claim requires this. Fake re-key
+    validates both guards/collisions for the whole batch before mutating rows because it has no transaction.
+12. **Add `access:` to `urlRulePlan`** for the signature-index query and pass it from registration.
+13. **M-2b stops after pull with a scripted error.** Otherwise normal unkeyed publication would
+    recover identity/server metadata and obscure the assertion that M1 left it untouched.
+    Seed owner `su-1` to avoid unrelated owner refresh too.
+14. **M-18's second page is empty in the main variant.** Only rules are registered; empty pages
+    still plan/land through `landsEmptyBatch`. The duplicate-claim variant instead receives a
+    second rule with the same signature.
+15. **Use remote stamps 5,000,000 ms and increasing V/W/X ranks.** These outrank fixture creation
+    time 1,000,000 ms, so merges equal arrivals, no republish is needed, and zero-push assertions
+    isolate claiming. Default stamp 100 would legitimately make local units win and republish.
+16. **Adoption count still uses `pairs.count` on rollback,** because counting precedes landing,
+    as with bookmarks. M-1(5) deliberately does not assert this counter.
+17. **No test-file project registration is needed.** The directory uses
+    `fileSystemSynchronizedGroups`; the dispatch's gem-registration instruction does not apply.
 
-### 验证口径
+### Validation scope
 
-18. **compile-only**（`xcodebuild build-for-testing … -quiet`，exit 0，零 error，日志零 warning）。二十四条新用例
-    （`URLRuleMergeTests` 18 条、`PhiOwnedItemStateTests` 1 条、`LocalStoreURLRuleThrowingTests` 5 条）没有在
-    运行时跑过；每条的走向按代码推导（见 report 的逐条说明）。
+18. **Compile-only:** exit 0, no errors/warnings. Twenty-four new cases (18 merge, one cursor-state,
+    five local-store) were not run; the report derives each expected path from code.
 
 ## Task 8b-2
 
-§8.4.3 的 M2 收敛：两遍指针 + 整组归约（R-M3-4a-82）、落地段尾钩 `URLRuleMergeTail`、
-三个 `LocalStore` 原语、两条清空规则、drain 闸只管第 2 步、§6.6 第 8 行、
-`OwnedItemPlan.preLandingSignatures`。
+Implement §8.4.3 M2 convergence: two pointer passes and whole-group reduction (R-82), transactional
+merge tail, three store primitives, two pointer-clearing rules, drain gating only step 2,
+§6.6 row 8, and pre-landing signatures.
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **`preLandingSignatures` 用具体类型 `[String: RuleSignature]`**（裁定一）：不用 `AnyHashable`
-   （分组键退化成运行期强转、失败即静默空转），也不给 `OwnedItemKind` 加第三个关联类型（会把非泛型的
-   `OwnedItemPlan` 拖成泛型、牵动书签与 pin 的每一个调用点）。全仓一个 module，`SyncableOwnedItems.swift`
-   已经具名引用过 pin 专属的 `PinnedTabScope`，没有新的构建边。书签与 pin 那两条路径永不填它。
-2. **`convergePass` 先跑、`mergePointerPass` 后跑**（裁定四）：与 §8.4.3 伪码「按组交织 + 循环后第二遍」的
-   op 发出次序不同，终态逐字相同、行写严格更少。证明**三条腿**逐字写在 `URLRuleKind.mergePass` 的文档
-   注释里，评审按那一段核对：(1) 锚点的**身份**不变（锚点 ≤ 胜者 < 每一条败者 ⇒ 锚点永不当败者，那一行
-   也必然活到写循环）、(2) 锚点子集的**基数**不变、(3) 终值支配。**第 (2) 条靠的是接缝不是论证**
-   （fix round 1 / 评审 F1）：伪码的 `writePointer` 在收敛**之前**求那个 `published.count > 1`，先收敛会把
-   「两条已发布成员 + 一条从未发布、本页也没落地的活行」这一组的子集从 2 掉到 1，那条从未发布的成员
-   就拿不到指针（而 `mergePartnerSyncId` 生命周期表的 RR10-8 那一行按「它被写过」立）。落法：
-   `mergePointerPass` 加第二个入参 `anchorRows`（带默认值 `nil` ⇒ 与 `liveRows` 同一份），**锚点子集建在
-   软删之前那一份活集上、写循环仍然只跑软删之后那一份**。探针 `testM2a_theAnchorCardinalityIsEvaluatedBeforeTheSoftDeletes`。
-3. **三个原语「找不到行」零写返回、DEBUG `assertionFailure`，不抛**（裁定五）：M2 的输入全部来自同一个事务里
-   刚读到的那份投影，结构上必然命中；抛会把整页落地回滚掉，同一页每轮重放每轮抛。
-4. **本页 `.transfer` 目标从 M2 第 2 步候选集里减掉**（裁定六 (1)，R-M3-4a-90）：`land` 闭包里
-   `input.atRestIdentities.subtracting(URLRuleKind.transferTargets(in: input.steps))`，传进 `mergePass(atRest:)`
-   的是减完的那一份。**`transferTargets(in:)` 今天结构性地交空集**——`.transfer` 相由 8b-3 加进 `StepKind`
-   （本任务不改那个枚举），函数体里那个穷举 `switch` 会在 8b-3 补 case 的那一刻编译不过，减法本身已经接上。
-5. **内容组戳改读「有效账户戳」**（裁定六 (2)，R-M3-4a-94）：唯一取值源是
-   `URLRuleKind.effectiveAccountStamps(landed:rebaselined:table:identities:)`；`mergePass` 的 `table:` 入参
-   **先被 R-M3-4a-90 删掉、又被 R-M3-4a-94 恢复**（未落地那一半只能从游标 `reconciled` 读），同批加
-   `landed:`。**`accountContentStamp(identity:table:)` 那个「只读基线」的旧口仍然不要**——它是这条裁定的反面。
-   `convergePass` 的签名与函数体一字不改，它只拿算好的 `[String: Date]`。
-6. **有效账户戳的第二层 `rebaselined` 与 `OwnedLandingInput.rebaselined` 这条新通道**（R-M3-4a-97）：
-   `plan.rebaselined` 要等 `land` 返回之后才写进游标，落地闭包读 `input.table` 就读到更旧的那一枚戳
-   （CASE M-33 变体 (d)）。引擎在 `land(...)` 调用点同批转 `output.plan.rebaselined`。
-7. **那张表按单元分两枚（`URLRuleEffectiveStamps`）并经 `URLRuleApplyBatch.accountStamps` 供给 8b-3 的
-   `.transfer`**（R-M3-4a-98）：`land` 闭包在拼批次**之前**算一次（`identities` = 本页活行 ∪ `landedIdentities`
-   ∪ `transferTargets`），整张交给批次的第四个 init 参数；尾钩那一侧的 `mergePass` 拿同样的三个入参再算一次
-   （纯函数、输入逐字相同 ⇒ 不可能分叉）。本任务只**供给**，消费者是 8b-3。
-8. **空批次也走完整引擎入口**（R-M3-4a-99）：`OwnedKindRegistration.landsEmptyBatch` 与
-   `applyOwnedKind` 那道空批次早退 guard 的第四个析取项由 **Task 6 已经产出**（`.urlRules` 取 `true`、
-   书签与 pin 显式 `false`），本任务只放宽另外两处：`LocalStore.applyURLRuleSyncBatchThrowing` 的
-   `guard !ops.isEmpty` 放成 `!ops.isEmpty || mergeTail != nil`，`landURLRules` 的
-   `guard !input.steps.isEmpty` **整条删掉**。
-9. **pre-pass 静止集只是上界，尾钩在事务里做第二次减法**（裁定六 (3)，R-M3-4a-100）：`mergePass` 在重读的
-   `rows` 之后、调 `convergePass` **之前**剔掉此刻 `pendingLocalEdit == true` / `deletedDate != nil` / 行已不在
-   的身份。**只减不加**——游标侧的七个合取项与第 10 项一律不重算。
-10. **指针锚点的「已发布」输入显式传入 `publishedIdentities`**（R-M3-4a-95）：`land` 闭包按
-    `Set(input.table.cursors.filter { $0.value.server != nil }.keys)` 算；函数内**不许**拿 `row.syncId != nil`
-    当「已发布」（M1 认领那一刻就有 `syncId` 了）。
-11. **§6.6 第 8 行落在 Task 6 的刷新钩子上，不碰 `SpaceManager.swift`**（裁定七）：钩子是
-    `landURLRules` 末尾那一句 `access.refreshRoutingTableAfterLanding()`（`PhiSyncEngine.swift`，**不在**
-    `PhiChromiumCoordinator.swift`）；改动是把它包进
-    `if !ops.isEmpty || out.mergeChangedRouting`。**指针写不进这个条件**（CASE M-7 钉住零刷新）。
+1. **Use concrete `[String: RuleSignature]` for pre-landing signatures.** `AnyHashable` would
+   require fallible runtime casts; a third associated type would make the non-generic plan and
+   all callers generic. Everything is one module, and the module already names pin-specific
+   `PinnedTabScope`. Bookmark/pin paths leave this map empty.
+2. **Run convergence before pointer updates.** This differs from the spec's interleaved order
+   but reaches the same state with fewer writes. The proof in `mergePass` has three parts:
+   anchor identity survives (anchor ≤ winner < every loser), anchor-subset cardinality is
+   preserved, and final values dominate earlier writes. The second part requires an explicit
+   input correction from review F1: compute anchors from pre-delete `anchorRows`, but write
+   pointers only to post-delete `liveRows`. Otherwise two published members could collapse to
+   one before an unpublished, unlanded third member receives its pointer, violating RR10-8.
+   `anchorRows` defaults to `liveRows`; M2a's anchor-cardinality test covers the difference.
+3. **Missing-row primitives return without writes and assert in DEBUG, rather than throwing.**
+   Inputs came from the same transaction's projection and must exist. Throwing would repeatedly
+   roll back the same page.
+4. **Subtract this page's transfer targets before M2 step 2** (R-90), in the landing closure.
+   At this task stage `transferTargets` necessarily returns empty because 8b-3 owns the new
+   step case. Its exhaustive switch will force that task to implement the case; the subtraction
+   is already connected.
+5. **Use effective account content stamps** (R-94), solely through
+   `effectiveAccountStamps(landed:rebaselined:table:identities:)`. R-90 removed the table argument,
+   but R-94 restores it for unlanded cursor baselines and adds landed values. Do not restore the
+   old baseline-only helper. `convergePass` still consumes its unchanged `[String: Date]` input.
+6. **Add the rebaselined input layer** (R-97). Cursor bookkeeping follows landing, so reading the
+   table alone misses this page's newer rebaseline (M-33(d)). Pass `output.plan.rebaselined` at
+   the engine's landing call.
+7. **Carry two per-unit stamps in `URLRuleEffectiveStamps` and batch `accountStamps`** (R-98).
+   Before batch assembly, compute them for live identities ∪ landed identities ∪ transfer targets.
+   The tail recomputes from identical pure inputs, so results agree. This task supplies the input;
+   8b-3 consumes it for transfer.
+8. **Permit empty batches end to end** (R-99). Task 6 already supplied the registration/engine
+   guard. Here allow store batches with a merge tail even without ops, and remove landing's
+   empty-step early return.
+9. **The pre-pass rest set is an upper bound** (R-100). In the transaction, before convergence,
+   subtract rows now pending local edit, soft-deleted, or absent. Never add identities or
+   recompute the cursor-side seven predicates and page-tombstone predicate.
+10. **Pass explicit `publishedIdentities`** (R-95), defined by cursor `server != nil`. A non-nil
+    row `syncId` alone does not prove publication because M1 assigns it during claim.
+11. **Implement §6.6 row 8 through the existing engine refresh hook.** Wrap it in
+    `!ops.isEmpty || out.mergeChangedRouting`; no manager/coordinator change. Pointer-only writes
+    do not refresh routing (M-7).
 
-### 本任务额外的偏离
+### Additional deviations
 
-12. **`RuleSignature: Comparable` 在 `URLRuleKind.swift` 里补了一个扩展**（不改 8b-1 的类型定义本身）：
-    两个 pass 都按 `groups.keys.sorted()` 遍历（`PinKind.swift:361` 的收敛先例），而字典 `keys` 的次序是
-    每进程随机的。比较键**注入**（先比 `pathPrefix` 有没有、再比值），两个不同的签名绝不比成相等。
-13. **三个原语的 body 多一个 `index: inout URLRuleTableIndex` 入参**（brief 的签名只写了 `in context:`）：
-    R-M3-4a-56 的寻址条款在一个写块里的落地形式就是那份含软删行的整表索引，而 `upsertURLRuleBody` /
-    `hardDeleteURLRuleBody` / `rekeyURLRuleBody` 三者已经是这个形状。body 是 **internal 不是 private**，
-    理由同 R-exec-2。
-14. **`URLRuleMergeTail` / `URLRuleBatchOutcome` 定义在 `PhiURLRuleLocalAccess.swift`**（brief 把它们画在
-    批次入口那一节）：`URLRuleApplyBatch` 要持 `mergeTail`、协议的 `apply(_:)` 要返回 `URLRuleBatchOutcome`，
-    放在同步层可以让 `LocalStorage` 不去定义同步层协议依赖的类型。
-15. **`apply(_:)` 与 `applyURLRuleSyncBatchThrowing(_:mergeTail:)` 都标 `@discardableResult`**：Task 8 与
-    Task 5 留下的那批「只看 `rows` / 库里的行变没变」的值级用例（`URLRuleKindTests` 2 处、
-    `LocalStoreURLRuleThrowingTests` 十余处）不必为了一个返回值逐行改。引擎那一侧**永远**读它。
-16. **尾钩的装配点是一个非隔离的自由函数 `makeURLRuleMergeTail(...)`**：闭包在写队列上被调，在 `@MainActor`
-    的 `landURLRules` 里直接形成会被推断成 `@MainActor` 闭包、转成非隔离函数类型要丢掉全局 actor。
-    捕获的全是值类型，闭包体是 `URLRuleKind.mergePass` 这个纯函数。
-17. **`landedIdentities(in:)` 含 `.claim`**（brief 的注释只点名 `.create` / `.move` / `.update` 是排除项的
-    反面）：一条被认领的行这一页第一次拿到账户身份与账户级 rank，指针的锚点子集要认得它。排除项仍然只有
-    `.delete`（以及 8b-3 的 (β)）。有效账户戳的第一层读的是另一份字典 `landed`（`land` 闭包刚翻译出的
-    那批 op 的值），两者是两个概念。
-18. **不声明 `URLRuleSyncOp.transfer`**：brief 的 op 清单只有三条新 case，而 `.transfer` 的 `source:`
-    需要 8b-3 的 `RuleProjection` 类型。`URLRuleBatchOutcome.deferredTombstones` 与
-    `URLRuleApplyBatch.accountStamps` 两条给 8b-3 的通道已经**声明并原样回传 / 供给**。
-19. **改了一条既有断言**：`URLRuleKindTests.swift` 的回声轮用例把 `applyCalls(access)` 从 1 改成 2 —— 回声轮
-    （`push` 先跑一次 pull）那一页零规则 step，而 R-M3-4a-56 要求空批次照样进事务跑 M2。同一处补了两条
-    探针（那一批零落地 op、刷新总数仍是 1）。书签与 pin 的用例一条没改。
-20. **CASE M2-d 的冲突支用 `.rekey` 撞车，不是「`.softDelete` 命中 `syncId` 不符的行」**：三个原语一律按
-    `syncId` 在 `URLRuleTableIndex.bySyncId` 上寻址，那条 `rowAlreadyMapped` 守卫在该寻址路径上**结构性
-    不可达**（留着是为了寻址方式一旦变化，静默覆盖仍然变成一次抛错）。钉的东西不变：一次抛错让**尾钩已经
-    写下的那几列**一起回滚。
-21. **CASE M-36 的「真实用户写」经 `FakeURLRuleAccess.applyEditorSave(...)`**：假件背后没有 `LocalStore`，
-    这个入口是 `applyURLRuleEditsBody` 第 4 / 9 步的假件等价物（内容组逐成员比 ⇒ 写 + 置位 + 戳；三个都相同
-    ⇒ 零写零置位），用例仍然不许直接戳 `rows`。旋钮 `beforeLandingTransaction` 只在假件上。
-22. **CASE M-6 缩到「同一对账户身份、两台的每设备量完全相反 ⇒ 同一个幸存者」**：brief 的逐轮脚本
-    （两台并发新建、轮 1/2/3/4 的 `collapsed` 与 tombstone 计数）要一台真的共享服务端状态的双引擎 fixture，
-    而它同时依赖 8b-3 的让位半边；本任务写的是**承重的那一条**——胜者选择不依赖任何每设备量
-    （本机 `id` / `createdDate` / `sortOrder` / 插入次序），两台软删的身份逐字相同。
-23. **CASE M-16b / M-17 (i) / M-25 (e) 的 8b-3 半边不写**（brief 已经点名它们不属于本任务）：M-17 只断 M2
-    那一半，M-16b 整条依赖 (ii) 让位支，留给 8b-3。
+12. **Add `RuleSignature: Comparable` in an extension.** Sorted group keys avoid randomized
+    dictionary traversal, following pin convergence. Compare path presence and value distinctly
+    so different signatures never compare equal.
+13. **Primitive bodies also take `inout URLRuleTableIndex`.** This implements inclusive addressing
+    in one write block and matches existing upsert/delete/re-key bodies. They are internal,
+    not private, for the same R-exec-2 reason.
+14. **Define merge-tail and batch-outcome types in the sync access file.** Registration/batch
+    protocol APIs depend on them, so storage should not own their definitions.
+15. **Mark access/store batch results discardable.** Existing row-value tests need not change
+    merely to consume a return value. The engine always consumes it.
+16. **Assemble the hook in nonisolated `makeURLRuleMergeTail`.** Creating it inside main-actor
+    landing would infer incompatible actor isolation. Captures are values and evaluation is pure.
+17. **Landed identities include `.claim`.** Claimed rows receive account identity/rank this page
+    and must qualify as pointer anchors. Exclusions remain delete and later 8b-3(β). This set
+    differs from the landed-value map that supplies effective stamps.
+18. **Do not declare `.transfer` yet.** It needs 8b-3's `RuleProjection`. The deferred-tombstone
+    outcome and account-stamp batch inputs are already declared and passed through.
+19. **One echo-round assertion changes from one apply to two.** An empty rule page now enters
+    M2's transaction. Add assertions for zero landing ops and unchanged total refresh count 1.
+    Bookmark/pin tests are unchanged.
+20. **M2-d injects a re-key collision.** A wrong-identity soft-delete guard is structurally
+    unreachable when lookup itself uses `syncId`; keep the guard for future addressing changes.
+    The replacement still proves a throw rolls back columns already written by the tail hook.
+21. **M-36 performs user writes through fake `applyEditorSave`,** matching store steps 4/9:
+    compare content members, then write/flag/stamp only on actual change. Tests may not mutate
+    rows directly. `beforeLandingTransaction` is fake-only.
+22. **M-6 tests device-independent winner selection directly.** The brief's multi-round shared-server
+    script also needs 8b-3 yielding. Here invert local ids, creation times, ordering, and insertion
+    order across two devices and verify the same account identity survives.
+23. **Defer the explicitly out-of-scope 8b-3 portions** of M-16b, M-17(i), and M-25(e).
+    M-17 covers M2 only; M-16b requires yielding entirely.
 
-### Fix round 1（评审 `task-8b-2-review.md` 的 F1 / F3 / F2；F4 ~ F7 由控制者 park）
+### Fix round 1 — review F1 / F3 / F2; controller parked F4–F7
 
-25. **F1（Important）**：`mergePointerPass` 的锚点子集与写循环分域 —— 见上面重写过的第 2 条。
-    `mergePass` 传 `anchorRows: live`（软删之前）、`liveRows: liveAfter`（软删之后）；两处文档与本条 ledger
-    同批把「终态逐字相同」那句证明补成三条腿。新增一条纯值探针。
-26. **F3（Minor）**：`effectiveAccountStamps` 的**第一层**按同一条「毫秒 0 = 缺席」口径压零。
-    `URLRuleLandingValues` 的两枚戳是非可选 `Date`，而 R-M3-4a-12 的无基线分支给目标戳与 rank 戳写的正是
-    0 ⇒ 不压就会给 8b-3 的 `.transfer` 递一枚 `Date(1970)` 这种「看起来很旧但很真」的目标戳。缺的那一枚
-    **按单元**落到第二 / 三层（一条本页 `.create` 的身份根本没有游标，补不到就仍然缺席）。
-27. **F2（Minor）**：`OwnedLandingOutcome.collapsed` / `.mergeChangedRouting` 挪到 `createdRows` /
-    `createdPins` **之后**，`createdRows` 那段被劫走的文档注释归位。
+25. **F1, Important:** separate pre-delete anchor rows from post-delete write rows, as item 2 now
+    describes. Update both comments and the three-part proof; add a pure-value probe.
+26. **F3, Minor:** normalize millisecond-zero stamps to absence in effective-stamp layer 1 too.
+    No-baseline target/rank stamps are zero (R-12), so a real `Date(1970)` must not reach transfer.
+    Fall back independently per unit to layers 2/3; a new identity without a cursor remains absent.
+27. **F2, Minor:** move `collapsed` / `mergeChangedRouting` after `createdRows` / `createdPins`,
+    restoring the documentation that had attached to the wrong member.
 
-### Fix round 2（re-review 在 fix round 1 上判出的新 Important）
+### Fix round 2 — new Important finding on re-review
 
-28. **锚点子集的「软删之前」那一份定义域只给第一遍用**：fix round 1 让**两遍**都从软删之前那一份活集
-    求锚点子集，而 leg (1) 的「锚点 ≤ 胜者 < 每一条败者」**只在分组键与 `convergePass` 的键相同时成立**
-    —— 也就是第一遍的「此刻的签名」。第二遍的键是 `preLandingSignatures[id] ?? 此刻的签名`：一条本页按
-    K1 被软删掉的败者会以它的**落地前**键 K2 重新进组，并且完全可能是 K2 里 `syncId` 最小的那一条 ⇒
-    它当上 K2 的锚点，而它是一条**同一个事务里刚被软删的死行**（K2 的子集还常常正是靠它才够到 2），
-    K2 那条活成员的 `mergePartnerSyncId` 会当场指向它。可达性：一条本页落地了入站 `.move` / `.update`
-    的行照样保留 pre-pass 那一刻的静止判定，收敛因此完全可能选中它当败者。
-    **落法**：`mergePointerPass` 里那个 `pass(_:)` 加一个 `anchorsFrom:` 入参 —— 第一遍传 `anchorRows`
-    （软删之前），第二遍传 `liveRows`（软删之后）。这不违反伪码：伪码的第二遍本来就跑在 `liveAfter` 上。
-    `mergePass` 与 `mergePointerPass` 两处的证明同批重写，明说哪一遍用哪一份、为什么。
-    探针 `testM2a_theSecondPassNeverAnchorsOnARowCollapsedThisPage`（含「`p` 还活着时那条写是对的」的对照）。
+28. **Only the first pointer pass uses pre-delete anchors.** The first fix applied that domain
+    to both passes, but the surviving-anchor proof holds only for convergence's current-signature
+    grouping. Pass 2 groups by pre-landing signature when available: a loser deleted under K1
+    could become K2's smallest identity and anchor a live row to a row just deleted in the same
+    transaction. This is reachable because landed move/update rows retain their pre-pass rest state.
+    Add `anchorsFrom` to the nested pass: first pass gets pre-delete `anchorRows`, second gets
+    post-delete `liveRows`, matching the spec's `liveAfter`. Update both proofs. Add
+    `testM2a_theSecondPassNeverAnchorsOnARowCollapsedThisPage`, with a control where `p` is still live.
 
-### 验证口径
+### Validation scope
 
-24. **无构建**（2026-09-18 amendment：不跑任何 `xcodebuild`）。本任务新增的 33 条用例与全部实现改动只经
-    逐行核对：每个引用到的符号都先 grep 过签名，每个 `switch URLRuleSyncOp` 都是穷举的，
-    `URLRuleKind` 的四个新纯函数没有任何 actor 隔离状态。一次统一的编译检查在全部任务做完之后跑。
+24. **No build**, under the 2026-09-18 amendment forbidding `xcodebuild`. The 33 new cases and
+    implementation were reviewed line by line: referenced signatures checked, operation switches
+    exhaustive, and four new pure helpers free of actor-isolated state. A branch-wide compilation
+    check follows completion of all tasks.
 
 ## Task 8b-3
 
-M3 让位：(α) / (β) 两落点 + `.transfer` + `RuleProjection` + `parkedTombstones` /
-`yieldedTombstones` + (ii) 记账 + 轮末 3b 复查 + `deferredDeletions`（spec §8.4.4 / §8.4.6）。
+Implement M3 yielding at (α)/(β), transfer and `RuleProjection`, parked/yielded tombstones,
+branch-(ii) bookkeeping, round-end 3b admission recheck, and deferred deletions (§8.4.4 / §8.4.6).
 
-### 偏离与实现裁定（逐条写明理由）
+### Deviations and implementation decisions
 
-1. **事务内「来源行未变」复查的判据不是六格原样相等**（R-M3-4a-102 / 裁定 11 的实现裁定）。
-   `source` 的两枚戳来自 `context.localProjections` 那份**带基线**的投影：一个单元的取值与基线相同时，
-   `stamp(_:baseline:…)` 沿用的是**基线**那一枚戳，而不是行上那一列（行上那一列完全可能是 `nil`）。
-   拿行上的列去和它原样比，M-12 的 (i) 支（只改了目标、内容组没动 ⇒ 投影的内容组戳 = 基线戳、行上
-   `contentUpdatedDate` 是 nil）每一轮都会被判成「变了」⇒ **永久停放**，而那正是这条复查不该挡的形状。
-   落成两个合取项：① `host` / `pathPrefix` / `askBeforeRouting` / `spaceId` 四个**取值**逐格相等
-   （编辑器那条写路径只在某个单元真的变了时才落写，所以任何一次有效的 Save 必然改掉其中一格）；
-   ② 行上那两枚编辑戳**都不新于** `source` 手上那两枚（毫秒粒度，兜住 A→B→A 那种净值不变的两次 Save）。
-   行已不在 / `deletedDate != nil` 一律算「变了」。实现是纯函数
-   `URLRuleKind.transferSourceUnchanged(row:source:)`，生产落地与假件共用。
-2. **`transferred` 与转移那一格 `superseded_by_delete` 在落地事务里求值，不在 plan 闭包里**
-   （偏离计划裁定六末段的字面写法）。裁定六写的是「`source.contentUpdatedDate <= W 那一行的
-   contentUpdatedDate` ⇒ +1」，而 CASE M-34 的变体 (b) 与 (c) 都期望 `superseded_by_delete == 1`：
-   (b) 里 W 的行戳要等本页那条 `.update(W)` 落下去才是真的，(c) 里判据本来就是
-   `max(行戳, 有效账户戳)`（R-M3-4a-98）——两样东西 plan 闭包手上都没有。按行戳的字面实现在两个变体上
-   都算成 0。落法：`URLRuleBatchOutcome` 加 `transferred` / `transferSupersededByDelete` 两个计数，
-   `OwnedLandingOutcome` 加 `transferred` / `supersededByDelete`，引擎并进既有的两个计数器。
-   `yield_no_partner` 仍按裁定六留在 plan 闭包（它的两个判据都在 pre-pass 手上）。
-3. **`transferURLRuleEditBody` 的签名带 `index: inout URLRuleTableIndex`、返回
-   `URLRuleTransferResult`**（Produces 写的是 `in context:` + `-> Int`）。前者与 M2 那三个 body 同形，
-   是「一个写块只建一次索引」（R-M3-4a-80 / 56）的硬要求；后者让批次执行器拿得到「内容组输没输」与
-   「W 换没换桶」两件事，而公开的 `transferURLRuleEditThrowing(toSyncId:source:targetEffectiveStamps:)`
-   仍按 Produces 返回 `Int`（写下去的单元数）。判定本身在纯函数
-   `URLRuleKind.transferDecision(target:source:targetEffectiveStamps:)` 里，生产与假件共用。
-4. **`partnerNotAtRest` 既是协议要求、也只有协议扩展里那一份实现**（控制者裁定的形状）。①② 两步直接调
-   `URLRuleSignatureQueries.mergePartners`，所以「谁算 W」两处不可能分叉；本函数只补第 ③ 步那一次分流
-   （「这一组有没有**活的**伙伴行」——软删的伙伴按静止第 7 项永远静止不了，算成「有伙伴」就是无界停放）。
-   它对一条**本身静止**、而同组另有一条不静止活行的身份**也会返回真**：那是正确的（若它随后带着一次
-   未发布编辑撞上 tombstone，确实该停放），发布段那一侧由第二个合取项 `pendingApply != nil` 干净放行。
-5. **`URLRuleApplyBatch` 的 `.transfer` 不进槽**：它写的是**另一条**身份（`toSyncId`）的行，与同
-   `syncId` 的落地写没有可合并的关系。于是 Task 8 那条「同一身份不会既有升级写又有 `.delete`」的断言
-   对 8b-3 逐字有效，不需要放宽。相序落成 `upgrades + transfers + passthrough + deletes`。
-6. **`landBookmarks` 的 `switch step.kind` 加了一条 `.transfer: continue`**（结构性不可达：
-   `tombstoneYieldsToLocalEdits` 在书签上恒假）。pin 那一侧不是 `switch`，不用改。
-7. **`FakeURLRuleAccess` 加了两个「真实用户写」入口**：`applyEditorRetarget(syncId:toSpaceId:at:)`
-   与 `applyEditorDelete(syncId:at:)`，形状照 `LocalStore.applyURLRuleEditsBody` 的第 5 / 7 / 9 步
-   （用例不许直接戳 `rows`）。`apply(_:)` 的 `land` 多收 `outcome:` / `alphaSources:` 两个入参，
-   M-37 的注入点复用 8b-2 已经加好的 `beforeLandingTransaction`，**没有新加旋钮**。
+1. **Source-row recheck is not literal equality of six fields** (R-102 / ruling 11). The source
+   comes from a baseline-stamped projection: unchanged units retain baseline stamps even when
+   their row stamp is nil. Literal stamp equality would permanently park M-12(i)'s target-only
+   edit. Instead require equality of host/path/ask/local target, plus both row edit stamps no
+   newer than the projected stamps at millisecond precision. Actual Save changes a value;
+   stamp comparison also catches A→B→A saves. Missing or soft-deleted rows fail. Production/fake
+   share pure `transferSourceUnchanged(row:source:)`.
+2. **Count transfer and transfer supersession in the landing transaction.** Ruling 6's literal
+   row-stamp comparison misses M-34(b)'s same-page update and (c)'s effective account stamp.
+   Both require `max(row stamp, effective account stamp)`, unavailable to the plan. Add batch
+   `transferred` / `transferSupersededByDelete` and landing `transferred` / `supersededByDelete`,
+   then merge into existing counters. `yield_no_partner` stays in the plan because the pre-pass
+   has both of its inputs.
+3. **The transfer body takes the shared table index and returns `URLRuleTransferResult`.** The
+   index enforces one construction per write block (R-80 / 56); the result exposes content loss
+   and target-bucket change. The public throwing helper still returns the number of written units.
+   Production/fake share pure `transferDecision`.
+4. **`partnerNotAtRest` is a protocol requirement with one extension implementation.** Reuse
+   `mergePartners` for partner selection, then distinguish whether the group has a live partner.
+   A soft-deleted partner cannot be at rest and must not cause unbounded parking. An at-rest
+   identity can itself return true when another live member is not at rest; this is correct for
+   a later unpublished edit. Publish-side `pendingApply != nil` restricts the actual guard.
+5. **Transfers bypass per-identity coalescing slots.** They write another identity's row, so they
+   cannot merge with X's landing write. Keep the upgrade/delete exclusivity assertion.
+   Phase order is `upgrades + transfers + passthrough + deletes`.
+6. **Add unreachable `.transfer: continue` to bookmark landing's exhaustive switch.** Bookmarks
+   never yield tombstones to edits. Pin landing has no corresponding switch.
+7. **Add fake editor retarget/delete entry points,** matching store steps 5/7/9 rather than direct
+   row mutation. Fake landing receives outcome and α-source inputs. M-37 reuses the existing
+   `beforeLandingTransaction` hook; no new injection knob.
 
-### 验证口径
+### Validation scope
 
-8. **无构建**（2026-09-18 amendment）：只经逐行核对。每个引用到的符号都先 grep 过签名；
-   `StepKind` / `URLRuleSyncOp` / `OwnedItemTombstoneResult` 上的每一个 `switch` 都重新核过穷举性
-   （`SyncableOwnedItems.phase`、`URLRuleKind.landedIdentities` / `.transferTargets`、
-   `landBookmarks`、`landURLRules`、`URLRuleApplyBatch.init`、`applyURLRuleSyncBatchBody`、
-   `FakeURLRuleAccess.land`、`URLRuleMergeTests.opSummary` / `.stepSummary`）；
-   `URLRuleKind` 的三个新纯函数没有任何 actor 隔离状态。
+8. **No build**, under the 2026-09-18 amendment. Review signatures and all affected switches
+   over step kinds, operations, and tombstone results, including production/fake landing and
+   test summaries. The three new pure helpers access no actor-isolated state.
 
-### Fix round 1（review 判出的两条 Important，**只补测试**）
+### Fix round 1 — two Important findings, tests only
 
-9. **F1 —— R-M3-4a-84 守卫的引擎接线零覆盖**：原来的 `test8b33_…` 是模块级的（把
-   `deferredDeletions: ["b"]` 手喂进 `SyncableOwnedItems.tombstones`），绕过了「谁来算这个集合」
-   与「引擎读不读 `diff.deferred`」两件真正会写歪的事。补三条**引擎级**用例，全部经
-   `pullOnce()` / `handleLocalOwnedChange(label:)` 真实走完发布段：
-   `testM22_theEngineComputedGuardSuppressesTheTombstoneThroughAFullRound`（CASE M-22 的「W 不
-   静止 ⇒ 停放」那一支 + CASE 8b-3.3 的整轮版：`pendingApply` 仍在、四个游标字段与轮首逐字
-   相同、`client.commit` 里没有 X 的 tombstone、行一个字节没动）、
-   `testM22_anOwnerShapedParkIsNotCoveredByTheGuard`（对照二：owner 形状停放**不**进守卫 ⇒
-   那一轮照常发 tombstone，`pendingApply == nil` 一条的实现在这里红）、
-   `testM22_theGuardAlsoHoldsOnAPushOnlyRound`（对照三：只跑 `.localOwnedChange` 那一趟，
-   外加「`rows` 换成 `allURLRules()` ⇒ 守卫恒空」的同趟断言）。
-10. **F2 —— 轮末 3b 复查的两条「不过」支零覆盖**：补
-   `test8b34_aYieldWithNoUsableServerTripleWritesNothing`（CASE 8b-3.4 两个变体：`entityId` 为空
-   / `version == 0`，**同时**目标 Space 已 purge ⇒ 成因一必须先判 ⇒ 一个字节都不写、撤销支没
-   跑）、`testM12_variant2_theRecheckRevokesTheYieldOnALaterRound`（变体 (2)：第一轮准入通过、
-   3b 与限定重发都拿 `.conflict`，**下一轮**才 hidden ⇒ 仍然复查并撤销、行被硬删；行上
-   `pendingLocalEdit == false` 同时覆盖变体 (4)——第三个合取项写成「`pendingLocalEdit` ∨
-   `unpublished`」的实现在这里恒假 ⇒ 行留着 ⇒ 断言红）、
-   `testM12_variant3_anUnresolvableOwnerWritesNothingAndRepublishesLater`（变体 (3)：Space 只是
-   不在 `currentSpaces()` 里、Space 游标根本不存在 ⇒ 零写；映射建立之后正常发 3b、
-   `resurrected == 1`）。M-12 (ii) 那条原有用例补上 `.applied` 之后的三条断言
-   （`resurrected == 1`、`deletedAtMs` 被清、两份基线都写回）——服务端那一行用
-   `FakePhiSyncClient.seed(tagHash:…)` 铺好，否则 update 支在寻址上直接抛。
-11. **本轮没有改动任何生产代码**：三条引擎级新用例把守卫与复查两段真的跑了一遍，没有暴露出
-    实现缺陷。F3 / F4 / F5 / F6 / F7 / F8 六条 Minor 按控制者指示**不动**。
-12. 一处口径澄清（写进用例注释，不改代码）：`.localOwnedChange` 那一趟走的是
-    `push(retryOnConflict:)`，而它自己**先做一次 preflight pull**，所以 `plan` 照样会跑——
-    对照三因此是「守卫对每一种走到发布段的轮次都成立」这条行为断言，判别「守卫读的是不是
-    `plan` 的产物」靠的是 `OwnedPlanOutput` 上根本没有那个成员（结构性不可写）。
+9. **F1: add engine coverage for the R-84 guard.** The old module probe supplied
+   `deferredDeletions` directly and bypassed both set construction and `diff.deferred` consumption.
+   Add full-round suppression, an owner-shaped parking negative control, and local-change-round
+   coverage through real engine entry points. Verify pending payload and four cursor fields
+   survive unchanged, no X tombstone is committed, and rows remain unchanged. The owner-shaped
+   control must publish its tombstone. The local-change case also detects substituting live-only
+   reads for inclusive rows.
+10. **F2: cover both rejected 3b rechecks.** Add missing server-id / zero-version variants with a
+    purged owner, proving the earlier cause performs zero writes without revocation. Add a later-round
+    hidden-owner case after conflicts, proving recheck still revokes and hard-deletes even with
+    `pendingLocalEdit == false`. Add unresolved-owner zero-write coverage followed by mapping
+    recovery and one resurrection. Extend existing M-12(ii) with applied-result checks: one
+    resurrection, cleared deletion time, and both baselines restored; seed its server row for update.
+11. **No production change.** The new probes exercise the existing guard/recheck paths without
+    identifying an implementation defect. Leave F3–F8 Minor findings unchanged as directed.
+12. **Clarification:** `.localOwnedChange` calls `push`, which first performs preflight pull, so
+    planning still runs. Its behavioral assertion covers every round reaching publication;
+    structural absence of a corresponding `OwnedPlanOutput` member proves the guard cannot
+    accidentally read that set from the plan.
 
 ## Task 8b-4
 
-M4 `pendingLocalEdit` 生命周期的两处清位（R-M3-4a-79 / R-M3-4a-91 / R-M3-4a-96）+ M5 编辑器
-按行按字段记脏（R-M3-4a-72）。
+Implement M4's two pending-edit clearing paths (R-79 / 91 / 96) and M5's per-row/per-field
+editor dirty tracking (R-72).
 
-### brief 的「计划裁定」要求记档的
+### Decisions the brief requires documenting
 
-1. **裁定 1（`URLRuleDraft` 的三个可选合并单元）本步是零改动。** Task 5 已经按本形状落地：
-   `content: ContentUnit?` / `spaceId: String?` / `sortOrder: Int?`、`applyURLRuleEditsBody`
-   的单元判据就是「非 nil 即在场」、插入支的前置要求 `content != nil ∧ spaceId != nil` 不成立
-   时抛 `LocalStoreWriteError.noCandidateSurvived` 并整批回滚。扁平便利 init 与四处既有构造点
-   一行都没碰。
-2. **裁定 2（比较值是行侧投影、毫秒粒度）落在两个新纯函数上**：
-   `URLRuleKind.clearingProjection(of:)`（行 -> `RuleProjection`）与
-   `URLRuleKind.clearingProjectionMatches(row:confirmed:)`（逐单元、`stampMilliseconds` 粒度）。
-   两处清位与 `.urlRules` 的 `snapshot` 闭包调的是**同一个**函数，所以「基线」与「此刻」在结构上
-   不可能用两套折算。投影**不截断**戳（截断会让两次投影自己也对不齐），毫秒换算只在比较那一步做。
-3. **裁定 3（`RuleProjection` 的第八个成员 `sortOrder: Int?`）带默认值 `nil`**，所以
-   `URLRuleKind.transferSource(of:resolve:)` 与既有测试的每一处构造点一个字不改，而
-   `transferURLRuleEditBody` / `transferDecision` 一个字节都不读它（rank 不转移）。
-   **`nil` 在清位那一侧恒不等**（fail-closed）：从实体折出来的投影永远当不成清位基线。
-4. **裁定 4（目标单元的换算通路）走「kind 侧换算完再交给原语」那一支。** 两处清位比较的两侧
-   **都是行侧投影**，所以比的是本机 `spaceId`（`RuleProjection.targetSpaceId`），
-   `targetOwnerUuid` 在行侧投影里恒空、**不参与比较**——与 `transferURLRuleEditBody` 只读
-   `source.targetSpaceId` 逐字同一条通路，`LocalStore` 因此仍然不认识任何账户映射。
-   `confirmed.targetSpaceId == nil` ⇒ 恒不等（换不出 ⇒ 不清）。
-5. **裁定 14 的两层分工**：**原语**收 `entries: [String: RuleProjection]`（R-M3-4a-91），
-   **注册项闭包** `clearPendingLocalEdits` 收 `Set<String>`（R-M3-4a-96），基线由 `.urlRules`
-   闭包从**捕获的** `state.publishBaseline` 查出来。spec §8.4.5 待同批修订；附录 C-28。
-6. **裁定 11 的恢复支**（远端删掉的脏行按「完整单元 + `syncId = nil`」重建，R-M3-4a-101）与
-   **软删那一格**（「`stored` 里找不到」有硬删与软删两种现实，编辑器**一行都不用分**，判定由
-   Task 5 的写事务第 2b 步收口，R-M3-4a-104；唯一的下游事实是 Save 之后那一行的 `storeId`
-   换成了新铸的 `id`）。附录 C-36 / C-39。
-7. **裁定 12 那张「脏位 -> 合并单元」映射表**由 Task 12 一次性写进 spec §15 实施勘误段。
+1. **No change to the three optional draft units.** Task 5 already treats non-nil as present;
+   insertion requires content and target or throws `noCandidateSurvived`, rolling back the batch.
+   Leave the flat initializer and existing construction sites unchanged.
+2. **Share row-side, millisecond-aware clearing projections.** Add `clearingProjection(of:)`
+   and `clearingProjectionMatches(row:confirmed:)`. Both clearing paths and snapshot use the
+   same projection. Do not truncate stored projection stamps; convert only during comparison.
+3. **Add optional `RuleProjection.sortOrder` defaulting to nil.** Existing transfer construction
+   stays valid, and transfer never reads rank. Clearing treats nil as unequal, so entity-derived
+   projections cannot masquerade as confirmation baselines.
+4. **Resolve targets in the kind before passing to storage.** Both clearing operands use local
+   `targetSpaceId`; account `targetOwnerUuid` is empty and excluded. Storage still knows no account
+   mappings. A nil confirmed target fails closed.
+5. **Ruling 14 separates two layers:** the primitive receives identity -> projection entries
+   (R-91); the registration closure receives an identity set (R-96) and resolves baselines from
+   captured `state.publishBaseline`. Update §8.4.5 / appendix C-28 accordingly.
+6. **Restore remotely deleted dirty rows with complete units and nil `syncId`** (R-101).
+   The editor need not distinguish hard from soft deletion: Task 5's transactional step 2b
+   decides (R-104). After Save, the row uses the newly minted store id. See C-36 / C-39.
+7. **Task 12 records the dirty-bit-to-unit mapping** in §15's implementation errata.
 
-### 与 brief 不同的地方
+### Departures from the brief
 
-8. **`URLRuleSyncRoundState` 多了一个 `publishResolver`（brief 没写）。** 注册项闭包的类型被
-   R-M3-4a-96 写死成 `(Set<String>) async -> Void`，拿不到 `maps`，而第二层的第 ② 步要调
-   `pendingLocalEditIdentities(resolve:)`。于是与 `publishBaseline` **同一趟**（`snapshot` 闭包里）
-   记下本轮的 resolver；`nil` ⇒ 这一轮整条不清位（fail-closed）。不新开通道、不改闭包类型。
-9. **两个闭包对 `access` 是强捕获，不是 brief 示例代码里的 `[weak access]`。** 同一个工厂产出的
-   其余每一个闭包（`beginRound` / `localIdentities` / `plan` / `land` / `liveOwners` /
-   `hardDeleteAfterTombstone` / `purgeSoftDeletedRows`）都强捕获同一个 `access`，弱捕获这两个
-   挡不住任何环，只会让两处清位在生命周期上与别处不一致。
-10. **`computeEditSet` 的第三遍「整桶重排」整条删掉。** 裁定 12 写死「`acceptDrop` **只给被拖动
-    那一行**记 `.order`」，而 U-21 要求 `upserts` **恰好 1 条**；第三遍按定义给同桶其余既有行也
-    发 `sortOrder` draft ⇒ 整桶进 `upserts` ⇒ 整桶被 `applyURLRuleEditsBody` 第 9 步置位 ⇒ 那一轮
-    整桶不静止、整桶对远端删除让位。其余兄弟行的稠密重编号由第 8 步的重排定义域完成，**不置位**
-    （`upsertedIds` 不含它们）。Task 11 的两条相关用例随之改判（`testReorderingABucket…` 更名为
-    `…SendsASortOrderOnlyDraftForTheDraggedRowOnly`、`testAReorderStillCommits…` 的期待从
-    `[I2, I0]` 收成 `[I2]`），**它们钉的行为没有被削弱，只是换成了 M5 的判据**。
-11. **`loaded` 这个入参保留在 `computeEditSet` 的签名里但已经没有读者。** brief 把签名写死成
-    `computeEditSet(rows:loaded:removed:stored:dirty:)`；M5 之后「用户碰过没有」由 `dirty` 回答、
-    「与库里还差不差」由 `stored` 回答，`loaded` 两头都不沾。保留是为了 §5.8 的调用形状与
-    `loadedRows` 这个 `@State` 的既有含义，删它属于另一次改动。
-12. **裁定 10（sheet 期间按字段刷新的收紧）在本仓库是空操作。** Task 11 **没有**实现 §5.8 第 3 条
-    的「sheet 打开期间按字段刷新」——`load()` 只在 `.onAppear` 跑一次，编辑器此后不再从 store
-    刷新任何字段。所以「脏字段一律不刷新」这条收紧没有落点可改；本任务不新造一条刷新通路
-    （那是 §5.8 第 3 条自己的任务）。U-15d 的 ③ / ④ / ⑤ 在「没有刷新」这一现实下**照样成立**，
-    而且成立的理由与裁定 10 同源：③ 的目标单元根本不在场、④ 零脏位、⑤ 脏字段不会被覆盖。
-    **spec §5.8 第 3 条在实现上仍然缺席，这一条记进勘误**。
-13. **U-15f / U-15g 里「sheet 打开期间那次删除」用生产的落地批次入口驱动，不是 `pullOnce()`。**
-    brief 要求「用既有 `pullOnce()` 驱动、不要手写硬删 / `deletedDate`」；后半条严格遵守——
-    硬删走 `.delete(syncId:)` op、软删走 `.softDelete(syncId:mergePartnerSyncId:)` op，两者都经
-    `LocalStore.applyURLRuleSyncBatchThrowing`，与引擎落地段调的是**同一份 body**。前半条做不到
-    的原因是结构性的：这两条用例跑在真 `LocalStore` 上（U-15g 的断言依赖 Task 5 写事务里的
-    第 2b 步），而 `URLRuleKindTests` 的真库段没有引擎脚手架（引擎段用的是 `FakeURLRuleAccess`），
-    把 `AccountPhiURLRuleAccess` + 引擎 + 假 client 接起来属于新造脚手架、且**不经构建无法验证**。
-14. **U-15d 与 U-21 的「下一轮 `pushed == 1` / 恰好一条 commit」两条引擎侧断言没有写。** 同第 13
-    条的理由（编辑器用例跑在真库上、那一层没有引擎）。清位两侧的发布行为由
-    `URLRuleMergeTests` 的 M-7 / M-7b / M-7c / M-7d / M-7e / M-19 / M-19x 覆盖。
-15. **M-19 的七个输入按「可观测终态」归并**：(a) 归一化不动点折回、(b) `ask` 改了又改回来、
-    (c) 零单元转移三者在行与游标上是**同一个状态**（标志置位 ∧ 快照字节 == `reconciled`），
-    合成一条用例三行断言；(d) 用 `FakeURLRuleAccess.failNextClearPendingLocalEdit` 造「(a) 那次
-    行写失败」并断言下一轮由 (b) 自愈；(e) / (f) 各一条；(g) 并进 M-19x (x1) 的四条边界。
-16. **M-20 改在真 `LocalStore` 上跑**（复用 8b-2 的 `makeMergeStore` / `mergeRows` 脚手架）：
-    落地的每一种写（`.create` / `.update` / `.move` / `.reorder` / `.rekey` / M2 的三条 / 入站
-    tombstone 的硬删）各一次 + 编辑器删除集那一条软删，逐条断言 `pendingLocalEdit == false`。
-    `deleteSpaceCascade` 的两个级联入口（`.userIntent` / `.retentionPurge`）由 Task 9 的用例覆盖，
-    本任务不重复。
-17. **M-7b / M-7d 的「提交在途」注入点是 `FakePhiSyncClient` 既有的 `gatedCommitTagHash` +
-    `arrivedInCommit` / `commitGate`**（形状照 `PhiSyncEngineOwnedItemsTests` 的加密失败用例），
-    没有往假 client 上加任何新开关；M-7e 的注入点按 brief 落在 `FakeURLRuleAccess` 上
-    （`beforeClearPendingLocalEditIfUnchanged`），那是唯一够得到 `entries` 的一层。
-18. **多改了一个 brief 没列的生产文件：`Sources/Sync/Phi/URLRuleKind.swift`。** 裁定 2 要求
-    「两处清位与 `snapshot` 闭包用**同一个**折算函数」，而那三个调用点分别在 `LocalStorage`、
-    `Sync/Phi` 的引擎与工厂里；`URLRuleKind` 是它们共同的、既有的判据之家
-    （`transferSourceUnchanged` / `transferDecision` 就住在那里，理由逐字相同：两处各写一份
-    的实现迟早分叉）。新增的只有 `clearingProjection(of:)` 与
-    `clearingProjectionMatches(row:confirmed:)` 两个纯函数，没有碰任何既有成员。
-19. **`FakeURLRuleAccess` 的两个新实现与生产 body 逐字同形**（同一条判据函数
-    `URLRuleKind.clearingProjectionMatches`），并新增两个 `Call` case
-    （`.clearPendingLocalEdit(syncId:)` / `.clearPendingLocalEditIfUnchanged(count:)`）让
-    「一次行写」「空集零事务」这两条在假件上可断言。
+8. **Capture `publishResolver` alongside the snapshot baseline.** R-96 fixes the closure type
+   to an identity set with no maps, but clearing needs `pendingLocalEditIdentities(resolve:)`.
+   A missing captured resolver suppresses clearing for that round. Add no protocol channel.
+9. **Capture access strongly in both closures,** matching every other registration closure.
+   Weak captures would not eliminate a cycle and would create inconsistent lifetime behavior.
+10. **Remove whole-bucket reorder pass 3.** Only the dragged row gets `.order`, and U-21 requires
+    exactly one upsert. Sending every sibling would flag the entire bucket as edited and make
+    all rows yield to remote deletion. Store densification already reindexes siblings without
+    flagging them. Update Task 11's two reorder expectations to M5's single-dragged-row contract.
+11. **Keep the now-unused `loaded` argument** in the specified signature. `dirty` answers whether
+    the user touched a unit, and `stored` whether values differ. Removing the argument/state
+    belongs to another change.
+12. **Initially, dirty-field refresh tightening had no implementation to modify.** Task 11 only
+    loaded on appearance; the sheet never refreshed afterward. Do not invent a new refresh path
+    in this initial implementation. U-15d(3–5) still hold under no refresh, but §5.8 rule 3 is
+    missing and must be recorded. Review fix F1 below completes it.
+13. **U-15f/g drive remote deletion through the production landing batch, not `pullOnce()`.**
+    Use delete/soft-delete operations through the same store body the engine uses, never direct
+    field edits. These real-store cases need step 2b, but their suite has no real-store engine
+    fixture; adding access + engine + fake client would require new unbuilt infrastructure.
+14. **Do not add the editor cases' next-round commit-count assertions** for the same fixture
+    reason. Merge tests M-7 / b / c / d / e and M-19 / x cover publication around both clearing paths.
+15. **Group M-19 inputs by observable state.** Normalization fixed point, ask changed back, and
+    zero-unit transfer all produce flagged rows with snapshot bytes equal to the baseline; cover
+    them with one case and three rows. Inject failed clear for (d), separate (e)/(f), and include
+    (g) in M-19x's four boundaries.
+16. **Run M-20 against real storage.** Reuse merge-store fixtures to exercise each landing op,
+    all three M2 writes, inbound hard delete, and editor soft delete, checking a false edit flag.
+    Task 9 already covers both Space cascade origins.
+17. **Reuse the client's existing commit gate for M-7b/d.** M-7e injects at the access layer's
+    `beforeClearPendingLocalEditIfUnchanged`, the only layer that can inspect entries.
+18. **Also modify `URLRuleKind.swift`, omitted from the brief's production files.** The two
+    shared pure comparison helpers belong beside existing shared transfer predicates, avoiding
+    duplicate logic across storage, engine, and registration. Existing members are unchanged.
+19. **Fake clearing mirrors production through the same predicate.** Add call records for
+    per-row clearing and conditional batch clearing, allowing assertions for one row write and
+    no transaction on an empty set.
 
-### 验证口径
+### Validation scope
 
-20. **无构建**（2026-09-18 amendment）：逐行核对 + `swiftc -parse` 语法过一遍。每个新符号在使用
-    前都 grep 过签名（`RuleProjection` 成员表、`transferURLRuleEditThrowing` 的实参形状、
-    `URLRuleDraft` 成员表、`URLRuleSyncRoundState`、`computeEditSet` 现签名与 `stored` 实参类型
-    ——brief 点名的那五项全部核过）；`URLRuleSyncOp` 仍然 `Equatable`（新成员是 `Int?`）；
-    `OwnedKindRegistration` 的成员次序与三个工厂的实参次序逐条对齐；两处清位都跑在
-    `@MainActor` 的 access 上、原语在 `LocalStore` 的写队列上。本任务**没有新增任何 `switch`**。
+20. **No build**, under the amendment; line-by-line review plus `swiftc -parse`. Verify all
+    named symbols/argument order, optional-rank Equatable compatibility, registration member order,
+    and main-actor access versus storage write-queue execution. No new switch is introduced.
 
-### Fix round 1（review 判出的 1 条 Critical + 3 条 Important；五条 Minor 按控制者指示不动）
+### Fix round 1 — one Critical and three Important findings; five Minor findings left as directed
 
-21. **F-1 —— spec §5.8 第 3 条「sheet 打开期间的按字段刷新」本轮补齐**（计划缺口：Task 11 的
-    计划裁定 2 把第 3 / 4 条一起划给 8b-4，而 8b-4 的 brief 裁定 10 反过来假设 Task 11 已经做了）。
-    三处改动：
-    - `SpaceManager` 加 `@Published private(set) var urlRulesRevision: Int`，在**每一个**改
-      `cachedURLRules` 的地方自增（publisher 的 sink `handleURLRulesUpdate(_:)`、
-      `reloadURLRulesFromStore()`、`unbind()`）。**不把 `cachedURLRules` 本身变成 `@Published`**：
-      它装的是 SwiftData 的 `@Model` 实例，就地刷新之后元素身份逐个不变，任何按值比较的下游都会
-      判成「没变」（`reloadURLRulesFromStore` 的注释里那条 `removeDuplicates` 坑就是同一件事）。
-      `applyRuleEdits` 与 §6.6 那张表里的每一个写面都以 `reloadURLRulesFromStore()` 收尾，所以
-      「任何改了缓存的路径都发一次信号」在一行上成立。
-    - `URLRulesEditor` 加 `.onChange(of: manager.urlRulesRevision) { _, _ in refreshFromStore() }`。
-      **不用 `.onReceive(manager.$urlRulesRevision)`**：`@Published private(set)` 的投影值跟着
-      setter 收成 `private`，视图这一侧够不到；`onChange` 读的是包装值，而 `@ObservedObject` 的
-      `objectWillChange` 保证 body 会被重算。`onChange` 按定义不在首次出现时触发，正好——那一次
-      比 `.onAppear` 的 `load()` 还早，会把一张空 `rows` 与整库合并成「全是新行」。
-    - 判据整条做成**纯函数** `URLRulesEditor.refreshRows(rows:loaded:stored:dirty:) -> RefreshResult`
-      （与 `computeEditSet` 同一条纪律：视图外可测）；`refreshFromStore()` 只是它的 `@State`
-      写入半边。裁剪**按控件分组**（裁定 7）：`[.value, .matchType]` 任一在场 ⇒ 文本框与匹配类型
-      都不碰；`[.ask, .target]` 任一在场 ⇒ 整个目标选择器不碰。四条行级规则：新建行不碰、
-      消失且有脏位 ⇒ 留在 sheet（Save 走恢复支）、消失且零脏位 ⇒ 掉出（本机不复活它）、
-      库里新出现的行 ⇒ 追加且**不记脏位**。`loadedRows` **只对非脏单元**随库走（脏单元保留上一次
-      加载那份——把用户未提交的编辑写进基线会让它此后永远「与基线相同」）。**`dirty` 是只读
-      入参，`RefreshResult` 里根本没有脏位这一格**，所以「刷新永不清脏位」在类型上成立。
-    - `RuleTableView` 加 `let refreshToken: Int` + `Coordinator.refreshToken` +
-      `reconfigureMaterializedRows()`：`updateNSView` 在 id 序列不变时早退（内容编辑由 coordinator
-      就地施加），一次「只改了几行内容」的刷新原本在界面上看不见。**只有按字段刷新那一条路自增
-      token**——用「`rows` 的内容指纹」当判据会让每一次按键都重新 `configure` 一遍，扰动正在编辑的
-      field editor。定点 `configure` 已物化的行（`makeIfNecessary: false`），**绝不 `reloadData()`**。
-      `Row` 因此加了 `Equatable`（`changed` 的判据）。
-    - **已知残留**：一次让 id 序列变化的刷新（新增 / 掉出一行）仍走既有的 `reloadData()` 分支，
-      如果用户此刻正在某个字段里敲字，field editor 焦点会丢。那是 Task 11 时代就有的结构
-      （任何结构性变化都这样），不在本轮的修复面上。
-22. **F-2 —— U-15d ③ / ④ / ⑤ 改成「先驱动一次真的刷新，再断言」**，⑤ 从空断言变成实断言
-    （脏字段刷新前后都是 `"a.example"`，脏单元的**基线**同样没被刷新）；③ / ④ 各加一条**正面
-    对照**（非脏的目标选择器 / 非脏的文本框确实被刷新成落地值，而 ④ 那一行仍然不进 `upserts`、
-    不置位）。新加 ⑥：刷新的另外三条行级规则（新行追加、干净的消失行掉出、脏的消失行留下）。
-23. **F-3 —— 裁定 3 的探针补上**：`FakeURLRuleAccess.applyEditorReorder(syncId:toSortOrder:)`
-    （形状照 `applyEditorSave`：真的改 `sortOrder` + 整桶稠密回写 + **只给被拖动那一行**置位、
-    两枚戳一枚都不写）。三条新用例：
-    `testM7b_aPureReorderInFlightKeepsTheFlagBecauseRankIsAMergeUnit`（(a) 那一侧：E1 改 `ask`
-    在途 + E2 纯拖动 ⇒ 第三个合并单元不等 ⇒ 不清位，指针照清）、
-    `testM7e_aPureReorderBetweenTheDecisionAndTheWriteKeepsTheFlag`（(b) 那一侧：判定与写入之间
-    的纯拖动 ⇒ 不清位，指针不碰）、`testM7e_withoutTheReorderTheSelfHealStillClears`（对照，
-    证明红的原因只有 rank 这一个单元）。删掉 `RuleProjection.sortOrder` 或
-    `clearingProjectionMatches` 里那条 `guard let sortOrder` ⇒ 前两条必红。
-24. **F-4 —— 三条 `"*.<host>"` 遗留断言改成裸 host**（`URLRuleKindTests.swift` 的
-    `testEveryDraftConstructionSiteCarriesTheRowIdentity` (1) / `testALegacyIdRowIsRecast…` /
-    `testADirtyRowDeletedRemotelyComesBackWithoutItsOldSyncId`）。**外加同一根因的另外两条**
-    （`testTheEditorNeitherRewritesNorDropsRulesWithUnresolvableTargets` 的 `c-changed.example`、
-    `testTheEditorLeavesRowsItNeverSawAlone` 的 `zero-changed.example`）：seed 的 host 不带 `*.`
-    ⇒ `MatchType.decode` 判成 `.domain` ⇒ `encode` 交回裸 host。review 只点了三条，但另外两条是
-    逐字相同的缺陷、在同一个文件、也在本任务改过的用例里，留着等于明知会红。
-25. **本轮没有改动任何清位逻辑**：F-1 是新增的视图层刷新通路 + 一条 `SpaceManager` 信号，
-    F-2 / F-3 / F-4 只动测试与假件。两个原语、两处接线、`RuleProjection`、`computeEditSet` 的
-    upsert 半边与恢复支**一个字节都没动**。
-26. F-5 / F-6 / F-7 / F-8 / F-9 五条 Minor 按控制者指示**不动**。
+21. **F1: complete live field refresh while the sheet is open.** Task 11 assigned it to 8b-4,
+    while this brief assumed Task 11 had done it.
+    - Add published, privately set `SpaceManager.urlRulesRevision`, incremented whenever the
+      cache changes: publisher updates, explicit reload, and unbind. Publishing the cached model
+      array itself would miss in-place changes with unchanged object identity.
+    - Observe the wrapped revision through `.onChange`; the private setter also hides the
+      projected publisher. `@ObservedObject` triggers body recomputation. Avoid an initial
+      callback before `.onAppear` loads rows.
+    - Put merge logic in pure `refreshRows`, with a state-writing wrapper. Treat value/match type
+      and ask/target as control groups: any dirty member protects the entire group. Preserve
+      new rows and dirty missing rows; remove clean missing rows; append newly stored rows without
+      dirty bits. Refresh loaded baselines only for clean units. Dirty state is read-only and is
+      absent from the result type, so refresh cannot clear it.
+    - Add a refresh token and materialized-row reconfiguration to the table coordinator. The
+      existing unchanged-id early return hides content-only refreshes. Only this refresh path
+      increments the token, avoiding reconfiguration on every keystroke. Configure existing rows
+      without `reloadData`; add Row Equatable for change detection.
+    - Known limitation: structural additions/removals still use the existing reload path and can
+      lose field-editor focus during typing. That pre-existing behavior is outside this fix.
+22. **F2: drive actual refresh in U-15d(3–5).** Assert dirty field and baseline preservation, and
+    positive controls showing clean target/text groups update without generating edits. Add (6)
+    for append, clean disappearance, and dirty disappearance.
+23. **F3: test rank as a clearing unit.** Fake editor reorder updates/densifies order, flags only
+    the dragged row, and changes no stamps. Add in-flight reorder, decision-to-write reorder,
+    and no-reorder control cases. Removing optional rank or its required-value guard makes the
+    first two fail.
+24. **F4: fix five stale wildcard-host expectations.** Domain seeds without `*.` decode and encode
+    as bare hosts. Correct the three review-named identity/restoration assertions plus the same
+    defect in unresolved-target and unseen-row cases.
+25. **No clearing logic changed in this review round.** F1 adds view refresh and a manager signal;
+    F2–F4 change tests/fakes. Primitives, wiring, projection, and edit-set restoration are unchanged.
+26. Leave F5–F9 Minor findings unchanged as directed.
 
-### Fix round 2（re-review 判出的两条 Important，都在 `SpaceURLRulesEditor.swift`）
+### Fix round 2 — two Important findings in the editor
 
-27. **R2-1 —— 刷新的追加支会把用户刚删掉的行重新加回来。** `seen` 只从 `rows` 建，而用户在本次
-    sheet 里删掉的行**还在库里**（软删要等这次 Save 才落，`computeEditSet` 从 `removedRows` 里取
-    `storeId` 进 `deletedIds`），于是它照样出现在 `stored` 里 ⇒ 下一次刷新把它当成「库里新出现
-    的行」重新追加 ⇒ 用户那次删除在界面上被悄悄撤销，而 `removedRows` 还留着它，Save 之后那一行
-    既被软删、又刚刚以新行的形式出现过一次。**修法**：`refreshRows` 加 `removed: [Row]` 入参，
-    `seen = storeIds(rows) ∪ storeIds(removed)`。探针两条：
-    `testARowDeletedInTheSheetIsNotReAppendedByARefresh`（删一行 → 别的设备落地一条新规则 →
-    刷新 ⇒ 被删的那一行**不回来**、新规则照样追加、Save 时 `deletedIds` 仍是 `[I2]`、落库软删）
-    与对照 `testTheRefreshWouldReAppendADeletedRowIfRemovedWereNotInTheDomain`（`removed: []` ⇒
-    那一行被重新追加，正是修复前的行为）。
-28. **R2-2 —— `reconfigureMaterializedRows()` 重灌每一个已物化的 cell，会顶掉正在编辑的
-    field editor。** `RuleCellView.configure` 无条件写 `valueField.stringValue` 并**整块重建**目标
-    popup 的菜单，所以一次落在用户敲字期间的刷新会丢掉插入点与选区——那正是 `updateNSView` 那道
-    早退存在的理由。**修法两道，缺一不可**：
-    - `RefreshResult` 加 `changedIds: Set<UUID>`，只收**四个用户可见单元**（匹配类型 / 文本框 /
-      `ask` / 目标）真的变了的那几行；`reconfigureMaterializedRows(_:)` 只重灌它们。
-      **`syncId` / `createdDate` 不进 `changedIds`**：`configure` 根本不渲染它们，而一次入站落地
-      会照抄远端的 `created_at_ms`，那一列几乎每次都在变——按「整行不等」判会让几乎每次刷新都把
-      全表重灌一遍。`changed`（要不要换 `@State`）仍然按整行判，两者刻意不同。
-      掉出与追加的行也不进 `changedIds`：它们改的是 id 序列，`updateNSView` 走结构性那一支。
-    - `Coordinator.holdsFieldEditor(_:in:)`：**此刻持有 first responder 的那一个 cell 一律跳过**。
-      一个正在编辑的 `NSTextField` 自己**不是** first responder——窗口的 field editor（一个共享的
-      `NSTextView`）才是，它的 `delegate` 指回那个 field，所以两种形状都认。这一道是纯防御：
-      那一行按定义属于一个脏组（用户在敲字 ⇒ `.value` 已置位 ⇒ `refreshRows` 本来就不刷新它的
-      内容组），跳过的行等失去焦点、下一次刷新时自然跟上。
-    探针：U-15d ③ / ④ / ⑤ / ⑥ 各加一条 `changedIds` 断言（③ ④ 恰好那一行、⑤ 与 ⑥ 恒空）。
-29. **本轮只改了 `SpaceURLRulesEditor.swift` 与它的用例**：`SpaceManager` 的信号、两个清位原语、
-    两处引擎接线、`computeEditSet` 一个字节都没动。
+27. **R2-1: refresh could reappend a row the user just removed.** It remains in storage until Save,
+    but was absent from the visible-row `seen` set. Pass `removed` into refresh and define seen
+    as visible store ids ∪ removed store ids. Add a test preserving deletion while appending a
+    genuinely new remote row, plus an empty-removed control reproducing the old behavior.
+28. **R2-2: configuring every materialized cell disrupts the field editor.** Apply both fixes:
+    - Return `changedIds` only for rows whose rendered units changed (match/text/ask/target),
+      excluding metadata and structural additions/removals. Whole-row `changed` still governs
+      state replacement; it intentionally differs from display changes.
+    - Skip a cell holding the first responder, recognizing both a text field and the shared
+      field editor whose delegate points to it. Dirty-group protection should already prevent
+      content replacement, but this defense preserves insertion/selection and catches up later.
+    Extend U-15d(3–6) with exact changed-id assertions.
+29. Only editor code and its tests change; manager signaling, clearing primitives/wiring, and
+    `computeEditSet` remain unchanged.
 
 ## Final compile check
 
-Task 8b-1 ~ 8b-4 及其修复轮全部在**没有编译**的前提下写完（用户指令），收尾时跑一次整支的
-`xcodebuild build-for-testing`（scheme `PhiBrowser`，macOS/arm64，`CODE_SIGNING_ALLOWED=NO`）。
+Tasks 8b-1–8b-4 and their review fixes were written without compilation under the user's
+instruction. At completion, run one branch-wide `xcodebuild build-for-testing` for scheme
+`PhiBrowser`, macOS/arm64, with `CODE_SIGNING_ALLOWED=NO`.
 
-结果：**4 个 error、1 条新告警**，全部落在测试文件里；八个生产文件
-（`URLRuleKind.swift` / `SyncableOwnedItems.swift` / `PhiSyncEngine.swift` /
-`PhiURLRuleLocalAccess.swift` / `LocalStore+SpaceURLRule.swift` / `PhiOwnedItemState.swift` /
-`SpaceManager.swift` / `SpaceURLRulesEditor.swift`）**一次过**，零 error 零告警。
-四处修复都是纯类型/作用域层面的，没有一条断言被削弱、没有一个用例被删、生产行为零改动。
+The first build found **four errors and one new warning, all in tests**. All eight production
+files compiled without errors/warnings: `URLRuleKind`, `SyncableOwnedItems`, `PhiSyncEngine`,
+`PhiURLRuleLocalAccess`, `LocalStore+SpaceURLRule`, `PhiOwnedItemState`, `SpaceManager`, and
+`SpaceURLRulesEditor`. Fixes change only types/scope, with no weakened assertions, deleted cases,
+or production behavior changes.
 
-| # | 文件:行 | 符号 | 成因 | 修法 |
-| - | ------- | ---- | ---- | ---- |
-| 1 | `Tests/…/Sync/Phi/URLRuleKindTests.swift:3299` | `RuleSnap.mergePartnerSyncId` | U-15f 的新建支用例断言 `XCTAssertNil(fresh.mergePartnerSyncId)`，但 Task 8b 之前铸的私有快照结构 `RuleSnap` 没收这一列 | `RuleSnap` 补 `var mergePartnerSyncId: String?` 与 `init(_:)` 里的一行赋值。副作用是正向的：`RuleSnap` 是 `Equatable`，「软删行一个字节没变」那类整行比较从此也盯着这一列 |
-| 2 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1165` | `seedSettled(_:id:…)` | 实参写成 `ask:accountStamp:sortOrder:`，而声明里 `sortOrder` 在 `accountStamp` 之前 | 调换两个实参的书写顺序（值一字不改） |
-| 3 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1824` | `counters(_:)` | 同一作用域里先有 `let counters = await counters(engine)`，之后的 `counters(engine)` 解析到那个 `OwnedRoundCounters?` 局部量而非方法 | 后一处改成 `await self.counters(engine)`（`let counters` 与它的断言都不动） |
-| 4 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:2940` | `counters(_:)` | 同上（M3-7 主变体里的 `let second`） | 同上 |
+| # | File:line | Symbol | Cause | Fix |
+| - | --------- | ------ | ----- | --- |
+| 1 | `Tests/…/Sync/Phi/URLRuleKindTests.swift:3299` | `RuleSnap.mergePartnerSyncId` | U-15f asserts a column absent from the older private snapshot type. | Add the optional member and initializer assignment. Equatable whole-row assertions now also cover this column. |
+| 2 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1165` | `seedSettled(_:id:…)` | Call argument order places `accountStamp` before `sortOrder`, unlike the declaration. | Swap argument order without changing values. |
+| 3 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:1824` | `counters(_:)` | An earlier local `counters` value shadows the method. | Qualify the later call as `await self.counters(engine)`. |
+| 4 | `Tests/…/Sync/Phi/URLRuleMergeTests.swift:2940` | `counters(_:)` | Same shadowing in M3-7's `second` value. | Same qualification. |
 
-新告警一条，顺手清掉：
-`Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift:1559-1561` —— `landing(...)` 的三个
-默认实参引用 `Self.t0`，而默认实参在 actor 隔离之外求值，主 actor 隔离的静态量在那里被引用会告警。
-`t0` 改成 `private nonisolated static let`（不可变的 `Sendable` 常量，脱离隔离安全）。
+Remove the new warning in `LocalStoreURLRuleThrowingTests.swift:1559-1561`: three default
+arguments reference main-actor-isolated `Self.t0` from outside isolation. Make this immutable
+Sendable constant `private nonisolated static let`.
 
-复跑之后：**TEST BUILD SUCCEEDED**，全仓零 error；剩下的两条告警来自
-`Sources/ChromiumBridge/ChromiumLauncher.h`（nullability specifier），与本计划无关、本轮未动。
-
-留给验收的问题：**零**——没有任何一处修复需要改动行为。
+The rerun reports **TEST BUILD SUCCEEDED**, with no errors. Two remaining nullability warnings
+come from unchanged `Sources/ChromiumBridge/ChromiumLauncher.h`. No behavior questions are
+introduced by these compilation fixes.
 
 ## Task 6 placeholders (final pass)
 
-Task 6 的进度条目 20 把 `PhiSyncMarkerBoundaryTests.swift` 里没填的 urlrules 占位留给 Task 12 收口。
-本轮把那几格补齐，只动这一个测试文件；**生产代码零改动，既有断言一条没删、没削弱**。
+Task 6 item 20 deferred rule-side marker-boundary placeholders to Task 12. Fill them in that
+single test file, without production changes or removing/weakening existing assertions.
 
-| CASE | 结果 | 这一格断的是什么 |
-| ---- | ---- | ---------------- |
-| B2-1c (d) | **filled** | 页里多挂一条 `.urlRules` 注册项 + 本机一条未发布的 `r1`（`spaceId: "s-1"` ⇒ 归属合格）：书签读失败的那一轮里 `urlrules` 的 `local_read_failed == 0`、规则 commit 恰 1 条、`pushed ≥ 1`（R-exec-3 是 per-kind 的）；顺带钉 `bookmarks` 的 `local_read_failed == 1` |
-| B2-6b | **filled** | 页里多一条 `urlRuleEntity("r1", version: 9)`（页 marker 随之 `"8"` → `"9"`，两处 marker 断言同步）：第一台只注册书签 ⇒ 规则零行；第二台注册三条 kind ⇒ `applied == 1`、行落在 `s-1`、`syncId == "r1"`、游标 `entityId == "srv-r1"` |
-| B2-13 | **filled** | 第 3 页从空页换成一条规则（解不开的设置实体在第 2 页）：`applied == 1`、行与游标都在 ⇒ 「`.unusable` 就地中断 drain」的实现连第 3 页都取不到。另钉 `ruleStore.hadRecordsSeen.count == 2`——`loadOwnedTable` 一轮两次（轮首 + 发布段），与页数无关，`landsEmptyBatch` 让规则每页都走到 `writeOwnedTable`，但**不**多调 `load` |
-| B2-15 | **filled** | 最后一页（第 5 页）从空页换成一条规则 ⇒ 「最后一页带的是非设置实体」这个前提这才有观察量：`applied == 1` + 游标 `srv-r5`，原来的 `clearEntityCursor()` 零调用与 update 支断言原样 |
-| B2-16（规则版） | **filled** | 新用例 `testAURLRuleOwnedByASpaceLandedOnTheSamePageResolvesThisRound`：同一页 Space + `target_space_uuid` 指向它的规则 ⇒ `parked == 0`、`applied == 1`、行落在刚建出来的那条 Space、游标无 `pendingApply`。为此 `urlRuleEntity` 加了一个 `targetSpaceUuid: String = "su-1"` 默认实参（既有调用点一个字节不改） |
-| B2-3 / B2-7 / B2-7b | already present | Task 6 本体已写（brief 点名的三格），本轮未动 |
-| B2-17 的规则侧连带断言 | **not filled** | 文件头注释（`:27`）提到它，但 B2-17 用例体内**没有** Task 6 占位、也没有规则 fixture；进度条目 20 列的遗留清单里也没有它。要补就得让第 2 轮带一条页（B2-17 第 2 轮是**零新页**，而 owned kind 的停放重投挂在页循环上，`landsEmptyBatch` 也只在有页时生效），那是改这条用例的脚本形状、不是填一格 —— 留给验收决定 |
+| CASE | Result | What it verifies |
+| ---- | ------ | ---------------- |
+| B2-1c(d) | Filled | Register rules and seed one unpublished eligible `r1`. A bookmark read failure leaves rule `local_read_failed == 0`, one rule commit, and `pushed >= 1`, while bookmark failure count is 1: R-exec-3 is per-kind. |
+| B2-6b | Filled | Add rule version 9 and advance the page marker from 8 to 9. A bookmark-only engine creates no rule; the next engine with all three kinds lands one row in `s-1`, identity `r1`, with cursor `srv-r1`. |
+| B2-13 | Filled | Put a rule on page 3 after unreadable settings on page 2. The row/cursor and one apply prove unusable settings do not truncate drain. Exactly two had-records loads occur per round, independent of page count; empty-batch landing adds writes, not loads. |
+| B2-15 | Filled | Put a rule on final page 5, making its non-settings nature observable through one apply and cursor `srv-r5`. Preserve zero `clearEntityCursor` calls and update-branch assertions. |
+| B2-16, rules | Filled | New same-page owner/rule test expects zero parked, one applied, the newly created local Space target, and no pending payload. Add defaulted `targetSpaceUuid` to the entity helper. |
+| B2-3 / B2-7 / B2-7b | Already present | Task 6 supplied these named cases; unchanged here. |
+| B2-17 rule-side consequences | Not filled | Only the file header mentions them; the case has neither a placeholder nor rule fixture, and item 20 did not list it. Round 2 has no new pages, while parked owned replay runs only in the page loop. Adding a page changes the script, so leave this for acceptance. |
 
-新增的小工具：`ruleCommits(_:)`（`client.commits` 按 `PhiSyncEntity.urlRuleEntityName` 过滤，形状照
-`bookmarkCommits` / `pinCommits`）。`:1110` 那处内联的同款过滤原样未动。
+Add `ruleCommits` filtering by `PhiSyncEntity.urlRuleEntityName`, following existing helpers.
+Leave the equivalent inline filter unchanged.
 
-验证口径：**没有编译、没有跑测试**（用户指令：本轮不得 `xcodebuild`）。逐符号按源码核对了
-签名与实参标签次序（`FakeURLRuleAccess(rows:)` / `PhiLocalURLRule.fixture(id:syncId:spaceId:)` /
-`urlRulePayload(uuid:targetSpaceUuid:host:)` / `OwnedKindRegistration.urlRules(access:store:)` /
-`OwnedRoundCounters.localReadFailed`），并用 `swiftc -parse` 单文件过了一遍语法（exit 0）。
-留给下一次整支构建的风险：仅类型层面，行为推导按 `applyOwnedKind` / `beginOwnedRound` /
-`publishOwnedKind` 三处源码。
+Validation: **no build or test execution**, under this round's user instruction. Check all
+referenced fixture signatures and argument order against source, then run single-file
+`swiftc -parse` successfully. Remaining branch-build risk is type checking; expected behavior
+is derived from the three engine entry paths.
 
 ## Task 12 (docs half)
 
-本任务**一行生产代码、一行 `.swift` 都没改**，也**没有**跑任何构建 / 测试 / App。
-验收脚本 T-M3-4a 与 Chromium 的那一次 `autoninja` **不在本任务范围内**，由用户执行。
+This task changes no production or Swift code and runs no build, test, or app. T-M3-4a acceptance
+and the Chromium `autoninja` run are outside scope and assigned to the user.
 
-### 写了什么、写在哪
+### Changes and locations
 
-| 仓库 | 文件 | 做了什么 |
-| --- | --- | --- |
-| 代码仓 | `docs/sync.md` | 新增 `## Marker persistence boundary` 一节（排在 `## Pull before commit` 之后）：逐页次序、四类 store 的 `Bool` 回传与 `AccountUserDefaults` 回滚、失败页的 `marker_advanced=false` + 零发布 + `cursor_save_failed`、发布闸是**合取**且 `page_budget_exhausted` / `pull_failed` 同样零发布（前者 marker 照推）、marker 搬进 `marker.json` 与备份恢复的后果、点名 `E-M3-4a-1`。`## URL Rules` 一节（Task 6 / 8b-3 已写）核对过与合并后的代码一致，**只补三条本来缺的**：归属是 Space 不是 Profile + 目标解析不出 ⇒ 停放（绝不改写、绝不丢弃）；本机删除一律软删 + 两条清理出路；D30 三段自动合并与「编辑赢过删除」的用户可见后果。`## Verification` 列出五个新测试文件与 Chromium 的 `phi_url_router_unittest.cc`，并保留「compile-only、绝不 `xcodebuild test`」那条口径 |
-| 代码仓 | `Sources/Sync/Phi/Proto/README.md` | **verify-only，已存在**：`:28` 的生成类型行含 `Phi_PhiURLRuleEntity`（Task 1 的 commit 里） |
-| 代码仓 | `Sources/LocalStorage/Compatibility/README.md` | **verify-only，已存在**：`:101` 的 V11 一句（Task 4 的 commit 里） |
-| 代码仓 | 本文件 | 这一节 |
-| KB | `design/2026-09-16-m3-4a-url-rules-marker-boundary-design.md` §15 | 新增 §15.1 写回口径 + §15.2 计划期勘误表（`E-M3-4a-2a ~ 2i`）+ §15.3 执行期勘误（`E-M3-4a-3 ~ 25`，按任务编号排序，两份 ledger 去重合并 + 控制者裁定里改了契约的那些）。`E-M3-4a-1` **一个字未动**。§15 是权威清单，两份 ledger 与 rulings 文件保留为施工期记录 |
-| KB | `design/2026-09-18-m3-4a-execution-rulings.md` | **新建**：抬头（编号约定）+ 状态表（分支 / 基点 / 区间 / 未合并 / 终审 pending / **验收结论 pending — acceptance not yet run (2026-09-18)**）+ `P1 ~ P4` 计划期裁定 + 逐任务的执行期裁定与仲裁 + 两条用户指令 + **各任务推迟的 minor 归档** + 并行 worktree 与整合记录 + 用户 / 控制者持有的五条未完项 + 附录 A（终审发现表，pending）+ 附录 B（验收后的外部评审，pending）+ Related |
-| KB | `30-projects/phinomenon/sync-service/README.md` | 新增 `## M3-4a Marker Boundary + URL Rules` 一节（照 `## M3-3` 的体例：状态 / 内容两半 / 规模与流程 / 验证方式 / 待做五条 / 已知残留），并把第 197 行那条「下一里程碑」的状态从「spec 已定稿待审阅」推进到「已实施完成，终审与验收待做」；Related 加一行指向新的 rulings 文件 |
-| KB | `60-knowledge-items/guidelines/assign-every-spec-clause-to-exactly-one-task.md` | **新建 draft**：§5.8 第 3 条那个「两份 brief 各自指向对方」的计划缺口，收成「spec 条款 → 任务」必须是全函数、brief 里「兄弟任务已经做了」是待核的断言、假则报 BLOCKED 而不是记勘误 |
-| KB | `60-knowledge-items/pitfalls/compile-only-suites-hide-vacuous-assertions.md` | **新建 draft**：四个里程碑几千条用例从未执行过，各任务评审登记的五类空洞断言，要求每条 case 一句可证伪注记 + 承重裁定配负面对照 |
+| Repository | File | Work |
+| ---------- | ---- | ---- |
+| Code | `docs/sync.md` | Add marker-boundary documentation after Pull before commit: page order, four store Bool results, defaults rollback, failure outcome/marker/publication behavior, conjunctive publish gating, budget/transport failure, marker-file migration and backup restore, and E-M3-4a-1. Verify URL Rules and add Space ownership/unresolved-target parking, soft-delete cleanup exits, and D30 merge/edit-wins behavior. List five new suites plus Chromium router tests, retaining compile-only guidance. |
+| Code | `Sources/Sync/Phi/Proto/README.md` | Verify the generated-type inventory already includes the rule entity. |
+| Code | `Sources/LocalStorage/Compatibility/README.md` | Verify the existing V11 statement. |
+| Code | This file | Add this task's ledger section. |
+| KB | `design/2026-09-16-m3-4a-url-rules-marker-boundary-design.md` §15 | Add writeback conventions, planning errata E-2a–2i, and execution errata E-3–25, deduplicating both ledgers and contract-changing rulings. Leave E-1 unchanged. §15 is authoritative; ledgers/rulings remain execution history. |
+| KB | `design/2026-09-18-m3-4a-execution-rulings.md` | Create numbering/status, P1–P4 planning rulings, task decisions/arbitration, user instructions, deferred Minor findings, parallel-lane integration history, five remaining user/controller items, pending final-review/acceptance appendices, and related links. Acceptance status is explicitly pending as of 2026-09-18. |
+| KB | `30-projects/phinomenon/sync-service/README.md` | Add M3-4a status, both implementation areas, process/scale, validation, five pending items, known limitations, and a rulings link. Advance milestone status from finalized spec to implementation complete with review/acceptance pending. |
+| KB | `60-knowledge-items/guidelines/assign-every-spec-clause-to-exactly-one-task.md` | Draft the lesson from mutually deferring briefs: every spec clause needs one task owner; claims that another task implemented it require verification, with a blocker if false. |
+| KB | `60-knowledge-items/pitfalls/compile-only-suites-hide-vacuous-assertions.md` | Draft the lesson from thousands of unexecuted cases across four milestones and five classes of vacuous assertions: each case needs a falsifiable note, and critical decisions need negative controls. |
 
-### 核对过的几件事（写进 §15 之前逐条读代码确认）
+### Source checks before §15 writeback
 
-- `mergePartners` / `partnerNotAtRest` 确实各带第四个 `tombstonesThisPage:`（`PhiURLRuleLocalAccess.swift:425` / `:456`）。
-- M1 认领的候选域是 `urlRuleClaims(arrivals:parked:…)`（`PhiSyncEngine.swift:7148`）。
-- `convergePass`（`URLRuleKind.swift:1157`）确实排在 `mergePointerPass`（`:1168`）之前；第一遍 `anchorsFrom: anchorDomain`（软删之前的 `live`）、第二遍 `anchorsFrom: liveRows`（软删之后）。
-- `transferSupersededByDelete` 在 `LocalStore+SpaceURLRule.swift:968` 的事务里累加；`transferSourceUnchanged`（`URLRuleKind.swift:763`）是「四值相等 ∧ 两枚行戳都不更新（ms）」，不是六格逐字相等。
-- `SpaceManager.urlRulesRevision`（`:422`，三处 `&+= 1`）+ `SpaceURLRulesEditor.swift:92` 的 `.onChange`。
-- 编辑器只给被拖动那一行记 `.order`（`SpaceURLRulesEditor.swift:383` / `:1002` 的注释与实现）。
-- `URLRuleDraft` 的三个可选单元 + 三个转发访问器（`LocalStore+SpaceURLRule.swift:52-61`）。
-- `purgeExpiredSoftDeletedOwnedRows`（`PhiSyncEngine.swift:1115`）没有 `spaceSectionEnabled` 门；出路 1 的硬删带 `saved` 合取（`:4435`）。
-- `SpaceManager.makeForTesting`（`:1987`）+ bind-nothing 的 `private init`（`:551`）；`Sources/` 里除定义外零引用。
-- `URLRuleKind.clearingProjection`（`:709`）/ `clearingProjectionMatches`（`:729`）与 `transferSourceUnchanged` / `transferDecision` 同住一个文件。
-- `git diff --name-status c9ab5806..HEAD -- Tests` 的五个新文件名（写进 `docs/sync.md` 的 `## Verification`）。
+- Both partner queries take `tombstonesThisPage`.
+- M1 candidates include arrivals and parked entities.
+- Convergence precedes pointer updates; pass 1 uses pre-delete anchors, pass 2 post-delete rows.
+- Transfer supersession is counted transactionally; source recheck requires four equal values
+  and row stamps no newer at millisecond precision, not six-field literal equality.
+- Manager revision signaling has three increment sites and the editor observes it.
+- Only the dragged row receives `.order`.
+- Drafts have three optional units and three compatibility forwarding accessors.
+- Expired soft-row purge is ungated; exit-1 hard deletion requires successful cursor save.
+- The isolated test manager initializer binds nothing and has no production caller.
+- Clearing and transfer predicates share the existing rule-kind file.
+- The five new test filenames in the branch diff match the verification documentation.
 
-### 留给别人的（本任务不做）
+### Work assigned elsewhere
 
-1. **用户**：`autoninja -C out/PhiRelease chrome unit_tests` + `unit_tests --gtest_filter='PhiURLRouter*'`，绿了之后提交 Task 10 的五处 Chromium 改动（提交信息在 `task-10-report.md`）。
-2. **用户**：在没有 Phi 运行的机器上单跑一次 `LocalStoreURLRuleThrowingTests`（U-24 家族的主上下文可见性前提，运行期未验证）。
-3. **用户**：T-M3-4a 双机验收（24 个勾 + 前置五项 + Task 12 brief 第二节那两张计数稳态表）。验收结论与走查期发现事后补进 spec §15 与 rulings 文件的附录 A / B。**§15 与 README 里现在写的是 `pending — acceptance not yet run (2026-09-18)`。**
-4. **用户**：知识库与 origin 的同步 —— 本任务在 `~/.agents/company-knowledge` 上**只 commit**，没有 pull、没有 rebase、没有上传（按 dispatch 的约束）。因此知识库相对 origin 可能是陈旧的。
-5. **控制者**：整支终审（`c9ab5806..e24be36a`，与本任务并行派发）。结论到手后填进 rulings 文件的附录 A；spec §15 与 README 里现在写的是「终审 pending」。
-6. **验收决定**：`PhiSyncMarkerBoundaryTests` 的 B2-17 规则侧连带断言仍未写（那条用例第 2 轮是零新页，要补就得改脚本形状；已登记为 `E-M3-4a-24` ①）。
+1. **User:** run Chromium `autoninja -C out/PhiRelease chrome unit_tests` and
+   `unit_tests --gtest_filter='PhiURLRouter*'`, then commit Task 10's five Chromium changes using
+   its report's message once validation passes.
+2. **User:** run `LocalStoreURLRuleThrowingTests` alone on a machine without Phi running to verify
+   U-24's currently unmeasured main-context visibility assumption.
+3. **User:** complete two-device T-M3-4a acceptance (24 checks, five prerequisites, and both
+   steady-state counter tables), then record results in §15 and rulings appendices A/B.
+   Current status is `pending — acceptance not yet run (2026-09-18)`.
+4. **User:** synchronize the KB with origin. This historical task committed locally only under
+   its dispatch constraint, without pull/rebase/upload, so its checkout could be stale.
+5. **Controller:** complete branch review over `c9ab5806..e24be36a`, dispatched alongside this
+   task, and record findings in appendix A. §15/README currently say final review pending.
+6. **Acceptance decision:** B2-17's rule-side consequence assertion remains absent because it
+   requires changing the no-new-page second round; recorded as E-M3-4a-24(1).
 
 ## Final review fix (I-1)
 
-整支终审（`c9ab5806..e24be36a`，见 `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-review.md`）
-的唯一 Important 发现，已修。
+Fix the branch review's sole Important finding over `c9ab5806..e24be36a`; see
+`.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-review.md`.
 
-1. **发现**：`PhiSyncEngine.publishOwnedKind` 里 R-M3-4a-103 那道闸写成了 `guard cursorSaveFailures == 0`，
-   读的是**轮**计数。Task 2b 写它时只注册了 `bookmarks`，per-kind 与 round-global 无从区分；三条 kind
-   都注册之后（`bookmarks → pins → urlrules`），书签任何一次推送侧的 `writeOwnedTable` 失败都会让
-   `pins` 与 `urlrules` 在快照之前整段早退——连同 §8.4.5 清位 (b) 与 3b 重新准入复检。§2.5 第 6 条点名
-   禁止把 R-exec-3 的 per-kind 语义扩成全局；R-M3-4a-103 本身的措辞也只管「**一次**失败的重放武装」。
-2. **修法**：把闸改成 delta——`let failuresBeforeLoad = cursorSaveFailures` 取在 `loadOwnedTable` **之前**，
-   `guard cursorSaveFailures == failuresBeforeLoad else { return }`。两条早退语义一个不动：`!loaded.lost`
-   照旧，武装失败（第 ① / ② 步写不成）仍然落在 delta 里 ⇒ 那条 kind 照旧不发布、不重建文件。
-   **`canPublishThisRound`（`drained && !isStopped && cursorSaveFailures == 0`，轮首折叠）一个字没动**——
-   轮级的闸本来就该是 round-global，两者是两件事。
-3. **探针**（`Tests/PhiBrowserTests/Sync/Phi/PhiSyncMarkerBoundaryTests.swift`，三条 kind 的 B2-1c 家族）：
-   - `testAPushSideCursorSaveFailureOfOneKindDoesNotSuppressTheLaterKinds`（CASE B2-1c (e)）—— 书签
-     `failSaveOnCallNumber = 2`（空页那次落地写是 #1，发布段 `guard !work.isEmpty` 那次早退写是 #2）
-     ⇒ 书签零 commit，pin 与规则各 1 条 commit、各自游标落盘，结局 `cursor_save_failed`。修前红。
-   - `testAFailedLossReplayArmStillSkipsOnlyItsOwnKind`（CASE B2-1c (f)，负面对照）—— `bookmarksHadRecords`
-     为真 + marker `failSaveOnCallNumber = 2`（页 1 的 marker 写是 #1，报损重放第 ① 步是 #2）⇒ 书签仍旧
-     不发布、不重建文件、闩不置位（2b-L1 的语义在 delta 形态下没被放宽），而 pin 与规则各 1 条 commit。
-     后两条修前红。
-4. **既有期望**：无需改动。`grep cursorSaveFailures Tests` 的两处都是注释；多 kind + 注入写失败的三条既有
-   用例（B2-6b、B2-6c、B2-7）失败点全在落地段或单 kind 引擎上 ⇒ 由 `canPublishThisRound` 收口，与这道闸
-   无关；`URLRuleKindTests` 的两条 R-103 变体（(e) / (f)）失败发生在 `urlrules` **自己**那次 load 里，
-   delta ≠ 0 ⇒ 照旧跳过。CASE 2b-L1 逐字读过，语义不变。
-5. **构建**：`build-for-testing`（log 在 `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-build-4.log`）。
-6. **复审修正（仅测试字面量）**：两条探针原先的写序号前提「每页每种 kind 无条件写一次表」是错的——
-   空页上 `applyOwnedKind` 对 `landsEmptyBatch == false` 的 kind（书签 / pin）在早退处返回、连那次
-   `replayedAfterDelete` 的写也不发生，只有规则那条 kind 的空页才走 `plan` / `land`。(e) 的注入改成
-   `failSaveOnCallNumber = 1`、`saveCalls` 期望改成 1（唯一那次就是发布段的早退写，失败照旧触发 ⇒
-   修前仍红）；(f) 的 `saveCalls` 期望改成 0（发布段在任何写之前返回）。
-7. **CASE 2b-L1 一并更正**：`ownedStore.saveCalls` 的期望值同源错误（原为 1，注记「只有落地那一次」），
-   按同一条推导改成 0；断言的本意「发布段没有写出新文件」不变，语义没有放宽。
+1. **Finding:** the R-103 guard in `publishOwnedKind` reads round-global `cursorSaveFailures == 0`.
+   When only bookmarks existed, per-kind and global behavior were indistinguishable. With three
+   kinds, a bookmark push-side cursor failure suppresses pins/rules before snapshot, including
+   clearing path (b) and 3b rechecks. §2.5 rule 6 forbids broadening R-exec-3 to global behavior;
+   R-103 concerns one failed replay-arming attempt.
+2. **Fix:** snapshot `failuresBeforeLoad` before loading and compare the counter afterward.
+   Keep the lost-table guard and suppression after either failed arming write, so that kind
+   still cannot publish/recreate its file. Leave the deliberately round-global
+   `canPublishThisRound` predicate unchanged.
+3. **Probes in the three-kind B2-1c family:**
+   - (e) `testAPushSideCursorSaveFailureOfOneKindDoesNotSuppressTheLaterKinds`: fail the bookmark
+     publish-table write, expect no bookmark commit but one pin/rule commit each, durable cursors,
+     and a save-failed outcome. The initial write-index assumption was corrected below.
+   - (f) `testAFailedLossReplayArmStillSkipsOnlyItsOwnKind`: seed bookmark had-records and fail
+     marker clear at save 2, after page marker save 1. Bookmarks still do not publish, recreate
+     the file, or arm the latch; pins/rules each commit once. This preserves 2b-L1's negative control.
+4. **Existing expectations remain semantically unchanged.** Earlier multi-kind failures occur
+   during landing or single-kind execution and remain governed by the round gate. Rule-side
+   R-103 variants fail within their own load, producing a nonzero delta and remaining suppressed.
+5. **Build:** `build-for-testing`; log at
+   `.superpowers/sdd/2026-09-17-m3-4a-url-rules-marker-boundary-plan/final-build-4.log`.
+6. **Re-review correction, test literals only:** empty pages do not write bookmark/pin landing
+   tables because `landsEmptyBatch` is false. Only rules enter empty-page planning/landing.
+   Change (e) to fail save 1 and expect one save, the publish early-return write; (f) expects
+   zero saves because it returns before any table write. The probes still distinguish the fix.
+7. **Correct CASE 2b-L1's save count to zero** for the same reason. Its intended assertion that
+   publication does not recreate the file is unchanged.

@@ -83,15 +83,12 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer: `PhiSyncEngine` may write
-    /// the `reconciled` / `server` baselines only after the row landed, and the
-    /// fire-and-forget original swallows its own failure (§4.9).
+    /// Throwing sibling used ONLY by the sync layer: `PhiSyncEngine` may write the `reconciled` / `server`
+    /// baselines only after the row landed, and the fire-and-forget original swallows its own failure (§4.9).
     ///
-    /// 三处与 UI 入口的有意差异：① 收 `URL` 而不是 `String?`，所以不经过
-    /// `URLProcessor.processUserInput`（那是给用户输入准备的，会把不像 URL 的东西变成
-    /// 搜索，而线上来的 URL 已经是绝对 URL）；② `allowsEmptyTitle` 默认 `true`，一条
-    /// 远端 `title == ""` 的 create 必须原样落成空标题；③ 父解析是严格的，解析不到就抛，
-    /// 绝不静默落回 Space root。
+    /// Three deliberate UI differences: accept an absolute `URL` without user-input/search processing; default
+    /// `allowsEmptyTitle` to true to preserve remote empty titles; and throw on unresolved parents instead of
+    /// silently falling back to the Space root.
     @discardableResult
     func createBookmarkThrowing(url: URL,
                                 title: String?,
@@ -164,7 +161,7 @@ extension LocalStore {
                                           allowsEmptyTitle: allowsEmptyTitle,
                                           now: now,
                                           in: context)
-        // 身份与行在同一个事务里写，落地路径没有第二次写可以失败。
+        // Persist the identity and row in one transaction; landing has no second write that could fail.
         node.syncId = syncId
         return node
     }
@@ -195,8 +192,8 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9). 文件夹不受
-    /// `allowsEmptyTitle` 影响：`insertDirectoryNode` 逐字写标题。
+    /// Throwing sibling used ONLY by the sync layer (§4.9). `allowsEmptyTitle` does not affect folders:
+    /// `insertDirectoryNode` copies the title verbatim.
     @discardableResult
     func createDirectoryThrowing(title: String,
                                  profileId: String,
@@ -689,8 +686,8 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                // `toSpaceId: nil` 保留今天的语义：从行自己身上取 Space，于是一个
-                // 缺失 / nil 的 parentId 落回那个 Space 的 root，且不重打任何标签。
+                // `toSpaceId: nil` preserves UI behavior: use the row's Space, fall back to its root for a
+                // missing/nil parentId, and do not retag.
                 try self.moveBookmarkBody(guid,
                                           profileId: profileId,
                                           toParentGuid: parentId,
@@ -704,21 +701,18 @@ extension LocalStore {
         }
     }
 
-    /// 新原语：**一次调用**同时做「重打整棵子树的 Space / Profile 标签」与「重挂到任意
-    /// 文件夹」，而且是一次字段变化，不是删+建——子行的 `guid` 一个都不换。
+    /// One call retags the entire subtree's Space/Profile and reparents it to any folder, updating fields
+    /// without deleting/recreating rows or changing child GUIDs.
     ///
-    /// 既有的两个原语都表达不了这件事：`moveBookmark` 从行自己身上取 Space 并自述「本
-    /// API 今天不支持跨 Space 移动」；`moveBookmarks` 永远落到目标 Space 的 root，从不
-    /// 落到某个文件夹。
-    ///
-    /// `toParentGuid == nil` 表示「直接挂在这个 Space 的 canonical root 下」。
+    /// Existing `moveBookmark` uses the row's own Space and cannot move across Spaces; `moveBookmarks` always
+    /// targets a Space root. `toParentGuid == nil` targets this Space's canonical root.
     func moveBookmarkThrowing(guid: String,
                               toParentGuid parentGuid: String?,
                               inSpaceId spaceId: String,
                               index: Int) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
-            // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space 行
-            // 还不在本地时退回这条行自己的 Profile。
+            // The destination Space determines the Profile; if its local row is absent, use the bookmark's
+            // existing Profile.
             let targetProfileId = try self.profileId(ofSpaceId: spaceId, in: context)
                 ?? self.bookmarkNodeProfileId(guid, in: context)
                 ?? Self.defaultProfileId
@@ -769,8 +763,8 @@ extension LocalStore {
         normalizeIndexes(for: siblings)
 
         let now = Date()
-        // 只有显式指定了目标 Space 的调用（也就是同步层）才会重打标签；UI 入口传 nil，
-        // 走的还是今天那一行 `node.updatedDate = Date()`。
+        // Retag only when sync explicitly supplies a destination Space. UI calls pass nil and retain the
+        // existing `node.updatedDate = Date()` behavior.
         if let requestedSpaceId,
            node.spaceId != requestedSpaceId || node.profileId != profileId {
             guard let targetProfile = try profile(with: profileId, in: context, createIfNeeded: true) else {
@@ -903,10 +897,9 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                // `readOnlyTargetRoot: false` 保留今天的 root 解析，**包括 heal-on-read**：
-                // 关系断了但孤儿根还在时，`bookmarkRoot` 会把那个孤儿根认领回来、把重复
-                // 根的孩子并过去再删掉重复根，然后这次拖动照常完成。改成纯读会让这一状态
-                // 下的用户手势被静默丢弃，而书签就躺在那个孤儿根里。
+                // `readOnlyTargetRoot: false` preserves UI heal-on-read: reclaim an orphan root, merge
+                // duplicate roots' children, then remove duplicates before moving. A pure read would silently
+                // drop the gesture while bookmarks remain under the orphan root.
                 try self.moveBookmarksBody(guids,
                                            sourceProfileId: sourceProfileId,
                                            toSpaceId: targetSpaceId,
@@ -919,8 +912,8 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9). 源与目标是同一个 Profile：
-    /// 账户里的一条行不会在两个 Chromium profile 之间搬。
+    /// Throwing sibling used ONLY by the sync layer (§4.9). Source and destination share a Profile: account
+    /// rows do not move between Chromium profiles.
     func moveBookmarksThrowing(guids: [String],
                                toSpaceId targetSpaceId: String,
                                profileId: String) async throws {
@@ -941,7 +934,7 @@ extension LocalStore {
                                    targetProfileId: String,
                                    readOnlyTargetRoot: Bool,
                                    in context: ModelContext) throws {
-        // 空清单是调用方的 bug，不是一次成功的空操作。
+        // An empty list is a caller bug, not a successful no-op.
         guard !guids.isEmpty else {
             throw LocalStoreWriteError.noCandidateSurvived
         }
@@ -956,10 +949,9 @@ extension LocalStore {
         guard targetSpaceIsWritable else {
             throw LocalStoreWriteError.targetNotWritable
         }
-        // 同步层（`readOnlyTargetRoot: true`）走纯读：`bookmarkRoot(createIfNeeded: true)`
-        // 会在每轮都跑的路径上重建一个空 root、认领孤儿根、删重复根，那些都是同步层不想
-        // 要的副作用，而且重建之后下面那条守卫永远不可达。UI 路径传 `false`，行为一字
-        // 不变——heal-on-read 正是它在孤儿根状态下还能完成拖动的原因。
+        // Sync uses `readOnlyTargetRoot: true`: `bookmarkRoot(createIfNeeded: true)` can create roots, reclaim
+        // orphans and delete duplicates on every round, and makes the missing-root guard unreachable. UI uses
+        // false to preserve heal-on-read and complete moves from orphan roots.
         guard let targetProfile = try profile(with: targetProfileId,
                                               in: context,
                                               createIfNeeded: true),
@@ -1001,8 +993,8 @@ extension LocalStore {
             movedGuids.insert(node.guid)
         }
 
-        // 上面两处 `continue` 今天完全静默，整批被跳过时旧代码「成功」返回，同步层据此
-        // 写下一条永远修不好的基线。
+        // If both silent `continue` paths skip the entire batch, throw instead of letting sync persist an
+        // unrecoverable false-success baseline.
         guard !movedNodes.isEmpty else {
             throw LocalStoreWriteError.noCandidateSurvived
         }
@@ -1108,10 +1100,9 @@ extension LocalStore {
                         url: String?,
                         secondaryUrl: String?? = nil,
                         secondaryTitle: String?? = nil) {
-        // UI 路径今天静默丢弃空标题（`if let title, !title.isEmpty`）。共享 body 里
-        // 「空标题 + `allowsEmptyTitle == false`」的语义是「替换成 URL 字符串」，与
-        // create 路径同一条规则，所以这里在入口就把空标题折成「这次不改标题」——UI 的
-        // 行为因此一字不变。
+        // Preserve UI behavior by treating an empty title as no title update. The shared body's empty-title
+        // behavior with `allowsEmptyTitle == false` substitutes the URL, matching create, while UI updates
+        // have always ignored empty titles.
         let titleUpdate = (title?.isEmpty == false) ? title : nil
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
@@ -1151,9 +1142,8 @@ extension LocalStore {
     
     /// Throwing sibling used ONLY by the sync layer (§4.9).
     ///
-    /// `title == nil` 表示这次不改标题；`title == ""` 配 `allowsEmptyTitle: true` 表示
-    /// 把标题清空（远端真的可以有一条空标题的书签）。内容字段真的变了才写
-    /// `contentUpdatedDate`。
+    /// `title == nil` leaves the title unchanged; `title == ""` with `allowsEmptyTitle: true` clears it,
+    /// preserving valid remote empty titles. Update `contentUpdatedDate` only for actual content changes.
     func updateBookmarkThrowing(_ guid: String,
                                 profileId: String,
                                 title: String?,
@@ -1175,9 +1165,8 @@ extension LocalStore {
 
     /// Single implementation shared by both entry points.
     ///
-    /// **先把全部 URL 解析完再写任何字段**：今天的实现把标题写进 model 之后才校验 URL，
-    /// 一次「改标题 + 改成一个非法 URL」于是留下一个半应用状态——标题变了，URL 没变，
-    /// 调用方却看不出失败。
+    /// Validate all URLs before writing any fields, avoiding a partial title update when a simultaneous URL
+    /// edit is invalid.
     private func updateBookmarkBody(_ guid: String,
                                     profileId: String,
                                     title: String?,
@@ -1197,7 +1186,7 @@ extension LocalStore {
             }
             resolvedURL = newURL
         }
-        // 外层「改不改」，内层「改成什么，nil = 清空」。
+        // Outer optional selects whether to change; inner optional selects the value, with nil meaning clear.
         var resolvedSecondaryURL: URL??
         if let secondaryUrlOpt = secondaryUrl {
             if let raw = secondaryUrlOpt, !raw.isEmpty {
@@ -1220,8 +1209,8 @@ extension LocalStore {
             contentDidChange = true
         }
         if let title {
-            // 空标题在 `allowsEmptyTitle == false` 时替换成 URL 字符串，与
-            // `insertBookmarkNode` 是同一条规则。
+            // With `allowsEmptyTitle == false`, substitute the URL for an empty title, matching
+            // `insertBookmarkNode`.
             let effectiveTitle = (title.isEmpty && !allowsEmptyTitle) ? node.url.absoluteString : title
             if node.title != effectiveTitle {
                 node.title = effectiveTitle
@@ -1251,8 +1240,7 @@ extension LocalStore {
         }
 
         let now = Date()
-        // 只在内容字段真的变化时写：把标题改成同样文字的一次保存，不该让这一行赢下对端
-        // 的编辑。
+        // Stamp only actual content changes; saving an identical title must not outrank a peer's edit.
         if contentDidChange {
             node.contentUpdatedDate = now
         }
@@ -1548,16 +1536,13 @@ extension LocalStore {
         return root
     }
 
-    /// 纯读版的 root 解析：按 `SpaceModel.bookmarkRoot` 关系取，取不到返回 nil，
-    /// **一个字节都不写**。
+    /// Read-only root resolution via `SpaceModel.bookmarkRoot`; return nil if absent and write nothing.
     ///
-    /// 为什么不能在同步轮的读路径上用 `bookmarkRoot(…)`：它在 `guard createIfNeeded`
-    /// **之前**就有 heal-on-read——`space?.bookmarkRoot = primary` 与
-    /// `context.delete(duplicate)`。放进每轮都跑的读路径等于每轮都可能在主 context 上
-    /// 删行。治愈逻辑原样留在 `bookmarkRoot` 里，由 UI 路径继续触发。
+    /// Do not use `bookmarkRoot(…)` in each sync round's reads: it heals relationships and deletes duplicate
+    /// roots even before `guard createIfNeeded`. Keep those mutations on the UI path.
     ///
-    /// 默认 Space 的那条回落是读，不是写：默认 Space 的 root 物理上就是 legacy 的
-    /// `ProfileModel.bookmarkRoot`，同一棵树有两个指针。这里只读第二个指针，不回链。
+    /// The default-Space fallback reads the legacy `ProfileModel.bookmarkRoot` pointer to the same physical
+    /// tree; it does not repair the backlink.
     func existingBookmarkRoot(profileId: String,
                               spaceId: String,
                               in context: ModelContext) throws -> TabDataModel? {
@@ -1571,11 +1556,11 @@ extension LocalStore {
         return try profile(with: profileId, in: context, createIfNeeded: false)?.bookmarkRoot
     }
 
-    /// 全部书签与文件夹行，**一次** fetch 带关系预取，给快照 / 差分 / index 投影三个
-    /// 消费者复用。
+    /// Fetch all bookmark/folder rows once with relationships prefetched for snapshot, diff and index
+    /// projections.
     ///
-    /// 谓词把 raw value 先提成局部 `let`：`TabDataModel.type` 是裸 `Int`，`dataType`
-    /// 是 extension 上的计算属性，`#Predicate` 看不见它。
+    /// Capture raw values in local constants for `#Predicate`: `TabDataModel.type` is an Int, and its computed
+    /// extension property `dataType` is not visible to the macro.
     func allBookmarkModels(in context: ModelContext) throws -> [TabDataModel] {
         let bookmarkRaw = TabDataType.bookmark.rawValue
         let folderRaw = TabDataType.bookmarkFolder.rawValue
@@ -1586,10 +1571,9 @@ extension LocalStore {
         return try context.fetch(descriptor)
     }
 
-    /// 每一对 (profileId, spaceId) 的 canonical root 的 guid。
-    ///
-    /// **绝不逐行调 `isBookmarkRoot(_:in:)`**：那个函数每次都 fetch 全部 `ProfileModel`
-    /// 与全部 `SpaceModel`，在一棵上千条的树上是平方级。这里每对 Space 只解析一次。
+    /// Canonical root GUIDs for each (profileId, spaceId) pair. Resolve each Space once: calling
+    /// `isBookmarkRoot(_:in:)` per row fetches all Profiles and Spaces each time, making large trees
+    /// quadratic.
     func canonicalRootGuids(in context: ModelContext) throws -> Set<String> {
         var pairs: [(profileId: String, spaceId: String)] = []
         for space in try context.fetch(FetchDescriptor<SpaceModel>()) {
@@ -1632,11 +1616,10 @@ private extension LocalStore {
             $0.parent?.guid == parentGuid
         }
 
-        // 次键 `\.guid` 与 `pinnedTabs(...)` 一致。没有它的时候，一条被排除的兄弟
-        // （停放 / 待删 / 还没身份）留着的过期 `index` 会与新写的撞上，撞上的两行顺序
-        // 随 fetch 而变，于是出站 pass 每轮给其中一条算出新 rank 发出去，对端应用后顺序
-        // 又翻回来——每轮两条无谓的 commit，永远。有了次键，index 撞车最坏只是「不对」，
-        // 而不是「不确定」。
+        // Use `guid` as the secondary key, matching `pinnedTabs(...)`. An excluded sibling (parked, pending
+        // deletion or unidentified) may retain an index that collides with a newly assigned one. Without a
+        // stable tie-break, fetch order can flip every round and cause endless rank commits; with it,
+        // collisions are deterministic even if imperfect.
         let sortBy: [SortDescriptor<TabDataModel>] = [SortDescriptor(\.index), SortDescriptor(\.guid)]
         let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate, sortBy: sortBy)
         return try context.fetch(descriptor)
@@ -1921,10 +1904,10 @@ private extension LocalStore {
         folder.spaceId = spaceId ?? parent.spaceId
         folder.profileId = profileId
         folder.isCreatedByChromium = false
-        // **先 insert，再写 `profile`。** `ProfileModel.tabs` 是它的 inverse：model 还不在
-        // 上下文里时写这一笔，SwiftData 会为 inverse 现造一个必填列全空的替身，此后每一次
-        // save 都整批校验失败（NSCocoaErrorDomain 1560）。这条规则对**每一个**新建
-        // `TabDataModel` 的地方都成立，不只是 pin 那几处。
+        // Insert before assigning `profile`. Its inverse `ProfileModel.tabs` otherwise creates an
+        // uninitialized placeholder for a model outside the context; its missing required fields cause every
+        // later save to fail validation (NSCocoaErrorDomain 1560). This applies to every new `TabDataModel`,
+        // not only pins.
         context.insert(folder)
         folder.profile = parent.profile
         try insert(node: folder, to: parent, at: index, in: context)
@@ -1945,10 +1928,9 @@ private extension LocalStore {
                             allowsEmptyTitle: Bool = false,
                             now: Date,
                             in context: ModelContext) throws -> TabDataModel {
-        // 默认（UI 路径）行为一字不变：空标题替换成 URL 字符串。同步层传 `true`，因为
-        // 一条 `title == ""` 的远端 create 若落成 URL 字符串，刚写下的 `reconciled` 就与
-        // 行对不上，下一轮快照判成本机改了标题、盖 `now`、把 URL 当标题发回去盖掉对端刚
-        // 清空的值。
+        // Keep the UI default of replacing empty titles with the URL. Sync passes true to preserve remote
+        // empty titles; substituting the URL would disagree with `reconciled`, look like a fresh local edit
+        // next round, and overwrite the peer's cleared title.
         let resolvedTitle: String
         if let title, !title.isEmpty || allowsEmptyTitle {
             resolvedTitle = title
@@ -1975,12 +1957,11 @@ private extension LocalStore {
         return bookmark
     }
     
-    /// `strict: false` 是今天的行为：一个解析不到 / 不是文件夹的父**无日志地**落回
-    /// Space root。对 UI 这是善意容错。
+    /// `strict: false` preserves UI tolerance: silently fall back to the Space root for an
+    /// unresolved/non-folder parent.
     ///
-    /// `strict: true` 只给同步层：落回 root 在那边意味着「把一条书签建到了账户没要求的
-    /// 位置」，而下一轮差分会把这个位置当成本机意图发回去，覆盖对端正确的
-    /// `parent_uuid`。
+    /// Sync alone uses true: an unintended root fallback would become a local position change next round and
+    /// overwrite the correct remote `parent_uuid`.
     func resolveParent(for parentId: String?,
                        profileId: String,
                        spaceId: String = LocalStore.defaultSpaceId,
@@ -2002,16 +1983,14 @@ private extension LocalStore {
                                 createIfNeeded: createIfNeeded)
     }
 
-    /// `moveBookmarksBody` 的目标 root 解析。
+    /// Destination root resolution for `moveBookmarksBody`.
     ///
-    /// `readOnly: false`（UI 拖放路径）是今天的行为，一字不变：`bookmarkRoot` 在
-    /// `guard createIfNeeded` **之前**还会做 heal-on-read——把一个「关系断了但还在」的
-    /// 孤儿根认领回来、把重复根的孩子并到主根上再删掉重复根。那正是这条路径在并发
-    /// 初始化留下孤儿根之后仍能完成拖动的原因，换成纯读会让用户的手势被静默丢弃。
+    /// `readOnly: false` preserves UI heal-on-read before `guard createIfNeeded`: reclaim orphan roots, merge
+    /// children and delete duplicate roots. Pure reads would drop gestures after concurrent initialization
+    /// leaves orphan roots.
     ///
-    /// `readOnly: true`（同步层）走 `existingBookmarkRoot`：那些治愈动作会在每轮都跑的
-    /// 路径上写主 context，而且「重建一个空 root 再搬进去」之后「目标 root 缺失」这条
-    /// 守卫永远不可达。
+    /// Sync uses true and `existingBookmarkRoot` to avoid main-context mutations on every round and keep the
+    /// missing-target-root guard meaningful.
     func targetBookmarkRoot(profileId: String,
                             spaceId: String,
                             readOnly: Bool,
@@ -2025,12 +2004,12 @@ private extension LocalStore {
                                 createIfNeeded: true)
     }
 
-    /// 这条行自己的 `profileId`，不存在就返回 nil。
+    /// The row's own `profileId`, or nil if the row is absent.
     func bookmarkNodeProfileId(_ guid: String, in context: ModelContext) throws -> String? {
         try bookmarkNode(with: guid, in: context)?.profileId
     }
 
-    /// 一个 Space 只属于一个 Profile。Space 行还不在本地时返回 nil。
+    /// A Space belongs to one Profile. Return nil if its local row is absent.
     func profileId(ofSpaceId spaceId: String, in context: ModelContext) throws -> String? {
         let descriptor = FetchDescriptor<SpaceModel>(
             predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId }
@@ -2038,8 +2017,8 @@ private extension LocalStore {
         return try context.fetch(descriptor).first?.profileId
     }
 
-    /// 用户输入的 URL 归一化。`URLProcessor.processUserInput` 会把不像 URL 的东西变成
-    /// 搜索，所以它**只在 UI 路径上**跑；同步层的 throwing 兄弟直接收 `URL`。
+    /// Normalize user-entered URLs on the UI path only: `URLProcessor.processUserInput` can turn non-URLs into
+    /// searches. The throwing sync sibling accepts `URL` directly.
     func userInputBookmarkURL(from raw: String?) throws -> URL {
         guard let normalized = normalizedURL(from: raw),
               let processed = URL(string: URLProcessor.processUserInput(normalized.absoluteString)) else {
@@ -2124,20 +2103,22 @@ extension LocalStore {
     }
 }
 
-// MARK: - 批量插入（同步层落地专用）
+// MARK: - Bulk insertion for sync landing
 
 extension LocalStore {
-    /// 一条待批量插入的书签 / 文件夹行。`index` 由调用方按 §4.10 的 rank 投影预先算好。
+    /// A bookmark/folder row for bulk insertion, with `index` precomputed by the caller's §4.10 rank
+    /// projection.
     struct BulkBookmarkInsert {
         var guid: String
-        /// 账户级同步身份。与行在同一个事务里写下，落地路径没有第二次写可以失败。
+        /// Account sync identity, persisted with the row in one transaction so no second landing write can
+        /// fail.
         var syncId: String?
         var title: String
-        /// 文件夹带占位 URL。
+        /// Folders carry a placeholder URL.
         var url: URL
         var index: Int
         var isFolder: Bool
-        /// nil = 直接挂在这个 Space 的 canonical root 下。
+        /// nil attaches directly to this Space's canonical root.
         var parentGuid: String?
         var spaceId: String
         var profileId: String
@@ -2145,7 +2126,7 @@ extension LocalStore {
         var contentUpdatedDate: Date?
         var secondaryUrl: URL?
         var secondaryTitle: String?
-        /// `TabSource` 的 raw value。
+        /// The `TabSource` raw value.
         var source: Int
 
         init(guid: String,
@@ -2179,21 +2160,19 @@ extension LocalStore {
         }
     }
 
-    /// 一次写 N 条兄弟，**index 预先算好、不走 `insert(node:to:at:in:)`**，被触及的父
-    /// 收集起来，**在事务末尾对每个父跑一次** `normalizeIndexes`。
+    /// Insert N siblings with precomputed indices, bypassing `insert(node:to:at:in:)`, and normalize each
+    /// touched parent once at transaction end.
     ///
-    /// 既有的 `insertBookmarkNode` / `insertDirectoryNode` 都以 `insert(node:to:at:in:)`
-    /// 收尾，而它每插一行就 fetch 一次该父的孩子并对整个兄弟列表跑一次
-    /// `normalizeIndexes`——250 条落进同一个文件夹是 250 次 fetch 加 250 次全量重排，在
-    /// 一个文件夹里是平方级，而且全在 §4.5 要求的那一个事务里、整轮都放不掉。UI 路径
-    /// 继续用 `insert(node:to:at:in:)`。
+    /// The single-row bookmark/folder helpers fetch siblings and normalize on every insert: 250 rows in one
+    /// folder cause 250 fetches and full reorders, quadratic work inside the single transaction required by
+    /// §4.5. UI keeps the existing single-row path.
     func insertBookmarksBulkThrowing(_ rows: [BulkBookmarkInsert]) async throws {
         _ = try await performBackgroundWriteAndWaitThrowing { context in
             try self.insertBookmarksBulkBody(rows, in: context)
         }
     }
 
-    /// 返回值是**被重排过的父的个数**，也就是 `normalizeIndexes` 被调用的次数。
+    /// Returns the number of normalized parents, equal to the number of `normalizeIndexes` calls.
     @discardableResult
     func insertBookmarksBulkBody(_ rows: [BulkBookmarkInsert],
                                  in context: ModelContext) throws -> Int {
@@ -2216,8 +2195,8 @@ extension LocalStore {
                 profile = resolved
             }
 
-            // 同一批里父可以排在子前面（§4.4 的拓扑顺序保证了这一点），所以先查本批已插
-            // 入的行，再查库里已有的行。
+            // Parents can precede their children in this batch (§4.4 topological order); check already
+            // inserted batch rows before persisted rows.
             let parent: TabDataModel
             if let parentGuid = row.parentGuid {
                 if let pending = insertedByGuid[parentGuid] {
@@ -2253,9 +2232,8 @@ extension LocalStore {
             node.source = row.source
             node.syncId = row.syncId
             node.contentUpdatedDate = row.contentUpdatedDate
-            // 先 insert，再写两条关系。`node.parent` 本来就排在 insert 之后，`node.profile`
-            // 当时留在了前面——而这是同步落地那条路（R-exec-2），它比一次作用域迁移常走
-            // 得多。
+            // Insert before assigning either relationship. Sync landing (R-exec-2) follows this order for both
+            // `parent` and `profile`, just as scope migration must.
             context.insert(node)
             node.profile = profile
             node.parent = parent
@@ -2271,40 +2249,31 @@ extension LocalStore {
     }
 }
 
-// MARK: - 一轮远端落地（同步层专用，§4.5 / R-exec-2）
+// MARK: - One remote landing round (sync only, §4.5 / R-exec-2)
 
-/// §4.5 要求一轮远端落地的**多条**行用**一个**事务：抛错 = 一条都没落，部分成功不存在。
+/// §4.5 requires all rows in a remote landing round to share one transaction: any error means none landed.
 ///
-/// 已有的 throwing 兄弟每一个都自己开一次 `performBackgroundWriteAndWaitThrowing`
-/// （`LocalStore.swift:466`），而那个入口把作业 yield 进串行写队列再等写 actor——把它们
-/// 挨个调是 N 个事务，套在一个写块里则直接死锁（嵌套的那次排在正等着它的块后面）。
+/// Existing throwing helpers each enqueue and await their own serialized
+/// `performBackgroundWriteAndWaitThrowing` (LocalStore.swift:466). Calling them separately creates N
+/// transactions; nesting them inside a write deadlocks behind the waiting outer block.
 ///
-/// **必须写在本文件里**：`moveBookmarkBody` / `updateBookmarkBody` / `deleteBookmarkBody`
-/// 与 `bookmarkNode` / `children` / `normalizeIndexes` 全是 `private`，别的文件够不着。
-/// 与 Task 2b 的 pin 侧同一条理由。
-///
-/// **既有的 throwing 兄弟一个都不动**：它们继续服务单条落地，这里只是多一个批量入口，
-/// 且调的是同一批 body——没有第二份实现，UI 路径与同步路径不可能漂移。
+/// Keep this extension in this file to access private move/update/delete bodies and bookmark/children/index
+/// helpers, as on the Task 2b pin side. Single-row throwing APIs remain available; this batch entry reuses
+/// their bodies so UI and sync behavior cannot diverge.
 extension LocalStore {
-    /// 一整批已排好序的书签落地操作，**一个**事务。
+    /// Apply the entire preordered bookmark batch in one transaction. `BookmarkApplyBatch` supplies §4.4
+    /// three-phase topological order; never reorder operations here.
     ///
-    /// `ops` 必须已经按 §4.4 的三相拓扑序排好（`BookmarkApplyBatch` 负责），这里**一条都
-    /// 不重排**。
+    /// 1. Recheck the import lock inside the write (§4.9 item 3), covering imports started after the round's
+    /// preliminary read. Refuse the entire batch, roll back and retry next round, equivalent to parking that
+    /// Space's bookmarks.
+    /// 2. Coalesce consecutive creates using `insertBookmarksBulkBody`, preserving relative order and avoiding
+    /// repeated sibling fetches/reorders for each insert.
+    /// 3. Normalize each touched parent once at the end (§4.10); per-operation normalization alone does not
+    /// ensure final dense indices.
     ///
-    /// 三件事在这一个块里：
-    /// 1. **导入锁在写块内部再读一次**（§4.9 第 3 条）。轮首那次读只是优化——「读完之后
-    ///    导入才开始」那个边沿只有在事务里重读才挡得住。占用中就整批抛
-    ///    `targetNotWritable`，事务回滚，引擎下一轮重试，等价于「该 Space 的书签本轮整体
-    ///    停放」。
-    /// 2. **连续的 create 攒成一次批量插入**。`insertBookmarksBulkBody` 把 index 预先算好、
-    ///    只在末尾对每个被触及的父跑一次 `normalizeIndexes`；逐条插会让 250 条落进同一个
-    ///    文件夹变成 250 次 fetch 加 250 次全量重排。相邻的 create 在三相排序里本来就是连着
-    ///    的，所以攒批**不改变任何一条操作的相对次序**。
-    /// 3. **末尾对每个被触及的父跑一次 `normalizeIndexes`**（§4.10）：一批操作可能反复动
-    ///    同一个父，每条各自那次重排只保证它自己那一刻是稠密的。
-    ///
-    /// 带 `contentUpdatedDate` 的远端 create 走批量插入那条路：两个单条 create 兄弟的参数表
-    /// 里没有这一列（Task 2a 第 3 条事实）。
+    /// Remote creates carrying `contentUpdatedDate` use bulk insertion because single-row create APIs lack
+    /// that argument (Task 2a item 3).
     func applyBookmarkSyncBatchThrowing(_ ops: [BookmarkApplyOp]) async throws {
         guard !ops.isEmpty else { return }
         try await performBackgroundWriteAndWaitThrowing { context in
@@ -2312,11 +2281,9 @@ extension LocalStore {
         }
     }
 
-    /// 退出账户 / 重置同步状态时抹掉全部书签身份（§9.2）。**一次批量写**：逐条一个事务
-    /// 在一棵上千条的树上是上千个事务。
-    ///
-    /// 只碰书签与文件夹行：`syncId` 这一列住在 `TabDataModel` 上，而 pin 的身份是
-    /// `(pinLineageId, owner)`（§3.2），不走这一列。
+    /// Clear all bookmark identities on account exit/sync reset (§9.2) in one bulk write, avoiding one
+    /// transaction per row. Only bookmarks and folders use this `syncId` column; pins derive identity from
+    /// `(pinLineageId, owner)` (§3.2).
     @discardableResult
     func clearAllBookmarkSyncIdsThrowing() async throws -> Int {
         try await performBackgroundWriteAndWaitThrowing { context in
@@ -2333,13 +2300,13 @@ extension LocalStore {
         }
     }
 
-    /// 事务体。分出来只为可读性，没有第二个调用方。
+    /// Transaction body, extracted solely for readability; it has one caller.
     private func applyBookmarkSyncBatchBody(_ ops: [BookmarkApplyOp],
                                             in context: ModelContext) throws {
         try refuseIfImporting(ops, in: context)
 
-        // 被触及的父，末尾统一重排一次。**记 guid，不记 model**：同一批里子先于父被删，
-        // 一个攥在手上的 model 到事务末尾可能已经是条删掉的行，再读它的属性是未定义的。
+        // Record touched parent GUIDs for final normalization, not models: children are deleted before
+        // parents, so a retained model may already be deleted by transaction end and unsafe to read.
         var touchedParentGuids = Set<String>()
         func remember(_ node: TabDataModel?) {
             guard let node else { return }
@@ -2367,29 +2334,27 @@ extension LocalStore {
                 guard let node = try bookmarkNode(with: guid, in: context) else {
                     throw LocalStoreWriteError.rowNotFound
                 }
-                // `bookmarkNode(with:)` 按 guid 匹配**任何** `TabDataModel`，包括 tab 与
-                // pin 行。往一条非书签行上写书签身份，下一轮快照读不到它、差分判成「本机
-                // 没有这一行」，于是给对端那条实体发 tombstone。
+                // `bookmarkNode(with:)` matches any `TabDataModel` by GUID, including tabs and pins. Claiming
+                // a non-bookmark would hide it from the next snapshot, making diff emit a tombstone for the
+                // remote entity.
                 guard node.dataType == .bookmark || node.dataType == .bookmarkFolder else {
                     throw LocalStoreWriteError.rowNotFound
                 }
-                // 一条行的身份只认领一次（§6.1）。重复认领同一个 uuid 是幂等的，换一个
-                // uuid 则是 fail-closed：旧身份会在本机瞬间失去对应行，而差分对此的回答是
-                // 删掉对端那条实体。今天这条不变量由协议之上的规划器守着，这里是
-                // R-M3-3-14 要求的那道「静默结果必须变成抛错」的闸。
+                // Claim identity only once (§6.1). Reclaiming the same UUID is idempotent; replacing it fails
+                // closed because the old identity would lose its local row and be tombstoned. This guard
+                // enforces the planner invariant at the write boundary (R-M3-3-14).
                 guard node.syncId == nil || node.syncId == syncId else {
                     throw LocalStoreWriteError.rowAlreadyMapped
                 }
-                // 认领不是一次编辑：只写身份，`contentUpdatedDate` 不为它而动。
+                // Claiming is not editing: write identity without changing `contentUpdatedDate`.
                 node.syncId = syncId
 
             case .move(let guid, let parentGuid, let spaceId, let index):
                 try flushCreates()
-                // 搬走之后旧父也要重排，所以先把它记下来。
+                // Remember the old parent before moving so it is normalized too.
                 remember(try bookmarkNode(with: guid, in: context)?.parent)
-                // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space
-                // 行还不在本地时退回这条行自己的 Profile。与 `moveBookmarkThrowing`
-                // （:603）逐字同一段。
+                // Use the destination Space's Profile, falling back to the row's existing Profile if the Space
+                // is absent locally, matching `moveBookmarkThrowing` (:603).
                 let targetProfileId = try profileId(ofSpaceId: spaceId, in: context)
                     ?? bookmarkNodeProfileId(guid, in: context)
                     ?? Self.defaultProfileId
@@ -2404,13 +2369,11 @@ extension LocalStore {
 
             case .update(let guid, let fields):
                 try flushCreates()
-                // 外层「改不改」，内层「改成什么」。`title` 的内层 nil 是「清空」——远端
-                // 真的可以有一条空标题的书签，所以 `allowsEmptyTitle` **显式**传 `true`
-                // （Task 2a 第 4 条事实：默认值会变，同步层每次自己写出来）。`url` 的内层
-                // nil 是「不动」：一条书签丢不掉它的 URL。
-                // `updateBookmarkBody` 的 `profileId` 形参在它的实现里一次都没有被读到，
-                // 所以这里不再为了算一个没人看的实参多跑一次 `bookmarkNode` fetch——一批
-                // 250 条 update 就是 250 次可以省掉的查询。
+                // Outer optional selects whether to change; inner optional selects the value. A nil inner
+                // title clears it, so explicitly pass `allowsEmptyTitle: true` regardless of defaults (Task 2a
+                // item 4). A nil inner URL means unchanged: bookmarks cannot lose their URL.
+                // `updateBookmarkBody` never reads `profileId`, so avoid an otherwise wasted row fetch per
+                // update.
                 try updateBookmarkBody(guid,
                                        profileId: Self.defaultProfileId,
                                        title: fields.title.map { $0 ?? "" },
@@ -2425,22 +2388,16 @@ extension LocalStore {
                 guard let node = try bookmarkNode(with: guid, in: context) else {
                     throw LocalStoreWriteError.rowNotFound
                 }
-                // `deleteBookmarkBody` 就是一句 `context.delete(node)`，而
-                // `TabDataModel.children` 带 `@Relationship(deleteRule: .cascade)`
-                // （`TabDataModelSchemaV10.swift:112`）——一次删除会把整棵子树无声地带走。
+                // `deleteBookmarkBody` calls `context.delete(node)`; `children` cascades deletion
+                // (TabDataModelSchemaV10.swift:112). Protect descendants not named by the batch, especially
+                // unpublished local rows. Named children are deleted first or moved away in phase 1; R-M3-3-17
+                // requires every other child to be deleted or lifted to the Space root before its folder.
+                // Violation rolls back for retry instead of silently losing user data.
                 //
-                // 这一批自己点名的后代是安全的：三相排序里 delete 相子先于父，而被「提走」
-                // 的孩子在第一相就已经改挂到别处。**挡的是这一批从没提过的后代**，尤其是
-                // 本地独有、从没发布过的行：R-M3-3-17 要求引擎先把它们删掉或提到 Space
-                // root，漏一个就在这个事务里静默死掉，没有计数也没有日志。正常运行时这条
-                // 守卫永远不触发，触发就整批回滚重试，而不是销毁用户数据。
-                //
-                // `!$0.isDeleted` 不是多余的：这一批的 delete 相是**子先于父**，所以走到
-                // 父这一条时它的孩子已经在同一个块里被 `context.delete` 标过了。带待定变更
-                // 的 fetch 会不会把它们滤掉，取决于 SwiftData 那条没有在本里程碑里被跑过的
-                // 语义（本里程碑只编译、不跑测试），而 §4.4 有一句顺带的话说的正相反。赌错
-                // 的代价是**每一次远端删除一个非空文件夹都永远抛 `folderNotEmpty`**，文件夹
-                // 删除在任何设备上都再也落不了地。显式过滤在两种语义下都对。
+                // Explicitly exclude `isDeleted` children: child-first deletes have already marked them in
+                // this context. Pending-change fetch behavior was not runtime-tested in this milestone
+                // (compile-only), and §4.4 suggests the opposite behavior. Filtering works either way and
+                // prevents every nonempty remote folder deletion from failing forever with `folderNotEmpty`.
                 if node.dataType == .bookmarkFolder,
                    try children(of: node, in: context).contains(where: { !$0.isDeleted }) {
                     throw LocalStoreWriteError.folderNotEmpty
@@ -2452,18 +2409,16 @@ extension LocalStore {
         }
         try flushCreates()
 
-        // §4.10：投影按父运行一次。本批次自己删掉的父在这里查不回来，跳过——它的孩子已经
-        // 随级联一起走了。
+        // §4.10: project once per parent. Skip parents deleted by this batch; their children have already been
+        // removed by cascade.
         for parentGuid in touchedParentGuids {
             guard let parent = try bookmarkNode(with: parentGuid, in: context) else { continue }
             normalizeIndexes(for: try children(of: parent, in: context))
         }
     }
 
-    /// 本批次碰到的任何一个 Space 正在被导入 ⇒ 整批不落地。
-    ///
-    /// `claim` / `update` / `delete` 身上只有 guid，所以它们的 Space 在**事务内**按行查，
-    /// 而不是让调用方从一份轮首的快照里猜——那份快照到这一刻可能已经过期。
+    /// Refuse the entire batch if any touched Space is importing. Resolve Spaces for GUID-only
+    /// claim/update/delete operations inside the transaction; a round-start snapshot may already be stale.
     private func refuseIfImporting(_ ops: [BookmarkApplyOp], in context: ModelContext) throws {
         var spaceIds = Set<String>()
         for op in ops {
@@ -2479,9 +2434,9 @@ extension LocalStore {
             }
         }
         for spaceId in spaceIds.sorted() where ImportTargetLock.shared.isImporting(into: spaceId) {
-            // 与 `targetNotWritable` 分开：导入是**瞬时**状态，引擎该停放重试，而不是把它
-            // 当成一次结构性失败。`sorted()` 只为让多个 Space 同时在导入时报出去的是同一
-            // 个，不随 Set 的迭代顺序变。
+            // Importing is transient, unlike `targetNotWritable`: park and retry instead of treating it as
+            // structural failure. Sort so concurrent imports report a deterministic Space rather than Set
+            // iteration order.
             throw LocalStoreWriteError.spaceImporting(spaceId: spaceId)
         }
     }
@@ -2505,10 +2460,11 @@ extension LocalStore {
 }
 
 #if DEBUG
-// MARK: - 测试钩子
+// MARK: - Test hooks
 
 extension LocalStore {
-    /// 建一个 Space 并立刻物化它的书签根，省得每个用例自己拼 `SpaceModel` 的六个字段。
+    /// Create a Space and immediately materialize its bookmark root, avoiding repeated six-field `SpaceModel`
+    /// setup in tests.
     func createSpaceForTesting(spaceId: String, profileId: String) async throws {
         try await createSpaceThrowing(profileId: profileId,
                                       name: spaceId,
@@ -2518,7 +2474,7 @@ extension LocalStore {
                                       createdDate: nil)
     }
 
-    /// 按给定 `index` 插一条书签并**跳过重排**，用来制造「两条兄弟 index 撞车」的前提。
+    /// Insert with the supplied index without normalization to create sibling index collisions.
     func insertBookmarkWithIndexForTesting(guid: String,
                                            parentGuid: String,
                                            index: Int) async throws {
@@ -2545,8 +2501,8 @@ extension LocalStore {
         }
     }
 
-    /// 断开 `SpaceModel.bookmarkRoot` 关系但把那条根行留在库里，制造「关系断了但孤儿根
-    /// 还在」的状态。
+    /// Detach `SpaceModel.bookmarkRoot` while preserving its root row, creating an orphan root with a broken
+    /// relationship.
     func detachBookmarkRootRelationshipForTesting(spaceId: String) async throws {
         _ = try await performBackgroundWriteAndWaitThrowing { context -> Bool in
             let descriptor = FetchDescriptor<SpaceModel>(
@@ -2560,7 +2516,7 @@ extension LocalStore {
         }
     }
 
-    /// 与 `insertBookmarksBulkThrowing` 同一个 body，额外把重排次数交回给用例。
+    /// Run the same body as `insertBookmarksBulkThrowing`, returning the normalization count for tests.
     func insertBookmarksBulkThrowingCountingNormalizations(
         _ rows: [BulkBookmarkInsert]
     ) async throws -> Int {

@@ -13,8 +13,8 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {
-        // 这个类驱动真的作用域迁移，而迁移的成功路径写 `UserDefaults.standard`——在 hosted
-        // 测试里那就是 Phi 自己的偏好域。
+        // This class runs real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
         clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -284,12 +284,12 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         let wrapper: PinnedScopeVariantWebContentWrapperSpy
     }
 
-    /// 现场那一串动作（Mac B 2026-09-15 01:20，build 825）：Profile → Space 的作用域切换，
-    /// 紧接着取消固定一条 pin。侧栏在第二步崩掉了。
+    /// Reproduces Mac B, 2026-09-15 01:20, build 825: switch Profile scope to Space, then unpin;
+    /// the sidebar crashed on the second step.
     ///
-    /// 钉的是 `pinnedTabs` 这一侧的不变量：**一条物理行一个运行时 `Tab`，同一个对象不许出现
-    /// 两次**。迁移会把迁移前那些 `Tab` 原地改指向新行（为了保住活着的 WebContents），任何
-    /// 漏网的重复都会直接进到侧栏那份 diffable 快照，而重复标识符在那里不是瑕疵、是崩溃。
+    /// The pinnedTabs invariant is one runtime Tab per physical row, with no repeated object.
+    /// Migration rebinds existing Tab objects in place to preserve live WebContents. Any duplicate
+    /// reaches the sidebar's diffable snapshot, where duplicate identifiers cause a crash.
     func testAScopeMigrationThenAnUnpinKeepsOneRuntimeTabPerRow() async throws {
         let store = try makeStore()
         let profile = try seedProfileAndSpaces(in: store)
@@ -314,11 +314,11 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         }
         assertUniquePinnedRuntimeTabs(state, expectedCount: 2)
         XCTAssertTrue(state.pinnedTabs.contains { $0 === runtimeOne },
-                      "① 迁移保住了那个活着的运行时 tab，没有换成一个新对象")
+                      "① Migration preserves the live runtime tab object")
         XCTAssertEqual(binding.liveTab.guidInLocalDB, runtimeOne.guidInLocalDB,
-                       "② 活标签页跟着迁到了同一条新行上")
+                       "② The live tab follows the migration to the same new row")
 
-        // 第二步：取消固定另一条 —— 现场就是在这一步崩的。
+        // Step 2: unpin the other tab; the original crash occurred here.
         let victim = try XCTUnwrap(
             state.pinnedTabs.first(where: { $0.pinnedLineageId == "lineage-two" })?.guidInLocalDB
         )
@@ -330,7 +330,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
 
         assertUniquePinnedRuntimeTabs(state, expectedCount: 1)
         XCTAssertTrue(state.pinnedTabs.first === runtimeOne,
-                      "③ 活下来的还是那一个运行时 tab")
+                      "③ The same runtime tab survives")
     }
 
     private func assertUniquePinnedRuntimeTabs(
@@ -342,12 +342,12 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         XCTAssertEqual(state.pinnedTabs.count, expectedCount, file: file, line: line)
         let guids = state.pinnedTabs.compactMap(\.guidInLocalDB)
         XCTAssertEqual(guids.count, state.pinnedTabs.count,
-                       "每一条 pin 都绑着一条物理行", file: file, line: line)
+                       "Every pin is bound to a physical row", file: file, line: line)
         XCTAssertEqual(Set(guids).count, guids.count,
-                       "没有两个运行时 tab 指着同一条行", file: file, line: line)
+                       "No two runtime tabs point to the same row", file: file, line: line)
         let objects = state.pinnedTabs.map { ObjectIdentifier($0) }
         XCTAssertEqual(Set(objects).count, objects.count,
-                       "同一个对象没有出现两次", file: file, line: line)
+                       "No object appears twice", file: file, line: line)
     }
 
     private func makeStore() throws -> LocalStore {

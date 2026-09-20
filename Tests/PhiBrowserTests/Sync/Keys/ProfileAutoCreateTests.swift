@@ -263,9 +263,8 @@ final class ProfileAutoCreateTests: XCTestCase {
         XCTAssertEqual(lockedOutcome, .failed)
         XCTAssertEqual(api.listProfilesCalls, 0)
 
-        // The other half of §12.1 ⑧, and §11's 口径: a shut gate is `.skipped`,
-        // NOT `.failed` -- it does not arm the retry and it is reported as
-        // `profile_refresh=skipped`.
+        // The other half of §12.1 ⑧ and §11's reporting contract: a closed gate is skipped,
+        // not failed. It arms no retry and reports profile_refresh=skipped.
         ProfilePairingGate.staticPendingOverride = true
         defer { ProfilePairingGate.staticPendingOverride = nil }
         let payload = Box<[AnyHashable: Any]?>(nil)

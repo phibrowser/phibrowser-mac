@@ -6,29 +6,28 @@
 import AppKit
 import SwiftUI
 
-/// 配对向导的模态根视图（§6）：步骤条 / content / 固定页脚 / 状态页 / D7 的覆盖确认页
-/// / self-revoke 出口。
+/// Modal root for the pairing wizard (§6): step bar, content, fixed footer, status pages, D7 overwrite
+/// confirmation and self-revoke exit.
 ///
-/// **确认页不另开文件**：它和加载 / 出错 / 提交中一样是容器自己的一页（同一个页脚、
-/// 同一个 self-revoke 出口、同一份 chrome），拆出去只会让这个 view 再持一份页脚状态。
-/// 它渲染的东西全部来自 `SpaceOverwriteDiff`，逻辑一行都不在这里。
+/// Keep confirmation as a container page like loading/error/submitting, sharing footer, exit and chrome
+/// instead of duplicating footer state. All rendered differences come from SpaceOverwriteDiff; this view owns
+/// no diff logic.
 struct PairingWizardView: View {
     @StateObject private var viewModel: PairingWizardViewModel
     let controller: SyncKeyController
     let onDismiss: () -> Void
 
-    /// 非 nil 之后这个按钮就地置灰：这个账户的最后一台活跃设备。**为窗口的一生保持
-    /// 粘性**——用户在这个模态里做不了任何事来增加第二台设备（原样搬自
-    /// `ProfilePairingGateView`）。
+    /// A nonnil note disables removal because this is the account's last active device. Keep it sticky for
+    /// this window: the modal cannot add a second device. Carried from ProfilePairingGateView.
     @State private var removeBlockedNote: String?
-    /// 同一个按钮的瞬时失败（离线、5xx、Keychain）。同一个槽位显示，但**不置灰**：
-    /// 重试就是修复。每次尝试开始时清掉。
+    /// Transient removal failure (offline, 5xx, Keychain), shown in the same slot without disabling retry.
+    /// Clear at each new attempt.
     @State private var removeErrorNote: String?
 
     init(viewModel: PairingWizardViewModel, controller: SyncKeyController,
          onDismiss: @escaping () -> Void) {
-        // 宿主建 VM、这里持有它：`weak var viewModel` 在宿主上的生命周期论证因此逐字
-        // 成立——VM 活在 `window` 持有的 hosting controller 里。
+        // The host creates the VM and this StateObject retains it through the window's hosting controller,
+        // supporting the host's weak viewModel lifetime.
         self._viewModel = StateObject(wrappedValue: viewModel)
         self.controller = controller
         self.onDismiss = onDismiss
@@ -71,7 +70,7 @@ struct PairingWizardView: View {
                         .font(.body)
                         .themedForeground(.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    // `.gate` 上下文只渲染行列表：标题 / 正文 / 主按钮归向导 chrome。
+                    // Gate context renders rows only; wizard chrome owns title, body and primary button.
                     ProfilePairingView(viewModel: viewModel.keyLayer,
                                        locals: locals, remotes: remotes,
                                        selections: $viewModel.profileSelections,
@@ -101,12 +100,9 @@ struct PairingWizardView: View {
         }
     }
 
-    /// `detail` 是加载页那条进度文案：预览的期限是 `PhiSyncEngine.previewDeadlineMs`
-    /// = 120 s，而 `.loading` 这一页既没有 Retry 按钮、窗口也没有关闭键。一个长达两分钟、
-    /// 不说自己在干什么也不说要等多久的加载页，用户唯一合理的反应是强退——强退掉的是一次
-    /// **配对**，下一次进来还要从头再等一遍。
-    ///
-    /// 其余三个状态页不传它（默认 nil），渲染逐字不变。
+    /// Loading progress detail: preview may take PhiSyncEngine.previewDeadlineMs = 120 s, with neither Retry
+    /// nor a close button on loading. Explain the work and expected wait so users do not force-quit pairing
+    /// and restart the wait. Other status pages pass nil and keep their existing rendering.
     private func statusPage(message: String?, detail: String? = nil,
                             showsProgress: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -123,12 +119,11 @@ struct PairingWizardView: View {
         .padding(24)
     }
 
-    // MARK: - D7 的覆盖确认页（§6.9）
+    // MARK: - D7 overwrite confirmation (§6.9)
 
     private func confirmationPage(_ items: [SpaceOverwriteDiff]) -> some View {
-        // 空页不可达：无差异时 Finish 根本不进这个 phase（§5.5）。断言仍然写出来，
-        // 因为一旦有人把差异计算改成「总是显示」，这一页会退化成一个只有两个按钮的
-        // 空白窗口。
+        // An empty page is invalid: Finish bypasses this phase when no differences exist (§5.5). Assert to
+        // prevent future always-show logic from presenting a blank two-button page.
         assert(!items.isEmpty)
         return ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
@@ -173,13 +168,12 @@ struct PairingWizardView: View {
     }
 
     private func changeRow(_ change: SpaceOverwriteDiff.Change) -> some View {
-        // 任一侧的图标落到兜底字形时，两侧都补一段 storedValue 原文——`SpaceIconView`
-        // 对**空**的与**解析不出**的 storedValue 画的是同一个 `rectangle.stack`，所以
-        // `Icon: [stack] → [stack]` 是可达的。
+        // If either icon uses the fallback glyph, show raw storedValue for both: empty and unrecognized values
+        // both render rectangle.stack, so glyphs alone can hide a real difference.
         let showsRaw = needsRawIconText(change)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            // 字段名**宽度不对齐**：它是本地化串，德语能长出一倍，硬对齐要么截断
-            // 要么把值挤出屏幕。
+            // Do not force equal label widths: localized labels can grow substantially and would truncate or
+            // crowd values offscreen.
             Text(Self.fieldLabel(change.field))
                 .font(.callout)
                 .themedForeground(.textSecondary)
@@ -189,7 +183,7 @@ struct PairingWizardView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 8)
-        // 整行作为一个元素，否则 VoiceOver 会把那个 `→` 单独念一遍。
+        // Expose the whole row as one accessibility element so VoiceOver does not read the arrow separately.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(
             format: NSLocalizedString("%1$@ changes from %2$@ to %3$@",
@@ -205,8 +199,8 @@ struct PairingWizardView: View {
         case .text(let text):
             HStack(spacing: 6) {
                 if field == .color, let swatch = Self.swatch(text) {
-                    // 唯一一处由 hex 解析出来的颜色（它渲染的就是那个 hex 本身，不是
-                    // 主题色）；解析不出就只留文本，不画空圆点。
+                    // This hex-derived color previews the literal value, not a theme color. If invalid, keep
+                    // text without an empty swatch.
                     Circle().fill(swatch).frame(width: 10, height: 10)
                 }
                 Text(text.isEmpty ? SpacePairingStepView.unresolvedName : text)
@@ -230,18 +224,16 @@ struct PairingWizardView: View {
         }
     }
 
-    /// `Default` 这条 key **不复用**：SettingsSectionCard 的 `Default` 是「默认
-    /// Space / Profile」的**徽章**，而 §6.4 的默认 Space 行**在同一个窗口里**正用着
-    /// 它；确认页要说的却是「这一侧没有自己的值」。同一扇窗上两个词会互相冲突。
+    /// Do not reuse Default: SettingsSectionCard uses it as the default Space/Profile badge in this same
+    /// window (§6.4). Confirmation instead means this side has no custom value; distinct keys avoid
+    /// conflicting meanings.
     private static let noCustomValue = NSLocalizedString(
         "No custom value",
         comment: "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead")
 
-    /// 六条字段标签，**一张 switch 同时供无障碍标签使用，不写第二份**。
-    ///
-    /// `Name` / `Icon` / `Color` / `Theme` 四条都是目录里**既有**的 key，所以它们照抄
-    /// 树上那一条 comment（§6.8 的复用规则：同一个 key 的两份 comment 会在重新生成时
-    /// 被拼成多行）。
+    /// One switch supplies all six visible and accessibility field labels. Reuse existing
+    /// Name/Icon/Color/Theme keys with their existing catalog comments (§6.8); different comments for the same
+    /// key are concatenated during generation.
     private static func fieldLabel(_ field: SpaceOverwriteDiff.Field) -> String {
         switch field {
         case .name: return NSLocalizedString("Name", comment: "Editor - Label for the title/name input field")
@@ -257,9 +249,8 @@ struct PairingWizardView: View {
         }
     }
 
-    /// **必须能表达千分单位的差别**：遮罩透明度的滑杆是连续的（`isContinuous = true`、
-    /// 无 tickMarks、线性映射、写入不取整），千分单位常态上不是 10 的倍数，一律
-    /// `%1$d%%` 会把两个**确实会被覆盖**的值渲染成同一个词。
+    /// Preserve thousandth-unit differences: the continuous opacity slider has no ticks or rounding. Integer
+    /// percentages could display two genuinely different values being overwritten as equal.
     private static func percentText(_ milliUnits: Int64) -> String {
         if milliUnits % 10 == 0 {
             return String(format: NSLocalizedString("%1$d%%",
@@ -271,8 +262,8 @@ struct PairingWizardView: View {
                       Double(milliUnits) / 10)
     }
 
-    /// 无障碍读的字符串。图标退回 storedValue 原文——§5.7 说过图标没有显示名目录，
-    /// 这是唯一能说出口的字符串。
+    /// Accessibility text. Icons use raw storedValue because §5.7 provides no display-name catalog, making it
+    /// the only speakable identity.
     private static func spoken(_ value: SpaceOverwriteDiff.Value) -> String {
         switch value {
         case .text(let text): return text.isEmpty ? SpacePairingStepView.unresolvedName : text
@@ -296,15 +287,15 @@ struct PairingWizardView: View {
         return NSImage(systemSymbolName: storedValue, accessibilityDescription: nil) != nil
     }
 
-    /// `Color(hexString:)`（ThirdParty/DynamicColor）不是 failable，一个无效串会画出
-    /// 一个说不清的颜色，所以先自己验一遍。
+    /// Validate hex first: DynamicColor's Color(hexString:) is nonfailable and can render an unspecified color
+    /// for invalid input.
     private static func swatch(_ hex: String) -> Color? {
         let body = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         guard body.count == 6 || body.count == 8, body.allSatisfy(\.isHexDigit) else { return nil }
         return Color(hexString: hex)
     }
 
-    // MARK: - 页脚（§6.5）
+    // MARK: - Footer (§6.5)
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -319,7 +310,7 @@ struct PairingWizardView: View {
                 Spacer(minLength: 0)
                 actions
             }
-            // App 级模态的**唯一另一个出口**：每一页都带着它，确认页也不例外。
+            // The app-modal's sole alternative exit appears on every page, including confirmation.
             Button(NSLocalizedString("Remove this device from sync…",
                                      comment: "Pairing wizard - self-revoke exit")) {
                 confirmAndRemoveThisDevice()
@@ -348,14 +339,9 @@ struct PairingWizardView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
-            // 两个析取项，逐字对应 spec §6.5 钉的那一句（也就是 `ProfilePairingView`
-            // 的 `.settings` 主按钮判据今天那一句在向导里的形态）：`allDecided`
-            // 之外还有「加载在飞」那一半 = `phase == .loading || phase == .submitting`。
-            //
-            // **不读 `viewModel.keyLayer.isSubmitting`**：`keyLayer` 是另一个
-            // `ObservableObject`，而这个 view 只 `@StateObject` 观察 `viewModel`——
-            // 跨对象的 `@Published` 变化不会让这里重画，那个析取项在**任何** phase 里
-            // 都是一个死的、还不会刷新的读。用 `phase` 的好处是它就在被观察的对象上。
+            // Match §6.5: disable for undecided rows or loading/submitting. Read phase on the observed wizard
+            // VM, never keyLayer.isSubmitting: keyLayer is a separate ObservableObject, and its Published
+            // changes do not redraw this view.
             .disabled(!viewModel.profileRowsDecided
                       || viewModel.phase == .loading || viewModel.phase == .submitting)
         case .spaces:
@@ -372,12 +358,10 @@ struct PairingWizardView: View {
             .disabled(!viewModel.spaceModel.allRowsDecided
                       || viewModel.phase == .loading || viewModel.phase == .submitting)
         case .confirmOverwrite:
-            // **两个按钮的角色是反过来的，这是有意的（D7）。** 全向导只有这一页里，
-            // 处在「主按钮」位置的动作是破坏性的，所以 `.defaultAction` 给 `Back`：
-            // Return 落在**安全**的那一侧。`Apply` 不挂任何 key equivalent，只能点；
-            // 它的键盘路径靠 full keyboard access，而声明顺序
-            // `Apply → Back → Remove…` 让第一次 Tab 就落在 `Apply` 上。
-            // 仍然**不挂 `.cancelAction`**：这是 App 级阻断模态，Esc 必须是死键。
+            // D7 deliberately reverses button roles here: Apply is destructive, so Back receives defaultAction
+            // and Return. Apply has no key equivalent; full keyboard access reaches it first in declaration
+            // order Apply → Back → Remove. Do not add cancelAction: Esc must not dismiss this blocking
+            // app-modal.
             Button(NSLocalizedString("Apply",
                                      comment: "Overwrite confirmation - apply every decision and start syncing")) {
                 Task { await viewModel.applyConfirmedOverwrite(controller: controller) }
@@ -402,21 +386,17 @@ struct PairingWizardView: View {
         }
     }
 
-    /// 模态的 retry 按钮是否可按。**它总是可按**，除了一趟提交正在飞的时候——沿用
-    /// `ProfilePairingGateView.retryEnabled` 的全部论证（一个卡住的加载必须在任何
-    /// phase 里都能重启，而一次落在提交上的 retry 会变成 `phase` 的第二个写者）。
-    ///
-    /// `isSubmitting` 由调用方传 `viewModel.isApplying`——那是向导 VM **自己**的
-    /// `@Published`，不是 `keyLayer.isSubmitting`：后者住在另一个 `ObservableObject`
-    /// 上，这个 view 不观察它，读它既不会触发重画，也在 `.error` 出现的那一刻早已被
-    /// `applyPairingDecisions` 的 `defer` 清掉了。
+    /// Retry is enabled except during submission. A stuck load must be restartable in any phase; retry during
+    /// submission would create a second phase writer. Pass the wizard VM's own Published isApplying, not
+    /// keyLayer.isSubmitting, which this view does not observe and whose defer already cleared it when error
+    /// appears (§6.5).
     static func retryEnabled(for phase: PairingWizardPhase, isSubmitting: Bool) -> Bool {
         !isSubmitting
     }
 
-    /// 第二次确认，然后是「先退休再清理」的序列。客户端**不**预探账户的设备数
-    /// （这个 client 上没有列表端点）：它直接问，被拒就就地置灰（原样搬自
-    /// `ProfilePairingGateView.confirmAndRemoveThisDevice`）。
+    /// Confirm again, then retire before cleanup. Do not preflight device count: this client has no list
+    /// endpoint. Request removal directly and disable on refusal, as in
+    /// ProfilePairingGateView.confirmAndRemoveThisDevice.
     private func confirmAndRemoveThisDevice() {
         guard SelfRevokeStrings.confirmRemoval() else { return }
         removeErrorNote = nil
@@ -427,7 +407,7 @@ struct PairingWizardView: View {
             } catch KeyAPIError.lastActiveDevice {
                 removeBlockedNote = SelfRevokeStrings.lastDeviceNote
             } catch {
-                // R12：错误只进日志，界面上是那条固定文案。
+                // R12: detailed errors go only to logs; UI uses fixed text.
                 AppLogWarn("[phi-sync] self-revoke failed (\(PhiSyncLog.describe(error)))")
                 removeErrorNote = SelfRevokeStrings.removalUnavailable
             }

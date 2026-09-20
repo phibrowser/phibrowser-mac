@@ -3,20 +3,15 @@ import Foundation
 import XCTest
 @testable import Phi
 
-/// 8b-1 的用例（spec §12.1「URL Rule」块里的 M-* 系列，D30 的第一段）：纯谓词级
-/// （M-28 / M-29 / M-30，直接调 `URLRuleKind` 上的三个静态函数）与假件级（M-1 / M-2 / M-2b /
-/// M-8 / M-8b / M-9 / M-11 / M-13 / M-14 / M-18 / M-20，真引擎 + `FakeURLRuleAccess` + 内存 store，
-/// 驱动入口只用 `pullOnce()`）。M-31 在 `PhiOwnedItemStateTests`、M-32 在
-/// `LocalStoreURLRuleThrowingTests`（真 `LocalStore`）。
-///
-/// 类标 `@MainActor` 与 `SyncableOwnedItemsTests.swift:11-12` 同款理由：要构造 `@MainActor` 假件。
-///
-/// **两条口径贯穿全文：**
-/// - 远端戳一律取 `Self.remoteStamp`（比 fixture 行的 `createdDate` 新），于是 §8.2 的无基线合并
-///   里远端赢下三个单元、合并结果 == 入站实体、零 `mustRepublish`——`pushed == 0` 的断言只说
-///   认领这一件事，不混进「本机赢了字段要重新发布」那条正当的推送。
-/// - 同一桶里的几条到达 rank 各不相同且按到达序递增（`V` / `W` / `X`），于是认领之后的
-///   `sortOrder` 序与基线 rank 序一致，出站快照沿用基线 rank、不铸新的。
+/// 8b-1 tests for spec §12.1 URL Rule M-* cases and D30's first section. Pure predicates cover M-28/29/30 via
+/// URLRuleKind static functions; real engine plus FakeURLRuleAccess/memory stores cover
+/// M-1/2/2b/8/8b/9/11/13/14/18/20 through pullOnce only. M-31 lives in PhiOwnedItemStateTests; M-32 uses real
+/// LocalStore in LocalStoreURLRuleThrowingTests. Main-actor fakes require @MainActor, as in
+/// SyncableOwnedItemsTests.swift:11–12.
+/// Two fixture invariants apply throughout: remoteStamp is newer than local createdDate so remote wins all
+/// three units in no-baseline merge (§8.2), eliminating legitimate mustRepublish noise from adoption
+/// assertions. Within a bucket, arrival ranks V/W/X increase with arrival order so adopted sortOrder agrees
+/// with baseline rank and snapshots need not mint ranks.
 @MainActor
 final class URLRuleMergeTests: XCTestCase {
     typealias FakePhiSyncClient = PhiSyncEngineTests.FakePhiSyncClient
@@ -31,11 +26,12 @@ final class URLRuleMergeTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private let key = SymmetricKey(size: .bits256)
-    /// 8b-2 的 CASE M2-d 那几条真 `LocalStore` 用例开出来的临时目录。**只删自己建的那些**。
+    /// Temporary directories for 8b-2 CASE M2-d real-LocalStore cases. Remove only directories created by this
+    /// test.
     private var mergeTempDirectories: [URL] = []
 
     private static let now: Int64 = 1_700_000_000_000
-    /// 见文件头：比 `PhiLocalURLRule.fixture()` 的 `createdDate`（1_000 s ⇒ 1_000_000 ms）新。
+    /// Newer than PhiLocalURLRule.fixture's createdDate, 1_000 seconds = 1_000_000 ms; see file header.
     private static let remoteStamp: Int64 = 5_000_000
 
     override func setUp() {
@@ -55,9 +51,9 @@ final class URLRuleMergeTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - 脚手架（形状照 `URLRuleKindTests` 的 Task 6 段）
+    // MARK: - Fixtures (matching URLRuleKindTests Task 6)
 
-    /// 一台已经配过对的机器：`space-a/b/c → su-1/2/3`，与 `OwnerResolver.fixture()` 同一套本机 id。
+    /// Paired device with space-a/b/c → su-1/2/3, matching OwnerResolver.fixture's local IDs.
     private func makeSpaceAccess() -> FakePhiSpaceAccess {
         let access = FakePhiSpaceAccess()
         let mappings = ["space-a": "su-1", "space-b": "su-2", "space-c": "su-3"]
@@ -74,7 +70,7 @@ final class URLRuleMergeTests: XCTestCase {
         return access
     }
 
-    /// `hasDrainedFullReplay` 预置为真：发布侧的 guard ① 不挡路，设置段与 Space 段静默。
+    /// Preseed hasDrainedFullReplay true to satisfy publication guard ①; silence settings and Spaces.
     private func drainedSpaceStore() throws -> MemorySpaceStore {
         let store = MemorySpaceStore()
         store.table.hasDrainedFullReplay = true
@@ -82,8 +78,8 @@ final class URLRuleMergeTests: XCTestCase {
         return store
     }
 
-    /// 让设置段与 Space 段这一轮都没有东西可发（照 `URLRuleKindTests.silenceOtherSections`），
-    /// 于是 `client.commits` 说的就是规则那一半。
+    /// Silence settings/Space publication as in URLRuleKindTests.silenceOtherSections so client.commits
+    /// measures rules alone.
     private func silenceOtherSections(_ spaceStore: MemorySpaceStore) throws {
         for uuid in ["su-1", "su-2", "su-3"] {
             spaceStore.table.unreadableTagHashes[
@@ -120,7 +116,7 @@ final class URLRuleMergeTests: XCTestCase {
                      entityId: "srv-\(payload.ruleUuid)", key: key)
     }
 
-    /// 一条远端实体，三枚戳都是 `remoteStamp`（见文件头）。
+    /// Remote entity with all three stamps set to remoteStamp; see file header.
     private func remote(uuid: String, target: String = "su-1", host: String = "github.com",
                         pathPrefix: String = "", rank: String = "V") -> Phi_PhiURLRuleEntity {
         urlRulePayload(uuid: uuid, targetSpaceUuid: target, host: host, pathPrefix: pathPrefix,
@@ -132,7 +128,7 @@ final class URLRuleMergeTests: XCTestCase {
         client.commits.filter { $0.name == PhiSyncEntity.urlRuleEntityName }
     }
 
-    /// 一条**活**的已发布游标：`server == reconciled`、有服务端三元组、归属已知。
+    /// Live published cursor with equal server/reconciled, server metadata and known ownership.
     private func publishedRuleCursor(_ payload: Phi_PhiURLRuleEntity,
                                      entityId: String = "srv-1", version: Int64 = 1,
                                      owner: String = "su-1") -> PhiOwnedItemCursor {
@@ -162,10 +158,10 @@ final class URLRuleMergeTests: XCTestCase {
                              tombstonesThisPage: tombstones)
     }
 
-    // MARK: - CASE M-1（首次同步认领）
+    // MARK: - CASE M-1 (initial-sync adoption)
 
-    /// 防的是什么：「删旧建新」的实现让那一行短暂没有身份或产生第二条行，而 §5.7 的差分对
-    /// 「有游标、无本机行」的回答是发一条 tombstone。
+    /// Delete-then-create would temporarily remove identity or duplicate the row; §5.7 diff tombstones an
+    /// identity with a cursor but no local row.
     func testM1_firstSyncClaimsTheLocalRowByReKeyingIt() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a", host: "github.com")])
         let store = MemoryOwnedItemStore()
@@ -177,13 +173,13 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // ① 那一行被 re-key，`id` 不变，没有第二条行。
+        // ① Rekey the existing row without changing id or creating another row.
         XCTAssertEqual(access.rows.count, 1)
         XCTAssertEqual(access.rows.first?.id, "i1")
         XCTAssertEqual(access.rows.first?.syncId, "remote-b")
         XCTAssertEqual(rekeyCount(access.lastAppliedOps), 1)
         XCTAssertEqual(createCount(access.lastAppliedOps), 0)
-        // ② 旧游标整条不在，新身份有基线与服务端三元组。
+        // ② Remove the old cursor completely; the new identity has baseline and server metadata.
         XCTAssertNil(store.table.cursors["local-a"])
         XCTAssertNotNil(store.table.cursors["remote-b"]?.reconciled)
         XCTAssertEqual(store.table.cursors["remote-b"]?.entityId, "srv-remote-b")
@@ -192,9 +188,9 @@ final class URLRuleMergeTests: XCTestCase {
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 1)
         XCTAssertEqual(first?.applied, 1)
-        XCTAssertTrue(ruleCommits(client).isEmpty, "远端赢下三个单元 ⇒ 没有什么要重新发布")
+        XCTAssertTrue(ruleCommits(client).isEmpty, "Remote wins all three units; nothing needs republication")
 
-        // ④ 再跑一轮：零推送、零 tombstone。
+        // ④ Another round produces no pushes or tombstones.
         await engine.pullOnce()
         let second = await counters(engine)
         XCTAssertEqual(second?.pushed, 0)
@@ -203,10 +199,10 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(access.rows.first?.syncId, "remote-b")
     }
 
-    /// ⑤ 一个事务：落地抛 ⇒ 行的 `syncId` 仍是旧值、旧游标状态一个字节不变（表里本来就没有
-    /// 它）、新身份没有基线（停放）。防的是什么：先删旧游标再落地的实现在这里留下一条「行没改、
-    /// 游标没了」的中间态，那条身份下一轮以 `baseVersion == 0` 的 create 盲写覆盖账户。
-    /// 末尾多跑一轮：停放项重试时走同一条认领通路（定义域是「到达 ∪ 停放」），收敛到 ①。
+    /// ⑤ One transaction: landing failure preserves old syncId and old cursor state (absent here), while the
+    /// new identity parks without baseline. Deleting the old cursor before landing would leave an unchanged
+    /// row without its cursor and permit blind baseVersion 0 publication. Retry parking through the same
+    /// arrivals ∪ parked adoption domain and converge to ①.
     func testM1_aFailedLandingLeavesTheRowOnItsOldIdentityAndWritesNoBaseline() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a", host: "github.com")])
         access.failApplyOnce = true
@@ -221,9 +217,9 @@ final class URLRuleMergeTests: XCTestCase {
 
         XCTAssertEqual(access.rows.count, 1)
         XCTAssertEqual(access.rows.first?.syncId, "local-a")
-        XCTAssertNil(store.table.cursors["local-a"], "从没有过，也没被写出来")
-        XCTAssertNil(store.table.cursors["remote-b"]?.reconciled, "没有基线")
-        XCTAssertNotNil(store.table.cursors["remote-b"]?.pendingApply, "整批停放")
+        XCTAssertNil(store.table.cursors["local-a"], "Never existed and was not created")
+        XCTAssertNil(store.table.cursors["remote-b"]?.reconciled, "No baseline")
+        XCTAssertNotNil(store.table.cursors["remote-b"]?.pendingApply, "Park the whole batch")
         let first = await counters(engine)
         XCTAssertEqual(first?.parked, 1)
         XCTAssertEqual(first?.applied, 0)
@@ -231,26 +227,25 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
         XCTAssertEqual(access.rows.count, 1)
         XCTAssertEqual(access.rows.first?.id, "i1")
-        XCTAssertEqual(access.rows.first?.syncId, "remote-b", "停放重试走同一条认领通路")
+        XCTAssertEqual(access.rows.first?.syncId, "remote-b", "Parking retry uses the same adoption path")
         XCTAssertNotNil(store.table.cursors["remote-b"]?.reconciled)
         XCTAssertNil(store.table.cursors["remote-b"]?.pendingApply)
         let second = await counters(engine)
         XCTAssertEqual(second?.adopted, 1)
     }
 
-    // MARK: - CASE M-2（认领拒绝：已有基线）
+    // MARK: - CASE M-2 (baseline prevents adoption)
 
-    /// 防的是什么：只判「游标不存在」的实现会 re-key 一条有基线的行并按第 4 步把带基线的旧游标
-    /// 整条删掉 ⇒ 基线销毁、旧身份那条账户实体变成谁都删不掉的孤儿。
-    /// ③（第二轮两条都静止 ⇒ `syncId` 较大的那条被软删、`collapsed == 1`）是 **8b-2** 的断言，
-    /// 这里只写到 ②，`collapsed` 留占位。
+    /// Checking only cursor absence could rekey a published row and delete its baseline-bearing old cursor,
+    /// leaving an undeletable account orphan. 8b-2 adds assertion ③: when both rows become still in round two,
+    /// soft-delete the larger syncId and count collapsed 1; the initial 8b-1 case covers ①/②.
     func testM2_aRowWithABaselineIsNotClaimable() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a", host: "github.com")])
         let store = MemoryOwnedItemStore()
         let published = urlRulePayload(uuid: "local-a")
         store.table.cursors["local-a"] = publishedRuleCursor(published, entityId: "e-a", version: 3)
         let client = FakePhiSyncClient()
-        // 账户上真有这条实体：假 client 的更新路径按 `entityId` / `baseVersion` 认它。
+        // Seed the actual account entity so fake updates can match entityId/baseVersion.
         client.seed(tagHash: ruleHash("local-a"), ciphertext: Data(), version: 3, entityId: "e-a")
         client.pagesByMarker = [page([ruleEntity(remote(uuid: "remote-b", rank: "W"), version: 7)],
                                      marker: "7")]
@@ -260,41 +255,40 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // ① 第一轮：零认领，入站实体作为第二条行落地。
+        // ① First round: no adoption; inbound entity lands as a second row.
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 0)
         XCTAssertEqual(access.rows.count, 2)
         XCTAssertEqual(access.rows.first { $0.id == "i1" }?.syncId, "local-a")
         XCTAssertEqual(createCount(access.lastAppliedOps), 1)
         XCTAssertEqual(rekeyCount(access.lastAppliedOps), 0)
-        // ② 刚落地那条身份的游标要到 `land` 返回之后才写下，静止判据 1 本轮不成立（R-M3-4a-67）。
+        // ② The newly landed identity's cursor persists only after land returns, so stillness predicate 1 is
+        // false this round (R-M3-4a-67).
         XCTAssertEqual(first?.collapsed, 0)
-        // ④ 已发布实体的游标完好：基线还在，没有被当成「旧游标」整条删掉。
+        // ④ Preserve the published entity's entire cursor and baseline instead of deleting it as an old
+        // adoption cursor.
         XCTAssertEqual(store.table.cursors["local-a"]?.entityId, "e-a")
         XCTAssertNotNil(store.table.cursors["local-a"]?.reconciled)
         XCTAssertNil(store.table.cursors["local-a"]?.deletedAtMs)
 
         await engine.pullOnce()
-        // ③（8b-2）：第二轮两条都静止 ⇒ `syncId` 字典序较大的 `"remote-b"` 被软删、
-        // `collapsed == 1`，胜者 `"local-a"` 那条**已发布实体**一个字节不动。
+        // ③ 8b-2: both rows are still next round; larger remote-b is soft-deleted with collapsed 1, while
+        // published winner local-a stays unchanged.
         let second = await counters(engine)
         XCTAssertEqual(second?.collapsed, 1)
-        XCTAssertNil(store.table.cursors["local-a"]?.deletedAtMs, "胜者的游标不动")
+        XCTAssertNil(store.table.cursors["local-a"]?.deletedAtMs, "The winner's cursor is unchanged")
         XCTAssertNil(access.rows.first { $0.syncId == "local-a" }?.deletedDate)
-        XCTAssertNotNil(access.rows.first { $0.syncId == "remote-b" }?.deletedDate, "败者软删")
+        XCTAssertNotNil(access.rows.first { $0.syncId == "remote-b" }?.deletedDate, "The loser is soft-deleted")
         XCTAssertEqual(access.rows.first { $0.syncId == "remote-b" }?.mergePartnerSyncId, "local-a")
-        XCTAssertEqual(access.rows.filter { $0.deletedDate == nil }.count, 1, "收敛之后一条活行")
+        XCTAssertEqual(access.rows.filter { $0.deletedDate == nil }.count, 1, "One live row after convergence")
     }
 
-    // MARK: - CASE M-2b（birthday 重置留下的游标不可认领）
+    // MARK: - CASE M-2b (birthday-reset cursors cannot be adopted)
 
-    /// 防的是什么：只看前两个合取项（`entityId.isEmpty && server == nil`）的实现会让一次 birthday
-    /// 重置之后**每一条**规则游标都可认领 ⇒ 任何同签名的入站实体都能 re-key 那一行、再把带基线的
-    /// 旧游标删掉。R-exec-13 的补键判据正是这种形状的镜像。
-    ///
-    /// 第 2 页的请求抛出去，让本轮止于 pull（无 push）：发布段的补键通路本来就会为这种形状的
-    /// 游标经 client tag 重新认一次身份并收割三元组，那是它的正当行为，但会遮住「认领 pre-pass
-    /// 一个字节都没动它」这条断言。
+    /// entityId empty plus server nil is insufficient: birthday reset retains reconciled, and every reset
+    /// cursor would otherwise become adoptable and lose its baseline. This mirrors R-exec-13 rekey
+    /// eligibility. Throw on page 2 to stop before legitimate publication-side rekey harvest obscures the
+    /// unchanged adoption prepass assertion.
     func testM2b_aBirthdayResetCursorIsNotClaimable() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a", host: "github.com")])
         let store = MemoryOwnedItemStore()
@@ -316,16 +310,16 @@ final class URLRuleMergeTests: XCTestCase {
 
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 0)
-        XCTAssertEqual(store.table.cursors["local-a"], reset, "一个字节都没动")
+        XCTAssertEqual(store.table.cursors["local-a"], reset, "Unchanged byte for byte")
         XCTAssertEqual(access.rows.first { $0.id == "i1" }?.syncId, "local-a")
-        XCTAssertEqual(access.rows.count, 2, "入站实体作为第二条行落地")
+        XCTAssertEqual(access.rows.count, 2, "The inbound entity lands as a second row")
         XCTAssertEqual(rekeyCount(access.lastAppliedOps), 0)
     }
 
-    // MARK: - CASE M-8（签名按归一化后的值比）
+    // MARK: - CASE M-8 (signatures compare normalized values)
 
-    /// 防的是什么：按未归一化的字节比签名的实现把两条同一规则判成两条；线上 `path_prefix` 的
-    /// `""` 与本机 nil 不互转的实现同样在这里红。
+    /// Raw-byte signatures would split equivalent rules; missing conversion between wire empty path and local
+    /// nil must also fail this case.
     func testM8_signaturesCompareNormalizedValues() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i1", syncId: "local-a", host: "GitHub.com.", pathPrefix: nil),
@@ -345,10 +339,11 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(first?.adopted, 1)
         XCTAssertEqual(access.rows.count, 1)
         XCTAssertEqual(access.rows.first?.syncId, "remote-b")
-        XCTAssertEqual(access.rows.first?.host, "github.com", "落地写的是归一化之后的值")
+        XCTAssertEqual(access.rows.first?.host, "github.com", "Landing writes normalized values")
     }
 
-    /// 负面同批：路径相同、**目标不同** ⇒ 冲突不是重复，两条行都留着（交给 §9 的裁决键）。
+    /// Same-batch negative control: identical paths with different targets conflict rather than duplicate.
+    /// Retain both rows for §9 arbitration.
     func testM8_aDifferentTargetIsAConflictNotADuplicate() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i1", syncId: "local-a", host: "GitHub.com.", pathPrefix: nil),
@@ -371,10 +366,10 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(access.rows.first { $0.syncId == "remote-b" }?.spaceId, "space-b")
     }
 
-    // MARK: - CASE M-8b（签名的 owner 是账户级的量）
+    // MARK: - CASE M-8b (signature ownership is account-global)
 
-    /// 防的是什么：把 `signatureIndex` 改成按本机 `spaceId` 建键的实现在第一段红（两个键空间，永不
-    /// 命中，认领整条静默失效）；把保留常量排除在签名之外的实现在第二段红。
+    /// Keying signatureIndex by local spaceId would never match account keys in the first case; excluding
+    /// reserved constants fails the second.
     func testM8b_signatureOwnerIsTheAccountLevelUuid() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a", spaceId: "space-a")])
         let store = MemoryOwnedItemStore()
@@ -416,18 +411,18 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(access.rows.first?.spaceId, SpaceManager.incognitoRuleTargetId)
     }
 
-    // MARK: - CASE M-9（停放 / 待删 / 补键 / 停着 tombstone 的成员不静止）
+    // MARK: - CASE M-9 (parked, pending-delete, rekey and pending-tombstone members are not still)
 
-    /// 防的是什么：漏掉判据 5 的实现会把一条停着远端 tombstone 的行选成胜者 ⇒ 它吸收败者、软删
-    /// 败者并真的发出败者的 tombstone，而它自己进不了 `snapshot` ⇒ 下一轮它也被硬删 ⇒ 该签名组
-    /// 在两台与账户上全部为零。漏掉判据 9 的实现让补键态成员被淘汰。`collapsed` 是 8b-2 的。
+    /// Missing predicate 5 could select a winner with pending remote deletion, tombstone absorbed losers, then
+    /// lose the winner too, emptying the signature group everywhere. Missing predicate 9 could eliminate a
+    /// rekey candidate. collapsed assertions belong to 8b-2.
     func testM9_parkedPendingDeleteUnkeyedAndPendingTombstoneMembersAreNotAtRest() {
         let a = PhiLocalURLRule.fixture(id: "ia", syncId: "a", sortOrder: 0)
         let b = PhiLocalURLRule.fixture(id: "ib", syncId: "b", sortOrder: 1)
         let cursorA = publishedRuleCursor(urlRulePayload(uuid: "a"), entityId: "srv-a")
         let baseB = publishedRuleCursor(urlRulePayload(uuid: "b", rank: "W"), entityId: "srv-b")
         XCTAssertTrue(isAtRest(a, cursorA))
-        XCTAssertTrue(isAtRest(b, baseB), "基准：两条都静止")
+        XCTAssertTrue(isAtRest(b, baseB), "Baseline: both rows are still")
 
         var parked = baseB
         parked.pendingApply = Data([0x01])
@@ -439,21 +434,21 @@ final class URLRuleMergeTests: XCTestCase {
         pendingTombstone.pendingTombstone = true
 
         for (label, variant) in [("(a) pendingApply", parked), ("(b) pendingDelete", pendingDelete),
-                                 ("(c) 补键态", unkeyed), ("(d) pendingTombstone", pendingTombstone)] {
+                                 ("(c) Rekey state", unkeyed), ("(d) pendingTombstone", pendingTombstone)] {
             XCTAssertTrue(isAtRest(a, cursorA), label)
             XCTAssertFalse(isAtRest(b, variant), label)
         }
-        // (c) 里 `b` 仍然满足 `PhiSyncEngine` 的 `unkeyed` 候选判据（补键没有被绕过）。
+        // In (c), b still meets PhiSyncEngine's unkeyed candidate predicate; rekey remains active.
         XCTAssertTrue(unkeyed.entityId.isEmpty && unkeyed.reconciled != nil
                       && unkeyed.deletedAtMs == nil && unkeyed.pendingApply == nil
                       && !unkeyed.pendingDelete && (unkeyed.rekeyRejectRounds ?? 0) < 3)
     }
 
-    // MARK: - CASE M-11（V11 回填 + 两台首次同步）
+    // MARK: - CASE M-11 (V11 backfill and two devices' initial sync)
 
-    /// 防的是什么：把 M1 放进 `ownedItemsPublishAllowed` 闸后面的实现在 ① 上红（首次 drain 里那道闸
-    /// 为假）——那正是 §12.2 第 13d 步点名的「`adopted` 是 0 而规则数变成 4」。这一条同时是 D30(a)
-    /// 在真实升级路径上的验收。
+    /// Putting M1 behind ownedItemsPublishAllowed fails adoption during initial drain, where that gate is
+    /// false. §12.2 step 13d describes the resulting adopted 0 and four rules. This also validates D30(a)
+    /// through the real upgrade path.
     func testM11_aFreshDeviceClaimsAllThreeBackfilledRowsDuringItsFirstDrain() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i1", syncId: "local-1", host: "a.example", sortOrder: 0),
@@ -461,7 +456,7 @@ final class URLRuleMergeTests: XCTestCase {
             .fixture(id: "i3", syncId: "local-3", host: "c.example", sortOrder: 2),
         ])
         let store = MemoryOwnedItemStore()
-        // 首次 drain：`hasDrainedFullReplay == false`，`setSpaceSyncEnabled(true)` 武装 drain。
+        // Initial drain: hasDrainedFullReplay false; setSpaceSyncEnabled(true) arms drain.
         let spaceStore = MemorySpaceStore()
         try silenceOtherSections(spaceStore)
         let client = FakePhiSyncClient()
@@ -478,7 +473,7 @@ final class URLRuleMergeTests: XCTestCase {
                                 spaceStore: spaceStore,
                                 ownedKinds: [.urlRules(access: access, store: store)])
         await engine.setSpaceSyncEnabled(true)
-        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay, "认领跑在 drain 排干之前")
+        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay, "Adoption runs before drain completes")
         await engine.pullOnce()
 
         let first = await counters(engine)
@@ -488,7 +483,7 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(access.rows.first { $0.id == "i2" }?.syncId, "acc-2")
         XCTAssertEqual(access.rows.first { $0.id == "i3" }?.syncId, "acc-3")
         for retired in ["local-1", "local-2", "local-3"] {
-            XCTAssertNil(store.table.cursors[retired], "旧游标 \(retired) 整条不在")
+            XCTAssertNil(store.table.cursors[retired], "Old cursor \(retired) is completely absent")
         }
         for adopted in ["acc-1", "acc-2", "acc-3"] {
             XCTAssertNotNil(store.table.cursors[adopted]?.reconciled)
@@ -501,14 +496,15 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(second?.pushed, 0)
         XCTAssertEqual(second?.tombstones, 0)
         XCTAssertTrue(ruleCommits(client).isEmpty)
-        XCTAssertEqual(client.stored.count, 3, "账户上恰好 3 条")
+        XCTAssertEqual(client.stored.count, 3, "Exactly three account entities")
         XCTAssertTrue(client.stored.values.allSatisfy { !$0.deleted })
     }
 
-    // MARK: - CASE M-13（1:1 配对）
+    // MARK: - CASE M-13 (one-to-one pairing)
 
-    /// 防的是什么：不做 1:1 的实现会产出两条 `.claim` 指向同一条行 ⇒ 第二次 re-key 的守卫必然不
-    /// 成立 ⇒ 抛 ⇒ 整批回滚、全部留在 `pendingApply`、同一页每轮重放每轮抛，marker 永不推进（B-2）。
+    /// Without one-to-one matching, two claims rekey the same row and the second guard fails, rolling
+    /// back/parking the entire batch. Replaying the same page would fail indefinitely and prevent B-2 marker
+    /// advancement.
     func testM13_twoSameSignatureArrivalsClaimOneRowAndCreateTheOther() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a")])
         let store = MemoryOwnedItemStore()
@@ -525,18 +521,19 @@ final class URLRuleMergeTests: XCTestCase {
 
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 1)
-        XCTAssertEqual(access.rows.first { $0.id == "i1" }?.syncId, "r-1", "字典序第一")
+        XCTAssertEqual(access.rows.first { $0.id == "i1" }?.syncId, "r-1", "Lexicographically first")
         XCTAssertEqual(access.rows.count, 2)
-        XCTAssertNotNil(access.rows.first { $0.syncId == "r-2" }, "另一条作为第二条行落地")
+        XCTAssertNotNil(access.rows.first { $0.syncId == "r-2" }, "The other entity lands as a second row")
         XCTAssertEqual(rekeyCount(access.lastAppliedOps), 1)
         XCTAssertEqual(createCount(access.lastAppliedOps), 1)
-        XCTAssertEqual(first?.refused, 0, "零抛出")
+        XCTAssertEqual(first?.refused, 0, "No errors thrown")
         XCTAssertEqual(first?.parked, 0)
         XCTAssertEqual(first?.applied, 2)
-        XCTAssertEqual(marker.file.marker, Data("7".utf8), "marker 正常推进")
+        XCTAssertEqual(marker.file.marker, Data("7".utf8), "Marker advances normally")
     }
 
-    /// 对称变体：一条 arrival + 两条可认领的本机行 ⇒ 按本机 `syncId` 字典序取第一条，另一条不动。
+    /// Symmetric case: one arrival and two adoptable rows choose the smaller local syncId, leaving the other
+    /// untouched.
     func testM13_oneArrivalAgainstTwoClaimableRowsClaimsTheFirstBySyncId() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i2", syncId: "local-b", sortOrder: 0),
@@ -559,16 +556,16 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(other?.syncId, "local-b")
         XCTAssertEqual(other?.id, "i2")
         XCTAssertNil(store.table.cursors["local-a"])
-        XCTAssertNil(store.table.cursors["local-b"], "没被认领的那条本来就没有游标，也没被建出来")
+        XCTAssertNil(store.table.cursors["local-b"], "The unclaimed row had no cursor and none was created")
     }
 
-    // MARK: - CASE M-14（没有签名的行是惰性的）
+    // MARK: - CASE M-14 (rows without signatures remain inert)
 
-    /// 防的是什么：把 nil owner 退化成 `""` / 本机 `spaceId` 的实现、以及只判第一道门的实现都在
-    /// 这里红——后者让 (c) 那条行「有签名却进不了 `snapshot`」。
+    /// Never replace nil owner with empty string or local spaceId. Checking only the first gate gives case (c)
+    /// a signature despite exclusion from snapshots.
     func testM14_rowsWithoutASignatureAreInert() async throws {
-        // (a) 两个不同的 agent Space（没有映射 ⇒ `eligibilityOwner` nil）；
-        // (b) 过期的 incognito 运行期 id（R-M3-4a-8）。
+        // (a) Two unmapped agent Spaces yield nil eligibilityOwner; (b) expired incognito runtime ID
+        // (R-M3-4a-8).
         let stale = SpaceManager.incognitoRuleTargetId + ".stale-runtime"
         let segments: [(label: String, rows: [PhiLocalURLRule])] = [
             ("(a) agent", [.fixture(id: "i1", syncId: "local-a", spaceId: "agent-space-1"),
@@ -600,13 +597,13 @@ final class URLRuleMergeTests: XCTestCase {
         }
     }
 
-    /// (c) 目标 Space 在本机带着 `hidden`（`localSpaceId != nil` 且 `isEligibleSpace == false`）而
-    /// 映射还在：第一道门过、第二道门不过 ⇒ nil；那条行也不进 `snapshot`（`skippedIneligibleOwner` +1）。
+    /// (c) Hidden local Space retains mapping: localSpaceId resolves but isEligibleSpace is false. The second
+    /// gate makes signature nil and snapshot increments skippedIneligibleOwner.
     func testM14c_aHiddenTargetFailsTheSecondGateAndStaysOutOfTheSnapshot() async throws {
         let rows: [PhiLocalURLRule] = [.fixture(id: "i1", syncId: "local-a", spaceId: "space-a"),
                                        .fixture(id: "i2", syncId: "local-b", spaceId: "space-b")]
         let hidden = OwnerResolver.fixture(ineligible: ["su-1"])
-        XCTAssertNotNil(hidden.localSpaceId("su-1"), "映射还在")
+        XCTAssertNotNil(hidden.localSpaceId("su-1"), "The mapping remains")
         XCTAssertNil(URLRuleKind.signature(of: rows[0], resolve: hidden, normalize: normalize))
         XCTAssertNotNil(URLRuleKind.signature(of: rows[1], resolve: hidden, normalize: normalize))
         let snapshot = SyncableOwnedItems.snapshot(URLRuleKind.self, locals: rows,
@@ -643,10 +640,10 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(rekeyCount(access.lastAppliedOps), 0)
     }
 
-    // MARK: - CASE M-18（认领在第 1 页，差分在第 2 页）
+    // MARK: - CASE M-18 (adoption on page 1, diff after page 2)
 
-    /// 防的是什么：轮首冻结投影的实现在 ② 上同时做出两件事（把刚认领上的那条账户实体删掉）。这一条
-    /// 同时是「每页重读 + 两个就地更新口」的唯一端到端探针。
+    /// Frozen entry projections would cause both erroneous publications in ② and delete the newly adopted
+    /// account identity. This end-to-end case covers per-page reread and both in-place refresh sites.
     func testM18_aClaimOnPageOneIsVisibleToPageTwoAndToTheEndOfRoundDiff() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a")])
         let store = MemoryOwnedItemStore()
@@ -665,21 +662,21 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(pages, 2)
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 1)
-        // ② 轮末的发布段用的是刷新过的行投影：老 `syncId` 不被当成「没有游标的行」再发一条新实体，
-        //    新身份不被判成「有基线、本机无对应行」。
+        // ② Publication uses refreshed rows: old syncId is not recreated as cursorless, and new identity is
+        // not treated as baseline-bearing but locally absent.
         XCTAssertEqual(first?.pushed, 0)
         XCTAssertEqual(first?.tombstones, 0)
         XCTAssertTrue(ruleCommits(client).isEmpty)
         XCTAssertEqual(access.rows.count, 1)
         XCTAssertEqual(access.rows.first?.syncId, "remote-b")
-        XCTAssertEqual(claimNotes(access), [1], "就地更新口被调过、恰好一次")
+        XCTAssertEqual(claimNotes(access), [1], "The in-place refresh entry point ran exactly once")
         XCTAssertNil(store.table.cursors["local-a"])
         XCTAssertNotNil(store.table.cursors["remote-b"]?.reconciled)
     }
 
-    /// 变体（跨页重复认领）：两条同签名入站实体分在两页、本机只有一条可认领的行 ⇒ `adopted == 1`、
-    /// 第 2 页那条作为第二条行落地、落地零抛出、marker 正常推进。防的是什么：用轮首那一份签名索引
-    /// 去建第 2 页索引的实现让同一条行被第二条身份 re-key ⇒ 抛 ⇒ 整批回滚。
+    /// Cross-page adoption variant: two same-signature arrivals across two pages and one adoptable row yield
+    /// adopted 1, then a second created row without errors and normal marker advancement. Reusing the entry
+    /// signature index would rekey the claimed row again and roll back page 2.
     func testM18_aSecondSameSignatureArrivalOnPageTwoDoesNotReKeyTheRowAgain() async throws {
         let access = FakeURLRuleAccess(rows: [.fixture(id: "i1", syncId: "local-a")])
         let store = MemoryOwnedItemStore()
@@ -698,24 +695,24 @@ final class URLRuleMergeTests: XCTestCase {
 
         let first = await counters(engine)
         XCTAssertEqual(first?.adopted, 1)
-        XCTAssertEqual(first?.refused, 0, "落地零抛出")
+        XCTAssertEqual(first?.refused, 0, "Landing throws no errors")
         XCTAssertEqual(first?.parked, 0)
         XCTAssertEqual(first?.applied, 2)
         XCTAssertEqual(access.rows.count, 2)
         XCTAssertEqual(access.rows.first { $0.id == "i1" }?.syncId, "remote-b")
         XCTAssertNotNil(access.rows.first { $0.syncId == "remote-c" })
-        XCTAssertEqual(createCount(access.lastAppliedOps), 1, "第 2 页那条是 create")
-        XCTAssertEqual(rekeyCount(access.lastAppliedOps), 0, "第 2 页没有第二次 re-key")
+        XCTAssertEqual(createCount(access.lastAppliedOps), 1, "The page-2 entity uses create")
+        XCTAssertEqual(rekeyCount(access.lastAppliedOps), 0, "Page 2 performs no second rekey")
         XCTAssertEqual(marker.file.marker, Data("9".utf8))
         XCTAssertEqual(first?.pushed, 0)
         XCTAssertEqual(first?.tombstones, 0)
     }
 
-    // MARK: - CASE M-20（re-key 那一半：引擎的写绝不置位 `pendingLocalEdit`）
+    // MARK: - CASE M-20 (engine rekey never sets pendingLocalEdit)
 
-    /// 防的是什么：一次认领若置位，这条身份对下一次远端删除免疫（§8.4.4 的让位谓词读它）；re-key
-    /// 顺手清掉那一位的实现会把一次真实的未发布用户编辑在首次同步里静默丢掉。另外两条（用户删除 /
-    /// Space 级联）是 Task 9 与 8b-4 的。
+    /// Setting pendingLocalEdit during adoption would make it yield to the next remote deletion (§8.4.4);
+    /// clearing a pre-existing bit would lose a genuine unpublished user edit. Task 9 / 8b-4 cover user
+    /// deletion and Space cascade counterparts.
     func testM20_reKeyNeverSetsThePendingLocalEditFlag() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i1", syncId: "local-a", pendingLocalEdit: false),
@@ -731,7 +728,7 @@ final class URLRuleMergeTests: XCTestCase {
 
         let row = access.rows.first { $0.id == "i1" }
         XCTAssertEqual(row?.syncId, "remote-b")
-        XCTAssertEqual(row?.pendingLocalEdit, false, "re-key、字段合并落地、重编号、归一化都不置位")
+        XCTAssertEqual(row?.pendingLocalEdit, false, "Rekey, merged-field landing, renumbering and normalization do not set pending")
     }
 
     func testM20_reKeyNeitherClearsAPendingLocalEditNorTouchesTheMergePartner() async throws {
@@ -751,52 +748,54 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(first?.adopted, 1)
         let row = access.rows.first { $0.id == "i1" }
         XCTAssertEqual(row?.syncId, "remote-b")
-        XCTAssertEqual(row?.pendingLocalEdit, true, "原样保留：清位只在 §8.4.5 的两处（8b-4）")
-        XCTAssertEqual(row?.mergePartnerSyncId, "w", "RR10-8：re-key 不动这一列")
+        XCTAssertEqual(row?.pendingLocalEdit, true, "Preserve the flag; only §8.4.5's two paths clear it (8b-4)")
+        XCTAssertEqual(row?.mergePartnerSyncId, "w", "RR10-8: rekey leaves this column unchanged")
     }
 
-    // MARK: - CASE M-28（静止谓词的十项，一项一条负面）
+    // MARK: - CASE M-28 (one negative case per stillness predicate)
 
-    /// 防的是什么：第 10 项是新加的那一项（R-M3-4a-86）；第 5 项与第 10 项是同族的两半，少任何一项
-    /// 都让一个签名组在两台与账户上全部归零。`syncId == nil` 那条钉住「绝不强解包」。
+    /// Predicate 10 is added by R-M3-4a-86; predicates 5 and 10 protect two remote-deletion timings. Missing
+    /// either can empty a signature group on both devices and account. Nil syncId must never be
+    /// force-unwrapped.
     func testM28_everyOneOfTheTenConjunctsIsIndividuallyFalsifiable() throws {
         let r = PhiLocalURLRule.fixture(id: "ir", syncId: "r", spaceId: "space-a")
         var base = publishedRuleCursor(urlRulePayload(uuid: "r"), entityId: "e", version: 2)
         base.deletedAtMs = nil
-        XCTAssertTrue(isAtRest(r, base), "基准：十项全成立")
+        XCTAssertTrue(isAtRest(r, base), "Baseline: all ten predicates hold")
 
         func cursor(_ mutate: (inout PhiOwnedItemCursor) -> Void) -> PhiOwnedItemCursor {
             var out = base
             mutate(&out)
             return out
         }
-        // 1 ~ 5、9：游标各翻一项。
-        XCTAssertFalse(isAtRest(r, cursor { $0.server = nil }), "1 已发布")
+        // Predicates 1–5 and 9: toggle one cursor field at a time.
+        XCTAssertFalse(isAtRest(r, cursor { $0.server = nil }), "1 Published")
         XCTAssertFalse(isAtRest(r, cursor { $0.server = Data([0x01]) }), "2 server == reconciled")
         XCTAssertFalse(isAtRest(r, cursor { $0.pendingApply = Data() }), "3 pendingApply")
         XCTAssertFalse(isAtRest(r, cursor { $0.pendingDelete = true }), "4 pendingDelete")
         XCTAssertFalse(isAtRest(r, cursor { $0.pendingTombstone = true }), "5 pendingTombstone")
-        XCTAssertFalse(isAtRest(r, cursor { $0.entityId = "" }), "9 补键态（reconciled 留着）")
-        XCTAssertFalse(isAtRest(r, nil), "1 没有游标")
-        // 6、7：行各翻一项。
+        XCTAssertFalse(isAtRest(r, cursor { $0.entityId = "" }), "9 Rekey state with reconciled retained")
+        XCTAssertFalse(isAtRest(r, nil), "1 No cursor")
+        // Predicates 6/7: toggle one row field at a time.
         var pendingEdit = r
         pendingEdit.pendingLocalEdit = true
         XCTAssertFalse(isAtRest(pendingEdit, base), "6 pendingLocalEdit")
         var deleted = r
         deleted.deletedDate = Date()
         XCTAssertFalse(isAtRest(deleted, base), "7 deletedDate")
-        // 8：目标改成 agent Space ⇒ `eligibilityOwner == nil`。
+        // Predicate 8: agent-Space target gives nil eligibilityOwner.
         var agent = r
         agent.spaceId = "agent-space"
-        XCTAssertFalse(isAtRest(agent, base), "8 没有签名")
-        // 10：本页有它的 tombstone。
+        XCTAssertFalse(isAtRest(agent, base), "8 No signature")
+        // Predicate 10: this page contains its tombstone.
         XCTAssertFalse(isAtRest(r, base, tombstones: ["r"]), "10 tombstonesThisPage")
-        // 前置：`syncId == nil` 的行绝不强解包。
+        // Precondition: never force-unwrap a row's nil syncId.
         var unkeyedRow = r
         unkeyedRow.syncId = nil
         XCTAssertFalse(isAtRest(unkeyedRow, base), "syncId == nil")
 
-        // (a) `mergePartners` 对一条 `mergePartnerSyncId == "r"` 的 X：基准下交回，变体 5 / 10 下不交回。
+        // (a) mergePartners returns X with mergePartnerSyncId r for the base case, excluding it under variants
+        // 5/10.
         let x = PhiLocalURLRule.fixture(id: "ix", syncId: "x", host: "other.example",
                                         mergePartnerSyncId: "r")
         let access = FakeURLRuleAccess(rows: [r, x])
@@ -807,18 +806,19 @@ final class URLRuleMergeTests: XCTestCase {
         var tombstoned = PhiOwnedItemTable()
         tombstoned.cursors["r"] = cursor { $0.pendingTombstone = true }
         XCTAssertEqual(access.mergePartners(table: tombstoned, resolve: resolve, tombstonesThisPage: []),
-                       [:], "变体 5：W 不静止 ⇒ 不进本表")
+                       [:], "Variant 5: nonstill W is excluded from this table")
         XCTAssertEqual(access.mergePartners(table: table, resolve: resolve, tombstonesThisPage: ["r"]),
-                       [:], "变体 10：W 不静止 ⇒ 不进本表")
-        // (b) 变体 10 下 `signatureIndex` 里 R 仍然在（第 10 项只影响静止，不影响分组）。
+                       [:], "Variant 10: nonstill W is excluded from this table")
+        // (b) Variant 10 keeps R in signatureIndex: it changes stillness, not grouping.
         let signature = try XCTUnwrap(URLRuleKind.signature(of: r, resolve: resolve, normalize: normalize))
         XCTAssertEqual(access.signatureIndex(resolve: resolve)[signature]?.map(\.id), ["ir"])
     }
 
-    // MARK: - CASE M-29（签名的两道门与惰性行的分组排除）
+    // MARK: - CASE M-29 (two signature gates and inert-row exclusion)
 
-    /// 防的是什么：只判第一道门的实现让 (c) 进索引；把保留常量按普通 uuid 送进 `isEligibleSpace`
-    /// 的实现让 (b) 掉出去；组内不排序的实现让 §8.4.2 的「取字典序第一条」在两台上取到不同的行。
+    /// First-gate-only logic incorrectly indexes (c); passing reserved constants through ordinary
+    /// isEligibleSpace excludes (b). Sort members consistently so §8.4.2's lexical first choice agrees across
+    /// devices.
     func testM29_bothGatesAndTheGroupOrderOfTheSignatureIndex() throws {
         let hidden = OwnerResolver.fixture(ineligible: ["su-2"])
         let a = PhiLocalURLRule.fixture(id: "i1", syncId: "a", spaceId: "space-a", host: "a.example")
@@ -828,7 +828,8 @@ final class URLRuleMergeTests: XCTestCase {
         let d = PhiLocalURLRule.fixture(id: "i4", syncId: "d", spaceId: "agent-space", host: "d.example")
         let softDeleted = PhiLocalURLRule.fixture(id: "i5", syncId: "e", spaceId: "space-a",
                                                   host: "a.example", deletedDate: Date())
-        // 同签名三条：组内按 `(syncId ?? "", id)` 升序 ⇒ 没有 syncId 的排最前，然后 `aa` < `zz`。
+        // Three same-signature rows sort ascending by (syncId ?? empty, id): nil syncId first, then aa before
+        // zz.
         let dupZ = PhiLocalURLRule.fixture(id: "i9", syncId: "zz", spaceId: "space-a", host: "dup.example")
         let dupA = PhiLocalURLRule.fixture(id: "i8", syncId: "aa", spaceId: "space-a", host: "dup.example")
         let dupNil = PhiLocalURLRule.fixture(id: "i7", syncId: nil, spaceId: "space-a", host: "dup.example")
@@ -836,22 +837,23 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(URLRuleKind.signature(of: a, resolve: hidden, normalize: normalize)?.owner, "su-1")
         XCTAssertEqual(URLRuleKind.signature(of: b, resolve: hidden, normalize: normalize)?.owner,
                        "incognito-space")
-        XCTAssertNil(URLRuleKind.signature(of: c, resolve: hidden, normalize: normalize), "(c) 第二道门")
-        XCTAssertNil(URLRuleKind.signature(of: d, resolve: hidden, normalize: normalize), "(d) 第一道门")
+        XCTAssertNil(URLRuleKind.signature(of: c, resolve: hidden, normalize: normalize), "(c) Second gate")
+        XCTAssertNil(URLRuleKind.signature(of: d, resolve: hidden, normalize: normalize), "(d) First gate")
 
         let access = FakeURLRuleAccess(rows: [dupZ, a, b, c, d, softDeleted, dupA, dupNil])
         let index = access.signatureIndex(resolve: hidden)
         let indexed = Set(index.values.flatMap { $0 }.map(\.id))
         XCTAssertEqual(indexed, ["i1", "i2", "i7", "i8", "i9"])
-        XCTAssertFalse(indexed.contains("i5"), "软删行一条都不在")
+        XCTAssertFalse(indexed.contains("i5"), "No soft-deleted rows are included")
         let dup = try XCTUnwrap(URLRuleKind.signature(of: dupA, resolve: hidden, normalize: normalize))
         XCTAssertEqual(index[dup]?.map(\.id), ["i7", "i8", "i9"])
     }
 
-    // MARK: - CASE M-30（`baselineSignature` 的 fail-closed）
+    // MARK: - CASE M-30 (baselineSignature fails closed)
 
-    /// 防的是什么：任何一种退化取值（`""` owner、跳过第二道门、解不出时回一个空签名）都会让 §8.4.4
-    /// 的兜底支命中一条不该命中的 W；(e) 钉住「基线签名与当前签名走同一个函数」。
+    /// Empty-owner fallback, bypassing gate two or returning an empty signature on decode failure would
+    /// wrongly select W in §8.4.4 fallback. Case (e) verifies baseline and current signatures share the same
+    /// function.
     func testM30_baselineSignatureFailsClosedAndMatchesTheRowSignature() throws {
         let hidden = OwnerResolver.fixture(ineligible: ["su-2"])
         var table = PhiOwnedItemTable()
@@ -867,31 +869,29 @@ final class URLRuleMergeTests: XCTestCase {
             URLRuleKind.baselineSignature(identity: identity, table: table, resolve: hidden,
                                           normalize: normalize)
         }
-        XCTAssertNil(baseline("a"), "(a) 没有这条身份")
-        XCTAssertNil(baseline("b"), "(b) 没有 reconciled")
-        XCTAssertNil(baseline("c"), "(c) 解不出 Phi_PhiEntity")
-        XCTAssertNil(baseline("c2"), "(c) 解得出信封、不是规则")
-        XCTAssertNil(baseline("d"), "(d) 目标此刻 hidden")
+        XCTAssertNil(baseline("a"), "(a) Identity absent")
+        XCTAssertNil(baseline("b"), "(b) No reconciled baseline")
+        XCTAssertNil(baseline("c"), "(c) Cannot decode Phi_PhiEntity")
+        XCTAssertNil(baseline("c2"), "(c) Envelope decodes but is not a rule")
+        XCTAssertNil(baseline("d"), "(d) Target is currently hidden")
         let e = try XCTUnwrap(baseline("e"))
-        // 把那份 `reconciled` 落成本机行之后算出的签名逐字相等。
+        // Signature exactly matches the local row materialized from reconciled.
         let landed = PhiLocalURLRule.fixture(id: "ie", syncId: "e", spaceId: "space-a",
                                              host: "E.example.", pathPrefix: "/docs")
         XCTAssertEqual(URLRuleKind.signature(of: landed, resolve: hidden, normalize: normalize), e)
         XCTAssertEqual(e, RuleSignature(host: "e.example", pathPrefix: "/docs", owner: "su-1"))
     }
 
-    // =======================================================================================
-    // MARK: - 8b-2（M2 收敛）：脚手架
-    // =======================================================================================
+    // MARK: - 8b-2 (M2 convergence): fixtures
 
-    /// 毫秒戳 -> `Date`，与 `URLRuleKind` 内部那一份互为逆。有效账户戳读出来的就是它。
+    /// Convert milliseconds to Date, inverse to URLRuleKind's conversion. This preserves effective account
+    /// stamps.
     private func stampDate(_ ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }
 
-    /// 一条**静止**的已发布行 + 它的游标：十个合取项全部成立。
-    ///
-    /// `accountStamp` 落在**游标基线**的三枚戳上（有效账户戳的第三层读它），与行上那一列
-    /// `rowContentUpdatedDate` 刻意**解耦**——R-M3-4a-94 的整条论证就是「静止只蕴含『有基线且
-    /// `server == reconciled`』，**不蕴含**『行戳 == 基线戳』」，所以用例必须造得出两者不同的行。
+    /// A still published row and cursor satisfying all ten predicates. accountStamp populates baseline stamps
+    /// and intentionally differs from rowContentUpdatedDate. R-M3-4a-94: stillness implies an equal
+    /// server/reconciled baseline, not equality of row and baseline stamps; fixtures must support that
+    /// distinction.
     @discardableResult
     private func seedSettled(_ syncId: String, id: String,
                              host: String = "github.com", pathPrefix: String? = nil,
@@ -904,8 +904,8 @@ final class URLRuleMergeTests: XCTestCase {
                              mergePartnerSyncId: String? = nil,
                              rows: inout [PhiLocalURLRule],
                              table: inout PhiOwnedItemTable) -> PhiLocalURLRule {
-        // 见文件头的第二条口径：同一桶里几条行的 rank 必须各不相同、且与 `sortOrder` 同序，
-        // 否则出站快照会为它们重新铸 rank，每一条「这一轮零 commit」的断言都会看到一次虚假推送。
+        // Distinct ranks must follow sortOrder within a bucket, as stated in the file header. Otherwise
+        // snapshots remint ranks and create spurious publication in zero-commit cases.
         let ladder = ["V", "W", "X", "Y", "Z"]
         let payload = urlRulePayload(uuid: syncId, targetSpaceUuid: target, host: host,
                                      pathPrefix: pathPrefix ?? "", ask: ask,
@@ -923,8 +923,8 @@ final class URLRuleMergeTests: XCTestCase {
         return row
     }
 
-    /// `URLRuleKind.mergePass` 的调用糖。`publishedIdentities` 默认按 R-M3-4a-95 的取值式
-    /// 从游标表算（`server != nil`），与 `land` 闭包里那一行逐字相同。
+    /// mergePass helper; default publishedIdentities uses cursor server != nil per R-M3-4a-95, matching land's
+    /// expression.
     private func mergePass(rows: [PhiLocalURLRule], table: PhiOwnedItemTable,
                            atRest: Set<String>, convergeAllowed: Bool = true,
                            landedThisPage: Set<String> = [],
@@ -950,7 +950,7 @@ final class URLRuleMergeTests: XCTestCase {
                                      preLandingSignatures: preLanding, resolve: resolve)
     }
 
-    /// 本页的 M2 补写 op（`FakeURLRuleAccess` 记的那一份）。
+    /// M2's additional operations recorded by FakeURLRuleAccess on this page.
     private func mergeOps(_ access: FakeURLRuleAccess) -> [URLRuleSyncOp] { access.lastMergeOps }
 
     private func refreshCalls(_ access: FakeURLRuleAccess) -> Int {
@@ -969,7 +969,7 @@ final class URLRuleMergeTests: XCTestCase {
         access.rows.first { $0.syncId == syncId }
     }
 
-    /// 一台只跑规则的引擎 + 一页（默认空页：`landsEmptyBatch` 的那条路径）。
+    /// Rules-only engine with one page, empty by default to exercise landsEmptyBatch.
     private func makeRuleEngine(_ access: FakeURLRuleAccess, _ store: MemoryOwnedItemStore,
                                 client: FakePhiSyncClient,
                                 drained: Bool = true) throws -> PhiSyncEngine {
@@ -981,12 +981,10 @@ final class URLRuleMergeTests: XCTestCase {
                           ownedKinds: [.urlRules(access: access, store: store)])
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-6b（吸收先归约整组，再写一次）（R-M3-4a-82）
-    // =======================================================================================
+    // MARK: - CASE M-6b (reduce the group before one absorption write; R-M3-4a-82)
 
-    /// 防的是什么：逐个败者比一份**固定的 W 快照**的实现先写 `true@30`、再因为「20 > 10（快照
-    /// 没更新）」写 `true@20` ⇒ 收在 `true@20`，戳**倒退**，两台成员次序不同还会分歧。
+    /// Comparing each loser against a fixed W snapshot could write true@30 then regress to true@20 because 20
+    /// still exceeds snapshot 10. Member order would then cause cross-device divergence.
     func testM6b_absorptionReducesTheWholeGroupOnceInsteadOfPerLoser() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1000,9 +998,9 @@ final class URLRuleMergeTests: XCTestCase {
         let converged = URLRuleKind.convergePass(groups: [signature: rows],
                                                  atRest: ["a", "b", "c"],
                                                  accountStamps: stamps)
-        // 一次写，取值是**整组**的 `source`（`true@30`），戳**照抄来源**。
+        // One write selects the whole group's source true@30 and copies its stamp.
         XCTAssertEqual(converged.contentGroupWrites.count, 1)
-        XCTAssertEqual(converged.contentGroupWrites.first?.syncId, "a", "胜者是 syncId 最小的那条")
+        XCTAssertEqual(converged.contentGroupWrites.first?.syncId, "a", "The smallest syncId wins")
         XCTAssertEqual(converged.contentGroupWrites.first?.ask, true)
         XCTAssertEqual(converged.contentGroupWrites.first?.contentUpdatedDate, stampDate(30))
         XCTAssertEqual(converged.collapsed, 2)
@@ -1010,8 +1008,8 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertTrue(converged.softDeletes.allSatisfy { $0.mergePartnerSyncId == "a" })
         XCTAssertEqual(converged.touchedBuckets, ["space-a"])
 
-        // (a) 戳推进：内容组相同、戳不同 ⇒ W 的组戳照样被写成 30。少了它，W 的组戳停在 10、
-        //     下一轮同一条败者又赢一次，「戳只进不退」守不住。
+        // (a) Equal content with newer stamp still advances W to 30. Otherwise the same loser keeps winning
+        // against stale W@10 next round, breaking monotonic stamps.
         var advanced = rows
         advanced[0].askBeforeRouting = true
         let advancedOut = URLRuleKind.convergePass(groups: [signature: advanced],
@@ -1021,8 +1019,8 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(advancedOut.contentGroupWrites.first?.contentUpdatedDate, stampDate(30))
         XCTAssertEqual(advancedOut.contentGroupWrites.first?.ask, true)
 
-        // (b) 戳相等定序：`true@30` 与 `false@30` ⇒ 按 `syncId` 字典序取定，**两台逐字相同**，
-        //     而且仍然只写一次。把成员次序打乱重跑，结论一个字节不变。
+        // (b) Equal-stamp true@30/false@30 ties use syncId lexical order, producing one identical write even
+        // after shuffling members.
         var tied: [PhiLocalURLRule] = []
         var tiedTable = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", ask: true, accountStamp: 30, rows: &tied, table: &tiedTable)
@@ -1033,16 +1031,14 @@ final class URLRuleMergeTests: XCTestCase {
         let reversed = URLRuleKind.convergePass(groups: [signature: tied.reversed()],
                                                 atRest: ["a", "b"], accountStamps: tiedStamps)
         XCTAssertEqual(first.contentGroupWrites.count, 1)
-        XCTAssertEqual(first, reversed, "成员次序不影响终态")
+        XCTAssertEqual(first, reversed, "Member order does not affect final state")
         XCTAssertEqual(first.softDeletes.map(\.syncId), ["b"])
     }
 
-    // =======================================================================================
-    // MARK: - CASE M2-a（指针绝不覆盖一条已经指向活行的值 —— 纯值）
-    // =======================================================================================
+    // MARK: - CASE M2-a (never overwrite a pointer already targeting a live row)
 
-    /// 防的是什么：承重的那条前置一旦放宽，指针这一步就是「两遍分组 × 每一页 × 组内每一个
-    /// 非锚点成员」的全库每页重写，而且第二遍会覆盖第 2 步 (b) 写下的终值（RR11-2）。
+    /// Weakening this precondition rewrites non-anchor pointers in both passes on every page, and pass two
+    /// overwrites step 2(b)'s final pointer (RR11-2).
     func testM2a_thePointerNeverOverwritesAValueThatAlreadyPointsAtALiveRow() throws {
         let a = PhiLocalURLRule.fixture(id: "i-a", syncId: "a")
         let b = PhiLocalURLRule.fixture(id: "i-b", syncId: "b", sortOrder: 1,
@@ -1050,11 +1046,12 @@ final class URLRuleMergeTests: XCTestCase {
         let c = PhiLocalURLRule.fixture(id: "i-c", syncId: "c", sortOrder: 2,
                                         mergePartnerSyncId: "zz")
         let out = pointerPass([a, b, c], published: ["a", "b", "c"])
-        XCTAssertNil(out["b"], "已经指向一条活行 ⇒ 不动")
-        XCTAssertEqual(out["c"], "a", "悬空 ⇒ 改写成锚点")
-        XCTAssertNil(out["a"], "锚点自己那一列恒为 nil（RR13-7）")
+        XCTAssertNil(out["b"], "Already points to a live row; leave unchanged")
+        XCTAssertEqual(out["c"], "a", "Dangling pointer is rewritten to the anchor")
+        XCTAssertNil(out["a"], "The anchor's own pointer remains nil (RR13-7)")
 
-        // 悬空判据只看「有没有**活**行」：指向一条已经被别人收敛掉的软删行同样是悬空。
+        // A pointer is dangling whenever no live row matches; targeting an already-converged soft-deleted row
+        // also qualifies.
         var cPointsAtDeleted = c
         cPointsAtDeleted.mergePartnerSyncId = "gone"
         let deleted = PhiLocalURLRule.fixture(id: "i-gone", syncId: "gone", sortOrder: 3,
@@ -1063,47 +1060,42 @@ final class URLRuleMergeTests: XCTestCase {
         let dangling = pointerPass([a, b, cPointsAtDeleted], published: ["a", "b", "c", "gone"])
         XCTAssertEqual(dangling["c"], "a")
 
-        // 负面对照（R-M3-4a-95）：`"A0"` 有 `syncId`（M1 认领那一刻就铸了一个）却**从没发布过**。
-        // 把「已发布」判成 `row.syncId != nil` 的实现会选它当锚点，而一条未发布的行**永远不
-        // 静止** ⇒ §8.4.4 第一步的伙伴查找对整组恒不命中（RR13-5）。
+        // Negative control / R-M3-4a-95: A0 has syncId minted by M1 but was never published. syncId presence
+        // cannot make it an anchor: unpublished rows are never still, so §8.4.4 partner lookup would fail for
+        // the entire group (RR13-5).
         let a0 = PhiLocalURLRule.fixture(id: "i-a0", syncId: "A0", sortOrder: 4)
         let control = pointerPass([a0, a, b, c], published: ["a", "b", "c"])
-        XCTAssertEqual(control["A0"], "a", "锚点仍然是 a，A0 自己也进结果字典")
+        XCTAssertEqual(control["A0"], "a", "The anchor remains a; A0 also appears in the result")
         XCTAssertEqual(control["c"], "a")
         XCTAssertNil(control["a"])
         XCTAssertNil(control["b"])
 
-        // 锚点子集少于两条 ⇒ 这一组零写。
+        // Fewer than two anchors means no pointer writes for the group.
         XCTAssertTrue(pointerPass([a0, a], published: ["a"]).isEmpty)
     }
 
-    /// **F1 的探针（8b-2 fix round 1）**：锚点子集的**基数**按伪码的时刻求值 —— 也就是收敛
-    /// **之前**那一份活集。组里两条已发布静止成员 A / B 加一条从未发布、本页也没落地的活行 C：
-    /// 收敛把 B 软删掉，软删之后的活集里「已发布 ∪ 本页落地」只剩 A 一条。
-    ///
-    /// 防的是什么：把锚点子集也建在软删之后那一份活集上的实现，这一组的子集从 2 掉到 1 ⇒
-    /// `guard anchors.count >= 2` 当场 `continue` ⇒ **C 一条指针都拿不到**，而 §8.4.3 的
-    /// `writePointer` 在收敛之前求那个 `> 1`、给**每一个**非锚点成员（含从未发布的）写指针，
-    /// `mergePartnerSyncId` 生命周期表的 RR10-8 那一行正是按「它被写过」立的。
+    /// F1 / 8b-2 fix round 1: first-pass anchor cardinality uses the pre-convergence live set. Published still
+    /// A/B plus unpublished, unlanded C converge by soft-deleting B. Recomputing anchors afterward would leave
+    /// only A and skip C's pointer at count < 2. §8.4.3 checks > 1 before convergence and writes every
+    /// non-anchor, including C (RR10-8 lifecycle).
     func testM2a_theAnchorCardinalityIsEvaluatedBeforeTheSoftDeletes() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", accountStamp: 100, rows: &rows, table: &table)
         seedSettled("b", id: "i-b", sortOrder: 1, accountStamp: 100, rows: &rows, table: &table)
-        // C：有 `syncId`（插入点铸造，R-M3-4a-23），**没有游标** ⇒ 既不在 `publishedIdentities`
-        // 里、也不在 `landedThisPage` 里，而且它不静止 ⇒ 不是收敛的成员。
+        // C has insertion-minted syncId (R-M3-4a-23) but no cursor; it is neither published nor landedThisPage
+        // and is not a still convergence member.
         rows.append(.fixture(id: "i-c", syncId: "c-local", sortOrder: 2, pendingLocalEdit: true))
 
         let out = mergePass(rows: rows, table: table, atRest: ["a", "b"])
-        XCTAssertEqual(out.collapsed, 1, "B 被软删")
+        XCTAssertEqual(out.collapsed, 1, "B is soft-deleted")
         XCTAssertEqual(out.ops, [
             .softDelete(syncId: "b", mergePartnerSyncId: "a"),
             .setMergePartner(syncId: "c-local", mergePartnerSyncId: "a"),
-        ], "C 照样拿到指向锚点 A 的那一列")
+        ], "C still receives a pointer to anchor A")
 
-        // 对照：同一份输入但闸关着（零软删）⇒ C 拿到的那一列**逐字相同**。B 此时还活着、
-        // 也还是非锚点成员，所以它多一条指针写；C 那一条两条路径一致，正是「`convergePass`
-        // 先跑」那条偏离要证明的东西。
+        // Closed-gate control performs no soft deletion and gives C the identical pointer. Live B gets its own
+        // non-anchor pointer too. C's equality proves the convergePass-first ordering deviation is safe here.
         let gated = mergePass(rows: rows, table: table, atRest: ["a", "b"], convergeAllowed: false)
         XCTAssertEqual(gated.ops, [
             .setMergePartner(syncId: "b", mergePartnerSyncId: "a"),
@@ -1111,16 +1103,10 @@ final class URLRuleMergeTests: XCTestCase {
         ])
     }
 
-    /// **fix round 2 的探针**：第二遍的锚点子集**绝不**能建在软删之前那一份活集上。
-    ///
-    /// 形状：`"p"` 本页按**此刻**的签名 K1（`su-1`）被收敛掉（胜者 `"m"` 的 `syncId` 更小），
-    /// 而它的**落地前**签名是 K2（`su-2`，本页一条 `.move` 把它从 `space-b` 搬到了 `space-a`）。
-    /// K2 里还有一条活成员 `"z"`，`syncId` 比 `"p"` 大。
-    ///
-    /// 防的是什么：第二遍若沿用软删之前那一份活集求子集，K2 的子集是 `["p", "z"]`（基数 2 **正是
-    /// 靠那条死行才够到的**）、锚点是 `"p"` ⇒ `"z"` 的 `mergePartnerSyncId` 当场指向一条**同一个
-    /// 事务里刚被软删的行**。leg (1) 的「锚点 ≤ 胜者 < 每一条败者」只在分组键与 `convergePass`
-    /// 的键相同时成立，而第二遍的键不是那一个。
+    /// Fix round 2: the second pass must use the post-deletion live set. p moved from K2/su-2 to K1/su-1 and
+    /// converged into smaller m this page; live z remains in pre-landing K2. Including deleted p would falsely
+    /// make two K2 anchors and point z at p, soft-deleted in the same transaction. The anchor ≤ winner < loser
+    /// argument applies only when pointer grouping matches convergePass, which the second pass does not.
     func testM2a_theSecondPassNeverAnchorsOnARowCollapsedThisPage() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1128,7 +1114,7 @@ final class URLRuleMergeTests: XCTestCase {
         seedSettled("p", id: "i-p", sortOrder: 1, accountStamp: 100, rows: &rows, table: &table)
         seedSettled("z", id: "i-z", spaceId: "space-b", target: "su-2", accountStamp: 100,
                     rows: &rows, table: &table)
-        // `"p"` 这一页刚落地一条 `.move`（su-2 → su-1），所以它的落地前签名是 K2。
+        // p just landed a su-2 → su-1 move; its pre-landing signature is K2.
         let k2 = RuleSignature(host: "github.com", pathPrefix: nil, owner: "su-2")
         let preLanding = ["p": k2]
 
@@ -1136,13 +1122,12 @@ final class URLRuleMergeTests: XCTestCase {
                             landedThisPage: ["p"], preLanding: preLanding)
         XCTAssertEqual(out.collapsed, 1)
         XCTAssertEqual(out.ops, [.softDelete(syncId: "p", mergePartnerSyncId: "m")],
-                       "`z` 一条指针都不该有：K2 的活成员只剩它自己")
+                       "z needs no pointer as K2's sole live member")
         XCTAssertFalse(out.ops.contains(.setMergePartner(syncId: "z", mergePartnerSyncId: "p")),
-                       "绝不指向一条同一个事务里刚被软删的行")
+                       "Never point to a row soft-deleted in the same transaction")
 
-        // 对照（也就是 fix 之前那一版会走的那条路）：`"p"` **还活着**的时候，第二遍给 `"z"` 写的
-        // 正是指向 `"p"` 的那一列——写本身是对的，错的是在它已经被本页软删之后还照写。
-        // （闸关着 ⇒ 零软删；第一遍照样给 K1 的非锚点成员 `"p"` 写一条指向 `"m"` 的。）
+        // Control keeps p live by closing the gate: pass two correctly points z to p, while pass one points p
+        // to m. That write is wrong only after p has been soft-deleted.
         let alive = mergePass(rows: rows, table: table, atRest: ["m", "p", "z"],
                               convergeAllowed: false, landedThisPage: ["p"],
                               preLanding: preLanding)
@@ -1152,12 +1137,10 @@ final class URLRuleMergeTests: XCTestCase {
         ])
     }
 
-    // =======================================================================================
-    // MARK: - CASE M2-c（闸只管第 2 步：通道级断言）
-    // =======================================================================================
+    // MARK: - CASE M2-c (gate affects only step 2; channel assertions)
 
-    /// 防的是什么：把闸读成「整趟不跑」或者把它塞进 `mergePointerPass` 内部，两种写法在纯值
-    /// 层面都看不出来。`changedRouting` 若把指针写也算进去，CASE M-7 的「零刷新」会变成每页一次。
+    /// A gate around the whole pass or inside mergePointerPass can evade pure-value coverage. Pointer writes
+    /// must not set changedRouting or CASE M-7's no-refresh behavior becomes a refresh per page.
     func testM2c_theGateOnlyStopsTheSecondStep() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1167,28 +1150,27 @@ final class URLRuleMergeTests: XCTestCase {
 
         let closed = mergePass(rows: rows, table: table, atRest: ["a", "b"], convergeAllowed: false)
         XCTAssertEqual(closed.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: "a")],
-                       "闸关着：只有第 1 步的指针")
+                       "Closed gate: only step-1 pointers")
         XCTAssertEqual(closed.collapsed, 0)
-        XCTAssertFalse(closed.changedRouting, "纯指针写 ⇒ 不刷路由表")
+        XCTAssertFalse(closed.changedRouting, "Pointer-only writes do not refresh routing")
 
         let open = mergePass(rows: rows, table: table, atRest: ["a", "b"], convergeAllowed: true)
         XCTAssertEqual(open.ops, [
             .setContentGroup(syncId: "a", host: "github.com", pathPrefix: nil, ask: true,
                              contentUpdatedDate: stampDate(20)),
             .softDelete(syncId: "b", mergePartnerSyncId: "a"),
-        ], "闸开：内容组 → 软删的相序")
+        ], "Open gate: content group precedes soft deletion")
         XCTAssertEqual(open.collapsed, 1)
         XCTAssertTrue(open.changedRouting)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-4（内容组吸收：照抄来源的戳，绝不铸 `now`）
-    // =======================================================================================
+    // MARK: - CASE M-4 (content absorption copies source stamps, never now)
 
-    /// 防的是什么：铸 `now` 会让一条经机器搬运的规则带着伪造的新鲜度去赢一次真实的用户编辑
-    /// （D33 / §8.4.1 第五条）。变体三防的是取值源去读 `createdDate` 之类的**每设备量**。
+    /// Minting now gives machine-transferred content false freshness over real user edits (D33 / §8.4.1(5)).
+    /// Variant three excludes device-specific createdDate from source selection.
     func testM4_absorptionCopiesTheSourceStampAndNeverMintsNow() throws {
-        /// 变体 α / β 的唯一差别是**行上那一列**，期望逐字相同（R-M3-4a-94：读的是账户戳）。
+        /// Variants α/β differ only in the row stamp and must yield identical results because account stamps
+        /// govern (R-M3-4a-94).
         func run(rowStamps: Bool) -> URLRuleMergeResult {
             var rows: [PhiLocalURLRule] = []
             var table = PhiOwnedItemTable()
@@ -1205,11 +1187,11 @@ final class URLRuleMergeTests: XCTestCase {
             XCTAssertEqual(out.ops.first,
                            .setContentGroup(syncId: "a", host: "github.com", pathPrefix: nil,
                                             ask: true, contentUpdatedDate: stampDate(300)),
-                           "rowStamps=\(rowStamps)：吸收 `true@300`，**不是** now")
+                           "rowStamps=\(rowStamps): absorb true@300, not now")
             XCTAssertEqual(out.collapsed, 1)
         }
 
-        // 变体一：败者内容组与胜者相同、戳也相同 ⇒ `ask` 与 `contentUpdatedDate` 一个字节不动。
+        // Variant one: equal content and stamps preserve ask/contentUpdatedDate byte for byte.
         var same: [PhiLocalURLRule] = []
         var sameTable = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", ask: true, accountStamp: 300, rows: &same, table: &sameTable)
@@ -1217,11 +1199,11 @@ final class URLRuleMergeTests: XCTestCase {
                     rows: &same, table: &sameTable)
         let identical = mergePass(rows: same, table: sameTable, atRest: ["a", "b"])
         XCTAssertEqual(identical.ops, [.softDelete(syncId: "b", mergePartnerSyncId: "a")],
-                       "零多余 commit：没有内容组写")
+                       "No extra commit because no content group is written")
         XCTAssertEqual(identical.collapsed, 1)
 
-        // 变体二 / 三：败者内容戳更旧而 `ask` 不同 ⇒ **整组不吸收**；把败者的本机 `createdDate`
-        // 推到远晚于胜者（每设备量）⇒ 结论逐字相同。
+        // Variants two/three: older loser content with different ask is not absorbed. Moving its device-local
+        // createdDate far into the future does not change the result.
         for loserCreated in [Date(timeIntervalSince1970: 1_000), Date(timeIntervalSince1970: 9_000)] {
             var older: [PhiLocalURLRule] = []
             var olderTable = PhiOwnedItemTable()
@@ -1231,28 +1213,27 @@ final class URLRuleMergeTests: XCTestCase {
                         createdDate: loserCreated, rows: &older, table: &olderTable)
             let out = mergePass(rows: older, table: olderTable, atRest: ["a", "b"])
             XCTAssertEqual(out.ops, [.softDelete(syncId: "b", mergePartnerSyncId: "a")],
-                           "createdDate=\(loserCreated)：整组不吸收")
+                           "createdDate=\(loserCreated): do not absorb the content group")
         }
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-3b（未发布行绝不当胜者，也绝不杀已发布实体）
-    // =======================================================================================
+    // MARK: - CASE M-3b (unpublished rows never win or delete published entities)
 
-    /// 防的是什么：静止谓词漏掉判据 1（已发布）的实现会选 `"a-local"` 当胜者并软删那条账户
-    /// 实体，直接违反 D30 原文；跨设备变体里那种实现会「A 删账户实体、B 删自己那条」。
+    /// Omitting stillness predicate 1 would make a-local win and delete a published account entity, violating
+    /// D30. Across devices it could make A delete the account entity while B deletes its own row.
     func testM3b_anUnpublishedRowNeverWinsAndNeverKillsAPublishedEntity() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("m-account", id: "i-acc", accountStamp: 100, rows: &rows, table: &table)
-        // 本机新建、从未发布：有 `syncId`（插入点铸造，R-M3-4a-23），**没有游标**。
+        // New unpublished local row with insertion-minted syncId (R-M3-4a-23) but no cursor.
         rows.append(.fixture(id: "i-local", syncId: "a-local", sortOrder: 1, pendingLocalEdit: true))
 
         let out = mergePass(rows: rows, table: table, atRest: ["m-account"])
         XCTAssertEqual(out.collapsed, 0)
-        XCTAssertTrue(out.ops.isEmpty, "锚点子集只有一条 ⇒ 连指针都不写")
+        XCTAssertTrue(out.ops.isEmpty, "Only one anchor means no pointer writes")
 
-        // 跨设备变体：本机铸值一次小于、一次大于账户身份 ⇒ **两台都零收敛**。
+        // Cross-device cases place local identity below and above account identity; neither device converges
+        // them.
         for localId in ["a-local", "z-local"] {
             var variant: [PhiLocalURLRule] = []
             var variantTable = PhiOwnedItemTable()
@@ -1265,12 +1246,10 @@ final class URLRuleMergeTests: XCTestCase {
         }
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-10（收敛不复活用户删掉的行）
-    // =======================================================================================
+    // MARK: - CASE M-10 (convergence never revives user-deleted rows)
 
-    /// 防的是什么：尾钩拿到的是**含软删行**的投影（寻址要它），漏掉那道活行过滤会让一条用户
-    /// 刚删掉的行当上胜者、被吸收内容组——用户眼里是「删掉的规则又改了一次内容回来」。
+    /// The tail hook includes soft-deleted rows for addressing. Without live filtering, a user-deleted row
+    /// could win and absorb content, making a deleted rule appear edited again.
     func testM10_convergenceNeverResurrectsARowTheUserDeleted() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1281,57 +1260,53 @@ final class URLRuleMergeTests: XCTestCase {
         rows[1].deletedDate = deletedAt
 
         let out = mergePass(rows: rows, table: table, atRest: ["a", "b"])
-        XCTAssertEqual(out.collapsed, 0, "软删那条不是组成员 ⇒ 组里只剩一条")
-        XCTAssertTrue(out.ops.isEmpty, "`a` 一个字节都不写（它那一列本来就是 nil）")
-        XCTAssertEqual(rows[1].deletedDate, deletedAt, "M2 一个字节都没碰它")
+        XCTAssertEqual(out.collapsed, 0, "Exclude the soft-deleted row, leaving one member")
+        XCTAssertTrue(out.ops.isEmpty, "a needs no write; its pointer is already nil")
+        XCTAssertEqual(rows[1].deletedDate, deletedAt, "M2 left it unchanged byte for byte")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-27（M2 不选本页将死的胜者）（R-M3-4a-86）
-    // =======================================================================================
+    // MARK: - CASE M-27 (M2 never selects a winner dying on this page; R-M3-4a-86)
 
-    /// 防的是什么：把 Z 当胜者的那一版（`atRest` 若在尾钩里重算就必然缺第 10 项）会让 Z 吸收
-    /// X 的内容组、软删 X 并发它的 tombstone，而 Z 自己在同一页的删除相被硬删 ⇒ **该签名组在
-    /// 两台与账户上全部为零**，日志里只留一个 `collapsed`。
+    /// Choosing Z as winner by recomputing atRest in the tail hook without predicate 10 would absorb X,
+    /// tombstone X, then hard-delete Z in this page's delete phase. The group disappears everywhere with only
+    /// collapsed in the log.
     func testM27_theMergeNeverPicksAWinnerThatDiesOnThisPage() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         let z = seedSettled("a", id: "i-z", ask: false, accountStamp: 10, rows: &rows, table: &table)
         seedSettled("b", id: "i-x", ask: true, sortOrder: 1, accountStamp: 20,
                     rows: &rows, table: &table)
-        // 本页 `arrivals` 里到达 Z 的 tombstone ⇒ 8b-1 的第 10 项把 Z 踢出 `atRestIdentities`。
-        XCTAssertFalse(isAtRest(z, table.cursors["a"], tombstones: ["a"]), "第 10 项")
+        // Z's tombstone arrives this page, so 8b-1 predicate 10 excludes Z from atRestIdentities.
+        XCTAssertFalse(isAtRest(z, table.cursors["a"], tombstones: ["a"]), "Predicate 10")
 
         let out = mergePass(rows: rows, table: table, atRest: ["b"])
-        XCTAssertEqual(out.collapsed, 0, "静止成员只剩一条")
+        XCTAssertEqual(out.collapsed, 0, "Only one still member remains")
         XCTAssertFalse(out.changedRouting)
-        // X 行上除第 1 步那次指针写之外零变化：不写内容组、不写 `deletedDate`。
+        // X changes only its step-1 pointer; neither content nor deletedDate is written.
         XCTAssertEqual(out.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: "a")])
 
-        // 下一页：Z 已经硬删 ⇒ 该签名只剩 X 一条 ⇒ 不再是重复。
+        // Next page: Z is hard-deleted and X is the sole member, so no duplicate remains.
         var afterDelete = [rows[1]]
         afterDelete[0].mergePartnerSyncId = "a"
         var afterTable = table
         afterTable.cursors["a"] = nil
         let next = mergePass(rows: afterDelete, table: afterTable, atRest: ["b"])
         XCTAssertEqual(next.collapsed, 0)
-        // 清空规则①：组里只剩它一条、它静止、那一列还挂着一个陈旧的伙伴 ⇒ 清空。
+        // Clear rule ①: a sole still member clears its stale partner pointer.
         XCTAssertEqual(next.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: nil)])
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-33（同页 M3 → M2：戳取**有效账户戳**的三层）
-    // =======================================================================================
+    // MARK: - CASE M-33 (same-page M3 → M2 uses all three effective-account-stamp sources)
 
-    /// 变体 (b)：戳源的「已落地那一半」。一律读游标基线的那一版选 W@30、把账户上最新的那份
-    /// 内容丢掉，必须红。
+    /// Variant (b) covers the landed-value stamp source. Baseline-only selection would choose W@30 and discard
+    /// the latest account content.
     func testM33b_theEffectiveStampOfAnIdentityLandedThisPageIsItsLandingValue() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-w", ask: false, accountStamp: 30,
                     rowContentUpdatedDate: stampDate(30), rows: &rows, table: &table)
-        // B 本页被一条 `.update` 落成 `ask == true` / 组戳 40，而 `land` 闭包手上那份**游标表
-        // 仍说 20**（记账排在 `land(...)` 之后）。
+        // B landed this page as ask true/stamp 40, but land's cursor table still says 20 because bookkeeping
+        // follows land.
         seedSettled("b", id: "i-b", ask: true, sortOrder: 1, accountStamp: 20,
                     rowContentUpdatedDate: stampDate(40), rows: &rows, table: &table)
         let landed = ["b": URLRuleLandingValues.fixture(syncId: "b", spaceId: "space-a",
@@ -1345,15 +1320,15 @@ final class URLRuleMergeTests: XCTestCase {
             .setContentGroup(syncId: "a", host: "github.com", pathPrefix: nil, ask: true,
                              contentUpdatedDate: stampDate(40)),
             .softDelete(syncId: "b", mergePartnerSyncId: "a"),
-        ], "`source` 取本页落地值 40，不是游标里那份 20")
+        ], "Source uses this page's landed stamp 40, not cursor stamp 20")
         XCTAssertEqual(out.collapsed, 1)
     }
 
-    /// 变体 (c)：行戳根本不能读。读行戳的那一版给 A 算出 `.distantPast`（或退到
-    /// `?? createdDate` 这个**每设备量**）⇒ 选 B ⇒ 账户上更新的那份被机器覆盖。
+    /// Variant (c): row stamps are not authoritative. Reading A's distantPast or device-local createdDate
+    /// fallback would choose B and overwrite newer account content.
     func testM33c_theRowStampIsNeverTheSourceOfTruth() throws {
-        // 两种形态：行上那一列是 `nil`（Task 5 裁定 5 的新行形态）与停在一个更旧的 10
-        // （`rebaselined` 只刷基线、不写行）。期望逐字相同。
+        // Test nil row stamp (Task 5 ruling 5 new-row shape) and stale 10 (rebaselined changes only baseline).
+        // Results must match.
         for rowStamp in [nil, stampDate(10)] as [Date?] {
             var rows: [PhiLocalURLRule] = []
             var table = PhiOwnedItemTable()
@@ -1363,21 +1338,21 @@ final class URLRuleMergeTests: XCTestCase {
                         rowContentUpdatedDate: stampDate(20), rows: &rows, table: &table)
             let out = mergePass(rows: rows, table: table, atRest: ["a", "b"])
             XCTAssertEqual(out.ops, [.softDelete(syncId: "b", mergePartnerSyncId: "a")],
-                           "rowStamp=\(String(describing: rowStamp))：`source` 是 A ⇒ A 一个字节不写")
+                           "rowStamp=\(String(describing: rowStamp)): source is A, which remains unchanged")
             XCTAssertEqual(out.collapsed, 1)
         }
     }
 
-    /// 变体 (d)：戳源的「本页 `rebaselined` 那一层」（R-M3-4a-97）。**这一页一条 op 都没有**，
-    /// 所以候选集的转移减法、相序、事务内剔除三条没有一条拦得住它——`rebaselined` 是唯一的堵口。
+    /// Variant (d) covers this page's rebaselined stamp source (R-M3-4a-97). With no operations, candidate
+    /// subtraction, phase ordering and transaction exclusion cannot protect it; rebaselined is essential.
     func testM33d_theEffectiveStampFallsBackToThisPagesRebaselinedBytes() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", ask: false, accountStamp: 10, rows: &rows, table: &table)
         seedSettled("b", id: "i-b", ask: true, sortOrder: 1, accountStamp: 20,
                     rows: &rows, table: &table)
-        // 本页到达 A 的一条实体：取值与本机**逐字相同**（仍是 `false`）而 `updated_at_ms == 30`
-        // ⇒ `plan` 一条 step 都不产出、A 落进 `plan.rebaselined`。
+        // A arrives with identical false value and newer stamp 30, so plan emits no steps and puts A in
+        // rebaselined.
         let rebased = baselineBytes(urlRulePayload(uuid: "a", targetSpaceUuid: "su-1",
                                                    host: "github.com", ask: false,
                                                    contentStamp: 30, targetStamp: 30,
@@ -1385,35 +1360,33 @@ final class URLRuleMergeTests: XCTestCase {
         let out = mergePass(rows: rows, table: table, atRest: ["a", "b"],
                             rebaselined: ["a": rebased])
         XCTAssertEqual(out.ops, [.softDelete(syncId: "b", mergePartnerSyncId: "a")],
-                       "`source` 是 A（30 > 20）⇒ B 被软删、A 一个字节不写")
+                       "Source A wins 30 > 20; soft-delete B and leave A unchanged")
         XCTAssertEqual(out.collapsed, 1)
 
-        // 只有「落地值 + 游标基线」两层的那一版：A 停在 10 ⇒ 选 B 当 `source` ⇒ 把 A 覆写成
-        // `ask == true` / 戳 20 并软删 A。这一行就是那个必须红的形状。
+        // A two-source implementation using only landed values/baseline leaves A@10, selects B and overwrites
+        // A with true@20 before soft-deleting it. This is the required negative shape.
         let twoLayers = mergePass(rows: rows, table: table, atRest: ["a", "b"])
         XCTAssertEqual(twoLayers.ops.first,
                        .setContentGroup(syncId: "a", host: "github.com", pathPrefix: nil,
                                         ask: true, contentUpdatedDate: stampDate(20)),
-                       "对照：没有第二层就会去吸收 B@20")
+                       "Control: omitting the second source layer absorbs B@20")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-25（指针的零延迟输入）（R-M3-4a-74 / 75 / 95）
-    // =======================================================================================
+    // MARK: - CASE M-25 (immediate pointer inputs; R-M3-4a-74 / 75 / 95)
 
-    /// (a) 首次落地那一页：Z 与 X **第一次**从账户落地（两者此刻都还没有游标）⇒ 断言那一页就
-    /// 写下 X → Z 的指针。只按 `publishedIdentities` 取锚点子集、**忘了并上 `landedThisPage`**
-    /// 的实现必须红（该子集此刻为空 ⇒ 一个指针都写不出）。
+    /// (a) Z/X first land from the account without cursors; the same page must write X → Z. Anchors must union
+    /// landedThisPage with publishedIdentities or the empty published set yields no pointers.
     func testM25a_thePointerIsWrittenOnTheVeryPageBothSidesFirstLand() throws {
         let z = PhiLocalURLRule.fixture(id: "i-z", syncId: "a")
         let x = PhiLocalURLRule.fixture(id: "i-x", syncId: "b", sortOrder: 1)
         let out = pointerPass([z, x], landedThisPage: ["a", "b"], published: [])
         XCTAssertEqual(out, ["b": "a"])
         XCTAssertTrue(pointerPass([z, x], landedThisPage: [], published: []).isEmpty,
-                      "两个并集项都是承重的：只看 `landedThisPage` 那一半也写不出来")
+                      "Both union terms are required; landedThisPage alone also cannot write this pointer")
     }
 
-    /// (b)(d) 闸关着（整段首次 drain / 报损重放）⇒ 这一页**照样写指针**，同一页 `collapsed == 0`。
+    /// (b)(d) Closed gate during initial drain/loss replay still permits pointers, with collapsed 0 on the
+    /// same page.
     func testM25bd_theGateNeverStopsThePointer() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1426,29 +1399,28 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertFalse(out.changedRouting)
     }
 
-    /// (c) 同页 `.move`，而 X 本页一条 step 都不落地：第一遍按**此刻**的签名不同组，第二遍按
-    /// `preLandingSignatures[Z]` 同组 ⇒ 指针写在 X 的行上、指向 Z。
-    ///
-    /// 三条必须红的实现：第二遍的定义域收成「表里那些身份」（X 不在表里 ⇒ 那一组只有 Z 一条
-    /// ⇒ **静默**空转）；落地之后重读行来算落地前签名；用 `newOwnerUuid` 当落地前目标。
+    /// (c) Z moves this page while X has no steps. Current signatures differ in pass one, but
+    /// preLandingSignatures[Z] groups them in pass two and writes X → Z. This catches restricting the domain
+    /// to cursor identities (excluding X), deriving old signatures by rereading after landing, or using
+    /// newOwnerUuid as the old target.
     func testM25c_theSecondPassGroupsByThePreLandingSignature() throws {
-        // Z 本页被搬到 `space-b`（su-2），X 还在 `space-a`（su-1）。
+        // Z just moved to space-b/su-2; X remains in space-a/su-1.
         let z = PhiLocalURLRule.fixture(id: "i-z", syncId: "a", spaceId: "space-b")
         let x = PhiLocalURLRule.fixture(id: "i-x", syncId: "b", spaceId: "space-a",
                                         sortOrder: 1, pendingLocalEdit: true)
         let preLanding = ["a": RuleSignature(host: "github.com", pathPrefix: nil, owner: "su-1")]
         XCTAssertTrue(pointerPass([z, x], published: ["a", "b"]).isEmpty,
-                      "只按此刻的签名 ⇒ 两组各一条 ⇒ 零写")
+                      "Current signatures alone form two singleton groups and write nothing")
         XCTAssertEqual(pointerPass([z, x], published: ["a", "b"], preLanding: preLanding),
                        ["b": "a"])
 
-        // Z 的**落地前**目标此刻解析不出来 ⇒ 这条身份不在 `preLandingSignatures` 里 ⇒ 第二遍
-        // 跳过它、**不崩**。
+        // If Z's pre-landing target cannot resolve, omit it from preLandingSignatures and skip pass two safely
+        // without force-unwrapping.
         XCTAssertTrue(pointerPass([z, x], published: ["a", "b"], preLanding: [:]).isEmpty)
     }
 
-    /// (e) 交织 B：X 与 Z 都不进 `preLandingSignatures`，第一遍按此刻的签名不同组，第二遍的键
-    /// 退化成同一对签名 ⇒ **那一趟两遍指针都写不出**。
+    /// (e) Interleaving B: neither X nor Z has preLandingSignatures. Current signatures differ and fallback
+    /// preserves that distinction, so neither pointer pass writes.
     func testM25e_theInterleavedShapeWritesNoPointerAtAll() throws {
         let z = PhiLocalURLRule.fixture(id: "i-z", syncId: "a", spaceId: "space-b")
         let x = PhiLocalURLRule.fixture(id: "i-x", syncId: "b", spaceId: "space-a", sortOrder: 1)
@@ -1457,14 +1429,14 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertNil(x.mergePartnerSyncId)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-3c / M-17（带未发布编辑的成员不静止，但要写指针）
-    // =======================================================================================
+    // MARK: - CASE M-3c / M-17 (unpublished edits prevent stillness but still get pointers)
 
-    /// 防的是什么：把指针的条件绑在「有静止胜者」上 ⇒ §8.4.6 竞态 3 掉进「指针从没被写过」那
-    /// 一格、终态两条规则。把静止判据 6 写成 `server == reconciled` 之外的任何投影比较也在这里红。
+    /// Tying pointer writes to a still winner leaves §8.4.6 race 3 without a prior pointer and ends with two
+    /// rules. Stillness also must honor pendingLocalEdit and server/reconciled state rather than an
+    /// alternative projection comparison.
     func testM3c_aMemberWithAnUnpublishedEditIsNotAtRestButStillGetsThePointer() throws {
-        /// `edited` 那一条不静止（`pendingLocalEdit` 或 `server != reconciled`），另一条是锚点。
+        /// The edited row is not still due to pendingLocalEdit or server != reconciled; the other is the
+        /// anchor.
         func run(editedIsLarger: Bool, viaServerMismatch: Bool) -> (URLRuleMergeResult, String) {
             let editedId = editedIsLarger ? "b" : "a"
             let otherId = editedIsLarger ? "a" : "b"
@@ -1479,54 +1451,53 @@ final class URLRuleMergeTests: XCTestCase {
             return (mergePass(rows: rows, table: table, atRest: [otherId]), editedId)
         }
 
-        // 被编辑的那条 `syncId` 更大 ⇒ 它行上此刻带着指向组内最小已发布 `syncId` 的那一列。
+        // The edited row has larger syncId and points to the smallest published syncId in its group.
         let (larger, _) = run(editedIsLarger: true, viaServerMismatch: false)
         XCTAssertEqual(larger.collapsed, 0)
         XCTAssertEqual(larger.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: "a")])
 
-        // 对称变体：被编辑的那条更小（它自己是锚点）⇒ **另一条**带着指向它的那一列。
+        // Symmetric case: the edited row is the smaller anchor, so the other row points to it.
         let (smaller, _) = run(editedIsLarger: false, viaServerMismatch: false)
         XCTAssertEqual(smaller.collapsed, 0)
         XCTAssertEqual(smaller.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: "a")])
 
-        // 对照二：`server != reconciled` ⇒ 判据 2 不成立 ⇒ 同样零收敛且写下指针。
+        // Second control: server != reconciled fails predicate 2, still yielding no convergence but a pointer
+        // write.
         let (mismatch, _) = run(editedIsLarger: true, viaServerMismatch: true)
         XCTAssertEqual(mismatch.collapsed, 0)
         XCTAssertEqual(mismatch.ops, [.setMergePartner(syncId: "b", mergePartnerSyncId: "a")])
     }
 
-    /// CASE M-17 的 M2 半边：胜者被 retarget ⇒ 败者被软删、**胜者的 rank 与目标一个字节都不动**，
-    /// 而且 M2 **绝不**把败者拉回来（它只写 `deletedDate`，从不清空它）。
+    /// M-17's M2 half: a retargeted winner soft-deletes the loser while preserving its own rank and target. M2
+    /// never restores the loser; it only sets deletedDate, never clears it.
     func testM17_theLoserIsSoftDeletedAndTheWinnerIsNeverTouchedOrPulledBack() throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
-        // 两条的有效账户戳相同 ⇒ 内容组零写（「戳推进」那一格由 CASE M-6b (a) 单独钉）。
+        // Equal effective account stamps require no content write. CASE M-6b(a) separately covers stamp-only
+        // advancement.
         seedSettled("a", id: "i-z", sortOrder: 0, accountStamp: 10, rows: &rows, table: &table)
         seedSettled("b", id: "i-x", sortOrder: 1, accountStamp: 10, rows: &rows, table: &table)
 
         let out = mergePass(rows: rows, table: table, atRest: ["a", "b"])
         XCTAssertEqual(out.collapsed, 1)
         XCTAssertEqual(out.ops, [.softDelete(syncId: "b", mergePartnerSyncId: "a")],
-                       "胜者 Z 一条 op 都没有：rank 与目标一个字节不动")
+                       "Winner Z has no operations; rank and target remain unchanged")
 
-        // M2 软删之后**只写 `deletedDate`，从不清空它**：把软删过的 X 原样喂回去，它不是组成员
-        // （活行过滤），`collapsed` 此后恒 0，X 绝不被拉回 S2。
+        // Feed soft-deleted X back unchanged: live filtering excludes it, collapsed remains 0, and M2 never
+        // moves it back to S2.
         var afterCollapse = rows
         afterCollapse[1].deletedDate = Date(timeIntervalSince1970: 7)
         afterCollapse[1].mergePartnerSyncId = "a"
         let next = mergePass(rows: afterCollapse, table: table, atRest: ["a", "b"])
         XCTAssertEqual(next.collapsed, 0)
-        XCTAssertTrue(next.ops.isEmpty, "胜者那一列本来就是 nil ⇒ 清空规则①也没什么可写")
+        XCTAssertTrue(next.ops.isEmpty, "The winner's pointer is already nil; clear rule ① has nothing to write")
         XCTAssertEqual(afterCollapse[1].deletedDate, Date(timeIntervalSince1970: 7))
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-16（让位对用户做的删除同样成立 —— 本任务只断 M2 的那一半）
-    // =======================================================================================
+    // MARK: - CASE M-16 (yielding also covers user deletion; M2 coverage here)
 
-    /// 防的是什么：一个「组里只有它一条也写指针」的实现会给它写上一个指向它自己的
-    /// `mergePartnerSyncId`（RR7-13 禁止），(i) 支于是把它的编辑转移到它自己身上、tombstone
-    /// 照常硬删 ⇒ 那次编辑永久丢失，而日志上看不出任何异常。
+    /// A singleton must not receive a self-pointer (RR7-13). Otherwise branch (i) transfers an edit to itself,
+    /// then the tombstone hard-deletes it and loses the edit silently.
     func testM16_aLoneMemberNeverGetsAPointerAndIsNeverCollapsed() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i1", syncId: "a", host: "github.com", askBeforeRouting: true,
@@ -1545,21 +1516,19 @@ final class URLRuleMergeTests: XCTestCase {
             let counters = await counters(engine)
             XCTAssertEqual(counters?.collapsed, 0)
             XCTAssertNil(row(access, "a")?.mergePartnerSyncId,
-                         "`members.count == 1` ⇒ 那一列恒为 nil（让位走 (ii) 支的结构性前提）")
-            XCTAssertNil(row(access, "a")?.deletedDate, "M2 一次都没碰它的 `deletedDate`")
+                         "members.count == 1 keeps the pointer nil, the structural precondition for yielding branch (ii)")
+            XCTAssertNil(row(access, "a")?.deletedDate, "M2 never modified its deletedDate")
         }
         XCTAssertEqual(row(access, "a")?.contentUpdatedDate, Date(timeIntervalSince1970: 30),
-                       "三枚戳一个都没被 M2 碰过")
+                       "M2 preserved all three stamps")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-3（收敛的胜者是确定的 + 指针优先级）—— 引擎级
-    // =======================================================================================
+    // MARK: - CASE M-3 (deterministic convergence winner and pointer priority, engine coverage)
 
-    /// 防的是什么：任何依赖每设备量（本机铸的 `syncId`、`createdDate`、`id`、`sortOrder`）的
-    /// 胜者选择在两台上分叉。指针那一半防的是 RR11-2。
+    /// Winner selection must not depend on device-local creation order, id, sortOrder or createdDate; only
+    /// account identities provide shared ordering. Pointer assertions cover RR11-2.
     func testM3_theWinnerIsDeterministicAndTheLosersPointAtIt() async throws {
-        /// 三条同签名活行，按给定的排布重跑一遍。
+        /// Run the same three live same-signature members under a supplied arrangement.
         func run(order: [(syncId: String, id: String, sortOrder: Int, created: TimeInterval)])
             async throws -> FakeURLRuleAccess {
             var rows: [PhiLocalURLRule] = []
@@ -1583,17 +1552,17 @@ final class URLRuleMergeTests: XCTestCase {
             return access
         }
 
-        // ① 基准排布。
+        // ① Baseline arrangement.
         let base = try await run(order: [("b", "i-b", 0, 1_000), ("a", "i-a", 1, 2_000),
                                           ("c", "i-c", 2, 3_000)])
-        XCTAssertNil(row(base, "a")?.deletedDate, "胜者是 `a`")
+        XCTAssertNil(row(base, "a")?.deletedDate, "The winner is a")
         XCTAssertNotNil(row(base, "b")?.deletedDate)
         XCTAssertNotNil(row(base, "c")?.deletedDate)
         XCTAssertEqual(row(base, "b")?.mergePartnerSyncId, "a")
         XCTAssertEqual(row(base, "c")?.mergePartnerSyncId, "a")
-        XCTAssertNil(row(base, "a")?.mergePartnerSyncId, "胜者自己那一列是空的")
+        XCTAssertNil(row(base, "a")?.mergePartnerSyncId, "The winner's own pointer is empty")
 
-        // ② 把插入次序、`id`、`sortOrder`、`createdDate` 全部打乱重跑 ⇒ 胜者仍是 `a`。
+        // ② Shuffle insertion order, id, sortOrder and createdDate; winner remains a.
         let shuffled = try await run(order: [("c", "z-1", 2, 9_000), ("b", "z-2", 0, 5_000),
                                              ("a", "z-9", 1, 7_000)])
         XCTAssertNil(row(shuffled, "a")?.deletedDate)
@@ -1601,11 +1570,9 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(row(shuffled, "c")?.mergePartnerSyncId, "a")
     }
 
-    /// 对照组：组里另有一条 `syncId` 字典序**更小**、已发布但带 `pendingLocalEdit` 的 `"A0"`
-    /// ⇒ 锚点是 `"A0"`，但**败者行上 `mergePartnerSyncId` 仍是 `"a"`（胜者），不是锚点**。
-    ///
-    /// 防的是什么：第二遍无条件覆盖的实现会把败者的指针改成锚点，而败者一软删就退出
-    /// `allURLRules()`、M2 再也不会为它补写第二次 ⇒ 指针永久指向一条不是胜者的行。
+    /// Control: smaller published A0 has pendingLocalEdit and becomes anchor, but a is the still winner. Loser
+    /// mergePartnerSyncId must point to a, not A0. Unconditional second-pass overwrite would permanently
+    /// mispoint soft-deleted losers, which leave allURLRules and never receive another M2 pointer write.
     func testM3_theLoserPointerIsTheWinnerNotTheAnchor() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1625,21 +1592,20 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.collapsed, 2, "`A0` 不静止 ⇒ 静止成员是 a / b / c")
-        XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a", "败者指向**胜者**")
+        XCTAssertEqual(counters?.collapsed, 2, "A0 is not still; still members are a/b/c")
+        XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a", "Losers point to the winner")
         XCTAssertEqual(row(access, "c")?.mergePartnerSyncId, "a")
-        XCTAssertNil(row(access, "A0")?.deletedDate, "带未发布编辑的那条一个字节不动")
-        XCTAssertNil(row(access, "A0")?.mergePartnerSyncId, "它是锚点 ⇒ 自己那一列恒为 nil")
+        XCTAssertNil(row(access, "A0")?.deletedDate, "The row with an unpublished edit is unchanged")
+        XCTAssertNil(row(access, "A0")?.mergePartnerSyncId, "It is the anchor, so its own pointer remains nil")
         XCTAssertEqual(row(access, "a")?.mergePartnerSyncId, "A0",
-                       "软删之后的活集里 `a` 不是锚点 ⇒ 它拿到指向锚点的那一列")
+                       "In the post-deletion live set, a is not the anchor and receives a pointer to it")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-5（幂等与「本机绝不两条同死」）
-    // =======================================================================================
+    // MARK: - CASE M-5 (idempotence and no simultaneous local loss)
 
-    /// 防的是什么：`settled.first` 若也进 `dropFirst()` 的定义域，本机这一台上某个签名组会一条
-    /// 不剩；幂等破掉则每一页都重跑一次软删与吸收，publisher 每页发射一次、稳态当场破。
+    /// Including settled.first among losers would erase the entire local signature group. Non-idempotent
+    /// absorption/deletion would write and emit publisher events on every page instead of reaching steady
+    /// state.
     func testM5_convergenceIsIdempotentAndAlwaysLeavesOneLiveRow() async throws {
         for count in [2, 3, 5] {
             var rows: [PhiLocalURLRule] = []
@@ -1659,36 +1625,34 @@ final class URLRuleMergeTests: XCTestCase {
             await engine.pullOnce()
             let first = await counters(engine)
             XCTAssertEqual(first?.collapsed, count - 1, "count=\(count)")
-            XCTAssertEqual(liveRows(access).count, 1, "count=\(count)：收敛之后至少一条活行")
+            XCTAssertEqual(liveRows(access).count, 1, "count=\(count): at least one live row remains after convergence")
             XCTAssertEqual(liveRows(access).first?.syncId, "r0")
             let refreshesAfterFirst = refreshCalls(access)
 
-            // 第二页：零落地 step、尾钩照跑 ⇒ `collapsed == 0`、`ops` 为空、**零次行写**。
+            // Second page has no landing steps but runs the tail hook: collapsed 0, empty ops and zero row
+            // writes.
             await engine.pullOnce()
             let second = await counters(engine)
             XCTAssertEqual(second?.collapsed, 0, "count=\(count)")
-            XCTAssertTrue(mergeOps(access).isEmpty, "count=\(count)：第二页零 op")
+            XCTAssertTrue(mergeOps(access).isEmpty, "count=\(count): no operations on page 2")
             XCTAssertTrue(access.lastAppliedOps.isEmpty)
             XCTAssertEqual(refreshCalls(access), refreshesAfterFirst,
-                           "count=\(count)：稳态零刷新")
+                           "count=\(count): no steady-state refresh")
             XCTAssertEqual(liveRows(access).count, 1)
         }
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7（收敛不回声 + 指针零写 + 单成员清空）
-    // =======================================================================================
+    // MARK: - CASE M-7 (no convergence echo; no-op pointers and singleton clearing)
 
-    /// 承重的是那条前置（RR12-7）——把「只写此刻为 nil 或指向一条没有活行的身份的活成员」
-    /// 放宽、只靠原语零写的实现在这里红：指针的调用面是「两遍分组 × 每一页 × 组内每一个非锚点
-    /// 成员」，无条件写就是一次全库每页重写。
-    ///
-    /// **本条不断言路由刷新的载荷内容**（测试进程里桥是 nil），只断言钩子的触发次数。
+    /// RR12-7 requires calling pointer writes only for live non-anchor rows with nil/dangling pointers.
+    /// Relying only on primitive no-op behavior still rewrites through two passes for every page/member.
+    /// Assert refresh-hook counts only; the test process has no routing bridge to inspect payload contents.
     func testM7_anAlreadyPointedGroupWritesNothingAndRefreshesNothing() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-a", accountStamp: 100, rows: &rows, table: &table)
-        // 非锚点那条已经指向锚点，而且它带着一次未发布编辑 ⇒ 不静止 ⇒ 这一组已经收敛完了。
+        // The non-anchor already points to the anchor and has an unpublished edit, so it is not still and no
+        // further convergence is possible.
         seedSettled("b", id: "i-b", sortOrder: 1, accountStamp: 100, pendingLocalEdit: true,
                     mergePartnerSyncId: "a", rows: &rows, table: &table)
 
@@ -1704,15 +1668,15 @@ final class URLRuleMergeTests: XCTestCase {
         for _ in 0..<3 { await engine.pullOnce() }
         let counters = await counters(engine)
         XCTAssertEqual(counters?.collapsed, 0)
-        XCTAssertTrue(mergeOps(access).isEmpty, "零次 `SpaceURLRule` 行写")
-        XCTAssertEqual(access.rows, before, "三轮下来一个字节都没动")
-        XCTAssertEqual(refreshCalls(access), 0, "落地后刷新钩子零次触发")
-        XCTAssertTrue(ruleCommits(client).isEmpty, "`urlRulesPublisher` 这一侧零发射的等价断言")
+        XCTAssertTrue(mergeOps(access).isEmpty, "No SpaceURLRule row writes")
+        XCTAssertEqual(access.rows, before, "Unchanged byte for byte across three rounds")
+        XCTAssertEqual(refreshCalls(access), 0, "No post-landing refresh calls")
+        XCTAssertTrue(ruleCommits(client).isEmpty, "Equivalent assertion for no urlRulesPublisher emissions")
     }
 
-    /// 清空规则①：胜者此刻**静止**且它的签名组里只剩它自己（`members.count == 1`）⇒ 它的
-    /// `mergePartnerSyncId` 被清空。防的是 RR9-4 的措辞陷阱（写成「不在任何签名组里」按字面
-    /// 永不成立，陈旧伙伴的窗口只剩第一条）。
+    /// Clear rule ①: a still winner alone in its signature group (members.count == 1) clears its partner.
+    /// RR9-4's literal wording 'not in any signature group' would never match and miss this stale-pointer
+    /// exit.
     func testM7_aLoneSettledMemberGetsItsStalePartnerCleared() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1730,19 +1694,17 @@ final class URLRuleMergeTests: XCTestCase {
 
         XCTAssertEqual(mergeOps(access), [.setMergePartner(syncId: "a", mergePartnerSyncId: nil)])
         XCTAssertNil(row(access, "a")?.mergePartnerSyncId)
-        XCTAssertEqual(refreshCalls(access), 0, "指针写不刷路由表")
-        // 幂等：清过之后不再写。
+        XCTAssertEqual(refreshCalls(access), 0, "Pointer writes do not refresh routing")
+        // Idempotent: once cleared, do not write again.
         await engine.pullOnce()
         XCTAssertTrue(mergeOps(access).isEmpty)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-15（drain / 重放期间：第 2 步不跑，第 1 步照跑）
-    // =======================================================================================
+    // MARK: - CASE M-15 (drain/replay skips step 2 but still runs step 1)
 
-    /// 断言的是「第 2 步不跑」，**不是「整趟零写」**——把断言写成「一个字节都没写」的实现会把
-    /// R-M3-4a-74(3) 判红；反过来，把指针也留在闸后面的实现会让「Z 那次改目标落在 drain /
-    /// 报损重放里」的那一格永远写不出指针、终态两条规则。
+    /// Assert step 2 is skipped, not zero writes overall: pointer writes remain required by R-M3-4a-74(3).
+    /// Gating pointers too would leave retargets arriving during drain/loss replay without links and end with
+    /// two rules.
     func testM15_theGateStopsTheSecondStepButNeverThePointer() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1755,7 +1717,7 @@ final class URLRuleMergeTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "7")]
         let spaceStore = MemorySpaceStore()
-        spaceStore.table.hasDrainedFullReplay = false      // 闸关着
+        spaceStore.table.hasDrainedFullReplay = false      // The gate is closed
         try silenceOtherSections(spaceStore)
         let engine = makeEngine(client: client, markerStore: markerStore(marker: "0"),
                                 spaceStore: spaceStore,
@@ -1764,13 +1726,13 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         let gated = await counters(engine)
-        XCTAssertEqual(gated?.collapsed, 0, "零次软删、零次内容组吸收")
+        XCTAssertEqual(gated?.collapsed, 0, "No soft deletion or content absorption")
         XCTAssertNil(row(access, "a")?.deletedDate)
         XCTAssertNil(row(access, "b")?.deletedDate)
-        XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a", "同一页里指针已经指向锚点")
-        XCTAssertEqual(refreshCalls(access), 0, "纯指针写 ⇒ 零刷新")
+        XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a", "The pointer targets the anchor on the same page")
+        XCTAssertEqual(refreshCalls(access), 0, "Pointer-only writes cause no refresh")
 
-        // 闸打开之后的下一页：`collapsed == 1`。
+        // The next page after opening the gate has collapsed 1.
         spaceStore.table.hasDrainedFullReplay = true
         await engine.pullOnce()
         let opened = await counters(engine)
@@ -1779,15 +1741,13 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertNil(row(access, "a")?.deletedDate)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-35（空页也收敛，走完整引擎入口）（R-M3-4a-99 / R-M3-4a-56）
-    // =======================================================================================
+    // MARK: - CASE M-35 (empty pages converge through the full engine; R-M3-4a-99 / 56)
 
-    /// 防的是什么：只放宽 `guard !ops.isEmpty`（Task 8 那句）与 `land` 闭包那条早退、却没动
-    /// 引擎那道空批次早退 guard 的实现。drain 结束之后的稳态里绝大多数页正是「三者全空」这
-    /// 一种，于是「纯本机重复也要收敛」在**首次 drain 之后就再也不执行**。
+    /// Relaxing only Task 8's nonempty-ops guard and land's early return is insufficient if applyOwnedKind
+    /// still skips empty batches. Most steady-state pages have all three inputs empty; local-only duplicate
+    /// convergence must continue after initial drain.
     func testM35_anEmptyPageStillRunsTheMergeThroughTheFullEngineEntry() async throws {
-        /// (i) 这一页只带一条 Space 更新；(ii) 这一页干脆是空页。
+        /// (i) A page with only a Space update; (ii) a completely empty page.
         for carriesSpace in [true, false] {
             var rows: [PhiLocalURLRule] = []
             var table = PhiOwnedItemTable()
@@ -1807,29 +1767,27 @@ final class URLRuleMergeTests: XCTestCase {
             await engine.setSpaceSyncEnabled(true)
             await engine.pullOnce()
 
-            let label = carriesSpace ? "(i) 只带 Space" : "(ii) 空页"
-            // `plan` 与 `land` 都被调过：`FakeURLRuleAccess.calls` 里有一条 `.apply`，尽管
-            // `ops` 为空。
+            let label = carriesSpace ? "(i) Space only" : "(ii) Empty page"
+            // Both plan and land ran: the fake records apply even though ops is empty.
             XCTAssertEqual(applyCalls(access), 1, label)
-            XCTAssertTrue(access.lastAppliedOps.isEmpty, "\(label)：零落地 op")
+            XCTAssertTrue(access.lastAppliedOps.isEmpty, "\(label): no landing operations")
             let counters = await counters(engine)
             XCTAssertEqual(counters?.collapsed, 1, label)
             XCTAssertNotNil(row(access, "b")?.deletedDate, label)
             XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a", label)
-            // `mergeChangedRouting == true` ⇒ Task 6 那个落地后钩子刷一次路由表（计划裁定七）。
-            XCTAssertEqual(refreshCalls(access), 1, "\(label)：§6.6 第 8 行")
+            // mergeChangedRouting true triggers Task 6's post-landing refresh once (plan ruling seven).
+            XCTAssertEqual(refreshCalls(access), 1, "\(label): §6.6 row 8")
 
-            // 随后两轮稳态。
+            // Then run two steady-state rounds.
             for _ in 0..<2 { await engine.pullOnce() }
             let steady = await self.counters(engine)
             XCTAssertEqual(steady?.collapsed, 0, label)
-            XCTAssertEqual(refreshCalls(access), 1, "\(label)：稳态不再刷新")
+            XCTAssertEqual(refreshCalls(access), 1, "\(label): no further refresh in steady state")
         }
     }
 
-    /// 负面对照的**结构性**半边：这道 guard 的第四个析取项就是 `landsEmptyBatch`，而三条 kind
-    /// 里只有规则取 `true`。取 `false`（或不补那个析取项）⇒ `applyOwnedKind` 在 `plan` 之前就
-    /// return ⇒ `collapsed` 永远是 0、A 与 B 永远并存。
+    /// Structural negative control: landsEmptyBatch is the guard's fourth disjunct and true only for rules.
+    /// False or omitted makes applyOwnedKind return before plan, leaving collapsed 0 and both rows forever.
     func testM35_onlyTheRuleKindLandsAnEmptyBatch() {
         let ruleStore = MemoryOwnedItemStore()
         let rules = OwnedKindRegistration.urlRules(access: FakeURLRuleAccess(), store: ruleStore)
@@ -1838,12 +1796,12 @@ final class URLRuleMergeTests: XCTestCase {
         let pins = OwnedKindRegistration.pins(access: FakePinAccess(scope: .profile),
                                               store: MemoryOwnedItemStore())
         XCTAssertTrue(rules.landsEmptyBatch)
-        XCTAssertFalse(bookmarks.landsEmptyBatch, "书签的早退逐字保留")
-        XCTAssertFalse(pins.landsEmptyBatch, "pin 的早退逐字保留")
+        XCTAssertFalse(bookmarks.landsEmptyBatch, "Preserve the bookmark early return")
+        XCTAssertFalse(pins.landsEmptyBatch, "Preserve the pin early return")
     }
 
-    /// 对照（书签与 pin 逐字不变）：同一页里两个 kind **零条 `.apply`**——它们的
-    /// `landsEmptyBatch == false`，早退支照旧走。
+    /// Bookmark/pin control: neither kind applies on the same empty page; landsEmptyBatch remains false and
+    /// existing early returns are unchanged.
     func testM35_bookmarksAndPinsStillTakeTheirEarlyReturnOnAnEmptyPage() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1869,20 +1827,18 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(applyCalls(ruleAccess), 1, "规则那一条走完了 `land`")
+        XCTAssertEqual(applyCalls(ruleAccess), 1, "The rule kind completed land")
         XCTAssertFalse(bookmarkAccess.calls.contains { if case .apply = $0 { return true } else { return false } },
-                       "书签零条 `.apply`")
+                       "No bookmark apply calls")
         XCTAssertFalse(pinAccess.calls.contains { if case .apply = $0 { return true } else { return false } },
-                       "pin 零条 `.apply`")
+                       "No pin apply calls")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-36（pre-pass 之后的本机编辑：静止集只是上界）（R-M3-4a-100）
-    // =======================================================================================
+    // MARK: - CASE M-36 (post-prepass local edits narrow the still set; R-M3-4a-100)
 
-    /// 防的是什么：「pre-pass 在主 actor 上算、落地事务在写队列上跑」这两个时刻之间的窗口。
-    /// 只按 pre-pass 那份 `atRest` 实现（事务里不再剔除）⇒ `source` 取 B（20 > 10，W 那次 Save
-    /// 没上账户）⇒ **W 被覆写回戳 20**，用户刚按下的那次 Save 在同一页里被机器抹掉。
+    /// A user Save can occur between main-actor prepass and write-queue transaction. Reusing prepass atRest
+    /// without transaction exclusion would select B@20 over baseline W@10 and overwrite W's fresh unpublished
+    /// Save on the same page.
     func testM36_aLocalSaveBetweenThePrePassAndTheTransactionLeavesTheCandidateSet() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -1895,7 +1851,8 @@ final class URLRuleMergeTests: XCTestCase {
         store.table = table
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "7")]
-        // pre-pass 与落地事务之间的那一次**真实用户写**（编辑器语义，绝不手写行或游标）。
+        // Perform a real editor-style user write between prepass and transaction; never manually mutate row or
+        // cursor fields.
         access.beforeLandingTransaction = { [weak access] in
             access?.applyEditorSave(syncId: "a", ask: true, at: Date(timeIntervalSince1970: 0.030))
         }
@@ -1904,27 +1861,23 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.collapsed, 0, "W 退出候选集 ⇒ 静止成员只剩 B 一条")
-        XCTAssertNil(row(access, "b")?.deletedDate, "B 没有被软删")
+        XCTAssertEqual(counters?.collapsed, 0, "W leaves candidates, leaving B as the sole still member")
+        XCTAssertNil(row(access, "b")?.deletedDate, "B was not soft-deleted")
         let w = try XCTUnwrap(row(access, "a"))
-        XCTAssertEqual(w.askBeforeRouting, true, "W 一个字节没被 M2 动过")
+        XCTAssertEqual(w.askBeforeRouting, true, "M2 left W unchanged byte for byte")
         XCTAssertEqual(w.contentUpdatedDate, Date(timeIntervalSince1970: 0.030),
-                       "戳仍是那次 Save 的 30，**不是** B 的 20")
+                       "The stamp remains Save's 30, not B's 20")
         XCTAssertTrue(w.pendingLocalEdit)
         XCTAssertNil(row(access, "b")?.mergePartnerSyncId,
-                     "`members.count == 1` 那条清空规则不触发（B 本来就是 nil）")
+                     "The singleton clear rule does not write because B's pointer is already nil")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M2-b（`preLandingSignatures` 取的是**落地前**目标，且每页重算）（RR12-5）
-    // =======================================================================================
+    // MARK: - CASE M2-b (preLandingSignatures uses pre-landing targets per page; RR12-5)
 
-    /// 防的是什么：按「轮首冻结一次投影」实现的版本第 2 页会算出 S2 ⇒ 第二遍按一个**两页之前**
-    /// 的签名分组、把指针写到错误的锚点上，而「只写 nil 或悬空」的前置会让那个错值**粘住**、
-    /// 下一页不会纠正，而且**静默**。
-    ///
-    /// 上半：模块级探针。`plan` 在**产出 step 的那一刻**照身份查 `context.localSignatures`，
-    /// 查不到的身份**结构性地不在表里**（不强解包、不填空值）。
+    /// A frozen round-entry projection gives page 2 a two-pages-old grouping and wrong pointer anchor. The
+    /// nil/dangling-only guard then makes that silent error persist. Module probe: when plan emits a step, it
+    /// looks up identity in context.localSignatures; missing signatures stay absent without forced unwrap or
+    /// placeholder values.
     func testM2b_thePlanRecordsThePreLandingSignatureWhenItEmitsTheStep() throws {
         var table = PhiOwnedItemTable()
         table.cursors["a"] = publishedRuleCursor(
@@ -1939,17 +1892,18 @@ final class URLRuleMergeTests: XCTestCase {
         let recorded = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [arrival], parked: [:],
                                                table: table, resolve: resolve, context: context)
         XCTAssertTrue(recorded.steps.contains { $0.identity == "a" && $0.kind == .update },
-                      "这一页真的产出了一条 `.update`")
+                      "This page actually produced an update")
         XCTAssertEqual(recorded.preLandingSignatures["a"], signature,
-                       "记的是**落地前**那一个（`old.example`），不是载荷里的新值")
+                       "Record pre-landing old.example, not the new payload value")
 
-        // 算不出签名的身份不进表：**不强解包、不填空值**。
+        // Unresolvable signatures are omitted without force-unwrapping or empty placeholders.
         let missing = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [arrival], parked: [:],
                                               table: table, resolve: resolve,
                                               context: OwnedItemPlanContext())
         XCTAssertTrue(missing.preLandingSignatures.isEmpty)
 
-        // 书签与 pin 那两条路径永不填 `localSignatures` ⇒ 这一位恒空（行为逐字不变）。
+        // Bookmark/pin paths never populate localSignatures, so this field remains empty and behavior
+        // unchanged.
         var bookmarkTable = PhiOwnedItemTable()
         bookmarkTable.cursors["bk"] = ownedCursor(
             reconciled: baselineBytes(bookmarkPayload(uuid: "bk", title: "old")),
@@ -1961,14 +1915,14 @@ final class URLRuleMergeTests: XCTestCase {
                                                                 contentStamp: 900),
                                         entityId: "srv-bk", version: 7)],
             parked: [:], table: bookmarkTable, resolve: resolve, context: OwnedItemPlanContext())
-        XCTAssertTrue(bookmarkPlan.preLandingSignatures.isEmpty, "书签恒空")
+        XCTAssertTrue(bookmarkPlan.preLandingSignatures.isEmpty, "Always empty for bookmarks")
     }
 
-    /// 下半：引擎级。同一轮两页，Z 连搬两次目标而 X 两页都不落地 ⇒ 第 2 页那次第二遍分组用的
-    /// 是 Z 在**第 2 页开始时**（也就是第 1 页落地之后）的目标，指针因此落在 X 的行上、指向 Z。
+    /// Engine probe: Z moves twice in one round while X never lands. Page 2 uses Z's target at that page's
+    /// entry, after page 1 landing, and writes X → Z.
     func testM2b_thePreLandingSignatureIsRecomputedEveryPage() async throws {
-        // Z 起点在 `space-c`（su-3）；第 1 页 `.move` 到 `space-b`（su-2），第 2 页再到
-        // `space-a`（su-1）。X 此刻在 `space-b`、两页都不落地（它压着一次未发布的用户编辑）。
+        // Z moves space-c/su-3 → space-b/su-2 on page 1, then space-a/su-1 on page 2. X stays in space-b with
+        // an unpublished user edit and no landing steps.
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("a", id: "i-z", spaceId: "space-c", target: "su-3", accountStamp: 100,
@@ -1994,25 +1948,21 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(row(access, "a")?.spaceId, "space-a", "两页 `.move` 都落地了")
+        XCTAssertEqual(row(access, "a")?.spaceId, "space-a", "Moves from both pages landed")
         XCTAssertEqual(row(access, "b")?.mergePartnerSyncId, "a",
-                       "指针写在 X 的行上、指向 Z（第二遍按**落地前**的目标分组）")
-        XCTAssertNil(row(access, "a")?.mergePartnerSyncId, "Z 是锚点")
+                       "X points to Z because pass two groups by pre-landing targets")
+        XCTAssertNil(row(access, "a")?.mergePartnerSyncId, "Z is the anchor")
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.collapsed, 0, "X 不静止 ⇒ 静止成员不足两条")
+        XCTAssertEqual(counters?.collapsed, 0, "Nonstill X leaves fewer than two still members")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-6（两台并发新建，收敛到同一条身份）（R-M3-4a-67）
-    // =======================================================================================
+    // MARK: - CASE M-6 (concurrent creates converge on one identity; R-M3-4a-67)
 
-    /// 承重的断言：两台机器对同一个签名组选出**同一个幸存者**，而两台的每设备量
-    /// （本机行 `id`、`createdDate`、桶内 `sortOrder`、插入次序）刻意造得完全不同。
-    ///
-    /// 防的是什么：胜者选择一旦依赖任何每设备量，两台就会软删不同的那一条 —— 终态两台各剩
-    /// 不同的一条规则，而账户上两条都在。`syncId` 字典序是唯一的账户级定序键。
+    /// Both devices must choose the same survivor despite different local id, createdDate, sortOrder and
+    /// insertion order. Depending on any device-specific value deletes different identities on each device.
+    /// syncId lexical order is the shared account-level ordering key.
     func testM6_twoDevicesPickTheSameSurvivorDespiteDifferentLocalQuantities() async throws {
-        /// 一台机器：同一对账户身份 `rule-a` / `rule-b`，两条都已发布且静止。
+        /// One device has the same published, still account pair rule-a/rule-b.
         func makeDevice(_ name: String, layout: [(syncId: String, id: String, sortOrder: Int,
                                                   created: TimeInterval)]) throws
             -> (engine: PhiSyncEngine, access: FakeURLRuleAccess, suite: String) {
@@ -2049,10 +1999,10 @@ final class URLRuleMergeTests: XCTestCase {
             return (engine, access, suite)
         }
 
-        // A：`rule-a` 是后插的、`id` 更大、桶里排在后面、`createdDate` 更晚。
+        // A inserts rule-a later, with larger id, later bucket position and newer createdDate.
         let deviceA = try makeDevice("A", layout: [("rule-b", "z-row", 0, 1_000),
                                                    ("rule-a", "a-row", 1, 9_000)])
-        // B：三项每设备量全部相反。
+        // B reverses all device-specific ordering inputs.
         let deviceB = try makeDevice("B", layout: [("rule-a", "z-row", 0, 9_000),
                                                    ("rule-b", "a-row", 1, 1_000)])
         defer {
@@ -2068,13 +2018,13 @@ final class URLRuleMergeTests: XCTestCase {
         let b = await deviceB.engine.lastOwnedRoundCountersForTesting["urlrules"]
         XCTAssertEqual(a?.collapsed, 1)
         XCTAssertEqual(b?.collapsed, 1)
-        // **软删的身份逐字相同**：胜者是 `syncId` 字典序最小的 `rule-a`。
+        // Both soft-delete the identical identity; smallest syncId rule-a survives.
         XCTAssertEqual(liveRows(deviceA.access).compactMap(\.syncId), ["rule-a"])
         XCTAssertEqual(liveRows(deviceB.access).compactMap(\.syncId), ["rule-a"])
         XCTAssertEqual(row(deviceA.access, "rule-b")?.mergePartnerSyncId, "rule-a")
         XCTAssertEqual(row(deviceB.access, "rule-b")?.mergePartnerSyncId, "rule-a")
 
-        // 稳态：再跑两轮零 `collapsed`。
+        // Steady state: two more rounds have collapsed 0.
         for _ in 0..<2 {
             await deviceA.engine.pullOnce()
             await deviceB.engine.pullOnce()
@@ -2085,14 +2035,12 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(steadyB?.collapsed, 0)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M2-d（三个原语在同一个事务里组合，冲突即整批回滚）—— 真 `LocalStore`
-    // =======================================================================================
+    // MARK: - CASE M2-d (three primitives in one atomic transaction, real LocalStore)
 
-    /// 防的是什么：三个原语各自开一次 `performBackgroundWriteAndWaitThrowing`（串行写流）的
-    /// 实现会在写块里**自我死锁**（R-exec-2），所以必须是「throwing 兄弟 + 私有 `…Body(…, in:)`」
-    /// 两半、尾钩只调 body。把尾钩排在稠密重排**之后**的实现会在败者离开的桶里留下一个空洞
-    /// 下标，而 `sortOrder` 是 `Specificity` 的第三项、排在裁决键之前。
+    /// Opening performBackgroundWriteAndWaitThrowing separately per primitive inside the write block
+    /// self-deadlocks (R-exec-2). Use throwing public wrappers plus private Body(..., in:) methods; the tail
+    /// hook invokes only bodies. Run it before dense reordering or loser removal leaves index gaps that affect
+    /// Specificity before arbitration.
     func testM2d_theThreePrimitivesShareOneTransactionAndTheTailRunsBeforeTheDensify() async throws {
         let store = try makeMergeStore()
         try await seedMergeRows(in: store)
@@ -2112,32 +2060,29 @@ final class URLRuleMergeTests: XCTestCase {
                                                                     mergeTail: tail)
         XCTAssertEqual(outcome.collapsed, 2)
         XCTAssertTrue(outcome.mergeChangedRouting)
-        XCTAssertTrue(outcome.deferredTombstones.isEmpty, "M2 自己从不填它")
+        XCTAssertTrue(outcome.deferredTombstones.isEmpty, "M2 never populates it")
 
         let after = try mergeRows(in: store)
         let winner = try XCTUnwrap(after["W"])
-        XCTAssertTrue(winner.askBeforeRouting, "内容组落盘了")
+        XCTAssertTrue(winner.askBeforeRouting, "The content group persisted")
         XCTAssertEqual(winner.contentUpdatedDate, Date(timeIntervalSince1970: 0.3))
         XCTAssertNil(winner.deletedDate)
         for loser in ["L1", "L2"] {
             XCTAssertNotNil(after[loser]?.deletedDate, loser)
-            XCTAssertEqual(after[loser]?.mergePartnerSyncId, "W", "\(loser)：两列同一次行写")
-            XCTAssertFalse(after[loser]?.pendingLocalEdit ?? true, "\(loser)：置位一个字节不碰")
+            XCTAssertEqual(after[loser]?.mergePartnerSyncId, "W", "\(loser): both columns share one row write")
+            XCTAssertFalse(after[loser]?.pendingLocalEdit ?? true, "\(loser): leave pending unchanged")
         }
         XCTAssertEqual(after["M"]?.mergePartnerSyncId, "W")
-        // 尾钩的写**排在稠密重排之前**：两条败者离开之后那个桶没有空洞。
+        // Tail-hook writes precede dense reordering, leaving no gaps after two losers depart.
         let live = after.values.filter { $0.deletedDate == nil }
             .sorted { $0.sortOrder < $1.sortOrder }
         XCTAssertEqual(live.map(\.sortOrder), Array(0..<live.count))
     }
 
-    /// 冲突支：**整批回滚**。落地那条 `.update` 已经写过、尾钩的内容组与第一条软删也写过，
-    /// 随后一条撞车的 op 抛 `rowAlreadyMapped` ⇒ **一条都没落盘**。
-    ///
-    /// 用 `.rekey` 撞车而不是「让 `.softDelete` 命中一条 `syncId` 与请求不符的行」：三个原语
-    /// 一律按 `syncId` 在 `URLRuleTableIndex.bySyncId` 上寻址，那条 `rowAlreadyMapped` 守卫
-    /// 在那条寻址路径上**结构性地不可达**（留着是为了寻址方式一旦变化，静默覆盖仍然变成一次
-    /// 抛错）。要钉的东西是同一个：一次抛错让**尾钩已经写下的那几列**一起回滚。
+    /// Conflict rolls back the entire batch: after update, absorbed content and first soft deletion, a later
+    /// rekey throws rowAlreadyMapped and none persist. Use rekey collision because primitives address by
+    /// syncId through bySyncId, making their defensive identity-mismatch guard unreachable under current
+    /// addressing. The assertion covers rollback of already executed tail-hook writes.
     func testM2d_aConflictInsideTheTailRollsTheWholeBatchBack() async throws {
         let store = try makeMergeStore()
         try await seedMergeRows(in: store)
@@ -2149,7 +2094,7 @@ final class URLRuleMergeTests: XCTestCase {
                 ops: [.setContentGroup(syncId: "W", host: "github.com", pathPrefix: nil,
                                        ask: true, contentUpdatedDate: Date(timeIntervalSince1970: 0.3)),
                       .softDelete(syncId: "L1", mergePartnerSyncId: "W"),
-                      // 把 L2 那一行 re-key 到 W 已经占着的身份 ⇒ `rowAlreadyMapped`。
+                      // Rekey L2 to the identity already owned by W, producing rowAlreadyMapped.
                       .rekey(localId: loser?.id ?? "missing", to: "W", values: nil)],
                 collapsed: 1, touchedBuckets: ["space-a"], changedRouting: true)
         }
@@ -2163,10 +2108,10 @@ final class URLRuleMergeTests: XCTestCase {
         }
 
         let after = try mergeRows(in: store)
-        XCTAssertEqual(after, before, "W 的内容组、L1 的 `deletedDate`、M 的指针全部没落盘")
+        XCTAssertEqual(after, before, "W content, L1 deletedDate and M pointer all failed to persist")
     }
 
-    // MARK: - M2-d 的真库脚手架
+    // MARK: - Real-store fixtures for M2-d
 
     private func makeMergeStore() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -2178,7 +2123,7 @@ final class URLRuleMergeTests: XCTestCase {
                           presentsCompatibilityAlerts: false)
     }
 
-    /// 一个桶里四条活行：胜者 W、两条败者 L1 / L2、一条旁观者 M。
+    /// Four live siblings: winner W, losers L1/L2 and bystander M.
     private func seedMergeRows(in store: LocalStore) async throws {
         try await store.performBackgroundWriteAndWaitThrowing { context in
             for (offset, syncId) in ["W", "L1", "L2", "M"].enumerated() {
@@ -2212,17 +2157,15 @@ final class URLRuleMergeTests: XCTestCase {
         return out
     }
 
-    // =======================================================================================
-    // MARK: - 8b-3（§8.4.4 让位）：脚手架
-    // =======================================================================================
+    // MARK: - 8b-3 (§8.4.4 yielding): fixtures
 
-    /// `URLRuleKind.transferSource(of:resolve:)` 的调用糖。算不出来直接炸——用例都是自己
-    /// 造的合法实体。
+    /// Helper for transferSource(of:resolve:); fail immediately if resolution fails because all fixtures are
+    /// valid entities.
     private func projection(_ payload: Phi_PhiURLRuleEntity) throws -> RuleProjection {
         try XCTUnwrap(URLRuleKind.transferSource(of: payload, resolve: resolve))
     }
 
-    /// `plan.steps` 的可读形式：`"<相>:<身份>"`，转移额外带上目标。断言执行序用它。
+    /// Readable plan steps as phase:identity, with destination for transfers, to assert execution order.
     private func stepSummary(_ steps: [OwnedItemApplyStep]) -> [String] {
         steps.map { step in
             switch step.kind {
@@ -2236,7 +2179,7 @@ final class URLRuleMergeTests: XCTestCase {
         }
     }
 
-    /// 假件记到的 op 序（`.apply` 收到的那一份，已经过 `URLRuleApplyBatch` 的四相排序）。
+    /// Fake-recorded apply operations after URLRuleApplyBatch's four-phase sorting.
     private func opSummary(_ ops: [URLRuleSyncOp]) -> [String] {
         ops.map { op in
             switch op {
@@ -2254,28 +2197,26 @@ final class URLRuleMergeTests: XCTestCase {
         }
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.1（开关关掉 ⇒ 书签与 pin 的 plan 逐字节不变）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.1 (disabled feature preserves bookmark/pin plans byte for byte)
 
-    /// 防的是什么：把让位做成「所有 kind 共享」的实现会让书签的每一次远端删除都变成一次
-    /// 复活——书签的数量级与删除频率与规则完全不同（§14.1）。
+    /// Applying yielding to every kind would turn bookmark remote deletions into resurrections; bookmark
+    /// volume and deletion frequency differ greatly from rules (§14.1).
     func test8b31_theYieldSwitchIsOffForBookmarksAndPins() throws {
-        XCTAssertFalse(BookmarkKind.tombstoneYieldsToLocalEdits, "书签走协议默认实现")
-        XCTAssertFalse(PinKind.tombstoneYieldsToLocalEdits, "pin 走协议默认实现")
-        XCTAssertTrue(URLRuleKind.tombstoneYieldsToLocalEdits, "规则是唯一开着的那一条")
+        XCTAssertFalse(BookmarkKind.tombstoneYieldsToLocalEdits, "Bookmarks use the protocol default")
+        XCTAssertFalse(PinKind.tombstoneYieldsToLocalEdits, "Pins use the protocol default")
+        XCTAssertTrue(URLRuleKind.tombstoneYieldsToLocalEdits, "Only rules enable this feature")
         XCTAssertNil(BookmarkKind.transferSource(of: bookmarkPayload(uuid: "bk"), resolve: resolve),
-                     "书签的取值源恒 nil")
+                     "Bookmark transfer source is always nil")
         XCTAssertNil(PinKind.transferSource(of: pinPayload(lineage: "LX"), resolve: resolve),
-                     "pin 的取值源恒 nil")
+                     "Pin transfer source is always nil")
 
-        // 一条书签，行上带一次未发布编辑（`server != reconciled`），同轮到达它的 tombstone。
+        // A bookmark with an unpublished local edit (server != reconciled) receives its tombstone this round.
         var table = PhiOwnedItemTable()
         table.cursors["bk"] = ownedCursor(
             reconciled: baselineBytes(bookmarkPayload(uuid: "bk", title: "local")),
             server: baselineBytes(bookmarkPayload(uuid: "bk", title: "remote")),
             entityId: "srv-bk", version: 1, ownerUuid: "su-1")
-        // 四个新输入**全填上**：书签这一侧结构性地读不到它们。
+        // Populate all four new inputs; the bookmark path must structurally ignore them.
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["bk"]
         context.pendingLocalEdits = ["bk"]
@@ -2284,24 +2225,21 @@ final class URLRuleMergeTests: XCTestCase {
         context.partnerNotAtRest = ["bk"]
         let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: [], parked: [:],
                                            table: table, resolve: resolve, context: context)
-        XCTAssertEqual(stepSummary(plan.steps), ["delete:bk"], "`.delete` 照常产出")
+        XCTAssertEqual(stepSummary(plan.steps), ["delete:bk"], "Delete is produced normally")
         XCTAssertTrue(plan.parkedTombstones.isEmpty)
         XCTAssertTrue(plan.yieldedTombstones.isEmpty)
 
-        // 差分那一侧：`deferredDeletions` 带默认值 ⇒ `deferred` 恒空、记账逐字不变。
+        // Diff uses default deferredDeletions, so deferred remains empty and bookkeeping unchanged.
         let diff = SyncableOwnedItems.tombstones(BookmarkKind.self, locals: [], table: table,
                                                  resolve: resolve, scope: nil, nowMs: 100)
         XCTAssertTrue(diff.deferred.isEmpty)
-        XCTAssertEqual(diff.identities, ["bk"], "既有的三条判据一个字没改")
+        XCTAssertEqual(diff.identities, ["bk"], "All three existing predicates remain unchanged")
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.2（`parkedTombstones` 走正常返回路径）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.2 (parkedTombstones on normal return)
 
-    /// 防的是什么：只在 §7.3 那条整批早退路径上填这个集合的实现里，正常返回路径靠默认值
-    /// `[]` ⇒ 那次停放**静默丢失**：三元组已收割、游标看上去健康、marker 早已推过那一页，
-    /// 那条远端删除再也不会被投递第二次。
+    /// Filling parkedTombstones only on §7.3's whole-batch early return leaves normal returns at default
+    /// empty, silently losing deletion after metadata harvest and marker advancement.
     func test8b32_aParkedTombstoneRidesTheNormalReturnPathAlongsideALanding() throws {
         var table = PhiOwnedItemTable()
         table.cursors["b"] = publishedRuleCursor(urlRulePayload(uuid: "b"), entityId: "srv-b")
@@ -2310,29 +2248,26 @@ final class URLRuleMergeTests: XCTestCase {
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["b"]
         context.pendingLocalEdits = ["b"]
-        context.partnerNotAtRest = ["b"]          // W 在、但不静止
+        context.partnerNotAtRest = ["b"]          // W exists but is not still
         let arrival = OwnedItemArrival(
             entity: urlRulePayload(uuid: "y", host: "y2.example", contentStamp: 900),
             entityId: "srv-y", version: 7)
         let plan = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [arrival], parked: [:],
                                            table: table, resolve: resolve, context: context)
 
-        XCTAssertEqual(plan.parkedTombstones, ["b"], "逐身份停放，走的是正常返回路径")
-        XCTAssertTrue(plan.yieldedTombstones.isEmpty, "停放不是让位")
+        XCTAssertEqual(plan.parkedTombstones, ["b"], "Per-identity parking follows the normal return path")
+        XCTAssertTrue(plan.yieldedTombstones.isEmpty, "Parking is not yielding")
         XCTAssertFalse(plan.steps.contains { $0.identity == "b" },
-                       "**不产出 `.delete`**：行一个字节不动")
-        XCTAssertEqual(stepSummary(plan.steps), ["update:y"], "同页别的身份照常落地")
+                       "No delete is produced; the row remains unchanged")
+        XCTAssertEqual(stepSummary(plan.steps), ["update:y"], "Other identities on the same page land normally")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-12 / M-21 / M-24（落点 (α) 的三结局，模块级）
-    // =======================================================================================
+    // MARK: - CASE M-12 / M-21 / M-24 (three α outcomes, module coverage)
 
-    /// (α) 的三结局表，一条用例三支：W 静止 ⇒ `.transfer` + **照常 `.delete`**；W 在但不静止
-    /// ⇒ 停放、零 `.delete`；根本没有伙伴 ⇒ (ii)、零 `.delete`。
-    ///
-    /// 防的是什么：因为「W 暂时不合格」就退回 (ii) 的以两条规则收场（RR8-7）；(α) 之后走软删
-    /// 而不是硬删的实现会在下一轮多发一条无谓的 tombstone（M-21）。
+    /// α outcomes: still W transfers then deletes X normally; present-but-not-still W parks without delete;
+    /// absent partner takes (ii) without delete. Falling back to (ii) for temporarily ineligible W leaves two
+    /// rules (RR8-7). Soft deletion after α instead of hard deletion emits an unnecessary next-round tombstone
+    /// (M-21).
     func testM12_theThreeOutcomesOfAnInboundTombstoneMeetingALocalEdit() throws {
         let xPayload = urlRulePayload(uuid: "b", targetSpaceUuid: "su-2", contentStamp: 30,
                                       targetStamp: 30)
@@ -2350,33 +2285,34 @@ final class URLRuleMergeTests: XCTestCase {
                                            table: table, resolve: resolve, context: context)
         }
 
-        // (i) 支：转移**第三相**、硬删**第四相**，同一批、同一个事务。
+        // Branch (i): transfer in phase 3, hard delete in phase 4, in one batch/transaction.
         let transferred = planFor { $0.mergePartners = ["b": "a"] }
         XCTAssertEqual(stepSummary(transferred.steps), ["transfer:b->a", "delete:b"],
-                       "转移在前、硬删在后")
+                       "Transfer precedes hard deletion")
         XCTAssertTrue(transferred.yieldedTombstones.isEmpty)
         XCTAssertTrue(transferred.parkedTombstones.isEmpty)
         let expectedSource = try projection(xPayload)
         if case .transfer(let source, let to) = transferred.steps[0].kind {
             XCTAssertEqual(to, "a")
-            XCTAssertEqual(source, expectedSource, "取值源是 X 的本机行投影")
-            XCTAssertEqual(source.targetSpaceId, "space-b", "账户级目标反查成了本机 Space id")
+            XCTAssertEqual(source, expectedSource, "Source values come from X's local projection")
+            XCTAssertEqual(source.targetSpaceId, "space-b", "Account target resolves to a local Space ID")
         } else {
-            XCTFail("第一条 step 必须是 `.transfer`")
+            XCTFail("The first step must be transfer")
         }
 
-        // 停放支：**零 `.delete`**。
+        // Parking branch emits no delete.
         let parked = planFor { $0.partnerNotAtRest = ["b"] }
         XCTAssertEqual(parked.parkedTombstones, ["b"])
-        XCTAssertTrue(parked.steps.isEmpty, "行一个字节不动")
+        XCTAssertTrue(parked.steps.isEmpty, "The row remains unchanged byte for byte")
 
-        // (ii) 支：根本没有伙伴行。
+        // Branch (ii): no partner row exists.
         let yielded = planFor { _ in }
         XCTAssertEqual(yielded.yieldedTombstones, ["b"])
-        XCTAssertTrue(yielded.steps.isEmpty, "`plan` 对它零 `.delete` step")
-        XCTAssertTrue(yielded.parkedTombstones.isEmpty, "让位不是停放")
+        XCTAssertTrue(yielded.steps.isEmpty, "Plan emits no delete step for it")
+        XCTAssertTrue(yielded.parkedTombstones.isEmpty, "Yielding is not parking")
 
-        // 取值算不出（投影缺席）⇒ **按 (ii) 走**，不停放、不硬删（裁定 3 末段 / C-19）。
+        // Missing projection/source values take (ii), without parking or hard deletion (ruling 3 final
+        // paragraph / C-19).
         var unresolvable = OwnedItemPlanContext()
         unresolvable.tombstonedIdentities = ["b"]
         unresolvable.pendingLocalEdits = ["b"]
@@ -2384,47 +2320,42 @@ final class URLRuleMergeTests: XCTestCase {
         let noSource = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [], parked: [:],
                                                table: table, resolve: resolve,
                                                context: unresolvable)
-        XCTAssertEqual(noSource.yieldedTombstones, ["b"], "投影缺席 ⇒ (ii)")
+        XCTAssertEqual(noSource.yieldedTombstones, ["b"], "Missing projection takes branch (ii)")
         XCTAssertTrue(noSource.steps.isEmpty)
 
-        // M-24（竞态 4）：败者上**没有**任何本机意图 ⇒ 两个析取项都不成立 ⇒ 照常硬删。
+        // M-24 race 4: no local intent on the loser means neither disjunct holds, so hard-delete normally.
         var settled = OwnedItemPlanContext()
         settled.tombstonedIdentities = ["b"]
         settled.mergePartners = ["b": "a"]
         settled.localProjections["b"] = baselineBytes(xPayload)
         let hardDeleted = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [], parked: [:],
                                                   table: table, resolve: resolve, context: settled)
-        XCTAssertEqual(stepSummary(hardDeleted.steps), ["delete:b"], "不走 `.transfer`")
+        XCTAssertEqual(stepSummary(hardDeleted.steps), ["delete:b"], "No transfer")
         XCTAssertTrue(hardDeleted.yieldedTombstones.isEmpty)
     }
 
-    /// (α) 的第二个析取项（取值式 `unpublished`）**单独**成立时同样让位——把它写成
-    /// 「只读 `pendingLocalEdit`」的实现在一次由落地合并赢下、还没上账户的本机编辑面前
-    /// 毫无防护（CASE M-19 (e)）。
+    /// α also yields when unpublished alone is true. Checking only pendingLocalEdit would miss a local field
+    /// won during landing but not yet published (M-19(e)).
     func testM19e_theUnpublishedDisjunctAloneIsEnoughToYield() throws {
         var table = PhiOwnedItemTable()
         table.cursors["b"] = publishedRuleCursor(urlRulePayload(uuid: "b"), entityId: "srv-b")
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["b"]
-        context.unpublished = ["b"]               // `pendingLocalEdit` 是假
+        context.unpublished = ["b"]               // pendingLocalEdit is false
         let plan = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [], parked: [:],
                                            table: table, resolve: resolve, context: context)
         XCTAssertEqual(plan.yieldedTombstones, ["b"])
         XCTAssertTrue(plan.steps.isEmpty)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-22（竞态 2：落点 (β)，模块级）
-    // =======================================================================================
+    // MARK: - CASE M-22 (race 2: β, module coverage)
 
-    /// (β) 的三结局：W 静止 ⇒ `.transfer`、**X 的软删与 `pendingDelete` 全部留着**；
-    /// W 在但不静止 ⇒ 停放**那条入站存活实体**（`parked`，**不是** `parkedTombstones`）；
-    /// 两者都不成立 ⇒ 回到 A9 原语义。
-    ///
-    /// 防的是什么：把 (α) 的 `deletedDate == nil` 或那条析取抄进来 ⇒ 永不让路 ⇒ 终态
-    /// Z@S2 + X@S1 两条；按本机那条软删行取值 ⇒ 目标单元不赢 ⇒ Z 停在旧目标。
+    /// β outcomes: still W receives transfer while X retains soft deletion/pendingDelete; present nonstill W
+    /// parks the live arrival in parked, not parkedTombstones; otherwise retain A9 behavior. Copying α's
+    /// live-row/disjunction requirements would never yield and leave Z@S2 plus X@S1. Source values must come
+    /// from inbound payload, not X's stale soft-deleted row.
     func testM22_theThreeOutcomesOfTheA9Branch() throws {
-        // X 已发布、游标待删（B 跑过 M2、tombstone 拿了 `.conflict`）；入站是 A 那条 retarget。
+        // Published X is pendingDelete after B's M2 tombstone conflicted; inbound payload is A's retarget.
         let baseline = urlRulePayload(uuid: "b", targetSpaceUuid: "su-2", contentStamp: 100,
                                       targetStamp: 100)
         var table = PhiOwnedItemTable()
@@ -2443,42 +2374,39 @@ final class URLRuleMergeTests: XCTestCase {
                                            table: table, resolve: resolve, context: context)
         }
 
-        // W 静止 ⇒ 转移。取值源是**入站实体**，不是本机那条软删行。
+        // Still W receives transfer from the inbound entity, not the soft-deleted local row.
         let transferred = planFor { $0.mergePartners = ["b": "a"] }
         XCTAssertEqual(stepSummary(transferred.steps), ["transfer:b->a"],
-                       "**不产出 `.delete`**：X 保持软删 + `pendingDelete`")
-        XCTAssertTrue(transferred.cancelledDeletes.isEmpty, "不撤销那条本机删除")
-        XCTAssertTrue(transferred.parked.isEmpty, "那条入站实体不落地、也不停放")
+                       "No delete is produced; X retains soft deletion and pendingDelete")
+        XCTAssertTrue(transferred.cancelledDeletes.isEmpty, "Do not cancel the local deletion")
+        XCTAssertTrue(transferred.parked.isEmpty, "The inbound entity neither lands nor parks")
         if case .transfer(let source, _) = transferred.steps[0].kind {
-            XCTAssertEqual(source.targetOwnerUuid, "su-1", "取值源是入站 `merged` 的新目标")
+            XCTAssertEqual(source.targetOwnerUuid, "su-1", "Source target comes from inbound merged payload")
             XCTAssertEqual(source.targetUpdatedDate,
-                           Date(timeIntervalSince1970: 0.9), "目标戳照抄入站那一枚")
+                           Date(timeIntervalSince1970: 0.9), "Copy the inbound target stamp")
         } else {
-            XCTFail("必须是 `.transfer`")
+            XCTFail("Must be transfer")
         }
 
-        // W 在但不静止 ⇒ 停放**那条入站存活实体**：`parked` 有它、`parkedTombstones` **没有**。
+        // Present nonstill W parks the inbound live entity in parked, never parkedTombstones.
         let parked = planFor { $0.partnerNotAtRest = ["b"] }
         XCTAssertTrue(parked.steps.isEmpty)
-        XCTAssertNotNil(parked.parked["b"], "游标 `pendingApply` + `pendingOwnerUuid`")
+        XCTAssertNotNil(parked.parked["b"], "Cursor retains pendingApply and pendingOwnerUuid")
         XCTAssertEqual(parked.parked["b"]?.pendingOwnerUuid, "su-1")
-        XCTAssertTrue(parked.parkedTombstones.isEmpty, "**绝不置 `pendingTombstone`**")
+        XCTAssertTrue(parked.parkedTombstones.isEmpty, "Never set pendingTombstone")
         XCTAssertTrue(parked.cancelledDeletes.isEmpty)
 
-        // 两者都不成立 ⇒ A9 原语义（位置比删除决定新、父是活的 ⇒ 取消删除）。
+        // Otherwise A9 applies: location newer than deletion decision with a live parent cancels deletion.
         let a9 = planFor { _ in }
-        XCTAssertEqual(a9.cancelledDeletes, ["b"], "A9 的三个合取项逐字不动")
+        XCTAssertEqual(a9.cancelledDeletes, ["b"], "A9's three conjunction terms remain unchanged")
         XCTAssertTrue(a9.steps.contains { $0.identity == "b" })
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-34 ①（`.transfer` 夹在 `.update` 与 `.delete` 之间）（R-M3-4a-93）
-    // =======================================================================================
+    // MARK: - CASE M-34 ① (transfer between update and delete; R-M3-4a-93)
 
-    /// 防的是什么：把 `.transfer` 留在**第一相**的那一版。执行序变成 `transfer(X→W)`（跟 W
-    /// **落地前**的 `@10` 比，30 赢）→ `.update(W)`（这条 step 在 plan 期就按入站载荷算好了，
-    /// 落地时原样写 `true@20`）→ `delete(X)` ⇒ **终态 W = `true@20`，那次 `@30` 的编辑凭空
-    /// 消失**，而 X 已经硬删、无处可捞。
+    /// Putting transfer in phase 1 would apply X@30 to pre-landing W@10, then overwrite it with plan's
+    /// precomputed update true@20 before deleting X. The newer edit would be irretrievably lost; update must
+    /// precede transfer.
     func testM34_theTransferPhaseRunsAfterTheUpdateAndBeforeTheDelete() throws {
         let wBaseline = urlRulePayload(uuid: "a", host: "w.example", ask: false, contentStamp: 10)
         let xProjection = urlRulePayload(uuid: "c", host: "w.example", ask: false, contentStamp: 30)
@@ -2497,9 +2425,9 @@ final class URLRuleMergeTests: XCTestCase {
         let plan = SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [arrival], parked: [:],
                                            table: table, resolve: resolve, context: context)
         XCTAssertEqual(stepSummary(plan.steps), ["update:a", "transfer:c->a", "delete:c"],
-                       "四相：`.update` ⇒ `.transfer` ⇒ `.delete`")
+                       "Four-phase order: update, transfer, delete")
 
-        // 批次那一侧的同一条次序（`URLRuleApplyBatch.init` 的三组）。
+        // Verify the same order in URLRuleApplyBatch's three operation groups.
         let values = URLRuleLandingValues.fixture(syncId: "a", spaceId: "space-a")
         let batch = URLRuleApplyBatch(unordered: [
             .delete(syncId: "c"),
@@ -2508,16 +2436,14 @@ final class URLRuleMergeTests: XCTestCase {
             .update(values),
         ])
         XCTAssertEqual(opSummary(batch.ops), ["update:a", "transfer:c->a", "delete:c"],
-                       "传入次序被相序改写，相内仍然稳定")
+                       "Phase ordering overrides input order while remaining stable within each phase")
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.3（`deferredDeletions` 零记账）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.3 (deferredDeletions performs no bookkeeping)
 
-    /// 防的是什么：把守卫写成「差分照常跑、只在切片里过滤」的实现会在同一步清掉
-    /// `pendingApply` 并重写 `deleteDecidedAtMs`，于是**下一轮**守卫的第二个合取项恒假、
-    /// A9 那条「入站位置比删除决定更新」的比较基准也被一路往后推。
+    /// Filtering only at slice construction after normal diff would clear pendingApply and rewrite
+    /// deleteDecidedAtMs. Next round the guard's second conjunction fails, and A9's comparison threshold
+    /// continually moves forward.
     func test8b33_aDeferredDeletionWritesNothingAtAllIntoTheCursorTable() throws {
         var table = PhiOwnedItemTable()
         var deferred = pendingDeleteCursor(decidedAtMs: 700, entityId: "srv-b", version: 3,
@@ -2527,7 +2453,7 @@ final class URLRuleMergeTests: XCTestCase {
         deferred.pendingApply = baselineBytes(urlRulePayload(uuid: "b", targetSpaceUuid: "su-2"))
         deferred.pendingOwnerUuid = "su-2"
         table.cursors["b"] = deferred
-        // 对照：同样「本机没有活行」的另一条身份，**不在**守卫里 ⇒ 照常发 tombstone。
+        // Control: another locally absent identity outside the guard emits its tombstone normally.
         table.cursors["z"] = ownedCursor(reconciled: baselineBytes(urlRulePayload(uuid: "z")),
                                          server: baselineBytes(urlRulePayload(uuid: "z")),
                                          entityId: "srv-z", version: 4, ownerUuid: "su-1")
@@ -2535,29 +2461,26 @@ final class URLRuleMergeTests: XCTestCase {
         let result = SyncableOwnedItems.tombstones(URLRuleKind.self, locals: [], table: table,
                                                    resolve: resolve, scope: nil, nowMs: 900,
                                                    deferredDeletions: ["b"])
-        XCTAssertEqual(result.identities, ["z"], "守卫里的身份不进 `identities`")
-        XCTAssertNil(result.cursorUpdates["b"], "**零 `cursorUpdates`**")
-        XCTAssertEqual(result.deferred, ["b"], "原样回传")
-        XCTAssertNotNil(result.cursorUpdates["z"], "同一趟别的身份照常记账")
-        // 引擎那一侧的第三个合取项：一条**上一轮就已经** `pendingDelete == true` 的身份本轮
-        // 不产出 cursorUpdate，仍会按既有 filter 进候选——所以那个减法必须读 `deferred`。
+        XCTAssertEqual(result.identities, ["z"], "Guarded identities are excluded from identities")
+        XCTAssertNil(result.cursorUpdates["b"], "No cursorUpdates")
+        XCTAssertEqual(result.deferred, ["b"], "Return unchanged")
+        XCTAssertNotNil(result.cursorUpdates["z"], "Other identities receive normal bookkeeping in this pass")
+        // Engine guard's third term must subtract deferred: an already pendingDelete identity creates no new
+        // cursorUpdate but still enters candidates through the existing filter.
         XCTAssertTrue(table.cursors["b"]?.pendingDelete == true
                         && table.cursors["b"]?.deletedAtMs == nil,
-                      "既有 filter 的两个合取项对它成立")
+                      "Both conjunction terms of the existing filter hold")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-23 对照二 / M-26（`partnerNotAtRest` 的三步查找次序与两个集合的分工）
-    // =======================================================================================
+    // MARK: - CASE M-23 control 2 / M-26 (partner lookup order and two result sets)
 
-    /// 三步查找次序（RR10-7）：① 指针 ⇒ 静止的那一条；② 指针取不到**或指到的行不静止**
-    /// ⇒ 退到兜底支；③ 都拿不出 ⇒ 按「有没有伙伴行」分流。
-    ///
-    /// 防的是什么：只按指针一条路查、指针不静止就停放的实现（M-23 对照二）；把「伙伴不静止」
-    /// 与「根本没有伙伴」混成一件事的实现（RR10-3）。
+    /// RR10-7 lookup order: use a still pointer target; if missing or nonstill, try fallback; if neither
+    /// yields one, distinguish a present nonstill partner from no partner. Pointer-only parking fails M-23
+    /// control 2; conflating those last outcomes violates RR10-3.
     func testM23b_thePartnerLookupFallsBackWhenThePointerIsNotAtRest() throws {
         var table = PhiOwnedItemTable()
-        // X：待重判的那一条，指针指向一条**永远不会静止**的锚点（目标 hidden ⇒ 失去签名）。
+        // X needs reconsideration and points to an anchor that can never become still because its hidden
+        // target loses signature eligibility.
         let baseline = urlRulePayload(uuid: "x")
         table.cursors["x"] = publishedRuleCursor(baseline, entityId: "srv-x")
         table.cursors["anchor"] = publishedRuleCursor(urlRulePayload(uuid: "anchor"),
@@ -2567,21 +2490,22 @@ final class URLRuleMergeTests: XCTestCase {
         let rows = [
             PhiLocalURLRule.fixture(id: "i-x", syncId: "x", pendingLocalEdit: true,
                                     mergePartnerSyncId: "anchor"),
-            // 锚点：活行，但目标是一条 agent Space ⇒ 没有签名 ⇒ 静止第 8 项永假。
+            // The anchor is live but targets an agent Space with no signature, permanently failing stillness
+            // predicate 8.
             PhiLocalURLRule.fixture(id: "i-anchor", syncId: "anchor", spaceId: "agent-space",
                                     sortOrder: 1),
             PhiLocalURLRule.fixture(id: "i-settled", syncId: "settled", sortOrder: 2),
         ]
         let access = FakeURLRuleAccess(rows: rows)
         let partners = access.mergePartners(table: table, resolve: resolve, tombstonesThisPage: [])
-        XCTAssertEqual(partners["x"], "settled", "退到兜底支、拿那条**静止**活行")
+        XCTAssertEqual(partners["x"], "settled", "Fallback selects the still live row")
         XCTAssertFalse(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
                                                tombstonesThisPage: []).contains("x"),
-                       "拿得出 W ⇒ 这一条不停放")
+                       "Resolvable W prevents parking")
     }
 
-    /// M-26 的第 10 项：同一页里 W 自己的 tombstone 也到了 ⇒ W 在这一页**不静止** ⇒ X 进
-    /// `partnerNotAtRest`（停放），而不是 (ii)。W 的行消失之后才轮到 (ii)。
+    /// M-26 predicate 10: W's tombstone also arrives this page, so W is not still and X enters
+    /// partnerNotAtRest parking, not (ii). Only after W disappears may (ii) apply.
     func testM26_aPartnerDyingOnThisPageParksInsteadOfYielding() throws {
         var table = PhiOwnedItemTable()
         table.cursors["a"] = publishedRuleCursor(urlRulePayload(uuid: "a"), entityId: "srv-a")
@@ -2593,32 +2517,32 @@ final class URLRuleMergeTests: XCTestCase {
         ]
         let access = FakeURLRuleAccess(rows: rows)
         let settled = access.mergePartners(table: table, resolve: resolve, tombstonesThisPage: [])
-        XCTAssertEqual(settled["b"], "a", "没有本页 tombstone 时 W 静止")
+        XCTAssertEqual(settled["b"], "a", "W is still without this page's tombstone")
         XCTAssertTrue(access.mergePartners(table: table, resolve: resolve,
                                            tombstonesThisPage: ["a", "b"]).isEmpty,
-                      "第 10 项让 W 在这一页不静止")
+                      "Predicate 10 makes W nonstill on this page")
         XCTAssertTrue(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
                                               tombstonesThisPage: ["a", "b"]).contains("b"),
-                      "W 在但不静止 ⇒ 停放，**不是** (ii)")
+                      "Present nonstill W parks rather than taking (ii)")
 
-        // W 的行已经没了 ⇒ 既没有静止的 W、也**没有伙伴行** ⇒ 两个集合都不收它 ⇒ (ii)。
+        // W is absent: no still partner and no partner row, so neither set contains X and branch (ii) applies.
         let orphan = FakeURLRuleAccess(rows: [rows[1]])
         XCTAssertTrue(orphan.mergePartners(table: table, resolve: resolve,
                                            tombstonesThisPage: []).isEmpty)
         XCTAssertTrue(orphan.partnerNotAtRest(table: table, rows: [rows[1]], resolve: resolve,
                                               tombstonesThisPage: []).isEmpty,
-                      "悬空指针不算「有伙伴行」——算了就是无界停放")
+                      "A dangling pointer is not a present partner, which would park indefinitely")
     }
 
-    /// (β) 的定义域**含软删行**（RR8-1）：照抄 (α) 的 `deletedDate == nil` 会让这两张表对
-    /// (β) 恒空 ⇒ 守卫形同虚设、正在重判的那一行被硬删。
+    /// β's domain includes soft-deleted rows (RR8-1). Copying α's deletedDate == nil filter empties both
+    /// lookup tables for β and defeats reconsideration protection.
     func testM22_theGuardDomainIncludesSoftDeletedRows() throws {
         var table = PhiOwnedItemTable()
         table.cursors["a"] = publishedRuleCursor(urlRulePayload(uuid: "a"), entityId: "srv-a")
         var pending = publishedRuleCursor(urlRulePayload(uuid: "b"), entityId: "srv-b")
         pending.pendingDelete = true
         table.cursors["b"] = pending
-        // W 不静止（游标带停放载荷）；X 是**软删**态、指针指向 W。
+        // W is nonstill with parked payload; soft-deleted X points to W.
         table.cursors["a"]?.pendingApply = baselineBytes(urlRulePayload(uuid: "a"))
         let rows = [
             PhiLocalURLRule.fixture(id: "i-a", syncId: "a"),
@@ -2629,28 +2553,24 @@ final class URLRuleMergeTests: XCTestCase {
         let access = FakeURLRuleAccess(rows: rows)
         XCTAssertEqual(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
                                                tombstonesThisPage: []),
-                       ["b"], "软删的 X 照样进守卫")
+                       ["b"], "Soft-deleted X still enters the guard")
         XCTAssertTrue(access.partnerNotAtRest(table: table,
                                               rows: rows.filter { $0.deletedDate == nil },
                                               resolve: resolve, tombstonesThisPage: []).isEmpty,
-                      "`rows` 取 `allURLRules()` 的实现必须判红")
+                      "Using allURLRules for rows must fail this assertion")
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.5 / 8b-3.6 / M-34 (b)(c)（转移的每单元 LWW，值级）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.5 / 8b-3.6 / M-34(b)(c) (per-unit transfer LWW, value coverage)
 
-    /// 裁定 9 的四条，一条用例四段。
-    ///
-    /// 防的是什么：无条件置位会给 W 留一个永不清掉的标志（8b-3.5）；**按字段**转移会把 X 的
-    /// `ask` 连同 X 的组戳打到 W 上（8b-3.6）；**只读 W 行戳**的那一版在 M-34 (c) 上把账户上
-    /// 更新的那份取值覆写掉。
+    /// Four parts of ruling 9: unconditional flagging leaves W permanently pending (8b-3.5); field-by-field
+    /// transfer wrongly copies X's ask/content stamp (8b-3.6); using only W's row stamp overwrites newer
+    /// account values in M-34(c).
     func test8b35_theTransferWritesOnlyTheUnitsItWins() throws {
         let target = PhiLocalURLRule.fixture(id: "i-w", syncId: "a", host: "w.example",
                                              contentUpdatedDate: stampDate(100),
                                              targetUpdatedDate: stampDate(100))
 
-        // 8b-3.5：两个单元都输 ⇒ 零写、不置位、不计 `transferred`。
+        // 8b-3.5: both units lose, so no write, pending flag or transferred count.
         let stale = try projection(urlRulePayload(uuid: "b", targetSpaceUuid: "su-2",
                                                   host: "x.example", contentStamp: 10,
                                                   targetStamp: 10))
@@ -2659,18 +2579,19 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(lost.written, 0)
         XCTAssertTrue(lost.contentSuperseded)
 
-        // 8b-3.6：目标戳更新、内容组戳更旧 ⇒ **只写目标整组**，内容组三个字段一个都不打过去。
+        // 8b-3.6: newer target but older content transfers only the target unit, leaving all three content
+        // fields untouched.
         let split = try projection(urlRulePayload(uuid: "b", targetSpaceUuid: "su-2",
                                                   host: "x.example", contentStamp: 10,
                                                   targetStamp: 900))
         let partial = URLRuleKind.transferDecision(target: target, source: split,
                                                    targetEffectiveStamps: URLRuleEffectiveStamps())
-        XCTAssertFalse(partial.writesContent, "内容组整组不转移")
+        XCTAssertFalse(partial.writesContent, "Do not transfer any content-group fields")
         XCTAssertTrue(partial.writesTarget)
         XCTAssertEqual(partial.written, 1)
-        XCTAssertTrue(partial.contentSuperseded, "计一次 `superseded_by_delete`")
+        XCTAssertTrue(partial.contentSuperseded, "Count one superseded_by_delete")
 
-        // M-34 (c)：W 的**账户**戳是 40、**行**上那一列还停在 10 ⇒ `max` 取 40 ⇒ 30 不赢。
+        // M-34(c): W has account stamp 40 and stale row stamp 10; max is 40, so source 30 loses.
         let laggingRow = PhiLocalURLRule.fixture(id: "i-w", syncId: "a", host: "w.example",
                                                  contentUpdatedDate: stampDate(10))
         let edit = try projection(urlRulePayload(uuid: "c", host: "w.example", ask: true,
@@ -2679,19 +2600,20 @@ final class URLRuleMergeTests: XCTestCase {
             target: laggingRow, source: edit,
             targetEffectiveStamps: URLRuleEffectiveStamps(content: stampDate(40), target: nil))
         XCTAssertFalse(againstAccount.writesContent,
-                       "`max(行戳 10, 账户戳 40)` ⇒ 30 输；只读行戳的实现必须红")
-        // 同族：行戳是 `nil`（Task 5 裁定 5 的新行形态），账户戳仍是 40 ⇒ 期望逐字相同。
+                       "max(row stamp 10, account stamp 40) defeats 30; row-only comparison must fail")
+        // Related case: nil row stamp (Task 5 ruling 5) with account stamp 40 yields the same result.
         let freshRow = PhiLocalURLRule.fixture(id: "i-w", syncId: "a", host: "w.example")
         XCTAssertFalse(URLRuleKind.transferDecision(
             target: freshRow, source: edit,
             targetEffectiveStamps: URLRuleEffectiveStamps(content: stampDate(40),
                                                           target: nil)).writesContent)
-        // 反过来：账户戳缺席 ⇒ `max` 退化成行戳（fail-open 到旧口径），30 > 10 ⇒ 赢。
+        // Conversely, absent account stamp falls back to row stamp; 30 beats 10, preserving the prior
+        // fail-open behavior.
         XCTAssertTrue(URLRuleKind.transferDecision(
             target: laggingRow, source: edit,
             targetEffectiveStamps: URLRuleEffectiveStamps()).writesContent)
 
-        // `targetSpaceId == nil` ⇒ 目标这一组不转移（零写，fail-closed）。
+        // Nil targetSpaceId skips target transfer without writing, failing closed.
         var unmapped = try projection(urlRulePayload(uuid: "b", contentStamp: 10,
                                                      targetStamp: 900))
         unmapped.targetSpaceId = nil
@@ -2700,14 +2622,10 @@ final class URLRuleMergeTests: XCTestCase {
             targetEffectiveStamps: URLRuleEffectiveStamps()).writesTarget)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-37（pre-pass 之后编辑来源行：事务内的「来源行未变」复查）（R-M3-4a-102）
-    // =======================================================================================
+    // MARK: - CASE M-37 (transaction rechecks source after prepass; R-M3-4a-102)
 
-    /// 复查的判定半边，值级。
-    ///
-    /// 防的是什么：不做复查的那一版转移的是 **E1**、随后硬删那条装着 E2 的行 ⇒ E2 在本机与
-    /// 账户上都不存在；把它写成「一律停放一轮」的实现让 (i) 支永远走不完。
+    /// Value-level recheck predicate. Without it, transfer uses E1 then deletes the row containing E2, losing
+    /// E2 everywhere. Always parking would instead prevent branch (i) from ever finishing.
     func testM37_theInTransactionSourceRecheck() throws {
         let row = PhiLocalURLRule.fixture(id: "i-x", syncId: "b", host: "e1.example",
                                           contentUpdatedDate: stampDate(30),
@@ -2715,40 +2633,39 @@ final class URLRuleMergeTests: XCTestCase {
         let source = try projection(urlRulePayload(uuid: "b", host: "e1.example",
                                                    contentStamp: 30, targetStamp: 30))
         XCTAssertTrue(URLRuleKind.transferSourceUnchanged(row: row, source: source),
-                      "来源行没变 ⇒ 逐字回到今天")
+                      "Unchanged source preserves the existing path")
 
         var saved = row
         saved.host = "e2.example"
         saved.contentUpdatedDate = stampDate(40)
         XCTAssertFalse(URLRuleKind.transferSourceUnchanged(row: saved, source: source),
-                       "用户在 pre-pass 与事务之间按了一次 Save")
+                       "The user saved between prepass and transaction")
 
         var retargeted = row
         retargeted.spaceId = "space-c"
         retargeted.targetUpdatedDate = stampDate(40)
         XCTAssertFalse(URLRuleKind.transferSourceUnchanged(row: retargeted, source: source),
-                       "只改目标的那次 Save 同样挡住")
+                       "A target-only Save also blocks transfer")
 
         var softDeleted = row
         softDeleted.deletedDate = Date(timeIntervalSince1970: 9)
         XCTAssertFalse(URLRuleKind.transferSourceUnchanged(row: softDeleted, source: source),
-                       "`deletedDate != nil` 也算「变了」——软删之后那条 tombstone 该走 (β)")
+                       "Nonnil deletedDate also counts as changed; soft deletion requires branch β")
         XCTAssertFalse(URLRuleKind.transferSourceUnchanged(row: nil, source: source),
-                       "行已不在")
+                       "The row is absent")
 
-        // 亚毫秒抖动**不算**变了：两侧都先过毫秒换算再比（裁定 11）。
+        // Sub-millisecond differences do not count: convert both sides to milliseconds before comparing
+        // (ruling 11).
         var jittered = row
         jittered.contentUpdatedDate = Date(timeIntervalSince1970: 0.0300001)
         XCTAssertTrue(URLRuleKind.transferSourceUnchanged(row: jittered, source: source),
-                      "白停放一轮的实现必须红")
+                      "Unconditionally parking for one round must fail")
     }
 
-    // =======================================================================================
-    // MARK: - `transferTargets` 与 `landedIdentities` 的分工（R-M3-4a-90 / RR12-6）
-    // =======================================================================================
+    // MARK: - transferTargets versus landedIdentities (R-M3-4a-90 / RR12-6)
 
-    /// 转移目标要退出本页 M2 的候选集；`.transfer` 的身份**不进** `landedIdentities`
-    /// （`outcome.landed` 是它的超集，两者不可互换）。
+    /// Transfer targets leave this page's M2 candidate set. Transfer identities do not enter landedIdentities;
+    /// outcome.landed is a superset and cannot replace it.
     func testM33_transferTargetsLeaveThisPagesMergeCandidateSet() throws {
         let steps = [
             OwnedItemApplyStep(identity: "c", kind: .transfer(source: try projection(
@@ -2761,17 +2678,14 @@ final class URLRuleMergeTests: XCTestCase {
         ]
         XCTAssertEqual(URLRuleKind.transferTargets(in: steps), ["a"])
         XCTAssertEqual(URLRuleKind.landedIdentities(in: steps), ["y"],
-                       "`.transfer` 与 `.delete` 都不在里面")
+                       "Neither transfer nor delete belongs to this set")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-12 / M-21（引擎级：(α) 的 (i) 支走完整一轮）
-    // =======================================================================================
+    // MARK: - CASE M-12 / M-21 (full engine round through α branch (i))
 
-    /// 一页只带 X 的 tombstone；X 手上有一次未发布编辑、指针指向静止的 W。
-    ///
-    /// 防的是什么：**终态不得是两条规则**。(α) 之后走软删而不是硬删的实现会在下一轮多发一条
-    /// 无谓的 tombstone，行还要在盘上躺 30 天（RR8-5）。
+    /// A page contains only X's tombstone; X has an unpublished edit and points to still W. End with one rule,
+    /// not two. Soft-deleting after α rather than hard-deleting would emit an unnecessary tombstone next round
+    /// and retain the row for 30 days (RR8-5).
     func testM21_anInboundTombstoneTransfersTheEditAndHardDeletesTheLoser() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -2790,19 +2704,19 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // ① 执行序：这一页没有到 W 的 `.update`，所以只有转移与硬删两条。
+        // ① No W update arrives, so operation order is just transfer then hard delete.
         XCTAssertEqual(opSummary(access.lastAppliedOps), ["transfer:b->a", "delete:b"])
-        // ② W 收下了那次编辑；X 在 `allURLRulesIncludingDeleted()` 里也找不到。
+        // ② W receives the edit; X is absent even from allURLRulesIncludingDeleted.
         let w = try XCTUnwrap(row(access, "a"))
-        XCTAssertEqual(w.askBeforeRouting, true, "内容组整组转移过来")
-        XCTAssertEqual(w.contentUpdatedDate, stampDate(30), "戳照抄来源，绝不铸 `now`")
-        XCTAssertTrue(w.pendingLocalEdit, "写了单元 ⇒ 置位")
-        XCTAssertNil(row(access, "b"), "X 被**硬删**，不是软删")
+        XCTAssertEqual(w.askBeforeRouting, true, "The whole content group transfers")
+        XCTAssertEqual(w.contentUpdatedDate, stampDate(30), "Copy the source stamp without minting now")
+        XCTAssertTrue(w.pendingLocalEdit, "Writing a unit sets pending")
+        XCTAssertNil(row(access, "b"), "X is hard-deleted, not soft-deleted")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.transferred, 1)
         XCTAssertEqual(counters?.resurrected, 0)
         XCTAssertEqual(counters?.yieldNoPartner, 0)
-        // ③ X 的游标按普通 tombstone 记账。
+        // ③ X's cursor follows ordinary tombstone bookkeeping.
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
         XCTAssertNil(cursor?.reconciled)
         XCTAssertNil(cursor?.server)
@@ -2811,8 +2725,8 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(cursor?.pendingTombstone, false)
     }
 
-    /// 落地抛错 ⇒ **整批回滚**：`.transfer` 与 `.delete` 在同一个事务里，W 的行与 X 的行
-    /// 一个字节都不动。
+    /// Landing failure rolls back transfer and delete together in one transaction, preserving both rows byte
+    /// for byte.
     func testM21_aFailedLandingRollsBackBothTheTransferAndTheDelete() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -2832,26 +2746,24 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(row(access, "a")?.askBeforeRouting, false, "W 的行没被动过")
+        XCTAssertEqual(row(access, "a")?.askBeforeRouting, false, "W's row is unchanged")
         XCTAssertFalse(try XCTUnwrap(row(access, "a")).pendingLocalEdit)
-        XCTAssertNotNil(row(access, "b"), "X 的行还在")
+        XCTAssertNotNil(row(access, "b"), "X's row remains")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.transferred, 0)
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertEqual(cursor?.pendingTombstone, true, "整批停放，下一轮重判")
-        XCTAssertNotNil(cursor?.reconciled, "基线一个字节没写")
+        XCTAssertEqual(cursor?.pendingTombstone, true, "Park the whole batch for next-round reconsideration")
+        XCTAssertNotNil(cursor?.reconciled, "No baseline bytes were written")
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.5（引擎级：零写转移不置位、不计 `transferred`，X 照常硬删）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.5 (no-op transfer leaves flags/count unchanged; X still hard-deletes)
 
-    /// 防的是什么：无条件置位会给 W 留一个永不清掉的标志：它从此**永久**退出静止（M2 不再
-    /// 收敛它）、并对**每一次**远端删除让位。
+    /// Unconditional pending flagging would make W permanently nonstill and yield to every future remote
+    /// deletion.
     func test8b35_aZeroUnitTransferStillHardDeletesTheLoser() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
-        // W 的两枚账户戳都比 X 新 ⇒ 两个单元都输。
+        // Both W account stamps are newer than X, so both units lose.
         seedSettled("a", id: "i-a", ask: false, accountStamp: 900, rows: &rows, table: &table)
         seedSettled("b", id: "i-b", ask: true, sortOrder: 1, accountStamp: 30,
                     rowContentUpdatedDate: stampDate(30), pendingLocalEdit: true,
@@ -2868,22 +2780,19 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         let w = try XCTUnwrap(row(access, "a"))
-        XCTAssertEqual(w.askBeforeRouting, false, "W 的行一个字节没变")
+        XCTAssertEqual(w.askBeforeRouting, false, "W's row is unchanged byte for byte")
         XCTAssertNil(w.contentUpdatedDate)
-        XCTAssertFalse(w.pendingLocalEdit, "零写 ⇒ **不置位**")
-        XCTAssertNil(row(access, "b"), "那条 `.delete` 不受零写影响")
+        XCTAssertFalse(w.pendingLocalEdit, "No writes means no pending flag")
+        XCTAssertNil(row(access, "b"), "The delete still proceeds despite no transfer writes")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.transferred, 0)
-        XCTAssertEqual(counters?.supersededByDelete, 1, "内容组输掉 ⇒ 计一次（§13.3）")
+        XCTAssertEqual(counters?.supersededByDelete, 1, "Count the losing content group once (§13.3)")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-37（引擎级：pre-pass 之后的那一次真实用户 Save）（R-M3-4a-102）
-    // =======================================================================================
+    // MARK: - CASE M-37 (real user Save after prepass, engine coverage; R-M3-4a-102)
 
-    /// 防的是什么：pre-pass（主 actor）与落地事务（写队列）之间那一次**真实可达**的用户 Save。
-    /// 不做复查的那一版转移的是 **E1**、`.delete(X)` 照常硬删那条装着 E2 的行 ⇒ **E2 在本机与
-    /// 账户上都不存在**，没有任何日志说它发生过。
+    /// A reachable user Save occurs between main-actor prepass and write-queue transaction. Without recheck,
+    /// E1 transfers before deleting X containing E2, silently losing E2 locally and remotely.
     func testM37_anEditToTheSourceRowBetweenThePrePassAndTheTransactionDefersBothOps() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -2898,7 +2807,7 @@ final class URLRuleMergeTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([remoteTombstone(tag: ruleTag("b"), version: 40,
                                                       entityId: "srv-b")], marker: "7")]
-        // 注入点：**落地事务之前**那一刻，pre-pass 已经冻下 E1。真实用户写（编辑器语义）。
+        // Inject a real editor-style user write immediately before the transaction, after prepass froze E1.
         access.beforeLandingTransaction = { [weak access] in
             access?.applyEditorSave(syncId: "b", host: "e2.example",
                                     at: Date(timeIntervalSince1970: 0.040))
@@ -2907,7 +2816,7 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // W 的行一个字节没变、X 的行还在，而且**就是 E2**。
+        // W remains unchanged and X survives with E2.
         let w = try XCTUnwrap(row(access, "a"))
         XCTAssertEqual(w.askBeforeRouting, false)
         XCTAssertNil(w.contentUpdatedDate)
@@ -2919,30 +2828,30 @@ final class URLRuleMergeTests: XCTestCase {
         let counters = await counters(engine)
         XCTAssertEqual(counters?.transferred, 0)
         XCTAssertEqual(counters?.resurrected, 0)
-        // 游标：`pendingTombstone` 置上、三元组已收割、两份基线与 `deletedAtMs` 一个字节不动。
+        // Cursor sets pendingTombstone and harvests metadata, preserving both baselines and deletedAtMs.
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
         XCTAssertEqual(cursor?.pendingTombstone, true)
-        XCTAssertEqual(cursor?.version, 40, "三元组照常收割")
+        XCTAssertEqual(cursor?.version, 40, "Harvest server metadata normally")
         XCTAssertNotNil(cursor?.reconciled)
         XCTAssertNotNil(cursor?.server)
-        XCTAssertNil(cursor?.deletedAtMs, "**绝不**进 `deleted`")
+        XCTAssertNil(cursor?.deletedAtMs, "Never enter deleted")
 
-        // 下一轮：那条停放的 tombstone 被重新投递，pre-pass 这一次捕获的是 **E2**。
+        // Next round retries the parked tombstone; prepass now captures E2.
         access.beforeLandingTransaction = nil
         client.pagesByMarker = [page([], marker: "8")]
         await engine.pullOnce()
 
         let movedOn = try XCTUnwrap(row(access, "a"))
-        XCTAssertEqual(movedOn.host, "e2.example", "转移的是 E2")
+        XCTAssertEqual(movedOn.host, "e2.example", "Transfer uses E2")
         XCTAssertEqual(movedOn.contentUpdatedDate, Date(timeIntervalSince1970: 0.040))
         XCTAssertTrue(movedOn.pendingLocalEdit)
-        XCTAssertNil(row(access, "b"), "X 随后才被硬删")
+        XCTAssertNil(row(access, "b"), "Only then is X hard-deleted")
         let second = await self.counters(engine)
         XCTAssertEqual(second?.transferred, 1)
     }
 
-    /// 对照：钩子**什么都不做** ⇒ 事务内比较逐格相等 ⇒ `.transfer` + `.delete(X)` 照常执行。
-    /// 钉住「复查只在真的变了时挡」，别把它写成「一律停放一轮」。
+    /// No-op-hook control leaves projections equal, allowing transfer and delete normally. Recheck blocks only
+    /// real changes, not every first attempt.
     func testM37_anUnchangedSourceRowExecutesBothOpsExactlyAsBefore() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -2971,15 +2880,11 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertNotNil(cursor?.deletedAtMs)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-12 (ii)（引擎级：让位 ⇒ 轮末 3b 重发布）
-    // =======================================================================================
+    // MARK: - CASE M-12(ii) (yield followed by round-end 3b republication)
 
-    /// 根本没有伙伴行 ⇒ (ii)：行留着、两份基线清 nil、`deletedAtMs` 写下**并保留**，轮末那次
-    /// 3b 以那条 tombstone 的版本当 `base_version` 把这条规则重新发回账户。
-    ///
-    /// 防的是什么：提前清 `deletedAtMs` 的让 3b 永远发不出；kind 自己软删、不产出 `.delete`
-    /// step 的实现会多发一条无谓的 tombstone。
+    /// No partner takes (ii): retain the row, clear both baselines and set/retain deletedAtMs. Round-end 3b
+    /// republishes using the tombstone version. Clearing deletedAtMs prematurely prevents 3b; kind-local soft
+    /// deletion without a delete step would emit an unnecessary tombstone.
     func testM12_theYieldBranchRepublishesTheRuleAtTheEndOfTheRound() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -2993,52 +2898,50 @@ final class URLRuleMergeTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([remoteTombstone(tag: ruleTag("b"), version: 40,
                                                       entityId: "srv-b")], marker: "7")]
-        // 账户上那一行真的还在（tombstone 那一版），于是轮末那次 3b 走 update 支并被接受。
+        // Seed the account tombstone entity so round-end 3b updates it and receives applied.
         client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 40, entityId: "srv-b",
                     deleted: true)
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // 行还在、`syncId` 没变、`deletedDate == nil`；`plan` 对它零 `.delete` step。
+        // The row retains syncId with nil deletedDate; plan emits no delete step.
         let x = try XCTUnwrap(row(access, "b"))
         XCTAssertNil(x.deletedDate)
-        XCTAssertEqual(x.askBeforeRouting, true, "那次未发布编辑原样留着")
-        XCTAssertTrue(access.lastAppliedOps.isEmpty, "零落地 op")
+        XCTAssertEqual(x.askBeforeRouting, true, "The unpublished edit remains unchanged")
+        XCTAssertTrue(access.lastAppliedOps.isEmpty, "No landing operations")
         XCTAssertTrue(access.hardDeleteCalls.isEmpty)
-        // 轮末 3b：`base_version` 取那条 tombstone 的版本。
+        // Round-end 3b uses the tombstone's base_version.
         let commits = ruleCommits(client)
-        XCTAssertEqual(commits.count, 1, "3b 重发布，一条")
+        XCTAssertEqual(commits.count, 1, "One 3b republication")
         XCTAssertEqual(commits.first?.baseVersion, 40)
         XCTAssertEqual(commits.first?.deleted, false)
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.yieldNoPartner, 1, "成因：指针空 ∧ 兜底未命中")
+        XCTAssertEqual(counters?.yieldNoPartner, 1, "Cause: empty pointer and no fallback match")
         XCTAssertEqual(counters?.transferred, 0)
-        XCTAssertEqual(counters?.tombstones, 1, "到达的那一条，不是本机发出去的")
-        // `.applied` 之后：§4.2 规则 3b 的复活——`deletedAtMs` 被清、两份基线写回。
+        XCTAssertEqual(counters?.tombstones, 1, "Counts the arrival, not a local publication")
+        // Applied resurrection under §4.2(3b) clears deletedAtMs and restores both baselines.
         XCTAssertEqual(counters?.resurrected, 1)
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertNil(cursor?.deletedAtMs, "**只有** `.applied` 才清它（RR5-3）")
+        XCTAssertNil(cursor?.deletedAtMs, "Only applied clears it (RR5-3)")
         XCTAssertNotNil(cursor?.reconciled)
-        XCTAssertEqual(cursor?.reconciled, cursor?.server, "R-exec-7：两份基线都写")
+        XCTAssertEqual(cursor?.reconciled, cursor?.server, "R-exec-7: write both baselines")
         XCTAssertEqual(cursor?.pendingDelete, false)
         XCTAssertEqual(cursor?.pendingTombstone, false)
-        // `pendingLocalEdit` 的清位是 8b-4 的清位 (b)，本任务不碰它。
+        // pendingLocalEdit clearing belongs to 8b-4 clearing rule (b), outside this task.
         XCTAssertTrue(try XCTUnwrap(row(access, "b")).pendingLocalEdit)
     }
 
 
-    // =======================================================================================
-    // MARK: - 8b-3 fix round 1：守卫的引擎接线与 3b 复查的两条「不过」支
-    // =======================================================================================
+    // MARK: - 8b-3 fix round 1: engine guard wiring and two failed 3b readmission paths
 
-    /// 本轮真的发出去的**规则 tombstone** commit。守卫写歪的唯一可观测后果就是这里多一条。
+    /// Actual outbound rule tombstone commits: an incorrect guard is observable as an extra entry here.
     private func ruleTombstoneCommits(_ client: FakePhiSyncClient) -> [FakePhiSyncClient.CommitCall] {
         ruleCommits(client).filter(\.deleted)
     }
 
-    /// 一台只跑规则的引擎，但 Space 侧的假件与 store 由用例自己给（3b 复查的成因二要改
-    /// Space 游标，成因三要改 `currentSpaces()`，两者 `makeRuleEngine` 都够不到）。
+    /// Rules-only engine with case-owned Space access/store. 3b readmission cause two modifies Space cursors;
+    /// cause three modifies currentSpaces, beyond makeRuleEngine's fixture interface.
     private func makeYieldEngine(_ access: FakeURLRuleAccess, _ store: MemoryOwnedItemStore,
                                  client: FakePhiSyncClient,
                                  spaceAccess: FakePhiSpaceAccess,
@@ -3051,8 +2954,8 @@ final class URLRuleMergeTests: XCTestCase {
                       now: { Self.now })
     }
 
-    /// 一条**走过 (ii)** 的游标：两份基线 nil、`deletedAtMs` 写下**并保留**、三个待办位清掉
-    /// （= `applyOwnedKind` 让位记账那一段写下的形状）。3b 复查的定义域就是它。
+    /// Cursor after (ii): nil baselines, retained deletedAtMs and three cleared pending flags, as written by
+    /// applyOwnedKind's yielding bookkeeping. This is the 3b recheck domain.
     private func yieldedCursor(entityId: String = "srv-b", version: Int64 = 40,
                                owner: String = "su-1") -> PhiOwnedItemCursor {
         var cursor = PhiOwnedItemCursor()
@@ -3065,8 +2968,9 @@ final class URLRuleMergeTests: XCTestCase {
         return cursor
     }
 
-    /// 一条 (β) 停放态：X 软删 + 指针指向 W、游标待删；W 活着但**不静止**（行上带一次未发布
-    /// 编辑）。两条行的取值与各自的基线逐字相同，所以「这一轮零 commit」的断言只说守卫这一件事。
+    /// β parking fixture: X is soft-deleted, pendingDelete and points to live but nonstill W with an
+    /// unpublished edit. Row values equal their respective baselines, isolating the guard in zero-commit
+    /// assertions.
     private func seedBetaPark(rows: inout [PhiLocalURLRule], table: inout PhiOwnedItemTable,
                               decidedAtMs: Int64 = 700) {
         seedSettled("a", id: "i-a", accountStamp: 100, pendingLocalEdit: true,
@@ -3082,17 +2986,12 @@ final class URLRuleMergeTests: XCTestCase {
                              mergePartnerSyncId: "a"))
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-22 引擎级 / CASE 8b-3.3 整轮版（R-M3-4a-84 的守卫接线）
-    // =======================================================================================
+    // MARK: - CASE M-22 engine / 8b-3.3 full round (R-M3-4a-84 guard wiring)
 
-    /// **这一支必须经完整发布段**（R-M3-4a-84）：`pullOnce()` 跑完 `plan` → `land` → 差分 →
-    /// 切片 → 组批。守卫这一次由**引擎**算（`tombstones` 闭包里的
-    /// `partnerNotAtRest ∩ pendingApply != nil`），不是用例手喂的集合。
-    ///
-    /// 防的是什么（spec 点名的那条失败链）：守卫恒空 ⇒ 差分在**同一步**清掉 `pendingApply`
-    /// 并把 X 排进 `deleteCandidates` ⇒ 那条 tombstone 必然 `.applied` ⇒ **正在重判的那一行被
-    /// 硬删** ⇒ 下一轮差分为它重发一条 `.create` ⇒ 终态两条规则。
+    /// Drive the full pullOnce publication sequence: plan → land → diff → slice → batch. The engine computes
+    /// partnerNotAtRest intersected with nonnil pendingApply inside tombstones; do not inject the guard set
+    /// manually. An empty guard would let diff clear pendingApply and enqueue X's accepted tombstone,
+    /// hard-delete the reconsidered row, then create it again next round, ending with two rules.
     func testM22_theEngineComputedGuardSuppressesTheTombstoneThroughAFullRound() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3102,51 +3001,48 @@ final class URLRuleMergeTests: XCTestCase {
         let store = MemoryOwnedItemStore()
         store.table = table
         let client = FakePhiSyncClient()
-        // B 的 tombstone 拿了 `.conflict` ⇒ 这一页带回 X 的**存活**实体。
+        // B's tombstone conflicted, so this page brings X's live entity back.
         client.pagesByMarker = [page([ruleEntity(remote(uuid: "b", rank: "W"), version: 40)],
                                      marker: "7")]
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // ① (β) 的停放真的发生了：那条实体没落地，游标带上载荷与归属。
+        // ① β actually parks: no landing, with payload and pending owner retained in cursor.
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertNotNil(cursor?.pendingApply, "入站实体停放下来（**不是**被差分清掉）")
+        XCTAssertNotNil(cursor?.pendingApply, "Park the inbound entity without diff clearing it")
         XCTAssertEqual(cursor?.pendingOwnerUuid, "su-1")
-        XCTAssertEqual(cursor?.pendingTombstone, false, "那是 (α) 的位")
-        // ② 守卫：差分对它**零记账**，四个字段与轮首逐字相同（CASE 8b-3.3 的整轮版）。
+        XCTAssertEqual(cursor?.pendingTombstone, false, "That flag belongs to α")
+        // ② The guard performs no diff bookkeeping; all four fields match entry state (full-round 8b-3.3).
         XCTAssertEqual(cursor?.pendingDelete, true)
-        XCTAssertEqual(cursor?.deleteDecidedAtMs, 700, "比较基准没有被一路往后推")
-        XCTAssertEqual(cursor?.reconciled, table.cursors["b"]?.reconciled, "基线一个字节没写")
-        // ③ `client.commit` 里没有 X 的 tombstone。
-        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "守卫恒空的实现在这里红")
+        XCTAssertEqual(cursor?.deleteDecidedAtMs, 700, "The comparison threshold does not keep moving forward")
+        XCTAssertEqual(cursor?.reconciled, table.cursors["b"]?.reconciled, "No baseline bytes were written")
+        // ③ client.commit contains no X tombstone.
+        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "An always-empty guard must fail here")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.tombstones, 0)
-        // ④ X 的行一个字节没动。
+        // ④ X's row remains unchanged byte for byte.
         let x = try XCTUnwrap(row(access, "b"))
-        XCTAssertEqual(x.deletedDate, Date(timeIntervalSince1970: 5), "仍是软删态")
+        XCTAssertEqual(x.deletedDate, Date(timeIntervalSince1970: 5), "Still soft-deleted")
         XCTAssertEqual(x.mergePartnerSyncId, "a")
         XCTAssertEqual(x.spaceId, "space-a")
         XCTAssertTrue(access.hardDeleteCalls.isEmpty)
     }
 
-    /// **对照二（owner 形状停放不进守卫）**：X 的停放是「归属还没映射」那一种
-    /// （`pendingOwnerUuid` 指一个未映射 Space，身份**不在** `partnerNotAtRest` 里），而用户
-    /// 本机删除还在 ⇒ **那一轮照常发 tombstone**。
-    ///
-    /// 防的是什么：把守卫写成 `pendingApply == nil` 一条的实现会把 §5.5 第 4 步的 owner 形状
-    /// 停放一并圈进来，一条正当的用户删除被**无界**地挡住。
+    /// Control two: owner-resolution parking is outside the guard. X waits for an unmapped Space and is not in
+    /// partnerNotAtRest; existing user deletion must still emit its tombstone. Guarding on pendingApply alone
+    /// would indefinitely block legitimate deletion during §5.5 step-4 owner parking.
     func testM22_anOwnerShapedParkIsNotCoveredByTheGuard() async throws {
         let payload = urlRulePayload(uuid: "b", host: "github.com", contentStamp: 100)
         var table = PhiOwnedItemTable()
         var cursor = publishedRuleCursor(payload, entityId: "srv-b", version: 1)
         cursor.pendingDelete = true
         cursor.deleteDecidedAtMs = 700
-        // owner 形状停放：等的是一个**未映射**的 Space，与伙伴静不静止无关。
+        // Owner parking waits for an unmapped Space, independent of partner stillness.
         cursor.pendingApply = baselineBytes(urlRulePayload(uuid: "b", targetSpaceUuid: "su-9"))
         cursor.pendingOwnerUuid = "su-9"
         table.cursors["b"] = cursor
-        // 组里没有第二条行 ⇒ `partnerNotAtRest` 对它恒空。
+        // No second row means partnerNotAtRest is always empty for X.
         let rows: [PhiLocalURLRule] = [
             .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
                      deletedDate: Date(timeIntervalSince1970: 5)),
@@ -3154,50 +3050,47 @@ final class URLRuleMergeTests: XCTestCase {
         let access = FakeURLRuleAccess(rows: rows)
         XCTAssertTrue(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
                                               tombstonesThisPage: []).isEmpty,
-                      "根本没有伙伴行 ⇒ 不进守卫")
+                      "No partner row means exclusion from this guard")
 
         let store = MemoryOwnedItemStore()
         store.table = table
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "7")]
-        // 服务端上那一行真的存在，于是这次 tombstone commit 走 update 支并被接受。
+        // Seed the actual server row so its update-style tombstone is accepted.
         client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 1, entityId: "srv-b")
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(ruleTombstoneCommits(client).count, 1, "正当的用户删除照常发出去")
+        XCTAssertEqual(ruleTombstoneCommits(client).count, 1, "Publish the legitimate user deletion normally")
         XCTAssertEqual(ruleTombstoneCommits(client).first?.baseVersion, 1)
         let counters = await counters(engine)
         XCTAssertEqual(counters?.tombstones, 1)
     }
 
-    /// **对照三（求值点）**：在 (β) 停放态上跑一趟 `.localOwnedChange`（`push(...)` 那四支之一，
-    /// 不是 `pullOnce()`）⇒ 那一趟同样零 tombstone、X 的行仍是软删态、`pendingDelete` 仍为真、
-    /// `pendingApply` 一个字节没动。守卫住在 `tombstones` 闭包里，所以它对**每一种**走到发布段
-    /// 的轮次都成立。
-    ///
-    /// **同一趟再加一条**：把守卫那一次的 `rows` 换成 `allURLRules()`（过滤软删）⇒ 守卫恒空
-    /// ——(β) 的 X 结构性是软删态的，那一版必须红。
+    /// Control three: localOwnedChange on persisted β parking must also produce no tombstone, retain
+    /// soft-deleted X and preserve pendingDelete/pendingApply. Computing the guard inside tombstones covers
+    /// every publication round. Also verify the guard reads all rows including soft deletion; allURLRules
+    /// would structurally omit β's X and empty the guard.
     func testM22_theGuardAlsoHoldsOnAPushOnlyRound() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedBetaPark(rows: &rows, table: &table)
-        // 停放态已经在盘上（上一轮 (β) 写下的），这一趟不拉任何页。
+        // Parking already persisted from the previous β round; this operation pulls no pages.
         table.cursors["b"]?.pendingApply = baselineBytes(
             urlRulePayload(uuid: "b", host: "github.com", rank: "W", contentStamp: 100))
         table.cursors["b"]?.pendingOwnerUuid = "su-1"
         let parkedPayload = table.cursors["b"]?.pendingApply
 
         let access = FakeURLRuleAccess(rows: rows)
-        // 定义域那一格：含软删行 ⇒ 守卫命中；换成活行 ⇒ 恒空。
+        // Domain check: including soft-deleted rows activates the guard; live-only rows leave it empty.
         XCTAssertTrue(access.partnerNotAtRest(table: table, rows: rows, resolve: resolve,
                                               tombstonesThisPage: []).contains("b"))
         XCTAssertTrue(access.partnerNotAtRest(table: table,
                                               rows: rows.filter { $0.deletedDate == nil },
                                               resolve: resolve,
                                               tombstonesThisPage: []).isEmpty,
-                      "`rows` 取 `allURLRules()` 的那一版必须红")
+                      "Using allURLRules for rows must fail")
 
         let store = MemoryOwnedItemStore()
         store.table = table
@@ -3206,26 +3099,22 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.handleLocalOwnedChange(label: "urlrules")
 
-        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "push-only 的那一趟同样不发")
+        XCTAssertTrue(ruleTombstoneCommits(client).isEmpty, "The push-only round also publishes nothing")
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertEqual(cursor?.pendingApply, parkedPayload, "`pendingApply` 一个字节没动")
+        XCTAssertEqual(cursor?.pendingApply, parkedPayload, "pendingApply is unchanged byte for byte")
         XCTAssertEqual(cursor?.pendingDelete, true)
         XCTAssertEqual(cursor?.deleteDecidedAtMs, 700)
         XCTAssertEqual(row(access, "b")?.deletedDate, Date(timeIntervalSince1970: 5))
     }
 
-    // =======================================================================================
-    // MARK: - CASE 8b-3.4（3b 复查：游标上没有可用的服务端三元组 ⇒ 零写）
-    // =======================================================================================
+    // MARK: - CASE 8b-3.4 (3b recheck with unusable server metadata performs no writes)
 
-    /// 一条走过 (ii) 的身份（`deletedAtMs != nil`、`reconciled == nil`、本机有活行），三元组
-    /// **不可用**（`entityId` 为空 / `version == 0`），**同时**它的目标 Space 游标带 `hidden`。
-    ///
-    /// 防的是什么：把「没有可用三元组」也走撤销支的实现会**硬删一条本机活行**而账户上没有任何
-    /// 东西被执行；把 RR13-6 读成「`pendingDelete == false` 就没有可执行的 tombstone」的实现会
-    /// 让撤销让位整支变成死代码（(ii) 的记账已经把三个待办位清掉了）。
+    /// An identity after (ii) has a live row, deletedAtMs, nil reconciled, unusable entityId/version and a
+    /// hidden target Space. Missing metadata must not enter revocation and hard-delete a live local row
+    /// without an executable server tombstone. Conversely, pendingDelete false cannot mean no executable
+    /// tombstone (RR13-6), because (ii) already cleared all pending flags.
     func test8b34_aYieldWithNoUsableServerTripleWritesNothing() async throws {
-        for (label, entityId, version) in [("entityId 为空", "", Int64(40)),
+        for (label, entityId, version) in [("Empty entityId", "", Int64(40)),
                                            ("version == 0", "srv-b", Int64(0))] {
             let rows: [PhiLocalURLRule] = [
                 .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
@@ -3240,44 +3129,38 @@ final class URLRuleMergeTests: XCTestCase {
             let client = FakePhiSyncClient()
             client.pagesByMarker = [page([], marker: "7")]
             let spaceStore = try drainedSpaceStore()
-            // 成因二那一格也成立（目标 Space 已 purge）⇒ 成因一必须**先**判，否则这一条会被
-            // 撤销支硬删。
+            // Cause two also holds because the target is purged; check cause one first to avoid wrongful hard
+            // deletion.
             spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
             let engine = makeYieldEngine(access, store, client: client,
                                          spaceAccess: makeSpaceAccess(), spaceStore: spaceStore)
             await engine.setSpaceSyncEnabled(true)
             await engine.pullOnce()
 
-            // **一个字节都不写。**
+            // Write no bytes.
             let survivor = try XCTUnwrap(row(access, "b"), label)
-            XCTAssertNil(survivor.deletedDate, "\(label)：行还在")
-            XCTAssertTrue(survivor.pendingLocalEdit, "\(label)：`pendingLocalEdit` 一个字节不动")
+            XCTAssertNil(survivor.deletedDate, "\(label): the row remains")
+            XCTAssertTrue(survivor.pendingLocalEdit, "\(label): pendingLocalEdit is unchanged")
             XCTAssertEqual(survivor.contentUpdatedDate, stampDate(30), label)
             let cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-            XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "\(label)：`deletedAtMs` 还在")
+            XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "\(label): deletedAtMs remains")
             XCTAssertNil(cursor?.reconciled, label)
             XCTAssertNil(cursor?.server, label)
-            XCTAssertTrue(ruleCommits(client).isEmpty, "\(label)：不发任何 tombstone，也不发 3b")
+            XCTAssertTrue(ruleCommits(client).isEmpty, "\(label): publish neither tombstones nor 3b")
             XCTAssertFalse(access.lastAppliedOps.contains { if case .delete = $0 { return true }
                                                             else { return false } },
-                           "\(label)：撤销支没跑")
+                           "\(label): the revocation branch did not run")
             XCTAssertTrue(access.hardDeleteCalls.isEmpty, label)
         }
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-12 变体 (2) / (4)（跨轮复查 ⇒ 撤销让位、硬删）
-    // =======================================================================================
+    // MARK: - CASE M-12 variants (2)/(4) (cross-round recheck revokes yielding and hard-deletes)
 
-    /// 第一轮：准入**通过**，3b 发出去却拿 `.conflict`（连同那次限定重发一起）⇒ 让位状态原样
-    /// 留着。**下一轮**才让目标 Space 转 `hidden` ⇒ **那一轮仍然复查并撤销让位、硬删**。
-    ///
-    /// 这一条同时是**变体 (4)**：行上 `pendingLocalEdit == false`（那条身份当初只靠取值式
-    /// `unpublished` 让位），而让位记账已经把两份基线清 nil ⇒ 把复查的第三个合取项写成
-    /// 「`pendingLocalEdit` ∨ `unpublished`」的实现在这里恒假 ⇒ 这条身份被**永久**排除在复查
-    /// 之外、行永远留着 ⇒ 断言「行没了」必须红。
-    ///
-    /// 防的是什么：把复查绑在**本轮** `yieldedTombstones` 上的实现在第二轮什么都不做。
+    /// Round one passes readmission but 3b and its scoped retry conflict, preserving yielded state. Only next
+    /// round does the target become hidden; recheck must still revoke yielding and hard-delete. Variant (4)
+    /// has pendingLocalEdit false because unpublished alone caused yielding, and both baselines are now nil.
+    /// Requiring pendingLocalEdit or unpublished again would permanently exclude it. Binding recheck only to
+    /// this round's yieldedTombstones also misses round two.
     func testM12_variant2_theRecheckRevokesTheYieldOnALaterRound() async throws {
         let rows: [PhiLocalURLRule] = [
             .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
@@ -3291,8 +3174,8 @@ final class URLRuleMergeTests: XCTestCase {
         store.table = table
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "7"), page([], marker: "8")]
-        // 第一轮那次 3b 与它的限定重发都拿 `.conflict`（`forcedConflicts` 在服务端行寻址之前
-        // 判，所以不需要往 `stored` 里塞行）。
+        // Both first-round 3b attempts conflict. forcedConflicts runs before server-row lookup, so no stored
+        // seed is needed.
         client.forcedConflicts = 2
         let spaceStore = try drainedSpaceStore()
         let engine = makeYieldEngine(access, store, client: client,
@@ -3300,40 +3183,37 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        // 第一轮：准入通过 ⇒ 3b 真的发了（`base_version` 取 tombstone 那一版），但没被接受。
-        XCTAssertEqual(ruleCommits(client).count, 2, "一次 3b + 一次限定重发")
+        // Round one: readmission passes and 3b actually publishes with the tombstone base_version, but is not
+        // accepted.
+        XCTAssertEqual(ruleCommits(client).count, 2, "One 3b publication and one scoped retry")
         XCTAssertEqual(ruleCommits(client).first?.baseVersion, 40)
         XCTAssertEqual(ruleCommits(client).first?.deleted, false)
-        XCTAssertNotNil(row(access, "b"), "让位状态原样留着")
+        XCTAssertNotNil(row(access, "b"), "Yielded state remains unchanged")
         var cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "`.conflict` 不写任何基线")
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "Conflict writes no baselines")
         XCTAssertNil(cursor?.reconciled)
 
-        // 第二轮：目标 Space 转 hidden ⇒ 复查照跑（本轮 `yieldedTombstones` 是空集）⇒ 撤销。
+        // Round two: hidden target triggers recheck/revocation despite an empty current yieldedTombstones set.
         spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
         await engine.pullOnce()
 
-        XCTAssertNil(row(access, "b"), "撤销让位：那一行被**硬删**")
+        XCTAssertNil(row(access, "b"), "Revoke yielding and hard-delete the row")
         XCTAssertTrue(access.lastAppliedOps.contains { if case .delete(let syncId) = $0 {
-            return syncId == "b" } else { return false } }, "走的是 `registration.land([.delete])`")
+            return syncId == "b" } else { return false } }, "Uses registration.land([.delete])")
         cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertEqual(cursor?.deletedAtMs, Self.now, "按 `:3195-3201` 逐字记账")
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now, "Preserve the bookkeeping specified at :3195-3201")
         XCTAssertEqual(cursor?.pendingDelete, false)
         XCTAssertNil(cursor?.reconciled)
         XCTAssertNil(cursor?.server)
-        XCTAssertEqual(ruleCommits(client).count, 2, "撤销那一轮一条都不发（身份已剔出切片）")
+        XCTAssertEqual(ruleCommits(client).count, 2, "Revocation publishes nothing because the identity left the slice")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-12 变体 (3)（成因区分：解析不出 ≠ hidden ⇒ 零写）
-    // =======================================================================================
+    // MARK: - CASE M-12 variant (3) (unresolved differs from hidden; no writes)
 
-    /// 目标 Space 只是**暂时不在 `currentSpaces()` 里**（**没有** `hidden`、**没有**
-    /// `purgedAtMs`，Space 游标根本不存在）⇒ 不硬删、不发任何 tombstone、行与
-    /// `pendingLocalEdit` 与 `deletedAtMs` 一个字节不动、那一轮也不发 3b；映射建立之后正常发
-    /// 3b、`resurrected == 1`。
-    ///
-    /// 防的是什么：一刀切硬删的实现在这里把一条用户还在用的规则连同它那次未发布编辑一起删掉。
+    /// A target temporarily absent from currentSpaces with no hidden/purged cursor must not cause hard
+    /// deletion or tombstones. Preserve row, pendingLocalEdit and deletedAtMs; skip 3b until mapping resolves,
+    /// then publish normally with resurrected 1. Blanket hard deletion would erase a still-used rule and its
+    /// unpublished edit.
     func testM12_variant3_anUnresolvableOwnerWritesNothingAndRepublishesLater() async throws {
         let rows: [PhiLocalURLRule] = [
             .fixture(id: "i-b", syncId: "b", spaceId: "space-a", host: "github.com",
@@ -3347,13 +3227,14 @@ final class URLRuleMergeTests: XCTestCase {
         store.table = table
         let client = FakePhiSyncClient()
         client.pagesByMarker = [page([], marker: "7"), page([], marker: "8")]
-        // 3b 被接受要求服务端那一行真的在（tombstone 那一版）。
+        // Seed the actual account tombstone so 3b can be accepted.
         client.seed(tagHash: ruleHash("b"), ciphertext: Data(), version: 40, entityId: "srv-b",
                     deleted: true)
         let spaceAccess = makeSpaceAccess()
         let restored = spaceAccess.spaces
-        // Space 列表还没加载：映射表还在，但它不在 `currentSpaces()` 里 ⇒ 归属不合格 ⇒ 这一行
-        // 惰性 ⇒ 进不了快照 ⇒ 准入不过；而 Space 游标**不存在** ⇒ 成因二不成立。
+        // Space list is not loaded: mapping remains, but currentSpaces excludes the target. Ineligible
+        // ownership makes the row inert and absent from snapshot; readmission fails, while absent Space cursor
+        // means cause two is false.
         spaceAccess.spaces = []
         let spaceStore = try drainedSpaceStore()
         let engine = makeYieldEngine(access, store, client: client,
@@ -3361,39 +3242,37 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        let survivor = try XCTUnwrap(row(access, "b"), "不硬删")
-        XCTAssertTrue(survivor.pendingLocalEdit, "`pendingLocalEdit` 一个字节不动")
+        let survivor = try XCTUnwrap(row(access, "b"), "No hard deletion")
+        XCTAssertTrue(survivor.pendingLocalEdit, "pendingLocalEdit is unchanged")
         XCTAssertEqual(survivor.contentUpdatedDate, stampDate(30))
         var cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "`deletedAtMs` 留着")
-        XCTAssertTrue(ruleCommits(client).isEmpty, "那一轮也不发 3b")
+        XCTAssertEqual(cursor?.deletedAtMs, Self.now - 1_000, "Retain deletedAtMs")
+        XCTAssertTrue(ruleCommits(client).isEmpty, "That round also skips 3b")
         XCTAssertTrue(access.hardDeleteCalls.isEmpty)
 
-        // 映射建立之后：准入通过 ⇒ 正常发 3b ⇒ `.applied` ⇒ 复活。
+        // After mapping becomes available, readmission permits 3b, applied and resurrection.
         spaceAccess.spaces = restored
         await engine.pullOnce()
 
-        XCTAssertEqual(ruleCommits(client).count, 1, "3b 发出去了")
+        XCTAssertEqual(ruleCommits(client).count, 1, "3b published")
         XCTAssertEqual(ruleCommits(client).first?.baseVersion, 40)
         XCTAssertEqual(ruleCommits(client).first?.deleted, false)
         cursor = await engine.ownedTableForTesting("urlrules").cursors["b"]
-        XCTAssertNil(cursor?.deletedAtMs, "§4.2 规则 3b 的复活：`deletedAtMs` 被清")
+        XCTAssertNil(cursor?.deletedAtMs, "§4.2(3b) resurrection clears deletedAtMs")
         XCTAssertNotNil(cursor?.reconciled)
         let counters = await counters(engine)
         XCTAssertEqual(counters?.resurrected, 1)
-        XCTAssertNotNil(row(access, "b"), "行一直都在")
+        XCTAssertNotNil(row(access, "b"), "The row remained throughout")
     }
 
 
-    // =======================================================================================
-    // MARK: - 8b-4（§8.4.5 的两处清位）：脚手架
-    // =======================================================================================
+    // MARK: - 8b-4 (§8.4.5's two pending-flag clearing paths): fixtures
 
     typealias Gate = PhiSyncEngineTests.Gate
 
-    /// 一个**只发空页**的 client：`stored` 从此只当「账户此刻有什么」用（提交那一侧的
-    /// base-version 校验读它），绝不经 `getUpdates` 回灌成一条解不开的实体。
-    /// `seeding` 里的每一条按 `seedSettled` 的游标形状（`srv-<id>` / version 1）落一行。
+    /// Client returns only empty pages. stored models account state for commit base-version checks and never
+    /// feeds undecodable entities into getUpdates. Seed each entity to match seedSettled's srv-<id>/version 1
+    /// cursor.
     private func publishingClient(seeding identities: [String] = [],
                                   version: Int64 = 1) -> FakePhiSyncClient {
         let client = FakePhiSyncClient()
@@ -3405,14 +3284,14 @@ final class URLRuleMergeTests: XCTestCase {
         return client
     }
 
-    /// 清位 (a) 的每一次原语调用，按调用序。**一次调用 = 一次行写**（标志与指针同一次）。
+    /// Ordered clearing-(a) primitive calls. One call is one row write clearing flag and pointer together.
     private func clearCalls(_ access: FakeURLRuleAccess) -> [String] {
         access.calls.compactMap {
             if case .clearPendingLocalEdit(let syncId) = $0 { return syncId } else { return nil }
         }
     }
 
-    /// 清位 (b) 的每一次原语调用收到的条数。空集连调都不调 ⇒ 这个数组是空的。
+    /// Entry counts passed to clearing-(b) primitives. Empty work skips the call, leaving this list empty.
     private func clearIfUnchangedCalls(_ access: FakeURLRuleAccess) -> [Int] {
         access.calls.compactMap {
             if case .clearPendingLocalEditIfUnchanged(let count) = $0 { return count } else { return nil }
@@ -3423,16 +3302,12 @@ final class URLRuleMergeTests: XCTestCase {
         row(access, syncId)?.pendingLocalEdit
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7（`.applied` 清位那一半）（§8.4.5 清位 (a) / §8.4.3 生命周期表第 2 行）
-    // =======================================================================================
+    // MARK: - CASE M-7 (applied clearing; §8.4.5(a) / §8.4.3 lifecycle row 2)
 
-    /// 一条已发布、静止、带着 M2 指针的规则 R；用户改一次 `ask` ⇒ 置位；一轮之后那次提交
-    /// `.applied` ⇒ `pendingLocalEdit == false` **且** `mergePartnerSyncId == nil`，两者是
-    /// **同一次**行写（假件上就是同一次原语调用）；再跑三轮零 commit、零清位。
-    ///
-    /// 防的是什么：把 `mergePartnerSyncId` 的清空拆成第二次行写的实现——那是一次额外发射 +
-    /// 一次多余的 §6.6 路由刷新，也是「崩在两次写中间 ⇒ 标志清了指针还在」的窗口。
+    /// Published still R has an M2 pointer. A user ask edit sets pending; accepted publication clears
+    /// pendingLocalEdit and mergePartnerSyncId in one primitive/row write. Three later rounds have no commits
+    /// or clearing. Separate pointer clearing would add an emission/routing refresh (§6.6) and a crash window
+    /// with cleared flag but stale pointer.
     func testM7_anAppliedLivePublishClearsTheFlagAndThePartnerInOneRowWrite() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3445,41 +3320,36 @@ final class URLRuleMergeTests: XCTestCase {
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
 
-        // 用户改一次 `ask` ⇒ 置位（走假件那条「真实用户写」的口，不手写行）。
+        // A real user ask edit through the fake's user-write interface sets pending; do not assign the row
+        // manually.
         access.applyEditorSave(syncId: "R", ask: true, at: stampDate(200))
         XCTAssertEqual(flag(access, "R"), true)
 
         await engine.pullOnce()
 
-        XCTAssertEqual(ruleCommits(client).count, 1, "E1 发出去了")
+        XCTAssertEqual(ruleCommits(client).count, 1, "E1 published")
         XCTAssertEqual(ruleCommits(client).first?.deleted, false)
-        XCTAssertEqual(clearCalls(access), ["R"], "一次原语调用 = 一次行写")
-        XCTAssertEqual(flag(access, "R"), false, "`.applied` ⇒ 清位 (a)")
-        XCTAssertNil(row(access, "R")?.mergePartnerSyncId, "指针与标志同一次行写")
+        XCTAssertEqual(clearCalls(access), ["R"], "One primitive call equals one row write")
+        XCTAssertEqual(flag(access, "R"), false, "Applied triggers clearing (a)")
+        XCTAssertNil(row(access, "R")?.mergePartnerSyncId, "Pointer and flag share one row write")
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["R"]
         XCTAssertNotNil(cursor?.reconciled)
-        XCTAssertEqual(cursor?.reconciled, cursor?.server, "R-exec-7：两份基线都是刚发出去的那份")
+        XCTAssertEqual(cursor?.reconciled, cursor?.server, "R-exec-7: both baselines match the published payload")
 
-        // 再跑三轮：零 commit、零行写。
+        // Three further rounds: no commits or row writes.
         for _ in 0..<3 { await engine.pullOnce() }
         XCTAssertEqual(ruleCommits(client).count, 1, "pushed == 0")
-        XCTAssertEqual(clearCalls(access), ["R"], "没有第二次清位 (a)")
+        XCTAssertEqual(clearCalls(access), ["R"], "No second clearing-(a) call")
         XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty,
-                      "(b) 过滤之后是空集 ⇒ 连原语都不调（零事务）")
+                      "(b) Empty filtered work skips the primitive and transaction")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7b（清位 (a) 的 E1 / E2 窗口）（R-M3-4a-79）
-    // =======================================================================================
+    // MARK: - CASE M-7b (clearing (a) E1/E2 window; R-M3-4a-79)
 
-    /// ① 用户存 E1（改 `ask`）⇒ 置位、发布段取快照、提交发出；② 提交**在途**时用户再存 E2
-    /// （改 `pathPrefix`）；③ 那次 commit `.applied`，确认的是 **E1** ⇒ (a) 比出「行此刻 = E2」
-    /// ≠「基线 = E1」⇒ **标志仍为 `true`**，而 `mergePartnerSyncId` 那一半**照清**；
-    /// ④ 下一轮一条 R 的入站 tombstone 到达 ⇒ 让位谓词成立 ⇒ **不硬删**、E2 的 `pathPrefix`
-    /// 还在；⑤ 再一轮 E2 发出去并 `.applied` ⇒ 清位、`pendingLocalEdit == false`。
-    ///
-    /// 防的是什么：无条件清位的实现在第 ④ 步必须红——它让 R 在 E2 还没上账户的那一轮失去让位
-    /// 保护，一条正好到达的远端 tombstone 当场硬删 ⇒ **E2 永久丢失**。
+    /// ① Save E1 ask edit and send its snapshot. ② Save E2 path edit while commit is in flight. ③ Applied
+    /// acknowledges E1: current E2 differs, so retain pending but clear pointer. ④ Next-round remote tombstone
+    /// must yield and preserve E2. ⑤ Publishing E2 successfully then clears pending. Unconditional clearing at
+    /// ③ loses yielding protection and permanently destroys E2 at ④.
     func testM7b_anEditInFlightKeepsTheFlagAndTheYieldProtection() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3489,7 +3359,7 @@ final class URLRuleMergeTests: XCTestCase {
         let store = MemoryOwnedItemStore()
         store.table = table
         let client = publishingClient(seeding: ["R"])
-        // 第二轮那条入站 tombstone（水位 40）。第一轮取空页（水位 1）。
+        // Round one gets empty page watermark 1; round two gets the inbound tombstone at watermark 40.
         client.pagesByMarker = [page([], marker: "1"),
                                 page([remoteTombstone(tag: ruleTag("R"), version: 300,
                                                       entityId: "srv-R")], marker: "300")]
@@ -3498,7 +3368,7 @@ final class URLRuleMergeTests: XCTestCase {
 
         // ① E1。
         access.applyEditorSave(syncId: "R", ask: true, at: stampDate(200))
-        // ② 提交在途时存 E2。
+        // ② Save E2 while the commit is in flight.
         let arrived = Gate()
         let release = Gate()
         client.gatedCommitTagHash = ruleHash("R")
@@ -3510,30 +3380,30 @@ final class URLRuleMergeTests: XCTestCase {
         await release.open()
         await round.value
 
-        // ③ `.applied` 确认的是 E1 ⇒ 标志留着，指针照清。
-        XCTAssertEqual(clearCalls(access), ["R"], "(a) 照常跑了一次")
-        XCTAssertEqual(flag(access, "R"), true, "行此刻 = E2 ≠ 基线 = E1 ⇒ 不清标志")
-        XCTAssertNil(row(access, "R")?.mergePartnerSyncId, "指针那一半照清")
-        XCTAssertEqual(row(access, "R")?.pathPrefix, "/anthropics", "E2 原样在行上")
+        // ③ Applied acknowledges E1: retain pending, clear pointer.
+        XCTAssertEqual(clearCalls(access), ["R"], "(a) Ran once normally")
+        XCTAssertEqual(flag(access, "R"), true, "Current row E2 differs from baseline E1, so retain pending")
+        XCTAssertNil(row(access, "R")?.mergePartnerSyncId, "The pointer still clears")
+        XCTAssertEqual(row(access, "R")?.pathPrefix, "/anthropics", "E2 remains unchanged in the row")
 
-        // ④ 下一轮：一条 R 的入站 tombstone。让位谓词成立 ⇒ 不硬删；同一轮的轮末 3b 把 E2
-        //    重新发回账户 ⇒ ⑤ 那一次 `.applied` 时行与基线相等 ⇒ 清位。
+        // ④ Next-round tombstone yields instead of hard-deleting. Round-end 3b republishes E2; ⑤ applied now
+        // finds row/baseline equal and clears pending.
         client.gatedCommitTagHash = nil
         client.arrivedInCommit = nil
         client.commitGate = nil
-        // 账户上那一条此刻停在 tombstone 那一版（3b 的 `base_version` 取它）。
+        // The account currently holds the tombstone version used by 3b as base_version.
         client.seed(tagHash: ruleHash("R"), ciphertext: Data(), version: 300, entityId: "srv-R",
                     deleted: true)
         await engine.pullOnce()
-        XCTAssertTrue(access.hardDeleteCalls.isEmpty, "④ 不硬删")
-        XCTAssertEqual(row(access, "R")?.pathPrefix, "/anthropics", "④ E2 的 `pathPrefix` 还在")
+        XCTAssertTrue(access.hardDeleteCalls.isEmpty, "④ No hard deletion")
+        XCTAssertEqual(row(access, "R")?.pathPrefix, "/anthropics", "④ E2's pathPrefix remains")
         XCTAssertNil(row(access, "R")?.deletedDate)
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.yieldNoPartner, 1, "没有伙伴 ⇒ (ii)")
-        XCTAssertEqual(counters?.resurrected, 1, "⑤ 轮末 3b 把 E2 发回账户并被接受")
-        XCTAssertEqual(flag(access, "R"), false, "⑤ E2 上账户之后才清位")
+        XCTAssertEqual(counters?.yieldNoPartner, 1, "No partner takes branch (ii)")
+        XCTAssertEqual(counters?.resurrected, 1, "⑤ Round-end 3b republishes E2 and receives acceptance")
+        XCTAssertEqual(flag(access, "R"), false, "⑤ Clear pending only after E2 reaches the account")
 
-        // 再跑三轮：零 commit、零清位。
+        // Three further rounds: no commits or flag clearing.
         let commitsSoFar = ruleCommits(client).count
         let clearsSoFar = clearCalls(access).count
         for _ in 0..<3 { await engine.pullOnce() }
@@ -3541,7 +3411,7 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(clearCalls(access).count, clearsSoFar)
     }
 
-    /// **对照**：把 ② 去掉（提交在途时什么都不存）⇒ ③ 就清位，与原稿行为逐字相同。
+    /// Control omits in-flight Save ②; applied at ③ clears pending normally, preserving prior behavior.
     func testM7b_withoutTheInFlightEditTheAppliedPublishClearsAtOnce() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3561,16 +3431,12 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertNil(row(access, "R")?.mergePartnerSyncId)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7c（清位 (b) 不碰 `mergePartnerSyncId`）
-    // =======================================================================================
+    // MARK: - CASE M-7c (clearing (b) preserves mergePartnerSyncId)
 
-    /// 一条 `pendingLocalEdit == true`、`mergePartnerSyncId == "w"`、且 `server == reconciled`
-    /// ∧ 快照字节 == `reconciled` 的行（一次被归一化吸收的编辑）⇒ 一轮之后
-    /// `pendingLocalEdit == false` 而 **`mergePartnerSyncId` 仍然是 `"w"`**。
-    ///
-    /// 防的是什么：§8.4.3 的两条清空规则是「存活发布 `.applied`」与「静止且组里没有第二条活行」，
-    /// (b) 不在其中；顺手清掉指针会让下一轮的让位从「有伙伴走转移」退到「没有伙伴走 (ii)」。
+    /// A normalized-away edit leaves pending true, pointer w, equal server/reconciled and snapshot equal to
+    /// reconciled. Clearing (b) resets pending but retains w. §8.4.3 clears pointers only after live applied
+    /// publication or for a still singleton; clearing here would change next-round yielding from transfer to
+    /// partnerless branch (ii).
     func testM7c_theSelfHealClearsTheFlagButNeverThePartnerPointer() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3585,20 +3451,17 @@ final class URLRuleMergeTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) 一次事务、一条身份")
-        XCTAssertTrue(clearCalls(access).isEmpty, "这一轮没有任何 `.applied`")
-        XCTAssertEqual(flag(access, "R"), false, "(b) 清掉了标志")
-        XCTAssertEqual(row(access, "R")?.mergePartnerSyncId, "w", "指针一个字节都不碰")
+        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) One transaction for one identity")
+        XCTAssertTrue(clearCalls(access).isEmpty, "This round has no applied outcomes")
+        XCTAssertEqual(flag(access, "R"), false, "(b) Cleared the pending flag")
+        XCTAssertEqual(row(access, "R")?.mergePartnerSyncId, "w", "Leave the pointer unchanged byte for byte")
         XCTAssertTrue(ruleCommits(client).isEmpty, "pushed == 0")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7d（3b 复活那一次 `.applied` 照样比，裁定 13）
-    // =======================================================================================
+    // MARK: - CASE M-7d (3b resurrection applied still compares current row; ruling 13)
 
-    /// 主支：一条走过 (ii) 让位的行 X（`deletedAtMs != nil` / 两份基线 nil / 指针 nil），下一轮
-    /// 以 3b 的形状重新发布 ⇒ `.applied` ⇒ `deletedAtMs == nil`、`resurrected == 1`、
-    /// **`pendingLocalEdit == false`**。
+    /// Main case: X after yielding (ii) has deletedAtMs, nil baselines/pointer. Next-round 3b applied clears
+    /// deletedAtMs, counts resurrected 1 and clears pendingLocalEdit.
     func testM7d_theResurrectingRepublishAlsoClearsTheFlag() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i-X", syncId: "X", spaceId: "space-a", host: "github.com",
@@ -3612,21 +3475,19 @@ final class URLRuleMergeTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(ruleCommits(client).count, 1, "3b 重新发布")
+        XCTAssertEqual(ruleCommits(client).count, 1, "3b republishes")
         XCTAssertEqual(ruleCommits(client).first?.baseVersion, 40)
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["X"]
-        XCTAssertNil(cursor?.deletedAtMs, "`.applied` ⇒ 复活")
+        XCTAssertNil(cursor?.deletedAtMs, "Applied completes resurrection")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.resurrected, 1)
-        XCTAssertEqual(flag(access, "X"), false, "那一次 `.applied` = 用户那次编辑终于上账户了")
+        XCTAssertEqual(flag(access, "X"), false, "That applied outcome means the user edit finally reached the account")
         XCTAssertNil(row(access, "X")?.mergePartnerSyncId)
     }
 
-    /// 变体 (b)：3b 的提交**在途**时用户再存一次 ⇒ 比不相等 ⇒ **标志仍为 `true`**，而
-    /// `deletedAtMs` 照样被清、`resurrected == 1`（两件事互不牵连）。
-    ///
-    /// 防的是什么：给 3b 这一支开无条件清位例外的实现在这里必须红；把清位与 `deletedAtMs`
-    /// 的清空绑成一个条件的实现在主支上就会红。
+    /// Variant (b): another Save during 3b flight keeps pending true because projections differ, while
+    /// deletedAtMs still clears and resurrected remains 1. No unconditional 3b clearing exception; flag
+    /// comparison and resurrection bookkeeping are independent.
     func testM7d_anEditInFlightDuringTheResurrectingRepublishKeepsTheFlag() async throws {
         let access = FakeURLRuleAccess(rows: [
             .fixture(id: "i-X", syncId: "X", spaceId: "space-a", host: "github.com",
@@ -3650,33 +3511,26 @@ final class URLRuleMergeTests: XCTestCase {
         await round.value
 
         let cursor = await engine.ownedTableForTesting("urlrules").cursors["X"]
-        XCTAssertNil(cursor?.deletedAtMs, "`deletedAtMs` 照样被清")
+        XCTAssertNil(cursor?.deletedAtMs, "deletedAtMs still clears")
         let counters = await counters(engine)
         XCTAssertEqual(counters?.resurrected, 1)
-        XCTAssertEqual(flag(access, "X"), true, "比不相等 ⇒ 标志仍为 `true`")
+        XCTAssertEqual(flag(access, "X"), true, "Unequal comparison keeps pending true")
         XCTAssertEqual(row(access, "X")?.host, "changed.example")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-7e（清位 (b) 的 E2 窗口：判定与写入之间用户又存了一次）（R-M3-4a-91）
-    // =======================================================================================
+    // MARK: - CASE M-7e (clearing (b) E2 between evaluation and write; R-M3-4a-91)
 
-    /// 入口状态 = 「上一轮 E1 拿到 `.applied`、但清位 (a) 那一次行写**失败**了」：
-    /// `pendingLocalEdit == true`、`server == reconciled`（都是 E1 的字节）、指针 `"w"`。
-    /// 本轮发布段因此把 R 收进 (b) 的候选身份集，`.urlRules` 闭包再把它映成
-    /// `entries[R] = state.publishBaseline[R]`（= E1 投影）。
-    ///
-    /// 就在**判定与写入之间**（钩子落在假件的 `clearPendingLocalEditIfUnchanged` 上，那是唯一
-    /// 够得到 `entries` 的一层），用户存了 **E2** ⇒ 原语在事务里重算出的投影是 E2 的、与
-    /// `entries[R]`（E1）**不等** ⇒ **标志仍然是 `true`**、指针仍是 `"w"`。
-    ///
-    /// 防的是什么：只收身份集、事务里只 `guard row.pendingLocalEdit` 的那一版在第一轮就把 E2
-    /// 的标志清掉 ⇒ 下一轮那条远端 tombstone 的让位谓词不成立 ⇒ **硬删一条带着未发布用户编辑
-    /// 的行**，且没有任何地方还留着 E2。
+    /// Entry models E1 applied last round but clearing (a)'s row write failed: pending true, equal E1
+    /// baselines and pointer w. Publication selects R for (b), passing publishBaseline E1 to the primitive.
+    /// Between evaluation and write, user Save E2 makes the transaction's recomputed projection differ, so
+    /// retain both pending and pointer.
+    /// An identity-only primitive guarding merely pendingLocalEdit would clear E2's protection, allowing
+    /// next-round tombstone to hard-delete its unpublished edit. Inject at clearPendingLocalEditIfUnchanged,
+    /// the layer that sees entries.
     func testM7e_aSaveBetweenTheDecisionAndTheWriteKeepsTheFlag() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
-        // E1 已经上了账户（游标基线与行都是 `ask == true`@200），但标志还挂着。
+        // E1 ask true@200 is already in account and row baselines, but pending remains set.
         seedSettled("R", id: "i-R", ask: true, accountStamp: 200,
                     rowContentUpdatedDate: stampDate(200), pendingLocalEdit: true,
                     mergePartnerSyncId: "w", rows: &rows, table: &table)
@@ -3690,33 +3544,33 @@ final class URLRuleMergeTests: XCTestCase {
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
 
-        // 判定与写入之间那一次真实的本机 Save（E2）。
+        // Perform real local Save E2 between evaluation and write.
         access.beforeClearPendingLocalEditIfUnchanged = { [weak access] in
             access?.applyEditorSave(syncId: "R", host: "e2.example", at: Date(timeIntervalSince1970: 3))
         }
 
         await engine.pullOnce()
 
-        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) 真的把 R 收进了 `entries`")
-        XCTAssertEqual(flag(access, "R"), true, "重算出来的是 E2 的投影 ⇒ 不清")
-        XCTAssertEqual(row(access, "R")?.mergePartnerSyncId, "w", "指针一个字节都不碰")
+        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) Actually included R in entries")
+        XCTAssertEqual(flag(access, "R"), true, "Recomputed E2 projection prevents clearing")
+        XCTAssertEqual(row(access, "R")?.mergePartnerSyncId, "w", "Leave the pointer unchanged byte for byte")
         XCTAssertEqual(row(access, "R")?.host, "e2.example")
 
-        // 第二轮：远端 tombstone ⇒ 让位谓词成立 ⇒ E2 活下来；同一轮的轮末 3b 把 E2 发回账户，
-        // 那一次 `.applied` 走清位 (a)，比相等 ⇒ 标志与指针一起清。
+        // Next-round remote tombstone yields, preserving E2. Round-end 3b publishes it; applied clearing (a)
+        // finds equality and clears flag/pointer together.
         access.beforeClearPendingLocalEditIfUnchanged = nil
         client.seed(tagHash: ruleHash("R"), ciphertext: Data(), version: 40, entityId: "srv-R",
                     deleted: true)
         await engine.pullOnce()
-        XCTAssertTrue(access.hardDeleteCalls.isEmpty, "让位，不硬删")
-        XCTAssertEqual(row(access, "R")?.host, "e2.example", "E2 活下来")
+        XCTAssertTrue(access.hardDeleteCalls.isEmpty, "Yield without hard deletion")
+        XCTAssertEqual(row(access, "R")?.host, "e2.example", "E2 survives")
         XCTAssertNil(row(access, "R")?.deletedDate)
-        XCTAssertEqual(flag(access, "R"), false, "E2 上账户之后才清位")
+        XCTAssertEqual(flag(access, "R"), false, "Clear pending only after E2 reaches the account")
         XCTAssertNil(row(access, "R")?.mergePartnerSyncId)
     }
 
-    /// **对照支**：钩子为 nil ⇒ 第一轮 (b) 正常清位、`pendingLocalEdit == false`，
-    /// `mergePartnerSyncId` 仍是 `"w"`——这条新判据**只减少清位、不改变常态**。
+    /// No-hook control clears pending normally through (b) while retaining w. The new predicate only restricts
+    /// clearing in the race window.
     func testM7e_withoutTheInjectedSaveTheSelfHealClearsAsBefore() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3735,16 +3589,12 @@ final class URLRuleMergeTests: XCTestCase {
         XCTAssertEqual(row(access, "R")?.mergePartnerSyncId, "w")
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-19（`pendingLocalEdit` 自愈，清位 (b) 那一半）（R-M3-4a-68 / RR8-8 / RR9-2）
-    // =======================================================================================
+    // MARK: - CASE M-19 (pendingLocalEdit recovery through clearing (b); R-M3-4a-68 / RR8-8 / RR9-2)
 
-    /// (a) / (b) / (c)：三条「编辑被吸收掉、取值与基线逐字相同」的行（归一化不动点折回、
-    /// `ask` 改了又改回来、一次两组全输的零单元转移），一轮之后**标志全部清掉**、`pushed == 0`；
-    /// 随后到达的入站 tombstone **照常硬删**、`resurrected == 0`。
-    ///
-    /// 防的是什么：只实现 `.applied` 清位、没有 (b) 的实现让这三条全红——那样的行**永久**不静止、
-    /// 对**每一次**远端删除让位，用户在别的设备上永远删不掉它。
+    /// (a)/(b)/(c): normalization, ask edit reverted, and transfer losing both units each leave values
+    /// identical to baseline. One round clears all pending flags with pushed 0; later inbound tombstones
+    /// hard-delete normally with resurrected 0. Applied-only clearing would leave these rows permanently
+    /// nonstill and yielding to every deletion.
     func testM19_theSelfHealClearsAnAbsorbedEditAndTheTombstoneThenHardDeletes() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3766,25 +3616,26 @@ final class URLRuleMergeTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(clearIfUnchangedCalls(access), [3], "一次事务、三条身份")
+        XCTAssertEqual(clearIfUnchangedCalls(access), [3], "One transaction for three identities")
         for syncId in ["a", "b", "c"] {
             XCTAssertEqual(flag(access, syncId), false, syncId)
         }
         XCTAssertTrue(ruleCommits(client).isEmpty, "pushed == 0")
 
-        // 入站 tombstone 照常硬删：让位谓词的合取项 (4) 两个析取项都不成立。
+        // Inbound tombstone hard-deletes normally because both disjuncts of yielding conjunction (4) are
+        // false.
         await engine.pullOnce()
-        XCTAssertEqual(access.hardDeleteCalls.count, 0, "硬删走的是落地 op，不是出路 1")
+        XCTAssertEqual(access.hardDeleteCalls.count, 0, "Hard deletion uses a landing operation, not exit 1")
         for syncId in ["a", "b", "c"] {
-            XCTAssertNil(row(access, syncId), "\(syncId) 被硬删")
+            XCTAssertNil(row(access, syncId), "\(syncId) was hard-deleted")
         }
         let counters = await counters(engine)
-        XCTAssertEqual(counters?.resurrected, 0, "没有任何一条让位")
+        XCTAssertEqual(counters?.resurrected, 0, "No entities yielded")
         XCTAssertEqual(counters?.yieldNoPartner, 0)
     }
 
-    /// (d)：清位 (a) 那一次行写**失败**（`failNextClearPendingLocalEdit`）⇒ 那一轮不崩、别的
-    /// 东西不回滚（游标基线照写），**下一轮由 (b) 自己补上**。
+    /// (d) Inject failNextClearPendingLocalEdit for clearing (a): the round does not crash or roll back other
+    /// work, including cursor baseline. Next round (b) repairs the flag.
     func testM19d_aFailedClearingWriteIsHealedByTheNextRound() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3802,33 +3653,31 @@ final class URLRuleMergeTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(ruleCommits(client).count, 1, "提交照常发、照常被接受")
-        XCTAssertEqual(clearCalls(access), ["R"], "(a) 调了，但那一次写抛了")
-        XCTAssertEqual(flag(access, "R"), true, "标志留着")
+        XCTAssertEqual(ruleCommits(client).count, 1, "The commit publishes and is accepted normally")
+        XCTAssertEqual(clearCalls(access), ["R"], "(a) Was called, but its write threw")
+        XCTAssertEqual(flag(access, "R"), true, "The pending flag remains")
         var cursor = await engine.ownedTableForTesting("urlrules").cursors["R"]
-        XCTAssertEqual(cursor?.reconciled, cursor?.server, "别的东西不回滚：两份基线照写")
+        XCTAssertEqual(cursor?.reconciled, cursor?.server, "Other work does not roll back; both baselines persist")
 
-        // 下一轮：`server == reconciled` ∧ 快照字节 == `reconciled` ⇒ (b) 自愈。
+        // Next round, server == reconciled and snapshot == reconciled enable (b) recovery.
         await engine.pullOnce()
         XCTAssertEqual(clearIfUnchangedCalls(access), [1])
-        XCTAssertEqual(flag(access, "R"), false, "下一轮自己补上")
+        XCTAssertEqual(flag(access, "R"), false, "The next round repairs it automatically")
         cursor = await engine.ownedTableForTesting("urlrules").cursors["R"]
         XCTAssertNotNil(cursor?.reconciled)
-        XCTAssertEqual(ruleCommits(client).count, 1, "自愈那一轮零 commit")
+        XCTAssertEqual(ruleCommits(client).count, 1, "The recovery round has no commits")
     }
 
-    /// (e)：落地合并赢下本机内容组 ⇒ `reconciled` 是 merged、`server` 是 remote ⇒
-    /// `server == reconciled` **不成立** ⇒ (b) 的候选集里根本没有它 ⇒ 标志**仍然 `true`**；
-    /// 此时到达的 tombstone **让位**（(α) 谓词 (4) 的 `unpublished` 析取项命中）。
-    ///
-    /// 防的是什么：省掉 `server == reconciled` 那个合取项的实现让这一条红。
+    /// (e) Local content wins landing merge: reconciled is merged but server remains remote. Their inequality
+    /// excludes (b), preserving pending; an arriving tombstone yields through α's unpublished disjunct.
+    /// Omitting server == reconciled would wrongly clear it.
     func testM19e_aLandedMergeKeepsTheFlagBecauseServerDiffersFromReconciled() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("R", id: "i-R", ask: true, accountStamp: 200,
                     rowContentUpdatedDate: stampDate(200), pendingLocalEdit: true,
                     rows: &rows, table: &table)
-        // `server` 是账户手上那一份（remote），`reconciled` 是本机落地的合并结果——两者不同。
+        // server contains account remote bytes; reconciled contains the different locally landed merge.
         var cursor = try XCTUnwrap(table.cursors["R"])
         cursor.server = baselineBytes(urlRulePayload(uuid: "R", host: "github.com", rank: "V",
                                                      contentStamp: 150, targetStamp: 150,
@@ -3841,8 +3690,8 @@ final class URLRuleMergeTests: XCTestCase {
         client.pagesByMarker = [page([], marker: "1"),
                                 page([remoteTombstone(tag: ruleTag("R"), version: 40,
                                                       entityId: "srv-R")], marker: "40")]
-        // 那一轮那次提交没落成（传输失败）：没有任何 `.applied`，所以 (a) 也不会跑，而
-        // `.conflict` 会拖一次限定重发的嵌套 pull 进来、把下一页提前吃掉。
+        // Fail commit transport so no applied clearing (a) occurs. A conflict would introduce nested retry
+        // pull and consume the next page prematurely.
         client.commitErrorOnce = Boom()
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -3850,28 +3699,25 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty,
-                      "`server != reconciled` ⇒ 连候选都不是")
-        XCTAssertTrue(clearCalls(access).isEmpty, "没有任何 `.applied` ⇒ (a) 不跑")
-        XCTAssertEqual(flag(access, "R"), true, "仍然 `true`")
+                      "server != reconciled excludes it from candidates")
+        XCTAssertTrue(clearCalls(access).isEmpty, "No applied outcomes means (a) does not run")
+        XCTAssertEqual(flag(access, "R"), true, "Still true")
 
-        // 到达的 tombstone 让位（行还在、没有被硬删）。
+        // The arriving tombstone yields, leaving the row alive.
         await engine.pullOnce()
-        XCTAssertNotNil(row(access, "R"), "让位 ⇒ 行还在")
+        XCTAssertNotNil(row(access, "R"), "Yielding preserves the row")
         XCTAssertNil(row(access, "R")?.deletedDate)
         XCTAssertTrue(access.hardDeleteCalls.isEmpty)
     }
 
-    /// (f)：一次**未发布的纯重排** ⇒ `server == reconciled` **成立**，而本轮 `snapshot` 走
-    /// `assignRanks` 之后的字节与 `reconciled` **不等** ⇒ (b) 的第二个合取项不成立 ⇒ 标志
-    /// **仍然 `true`**，到达的 tombstone 让位。
-    ///
-    /// 防的是什么：拿 `urlRuleLocalProjections` 的字节判第二个合取项的实现让这一条红
-    /// （rank **取基线**，§5.6 第 1 条 ⇒ 纯重排被判成零变化 ⇒ 当轮清位 ⇒ 那一轮的远端
-    /// tombstone 硬删、用户那次拖动连同规则一起没了）。
+    /// (f) Unpublished pure reorder retains server == reconciled but assignRanks makes snapshot bytes differ.
+    /// Clearing (b)'s second conjunction fails, preserving pending and yielding. urlRuleLocalProjections uses
+    /// baseline rank (§5.6(1)) and would miss the reorder, clear pending, then lose the user's drag to a
+    /// tombstone.
     func testM19f_anUnpublishedPureReorderKeepsTheFlag() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
-        // 基线 rank 是 R1 = "V" < R2 = "W"，而本机次序被用户拖成了 [R2, R1]。
+        // Baseline ranks R1 V < R2 W, but the user reordered locals to [R2,R1].
         seedSettled("R1", id: "i-1", host: "one.example", sortOrder: 1, accountStamp: 100,
                     rank: "V", pendingLocalEdit: true, rows: &rows, table: &table)
         seedSettled("R2", id: "i-2", host: "two.example", sortOrder: 0, accountStamp: 100,
@@ -3883,7 +3729,7 @@ final class URLRuleMergeTests: XCTestCase {
         client.pagesByMarker = [page([], marker: "1"),
                                 page([remoteTombstone(tag: ruleTag("R1"), version: 40,
                                                       entityId: "srv-R1")], marker: "40")]
-        // 那一轮那次提交没落成（见 M-19 (e) 里同一条理由）。
+        // Fail publication as in M-19(e) to isolate pending clearing.
         client.commitErrorOnce = Boom()
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -3891,33 +3737,28 @@ final class URLRuleMergeTests: XCTestCase {
         await engine.pullOnce()
 
         XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty,
-                      "快照字节 != `reconciled` ⇒ 连候选都不是")
-        XCTAssertEqual(flag(access, "R1"), true, "仍然 `true`")
+                      "Snapshot bytes differ from reconciled, excluding it from candidates")
+        XCTAssertEqual(flag(access, "R1"), true, "Still true")
 
-        // 到达的 tombstone 让位（行还在、没有被硬删）。
+        // The arriving tombstone yields, leaving the row alive.
         await engine.pullOnce()
-        XCTAssertNotNil(row(access, "R1"), "让位 ⇒ 行还在")
+        XCTAssertNotNil(row(access, "R1"), "Yielding preserves the row")
         XCTAssertNil(row(access, "R1")?.deletedDate)
         XCTAssertTrue(access.hardDeleteCalls.isEmpty)
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-19x（(b) 的三条边界）
-    // =======================================================================================
+    // MARK: - CASE M-19x (three clearing-(b) boundaries)
 
-    /// (x1) 四类**不进快照**的行各一条（没有签名的惰性行、`pendingTombstone == true`、
-    /// `pendingApply != nil`、`pendingDelete == true`），全部 `pendingLocalEdit == true` ⇒
-    /// 连跑三轮，四条的标志**都还在**。
-    ///
-    /// 防的是什么：RR9-2 的整条——按「不在本轮候选 / `republish` 里」实现的那一版会当轮清位，
-    /// 随后那条停放的 tombstone 重判时不再让位 ⇒ 硬删。
+    /// (x1) Four pending rows excluded from snapshots: inert/no signature, pendingTombstone, pendingApply and
+    /// pendingDelete. Three rounds must retain all flags. Clearing based merely on absence from
+    /// candidates/republish violates RR9-2 and lets a retried tombstone hard-delete without yielding.
     func testM19x1_rowsThatNeverEnterTheSnapshotKeepTheirFlag() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
-        // ① 没有签名的惰性行：目标 Space 映不出账户 uuid。
+        // ① Inert unsigned row: target Space cannot map to an account UUID.
         rows.append(.fixture(id: "i-lazy", syncId: "lazy", spaceId: "dead-space",
                              host: "lazy.example", pendingLocalEdit: true))
-        // ② / ③ / ④：三个待办位各一条。
+        // ②/③/④ each exercise one pending state.
         seedSettled("tomb", id: "i-tomb", host: "tomb.example", sortOrder: 1, accountStamp: 100,
                     pendingLocalEdit: true, rows: &rows, table: &table)
         seedSettled("apply", id: "i-apply", host: "apply.example", sortOrder: 2, accountStamp: 100,
@@ -3935,7 +3776,7 @@ final class URLRuleMergeTests: XCTestCase {
         let store = MemoryOwnedItemStore()
         store.table = table
         let client = publishingClient(seeding: ["tomb", "apply", "del"])
-        // 那条待删的 tombstone **永远发不成**（`.invalidMessage`），于是行留在库里、断言得到它。
+        // The pending-delete tombstone always fails invalidMessage so its row remains observable.
         client.refuseCommitsForTagHashes = [ruleHash("del")]
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -3943,45 +3784,41 @@ final class URLRuleMergeTests: XCTestCase {
         for _ in 0..<3 { await engine.pullOnce() }
 
         for syncId in ["lazy", "tomb", "apply", "del"] {
-            XCTAssertEqual(flag(access, syncId), true, "\(syncId)：标志还在")
+            XCTAssertEqual(flag(access, syncId), true, "\(syncId): pending remains set")
         }
-        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "四条都进不了 (b) 的候选集")
+        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "All four are excluded from clearing-(b) candidates")
     }
 
-    /// (x2) 一条 `server == nil`（从没被账户接受过）而快照字节恰好等于 `reconciled` 的行 ⇒
-    /// **不清**（取值式 fail-closed）。
-    ///
-    /// 防的是什么：写成 `cursor.server == cursor.reconciled` 的 Optional 比较在这里恒真
-    /// （两个 nil 相等），会恒真地清一片。
+    /// (x2) A never-accepted row with nil server must not clear even when snapshot matches reconciled; the
+    /// predicate fails closed. Optional server == reconciled can incorrectly consider two nil values equal and
+    /// clear flags broadly.
     func testM19x2_aCursorWithoutAServerBaselineIsNeverCleared() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
         seedSettled("R", id: "i-R", accountStamp: 100, pendingLocalEdit: true,
                     rows: &rows, table: &table)
         var cursor = try XCTUnwrap(table.cursors["R"])
-        cursor.server = nil                 // 账户从没接受过它
+        cursor.server = nil                 // The account never accepted it
         table.cursors["R"] = cursor
         let access = FakeURLRuleAccess(rows: rows)
         let store = MemoryOwnedItemStore()
         store.table = table
-        // 快照字节 == `reconciled` 且游标带着服务端三元组 ⇒ 这一轮根本没有可发的东西，
-        // 所以不需要任何 commit 桩：(a) 结构性不可达，要钉的只有 (b) 的取值式。
+        // Equal snapshot/reconciled plus usable server metadata leaves no publication work, so no commit stub
+        // is needed. Clearing (a) is structurally unreachable; isolate (b)'s predicate.
         let client = publishingClient(seeding: ["R"])
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
 
         await engine.pullOnce()
 
-        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "`server == nil` ⇒ 不清")
+        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "nil server prevents clearing")
         XCTAssertTrue(clearCalls(access).isEmpty)
         XCTAssertEqual(flag(access, "R"), true)
     }
 
-    /// (x3) 一库 N 条**干净**规则（`pendingLocalEdit == false`）连跑三轮 ⇒ **零次清位原语调用**
-    /// （两处都零），零 commit。
-    ///
-    /// 防的是什么：RR7-14——对全库每条干净行都写一次的实现每轮触发一次 `urlRulesPublisher()`
-    /// 与一次 §6.6 路由刷新，正是 M3-3 `created_at_ms` 风暴那一族。
+    /// (x3) N clean rules across three rounds cause zero primitive calls at either clearing site and zero
+    /// commits. Rewriting every clean row each round triggers publisher/routing refresh noise (RR7-14), the
+    /// same failure family as M3-3's created_at_ms storm.
     func testM19x3_aCleanTableWritesNothingAtAllAcrossThreeRounds() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -3998,27 +3835,23 @@ final class URLRuleMergeTests: XCTestCase {
 
         for _ in 0..<3 { await engine.pullOnce() }
 
-        XCTAssertTrue(clearCalls(access).isEmpty, "零次 (a)")
-        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "零次 (b) —— 空集连原语都不调")
-        XCTAssertTrue(ruleCommits(client).isEmpty, "零 commit")
-        XCTAssertEqual(refreshCalls(access), 0, "§6.6 的路由刷新零次")
+        XCTAssertTrue(clearCalls(access).isEmpty, "No clearing-(a) calls")
+        XCTAssertTrue(clearIfUnchangedCalls(access).isEmpty, "No clearing-(b) calls; empty work skips the primitive")
+        XCTAssertTrue(ruleCommits(client).isEmpty, "No commits")
+        XCTAssertEqual(refreshCalls(access), 0, "No §6.6 routing refreshes")
         XCTAssertTrue(access.rows.allSatisfy { !$0.pendingLocalEdit })
     }
 
-    // =======================================================================================
-    // MARK: - CASE M-20（删除不置位，引擎的每一次写也不置位）（R-M3-4a-69 / RR5-8）—— 真 `LocalStore`
-    // =======================================================================================
+    // MARK: - CASE M-20 (deletion and all engine writes preserve clear pending flags; real LocalStore)
 
-    /// 落地的每一种写（`.create` / `.update` / `.move` / `.reorder` / `.rekey` / M2 的三条 /
-    /// 入站 tombstone 的硬删）在**真库**上各跑一次 ⇒ 每一条留下来的行 `pendingLocalEdit`
-    /// **逐条仍是 `false`**；编辑器删除集那一条软删之后同样是 `false`。
-    ///
-    /// 防的是什么：任何一条引擎写顺手置位，都会让那条身份对**下一次**远端删除免疫，而 D32(a)
-    /// 给用户的口径「另一台持有一次尚未发布的**用户**编辑」当场变成假话。
+    /// Exercise create/update/move/reorder/rekey, all three M2 writes and inbound hard deletion on real
+    /// storage. Every surviving row keeps pendingLocalEdit false; editor soft deletion also leaves it false
+    /// (R-M3-4a-69 / RR5-8). Engine-created pending flags would falsely claim D32(a)'s unpublished user edit
+    /// and cause unwarranted yielding to later deletion.
     func testM20_noEngineWriteAndNoDeleteEverSetsThePendingLocalEditFlag() async throws {
         let store = try makeMergeStore()
         try await store.performBackgroundWriteAndWaitThrowing { context in
-            // 四条带身份的行 + 一条**没有身份**的行（`.rekey` 的目标）。
+            // Four identified rows plus one unidentified rekey target.
             for (offset, syncId) in ["W", "L1", "L2", "M"].enumerated() {
                 context.insert(SpaceURLRule(
                     id: "row-\(syncId)", spaceId: "space-a", host: "github.com",
@@ -4045,7 +3878,7 @@ final class URLRuleMergeTests: XCTestCase {
                 collapsed: 1, touchedBuckets: ["space-a"], changedRouting: true)
         }
         _ = try await store.applyURLRuleSyncBatchThrowing([
-            // `.create`（本机没有这条身份）/ `.update` / `.move` / `.reorder` / `.rekey`。
+            // Exercise missing-identity create, update, move, reorder and rekey.
             .create(URLRuleLandingValues.fixture(syncId: "NEW", spaceId: "space-a",
                                                  host: "new.example", sortOrder: 5)),
             .update(URLRuleLandingValues.fixture(syncId: "M", spaceId: "space-a",
@@ -4054,43 +3887,36 @@ final class URLRuleMergeTests: XCTestCase {
                                                host: "github.com", sortOrder: 0)),
             .reorder(syncId: "L2", spaceId: "space-a", sortOrder: 0),
             .rekey(localId: "row-unclaimed", to: "CLAIMED", values: nil),
-            // 入站 tombstone ⇒ 硬删。
+            // Inbound tombstone hard-deletes.
             .delete(syncId: "L2"),
         ], mergeTail: tail)
 
         let after = try mergeRows(in: store)
-        XCTAssertNil(after["L2"], "入站 tombstone 硬删了它（这一列随行消失）")
+        XCTAssertNil(after["L2"], "Inbound tombstone hard-deleted it, removing this column with the row")
         for syncId in ["W", "L1", "M", "NEW", "CLAIMED"] {
             XCTAssertEqual(after[syncId]?.pendingLocalEdit, false,
-                           "\(syncId)：引擎的这一次写一个字节都没碰置位")
+                           "\(syncId): this engine write left pending unchanged")
         }
-        XCTAssertNotNil(after["L1"]?.deletedDate, "M2 的软删照落")
+        XCTAssertNotNil(after["L1"]?.deletedDate, "M2 soft deletion still lands")
         XCTAssertEqual(after["L1"]?.mergePartnerSyncId, "W")
         XCTAssertEqual(after["M"]?.mergePartnerSyncId, "W")
 
-        // 编辑器删除集那一条：软删 + **不置位**（R-M3-4a-69）。
+        // Editor delete set soft-deletes without setting pending (R-M3-4a-69).
         let target = try XCTUnwrap(after["M"]?.id)
         try await store.applyURLRuleEditsThrowing(upserts: [], deletedIds: [target])
         let afterDelete = try mergeRows(in: store)
         XCTAssertNotNil(afterDelete["M"]?.deletedDate)
-        XCTAssertEqual(afterDelete["M"]?.pendingLocalEdit, false, "删除不是编辑")
+        XCTAssertEqual(afterDelete["M"]?.pendingLocalEdit, false, "Deletion is not an edit")
     }
 
 
-    // =======================================================================================
-    // MARK: - CASE M-7b 的 rank 变体 / 清位 (b) 的 rank 变体（裁定 3 的探针）
-    // =======================================================================================
+    // MARK: - CASE M-7b and clearing-(b) rank variants (ruling 3)
 
-    /// 一桶两条已发布规则。① 用户存 **E1**（改 R1 的 `ask`）⇒ 置位、快照记下基线
-    /// （`ask == true` ∧ `sortOrder == 0`）、提交发出；② 提交**在途**时用户做一次**纯拖动**
-    /// （把 R1 拖到第 2 位）⇒ 行此刻取值与 E1 逐格相同、**只有 `sortOrder` 变了**；
-    /// ③ 那次 commit `.applied`（确认的是 E1）⇒ (a) 比出第三个合并单元不等 ⇒
-    /// **`pendingLocalEdit` 仍为 `true`**，而 `mergePartnerSyncId` 那一半照清。
-    ///
-    /// 防的是什么：把 rank 排除在比较之外的实现（删掉 `RuleProjection.sortOrder` 与
-    /// `clearingProjectionMatches` 里那一条 `guard let sortOrder`）在这里**必须红**——它会把
-    /// 「E1 在途 + E2 纯拖动」判成相等 ⇒ 当场清位 ⇒ 那一轮的远端 tombstone 硬删，用户那次拖动
-    /// 连同规则一起没了（裁定 3 点名的那一族）。
+    /// Two published siblings. ① E1 edits R1 ask and sends a snapshot at sortOrder 0. ② An in-flight pure drag
+    /// moves it to position 2, leaving all value fields unchanged. ③ Applied acknowledges E1, but rank-unit
+    /// mismatch keeps pending true while clearing pointer. Omitting
+    /// RuleProjection.sortOrder/clearingProjectionMatches' sortOrder guard would falsely clear protection and
+    /// lose the drag plus row to remote deletion (ruling 3).
     func testM7b_aPureReorderInFlightKeepsTheFlagBecauseRankIsAMergeUnit() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -4106,11 +3932,11 @@ final class URLRuleMergeTests: XCTestCase {
         let engine = try makeRuleEngine(access, store, client: client)
         await engine.setSpaceSyncEnabled(true)
 
-        // ① E1：只改 `ask`。
+        // ① E1 edits only ask.
         access.applyEditorSave(syncId: "R1", ask: true, at: stampDate(200))
         XCTAssertEqual(row(access, "R1")?.sortOrder, 0)
 
-        // ② 提交在途时的**纯拖动**：取值一格都没变，只有位置变了。
+        // ② In-flight pure drag changes only position, not field values.
         let arrived = Gate()
         let release = Gate()
         client.gatedCommitTagHash = ruleHash("R1")
@@ -4122,22 +3948,19 @@ final class URLRuleMergeTests: XCTestCase {
         await release.open()
         await round.value
 
-        // ③ `.applied` 确认的是 E1（`sortOrder == 0`），而行此刻是 `sortOrder == 1`。
-        XCTAssertEqual(clearCalls(access), ["R1"], "(a) 照常跑了一次")
-        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "拖动落在行上了")
-        XCTAssertEqual(row(access, "R1")?.askBeforeRouting, true, "取值与 E1 逐格相同")
-        XCTAssertEqual(flag(access, "R1"), true, "第三个合并单元不等 ⇒ **不清位**")
-        XCTAssertNil(row(access, "R1")?.mergePartnerSyncId, "指针那一半照清")
-        XCTAssertEqual(flag(access, "R2"), false, "重编号不置位")
+        // ③ Applied acknowledges E1 at sortOrder 0 while the row is now at 1.
+        XCTAssertEqual(clearCalls(access), ["R1"], "(a) Ran once normally")
+        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "The drag reached the row")
+        XCTAssertEqual(row(access, "R1")?.askBeforeRouting, true, "Field values match E1")
+        XCTAssertEqual(flag(access, "R1"), true, "The third merge unit differs; retain pending")
+        XCTAssertNil(row(access, "R1")?.mergePartnerSyncId, "The pointer still clears")
+        XCTAssertEqual(flag(access, "R2"), false, "Renumbering does not set pending")
     }
 
-    /// 清位 (b) 那一侧的同一条判据：入口状态是「上一轮 E1 上了账户、(a) 那次写失败」
-    /// （`server == reconciled` ∧ 标志还挂着），本轮 (b) 把 R1 收进候选并映到快照那一刻的基线；
-    /// 就在**判定与写入之间**用户做一次**纯拖动** ⇒ 原语在事务里重算出的 `sortOrder` 与基线不等
-    /// ⇒ **标志仍然是 `true`**、零行写、指针不碰。
-    ///
-    /// 防的是什么：与上一条同一族——少了第八个合并成员，这一条的重算投影与基线逐格相等 ⇒ 清位
-    /// ⇒ 下一轮一条远端 tombstone 到达时让位谓词不成立 ⇒ 硬删一条带着未发布拖动的行。
+    /// Clearing-(b) equivalent: E1 reached the account but (a) failed, leaving equal baselines and pending.
+    /// After selecting R1 and its snapshot baseline, a pure drag occurs before write. Transaction sortOrder
+    /// comparison must retain pending with no row write or pointer change. Omitting that eighth projection
+    /// member would clear the unpublished drag's yielding protection.
     func testM7e_aPureReorderBetweenTheDecisionAndTheWriteKeepsTheFlag() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()
@@ -4158,16 +3981,16 @@ final class URLRuleMergeTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) 真的把 R1 收进了 `entries`")
-        XCTAssertEqual(access.lastClearEntries["R1"]?.sortOrder, 0, "基线记的是快照那一刻的位置")
-        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "拖动落在行上了")
-        XCTAssertEqual(flag(access, "R1"), true, "rank 这个单元不等 ⇒ **不清位**")
-        XCTAssertEqual(row(access, "R1")?.mergePartnerSyncId, "w", "(b) 一个字节都不碰指针")
+        XCTAssertEqual(clearIfUnchangedCalls(access), [1], "(b) Actually included R1 in entries")
+        XCTAssertEqual(access.lastClearEntries["R1"]?.sortOrder, 0, "Baseline records position at snapshot time")
+        XCTAssertEqual(row(access, "R1")?.sortOrder, 1, "The drag reached the row")
+        XCTAssertEqual(flag(access, "R1"), true, "Rank-unit mismatch prevents clearing")
+        XCTAssertEqual(row(access, "R1")?.mergePartnerSyncId, "w", "(b) Leaves the pointer unchanged byte for byte")
         XCTAssertEqual(flag(access, "R2"), false)
     }
 
-    /// **对照**：同一形状，钩子不做任何事 ⇒ (b) 正常清位。证明上面那条红的原因**只有** rank
-    /// 这一个单元，而不是「凡是有第二条行就不清」。
+    /// No-op-hook control clears through (b), proving rank mismatch alone blocks the preceding case, not
+    /// merely having a second row.
     func testM7e_withoutTheReorderTheSelfHealStillClears() async throws {
         var rows: [PhiLocalURLRule] = []
         var table = PhiOwnedItemTable()

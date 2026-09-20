@@ -1,15 +1,14 @@
 import XCTest
 @testable import Phi
 
-/// Task 3 的用例：per-kind 的游标表、它在账户目录下的原子 JSON 文件存储，以及住在
-/// `PhiSpaceSyncTable` 上的四个 per-kind 报损 / 重放标志。
-///
-/// 这个类一个 `@MainActor` 假件都不用（`FileOwnedItemStateStore` 与两个 struct 都不是
-/// 隔离类型），所以整类不标注——形状照同样不标注的 `PhiSpaceSyncStateTests`。
+/// Task 3: per-kind cursor tables, atomic JSON storage under the account directory,
+/// and four per-kind loss/replay flags on PhiSpaceSyncTable. No MainActor fakes
+/// are used: FileOwnedItemStateStore and both structs are unisolated, so the test
+/// class remains unannotated like PhiSpaceSyncStateTests.
 final class PhiOwnedItemStateTests: XCTestCase {
 
-    /// 每条用例一个独立的临时目录：文件存储的契约里有「这一路一个字节都不许写回去」，
-    /// 断言它就必须能看到真实的文件系统状态。
+    /// Use a separate temporary directory per case to observe the real filesystem
+    /// and assert paths that must not write anything back.
     private var directory: URL!
     private var fileURL: URL!
 
@@ -19,14 +18,14 @@ final class PhiOwnedItemStateTests: XCTestCase {
             .appendingPathComponent("PhiOwnedItemStateTests-\(UUID().uuidString)",
                                     isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // 名字与生产落点同款（§3.5：`<account.userDataStorage>/sync/bookmarks-cursors.json`）。
+        // Match the production path name: <account.userDataStorage>/sync/bookmarks-cursors.json (§3.5).
         fileURL = directory.appendingPathComponent("sync", isDirectory: true)
             .appendingPathComponent("bookmarks-cursors.json")
     }
 
     override func tearDownWithError() throws {
-        // CASE 2a.7 把 `sync/` 改成只读来注入落盘失败；**先恢复权限再删**，否则只读目录
-        // 删不掉，临时目录会一次次累积下来。
+        // CASE 2a.7 makes sync/ read-only to force persistence failure. Restore permissions
+        // before deleting or undeletable temporary directories accumulate.
         if let fileURL {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o700],
@@ -38,8 +37,8 @@ final class PhiOwnedItemStateTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    /// `0o500` = 可读可进入、**不可写**：`.atomic` 写要在同目录建临时文件，于是必然失败。
-    /// **测试进程不是 root**，所以这个注入是确定的。
+    /// 0o500 permits reads/traversal but blocks the temporary file needed by atomic
+    /// writes. The non-root test process makes this failure deterministic.
     private func setCursorDirectoryWritable(_ writable: Bool) throws {
         try FileManager.default.setAttributes(
             [.posixPermissions: writable ? 0o700 : 0o500],
@@ -56,11 +55,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.1
 
-    /// CASE 3.1 — 十四个字段全部往返。
-    ///
-    /// 防的是什么：只钉住一部分字段的往返用例会放过一条被漏掉的 `Codable` 字段，而漏掉
-    /// 任何一条都让引擎对一条实体做出错误判断；错误的方向是「发一条 `baseVersion == 0`
-    /// 的 create 把账户上那条盲写覆盖」。字段数断言让加第十五个字段的人必须回到这里。
+    /// CASE 3.1: round-trip all fourteen fields. Partial coverage misses omitted Codable
+    /// fields, which can make the engine send baseVersion=0 creates that blindly overwrite
+    /// account entities. The field-count assertion requires any fifteenth field to join this test.
     func testEveryCursorFieldSurvivesAFileRoundTrip() throws {
         var cursor = PhiOwnedItemCursor()
         cursor.entityId = "srv-1"
@@ -87,15 +84,15 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let fieldCount = Mirror(reflecting: cursor).children.count
         let roundTripped = loaded.table
         let reportedLoss = loaded.reportedLoss
-        XCTAssertEqual(fieldCount, 14, "新增一个游标字段必须同时在这条用例里赋非默认值")
+        XCTAssertEqual(fieldCount, 14, "Every new cursor field needs a nondefault value in this test")
         XCTAssertEqual(roundTripped, table)
         XCTAssertEqual(roundTripped.cursors["bm-1"], cursor)
-        XCTAssertFalse(reportedLoss, "读得出来就不是丢失")
+        XCTAssertFalse(reportedLoss, "Readable data is not lost")
 
-        // 同一条用例的第二半：**盘上的键名**。往返断言钉不住改名——合成的 `CodingKeys` 跟着
-        // 属性名走，改一个属性名就在同一个 `formatVersion` 下悄悄换掉盘上的键，那个字段的
-        // 每条游标都解成默认值。所以这里解一份写死键名的 JSON。`Data` 字段是
-        // `JSONEncoder` 默认的 base64。
+        // Also verify persisted key names: synthesized CodingKeys follow property renames,
+        // so a round trip alone permits a key change within the same formatVersion and
+        // default-decoding every existing cursor's field. Decode literal JSON with fixed
+        // keys; Data fields use JSONEncoder's default base64.
         let literal = Data("""
         {
           "entityId": "srv-1",
@@ -117,19 +114,16 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
         let fromLiteral = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: literal)
 
-        XCTAssertEqual(fromLiteral, cursor, "十四个盘上键名必须与这份字面量逐字一致")
+        XCTAssertEqual(fromLiteral, cursor, "All fourteen persisted keys must match this literal exactly")
     }
 
-    /// CASE 3.1b — **上一版落盘的文件仍然读得出来**（R-exec-13 / F-PK-2）。
-    ///
-    /// 防的是什么：合成的 `init(from:)` 对一条**非可选**属性调的是 `decode(_:forKey:)`，缺键
-    /// 就抛 `keyNotFound`——属性上写没写默认值都一样。而 `JSONEncoder` 只省略值为 nil 的可选
-    /// 字段，所以线上那些文件里每一个非可选字段都在、后加的那个不在。于是给这个结构体加一条
-    /// **非可选**字段 = 每一台已有设备的 `pins-cursors.json` / `bookmarks-cursors.json` 整份
-    /// 解不开 = `load` 交出空表并报损 = 整类型重放 + 每一份 `reconciled` 基线当场丢失。
-    ///
-    /// 这份字面量就是 build 822 真机上那份文件的键集（少了 `rekeyRejectRounds`）。它必须解得
-    /// 出来，并且解出 `nil`（= 没有连败）。
+    /// CASE 3.1b: files written by the previous version remain readable (R-exec-13 / F-PK-2).
+    /// Synthesized decoding uses decode for nonoptional properties and throws keyNotFound
+    /// even if a property declares a default. Existing JSON contains every nonoptional
+    /// field but not newly added ones. Adding a required field could invalidate every
+    /// pin/bookmark cursor file, return an empty table with loss, trigger full replay,
+    /// and discard every reconciled baseline. This literal matches build 822's keys,
+    /// without rekeyRejectRounds; it must decode that field as nil, meaning no rejection streak.
     func testACursorFileFromTheBuildBeforeThisFieldStillDecodes() throws {
         let previousBuild = Data("""
         {
@@ -156,19 +150,17 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let store = makeStore()
         let loaded = store.load(hadRecords: true)
 
-        XCTAssertFalse(loaded.reportedLoss, "① 上一版的文件不是一次丢失")
-        XCTAssertEqual(loaded.table.cursors["bm-1"]?.entityId, "srv-1", "② 基线与三元组都还在")
+        XCTAssertFalse(loaded.reportedLoss, "① The previous version's file is not a loss")
+        XCTAssertEqual(loaded.table.cursors["bm-1"]?.entityId, "srv-1", "② The baseline and identity/version tuple survive")
         XCTAssertNotNil(loaded.table.cursors["bm-1"]?.reconciled)
         XCTAssertNil(loaded.table.cursors["bm-1"]?.rekeyRejectRounds,
-                     "③ 缺键解成 nil，与「没有连败」同义")
+                     "③ A missing key decodes as nil, meaning no rejection streak")
     }
 
     // MARK: - CASE 3.2
 
-    /// CASE 3.2 — 表里没有任何窗口状态。
-    ///
-    /// 防的是什么：R-M3-3-28 撤回了 `firstArrival` / `claimEligible` / `locallyMinted`
-    /// 与 `creator_device_id` 那几套机制；把其中任何一个加回来的人在这里红。
+    /// CASE 3.2: the table contains no window state. R-M3-3-28 removed firstArrival,
+    /// claimEligible, locallyMinted, and creator_device_id mechanisms; restoring any must fail here.
     func testTheTableCarriesNoFirstMergeWindowState() {
         let names = Set(Mirror(reflecting: PhiOwnedItemTable()).children.compactMap(\.label))
 
@@ -177,11 +169,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.3
 
-    /// CASE 3.3 — 文件不存在时只有 `hadRecords` 才报损。
-    ///
-    /// 防的是什么：从未发布过任何东西 ⇒ 文件本来就不该存在，这不是丢失。而「读不出来
-    /// 顺手写一个空文件回去」会把一次真正的丢失变成一张「正常的空表」，下一轮就以
-    /// `baseVersion == 0` 的 create 盲写覆盖账户。
+    /// CASE 3.3: a missing file reports loss only with hadRecords. Before any publication,
+    /// no file is expected. Writing an empty file after failed reading would disguise
+    /// real loss as a normal empty table and permit blind baseVersion=0 overwrites next round.
     func testAMissingFileReportsLossOnlyWhenTheKindHasPublishedBefore() {
         let store = makeStore()
 
@@ -197,12 +187,12 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertFalse(quietLoss)
         XCTAssertTrue(loudTable.cursors.isEmpty)
         XCTAssertTrue(loudLoss)
-        XCTAssertFalse(exists, "读不出来的那一路一个字节都不许写回去")
+        XCTAssertFalse(exists, "A failed read must write nothing back")
     }
 
     // MARK: - CASE 3.4
 
-    /// CASE 3.4 — `formatVersion` 偏低 ⇒ 丢弃并报损。
+    /// CASE 3.4: discard and report loss for an old formatVersion.
     func testATableFromAnOlderFormatVersionIsDroppedAndReported() throws {
         var stale = PhiOwnedItemTable()
         stale.formatVersion = PhiOwnedItemTable.currentFormatVersion - 1
@@ -224,15 +214,14 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertTrue(loudTable.cursors.isEmpty)
         XCTAssertEqual(loudTable.formatVersion, PhiOwnedItemTable.currentFormatVersion)
         XCTAssertTrue(loudLoss)
-        XCTAssertFalse(quietLoss, "`reportedLoss` 只随 `hadRecords` 变")
-        XCTAssertEqual(onDisk, staleBytes, "丢弃那一路不写回文件")
+        XCTAssertFalse(quietLoss, "reportedLoss depends only on hadRecords")
+        XCTAssertEqual(onDisk, staleBytes, "Discarding does not rewrite the file")
     }
 
-    /// CASE 3.4 的另一半：`formatVersion` **缺失**（§3.6 / §12.1 的「更小**或缺失**」）。
-    ///
-    /// 表里带着一条真游标，所以这条用例只可能因为「没有 `formatVersion` 这个键」而丢弃——
-    /// 而这正是 per-kind 表将来加字段时最可能踩的那个机制（合成的 `Decodable` 对缺席的键
-    /// 抛 `keyNotFound`，属性默认值不参与）。
+    /// CASE 3.4, missing formatVersion (§3.6 / §12.1: smaller or absent).
+    /// Include a real cursor so only the missing format key causes discard. This also
+    /// exposes the field-addition trap: synthesized Decodable throws keyNotFound and
+    /// does not use property defaults.
     func testATableWithNoFormatVersionKeyIsDroppedAndReported() throws {
         var table = PhiOwnedItemTable()
         table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]),
@@ -256,12 +245,12 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertTrue(loudTable.cursors.isEmpty)
         XCTAssertTrue(loudLoss)
         XCTAssertFalse(quietLoss)
-        XCTAssertEqual(onDisk, bytes, "缺键那一路也不写回文件")
+        XCTAssertEqual(onDisk, bytes, "A missing key must not cause a file rewrite")
     }
 
     // MARK: - CASE 3.5
 
-    /// CASE 3.5 — 字节解不开 ⇒ 丢弃并报损。
+    /// CASE 3.5: discard and report loss for undecodable bytes.
     func testUndecodableBytesAreDroppedAndReported() throws {
         let garbage = Data("{ not json".utf8)
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
@@ -281,12 +270,12 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertTrue(loudLoss)
         XCTAssertTrue(quietTable.cursors.isEmpty)
         XCTAssertFalse(quietLoss)
-        XCTAssertEqual(onDisk, garbage, "解不开那一路不写回文件")
+        XCTAssertEqual(onDisk, garbage, "Undecodable data must not be rewritten")
     }
 
     // MARK: - CASE 3.6
 
-    /// CASE 3.6 — 表为空但该 kind 发布过 ⇒ 报损。
+    /// CASE 3.6: an empty table reports loss if this kind has published before.
     func testAnEmptyTableIsALossWhenTheKindHasPublishedBefore() throws {
         let store = makeStore()
         store.save(PhiOwnedItemTable())
@@ -302,11 +291,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertFalse(quietLoss)
     }
 
-    /// CASE 3.6 的假件对照：`MemoryOwnedItemStore` 在同一处必须给出同一个答案。
-    ///
-    /// 防的是什么：两边的报损判据一旦分家，一条拿着空表、`bookmarksHadRecords == true` 的
-    /// Task 6 / 9 用例会在「正常一轮、什么都没丢」上变绿，而线上代码在同一处报损并重放
-    /// 整个 data type——假件把真实行为盖住了，方向还正好是放过它。
+    /// CASE 3.6 fake parity: MemoryOwnedItemStore must make the same loss decision.
+    /// Otherwise Task 6/9 tests with an empty table and bookmarksHadRecords=true pass
+    /// as normal rounds while production reports loss and replays the entire type.
     func testTheMemoryStoreReportsTheSameLossAsTheFileStore() {
         let store = MemoryOwnedItemStore()
 
@@ -322,7 +309,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertFalse(quietLoss)
         XCTAssertEqual(seen, [true, false])
 
-        // 非空表、没有脚本化的丢失 ⇒ 照常读回原表，一次报损都没有。
+        // A nonempty table without scripted loss loads normally without reporting loss.
         var table = PhiOwnedItemTable()
         table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]), entityId: "srv-1")
         store.save(table)
@@ -337,11 +324,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.7
 
-    /// CASE 3.7 — 报损判据与本地行、与 `syncId` 无关。
-    ///
-    /// 防的是什么：pin 根本没有 `syncId` 这一列，按「名下还有没有带 `syncId` 的行」写的
-    /// 判据对 pin 恒不触发，于是丢掉 `pins-cursors.json` 什么都不发生，下一轮就把账户里
-    /// 每一条 pin 用 `baseVersion == 0` 的 create 盲写覆盖。
+    /// CASE 3.7: loss detection is independent of local rows and syncId. Pins have
+    /// no syncId column, so checking for rows with syncId would never detect pin loss;
+    /// losing pins-cursors.json would then cause blind baseVersion=0 overwrites of every account pin.
     func testLossReportingFollowsOnlyTheFlagItIsGiven() {
         let store = makeStore()
         store.save(PhiOwnedItemTable())
@@ -354,13 +339,13 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let secondLoss = second.reportedLoss
         let thirdLoss = third.reportedLoss
         XCTAssertTrue(firstLoss)
-        XCTAssertFalse(secondLoss, "同一个 store、同一份字节，只有入参变了")
-        XCTAssertTrue(thirdLoss, "判据没有「只报一次」这种记忆")
+        XCTAssertFalse(secondLoss, "Only the input changed; store and bytes are identical")
+        XCTAssertTrue(thirdLoss, "Loss reporting has no report-once memory")
     }
 
     // MARK: - CASE 3.8
 
-    /// CASE 3.8 — `save` 是原子的：落盘的永远是一份完整的表。
+    /// CASE 3.8: atomic save always leaves a complete table on disk.
     func testSaveLandsOneCompleteTable() throws {
         var table = PhiOwnedItemTable()
         table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]),
@@ -379,7 +364,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.9
 
-    /// CASE 3.9 — `deleteFile` 之后 `load` 是空表（§9.1 的自撤销直接删文件）。
+    /// CASE 3.9: load returns an empty table after deleteFile; §9.1 self-revoke deletes the file directly.
     func testDeleteFileLeavesTheNextLoadWithAnEmptyTable() {
         var table = PhiOwnedItemTable()
         table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]), entityId: "srv-1")
@@ -397,10 +382,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.10
 
-    /// CASE 3.10 — 30 天窗口只丢过期的 tombstone 游标。
-    ///
-    /// `nowMs` 取「旧 tombstone 的到期时刻再加 1 ms」：`deletedAtMs = 1` 的那条刚好过期，
-    /// 999 ms 之后才定案的那条还在窗口里，活游标（没有 `deletedAtMs`）永远不参与。
+    /// CASE 3.10: the 30-day window drops only expired tombstone cursors.
+    /// Set now one millisecond after the old tombstone expires: deletedAtMs=1 expires,
+    /// while one finalized 999 ms later remains. Live cursors never participate.
     func testOnlyExpiredTombstoneCursorsAreDropped() {
         var table = PhiOwnedItemTable()
         table.cursors["live"] = ownedCursor(reconciled: Data([0x01]),
@@ -420,10 +404,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.11
 
-    /// CASE 3.11 — per-kind 标志与 Space 的那个永久闩独立。
-    ///
-    /// 防的是什么：复用 Space 侧的 `didReplayForEmptyTable`，会在 Space 段先花掉它之后，
-    /// 让书签或 pin 的第一次文件丢失**一次重放都得不到**。
+    /// CASE 3.11: per-kind flags are independent of the permanent Space latch.
+    /// Reusing didReplayForEmptyTable after the Space section consumes it would deny
+    /// bookmarks or pins any replay after their first file loss.
     func testThePerKindReplayFlagsAreIndependentOfTheSpaceLatch() {
         var table = PhiSpaceSyncTable()
 
@@ -441,7 +424,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertFalse(pinsReplayed)
     }
 
-    /// 同一条用例的另一半：`OwnedKindFlags` 的两条注册项各自读写自己那一对，互不串线。
+    /// Also verify both OwnedKindFlags registrations independently read and write their own pair.
     func testOwnedKindFlagsAddressOnePairEach() {
         var table = PhiSpaceSyncTable()
 
@@ -460,10 +443,8 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.12
 
-    /// CASE 3.12 — 共享 marker 状态的字段集合。
-    ///
-    /// 防的是什么：加第十三个字段的人必须先读那段注释——这些字段**四种 kind 共用**，
-    /// 一份都不得复制进 per-kind 的文件里。
+    /// CASE 3.12: shared-marker field set. Adding a thirteenth field requires reviewing
+    /// the ownership comment: all four kinds share these fields; none belongs in a per-kind file.
     func testTheSharedMarkerStateIsExactlyTheseTwelveFields() {
         let all = Set(Mirror(reflecting: PhiSpaceSyncTable()).children.compactMap(\.label))
 
@@ -487,12 +468,10 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 2a.7（R-M3-4a-83）
 
-    /// CASE 2a.7 — `FileOwnedItemStateStore.save` 在不可写目录上回 `false` 且**不动文件**。
-    ///
-    /// 防的是什么：catch 分支忘了 `return false`、或者写成 `return true` 的实现——它让
-    /// Task 2b 的 `cursorSaveFailed` 永远为假，B-2 的整条保证在三个 JSON 文件上归零。
-    /// 同时钉住「写失败**不重试**」（§11.4）仍然成立：没有半截的重试队列，只有一个回传，
-    /// 上一份完整的表原封不动留在盘上。
+    /// CASE 2a.7: FileOwnedItemStateStore.save returns false in an unwritable directory
+    /// and preserves the file. A catch that forgets false keeps cursorSaveFailed false,
+    /// invalidating B-2 for all three JSON files. Also preserve §11.4's no-retry contract:
+    /// one returned failure, no partial retry queue, and the previous complete table intact.
     func testAFailedCursorSaveReportsItAndLeavesTheFileUntouched() throws {
         let store = makeStore()
         var tableA = PhiOwnedItemTable()
@@ -501,7 +480,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         cursorA.version = 4
         cursorA.reconciled = Data([0x01])
         tableA.cursors["b1"] = cursorA
-        XCTAssertTrue(store.save(tableA), "一次成功的写回 true")
+        XCTAssertTrue(store.save(tableA), "A successful write returns true")
         let bytesAfterA = try Data(contentsOf: fileURL).count
 
         var tableB = PhiOwnedItemTable()
@@ -512,22 +491,22 @@ final class PhiOwnedItemStateTests: XCTestCase {
         tableB.cursors["b2"] = cursorB
 
         try setCursorDirectoryWritable(false)
-        XCTAssertFalse(store.save(tableB), "写盘失败 ⇒ false")
+        XCTAssertFalse(store.save(tableB), "A failed disk write returns false")
 
         try setCursorDirectoryWritable(true)
         let reloaded = store.load(hadRecords: true)
-        XCTAssertEqual(reloaded.table, tableA, "盘上仍然是上一份完整的表")
-        XCTAssertFalse(reloaded.reportedLoss, "读得出来就不是丢失")
+        XCTAssertEqual(reloaded.table, tableA, "The previous complete table remains on disk")
+        XCTAssertFalse(reloaded.reportedLoss, "Readable data is not lost")
         XCTAssertEqual(try Data(contentsOf: fileURL).count, bytesAfterA,
-                       "失败那一次一个字节都没写出去")
+                       "The failed attempt wrote no bytes")
     }
 
-    // MARK: - CASE M-31（`removeCursor` 的文件往返，8b-1）
+    // MARK: - CASE M-31: removeCursor file round trip (8b-1)
 
-    /// 防的是什么：把「删旧游标」实现成「写一条空 `PhiOwnedItemCursor()`」的实现在这里红：一条
-    /// `entityId == ""`、`reconciled == nil` 的游标会被补键判据与 §4.2 第 3b 条反复扫到，而它对应的
-    /// 本机行此刻挂在**另一个**身份上 ⇒ 每轮一次无主重发。`reportedLoss == false` 那一半钉住删一条
-    /// 游标不等于丢整表。
+    /// Replacing a removed cursor with an empty PhiOwnedItemCursor would leave entityId
+    /// empty and reconciled nil, repeatedly triggering key completion and §4.2 step 3b
+    /// while the local row belongs to another identity: one orphan publication per round.
+    /// reportedLoss=false also proves removing one cursor is not loss of the whole table.
     func testRemoveCursorDropsTheWholeEntryAndSurvivesAFileRoundTrip() throws {
         var table = PhiOwnedItemTable()
         var old = PhiOwnedItemCursor()
@@ -543,17 +522,17 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let formatVersion = table.formatVersion
 
         table.removeCursor(identity: "old")
-        XCTAssertNil(table.cursors["old"], "整条不在，不是一条空游标")
+        XCTAssertNil(table.cursors["old"], "The cursor is absent, not an empty cursor")
         XCTAssertEqual(table.cursors.count, 1)
         XCTAssertTrue(makeStore().save(table))
 
         let reloaded = makeStore().load(hadRecords: true)
         XCTAssertNil(reloaded.table.cursors["old"])
-        XCTAssertEqual(reloaded.table.cursors["new"], fresh, "逐字段相等")
+        XCTAssertEqual(reloaded.table.cursors["new"], fresh, "Every field matches")
         XCTAssertFalse(reloaded.reportedLoss)
         XCTAssertEqual(reloaded.table.formatVersion, formatVersion)
 
-        // 幂等：对一条不存在的身份调 `removeCursor` ⇒ 表逐字不变。
+        // Idempotence: removing a missing identity leaves the table unchanged.
         var untouched = reloaded.table
         untouched.removeCursor(identity: "missing")
         XCTAssertEqual(untouched, reloaded.table)

@@ -344,8 +344,8 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         )
     }
 
-    // CASE 2a.24 / C-3 —— schema V12 的升级按 Compatibility/README.md 规则 3 走
-    // `beforeSchemaUpgrade`：写一次 manifest、造一次备份，第二次打开不再造第二份。
+    // CASE 2a.24 / C-3: schema V12 upgrade follows Compatibility/README.md rule 3,
+    // using beforeSchemaUpgrade to write one manifest and backup, with no new backup on reopening.
     func testUpgradeToStoreFormatTwelveCreatesManifestAndBackupExactlyOnce() throws {
         let directory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: directory, contents: "v10")
@@ -388,9 +388,9 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         XCTAssertEqual(try readManifest(from: directory).backups.map(\.storeFormatVersion), [10])
     }
 
-    // CASE 2a.25 —— `readableStoreFormatVersions` 的上下界。
+    // CASE 2a.25: readableStoreFormatVersions lower and upper bounds.
     func testShippingReadableStoreFormatVersionBounds() throws {
-        // 这两处断言的是出厂配置本身，留字面量：它们是整条链的锚点。
+        // Keep literal assertions for the production configuration; they anchor the entire chain.
         XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 12)
         XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...12)
 
@@ -399,7 +399,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             readableStoreFormatVersions: 1...12
         )
 
-        // 「太新」那一组从出厂配置派生（`current + 1`），下一次版本提升不必再改这里。
+        // Derive the too-new case from current + 1 so future version bumps need no test change.
         let tooNewVersion = LocalStore.compatibilityConfiguration.currentStoreFormatVersion + 1
         let tooNewDirectory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: tooNewDirectory, contents: "v\(tooNewVersion)")
@@ -427,11 +427,11 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         XCTAssertEqual(plan.activeStoreFormatVersion, 1)
     }
 
-    // CASE 2a.25b / C-4 —— 降级路径：V12 的库被一个只认到 V10 的构建打开。用户在两个构建之间
-    // 来回切时，一次「打开即降级」会把 V12 写下的六列丢掉——那等于全库规则行的账户身份、软删
-    // 意图、合并伙伴同时消失：下一次再跑新构建时，差分把整张 `urlrules-cursors.json` 判成本机
-    // 删除，一轮之内给账户上每一条规则发出 tombstone。所以按 README 规则 4 的降级语义：拒绝
-    // 打开并保留那份库，不就地降级、不删除。
+    // CASE 2a.25b / C-4: a build supporting only V10 opens a V12 store. An in-place downgrade
+    // would drop V12's six columns, erasing account identity, soft-deletion intent, and merge
+    // partners for every rule. Returning to the new build would then classify all urlrules-cursors.json
+    // entries as locally deleted and tombstone every account rule in one round. Follow README
+    // rule 4: refuse to open and preserve the store, without downgrading or deleting it.
     func testStoreFormatTwelveIsPreservedWhenOpenedByAnAppThatOnlyReadsEleven() throws {
         let directory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: directory, contents: "v12")
@@ -439,7 +439,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             LocalStoreCompatibilityManifest(activeStoreFormatVersion: 12, backups: []),
             to: directory
         )
-        // 「降级构建」那一组从出厂配置派生（`current - 1`）。
+        // Derive the downgrade build from the production configuration, current - 1.
         let olderBuildVersion = LocalStore.compatibilityConfiguration.currentStoreFormatVersion - 1
         let olderBuildController = makeController(
             currentStoreFormatVersion: olderBuildVersion,

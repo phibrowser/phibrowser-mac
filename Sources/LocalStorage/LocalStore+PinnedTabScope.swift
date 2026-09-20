@@ -75,12 +75,10 @@ private struct PinnedTabMergeCandidate {
     let signature: PinnedTabVariantSignature
     var sourceGuids: [String]
     var lastSeen: Date?
-    /// 合并进来的各份副本里**最晚**的那个内容编辑戳，取法与 `lastSeen` 同。
-    ///
-    /// 只有内容签名相等的副本才会合并，所以合出来那一行的**内容**取谁都一样；但它们各自的
-    /// 编辑戳可以不同（两台机器把同一次编辑落在不同时刻）。只取 `source` 那一份的话，两台把
-    /// 集合排成不同顺序的机器会为同一份内容发布不同的比较戳，下一轮互相盖来盖去。取最大值
-    /// 与顺序无关，因此收敛。
+    /// Latest content-edit timestamp across merged copies, like `lastSeen`. Copies merge only when content
+    /// signatures match, so any copy supplies identical content but their edit times can differ. Taking the
+    /// maximum is order-independent and converges; taking only `source` could publish different stamps and
+    /// cause repeated overwrites.
     var contentUpdatedDate: Date?
 }
 
@@ -90,13 +88,11 @@ extension LocalStore {
         pinnedTabScopeIfReadable() ?? .profile
     }
 
-    /// 同一次读，但**读不出来就答 nil**，而不是把 `.profile` 这个失败默认值伪装成行的取值。
-    ///
-    /// 库没打开（兼容性预检拒绝、`requiresNewerApp`、`ModelContainer` 打不开）或读抛错时，
-    /// `pinnedTabScope()` 交的 `.profile` 对本机 UI 是个安全的显示默认值，对**账户级**决策
-    /// 却不是：把它当成行播种进镜像键，会在一个从没发布过作用域的账户上把 `.profile` 定成
-    /// 账户取值。同步层的写者因此走这一个口（`PinnedTabScopeMirror.reseed` 的 `rowValue`
-    /// 契约），读者那一侧 `AccountPhiPinnedTabAccess.accountScope()` 对镜像键做的是同一件事。
+    /// Read the scope, returning nil on failure instead of presenting `.profile` as a stored value. An
+    /// unopened/incompatible store or failed read can safely default UI display to `.profile`, but must not
+    /// seed an unpublished account's authoritative mirror with that fallback. Sync writers use this API
+    /// (`PinnedTabScopeMirror.reseed`'s `rowValue` contract); `AccountPhiPinnedTabAccess.accountScope()`
+    /// applies the same rule to mirror reads.
     @MainActor
     func pinnedTabScopeIfReadable() -> PinnedTabScope? {
         guard let context = mainContext else { return nil }
@@ -141,21 +137,18 @@ extension LocalStore {
             let settings = try self.browserDataSettings(in: context, createIfNeeded: true)
             settings?.pinnedTabScopeRawValue = newScope.rawValue
         }
-        // 本地 → 镜像（§7.1 第 2 步）。写在这里、在那次抛出写之后：迁移抛错时行没变，键也
-        // 不许变——键与行必须同生同死。
+        // Local → mirror (§7.1 step 2), only after the throwing write: if migration fails, neither row nor key
+        // may change.
         //
-        // **每一条不抛出的路径都写，包括上面 `guard currentScope != newScope` 那次空操作**
-        // （它 `return` 的是闭包，不是这个函数）。断言是「非抛出返回之后键 == 行」，而空操作
-        // 那一路行本来就等于 `newScope`，所以这次写是幂等的。它不是无条件安全的：镜像键正
-        // 押着一个**已落地、迁移尚未跑完**的账户值时（§7.1 第 3 步情形二），一个把目标定成
-        // 行当前值的调用会把那个账户值擦掉。两个生产调用方都先比过行才进来
-        // （`PhiChromiumCoordinator.applyAccountPinnedTabScope`、
-        // `SpacesSettingsView.requestPinnedTabScopeChange`），新调用方必须照做。
+        // Every nonthrowing path writes, including the `currentScope == newScope` no-op, which returns from
+        // the closure only. The postcondition is key == row. However, a no-op targeting the current row could
+        // erase an already-landed account value awaiting migration (§7.1 step 3, case 2). Both production
+        // callers (`applyAccountPinnedTabScope`, `requestPinnedTabScopeChange`) compare the row first; new
+        // callers must too.
         //
-        // 这是全仓库**唯一**一处刻意让 sidecar 落后于键值的地方——它是一次真实的用户（或
-        // 远端落地之后的重放）操作，下一轮 `SyncableSettings.snapshot` 本来就该把它判成本地
-        // 变更、盖上 `now` 发出去。远端落地那条路上值相同、sidecar 已由 `apply` 记下同一份
-        // signature，于是那一次重写不会被判成本地变更，链路收敛。
+        // This is the sole intentional write leaving the sidecar behind the key: a real user change or replay
+        // should be stamped and published by `SyncableSettings.snapshot`. For remote landing, `apply` already
+        // saved the same signature, so rewriting the identical value produces no echo.
         UserDefaults.standard.set(newScope.rawValue, forKey: PinnedTabScopeMirror.key)
     }
 
@@ -217,11 +210,9 @@ extension LocalStore {
         try applyPinnedTabOwner(owner, to: tab, in: context)
     }
 
-    /// 一对 `(profileId, spaceId)` 在某个作用域下坐出来的归属。
-    ///
-    /// 抽出来只为让同步层的批次入口能算出「这一条 create 之后要重排哪个 owner」，而不必
-    /// 把 `applyCurrentPinnedTabOwner` 里那个 switch 抄第二遍——两处分叉的后果是一批
-    /// create 之后那个 owner 的 index 不被重排，于是同一个集合里出现重复 index。
+    /// Owner for a `(profileId, spaceId)` pair at a given scope. Shared with the sync batch to identify the
+    /// owner requiring normalization after create; duplicating `applyCurrentPinnedTabOwner`'s switch could
+    /// miss an owner and leave duplicate indices.
     fileprivate static func pinnedTabOwner(for scope: PinnedTabScope,
                                            profileId: String,
                                            spaceId: String) -> PinnedTabOwner {
@@ -301,10 +292,9 @@ extension LocalStore {
         let allPinned = try context.fetch(FetchDescriptor<TabDataModel>(
             predicate: #Predicate { $0.type == pinnedRaw }
         ))
-        // `uniquingKeysWith` 而不是 `uniqueKeysWithValues`：`guid` 在 schema 上没有唯一
-        // 约束，所以一条重复行（见 `healDuplicatePinnedTabRowsBody`）会让后者直接 trap，
-        // 而这里跑在一次**写**事务里——一次崩溃换一次拆分伙伴反查，不划算。留第一条，与
-        // 别处按 guid 定位的读法（`pinnedTabRow(with:in:)`）同一个判据。
+        // Use `uniquingKeysWith`: schema GUIDs are not unique, so duplicate rows would trap
+        // `uniqueKeysWithValues` inside a write transaction. Keep the first row, matching
+        // `pinnedTabRow(with:in:)`; see `healDuplicatePinnedTabRowsBody`.
         let rowsByGuid = Dictionary(allPinned.map { ($0.guid, $0) },
                                     uniquingKeysWith: { first, _ in first })
         let sourceSignature = pinnedTabVariantSignature(for: source, rowsByGuid: rowsByGuid)
@@ -360,8 +350,8 @@ extension LocalStore {
         url: URL?,
         title: String?
     ) {
-        // 入口这一层的 no-op 守卫逐字保留：今天它在**排队之前**就返回，一次写都不入队、
-        // 一条日志都不记。共享 body 里那条同义的守卫因此永远不会被这条路径踩到。
+        // Preserve the entry-point no-op before enqueueing: it schedules no write and logs nothing, so this
+        // path never reaches the equivalent shared-body guard.
         guard url != nil || title != nil else { return }
         performBackgroundWrite { context in
             do {
@@ -372,11 +362,10 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9). 「guid 不在当前作用域」是
-    /// fail-closed 的设计、不是 bug，但对同步层必须可见：fire-and-forget 入口那条静默
-    /// `return` 与一次成功落地在调用方看来一模一样，于是引擎会为一次根本没发生的写入
-    /// 落下 `reconciled` / `server` 基线——那条行此后既不会被差分判成删除（它还在），
-    /// 也不会被快照重发（基线说它已同步）。
+    /// Throwing sibling used ONLY by sync (§4.9). A GUID outside the active scope must fail closed visibly:
+    /// the UI's silent return would look like successful landing and save `reconciled` / `server` for a write
+    /// that never occurred. The existing row would then be neither deleted by diff nor republished by
+    /// snapshot.
     func updateActivePinnedTabThrowing(
         guid: String,
         url: URL?,
@@ -394,7 +383,7 @@ extension LocalStore {
         title: String?,
         in context: ModelContext
     ) throws {
-        // 一个字段都没给是调用方的 bug，不是一次成功的空写。
+        // Supplying no fields is a caller bug, not a successful no-op.
         guard url != nil || title != nil else {
             throw LocalStoreWriteError.noCandidateSurvived
         }
@@ -408,8 +397,8 @@ extension LocalStore {
         guard pinnedTab(tab, belongsTo: try pinnedTabScope(in: context)) else {
             throw LocalStoreWriteError.rowNotInActiveScope
         }
-        // 赋值一律无条件执行，与今天逐字相同——把「值没变」做成跳过会连 `needUpdateMetaData`
-        // 一起跳过，那是 UI 行为的改变。`contentDidChange` 只决定 `contentUpdatedDate`。
+        // Keep assignments unconditional: skipping unchanged values would also skip `needUpdateMetaData` and
+        // alter UI behavior. `contentDidChange` controls only `contentUpdatedDate`.
         var contentDidChange = false
         if let url {
             if tab.url != url { contentDidChange = true }
@@ -421,9 +410,8 @@ extension LocalStore {
             tab.title = title
         }
         let now = Date()
-        // 只在内容字段真的变化时写（§4.9 第 0 条 / R-M3-3-26）：把标题改成同样文字的一次
-        // 保存，不该让这一行赢下对端的编辑。两个入口都写，因为一次本机 UI 编辑与一次远端
-        // 落地在「这一行的内容什么时候被改的」这件事上意义相同。
+        // Stamp only actual content changes (§4.9 item 0 / R-M3-3-26), so saving the same title cannot outrank
+        // a peer edit. Both local UI edits and remote landing use the same meaning of content-edit time.
         if contentDidChange {
             tab.contentUpdatedDate = now
         }
@@ -440,8 +428,7 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9)，理由同
-    /// `updateActivePinnedTabThrowing`。
+    /// Throwing sibling used ONLY by sync (§4.9), for the same reason as `updateActivePinnedTabThrowing`.
     func removeActivePinnedTabThrowing(guid: String) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
             try self.removeActivePinnedTabBody(guid: guid, in: context)
@@ -545,9 +532,9 @@ extension LocalStore {
             sourceRows: sourceRows,
             in: context
         )
-        // 留第一条，理由同 `activePinnedTab(resolving:…)`：`guid` 在 schema 上不唯一，
-        // 一条重复行会让 `uniqueKeysWithValues` 在**作用域迁移中途** trap。两条共享 guid
-        // 的行按构造 lineage 也相同，所以取哪一条的值都一样。
+        // Keep the first row, as in `activePinnedTab(resolving:…)`: schema GUIDs are not unique, and
+        // `uniqueKeysWithValues` would trap mid-migration. Rows sharing a GUID also share lineage by
+        // construction, so either gives the same value.
         let lineageByGuid = Dictionary(sourceRows.map { ($0.guid, $0.pinLineageId ?? $0.guid) },
                                        uniquingKeysWith: { first, _ in first })
 
@@ -746,15 +733,11 @@ extension LocalStore {
         return candidates
     }
 
-    // 合并键**只用可同步的字段**（R-M3-3-16）。
-    //
-    // favicon 曾经参与这个签名，而 `mergeCandidates` 只在签名相等时才合并同 lineage 的
-    // 两份副本。D9 让 favicon 留在设备本地并各自回填（spec §8），所以两台机器对同一条 pin
-    // 合法地持有**不同的**字节：同一次账户级作用域变更于是在 A 上合出 1 行、在 B 上合出
-    // 2 行，两台机器的 pin 数量从此不同，且各自都认为自己是对的——没有任何计数器会变色。
-    //
-    // 去掉之后两台机器从同一批可同步字段算出同一个结果；万一仍有残差，也只会以「多落一条
-    // 实体」的并集形式出现（两台都收到、都显示），而不会发散。
+    // Merge keys include only syncable fields (R-M3-3-16). Favicon bytes are device-local and independently
+    // backfilled under D9/spec §8. Including them could merge a lineage into one pin on one device but two on
+    // another after the same account scope change, silently diverging counts. Excluding them makes identical
+    // syncable inputs converge; any residual extra entities are a shared union rather than device-specific
+    // divergence.
     private func contentSignature(for tab: TabDataModel) -> PinnedTabContentSignature {
         PinnedTabContentSignature(
             title: tab.title,
@@ -792,19 +775,16 @@ extension LocalStore {
             model.layout = source.layout
             model.lastSeen = candidate.lastSeen
             model.icon = source.icon
-            // 内容编辑戳必须跟着搬过来（R-M3-3-26 加的这一列，迁移路径当时没跟上）。不搬的
-            // 话用户切一次作用域，本机每一条 pin 的比较戳就从「上次真实编辑」塌回
-            // `createdDate`，于是它们在下一轮全部输给对端任意一次旧编辑——一次作用域切换变成
-            // 一次账户级的内容回滚。取的是候选上那个**跨副本最大值**，不是 `source` 自己的
-            // 那一份，理由见 `PinnedTabMergeCandidate.contentUpdatedDate`。
+            // Carry the content-edit stamp through migration (R-M3-3-26). Otherwise scope changes reset
+            // comparison time to `createdDate`, allowing stale remote edits to overwrite every local pin. Use
+            // the maximum across candidate copies, not just `source`; see
+            // `PinnedTabMergeCandidate.contentUpdatedDate`.
             model.contentUpdatedDate = candidate.contentUpdatedDate
             model.pinLineageId = candidate.lineageId
-            // **先 insert，再碰任何关系**（与下面 `moveOrCreatePinnedTabBody` 同序）。
-            // `applyPinnedTabOwner` 会写 `model.profile`，而 `ProfileModel.tabs` 是它的
-            // inverse：在 model 还没进上下文时写这一笔，SwiftData 只能为 inverse 现造一个
-            // **空白替身**登记进去——六个必填列全是 nil 的 `TabDataModel`。它不会被这次
-            // save 之外的任何代码碰到，却会在此后**每一次** save 上被物化并整批校验失败
-            // （NSCocoaErrorDomain 1560），直到有人 rollback。
+            // Insert before touching relationships, matching `moveOrCreatePinnedTabBody`.
+            // `applyPinnedTabOwner` writes `profile`, whose inverse `ProfileModel.tabs` would otherwise
+            // register a blank placeholder with six missing required fields. Every later save then fails
+            // validation (NSCocoaErrorDomain 1560) until rollback.
             context.insert(model)
             try applyPinnedTabOwner(owner, to: model, in: context)
             targetModels.append(model)
@@ -824,55 +804,47 @@ extension LocalStore {
     }
 }
 
-// MARK: - 同步层的 pin 读写口（§4.8 / §4.9）
+// MARK: - Sync pin access (§4.8 / §4.9)
 //
-// 这一段整体住在本文件里，不在 `LocalStore.swift`：`pinnedTab(_:belongsTo:)`、
-// `owner(of:at:)`、`contentSignature(for:)` 这几个 helper 都是 `private`，而 Swift 的
-// `private` 只对**同一个文件**里的其它 extension 可见。
+// Keep this extension in this file: Swift's `private` helpers `pinnedTab(_:belongsTo:)`, `owner(of:at:)` and
+// `contentSignature(for:)` are accessible only to extensions in the same file.
 extension LocalStore {
-    /// 同步层每轮那**一次** pin fetch 的产物：快照与差分定义域出自同一批 models。
-    ///
-    /// 两者之间**没有第二个时刻**（L9）。跑两次查询的话，中间隔着至少一次 actor hop，
-    /// 期间用户取消固定一条 pin，同一轮里它会既在快照里（当成活的发布）又不在定义域里
-    /// （发 tombstone）。
+    /// The single pin fetch for a sync round supplies both snapshot and diff domains from the same models
+    /// (L9). Separate queries introduce an actor-hop race: a user unpin could make the same row live in the
+    /// snapshot but absent in diff, both publishing and tombstoning it in one round.
     struct PinSyncFetch {
-        /// 当前作用域内、**非休眠**的行，按 `(ownerKey, index, guid)` 有序——`allPins()`
-        /// 的来源。
+        /// Non-dormant rows in the current scope, sorted by `(ownerKey, index, guid)`, for `allPins()`.
         let active: [TabDataModel]
-        /// 同一批 fetch 里**未经作用域过滤**的非休眠行——`allPinRows()` 的来源
-        /// （R-exec-4）。差分与 §9.3 级联按**行**取这一份，各自按
-        /// `PinKind.identity(of local:)` 算出 `(lineage, owner)`（R-exec-11）。
+        /// Non-dormant rows from the same fetch, without scope filtering, for `allPinRows()` (R-exec-4). Diff
+        /// and §9.3 cascade operate per row and derive `(lineage, owner)` via `PinKind.identity(of local:)`
+        /// (R-exec-11).
         ///
-        /// **少一层过滤、多一层过滤各有理由，两条都是有意的：**
+        /// Scope filtering is deliberately absent: migration keeps source-scope physical rows as backups and
+        /// deletes only target-scope rows. Most backups remain non-dormant; not claiming them this round does
+        /// not mean the account should delete them. Filtering them would tombstone whole collections on scope
+        /// changes.
         ///
-        /// - 作用域过滤去掉了：一次作用域迁移把旧集合的物理行原地留下当备份
-        ///   （`migratePinnedTabs` 只删**目标**作用域的旧行），它们大多 `isPinnedTabDormant
-        ///   == false`。这些行在本机是真实存在的，只是同步层这一轮不认领它们。「同步层不
-        ///   认领它」与「账户应该忘掉它」是两句不同的话——后者的回答是给每一条游标发
-        ///   tombstone，一次作用域抖动就会删掉账户上整批 pin。
-        /// - 休眠过滤留着了：`PhiLocalPin.isDormant` 的契约明写「休眠行不进快照，也不参与
-        ///   差分」，于是「只剩休眠副本的 lineage」在差分眼里就是「本机没有这一行」并照常
-        ///   产出 tombstone（spec §12.1 的 8b 第一句）。
+        /// Dormancy filtering remains required: dormant rows participate in neither snapshot nor diff. A
+        /// lineage with only dormant copies is locally absent and emits a tombstone (spec §12.1, 8b opening
+        /// sentence).
         let nonDormant: [TabDataModel]
     }
 
-    /// 非休眠的**全部** pin 行，**未经作用域过滤**（带 `\.profile` 预取）。
-    ///
-    /// 两个调用方共用这一条判据，而且必须共用：`PinSyncFetch.nonDormant`（差分的定义域）与
-    /// §5.7 那条变化信号的值快照（`LocalStore.pinnedTabChangesPublisher`）问的是同一个问题
-    /// ——「本机现在有哪些 pin 行」。各写一遍就会走偏，而走偏的后果不对称：快照那边的行集合
-    /// 比差分那边**小**，就会有一类真实变化永远发不出信号。
+    /// All non-dormant pin rows without scope filtering, with `profile` prefetched. Share this predicate
+    /// between `PinSyncFetch.nonDormant` (diff domain) and `LocalStore.pinnedTabChangesPublisher` (§5.7). Both
+    /// ask which pins exist locally; a narrower notification snapshot would permanently suppress some real
+    /// changes.
     func nonDormantPinModels(in context: ModelContext) throws -> [TabDataModel] {
         let pinnedRaw = TabDataType.pinnedTab.rawValue
         var descriptor = FetchDescriptor<TabDataModel>(
             predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
         )
-        // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
+        // Owner derivation reads `profile?.profileId`; prefetch avoids a fault for each row.
         descriptor.relationshipKeyPathsForPrefetching = [\.profile]
         return try context.fetch(descriptor).filter { !$0.isPinnedTabDormant }
     }
 
-    /// 一次 fetch（带 `\.profile` 预取）+ 一次作用域读，其余全在内存里。
+    /// One fetch with `profile` prefetched and one scope read; all remaining work is in memory.
     func pinSyncFetch(in context: ModelContext) throws -> PinSyncFetch {
         let scope = try pinnedTabScope(in: context)
         let nonDormant = try nonDormantPinModels(in: context)
@@ -890,27 +862,22 @@ extension LocalStore {
         return PinSyncFetch(active: active, nonDormant: nonDormant)
     }
 
-    /// 启动时跑一次的自愈：把库里**已经存在**的重复 pin 行折叠掉。
+    /// One-time startup repair of existing duplicate pin rows.
     ///
-    /// 两类，各有一条判据：
+    /// 1. Shared GUIDs: the schema lacks uniqueness, so duplicate creates can persist (Mac B, 2026-09-14
+    /// 23:49: `landPins` emitted two creates for one identity with two steps). Repair at the store: sync
+    /// delete/move/A11 resolve only the first GUID match, and the sidebar's `guidInLocalDB` dictionary traps
+    /// on duplicates.
+    /// 2. Exact identity duplicates: identity is `(lineage, owner)` (§7.2). Match A11 collapse rule 1 and
+    /// merge only identical variant signatures. Preserve divergent variants; A11 mints new lineages for these
+    /// distinct user-visible pins.
     ///
-    /// 1. **共享 guid 的行。** `TabDataModelSchemaV9` 上 `guid` 不是唯一列，所以一次算错
-    ///    的落地能把同一个 guid 写进两条行（Mac B 2026-09-14 23:49：`landPins` 对一条
-    ///    带两条 step 的身份发了两遍 `.create`）。这一类**必须**在库这一层收拾：同步层每
-    ///    一种修复手段（A11 的折叠、`.delete`、`.move`）都按 guid 定位，而按 guid 定位只
-    ///    取得到其中一条；侧栏那本按 `guidInLocalDB` 建的字典则直接在重复键上 trap。
-    /// 2. **同一条身份的精确重复。** 身份是 `(lineage, owner)`（§7.2），判据与 A11 的
-    ///    ① 折叠逐字同源：只折叠**变体签名相同**的副本。内容分歧的变体不动——A11 给它们
-    ///    各铸一条新 lineage，那是用户看得见的两个固定标签页，删掉就是销毁数据。
+    /// Keep the smallest index, then earliest creation time, then enumeration order within this fetch. Dormant
+    /// rows participate only in GUID deduplication; identity collapse must not merge backups with active rows.
     ///
-    /// 幸存者判据固定且与 fetch 次序无关：`index` 最小的留下，平手取建得最早的，再平手
-    /// 按这一批的枚举次序。休眠行只参与第 ① 类——它们是作用域迁移留下的本地备份，不进
-    /// 快照也不参与差分，按身份折叠它们等于把备份和它的活动行并掉。
-    ///
-    /// **不重编号。** index 留下的空洞是无害的（每一个读者都按 index 排序、每一个写者都
-    /// 会重新稠密化），而在这里跨 owner 重编号要先知道当前作用域，风险远大于收益。
-    ///
-    /// R12：日志只有两个条数，没有任何 guid、标题或网址。
+    /// Do not renumber: index gaps are harmless to sorted readers and normalized writers; cross-owner
+    /// renumbering would unnecessarily require scope knowledge. R12 logs only two counts, never GUIDs, titles
+    /// or URLs.
     func healDuplicatePinnedTabRows() {
         performBackgroundWrite { context in
             do {
@@ -921,7 +888,7 @@ extension LocalStore {
         }
     }
 
-    /// 事务体。分出来是为了让用例能在一个已知形状的库上直接驱动它。
+    /// Transaction body exposed for tests against a store with known contents.
     @discardableResult
     func healDuplicatePinnedTabRowsBody(
         in context: ModelContext
@@ -930,12 +897,12 @@ extension LocalStore {
         var descriptor = FetchDescriptor<TabDataModel>(
             predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
         )
-        // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
+        // Owner derivation reads `profile?.profileId`; prefetch avoids a fault for each row.
         descriptor.relationshipKeyPathsForPrefetching = [\.profile]
         let rows = try context.fetch(descriptor)
         guard rows.count > 1 else { return (0, 0) }
 
-        /// 组内定序：幸存者排第一。
+        /// Order each group with the survivor first.
         func ordered(_ group: [(offset: Int, row: TabDataModel)])
             -> [(offset: Int, row: TabDataModel)] {
             group.sorted {
@@ -947,7 +914,7 @@ extension LocalStore {
             }
         }
 
-        // ① 共享 guid。**组键的遍历次序固定**，于是同一批行每次跑出同一个结果。
+        // 1. Shared GUIDs. Traverse group keys deterministically for repeatable results on the same rows.
         var byGuid: [String: [(offset: Int, row: TabDataModel)]] = [:]
         for (offset, row) in rows.enumerated() {
             byGuid[row.guid, default: []].append((offset: offset, row: row))
@@ -961,11 +928,11 @@ extension LocalStore {
             survivors.append(keeper)
             guard group.count > 1 else { continue }
             sharedGuid += group.count - 1
-            // 拆分伙伴的反向链接不用清：那个 guid 还在，它指着幸存的那一条。
+            // Keep split-partner backlinks: this GUID still exists and points to the survivor.
             doomed.append(contentsOf: group.dropFirst().map(\.row))
         }
 
-        // ② 同身份的精确重复，只看**幸存下来且非休眠**的那些行。
+        // 2. Exact identity duplicates among surviving, non-dormant rows only.
         let rowsByGuid = Dictionary(rows.map { ($0.guid, $0) },
                                     uniquingKeysWith: { first, _ in first })
         var byIdentity: [String: [(offset: Int, row: TabDataModel)]] = [:]
@@ -984,8 +951,8 @@ extension LocalStore {
             where pinnedTabVariantSignature(for: entry.row, rowsByGuid: rowsByGuid)
                 == keeperSignature {
                 sharedIdentity += 1
-                // 这一条的 guid 是随它一起消失的，所以指着它的伙伴链接必须先断开——
-                // 留着的话幸存者那一侧指向一条不存在的 guid。
+                // This GUID disappears with its row, so first clear partner links that would otherwise dangle
+                // from survivors.
                 try clearSplitPartnerBackReferenceBody(of: entry.row, in: context)
                 doomed.append(entry.row)
             }
@@ -998,17 +965,13 @@ extension LocalStore {
         return (sharedGuid: sharedGuid, sharedIdentity: sharedIdentity)
     }
 
-    /// 给同 owner 内的同 lineage 变体重铸 `pinLineageId`（§7.2 / A11）。
+    /// Remint `pinLineageId` for variants of one lineage under one owner (§7.2 / A11). Broader-scope migration
+    /// can leave active copies with divergent content: they are distinct user-visible pins, not physical
+    /// copies of one entity. Without new identities, the second variant cannot sync or be remotely deleted
+    /// despite healthy counters.
     ///
-    /// 「变宽」方向的迁移会在同一个 owner 下留下两条共享 lineage 的活动行（内容分歧的
-    /// 变体），而它们**不是**同一条实体的两个副本——它们是用户看得见的两个固定标签页。
-    /// 按「一条实体、多个物理副本」处理会留下一整类永远同步不了的行：第二个副本没有自己的
-    /// 身份，既到不了别的机器，也无法被别的机器删除，而每一个计数器都读健康值。
-    ///
-    /// 它是一次**本地写**，所以它属于那一轮的 `PinApplyBatch`、与落地同一个事务，
-    /// **不在 push 段那个只读的 pre-pass 里**（W14）。
-    ///
-    /// 没有 fire-and-forget 兄弟：没有任何 UI 路径会改一行的 lineage。
+    /// This local write belongs in the round's `PinApplyBatch`, in the landing transaction, never the
+    /// read-only push pre-pass (W14). No fire-and-forget sibling is needed: UI does not change lineage.
     func relineagePinnedTabThrowing(guid: String, newLineageId: String) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
             try self.relineagePinnedTabBody(guid: guid, newLineageId: newLineageId, in: context)
@@ -1027,32 +990,28 @@ extension LocalStore {
         guard let tab = try context.fetch(descriptor).first else {
             throw LocalStoreWriteError.rowNotFound
         }
-        // 分组的来源是那一轮 `pinSyncFetch(in:).active` 的结果，所以定义域一致：
-        // 作用域外的备份行与休眠行都不参与重铸。
+        // Match the grouping domain from `pinSyncFetch(in:).active`: out-of-scope backups and dormant rows do
+        // not receive new lineages.
         guard !tab.isPinnedTabDormant,
               pinnedTab(tab, belongsTo: try pinnedTabScope(in: context)) else {
             throw LocalStoreWriteError.rowNotInActiveScope
         }
         guard tab.pinLineageId != newLineageId else { return }
         tab.pinLineageId = newLineageId
-        // 身份不是内容：`contentUpdatedDate` 不碰（§4.9 第 0 条）。
+        // Identity is not content; leave `contentUpdatedDate` unchanged (§4.9 item 0).
         tab.updatedDate = Date()
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9)。比 fire-and-forget 入口多两个
-    /// 参数：`lineageId`（线上身份的一半，落地必须原样写回、不能重铸）与 `createdDate`
-    /// （`created_at_ms` 按 `min()` 合并之后要真的落到行上）。
+    /// Throwing sibling used ONLY by sync (§4.9). Additional parameters preserve `lineageId` from the wire and
+    /// persist the min-merged `createdDate` (`created_at_ms`). Accept `URL` directly, avoiding entry-point
+    /// parsing (§4.9 item 2).
     ///
-    /// `url` 收 `URL` 而不是 `String`，因此根本不经过入口那一步 `URL(string:)`（§4.9 第 2 条）。
+    /// `source` is `PhiPinTabEntity` field 8 (`TabSource` raw value), merged by preferring nonzero, then the
+    /// smaller nonzero value. Without it, landing would write 0 and later erase the peer's import source.
     ///
-    /// `source` 是 `PhiPinTabEntity` 的字段 8（`TabSource` 的 raw value），`PinKind.merge`
-    /// 按「取非零一侧、都非零取较小者」合并它。缺这个参数，一条远端 pin 落地时它只能落成
-    /// 默认值 0，下一轮的快照把 0 当成本机的值发回去，把对端记录的导入来源抹掉。
-    ///
-    /// `contentUpdatedDate` 同理（R-exec-5，与书签的 `BulkBookmarkInsert` 是同一件事）：
-    /// 缺它的话一条远端 pin 落地时那一列是 nil，下一轮快照拿 `contentUpdatedDate ??
-    /// createdDate` 当本机比较戳，取到的是**落地那一刻**的 `createdDate`，比对端真正的编辑
-    /// 时间晚得多——刚落地的那条 pin 于是在下一次字段冲突里凭「我比较新」赢下对端的真实编辑。
+    /// Likewise, carry `contentUpdatedDate` (R-exec-5, as in bookmark `BulkBookmarkInsert`). Without it,
+    /// snapshot fallback to `createdDate` could make a newly landed pin appear more recently edited than its
+    /// peer and incorrectly win the next conflict.
     func createPinnedTabThrowing(guid: String,
                                  url: URL,
                                  title: String,
@@ -1090,18 +1049,13 @@ extension LocalStore {
                              source: Int,
                              contentUpdatedDate: Date? = nil,
                              in context: ModelContext) throws {
-        // **guid 是一条 pin 行的物理主键，一条都不许重。**
+        // GUID is a pin row's physical identity and must not repeat. The schema has no unique constraint; a
+        // duplicate create succeeds silently, but move/update/delete resolve only the first match and the
+        // sidebar dictionary traps (Mac B, 2026-09-14 23:49, PinnedTabViewController.swift:601).
         //
-        // schema 没有替它建唯一约束（`TabDataModelSchemaV9` 上 `guid` 是普通一列），所以
-        // 一次带着已有 guid 的 create 在 store 这一层是成功的——它只是安静地多出一条行。
-        // 后果不是「多一条 pin」那么轻：`.move` / `.update` / `.delete` 三种操作都按 guid
-        // 取**第一条**匹配行，于是另一条此后既改不动也删不掉；侧栏那本按 `guidInLocalDB`
-        // 建的字典则在重复键上直接 trap（Mac B 2026-09-14 23:49，
-        // `PinnedTabViewController.swift:601`）。
-        //
-        // 拒收而不是去重：走到这里说明调用方算错了（同步落地那一支已经在
-        // `landPins` 里按身份收敛过一次）。`rowAlreadyMapped` 正是引擎那条「这一批算错了
-        // ⇒ 整批拒收」的分支认得的错误，于是一个字都不会落库。
+        // Reject instead of deduplicating: `landPins` already consolidated by identity, so reaching this guard
+        // is a caller bug. `rowAlreadyMapped` tells the engine to refuse the entire invalid batch without
+        // persisting anything.
         if try pinnedTabRow(with: guid, in: context) != nil {
             AppLogWarn("[LocalStore] Refused a pinned-tab create on an existing guid")
             throw LocalStoreWriteError.rowAlreadyMapped
@@ -1127,12 +1081,11 @@ extension LocalStore {
         model.isCreatedByChromium = false
         model.pinLineageId = lineageId ?? guid
         model.source = source
-        // nil 就留 nil：`PhiLocalPin.contentUpdatedDate` 的契约是「nil = 从未改过内容」，
-        // 拿 `now` 顶上去会把每一条本机新建的 pin 都伪装成刚被编辑过。
+        // Preserve nil: `PhiLocalPin.contentUpdatedDate` defines it as never edited. Substituting `now` would
+        // make every newly created local pin look edited.
         model.contentUpdatedDate = contentUpdatedDate
-        // 先 insert 再写归属，理由同 `insertPinnedTabs`：`applyCurrentPinnedTabOwner` 写的
-        // `model.profile` 会经 `ProfileModel.tabs` 这条 inverse 反向登记，此刻 model 还不在
-        // 上下文里的话，被登记进去的是一个必填列全空的替身。
+        // Insert before assigning ownership, as in `insertPinnedTabs`: `applyCurrentPinnedTabOwner` writes
+        // `profile`, whose inverse would otherwise register a placeholder with missing required fields.
         context.insert(model)
         do {
             try applyCurrentPinnedTabOwner(
@@ -1142,13 +1095,10 @@ extension LocalStore {
                 in: context
             )
         } catch {
-            // **归属写失败就把刚插进去的行撤掉。** insert 排到前面之后，这两句之间多了一个
-            // 出口；而这条 body 有一个 fire-and-forget 的调用方（`createPinnedTab`，它的
-            // `catch` 只记一行日志），于是 `perform` 会照常 save，把一条 `profile` /
-            // `profileId` / `spaceId` 全空的 pin 行提交下去。它在任何作用域下都查不出来，
-            // 却在 `PinKind` 眼里坐在 `"app"` 归属上——一条永远发得出去、永远回不来的垃圾。
-            // 走 throwing 调用方时这一句是多余的（`performThrowing` 会 rollback），但多余
-            // 好过只在一条路上正确。
+            // Remove the inserted row if ownership assignment fails. Fire-and-forget `createPinnedTab` only
+            // logs the error, so `perform` would otherwise save a pin with no profile/profileId/spaceId:
+            // invisible locally but permanently published under the app owner. Throwing callers also roll back
+            // via `performThrowing`; explicit deletion keeps both paths correct.
             context.delete(model)
             throw error
         }
@@ -1160,11 +1110,11 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9)。fire-and-forget 入口收的是一个
-    /// 活动 `Tab`，同步层手里没有；它在入口就把需要的四个值取出来，所以这里直接收那四个值。
+    /// Throwing sibling used ONLY by sync (§4.9). The fire-and-forget API extracts four values from an active
+    /// `Tab`; sync accepts those values directly.
     ///
-    /// `url` 是 `URL?` 而不是 `String?`：解析必须留在 create 分支里做，把它提到入口会让
-    /// 「URL 非法但行已存在」的那一次**移动**也失败，而今天它是成功的。
+    /// Accept `URL?` instead of `String?` and leave parsing on the create branch: moving an existing row must
+    /// still succeed when the supplied URL is invalid.
     func moveOrCreatePinnedTabThrowing(guid: String,
                                        lineageId: String?,
                                        title: String,
@@ -1188,10 +1138,9 @@ extension LocalStore {
 
     /// Single implementation shared by both entry points.
     ///
-    /// 三条今天「记一条 warning 然后 return」的守卫在这里各变成一次 `throw`：对同步层它们
-    /// 与成功落地无法区分，而引擎会为一次没发生的写落下基线（§4.9 / R-M3-3-14）。
-    /// fire-and-forget 包装捕获并记录，数据侧的行为因此一字不变——`performBackgroundWrite`
-    /// 不回滚，抛出点之前的改动照样落盘，与今天 `return` 时留下的状态逐字相同。
+    /// The three former warning-and-return guards throw so sync cannot record a baseline for an unapplied
+    /// write (§4.9 / R-M3-3-14). The fire-and-forget wrapper catches and logs; `performBackgroundWrite` still
+    /// saves pre-error changes without rollback, preserving its prior behavior.
     func moveOrCreatePinnedTabBody(guid tabGuid: String,
                                    lineageId tabLineageId: String?,
                                    title tabTitle: String,
@@ -1230,17 +1179,17 @@ extension LocalStore {
         }
 
         var tabToMove: TabDataModel
-        // 这一行是**这次调用新建**的，还是从库里取出来的既有行。归属写失败时只许撤掉前者：
-        // 删掉一条既有行会把用户一条好好的 pin 连带弄丢。
+        // Track whether this call created the row. On ownership failure, remove only a new row; deleting an
+        // existing row would destroy the user's pin.
         var didCreateRow = false
         let now = Date()
         if let resolvedTabGuid,
            let tabToMoveIndex = activePins.firstIndex(where: { $0.guid == resolvedTabGuid }) {
             tabToMove = activePins.remove(at: tabToMoveIndex)
         } else {
-            // 带 lineage 却解析不到活动行 = 这个 guid 属于**另一个**活动 owner，
-            // `activePinnedTab` 显式拒绝了它（§7.2）。换 owner 不是一次移动，是旧 tag 的
-            // tombstone 加新 tag 的 create。
+            // A supplied lineage with no active row means another active owner owns this GUID, which
+            // `activePinnedTab` rejects (§7.2). Owner changes are an old-tag tombstone plus a new-tag create,
+            // not a move.
             guard tabLineageId == nil else {
                 throw LocalStoreWriteError.rowNotInActiveScope
             }
@@ -1276,8 +1225,8 @@ extension LocalStore {
                 in: context
             )
         } catch {
-            // 理由同 `createPinnedTabBody`：`moveOrCreatePinnedTab` 是 fire-and-forget 的。
-            // **只撤本次新建的那一行**，移动路径上的既有行一个字都不碰。
+            // Like `createPinnedTabBody`, this has a fire-and-forget caller. Remove only a row created by this
+            // call; preserve existing rows on the move path.
             if didCreateRow { context.delete(tabToMove) }
             throw error
         }
@@ -1300,27 +1249,22 @@ extension LocalStore {
         }
     }
 
-    /// Throwing sibling used ONLY by the sync layer (§4.9)。落地一条 `split_partner_uuid`
-    /// 非空的 pin 时，两个方向的 `splitPartnerGuid` 必须在**同一个事务**里写完（§7.4）；
-    /// `reconcilePinnedSplitPartners()` 帮不上忙，它遍历的是活动窗口里的 `SplitGroup`，
-    /// 而一对由同步落地的拆分 pin 没有任何活动 group。
+    /// Throwing sibling used ONLY by sync (§4.9). For a nonempty `split_partner_uuid`, write both
+    /// `splitPartnerGuid` directions in one transaction (§7.4). `reconcilePinnedSplitPartners()` scans
+    /// active-window `SplitGroup`s, which newly landed split pins do not have.
     func updateTabSplitPartnerThrowing(_ guid: String, partnerGuid: String?) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
             try self.updateTabSplitPartnerBody(guid, partnerGuid: partnerGuid, in: context)
         }
     }
 
-    /// Single implementation shared by both entry points.
+    /// Single implementation shared by both entry points. An already-equal value is success and may advance
+    /// the baseline; a missing row is failure.
     ///
-    /// 「值已经是它了」不是失败：行的状态与请求一致，基线照写是正确的。「行不存在」才是。
-    ///
-    /// 定位**只**认 pin 行（M5）。原先它按 guid 匹配任何一条 `TabDataModel` 并取一个无序
-    /// fetch 的 `.first`，而 `pinnedTabRow(with:)` 的注释已经说明一条普通 tab 与一条 pin 可以
-    /// 共享 guid 空间。落地批次是这个 body 的新调用方，把一条普通 tab 的 `splitPartnerGuid`
-    /// 改写会让它在下一轮的 pin 快照里凭空出现。**UI 行为逐字不变**：`updateTabSplitPartner`
-    /// 的每一个既有调用点（`BrowserState+Split.swift:309-310, 852-853, 900-904`、
-    /// `BrowserState.swift:3217, 5906-5907`）的 guid 都是从 `pinnedTabs` 里取的，本来就只会是
-    /// pin 行。
+    /// Resolve only pin rows (M5). Ordinary tabs may share the GUID space; matching any `TabDataModel` could
+    /// rewrite a normal tab's split partner and introduce it into a pin snapshot. Existing UI callers already
+    /// obtain GUIDs from `pinnedTabs`, preserving their behavior (BrowserState+Split.swift:309-310, 852-853,
+    /// 900-904; BrowserState.swift:3217, 5906-5907).
     func updateTabSplitPartnerBody(_ guid: String,
                                    partnerGuid: String?,
                                    in context: ModelContext) throws {
@@ -1337,25 +1281,19 @@ extension LocalStore {
         tab.updatedDate = Date()
     }
 
-    // MARK: - 一轮远端落地的批次入口（R-exec-2 的 pin 版）
+    // MARK: - Remote landing batch entry (pin counterpart of R-exec-2)
 
-    /// 一轮远端落地的**全部** pin 操作，一个写块、一个事务。
+    /// Apply all pin operations from one remote round in one write block and transaction. `PinApplyBatch`
+    /// orders create/relineage/move → update → delete; never reorder here.
     ///
-    /// `ops` 已由 `PinApplyBatch` 排好序（① create / relineage / move ② update ③ delete），
-    /// 这里**一条都不重排**。
+    /// Do not compose throwing helpers (R-exec-2): each starts its own serialized write, creating partial
+    /// success across N transactions; nesting them deadlocks. Keep this entry in the same file as the private
+    /// shared bodies.
     ///
-    /// **不能由那几个 throwing 兄弟拼出来**（R-exec-2，与书签同一条理由）：它们各自开一个
-    /// `performBackgroundWriteAndWaitThrowing` 块，N 条操作就是 N 个事务，部分成功于是成立
-    /// ——引擎会为一批只落了一半的操作写下基线；而把它们套进这一个块里则会在串行写流上
-    /// 自锁。共享的 body 是本文件的 `private`，所以这个入口住在**本文件**，不在同步层。
-    ///
-    /// 块内两件事与书签那边逐条对应：
-    /// 1. **导入锁在写块内部再读一次**（§4.9 第 3 条）。轮首那次读只是优化，「读完之后导入
-    ///    才开始」那个边沿只有在事务里重读才挡得住。占用中就整批抛 `spaceImporting`，事务
-    ///    回滚，引擎下一轮重试。
-    /// 2. **末尾按被触及的每个 owner 跑一次 index 重排**。pin 是**按 owner 分组**的，不是
-    ///    按父——它没有父。一批操作可能反复动同一个 owner，每条各自那次重排只保证它自己
-    ///    那一刻是稠密的。
+    /// Recheck import locks inside the transaction (§4.9 item 3), covering imports started after the
+    /// round-start read. Throw `spaceImporting` to roll back and retry the entire batch. Finally normalize
+    /// each touched owner once: pins group by owner, not parent, and per-operation dense ordering alone cannot
+    /// ensure the final result.
     func applyPinSyncBatchThrowing(_ ops: [PinApplyOp]) async throws {
         guard !ops.isEmpty else { return }
         try await performBackgroundWriteAndWaitThrowing { context in
@@ -1363,23 +1301,22 @@ extension LocalStore {
         }
     }
 
-    /// 事务体。分出来只为可读性，没有第二个调用方。
+    /// Transaction body, extracted solely for readability; it has one caller.
     private func applyPinSyncBatchBody(_ ops: [PinApplyOp], in context: ModelContext) throws {
         try refuseIfImportingPins(ops, in: context)
 
         let scope = try pinnedTabScope(in: context)
-        // 被触及的 owner，末尾统一重排一次。**记归属值，不记 model**：同一批里一条行被删
-        // 之后再读它的属性是未定义的。
+        // Record owner values for final normalization, not models: reading a deleted row's properties later in
+        // the batch is undefined.
         var touchedOwners = Set<PinnedTabOwner>()
 
         for op in ops {
             switch op {
             case .create(let row):
-                // 四个参数一律**显式**传（§4.9 / R-exec-5）：`lineageId` 为 nil 会让 body
-                // 自己铸一个新的 lineage，于是刚从账户落地的那条 pin 拿到一个线上没有的
-                // 身份，下一轮被差分判成「本机新建」再发一次，账户上多出一条重复实体；
-                // `source`、`createdDate` 与 `contentUpdatedDate` 同理会把对端记录的值抹成
-                // 默认值，而最后那一个抹掉之后，这条 pin 下一轮的本机比较戳回落到落地时刻。
+                // Explicitly pass all four values (§4.9 / R-exec-5). A nil `lineageId` would mint a new
+                // identity and republish the landed pin as a duplicate. Defaults for `source`, `createdDate`
+                // or `contentUpdatedDate` would erase remote values; losing the edit stamp also resets
+                // comparison time to landing time.
                 let profileId = row.profileId ?? Self.defaultProfileId
                 let spaceId = row.spaceId ?? Self.defaultSpaceId
                 try createPinnedTabBody(guid: row.guid,
@@ -1398,7 +1335,8 @@ extension LocalStore {
                                                          spaceId: spaceId))
 
             case .relineage(let guid, let newLineageId):
-                // 身份不是位置：重铸不动 index，所以这一条不进 `touchedOwners`。
+                // Identity is not position: reminting leaves index unchanged and does not add to
+                // `touchedOwners`.
                 try relineagePinnedTabBody(guid: guid,
                                            newLineageId: newLineageId,
                                            in: context)
@@ -1410,8 +1348,8 @@ extension LocalStore {
                 guard pinnedTab(tab, belongsTo: scope) else {
                     throw LocalStoreWriteError.rowNotInActiveScope
                 }
-                // 「值已经是它了」不是失败，也不该盖 `updatedDate`。`contentUpdatedDate`
-                // 一律不动：位置不是内容（§4.9 第 0 条）。
+                // An equal value is success and needs no `updatedDate` stamp. Never change
+                // `contentUpdatedDate` for position (§4.9 item 0).
                 if tab.index != index {
                     tab.index = index
                     tab.updatedDate = Date()
@@ -1419,23 +1357,20 @@ extension LocalStore {
                 touchedOwners.insert(owner(of: tab, at: scope))
 
             case .update(let guid, let fields):
-                // 外层「改不改」，内层「改成什么」。`title` 的内层 nil 是「清空」——远端真
-                // 的可以有一条空标题的 pin；`url` 的内层 nil 是「不动」：一条 pin 丢不掉
-                // 它的 URL。
+                // Outer optional selects whether to change; inner optional selects the value. A nil inner
+                // title clears it; a nil inner URL leaves it unchanged, since pins cannot lose their URL.
                 let title = fields.title.map { $0 ?? "" }
                 let url = fields.url.flatMap { $0 }
                 let changesSplitPartner = fields.splitPartnerLineageId != nil
-                // 一条什么都不改的补丁是调用方的 bug，不是一次成功的空写（M4）。判据是
-                // **生效之后的**三个值，不是三个外层可选：`url` 的外层 some、内层 nil 表达
-                // 的是「不动」，所以只带它的一条补丁同样什么都不改。这是批次里唯一一处
-                // 「不抛错」曾经不等于「真的落地了」的地方，而 §4.9 的整套保证就建立在那
-                // 句等价上。
+                // A patch with no effective change is a caller bug (M4). Check the three resolved values, not
+                // outer optionals: a present URL unit with nil inside means unchanged too. The §4.9 baseline
+                // guarantee requires nonthrowing completion to mean actual landing.
                 guard title != nil || url != nil || changesSplitPartner else {
                     throw LocalStoreWriteError.noCandidateSurvived
                 }
                 if title != nil || url != nil {
-                    // 两个字段都没给时**不调**：共享 body 把那当成调用方的 bug 并抛
-                    // `noCandidateSurvived`，而这里它只是「这一条补丁只动了拆分伙伴」。
+                    // Call only if title or URL is supplied: the shared body throws `noCandidateSurvived`
+                    // otherwise, but a split-partner-only patch is valid here.
                     try updateActivePinnedTabBody(guid: guid, url: url, title: title, in: context)
                 }
                 if let partnerLineageId = fields.splitPartnerLineageId {
@@ -1448,21 +1383,19 @@ extension LocalStore {
                 guard let tab = try pinnedTabRow(with: guid, in: context) else {
                     throw LocalStoreWriteError.rowNotFound
                 }
-                // 先记归属再删：删掉之后这条 model 的属性读起来是未定义的。
+                // Capture ownership before deletion; reading a deleted model is undefined.
                 touchedOwners.insert(owner(of: tab, at: scope))
-                // 对半的反向链接在**同一个事务**里断掉（M6）。UI 路径从来配不出这一幕——它
-                // 删一对拆分 pin 时两条一起删——但引擎会按 §7.2 只删一条（对端取消固定了
-                // 其中一半）。留着那条链接，幸存的那一行就指着一条不存在的 guid：
-                // `pinnedTabVariantSignature` 拿不到伙伴、作用域迁移把它当成一条普通 pin
-                // 合并，而 UI 的合并单元格会去渲染一个查不到的对半。
+                // Clear the other half's backlink in the same transaction (M6). UI deletes split pins
+                // together, but §7.2 sync may remove one half after remote unpinning. A dangling GUID would
+                // confuse variant signatures, scope migration and the merged UI cell.
                 try clearSplitPartnerBackReferenceBody(of: tab, in: context)
                 try removeActivePinnedTabBody(guid: guid, in: context)
             }
         }
 
-        // §4.10 的投影按 owner 运行一次。`!$0.isDeleted` 与书签那边同一条理由：带待定变更
-        // 的 fetch 会不会把同一个块里刚 `context.delete` 标过的行滤掉，取决于一条本里程碑
-        // 没有跑过的 SwiftData 语义，而把一条死行编进号会在那个集合里留下一个空位。
+        // Normalize once per owner (§4.10). Explicitly exclude `isDeleted` rows, as for bookmarks:
+        // pending-change fetch filtering was not runtime-tested in this milestone, and numbering a deleted row
+        // would leave an index gap.
         for touched in touchedOwners.sorted(by: { $0.sortKey < $1.sortKey }) {
             let rows = try pinnedTabs(profileId: touched.profileId ?? Self.defaultProfileId,
                                       spaceId: touched.spaceId ?? Self.defaultSpaceId,
@@ -1473,11 +1406,9 @@ extension LocalStore {
         }
     }
 
-    /// 稠密重编号。与书签那边的 `normalizeIndexes(for:)` 逐字同义——那一个住在
-    /// `LocalStore+Bookmark.swift` 的 `private extension` 里，跨文件够不着。
-    ///
-    /// **只在 `index` 真的不同时才写**：无条件赋值会给整个集合盖一遍 `updatedDate`，而一次
-    /// 本机重排本来只该动真正换了位置的那几行。
+    /// Dense renumbering, equivalent to bookmark `normalizeIndexes(for:)`, whose private extension is
+    /// inaccessible here. Write only changed indices: unconditional assignments would stamp the entire
+    /// collection's `updatedDate` instead of only moved rows.
     private static func normalizePinnedIndexes(for rows: [TabDataModel]) {
         for (position, row) in rows.enumerated() where row.index != position {
             row.index = position
@@ -1485,13 +1416,9 @@ extension LocalStore {
         }
     }
 
-    /// 本批次碰到的任何一个 Space 正在被导入 ⇒ 整批不落地（§4.9 第 3 条）。
-    ///
-    /// 四种按 guid 定位的操作身上只有 guid，所以它们的 Space 在**事务内**按行查，而不是让
-    /// 调用方从一份轮首的快照里猜——那份快照到这一刻可能已经过期。
-    ///
-    /// Profile / App 作用域的 pin 没有 Space，那两种作用域下这道闸恒不触发，这是对的：
-    /// `ImportTargetLock` 锁的是一个 Space。
+    /// Refuse the entire batch if any touched Space is importing (§4.9 item 3). Resolve Spaces for all four
+    /// GUID-addressed operations inside the transaction, not from a potentially stale round-start snapshot.
+    /// Profile/App pins have no Space and correctly bypass this Space-scoped `ImportTargetLock`.
     private func refuseIfImportingPins(_ ops: [PinApplyOp], in context: ModelContext) throws {
         var spaceIds = Set<String>()
         for op in ops {
@@ -1506,26 +1433,21 @@ extension LocalStore {
             }
         }
         for spaceId in spaceIds.sorted() where ImportTargetLock.shared.isImporting(into: spaceId) {
-            // 与 `targetNotWritable` 分开：导入是**瞬时**状态，引擎该停放重试，而不是把它
-            // 当成一次结构性失败。`sorted()` 只为让多个 Space 同时在导入时报出去的是同一
-            // 个，不随 Set 的迭代顺序变。
+            // Importing is transient, unlike `targetNotWritable`: park and retry instead of treating it as
+            // structural failure. Sort to report a deterministic Space when several imports are active.
             throw LocalStoreWriteError.spaceImporting(spaceId: spaceId)
         }
     }
 
-    /// 落地一条 `split_partner_uuid`：解析得出就把**两个**方向写在同一个事务里（§7.4 / I11）。
+    /// Land `split_partner_uuid`, writing both directions in one transaction when resolvable (§7.4 / I11).
     ///
-    /// **伙伴解析不出来不是失败**（§7.4 落地规则 3）：本地链接留 nil，由引擎在游标上记
-    /// `pendingPartnerLineage`，伙伴落地的那一轮再把两个方向补齐。在这里抛错是错的——整个
-    /// 批次是一个事务，于是「一对拆分 pin 只到了一半」这个 §7.4 视为**常态**的情形会把同一
-    /// 轮里其余每一条 pin 操作一起回滚；基线永不写下、同一批每轮重放，pin 段就此停摆。
+    /// An unresolved partner is not failure (§7.4 landing rule 3): leave the local link nil and let the engine
+    /// record `pendingPartnerLineage`, then repair both directions when the partner lands. Throwing would roll
+    /// back every pin operation for this normal half-arrived state and block progress indefinitely.
     ///
-    /// 「伙伴行存在、但坐在另一个 owner 里」按同一条处理：§7.4 说一对拆分必然同 owner，所以
-    /// 那是一条畸形载荷，该由 §4.6 去拒收或停放，而不是由一次本机写失败来表达。跨 owner 匹配
-    /// 更会把两个 Space 里两条同 lineage 的 pin 链成一对。
-    ///
-    /// `reconcilePinnedSplitPartners()` 帮不上忙：它遍历的是活动窗口里的 `SplitGroup`，而
-    /// 一对由同步落地的拆分 pin 没有任何活动 group。
+    /// Treat a partner under another owner as unresolved too. Split pairs must share an owner (§7.4); §4.6
+    /// rejects/parks malformed payloads, and cross-owner matching could join pins in unrelated Spaces.
+    /// `reconcilePinnedSplitPartners()` cannot help because landed pins have no active-window `SplitGroup`.
     private func applyPinSplitPartnerBody(guid: String,
                                           partnerLineageId: String?,
                                           in context: ModelContext) throws {
@@ -1546,16 +1468,15 @@ extension LocalStore {
                 scope: scope,
                 in: context
             )
-            // **一律过 `lineageKey`**：本机那一列存的可能是 `UUID().uuidString`（大写）或
-            // 一条回落成 guid 的旧值，而补丁里的 lineage 是线上归一过的小写。直接比恒为假，
-            // 于是每一条拆分 pin 都永远链不上、永远停在「等伙伴」那一格。
+            // Normalize through `lineageKey`: local values may be uppercase UUIDs or legacy GUID fallbacks,
+            // while wire lineages are lowercase. Direct comparison would leave split pins waiting forever.
             resolvedPartnerGuid = siblings.first {
                 $0.guid != guid && PinKind.lineageKey($0.pinLineageId ?? $0.guid) == wanted
             }?.guid
         }
 
-        // 旧伙伴的反向链接先断，否则它会一直指着一条已经改配的行。只在它**确实**回指本行
-        // 时才动：另一条正常的拆分对不该被这次改配波及。
+        // Clear the old partner's backlink only if it actually points to this row, preserving unrelated split
+        // pairs after reassignment.
         if let previous = tab.splitPartnerGuid,
            previous != resolvedPartnerGuid,
            let previousRow = try pinnedTabRow(with: previous, in: context),
@@ -1568,10 +1489,8 @@ extension LocalStore {
         }
     }
 
-    /// 断掉**回指**这一行的那条链接，同一个事务。`.delete` 在移除一条拆分 pin 之前调它。
-    ///
-    /// 只在伙伴**确实**回指本行时才写：一条单向的陈旧链接（对端已经改配给别人）不该被这次
-    /// 删除顺手改掉，那会把另一对正常的拆分拆散。
+    /// Clear the link pointing back to this row in the same transaction before split-pin deletion. Write only
+    /// if the partner still references this row; a stale one-way link must not break the partner's new pair.
     private func clearSplitPartnerBackReferenceBody(of tab: TabDataModel,
                                                     in context: ModelContext) throws {
         guard let partnerGuid = tab.splitPartnerGuid, partnerGuid != tab.guid,
@@ -1582,9 +1501,8 @@ extension LocalStore {
         try updateTabSplitPartnerBody(partnerGuid, partnerGuid: nil, in: context)
     }
 
-    /// 按 guid 定位一条 **pin** 行。`bookmarkNode(with:)` 那种「匹配任何 `TabDataModel`」
-    /// 在这里是错的：一条普通 tab 与一条 pin 可以共享 guid 空间，而把一条 tab 当成 pin
-    /// 改写会让它在下一轮快照里凭空出现。
+    /// Resolve only a pin row by GUID. Ordinary tabs may share GUID space; matching any `TabDataModel` as
+    /// `bookmarkNode(with:)` does could rewrite a tab and introduce it into the next pin snapshot.
     private func pinnedTabRow(with guid: String,
                               in context: ModelContext) throws -> TabDataModel? {
         let pinnedRaw = TabDataType.pinnedTab.rawValue

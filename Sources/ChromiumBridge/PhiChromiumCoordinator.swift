@@ -132,32 +132,30 @@ import SwiftUI
     /// SwiftData cannot see them.
     private var phiSpacesCancellable: AnyCancellable?
 
-    // MARK: - Phi 归属项同步（M3-3）
+    // MARK: - Phi owned-item sync (M3-3)
     //
-    // 书签与 pin 的本地变化触发（§5.7）。与上面的 Space 段同一条命：同一个引擎、同一个
-    // `startPhiSyncIfReady()` 挂起、同一个 `stopPhiSync()` 拆除。
+    // Local bookmark and pin changes (§5.7) share the Space sync lifecycle: the same engine, setup in
+    // `startPhiSyncIfReady()`, and teardown in `stopPhiSync()`.
 
-    /// 整账户书签编辑 -> 一轮归属项推送（§5.7）。上游是 `LocalStore.bookmarkChangesPublisher()`，
-    /// 防抖与取值快照去重都在它里面（防抖必须在投影之前），所以这里是一条裸 `sink`。
+    /// Account-wide bookmark edits trigger an owned-item push (§5.7). `LocalStore.bookmarkChangesPublisher()`
+    /// debounces before projection and deduplicates value snapshots, so this is a plain `sink`.
     ///
-    /// 一次远端落地也会写本地行、必然触发这条订阅，与 Space 侧是同一条论证：落地已经在同
-    /// 一轮写好基线，随之而来的推送轮比下来零字段变化 ⇒ 零提交、零本地写 ⇒ 没有第二次
-    /// 发射。图标回填（§8）走的是不进快照的字段，所以它连这条订阅都到不了。
+    /// Remote landing also triggers this subscription, but saves the baseline in the same round: the next push
+    /// finds no field changes, commits or local writes, so emits no second notification. Favicon backfill (§8)
+    /// changes fields excluded from the snapshot and never reaches this subscription.
     private var phiBookmarksCancellable: AnyCancellable?
-    /// 整账户 pin 编辑 -> 一轮归属项推送（§5.7）。形状同上。
+    /// Account-wide pin edits trigger an owned-item push (§5.7), as above.
     private var phiPinnedTabsCancellable: AnyCancellable?
-    /// 整账户 URL Rule 编辑 -> 一轮归属项推送（M3-4a §6.5）。形状同上；上游是 store 级的
-    /// `LocalStore.urlRuleChangesPublisher()`，**不是** UI 那条 `urlRulesPublisher()`。
+    /// Account-wide URL Rule edits trigger an owned-item push (M3-4a §6.5) via the store-level
+    /// `LocalStore.urlRuleChangesPublisher()`, not the UI `urlRulesPublisher()`.
     private var phiURLRulesCancellable: AnyCancellable?
-    /// 两条订阅要把各自 kind 的 `label` 交给引擎，而 `label` 是注册清单的唯一键
-    /// （`OwnedKindRegistration.label`）。注册项在引擎构建那一处建，订阅在
-    /// `startPhiSyncIfReady()` 里挂，所以把 label 从前者带到后者，而不是在第二处重写一遍
-    /// 字面量——重写的那一份会在改名时静默失配，而失配的后果只是日志里少一行，没有任何
-    /// 东西会报错。与引擎同生共死。
+    /// Subscriptions pass the kind's `label`, the unique `OwnedKindRegistration` key, to the engine. Carry
+    /// labels from engine construction to `startPhiSyncIfReady()` instead of repeating literals: a renamed
+    /// duplicate would silently mismatch, merely losing a log entry. Labels share the engine lifetime.
     private var phiBookmarkKindLabel: String?
-    /// 同上，pin 那一条。
+    /// The corresponding pin registration label.
     private var phiPinKindLabel: String?
-    /// 同上，URL Rule 那一条（M3-4a）。
+    /// The corresponding URL Rule registration label (M3-4a).
     private var phiURLRuleKindLabel: String?
 
     /// Coalescing window for local edits. A settings pane can write several keys in a row
@@ -210,41 +208,36 @@ import SwiftUI
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
         let spaceMappingStore = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
         let spaceKeys = SpaceSyncMappingManager(store: spaceMappingStore)
-        // M3-2b §3.6：M3-2 未发布，所以不写迁移代码。盘上是一张 formatVersion < 2 的
-        // 表（或一坨解不开的字节）⇒ 整张丢掉，并让配对向导在这台升级过的开发机上跑
-        // 一次。这里正是 `PhiSpaceSyncState` 文档里「没有引擎时主线程可以直接碰
-        // store」那条例外（PhiSpaceSyncState.swift:256-262）：store 刚构造、引擎还
-        // 不存在、当前就在主 actor 上。空表之后的自愈是既有机制，不新增
-        // （`hasDrainedFullReplay == false` ⇒ 门开边沿丢 marker、重放整个 data type）。
-        // `joinPairingPending` 一律经 `ProfilePairingGate` 那个唯一读写口（P2）。
+        // M3-2b §3.6: M3-2 was unreleased, so discard formatVersion < 2 or undecodable tables and rerun
+        // pairing on upgraded development machines. This is the documented main-actor store-access exception
+        // (PhiSpaceSyncState.swift:256-262): the store was just created and no engine exists. Existing
+        // recovery handles the empty table (`hasDrainedFullReplay == false` drops the marker at gate opening
+        // and replays the type). Access `joinPairingPending` only through `ProfilePairingGate` (P2).
         if spaceStateStore.discardIfStaleFormat() {
             AppLogWarn("[phi-sync] space sync table discarded (format < \(PhiSpaceSyncTable.currentFormatVersion)); re-running the pairing wizard")
             ProfilePairingGate.joinPairingPending = true
         }
-        // M3-3 §3.5：归属项（书签 / pin）的两张 per-kind 游标表，落在账户目录下
-        // （`<App Support>/Phi/users/<userID>/sync/`），所以切账户与账户重置零清理，也不必
-        // 进 `PhiSyncEngine.stateKeys`。目录不存在时由 `FileOwnedItemStateStore.save` 顺手
-        // 建（`withIntermediateDirectories: true`），两条 kind 走同一条路。
+        // M3-3 §3.5: per-kind bookmark and pin cursor tables live in `<App Support>/Phi/users/<userID>/sync/`.
+        // Account switches/resets need no cleanup or `PhiSyncEngine.stateKeys` entries;
+        // `FileOwnedItemStateStore.save` creates intermediate directories for both kinds.
         //
-        // **建在这里、而不是等 `buildPhiSyncEngine`**：§9.1 的自撤销要删的正是这两个 store
-        // 指着的文件，而那一步与引擎建不建得起来无关——读不到设备密钥的会话里
-        // `buildPhiSyncEngine` 在它自己那道 guard 上就返回了，而「离开账户」照样得做干净。
-        // 两处因此共用同一批对象，绝不各建一份。
+        // Create these stores here, before `buildPhiSyncEngine`: self-revocation (§9.1) must delete their
+        // files even when unavailable device keys prevent engine construction. Both paths must share these
+        // objects.
         let syncDirectory = account.userDataStorage.appendingPathComponent("sync")
         let bookmarkAccess = AccountPhiBookmarkAccess(account: account)
         let bookmarkStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
         let pinStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
-        // M3-4a：URL Rule 的游标表，第三张、同一个目录，字段集与另两张逐字相同（§3.5）。
-        // 进 `ownedItemStores`（§9.1 的自撤销删它的文件），但**不进** `clearAllSyncIds`——
-        // 理由见下面那个闭包旁的注释（§4.4 末两段）。
+        // M3-4a: the third cursor table, for URL Rules, shares the directory and schema (§3.5). Include it in
+        // `ownedItemStores` for self-revocation file deletion (§9.1), but not `clearAllSyncIds`; see the
+        // closure below (§4.4, final two paragraphs).
         let urlRuleStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("urlrules-cursors.json"))
-        // M3-4a §2.10：共享进度 marker 与 store birthday 也落在同一个目录（`marker.json`），
-        // 于是一次用户数据导入把库、游标表与 marker 一起回退。**同样建在这里、而不是等
-        // `buildPhiSyncEngine`**：§4.4 的自撤销要删的正是它指着的文件，而那一步与引擎建不建
-        // 得起来无关——controller 与引擎共用这一个对象。
+        // M3-4a §2.10: shared progress marker and store birthday live in `marker.json` alongside the tables,
+        // so user-data import rolls them back together. Create it before engine construction: self-revocation
+        // (§4.4) must delete the file even without an engine. Controller and engine share this object.
         let markerStore = FilePhiSyncMarkerStore(
             fileURL: syncDirectory.appendingPathComponent("marker.json"))
         syncKeyController = SyncKeyController(
@@ -278,18 +271,17 @@ import SwiftUI
             deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
             engineDefaults: UserDefaults.standard,
             spaceStateStore: spaceStateStore,
-            // M3-3 §9.1 的两步。store 数组给「先删三个游标文件」那一半；闭包给「后清
-            // `syncId`」那一半，窄成一个函数、与 `notifyChromium` 同形，于是 controller
-            // 仍然既不持 `Account` 也不持 `LocalStore`。
+            // M3-3 §9.1: first delete the three cursor files via the store array, then clear `syncId` via a
+            // narrow closure like `notifyChromium`. The controller retains neither `Account` nor `LocalStore`.
             ownedItemStores: [bookmarkStore, pinStore, urlRuleStore],
-            // §4.4：自撤销第 4 步多删一次 `marker.json`。
+            // §4.4: self-revocation step 4 also deletes `marker.json`.
             markerStore: markerStore,
-            // **只清书签的 `syncId`，规则的不清**（M3-4a §4.4 末两段）：规则的 `syncId` 在
-            // 插入点铸造（R-M3-4a-23），清空之后下一次写入重铸一个**新的**，重新加入时账户上
-            // 那些旧身份没有任何设备认领 ⇒ 孤儿实体；而规则的认领只对**从未发布**的行成立
-            // （R-M3-4a-53），D30 救不了。留着 `syncId` 正好让重新加入时每条规则经「报损重放
-            // + 按身份匹配本机行」认回它自己那条实体（游标文件已经删掉）。
-            // `PhiURLRuleLocalAccess` 因此没有、也不许有 `clearAllSyncIds` 这个成员。
+            // Clear only bookmark `syncId`, never rule identities (M3-4a §4.4, final two paragraphs). Rule
+            // identities are minted on insertion (R-M3-4a-23); clearing them would mint new identities and
+            // orphan the old account entities on rejoin. Claiming only applies to never-published rules
+            // (R-M3-4a-53), so D30 cannot recover them. Keeping identities lets lost-state replay match each
+            // local row to its own entity after cursor deletion. `PhiURLRuleLocalAccess` must not expose
+            // `clearAllSyncIds`.
             clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
@@ -386,27 +378,22 @@ import SwiftUI
         if Self.resetPhiSyncCursorIfAccountChanged(accountId: accountId, defaults: defaults) {
             AppLogInfo("[phi-sync] dropped the previous account's settings cursor")
         }
-        // M3-4a §2.10 的一次性迁移：`phi.sync.marker` / `phi.sync.storeBirthday` 两个旧键
-        // 迁进账户目录的 `marker.json`。**次序**：紧跟在上面那次按账户归属的擦除之后——那次
-        // 擦除连两个旧键一起擦，否则一台迁移写失败的机器换账户之后会把上一个账户的残留迁进
-        // 新账户的文件（marker 是服务端按账户发的不透明 token，新账户按它要增量 = 永久漏收）。
-        // 这里正是 §2.10 点名的那扇窗口（`discardIfStaleFormat()` 的同款：store 刚构造、引擎
-        // 还不存在、主 actor 上），所以主线程直接碰 store 是合法的。写失败 ⇒ 不清键、下次启动
-        // 重来，迁移自己会记日志。
+        // M3-4a §2.10: migrate legacy `phi.sync.marker` / `phi.sync.storeBirthday` keys to account-scoped
+        // `marker.json` AFTER the account-ownership reset above, which also removes these keys. Otherwise a
+        // failed migration followed by an account switch could import the old account's opaque token and
+        // permanently miss updates. Like `discardIfStaleFormat()`, this permitted main-actor window precedes
+        // engine construction. Failure keeps the keys for a logged retry next launch.
         PhiSyncMarkerMigration.migrateLegacyMarker(from: defaults, into: markerStore)
 
-        // M3-3 §7.1 第 3 步：挂载账户时重新播种 pin 作用域的镜像键（R-M3-3-8）。这里正是
-        // 「`LocalStore` 已打开、引擎尚未启动」的那一点，而 `reseed` 是个纯函数，所以协调器
-        // 只负责按它的结论决定跑不跑迁移。
+        // M3-3 §7.1 step 3: reseed the pin-scope mirror when mounting the account, after `LocalStore` opens
+        // and before engine startup (R-M3-3-8). `reseed` is pure; the coordinator acts on its migration
+        // decision.
         //
-        // 镜像键住在 `UserDefaults.standard`、按账户**不**分域，而作用域那一行每账户一份，
-        // 所以上面那次游标重置清不掉它——跨账户串扰恰恰是 `reseed` 的情形二要处理的。
-        //
-        // 落在设备密钥那条 guard **之后**：读不到设备密钥的那种会话里引擎根本建不起来，一次
-        // pin 迁移也就无从被任何一轮观察到；下次挂载账户时照样重播。
-        // `pinnedTabScopeIfReadable()`，不是 `pinnedTabScope()`：后者在库根本没打开时答
-        // `.profile`，而那个失败默认值一旦被当成行播种出去，就在一个从没发布过作用域的账户
-        // 上把 `.profile` 定成了账户取值。
+        // The mirror is in unscoped `UserDefaults.standard`, while scope rows belong to accounts, so cursor
+        // reset cannot clear it; reseed case 2 handles cross-account leakage. Run after the device-key guard:
+        // without keys no engine could observe a migration, and the next mount retries. Use
+        // `pinnedTabScopeIfReadable()`: `pinnedTabScope()` returns `.profile` for an unopened store, which
+        // must not become an unpublished account's authoritative value.
         let localStore = account.localStorage
         switch PinnedTabScopeMirror.reseed(rowValue: localStore.pinnedTabScopeIfReadable(),
                                            into: defaults) {
@@ -415,8 +402,8 @@ import SwiftUI
         case .rowUnavailable:
             AppLogWarn("[phi-sync] pinned-tab scope mirror not reseeded: the local store is not readable")
         case .runLocalMigration(let scope):
-            // 键权威：账户的值已经落地过，只是行没追上（App 在 `apply` 与迁移之间被杀，或
-            // 迁移抛错）。§11.4 指望的就是这条重试路径。
+            // The key is authoritative: its account value landed but the row lags after a crash or migration
+            // failure. This is the §11.4 retry path.
             applyAccountPinnedTabScope(scope, store: localStore)
         }
 
@@ -430,29 +417,29 @@ import SwiftUI
         // table is the opposite — account-scoped, so it goes to `account.userDefaults`
         // through `spaceStateStore`.
         let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
-        // M3-3：归属项（书签 / pin）的注册清单。两条 kind 的 access / store 由
-        // `buildSyncKeyControllerIfNeeded()` 建好传进来——§9.1 的自撤销要删的是**同一批
-        // 对象**指着的文件，而那一步在引擎建不起来的会话里照样要跑（见那里的注释）。
+        // M3-3: bookmark and pin kind registrations reuse the access/store objects from
+        // `buildSyncKeyControllerIfNeeded()`. Self-revocation (§9.1) must delete those same files even if
+        // engine construction fails.
         //
-        // pin 的 access 是这里的（PR15：`PinKind` 只在这里进引擎）：它收的是 `LocalStore`
-        // 而不是 `Account`——那个注入是 5b-1 为了让生产实现在测试里也驱动得起来做的——而
-        // 自撤销那一步按 §9.1 **只清书签的 `syncId`**：pin 的身份是 `(pinLineageId, owner)`
-        // 推导出来的，而 `pinLineageId` 本来就是一个本地字段（作用域迁移与跨窗口转移依赖
-        // 它），清掉会破坏与同步无关的本地功能。
+        // Construct pin access here (PR15: the sole `PinKind` engine registration), injecting `LocalStore` for
+        // production-access tests (5b-1). Self-revocation clears only bookmark `syncId`: pin identity derives
+        // from `(pinLineageId, owner)`, and local scope migration and window transfers require `pinLineageId`
+        // independently of sync.
         let pinAccess = AccountPhiPinnedTabAccess(store: account.localStorage)
         let bookmarkKind = OwnedKindRegistration.bookmarks(access: bookmarkAccess,
                                                            store: bookmarkStore)
         let pinKind = OwnedKindRegistration.pins(access: pinAccess, store: pinStore)
-        // M3-4a：URL Rule 的 access 同样收 `LocalStore`（Task 8）。**注册次序即处理次序**：
-        // 规则排在最后（§5.2「设置 → Space → 书签 → pin → URL Rule」），B2-7b 的中止窗口
-        // 「最后一条 kind 落完但 marker 没写」落在它身上；第五种 kind 不需要引擎里任何新分支
-        // （§6.2）。落地后的路由表刷新经 `AccountPhiURLRuleAccess.refreshRoutingTableAfterLanding()`
-        // ——引擎不直调 `SpaceManager`；`ruleTieBreakKeyResolver` 的注入在上面（Task 10），不动。
+        // M3-4a Task 8: URL Rule access also receives `LocalStore`. Registration order is processing order:
+        // settings → Space → bookmark → pin → URL Rule (§5.2). B2-7b's interruption after the last kind lands
+        // but before marker persistence therefore falls here; the fifth kind needs no engine branch (§6.2).
+        // Routing refresh goes through `AccountPhiURLRuleAccess.refreshRoutingTableAfterLanding()`, never
+        // direct engine access to `SpaceManager`. Keep the Task 10 `ruleTieBreakKeyResolver` injection above.
         let urlRuleAccess = AccountPhiURLRuleAccess(store: account.localStorage)
         let urlRuleKind = OwnedKindRegistration.urlRules(access: urlRuleAccess,
                                                          store: urlRuleStore)
         let ownedKinds = [bookmarkKind, pinKind, urlRuleKind]
-        // §5.7 的三条订阅在 `startPhiSyncIfReady()` 里挂，label 从这里带过去（见属性注释）。
+        // Carry labels to the three §5.7 subscriptions installed by `startPhiSyncIfReady()`; see the
+        // properties above.
         phiBookmarkKindLabel = bookmarkKind.label
         phiPinKindLabel = pinKind.label
         phiURLRuleKindLabel = urlRuleKind.label
@@ -460,9 +447,8 @@ import SwiftUI
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)
         lastSpaceGateEnabled = nil
-        // M3-3 §8.2：图标回填队列。它是 `@MainActor`，而引擎是一个非 MainActor 的 actor，
-        // 所以只能在这里造好再传进去。两个写入口各一个：§8.2 开头那句是「落地的书签**与
-        // pin** 没有图标时」，而两种 kind 的写回各走自己那条 access。
+        // M3-3 §8.2: construct the `@MainActor` favicon queue here before passing it to the non-main engine
+        // actor. Supply both write accessors: landed bookmarks AND pins without icons require backfill.
         let faviconBackfill = PhiFaviconBackfillQueue(fetcher: PhiFaviconFetcher(),
                                                       access: bookmarkAccess,
                                                       pinAccess: pinAccess,
@@ -574,27 +560,23 @@ import SwiftUI
             MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
         }
 
-        // M3-3 §7.1 第 4 步：镜像 → 本地。`SyncableSettings.apply` 把落地的 key 数组放在
-        // `userInfo` 里；含 pin 作用域那个 key 就按刚落地的值跑一次**既有的**本地迁移。
-        //
-        // 这条通知存在的理由与本用法逐字吻合：它是给「在启动时把值缓存在内存里、此后只写
-        // 不读」的组件用的（既有消费者是 `ThemeManager`）。作用域的消费者是一张 SwiftData
-        // 行，同一类问题。
-        //
-        // `queue: .main` 而不是 `nil`：`apply` 跑在引擎自己的线程上（`PhiSyncEngine` 是
-        // 一个 actor），而下面每一步都是主 actor 的。
+        // M3-3 §7.1 step 4: mirror → local. If `SyncableSettings.apply` lists the pin-scope key in `userInfo`,
+        // run the existing migration with its landed value. This notification serves consumers that cache
+        // values at startup (such as `ThemeManager`); the scope row has the same need. Use `.main` because
+        // `apply` runs on the engine actor while every operation below requires the main actor.
         phiPinnedTabScopeObserver = NotificationCenter.default.addObserver(
             forName: .phiSyncedSettingsDidApply, object: nil, queue: .main
         ) { [weak self] notification in
             let applied = notification.userInfo?[SyncableSettings.appliedKeysUserInfoKey]
                 as? [String] ?? []
-            // `UserDefaults.standard` 就地读，而不是捕获上面那个同名局部变量：它不是
-            // `Sendable`，捕获进这个 `@Sendable` 闭包会多出一条并发告警，而两者指的是同一个域。
+            // Read `UserDefaults.standard` in place: capturing the equivalent local value in this `@Sendable`
+            // closure would capture a non-Sendable object.
             guard applied.contains(PinnedTabScopeMirror.key),
                   let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
                   let scope = PinnedTabScope(rawValue: raw) else { return }
-            // 这一侧的 store 必须在**触发时**取：这个观察者活得和引擎一样久，而落地随时
-            // 可能发生。挂载那一侧则传它正在建的那个账户的 store，不走单例。
+            // Resolve the store when the observer fires: it lives as long as the engine and landing can occur
+            // anytime. Mount-time callers pass the account store under construction instead of using the
+            // singleton.
             MainActor.assumeIsolated {
                 guard let store = AccountController.shared.account?.localStorage else { return }
                 self?.applyAccountPinnedTabScope(scope, store: store)
@@ -602,28 +584,22 @@ import SwiftUI
         }
     }
 
-    /// Runs the existing local pinned-tab scope migration towards an account value that has
-    /// just landed (§7.1 step 4) or that a mount-time reseed found the row lagging behind
-    /// (§7.1 step 3).
+    /// Runs the existing local pinned-tab scope migration towards an account value that has just landed (§7.1
+    /// step 4) or that a mount-time reseed found the row lagging behind (§7.1 step 3).
     ///
-    /// **两个 preferred 参数必须传**，与设置面板那条路径逐字一致：`sourceCollections` 把
-    /// `isPreferred` 的集合排在前面，`mergeCandidates` 拿第一个集合的行当 `candidate.source`
-    /// ——它的标题 / URL / 顺序成为合并后的那一行。都传 nil 的话，同一次作用域变更在「本机
-    /// 操作」与「远端落地」两条路上会产出不同的 pin 集合与顺序。设置面板在活动 Space 为 nil
-    /// 时退到它自己的选中项，那是面板私有的 `@State`，在这里没有对应物，所以这条路径就以
-    /// `activeSpaceId` 为准。
+    /// Pass both preferred arguments, matching Settings. `sourceCollections` puts the preferred collection
+    /// first; `mergeCandidates` takes its title, URL and order as `candidate.source`. Passing nil could
+    /// produce different pins and ordering for local changes versus remote landing. Settings can fall back to
+    /// its private selection when no Space is active; this path uses `activeSpaceId`.
     ///
-    /// **`activeSpaceId` 为 nil 时合并顺序是设备相关的，不是「设备无关但确定」。**
-    /// `isPreferred` 于是对每个 owner 都为假，tie-break 落回 `PinnedTabOwner.sortKey`，而那是
-    /// `"\(profileId ?? "")\0\(spaceId ?? "")"` ——拿的是**本机的** profile / Space id，本机
-    /// Space id 每台机器一份（`syncUuid(forSpaceId:)` / `localSpaceId(forSyncUuid:)` 存在的全部
-    /// 理由就是这个）。两台机器因此会把同一次账户级作用域变更合成不同的行顺序、并带过不同的
-    /// 非签名字段。暴露的是**挂载时**那条重播：它跑在启动期的 `buildPhiSyncEngine` 里，那时
-    /// 很可能一个 Space 都还没激活；落地观察者那条几乎不暴露。把挂载时的重播推迟到有活动
-    /// Space 之后是一条待裁定的改法（迁移本来就是 §11.4 的重试路径，跳过一次挂载不损失什么）。
+    /// With nil `activeSpaceId`, merge order is device-dependent: no owner is preferred, so
+    /// `PinnedTabOwner.sortKey` breaks ties using local profile/Space IDs. Devices may choose different order
+    /// and non-signature fields for the same account scope change. Mount-time reseeding in
+    /// `buildPhiSyncEngine` is particularly exposed before any Space is active. Deferring that retry until
+    /// activation remains an undecided option (§11.4 allows a skipped mount).
     ///
-    /// 失败只记一条元数据日志：镜像键**保持**已落地的新值（它是账户的值），本机行仍是旧作用
-    /// 域，于是下一轮仍 `scope_mismatch`，而这次迁移会在下一次落地或下次挂载账户时重试。
+    /// Failure logs metadata only. Keep the mirror's new account value and the row's old scope, so
+    /// `scope_mismatch` persists and migration retries at the next landing or mount.
     @MainActor
     private func applyAccountPinnedTabScope(_ scope: PinnedTabScope, store: LocalStore) {
         guard store.pinnedTabScope() != scope else { return }
@@ -760,16 +736,13 @@ import SwiftUI
                     Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
                 }
 
-            // 书签与 pin 的本地编辑（§5.7）：**2 s 防抖 → 投影一次 → 值快照去重 → 一轮
-            // 推送**。上面那条 Space 订阅在这里自己防抖，这两条**不**——窗口住在
-            // `LocalStore` 那两个 store 级 publisher 里（`changeSignalDebounce`，同样 2 秒），
-            // 因为防抖必须在投影**之前**才能挡住一次导入把整棵书签树在主 actor 上重投几十遍
-            // （§5.7 第 1 条）。在这里再加一级就是 4 秒延迟。到这里的每一次发射都已经是
-            // 「安静下来了，而且同步层看得见的字段真的变了」。
+            // Local bookmark/pin edits (§5.7): 2 s debounce → one projection → value-snapshot deduplication →
+            // one push. Debouncing lives in the two `LocalStore` publishers (`changeSignalDebounce`) before
+            // projection, preventing repeated main-actor tree projections during import (§5.7 item 1). A
+            // second debounce here would add another 2 s. Every emission is already settled and sync-visible.
             //
-            // 回声与上面那条同一条论证：一次远端落地会写本地行、必然触发 publisher，但落地
-            // 已经在同一轮写好基线，随之而来的推送轮零字段变化 ⇒ 零提交、零本地写 ⇒ 没有
-            // 第二次发射。
+            // Remote landing triggers the publisher but saves its baseline in the same round; the next push
+            // has no field changes, commits or local writes, hence no second emission.
             if let label = phiBookmarkKindLabel {
                 phiBookmarksCancellable = account.localStorage.bookmarkChangesPublisher()
                     .sink { [weak self] _ in
@@ -786,10 +759,10 @@ import SwiftUI
                         }
                     }
             }
-            // §6.5 的第三条订阅（M3-4a）。**接 store 级兄弟 `urlRuleChangesPublisher()`，不是
-            // `urlRulesPublisher()`**：后者发 model 对象、按 `l.id` 去重，而两侧是 SwiftData
-            // 就地刷新的同一批实例，一次真实字段编辑会被吞掉；它还是 UI 的 publisher，
-            // `SpaceManager` 已经订着它。防抖与值快照去重都在 store 侧，这里是裸 sink。
+            // M3-4a §6.5: use store-level `urlRuleChangesPublisher()`, not UI `urlRulesPublisher()`. The
+            // latter compares IDs on the same mutable SwiftData instances and swallows field edits;
+            // `SpaceManager` already consumes it. Store-side debounce and snapshot deduplication leave a plain
+            // sink here.
             if let label = phiURLRuleKindLabel {
                 phiURLRulesCancellable = account.localStorage.urlRuleChangesPublisher()
                     .sink { [weak self] _ in
@@ -805,9 +778,9 @@ import SwiftUI
         Task { await engine.runRetentionSweep() }
     }
 
-    /// 配对向导第 2 步的左列（§3.4 末）。就地新建一个 `AccountPhiSpaceAccess` 而不是
-    /// 去引擎里借：它是无状态的（两个 `let` 加一个 `weak`），`pairableSpaces()` 是
-    /// 纯读，借引擎的那一个反而要给引擎加一条只为 UI 存在的出口。
+    /// Pairing step 2's left column (§3.4, final paragraph). Create a stateless `AccountPhiSpaceAccess` (two
+    /// lets and a weak reference) for the read-only `pairableSpaces()`, avoiding an engine API solely for UI
+    /// access.
     @MainActor
     func pairableLocalSpaces() -> [PhiLocalSpace] {
         guard let account = AccountController.shared.account else { return [] }
@@ -815,9 +788,9 @@ import SwiftUI
                                      controller: syncKeyController).pairableSpaces()
     }
 
-    /// 配对向导的账户预览（§4.5）。向导不持有引擎。加入流程走到向导时引擎一定已经
-    /// 建好，`.engineUnavailable` 只覆盖登出 / 自撤销把引擎丢掉之后通知还在飞的窄
-    /// 窗口，界面按普通错误页处理。
+    /// Account preview for pairing (§4.5); the wizard never owns the engine. Join builds the engine before
+    /// showing the wizard. `.engineUnavailable` covers an in-flight notification after logout/self-revocation
+    /// discarded it and uses the ordinary error page.
     @MainActor
     func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
         guard let engine = phiSyncEngine else { return .failure(.engineUnavailable) }
@@ -939,17 +912,17 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSpacePairingObserver = nil
         }
-        // §5.7 的两条归属项订阅。留着不清的订阅会在账户注销之后继续把 Round 排给一个已经
-        // 退休的引擎——`shutdown()` 让那些轮次一个字节都不写，但每一次都还是一次完整的排队
-        // 与唤醒，而下一个账户挂上来的时候这两条订阅指的仍是上一个账户的 `LocalStore`。
+        // Cancel both owned-item subscriptions (§5.7). Otherwise they retain the old account store and
+        // enqueue/wake rounds on a retired engine after logout, even though `shutdown()` prevents writes.
         phiBookmarksCancellable?.cancel()
         phiBookmarksCancellable = nil
         phiPinnedTabsCancellable?.cancel()
         phiPinnedTabsCancellable = nil
-        // 第三条（M3-4a）：漏掉它，换账户之后旧引擎会被一条死订阅吊住。
+        // Cancel the third subscription (M3-4a), which would otherwise retain the old engine across account
+        // switches.
         phiURLRulesCancellable?.cancel()
         phiURLRulesCancellable = nil
-        // 三个 label 描述的是下面正要丢掉的那个引擎的注册清单，跟着它一起清。
+        // Clear all three labels with the engine whose registrations they describe.
         phiBookmarkKindLabel = nil
         phiPinKindLabel = nil
         phiURLRuleKindLabel = nil

@@ -3,13 +3,11 @@ import Foundation
 import XCTest
 @testable import Phi
 
-// MARK: - 假件
+// MARK: - Fakes
 
-/// 内存版 `PhiBookmarkLocalAccess`。形状照既有的 `FakePhiSpaceAccess`
-/// （`PhiSpaceLocalAccessTests.swift:9`）：**顶层类型**，调用记在一个 `Call` 枚举数组里。
-///
-/// `apply(_:)` **真的把 `ops` 施加到 `rows` 上**（V10）：后面一大批用例是在一次 apply
-/// 之后直接断言 `rows`，只记调用不改行会让那些断言恒为假。
+/// In-memory PhiBookmarkLocalAccess, following FakePhiSpaceAccess: a top-level
+/// type recording calls in an enum array. apply actually mutates rows (V10),
+/// because many later cases assert row values immediately after application.
 @MainActor
 final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     enum Call: Equatable {
@@ -22,43 +20,40 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
 
     var rows: [PhiLocalBookmark]
     var importingSpaceIds: Set<String> = []
-    /// 让两个读方法抛（R-exec-3）。**每次都抛，不自动清零**：一轮读失败的引擎行为是整段
-    /// 跳过，用例要断言的正是「跳过了」，一次性的失败会让第二次读悄悄成功。
+    /// Make both reads throw on every call (R-exec-3), without resetting. Engine tests
+    /// assert that a read failure skips the whole section; a one-shot error lets later reads succeed.
     var readError: Error?
-    /// 本机有行、但**不在快照里**的那些身份：孤儿根 / 重复根下面的子树（R-exec-4）。
-    /// `allBookmarks()` 看不见它们，`allSyncIds()` 必须看得见，否则差分把它们判成删除。
+    /// Identities with local rows outside the snapshot, under orphan or duplicate roots
+    /// (R-exec-4). allBookmarks excludes them; allSyncIds includes them to prevent false deletions.
     var orphanedSyncIds: Set<String> = []
-    /// 本轮有没有一份可用的快照，**与生产实现同一条契约**：三个读者只在本轮最后一次成功的
-    /// `allBookmarks()` 或 `apply(_:)` 之后有意义，否则交出「不在」那个值；`allSyncIds()`
-    /// 在此之前抛。
-    ///
-    /// 假件必须模这一条，否则 Task 6 的引擎用例会在假件上跑过一种生产实现里根本不成立的
-    /// 用法——「落地之后直接复核」在假件上答对、在真机上每一条都答不在（G1 / G4）。
+    /// Match production snapshot validity: the three cache readers are meaningful only
+    /// after this round's last successful allBookmarks or apply; otherwise return absent,
+    /// and allSyncIds throws. Without this contract, Task 6's post-apply verification
+    /// would succeed in the fake but report every row absent in production (G1 / G4).
     private(set) var snapshotIsLoaded = false
-    /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
+    /// The next apply throws storeUnavailable, resets the flag, and changes no rows.
     var failApplyOnce = false
-    /// 下一次 `apply` 抛这个错，然后清零。**一行都不改。** `failApplyOnce` 只表达得了
-    /// `.storeUnavailable` 一种，而 §4.5 的三种落地失败（导入锁 / `.folderNotEmpty` /
-    /// `.rowAlreadyMapped`）的**正确反应方向相反**，用例必须能逐种注入。
+    /// The next apply throws this error, resets it, and changes no rows. Unlike the
+    /// storeUnavailable-only failApplyOnce, this can inject §4.5's import-lock,
+    /// folderNotEmpty, and rowAlreadyMapped failures, which require opposite responses.
     var applyErrorOnce: Error?
-    /// `apply` 不抛错、但一条行都不改——模拟 Task 2a 之前那族静默守卫。
+    /// apply succeeds without changing rows, modeling silent guards from before Task 2a.
     var applyLandsNothingSilently = false
-    /// `clearAllSyncIds()` 抛错（Task 9a 的次序用例）。
+    /// Make clearAllSyncIds throw for Task 9a ordering tests.
     var failClearSyncIds = false
     private(set) var calls: [Call] = []
-    /// 最近一次 `apply` 收到的 `ops`，供顺序断言。抛错的那次也记——断言的正是「引擎把什么
-    /// 交了出去」，而不是「什么落了地」。
+    /// Record the latest apply ops even when it throws: ordering assertions check
+    /// what the engine submitted, not what persisted.
     private(set) var lastAppliedOps: [BookmarkApplyOp] = []
 
     init(rows: [PhiLocalBookmark] = []) {
         self.rows = rows
     }
 
-    /// 按 `(spaceId, parentGuid, index, guid)` 有序（§4.8），与 `allPins()` 对称：喂给引擎
-    /// 的次序必须是生产实现真会产出的那个，否则后面断言提交顺序或 index 投影的用例会因为
-    /// 一个与被测代码无关的理由变红或变绿。无父的行（`parentGuid == nil`）排在同 Space 的
-    /// 有父行之前。
-    /// 开新一轮：把快照标成「没读过」。用例用它制造 R-exec-3 之后那三种无效状态。
+    /// Order by (spaceId, parentGuid, index, guid), matching §4.8 and allPins. Engine
+    /// commit-order and index-projection tests must receive production ordering to avoid
+    /// false results. Parentless rows precede parented rows within a Space.
+    /// Start a new round by invalidating the snapshot, allowing tests of R-exec-3's three invalid states.
     func beginRound() {
         snapshotIsLoaded = false
     }
@@ -73,12 +68,10 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         }
     }
 
-    /// 那一次 fetch 的行快照本身，**不再 fetch**、**不记调用**——它与
-    /// `isKnownLocalBookmark` / `localIsFolder` 同属那一组读缓存的非抛出读者，而 CASE 0.3
-    /// 那条逐项相等的 `calls` 断言容不下一个新条目。次序与 `allBookmarks()` 相同。
-    ///
-    /// **没读过就交 nil**，与生产实现同一条契约：调用方拿它去换掉轮内那份本机投影，一个空
-    /// 数组会让整轮的出站快照变空。
+    /// Return the existing fetched snapshot without fetching or recording a call, like
+    /// isKnownLocalBookmark and localIsFolder. CASE 0.3 compares calls exactly. Order
+    /// matches allBookmarks. Return nil before a read, matching production: an empty
+    /// array would replace the round's local projection and erase its outbound snapshot.
     func cachedBookmarks() -> [PhiLocalBookmark]? {
         guard snapshotIsLoaded else { return nil }
         return rows.sorted {
@@ -87,8 +80,8 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         }
     }
 
-    /// 契约是「那一次 fetch 结果在内存里的分组」，所以这里读的也是 `rows`，**不**再记一次
-    /// `.allBookmarks`，也**不**过滤（§4.10 的 index 投影要未过滤的兄弟列表）。
+    /// Group the existing fetched rows in memory without recording another allBookmarks
+    /// call or filtering: §4.10's index projection needs unfiltered siblings.
     func siblings(ofParent parentGuid: String?, inSpaceId spaceId: String) -> [PhiLocalBookmark] {
         calls.append(.siblings(parent: parentGuid, space: spaceId))
         guard snapshotIsLoaded else { return [] }
@@ -97,13 +90,13 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
     }
 
-    /// 快照里的身份加上被排除的那些。生产实现是一次不做根过滤的 fetch；这里用一个显式的
-    /// `orphanedSyncIds` 表达同一件事，因为假件的 `rows` 本身没有根的概念。
+    /// Combine snapshot identities with excluded ones. Production uses an unfiltered
+    /// fetch; orphanedSyncIds models the same result because fake rows have no root concept.
     func allSyncIds() throws -> Set<String> {
         calls.append(.allSyncIds)
         if let readError { throw readError }
-        // 与生产实现同源：它读的是快照那一次 fetch 的未过滤结果，所以本轮没成功读过就抛，
-        // 绝不交出一个会让差分把整棵树判成删除的空集合。
+        // Like production, use the snapshot fetch's unfiltered result. Throw before a
+        // successful read this round instead of returning an empty set that falsely deletes a subtree.
         guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
         return Set(rows.compactMap(\.syncId)).union(orphanedSyncIds)
     }
@@ -113,8 +106,8 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         return rows.contains { $0.guid == guid }
     }
 
-    /// 生产实现从那一次 fetch 的分组缓存里读 `dataType`；这里读的是同一份 `rows`，
-    /// 于是假件与生产实现在「找不到 ⇒ nil」这一点上同形。
+    /// Production reads dataType from the fetched grouping cache; use the same rows
+    /// here so both implementations return nil for missing rows.
     func localIsFolder(guid: String) -> Bool? {
         guard snapshotIsLoaded else { return nil }
         return rows.first { $0.guid == guid }?.isFolder
@@ -135,45 +128,43 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             self.applyErrorOnce = nil
             throw applyErrorOnce
         }
-        // 导入锁是 **fail-closed** 的，与生产实现的 `refuseIfImporting`
-        // （`LocalStore+Bookmark.swift`）同形：扫一遍这批 ops 涉及的全部 `spaceId`，只要有
-        // 一个正在被导入就拒掉整批。假件不模这一条，CASE 6.10c-2 就测不到「按 Space 切开」。
+        // Match production refuseIfImporting in LocalStore+Bookmark.swift: reject the entire
+        // batch if any operation's Space is importing. Without this fail-closed behavior,
+        // CASE 6.10c-2 cannot test splitting operations by Space.
         if let locked = batch.ops.compactMap(spaceId(of:)).first(where: importingSpaceIds.contains) {
             throw LocalStoreWriteError.spaceImporting(spaceId: locked)
         }
-        // 一条行的身份**只认领一次**，与生产实现同形（`LocalStore+Bookmark.swift` 的
-        // `node.syncId == nil || node.syncId == syncId`）：换一个身份是 fail-closed 的
-        // **批次级**拒绝，一行都不改。覆盖写会让旧身份在本机瞬间失去对应行，而下一轮差分对
-        // 「没有本机行」的回答是发一条 tombstone，把账户上那条真实的书签删掉。
+        // Claim an identity only once, matching production's nil-or-equal syncId guard.
+        // A different identity rejects the whole batch without changes; overwriting it
+        // would make the old account identity look locally deleted and publish a tombstone.
         //
-        // **这道扫描读的是施加任何 op 之前的 `rows`**，所以它接的是「目标行**在这一批之前**
-        // 就已经带着另一个身份」那一种形状（上一批写的，或轮首那份快照里就带着）。真 store
-        // 是边走边写的，同一批里的第二条 `.claim` 会看见第一条刚写下的 `syncId` 而抛，假件
-        // 在这一点上比它宽——同一批双认领由 CASE 6b.13 的身份断言（那一行最后带的是哪一条）
-        // 兜住，不靠这里。
+        // This scan examines rows before any op, covering identities from earlier batches
+        // or the round snapshot. The real store checks sequentially, so a second claim
+        // in one batch sees the first; the fake is looser. CASE 6b.13's final row-identity
+        // assertion covers double claims within a batch rather than this scan.
         for op in batch.ops {
             guard case .claim(let guid, let syncId) = op,
                   let existing = rows.first(where: { $0.guid == guid })?.syncId,
                   existing != syncId else { continue }
             throw LocalStoreWriteError.rowAlreadyMapped
         }
-        // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做（G1）。抛错那一
-        // 支走不到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
+        // Production rereads after successful application, enabling same-round §4.5
+        // verification (G1). A thrown write skips this reread and preserves the old snapshot.
         snapshotIsLoaded = true
         guard !applyLandsNothingSilently else { return }
         for op in batch.ops { land(op) }
     }
 
-    /// Task 10 的回填写入口收到的（行，字节）对，**按到达顺序摊平**。
+    /// Task 10 backfill (row, bytes) pairs flattened in arrival order.
     private(set) var faviconWrites: [(guid: String, data: Data)] = []
-    /// `setFavicon` 被调了几次。光看摊平的条数看不出「整轮一次写回」，而那正是 CASE 10.11
-    /// 要的不变量。
+    /// Count setFavicon calls: flattened row counts alone cannot prove CASE 10.11's
+    /// one-write-per-round invariant.
     private(set) var faviconWriteCalls = 0
-    /// 下一次 `setFavicon` 抛错，然后清零。**一条都不写。**
+    /// The next setFavicon throws, resets the flag, and writes nothing.
     var failSetFaviconOnce = false
 
-    /// **不进 `calls`**：`Call` 是同步落地那条路的调用记录，回填刻意不走那条路，把它记进去
-    /// 会让「`.apply` 零次」那条断言读起来像是在数另一件事。
+    /// Exclude backfill from calls, which records sync application. Backfill deliberately
+    /// uses another path; mixing it in would obscure zero-apply assertions.
     func setFavicon(_ writes: [(guid: String, data: Data)]) async throws {
         faviconWriteCalls += 1
         if failSetFaviconOnce {
@@ -189,8 +180,8 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         for index in rows.indices { rows[index].syncId = nil }
     }
 
-    /// 一个操作落在哪个 Space 上。`.create` / `.move` 自己带目标 Space，其余按被点名的那条
-    /// 行现在坐在哪里。
+    /// Resolve an operation's Space: create/move carry their target; other operations
+    /// use the named row's current Space.
     private func spaceId(of op: BookmarkApplyOp) -> String? {
         switch op {
         case .create(let row): return row.spaceId
@@ -200,9 +191,8 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         }
     }
 
-    /// `.delete` 只移除被点名的那一行，**不**级联到后代：`BookmarkApplyBatch` 已经把整棵
-    /// 子树的 delete 按子先于父排进了同一批，级联会让「批里有几条 delete」与「落了几行」
-    /// 对不上。
+    /// Delete only the named row, without cascading. BookmarkApplyBatch already orders
+    /// every subtree deletion child-first; cascading would make delete-op and applied-row counts differ.
     private func land(_ op: BookmarkApplyOp) {
         switch op {
         case .claim(let guid, let syncId):
@@ -217,8 +207,8 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             rows[index].index = position
         case .update(let guid, let fields):
             guard let index = rows.firstIndex(where: { $0.guid == guid }) else { return }
-            // 外层 some = 改这个字段。`title` / `url` 在本机模型里非可选，所以内层 nil
-            // 分别是「清成空串」与「不动」——一条书签丢不掉它的 URL。
+            // Outer some means modify the field. Local title/URL are nonoptional, so inner
+            // nil clears title to empty but leaves URL unchanged; a bookmark cannot lose its URL.
             if let title = fields.title { rows[index].title = title ?? "" }
             if let url = fields.url, let url { rows[index].url = url }
             if let secondaryUrl = fields.secondaryUrl { rows[index].secondaryUrl = secondaryUrl }
@@ -231,7 +221,7 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     }
 }
 
-/// 内存版 `PhiPinnedTabLocalAccess`。`apply(_:)` 的落地契约同 `FakeBookmarkAccess`。
+/// In-memory PhiPinnedTabLocalAccess with the same apply contract as FakeBookmarkAccess.
 @MainActor
 final class FakePinAccess: PhiPinnedTabLocalAccess {
     enum Call: Equatable {
@@ -244,21 +234,18 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     var scope: PinnedTabScope
     var account: PinnedTabScope?
     var rows: [PhiLocalPin]
-    /// 让两个读方法抛（R-exec-3）。**每次都抛，不自动清零**：一轮读失败的引擎行为是整段
-    /// 跳过，用例要断言的正是「跳过了」，一次性的失败会让第二次读悄悄成功。
+    /// Both reads throw persistently (R-exec-3), without resetting. Tests must verify
+    /// that a read failure skips the whole section; one-shot failure permits a later read to succeed.
     var readError: Error?
-    /// 本机有行、但**不在快照里**的那些行：作用域迁移原地留下的、当前作用域之外的备份行
-    /// （R-exec-4）。`allPins()` 看不见它们，`allPinRows()` 必须看得见，否则差分把它们判成
-    /// 删除。
-    ///
-    /// **是行，不是 lineage**（R-exec-11）：每一条备份行保护的是**它自己那条**
-    /// `(lineage, owner)` 身份，所以它的 `spaceId` / `profileId` 必须写实。
+    /// Local rows outside the snapshot: backup rows retained outside the active scope
+    /// after migration (R-exec-4). allPins excludes them; allPinRows includes them to
+    /// prevent false deletions. These are rows, not lineages (R-exec-11): each protects
+    /// its own (lineage, owner) identity, so spaceId/profileId must be accurate.
     var outOfScopeRows: [PhiLocalPin] = []
-    /// 本轮有没有一份可用的快照，**与生产实现同一条契约**：`isKnownLocalPin` 只在本轮最后
-    /// 一次成功的 `allPins()` 或 `apply(_:)` 之后有意义，否则交出「不在」那个值；
-    /// `allPinRows()` 在此之前抛。
+    /// Match production: isKnownLocalPin is valid only after this round's successful
+    /// allPins or apply; otherwise report absent. allPinRows throws before that point.
     private(set) var snapshotIsLoaded = false
-    /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
+    /// The next apply throws storeUnavailable, resets the flag, and changes no rows.
     var failApplyOnce = false
     private(set) var calls: [Call] = []
     private(set) var lastAppliedOps: [PinApplyOp] = []
@@ -271,18 +258,15 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
 
     func currentScope() -> PinnedTabScope { scope }
 
-    /// 轮中作用域迁移的脚本（R-exec-12）：`accountScope()` 被问到第 `onAccountScopeRead` 次
-    /// 时，**先取好返回值再**就地跑一次 `run`，然后清空自己。Task 8 的跟随迁移
-    /// （`PhiChromiumCoordinator.applyAccountPinnedTabScope`）跑在一个 detached `Task` 里，
-    /// 落点就在轮首取样与落地之间，这个钩子把那一刻搬进用例。
+    /// Script a mid-round scope migration (R-exec-12): on the specified accountScope
+    /// read, capture the return value before running run in place, then clear the hook.
+    /// Task 8's detached applyAccountPinnedTabScope can migrate between initial sampling
+    /// and application; this reproduces that instant.
     ///
-    /// **挂在 `accountScope()` 上而不是 `currentScope()` 上**：轮首那个闭包按
-    /// `allPins()` → `currentScope()` → `accountScope()` 的次序取样，只有挂在**最后**那一个
-    /// 上，轮首才会像现场那样把两个作用域都读成迁移**前**的值。挂在前两个任何一个上，
-    /// `beginRound` 自己就读出一对不一致的值 —— 那是 §7.3 既有守卫已经挡住的另一个场景，
-    /// 测不到这个 fix。
-    ///
-    /// 计数：`beginRound` 那一次是第 1 次，此后每一次 `rescanScopes` 各一次。
+    /// Hook accountScope, not currentScope: initial sampling reads allPins, currentScope,
+    /// then accountScope. Only the last hook preserves both pre-migration scope values.
+    /// Earlier hooks yield an inconsistent initial pair already rejected by §7.3,
+    /// which would not exercise this fix. beginRound is read 1; each rescanScopes adds one.
     var midRoundMigration: (onAccountScopeRead: Int, run: @MainActor (FakePinAccess) -> Void)?
     private(set) var accountScopeReads = 0
 
@@ -296,12 +280,12 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
         return answer
     }
 
-    /// 开新一轮：把快照标成「没读过」。用例用它制造 R-exec-3 之后那三种无效状态。
+    /// Invalidate the snapshot for a new round to construct R-exec-3's three invalid states.
     func beginRound() {
         snapshotIsLoaded = false
     }
 
-    /// 非休眠的**全部**行，按 `(ownerKey, index, guid)` 有序。**不挑代表。**
+    /// All nondormant rows ordered by (ownerKey, index, guid), without choosing representatives.
     func allPins() throws -> [PhiLocalPin] {
         calls.append(.allPins)
         if let readError { throw readError }
@@ -311,20 +295,19 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             .sorted { (Self.ownerKey($0), $0.index, $0.guid) < (Self.ownerKey($1), $1.index, $1.guid) }
     }
 
-    /// 快照里的行加上作用域之外那些。生产实现是同一次 fetch 里未经作用域过滤的行；这里用
-    /// 一个显式的 `outOfScopeRows` 表达同一件事，因为假件的 `rows` 本身没有「另一个作用域」
-    /// 的概念。
+    /// Combine snapshot and out-of-scope rows. Production uses the same fetch before
+    /// scope filtering; outOfScopeRows models that because the fake's rows lack an alternate-scope concept.
     func allPinRows() throws -> [PhiLocalPin] {
         calls.append(.allPinRows)
         if let readError { throw readError }
-        // 与生产实现同源：本轮没成功读过就抛，绝不交出一个会让差分把整批 pin 判成删除的
-        // 空数组。
+        // Match production: throw before a successful round read rather than return an
+        // empty array that falsely classifies every pin as deleted.
         guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
         return (rows + outOfScopeRows).filter { !$0.isDormant }
     }
 
-    /// 那一次 fetch 的行快照本身，**不再 fetch**、**不记调用**（理由同
-    /// `FakeBookmarkAccess.cachedBookmarks()`）。过滤与次序都与 `allPins()` 相同。
+    /// Return the cached fetched snapshot without another fetch or recorded call,
+    /// as in FakeBookmarkAccess.cachedBookmarks. Filtering and ordering match allPins.
     func cachedPins() -> [PhiLocalPin]? {
         guard snapshotIsLoaded else { return nil }
         return rows
@@ -332,12 +315,10 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             .sorted { (Self.ownerKey($0), $0.index, $0.guid) < (Self.ownerKey($1), $1.index, $1.guid) }
     }
 
-    /// **两边都过 `PinKind.lineageKey`**（P11），与生产实现同形：传进来的是线上归一过的小写
-    /// lineage，而 `rows` 里那一列可能是大写。
-    ///
-    /// **判据是完整身份 `(lineage, ownerKey)`**，同生产实现：只按 lineage 比的话，一条
-    /// `(L, spaceX)` 的行没了、而 `(L, spaceY)` 还在时照样答「在」。`ownerKey` 为 nil =
-    /// 调用方反查不出本机 owner ⇒ 本机不可能有这条身份的行。
+    /// Normalize both sides with PinKind.lineageKey (P11), matching production: wire
+    /// lineage is lowercase while rows may be uppercase. Compare the full (lineage, ownerKey)
+    /// identity; lineage alone falsely finds (L, spaceX) when only (L, spaceY) remains.
+    /// A nil ownerKey means local-owner lookup failed, so no matching local identity can exist.
     func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool {
         guard snapshotIsLoaded, let ownerKey else { return false }
         let wanted = PinKind.lineageKey(lineageId)
@@ -353,13 +334,13 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
         }
-        // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做。抛错那一支走不
-        // 到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
+        // Production rereads after successful application for same-round §4.5 verification.
+        // Thrown writes skip the reread and preserve the old snapshot.
         snapshotIsLoaded = true
         for op in batch.ops { land(op) }
     }
 
-    /// Task 10 的回填写入口。语义与 `FakeBookmarkAccess` 上那一条逐字相同。
+    /// Task 10 backfill write API, with the same semantics as FakeBookmarkAccess.
     private(set) var faviconWrites: [(guid: String, data: Data)] = []
     private(set) var faviconWriteCalls = 0
     var failSetFaviconOnce = false
@@ -378,13 +359,13 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
                      preferredSpaceId: String?) async throws {
         calls.append(.changeScope(scope))
         self.scope = scope
-        // 迁移重建了整批物理行，本轮那份快照与它已经没有关系了——生产实现在这里也只清不
-        // 重读。
+        // Migration rebuilt all physical rows, invalidating the round snapshot. Production
+        // also clears it here without rereading.
         snapshotIsLoaded = false
     }
 
-    /// `phi-pin:<lineage>:<ownerKey>` 里那个 ownerKey 的本机侧对应物：Space 作用域是
-    /// spaceId，Profile 作用域是 profileId，App 作用域是字面量 "app"。
+    /// Local equivalent of ownerKey in phi-pin:<lineage>:<ownerKey>: spaceId for Space
+    /// scope, profileId for Profile scope, and literal app for App scope.
     private static func ownerKey(_ pin: PhiLocalPin) -> String {
         pin.spaceId ?? pin.profileId ?? "app"
     }
@@ -412,10 +393,10 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     }
 }
 
-/// 内存版 `PhiURLRuleLocalAccess`（Task 8）。形状照 `FakeBookmarkAccess`：`apply(_:)` **真的把
-/// `ops` 施加到 `rows` 上**，含两桶稠密重排，好让 Task 6 的引擎用例在假件上看到与真库同形的结果。
-/// `readError` **每次都抛、不自动清零**（R-exec-3）；`snapshotIsLoaded` 与 `beginRound()` 守
-/// 与生产实现同一条契约：两个缓存读者只在本轮最后一次成功的读或 `apply` 之后有意义。
+/// In-memory PhiURLRuleLocalAccess (Task 8), following FakeBookmarkAccess: apply
+/// mutates rows and densely normalizes both buckets so Task 6 sees production results.
+/// readError persists (R-exec-3). snapshotIsLoaded/beginRound match production: both
+/// cache readers are valid only after this round's last successful read or apply.
 @MainActor
 final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     enum Call: Equatable {
@@ -424,67 +405,66 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         case siblings(space: String)
         case liveOwners(count: Int)
         case apply(opCount: Int)
-        /// Task 6：落地提交之后那一次显式的路由表刷新（§6.6 / R-M3-4a-34）。
+        /// Task 6: explicit routing-table refresh after application commits (§6.6 / R-M3-4a-34).
         case refreshRoutingTable
-        /// 8b-1：两个就地更新口（R-M3-4a-62），记条数好让 CASE M-18 断言它们真的被调过。
+        /// 8b-1: count the two in-place update APIs so CASE M-18 can prove they ran (R-M3-4a-62).
         case notePersistedClaims(count: Int)
         case noteDeletedRows(count: Int)
-        /// 8b-4：§8.4.5 的两处清位。(a) 一条身份一次；(b) 一次事务一条（空集连调都不调）。
+        /// 8b-4 / §8.4.5: clear (a) once per identity, and (b) once per transaction, with no call for an empty set.
         case clearPendingLocalEdit(syncId: String)
         case clearPendingLocalEditIfUnchanged(count: Int)
     }
 
-    /// 含软删行（`deletedDate != nil`）。两个读口按自己的定义域过滤。
+    /// Includes soft-deleted rows; each read filters its own domain.
     var rows: [PhiLocalURLRule]
-    /// 让两个读口与 `liveOwners` 抛。**每次都抛，不自动清零。**
+    /// Both reads and liveOwners throw on every call without resetting.
     var readError: Error?
     private(set) var snapshotIsLoaded = false
-    /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
+    /// The next apply throws storeUnavailable, resets the flag, and changes no rows.
     var failApplyOnce = false
-    /// 下一次 `apply` 抛这个错，然后清零。**一行都不改。**
+    /// The next apply throws this error, clears it, and changes no rows.
     var applyErrorOnce: Error?
     private(set) var calls: [Call] = []
-    /// 最近一次 `apply` 收到的 `ops`（抛错的那次也记）。
+    /// Latest apply ops, including calls that throw.
     private(set) var lastAppliedOps: [URLRuleSyncOp] = []
-    /// Task 9：出路 1 的每一次 `hardDeleteURLRule(syncId:)`，按调用序（行不在的那次也记）。
+    /// Task 9 exit 1: hardDeleteURLRule calls in order, including missing-row calls.
     private(set) var hardDeleteCalls: [String] = []
-    /// Task 9：出路 2 的每一次 `purgeSoftDeletedURLRules(olderThan:)` 收到的 cutoff。
+    /// Task 9 exit 2: every cutoff passed to purgeSoftDeletedURLRules.
     private(set) var purgeCalls: [Date] = []
-    /// 让两条出路抛。**每次都抛，不自动清零。**
+    /// Both exits throw persistently without resetting.
     var deleteError: Error?
-    /// 8b-2 / R-M3-4a-100（CASE M-36）：在 `apply(_:)` 真正落「落地写 + 尾钩」这一段**之前**
-    /// 被调一次，用来在 pre-pass 与落地事务之间注入一次**真实的**本机 Save
-    /// （`applyURLRuleEditsThrowing`，绝不手写行或游标）。生产实现里那个窗口是真实可达的：
-    /// pre-pass 跑在主 actor 上、落地事务跑在写队列上，中间隔着一次
-    /// `performBackgroundWriteAndWaitThrowing` 的排队。**只在假件上有**，生产协议一个字节不加。
+    /// 8b-2 / R-M3-4a-100 (CASE M-36): run once before apply's write-plus-tail-hook
+    /// segment to inject a real local Save through applyURLRuleEditsThrowing between
+    /// pre-pass and transaction. Never mutate rows or cursors directly. Production has
+    /// this window because main-actor pre-pass queues through performBackgroundWriteAndWaitThrowing
+    /// before the write transaction. This hook is fake-only; leave the production protocol unchanged.
     var beforeLandingTransaction: (@MainActor () async -> Void)?
-    /// 最近一次 `apply` 里尾钩交回的那些 M2 op（没有尾钩的那次是空数组）。
+    /// M2 ops returned by the latest apply tail hook, or an empty array without a hook.
     private(set) var lastMergeOps: [URLRuleSyncOp] = []
-    /// 8b-4 / CASE M-7e：下一次 `clearPendingLocalEdit(syncId:ifProjectionEquals:)` **抛**
-    /// 一次 `LocalStoreWriteError.storeUnavailable`，然后清零。**一个字节都不写**——与
-    /// §8.4.5 那张表第 7 行「记一条 R12 日志、下一轮由 (b) 自愈」同形。
+    /// 8b-4 / CASE M-7e: the next clearPendingLocalEdit throws storeUnavailable once
+    /// without writes, matching §8.4.5 row 7: log R12 and let (b) repair next round.
     var failNextClearPendingLocalEdit = false
-    /// 8b-4 / CASE M-7e（R-M3-4a-91 / 裁定 14）的注入点：在
-    /// `clearPendingLocalEditIfUnchanged(entries:)` 真正落事务**之前**被调一次，用来在
-    /// 「判定」与「写入」之间注入一次**真实的**本机 Save（走 `applyEditorSave` 那条口，
-    /// 绝不手写行）。
+    /// 8b-4 / CASE M-7e (R-M3-4a-91 / ruling 14): run once immediately before
+    /// clearPendingLocalEditIfUnchanged's transaction, injecting a real local Save
+    /// through applyEditorSave between decision and write, never direct row mutation.
     ///
-    /// **只能放在假件上**：注册项闭包与引擎那一层此刻手上只有一个 `Set<String>`，钩子放在
-    /// 那里既够不到 `entries`、也测不到「判定与写入之间」这个真正的窗口。生产协议一个字节不加。
+    /// Keep this hook in the fake: registration closures and engine hold only Set<String>,
+    /// so a hook there cannot access entries or test the actual decision/write window.
+    /// Leave the production protocol unchanged.
     var beforeClearPendingLocalEditIfUnchanged: (@MainActor () async -> Void)?
-    /// 最近一次 `clearPendingLocalEditIfUnchanged` 收到的那张「身份 -> 基线」表。
+    /// Latest identity-to-baseline table passed to clearPendingLocalEditIfUnchanged.
     private(set) var lastClearEntries: [String: RuleProjection] = [:]
 
     init(rows: [PhiLocalURLRule] = []) {
         self.rows = rows
     }
 
-    /// 开新一轮：把快照标成「没读过」。
+    /// Invalidate the snapshot at the start of a new round.
     func beginRound() {
         snapshotIsLoaded = false
     }
 
-    /// 活行，按 `(spaceId, sortOrder, id)` 有序——喂给引擎的次序必须是生产实现真会产出的那个。
+    /// Live rows in production order: (spaceId, sortOrder, id).
     func allURLRules() throws -> [PhiLocalURLRule] {
         calls.append(.allURLRules)
         if let readError { throw readError }
@@ -492,7 +472,7 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return Self.ordered(rows.filter { $0.deletedDate == nil })
     }
 
-    /// 活行 ∪ 软删行，同一次序。
+    /// Live plus soft-deleted rows in the same order.
     func allURLRulesIncludingDeleted() throws -> [PhiLocalURLRule] {
         calls.append(.allURLRulesIncludingDeleted)
         if let readError { throw readError }
@@ -500,21 +480,22 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return Self.ordered(rows)
     }
 
-    /// 本页快照按 `spaceId` 的分组：**软删行排除**（R-M3-4a-51），不按合格性过滤。
+    /// Group this page's snapshot by spaceId, excluding soft-deleted rows (R-M3-4a-51)
+    /// without eligibility filtering.
     func siblings(inSpaceId spaceId: String) -> [PhiLocalURLRule] {
         calls.append(.siblings(space: spaceId))
         guard snapshotIsLoaded else { return [] }
         return Self.ordered(rows.filter { $0.spaceId == spaceId && $0.deletedDate == nil })
     }
 
-    /// 判据是 `syncId`、不是 `id`，定义域与 `allURLRules()` 同源（活行）。
+    /// Address by syncId, not id, over the live-row domain shared with allURLRules.
     func isKnownLocalURLRule(_ syncId: String) -> Bool {
         guard snapshotIsLoaded else { return false }
         return rows.contains { $0.syncId == syncId && $0.deletedDate == nil }
     }
 
-    /// 生产实现自己做一次 fetch、不读本页缓存，所以这里也不看 `snapshotIsLoaded`。只填
-    /// `claimed`；`owners` 由 Task 6 的注册项闭包配 `OwnedOwnerMaps` 补。
+    /// Production fetches independently of the page cache, so ignore snapshotIsLoaded.
+    /// Fill claimed only; Task 6's registration closure adds owners through OwnedOwnerMaps.
     func liveOwners(_ candidates: Set<String>) throws -> OwnedLiveRows {
         calls.append(.liveOwners(count: candidates.count))
         if let readError { throw readError }
@@ -522,8 +503,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return OwnedLiveRows(claimed: candidates.intersection(live), owners: [:])
     }
 
-    /// **`ops` 为空、只带尾钩的批次照样跑一遍**（8b-2 / R-M3-4a-56：一页没有任何规则落地时
-    /// M2 同样要跑）。块内次序与生产 body 逐字相同：落地 op ⇒ **尾钩** ⇒ 稠密重排。
+    /// Run even with empty ops and only a tail hook: M2 must run on pages applying
+    /// no rules (8b-2 / R-M3-4a-56). Match production order: apply ops, tail hook, dense normalization.
     @discardableResult
     func apply(_ batch: URLRuleApplyBatch) async throws -> URLRuleBatchOutcome {
         calls.append(.apply(opCount: batch.ops.count))
@@ -537,13 +518,13 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             self.applyErrorOnce = nil
             throw applyErrorOnce
         }
-        // R-M3-4a-100（CASE M-36）的注入点：**落地写之前**那一刻，pre-pass 已经跑完。
+        // R-M3-4a-100 / CASE M-36 injection: pre-pass has finished, but application has not started.
         if let beforeLandingTransaction {
             await beforeLandingTransaction()
         }
-        // `.rekey` 的两条守卫与撞车检查照生产 body（`LocalStore.rekeyURLRuleBody`），**先整批校验
-        // 再动 `rows`**：假件没有事务，抛在半途会留下半应用状态，而 §5.5 的契约是「抛错 = 一条
-        // 都没落」。
+        // Match LocalStore.rekeyURLRuleBody's two re-key guards and collision check.
+        // Validate the entire batch before mutating rows: the fake has no transaction,
+        // so a mid-batch throw would violate §5.5's no-partial-application contract.
         for op in batch.ops {
             guard case .rekey(let localId, let to, _) = op else { continue }
             guard let row = rows.first(where: { $0.id == localId }), row.deletedDate == nil else {
@@ -555,8 +536,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         }
         var touchedBuckets: Set<String> = []
         var outcome = URLRuleBatchOutcome()
-        // 8b-3 / R-M3-4a-102：**只有 (α) 那一对**做「来源行未变」复查，判别标准与生产 body
-        // 逐字相同——「这条 `.transfer` 的同身份 `.delete` 在不在同一批里」。
+        // 8b-3 / R-M3-4a-102: recheck unchanged source only for pair α, using the
+        // production criterion: does this batch contain a delete for the transfer's identity?
         var alphaSources: Set<String> = []
         for op in batch.ops {
             if case .delete(let syncId) = op { alphaSources.insert(syncId) }
@@ -565,8 +546,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             land(op, touchedBuckets: &touchedBuckets, outcome: &outcome,
                  alphaSources: alphaSources)
         }
-        // 尾钩：交给它的是此刻**含软删行**的那份投影（寻址要它），**排在稠密重排之前**——
-        // 排在之后的实现会在败者离开的桶里留下一个空洞下标。
+        // Pass the current projection including soft-deleted rows to the tail hook for
+        // addressing. Run it before dense normalization or the loser's former bucket retains a gap.
         if let mergeTail = batch.mergeTail {
             let result = mergeTail.evaluate(Self.ordered(rows))
             lastMergeOps = result.ops
@@ -581,20 +562,20 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         for bucket in touchedBuckets {
             densify(bucket)
         }
-        // 生产实现末尾会重读一次，于是落地后的复核在同一轮里就能做。
+        // Production rereads at the end to enable same-round post-apply verification.
         snapshotIsLoaded = true
         return outcome
     }
 
-    /// 只记一条调用（`calls` 有序，CASE U-24 断言它排在 `.apply` 之后、且一页一条）。
+    /// Record one ordered call; CASE U-24 requires it after apply, once per page.
     func refreshRoutingTableAfterLanding() {
         calls.append(.refreshRoutingTable)
     }
 
-    // MARK: 8b-1：D30 的四个只读查询 + 两个就地更新口
+    // MARK: 8b-1: D30's four read queries and two in-place update APIs
 
-    /// 四个查询建在 `rows` 上、逻辑与生产实现共用 `URLRuleSignatureQueries`（判据只有一份）。
-    /// 不看 `snapshotIsLoaded`：M-28 / M-29 直接构造假件就调。
+    /// All four queries use rows and share URLRuleSignatureQueries with production,
+    /// keeping one set of criteria. Ignore snapshotIsLoaded because M-28/M-29 call the fake directly.
     func signatureIndex(resolve: OwnerResolver) -> [RuleSignature: [PhiLocalURLRule]] {
         URLRuleSignatureQueries.signatureIndex(rows: rows, resolve: resolve)
     }
@@ -613,8 +594,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
                                               tombstonesThisPage: tombstonesThisPage)
     }
 
-    /// 键方向：**本机行 id -> 新 syncId**（与书签那一侧相反）。`apply` 已经改过 `rows`，这里是
-    /// 一次幂等的补写；记一条调用。
+    /// Map local row id to new syncId, opposite to bookmarks. apply already changed
+    /// rows; this is an idempotent follow-up write that records one call.
     func notePersistedClaims(_ claimed: [String: String]) {
         calls.append(.notePersistedClaims(count: claimed.count))
         for index in rows.indices {
@@ -630,12 +611,13 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         }
     }
 
-    // MARK: 8b-4：§8.4.5 的两处清位
+    // MARK: 8b-4: Both flag-clearing paths from §8.4.5
 
-    /// 清位 (a)，与生产 body（`LocalStore.clearPendingLocalEditBody`）逐字同形：
-    /// 寻址含软删行 ⇒ `mergePartnerSyncId` 非 nil 才清（值相同零写）⇒
-    /// `guard row.pendingLocalEdit` ⇒ 用**与生产同一个函数**算此刻的投影、逐单元比 ⇒
-    /// 相等才清标志。三件事一次完成（假件没有事务，但次序与判据必须一致）。
+    /// Clear (a), matching LocalStore.clearPendingLocalEditBody: address including
+    /// soft-deleted rows, clear a nonnil mergePartnerSyncId without redundant writes,
+    /// guard pendingLocalEdit, compute the projection with the production function,
+    /// and clear the flag only if every unit matches. Keep the same order and criteria
+    /// for all three actions even though the fake has no transaction.
     @discardableResult
     func clearPendingLocalEdit(syncId: String,
                                ifProjectionEquals confirmed: RuleProjection) async throws -> Bool {
@@ -655,12 +637,11 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return true
     }
 
-    /// 清位 (b)，同样与生产 body 逐字同形，外加 M-7e 的注入钩子。
-    /// **`mergePartnerSyncId` 一个字节都不碰**。
+    /// Clear (b), matching production with the M-7e hook. Never change mergePartnerSyncId.
     func clearPendingLocalEditIfUnchanged(entries: [String: RuleProjection]) async throws {
         calls.append(.clearPendingLocalEditIfUnchanged(count: entries.count))
         lastClearEntries = entries
-        // 「判定」与「写入」之间的那个真实窗口（裁定 14）。
+        // The real interval between deciding and writing (ruling 14).
         if let beforeClearPendingLocalEditIfUnchanged {
             await beforeClearPendingLocalEditIfUnchanged()
         }
@@ -676,8 +657,8 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         }
     }
 
-    /// 出路 1：按 `syncId` 真删（活行与软删行都删——生产 body 同样不看 `deletedDate`）；
-    /// 行不在 = 无事可做。
+    /// Exit 1: hard-delete by syncId, including live and soft-deleted rows. Production
+    /// also ignores deletedDate; missing rows are no-ops.
     func hardDeleteURLRule(syncId: String) async throws {
         hardDeleteCalls.append(syncId)
         if let deleteError { throw deleteError }
@@ -686,7 +667,7 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         for bucket in buckets { densify(bucket) }
     }
 
-    /// 出路 2：判据是**行上的** `deletedDate`，与游标无关；`syncId == nil` 的软删行不碰。
+    /// Exit 2: use the row's deletedDate, independent of cursors; preserve soft-deleted rows without syncId.
     func purgeSoftDeletedURLRules(olderThan cutoff: Date) async throws -> Int {
         purgeCalls.append(cutoff)
         if let deleteError { throw deleteError }
@@ -700,13 +681,13 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         return expired.count
     }
 
-    /// 一次**编辑器语义**的本机 Save，`LocalStore.applyURLRuleEditsBody` 第 4 / 9 步的假件
-    /// 等价物：内容组三个成员逐一比、有任何一个不同 ⇒ 写不同的那些 + `contentUpdatedDate`
-    /// + `pendingLocalEdit = true`；三个都相同 ⇒ 一个字节都不写、也不置位。
+    /// Editor-semantic local Save, equivalent to LocalStore.applyURLRuleEditsBody
+    /// steps 4/9: compare all three content members; if any differ, write changed fields,
+    /// contentUpdatedDate, and pendingLocalEdit=true. If all match, write and flag nothing.
     ///
-    /// **用例不许直接戳 `rows`**：假件背后没有 `LocalStore`，这个入口是「真实用户写」在假件上
-    /// 唯一的形状（R-M3-4a-100 / CASE M-36 的注入点靠它）。游标一个字节不碰——那次 Save 本来
-    /// 就没上账户。
+    /// Tests must not mutate rows directly. With no backing LocalStore, this is the fake's
+    /// real-user-write API for R-M3-4a-100 / CASE M-36 injection. Leave cursors untouched:
+    /// this Save has not reached the account.
     func applyEditorSave(syncId: String, host: String? = nil, pathPrefix: String?? = nil,
                          ask: Bool? = nil, at contentUpdatedDate: Date) {
         guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
@@ -735,9 +716,9 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows[index].pendingLocalEdit = true
     }
 
-    /// 同一条入口的**改目标**半边（`LocalStore.applyURLRuleEditsBody` 第 5 / 9 步）：
-    /// 目标真的变了 ⇒ 写 `spaceId` + `targetUpdatedDate` + `pendingLocalEdit = true`；
-    /// 相同 ⇒ 一个字节都不写、也不置位。`deletedIds` 那一半是 `applyEditorDelete`。
+    /// Retargeting half of the same API, matching steps 5/9: if the target changes,
+    /// write spaceId, targetUpdatedDate, and pendingLocalEdit=true; otherwise write
+    /// and flag nothing. applyEditorDelete handles deletedIds.
     func applyEditorRetarget(syncId: String, toSpaceId: String, at targetUpdatedDate: Date) {
         guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
               rows[index].deletedDate == nil, rows[index].spaceId != toSpaceId else { return }
@@ -746,13 +727,12 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows[index].pendingLocalEdit = true
     }
 
-    /// 同一条入口的**纯拖动**半边（`LocalStore.applyURLRuleEditsBody` 第 8 / 9 步）：把这一行
-    /// 挪到它那个桶里的 `sortOrder` 位，整桶按 0…n-1 稠密回写，**只给被拖动那一行置位**
-    /// （其余行的重编号是第 8 步的副产品，不在 `upsertedIds` 里 ⇒ 第 9 步不碰它们）。
-    /// **两枚戳一枚都不写**（§4.3 第 4 条：只有 `sortOrder` 变 ⇒ 内容戳与目标戳都不动）。
-    ///
-    /// 8b-4 fix round 1 / 裁定 3 的探针要它：清位比的是**三个**合并单元，rank 是第三个，而
-    /// `applyEditorSave` 造不出「取值全同、只有位置变了」这种编辑。
+    /// Pure-drag half of the API, steps 8/9: move the row to sortOrder in its bucket,
+    /// write dense indexes 0...n-1, and flag only the dragged row. Other rows' renumbering
+    /// is a step-8 side effect outside upsertedIds, so step 9 leaves their flags alone.
+    /// Neither timestamp changes (§4.3 rule 4). The 8b-4 fix-round-1 / ruling-3 probe
+    /// needs this because flag clearing compares three merge units, including rank;
+    /// applyEditorSave cannot model unchanged values with a changed position.
     func applyEditorReorder(syncId: String, toSortOrder: Int) {
         guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
               rows[index].deletedDate == nil else { return }
@@ -768,9 +748,9 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows[index].pendingLocalEdit = true
     }
 
-    /// 编辑器删除集那一半（第 7 步）：**软删**，`pendingLocalEdit` 一个字节都不碰
-    /// （删除不是编辑，R-M3-4a-69）；`mergePartnerSyncId` 由调用方另行安排（M2 那条路径是
-    /// `.softDelete` op）。
+    /// Editor deletion set (step 7): soft-delete without touching pendingLocalEdit,
+    /// since deletion is not an edit (R-M3-4a-69). The caller handles mergePartnerSyncId;
+    /// M2 uses a softDelete op.
     func applyEditorDelete(syncId: String, at deletedDate: Date) {
         guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
               rows[index].deletedDate == nil else { return }
@@ -781,11 +761,12 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         rows.sorted { ($0.spaceId, $0.sortOrder, $0.id) < ($1.spaceId, $1.sortOrder, $1.id) }
     }
 
-    /// 与 `LocalStore.applyURLRuleSyncBatchBody` 同形：寻址含软删行；`.create` / `.update` /
-    /// `.move` 命中就写九个字段、**命中软删行时**才清 `deletedDate` / `mergePartnerSyncId`
-    /// （生产 body `upsertURLRuleBody` 同一条判据，RR10-8：落地不动活行的合并伙伴），不命中就
-    /// 建行；`.reorder` 只写 `sortOrder`；`.delete` 真删；`.rekey` 按 `id` 改 `syncId`、带
-    /// `values` 时紧接着走 `.update` 那一支。`pendingLocalEdit` 一个字节不碰。
+    /// Match LocalStore.applyURLRuleSyncBatchBody: address soft-deleted rows too.
+    /// create/update/move write nine fields on a match or insert otherwise, clearing
+    /// deletedDate/mergePartnerSyncId only for soft-deleted matches. Preserve live merge
+    /// partners (upsertURLRuleBody, RR10-8). reorder writes only sortOrder; delete
+    /// hard-deletes; rekey changes syncId by id and then applies optional values through
+    /// update. Never change pendingLocalEdit.
     private func land(_ op: URLRuleSyncOp, touchedBuckets: inout Set<String>,
                       outcome: inout URLRuleBatchOutcome, alphaSources: Set<String>) {
         switch op {
@@ -800,7 +781,7 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         case .create(let values), .update(let values), .move(let values):
             let existing = rows.firstIndex { $0.syncId == values.syncId }
             let sourceBucket = existing.map { rows[$0].spaceId }
-            // 与生产 body 同一条规则：建行或救回软删行都算「进了桶」，在写之前读。
+            // Match production: creation and soft-deleted restoration both enter the bucket; determine this before writing.
             let entersBucket = existing.map { rows[$0].deletedDate != nil } ?? true
             if let index = existing {
                 rows[index].spaceId = values.spaceId
@@ -833,7 +814,7 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             case .create:
                 touchedBuckets.insert(values.spaceId)
             default:
-                // `.update`：只有进了桶（建行 / 救回软删行）、或（防御）目标真的变了才记桶。
+                // For update, record the bucket only on insertion/restoration or, defensively, an actual target change.
                 if entersBucket {
                     touchedBuckets.insert(values.spaceId)
                 } else if let sourceBucket, sourceBucket != values.spaceId {
@@ -846,16 +827,15 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
             rows[index].sortOrder = sortOrder
             touchedBuckets.insert(rows[index].spaceId)
         case .delete(let syncId):
-            // R-M3-4a-102：(α) 的复查不过 ⇒ `.transfer` 与**同身份的 `.delete`** 两条都不执行
-            // （相序保证 `.transfer` 已经先跑过、集合已经填好）。
+            // R-M3-4a-102: failed α recheck skips both transfer and same-identity delete.
+            // Phase ordering ensures transfer has already populated the skip set.
             guard !outcome.deferredTombstones.contains(syncId) else { return }
             for row in rows where row.syncId == syncId {
                 touchedBuckets.insert(row.spaceId)
             }
             rows.removeAll { $0.syncId == syncId }
-        // 8b-3：§8.4.4 的编辑转移。与生产 body 共用 `URLRuleKind` 那两个纯判定函数
-        // （`transferSourceUnchanged` / `transferDecision`），两处各写一份的实现迟早在「谁赢」
-        // 上分叉。
+        // 8b-3 / §8.4.4 edit transfer shares URLRuleKind.transferSourceUnchanged and
+        // transferDecision with production; duplicate criteria would eventually disagree on the winner.
         case .transfer(let fromSyncId, let toSyncId, let source, let stamps):
             if alphaSources.contains(fromSyncId),
                !URLRuleKind.transferSourceUnchanged(
@@ -885,31 +865,32 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
                 }
                 rows[index].targetUpdatedDate = source.targetUpdatedDate
             }
-            // §8.4.5：**`written > 0` 才置位**、才计一次 `transferred`。
+            // §8.4.5: flag and count transferred only when written > 0.
             if decision.written > 0 {
                 rows[index].pendingLocalEdit = true
                 outcome.transferred += 1
             }
             if decision.contentSuperseded { outcome.transferSupersededByDelete += 1 }
-        // 8b-2 的三条，与生产 body 的三个原语逐字同形（计划裁定五）：按 `syncId` 在**含软删行**
-        // 的定义域里寻址、找不到零写、值相同零写、**一律不碰 `pendingLocalEdit`**。
+        // The three 8b-2 operations match production primitives (ruling 5): address by
+        // syncId including soft-deleted rows, write nothing for missing or unchanged values,
+        // and never touch pendingLocalEdit.
         case .softDelete(let syncId, let mergePartnerSyncId):
             guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
-            // 两列**同一次行写**（RR8-4）；已经软删的行不重写 `deletedDate`。
+            // Write both columns together (RR8-4); do not rewrite deletedDate on already-soft-deleted rows.
             if rows[index].deletedDate == nil { rows[index].deletedDate = Date() }
             rows[index].mergePartnerSyncId = mergePartnerSyncId
             touchedBuckets.insert(rows[index].spaceId)
         case .setMergePartner(let syncId, let mergePartnerSyncId):
             guard let index = rows.firstIndex(where: { $0.syncId == syncId }),
                   rows[index].mergePartnerSyncId != mergePartnerSyncId else { return }
-            // **不记桶**：这一列不进路由表、不改次序。
+            // Do not record the bucket: this column affects neither routing nor order.
             rows[index].mergePartnerSyncId = mergePartnerSyncId
         case .setContentGroup(let syncId, let host, let pathPrefix, let ask,
                               let contentUpdatedDate):
             guard let index = rows.firstIndex(where: { $0.syncId == syncId }) else { return }
             let normalized = LocalStore.normalizedRule(host: host, pathPrefix: pathPrefix)
-            // 三个字段 + 它们共用的那一枚戳；`sortOrder` / `targetUpdatedDate` / `deletedDate`
-            // 一个字节不碰。
+            // Write the three fields and their shared stamp; preserve sortOrder,
+            // targetUpdatedDate, and deletedDate.
             rows[index].host = normalized.host
             rows[index].pathPrefix = normalized.pathPrefix
             rows[index].askBeforeRouting = ask
@@ -917,7 +898,7 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
         }
     }
 
-    /// 该桶的活行按 `(sortOrder, id)` 升序写 `0..<n`。
+    /// Write 0..<n to live bucket rows ordered by (sortOrder, id).
     private func densify(_ bucket: String) {
         let live = rows.indices
             .filter { rows[$0].spaceId == bucket && rows[$0].deletedDate == nil }
@@ -928,10 +909,10 @@ final class FakeURLRuleAccess: PhiURLRuleLocalAccess {
     }
 }
 
-// MARK: - 值类型 fixture
+// MARK: - Value-type fixtures
 
 extension PhiLocalBookmark {
-    /// 每个参数都有默认值，所以一条用例只写它真正在乎的那几个字段。
+    /// Defaults for every argument let each case specify only the fields it tests.
     static func fixture(guid: String = "g1",
                         syncId: String? = nil,
                         spaceId: String = LocalStore.defaultSpaceId,
@@ -976,8 +957,9 @@ extension PhiLocalPin {
 }
 
 extension PhiLocalURLRule {
-    /// 默认目标 `space-a`（`OwnerResolver.fixture()` 映到 `su-1`）。`syncId` 默认 nil 与书签 /
-    /// pin 的 fixture 同款，投影用例自己传；两枚行戳默认 nil ⇒ 无基线投影退回 `createdDate`。
+    /// Default target space-a maps to su-1 through OwnerResolver.fixture. Default
+    /// syncId=nil matches bookmark/pin fixtures; projection cases supply it explicitly.
+    /// Both row stamps default to nil, so baseline-free projection falls back to createdDate.
     static func fixture(id: String = "i1", syncId: String? = nil,
                         spaceId: String = "space-a", host: String = "github.com",
                         pathPrefix: String? = nil, askBeforeRouting: Bool = false,
@@ -997,7 +979,7 @@ extension PhiLocalURLRule {
 }
 
 extension URLRuleLandingValues {
-    /// 一次落地写的九个取值；三枚戳默认同一时刻，钉戳的用例自己传。
+    /// Nine application values; all three stamps default to one instant unless a case supplies them.
     static func fixture(syncId: String = "R1", spaceId: String = "S1", host: String = "github.com",
                         pathPrefix: String? = nil, askBeforeRouting: Bool = false, sortOrder: Int = 0,
                         createdDate: Date = Date(timeIntervalSince1970: 1_000),
@@ -1010,9 +992,9 @@ extension URLRuleLandingValues {
     }
 }
 
-// MARK: - 载荷构造（返回生成的 proto 类型）
+// MARK: - Payload builders returning generated proto types
 
-/// `PhiSettingValue` 是这套 schema 的通用「值 + LWW 戳」标量，三种 `v` case 各一个重载。
+/// PhiSettingValue is the schema's generic value-plus-LWW-stamp scalar, with one overload per v case.
 func stamped(_ value: String, at ms: Int64) -> Phi_PhiSettingValue {
     var out = Phi_PhiSettingValue()
     out.updatedAtMs = ms
@@ -1034,13 +1016,11 @@ func stamped(_ value: Int64, at ms: Int64) -> Phi_PhiSettingValue {
     return out
 }
 
-/// 一条书签实体。
-///
-/// `space_uuid` 与 `parent_uuid` 是 LOCATION 的两半，共用 `locationStamp`（§4.3）；
-/// `rank` 有自己的戳；四个内容字段共用 `contentStamp`。`secondary_url` /
-/// `secondary_title` 没有参数，按 proto 的「永远发射」规则发显式清空值 ""——省略它们会让
-/// fixture 与它自己的快照在 `has_…` 上不同，每一条「这一轮不发布」的断言都会看到一次
-/// 虚假 commit。
+/// Bookmark entity. space_uuid/parent_uuid share locationStamp (§4.3), rank has
+/// its own stamp, and four content fields share contentStamp. secondary_url/title
+/// have no parameters and emit explicit empty strings under the proto always-emit
+/// rule. Omitting them changes has_... relative to the fixture's own snapshot,
+/// producing false commits in every no-publication assertion.
 func bookmarkPayload(uuid: String,
                      spaceUuid: String = "su-1",
                      parentUuid: String = "",
@@ -1068,12 +1048,10 @@ func bookmarkPayload(uuid: String,
     return entity
 }
 
-/// 一条 pin 实体。
-///
-/// `ownerKey` 就是 client tag 第三段里那个 ownerKey，按 proto 的三选一映射进 `owner`
-/// oneof：字面量 "app" = 一条 oneof 都不设（App 作用域，缺席**就是**三个值之一）；
-/// `"su-"` 前缀或字面量 `LocalStore.defaultSpaceId` = Space 作用域；其余 = Profile
-/// 作用域。本计划的命名约定是 `su-*` 空间 uuid / `pu-*` profile uuid。
+/// Pin entity. ownerKey is the client tag's third segment, mapped to the owner
+/// oneof: literal app leaves all cases absent (App scope is one of the three values);
+/// su- prefix or LocalStore.defaultSpaceId selects Space; everything else selects
+/// Profile. Fixtures use su-* Space UUIDs and pu-* Profile UUIDs.
 func pinPayload(lineage: String,
                 ownerKey: String = "pu-1",
                 rank: String = "V",
@@ -1087,7 +1065,7 @@ func pinPayload(lineage: String,
     var entity = Phi_PhiPinTabEntity()
     entity.pinUuid = lineage
     if ownerKey == "app" {
-        // owner 留空 = App 作用域。
+        // Absent owner means App scope.
     } else if ownerKey.hasPrefix("su-") || ownerKey == LocalStore.defaultSpaceId {
         entity.spaceUuid = ownerKey
     } else {
@@ -1102,13 +1080,11 @@ func pinPayload(lineage: String,
     return entity
 }
 
-/// 一条 URL Rule 实体。
-///
-/// 三个合并单元各带自己的戳（§8.2）：内容组三个成员共用 `contentStamp`（载体是 `host`，
-/// 发送时写成相等）、`target_space_uuid` 带 `targetStamp`、`rank` 带 `rankStamp`。
-/// `path_prefix` 默认发显式的 `""`（线上的「匹配任意路径」编码，本机是 nil）——与
-/// `bookmarkPayload` 的 `secondary_url` 同一个理由：省略会让 fixture 与它自己的快照在
-/// `has_…` 上不同，每一条「这一轮不发布」的断言都会看到一次虚假 commit。
+/// URL-rule entity. Each merge unit has its own stamp (§8.2): three content
+/// members share contentStamp, carried by host and emitted equally; target_space_uuid
+/// uses targetStamp; rank uses rankStamp. path_prefix defaults to explicit empty
+/// string, the wire match-any-path encoding for local nil. As with bookmark
+/// secondary_url, omission changes has_... versus the fixture's snapshot and creates false commits.
 func urlRulePayload(uuid: String,
                     targetSpaceUuid: String = "su-1",
                     host: String = "github.com",
@@ -1132,10 +1108,9 @@ func urlRulePayload(uuid: String,
     return entity
 }
 
-/// 一条 Space 实体，书签解析 `space_uuid` 时当背景用。
-///
-/// `profile_uuid` 没有参数，所以不发射；需要 profile 绑定的用例在返回值上自己设
-/// （它是 `var`）。默认 Space 按 D1 不带 `theme_id` 与 `profile_uuid`。
+/// Space entity used as context for bookmark space_uuid resolution. No profile_uuid
+/// parameter means no emission; cases needing a binding set the mutable result.
+/// D1's default Space carries neither theme_id nor profile_uuid.
 func spacePayload(uuid: String, name: String = "S", stamp: Int64 = 100) -> Phi_PhiSpaceEntity {
     var entity = Phi_PhiSpaceEntity()
     entity.spaceUuid = uuid
@@ -1170,7 +1145,7 @@ func envelope(_ payload: Phi_PhiSpaceEntity) -> Phi_PhiEntity {
     return out
 }
 
-/// 基线字节：`envelope(payload).serializedData()`，写进游标的 `reconciled` / `server`。
+/// Baseline bytes from envelope(payload).serializedData(), stored as reconciled/server on cursors.
 func baselineBytes(_ payload: Phi_PhiBookmarkEntity) -> Data {
     (try? envelope(payload).serializedData()) ?? Data()
 }
@@ -1189,12 +1164,11 @@ func baselineBytes(_ payload: Phi_PhiURLRuleEntity) -> Data {
     (try? envelope(payload).serializedData()) ?? Data()
 }
 
-// MARK: - 协议层 fixture
+// MARK: - Protocol fixtures
 
-/// `PhiRemoteEntity`（`PhiSyncProtocolClient.swift`）是假件页的元素类型。生成的
-/// `SyncPb_SyncEntity` 是线上消息，假件不碰它。
-///
-/// `tag` 是 **client tag**（`phi-bookmark:<uuid>` 之类），这里现算它的 hash。
+/// Fake pages contain PhiRemoteEntity from PhiSyncProtocolClient.swift, not generated
+/// wire SyncPb_SyncEntity messages. tag is a client tag such as phi-bookmark:<uuid>;
+/// compute its hash here.
 func remoteEntity(_ envelope: Phi_PhiEntity,
                   tag: String,
                   version: Int64,
@@ -1215,7 +1189,7 @@ func remoteTombstone(tag: String, version: Int64, entityId: String = "srv-1") ->
                     deleted: true)
 }
 
-/// 密文是随机字节，解不开——§5.5 的隔离路径用。
+/// Random, undecryptable ciphertext for §5.5 isolation tests.
 func remoteUnreadable(tag: String, version: Int64) -> PhiRemoteEntity {
     PhiRemoteEntity(entityId: "srv-1",
                     clientTagHash: PhiSyncEntity.clientTagHash(for: tag),
@@ -1224,7 +1198,7 @@ func remoteUnreadable(tag: String, version: Int64) -> PhiRemoteEntity {
                     deleted: false)
 }
 
-/// 一条 `kind` oneof 都没设的载荷，分发的兜底分支用。
+/// Payload with no kind oneof for the dispatcher fallback.
 func remoteUnknownKind(tag: String, version: Int64, key: SymmetricKey) -> PhiRemoteEntity {
     remoteEntity(Phi_PhiEntity(), tag: tag, version: version, key: key)
 }
@@ -1238,7 +1212,7 @@ func remoteSettingsEntity(key settingKey: String, value: String,
     return remoteEntity(wrapper, tag: PhiSyncEntity.clientTag, version: version, key: key)
 }
 
-/// `FakePhiSyncClient.Page` 的构造糖。
+/// Convenience builder for FakePhiSyncClient.Page.
 func page(_ entities: [PhiRemoteEntity],
           marker: String = "m1",
           changesRemaining: Bool = false) -> PhiSyncEngineTests.FakePhiSyncClient.Page {
@@ -1247,10 +1221,10 @@ func page(_ entities: [PhiRemoteEntity],
                                               changesRemaining: changesRemaining)
 }
 
-// MARK: - commit 过滤
+// MARK: - Commit filtering
 
-/// 书签 tag 的 commit 条目。设置实体与 Space 实体骑在同一个 `commits` 列表上，不是这些
-/// 用例关心的东西。
+/// Bookmark-tag commits only. Settings and Space entities share the commits list
+/// but are outside these assertions.
 func bookmarkCommits(_ client: PhiSyncEngineTests.FakePhiSyncClient)
     -> [PhiSyncEngineTests.FakePhiSyncClient.CommitCall] {
     client.commits.filter { $0.name == PhiSyncEntity.bookmarkEntityName }
@@ -1261,8 +1235,8 @@ func pinCommits(_ client: PhiSyncEngineTests.FakePhiSyncClient)
     client.commits.filter { $0.name == PhiSyncEntity.pinEntityName }
 }
 
-/// 从一条 commit 的密文里解出 `bookmark_uuid`，供顺序断言。tombstone（`ciphertext == nil`）
-/// 与解不开的密文都返回 nil。
+/// Decrypt bookmark_uuid for ordering assertions; tombstones with nil ciphertext
+/// and undecryptable ciphertext return nil.
 func committedBookmarkUuid(_ call: PhiSyncEngineTests.FakePhiSyncClient.CommitCall,
                            key: SymmetricKey) -> String? {
     guard let ciphertext = call.ciphertext,
@@ -1271,8 +1245,8 @@ func committedBookmarkUuid(_ call: PhiSyncEngineTests.FakePhiSyncClient.CommitCa
     return payload.bookmarkUuid
 }
 
-/// 同上，解出 `pin_uuid`（lineage）。**只有 lineage，不含 owner**：一条 lineage 在 N 个
-/// owner 里是 N 条实体，要区分它们得另看 `clientTagHash`。
+/// Likewise for pin_uuid lineage, without owner. One lineage under N owners is
+/// N entities; use clientTagHash to distinguish them.
 func committedPinIdentity(_ call: PhiSyncEngineTests.FakePhiSyncClient.CommitCall,
                           key: SymmetricKey) -> String? {
     guard let ciphertext = call.ciphertext,
@@ -1281,10 +1255,10 @@ func committedPinIdentity(_ call: PhiSyncEngineTests.FakePhiSyncClient.CommitCal
     return payload.pinUuid
 }
 
-// MARK: - 游标 fixture 与内存 store
+// MARK: - Cursor fixtures and in-memory stores
 
-/// 一条**活**游标：没有 `deletedAtMs`，也没有任何待办位。参数只开了用例真正会挑的那几个
-/// 字段，其余走 `PhiOwnedItemCursor` 自己的默认值——一条用例写出来的字段就是它在乎的字段。
+/// Live cursor with no deletedAtMs or pending flags. Expose only fields selected
+/// by tests; other values use PhiOwnedItemCursor defaults so each case states what matters.
 func ownedCursor(reconciled: Data? = nil, server: Data? = nil,
                  entityId: String = "", version: Int64 = 0,
                  ownerUuid: String? = nil) -> PhiOwnedItemCursor {
@@ -1297,9 +1271,9 @@ func ownedCursor(reconciled: Data? = nil, server: Data? = nil,
     return cursor
 }
 
-/// 一条**待发 tombstone** 的游标：`pendingDelete` 已经置起，`deleteDecidedAtMs` 是差分作出
-/// 那个删除决定的时刻（§5.6 的 L1 支拿它与入站实体的 `location` 时间戳比）。
-/// `deletedAtMs` 仍是 nil——删除还没被服务端接受，还没定案。
+/// Pending-tombstone cursor: pendingDelete is set and deleteDecidedAtMs records
+/// the diff's decision time, compared with inbound location stamps by §5.6 L1.
+/// deletedAtMs remains nil until the server accepts and finalizes deletion.
 func pendingDeleteCursor(decidedAtMs: Int64, entityId: String = "srv-1",
                          version: Int64 = 1, rejectRounds: Int = 0,
                          reconciled: Data? = nil) -> PhiOwnedItemCursor {
@@ -1310,9 +1284,9 @@ func pendingDeleteCursor(decidedAtMs: Int64, entityId: String = "srv-1",
     return cursor
 }
 
-/// 一条**已清理**的 Space 游标，保留期级联（§9.3）用：形状照 `PhiSpaceSyncTable.purgeExpired`
-/// 留下的那个 tombstone——`entityId` / `version` 保留，`hidden` 与 `deletedAtMs` 在
-/// （`hidden ⇒ deletedAtMs != nil` 是 Space 侧的不变量），再盖上 `purgedAtMs`。
+/// Purged Space cursor for §9.3 retention cascades, matching purgeExpired output:
+/// retain entityId/version, hidden/deletedAtMs, and add purgedAtMs. Space invariant:
+/// hidden implies a nonnil deletedAtMs.
 func purgedSpaceCursor(purgedAtMs: Int64 = 1) -> PhiSpaceCursor {
     var cursor = PhiSpaceCursor()
     cursor.entityId = "srv-space"
@@ -1323,24 +1297,24 @@ func purgedSpaceCursor(purgedAtMs: Int64 = 1) -> PhiSpaceCursor {
     return cursor
 }
 
-/// 内存版 `PhiOwnedItemStateStore`。`: AnyObject` 是协议要求的，也是这个假件的前提：
-/// 测试改了 `table`，引擎下一次 `load` 就该看得到。
+/// In-memory PhiOwnedItemStateStore. The protocol requires AnyObject, and the
+/// fake relies on it: engine load must observe test mutations of table.
 final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     var table: PhiOwnedItemTable
-    /// 每次 `load` 都报损（= 那个文件没了）。
+    /// Every load reports file loss.
     var forcedLoss = false
-    /// 只在第 N 次 `load` 报损（N 从 1 数）——「apply 段读到旧表、发布段才发现丢失」这一类
-    /// 用例要的就是这个：两次 `load` 之间的那一半轮次必须照常跑完。
+    /// Report loss only on the Nth load, counting from 1. Cases where apply reads an
+    /// old table but publication discovers loss need the intervening half-round to finish normally.
     var loseOnLoadNumber: Int?
     private(set) var deleted = false
-    /// 每一次 `load` 收到的 `hadRecords`，按调用序。报损判据只随它变，断言它就是断言引擎
-    /// 把哪一条 per-kind 标志喂了进来。
+    /// Record hadRecords for every load in call order. Loss reporting depends on it,
+    /// so these assertions identify which per-kind flag the engine supplied.
     private(set) var hadRecordsSeen: [Bool] = []
-    /// 置真 ⇒ 每一次 `save` 都回 false 并**不改** `table`（R-M3-4a-83 的内存版）。
-    /// 用例自己置回 false 放行。
+    /// When true, every save returns false without changing table, modeling R-M3-4a-83.
+    /// Tests set it false to permit writes again.
     var failNextSave = false
-    /// 只让第 N 次 `save` 失败（N 从 1 数，按 `saveCalls` 数）——B-2 的用例要「最后一页那次
-    /// 落地写」「发布段那一次」这种精确注入。失败那一次同样**不改** `table`。
+    /// Fail only save number N, counting saveCalls from 1, without changing table.
+    /// B-2 cases need precise failures at final-page application or publication.
     var failSaveOnCallNumber: Int?
     private(set) var saveCalls = 0
 
@@ -1348,15 +1322,13 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
         self.table = table
     }
 
-    /// 报损那一路**与真 store 逐字同形**，四种情形一个不少：`forcedLoss` 与
-    /// `loseOnLoadNumber` 是「文件没了 / 解不开 / 版本偏低」的脚本化对应物，**而「表里一条
-    /// 游标都没有」这一条必须自己成立**——`FileOwnedItemStateStore` 对空表照样报损（CASE
-    /// 3.6），少了它，一个拿着空表的假件会让 Task 6 / 9 的用例在「正常一轮、什么都没丢」上
-    /// 变绿，而线上代码在同一处报损并重放整个 data type。
-    ///
-    /// `reportedLoss` 一律取 `hadRecords`（`forcedLoss` 说的是「文件没了」，不是「无条件报
-    /// 真」——`hadRecords == false` 时文件本来就不该存在，那不是丢失）。`table` 本身不动，
-    /// 好让用例还能断言「引擎后来写回去的是什么」。
+    /// Match all four production loss conditions. forcedLoss/loseOnLoadNumber model
+    /// missing, undecodable, or old-version files; an empty cursor table must independently
+    /// trigger loss, as FileOwnedItemStateStore does (CASE 3.6). Otherwise fake Task 6/9
+    /// rounds would pass normally where production reports loss and replays the full type.
+    /// reportedLoss always takes hadRecords: forcedLoss means missing file, not unconditional
+    /// loss. With hadRecords=false, the file was never expected. Leave table unchanged
+    /// so tests can still inspect subsequent engine writes.
     func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool) {
         hadRecordsSeen.append(hadRecords)
         let loses = forcedLoss || loseOnLoadNumber == hadRecordsSeen.count || table.cursors.isEmpty
@@ -1378,17 +1350,15 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
     }
 }
 
-/// 内存版 `PhiSyncMarkerStore`（M3-4a Task 3）。形状照上面的 `MemoryOwnedItemStore`，并且
-/// 同样是**顶层类型**：`PhiSyncMarkerBoundaryTests` 与 `SelfRevokeTests` 跨文件共用同一个
-/// 假件，不各抄一份。
-///
-/// `saves` 记**每一次** `save` 调用收到的表（失败的那一次也记），所以 `saves.count` 就是
-/// 调用计数，`failSaveOnCallNumber` 数的正是它；「一次写都没有」断言 `saves.isEmpty`。
+/// In-memory PhiSyncMarkerStore (M3-4a Task 3), matching MemoryOwnedItemStore.
+/// Keep it top-level so PhiSyncMarkerBoundaryTests and SelfRevokeTests share it.
+/// saves records every attempted table, including failures; saves.count is both
+/// call count and failSaveOnCallNumber's index. Assert saves.isEmpty for no writes.
 final class MemoryMarkerStore: PhiSyncMarkerStore {
     var file: PhiSyncMarkerFile
-    /// 每次 `save` 都失败（= 盘满 / 目录不可写）。Task 2b 的第三个置位点用它。
+    /// Every save fails, modeling full disk or an unwritable directory for Task 2b's third flag-setting point.
     var failSave = false
-    /// 只让第 N 次 `save` 失败（N 从 1 数）——逐页边界的用例要「第 3 页那一次写失败」。
+    /// Fail only the Nth save, counting from 1, for precise page-boundary failures.
     var failSaveOnCallNumber: Int?
     private(set) var saves: [PhiSyncMarkerFile] = []
     private(set) var loadCount = 0
@@ -1403,7 +1373,7 @@ final class MemoryMarkerStore: PhiSyncMarkerStore {
         return file
     }
 
-    /// 失败那一路**不改 `file`**（R-M3-4a-83 的内存版）：内存与「磁盘」一起停在旧表上。
+    /// Failure preserves file (R-M3-4a-83): memory and simulated disk retain the old table.
     @discardableResult
     func save(_ file: PhiSyncMarkerFile) -> Bool {
         saves.append(file)
@@ -1412,8 +1382,8 @@ final class MemoryMarkerStore: PhiSyncMarkerStore {
         return true
     }
 
-    /// 删，不是存一张空表：只置 `deleted`，`file` 复位成空表——下一次 `load` 交回的正是
-    /// 真 store「文件不存在」那一路的结论。
+    /// Delete rather than save an empty table: set deleted and reset file so the next
+    /// load matches the real store's missing-file result.
     func deleteFile() {
         deleted = true
         file = PhiSyncMarkerFile()
@@ -1422,16 +1392,14 @@ final class MemoryMarkerStore: PhiSyncMarkerStore {
 
 // MARK: - CASE 0.1 – 0.5
 
-/// 本文件既是 M3-3「自有条目」（书签 + pin）全部测试的共享脚手架，也是 Task 0 自己那
-/// 五条用例的宿主。形状照 `PhiSpaceLocalAccessTests.swift`：顶层的假件 + 同文件里的
-/// `XCTestCase`。
-///
-/// 假件是 `@MainActor` 的（两个协议都是），所以测试类整体标 `@MainActor`。
+/// Shared support for all M3-3 owned-item bookmark/pin tests and Task 0's five cases.
+/// Follow PhiSpaceLocalAccessTests: top-level fakes plus XCTestCase in one file.
+/// Both protocols and their fakes are MainActor, so isolate the entire test class too.
 @MainActor
 final class OwnedItemsTestSupportTests: XCTestCase {
 
-    /// 三个相的编号，与 `BookmarkApplyBatch` 的排序判据同义但**独立实现**——用被测类型
-    /// 自己的排序函数来断言它自己的排序，测不出任何东西。
+    /// Number the three phases independently of BookmarkApplyBatch's sorting code;
+    /// using the implementation's own comparator would verify nothing.
     private func phase(_ op: BookmarkApplyOp) -> Int {
         switch op {
         case .claim, .create, .move: return 1
@@ -1448,10 +1416,8 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         ops.compactMap { if case .delete(let guid) = $0 { return guid } else { return nil } }
     }
 
-    /// CASE 0.1 — 批次按三相排序。
-    ///
-    /// 防的是什么：三相交错或同相内父子顺序反了，落地时会去更新一条已被删的行，或建一条
-    /// 父还不存在的子行。
+    /// CASE 0.1: sort batches into three phases. Interleaving phases or reversing
+    /// parent/child order can update deleted rows or create children before their parents exist.
     func testBookmarkBatchSortsOpsIntoThreePhasesWithParentsBeforeChildren() {
         let unordered: [BookmarkApplyOp] = [
             .delete(guid: "child"),
@@ -1464,15 +1430,14 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         let ops = BookmarkApplyBatch(unordered: unordered, parentOf: ["child": "parent"]).ops
 
         let phases = ops.map(phase)
-        XCTAssertEqual(phases, phases.sorted(), "相序号必须单调不减")
-        XCTAssertEqual(createGuids(ops), ["parent", "child"], "同相内父先于子")
-        XCTAssertEqual(deleteGuids(ops), ["child", "parent"], "delete 相内子先于父")
+        XCTAssertEqual(phases, phases.sorted(), "Phase numbers must be nondecreasing")
+        XCTAssertEqual(createGuids(ops), ["parent", "child"], "Parents precede children within the create phase")
+        XCTAssertEqual(deleteGuids(ops), ["child", "parent"], "Children precede parents within the delete phase")
     }
 
-    /// CASE 0.2 — 祖先的 delete 绝不排在它后代的操作之前。
-    ///
-    /// 防的是什么：先删父、再更新已随 cascade 消失的子行——那次更新在 Task 2a 之后会抛
-    /// `.rowNotFound`，整批回滚，这一轮永远落不了地。
+    /// CASE 0.2: never delete an ancestor before operating on its descendants.
+    /// Deleting the parent first cascades away a child; updating it then throws
+    /// rowNotFound after Task 2a, rolling back the whole batch forever.
     func testAnAncestorDeleteNeverPrecedesAnOperationOnItsDescendant() {
         let unordered: [BookmarkApplyOp] = [
             .delete(guid: "parent"),
@@ -1489,10 +1454,8 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         XCTAssertLessThan(updateIndex, deleteIndex)
     }
 
-    /// CASE 0.3 — 假件用枚举记调用。
-    ///
-    /// 防的是什么：用 `[String]` 记调用与既有 `FakePhiSpaceAccess.Call` 形状不一致，复用
-    /// 既有断言写法的人会踩空。
+    /// CASE 0.3: record fake calls with an enum. String arrays would diverge from
+    /// FakePhiSpaceAccess.Call and break reuse of existing assertion patterns.
     func testFakeBookmarkAccessRecordsCallsAsEnumCases() async throws {
         let fake = FakeBookmarkAccess(rows: [.fixture(guid: "g1")])
 
@@ -1503,10 +1466,8 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         XCTAssertEqual(calls, [.allBookmarks, .apply(opCount: 1)])
     }
 
-    /// CASE 0.4 — `siblings` 不产生第二次读。
-    ///
-    /// 防的是什么：把 `siblings` 实现成第二次 fetch，一棵上千行的树每轮要扫好几遍，而且
-    /// 两次之间用户可能改过行。
+    /// CASE 0.4: siblings does not fetch again. Repeated fetching rescans large trees
+    /// several times per round and may observe user changes between reads.
     func testSiblingsIsAnInMemoryGroupingRatherThanASecondFetch() throws {
         let fake = FakeBookmarkAccess(rows: [
             .fixture(guid: "a", parentGuid: "p", index: 0),
@@ -1522,10 +1483,8 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         XCTAssertEqual(fetchCount, 1)
     }
 
-    /// CASE 0.5 — App 作用域的 pin 两个 owner 字段都为 nil。
-    ///
-    /// 防的是什么：`profileId` 写成非可选时 App 作用域的行根本表达不了，而 §7.2 的 owner
-    /// 推导表里那一整行就没法测。
+    /// CASE 0.5: App-scope pins have both owner fields nil. A nonoptional profileId
+    /// cannot represent App scope or test that row of §7.2's owner-inference table.
     func testAnAppScopedPinFixtureCarriesNeitherOwnerId() {
         let pin = PhiLocalPin.fixture(spaceId: nil, profileId: nil)
 
@@ -1536,16 +1495,16 @@ final class OwnedItemsTestSupportTests: XCTestCase {
     }
 }
 
-// MARK: - 归属解析器 fixture
+// MARK: - Owner-resolver fixtures
 
 extension OwnerResolver {
-    /// 本里程碑全部归属项用例的公共解析器：`space-a → su-1`、`space-b → su-2`、
-    /// `Default → pu-1`，反向映射由正向表现算，两个方向**永远一致**——手写两张表迟早
-    /// 会漂，而一条只在单方向存在的映射会让「归属解析不到」这一支在本该绿的用例上变红。
+    /// Shared resolver: space-a → su-1, space-b → su-2, Default → pu-1. Derive reverse
+    /// mappings from the forward table to keep both directions consistent; separate
+    /// handwritten tables drift and falsely trigger unresolved-owner paths.
     ///
-    /// `ineligible` 里的 syncUuid 让 `isEligibleSpace` 返回 false（模拟 hidden / purged）。
-    /// 它对**不在表里**的 uuid 返回 true：`isEligibleSpace` 的判据只对 Space 归属有意义，
-    /// pin 的 profile / app 归属走的是另外两个成员，被它一刀切掉会让整类 pin 停止发布。
+    /// ineligible UUIDs make isEligibleSpace false, modeling hidden/purged Spaces.
+    /// Unknown UUIDs return true: eligibility applies only to Space ownership, while
+    /// Profile/App pins use the other members. Rejecting them here would stop whole pin kinds from publishing.
     static func fixture(spaceUuids: [String: String] = ["space-a": "su-1", "space-b": "su-2"],
                         profileUuids: [String: String] = ["Default": "pu-1"],
                         ineligible: Set<String> = []) -> OwnerResolver {

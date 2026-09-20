@@ -2,18 +2,16 @@ import Foundation
 import XCTest
 @testable import Phi
 
-/// `SyncableOwnedItems` 与 `BookmarkKind` 的模块级用例：**没有 SwiftData、没有引擎、
-/// 没有持久化**，全部输入都是值类型，全部输出都是返回值。
-///
-/// 类标 `@MainActor` 是因为 Task 0 那两个假件（`FakeBookmarkAccess` / `FakePinAccess`）
-/// 是 `@MainActor` 的，本里程碑后面的用例会在同一个文件族里构造它们；模块本身不需要
-/// 任何 actor。
+/// Module tests for SyncableOwnedItems and BookmarkKind: no SwiftData, engine,
+/// or persistence; all inputs and outputs are values. MainActor is required only
+/// for the shared Task 0 FakeBookmarkAccess/FakePinAccess used by this test family;
+/// the module itself needs no actor.
 @MainActor
 final class SyncableOwnedItemsTests: XCTestCase {
 
     private let resolve = OwnerResolver.fixture()
 
-    // MARK: - 小工具
+    // MARK: - Helpers
 
     private func arrival(_ payload: Phi_PhiBookmarkEntity,
                          entityId: String = "srv-1",
@@ -30,7 +28,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
                                 table: table, resolve: resolve ?? self.resolve, context: context)
     }
 
-    /// 一条活游标，带基线与归属——`plan` 的删除排序与 `tombstones` 的三条判据都读它。
+    /// Live cursor with baseline and owner, read by plan's delete ordering and the three tombstone criteria.
     private func landedCursor(_ payload: Phi_PhiBookmarkEntity,
                               entityId: String = "srv-1",
                               version: Int64 = 1,
@@ -43,9 +41,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
         plan.steps.filter { $0.kind == .delete }.map(\.identity)
     }
 
-    /// 本机行的内容取值与 `bookmarkPayload` 的默认值逐字段对齐，于是「没有任何变化」
-    /// 的那些用例产出的字节真的等于基线。`createdDate` 是 1 秒 = 1000 ms，正是
-    /// `bookmarkPayload` 的 `createdAtMs` 默认值。
+    /// Match every local content field to bookmarkPayload defaults so unchanged
+    /// cases produce bytes equal to the baseline. createdDate is one second,
+    /// matching the payload's default createdAtMs=1000.
     private func row(identity: String,
                      guid: String? = nil,
                      spaceId: String = "space-a",
@@ -68,10 +66,8 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.1
 
-    /// CASE 4a.1 — 归属解析不到 ⇒ 停放。
-    ///
-    /// 防的是什么：停放是「等 Space 落地」，不是丢弃也不是猜一个 Space；停放项在本机
-    /// 不该留任何痕迹，否则下一轮差分把那个痕迹当成本机意图发回去。
+    /// CASE 4a.1: unresolved owner parks the entity. Wait for its Space without
+    /// discarding, guessing, or leaving local traces that the next diff could publish as intent.
     func testAnArrivalWhoseOwnerDoesNotResolveIsParkedRatherThanLandedOrDropped() {
         let plan = planned([arrival(bookmarkPayload(uuid: "b1", spaceUuid: "su-unknown"))])
 
@@ -83,7 +79,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.2 / 4a.3
 
-    /// CASE 4a.2 — 一页里乱序到达的三层树一轮落完。
+    /// CASE 4a.2: apply a three-level tree arriving out of order in one round.
     func testAThreeLevelTreeArrivingOutOfOrderLandsInOneRound() {
         let plan = planned([
             arrival(bookmarkPayload(uuid: "c", parentUuid: "b")),
@@ -97,9 +93,8 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertTrue(parkedKeys.isEmpty)
     }
 
-    /// CASE 4a.3 — 五层树打乱顺序仍一轮落完。
-    ///
-    /// 防的是什么：按到达顺序处理的实现会把每一层推到下一轮，一棵五层树要五轮。
+    /// CASE 4a.3: apply a shuffled five-level tree in one round. Arrival-order
+    /// processing would defer each level and require five rounds.
     func testAFiveLevelTreeStillLandsInOneRoundWhateverTheArrivalOrder() {
         let chain = ["n1", "n2", "n3", "n4", "n5"]
         var arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>] = []
@@ -108,7 +103,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
                                                     parentUuid: depth == 0 ? "" : chain[depth - 1],
                                                     isFolder: depth < chain.count - 1)))
         }
-        // 打乱成一个与链序毫无关系的到达顺序。
+        // Shuffle arrivals independently of chain order.
         let shuffled = [arrivals[3], arrivals[0], arrivals[4], arrivals[2], arrivals[1]]
 
         let plan = planned(shuffled)
@@ -121,9 +116,8 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.4
 
-    /// CASE 4a.4 — 环 ⇒ 两条都 refuse，不 trap。
-    ///
-    /// 防的是什么：这是对端字节不是本机 bug；停放会让它永远等一个等不到的父。
+    /// CASE 4a.4: refuse both cycle members without trapping. Remote bytes are
+    /// untrusted, not a local bug; parking waits forever for an impossible parent.
     func testACycleRefusesBothEntitiesInsteadOfParkingOrTrapping() {
         let plan = planned([
             arrival(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true)),
@@ -149,9 +143,8 @@ final class SyncableOwnedItemsTests: XCTestCase {
         return table
     }
 
-    /// CASE 4a.5 — 父被证实死亡时子才提升。
-    ///
-    /// 防的是什么：提升是一次字段变化，会推回账户，两边靠它收敛。
+    /// CASE 4a.5: promote children only when the parent is confirmed dead.
+    /// Promotion changes fields and republishes them so devices converge.
     func testAChildIsLiftedToTheRootOnlyWhenItsParentIsProvenDead() {
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["parent"]
@@ -165,7 +158,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(childStep?.newParentUuid, "")
     }
 
-    /// CASE 4a.6 — 子自己也带 tombstone ⇒ 两条都删，不提升。
+    /// CASE 4a.6: a child also carrying a tombstone is deleted with its parent, without promotion.
     func testAChildThatCarriesItsOwnTombstoneIsDeletedRatherThanLifted() {
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["parent", "child"]
@@ -179,29 +172,28 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(deletes, ["child", "parent"])
     }
 
-    /// CASE 4a.7 — 父只是「缺席」时子停放（负面三连）。
-    ///
-    /// 防的是什么：这三种都不是「父被证实死亡」；当成死亡会把一棵完好的子树整体提到
-    /// Space 根，而那个位置会被发回账户、在每一台设备上生效。
+    /// CASE 4a.7: merely absent parents park children, in all three negative cases.
+    /// None proves parent death; promotion would move an intact subtree to the
+    /// Space root and publish that incorrect location to every device.
     func testAMerelyAbsentParentParksTheChildInsteadOfLiftingIt() {
         let childArrival = arrival(bookmarkPayload(uuid: "child", parentUuid: "parent"))
 
-        // ① 父的实体解密失败，被记进了 `unreadableTagHashes`：本机认得这条身份（游标在），
-        //    但它从来没落过地，所以既没有本地行也没有基线。
+        // ① Parent decryption failed and its tag is unreadable. A cursor identifies it,
+        // but it never applied, so it has neither local row nor baseline.
         var unreadableTable = PhiOwnedItemTable()
         unreadableTable.cursors["parent"] = PhiOwnedItemCursor()
         unreadableTable.cursors["child"] = landedCursor(
             bookmarkPayload(uuid: "child", parentUuid: "parent"), entityId: "srv-c")
 
-        // ② 父本轮被 §4.6 拒收（非法 rank）。
+        // ② §4.6 refuses this round's parent for an invalid rank.
         let refusedParent = arrival(bookmarkPayload(uuid: "parent", rank: "V0", isFolder: true))
 
-        // ③ 父根本没到。
+        // ③ The parent has not arrived.
         let cases: [(name: String, arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>],
                      table: PhiOwnedItemTable)] = [
-            ("父不可读", [childArrival], unreadableTable),
-            ("父被拒收", [childArrival, refusedParent], parentChildTable()),
-            ("父没到", [childArrival], PhiOwnedItemTable()),
+            ("Unreadable parent", [childArrival], unreadableTable),
+            ("Refused parent", [childArrival, refusedParent], parentChildTable()),
+            ("Absent parent", [childArrival], PhiOwnedItemTable()),
         ]
 
         for scenario in cases {
@@ -218,13 +210,12 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.8
 
-    /// CASE 4a.8 — 非法 rank ⇒ refuse，且 `rankBetween` 零调用。
-    ///
-    /// 防的是什么：`rankBetween` 在发布构建里用 `precondition` 直接 trap，而对端字节是
-    /// 不可信输入——唯一的解码边界就是 `isLegalRank`。书签让这件事更严重：rank 只在同一个
-    /// 父下可比，一次非法 rank 能污染的是一整个文件夹。
+    /// CASE 4a.8: refuse invalid rank without calling rankBetween. Its precondition
+    /// traps even in release builds, so isLegalRank is the sole decoding boundary
+    /// for untrusted ranks. Bookmark ranks compare only within one parent; an invalid
+    /// one can corrupt an entire folder's ordering.
     func testAnIllegalRankIsRefusedAndNeverReachesRankBetween() {
-        // spec §4.6 列了三种非法形状，只测一种的实现可能只挡住了字符集那一条。
+        // Cover all three invalid forms from §4.6; one case might test only the character-set guard.
         for rank in ["", "V0", "V-1"] {
             RankProbe.reset()
 
@@ -241,12 +232,11 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.9 / 4a.10 / 4a.20
 
-    /// CASE 4a.9 — 根级项两个 location 成员共用一个戳（7a）。
-    ///
-    /// 内容戳（2000 ms）与 `now`（5000 ms）刻意取成不同的值：A13 那句「其余字段盖 `now`」
-    /// 已被 R-M3-3-28 的 First-publish stamps 与 spec §4.2 第 5 条取代，而书签的「其余字段」
-    /// 集合是**空**的——它全部 LWW 字段就是两个 location 成员、`rank` 与四个内容字段。
-    /// 于是这条与 CASE 4a.20 是同一条规则的两个独立探针。
+    /// CASE 4a.9: root items' two location members share a stamp (7a).
+    /// Deliberately distinguish content stamp 2000 from now=5000. R-M3-3-28 first-publish
+    /// stamps and §4.2 rule 5 supersede A13's restamp-other-fields rule. Bookmarks
+    /// have no other LWW fields: only two location members, rank, and four content
+    /// fields. This and CASE 4a.20 independently test the same rule.
     func testARootLevelRowStampsBothLocationMembersTogetherWithNoBaseline() {
         let local = row(identity: "b1", contentUpdatedDate: Date(timeIntervalSince1970: 2))
 
@@ -261,13 +251,13 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(parentStamp, 0)
         XCTAssertEqual(spaceStamp, parentStamp)
         XCTAssertEqual(entity?.rank.updatedAtMs, 0)
-        XCTAssertEqual(entity?.title.updatedAtMs, 2_000, "内容字段盖行自己的内容戳")
-        XCTAssertNotEqual(entity?.title.updatedAtMs, 5_000, "绝不盖 now")
+        XCTAssertEqual(entity?.title.updatedAtMs, 2_000, "Content fields use the row's own content stamp")
+        XCTAssertNotEqual(entity?.title.updatedAtMs, 5_000, "Never stamp now")
     }
 
-    /// CASE 4a.10 — 纯排序只重盖 `rank`（7b 前半）。
+    /// CASE 4a.10: pure reorder restamps only rank (7b, first half).
     func testAPureReorderRestampsOnlyTheRank() {
-        // 基线次序是 b2("k") 之后 b1("V")，本机把 b2 拖到了前面，于是只有 b2 要一个新 rank。
+        // Baseline rank order puts b2(k) after b1(V); dragging b2 ahead requires a new rank only for b2.
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1", rank: "V"))
         table.cursors["b2"] = landedCursor(bookmarkPayload(uuid: "b2", rank: "k"))
@@ -281,7 +271,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(moved?.rank.updatedAtMs, 5_000)
     }
 
-    /// CASE 4a.20 — 无基线的新行怎么盖戳（10）。
+    /// CASE 4a.20: first-publish timestamps for a row without a baseline (10).
     func testANoBaselineRowStampsContentWithItsOwnContentTimestamp() {
         let local = PhiLocalBookmark.fixture(guid: "g1", syncId: "b1", spaceId: "space-a",
                                              createdDate: Date(timeIntervalSince1970: 1),
@@ -300,13 +290,12 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(entity?.createdAtMs, 1_000)
     }
 
-    // MARK: - CASE 4a.11 – 4a.14（合并）
+    // MARK: - CASE 4a.11–4a.14: Merge
 
-    /// CASE 4a.11 — 相干规则两个方向同结果（7c）。
-    ///
-    /// 防的是什么：写成「当赢家是对面那一侧时才取对面的 rank」只修一半：本机赢下 location
-    /// 而对端 rank 戳更新时，plain LWW 会把一个在**输掉的** location 里铸出来的 rank 装到
-    /// 赢家的 location 上，两台机器从同一对实体算出不同结果。
+    /// CASE 4a.11: coherence gives the same result in both directions (7c).
+    /// Taking remote rank only when remote location wins fixes only one direction.
+    /// When local location wins but remote rank is newer, plain LWW would attach a
+    /// rank minted in the losing location to the winner, producing different results on the two devices.
     func testTheRankFollowsTheLocationWinnerInBothDirections() {
         let x = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "M",
                                 locationStamp: 200, rankStamp: 100)
@@ -321,7 +310,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(forward.rank.stringValue, "M")
     }
 
-    /// CASE 4a.12 — 三方汇合与顺序无关（7d 的一半）。
+    /// CASE 4a.12: three-way merge is order-independent (7d, first half).
     func testAThreeWayMergeIsIndependentOfTheOrderItIsApplied() {
         let a = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "M", title: "A",
                                 locationStamp: 300, rankStamp: 100, contentStamp: 100)
@@ -336,10 +325,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(left, right)
     }
 
-    /// CASE 4a.13 — 载体恒由深度决定，不取 `max`（N1 的探针）。
-    ///
-    /// 防的是什么：取 `max(space, parent)` 的实现会算出 900 并赢下这次合并；两台机器对
-    /// 同一对实体挑不同的载体，位置永不收敛。
+    /// CASE 4a.13: depth selects the carrier, never max (N1 probe).
+    /// max(space, parent) would choose 900 and win this merge; devices choosing
+    /// different carriers for the same entities would never converge in location.
     func testTheLocationTimestampComesFromTheCarrierNeverFromTheLargerMember() {
         var descendant = bookmarkPayload(uuid: "b1", parentUuid: "p1", locationStamp: 100)
         descendant.spaceUuid = stamped("su-1", at: 900)
@@ -352,7 +340,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(merged.parentUuid.stringValue, "p2")
     }
 
-    /// CASE 4a.14 — 平手按字节字典序（7e）。
+    /// CASE 4a.14: ties use lexicographic byte order (7e).
     func testATiedLocationIsBrokenDeterministicallyAndSymmetrically() {
         let a = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", locationStamp: 100)
         let b = bookmarkPayload(uuid: "b1", spaceUuid: "su-2", locationStamp: 100)
@@ -366,16 +354,15 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.15 / 4a.16
 
-    /// CASE 4a.15 — 子孙的 `space_uuid` 不参与变化检测（7b 后半 · 一）。
-    ///
-    /// 防的是什么：子孙的 Space 由它的父推导，让它参与会在每次跨 Space 移动时把整棵子树
-    /// 都标成脏的。
+    /// CASE 4a.15: descendant space_uuid does not participate in change detection
+    /// (7b, second half, part 1). Its Space derives from its parent; including it
+    /// would dirty every descendant on each cross-Space move.
     func testADescendantsSpaceUuidDoesNotParticipateInChangeDetection() {
         let baseline = bookmarkPayload(uuid: "c1", spaceUuid: "su-1", parentUuid: "p1")
         var table = PhiOwnedItemTable()
         table.cursors["p1"] = landedCursor(bookmarkPayload(uuid: "p1", isFolder: true))
         table.cursors["c1"] = landedCursor(baseline)
-        // 本机把整棵子树重打到了 space-b，只有那个文件夹是一次真实的位置变化。
+        // Retag the entire subtree to space-b; only the folder has a real location change.
         let locals = [row(identity: "p1", spaceId: "space-b", isFolder: true),
                       row(identity: "c1", spaceId: "space-b", parentGuid: "g-p1")]
 
@@ -388,9 +375,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(produced, expected)
     }
 
-    /// CASE 4a.16 — 跨 Space 移动一个含 40 后代的文件夹 ⇒ 恰好一条 commit（7b 后半 · 二）。
-    ///
-    /// 防的是什么：41 条 commit 与 1 条的差别，在一次大规模整理里就是几千条无谓的写。
+    /// CASE 4a.16: moving a folder with 40 descendants across Spaces produces one
+    /// commit (7b, second half, part 2). Sending 41 instead scales to thousands
+    /// of unnecessary writes during large reorganizations.
     func testMovingAFolderWithFortyDescendantsAcrossSpacesChangesExactlyOneEntity() {
         let descendantCount = 40
         var table = PhiOwnedItemTable()
@@ -405,7 +392,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
         for index in 0..<descendantCount {
             let identity = "c\(index)"
-            // 单字符 rank，按字母表严格递增，于是本机次序与基线次序一致、没有一条要重排。
+            // Strictly increasing single-character ranks match local and baseline order, requiring no reordering.
             let rank = String(SyncableSpaces.rankAlphabet[index + 1])
             let baseline = bookmarkPayload(uuid: identity, spaceUuid: "su-1",
                                            parentUuid: "fd", rank: rank)
@@ -426,10 +413,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.17 / 4a.17b / 4a.18 / 4a.18b
 
-    /// CASE 4a.17 — 差分 tombstone 的三条判据 + 两条排除（8）。
-    ///
-    /// 防的是什么：§4.7 点名了④的后果——把归属不合格而被 §4.2 跳过的行算成「本机没有
-    /// 这一行」，会在一次映射抖动里删掉账户上一整个 Space 的书签。
+    /// CASE 4a.17: three tombstone criteria plus two exclusions (8).
+    /// §4.7 warns that treating §4.2's ineligible-owner exclusions as missing local
+    /// rows can delete every bookmark in an account Space during a mapping fluctuation.
     func testTheLocalDeleteDiffHasThreeCriteriaAndTwoOwnerExclusions() {
         var table = PhiOwnedItemTable()
         table.cursors["i1"] = landedCursor(bookmarkPayload(uuid: "i1"))
@@ -448,14 +434,12 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(identities, ["i1"])
     }
 
-    /// CASE 4a.17b — 两条排除各自计进 `excluded_unmapped_owner`（V21）。
-    ///
-    /// 防的是什么：spec §11.2 对这个计数的定义覆盖两种排除，只喂其中一个成员进日志的
-    /// 实现会让一整类排除在线上不可见。
+    /// CASE 4a.17b: both exclusions count toward excluded_unmapped_owner (V21).
+    /// §11.2 includes both; logging only one makes an entire exclusion class invisible.
     func testBothOwnerExclusionsAreCountedSeparatelyButBelongToOneLogField() {
-        // b3 是 C1 的探针：一条**子孙**行，它的绑定引用是父（一个书签 uuid），拿那个去问
-        // `isEligibleSpace` 永远为真。排除判据必须读它**坐在哪个 Space 里**，否则一个账户
-        // 已软删的 Space 底下每一条非根行都会继续发布，30 天后被 purge 级联静默删掉。
+        // b3 probes C1: a descendant's binding is its parent bookmark UUID, which
+        // always passes isEligibleSpace. Check the actual containing Space or every
+        // nonroot row under a soft-deleted Space keeps publishing until retention purge destroys it.
         let locals = [row(identity: "b1", spaceId: "space-x"),
                       row(identity: "b2", spaceId: "space-b", isFolder: true),
                       row(identity: "b3", spaceId: "space-b", parentGuid: "g-b2")]
@@ -468,28 +452,26 @@ final class SyncableOwnedItemsTests: XCTestCase {
         let ineligible = result.skippedIneligibleOwner
         let produced = result.entities.count
         XCTAssertEqual(unmapped, 1)
-        XCTAssertEqual(ineligible, 2, "根级项与子孙都要被排除")
+        XCTAssertEqual(ineligible, 2, "Exclude both root and descendant rows")
         XCTAssertEqual(produced, 0)
     }
 
-    /// CASE 4a.18 — 停放的两种情形方向相反（8a）。
-    ///
-    /// 防的是什么：这是 C1 那条回归——它是唯一能删掉对端数据的错法。断言落在
-    /// `cursorUpdates` 上而不是「跑完之后去看那张表」：纯函数拿的是 `table` 的值拷贝，
-    /// 改不到调用方那一份。
+    /// CASE 4a.18: the two parked cases require opposite outcomes (8a).
+    /// This C1 regression can delete remote data. Assert cursorUpdates, because
+    /// the pure function receives a value copy and cannot mutate the caller's table.
     func testAParkedEntityOnlyTombstonesWhenThisDeviceHadAlreadyLandedIt() {
         var table = PhiOwnedItemTable()
-        // p1：只有 `pendingApply`，从未落地——一条仅仅是本机还没能放下去的入站实体。
+        // p1 has only pendingApply and has never landed locally.
         var neverLanded = PhiOwnedItemCursor()
         neverLanded.entityId = "srv-p1"
         neverLanded.version = 7
         neverLanded.pendingApply = baselineBytes(bookmarkPayload(uuid: "p1"))
         neverLanded.ownerUuid = "su-1"
         table.cursors["p1"] = neverLanded
-        // p2：落地过，之后才被停放，本机行已经被用户删掉。
+        // p2 applied before parking, and the user has since deleted its local row.
         var landedThenParked = landedCursor(bookmarkPayload(uuid: "p2"),
                                             entityId: "srv-p2", version: 9)
-        landedThenParked.pendingApply = baselineBytes(bookmarkPayload(uuid: "p2", title: "新"))
+        landedThenParked.pendingApply = baselineBytes(bookmarkPayload(uuid: "p2", title: "\u{65b0}"))
         table.cursors["p2"] = landedThenParked
 
         let result = SyncableOwnedItems.tombstones(BookmarkKind.self, locals: [], table: table,
@@ -507,10 +489,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertNil(neverLandedUpdate)
     }
 
-    /// CASE 4a.18b — 停放项带着它在等的归属 uuid（V19 / §4.4 第 4 步）。
-    ///
-    /// 防的是什么：`pendingOwnerUuid` 是游标上一个真实存在的字段，没有这条通道它永远是
-    /// nil，于是每一条停放项每一轮都要把整棵树重解一遍才知道能不能重试。
+    /// CASE 4a.18b: parked items carry the owner UUID they await (V19 / §4.4 step 4).
+    /// Without this path pendingOwnerUuid stays nil, forcing every parked item to
+    /// redecode its whole tree each round just to decide whether it can retry.
     func testAParkedItemRecordsTheOwnerReferenceItIsWaitingFor() {
         let plan = planned([
             arrival(bookmarkPayload(uuid: "b1", spaceUuid: "su-unknown")),
@@ -525,11 +506,9 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.19
 
-    /// CASE 4a.19 — 回声抑制：apply 之后立刻 snapshot ⇒ 零盖戳（9）。
-    ///
-    /// 防的是什么：**必须逐字段断言戳没动**，不能只比 `signature(of:)`——那个函数定义就是
-    /// 「把 `updatedAtMs` 清零后的字节」，一个 apply 之后给每个字段都盖上 `now` 的实现在
-    /// 签名相等这条断言下照样绿，而它会让两台机器无限互相回声。
+    /// CASE 4a.19: snapshot immediately after apply restamps nothing (9).
+    /// Assert timestamps field by field; signature clears updatedAtMs by definition,
+    /// so signature equality would miss restamping every field with now and infinite device echoes.
     func testSnapshottingRightAfterAnApplyRestampsNoField() {
         let baseline = bookmarkPayload(uuid: "b1")
         var table = PhiOwnedItemTable()
@@ -552,7 +531,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
 
     // MARK: - CASE 4a.21 / 4a.22
 
-    /// CASE 4a.21 — `created_at_ms` 取 min，`source` 取非零、都非零取较小（11）。
+    /// CASE 4a.21: created_at_ms takes the minimum; source takes the nonzero value, or the smaller of two nonzero values (11).
     func testCreatedAtAndSourceMergeDeterministicallyInBothDirections() {
         let a = bookmarkPayload(uuid: "b1", source: 0, createdAtMs: 5_000)
         let b = bookmarkPayload(uuid: "b1", source: 2, createdAtMs: 1_000)
@@ -572,13 +551,11 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(bothNonZeroReversed.source, 1)
     }
 
-    /// CASE 4a.22 — 未知字段在 merge 后原样保留（12）。
-    ///
-    /// 防的是什么：`merge` 必须从 `remote` 起手；从 `local` 起手的实现每一轮都会把新版本
-    /// 客户端写的字段抹掉。
+    /// CASE 4a.22: preserve unknown fields through merge (12). Merge must start
+    /// from remote; starting from local erases newer-client fields every round.
     func testUnknownFieldsSurviveAMerge() throws {
         var raw = try bookmarkPayload(uuid: "b1").serializedData()
-        // field 12（`reserved 12 to 15` 里的第一个），wire type 0：tag = 12 << 3 = 0x60。
+        // Field 12, first of reserved 12–15, with wire type 0: tag = 12 << 3 = 0x60.
         raw.append(contentsOf: [0x60, 0x2A])
         let remote = try Phi_PhiBookmarkEntity(serializedBytes: raw)
 
@@ -591,12 +568,12 @@ final class SyncableOwnedItemsTests: XCTestCase {
     }
 }
 
-// MARK: - 认领（§6 的规则 (i)）
+// MARK: - Adoption (§6 rule i)
 
 extension SyncableOwnedItemsTests {
 
-    /// 文件夹的本机占位 URL（`LocalStore+Bookmark.swift`）。所有文件夹共享它，所以文件夹
-    /// **绝不**参与任何按 URL 的比较。
+    /// Local folder placeholder URL from LocalStore+Bookmark.swift. All folders
+    /// share it, so folders must never participate in URL-based comparisons.
     private static let folderPlaceholder = URL(string: "https://bookmark.phi/folder")!
 
     private func folderRow(identity: String?, guid: String, title: String,
@@ -619,7 +596,7 @@ extension SyncableOwnedItemsTests {
                                  contentUpdatedDate: contentUpdatedDate)
     }
 
-    /// CASE 4a.23（spec 13）— 基本认领：本机行被认领而不是被复制。
+    /// CASE 4a.23 (spec 13): basic adoption claims a local row rather than copying it.
     func testAnIncomingEntityAdoptsAMatchingUnsyncedLocalRow() {
         let local = markRow(identity: nil, guid: "g1", url: "https://e.example")
 
@@ -632,21 +609,21 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(adopted, 1)
     }
 
-    /// CASE 4a.24（spec 13a / 13a′）— 字段级合并与重新发布。
-    ///
-    /// 防的是什么：本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
+    /// CASE 4a.24 (spec 13a / 13a′): field merge and republication. If local wins
+    /// without publishing, the remote remains stale while both devices consider themselves converged.
     func testAdoptionMergesFieldByFieldAndRepublishesWhenALocalFieldWins() {
-        // 本机在加入期间改过标题，戳晚于远端；位置字段本机没有基线，一律取远端。
+        // The local title changed during join with a newer stamp. Without a local
+        // location baseline, take remote location fields.
         let local = markRow(identity: nil, guid: "g1", url: "https://e.example",
-                            title: "本机标题", contentUpdatedDate: Date(timeIntervalSince1970: 900))
-        let remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "k", title: "远端标题",
+                            title: "\u{672c}\u{673a}\u{6807}\u{9898}", contentUpdatedDate: Date(timeIntervalSince1970: 900))
+        let remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "k", title: "\u{8fdc}\u{7aef}\u{6807}\u{9898}",
                                      locationStamp: 100, rankStamp: 100, contentStamp: 100)
 
         let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [local],
                                                 resolve: resolve)
 
-        // 断言落在**模块的产出**上：合并规则若只活在测试体里，一个整体采纳远端的引擎
-        // 照样绿，而那正是 §6.2 点名禁止的实现。
+        // Assert module output. Merge logic written only in the test would let an
+        // engine blindly adopting remote values pass, despite §6.2 explicitly forbidding it.
         let merged = mergedEntity(adoption, "b1")
         let pairedGuid = adoption.pairs["b1"]
         let title = merged?.title.stringValue
@@ -654,13 +631,13 @@ extension SyncableOwnedItemsTests {
         let locationStamp = merged.map(BookmarkKind.locationStamp(of:))
         let republishes = adoption.mustRepublish.contains("b1")
         XCTAssertEqual(pairedGuid, "g1")
-        XCTAssertEqual(title, "本机标题")
+        XCTAssertEqual(title, "\u{672c}\u{673a}\u{6807}\u{9898}")
         XCTAssertEqual(rank, "k")
         XCTAssertEqual(locationStamp, 100)
         XCTAssertTrue(republishes)
     }
 
-    /// `adopt` 产出的合并结果解回实体。
+    /// Decode the merged entity produced by adopt.
     private func mergedEntity(_ result: OwnedItemAdoptionResult,
                               _ identity: String) -> Phi_PhiBookmarkEntity? {
         guard let bytes = result.merges[identity],
@@ -668,18 +645,16 @@ extension SyncableOwnedItemsTests {
         return BookmarkKind.entity(from: envelope)
     }
 
-    /// CASE 4a.24b（spec 13a′）— `updatedDate` 被推前而 `contentUpdatedDate` 不动（V29）。
-    ///
-    /// 防的是什么：这正是 §6.2 拒绝用 `updatedDate` 当同步戳的理由——`updateLastSeen` /
-    /// `updateTabFavicon` / `normalizeIndexes` 都会把它推前，而「推前」正是让一个没人编辑
-    /// 过的本机旧值赢下对端真实编辑的那个方向。`PhiLocalBookmark` 里根本没有那一列，所以
-    /// 这条在结构上已经防住了；写成用例是为了让哪天有人把它加回来时立刻红。
+    /// CASE 4a.24b (spec 13a′): updatedDate advances without contentUpdatedDate (V29).
+    /// §6.2 rejects updatedDate as a sync stamp because lastSeen/favicon/index
+    /// maintenance advances it, letting untouched local values beat real remote edits.
+    /// PhiLocalBookmark structurally omits that column; this regression fails if it returns.
     func testTheLocalStampIsContentUpdatedDateSoATouchedRowStillLosesToARealEdit() {
-        // 一次**打开**（`updateLastSeen`）会把 `updatedDate` 推到现在，而 `contentUpdatedDate`
-        // 一动不动。本机参与比较的戳仍是那个早得多的 `createdDate`，于是远端的内容值赢。
-        let touched = PhiLocalBookmark.fixture(guid: "g1", spaceId: "space-a", title: "本机旧值",
+        // Opening updates lastSeen/updatedDate but not contentUpdatedDate. The local
+        // comparison stamp remains the much older createdDate, so remote content wins.
+        let touched = PhiLocalBookmark.fixture(guid: "g1", spaceId: "space-a", title: "\u{672c}\u{673a}\u{65e7}\u{503c}",
                                                createdDate: Date(timeIntervalSince1970: 0.05))
-        let remote = bookmarkPayload(uuid: "b1", title: "远端改名", contentStamp: 100,
+        let remote = bookmarkPayload(uuid: "b1", title: "\u{8fdc}\u{7aef}\u{6539}\u{540d}", contentStamp: 100,
                                      createdAtMs: 50)
 
         let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [touched],
@@ -689,15 +664,14 @@ extension SyncableOwnedItemsTests {
         let merged = mergedEntity(adoption, "b1")
         let title = merged?.title.stringValue
         let republishes = adoption.mustRepublish.contains("b1")
-        XCTAssertFalse(fields.contains("updatedDate"), "加回这一列就让这条用例立刻红")
-        XCTAssertEqual(title, "远端改名")
-        XCTAssertFalse(republishes, "本机一个字段都没赢 ⇒ 零 commit")
+        XCTAssertFalse(fields.contains("updatedDate"), "Restoring this column must fail the test")
+        XCTAssertEqual(title, "\u{8fdc}\u{7aef}\u{6539}\u{540d}")
+        XCTAssertFalse(republishes, "No local field won, so no commit is needed")
     }
 
-    /// CASE 4a.25（spec 13b）— 跨轮认领。
-    ///
-    /// 防的是什么：规则 (i) 是**无状态、连续**的（R-M3-3-28）——写成「只在该 Space 首次
-    /// 合并时跑一次」的实现，会让第二轮到达的实体在本机建出重复行。
+    /// CASE 4a.25 (spec 13b): adoption across rounds. Rule i is stateless and
+    /// continuous (R-M3-3-28); running only on a Space's first merge creates duplicate
+    /// local rows for entities arriving in later rounds.
     func testRuleOneKeepsAdoptingOnLaterRoundsAndUsesAdoptedParentsAsAnchors() {
         let folder = folderRow(identity: nil, guid: "g-folder", title: "F")
         let firstRound = SyncableOwnedItems.adopt(
@@ -705,7 +679,7 @@ extension SyncableOwnedItemsTests {
                                        url: Self.folderPlaceholder.absoluteString)],
             locals: [folder], resolve: resolve)
 
-        // 第一轮认领的结果写回本机行，第二轮那一行已经带身份。
+        // Write the first round's claimed identity to the local row before round 2.
         let adoptedFolder = folderRow(identity: "f1", guid: "g-folder", title: "F")
         let child = markRow(identity: nil, guid: "g-child", url: "https://child.example",
                             parentGuid: "g-folder")
@@ -724,9 +698,8 @@ extension SyncableOwnedItemsTests {
         XCTAssertNil(refusedToRepair)
     }
 
-    /// CASE 4a.26（spec 13c）— 先按完整键分组，再组内按位配对。
-    ///
-    /// 防的是什么：按 (Space, 路径) 分组再按位配的实现会把 URL 不同的两条配到一起。
+    /// CASE 4a.26 (spec 13c): group by the full key, then pair by position.
+    /// Grouping only by Space/path would pair rows with different URLs.
     func testPairingGroupsByTheFullKeyFirstAndOnlyThenPairsPositionally() {
         let locals = [
             markRow(identity: nil, guid: "gX1", url: "https://x.example", index: 0),
@@ -752,10 +725,9 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(adopted, 3)
     }
 
-    /// CASE 4a.27（spec 13d）— 已有身份的行永不被重新指派。
-    ///
-    /// 防的是什么：重新指派会让 `b1` 在账户上失去持有者，于是下一轮差分为它发一条
-    /// tombstone——一次「看起来重复」的判断删掉了账户上一条真实的书签。
+    /// CASE 4a.27 (spec 13d): never reassign an identified row. Reassignment
+    /// orphaning b1 would make the next diff tombstone a real account bookmark
+    /// merely because it looked duplicated.
     func testARowThatAlreadyHasAnIdentityIsNeverReassigned() {
         let local = markRow(identity: "b1", guid: "g1", url: "https://e.example")
         var table = PhiOwnedItemTable()
@@ -774,12 +746,11 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(tombstoned.isEmpty)
     }
 
-    /// CASE 4a.28（spec 13e）— 稳态下的重复保持重复，零删除。
-    ///
-    /// 防的是什么：spec 把这条叫「撤回自动合并之后的核心保证」——**任何「看起来重复就删
-    /// 一条」的实现必须让它红**。
+    /// CASE 4a.28 (spec 13e): stable duplicates remain duplicates, without deletion.
+    /// This is the core guarantee after removing automatic merging; deleting any
+    /// lookalike row must fail here.
     func testDeliberateDuplicatesStayDuplicatesAndProduceNoTombstone() {
-        let folder = folderRow(identity: "fd", guid: "g-fd", title: "夹")
+        let folder = folderRow(identity: "fd", guid: "g-fd", title: "\u{5939}")
         let first = markRow(identity: "d1", guid: "g-d1", url: "https://dup.example",
                             parentGuid: "g-fd", index: 0)
         let second = markRow(identity: "d2", guid: "g-d2", url: "https://dup.example",
@@ -805,7 +776,7 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(updates.isEmpty)
     }
 
-    /// CASE 4a.29（spec 13f）— 撤回的三套机制一个字段都没回来。
+    /// CASE 4a.29 (spec 13f): none of the three withdrawn mechanisms regains any fields.
     func testNeitherTheTableNorTheCursorCarriesAnyWithdrawnWindowState() {
         let withdrawn = ["firstArrival", "firstArrivalAtMs", "claimEligible", "lastArrivalMs",
                          "locallyMinted", "creatorDeviceId", "dedupedAwayAtMs"]
@@ -819,17 +790,15 @@ extension SyncableOwnedItemsTests {
         }
     }
 
-    /// CASE 4a.30（spec 13e 的计数半边）— `unmatchedFolders` 的定义。
-    ///
-    /// 防的是什么：§12.2 验收步骤 5 要断言 `adopted=3`，这两个计数是承重的，不能只在日志里
-    /// 凑数。
+    /// CASE 4a.30 (spec 13e counting): unmatchedFolders definition. §12.2 acceptance
+    /// step 5 asserts adopted=3; both counts carry test meaning rather than merely filling logs.
     func testUnmatchedFoldersCountsIncomingFolderEntitiesThatFoundNoLocalRow() {
-        let anchor = folderRow(identity: "pf", guid: "g-pf", title: "父")
-        let mine = folderRow(identity: nil, guid: "g-mine", title: "本机夹", parentGuid: "g-pf")
+        let anchor = folderRow(identity: "pf", guid: "g-pf", title: "\u{7236}")
+        let mine = folderRow(identity: nil, guid: "g-mine", title: "\u{672c}\u{673a}\u{5939}", parentGuid: "g-pf")
 
         let result = SyncableOwnedItems.adopt(
             arrivals: [bookmarkPayload(uuid: "rf", parentUuid: "pf", isFolder: true,
-                                       title: "远端夹",
+                                       title: "\u{8fdc}\u{7aef}\u{5939}",
                                        url: Self.folderPlaceholder.absoluteString)],
             locals: [anchor, mine], resolve: resolve)
 
@@ -839,10 +808,8 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(adopted, 0)
     }
 
-    /// CASE 4a.31 — 文件夹绝不按 URL 配对。
-    ///
-    /// 防的是什么：所有文件夹共享那一个占位 URL；按 URL 配会把同级所有文件夹塌成一个，
-    /// 而塌掉的文件夹会孤立它的孩子。
+    /// CASE 4a.31: never pair folders by URL. Their shared placeholder would
+    /// collapse every sibling folder into one and orphan the removed folders' children.
     func testFoldersPairByTitleAndNeverByTheirSharedPlaceholderURL() {
         let locals = [folderRow(identity: nil, guid: "g-a", title: "A", index: 0),
                       folderRow(identity: nil, guid: "g-b", title: "B", index: 1)]
@@ -866,15 +833,14 @@ extension SyncableOwnedItemsTests {
     }
 }
 
-// MARK: - 修复轮回归（review C1 / C2 / I1 / I2 / I3 / M1 / M5）
+// MARK: - Fix-round regressions (review C1 / C2 / I1 / I2 / I3 / M1 / M5)
 
 extension SyncableOwnedItemsTests {
 
-    /// C2 — 既搬了家又被改了名的实体必须同时产出 `.move` 与 `.update`。
-    ///
-    /// 防的是什么：落地的 move 操作不带字段补丁，内容只走 update。只产出 move 的实现会让
-    /// 那次改名永远到不了本机行，而下一轮的快照拿本机的旧标题盖回账户——对端的编辑被销毁，
-    /// 没有任何计数动一下，两台机器还都认为自己收敛了。
+    /// C2: an entity both moved and renamed produces move and update. Move carries
+    /// no field patch; content uses update. Emitting only move loses the rename,
+    /// then the next snapshot overwrites the account with the old local title,
+    /// silently destroying the remote edit while both devices report convergence.
     func testAnEntityThatBothMovedAndChangedContentEmitsBothSteps() {
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1", parentUuid: "p1",
@@ -890,9 +856,8 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(kinds, [.move, .update])
     }
 
-    /// C2 的另一半 — 对端一次**纯重盖戳**不产出任何步骤。
-    ///
-    /// 防的是什么：拿整条实体比（时间戳也算）会为每一次重盖戳产出一条空的字段补丁。
+    /// C2, other half: remote timestamp-only changes produce no steps. Comparing
+    /// whole entities including timestamps would generate empty patches for every restamp.
     func testAPeersPureRestampProducesNoStepAtAll() {
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1"))
@@ -905,10 +870,9 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(steps.isEmpty)
     }
 
-    /// I3 — `is_folder` 与本机已有的那一条不符 ⇒ 拒收，不是合并。
-    ///
-    /// 防的是什么：把这个分歧合并掉（取并 / 取一侧）会把一条被 §4.6 判为非法的载荷变成
-    /// 一次合法的更新，而一条行不会在书签与文件夹之间变形。
+    /// I3: refuse is_folder mismatch with an existing row instead of merging.
+    /// Resolving the mismatch by union or choosing a side would legitimize a §4.6
+    /// invalid payload; rows cannot transform between bookmarks and folders.
     func testAnIsFolderDisagreementWithTheBaselineIsRefusedRatherThanMerged() {
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1", isFolder: true))
@@ -924,11 +888,9 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(steps.isEmpty)
     }
 
-    /// I1 — 父不是本轮的同步合格行 ⇒ 该行本轮跳过（§4.2 第 2 条）。
-    ///
-    /// 防的是什么：父的实体正停放着（本机还没落地账户上那个更新的版本）时照发孩子，账户上
-    /// 会留下一条指着一个本机根本还没同步的父的实体。这条排除**不计任何计数**——它不是
-    /// 「归属没映射」。
+    /// I1: skip a row whose parent is not sync-eligible this round (§4.2 rule 2).
+    /// Publishing children of a parked parent references a parent version not yet
+    /// applied locally. This exclusion increments no counter; it is not an unmapped owner.
     func testARowWhoseParentIsNotSyncEligibleThisRoundIsSkippedWithoutACounter() {
         var parked = PhiOwnedItemCursor()
         parked.pendingApply = baselineBytes(bookmarkPayload(uuid: "p1", isFolder: true))
@@ -948,11 +910,9 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(ineligible, 0)
     }
 
-    /// I2 — 探针确实数得到东西。
-    ///
-    /// 防的是什么：CASE 4a.8 断言的是 `rankBetweenCalls == 0`。若模块的 rank 生成绕过了
-    /// 转发器，那条断言恒真、什么都守不住。这条用例是它的活性证明：一次真的重排必须让
-    /// 计数变成非零。
+    /// I2: prove the rank probe is live. CASE 4a.8's zero rankBetweenCalls would
+    /// always pass if rank generation bypassed the forwarding counter. A real
+    /// reorder must make it nonzero.
     func testTheRankProbeObservesTheModulesOwnRankGeneration() {
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1", rank: "V"))
@@ -967,15 +927,14 @@ extension SyncableOwnedItemsTests {
         XCTAssertGreaterThan(calls, 0)
     }
 
-    /// M1 — 已经待删的游标绝不被重写删除决定的时刻。
-    ///
-    /// 防的是什么：`deleteDecidedAtMs` 是 A9 那条「入站位置比删除决定更新」的比较基准。
-    /// 每一轮把它往前推，一次并发移动就永远取消不了删除。
+    /// M1: never rewrite deleteDecidedAtMs on an already-pending cursor. A9 compares
+    /// inbound location freshness against it; advancing it each round would prevent
+    /// any concurrent move from cancelling deletion.
     func testARedecidedDeleteNeverPushesTheDecisionTimestampForward() {
         var cursor = pendingDeleteCursor(decidedAtMs: 1_000,
                                          reconciled: baselineBytes(bookmarkPayload(uuid: "b1")))
         cursor.ownerUuid = "su-1"
-        cursor.pendingApply = baselineBytes(bookmarkPayload(uuid: "b1", title: "新"))
+        cursor.pendingApply = baselineBytes(bookmarkPayload(uuid: "b1", title: "\u{65b0}"))
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = cursor
 
@@ -989,15 +948,14 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(updated?.deleteDecidedAtMs, 1_000)
     }
 
-    /// R-exec-9 — 「还没认领上」与「认领不上」是两件事。
-    ///
-    /// 防的是什么：一条身份本轮已经被 §6 的规则 (i) 配上了一条本机行，只是那次 `syncId` 写回
-    /// 被导入锁拒了。它此刻还没有 `syncId`，所以第三条判据（「本机确实没有这一行了」）对它
-    /// 成立——不排除它，这一轮就会把一条两边都同意它存在的账户实体删掉，而本机那一行下一轮
-    /// 再铸一个新身份重新建一条，对端看到的是一次删除加一次毫无关系的新建。
-    ///
-    /// 反过来，一条认领**配不上**的停放游标（用户在重试窗口里改了那一行）必须照常被删掉：
-    /// 靠 `pendingApply` 一刀切排除，会把它永久留在账户上，而没有任何设备还能删掉它。
+    /// R-exec-9: a claim not yet persisted differs from an unmatchable claim.
+    /// Rule i can match a row this round while an import lock rejects syncId writeback.
+    /// Without an exemption, the missing identity satisfies the deletion criterion
+    /// and tombstones an entity both sides agree exists; next round remints it,
+    /// showing the remote an unrelated delete/create pair.
+    /// Conversely, a parked cursor that no longer matches because the user edited
+    /// during retry must remain deletable. Exempting all pendingApply cursors would
+    /// leave permanent account entities no device can remove.
     func testAParkedCursorIsExemptOnlyWhileItsClaimIsStillPending() {
         var table = PhiOwnedItemTable()
         for identity in ["claimed", "unclaimable"] {
@@ -1013,13 +971,12 @@ extension SyncableOwnedItemsTests {
         let identities = result.identities
         let exempt = result.cursorUpdates["claimed"]
         XCTAssertEqual(identities, ["unclaimable"])
-        XCTAssertNil(exempt, "被豁免的那条游标一个字段都不许动")
+        XCTAssertNil(exempt, "Do not change any field of the exempt cursor")
     }
 
-    /// M4 — 游标的 `ownerUuid` 还没被刷新过 ⇒ 不发 tombstone。
-    ///
-    /// 防的是什么：引擎每轮要为表里的每一条游标刷新这个字段；nil 说明那条前置条件没成立，
-    /// 而本模块检查不了。方向只能是保守的。
+    /// M4: a cursor whose ownerUuid has not been refreshed sends no tombstone.
+    /// The engine must refresh every cursor each round; nil means that prerequisite
+    /// failed, which this module cannot verify, so remain conservative.
     func testACursorWithNoRefreshedOwnerNeverTombstones() {
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(bookmarkPayload(uuid: "b1"), ownerUuid: nil)
@@ -1031,7 +988,7 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(identities.isEmpty)
     }
 
-    /// M5 — uuid 为空的到达计一次 `refused`。
+    /// M5: an arrival with empty UUID increments refused once.
     func testAnArrivalWithAnEmptyUuidCountsAsRefused() {
         let plan = planned([arrival(bookmarkPayload(uuid: ""))])
 
@@ -1042,11 +999,11 @@ extension SyncableOwnedItemsTests {
     }
 }
 
-// MARK: - 修复轮 2 回归（review F1 / F2）
+// MARK: - Fix-round 2 regressions (review F1 / F2)
 
 extension SyncableOwnedItemsTests {
 
-    /// `plan` 的某一条 step 里那份载荷解回实体。
+    /// Decode the entity carried by a plan step.
     private func stepEntity(_ plan: OwnedItemPlan, _ identity: String,
                             _ kind: StepKind) -> Phi_PhiBookmarkEntity? {
         guard let payload = plan.steps.first(where: { $0.identity == identity && $0.kind == kind })?
@@ -1055,7 +1012,7 @@ extension SyncableOwnedItemsTests {
         return BookmarkKind.entity(from: envelope)
     }
 
-    /// 把一次认领的产出接进 `plan` 的入参，与引擎将来要做的接法逐字一致。
+    /// Feed adoption output into plan exactly as the engine will.
     private func adoptionContext(_ result: OwnedItemAdoptionResult) -> OwnedItemPlanContext {
         var context = OwnedItemPlanContext()
         context.pairs = result.pairs
@@ -1064,20 +1021,18 @@ extension SyncableOwnedItemsTests {
         return context
     }
 
-    /// F1 (a) — 认领的身份落地的是**合并结果**，不是远端那一份。
-    ///
-    /// 防的是什么：一个忽略 `context.adoptedMerges`、直接落远端的实现——正是 §6.2 点名禁止
-    /// 的「整体采纳远端」——会让 `.claim` 那条 step 的载荷带着「远端标题」，于是下面那条
-    /// `XCTAssertEqual(claimedTitle, "本机标题")` 立刻红。它同时钉住 `.claim` + `.update`
-    /// 这一对：落地的 claim 操作只写 `syncId`，内容只走 update，只产出一条就把那次合并丢了。
+    /// F1(a): apply the merged result for an adopted identity, not the remote original.
+    /// Ignoring context.adoptedMerges implements §6.2's forbidden wholesale adoption
+    /// and loses the winning local title. Assert both claim and update: claim writes
+    /// only syncId, while update carries content; omitting either loses the merge.
     func testAClaimedIdentityLandsTheMergedEntityRatherThanTheRemoteWholesale() {
-        // 本机的标题更新（`contentUpdatedDate` 更晚），而 `secondary_title` 这一侧远端更新：
-        // 于是合并结果两边各赢一个字段，既要重新发布，又确实要写字段。
+        // Local title is newer, while remote secondary_title is newer. Each side
+        // wins a field, requiring both republication and a local content write.
         let local = markRow(identity: nil, guid: "g1", url: "https://e.example",
-                            title: "本机标题", contentUpdatedDate: Date(timeIntervalSince1970: 900))
-        var remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "k", title: "远端标题",
+                            title: "\u{672c}\u{673a}\u{6807}\u{9898}", contentUpdatedDate: Date(timeIntervalSince1970: 900))
+        var remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "k", title: "\u{8fdc}\u{7aef}\u{6807}\u{9898}",
                                      locationStamp: 100, rankStamp: 100, contentStamp: 100)
-        remote.secondaryTitle = stamped("远端副标题", at: 1_000_000)
+        remote.secondaryTitle = stamped("\u{8fdc}\u{7aef}\u{526f}\u{6807}\u{9898}", at: 1_000_000)
 
         let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [local],
                                                 resolve: resolve)
@@ -1092,18 +1047,17 @@ extension SyncableOwnedItemsTests {
         let claimedLocation = claimed.map(BookmarkKind.locationStamp(of:))
         let republishes = adoption.mustRepublish.contains("b1")
         XCTAssertEqual(kinds, [.claim, .update])
-        XCTAssertEqual(claimedTitle, "本机标题", "本机赢下的内容字段")
-        XCTAssertEqual(claimedSecondary, "远端副标题", "远端赢下的内容字段")
-        XCTAssertEqual(claimedRank, "k", "位置取远端")
-        XCTAssertEqual(claimedLocation, 100, "位置取远端")
-        XCTAssertEqual(patched, claimed, "两条 step 带的是同一份合并结果")
+        XCTAssertEqual(claimedTitle, "\u{672c}\u{673a}\u{6807}\u{9898}", "The locally winning content field")
+        XCTAssertEqual(claimedSecondary, "\u{8fdc}\u{7aef}\u{526f}\u{6807}\u{9898}", "The remotely winning content field")
+        XCTAssertEqual(claimedRank, "k", "Take the remote location")
+        XCTAssertEqual(claimedLocation, 100, "Take the remote location")
+        XCTAssertEqual(patched, claimed, "Both steps carry the same merged result")
         XCTAssertTrue(republishes)
     }
 
-    /// F1 (b) — 本机行与远端逐字相同 ⇒ 只有 `.claim`，零重新发布。
-    ///
-    /// 防的是什么：无条件产出 `.update` 会为每一条认领的行发一条空补丁，而首次同步里
-    /// 认领的行可能有上千条。
+    /// F1(b): byte-identical local and remote rows need only claim, without
+    /// republication. Unconditional update emits empty patches for potentially
+    /// thousands of first-sync adoptions.
     func testAClaimedRowIdenticalToTheRemoteNeedsNoFieldWriteAndNoRepublish() {
         let local = PhiLocalBookmark.fixture(guid: "g1", spaceId: "space-a", title: "T",
                                              createdDate: Date(timeIntervalSince1970: 0.05))
@@ -1121,11 +1075,10 @@ extension SyncableOwnedItemsTests {
         XCTAssertFalse(writes)
     }
 
-    /// F2 — 合并算不出来 ⇒ 那一对不成立，绝不退回「整体采纳远端」。
-    ///
-    /// 防的是什么：投影失败时静默按远端落地，会在一次归属解析抖动里吃掉用户在加入期间做的
-    /// 编辑。构造一个正向与反向不一致的解析器（`localSpaceId` 认得 `su-1`，`syncUuid` 却
-    /// 认不得 `space-a`），投影因此拿不到 Space 的 syncUuid。
+    /// F2: failed merge invalidates the pair, never falling back to wholesale
+    /// remote adoption and losing join-time user edits. Build inconsistent forward
+    /// and reverse owner lookup: localSpaceId resolves su-1, but syncUuid cannot
+    /// resolve space-a, preventing projection from obtaining the Space UUID.
     func testAPairWhoseMergeCannotBeComputedIsDroppedRatherThanTakenWholesale() {
         let brokenResolve = OwnerResolver(syncUuid: { _ in nil },
                                           localSpaceId: { $0 == "su-1" ? "space-a" : nil },
@@ -1150,36 +1103,28 @@ extension SyncableOwnedItemsTests {
 
 // MARK: - PinKind（Task 4b）
 
-/// `PinKind` 的模块级用例：与上面那一族同样**没有 SwiftData、没有引擎、没有持久化**。
-///
-/// 单独一个类而不是 `SyncableOwnedItemsTests` 的 extension：pin 的 `arrival` / `planned`
-/// / 行构造与书签同名不同型，同一个类里两套重载会让每一处调用都要写类型标注。
-///
-/// 类标 `@MainActor` 是因为 CASE 4b.2 要用 Task 0 那个 `@MainActor` 的 `FakePinAccess`
-/// 去钉 `allPins()` 的契约。
+/// PinKind module tests, likewise without SwiftData, engine, or persistence.
+/// Use a separate class because pin arrival/planned/row helpers share bookmark
+/// names with different types, otherwise requiring annotations at every call.
+/// MainActor is needed for CASE 4b.2's FakePinAccess contract check.
 @MainActor
 final class PinKindTests: XCTestCase {
 
     private let resolve = OwnerResolver.fixture()
 
-    /// 把字面量 `"app"` 映射到**它自己**的解析器——引擎侧（Task 5b / Task 6）构造
-    /// `OwnerResolver` 时要做的正是这一件事。
-    ///
-    /// 为什么必须在解析器里做、而不是在 `tombstones` 里特判这个字符串：`tombstones`
-    /// 判「这条游标的归属还在不在」走的是 `localSpaceId` 与 `localProfileId`，两个都解析
-    /// 不出来就按**归属未映射**跳过（§4.2 第 1 条）。一条 App 作用域 pin 的 `ownerUuid`
-    /// 是字面量 `"app"`，于是那条游标永远不产出 tombstone——用户删掉的 App 作用域 pin
-    /// 在账户上不死，每台新设备加入都把它拉回来（CASE 4b.4b）。特判那个字符串则会给
-    /// 「归属未映射」这条规则在 pin 侧开一个例外，而那条规则正是 §4.7 用来防「一次映射
-    /// 抖动删掉整个 Space 的书签」的。
+    /// Resolver maps literal app to itself, as engine construction must in Tasks
+    /// 5b/6. tombstones checks ownership through localSpaceId/localProfileId; if
+    /// neither resolves app, §4.2 rule 1 skips it forever, preventing deletion of
+    /// App pins and resurrecting them on new devices (CASE 4b.4b). A special case
+    /// in tombstones would instead weaken the shared unmapped-owner rule protecting
+    /// whole Space bookmark collections during mapping fluctuations (§4.7).
     private let resolveWithApp = OwnerResolver.fixture(
         profileUuids: ["Default": "pu-1", "app": "app"])
 
-    // MARK: - 小工具
+    // MARK: - Helpers
 
-    /// 本机行的内容取值与 `pinPayload` 的默认值逐字段对齐（`createdDate` 1 秒 = 1000 ms
-    /// 正是 `pinPayload` 的 `createdAtMs` 默认值），于是「没有任何变化」的用例产出的字节
-    /// 真的等于基线。
+    /// Match local content to pinPayload defaults so unchanged cases equal baseline
+    /// bytes. createdDate of one second matches default createdAtMs=1000.
     private func pinRow(lineageId: String = "LX",
                         guid: String = "p1",
                         spaceId: String? = nil,
@@ -1216,7 +1161,7 @@ final class PinKindTests: XCTestCase {
                                       nowMs: nowMs)
     }
 
-    /// 一条**活**游标，带基线与归属。
+    /// Live cursor with baseline and owner.
     private func landedCursor(_ payload: Phi_PhiPinTabEntity,
                               entityId: String = "srv-1",
                               version: Int64 = 1,
@@ -1227,19 +1172,15 @@ final class PinKindTests: XCTestCase {
 
     // MARK: - CASE 4b.1
 
-    /// CASE 4b.1（spec 7c）— pin 没有 location：一条 lineage 在两个 owner 下就是两条实体，
-    /// 而 `rank` 走**普通 LWW**。
-    ///
-    /// 防的是什么：owner 是身份的一半（R-M3-3-15），把它当成一个可合并的字段、或者把一条
-    /// lineage 当成一条实体，会让两个 Space 里的同一条 pin 在字典里互相覆盖——账户上只剩
-    /// 一条，另一个 Space 里那一条既到不了别的机器、也无法被别的机器删除。`rank` 若套用
-    /// 书签那条「相干」规则，它要去问一个 pin 根本没有的 location，结果由一个恒相等的值
-    /// 决定。
+    /// CASE 4b.1 (spec 7c): pins have no location; one lineage under two owners
+    /// means two entities, and rank uses ordinary LWW. Owner is half the identity
+    /// (R-M3-3-15). Treating it as mergeable or keying only by lineage collapses
+    /// Space pins in the dictionary, leaving one unsyncable and undeletable remotely.
+    /// Bookmark rank coherence would query a nonexistent location and depend on a constant equality.
     func testOneLineageInThreeOwnersIsThreeEntitiesAndItsRankIsPlainLastWriterWins() {
-        // §12.1 item 7c：同一条 lineage 在**三个** Space 的行 ⇒ 三条实体，**没有任何一条
-        // 被字典覆盖掉**。两个的版本测不出「按 lineage 当键」这一族错法里最常见的那一个
-        // ——写成 `entities[lineage]` 的实现在两条时还剩一条，看上去像「少了一条」，三条时
-        // 才明显是「只剩最后写进去的那一条」。
+        // §12.1 item 7c: one lineage in three Spaces produces three entities without
+        // dictionary overwrites. Three makes the common entities[lineage] bug clearly
+        // retain only the last item, rather than merely appearing to lose one of two.
         let rows = [pinRow(guid: "p1", spaceId: "space-a"),
                     pinRow(guid: "p2", spaceId: "space-b"),
                     pinRow(guid: "p3", spaceId: "space-c")]
@@ -1253,7 +1194,7 @@ final class PinKindTests: XCTestCase {
         XCTAssertEqual(keys, ["lx:su-1", "lx:su-2", "lx:su-3"])
         XCTAssertEqual(count, 3)
 
-        // 同一身份的两条实体：戳大的 rank 赢，两个方向结果相同，没有 location 参与。
+        // For one identity, newer rank wins symmetrically, without any location field.
         let older = pinPayload(lineage: "lx", ownerKey: "su-1", rank: "a", rankStamp: 100)
         let newer = pinPayload(lineage: "lx", ownerKey: "su-1", rank: "b", rankStamp: 200)
         let forward = PinKind.merge(local: older, remote: newer).rank.stringValue
@@ -1264,16 +1205,12 @@ final class PinKindTests: XCTestCase {
 
     // MARK: - CASE 4b.2 / 4b.3 / 4b.3b
 
-    /// CASE 4b.2（spec 8b 第一句）— 只剩休眠行的 lineage：不进快照，但**产出** tombstone。
-    ///
-    /// 防的是什么：v3 的 spec 在这里写反了（V12）。`allPins()` 的契约是「当前作用域内、
-    /// **非休眠**的全部行」，所以一条只剩休眠副本的 lineage 在差分眼里就是「本机没有这
-    /// 一行」，三条判据全中。写成「不产出」的实现会让一条用户已经收起来的 pin 永远赖在
-    /// 账户上，每台新设备加入都把它拉回来。
-    ///
-    /// 两个断言面各钉一半：假 access 的 `allPins()` 真的把休眠行滤掉（契约），而把那条
-    /// 休眠行**直接**喂给模块时 `PinKind` 自己也不发布它（`PhiLocalPin.isDormant` 的自述
-    /// 「休眠行不进快照，也不参与差分」在 kind 这一层也成立）。
+    /// CASE 4b.2 (spec 8b first sentence): dormant-only lineages are excluded from
+    /// snapshot but produce tombstones; spec v3 incorrectly said otherwise (V12).
+    /// allPins includes only active-scope nondormant rows, so all three deletion
+    /// criteria hold. Suppressing deletion would keep user-hidden pins in the account
+    /// and restore them on every new device. Assert both the fake access filter
+    /// and PinKind's exclusion when handed a dormant row directly.
     func testALineageLeftWithOnlyADormantRowLeavesTheSnapshotButStillTombstones() throws {
         let dormant = pinRow(guid: "p1", spaceId: "space-a", isDormant: true)
         var table = PhiOwnedItemTable()
@@ -1287,15 +1224,14 @@ final class PinKindTests: XCTestCase {
         let visibleCount = visible.count
         let publishedCount = published.count
         let identities = result.identities
-        XCTAssertEqual(visibleCount, 0, "allPins() 的契约：非休眠的全部行")
+        XCTAssertEqual(visibleCount, 0, "allPins includes all nondormant rows only")
         XCTAssertEqual(publishedCount, 0)
         XCTAssertEqual(identities, ["lx:su-1"])
     }
 
-    /// CASE 4b.3（spec 8b 第三句）— 同 owner 下多条同 lineage 活动行，**全部**消失才产出。
-    ///
-    /// 防的是什么：按「找到一条就算在」写对；按「数量变了就算删」写错——后者会在用户关掉
-    /// 其中一个副本时，把整条 lineage 从账户上删掉。
+    /// CASE 4b.3 (spec 8b third sentence): same-lineage active copies under one
+    /// owner produce a tombstone only when all disappear. Presence, not a changed
+    /// count, is the criterion; closing one copy must not delete the account lineage.
     func testALineageWithSeveralActiveRowsOnlyTombstonesWhenTheLastOneIsGone() {
         let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
                     pinRow(guid: "p2", spaceId: "space-a", index: 1)]
@@ -1311,15 +1247,13 @@ final class PinKindTests: XCTestCase {
         XCTAssertEqual(withNone, ["lx:su-1"])
     }
 
-    /// CASE 4b.3b（spec 8b 第二句 / V27）— 活动行与休眠备份并存：只投影活动行，不产出
-    /// tombstone。
-    ///
-    /// 防的是什么：把休眠副本也算进快照会让同一条身份有两个候选投影，两次运行挑中不同的
-    /// 那一条就产生一次假的字段变化；而把「存在休眠副本」当成「还在」的实现会与 CASE 4b.2
-    /// 直接冲突。
+    /// CASE 4b.3b (spec 8b second sentence / V27): with active and dormant copies,
+    /// project only active rows and send no tombstone. Including dormant candidates
+    /// can choose different projections and invent changes; counting dormant copies
+    /// as presence contradicts CASE 4b.2.
     func testAnActiveRowBesideADormantBackupProjectsOnlyTheActiveOne() {
-        let active = pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "活")
-        let dormant = pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "休眠",
+        let active = pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "\u{6d3b}")
+        let dormant = pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "\u{4f11}\u{7720}",
                              isDormant: true)
         var table = PhiOwnedItemTable()
         table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
@@ -1330,17 +1264,15 @@ final class PinKindTests: XCTestCase {
         let keys = Set(published.keys)
         let title = published["lx:su-1"]?.title.stringValue
         XCTAssertEqual(keys, ["lx:su-1"])
-        XCTAssertEqual(title, "活")
+        XCTAssertEqual(title, "\u{6d3b}")
         XCTAssertEqual(identities, [])
     }
 
     // MARK: - CASE 4b.4 / 4b.4b / 4b.5
 
-    /// CASE 4b.4（spec 14）— owner 按 §7.2 的表推导：Space / Profile / App 各一条。
-    ///
-    /// 防的是什么：§7.2 把 App 作用域定义为「两者都为 nil」，而 `pinnedTab(_:belongsTo:)`
-    /// 保证一条行恰好属于一个 owner，所以判据是**先看 `spaceId` 再看 `profileId`**，不是
-    /// 「哪个非 nil 用哪个」——一条 Space 作用域的行两个字段都非 nil。
+    /// CASE 4b.4 (spec 14): infer Space/Profile/App owners using §7.2. App has
+    /// both ids nil; each pin belongs to exactly one owner. Check spaceId before
+    /// profileId, because Space-scoped rows can have both populated.
     func testTheOwnerIsDerivedFromTheRowShapeForEachOfTheThreeScopes() {
         let spaceScoped = pinRow(guid: "p1", spaceId: "space-a", profileId: nil)
         let profileScoped = pinRow(guid: "p2", spaceId: nil, profileId: "Default")
@@ -1353,19 +1285,16 @@ final class PinKindTests: XCTestCase {
         XCTAssertEqual(profile, "pu-1")
         XCTAssertEqual(app, "app")
 
-        // 一条 Space 作用域的真实行两个字段都非 nil（`PhiLocalPin.spaceId` 的自述）：
-        // 判据仍然先看 `spaceId`。
+        // A real Space-scoped row has both ids; spaceId still takes precedence.
         let bothSet = pinRow(guid: "p4", spaceId: "space-b", profileId: "Default")
         let derived = PinKind.eligibilityOwner(of: bothSet, resolve: resolve, scope: .space)
         XCTAssertEqual(derived, "su-2")
     }
 
-    /// CASE 4b.4b — App 作用域的游标照常产出 tombstone。
-    ///
-    /// 防的是什么：`"app"` 两个解析器都不认，按「归属未映射」跳过的话这条游标永远不产出
-    /// tombstone——用户删掉的 App 作用域 pin 在账户上不死，每台新设备都把它拉回来。这条
-    /// 用例只有在 resolver 把 `"app"` 映射到自己之后才绿，所以它同时是 Task 5b / Task 6
-    /// 那一行注释的探测器。
+    /// CASE 4b.4b: App cursors produce tombstones normally. If neither resolver
+    /// recognizes app, unmapped-owner exclusion prevents deletion forever and new
+    /// devices resurrect the pin. This passes only when the resolver maps app to
+    /// itself, also checking the Tasks 5b/6 integration contract.
     func testAnAppScopedCursorStillTombstonesOnceTheResolverMapsTheLiteralToItself() {
         var table = PhiOwnedItemTable()
         table.cursors["lx:app"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "app"),
@@ -1375,13 +1304,11 @@ final class PinKindTests: XCTestCase {
         let unmapped = tombstones([], table: table, resolve: resolve, scope: .app).identities
 
         XCTAssertEqual(mapped, ["lx:app"])
-        XCTAssertEqual(unmapped, [], "解析器不认 \"app\" 时它被当作归属未映射——这正是要修的")
+        XCTAssertEqual(unmapped, [], "Without app resolution, the cursor is incorrectly treated as unmapped")
     }
 
-    /// CASE 4b.5 — 映射缺失 ⇒ 排除，**不退化成 `"app"`**。
-    ///
-    /// 防的是什么：退化成 `"app"` 会把一条 Space 作用域的 pin 发成账户全局的，对端按 App
-    /// 作用域落地之后它在**每一个** Space 里都出现。
+    /// CASE 4b.5: missing mapping excludes the pin without falling back to app.
+    /// Fallback publishes a Space pin account-wide, making it appear in every Space remotely.
     func testARowWhoseSpaceHasNoMappingIsExcludedRatherThanFallingBackToTheAppScope() {
         let orphan = pinRow(guid: "p1", spaceId: "space-z")
 
@@ -1397,12 +1324,10 @@ final class PinKindTests: XCTestCase {
 
     // MARK: - CASE 4b.6
 
-    /// CASE 4b.6 — `lineageKey` 归一并贯穿身份与 client tag。
-    ///
-    /// 防的是什么：`PhiSyncEntity.pinClientTag(_:ownerKey:)` 自己**不做**任何大小写归一
-    /// （有意如此，它是一个纯拼接函数），归一的责任全部落在 `lineageKey(_:)` 上。三处
-    /// 共用它——tag 的构造、§5.1 的索引种子、落地时的匹配——任何一处漏掉，算出的 hash 与
-    /// 线上那条永不相等，§2.5 的接收端校验会把**每一条** pin 实体都判成伪造载荷。
+    /// CASE 4b.6: lineageKey normalization covers identity and client tag.
+    /// pinClientTag is deliberately pure concatenation. Tag construction, §5.1
+    /// index seeding, and application matching must all use lineageKey; omitting
+    /// one makes hashes differ and §2.5 reject every pin as a forged payload.
     func testTheLineageKeyNormalizesOnceAndRunsThroughBothTheIdentityAndTheTag() {
         let key = PinKind.lineageKey("LX-Abc")
         let row = pinRow(lineageId: "LX-Abc", guid: "p1", profileId: "Default")
@@ -1411,7 +1336,7 @@ final class PinKindTests: XCTestCase {
         XCTAssertEqual(key, "lx-abc")
         XCTAssertEqual(identity, "lx-abc:pu-1")
 
-        // 身份的后半段与 client tag 的后半段逐字一致。
+        // The identity suffix matches the client-tag suffix exactly.
         let tag = identity.map { PinKind.tagPrefix + $0 }
         let built = PhiSyncEntity.pinClientTag(key, ownerKey: "pu-1")
         XCTAssertEqual(tag, built)
@@ -1419,10 +1344,9 @@ final class PinKindTests: XCTestCase {
 
     // MARK: - CASE 4b.7
 
-    /// CASE 4b.7（spec 14 后半）— 换 owner = 旧 tag 的 tombstone + 新 tag 的 create。
-    ///
-    /// 防的是什么：把它当成一次字段更新会在线上留下一条谁都不再持有、也永远不会被差分
-    /// 判成删除的孤儿实体。`PinApplyOp` 里因此**不存在** `rebind`。
+    /// CASE 4b.7 (spec 14, second half): owner change is old-tag tombstone plus
+    /// new-tag create. A field update leaves an unowned entity that diffing cannot
+    /// delete; consequently PinApplyOp has no rebind operation.
     func testMovingAPinToAnotherOwnerTombstonesTheOldTagAndCreatesTheNewOne() {
         var table = PhiOwnedItemTable()
         table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
@@ -1438,16 +1362,14 @@ final class PinKindTests: XCTestCase {
 
     // MARK: - CASE 4b.8
 
-    /// CASE 4b.8（spec 14b / A11）— 同 owner 下的同 lineage 变体重铸，落在 `PinApplyBatch` 里。
-    ///
-    /// 防的是什么：做成发布段 pre-pass 的旁路写，会在「重铸已提交、实体未发布」的中间态
-    /// 崩掉，而重铸不可逆（旧 lineage 已经不在任何行上）。按「一条实体、多个物理副本」写
-    /// 则会留下一整类**永远同步不了**的行：第二个副本没有自己的身份，既到不了别的机器，
-    /// 也无法被别的机器删除。
+    /// CASE 4b.8 (spec 14b / A11): relineage same-owner variants inside PinApplyBatch.
+    /// An out-of-band publication pre-pass could crash after irreversible relineaging
+    /// before publishing. Treating variants as physical copies of one entity instead
+    /// leaves additional copies without identities, unable to sync or be deleted remotely.
     func testVariantsUnderOneOwnerAreRelineagedKeepingTheLowestIndexRow() {
-        // **两条的同步字段签名必须不同**（R-exec-12 / D-A2）：重铸只针对真变体，签名相同的
-        // 两条是同一条 pin 的物理副本，A11 折叠它们而不是给它们各铸一条身份。用例要钉的是
-        // 重铸那一支，所以第二条给一个不同的标题。
+        // Use distinct sync-field signatures (R-exec-12 / D-A2). Equal signatures
+        // are physical copies collapsed by A11; real variants get new identities.
+        // Give the second row a different title to exercise relineaging.
         let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "T"),
                     pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "Variant")]
 
@@ -1456,26 +1378,24 @@ final class PinKindTests: XCTestCase {
         let ops = batch.ops
         XCTAssertEqual(ops.count, 1)
         guard case .relineage(let guid, let newLineageId)? = ops.first else {
-            return XCTFail("期待恰好一条 relineage")
+            return XCTFail("Expected exactly one relineage")
         }
-        XCTAssertEqual(guid, "p2", "index 最小的那一条保留原 lineage")
+        XCTAssertEqual(guid, "p2", "The lowest-index row keeps the original lineage")
         XCTAssertNotEqual(newLineageId, "LX")
         XCTAssertNotEqual(PinKind.lineageKey(newLineageId), "lx")
         XCTAssertFalse(newLineageId.isEmpty)
-        // 铸出来的值本身要能当一条线上 lineage 用：已归一、且不会被 §4.6 判成非法。
+        // The minted lineage must be normalized and valid under §4.6.
         XCTAssertEqual(PinKind.lineageKey(newLineageId), newLineageId)
     }
 
-    /// CASE 4b.8（4b-4）— 重铸出来的 lineage **跨设备确定**。
-    ///
-    /// 防的是什么：A11 的场景就是「两台机器跑同一次确定性迁移、面对同一对变体」。用
-    /// `UUID()` 各铸一个的话，两边各自发布一条对方没有的实体、又各自落地对方那一条，而
-    /// §6.7 排除了 pin 的认领——**没有任何东西会去重**，用户每个变体多出一个固定标签页，
-    /// 两台机器都是。随机实现在这条上必红。
+    /// CASE 4b.8 (4b-4): relineaging is deterministic across devices. A11 has two
+    /// machines running the same migration on the same variants. Random UUIDs
+    /// make each publish and then import the other's variant. §6.7 excludes pin
+    /// adoption, so no deduplication removes the extra pins. Random minting must fail here.
     func testTheRemintedLineageIsDeterministicAcrossDevices() {
-        // 同一批行在「另一台机器」上的样子：物理 guid 按设备重铸，lineage 与 index 由那次
-        // 确定性迁移决定，所以两边一致。
-        // 三条**签名各不相同**的真变体：签名相同的会被 A11 折叠掉，那是下面几条用例的事。
+        // The same migrated rows on another device have different physical guids but
+        // identical deterministic lineage/index values. Use three distinct signatures:
+        // A11 collapses identical copies, covered separately below.
         let deviceA = [pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "T"),
                        pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "U"),
                        pinRow(guid: "p3", spaceId: "space-a", index: 2, title: "W")]
@@ -1487,12 +1407,12 @@ final class PinKindTests: XCTestCase {
         let again = mintedLineages(PinKind.normalizeVariants(locals: deviceA))
         let other = mintedLineages(PinKind.normalizeVariants(locals: deviceB))
 
-        XCTAssertEqual(first.count, 2, "三条变体重铸两条，index 最小的那一条不动")
-        XCTAssertEqual(first, again, "同一批输入跑两次产出同一批 lineage")
-        XCTAssertEqual(first, other, "另一台设备的同一次迁移结果铸出同一批 lineage")
-        XCTAssertNotEqual(first[0], first[1], "ordinal 不同 ⇒ lineage 不同")
+        XCTAssertEqual(first.count, 2, "Relineage two of three variants, preserving the lowest-index row")
+        XCTAssertEqual(first, again, "Identical inputs produce identical lineages on repeated runs")
+        XCTAssertEqual(first, other, "The same migration on another device produces identical lineages")
+        XCTAssertNotEqual(first[0], first[1], "Different ordinals produce different lineages")
 
-        // index 最小的那一条一个 op 都没有。
+        // The lowest-index row receives no operations.
         let targets = relineageGuids(PinKind.normalizeVariants(locals: deviceA))
         XCTAssertEqual(targets, ["p2", "p3"])
     }
@@ -1511,11 +1431,9 @@ final class PinKindTests: XCTestCase {
         }
     }
 
-    /// CASE 4b.8（后半）— 一个 owner 一组：不同 owner 下的同 lineage 行**不是**变体。
-    ///
-    /// 防的是什么：按 lineage 单独分组会把「一条 lineage 在 N 个 Space 里」这个**正常**
-    /// 形状（`migratePinnedTabs` Profile → Space 的扇出）判成 N-1 条要重铸的变体，于是
-    /// 一次作用域迁移之后两台机器各自重铸、各自造出一批只有自己有的 pin。
+    /// CASE 4b.8, second half: group by owner; the same lineage under different
+    /// owners is not a variant. Grouping by lineage alone misclassifies normal
+    /// Profile-to-Space fanout as N-1 variants to remint, creating device-specific extra pins.
     func testTheSameLineageInTwoOwnersIsNotAVariantAndIsNeverRelineaged() {
         let rows = [pinRow(guid: "p1", spaceId: "space-a"),
                     pinRow(guid: "p2", spaceId: "space-b")]
@@ -1525,7 +1443,7 @@ final class PinKindTests: XCTestCase {
         XCTAssertTrue(ops.isEmpty)
     }
 
-    // MARK: - CASE 4b.8b：精确重复折叠（R-exec-12 / D-A2）
+    // MARK: - CASE 4b.8b: Collapse exact duplicates (R-exec-12 / D-A2)
 
     private func deletedGuids(_ batch: PinApplyBatch) -> [String] {
         batch.ops.compactMap {
@@ -1534,35 +1452,31 @@ final class PinKindTests: XCTestCase {
         }
     }
 
-    /// CASE 4b.8b（R-exec-12 / D-A2）— 同 owner、同 lineage、**签名相同**的两条是同一条 pin
-    /// 的两个物理副本：折叠成一条，**绝不重铸**。
-    ///
-    /// 现场（Mac B 2026-09-14，build 821）：一次轮中作用域迁移让落地在刚迁好的行旁边又建了
-    /// 一遍，于是每条身份下有两条一模一样的行。旧判据「同 lineage 同 owner ⇒ 除第一条外全部
-    /// 重铸」从不看内容，于是它给那四条重复各铸了一条新身份。
-    ///
-    /// 防的是什么：重铸**不可逆**——旧 lineage 已经不在那一行上，而本仓库里没有任何东西会把
-    /// 两条 lineage 再并回去。旧判据因此把一个**瞬时**的碰撞转成了账户上**永久**的四条重复，
-    /// 两台机器都能看见，只能靠用户手工取消固定来清。同一对行交给 `mergeCandidates` 本来就会
-    /// 被合成一条（§7.1），两条路必须对「什么是同一条 pin」给同一个答案。
+    /// CASE 4b.8b (R-exec-12 / D-A2): same owner, lineage, and signature means
+    /// two physical copies of one pin. Collapse them without relineaging.
+    /// Mac B, 2026-09-14, build 821: mid-round migration created duplicate rows
+    /// beside newly migrated ones. The old criterion ignored content and minted
+    /// four new identities. Relineaging is irreversible: nothing merges distinct
+    /// lineages afterward, so a transient collision became four permanent account
+    /// duplicates requiring manual unpinning. mergeCandidates would merge the same
+    /// rows (§7.1); both paths must agree on pin identity.
     func testTwoIdenticalRowsUnderOneIdentityAreCollapsedNotRelineaged() {
-        // 逐字段相同，只差物理 guid 与 index——那正是一条 pin 的两个副本该有的样子。
+        // Identical fields except physical guid/index: two copies of the same pin.
         let rows = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0),
                     pinRow(guid: "p-dup", spaceId: "space-a", index: 1)]
 
         let batch = PinKind.normalizeVariants(locals: rows)
 
         XCTAssertEqual(deletedGuids(batch), ["p-dup"],
-                       "① `index` 最大的那个副本被删，留下 `index` 最小的那一条")
+                       "① Delete the highest-index copy and retain the lowest-index row")
         XCTAssertTrue(relineageGuids(batch).isEmpty,
-                      "② 一条都不许重铸：重铸会把这次碰撞变成账户上一条永久的重复")
+                      "② Never relineage a collision into a permanent account duplicate")
         XCTAssertEqual(batch.ops.count, 1)
     }
 
-    /// CASE 4b.8b（拆分伙伴）— 签名带拆分伙伴那一段：伙伴 lineage 不同 ⇒ 是真变体。
-    ///
-    /// 防的是什么：签名只看 `(title, url)` 的话，一条拆分对的两半（内容相同、伙伴不同）会被
-    /// 当成重复折叠掉，用户丢掉半个拆分视图。口径必须与 `PinnedTabVariantSignature` 同源。
+    /// CASE 4b.8b, split partners: signatures include partner lineage; different
+    /// partners mean real variants. Comparing only title/URL can collapse equal-content
+    /// split halves and destroy half a view. Share the PinnedTabVariantSignature definition.
     func testRowsDifferingOnlyInTheirSplitPartnerAreVariantsNotDuplicates() {
         let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0,
                            splitPartnerLineageId: "lm"),
@@ -1575,12 +1489,10 @@ final class PinKindTests: XCTestCase {
         XCTAssertEqual(relineageGuids(batch), ["p2"])
     }
 
-    /// CASE 4b.8b（混合组）— 三条里两条相同、一条分叉 ⇒ 一条 `.delete` + 一条 `.relineage`，
-    /// 而且重铸的 ordinal 按**幸存者**数，不是按原成员数。
-    ///
-    /// 防的是什么：先铸 ordinal 再折叠的实现会把分叉那一条铸成 `ordinal: 2`，于是同一批行在
-    /// 「有没有重复」这件事上产出不同的 lineage——而重复是否出现取决于一次竞态，两台机器于是
-    /// 给同一条变体铸出两条不同的身份，永远互为对方看不见的多余 pin。
+    /// CASE 4b.8b, mixed group: two equal copies and one variant yield one delete
+    /// and one relineage, with ordinal based on survivors. Assigning ordinal before
+    /// collapse gives 2 instead of 1, making race-dependent duplicate presence
+    /// produce different cross-device identities and permanent extra pins.
     func testAMixedGroupCollapsesTheDuplicateAndRelineagesOnlyTheDivergentMember() {
         let rows = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0, title: "T"),
                     pinRow(guid: "p-dup", spaceId: "space-a", index: 1, title: "T"),
@@ -1590,24 +1502,23 @@ final class PinKindTests: XCTestCase {
 
         XCTAssertEqual(deletedGuids(batch), ["p-dup"])
         XCTAssertEqual(relineageGuids(batch), ["p-variant"])
-        // 幸存者是 [p-keep, p-variant]，所以分叉那一条是 ordinal 1——与「这一组本来就只有
-        // 两条真变体」时铸出来的值逐字节相同。
+        // Survivors are p-keep/p-variant, so use ordinal 1, exactly as if the group
+        // had contained only the two real variants.
         let twoVariantsOnly = [pinRow(guid: "p-keep", spaceId: "space-a", index: 0, title: "T"),
                                pinRow(guid: "p-variant", spaceId: "space-a", index: 1,
                                       title: "Variant")]
         XCTAssertEqual(mintedLineages(batch),
                        mintedLineages(PinKind.normalizeVariants(locals: twoVariantsOnly)),
-                       "ordinal 按幸存者数 ⇒ 有没有那条重复，铸出来的 lineage 一模一样")
+                       "Survivor-based ordinals produce identical lineages with or without the duplicate")
     }
 
-    /// CASE 4b.8b（确定性）— 两台设备拿到同一批行，**留下同一条、删掉同一条**。
-    ///
-    /// 防的是什么：折叠的幸存者若按 `guid` 挑，两台机器各留一条不同的物理行、各删对方留下的
-    /// 那一条，于是这条 pin 在两边都被删光。判据必须只读**跨设备一致**的字段——`index` 由
-    /// `migratePinnedTabs` 确定性地产出，`guid` 是每台设备各铸的。
+    /// CASE 4b.8b, determinism: devices retain and delete corresponding copies.
+    /// Choosing by device-local guid can keep opposite physical rows, leading to
+    /// both copies being deleted. Use cross-device-stable fields: migration produces
+    /// index deterministically, while each device mints its own guid.
     func testTheCollapseSurvivorIsTheSameRowOnTwoDevices() {
-        // 两台设备：同一对副本，`index` 一致（迁移是确定性的），物理 guid 各铸一套。
-        // 设备 B 的 guid 次序**相反**，于是任何按 guid 挑幸存者的实现都会在这里分叉。
+        // Both devices share deterministic indexes but mint different guids. Reverse
+        // B's guid order so guid-based survivor selection must diverge.
         let deviceA = [pinRow(guid: "a-first", spaceId: "space-a", index: 0),
                        pinRow(guid: "a-second", spaceId: "space-a", index: 1)]
         let deviceB = [pinRow(guid: "z-first", spaceId: "space-a", index: 0),
@@ -1616,16 +1527,15 @@ final class PinKindTests: XCTestCase {
         let onA = PinKind.normalizeVariants(locals: deviceA)
         let onB = PinKind.normalizeVariants(locals: deviceB)
 
-        XCTAssertEqual(deletedGuids(onA), ["a-second"], "① 删的是 `index` 较大的那一条")
+        XCTAssertEqual(deletedGuids(onA), ["a-second"], "① Delete the higher-index copy")
         XCTAssertEqual(deletedGuids(onB), ["b-second"],
-                       "② 另一台设备删的是**同一个位置**的那一条，尽管 guid 次序相反")
+                       "② The other device deletes the same position despite reversed guid order")
         XCTAssertEqual(onA.ops.count, onB.ops.count)
     }
 
-    /// CASE 4b.8b（休眠行）— 休眠的备份行不参与折叠，正如它不参与重铸。
-    ///
-    /// 防的是什么：作用域迁移原地留下的备份行与它的活动行内容一模一样，把它折叠掉等于在一次
-    /// 作用域往返里悄悄删掉用户的备份。
+    /// CASE 4b.8b, dormant rows: backups participate in neither collapse nor
+    /// relineaging. Their content matches active rows after migration; collapsing
+    /// them silently destroys backups during a scope round trip.
     func testADormantBackupRowIsNeverCollapsedIntoItsActiveTwin() {
         let rows = [pinRow(guid: "p-active", spaceId: "space-a", index: 0),
                     pinRow(guid: "p-dormant", spaceId: "space-a", index: 1, isDormant: true)]
@@ -1635,24 +1545,23 @@ final class PinKindTests: XCTestCase {
         XCTAssertTrue(batch.ops.isEmpty)
     }
 
-    // MARK: - CASE 4b.8c：快照按身份去重（R-exec-12 / D-B）
+    // MARK: - CASE 4b.8c: Deduplicate snapshot identities (R-exec-12 / D-B)
 
-    /// CASE 4b.8c（R-exec-12 / D-B）— 两条本机行算出同一条身份 ⇒ 快照交**一条**实体，
-    /// rank 沿用基线，而且连跑两次字节相同。
-    ///
-    /// 现场（Mac B 2026-09-14，19:18:37 → 19:19:34）：八条行、四条身份，`snapshot` 按**行**
-    /// 建 rank 组，于是同一个 uuid 在 `assignRanks` 的 `order` 里出现两次。重复的那一个按定义
-    /// 不在严格递增的保留集里 ⇒ 每轮派一个新铸的 `rankBetween`，而 `assigned` 按 uuid 记账
-    /// ⇒ 它盖掉保留的那一条刚拿到的 rank。发布判据是裸字节比较，于是这四条身份**每一轮**都
-    /// 与基线不同、每一轮都提交：25 轮、2.34 s 一次、分数键一轮长一个字符（922 → 934 字节）。
-    ///
-    /// 防的是什么：一个跑起来每个计数器都读健康值（`pushed=4 refused=0 parked=0`）的提交
-    /// 死循环。去重让它**结构上不可能**，代价在正常情况下是零——身份本来就互不相同。
+    /// CASE 4b.8c (R-exec-12 / D-B): two rows with one identity yield one entity,
+    /// retaining baseline rank and identical bytes across repeated runs.
+    /// Mac B, 2026-09-14 19:18:37–19:19:34: eight rows for four identities entered
+    /// row-based rank groups, duplicating UUIDs in assignRanks order. A duplicate
+    /// cannot join the strictly increasing retained set, so each round minted a
+    /// rankBetween value; UUID-keyed assigned then overwrote the retained rank.
+    /// All four identities differed from baseline every round: 25 rounds at
+    /// 2.34-second intervals, keys growing one character per round (922–934 bytes).
+    /// Counters looked healthy (pushed=4/refused=0/parked=0). Deduplication structurally
+    /// prevents this endless commit loop with no cost for normally unique identities.
     func testTwoLocalRowsSharingOneIdentityProduceExactlyOneStableEntity() {
         var table = PhiOwnedItemTable()
         table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1",
                                                            rank: "V"))
-        // 同 lineage、同 owner 的两条行 ⇒ `PinKind.identity` 对两条都算出 `lx:su-1`。
+        // Two same-lineage, same-owner rows both resolve to lx:su-1.
         let doubled = [pinRow(guid: "p-first", spaceId: "space-a", index: 0),
                        pinRow(guid: "p-second", spaceId: "space-a", index: 1)]
 
@@ -1661,50 +1570,43 @@ final class PinKindTests: XCTestCase {
         let rankCalls = RankProbe.rankBetweenCalls
         let again = snapshot(doubled, table: table)
 
-        XCTAssertEqual(Array(first.entities.keys), ["lx:su-1"], "① 一条身份一条实体")
+        XCTAssertEqual(Array(first.entities.keys), ["lx:su-1"], "① One entity per identity")
         XCTAssertEqual(first.entities["lx:su-1"]?.rank.stringValue, "V",
-                       "② 基线 rank 原样沿用，不是新铸的一个")
+                       "② Reuse the baseline rank without minting")
         XCTAssertEqual(rankCalls, 0,
-                       "③ 基线已经严格递增（只有一条）⇒ `rankBetween` 一次都不该被调到")
+                       "③ A single baseline rank is already ordered; never call rankBetween")
         let firstBytes = first.entities["lx:su-1"].flatMap { try? $0.serializedData() }
         let againBytes = again.entities["lx:su-1"].flatMap { try? $0.serializedData() }
         XCTAssertNotNil(firstBytes)
         XCTAssertEqual(firstBytes, againBytes,
-                       "④ 连跑两次字节相同——发布判据是裸字节比较，这就是收敛本身")
+                       "④ Repeated snapshots produce identical bytes, the publication convergence criterion")
     }
 
-    /// CASE 4b.8c（留哪一条）— 去重留下的是 `locals` 里的**第一条**，与 A11 折叠时留下的
-    /// 是同一条行。
-    ///
-    /// 防的是什么：两处各留一条不同的行，那条被快照发布、又被 A11 删掉的行会让账户上那条
-    /// 实体在同一轮里既被更新又失去它的本机行。`allPins()` 按 `(ownerKey, index, guid)`
-    /// 有序，所以「第一条」= `index` 最小的那一条 = A11 的幸存者。
+    /// CASE 4b.8c, survivor: snapshot keeps the first locals row, matching A11.
+    /// Different survivors would publish a row that A11 deletes in the same round.
+    /// allPins sorts by ownerKey/index/guid, so first means lowest index and matches A11.
     func testTheDeduplicatedSnapshotKeepsTheSameRowThatVariantCollapseKeeps() {
-        // 两条行的**内容不同**，于是「留了哪一条」在发布出来的实体上看得见。
+        // Different contents make the selected survivor visible in the published entity.
         let rows = [pinRow(guid: "p-first", spaceId: "space-a", index: 0, title: "First"),
                     pinRow(guid: "p-second", spaceId: "space-a", index: 1, title: "Second")]
 
         let published = snapshot(rows).entities["lx:su-1"]
 
         XCTAssertEqual(published?.title.stringValue, "First",
-                       "① 留的是 `index` 最小的那一条")
-        // A11 对同一批行（签名不同 ⇒ 真变体）重铸的也正是第二条。
+                       "① Retain the lowest-index row")
+        // With distinct signatures, A11 also relineages the second row.
         XCTAssertEqual(relineageGuids(PinKind.normalizeVariants(locals: rows)), ["p-second"],
-                       "② 两处对「幸存者是谁」给同一个答案")
+                       "② Both paths agree on the survivor")
     }
 
     // MARK: - CASE 4b.9
 
-    /// CASE 4b.9（spec 14c / R-M3-3-23）— 作用域往返之后的复活沿用**旧游标**。
-    ///
-    /// 防的是什么：用 `entityId == ""` / `baseVersion == 0` 发 create 会被服务端按
-    /// `baseVersion` 不匹配拒掉，这条 pin 此后每一轮都重试同一个必然失败的提交。
-    ///
-    /// 断言落在「快照产出的身份就是那条游标的键」上：发布段的切片构造（Task 6 Step 5）读
-    /// 的正是 `table.cursors[身份]` 的 `entityId` 与 `version`，所以身份一旦漂掉（lineage
-    /// 没归一、owner 推导换了一种写法），它找到的就是「没有游标」，于是发 create。
-    /// **不断言「游标没被快照改动」**（V34）：`snapshot` 收的是 `table` 的值拷贝，那条断言
-    /// 对任何实现都恒真。
+    /// CASE 4b.9 (spec 14c / R-M3-3-23): revival after a scope round trip reuses
+    /// the old cursor. Creating with empty entityId/baseVersion=0 would be rejected
+    /// every round for version mismatch. Assert snapshot identity equals the cursor
+    /// key used by Task 6 step 5 to obtain entityId/version. Normalization or owner
+    /// drift would miss it and send create. Do not assert that snapshot leaves the
+    /// table unchanged (V34): it receives a value copy, so that assertion always passes.
     func testAResurrectedPinKeepsTheIdentityThatAlreadyCarriesTheServerTriple() {
         var table = PhiOwnedItemTable()
         var tombstoned = landedCursor(pinPayload(lineage: "lx", ownerKey: "pu-1"),
@@ -1719,13 +1621,13 @@ final class PinKindTests: XCTestCase {
         let cursor = table.cursors[keys.first ?? ""]
         let entityId = cursor?.entityId
         let version = cursor?.version
-        XCTAssertEqual(keys, ["lx:pu-1"], "复活的实体落在那条 tombstone 游标的键上")
+        XCTAssertEqual(keys, ["lx:pu-1"], "The revived entity uses the tombstone cursor's key")
         XCTAssertEqual(entityId, "e-lx")
         XCTAssertEqual(version, 42)
     }
 }
 
-// MARK: - PinKind 的入站半边（CASE 4b.10 – 4b.15）
+// MARK: - PinKind inbound handling (CASE 4b.10–4b.15)
 
 extension PinKindTests {
 
@@ -1753,17 +1655,13 @@ extension PinKindTests {
 
     // MARK: - CASE 4b.10
 
-    /// CASE 4b.10（spec 15 / R-M3-3-12）— 作用域不一致：零发布 + 入站**全部停放**，收敛
-    /// 之后的第一轮原样落地。
-    ///
-    /// 防的是什么（其一）：丢弃的话，共享 marker 已经逐页推过去了，服务端只按
-    /// `version > marker` 下发——那些实体**再也不会重发**，直到某个对端碰巧再编辑一次。
-    /// 而这一轮恰恰是最可能带着 pin 实体的那一轮：作用域是随设置通道落地的，对端正是在
-    /// 那一刻重新发布了它按新作用域派生出的 pin。
-    ///
-    /// 防的是什么（其二，V7）：`OwnedItemPlanContext` 不带 `localScope` / `accountScope`
-    /// 这两个成员时，这条 Expected **没有任何输入能产出**——`plan` 看不到作用域，就不可能
-    /// 因为作用域而把整批入站停放。
+    /// CASE 4b.10 (spec 15 / R-M3-3-12): scope mismatch suppresses publication
+    /// and parks all inbound entities, applying them once scopes converge. Dropping
+    /// them loses them permanently after the shared marker advances; the server
+    /// resends only on later edits. Scope-setting rounds are especially likely
+    /// to contain newly republished pins for the new scope.
+    /// V7: OwnedItemPlanContext must carry localScope/accountScope; otherwise plan
+    /// has no input from which it could implement the expected parking behavior.
     func testAScopeMismatchParksEveryArrivalAndTheNextAgreeingRoundLandsThem() {
         var mismatched = OwnedItemPlanContext()
         mismatched.localScope = .space
@@ -1777,10 +1675,10 @@ extension PinKindTests {
         let waitingFor = parkedRound.parked["lx:pu-1"]?.pendingOwnerUuid
         XCTAssertTrue(mismatched.scopeMismatch)
         XCTAssertTrue(mismatchedSteps.isEmpty)
-        XCTAssertEqual(parkedKeys, ["lx:pu-1"], "入站的那条进 parked，不是被丢弃")
+        XCTAssertEqual(parkedKeys, ["lx:pu-1"], "Park the inbound entity instead of discarding it")
         XCTAssertEqual(waitingFor, "pu-1")
 
-        // 作用域收敛之后的第一轮：把上一轮的 `parked` 原样传回去。
+        // First converged round: pass the previous parked payload back unchanged.
         var agreed = OwnedItemPlanContext()
         agreed.localScope = .profile
         agreed.accountScope = .profile
@@ -1798,13 +1696,10 @@ extension PinKindTests {
 
     // MARK: - CASE 4b.11 / 4b.11c
 
-    /// CASE 4b.11（spec 16 / §7.4）— 拆分对只到一条时，快照发**基线里**的 partner，不发
-    /// 空串。
-    ///
-    /// 防的是什么：本机行的 `splitPartnerGuid` 是 nil（伙伴还没落地），而基线里的
-    /// `split_partner_uuid` 是伙伴的 lineage。判出「这个字段变了」并把 `""` 盖上 `now`
-    /// 发出去，等于宣布「这条 pin 不再有拆分伙伴」——会在对端把一个完好的拆分对拆开，而
-    /// 这台机器只是接收了它。
+    /// CASE 4b.11 (spec 16 / §7.4): if only one split half arrives, snapshot
+    /// emits its baseline partner rather than empty string. Local splitPartnerGuid
+    /// is nil until arrival, but restamping an empty partner with now would tell
+    /// the remote device to break its intact pair merely because this device received it.
     func testAHalfLandedSplitPairReEmitsTheBaselinePartnerRatherThanClearingIt() {
         let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1", splitPartner: "lb")
         var table = PhiOwnedItemTable()
@@ -1819,19 +1714,15 @@ extension PinKindTests {
         let partner = entity?.splitPartnerUuid.stringValue
         let partnerStamp = entity?.splitPartnerUuid.updatedAtMs
         XCTAssertEqual(partner, "lb")
-        XCTAssertEqual(partnerStamp, 100, "照抄基线那一份，连戳一起——它不是一次本机变化")
+        XCTAssertEqual(partnerStamp, 100, "Copy the baseline partner and stamp; this is not a local change")
     }
 
-    /// CASE 4b.11c（spec item 16 / V28）— 伙伴到达时产出的是一条**普通的字段更新**。
-    ///
-    /// 防的是什么：既有的 `reconcilePinnedSplitPartners()` 是给**本机**拆分操作用的启发式
-    /// 修复（它遍历活动窗口里的 `SplitGroup`，而一对由同步落地的拆分 pin 根本没有活动
-    /// group）。让同步落地去调它，等于把一个「猜哪两条该配对」的算法插进一条已经有确定
-    /// 答案（`split_partner_uuid` 字段）的路径。
-    ///
-    /// **本任务能观察到的是这条**：`plan` 为一次 partner 变化产出的是 `.update` 而不是
-    /// 别的相，于是落地段（Task 6b）拿到的是 `PinApplyOp.update` 这一条确定的写。假件的
-    /// `lastAppliedOps` 断言要等引擎接线之后才有被测对象（CASE 6b.12）。
+    /// CASE 4b.11c (spec 16 / V28): partner arrival produces an ordinary field
+    /// update. reconcilePinnedSplitPartners heuristically scans active SplitGroups
+    /// for local operations; newly synced pairs have none, and their explicit
+    /// split_partner_uuid already determines the answer. Assert plan produces
+    /// update, giving Task 6b a deterministic PinApplyOp.update. lastAppliedOps
+    /// requires engine wiring and is covered by CASE 6b.12.
     func testAPartnerLinkArrivingIsAPlainFieldUpdate() {
         let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1", splitPartner: "")
         var table = PhiOwnedItemTable()
@@ -1845,17 +1736,17 @@ extension PinKindTests {
 
         let kinds = plan.steps.map(\.kind)
         let identities = plan.steps.map(\.identity)
-        XCTAssertEqual(kinds, [.update], "partner 变化算进内容签名，且只算进内容签名")
+        XCTAssertEqual(kinds, [.update], "Partner changes affect only the content signature")
         XCTAssertEqual(identities, ["lx:pu-1"])
     }
 
     // MARK: - CASE 4b.12 / 4b.13
 
-    /// CASE 4b.12（spec 17a）— `pendingDelete` 遇一次普通更新 ⇒ 丢弃，本机的删除赢。
+    /// CASE 4b.12 (spec 17a): pendingDelete discards an ordinary update; local deletion wins.
     func testAnOrdinaryUpdateArrivingOnAPendingDeleteIsDiscarded() {
         let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
-        // 只改了标题：内容戳 2000，而**位置戳**（pin 是 `rank` 的戳）还停在 100。
-        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "新标题",
+        // Only title changed: content stamp 2000, but location stamp (pin rank) remains 100.
+        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "\u{65b0}\u{6807}\u{9898}",
                                 rankStamp: 100, contentStamp: 2_000)
 
         let plan = planned([arrival(edited)], table: table)
@@ -1868,15 +1759,13 @@ extension PinKindTests {
         XCTAssertTrue(cancelled.isEmpty)
     }
 
-    /// CASE 4b.13（spec 17b / A6）— 被丢弃的那一条**仍然**要收割 `entityId` / `version`。
-    ///
-    /// 防的是什么：接下来那条 tombstone 会用一个过期的 `baseVersion` 提交并被永久拒绝，
-    /// 在真机上表现为一个每 60 s 重来一次、删除永远落不了地的循环。这条用例只有在 `plan`
-    /// 收 `OwnedItemArrival`（带协议层三元组）而不是裸载荷时才可能成立——载荷里根本没有
-    /// 这两个字段。
+    /// CASE 4b.13 (spec 17b / A6): harvest entityId/version even from discarded
+    /// arrivals. Otherwise the tombstone retries a stale baseVersion forever,
+    /// visibly looping every 60 seconds. plan must receive OwnedItemArrival with
+    /// the protocol tuple; bare payloads contain neither field.
     func testTheDiscardedArrivalStillHarvestsItsServerTriple() {
         let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
-        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "新标题",
+        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "\u{65b0}\u{6807}\u{9898}",
                                 rankStamp: 100, contentStamp: 2_000)
 
         let plan = planned([arrival(edited, entityId: "e-server", version: 77)], table: table)
@@ -1892,14 +1781,11 @@ extension PinKindTests {
 
     // MARK: - CASE 4b.14 / 4b.15
 
-    /// CASE 4b.14（spec 17c / A9）— 入站实体的**位置**比删除决定更新 ⇒ 取消删除。
-    ///
-    /// 触发者是**远端实体**，不是本机的又一次编辑：按「本机行在决定之后又被改过」实现的
-    /// 版本会在本地无关改动上取消删除，同时把真正的 A9 情形丢掉（§5.6 警告的正是这种
-    /// 错配）。
-    ///
-    /// 这条同时是 `PinKind.locationStamp(of:)` 的探测器：它返回 0 的实现会让第一个合取项
-    /// **恒假**，于是 pin 侧的取消删除永远不触发，这条用例必红。
+    /// CASE 4b.14 (spec 17c / A9): inbound location newer than the deletion decision
+    /// cancels deletion. The trigger is the remote entity, not a later local edit;
+    /// using local edits would cancel on unrelated changes and miss the real A9
+    /// case warned about by §5.6. Also probes PinKind.locationStamp: returning zero
+    /// makes the first conjunction always false and must fail this test.
     func testARemotePositionNewerThanTheDeleteDecisionCancelsTheDelete() {
         let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
         let moved = pinPayload(lineage: "lx", ownerKey: "pu-1", rank: "b", rankStamp: 2_000)
@@ -1914,10 +1800,10 @@ extension PinKindTests {
         XCTAssertEqual(superseded, 0)
     }
 
-    /// CASE 4b.15（spec 17d）— 同样一次更新的两个否定支：该项进了被删子树、或它的归属
-    /// 解析不出来 ⇒ **仍然**丢弃，绝不取消删除。
+    /// CASE 4b.15 (spec 17d): the negative cases, deleted-subtree membership or
+    /// unresolved owner, must never cancel deletion; their precise handling is checked below.
     func testAMoveIntoTheDeletedSubtreeOrAnUnresolvableOwnerStillLosesToTheDelete() {
-        // ① 这条身份本身就在本轮被删的那一片里。
+        // ① This identity belongs to the subtree deleted this round.
         let doomedTable = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
         var doomedContext = OwnedItemPlanContext()
         doomedContext.deletedSubtree = ["lx:pu-1"]
@@ -1932,8 +1818,8 @@ extension PinKindTests {
         XCTAssertTrue(doomedCancelled.isEmpty)
         XCTAssertEqual(doomedSuperseded, 1)
 
-        // ② 归属解析不出来：这条实体连落地资格都没有，先被停放（**不是**取消删除，也
-        //    不是丢弃——归属落地之后它还要重来一次）。
+        // ② Unresolved ownership prevents application, so park first. Do not cancel
+        // deletion or discard: retry once the owner has applied.
         let orphanTable = pendingDeleteTable("lx:pu-nowhere", decidedAtMs: 1_000)
         let orphan = pinPayload(lineage: "lx", ownerKey: "pu-nowhere", rank: "b",
                                 rankStamp: 2_000)
@@ -1948,26 +1834,23 @@ extension PinKindTests {
         XCTAssertEqual(orphanParked, ["lx:pu-nowhere"])
     }
 
-    // MARK: - 拒收（§4.6 的 pin 半边）
+    // MARK: - Refusal (§4.6 pin cases)
 
-    /// §4.6 的 pin 拒收表，每一行都测；owner 与作用域不符**不在**表里（§7.3 停放，由
-    /// CASE 4b.10 覆盖）。
-    ///
-    /// 防的是什么：非法 `rank` 是 `rankBetween` 的解码边界（发布构建里 `precondition` 直接
-    /// trap）；未归一的大写 lineage 若被接受，同一条 pin 在账户上会有两个身份；带 `:` 的
-    /// lineage 让 `lineage + ":" + ownerKey` 这个拼接不再可逆（`("a:b", "c")` 与
-    /// `("a", "b:c")` 算出同一个身份），于是一条伪造载荷可以顶着另一条实体的身份去收割
-    /// `entityId` / `version`；解析不出 `URL` 的那一条落地段既 create 不了也 update 不了
-    /// （`PhiLocalPin.url` 是非可选的 `URL`），不在这里拒收就只剩「静默丢弃」或「永久停放」
-    /// 两条坏路（4b-1）。
+    /// Test every §4.6 pin refusal row. Owner/scope mismatch is parking under
+    /// §7.3, covered by CASE 4b.10. Invalid ranks must be rejected before rankBetween's
+    /// release precondition can trap. Accepting uppercase lineage creates duplicate
+    /// identities; colon-containing lineage makes lineage:owner concatenation ambiguous
+    /// and lets a forged payload harvest another entity's id/version. Invalid URLs
+    /// cannot create or update a nonoptional PhiLocalPin.url, so rejecting here
+    /// avoids silent discard or permanent parking (4b-1).
     func testThePinRefusalTableIsTheStructuralCriteria() {
-        // 两个独立的探针，因为 `URL(string:)` 比它看上去宽松得多：这个工具链上
-        // `"not a url"`（带空格）、`"https://e.example/\u{0}"`、裸控制字符都**能**解析出
-        // 一个 URL。真正被拒的是「权威部分本身非法」这一类：未闭合的 IPv6 字面量，以及
-        // 空串。两条都断言，于是任何一条被将来的解析器放宽时这条用例仍然有牙。
+        // Use two independent invalid URLs: this toolchain accepts spaces, NULs,
+        // and bare controls more liberally than expected. Invalid authority, such as
+        // unclosed IPv6, and empty string are rejected. Checking both retains coverage
+        // if future parsers become more permissive for one.
         let unparseable = "http://[::1"
-        XCTAssertNil(URL(string: unparseable), "fixture 前提：未闭合的 IPv6 字面量解析不出 URL")
-        XCTAssertNil(URL(string: ""), "fixture 前提：空串解析不出 URL")
+        XCTAssertNil(URL(string: unparseable), "Fixture precondition: an unclosed IPv6 literal cannot form a URL")
+        XCTAssertNil(URL(string: ""), "Fixture precondition: an empty string cannot form a URL")
 
         let empty = PinKind.refuses(pinPayload(lineage: ""), baseline: nil)
         let uppercase = PinKind.refuses(pinPayload(lineage: "LX"), baseline: nil)
@@ -1987,14 +1870,12 @@ extension PinKindTests {
         XCTAssertNil(legal)
     }
 
-    /// 4b-6（§4.2 第 5 条 / A13）— 无基线那一行的三类戳：`rank` 盖 0、内容字段
-    /// （`title` / `url`）盖行自己的内容戳、**其余每个字段盖 `now`**。
-    ///
-    /// 防的是什么：把 `rank` 记成 `now` 会让一条被当作 create 重新发布的 pin 改写掉账户里
-    /// 的次序；把 `title` / `url` 记成 `now` 会让一条几年前建的、从没人动过的 pin 赢下对端
-    /// 上周做的改名。而 `split_partner_uuid` 记成内容戳则反过来：拆分链接不是「编辑内容」
-    /// 的产物，`contentUpdatedDate` 不为它而动，拿一个可能几年前的戳去发一条刚建立的链接，
-    /// 会让对端一条更早但戳更新的空值赢下它。
+    /// 4b-6 (§4.2 rule 5 / A13): without a baseline, stamp rank at zero, title/URL
+    /// with the row's content stamp, and every other field with now. Stamping rank
+    /// with now could overwrite account ordering on republished creates; doing
+    /// the same to content makes an untouched old pin beat a recent remote rename.
+    /// Conversely, split links do not advance contentUpdatedDate, so giving a newly
+    /// created link that old stamp lets a newer remote empty value incorrectly win.
     func testANoBaselineRowStampsRankZeroContentFromTheRowAndEverythingElseNow() {
         let row = pinRow(guid: "p1", spaceId: "space-a", splitPartnerLineageId: "LB",
                          contentUpdatedDate: Date(timeIntervalSince1970: 2))
@@ -2011,19 +1892,19 @@ extension PinKindTests {
         XCTAssertEqual(titleStamp, 2_000)
         XCTAssertEqual(urlStamp, 2_000)
         XCTAssertEqual(partnerStamp, 5_000)
-        XCTAssertEqual(partner, "lb", "伙伴 lineage 出门前也要过 lineageKey")
+        XCTAssertEqual(partner, "lb", "Normalize partner lineage through lineageKey before publication")
     }
 }
 
-// MARK: - Task 5a：落地 index 投影（§4.10）
+// MARK: - Task 5a: Application index projection (§4.10)
 
-/// `BookmarkKind.rankToIndex(siblings:ranks:)` 的三条用例。模块级、纯函数：没有
-/// `LocalStore`、没有引擎、没有假件——投影本身是落地路径上唯一一处「线上次序 → 本机
-/// 稠密 index」的翻译，它错了整个文件夹的顺序就错了，所以它单独有用例。
+/// Three pure BookmarkKind.rankToIndex tests without LocalStore, engine, or
+/// fakes. This is the application path's sole wire-order-to-dense-local-index
+/// translation; an error reorders the whole folder, warranting direct coverage.
 @MainActor
 final class BookmarkRankToIndexProjectionTests: XCTestCase {
 
-    /// 只写这条用例在乎的四个字段；其余走 fixture 的默认值。
+    /// Specify only the four relevant fields; use fixture defaults for the rest.
     private func sibling(guid: String,
                          syncId: String?,
                          index: Int) -> PhiLocalBookmark {
@@ -2032,12 +1913,9 @@ final class BookmarkRankToIndexProjectionTests: XCTestCase {
 
     // MARK: - CASE 5a.1
 
-    /// CASE 5a.1 — rank → 稠密 index 的投影按 **rank 序**编号，不是按旧 `index` 序。
-    ///
-    /// 防的是什么：沿用旧 `index` 排序的实现在「本机顺序恰好等于 rank 顺序」的数据上
-    /// 也是绿的，只有在两者不一致时才露馅。这里刻意让旧 `index`（7 / 2 / 5）与 rank
-    /// 序（M < V < b）给出**三个都不同**的名次，于是任何一种按旧 index 编号的写法都
-    /// 得不到期望值。
+    /// CASE 5a.1: rank order determines dense indexes, not old index order.
+    /// Choose old indexes 7/2/5 and ranks M/V/b so all three positions differ;
+    /// otherwise retaining old order could pass accidentally.
     func testTheProjectionNumbersSiblingsByRankOrderNotByTheirOldIndex() {
         let siblings = [
             sibling(guid: "g1", syncId: "b1", index: 7),
@@ -2053,14 +1931,10 @@ final class BookmarkRankToIndexProjectionTests: XCTestCase {
 
     // MARK: - CASE 5a.2
 
-    /// CASE 5a.2 — rank 平手时按**身份 uuid** 定序。
-    ///
-    /// 防的是什么：不定序会让两台机器把同一批行写成不同的 index 顺序，各自再发回一轮
-    /// 无谓的 rank 更新，两边永远互相盖。
-    ///
-    /// 两条行的**本机 guid 次序与身份次序刻意相反**（`b-aaa` 住在 `g-zzz` 上）：按 guid
-    /// 平手的写法会把 `b-bbb` 排前，于是这条用例对「平手判据用错了字段」是有牙的，而
-    /// 不是两种写法都绿。
+    /// CASE 5a.2: break rank ties by identity UUID. Nondeterministic ties make
+    /// devices write different indexes and endlessly exchange rank updates.
+    /// Reverse local guid and identity order (b-aaa on g-zzz) so guid-based
+    /// tie-breaking fails rather than coincidentally matching.
     func testSiblingsWithTheSameRankAreOrderedByIdentityUuid() {
         let siblings = [
             sibling(guid: "g-aaa", syncId: "b-bbb", index: 0),
@@ -2070,23 +1944,20 @@ final class BookmarkRankToIndexProjectionTests: XCTestCase {
         let projected = BookmarkKind.rankToIndex(siblings: siblings,
                                                  ranks: ["b-aaa": "M", "b-bbb": "M"])
 
-        XCTAssertEqual(projected["g-zzz"], 0, "b-aaa 排前")
+        XCTAssertEqual(projected["g-zzz"], 0, "b-aaa sorts first")
         XCTAssertEqual(projected["g-aaa"], 1)
     }
 
     // MARK: - CASE 5a.3
 
-    /// CASE 5a.3 — 投影喂的是**未过滤**的兄弟列表：本轮不参与同步的那条也拿到一个
-    /// index，三个 index 互不相同。
-    ///
-    /// 防的是什么：只重排参与本轮的那几条，被排除的兄弟留着的旧 `index` 会与新写的
-    /// 撞上，同一个文件夹里出现两条 index 相同的行，此后顺序随 fetch 而变；下一轮的
-    /// 出站 pass 于是给其中一条算出新 rank 发出去，对端应用后顺序又翻回来——每轮两条
-    /// commit，永远（§4.10）。
+    /// CASE 5a.3: project unfiltered siblings, including nonsyncing rows, into
+    /// distinct indexes. Filtering leaves stale indexes colliding with rewritten
+    /// ones, makes fetch order unstable, and creates endless rank-update oscillation
+    /// with two commits per round (§4.10).
     func testTheProjectionCoversEverySiblingIncludingTheOnesNotInThisRound() {
         let siblings = [
             sibling(guid: "g1", syncId: "b1", index: 0),
-            // 还没发布过的本机行：本轮没有 rank，但它占着这个父下的一个槽位。
+            // An unpublished local row has no rank this round but still occupies a sibling slot.
             sibling(guid: "g2", syncId: nil, index: 1),
             sibling(guid: "g3", syncId: "b3", index: 2),
         ]
@@ -2095,17 +1966,17 @@ final class BookmarkRankToIndexProjectionTests: XCTestCase {
                                                  ranks: ["b1": "V", "b3": "b"])
 
         let indexes = Set(projected.values)
-        XCTAssertEqual(projected.count, 3, "未过滤：三条兄弟都要拿到 index")
-        XCTAssertEqual(indexes.count, 3, "三个 index 互不相同")
-        XCTAssertEqual(projected["g2"], 0, "没有 rank 的行排在最前，与 assignRanks 的补集规则同向")
+        XCTAssertEqual(projected.count, 3, "All three unfiltered siblings receive indexes")
+        XCTAssertEqual(indexes.count, 3, "All three indexes are distinct")
+        XCTAssertEqual(projected["g2"], 0, "Unranked rows come first, matching assignRanks complement ordering")
     }
 }
 
-// MARK: - Task 5a fix round：读失败与差分定义域
+// MARK: - Task 5a fix round: Read failures and diff domain
 
-/// `PhiBookmarkLocalAccess` 两条读契约的用例（R-exec-3 / R-exec-4）。走假件，因为要断言的
-/// 是**协议的形状**——读失败能不能被调用方看见、差分的定义域是不是比快照宽——而不是
-/// SwiftData 的行为。
+/// PhiBookmarkLocalAccess read contracts (R-exec-3 / R-exec-4). Use fakes to
+/// verify protocol behavior, not SwiftData: callers must observe read failures,
+/// and the diff domain must be wider than the snapshot.
 @MainActor
 final class BookmarkLocalAccessReadContractTests: XCTestCase {
 
@@ -2113,12 +1984,10 @@ final class BookmarkLocalAccessReadContractTests: XCTestCase {
 
     // MARK: - R-exec-3
 
-    /// 读失败必须抛，**绝不**变成一个空数组。
-    ///
-    /// 防的是什么：一次读不出来与「这个账户一条书签都没有」在值上是同一个 `[]`。§4.7 的
-    /// 差分对空集合的回答是给每一条游标发 tombstone，所以把失败读成空集合会删掉账户上整棵
-    /// 树，而且每台设备同步之后都跟着删。进程刚起来那一轮最危险：本机还没有任何快照可回落，
-    /// 游标表却已经从磁盘上读满了。
+    /// Read failures must throw, never return an empty array. Empty means no
+    /// local bookmarks to §4.7, which tombstones every cursor and deletes the
+    /// whole account tree on all devices. Startup is particularly dangerous:
+    /// no local snapshot exists yet, while cursors have already loaded from disk.
     func testAFailingStoreMakesTheSnapshotThrowRatherThanReportNoBookmarks() async {
         let access = FakeBookmarkAccess(rows: [
             PhiLocalBookmark.fixture(guid: "g1", syncId: "b1"),
@@ -2134,11 +2003,11 @@ final class BookmarkLocalAccessReadContractTests: XCTestCase {
             thrown = error
         }
 
-        XCTAssertNil(returned, "读失败不许交出任何一份行列表，空数组也不行")
-        XCTAssertTrue(thrown is StoreDown, "原样上抛，调用方才分得清这是读失败")
+        XCTAssertNil(returned, "A failed read returns no row list, including an empty array")
+        XCTAssertTrue(thrown is StoreDown, "Propagate the original error so callers can recognize read failure")
     }
 
-    /// 差分定义域那一个读口同样要抛：它才是 §4.7 判「本机还有没有这一行」的那一份数据。
+    /// The diff-domain read must also throw; it supplies §4.7's evidence of local row existence.
     func testAFailingStoreMakesTheIdentityReadThrowToo() async {
         let access = FakeBookmarkAccess(rows: [PhiLocalBookmark.fixture(guid: "g1", syncId: "b1")])
         access.readError = StoreDown()
@@ -2157,33 +2026,32 @@ final class BookmarkLocalAccessReadContractTests: XCTestCase {
 
     // MARK: - R-exec-4
 
-    /// 孤儿根下面那条行**不在快照里**（它不发布），但**在身份集合里**（它没有被删）。
-    ///
-    /// 防的是什么：快照回答的是「同步层认领哪些行」，差分要问的是「这条身份在本机还有没有
-    /// 行」。拿快照当差分的定义域，一条曾经发布过、后来它那个根不再是 Space 的 canonical
-    /// root 的行（并发初始化正好造出这种状态）会连同整棵子树被判成删除，账户上那一片就没
-    /// 了——而本机其实一行都没少。
+    /// An orphan-root row is absent from snapshot but present in the identity
+    /// set. Snapshot decides what sync claims; diff asks whether a local row
+    /// still exists. Concurrent initialization can make a former root noncanonical;
+    /// using snapshot as the diff domain would tombstone its intact published
+    /// subtree while no local row was actually deleted.
     func testAnOrphanRootRowIsOutOfTheSnapshotButStillCountsAsPresentForTheDiff() throws {
         let access = FakeBookmarkAccess(rows: [
             PhiLocalBookmark.fixture(guid: "g1", syncId: "b1"),
         ])
-        // 本机有这一行，但它挂在一个已经不是 canonical root 的根下面。
+        // This local row is under a root that is no longer canonical.
         access.orphanedSyncIds = ["b-orphan"]
 
         let snapshotIdentities = Set(try access.allBookmarks().compactMap(\.syncId))
         let diffDomain = try access.allSyncIds()
 
-        XCTAssertEqual(snapshotIdentities, ["b1"], "孤儿根那棵不进快照，它不发布")
-        XCTAssertEqual(diffDomain, ["b1", "b-orphan"], "但它绝不能被差分判成「本机没有了」")
+        XCTAssertEqual(snapshotIdentities, ["b1"], "The orphan subtree is not published in the snapshot")
+        XCTAssertEqual(diffDomain, ["b1", "b-orphan"], "The diff must not classify it as locally absent")
         XCTAssertTrue(diffDomain.isSuperset(of: snapshotIdentities),
-                      "差分定义域只会比快照宽，不会窄")
+                      "The diff domain contains the snapshot domain")
     }
 }
 
-// MARK: - Task 5a fix round 2：快照的生命周期
+// MARK: - Task 5a fix round 2: Snapshot lifecycle
 
-/// 三个读缓存的读者什么时候有意义（G1 / G4）。契约是：本轮**最后一次成功的**
-/// `allBookmarks()` 或 `apply(_:)` 之后。
+/// The three cache readers are valid after this round's last successful
+/// allBookmarks or apply (G1 / G4).
 @MainActor
 final class BookmarkSnapshotLifetimeTests: XCTestCase {
 
@@ -2195,11 +2063,10 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
         ])
     }
 
-    /// 本轮还没读过 ⇒ 三个读者交出「不在」，`allSyncIds()` 抛。
-    ///
-    /// 防的是什么：这三个值全都是**错的**，只是非抛出的签名里没有别的东西可交。生产实现在
-    /// DEBUG 下会在这里 `assertionFailure`，假件跟着模同一条契约，免得 Task 6 的引擎用例在
-    /// 假件上跑过一种真机上根本不成立的用法。
+    /// Before reading this round, all three readers report absent and allSyncIds
+    /// throws. Absent values are not truthful observations, just the nonthrowing
+    /// APIs' fallback. Production DEBUG asserts here; matching the contract in
+    /// fakes prevents Task 6 from relying on usage invalid on real devices.
     func testTheCacheBackedReadersReportAbsentBeforeAnySuccessfulSnapshot() {
         let access = access()
 
@@ -2212,10 +2079,10 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
         XCTAssertTrue(siblings.isEmpty)
         XCTAssertFalse(known)
         XCTAssertNil(isFolder)
-        XCTAssertTrue(identitiesThrew, "空集合会让差分把整棵树判成删除，所以这里只能抛")
+        XCTAssertTrue(identitiesThrew, "Throw instead of returning an empty set that deletes the entire tree")
     }
 
-    /// 一次成功的 `allBookmarks()` 之后三个读者才答得上话。
+    /// The three readers become valid after a successful allBookmarks call.
     func testASuccessfulSnapshotMakesTheReadersAnswer() throws {
         let access = access()
 
@@ -2229,12 +2096,11 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
         XCTAssertEqual(isFolder, true)
     }
 
-    /// 一次成功的 `apply(_:)` 之后，三个读者仍然答得上话，而且答的是**落地之后**的形状。
-    ///
-    /// 防的是什么：§4.5 要求「落地之后、写基线之前，按计划复核一次」，而复核用的正是这三个
-    /// 读者。落地后把快照清空了事的话，它们对每一个 guid 都答「不在」——复核永远不通过、
-    /// 基线永远不写、同一批每轮重放；而 `isKnownLocalBookmark` 全答 false 更会让引擎把每条
-    /// 身份判成死映射，把整棵树当成新行重建一遍，用户看见的是一棵重复的树。
+    /// After successful apply, all three readers remain valid and reflect the
+    /// applied state. §4.5 uses them to verify application before recording baselines.
+    /// Clearing the snapshot would make every guid absent, block baselines, and
+    /// replay the batch forever; false isKnownLocalBookmark also triggers dead-mapping
+    /// repair that recreates the entire tree as duplicates.
     func testTheReadersStillAnswerRightAfterASuccessfulApply() async throws {
         let access = access()
         _ = try access.allBookmarks()
@@ -2247,12 +2113,12 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
         let siblings = access.siblings(ofParent: "g-folder", inSpaceId: LocalStore.defaultSpaceId)
         let known = access.isKnownLocalBookmark("g2")
         let identities = try access.allSyncIds()
-        XCTAssertEqual(siblings.map(\.guid), ["g1", "g2"], "复核读到的是落地之后的形状")
-        XCTAssertTrue(known, "落地的那条行必须认得出来，否则它会被当成死映射重建")
+        XCTAssertEqual(siblings.map(\.guid), ["g1", "g2"], "Verification sees the post-apply rows")
+        XCTAssertTrue(known, "Recognize the applied row so dead-mapping repair cannot recreate it")
         XCTAssertTrue(identities.contains("b2"))
     }
 
-    /// 新一轮开始、还没读之前，读者回到「不在」。
+    /// A new round invalidates the readers until another successful read.
     func testBeginningANewRoundInvalidatesTheReaders() throws {
         let access = access()
         _ = try access.allBookmarks()
@@ -2264,12 +2130,12 @@ final class BookmarkSnapshotLifetimeTests: XCTestCase {
     }
 }
 
-// MARK: - 外部评审回归：入站合并的本机那一侧（§4.3 / §6.2）
+// MARK: - External review: Local side of inbound merge (§4.3 / §6.2)
 
 extension SyncableOwnedItemsTests {
 
-    /// 本机那一行**此刻**的出站投影，即 `plan` 的 `context.localProjections` 要的那份字节。
-    /// 构造方式与引擎侧的 `bookmarkLocalProjections` 逐字相同（`project` + 基线盖戳）。
+    /// Current local outbound projection for context.localProjections, built exactly
+    /// like engine bookmarkLocalProjections: project, then stamp against the baseline.
     private func projectionBytes(of row: PhiLocalBookmark,
                                  baseline: Phi_PhiBookmarkEntity,
                                  parentIdentity: String? = nil,
@@ -2281,15 +2147,14 @@ extension SyncableOwnedItemsTests {
         return try BookmarkKind.envelope(stamped).serializedData()
     }
 
-    /// 一条**还没发布**的本机编辑，遇上对端改了同一条实体的**另一个**字段。
-    ///
-    /// 防的是什么：把 `reconciled` 当成合并的本机那一侧，那次本机编辑在参与比较的两条实体
-    /// 里根本没有代表——它的字段在基线里仍是旧值旧戳。合并结果于是带着**旧值**回来，而
-    /// `.update` 的补丁是四个内容字段一起写的（`bookmarkPatch`），那次编辑被静默改写：没有
-    /// commit、没有计数，两台机器都认为自己收敛了。
+    /// An unpublished local edit meets a remote edit to another field. Using
+    /// reconciled as the local merge side omits the pending edit, since its old
+    /// value/stamp remain in baseline. The merged bookmarkPatch rewrites all four
+    /// content fields and silently erases that edit without commits or counters,
+    /// while both devices consider themselves converged.
     func testAnUnpublishedLocalEditSurvivesARemoteEditOfAnotherField() throws {
         let baseline = bookmarkPayload(uuid: "b1", title: "T", url: "https://old.example")
-        // 本机把 URL 改了，还没发布；标题一个字没动。
+        // Local URL changed without publication; title is unchanged.
         let edited = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-a",
                                               title: "T",
                                               url: URL(string: "https://new.example")!,
@@ -2297,8 +2162,8 @@ extension SyncableOwnedItemsTests {
                                               contentUpdatedDate: Date(timeIntervalSince1970: 400))
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(baseline)
-        // 对端只改了标题。
-        let inbound = bookmarkPayload(uuid: "b1", title: "对端标题",
+        // Remote changed only the title.
+        let inbound = bookmarkPayload(uuid: "b1", title: "\u{5bf9}\u{7aef}\u{6807}\u{9898}",
                                       url: "https://old.example", contentStamp: 200)
         var context = OwnedItemPlanContext()
         context.localProjections = ["b1": try projectionBytes(of: edited, baseline: baseline,
@@ -2307,17 +2172,16 @@ extension SyncableOwnedItemsTests {
         let plan = planned([arrival(inbound)], table: table, context: context)
 
         let landed = stepEntity(plan, "b1", .update)
-        XCTAssertEqual(landed?.title.stringValue, "对端标题", "① 对端赢下它改过的那个字段")
+        XCTAssertEqual(landed?.title.stringValue, "\u{5bf9}\u{7aef}\u{6807}\u{9898}", "① The remote side wins its edited field")
         XCTAssertEqual(landed?.url.stringValue, "https://new.example",
-                       "② 本机那次还没发布的编辑一个字都不被改写")
+                       "② Preserve the unpublished local edit exactly")
         XCTAssertTrue(plan.mustRepublish.contains("b1"),
-                      "③ 本机赢了字段 ⇒ 这条实体必须重新发布，否则账户永远停在旧 URL 上")
+                      "③ Republish locally winning fields so the account receives the new URL")
     }
 
-    /// 反方向：本机行与基线逐字相同（没有任何未发布的编辑）⇒ 远端整条赢，**零重发**。
-    ///
-    /// 防的是什么：把「有投影」本身当成「本机赢了」的实现会让每一条入站更新都多一条
-    /// commit，两台机器互相重发，永不安静。
+    /// Conversely, unchanged local rows let remote win entirely with no republication.
+    /// Treating projection presence itself as a local win adds a commit for every
+    /// inbound update, causing endless device echoes.
     func testAnInboundUpdateOnACleanRowRepublishesNothing() throws {
         let baseline = bookmarkPayload(uuid: "b1", title: "T")
         let clean = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-a",
@@ -2325,7 +2189,7 @@ extension SyncableOwnedItemsTests {
                                              createdDate: Date(timeIntervalSince1970: 1))
         var table = PhiOwnedItemTable()
         table.cursors["b1"] = landedCursor(baseline)
-        let inbound = bookmarkPayload(uuid: "b1", title: "对端标题", contentStamp: 200)
+        let inbound = bookmarkPayload(uuid: "b1", title: "\u{5bf9}\u{7aef}\u{6807}\u{9898}", contentStamp: 200)
         var context = OwnedItemPlanContext()
         context.localProjections = ["b1": try projectionBytes(of: clean, baseline: baseline,
                                                               now: 500)]
@@ -2333,21 +2197,20 @@ extension SyncableOwnedItemsTests {
         let plan = planned([arrival(inbound)], table: table, context: context)
 
         let landed = stepEntity(plan, "b1", .update)
-        XCTAssertEqual(landed?.title.stringValue, "对端标题")
-        XCTAssertTrue(plan.mustRepublish.isEmpty, "远端整条赢 ⇒ 没有任何东西要发回账户")
+        XCTAssertEqual(landed?.title.stringValue, "\u{5bf9}\u{7aef}\u{6807}\u{9898}")
+        XCTAssertTrue(plan.mustRepublish.isEmpty, "Remote wins every field, so nothing needs republication")
     }
 }
 
-// MARK: - 外部评审回归：作用域不一致轮里的 tombstone（§7.3 / spec §12.1 第 15 条）
+// MARK: - External review: Tombstones during scope mismatch (§7.3 / §12.1 item 15)
 
 extension PinKindTests {
 
-    /// 作用域不一致 ⇒ 存活实体进 `parked`，**tombstone 进 `parkedTombstones`**。
-    ///
-    /// 防的是什么：只停存活实体的写法把本轮到达的每一条远端删除**永久**丢掉——tombstone 没有
-    /// 载荷可以塞进 `parked`（§2.5：它只有 tag hash），而共享 marker 早已推过那一页，服务端
-    /// 不会再发第二次。表现是那条 pin 在本机永远不死、账户上它早就没了，而版本已经收割、
-    /// 每一个计数器都健康。
+    /// Scope mismatch parks live entities in parked and tombstones in parkedTombstones.
+    /// Parking only live payloads permanently loses remote deletions: tombstones
+    /// carry only tag hashes (§2.5), and an advanced marker prevents redelivery.
+    /// The local pin then survives forever despite account deletion, harvested
+    /// versions, and healthy-looking counters.
     func testAScopeMismatchParksInboundTombstonesInsteadOfDroppingThem() {
         var mismatched = OwnedItemPlanContext()
         mismatched.localScope = .space
@@ -2357,13 +2220,13 @@ extension PinKindTests {
         let plan = planned([arrival(pinPayload(lineage: "ly", ownerKey: "pu-1"))],
                            context: mismatched)
 
-        XCTAssertTrue(plan.steps.isEmpty, "① 作用域不一致 ⇒ 零 step")
-        XCTAssertEqual(Set(plan.parked.keys), ["ly:pu-1"], "② 存活实体照旧进 parked")
+        XCTAssertTrue(plan.steps.isEmpty, "① Scope mismatch produces no steps")
+        XCTAssertEqual(Set(plan.parked.keys), ["ly:pu-1"], "② Live entities enter parked")
         XCTAssertEqual(plan.parkedTombstones, ["lx:pu-1"],
-                       "③ 那条远端删除也要留下来，否则它再也不会被投递")
+                       "③ Retain the remote deletion because it will not be delivered again")
     }
 
-    /// 作用域一致的那一轮**不该**有任何 `parkedTombstones`：tombstone 走正常的第三相。
+    /// With matching scopes, parkedTombstones stays empty; tombstones use the normal third phase.
     func testAnAgreeingScopeRoundEmitsDeleteStepsRatherThanParkingTombstones() {
         var agreed = OwnedItemPlanContext()
         agreed.localScope = .profile
@@ -2377,7 +2240,7 @@ extension PinKindTests {
     }
 }
 
-// MARK: - 外部评审回归：取值相同、戳更新的入站实体（§4.3 的 LWW 比的是一对值）
+// MARK: - External review: Equal values with newer inbound stamps (§4.3 LWW value/stamp pairs)
 
 extension SyncableOwnedItemsTests {
 
@@ -2388,11 +2251,10 @@ extension SyncableOwnedItemsTests {
         return BookmarkKind.entity(from: envelope)
     }
 
-    /// 对端把标题改成 B 又改回 A：取值与本机相同、戳是新的 ⇒ **零 step，但基线要跟上**。
-    ///
-    /// 防的是什么：基线停在旧戳上，一条后到的 `B@200`（重放、第三台设备、marker 回退都产得
-    /// 出）会拿 200 去比 100 而赢下，把账户上更新的那个 A 覆盖掉——两台机器从此不同，而没有
-    /// 任何一条日志或计数会动。
+    /// Remote changes title A to B and back to A: equal value with newer stamp
+    /// produces no step but advances baseline. Otherwise delayed B@200 from replay,
+    /// a third device, or marker rollback beats stale A@100 and overwrites newer
+    /// account A, silently diverging devices without any diagnostic change.
     func testASameValueUpdateWithANewerStampStillMovesTheBaselineForward() {
         let baseline = bookmarkPayload(uuid: "b1", title: "A")
         var table = PhiOwnedItemTable()
@@ -2401,12 +2263,12 @@ extension SyncableOwnedItemsTests {
         let plan = planned([arrival(bookmarkPayload(uuid: "b1", title: "A", contentStamp: 300))],
                            table: table)
 
-        XCTAssertTrue(plan.steps.isEmpty, "① 取值没变 ⇒ 不产出一条空补丁")
+        XCTAssertTrue(plan.steps.isEmpty, "① Unchanged values produce no empty patch")
         let refreshed = bookmarkEntity(plan.rebaselined["b1"])
         XCTAssertEqual(refreshed?.title.stringValue, "A")
-        XCTAssertEqual(refreshed?.title.updatedAtMs, 300, "② 基线吃下那个更新的戳")
+        XCTAssertEqual(refreshed?.title.updatedAtMs, 300, "② The baseline retains the newer stamp")
 
-        // ③ 吃下之后，一条更旧的 `B@200` 再也赢不了。
+        // ③ After baseline advancement, older B@200 cannot win.
         var refreshedTable = PhiOwnedItemTable()
         refreshedTable.cursors["b1"] = ownedCursor(reconciled: plan.rebaselined["b1"],
                                                    entityId: "srv-1", version: 1,
@@ -2415,10 +2277,10 @@ extension SyncableOwnedItemsTests {
         let late = planned([arrival(bookmarkPayload(uuid: "b1", title: "B", contentStamp: 200))],
                            table: refreshedTable)
 
-        XCTAssertTrue(late.steps.isEmpty, "③ B@200 输给账户上那条 A@300")
+        XCTAssertTrue(late.steps.isEmpty, "③ B@200 loses to account A@300")
     }
 
-    /// 反方向：入站实体与基线**逐字节相同** ⇒ 连基线都不用重写。
+    /// Conversely, byte-identical inbound entity and baseline require no baseline rewrite.
     func testAnIdenticalInboundEntityRewritesNothingAtAll() {
         let baseline = bookmarkPayload(uuid: "b1", title: "A")
         var table = PhiOwnedItemTable()
@@ -2427,22 +2289,22 @@ extension SyncableOwnedItemsTests {
         let plan = planned([arrival(baseline)], table: table)
 
         XCTAssertTrue(plan.steps.isEmpty)
-        XCTAssertTrue(plan.rebaselined.isEmpty, "一个字节都没变，没什么要写")
+        XCTAssertTrue(plan.rebaselined.isEmpty, "Identical bytes require no writes")
     }
 }
 
-// MARK: - R-exec-16：本机落不了地的那两个字段（`created_at_ms` / `source`）
+// MARK: - R-exec-16: Fields not writable locally (created_at_ms / source)
 
-/// 两台设备对同一条书签的创建时刻不一致时，出站投影必须**自己先与基线合并**。
-///
-/// 防的是什么：`created_at_ms` 用 min() 合并，而 `BookmarkFieldPatch` 写不了它——一次「只有
-/// 创建时刻变了」的合并产出零条本机 op，落地却照样推进两份基线。投影若继续宣称本机那一列
-/// 的值，戳大的那台每轮看见「投影 ≠ reconciled」而重发、戳小的那台每轮看见
-/// 「server ≠ reconciled」而重发，两台机器把一条 176 字节的书签**永远**发下去
-/// （Mac A/B 2026-09-14 的提交风暴）。
+/// When devices disagree on creation time, outbound projection must merge
+/// with its baseline first. created_at_ms merges by minimum but cannot be
+/// written by BookmarkFieldPatch; creation-time-only merges generate no local
+/// ops while advancing both baselines. Reasserting the local column then makes
+/// one device's projection differ from reconciled and the other's server differ
+/// from reconciled, endlessly republishing a 176-byte bookmark (Mac A/B commit
+/// storm, 2026-09-14).
 extension SyncableOwnedItemsTests {
 
-    /// A 手上那个戳，与 B 手上那个（晚 11 分钟）——现场那两个值。
+    /// The incident's two timestamps: A's value and B's value eleven minutes later.
     private static var earlierCreatedAtMs: Int64 { 1_789_370_308_853 }
     private static var laterCreatedAtMs: Int64 { 1_789_370_985_148 }
 
@@ -2450,8 +2312,8 @@ extension SyncableOwnedItemsTests {
         Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
     }
 
-    /// 一台设备此刻的出站投影：`project` + 拿它自己那条基线盖戳，与
-    /// `PhiSyncEngine.bookmarkLocalProjections` 逐字同构。
+    /// Current outbound projection: project and stamp against the device's own
+    /// baseline, matching PhiSyncEngine.bookmarkLocalProjections.
     private func projection(of row: PhiLocalBookmark,
                             baseline: Phi_PhiBookmarkEntity) throws -> Phi_PhiBookmarkEntity {
         let projected = try XCTUnwrap(BookmarkKind.project(row, resolve: resolve, scope: nil,
@@ -2460,48 +2322,48 @@ extension SyncableOwnedItemsTests {
                                   rank: BookmarkKind.rank(of: baseline), now: 9_000)
     }
 
-    /// CASE 16.1 — 两台设备的投影都取 min，且**逐字节相同**。
+    /// CASE 16.1: both projections take the minimum and are byte-identical.
     func testTwoDevicesProjectTheSameEarliestCreationStamp() throws {
         let earlier = Self.earlierCreatedAtMs
         let later = Self.laterCreatedAtMs
-        // 同一条书签的两条本机行：除创建时刻外逐字段相同。
+        // Two local rows for one bookmark differ only in creation time.
         let rowA = PhiLocalBookmark.fixture(guid: "GA", syncId: "b1", spaceId: "space-a",
                                             createdDate: date(fromMilliseconds: earlier))
         let rowB = PhiLocalBookmark.fixture(guid: "GB", syncId: "b1", spaceId: "space-a",
                                             createdDate: date(fromMilliseconds: later))
-        // 每台机器刚落地了对端那一份：基线是合并结果，带的是**对端**那个创建时刻。
+        // Each machine just applied the other's entity; its merged baseline carries
+        // the peer's creation timestamp.
         let baselineA = bookmarkPayload(uuid: "b1", createdAtMs: later)
         let baselineB = bookmarkPayload(uuid: "b1", createdAtMs: earlier)
 
         let projectedA = try projection(of: rowA, baseline: baselineA)
         let projectedB = try projection(of: rowB, baseline: baselineB)
 
-        XCTAssertEqual(projectedA.createdAtMs, earlier, "① 戳小的那台仍然发自己那个")
-        XCTAssertEqual(projectedB.createdAtMs, earlier, "② 戳大的那台改发基线那个，不再重申")
+        XCTAssertEqual(projectedA.createdAtMs, earlier, "① The earlier device keeps publishing its own timestamp")
+        XCTAssertEqual(projectedB.createdAtMs, earlier, "② The later device uses the baseline timestamp instead of reasserting its own")
         XCTAssertEqual(try projectedA.serializedData(), try projectedB.serializedData(),
-                       "③ 两台机器对同一条书签算出同一串字节")
+                       "③ Both devices produce identical bytes for the bookmark")
     }
 
-    /// CASE 16.2 — 投影是 `merge` 的不动点：合并它与账户手上那一份，得回它自己。
-    ///
-    /// 这正是「不再重发」的充要条件：落地写下的 `reconciled` 就是合并结果，下一轮的投影与它
-    /// 逐字节相同 ⇒ 字节差为零 ⇒ 不进发布切片。
+    /// CASE 16.2: projection is a merge fixed point against the account entity.
+    /// This is the no-republication condition: application stores merged reconciled
+    /// bytes, and the next identical projection has no byte difference to publish.
     func testAProjectionIsAFixedPointOfTheMerge() throws {
         let earlier = Self.earlierCreatedAtMs
         let later = Self.laterCreatedAtMs
         let rowB = PhiLocalBookmark.fixture(guid: "GB", syncId: "b1", spaceId: "space-a",
                                             createdDate: date(fromMilliseconds: later))
-        // 账户上那一份来自对端，带的是较早那个戳。
+        // The account entity comes from the peer with the earlier timestamp.
         let account = bookmarkPayload(uuid: "b1", createdAtMs: earlier)
 
         let projected = try projection(of: rowB, baseline: account)
         let merged = BookmarkKind.merge(local: projected, remote: account)
 
-        XCTAssertEqual(merged, projected, "合并不再改动投影，于是没有任何东西要重发")
+        XCTAssertEqual(merged, projected, "Merge leaves projection unchanged, so no republication is needed")
         XCTAssertEqual(merged.createdAtMs, earlier)
     }
 
-    /// CASE 16.3 — `source` 写一次定终身：基线上有就照抄，本机那一列不再去覆盖它。
+    /// CASE 16.3: source is write-once; copy it from baseline without overriding it from the local column.
     func testABaselineSourceIsNeverOverwrittenByTheLocalColumn() throws {
         let row = PhiLocalBookmark.fixture(guid: "GA", syncId: "b1", spaceId: "space-a",
                                            source: 7,
@@ -2511,11 +2373,11 @@ extension SyncableOwnedItemsTests {
         let projected = try projection(of: row, baseline: account)
         let merged = BookmarkKind.merge(local: projected, remote: account)
 
-        XCTAssertEqual(projected.source, 3, "① 账户上那个赢")
-        XCTAssertEqual(merged, projected, "② 于是合并同样是不动点")
+        XCTAssertEqual(projected.source, 3, "① The account value wins")
+        XCTAssertEqual(merged, projected, "② Merge is also a fixed point")
     }
 
-    /// CASE 16.4 — pin 侧逐字同款（`PinFieldPatch` 同样写不了这两个字段）。
+    /// CASE 16.4: the same pin contract; PinFieldPatch cannot write these two fields either.
     func testAPinProjectionConvergesOnTheEarliestCreationStampToo() throws {
         let earlier = Self.earlierCreatedAtMs
         let later = Self.laterCreatedAtMs
@@ -2532,6 +2394,6 @@ extension SyncableOwnedItemsTests {
 
         XCTAssertEqual(stamped.createdAtMs, earlier)
         XCTAssertEqual(stamped.source, 3)
-        XCTAssertEqual(merged, stamped, "同书签：投影是合并的不动点")
+        XCTAssertEqual(merged, stamped, "Like bookmarks, the projection is a merge fixed point")
     }
 }

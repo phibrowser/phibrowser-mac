@@ -6,95 +6,90 @@
 import Foundation
 import SwiftProtobuf
 
-// 「归属项」（书签 / pin）的 snapshot / 差分 / plan / 认领，外加 §4.3 的位置合并。
-//
-// **整个文件是纯函数**，与 `SyncableSpaces.swift:19-22` 的自述逐字同款：引擎拥有全部
-// 持久化，`snapshot` 一个字节都不写。这里没有 actor hop、没有 `LocalStore`、没有
-// `UserDefaults`，所以它能在一个没有 SwiftData 的测试进程里整体跑起来。
-//
-// rank 的四个原语（`rankAlphabet` / `rankBetween` / `longestIncreasingKeptSet` /
-// `assignRanks` / `isLegalRank`）**不在这里重写**：它们住在 `SyncableSpaces` 上，本文件
-// 是第二个调用方（R4 单一实现）。两份实现迟早会漂，而它们决定的是账户级次序。
+// Owned-item (bookmark/pin) snapshot, diff, plan, adoption, and §4.3 location merge.
+// This file contains only pure functions, like SyncableSpaces.swift:19–22. The
+// engine owns persistence; snapshot writes nothing. No actor hops, LocalStore,
+// or UserDefaults are involved, so tests can run without SwiftData.
+// Reuse SyncableSpaces' rankAlphabet, rankBetween, longestIncreasingKeptSet,
+// assignRanks, and isLegalRank primitives (R4, single implementation). Duplicating
+// them would let account-wide ordering rules drift.
 
-/// 身份翻译与归属合格性，由引擎在**轮首**算好一次传进来——纯函数模块不该自己去够
-/// `PhiSpaceSyncTable` 或者映射表。
+/// Identity translation and owner eligibility computed once by the engine at
+/// round start. Pure functions must not access PhiSpaceSyncTable or mapping stores.
 struct OwnerResolver {
-    /// 本地 spaceId -> 账户级 syncUuid。
+    /// Local spaceId to account-wide syncUuid.
     var syncUuid: (String) -> String?
-    /// syncUuid -> 本地 spaceId。
+    /// syncUuid to local spaceId.
     var localSpaceId: (String) -> String?
-    /// §4.2 规则 1 那三条判据的合取：在 `currentSpaces()` 里 ∧ 有 syncUuid ∧ Space 游标
-    /// 既不 `hidden` 也没有 `purgedAtMs`。
-    ///
-    /// **只对 Space 归属有意义**：本模块只在 `localSpaceId(uuid) != nil` 时问它，所以一个
-    /// profile / app 作用域的 pin 归属不会被它一刀切掉。
+    /// Conjunction from §4.2 rule 1: present in currentSpaces, mapped to syncUuid,
+    /// and a Space cursor with neither hidden nor purgedAtMs. Only meaningful for
+    /// Space ownership; call it only when localSpaceId resolves, preserving Profile/App pins.
     var isEligibleSpace: (String) -> Bool
-    /// 本地 profileId -> 账户级 profile uuid。
+    /// Local profileId to account-wide Profile UUID.
     var globalUuid: (String) -> String?
-    /// profile uuid -> 本地 profileId。
+    /// Profile UUID to local profileId.
     var localProfileId: (String) -> String?
 }
 
-/// 协议层三元组 + 载荷。`plan` 收它而不是裸载荷，因为 §5.6 L1 的「收割」要拿到服务端赋的
-/// `entityId` 与 `version`，而那两个字段住在 `PhiRemoteEntity` 上、**不在**加密载荷里。
+/// Protocol tuple plus payload. plan needs server-assigned entityId/version
+/// for §5.6 L1 harvesting; these belong to PhiRemoteEntity, not the encrypted payload.
 struct OwnedItemArrival<Entity> {
     var entity: Entity
     var entityId: String
     var version: Int64
 }
 
-/// `plan` 的第六个参数：一次调用要带的全部轮内上下文。散成多个实参会让签名随着每一条新
-/// 规则而变。
+/// All round context for plan's sixth parameter, avoiding signature changes
+/// for every additional rule.
 struct OwnedItemPlanContext {
-    /// `adopt` 的配对表：实体身份 -> 本机行的稳定本地 id（书签是 `guid`，规则是 `PhiLocalURLRule.id`）。
+    /// Adoption pairs: entity identity to stable local row id (bookmark guid or PhiLocalURLRule.id).
     var pairs: [String: String] = [:]
-    /// `adopt` 按 §6.2 算好的**字段级合并结果**（身份 -> `Phi_PhiEntity` 信封字节），即
-    /// `OwnedItemAdoptionResult.merges`。`plan` 用它替换这些身份的入站实体，于是落地的是
-    /// 合并结果而不是「整体采纳远端」。字节而不是实体，是为了让这个结构保持非泛型。
+    /// Field-level merges from §6.2 / OwnedItemAdoptionResult.merges, mapping
+    /// identity to serialized Phi_PhiEntity envelopes. plan substitutes these for
+    /// inbound entities so application uses merged values, not wholesale remote
+    /// adoption. Bytes keep this context nongeneric.
     var adoptedMerges: [String: Data] = [:]
-    /// `OwnedItemAdoptionResult.fieldWrites`：认领之后还要写字段的那些身份。不在里面的
-    /// 身份只产出一条 `.claim`——那一行的内容已经等于合并结果，再发一条空补丁没有意义。
+    /// OwnedItemAdoptionResult.fieldWrites: identities needing field writes after
+    /// claim. Others produce only claim because local content already equals the
+    /// merge; an empty update patch would be redundant.
     var adoptedFieldWrites: Set<String> = []
-    /// 本轮同时到达的 tombstone 身份集合（提升只在父被**证实死亡**时发生）。
+    /// Tombstone identities arriving this round; promote children only when parent death is confirmed.
     var tombstonedIdentities: Set<String> = []
-    /// 身份 -> **本机那一行此刻的出站投影**（`Phi_PhiEntity` 信封字节），由适配层按 §4.2
-    /// 第 4 / 5 条盖好戳——即「这一轮的 `snapshot` 会为这条身份发布的那一份」。
-    ///
-    /// **§4.3 的合并是对两条实体 X、Y 对称地写的，而 X 是本机此刻那一条，不是基线。**
-    /// 拿 `reconciled` 当本机那一侧，一处**还没发布**的本机编辑在线上没有任何代表：它的
-    /// 字段在基线里仍是旧值旧戳，于是对端只要碰了同一条实体的**任何**一个字段，合并结果
-    /// 就带着旧值回来，而 `.update` 的字段补丁是整组内容字段一起写的（`bookmarkPatch`）
-    /// ——那次本机编辑被静默改写，没有 commit、没有计数，两台机器都认为自己收敛了。
-    /// 基线的用途是**差分出要发布什么**（§4.2 第 4 条的盖戳判据），不是决定落地什么。
-    ///
-    /// 只给**有基线**的身份算（无基线那一类走 §6.2 的 `adoptedMerges`，或者本来就整条
-    /// 采纳远端）：没有基线时 `stamp` 会把 `location` / `rank` 盖成 0 并把内容字段盖成
-    /// `contentUpdatedDate`，那是认领那条路的规则，不是一条已经在账户上的行的规则。
+    /// Identity to the current local outbound projection as serialized Phi_PhiEntity,
+    /// stamped by the adapter under §4.2 rules 4/5: exactly what snapshot would publish.
+    /// §4.3 merges current local and remote entities symmetrically; local is not
+    /// reconciled. Using baseline as local omits unpublished edits, letting any
+    /// remote field change return stale local values that a grouped bookmarkPatch
+    /// silently overwrites. Baseline determines publication differences and stamps,
+    /// not application values.
+    /// Compute only for identities with baselines. Others use §6.2 adoptedMerges
+    /// or initial remote adoption; baseline-free stamping assigns zero location/rank
+    /// and contentUpdatedDate to content, which is adoption policy, not the policy
+    /// for an existing account row.
     var localProjections: [String: Data] = [:]
-    /// 本轮因一条远端文件夹 tombstone 而要消失的身份（A9 的第三个合取项）。
+    /// Identities removed by a remote folder tombstone this round (A9's third conjunct).
     var deletedSubtree: Set<String> = []
-    /// 解析得到一条**活的**本地行的父身份（A9 的第二个合取项）。
+    /// Parent identities resolving to live local rows (A9's second conjunct).
     var liveLocalParents: Set<String> = []
-    /// 本机当前作用域与账户作用域（书签两者都传 nil）。两者都非 nil 且**不相等**时，
-    /// §7.3 的作用域不一致成立：`plan` 产出零 step、把入站实体**全部**塞进 `parked`。
+    /// Local/account pin scopes; bookmarks pass nil for both. Two nonnil unequal
+    /// values trigger §7.3: no plan steps and all inbound entities parked.
     var localScope: PinnedTabScope? = nil
     var accountScope: PinnedTabScope? = nil
-    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1），由适配层的 pre-pass 填
-    /// （8b-2 计划裁定二）。`plan` 手上没有本机行（`localProjections` 是投影字节，不是行），
-    /// 算不出签名，所以它只在产出 `.move` / `.update` 的那一刻**照身份查一次**这张表并把命中的
-    /// 那些抄进 `OwnedItemPlan.preLandingSignatures`；查不到的身份**结构性地不在表里**
-    /// （不强解包、不填空值）。
-    ///
-    /// 类型逐字是 `[String: RuleSignature]`（8b-2 计划裁定一）：`AnyHashable` 会把第二遍指针的
-    /// 分组键从编译期类型退化成运行期强转（失败即**静默**空转，正是 RR12-1 点名的那种失效），
-    /// 而给 `OwnedItemKind` 加第三个关联类型会把非泛型的 `OwnedItemPlan` 也拖成泛型、牵动书签
-    /// 与 pin 的每一个调用点。本文件已经在 `localScope` / `accountScope` 上具名引用了 pin 专属
-    /// 的 `PinnedTabScope`，全仓又是**一个** Swift module，所以这里没有任何新的构建边。
-    /// **书签与 pin 那两条路径永不填它。**
+    /// Pre-page-application merge signatures by identity (D30 / §8.4.1), supplied
+    /// by the adapter pre-pass (8b-2 ruling 2). plan has projection bytes, not local
+    /// rows, so it only copies present entries into preLandingSignatures when
+    /// emitting move/update; missing identities remain absent.
+    /// Use [String: RuleSignature] exactly (ruling 1): AnyHashable would replace
+    /// compile-time grouping with runtime casts that can silently fail (RR12-1).
+    /// A third associated type would make OwnedItemPlan generic and affect every
+    /// bookmark/pin caller. This file already names pin-specific PinnedTabScope
+    /// and the repository has one Swift module, so no new build dependency arises.
+    /// Bookmark/pin contexts never populate this table.
     var localSignatures: [String: RuleSignature] = [:]
-    /// 轮首之后作用域**动过**（R-exec-12）：两个值在轮首取样时还一致，落地之前再读已经不是
-    /// 那一对了。轮内那份本机投影因此过期，与「两者不相等」同等处理——差别只在它证明的是
-    /// 「投影过期」而不是「本机与账户不一致」，而 §7.3 的处置对两者是同一个。
+    /// Scope changed after initial sampling (R-exec-12): both values originally
+    /// agreed but no longer match that pair before application. The local projection
+    /// is stale, so apply the same §7.3 handling as scope mismatch, even though
+    /// this proves stale sampling rather than current local/account disagreement.
     var scopeMovedMidRound = false
     var scopeMismatch: Bool {
         if scopeMovedMidRound { return true }
@@ -102,73 +97,68 @@ struct OwnedItemPlanContext {
         return localScope != accountScope
     }
 
-    // MARK: §8.4.4 的四个具名输入（R-M3-4a-73，8b-3）。**书签与 pin 恒空集 / 空表**——
-    // 它们的 plan 上下文一个都不填，两个新分支因此在它们身上结构性不可达。
-    //
-    // 判定留在 kind 侧：签名与软删是规则特有的，`OwnedItemPlanContext` 承载不了行上的布尔。
+    // MARK: §8.4.4's four named inputs (R-M3-4a-73, 8b-3)
+    // Bookmark/pin contexts leave these empty, making the new branches unreachable.
+    // Keep criteria in the kind: signatures and soft deletion are rule-specific
+    // and this generic context cannot inspect row flags.
 
-    /// 满足 (α) 前三个合取项（行在 ∧ `deletedDate == nil` ∧ **有签名**）**且**
-    /// `row.pendingLocalEdit == true` 的身份。
+    /// Identities meeting α's first three conditions (row exists, not soft-deleted,
+    /// with signature) and pendingLocalEdit=true.
     var pendingLocalEdits: Set<String> = []
-    /// 满足 (α) 前三个合取项**且**取值式 `server != nil && reconciled != nil &&
-    /// server != reconciled` 的身份（与发布段的 `pending` 集合逐字同源）。
+    /// Identities meeting α's first three conditions and nonnil, unequal server
+    /// and reconciled values, matching publication's pending set.
     var unpublished: Set<String> = []
-    /// 身份 -> 伙伴 W 的身份，**只收按三步查找次序真的拿到一条「静止」W 的那些**。
-    /// **定义域不受上面那三个合取项限制**（RR8-1）：(β) 的 X 按定义是软删态的。
+    /// Identity to partner W identity, only when the three-step lookup finds a
+    /// quiescent W. This domain is not limited by α's first three conditions (RR8-1):
+    /// β's X is soft-deleted by definition.
     var mergePartners: [String: String] = [:]
-    /// 三步查找次序走完拿不出静止 W、而这一组**确实有伙伴行**的身份（RR10-3）。
-    /// 与「根本没有伙伴」**必须分开**：一张字典用「键不在」表示两件事，会让实现在伙伴不静止
-    /// 时走 (ii) / A9 原语义。
+    /// Identities whose group has a partner but whose three-step search finds no
+    /// quiescent W (RR10-3). Distinguish this from no partner; conflating both
+    /// as a missing dictionary key incorrectly falls back to ii/A9 while the partner is active.
     var partnerNotAtRest: Set<String> = []
 }
 
-/// 一次转移的**取值源**，已经从它的来源里取出来（§8.4.4 / RR8-2）。落地只看这个值，不再
-/// 回头读行或实体。
-///
-/// §8.4.4 那份声明加了一格 `targetSpaceId`：落地写的是 `SpaceURLRule.spaceId` 这一**本机**
-/// 列，而 `targetOwnerUuid` 是账户级的量；反查由持有 resolver 的 kind 做，`LocalStore` 因此
-/// 不需要认识任何账户映射（裁定 3）。
+/// Transfer source values captured from their origin (§8.4.4 / RR8-2).
+/// Application consumes these values without rereading rows or entities.
+/// Add targetSpaceId to the spec declaration because application writes the
+/// local SpaceURLRule.spaceId, while targetOwnerUuid is account-wide. The kind
+/// performs reverse lookup, keeping LocalStore unaware of account mappings (ruling 3).
 struct RuleProjection: Equatable, Sendable {
     var host: String
     var pathPrefix: String?
     var askBeforeRouting: Bool
-    /// 内容组那一枚戳（载体 host，§8.2 第 1 条）。
+    /// Content-group timestamp carried by host (§8.2 rule 1).
     var contentUpdatedDate: Date?
-    /// 账户级目标。
+    /// Account-wide target identity.
     var targetOwnerUuid: String
-    /// 同一个目标反查出的本机 Space id；nil ⇒ 目标单元不转移。
+    /// Reverse-resolved local Space id for that target; nil skips target transfer.
     var targetSpaceId: String?
-    /// 目标那一枚戳。
+    /// Target timestamp.
     var targetUpdatedDate: Date?
-    /// rank 这个合并单元的**本机**取值（8b-4 / 裁定 3）。**只有 §8.4.5 的两处清位读它**：
-    /// 它们比的是「行此刻的三个合并单元」，而第三个单元在行上是 `sortOrder: Int`、在载荷里是
-    /// `SyncableSpaces.assignRanks` 出来的字典序串，两者在
-    /// store 里没法互算。少了这一项，「E1 改 `ask` 在途 + E2 纯拖动」会被判成相等 ⇒ 当场清位
-    /// ⇒ 那一轮的远端 tombstone 硬删、E2 的顺序连同规则一起没了。
-    ///
-    /// **`transferURLRuleEditThrowing` 一个字节都不看它**（rank 不转移，§8.4.4 那张表第三行），
-    /// 所以从实体折出来的 `transferSource(of:resolve:)` 让它保持 `nil` —— 而 `nil` 在清位那一侧
-    /// 恒不等（fail-closed，见 `URLRuleKind.clearingProjectionMatches`）。
+    /// Local rank-unit value (8b-4 / ruling 3), read only by §8.4.5's two flag-clearing
+    /// paths. They compare three current row units; rank is local sortOrder:Int
+    /// but wire lexicographic assignRanks output, which the store cannot convert.
+    /// Without it, an in-flight ask edit followed by a pure drag can falsely match,
+    /// clear the flag, and let a remote tombstone destroy the rule and drag intent.
+    /// Transfer never reads this field because rank is not transferred (§8.4.4
+    /// row 3). Entity-derived transferSource leaves it nil; clearing treats nil
+    /// as unequal, failing closed (URLRuleKind.clearingProjectionMatches).
     var sortOrder: Int? = nil
 }
 
-/// 一个落地步骤属于 §4.4 四相里的哪一相，由这个枚举决定——它同时是排序键：
-/// `.claim` / `.create` / `.move` 是第一相，`.update` 第二相，**`.transfer` 第三相**，
-/// `.delete` 第四相（R-M3-4a-93）。
-///
-/// `.transfer` 必须排在 `.update` **之后**：它的每单元 LWW 要跟 W 的**当前值**比，
-/// 而「当前值」只有在本页那条普通 `.update(W)` 已经落下去之后才是真的当前值。
-/// 也必须排在 `.delete` **之前**：X 的硬删要在编辑被搬走之后才发生。
-/// **绝不能并进 `.update`**：两者取值源不同（`.update` 取入站载荷，`.transfer` 取
-/// X 的本机行投影并按单元比 LWW），并相就是把两套语义混成一套。
+/// Application phase and sort key (§4.4 / R-M3-4a-93): claim/create/move first,
+/// update second, transfer third, delete fourth. Transfer must follow update
+/// to compare against W's current per-unit values, and precede deletion of X
+/// so edits survive. Do not combine it with update: update reads inbound
+/// payloads, while transfer reads X's local projection and compares each unit by LWW.
 enum StepKind: Equatable {
-    case claim        // 认领：把账户身份写到一条已存在的本机行上（§6.3 第 ① 步）
+    case claim        // Claim: assign account identity to an existing local row (§6.3 step ①)
     case create
-    case move         // 改父 / 改 Space / 改位置
-    case update       // 只改内容字段
-    /// §8.4.4 的编辑转移，**第三相**：把这条身份手上那次还没上账户的用户意图搬到 `to` 那一条
-    /// 合并伙伴上。`source` 是**值**（RR8-2）——两个落点的取值源不同，把取值留给落地闭包就
-    /// 等于让它去猜自己在哪一支。
+    case move         // Change parent, Space, or position
+    case update       // Change content fields only
+    /// §8.4.4 third-phase transfer moves unpublished user intent to merge partner
+    /// to. source is a value (RR8-2): the two branches use different sources,
+    /// and application must not guess which branch to read.
     case transfer(source: RuleProjection, to: String)
     case delete
 }
@@ -176,158 +166,143 @@ enum StepKind: Equatable {
 struct OwnedItemApplyStep: Equatable {
     var identity: String
     var kind: StepKind
-    /// **模块判定的**落地父，`""` = Space 根。
-    ///
-    /// nil = 「照载荷自己的父落地」——一条根级书签的 create、以及每一条 pin（pin 没有父）
-    /// 都是 nil。非 nil 只发生在模块真的**决定**了一个父的时候：提升到根（`""`，§4.4
-    /// 第 5 步）与挂到本轮一起落地的那个父之下。
+    /// Parent explicitly chosen by the module; empty string means Space root.
+    /// nil uses the payload's parent, including root bookmark creates and all
+    /// parentless pins. Nonnil is reserved for actual decisions: promotion to
+    /// root (§4.4 step 5) or attachment to a parent applying in this round.
     var newParentUuid: String?
-    /// 新增（M3-4a / R-M3-4a-26）。非 nil = 这一步把该身份搬到另一个归属桶。
-    /// 只有归属可变的 kind 会填它；书签的归属变化走 `newParentUuid` + `location`，
-    /// pin 的归属在 client tag 里、根本变不了。**默认 nil**，所以书签与 pin 的每一处
-    /// 构造点与每一条既有 `==` 断言逐字不变。
+    /// M3-4a / R-M3-4a-26: nonnil when this step changes the ownership bucket.
+    /// Only kinds with mutable ownership populate it. Bookmarks use newParentUuid
+    /// and location; pin owner is immutable in the client tag. Default nil
+    /// preserves all bookmark/pin constructors and equality assertions.
     var newOwnerUuid: String? = nil
     var newRank: String?
-    /// 落地后要写进 `reconciled` 的字节（`Phi_PhiEntity` 信封的序列化形式）。
+    /// Serialized Phi_PhiEntity bytes to store as reconciled after application.
     var payload: Data?
 }
 
-/// 一条停放项。**它带着归属 uuid**：§4.4 第 4 步要求停放的同时记下「我在等哪一个归属
-/// 落地」，引擎把它写进游标的 `pendingOwnerUuid`，下一轮据此判断这条停放项是否可以重试。
+/// Parked item with the owner UUID it awaits (§4.4 step 4). The engine records
+/// it as pendingOwnerUuid to decide next round whether application can retry.
 struct ParkedOwnedItem: Equatable {
     var payload: Data
     var pendingOwnerUuid: String?
 }
 
 struct OwnedItemPlan {
-    var steps: [OwnedItemApplyStep]    // 已按 §4.4 四相排序（R-M3-4a-93）
+    var steps: [OwnedItemApplyStep]    // Sorted into §4.4's four phases (R-M3-4a-93)
     var parked: [String: ParkedOwnedItem]
     var refused: Int
     var lifted: Int
     var supersededByDelete: Int
     var cancelledDeletes: Set<String>
-    /// 身份 -> 本轮从协议层收割到的 `(entityId, version)`，即使那条实体被丢弃。
+    /// Identity to harvested protocol entityId/version, even for discarded entities.
     var harvest: [String: (entityId: String, version: Int64)]
-    /// 合并结果里**本机那一侧赢了字段**的那些身份：必须重新发布（与
-    /// `OwnedItemAdoptionResult.mustRepublish` 同一条规则、同一个理由，§6.2）。
-    ///
-    /// 普通差分对它们的回答永远是「没变化」——落地之后本机那一行与 `reconciled` 逐字相等，
-    /// 于是快照算出来的字节就是基线本身。不显式排进发布队列，本机赢下的那个值**永远**到不了
-    /// 账户，而两台机器都认为自己收敛了。
+    /// Identities whose local fields won the merge and must republish, matching
+    /// OwnedItemAdoptionResult.mustRepublish (§6.2). Normal diff sees no change
+    /// after application because local rows equal reconciled bytes. Without explicit
+    /// publication, the winning local value never reaches the account despite apparent convergence.
     var mustRepublish: Set<String> = []
-    /// **这条身份本轮一条 step 都产不出、因此要连同它的 tombstone 一起停放的身份**（RR9-15）。
-    /// 调用方把它们写成游标的 `pendingTombstone`，下一轮的工作集照常带上。
-    ///
-    /// **两个填充点**：§7.3 的作用域不一致**整批**早退，与 §8.4.4 (α) 的「W 在但不静止」。
-    /// 后者是**逐身份**的，要与同页别的身份照常落地并存，所以正常返回路径**必须**传这个参数
-    /// ——只在早退支上填、正常路径靠默认值 `[]` 的实现会让那次停放**静默丢失**：三元组已收割、
-    /// 游标看上去健康、marker 早已推过那一页，那条远端删除再也不会被投递第二次。
-    ///
-    /// 它与 `parked` 是同一件事的两半：那一支把入站的**存活**实体塞进 `parked`，而
-    /// tombstone 没有载荷可停（§2.5：它只有 tag hash），所以只能在这里报出身份。
+    /// Identities producing no steps this round whose tombstones must also park
+    /// (RR9-15). The caller records pendingTombstone for the next working set.
+    /// Populate on both whole-batch §7.3 scope-mismatch exits and per-identity
+    /// §8.4.4 α branches with a nonquiescent W. The normal return must carry
+    /// this set; defaulting it empty silently loses deletion after tuple harvesting
+    /// and marker advancement, with no redelivery.
+    /// This complements parked for live payloads: tombstones carry only tag hashes
+    /// (§2.5), so report their identities here.
     var parkedTombstones: Set<String> = []
-    /// §8.4.4 **(ii)** 支的身份（R-M3-4a-61）：**只收 (ii)**，转移与停放都不进。
-    ///
-    /// 调用方对它们的记账是「行留着、两份基线清 nil、写下并**保留** `deletedAtMs`、清掉三个
-    /// 待办位」，轮末的 3b 重发布据此把这条规则重新发回账户。**绝不进 `deleted`、绝不调
-    /// `noteDeletedRows`**——行留在盘上、也留在本页刷新之后的投影里，那正是 3b 的前提。
+    /// Only §8.4.4 ii identities (R-M3-4a-61), excluding transfers and parking.
+    /// The caller retains the row, clears both baselines and three pending flags,
+    /// and records/preserves deletedAtMs for round-end 3b republication. Never add
+    /// them to deleted or call noteDeletedRows: the retained disk row and refreshed
+    /// projection are prerequisites for 3b.
     var yieldedTombstones: Set<String> = []
-    /// 身份 -> 要写进 `reconciled` 的新字节，**而这条身份本轮一个 step 都没有**。
-    ///
-    /// LWW 比的是 `(值, 戳)` 这一对，所以一条**取值没变、戳更新**的入站实体照样要被吃下：
-    /// 对端把标题从 A 改成 B 再改回 A，账户上那条是 `A@300`，而本机基线还停在 `A@100`。
-    /// 落地那一侧确实什么都不用做（那一行已经是 A，产一条空补丁是错的），但基线**必须**跟上
-    /// ——不跟上的话，一条后到的 `B@200`（重放、第三台设备、marker 回退都产得出）会拿 200 去
-    /// 比 100 而**赢下**，把账户上更新的那个 A 覆盖掉，两台机器从此不同。
-    ///
-    /// 这一位不破坏「apply → 基线」的次序（§4.5）：走到这里的身份按定义没有任何东西要落地，
-    /// 合并结果与基线在**取值**上逐字相同，差的只是时间戳。
+    /// New reconciled bytes for identities producing no steps this round. LWW
+    /// compares value and stamp: a remote A→B→A can yield A@300 while local
+    /// baseline remains A@100. No field patch is needed, but baseline must advance
+    /// or delayed B@200 can win and overwrite the newer account A.
+    /// This preserves apply-before-baseline (§4.5): by definition no application
+    /// is needed; merged and baseline values match, differing only in timestamps.
     var rebaselined: [String: Data] = [:]
-    /// 身份 -> 那一行**这一页落地之前**的合并签名（D30 / §8.4.1 / R-M3-4a-73），
-    /// **只在产出 `.move` / `.update` 的那一刻**从 `OwnedItemPlanContext.localSignatures` 抄下来。
-    ///
-    /// §8.4.3 第 1 步的**第二遍**指针按它分组：一条本页被 `.move` 搬走目标的规则 Z，与一条
-    /// 留在旧目标上、本页什么都不落地的同签名重复 X，按**此刻**的签名已经不同组了，而那正是
-    /// 唯一需要写下指针的形状（R-M3-4a-74 / 75）。三条禁令：**绝不**落地之后重读行（那时行
-    /// 已经在新目标上，第二遍与第一遍逐字相同）；**绝不**用 `OwnedItemApplyStep.newOwnerUuid`
-    /// （那是**新**目标）；**绝不**在轮首冻结一次（pre-pass 每页跑一次，CASE M2-b）。
-    ///
-    /// **书签与 pin 恒空**（它们的 plan 上下文不填 `localSignatures`）。
+    /// Pre-page-application signatures (D30 / §8.4.1 / R-M3-4a-73), copied from
+    /// context.localSignatures only when emitting move/update. §8.4.3 step 1's
+    /// second pointer pass groups by these old signatures: moved rule Z and
+    /// unchanged duplicate X no longer share their current target, exactly the
+    /// case needing a pointer (R-M3-4a-74/75). Never reread after application,
+    /// use newOwnerUuid (the new target), or freeze once at round start; pre-pass
+    /// runs every page (CASE M2-b). Always empty for bookmarks/pins.
     var preLandingSignatures: [String: RuleSignature] = [:]
 }
 
-/// §4.6 的结构性拒收判据。**没有 `refusedAtMs`**：这些判据全是结构性的，对端修好就该被
-/// 接受，所以每轮重判一次（Space 侧那个「记住我拒过」的优化已经变成一条无法自愈的永久
-/// 排除）。
+/// §4.6 structural refusal criteria, without refusedAtMs. Recheck each round
+/// so corrected remote payloads can recover; remembering refusal on Spaces
+/// turned an optimization into permanent exclusion.
 enum OwnedItemRefusal: Equatable {
     case illegalRank, cycle, isFolderMismatch, selfReference, invalidUuid, invalidURL
-    /// §5.4：`host` 归一后为空。三处写路径与桥接层都把空 host 当成「丢弃这一行」。
+    /// §5.4: normalized host is empty; all three write paths and the bridge discard such rows.
     case emptyHost
-    /// §5.4：`host` 归一后是 `"*"` 或 `"*."`。两个匹配器都显式判死。
+    /// §5.4: normalized host is * or *.; both matchers explicitly reject these.
     case degenerateHost
-    /// §5.4：`host` 含 `/`；或含 `:` 且**不是**「以 `[` 开头、以 `]` 结尾」的 IPv6 字面量。
+    /// §5.4: host contains slash, or colon without being a bracketed IPv6 literal.
     case malformedHost
 }
 
 struct OwnedItemSnapshotResult<Entity> {
-    /// **每一条合格的本机行都在这里**，不只是「有变化的那些」。变化检测是**调用方**的事：
-    /// 引擎拿 `entities[身份]` 与游标的 `reconciled` 比序列化字节，不等才进发布切片。
+    /// Every eligible local row, not only changed rows. The caller compares
+    /// serialized entities with reconciled and selects differing identities for publication.
     var entities: [String: Entity]
-    /// 归属未映射（`syncUuid(forSpaceId:)` 返回 nil）而跳过的条数。
+    /// Rows skipped because owner syncUuid lookup is unmapped.
     var skippedUnmappedOwner: Int
-    /// 归属映射得到、但 `isEligibleSpace` 判为不合格（hidden / purged）而跳过的条数。
-    /// **两者都计进 `excluded_unmapped_owner` 这一个计数**：spec §11.2 对它的定义覆盖
-    /// 「归属解析不出来」与「归属不合格」两种，日志行上只有一个字段。分两个成员是为了让
-    /// 两条排除路径各自可断言。
+    /// Rows with mapped but ineligible hidden/purged Space owners. Combine this
+    /// and unresolved-owner count into excluded_unmapped_owner (§11.2); separate
+    /// members let tests assert the two exclusion paths independently.
     var skippedIneligibleOwner: Int
 }
 
-/// `tombstones(...)` 的返回：**不只是身份列表**。§4.7 要求产出一条差分 tombstone 的同时
-/// 把那条游标推进到「待删」状态——清 `pendingApply`、置 `pendingDelete` 与
-/// `deleteDecidedAtMs`、收割 `entityId` / `version`。纯函数拿的是 `table` 的**值拷贝**，
-/// 改不到调用方那一份，所以它必须把要改的东西**返回出来**，由引擎写回。
+/// Tombstone result includes cursor changes, not only identities. §4.7 requires
+/// clearing pendingApply, setting pendingDelete/deleteDecidedAtMs, and harvesting
+/// entityId/version. Pure functions hold a table value copy, so return updates
+/// for the engine to persist.
 struct OwnedItemTombstoneResult {
-    /// 本轮要发 tombstone 的身份，已按 §5.3 的反拓扑序排好（子先于父）。
+    /// Tombstone identities ordered child-before-parent, reverse topologically (§5.3).
     var identities: [String]
-    /// 身份 -> 该游标要被写成什么样（调用方 apply 到自己那份表上）。
+    /// Identity to updated cursor value for the caller's table.
     var cursorUpdates: [String: PhiOwnedItemCursor]
-    /// 入参 `deferredDeletions` 的**原样回传**（默认空集，R-M3-4a-84）。引擎的
-    /// `deleteCandidates` 据此再减一次：一条**上一轮就已经** `pendingDelete == true` 的身份
-    /// 本轮不产出 cursorUpdate，仍会按既有 filter 进候选。
+    /// Return deferredDeletions unchanged (default empty, R-M3-4a-84). The engine
+    /// subtracts these from deleteCandidates too: an already-pending identity
+    /// produces no cursor update but would still pass the existing candidate filter.
     var deferred: Set<String> = []
 }
 
 struct OwnedItemAdoptionResult {
-    var pairs: [String: String]        // 实体身份 -> 本机 guid
+    var pairs: [String: String]        // Entity identity to local guid
     var adopted: Int
     var unmatchedFolders: Int
-    /// §6.2 的字段级合并结果（身份 -> `Phi_PhiEntity` 信封字节）：本机内容字段带着
-    /// `contentUpdatedDate ?? createdDate` 的戳与远端各自的戳按 LWW 定胜负，位置**取远端**
-    /// （本机那一行没有基线，它的位置纯属本机派生）。喂给 `plan` 的 `context.adoptedMerges`。
+    /// §6.2 field merges as identity-to-envelope bytes. Local content uses
+    /// contentUpdatedDate ?? createdDate against remote LWW stamps; location
+    /// comes from remote because an unbaselined local position is only derived.
+    /// Pass these into context.adoptedMerges.
     var merges: [String: Data] = [:]
-    /// 合并结果里有本机字段赢了的那些身份 —— **必须重新发布**，走正常的快照与切片。
-    /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
+    /// Identities with locally winning fields must republish through normal
+    /// snapshot/commit selection, or remote values stay stale despite apparent convergence.
     var mustRepublish: Set<String> = []
-    /// 落地时**确实要写字段**的那些身份：合并结果的内容与那条本机行现在的内容不同。
-    ///
-    /// 与 `mustRepublish` 是相反的两个方向，都要有：本机赢了一个字段 ⇒ 那一行已经是对的、
-    /// 账户不是（`mustRepublish`）；远端赢了一个字段 ⇒ 账户是对的、那一行要被改写（这个
-    /// 集合）。只认领而不写字段，一条被远端改过名的行会永远停在本机的旧标题上，而
-    /// `reconciled` 说的是新标题——下一轮的快照于是拿那个旧标题去发布，两台机器永久分歧。
+    /// Identities whose merged content differs from the current row and needs
+    /// a local field write. This complements mustRepublish: local wins need
+    /// account updates, while remote wins need row updates. Claiming without
+    /// writing remote renames leaves old local titles against new reconciled
+    /// baselines, causing stale republication and permanent divergence.
     var fieldWrites: Set<String> = []
-    /// 配上了、但**合并算不出来**（投影失败）而被丢掉的配对数。
-    ///
-    /// 丢掉而不是「退回整体采纳远端」：那条路会在一次归属解析抖动里静默吃掉用户的本机编辑。
-    /// 丢掉的代价只是那一行这一轮保持未同步，下一轮重来。
+    /// Matched pairs discarded because projection prevented a merge. Never
+    /// fall back to wholesale remote adoption, which can silently erase local
+    /// edits during mapping fluctuations. Leave the row unsynced and retry next round.
     var unmergeablePairs: Int = 0
 }
 
 #if DEBUG
-/// 测试专用探针：数**本模块自己**打进 `rankBetween` 的次数（CASE 4a.8）。
-///
-/// `SyncableSpaces.assignRanks` 内部那些调用不计——它是 `SyncableSpaces` 自己的算法，本
-/// 里程碑一个字都没动它。这个探针守的是另一件事：**入站路径**（`plan`）绝不能把对端字节
-/// 里的 rank 递给一个会 `precondition` 的函数。
+/// Test-only count of this module's direct rankBetween calls (CASE 4a.8).
+/// Exclude assignRanks internals, an unchanged SyncableSpaces algorithm.
+/// The probe guards inbound plan paths from passing untrusted ranks into a
+/// function with trapping preconditions.
 enum RankProbe {
     nonisolated(unsafe) private(set) static var rankBetweenCalls = 0
     static func reset() { rankBetweenCalls = 0 }
@@ -335,69 +310,60 @@ enum RankProbe {
 }
 #endif
 
-/// 一种「归属项」kind 的薄适配：编解码、字段 LWW 表、归属解析、盖戳。模块本身只认这个
-/// 协议，不认书签也不认 pin。
-///
-/// **相对 spec §4.1 那份声明的增补，逐条写明理由**（都是「模块是泛型的，而这件事只有
-/// 适配层知道」这一个形状）：
-/// - `localEdge(of:)`：`snapshot` 要把子行的 `parent_uuid` 填成**父行的账户身份**，而候选
-///   身份只活在内存里（§4.2 第 2 条），所以这张 `本地 id -> 身份` 表只能在模块里、从
-///   `locals` 自己算出来；模块不认识 `PhiLocalBookmark`，由适配层把这一对拿出来。
-/// - `rank(of:)`：rank 通道要读基线里的 rank 再喂给 `assignRanks`，泛型 `Entity` 上没有
-///   这个字段。
-/// - `locationStamp(of:)`：§4.3 的载体戳，A9 的第一个合取项也要它。spec 把它列在
-///   `BookmarkKind` 上，这里把它提进协议，签名一字不改。
-/// - `stamp(...)`：§4.2 第 4/5 条的盖戳规则按**字段分组**（location / rank / 内容），分组
-///   本身只有适配层知道。`project` 保持「不盖戳」的纯投影。
+/// Thin owned-item adapter for coding, field LWW, ownership, and stamping.
+/// The generic module knows this protocol, not bookmarks or pins.
+/// Additions to §4.1 expose information only the adapter knows:
+/// - localEdge supplies local id/account identity pairs so snapshot can derive
+///   in-memory parent identities from locals (§4.2 rule 2).
+/// - rank reads baseline rank for assignRanks from generic Entity.
+/// - locationStamp exposes §4.3's carrier and A9's first conjunct, retaining
+///   the BookmarkKind signature specified by the design.
+/// - stamp applies §4.2 rules 4/5 by location/rank/content groups; project
+///   remains a pure, unstamped projection.
 protocol OwnedItemKind {
-    /// 线上实体类型（`Phi_PhiBookmarkEntity` / `Phi_PhiPinTabEntity`）。
+    /// Wire entity type, such as Phi_PhiBookmarkEntity or Phi_PhiPinTabEntity.
     associatedtype Entity: SwiftProtobuf.Message & Equatable
-    /// 本机行的值快照（`PhiLocalBookmark` / `PhiLocalPin`）。
+    /// Local-row value snapshot, such as PhiLocalBookmark or PhiLocalPin.
     associatedtype Local
 
     static var tagPrefix: String { get }        // "phi-bookmark:" / "phi-pin:"
-    static var entityName: String { get }       // 服务端明文常量
+    static var entityName: String { get }       // Server plaintext constant
 
     static func identity(of entity: Entity) -> String
-    /// 本机行的账户身份。书签是 `syncId`（nil = 这一行还没铸过身份，本轮不发布）。
+    /// Account identity of a local row; bookmarks use syncId, with nil meaning
+    /// no identity minted and no publication this round.
     static func identity(of local: Local, resolve: OwnerResolver, scope: PinnedTabScope?) -> String?
 
     static func envelope(_ entity: Entity) -> Phi_PhiEntity
     static func entity(from envelope: Phi_PhiEntity) -> Entity?
 
-    /// 本机行 → 线上实体，**不盖时间戳也不填 rank**。归属解析不出 ⇒ nil，该行本轮整条
-    /// 跳过（§4.2 第 1 条）。`parentIdentity` 是父行的账户身份，nil = 直接挂在 Space 根下。
+    /// Project local row to wire entity without timestamps or rank. Unresolved
+    /// ownership returns nil and skips the whole row (§4.2 rule 1). parentIdentity
+    /// is the parent's account identity; nil attaches directly to the Space root.
     static func project(_ local: Local, resolve: OwnerResolver, scope: PinnedTabScope?,
                         parentIdentity: String?) -> Entity?
-    /// 字段级 LWW 合并。**必须从 `remote` 起手**（保留未知字段，`Proto/README.md`）。
+    /// Field LWW merge must start from remote to preserve unknown fields (Proto/README.md).
     static func merge(local: Entity, remote: Entity) -> Entity
-    /// 内容拒收（结构非法的载荷），nil = 接受。
-    ///
-    /// `baseline` 是本机手上那条已落地的实体（没有就是 nil），**§4.6 的 `is_folder` 判据
-    /// 要它**：一条行不会在书签与文件夹之间变形，两侧不符的那条实体要被**拒收**而不是被
-    /// 合并掉。把这一条放进 `refuses` 而不是新开一个成员，是为了让 §4.6 那张表只有一个
-    /// 实现点。
+    /// Structural refusal, or nil to accept. baseline is the already-applied
+    /// entity, if any, required by §4.6's is_folder check: a row cannot change
+    /// between bookmark and folder. Keep that mismatch in this single refusal
+    /// table rather than merging it or adding a separate protocol member.
     static func refuses(_ entity: Entity, baseline: Entity?) -> OwnedItemRefusal?
-    /// 这条实体落地**之前必须已经解析出来**的归属引用。
-    ///
-    /// **复数**（spec §4.1）：一条实体可以有不止一个归属引用，§4.4 第 4 步要为其中任一个
-    /// 记 `pendingOwnerUuid`，单个可选表达不了。书签返回的是**绑定**的那一个——子孙是
-    /// `parent_uuid`，根级项是 `space_uuid`；子孙的 `space_uuid` 是诊断字段，接收端忽略
-    /// （R-M3-3-18），把它也算成必须解析会让一次「移走文件夹再删掉旧 Space」把整棵子树
-    /// **永久**停放在每一台新设备上。
+    /// Ownership references that must resolve before application. Plural because
+    /// §4.4 step 4 may need pendingOwnerUuid for any of several references.
+    /// Bookmarks return only the binding reference: parent_uuid for descendants,
+    /// space_uuid for roots. Descendant space_uuid is diagnostic and ignored
+    /// (R-M3-3-18); requiring it would permanently park moved subtrees on new
+    /// devices after deletion of their old Space.
     static func ownerUuids(of entity: Entity) -> [String]
 
-    /// 这条本机行**当前所在的归属**：书签是它那个 Space 的 syncUuid，pin 是推导出来的
-    /// ownerKey。nil = 归属没有映射。
-    ///
-    /// **与 `ownerUuids(of:)` 是两件事，不能合并**：后者是「落地之前必须已经解析出来的
-    /// 引用」，对一条子孙书签而言那是它的**父**；而 hidden / purged 的排除判据问的是「这一
-    /// 行坐在哪个 Space 里」。用 `ownerUuids` 去判，`resolve.localSpaceId(<一个书签 uuid>)`
-    /// 恒为 nil，于是一个账户已软删、本机还留着 30 天的 Space 底下**每一条非根行**都继续
-    /// 发布，30 天后被 purge 级联静默删掉，而整段时间里每一个计数器都是健康值。
-    ///
-    /// 这同时是引擎每轮要刷进每条游标 `ownerUuid` 的那个值（A12 / §3.5），所以它只该有一个
-    /// 实现点。
+    /// Current local owner: containing Space syncUuid for bookmarks, inferred
+    /// ownerKey for pins; nil means unmapped. Distinct from ownerUuids, which
+    /// lists application prerequisites and names a descendant's parent. Hidden/purged
+    /// filtering needs the containing Space; a bookmark UUID cannot resolve as
+    /// a Space, so using ownerUuids would let descendants under soft-deleted
+    /// Spaces publish for 30 days before purge silently deletes them. This same
+    /// value refreshes cursor.ownerUuid each round (A12 / §3.5); keep one implementation.
     static func eligibilityOwner(of local: Local, resolve: OwnerResolver,
                                  scope: PinnedTabScope?) -> String?
 
@@ -406,66 +372,61 @@ protocol OwnedItemKind {
     static func locationStamp(of entity: Entity) -> Int64
     static func stamp(_ projected: Entity, baseline: Entity?, local: Local,
                       rank: String, now: Int64) -> Entity
-    /// 这条实体**内容字段**的取值字节（时间戳清零），与 `SyncableSettings.signature(of:)`
-    /// 同义、同理由：判「要不要带一份字段补丁」只能看取值，看整条实体会把对端一次纯重盖戳
-    /// 也算成一次内容变化，产出一条空补丁。位置与 rank **不在里面**——它们由 `.move` 承载。
+    /// Content-value bytes with timestamps zeroed, like SyncableSettings.signature.
+    /// Use these to decide field patches; whole-entity comparison would turn
+    /// remote restamps into empty updates. Exclude location/rank, carried by move.
     static func contentSignature(of entity: Entity) -> Data
 
-    /// 这条实体现在**指向**哪一个归属桶（规则的 `target_space_uuid` 字段值）。
-    /// nil = 这一 kind 的归属不可变、或不由单一字段承载 ⇒ `.move` 不带 `newOwnerUuid`。
-    ///
-    /// **不是 `ownerUuids(of:).first`**（R-M3-4a-26 / RR-B5）：那个成员的合同是「落地前必须
-    /// 解析出来的归属引用」，将来任何一条 kind 想把某个归属排除在停放判据外时又会返回空；
-    /// 而 `plan` 是泛型的，拿不到任何具体字段，所以通道只能是一个协议成员。
+    /// Current target ownership bucket, such as target_space_uuid for rules.
+    /// nil means immutable ownership or no single target field, leaving newOwnerUuid
+    /// absent. Do not derive this from ownerUuids.first (R-M3-4a-26 / RR-B5):
+    /// application-prerequisite references may intentionally exclude an owner.
+    /// The generic planner therefore needs a dedicated protocol member.
     static func targetOwnerUuid(of entity: Entity) -> String?
 
-    /// §8.4.4 的开关：本 kind 的入站删除撞上一条**还没上账户的用户意图**时**让位**。
-    /// 规则 `true`，书签与 pin 本里程碑 `false`（§6.1 / §14.1）。
-    ///
-    /// 让位不是「所有 kind 共享」的：书签的数量级与删除频率与规则完全不同，把每一次远端
-    /// 删除都变成一次复活是另一种数据事故（§14.1）。
+    /// §8.4.4: inbound deletion yields to unpublished user intent for this kind.
+    /// True for rules; false for bookmarks/pins in this milestone (§6.1 / §14.1).
+    /// Bookmark volume and deletion frequency differ; making every deletion
+    /// resurrect across all kinds would create a different data-loss problem.
     static var tombstoneYieldsToLocalEdits: Bool { get }
 
-    /// §8.4.4 的转移**取值源**：把一条实体折成 `RuleProjection`。两个落点喂给它的实体
-    /// 不同（(α) 是 X 的**本机行投影**，(β) 是本轮的 `merged`），所以取值留在 kind 侧、
-    /// 载荷是**值**（RR8-2）。`resolve` 只用来把账户级目标反查成本机 Space id。
-    ///
-    /// **不是第五个 `OwnedItemPlanContext` 成员**：R-M3-4a-73 与 §11 把新输入写死成四个，
-    /// 而这条是「模块问 kind 要一个值」，与 `locationStamp(of:)` / `contentSignature(of:)` 同族。
+    /// §8.4.4 transfer source: derive RuleProjection from an entity. α uses X's
+    /// local projection; β uses this round's merged entity. Keep extraction in
+    /// the kind and pass values (RR8-2); resolver only translates the target
+    /// to local Space id. This is a kind query like locationStamp/contentSignature,
+    /// not a fifth context input: R-M3-4a-73 / §11 fix that set at four.
     static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection?
 }
 
 extension OwnedItemKind {
-    /// 默认 nil：`BookmarkKind` 与 `PinKind` 一行不改、行为逐字不变。
+    /// Default nil preserves BookmarkKind/PinKind implementations and behavior.
     static func targetOwnerUuid(of entity: Entity) -> String? { nil }
-    /// 默认关：书签与 pin 的两个新分支结构性不可达（计划裁定十）。
+    /// Default off makes both new branches unreachable for bookmarks/pins (ruling 10).
     static var tombstoneYieldsToLocalEdits: Bool { false }
-    /// 默认 nil：同上。
+    /// Default nil for the same compatibility guarantee.
     static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection? { nil }
 }
 
-/// 一条归属引用在本轮里的状态（`plan` 第 3 步）。文件作用域而不是函数内的局部类型：
-/// 泛型函数里不允许嵌套类型。
+/// Owner-reference state for plan step 3. File-scoped because generic functions
+/// cannot contain nested types.
 private enum OwnerState {
-    /// 本轮工作集里的另一条实体——一条依赖边。
+    /// Another entity in this round's working set: a dependency edge.
     case item(String)
-    /// 父被**证实死亡**：本轮的 tombstone，或游标上已经定案的 `deletedAtMs`。
+    /// Confirmed dead parent: a current tombstone or finalized cursor deletedAtMs.
     case lift
-    /// 归属在模块之外解析得出（一个合格的 Space、一个映射得到的 profile、或一条活的
-    /// 本地父行）。
+    /// Owner resolved outside the module: eligible Space, mapped Profile, or live local parent row.
     case external
     case unresolved
 }
 
 enum SyncableOwnedItems {
 
-    // MARK: - rank 原语的转发
+    // MARK: - Rank primitive forwarding
 
-    /// 转发到 `SyncableSpaces.rankBetween`，**顺带过一次探针**。
-    ///
-    /// 本模块**唯一**的 rank 生成路径是 `snapshot` 里那次 `assignRanks`，它把这个转发器作为
-    /// 注入点传了进去，所以探针数到的就是真实次数。入站路径（`plan`）一条都不该有：
-    /// `rankBetween` 在发布构建里用 `precondition` 直接 trap，而对端字节是不可信输入。
+    /// Forward to SyncableSpaces.rankBetween through the test probe. This module's
+    /// only rank generation is snapshot's assignRanks, which receives this function,
+    /// so the probe measures real calls. Inbound plan must never call it: untrusted
+    /// remote ranks could trigger release-build precondition traps.
     static func rankBetween(_ a: String?, _ b: String?) -> String {
         #if DEBUG
         RankProbe.note()
@@ -473,18 +434,15 @@ enum SyncableOwnedItems {
         return SyncableSpaces.rankBetween(a, b)
     }
 
-    // MARK: - 出站：snapshot（§4.2）
+    // MARK: - Outbound snapshot (§4.2)
 
-    /// 每一条**合格**本机行的出站实体，按身份键。
-    ///
-    /// PURE：什么都不写。`locals` 是引擎交进来的那一份（未同步行的候选身份已经在内存里
-    /// 填进了 `syncId`，§4.2 第 2 条），归属过滤**在这个函数里面做**——差分要看到被过滤掉
-    /// 的那些行，所以调用方不许先把它们筛掉（§4.7）。
-    ///
-    /// - Precondition: `locals` 已按**同级次序**排好（书签是
-    ///   `(spaceId, parentGuid, index, guid)`，`PhiBookmarkLocalAccess.allBookmarks()` 的契约）。
-    ///   rank 通道把它当成「当前本机次序」直接喂给 `assignRanks`；换成任何别的次序，每一轮
-    ///   都会重排一批本来不该动的 rank。
+    /// Outbound entities for all eligible local rows, keyed by identity. Pure: no
+    /// writes. The engine provides locals with candidate syncIds already assigned
+    /// in memory (§4.2 rule 2). Filter ownership here, not at the caller: diffing
+    /// must still see excluded rows (§4.7).
+    /// Precondition: locals are in sibling order, for bookmarks spaceId/parentGuid/index/guid
+    /// per allBookmarks. assignRanks takes this as current local order; another
+    /// ordering would needlessly change ranks every round.
     static func snapshot<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                            table: PhiOwnedItemTable, resolve: OwnerResolver,
                                            scope: PinnedTabScope?, now: Int64)
@@ -492,11 +450,10 @@ enum SyncableOwnedItems {
         var skippedUnmappedOwner = 0
         var skippedIneligibleOwner = 0
 
-        // 第一遍：逐行判「它**自己**是不是本轮的同步合格行」（§4.2 第 1 / 3 条）。
-        //
-        // 归属判据读的是 `eligibilityOwner`——**这一行坐在哪个 Space 里**，不是它的绑定
-        // 引用。对一条子孙书签来说绑定引用是它的父，拿那个去问 `isEligibleSpace` 永远为真，
-        // 于是一个账户已软删的 Space 底下每一条非根行都会继续发布。
+        // Pass 1: each row's own sync eligibility (§4.2 rules 1/3). eligibilityOwner
+        // identifies its containing Space, not its binding parent. A descendant's
+        // parent bookmark UUID would bypass Space eligibility and allow publication
+        // under an account-soft-deleted Space.
         var indexByLocalId: [String: Int] = [:]
         var identityOf: [String?] = []
         var selfEligible: [Bool] = []
@@ -518,9 +475,9 @@ enum SyncableOwnedItems {
                 selfEligible.append(false)
                 continue
             }
-            // §4.2 第 3 条：停放中 / 待发 tombstone / 待发删除的游标一律不进快照。一个停放中
-            // 的实体若被快照，每个字段会盖上 `now` 再按停放游标的 entityId/version 当 update
-            // 提交，把账户上那条整体覆盖成本机的值。
+            // §4.2 rule 3 excludes parked, pending-tombstone, and pending-delete cursors.
+            // Snapshotting a parked row would restamp local fields with now and update
+            // the account through its harvested entityId/version, overwriting remote values.
             if let cursor = table.cursors[identity] {
                 guard cursor.pendingApply == nil, !cursor.pendingTombstone,
                       !cursor.pendingDelete else {
@@ -531,10 +488,10 @@ enum SyncableOwnedItems {
             selfEligible.append(true)
         }
 
-        // §4.2 第 2 条：**父行不是本轮的同步合格行 ⇒ 该行本轮跳过**（整条祖先链都要合格）。
-        // 不计任何计数——它不是「归属没映射」，把它算进 `excluded_unmapped_owner` 会让那个
-        // 计数混进另一种现象。一条子书签若在父的实体即将被 tombstone / 停放 / 过期时照发，
-        // 账户上会留下一条指着一个不该存在的父的实体。
+        // §4.2 rule 2: every ancestor must be sync-eligible; otherwise skip the row.
+        // Do not count this as unmapped ownership. Publishing a child whose parent
+        // is parked, tombstoned, or expiring leaves an account entity referencing
+        // a parent that should not exist.
         func chainEligible(_ offset: Int) -> Bool {
             guard selfEligible[offset] else { return false }
             var hops = 0
@@ -549,41 +506,36 @@ enum SyncableOwnedItems {
             return true
         }
 
-        // 本地 id -> 账户身份，**只收合格行**：子行的 `parent_uuid` 只能填一个合格父的身份。
+        // Map local id to account identity for eligible rows only; children may reference only eligible parents.
         var identityByLocalId: [String: String] = [:]
         for (offset, local) in locals.enumerated() where selfEligible[offset] {
             identityByLocalId[K.localEdge(of: local).id] = identityOf[offset]
         }
 
         var candidates: [(identity: String, local: K.Local, entity: K.Entity, group: String)] = []
-        // **一条身份至多一个候选**（R-exec-12 / D-B）。`locals` 是一行一条，而 pin 的身份是
-        // `(lineage, owner)` **推导**出来的（§3.2 / R-M3-3-15），所以两条本机行完全可能算出
-        // 同一条身份——书签那一侧靠 `syncId` 那一列，结构上产不出这个形状。
-        //
-        // 不去重的后果不是「多发一条」，是**永不收敛**：下面那个 rank 通道按行喂
-        // `assignRanks`，于是同一个 uuid 在 `order` 里出现两次；重复的那一个按定义不在严格
-        // 递增的保留集里，每一轮都被派一个新铸的 `rankBetween`，而 `assigned` 按 uuid 记账
-        // ⇒ 它**盖掉**保留的那一条刚拿到的 rank。这条身份的发布字节于是每一轮都与基线不同
-        // （`PhiSyncEngine` 的发布判据是裸字节比较），每一轮都提交一次，分数键一轮长一个
-        // 字符——Mac B 2026-09-14 那一分钟 25 轮、922 → 934 字节的提交循环就是这个。
-        //
-        // 留**第一条**：`allPins()` 按 `(ownerKey, index, guid)` 有序，于是留下的正是
-        // `PinKind.normalizeVariants` 折叠时留下的同一条行。正常情况下身份本来就互不相同，
-        // 这一趟一条都不丢。
+        // At most one candidate per identity (R-exec-12 / D-B). Pins derive identity
+        // from lineage/owner, so multiple physical rows can collide, unlike bookmark
+        // syncId rows. Without deduplication, assignRanks sees a repeated UUID: its
+        // second occurrence cannot join the strictly increasing kept set and gets
+        // a new rank each round, overwriting the retained rank in the UUID-keyed result.
+        // Byte comparison then republishes forever, with keys growing every round
+        // (Mac B, 2026-09-14: 25 rounds in a minute, 922–934 bytes).
+        // Keep the first row in allPins ownerKey/index/guid order, matching
+        // normalizeVariants' survivor. Normally identities are unique and nothing is dropped.
         var claimedIdentities: Set<String> = []
         for (offset, local) in locals.enumerated() {
             guard chainEligible(offset), let identity = identityOf[offset] else { continue }
             guard claimedIdentities.insert(identity).inserted else { continue }
             let parentIdentity = K.localEdge(of: local).parentId.flatMap { identityByLocalId[$0] }
-            // 归属已经在第一遍判过，所以这一支是防御性的：投影再失败就静默跳过，绝不
-            // 二次计进任何一个排除计数。
+            // Ownership already passed the first scan. A defensive projection failure
+            // skips silently without incrementing exclusion counters twice.
             guard let entity = K.project(local, resolve: resolve, scope: scope,
                                          parentIdentity: parentIdentity) else { continue }
             candidates.append((identity, local, entity,
                                K.ownerUuids(of: entity).joined(separator: "\u{0}")))
         }
 
-        // 基线：变更检测与 rank 通道的共同输入。
+        // Baselines feed both change detection and rank assignment.
         var baselines: [String: K.Entity] = [:]
         for candidate in candidates {
             guard let bytes = table.cursors[candidate.identity]?.reconciled,
@@ -591,16 +543,16 @@ enum SyncableOwnedItems {
                   let entity = K.entity(from: envelope) else { continue }
             baselines[candidate.identity] = entity
         }
-        // rank 通道唯一的解码边界：基线是对端字节，只有本仓库自己产得出的 rank 才允许
-        // 到达 `rankBetween`；其余降格成「没有 rank」，于是它落进 `assignRanks` 的补集
-        // 并被派一个真的。
+        // The rank channel's sole decoding boundary: baseline ranks are remote bytes.
+        // Only legal ranks reach rankBetween; invalid ranks become absent and enter
+        // assignRanks' complement to receive valid replacements.
         func baselineRank(_ identity: String) -> String? {
             guard let rank = baselines[identity].map(K.rank(of:)),
                   SyncableSpaces.isLegalRank(rank) else { return nil }
             return rank
         }
 
-        // 一个归属一组（书签是「同一个父」，pin 是同一个 owner）：rank 只在组内可比。
+        // Group by owner: bookmark parent or pin owner. Ranks compare only within a group.
         var groupOrder: [String] = []
         var groups: [String: [Int]] = [:]
         for (offset, candidate) in candidates.enumerated() {
@@ -630,48 +582,36 @@ enum SyncableOwnedItems {
                                        skippedIneligibleOwner: skippedIneligibleOwner)
     }
 
-    // MARK: - 差分 tombstone（§4.7）
+    // MARK: - Diff tombstones (§4.7)
 
-    /// 本地删除的**唯一**起源：`LocalStore` 没有书签 / pin 的删除钩子，publisher 发出的是
-    /// 缺席，所以删除是一次快照差分。三条判据逐条对应一个会删掉账户数据的错法：
+    /// Snapshot diff is the sole bookmark/pin local-deletion source: LocalStore
+    /// has no delete hook and publishers report absence. Three criteria prevent
+    /// destructive false deletions:
+    /// - reconciled must exist, not merely entityId: parked arrivals harvest ids
+    ///   before application and must not tombstone newly created remote entities.
+    /// - deletedAtMs must be nil to suppress echoes after remote deletion.
+    /// - The local row must actually be absent.
+    /// Unmapped and ineligible ownership are not absence; those rows exist but
+    /// do not publish. Confusing them can delete a whole Space during mapping changes.
     ///
-    /// - `reconciled != nil`（**不是 `entityId != nil`**）：停放会 harvest `entityId`，按它
-    ///   判会给一条**仅仅是本机还没能放下去**的入站实体发 tombstone，把对端刚建的东西删掉。
-    /// - `deletedAtMs == nil`：挡住「远端删除刚落地 ⇒ 本机行没了 ⇒ 又给它发一条自己的
-    ///   tombstone」这个回声。
-    /// - 本机确实没有这一行了。
+    /// pendingApply is not a fourth criterion (A7). With a baseline it means an
+    /// applied row awaits a newer remote edit; local deletion wins, emits a
+    /// tombstone, and clears pendingApply in the same update.
+    /// pendingClaims exempts identities actually matched this round whose syncId
+    /// write failed, such as under an import lock (R-exec-9). They await only
+    /// persistence; deleting them would remove an agreed account entity and then
+    /// remint the local row as an unrelated create. Never exempt all pendingApply:
+    /// unmatchable rows edited/deleted during retry must remain deletable.
     ///
-    /// 两条排除（归属未映射 / 归属不合格）不是「本机没有这一行」：那些行**存在**，只是
-    /// 不发布；把它们算成缺席会在一次映射抖动里删掉账户上一整个 Space 的书签。
-    ///
-    /// **`pendingApply != nil` 不是第四条判据**（A7）：对一条有基线的游标来说它的含义是
-    /// 「这一行落地过，一个更新的远端版本正在等」，那是一次**删除对编辑**的冲突，本机的
-    /// 删除赢——产出 tombstone 并在同一步清掉 `pendingApply`。
-    ///
-    /// `pendingClaims` 是第六条排除，也是「还没认领上」与「认领不上」之间那道界线
-    /// （R-exec-9）：里面装的是**本轮 §6 的认领真的配上了、但那次 `syncId` 写回没能落盘**的
-    /// 身份（导入锁拒了那一批）。那条本机行离认领只差一次成功的写回，而它此刻还没有
-    /// `syncId`，于是第三条判据（「本机确实没有这一行了」）对它成立——不排除它，这一轮就会
-    /// 把一条两边都同意它存在的账户实体删掉，下一轮本机那一行再铸一个新身份重新建一条，
-    /// 对端看到的是一次删除加一次毫无关系的新建。
-    ///
-    /// **绝不能退化成「`pendingApply != nil` 就排除」**：一条认领**配不上**的停放游标
-    /// （用户在重试窗口里改了那一行或把它删了）正是该被 tombstone 的那一类，靠 `pendingApply`
-    /// 一刀切会把它永久留在账户上，而没有任何设备还能删掉它。
-    ///
-    /// **第七个入参 `explicitDeletions` 是规则这一 kind 的第二个 tombstone 起源**
-    /// （R-M3-4a-78）。上面那套判据是**跟随端保护**：账户说某个 Space 没了、或本机映射还没
-    /// 建起来，就不替别人发删除。而「用户在本机删掉一个 Space」恰好踩中两道归属门的中间
-    /// 态——`SpaceModel` 行已在同一次提交里删掉 ⇒ `isEligibleSpace(owner)` 假，sync-uuid
-    /// 映射却还在 ⇒ `localSpaceId(owner)` 非 nil ⇒ 合格门逐条 `continue` ⇒ 一条 tombstone
-    /// 都发不出来，本机没了、账户还在，那些实体成为**任何设备都删不掉**的孤儿。
-    ///
-    /// 落在这个集合里的身份**只跳过两道归属门**：它的软删**就是**用户这一次删除动作本身
-    /// 写下的，归属合不合格与「用户要不要删它」无关；而它已经在账户上（第一条判据）。
-    /// 其余三条判据、`pendingClaims` 排除与整段游标记账**逐字照旧**。
-    ///
-    /// **集合的来源必须是「一次删除决定」，不是「行不见了」**（R-M3-4a-85）：保留期 purge
-    /// 是跟随不是决定，它对规则行走硬删、绝不写 `deletedDate`，因此永远进不了这个集合。
+    /// explicitDeletions is the seventh argument and rules' second tombstone
+    /// source (R-M3-4a-78). Ordinary owner gates protect followers. A user Space
+    /// delete removes SpaceModel in the same transaction while its mapping remains,
+    /// making eligibility false and suppressing every rule tombstone. Explicit
+    /// user-intent soft deletions bypass only the two owner gates, preserving
+    /// the three criteria, pendingClaims exemption, and cursor bookkeeping.
+    /// The set must represent deletion decisions, not missing rows (R-M3-4a-85):
+    /// retention purge follows remote deletion, hard-deletes rules without
+    /// deletedDate, and never enters this set.
     static func tombstones<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                              table: PhiOwnedItemTable, resolve: OwnerResolver,
                                              scope: PinnedTabScope?,
@@ -680,14 +620,12 @@ enum SyncableOwnedItems {
                                              explicitDeletions: Set<String> = [],
                                              deferredDeletions: Set<String> = [])
         -> OwnedItemTombstoneResult {
-        // 往后长的入参一律接在 `pendingClaims` 之后、一律带默认值，书签 / pin 的调用点与既有
-        // 用例一个字都不用改。
-        //
-        // **第八个入参 `deferredDeletions` 是 §8.4.4 (β) 的守卫**（R-M3-4a-84 / 计划裁定五）：
-        // 一条正在被重判的删除（本机用户删了它、而这一轮那条入站存活实体因为伙伴 W 不静止
-        // 被停放下来）**这一轮不发 tombstone**。守卫必须在**差分之前**——本函数对每条候选
-        // 在同一步清 `pendingApply` 并置 `pendingDelete`，而引擎先套用 `cursorUpdates`、之后
-        // 才构造 `deleteCandidates`，放在那里的守卫被读到时第二个合取项已经恒假。
+        // Append new defaulted arguments after pendingClaims to preserve bookmark/pin callers.
+        // The eighth argument deferredDeletions guards §8.4.4 β (R-M3-4a-84 / ruling 5):
+        // a local deletion being reconsidered while its live arrival is parked for
+        // nonquiescent W must send no tombstone this round. Guard before diffing,
+        // which clears pendingApply and sets pendingDelete. The engine applies
+        // cursorUpdates before constructing deleteCandidates, too late for that guard there.
         var liveIdentities: Set<String> = []
         for local in locals {
             if let identity = K.identity(of: local, resolve: resolve, scope: scope) {
@@ -698,28 +636,28 @@ enum SyncableOwnedItems {
         var identities: [String] = []
         var cursorUpdates: [String: PhiOwnedItemCursor] = [:]
         for (identity, cursor) in table.cursors {
-            // 第 0 道（R-M3-4a-84）：**不进 `identities`、零 `cursorUpdates`**——
-            // `pendingApply` / `pendingOwnerUuid` / `pendingDelete` / `deleteDecidedAtMs`
-            // 一个字节都不碰，所以它必须排在三条判据与整段游标记账**之前**。
+            // Guard 0 (R-M3-4a-84): omit identity and cursor updates, preserving pendingApply,
+            // pendingOwnerUuid, pendingDelete, and deleteDecidedAtMs. Run before all
+            // three criteria and cursor bookkeeping.
             guard !deferredDeletions.contains(identity) else { continue }
             guard cursor.reconciled != nil else { continue }
             guard cursor.deletedAtMs == nil else { continue }
             guard !liveIdentities.contains(identity) else { continue }
-            // 本轮认领已经配上、只差一次成功的写回（R-exec-9）。
+            // Matched for adoption this round, awaiting only successful persistence (R-exec-9).
             guard !pendingClaims.contains(identity) else { continue }
-            // 两道**归属**门，起源 (b) 的身份从这里绕过去（R-M3-4a-78）。
+            // Origin b identities bypass these two ownership gates (R-M3-4a-78).
             if !explicitDeletions.contains(identity) {
-                // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
-                // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
-                // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
-                // 放行则可能删掉账户上一整个 Space 的书签。
+                // Nil ownerUuid is unknown ownership, never permission to delete. The engine
+                // must refresh it each round (A12 / §3.5); nil indicates an unmet prerequisite
+                // this module cannot verify. Conservatively retaining one stale account entity
+                // is preferable to deleting an entire Space's bookmarks.
                 guard let owner = cursor.ownerUuid else { continue }
-                // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
-                // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
-                // 由引擎的 resolver 把它映成自身。
+                // Unmapped owner. App-scope pins use a literal ownerKey requiring no stored
+                // mapping; Task 4b must either avoid that literal in cursor.ownerUuid or
+                // have the engine resolver map it to itself.
                 let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
                 guard mapped else { continue }
-                // 归属不合格（hidden / purged）。
+                // Ineligible hidden/purged owner.
                 guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
             }
             identities.append(identity)
@@ -727,16 +665,16 @@ enum SyncableOwnedItems {
             updated.pendingApply = nil
             updated.pendingOwnerUuid = nil
             updated.pendingDelete = true
-            // **删除决定的时刻只写一次。** 一条已经待删、同时还停着一条入站更新的游标是
-            // 可达的（`plan` 会在走到 `pendingDelete` 那一支之前先把被挡住的实体停放下来），
-            // 重写这个戳会把 A9 那条「入站位置比删除决定更新」的比较基准一路往后推，于是
-            // 一次并发移动永远取消不了删除。
+            // Write deletion-decision time once. A pending-delete cursor may also hold
+            // a blocked pending arrival, since planning parks before reaching deletion
+            // handling. Restamping would continually advance A9's comparison boundary
+            // and prevent concurrent moves from cancelling deletion.
             if !cursor.pendingDelete { updated.deleteDecidedAtMs = nowMs }
             if updated != cursor { cursorUpdates[identity] = updated }
         }
 
-        // §5.3 的反拓扑序：子先于父。父子关系从基线里解出来——tombstone 没有载荷，这是
-        // 唯一的来源。
+        // §5.3 reverse topological order: children before parents. Baselines are
+        // the only parent-reference source because tombstones have no payload.
         var parentOf: [String: String] = [:]
         for identity in identities {
             guard let bytes = table.cursors[identity]?.reconciled,
@@ -755,21 +693,21 @@ enum SyncableOwnedItems {
                                         deferred: deferredDeletions)
     }
 
-    // MARK: - 入站：plan（§4.4）
+    // MARK: - Inbound plan (§4.4)
 
-    /// 本轮到达 + 停放集 → 一个**分四相有序**的落地计划（R-M3-4a-93）。
-    ///
-    /// 书签的依赖是**同一个 data type 内的兄弟实体**，而且可以任意深，所以这里先做一次
-    /// 拓扑排序：一页里乱序到达的一棵树**一轮**落完，而不是每层一轮。
+    /// Current arrivals plus parked items produce a plan ordered in four phases
+    /// (R-M3-4a-93). Bookmark dependencies are arbitrarily deep peer entities
+    /// within one data type; topological ordering applies an out-of-order tree
+    /// in one round instead of one round per level.
     static func plan<K: OwnedItemKind>(_ kind: K.Type,
                                        arrivals: [OwnedItemArrival<K.Entity>],
                                        parked: [String: ParkedOwnedItem],
                                        table: PhiOwnedItemTable,
                                        resolve: OwnerResolver,
                                        context: OwnedItemPlanContext) -> OwnedItemPlan {
-        // 收割先于一切：**无论那条实体后来被丢弃、拒收还是停放**，服务端赋的
-        // `entityId` / `version` 都要留下（A6）。不收割的实现在真机上表现为一个每 60 s
-        // 重来一次、删除永远落不了地的循环。
+        // Harvest first, whether the entity is later discarded, refused, or parked
+        // (A6). Losing server entityId/version produces stale-version deletion
+        // retries every 60 seconds with no successful application.
         var harvest: [String: (entityId: String, version: Int64)] = [:]
         for item in arrivals {
             let identity = K.identity(of: item.entity)
@@ -784,13 +722,10 @@ enum SyncableOwnedItems {
             try? K.envelope(entity).serializedData()
         }
 
-        // §7.3：作用域不一致 ⇒ 零 step，入站实体**全部**停放，等作用域收敛。
-        //
-        // **tombstone 与存活实体一起停**（spec §12.1 第 15 条：「本轮到达的 pin 实体全部进
-        // `pendingApply`，tombstone 进 `pendingTombstone`」）。它们没有载荷可以塞进 `parked`
-        // ——一条 tombstone 只有 tag hash（§2.5）——所以走 `parkedTombstones` 这条身份通道。
-        // 只停存活实体的写法会把本轮到达的每一条远端删除永久丢掉：marker 早已推过那一页，
-        // 服务端不会再发第二次。
+        // §7.3 scope mismatch parks all inbound entities with zero steps. Park
+        // tombstones too (§12.1 item 15), using parkedTombstones identities because
+        // they carry only tag hashes (§2.5). Parking live payloads alone loses
+        // remote deletions permanently after the marker advances beyond their page.
         if context.scopeMismatch {
             var parkedOut = parked
             for item in arrivals {
@@ -804,8 +739,9 @@ enum SyncableOwnedItems {
                                  parkedTombstones: context.tombstonedIdentities)
         }
 
-        // 1. 工作集 = 停放项（按 uuid 字典序，设备无关）∪ 本轮到达，到达项覆盖同身份的
-        //    停放项。解不开的停放项原样留在 `parked` 里。
+        // 1. Working set: parked items in device-independent UUID order plus current
+        // arrivals, which replace parked copies of the same identity. Preserve
+        // undecodable parked bytes unchanged.
         var working: [(identity: String, entity: K.Entity)] = []
         var slotOf: [String: Int] = [:]
         var parkedOut: [String: ParkedOwnedItem] = [:]
@@ -822,8 +758,8 @@ enum SyncableOwnedItems {
         var refused = 0
         for item in arrivals {
             let identity = K.identity(of: item.entity)
-            // §4.6 的第一条判据：uuid 为空 ⇒ 拒收。丢掉而不计数会让一个每轮都在发空 uuid 的
-            // 对端在计数行上完全不可见。
+            // §4.6 first criterion: refuse empty UUID and count it, so a repeatedly
+            // malformed sender remains visible in diagnostics.
             guard !identity.isEmpty else { refused += 1; continue }
             if let slot = slotOf[identity] {
                 working[slot] = (identity, item.entity)
@@ -833,8 +769,8 @@ enum SyncableOwnedItems {
             }
         }
 
-        // 2. 拒收与 tombstone 覆盖。孩子自己也带 tombstone 时**不提升**——那才是「这条也
-        //    该消失」，所以它的活实体在这里就被它自己的 tombstone 盖掉。
+        // 2. Refusals and tombstone precedence. A child's own tombstone replaces
+        // its live entity here, ensuring deletion rather than promotion.
         func baselineOf(_ identity: String) -> K.Entity? {
             guard let bytes = table.cursors[identity]?.reconciled,
                   let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
@@ -844,8 +780,8 @@ enum SyncableOwnedItems {
         var survivors: [(identity: String, entity: K.Entity)] = []
         for item in working {
             if context.tombstonedIdentities.contains(item.identity) { continue }
-            // 基线一并交给 `refuses`：§4.6 的 `is_folder` 判据比的就是「与本机已有的那一条
-            // 不符」。合并掉这个分歧（取并 / 取一侧）是错的——它是 INVARIANT 不是 LWW。
+            // Pass baseline to refuses for is_folder mismatch against the existing
+            // local entity. This is an invariant, not a field to resolve through LWW.
             if K.refuses(item.entity, baseline: baselineOf(item.identity)) != nil {
                 refused += 1
                 continue
@@ -854,9 +790,9 @@ enum SyncableOwnedItems {
         }
         let survivorIdentities = Set(survivors.map(\.identity))
 
-        // 3. 归属分类。**「父只是不在」绝不触发提升**：父缺席的原因里有好几个与删除无关
-        //    且都可达（解密失败、被拒收、自己也停放着、被页预算切在后面），按「不在即提升」
-        //    写，一份坏密文就能把一整棵子树在整个账户上拍平，而且再也回不去。
+        // 3. Classify ownership. Mere parent absence never promotes: decryption
+        // failure, refusal, parking, or later pages can all explain it. Otherwise
+        // one invalid ciphertext could irreversibly flatten a whole account subtree.
         func classify(_ uuid: String) -> OwnerState {
             if survivorIdentities.contains(uuid) { return .item(uuid) }
             if context.tombstonedIdentities.contains(uuid)
@@ -867,8 +803,8 @@ enum SyncableOwnedItems {
             return .unresolved
         }
 
-        // 4. 拓扑排序（Kahn）。排不完的剩余节点即处在环里——对端 bug 或伪造载荷，一律
-        //    refuse：停放会让它永远等一个等不到的父。
+        // 4. Kahn topological sort. Refuse remaining cyclic dependencies as remote
+        // bugs or forged payloads; parking waits forever for impossible parents.
         var dependencies: [String: [String]] = [:]
         for item in survivors {
             dependencies[item.identity] = K.ownerUuids(of: item.entity).compactMap {
@@ -895,9 +831,9 @@ enum SyncableOwnedItems {
             remaining = stillRemaining
             if remaining.isEmpty || !progressed { break }
         }
-        refused += remaining.count      // 环
+        refused += remaining.count      // Cycles
 
-        // 5. 按拓扑序落地。
+        // 5. Apply in topological order.
         var steps: [OwnedItemApplyStep] = []
         var lifted = 0
         var supersededByDelete = 0
@@ -906,8 +842,7 @@ enum SyncableOwnedItems {
         var rebaselined: [String: Data] = [:]
         var preLandingSignatures: [String: RuleSignature] = [:]
         var landedIdentities: Set<String> = []
-        // §8.4.4 的两个新局部量（8b-3）。两个落点各填各的：(α) 落在第 6 段，(β) 落在下面
-        // 的 A9 / L1 支。
+        // §8.4.4 locals (8b-3): α populates in section 6, β in the following A9/L1 branch.
         var parkedTombstonesOut: Set<String> = []
         var yieldedTombstones: Set<String> = []
 
@@ -922,7 +857,7 @@ enum SyncableOwnedItems {
                     if landedIdentities.contains(parent) {
                         landingParent = parent
                     } else {
-                        blockedBy = owner      // 父本身停放 / 被拒 / 在环里
+                        blockedBy = owner      // The parent is parked, refused, or cyclic
                     }
                 case .lift:
                     wasLifted = true
@@ -945,18 +880,17 @@ enum SyncableOwnedItems {
 
             let cursor = table.cursors[identity]
             let baseline = baselineOf(identity)
-            // 认领的身份走 §6.2 的**字段级**合并，结果由 `adopt` 算好、经 `context` 传进来。
-            // 一条被认领的本机行没有基线，所以下面那条「与基线合并」的通路对它退化成
-            // 「整体采纳远端」——而那正是 §6.2 点名禁止的东西（用户在一次二十分钟的首同步
-            // 期间改的标题会静默消失，没有 commit 也没有计数）。
+            // Adopted identities use §6.2 field merges supplied through context. Their
+            // local rows have no baseline, so ordinary baseline merging would degrade
+            // to forbidden wholesale remote adoption and silently erase join-time edits.
             let adopted: K.Entity? = context.adoptedMerges[identity].flatMap {
                 guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
                 return K.entity(from: envelope)
             }
-            // **合并的本机那一侧是本机行此刻的投影**（`context.localProjections`），基线只在
-            // 没有投影时兜底。理由写在 `OwnedItemPlanContext.localProjections` 上：基线里那
-            // 一份是**上一次同步**的值，用它当本机那一侧会让一处还没发布的本机编辑在对端
-            // 碰了同一条实体的任何字段时被改写掉。
+            // Use the current local projection for the local merge side, falling back
+            // to baseline only when absent. Baselines represent the previous sync;
+            // using them directly would overwrite unpublished local edits whenever the
+            // remote changes any field of the entity.
             let localProjection: K.Entity? = context.localProjections[identity].flatMap {
                 guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
                 return K.entity(from: envelope)
@@ -965,36 +899,33 @@ enum SyncableOwnedItems {
                 ?? localProjection.map { K.merge(local: $0, remote: item.entity) }
                 ?? baseline.map { K.merge(local: $0, remote: item.entity) }
                 ?? item.entity
-            // 本机赢下 `location` 时落地的父要跟着合并结果走，否则那一行会被搬到**输掉的**
-            // 那个父下面，而 `reconciled` 说的是另一个——下一轮的快照把它当成一次本机移动
-            // 再发出去，一次本机移动因此变成两次。`nil` = 「照载荷自己的父落地」，而载荷
-            // 就是合并结果。提升（`wasLifted`）是模块自己作的决定，不受这一条影响。
+            // When local location wins, apply the merged parent rather than the losing
+            // remote parent. Otherwise local state differs from reconciled and republishes
+            // a second move next round. nil means use the merged payload's parent;
+            // explicit promotion via wasLifted remains authoritative.
             if !wasLifted, landingParent != nil,
                K.ownerUuids(of: merged) != K.ownerUuids(of: item.entity) {
                 landingParent = nil
             }
 
-            // §5.6 的 L1 支：游标带 `pendingDelete` 时到达的**存活**实体。
+            // §5.6 L1: a live arrival meets a pending-delete cursor.
             if cursor?.pendingDelete == true {
-                // §8.4.4 的落点 **(β)**（8b-3 / 计划裁定一）。谓词是 (β) 自己那四条：
-                // `cursor.pendingDelete == true` ∧ 行在（**软删态也算**）∧ **有签名** ∧
-                // 伙伴 W 静止；前三条已经折进 `mergePartners` / `partnerNotAtRest` 的定义域。
-                //
-                // **(α) 的 `deletedDate == nil` 与那条析取绝不照抄到这里**（RR8-1）：
-                // `pendingDelete == true` 蕴含「本机行不存在或已软删」，做收敛的那一台上败者
-                // 没有本机编辑、`.conflict` 又不写基线 ⇒ 两项在 (β) 上结构性恒假 ⇒ 这一支
-                // 永不让路 ⇒ 落回 `cancelledDeletes` ⇒ 终态两条签名不同的规则。
+                // §8.4.4 β (8b-3 / ruling 1): pendingDelete, existing row including soft
+                // deletions, signature, and quiescent W. The first three are encoded in
+                // mergePartners/partnerNotAtRest domains. Do not copy α's live-row or dirty
+                // disjunction criteria (RR8-1): β rows are absent or soft-deleted, and on
+                // the merging device the loser lacks local edits while conflict leaves
+                // baselines unchanged. Those extra criteria would make β unreachable,
+                // fall back to cancelledDeletes, and leave two different-signature rules.
                 if K.tombstoneYieldsToLocalEdits {
                     if let partner = context.mergePartners[identity],
                        let source = K.transferSource(of: merged, resolve: resolve) {
-                        // (i) 编辑转移。取值源是**本轮这条入站 `merged`**，不是本机行：
-                        // 竞态 2 里本机那一行是 M2 软删下来的，目标还是旧的，用户那次 retarget
-                        // 只存在于入站实体里。
-                        //
-                        // 不 `cancelledDeletes.insert`、**这条入站实体不落地**：X 的软删态、
-                        // `mergePartnerSyncId` 与 `pendingDelete` 全部留着（RR9-1：落地会清掉
-                        // `deletedDate` 与指针，于是「下一轮重判回到转移」不可达，而游标那一侧
-                        // 的 `pendingDelete` 迟早 `.applied` ⇒ 硬删这一行）。
+                        // i. Transfer from this round's merged inbound entity, not the local row: in
+                        // race 2, M2 soft-deleted the local row with its old target, while retarget
+                        // intent exists only in the arrival. Do not cancel deletion or apply X:
+                        // preserve soft deletion, mergePartnerSyncId, and pendingDelete (RR9-1).
+                        // Application would clear the pointer/state needed to reconsider transfer
+                        // next round, while the pending tombstone eventually hard-deletes X.
                         steps.append(OwnedItemApplyStep(identity: identity,
                                                         kind: .transfer(source: source,
                                                                         to: partner),
@@ -1003,9 +934,8 @@ enum SyncableOwnedItems {
                         continue
                     }
                     if context.partnerNotAtRest.contains(identity) {
-                        // W 在但不静止 ⇒ 停放**那条入站存活实体**（游标 `pendingApply`），
-                        // **绝不** `parkedTombstones`、**绝不置 `pendingTombstone`**
-                        // （那是 (α) 的位）。
+                        // A present but nonquiescent W parks the live arrival as pendingApply.
+                        // Never set parkedTombstones/pendingTombstone here; those belong to α.
                         if let payload = payloadBytes(item.entity) {
                             parkedOut[identity] = ParkedOwnedItem(
                                 payload: payload,
@@ -1021,8 +951,8 @@ enum SyncableOwnedItems {
                 } ?? true
                 let outsideDeletedSubtree = !context.deletedSubtree.contains(identity)
                     && !(landingParent.map { context.deletedSubtree.contains($0) } ?? false)
-                // A9：把该项移到一个**活的、且不在被删子树里**的父下，且位置比删除决定更新
-                // ⇒ 取消删除。其余一切入站更新都被丢弃（本机的删除赢）。
+                // A9: newer inbound location moving to a live parent outside the deleted
+                // subtree cancels deletion. Discard other updates; local deletion wins.
                 guard newerThanDeletion, parentIsLive, outsideDeletedSubtree else {
                     supersededByDelete += 1
                     continue
@@ -1034,17 +964,17 @@ enum SyncableOwnedItems {
             landedIdentities.insert(identity)
             let payload = payloadBytes(merged)
             let rank = K.rank(of: merged)
-            // §6.2 的那条规则，落在普通更新路径上：合并结果与**账户手上那一份**不同 ⇒ 本机
-            // 赢了点什么，这条实体要重新发布。判据比的是整条实体而不是内容签名——本机也可能
-            // 赢下 `location` / `rank`，而那两样都不在签名里。认领那一支不在这里：它的
-            // `mustRepublish` 由 `adopt` 自己算（本机那一侧没有基线，判据不同）。
+            // Ordinary-update §6.2 republication: merged differs from the account entity
+            // when local wins something. Compare the whole entity, including location/rank
+            // outside the content signature. Adoption computes its own mustRepublish
+            // because its local side has no baseline.
             if adopted == nil, localProjection != nil, payload != payloadBytes(item.entity) {
                 mustRepublish.insert(identity)
             }
 
             if context.pairs[identity] != nil {
-                // §6.3：① 把账户身份写到那条本机行上，② 再按相序把字段落下去。两条 step
-                // 是因为落地的 claim 操作只写 `syncId`，内容只走 update。
+                // §6.3: claim account identity first, then write fields in phase order.
+                // Two steps are needed because claim writes only syncId and update carries content.
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .claim,
                                                 newParentUuid: landingParent, newRank: rank,
                                                 payload: payload))
@@ -1064,45 +994,44 @@ enum SyncableOwnedItems {
             let moved = wasLifted || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
                 || K.rank(of: merged) != K.rank(of: baseline)
             if moved {
-                // `newOwnerUuid` 从合并结果的归属字段填（R-M3-4a-26）：`.claim` / `.create` /
-                // `.update` / `.delete` 四处一律不填，`.create` 的目标在载荷里、由落地闭包自己读。
+                // Populate newOwnerUuid from merged ownership only for move (R-M3-4a-26).
+                // Leave it absent for claim/create/update/delete; create reads its target from payload.
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .move,
                                                 newParentUuid: landingParent,
                                                 newOwnerUuid: K.targetOwnerUuid(of: merged),
                                                 newRank: rank, payload: payload))
-                // D30 / §8.4.3 第 1 步的第二遍分组键：**产出 step 的这一刻**记下那一行落地前的
-                // 签名（8b-2 计划裁定二）。算不出的身份结构性地不在表里。
+                // Capture the pre-application signature when emitting this step for D30's
+                // second grouping pass (§8.4.3 step 1 / ruling 2). Unavailable signatures remain absent.
                 if let key = context.localSignatures[identity] {
                     preLandingSignatures[identity] = key
                 }
             }
-            // **移动与内容改动是两条步骤，不是二选一。** 落地的 move 操作
-            // （`BookmarkApplyOp.move`）不带字段补丁，内容只走 update；一条既搬了家又被改了
-            // 名的实体若只产出 move，那次改名永远到不了本机行，而下一轮的快照会拿本机的旧
-            // 标题盖回账户——对端的编辑被销毁，且没有任何计数动一下。
-            //
-            // 判据是**内容签名**而不是整条实体：对端一次纯重盖戳不该产出一条空补丁。
+            // Move and content update are separate, not mutually exclusive. Bookmark
+            // move carries no patch, so omitting update after a rename loses the remote
+            // edit and republishes the old local title next round without a diagnostic.
+            // Compare content signatures, not full entities; timestamp-only changes
+            // must not generate empty patches.
             let contentChanged = K.contentSignature(of: merged)
                 != K.contentSignature(of: baseline)
             if contentChanged {
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
                                                 newParentUuid: nil, newRank: nil, payload: payload))
-                // 同上（8b-2 计划裁定二）：`.move` 与 `.update` 是同一条身份的两条 step，记两次
-                // 是幂等的（值相同）。
+                // Likewise capture on update (ruling 2). Recording the same identity for
+                // both move and update is idempotent because the signature is identical.
                 if let key = context.localSignatures[identity] {
                     preLandingSignatures[identity] = key
                 }
             }
-            // 一条 step 都没有、而合并结果与基线仍然不同 ⇒ 只差时间戳，基线照样要跟上
-            // （见 `OwnedItemPlan.rebaselined`）。判据是「本轮没有任何东西要落地」，所以它
-            // 必须排在上面两条之后。
+            // No steps but a changed merged baseline means timestamps differ; advance
+            // baseline (see rebaselined). Check after both step-producing branches to
+            // establish that nothing needs application.
             if !moved, !contentChanged, let payload,
                payload != table.cursors[identity]?.reconciled {
                 rebaselined[identity] = payload
             }
         }
 
-        // 6. 本轮的远端 tombstone：子先于父（§4.4 的第四相）。
+        // 6. Current remote tombstones, child-first in §4.4's fourth phase.
         var deleteParentOf: [String: String] = [:]
         for identity in context.tombstonedIdentities {
             var entity: K.Entity?
@@ -1124,27 +1053,26 @@ enum SyncableOwnedItems {
             let left = depths[$0] ?? 0, right = depths[$1] ?? 0
             return left == right ? $0 < $1 : left > right
         }) {
-            // §8.4.4 的落点 **(α)**（8b-3 / 计划裁定一）：入站的是一条 **tombstone**，谓词是
-            // 行在 ∧ `deletedDate == nil` ∧ **有签名** ∧（`pendingLocalEdit` ∨ 取值式
-            // `unpublished`）——前三条已经折进那两个集合的定义域（§5.6），模块只读集合。
+            // §8.4.4 α (8b-3 / ruling 1): inbound tombstone with a live signed row
+            // and pendingLocalEdit or value-based unpublished changes. The sets already
+            // encode the first three conditions (§5.6); the module only tests membership.
             if K.tombstoneYieldsToLocalEdits,
                context.pendingLocalEdits.contains(identity)
                 || context.unpublished.contains(identity) {
                 if let partner = context.mergePartners[identity] {
-                    // W 静止 ⇒ (i) 编辑转移。取值源 = X 的**本机行投影**（pre-pass 那一刻
-                    // 冻下来的）。**这份 `source` 在落地事务里还要被复查一次**
-                    // （R-M3-4a-102 / 裁定 11）：执行器按 `fromSyncId` 重读 X、与它逐格比，
-                    // 不等就把 `.transfer` 与下面那条 `.delete` 一起跳过并交回
-                    // `deferredTombstones`。**模块这一侧一个字节都不改**——判定权仍在 pre-pass，
-                    // 事务里做的只是一次相等比较。
+                    // Quiescent W transfers X's local projection frozen in pre-pass. The
+                    // transaction rechecks this source (R-M3-4a-102 / ruling 11), rereading X
+                    // by fromSyncId and comparing units. Mismatch skips both transfer/delete
+                    // and returns deferredTombstones. Decision ownership stays in pre-pass;
+                    // the transaction only checks equality, with no module changes.
                     let projected: K.Entity? = context.localProjections[identity]
                         .flatMap { try? Phi_PhiEntity(serializedBytes: $0) }
                         .flatMap { K.entity(from: $0) }
                     guard let source = projected
                             .flatMap({ K.transferSource(of: $0, resolve: resolve) }) else {
-                        // 取值算不出（投影缺席 / 解不开）⇒ 按 (ii) 走：**保留行、零写**
-                        // （裁定 3 末段）。停放会置 `pendingTombstone` ⇒ 该身份进不了
-                        // `snapshot` ⇒ 3b 永远发不出去 ⇒ 死锁；硬删则丢掉用户那次编辑。
+                        // Missing/undecodable projection follows ii: retain the row without writes
+                        // (ruling 3). Parking would set pendingTombstone, exclude snapshot, and
+                        // deadlock 3b publication; hard deletion would destroy the local edit.
                         yieldedTombstones.insert(identity)
                         continue
                     }
@@ -1152,14 +1080,14 @@ enum SyncableOwnedItems {
                                                     kind: .transfer(source: source, to: partner),
                                                     newParentUuid: nil, newRank: nil,
                                                     payload: nil))
-                    // **不 continue**：随后照常产出那条 `.delete`（**第四相**、同一个落地
-                    // 事务，RR8-5）。产出次序无所谓，`phase` 排序保证 `.transfer` 先执行。
+                    // Continue to emit delete in the same transaction's fourth phase (RR8-5);
+                    // phase sorting guarantees transfer executes first regardless of emission order.
                 } else if context.partnerNotAtRest.contains(identity) {
-                    // W 在但不静止 ⇒ 停放这条 tombstone，**不产出 `.delete`**，行一个字节不动。
+                    // Present but nonquiescent W parks the tombstone without delete or row changes.
                     parkedTombstonesOut.insert(identity)
                     continue
                 } else {
-                    // 根本没有伙伴行 ⇒ (ii) 3b 复活。**只有这一种情形走 (ii)。**
+                    // No partner row follows ii for 3b revival; only this partner-lookup outcome uses ii.
                     yieldedTombstones.insert(identity)
                     continue
                 }
@@ -1168,7 +1096,7 @@ enum SyncableOwnedItems {
                                             newParentUuid: nil, newRank: nil, payload: nil))
         }
 
-        // 7. 四相排序，相内**稳定**（保持上面攒出来的拓扑 / 反拓扑次序）。
+        // 7. Stable four-phase sort preserves accumulated topological/reverse-topological order within phases.
         let sorted = steps.enumerated().sorted { lhs, rhs in
             let lhsPhase = phase(lhs.element.kind), rhsPhase = phase(rhs.element.kind)
             return lhsPhase == rhsPhase ? lhs.offset < rhs.offset : lhsPhase < rhsPhase
@@ -1178,29 +1106,29 @@ enum SyncableOwnedItems {
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
                              mustRepublish: mustRepublish,
-                             // RR9-15：正常返回路径**必须**传这两个集合——(α) 的停放是逐身份
-                             // 的，要与同页别的身份照常落地并存，靠默认值 `[]` 会让它静默丢失。
+                             // RR9-15: normal returns must carry both sets. Per-identity α parking
+                             // coexists with application elsewhere on the page; default empty sets
+                             // would silently lose it.
                              parkedTombstones: parkedTombstonesOut,
                              yieldedTombstones: yieldedTombstones,
                              rebaselined: rebaselined,
                              preLandingSignatures: preLandingSignatures)
     }
 
-    // MARK: - 认领（§6 的规则 (i)）
+    // MARK: - Adoption (§6 rule i)
 
-    /// D10 的规则 (i)，**只对书签存在**（§6.7：pin 完全不走 §6）：一条入站实体匹配到一条
-    /// `syncId == nil` 的本地行 ⇒ 那一行**接过这个 uuid**，落地是一次原地更新而不是新建。
+    /// D10 rule i applies only to bookmarks (§6.7 excludes pins): an inbound
+    /// entity matched to a nil-syncId local row claims that UUID through in-place
+    /// update rather than creation. There is no second rule: sync never removes
+    /// or merges published lookalikes (R-M3-3-28). Former automatic collapse
+    /// merged sibling folders sharing a placeholder URL and displaced their
+    /// children to the Space root. This function deletes nothing and drops no
+    /// arrival; unmatched arrivals create rows, while unmatched locals mint identities.
     ///
-    /// **没有第二条规则。** 同步层从不因为「看起来重复」而删除或合并任何已经发布的实体
-    /// （R-M3-3-28）：那一版的自动折叠会让同一个父下的每一个兄弟文件夹塌成一个（文件夹共享
-    /// 同一个占位 URL），而塌掉的文件夹会把孩子甩到 Space 根上。这个函数**从不删除任何
-    /// 东西，也不会让任何入站实体被丢掉**——没配上的实体照常建新行，没配上的本机行照常
-    /// 自己铸身份。
-    ///
-    /// 匹配自上而下走：从每个有映射的 Space 的根、以及每一条**已经有身份**的本机行（跨轮
-    /// 锚点，§6.3 末）出发，一层一层往下。每一层先按**完整**匹配键分组——书签是 URL，
-    /// 文件夹是标题——再在组内按位配对（本地 `index` 序 × 远端 `rank` 序）。按 (Space, 路径)
-    /// 分组再按位配会把一条本机的 URL X 配给一条远端的 URL Y。
+    /// Match top-down from mapped Space roots and already-identified local anchors
+    /// for cross-round continuity (§6.3). Group each level by full key, URL for
+    /// bookmarks or title for folders, then pair local index order with remote
+    /// rank order. Grouping by only Space/path could pair different URLs.
     static func adopt(arrivals: [Phi_PhiBookmarkEntity], locals: [PhiLocalBookmark],
                       resolve: OwnerResolver) -> OwnedItemAdoptionResult {
         var pairs: [String: String] = [:]
@@ -1229,20 +1157,14 @@ enum SyncableOwnedItems {
             queue.append((remoteParent, localParentGuid, localSpaceId))
         }
 
-        /// §6.2 的字段级合并，**不是「整体采纳远端」**。
-        ///
-        /// 本机那一侧是「这条行投影出来、按无基线规则盖过戳」的实体：内容字段带
-        /// `contentUpdatedDate ?? createdDate`，位置与 rank 带 0。于是内容按 LWW 各自定胜负，
-        /// 位置必然取远端（0 输给任何真实的戳）——正是 §6.2 那张表。
-        ///
-        /// 本机戳**必须是 `contentUpdatedDate`**：`updatedDate` 被 `updateLastSeen` /
-        /// `updateTabFavicon` / `normalizeIndexes` 三条**非编辑**路径往前推，而「往前推」正是
-        /// 让一个没人动过的本机旧值赢下对端刚做的编辑的那个方向。
-        /// 算得出合并就记下来并返回 true；**算不出就返回 false，那一对不成立**。
-        ///
-        /// 绝不「算不出就退回整体采纳远端」：那条路会在一次归属解析抖动里静默吃掉用户在
-        /// 加入期间做的编辑，而那正是 §6.2 花整节篇幅禁止的东西。不配对的代价只是那一行
-        /// 这一轮保持未同步、下一轮重来，而入站实体照常建一条新行。
+        /// §6.2 field merge. Project local without baseline: content uses
+        /// contentUpdatedDate ?? createdDate; location/rank use zero and yield to
+        /// real remote stamps. Never substitute updatedDate, which lastSeen/favicon/index
+        /// maintenance advances without edits and could let stale local content win.
+        /// Record a successful merge and return true; failure invalidates the pair.
+        /// Never fall back to wholesale remote adoption and erase join-time edits
+        /// during owner-resolution fluctuations. The local row remains unsynced
+        /// for retry, and the arrival creates its own row normally.
         func recordMerge(_ entity: Phi_PhiBookmarkEntity, _ row: PhiLocalBookmark) -> Bool {
             let parentIdentity = entity.parentUuid.stringValue
             guard var projected = BookmarkKind.project(row, resolve: resolve, scope: nil,
@@ -1252,15 +1174,15 @@ enum SyncableOwnedItems {
             }
             projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
                                            rank: "", now: 0)
-            // 那一行还没有身份，所以投影出来的 uuid 是空串；合并之后它接过远端这一个。
+            // The unidentified local projection has an empty UUID; the merge adopts the remote UUID.
             let merged = BookmarkKind.merge(local: projected, remote: entity)
             guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else {
                 return false
             }
             merges[entity.bookmarkUuid] = bytes
-            // 合并结果与账户手上那一份不同 ⇒ 本机赢了至少一个字段 ⇒ 必须重新发布。
+            // A merge differing from the account entity means a local field won and requires republication.
             if merged != entity { mustRepublish.insert(entity.bookmarkUuid) }
-            // 合并结果的内容与那一行现在的内容不同 ⇒ 落地时要写字段。
+            // Merged content differing from the current row requires field writes during application.
             if BookmarkKind.contentSignature(of: merged)
                 != BookmarkKind.contentSignature(of: projected) {
                 fieldWrites.insert(entity.bookmarkUuid)
@@ -1268,15 +1190,15 @@ enum SyncableOwnedItems {
             return true
         }
 
-        // 起点 ①：每一个有映射的 Space 的根。
+        // Starting point ①: every mapped Space root.
         for entity in arrivalsByParent[""] ?? [] {
             if let spaceId = resolve.localSpaceId(entity.spaceUuid.stringValue) {
                 enqueue("", nil, spaceId)
             }
         }
-        // 起点 ②：一条**已经被认领过**的本机行是它孩子的锚点。规则 (i) 因此在分轮切片下
-        // 继续工作，不需要任何窗口——写成「只在该 Space 首次合并时跑一次」的实现，会让
-        // 第二轮到达的实体在本机建出重复行。
+        // Starting point ②: an identified local row anchors its children across
+        // round slices, without a window. Running only on first Space merge would
+        // create duplicate rows for arrivals in later rounds.
         for entity in arrivals {
             let parent = entity.parentUuid.stringValue
             guard !parent.isEmpty, let guid = localGuidByIdentity[parent],
@@ -1291,14 +1213,13 @@ enum SyncableOwnedItems {
 
             var candidates: [Phi_PhiBookmarkEntity] = []
             for entity in arrivalsByParent[level.remoteParent] ?? [] {
-                // 根级那一层要按 Space 再筛一次：`parent_uuid == ""` 的实体来自账户里的
-                // 每一个 Space。
+                // Filter root-level arrivals by Space too; empty parent_uuid spans every account Space.
                 if level.remoteParent.isEmpty,
                    resolve.localSpaceId(entity.spaceUuid.stringValue) != level.localSpaceId {
                     continue
                 }
-                // 已经有持有者的实体不参与配对（**规则 (i) 只认 `syncId == nil` 的行**），
-                // 但它是它自己那一层的锚点。
+                // Already-claimed entities do not pair because rule i only claims nil-syncId
+                // rows, but they remain anchors for their children.
                 if let guid = localGuidByIdentity[entity.bookmarkUuid] {
                     if entity.isFolder, let row = localByGuid[guid] {
                         enqueue(entity.bookmarkUuid, guid, row.spaceId)
@@ -1312,8 +1233,8 @@ enum SyncableOwnedItems {
                     && $0.parentGuid == level.localParentGuid
             }
 
-            // 文件夹按**标题**分组，**绝不按 URL**：本地所有文件夹共享同一个占位 URL，按
-            // URL 比会把一个父下的每一个兄弟文件夹判成同一个东西。
+            // Group folders by title, never URL: all local folders share one placeholder,
+            // which would otherwise make every sibling folder look identical.
             unmatchedFolders += pairWithinGroups(
                 remote: candidates.filter(\.isFolder),
                 local: localChildren.filter(\.isFolder),
@@ -1323,7 +1244,7 @@ enum SyncableOwnedItems {
                     pairs[entity.bookmarkUuid] = row.guid
                     enqueue(entity.bookmarkUuid, row.guid, row.spaceId)
                 }
-            // 书签按 URL 分组。
+            // Group bookmarks by URL.
             _ = pairWithinGroups(
                 remote: candidates.filter { !$0.isFolder },
                 local: localChildren.filter { !$0.isFolder },
@@ -1340,9 +1261,9 @@ enum SyncableOwnedItems {
                                        unmergeablePairs: unmergeablePairs)
     }
 
-    /// 一层之内的一对一配对：**先按完整键分组，再**在组内按位配（本地 `index` 序 × 远端
-    /// `rank` 序）。两边都是各自视角下用户看到的顺序，于是「哪一条本地与哪一条远端相比」
-    /// 是位置对应的，而不是任意的。返回没配上的**入站**条数。
+    /// One-to-one pairing within a level: group by full key, then align local
+    /// index order with remote rank order. Pair by each side's user-visible
+    /// position rather than arbitrarily. Return the number of unmatched arrivals.
     private static func pairWithinGroups(remote: [Phi_PhiBookmarkEntity],
                                          local: [PhiLocalBookmark],
                                          remoteKey: (Phi_PhiBookmarkEntity) -> String,
@@ -1371,11 +1292,11 @@ enum SyncableOwnedItems {
         return leftOver
     }
 
-    // MARK: - 私有工具
+    // MARK: - Private helpers
 
-    /// ① claim / create / move ② update ③ **transfer** ④ delete（R-M3-4a-93）。
-    /// `.transfer` 自成一相，夹在 `.update` 与 `.delete` 之间——见 `StepKind` 的注释：
-    /// 它要跟 W 落地**之后**的值比 LWW，又必须赶在 X 的硬删之前。
+    /// Four phases: claim/create/move, update, transfer, delete (R-M3-4a-93).
+    /// Transfer compares LWW against W after update and runs before hard-deleting X;
+    /// see StepKind for the boundary rationale.
     private static func phase(_ kind: StepKind) -> Int {
         switch kind {
         case .claim, .create, .move: return 1
@@ -1385,8 +1306,8 @@ enum SyncableOwnedItems {
         }
     }
 
-    /// 从 `parentOf` 往上走到没有父为止。`parentOf.count` 当跳数上限：一条环在这里被截断
-    /// 成一个有限深度，而不是把排序挂死。
+    /// Walk parentOf to the root, bounded by its entry count. Cycles therefore
+    /// have finite depth instead of hanging the sort.
     private static func depth(of identities: [String], parentOf: [String: String]) -> [String: Int] {
         var out: [String: Int] = [:]
         let limit = parentOf.count

@@ -6,21 +6,16 @@
 import CryptoKit
 import Foundation
 
-// 固定标签页这一种 kind 的适配：编解码、字段 LWW 表、归属解析、盖戳。
-//
-// 与书签相差的那几件事，逐条都是「身份是 `(lineage, owner)` 这一对」（R-M3-3-15）的直接
-// 后果：
-//
-// - **pin 没有 location**（§4.3）。owner 是身份的一半、不可变，所以它不是一个可合并的
-//   字段，也就没有「位置组」可言；`rank` 是一个**普通 LWW** 字段，不套书签那条相干规则。
-// - **换 owner 不是字段变化**：旧 tag 下一条 tombstone + 新 tag 下一条 create（§7.2）。
-//   `PinApplyOp` 里因此不存在 `rebind`。
-// - **pin 完全不走 §6 的认领**（§6.7）。首次同步时两边的 pin **取并集**——没有内容匹配、
-//   没有配对、没有去重，所以 `SyncableOwnedItems.adopt` 只收 `Phi_PhiBookmarkEntity`，
-//   这里不补一个 pin 版本。
-// - **同一个 owner 下仍可能有多条同 lineage 的活动行**（`mergeCandidates` 对签名不同的
-//   变体会留下第二条），它们是用户看得见的两个固定标签页，由 `normalizeVariants(locals:)`
-//   各自重铸身份。
+// Pinned-tab adapter: encoding, field LWW rules, owner resolution, and timestamps.
+// Differences from bookmarks follow from identity being the (lineage, owner) pair (R-M3-3-15):
+// - Pins have no location (§4.3). The owner is immutable identity, so there is no location group; rank is an
+// ordinary LWW field without bookmark coherence rules.
+// - Changing owners emits a tombstone under the old tag and a create under the new tag (§7.2), so PinApplyOp
+// has no rebind.
+// - Pins never use §6 adoption (§6.7). Initial sync unions both sets without content matching, pairing, or
+// deduplication; SyncableOwnedItems.adopt therefore accepts only Phi_PhiBookmarkEntity.
+// - Multiple active rows may share a lineage and owner when mergeCandidates retains distinct signatures. They
+// are separate visible pins, and normalizeVariants(locals:) remints their identities.
 
 enum PinKind: OwnedItemKind {
     typealias Entity = Phi_PhiPinTabEntity
@@ -29,59 +24,46 @@ enum PinKind: OwnedItemKind {
     static var tagPrefix: String { PhiSyncEntity.pinTagPrefix }
     static var entityName: String { PhiSyncEntity.pinEntityName }
 
-    // MARK: - lineage 的归一
+    // MARK: - Lineage normalization
 
-    /// 本地 `pinLineageId`（来自 `UUID().uuidString`，**大写**）→ 线上 `pin_uuid`。
-    ///
-    /// **三处共用这一个 helper**（§3.2）：client tag 的构造（§2.5）、§5.1 的索引种子、
-    /// 落地时的匹配。`PhiSyncEntity.pinClientTag(_:ownerKey:)` 自己**不做**任何大小写归一
-    /// ——它是一个纯拼接函数，归一的责任全部在这里，调用方在**进** tag 之前就要归一好。
-    /// 把归一塞进 tag 构造器，索引种子与落地匹配那两处就失去了同一个守卫；而三处只要有
-    /// 一处漏掉，算出的 hash 与线上那条永不相等，§2.5 的接收端校验会把**每一条** pin 实体
-    /// 都判成伪造载荷（§3.2 把这种失效叫「整个 pin 通道失灵」）。
-    ///
-    /// **两个方向都不写回本地行**：本机那一列仍然是大写的原值。
+    /// Convert local pinLineageId (uppercase UUID().uuidString) to wire pin_uuid.
+    /// This helper serves client-tag construction (§2.5), index seeding (§5.1), and landing matches (§3.2).
+    /// PhiSyncEntity.pinClientTag(_:ownerKey:) only concatenates; callers must normalize before constructing
+    /// tags. Putting normalization there would leave the other two paths unguarded. A missed normalization
+    /// makes hashes differ from the wire and causes §2.5 validation to reject every pin as a forged payload,
+    /// disabling the entire pin channel (§3.2).
+    /// Neither direction writes back to the local row; its uppercase value remains intact.
     static func lineageKey(_ lineageId: String) -> String { lineageId.lowercased() }
 
-    // MARK: - 身份与信封
+    // MARK: - Identity and envelope
 
-    /// 线上实体的身份：`<pin_uuid>:<ownerKey>`，与 client tag 去掉前缀之后逐字一致。
-    ///
-    /// **这里不再调 `lineageKey`**：账户上那条实体的 `pin_uuid` 按定义已经是归一形式，而
-    /// 一条没归一的入站实体会被 `refuses` 判成 `.invalidUuid`。若这里顺手小写化，一条
-    /// 大写载荷就会与那条合法实体**撞成同一个身份**，于是 `plan` 的收割会把它的
-    /// `entityId` / `version` 写到合法那条的游标上——下一次提交带着一个属于别的服务端实体
-    /// 的三元组。
+    /// Wire identity is <pin_uuid>:<ownerKey>, exactly the client tag without its prefix.
+    /// Do not call lineageKey here: account pin_uuid is already normalized, and refuses rejects unnormalized
+    /// input as invalidUuid. Lowercasing incoming payloads would alias an uppercase payload with a valid
+    /// entity, letting plan harvest the wrong entityId/version into its cursor and submit another server
+    /// entity's tuple.
     static func identity(of entity: Phi_PhiPinTabEntity) -> String {
         let lineage = entity.pinUuid
-        // 空 lineage ⇒ 空身份，由 `plan` 的第一条判据（uuid 为空 ⇒ 拒收）接住。
+        // Empty lineage yields empty identity, rejected by plan's first check for empty uuid.
         guard !lineage.isEmpty else { return "" }
         return lineage + ":" + ownerKey(of: entity)
     }
 
-    /// 本机行的账户身份 `<lineageKey>:<ownerKey>`。
-    ///
-    /// 两条 nil：**休眠行**（`PhiLocalPin.isDormant` 的自述「休眠行不进快照，也不参与
-    /// 差分」——作用域迁移留下的本地备份不是一条账户实体；`allPins()` 的契约已经把它们滤
-    /// 掉了，这里再挡一次，于是「只剩休眠副本的 lineage」在差分眼里就是「本机没有这一
-    /// 行」并照常产出 tombstone）与**空 lineage**。
-    ///
-    /// **归属解析不出来时仍然返回一个身份**，后半段换成一个 NUL 打头、任何账户 uuid 都
-    /// 产不出的占位：`snapshot` 的排除计数（`excluded_unmapped_owner`）只在
-    /// 「`identity` 非 nil ∧ `eligibilityOwner` 为 nil」这一支里 +1（`SyncableOwnedItems`
-    /// 里那两个 `guard`），这里返回 nil 就会让 §4.2 第 1 条点名的那一整类排除在计数行上
-    /// **完全不可见**——而那正是告诉运维「有一个 Space 映射缺了」的唯一信号。
-    ///
-    /// **占位值的不变量，两条，缺一条它就会漏到线上：**
-    ///
-    /// 1. 占位后半段**只**出现在「同一个 resolver 与 scope 下 `eligibilityOwner(of:…)`
-    ///    返回 nil」的那些行上。它不是一个可以被别处复用的哨值。
-    /// 2. **任何调用方都不得直接从 `identity(of local:)` 派生 client tag、游标键、线上
-    ///    字节或日志字段**。这四样东西只能来自 `snapshot(...).entities.keys` 或
-    ///    `table.cursors` ——两者都以 `eligibilityOwner != nil` 为前提（模块里那两个
-    ///    `guard` 把不合格的行挡在 `candidates` 之外，`identityByLocalId` 也只收合格行）。
-    ///    `cursor.ownerUuid` 的每轮刷新（A12 / §3.5）同理走 `eligibilityOwner`，不许去截
-    ///    这个身份的后半段。
+    /// The local row's account identity is <lineageKey>:<ownerKey>.
+    /// Return nil for dormant rows and empty lineage. Dormant rows are local scope-migration backups, excluded
+    /// by allPins() and again here from snapshots and diffs. A lineage with only dormant copies therefore
+    /// appears locally absent and emits a tombstone.
+    /// An unresolved owner still yields an identity with a NUL-prefixed placeholder suffix that cannot be an
+    /// account uuid. snapshot increments excluded_unmapped_owner only when identity is non-nil and
+    /// eligibilityOwner is nil. Returning nil would hide the entire §4.2 item 1 exclusion class and its only
+    /// operational signal of a missing Space mapping.
+    /// Two invariants prevent the placeholder reaching the wire:
+    /// 1. It appears only for rows whose eligibilityOwner is nil under the same resolver and scope; it is not
+    /// a reusable sentinel.
+    /// 2. Never derive client tags, cursor keys, wire bytes, or log fields directly from identity(of local:).
+    /// Use snapshot(...).entities.keys or table.cursors, both gated on eligibilityOwner != nil. The guards
+    /// exclude ineligible candidates, and identityByLocalId also admits only eligible rows. Likewise, refresh
+    /// cursor.ownerUuid each round through eligibilityOwner (A12 / §3.5), never by splitting this identity.
     static func identity(of local: PhiLocalPin, resolve: OwnerResolver,
                          scope: PinnedTabScope?) -> String? {
         guard !local.isDormant else { return nil }
@@ -102,31 +84,24 @@ enum PinKind: OwnedItemKind {
         return payload
     }
 
-    /// pin 是**平的**：没有父，所以 `parentId` 恒为 nil（`snapshot` 的祖先链判据对它退化
-    /// 成「只看自己」，`plan` 的拓扑排序对它是一趟空转）。
+    /// Pins are flat: parentId is always nil. Snapshot ancestor checks examine only the pin itself, and plan's
+    /// topological sort has no dependencies.
     static func localEdge(of local: PhiLocalPin) -> (id: String, parentId: String?) {
         (id: local.guid, parentId: nil)
     }
 
-    // MARK: - 归属（§7.2）
+    // MARK: - Ownership (§7.2)
 
-    /// 这条**本机行**坐在哪个归属里，按 §7.2 的表推导；nil = 那个 Space / profile 没有
-    /// 映射，该行本轮整条跳过并计一次 `excluded_unmapped_owner`（§4.2 第 1 条）。
-    ///
-    /// **判据是先看 `spaceId` 再看 `profileId`**，不是「哪个非 nil 用哪个」：一条 Space
-    /// 作用域的行两个字段都非 nil（`PhiLocalPin.spaceId` 上那张表），`pinnedTab(_:belongsTo:)`
-    /// 保证它恰好属于一个 owner。
-    ///
-    /// **解析不出来时绝不退化成 `"app"`**：那会把一条 Space 作用域的 pin 发成账户全局的，
-    /// 对端按 App 作用域落地之后它在**每一个** Space 里都出现。
-    ///
-    /// `scope` 不参与推导。账户作用域与本机作用域的比较是 §7.3 的事，不一致的那一轮**整个
-    /// 发布段**都不跑；而 `allPins()` 交上来的行按契约全在当前作用域内，行的形状**就是**
-    /// 那个作用域。拿 `scope` 去覆写行的形状，会在一次尚未迁移完的作用域变更里把一批
-    /// Space 形状的行发成 App 作用域的实体。
-    ///
-    /// 这同时是 §4.2 的合格性判据与 Task 7 的 `ownerUuid` 预处理读的那一个值——**一个
-    /// 实现点**（A12 / §3.5）。
+    /// Derive the local row's owner using §7.2. nil means its Space/profile is unmapped: skip the whole row
+    /// this round and increment excluded_unmapped_owner (§4.2 item 1).
+    /// Check spaceId before profileId, not just either non-nil field: Space-scoped rows have both (see
+    /// PhiLocalPin.spaceId), and pinnedTab(_:belongsTo:) guarantees exactly one owner.
+    /// Never fall back to app on resolution failure: a Space pin would become account-wide and appear in every
+    /// remote Space.
+    /// Ignore scope here. §7.3 compares account and local scopes and skips the entire publishing phase on
+    /// mismatch. allPins() guarantees rows in the current scope, encoded by their shape. Overriding that shape
+    /// with scope during incomplete migration could publish Space-shaped rows as App entities.
+    /// This is the single implementation for §4.2 eligibility and Task 7 ownerUuid preprocessing (A12 / §3.5).
     static func eligibilityOwner(of local: PhiLocalPin, resolve: OwnerResolver,
                                  scope: PinnedTabScope?) -> String? {
         switch owner(of: local, resolve: resolve) {
@@ -136,22 +111,20 @@ enum PinKind: OwnedItemKind {
         }
     }
 
-    /// 这条实体落地**之前必须已经解析出来**的归属引用：它的 owner，一个。
-    ///
-    /// App 作用域返回字面量 `"app"`，与 Space / Profile 同走一条路。引擎侧构造的
-    /// `OwnerResolver` 把 `"app"` 映射到**它自己**（Task 5b / Task 6 在各自的构造处写了
-    /// 这一行的理由），于是 `plan` 的归属分类把它判成「模块之外解析得出」而正常落地，
-    /// `tombstones` 也不必为这个字符串开一个「归属未映射」的例外——那条规则正是 §4.7 用来
-    /// 防「一次映射抖动删掉整个 Space 的书签」的。
+    /// The single owner reference must resolve before landing.
+    /// App scope returns literal app, following the same path as Space/Profile. The engine's OwnerResolver
+    /// maps app to itself (see Task 5b / Task 6 constructors), so plan resolves it outside this module and
+    /// lands normally. tombstones needs no unmapped-owner exception, preserving §4.7's protection against
+    /// deleting a Space's bookmarks during transient mapping loss.
     static func ownerUuids(of entity: Phi_PhiPinTabEntity) -> [String] {
         [ownerKey(of: entity)]
     }
 
-    // MARK: - 出站投影与盖戳（§4.2）
+    // MARK: - Outbound projection and timestamps (§4.2)
 
-    /// 本机行 → 线上实体，**不盖戳也不填 rank**。
-    ///
-    /// `parentIdentity` 被忽略：pin 没有父。归属解析不出 ⇒ nil，该行本轮整条跳过。
+    /// Project a local row to a wire entity without stamping or assigning rank.
+    /// Ignore parentIdentity because pins have no parent. An unresolved owner returns nil, skipping the whole
+    /// row this round.
     static func project(_ local: PhiLocalPin, resolve: OwnerResolver,
                         scope: PinnedTabScope?, parentIdentity: String?) -> Phi_PhiPinTabEntity? {
         guard let owner = owner(of: local, resolve: resolve) else { return nil }
@@ -161,7 +134,7 @@ enum PinKind: OwnedItemKind {
         switch owner {
         case .space(let uuid): entity.spaceUuid = uuid
         case .profile(let uuid): entity.profileUuid = uuid
-        // App 作用域 = 一条 oneof 都不设（§2.4：**缺席就是三个值之一**）。
+        // App scope leaves the oneof unset (§2.4: absence is one of the three values).
         case .app: break
         }
         entity.rank = string("")
@@ -175,22 +148,20 @@ enum PinKind: OwnedItemKind {
 
     static func rank(of entity: Phi_PhiPinTabEntity) -> String { entity.rank.stringValue }
 
-    /// **`rank` 的戳，不是 0。**
-    ///
-    /// 一条 pin 没有 location，但这个值是 §5.6 L1 支（A9）那三个合取项里的第一项——「实体
-    /// 的位置戳**严格晚于** `deleteDecidedAtMs`」。返回 0 会让那个比较**恒假**，于是 pin 侧
-    /// 的 A9 取消删除永远不触发：一条对端刚从被删作用域里拖出来的 pin 照样被删掉。`rank`
-    /// 是 pin 唯一的位置维度，它的戳就是这条实体「位置何时变过」的答案。
+    /// Return the rank timestamp, not zero.
+    /// Pins have no location, but §5.6 L1 (A9) requires the entity's location timestamp to be strictly later
+    /// than deleteDecidedAtMs. Zero would make that condition always false and prevent A9 from canceling pin
+    /// deletion after a remote move out of a deleted scope. Rank is the pin's sole position dimension, so its
+    /// timestamp records that change.
     static func locationStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
         entity.rank.updatedAtMs
     }
 
-    /// 三个内容字段的**取值**字节（时间戳清零），与 `SyncableSettings.signature(of:)` 同义。
-    ///
-    /// `rank` 不在里面：它由 `.move` 承载（落地是 `PinApplyOp.move(guid:index:)`），混进来
-    /// 会让每一次纯排序都额外产出一条空的字段补丁。`split_partner_uuid` **在**里面：它走
-    /// `PinFieldPatch.splitPartnerLineageId`，不算进内容签名的话一次纯拆分链接变化产不出
-    /// 任何一条 step，两台机器的拆分对从此不同。
+    /// Value bytes of the three content fields with timestamps zeroed, like SyncableSettings.signature(of:).
+    /// Exclude rank because move carries it through PinApplyOp.move(guid:index:); including it would add an
+    /// empty field patch for every reorder. Include split_partner_uuid, carried by
+    /// PinFieldPatch.splitPartnerLineageId, so a split-link-only change produces a step and keeps both
+    /// devices' pairs consistent.
     static func contentSignature(of entity: Phi_PhiPinTabEntity) -> Data {
         var out = Data()
         for value in [entity.title, entity.url, entity.splitPartnerUuid] {
@@ -200,24 +171,17 @@ enum PinKind: OwnedItemKind {
         return out
     }
 
-    /// §4.2 第 4 / 5 条的盖戳。pin 只有两组字段：`rank`（自己的戳）与内容字段。
-    ///
-    /// 无基线那一支按 §4.2 第 5 条：`rank` 盖 **0**（本机派生出来的位置不该赢过对端任何
-    /// 一次真实操作——书签那边 `location` 与 `rank` 都盖 0，pin 没有 location，剩下的就是
-    /// 这一个），**内容字段**（`title` / `url`）盖 **`contentUpdatedDate ?? createdDate`**，
-    /// **其余每个字段盖 `now`**（A13）。内容字段绝不盖 `now`：一条几年前建的、从没人动过的
-    /// pin 若以 `now` 首发，它会赢下对端上周做的改名。
-    ///
-    /// `split_partner_uuid` **属于「其余」那一类，盖 `now`**：§4.2 第 5 条点名的内容字段
-    /// 只有 `title` / `url` / `secondary_*`，而拆分链接不是用户「编辑内容」的产物——它由
-    /// 一次拆分操作产生，`contentUpdatedDate` 不为它而动，拿一个可能几年前的戳去发一条刚
-    /// 建立的链接，会让对端一条更早但戳更新的空值赢下它。（它仍然在 `contentSignature`
-    /// 里：那个函数判的是「要不要带一份字段补丁」，与盖哪个戳是两件事。）
-    ///
-    /// **`split_partner_uuid` 的半落地保护**（§7.4）：本机行的伙伴还没落地（本地链接是
-    /// nil）而基线里有一个 lineage ⇒ **照抄基线那一份**，绝不发 `""`。发空串等于宣布
-    /// 「这条 pin 不再有拆分伙伴」，会在对端把一个完好的拆分对拆开——而这台机器只是接收
-    /// 了它。
+    /// Stamp per §4.2 items 4/5: rank has its own timestamp; content fields form the other group.
+    /// Without a baseline (§4.2 item 5), stamp rank with 0 so derived local order cannot beat a real remote
+    /// action. Stamp title/url with contentUpdatedDate ?? createdDate, and every other field with now (A13).
+    /// Stamping old untouched content with now could overwrite last week's remote rename.
+    /// split_partner_uuid belongs to the other fields and gets now: §4.2 item 5 names only
+    /// title/url/secondary_* as content. A split operation does not change contentUpdatedDate, and an old
+    /// timestamp could lose a newly created link to a newer-stamped empty value. It remains in
+    /// contentSignature because deciding whether a patch is needed is independent of timestamp choice.
+    /// Preserve partially landed split links (§7.4): if the local partner has not landed and its link is nil
+    /// while the baseline has a lineage, copy the baseline. Sending an empty string would break an intact
+    /// remote pair merely because this device received it.
     static func stamp(_ projected: Phi_PhiPinTabEntity, baseline: Phi_PhiPinTabEntity?,
                       local: PhiLocalPin, rank: String, now: Int64) -> Phi_PhiPinTabEntity {
         var out = projected
@@ -236,12 +200,12 @@ enum PinKind: OwnedItemKind {
             out.splitPartnerUuid.updatedAtMs = now
             return out
         }
-        // R-exec-16，与 `BookmarkKind.stamp` 逐字同款同理由：`created_at_ms` 与 `source` 的
-        // 合并规则不是 LWW，而 `PinFieldPatch` 只写得了三个内容字段，所以一次「只有
-        // `created_at_ms` 变了」的合并产出零条本机 op、却照样推进两份基线。投影不自己先合
-        // 一次，两台设备就会对同一条 pin 每轮互相重发到永远。
+        // R-exec-16, as in BookmarkKind.stamp: created_at_ms and source do not use LWW, while PinFieldPatch
+        // writes only three content fields. A created_at_ms-only merge can emit no local ops while advancing
+        // both baselines. Merge into the projection first to prevent devices resending the same pin forever.
         out.createdAtMs = mergedCreatedAtMs(out.createdAtMs, baseline.createdAtMs)
-        // `source` 写一次定终身（§2.1）：基线上有就照抄，绝不拿本机那一列去覆盖。
+        // source is write-once (§2.1): retain a nonzero baseline value instead of overwriting it from the
+        // local row.
         if baseline.source != 0 { out.source = baseline.source }
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
         out.title.updatedAtMs = restamped(out.title, baseline.title, now)
@@ -251,18 +215,15 @@ enum PinKind: OwnedItemKind {
         return out
     }
 
-    // MARK: - 合并（§2.4）
+    // MARK: - Merge (§2.4)
 
-    /// 逐字段 LWW，**`rank` 是其中一个普通字段**——没有位置组，也就没有书签那条「相干」
-    /// 规则可套（它要问的 `location` 在 pin 上根本不存在，套上去就是让一个恒相等的值去
-    /// 决定 rank 的归属）。
-    ///
-    /// **owner 一个字都不碰**：它是身份的一半、不可变（§2.4 / R-M3-3-15），两条同身份的
-    /// 实体必然同 owner——§2.5 的接收端 tag 校验顺带把这件事钉死，一条 `owner` 与 tag 不符
-    /// 的实体是伪造载荷而不是一次合法的换绑。`merged` 从 `remote` 继承的那一个就是对的。
-    ///
-    /// **从 `remote` 起手**：`Phi_PhiPinTabEntity()` 不带 `unknownFields`，从它起手会把更新
-    /// 版本客户端写在预留字段 10-13 上的内容在每一轮里都抹掉一次（`Proto/README.md`）。
+    /// Merge fields with LWW, including rank as an ordinary field. Pins have no location group, so bookmark
+    /// coherence rules cannot apply.
+    /// Leave owner untouched: it is immutable identity (§2.4 / R-M3-3-15), and same-identity entities must
+    /// share it. §2.5 tag validation treats a mismatched owner as forged payload, not a rebind, so inheriting
+    /// remote's owner is correct.
+    /// Start from remote to preserve unknownFields. A fresh Phi_PhiPinTabEntity would erase newer clients'
+    /// reserved fields 10–13 every round (Proto/README.md).
     static func merge(local: Phi_PhiPinTabEntity,
                       remote: Phi_PhiPinTabEntity) -> Phi_PhiPinTabEntity {
         var merged = remote
@@ -272,38 +233,30 @@ enum PinKind: OwnedItemKind {
         merged.url = SyncableSettings.lwwWinner(local.url, remote.url)
         merged.splitPartnerUuid = SyncableSettings.lwwWinner(local.splitPartnerUuid,
                                                              remote.splitPartnerUuid)
-        // NOT last-writer-wins：非零的一侧赢；两侧都非零且不同时取较小者（同书签）。
+        // Not LWW: nonzero wins; if both are nonzero and differ, choose the smaller value, as for bookmarks.
         merged.source = mergedSource(local.source, remote.source)
-        // NOT last-writer-wins：最早的创建时刻才是真的那一个。
+        // Not LWW: retain the earliest creation time.
         merged.createdAtMs = mergedCreatedAtMs(local.createdAtMs, remote.createdAtMs)
         return merged
     }
 
-    // MARK: - 拒收（§4.6）
+    // MARK: - Refusal (§4.6)
 
-    /// pin 的拒收表只有 §4.6 里标着「两者」的那两行：非法 `pin_uuid` 与非法 `rank`。
-    ///
-    /// `rank` 这一条是 `rankBetween` 的**解码边界**：那个函数在发布构建里用 `precondition`
-    /// 直接 trap，而对端字节是不可信输入。
-    ///
-    /// `pin_uuid` 必须是**已归一**的形式：本地 lineage 来自 `UUID().uuidString`（大写），
-    /// 归一是 `lineageKey` 的事（§3.2），所以一条带大写 lineage 的入站实体说明对端漏掉了
-    /// 那一步——接受它会让同一条 pin 在账户上有两个身份。
-    ///
-    /// `baseline` 用不上：书签那条 `is_folder` 判据在 pin 上没有对应物（一条 pin 不会变形
-    /// 成别的东西），而 owner 的分歧在 §2.5 的 tag 校验里就已经被挡住了。**签名仍然带着
-    /// 它**——§4.6 那张表只该有一个实现形状。
-    ///
-    /// **`url` 解析不出 `URL` ⇒ 拒收**，与 `BookmarkKind.refuses` 同一条判据同一个理由：
-    /// 落地类型 `PhiLocalPin.url` 是**非可选**的 `URL`，所以落地段既 create 不了也 update
-    /// 不了这样一条行。§4.6 那张表把 URL 那一行标成「书签」，是因为它的措辞带着
-    /// `is_folder`；它背后的结构性事实对 pin 逐字成立（勘误见 ledger）。不拒收只剩两条坏路：
-    /// 静默丢弃（没有任何计数）或永久停放（等一个永远不会变得可解析的东西）。拒收给出的
-    /// 是 §4.6 本来的形状——计进 `refused`、不写游标、**每轮重判**，于是对端修好字节的下
-    /// 一个版本就被接受。
-    ///
-    /// 「owner 的 oneof 与账户当前作用域不符」不在这里：§4.6 明确说那**不是** refuse 也
-    /// 不是丢弃，而是整条**停放**等作用域收敛（§7.3），由 `plan` 的 `scopeMismatch` 实现。
+    /// Pins use the two §4.6 checks marked for both kinds: invalid pin_uuid and invalid rank.
+    /// Validate rank at the decoding boundary because rankBetween traps via precondition even in release
+    /// builds and remote bytes are untrusted.
+    /// pin_uuid must already be normalized. Local UUID().uuidString is uppercase and lineageKey handles
+    /// normalization (§3.2); accepting unnormalized remote lineage would create two account identities for one
+    /// pin.
+    /// baseline is unused: pins have no is_folder equivalent, and §2.5 tag validation already rejects owner
+    /// disagreement. Keep the parameter for a single §4.6 interface.
+    /// Also reject urls that cannot form URL, for the same reason as BookmarkKind.refuses: PhiLocalPin.url is
+    /// nonoptional, so landing cannot create or update such a row. §4.6 labels this check for bookmarks
+    /// because its wording mentions is_folder, but the structural requirement also applies to pins (see ledger
+    /// erratum). Refusal increments refused, writes no cursor, and reevaluates each round so a corrected
+    /// remote version can land; silent dropping loses accounting and parking could last forever.
+    /// Owner oneof mismatching account scope is neither refusal nor discard (§4.6). plan's scopeMismatch parks
+    /// it until scopes converge (§7.3).
     static func refuses(_ entity: Phi_PhiPinTabEntity,
                         baseline: Phi_PhiPinTabEntity?) -> OwnedItemRefusal? {
         guard isNormalizedLineage(entity.pinUuid) else { return .invalidUuid }
@@ -312,44 +265,30 @@ enum PinKind: OwnedItemKind {
         return nil
     }
 
-    // MARK: - 变体重铸（§7.2 / A11）
+    // MARK: - Variant identity reminting (§7.2 / A11)
 
-    /// 同一个 `(lineage, ownerKey)` 下的多条**活动**行，先按同步字段签名折叠掉精确重复，
-    /// 再把**剩下的**每一条（`index` 最小的那一条除外，平手取 `guid` 字典序最小）重铸
-    /// `pinLineageId`。
-    ///
-    /// **两种碰撞，答案相反，判据必须先分开它们（R-exec-12 / D-A2）：**
-    ///
-    /// - **签名不同 ⇒ 真变体**，它们**不是**同一条实体的多个副本，而是用户看得见的两个
-    ///   固定标签页（`mergeCandidates` 对 `PinnedTabVariantSignature` 不同的副本刻意保留
-    ///   第二条）。按「一条实体、多个物理副本」写会留下一整类**永远同步不了**的行：第二个
-    ///   副本没有自己的身份，既到不了别的机器，也无法被别的机器删除，而每一个计数器都读
-    ///   健康值。所以它们各自重铸一条身份。
-    /// - **签名相同 ⇒ 同一条 pin 的多个物理副本**，由一次重放或一次落地竞态造出来（Mac B
-    ///   2026-09-14：轮首那份本机投影在作用域迁移之前取样，落地于是在刚迁好的行旁边又建了
-    ///   一遍）。给它重铸等于**把一个瞬时的碰撞变成账户上一条永久的重复**——旧 lineage 已经
-    ///   不在那一行上，而本仓库里没有任何东西会把两条 lineage 再并回去。交给
-    ///   `mergeCandidates` 的话它们本来就会被合成一条，所以这里也折叠成一条：留下 ordinal 0
-    ///   那一条，其余发 `.delete`。
-    ///
-    /// 签名口径与 §7.1 / R-M3-3-16 给 `mergeCandidates` 定的那一个同源——**只看同步字段**
-    /// `(title, url, splitPartnerLineageId)`。两处分叉的后果是「这两行是不是同一条 pin」在
-    /// 迁移那一侧与同步这一侧问出两个答案。
-    ///
-    /// **产出的是一个 `PinApplyBatch`**，与那一轮的落地同一个事务；它**不是** push 段
-    /// pre-pass 的一次旁路写——那个 pre-pass 按 §4.2 第 2 条是只读的，而重铸不可逆（旧
-    /// lineage 已经不在任何行上），在「重铸已提交、实体未发布」的中间态崩掉就再也回不去。
-    ///
-    /// 分组用的是**本机**的 owner id（`spaceId ?? profileId ?? "app"`），不需要 resolver：
-    /// 本机 id → 账户 uuid 的映射在每一类归属内是一一的，所以两行属于同一个账户 owner
-    /// 当且仅当它们属于同一个本机 owner。**前置条件**：`locals` 来自一次 `allPins()`，
-    /// 即全部属于**同一个作用域类**——混进另一个作用域的行会让这个等价关系不成立。
-    /// 休眠行不参与分组（它们是作用域迁移留下的本地备份，重铸它们会把那份备份与它的活动
-    /// 行永久拆开）。
-    ///
-    /// **新 lineage 是确定性的**，见 `mintedLineage(_:ordinal:)`；**留下来的那一条也是**
-    /// ——折叠与重铸读的是同一个 `(index, guid)` 次序，于是两台跑过同一次确定性迁移的机器
-    /// 留下同一条、删掉同一条、给同一条铸同一个 ordinal。
+    /// For active rows sharing (lineage, ownerKey), collapse exact synced-field duplicates, then remint
+    /// pinLineageId for every survivor except the smallest index, breaking ties by lexicographic guid.
+    /// Separate two collision types (R-exec-12 / D-A2):
+    /// - Different signatures are real variants: mergeCandidates deliberately retains them as distinct visible
+    /// pins. Each needs its own identity; otherwise a second row can neither sync nor be deleted remotely
+    /// while counters still look healthy.
+    /// - Equal signatures are physical copies caused by replay or a landing race. On Mac B, 2026-09-14, the
+    /// round-start projection preceded scope migration, so landing recreated a migrated row. Reminting would
+    /// make a transient collision a permanent account duplicate, with no mechanism to merge the lineages
+    /// again. Keep ordinal 0 and delete the rest, matching mergeCandidates.
+    /// Use the same synced fields as mergeCandidates (§7.1 / R-M3-3-16): title, url, splitPartnerLineageId.
+    /// Divergent signatures would make migration and sync disagree about pin identity.
+    /// Return a PinApplyBatch for the same transaction as that round's landing. Do not write through the
+    /// read-only push pre-pass (§4.2 item 2). Reminting is irreversible; a crash after reminting but before
+    /// publication cannot restore the old lineage.
+    /// Group by local owner id (spaceId ?? profileId ?? app), without a resolver. Within each owner kind,
+    /// local-id/account-uuid mappings are one-to-one. Precondition: locals comes from allPins() and belongs to
+    /// one scope kind; mixed scopes break that equivalence. Exclude dormant migration backups to keep them
+    /// linked to their active rows.
+    /// Both the new lineage (mintedLineage(_:ordinal:)) and retained row are deterministic. Collapse and
+    /// remint share (index, guid) order, so devices that ran the same deterministic migration retain/delete
+    /// the same rows and assign identical ordinals.
     static func normalizeVariants(locals: [PhiLocalPin]) -> PinApplyBatch {
         var groups: [String: [PhiLocalPin]] = [:]
         for local in locals where !local.isDormant {
@@ -357,14 +296,13 @@ enum PinKind: OwnedItemKind {
             groups[key, default: []].append(local)
         }
         var ops: [PinApplyOp] = []
-        // 组的遍历次序固定，于是同一批行产出的 ops 次序也固定。
+        // Traverse groups in a fixed order so the same rows produce the same op sequence.
         for key in groups.keys.sorted() {
             let members = (groups[key] ?? []).sorted {
                 $0.index == $1.index ? $0.guid < $1.guid : $0.index < $1.index
             }
-            // ① 折叠精确重复：签名第一次出现的那一条留下，其余是同一条 pin 的物理副本。
-            //    **在铸 ordinal 之前做**——重复行若参与计数，两条一模一样的行会分到两个
-            //    ordinal，于是账户上多出一条用户从来没有过的 pin，且不可逆。
+            // 1. Collapse exact duplicates, retaining the first row per signature. Do this before assigning
+            // ordinals: counting identical physical copies would irreversibly create a pin the user never had.
             var survivors: [PhiLocalPin] = []
             var seen: Set<PinVariantSignature> = []
             for row in members {
@@ -374,8 +312,8 @@ enum PinKind: OwnedItemKind {
                 }
                 survivors.append(row)
             }
-            // ② ordinal 从 1 数：0 是保留原 lineage 的那一条（`index` 最小的**幸存者**），
-            //    它不产出 op。
+            // 2. Start reminting at ordinal 1. Ordinal 0 is the smallest-index survivor, retains its lineage,
+            // and emits no op.
             for (ordinal, row) in survivors.enumerated() where ordinal > 0 {
                 ops.append(.relineage(guid: row.guid,
                                       newLineageId: mintedLineage(lineageKey(row.lineageId),
@@ -385,17 +323,13 @@ enum PinKind: OwnedItemKind {
         return PinApplyBatch(unordered: ops)
     }
 
-    /// 「这两行是不是同一条 pin」的判据：**只有同步字段**参与。
-    ///
-    /// 与 `LocalStore` 那一侧的 `PinnedTabVariantSignature` 同源（§7.1 / R-M3-3-16）：内容是
-    /// `(title, url)`，外加拆分伙伴那一段。本机侧那个结构还带伙伴的**内容**签名，这里带不了
-    /// ——`PhiLocalPin` 上的伙伴是一条 lineage 而不是一条行，而伙伴自己的内容变化会由**它
-    /// 那一条**身份各自发布。少带它只会让判据更严格一点点（伙伴换了内容但没换 lineage 的两行
-    /// 仍判成同一条 pin），而那正是「同一条 pin 的两个副本」该有的答案。
-    ///
-    /// `index` **不进签名**：两个副本的位置按定义不同（它们是两条物理行），把它算进去等于
-    /// 让这个判据恒不相等，折叠那一支永远到不了。`guid`、`source`、两个日期戳同理不进——
-    /// 它们都是按副本、按设备的。
+    /// Pin equivalence uses only synced fields.
+    /// Match LocalStore's PinnedTabVariantSignature (§7.1 / R-M3-3-16): title, url, and split partner. The
+    /// local structure also includes partner content, unavailable here because PhiLocalPin references a
+    /// partner lineage, not a row. The partner's identity publishes its content changes separately. Copies
+    /// whose partner content changed without a lineage change remain the same pin, as intended.
+    /// Exclude index: physical copies occupy different positions, so including it would prevent all
+    /// collapsing. Also exclude per-copy/per-device guid, source, and both dates.
     private struct PinVariantSignature: Hashable {
         let title: String
         let url: String
@@ -405,18 +339,18 @@ enum PinKind: OwnedItemKind {
     private static func variantSignature(of local: PhiLocalPin) -> PinVariantSignature {
         PinVariantSignature(title: local.title,
                             url: local.url.absoluteString,
-                            // 伙伴那一列在本机可能是大写（回落成 guid 的旧值，P11），
-                            // 比较入口一律先归一。
+                            // The local partner value may be uppercase (legacy guid fallback, P11); normalize
+                            // before comparison.
                             splitPartnerLineage: local.splitPartnerLineageId.map(lineageKey))
     }
 
-    // MARK: - 私有
+    // MARK: - Private
 
-    /// App 作用域在 client tag 第三段里的字面量（§2.4 / §2.5）。
+    /// Literal App-scope owner in the third client-tag component (§2.4 / §2.5).
     private static let appOwnerKey = "app"
 
-    /// 归属解析不出来时 `identity(of local:)` 用的占位后半段。NUL 打头，账户 uuid 产不出
-    /// 这种字节，所以它与任何真实身份都不相等——见 `identity(of local:)` 的注释。
+    /// Placeholder suffix for identity(of local:) when owner resolution fails. Its leading NUL cannot occur in
+    /// account uuids, keeping it distinct from every real identity; see identity(of local:).
     private static let unresolvedOwnerKey = "\u{0}unresolved-owner"
 
     private enum PinOwner {
@@ -437,7 +371,7 @@ enum PinKind: OwnedItemKind {
         return .app
     }
 
-    /// 线上实体的 ownerKey：`space_uuid` / `profile_uuid` / 字面量 `"app"`（oneof 缺席）。
+    /// Wire ownerKey: space_uuid, profile_uuid, or literal app when the oneof is absent.
     private static func ownerKey(of entity: Phi_PhiPinTabEntity) -> String {
         switch entity.owner {
         case .spaceUuid(let uuid): return uuid
@@ -446,39 +380,30 @@ enum PinKind: OwnedItemKind {
         }
     }
 
-    /// 本机那一侧的 owner id：`normalizeVariants` 的分组键，也是
-    /// `PhiPinnedTabLocalAccess.isKnownLocalPin(_:ownerKey:)` 那半个身份。
-    ///
-    /// **判据与 `owner(of:resolve:)` 逐字同序**（先 `spaceId` 再 `profileId`，都没有才是
-    /// App 作用域），只是停在本机这一侧、不过映射表。两处分叉的后果是「本机有没有这条
-    /// 身份的行」在账户侧与本机侧问出两个答案。
-    ///
-    /// 与 `identity(of:resolve:scope:)` 的后半段是**两个命名空间**：那一个是账户级 uuid，
-    /// 这一个是本机 id。互相直接比较恒为假，中间必须过 `OwnerResolver` 的反查。
+    /// Local owner id, used by normalizeVariants for grouping and by
+    /// PhiPinnedTabLocalAccess.isKnownLocalPin(_:ownerKey:) as half the identity.
+    /// Use the same precedence as owner(of:resolve:): spaceId, then profileId, otherwise App, without crossing
+    /// the mapping table. Divergence would make account and local lookups disagree about whether a row exists.
+    /// This uses a different namespace from identity(of:resolve:scope:)'s account-uuid suffix. Direct
+    /// comparison is invalid; use OwnerResolver's reverse lookup.
     static func localOwnerKey(_ local: PhiLocalPin) -> String {
         local.spaceId ?? local.profileId ?? appOwnerKey
     }
 
-    /// 变体重铸出来的新 lineage：`(原 lineage, ordinal)` 的 SHA-1 取前 16 字节，按
-    /// 8-4-4-4-12 排成一个小写 uuid 形状的串。
-    ///
-    /// **必须跨设备确定。** A11 针对的正是「两台机器跑同一次确定性迁移、面对同一对变体」
-    /// ——`migratePinnedTabs` 对 lineage 与 index 都是确定的（§3.2），所以两边看到的是同一
-    /// 个分组、同一个次序。用 `UUID()` 各铸一个的话，两边各自发布一条对方没有的实体、又
-    /// 各自落地对方那一条，而 §6.7 排除了 pin 的认领——没有任何东西会去重，用户**每个变体
-    /// 多出一个固定标签页**，两台机器都是。
-    ///
-    /// **ownerKey 不进哈希，这是有意的。** 本函数按签名只拿得到本机那一侧的 owner id，而
-    /// 本机 `spaceId` 是**按设备**铸的（`LocalStore+Space.swift:69` 用 `UUID().uuidString`），
-    /// 把它喂进哈希恰好会毁掉这里要的那个确定性；账户级 ownerKey 则要 resolver，而
-    /// `normalizeVariants(locals:)` 的签名里没有。省掉它不引入歧义：身份是
-    /// `(lineage, owner)` 这一对，所以同一个新 lineage 落在两个 owner 下就是两条实体——正是
-    /// Profile → Space 扇出本来就该有的形状（一条 lineage 在 N 个 Space 里是 N 条实体）；
-    /// 而同一个 owner 内 ordinal 互不相同，组内不会撞。
-    ///
-    /// 前缀是域分隔符：让这个派生不可能与别处任何一个「对某个 uuid 取哈希」的方案撞上。
-    /// 值**不是** RFC-4122 的 v4（没有版本位），只是 uuid 形状——本地那一列从来没有校验过
-    /// 形状，而线上要的只是「已归一」。
+    /// Derive variant lineage from the first 16 SHA-1 bytes of (original lineage, ordinal), formatted as a
+    /// lowercase 8-4-4-4-12 uuid-shaped string.
+    /// It must be deterministic across devices (A11). migratePinnedTabs assigns deterministic lineage and
+    /// index (§3.2), yielding identical groups and order. Random UUIDs would make each device publish and
+    /// receive distinct variants; §6.7 excludes pin adoption, so both devices would gain one permanent
+    /// duplicate per variant.
+    /// Deliberately omit ownerKey: only local owner ids are available here, and Space ids are device-specific
+    /// (LocalStore+Space.swift:69). Including them would destroy determinism; account owner keys need a
+    /// resolver unavailable to normalizeVariants(locals:). Identity is the (lineage, owner) pair, so identical
+    /// derived lineage under different owners is unambiguous and matches Profile-to-Space fan-out. Ordinals
+    /// remain distinct within an owner.
+    /// The prefix separates this derivation from other uuid-hashing schemes. This is uuid-shaped, not RFC-4122
+    /// v4 with version bits; the local column does not validate shape, and the wire requires only
+    /// normalization.
     private static func mintedLineage(_ lineage: String, ordinal: Int) -> String {
         let seed = "phi-pin-variant|" + lineage + "|" + String(ordinal)
         let digest = Array(Insecure.SHA1.hash(data: Data(seed.utf8))).prefix(16)
@@ -491,16 +416,13 @@ enum PinKind: OwnedItemKind {
         return out
     }
 
-    /// 一条**已归一**的 lineage 该有的形状。判的是「对端有没有走过 `lineageKey`」，不是
-    /// RFC-4122 合法性——严格校验会连带拒掉每一条形状合法但生成方式不同的对端实体，而
-    /// `pinLineageId` 在本仓库里有五处回退成那一行的 `guid`（`LocalStore+PinnedTabScope.swift`
-    /// / `LocalStore+PinnedTabTransfer.swift`），那些 guid 未必是 uuid 形状。判据与
-    /// `BookmarkKind.isAccountUuid` 同源。
-    ///
-    /// **`:` 必须拒**：身份是 `lineage + ":" + ownerKey`，一条带冒号的 lineage 让这个拼接
-    /// 不再可逆——`("a:b", "c")` 与 `("a", "b:c")` 算出同一个身份，于是一条伪造载荷可以顶
-    /// 着另一条实体的身份去收割 `entityId` / `version`，而 client tag 也多出一段。
-    /// NUL 一并拒：`identity(of local:)` 的未映射占位用它，组键也用它。
+    /// Check normalized lineage, not RFC-4122 validity. Other valid generators and the five guid fallbacks in
+    /// LocalStore+PinnedTabScope.swift / LocalStore+PinnedTabTransfer.swift may produce non-uuid shapes. Match
+    /// BookmarkKind.isAccountUuid.
+    /// Reject colons: lineage + ':' + ownerKey must be reversible. Pairs (a:b, c) and (a, b:c) would otherwise
+    /// share an identity, allowing forged payloads to harvest another entity's entityId/version and add a
+    /// client-tag component. Reject NUL as well because unresolved-owner placeholders and grouping keys use
+    /// it.
     private static func isNormalizedLineage(_ lineage: String) -> Bool {
         !lineage.isEmpty
             && !lineage.contains(where: { $0.isUppercase })
@@ -509,7 +431,7 @@ enum PinKind: OwnedItemKind {
             && !lineage.unicodeScalars.contains("\u{0}")
     }
 
-    /// 与基线同名字段的 signature 相同 ⇒ 沿用基线的时间戳；不同 ⇒ 盖 `now`。
+    /// Reuse the baseline timestamp when the field signatures match; otherwise stamp now.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
                                   _ now: Int64) -> Int64 {
@@ -523,8 +445,8 @@ enum PinKind: OwnedItemKind {
         return min(left, right)
     }
 
-    /// `created_at_ms` 的合并：非零的一侧赢，两侧都非零取较早的那一个。**`merge` 与 `stamp`
-    /// 共用这一个实现**（R4 / R-exec-16），理由见 `BookmarkKind` 上同名函数。
+    /// Merge created_at_ms: nonzero wins; if both are nonzero, choose the earlier time. merge and stamp share
+    /// this implementation (R4 / R-exec-16); see BookmarkKind's same-named function.
     private static func mergedCreatedAtMs(_ left: Int64, _ right: Int64) -> Int64 {
         [left, right].filter { $0 > 0 }.min() ?? 0
     }

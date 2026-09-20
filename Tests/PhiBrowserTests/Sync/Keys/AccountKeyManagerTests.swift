@@ -78,9 +78,9 @@ final class AccountKeyManagerTests: XCTestCase {
         /// versa) — the two failures take different paths through
         /// `SyncKeyController.resolveMappings()`.
         var profileEndpointError: Error?
-        /// 只对**下一次** per-profile 调用生效，然后清空。`profileEndpointError` 是
-        /// 持久的，表达不了「这一次失败、下一次好了」——而那正是
-        /// `applyPairingDecisions` 失败后自己重载候选表的那条路径。
+        /// Applies only to the next per-profile call, then clears. Persistent profileEndpointError
+        /// cannot model failure followed by recovery, which applyPairingDecisions needs when
+        /// reloading candidates after failure.
         var profileEndpointErrorOnce: Error?
         var listProfilesError: Error?
         private(set) var listProfilesCalls = 0

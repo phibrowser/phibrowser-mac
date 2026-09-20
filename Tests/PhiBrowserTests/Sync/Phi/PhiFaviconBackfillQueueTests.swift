@@ -8,43 +8,42 @@ import Foundation
 import XCTest
 @testable import Phi
 
-// MARK: - 假件
+// MARK: - Fakes
 
-/// 内存版 `PhiFaviconFetching`。两步取图都记在这里：第 1 步只数次数
-/// （`chromiumLookups`），第 2 步把**每一跳**真的会发出去的 URL 记进 `requests`。
-///
-/// **重定向由假件自己走一遍，而且逐跳过同一张过滤表**（`PhiFaviconHostFilter`）：
-/// CASE 10.6 断言的正是「被 302 带到回环地址的那一跳从来没被请求过」，而那条判断住在
-/// 生产 fetcher 的 `URLSessionTaskDelegate` 里，假件够不着。两边共用同一个谓词，于是
-/// 用例测的是真的那张表，不是假件自己的一份复制品。
+/// In-memory PhiFaviconFetching records both steps: chromiumLookups counts step 1,
+/// while requests records every URL actually requested in step 2.
+/// The fake follows redirects and checks each hop with the shared PhiFaviconHostFilter.
+/// CASE 10.6 asserts that a redirect to loopback is never requested. Production
+/// enforces this in URLSessionTaskDelegate, beyond the fake's reach; sharing the
+/// predicate tests the real filter rather than a copied policy.
 @MainActor
 final class RecordingFetcher: PhiFaviconFetching {
-    /// 逐跳记录，包含初始那一跳。被过滤表挡下的那一跳**不进这里**——它根本没发出去。
+    /// Record each requested hop, including the initial URL; filtered hops are never requested or recorded.
     private(set) var requests: [URL] = []
-    /// 同时在飞的最大条数。串行 ⇒ 恒为 1。
+    /// Peak in-flight count; serial execution keeps it at one.
     private(set) var maxConcurrent = 0
-    /// 第 1 步被问了几次。
+    /// Number of step-1 lookups.
     private(set) var chromiumLookups = 0
-    /// `streamedBytes` 那条路上真的读进内存的字节数（每次尝试各自计，取最后一次）。
+    /// Bytes actually read into memory by streamedBytes, measured per attempt; retain the latest count.
     private(set) var bytesActuallyRead = 0
-    /// `cancelAll()` 被调了几次（`stop()` ⇒ §8.3 的「取消队列并丢弃未完成项」）。
+    /// cancelAll call count; stop cancels the queue and discards unfinished entries (§8.3).
     private(set) var cancelAllCalls = 0
 
-    /// 第 2 步每次都失败（HTTP 500）。
+    /// Every step-2 attempt fails with HTTP 500.
     var alwaysFail = false
-    /// 第 2 步每次都超时。
+    /// Every step-2 attempt times out.
     var alwaysTimeout = false
-    /// 逐跳的重定向链，按顺序消费。
+    /// Redirect chain consumed in hop order.
     var redirectChain: [String] = []
-    /// 成功时交回的字节。nil ⇒ 一张真的能解码的 PNG。
+    /// Successful response bytes; nil supplies a genuinely decodable PNG.
     var responseBytes: Data?
-    /// 响应体一共有多少字节（模拟一个超限的流）。> 0 时走边下边计那条路。
+    /// Total response-body bytes for an oversized stream; positive values enable incremental counting.
     var streamedBytes = 0
-    /// 第 1 步交回的字节。nil ⇒ Chromium 那边没有这条 URL 的图标。
+    /// Step-1 bytes; nil means Chromium has no favicon for this URL.
     var chromiumResponse: Data?
-    /// 第 1 步**永不主动返回**——模拟一个丢了回调的 bridge。它只在被取消时回来，而那正是
-    /// 生产实现用 `withTaskCancellationHandler` 换来的那条性质：不理会取消的第 1 步会把整个
-    /// 任务组连同 `drainOnce()` 一起钉死，套多少层截止时间都救不回来。
+    /// Step 1 returns only on cancellation, modeling a lost bridge callback. Production
+    /// uses withTaskCancellationHandler to guarantee this: ignoring cancellation would
+    /// block the task group and drainOnce forever, regardless of outer deadlines.
     var chromiumNeverCompletes = false
 
     private var inFlight = 0
@@ -67,7 +66,7 @@ final class RecordingFetcher: PhiFaviconFetching {
         maxConcurrent = max(maxConcurrent, inFlight)
         defer { inFlight -= 1 }
 
-        // 逐跳：每一跳都先过过滤表，过不了就当场断，**不记进 `requests`**。
+        // Filter each hop before requesting; rejected hops never enter requests.
         var current = url
         var hops = 0
         while true {
@@ -88,10 +87,9 @@ final class RecordingFetcher: PhiFaviconFetching {
         if alwaysFail { throw PhiFaviconFetchError.badStatus(500) }
 
         if streamedBytes > 0 {
-            // **假件刻意不自设上限**：它模拟的是一个没能在流中途收手的取图器，于是用例断言
-            // 的是队列自己那道 `accepts` 后备闸（真的生产行为），而不是假件循环里的一个常量。
-            // 生产侧那道边下边断住在 `PhiFaviconFetcher.readBounded`，测它要一个 URLProtocol
-            // 夹具，不在本任务范围内。
+            // Deliberately omit a fake stream limit to model a fetcher failing to stop in time.
+            // This tests the queue's real accepts fallback, not a fake-loop constant. Production
+            // readBounded streaming enforcement needs a URLProtocol fixture outside this task's scope.
             bytesActuallyRead = streamedBytes
             return Data(count: streamedBytes)
         }
@@ -99,7 +97,7 @@ final class RecordingFetcher: PhiFaviconFetching {
     }
 }
 
-/// 把回填那一行日志抓下来的 sink（CASE 10.12）。
+/// Capture the backfill diagnostic line for CASE 10.12.
 @MainActor
 final class CapturingLogSink: PhiFaviconLogSink {
     private(set) var lines: [String] = []
@@ -107,10 +105,8 @@ final class CapturingLogSink: PhiFaviconLogSink {
     func record(_ line: String) { lines.append(line) }
 }
 
-/// 一张 16×16、`NSImage` 真的解得开的 PNG。
-///
-/// 走 `NSBitmapImageRep` 而不是 `NSImage.lockFocus()`：后者要求主线程且会碰绘图上下文，
-/// 而这个 fixture 只需要一段合法的 PNG 字节。
+/// A 16×16 PNG that NSImage can decode. Use NSBitmapImageRep instead of lockFocus,
+/// which requires the main thread and a drawing context; the fixture only needs valid PNG bytes.
 func validPNGBytes() -> Data {
     guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                      pixelsWide: 16,
@@ -125,12 +121,12 @@ func validPNGBytes() -> Data {
     return rep.representation(using: .png, properties: [:]) ?? Data()
 }
 
-// MARK: - 用例
+// MARK: - Tests
 
 @MainActor
 final class PhiFaviconBackfillQueueTests: XCTestCase {
 
-    // MARK: 脚手架
+    // MARK: Test support
 
     private struct Harness {
         var queue: PhiFaviconBackfillQueue
@@ -139,8 +135,8 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         var sink: CapturingLogSink
     }
 
-    /// 默认闸一律**放行**（`{ _ in false }` = 「这条不该用默认图标」），于是除了 CASE 10.10
-    /// 之外没有一条用例会因为第 0 步而静默跳过。
+    /// Default gate always allows processing: false means this row should not use
+    /// the default icon. Only CASE 10.10 may skip silently at step 0.
     private func makeHarness(gate: @escaping (URL) -> Bool = { _ in false }) -> Harness {
         let fetcher = RecordingFetcher()
         let access = FakeBookmarkAccess()
@@ -159,7 +155,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         }
     }
 
-    // MARK: CASE 10.1 — 每轮最多 20 条，其余留到下一轮
+    // MARK: CASE 10.1: Process at most 20 entries per round; defer the rest
 
     func testDrainOnceTakesAtMostTwentyRowsAndLeavesTheRestQueued() async {
         let harness = makeHarness()
@@ -176,7 +172,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(fourth.attempted, 0)
     }
 
-    // MARK: CASE 10.2 — 串行
+    // MARK: CASE 10.2: Serial execution
 
     func testFetchesRunOneAtATime() async {
         let harness = makeHarness()
@@ -188,7 +184,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(concurrent, 1)
     }
 
-    // MARK: CASE 10.3 — 失败至多再试一次
+    // MARK: CASE 10.3: At most one retry after failure
 
     func testAFailingFetchIsRetriedExactlyOnce() async {
         let harness = makeHarness()
@@ -203,7 +199,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(result.succeeded, 0)
     }
 
-    // MARK: CASE 10.4 — 超时计入 failed，且不写回
+    // MARK: CASE 10.4: Timeouts count as failed and write nothing
 
     func testATimeoutCountsAsFailedAndWritesNothing() async {
         let harness = makeHarness()
@@ -218,7 +214,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(writes, 0)
     }
 
-    // MARK: CASE 10.5 — 过滤表逐条，零网络调用
+    // MARK: CASE 10.5: Filtered hosts make zero network calls
 
     func testBlockedSchemesAndPrivateHostsNeverReachTheNetwork() async {
         let harness = makeHarness()
@@ -236,7 +232,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(result.succeeded, 0)
     }
 
-    // MARK: CASE 10.6 — 每一跳重定向都重新过过滤表
+    // MARK: CASE 10.6: Recheck the filter at every redirect hop
 
     func testEveryRedirectHopIsRefiltered() async {
         let harness = makeHarness()
@@ -251,7 +247,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(loopbackHops, 0, "a 302 into loopback must never be requested")
     }
 
-    // MARK: CASE 10.7 — 超过三跳放弃
+    // MARK: CASE 10.7: Stop after three redirects
 
     func testMoreThanThreeRedirectsIsAbandoned() async {
         let harness = makeHarness()
@@ -269,11 +265,11 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(fourthHop, 0, "the fourth hop is past the limit and must not be requested")
     }
 
-    // MARK: CASE 10.8 — 超限响应被拒，队列自己有一道后备闸
+    // MARK: CASE 10.8: Queue fallback rejects oversized responses
 
-    /// 断言的是**生产行为**：即使取图器没能在流中途收手、把整段 1 MB 交了回来，队列的
-    /// `accepts` 也不会让它落地。上限常量与生产流式读取用的是同一个，所以这条用例同时把
-    /// 那个数钉住。
+    /// Assert production behavior: even if the fetcher returns the full 1 MB instead
+    /// of stopping midstream, the queue's accepts gate rejects it. The limit is shared
+    /// with production streaming reads, so this also fixes the expected bound.
     func testAnOversizedBodyIsRejectedEvenWhenTheFetcherFailsToCapIt() async {
         let harness = makeHarness()
         harness.fetcher.streamedBytes = 1_000_000
@@ -290,7 +286,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(PhiFaviconBackfillQueue.maxBytes, 65_536)
     }
 
-    // MARK: CASE 10.9 — 解不开的字节被拒
+    // MARK: CASE 10.9: Reject undecodable bytes
 
     func testUndecodableBytesAreRejected() async {
         let harness = makeHarness()
@@ -304,7 +300,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(writes, 0)
     }
 
-    // MARK: CASE 10.10 — 第 0 步的闸让两步都跳过
+    // MARK: CASE 10.10: Step-0 gate skips both fetch steps
 
     func testTheDefaultFaviconGateSkipsBothSteps() async {
         let harness = makeHarness(gate: { _ in true })
@@ -318,7 +314,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(result.attempted, 0)
     }
 
-    // MARK: CASE 10.11 — 整轮一次写回
+    // MARK: CASE 10.11: One writeback per round
 
     func testOneRoundProducesExactlyOneWriteBack() async {
         let harness = makeHarness()
@@ -339,7 +335,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(applyCalls, 0, "favicon never travels through the …ApplyOp path")
     }
 
-    // MARK: CASE 10.12 — 日志有计数、没有 host
+    // MARK: CASE 10.12: Log counts without hosts
 
     func testTheRoundLineCarriesCountsButNoHost() async {
         let harness = makeHarness()
@@ -353,12 +349,12 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("attempted=") })
     }
 
-    // MARK: §11.3 — 那条诊断行的字段
+    // MARK: §11.3: Diagnostic fields
 
-    /// spec §11.3 逐字规定了
-    /// `[phi-sync] favicon backfill: queued=<n> from_history=<n> from_network=<n> failed=<n> ms=<n>`。
-    /// `from_history` / `from_network` 的分法是 §8.3 里唯一一个与隐私相关的数：它回答「这条
-    /// 队列到底有没有在向第三方发请求」。
+    /// §11.3 specifies exactly:
+    /// [phi-sync] favicon backfill: queued=<n> from_history=<n> from_network=<n> failed=<n> ms=<n>
+    /// The history/network split is §8.3's privacy-relevant count: it shows whether
+    /// the queue sends any third-party requests.
     func testTheRoundLineCarriesTheSpecMandatedCounters() async {
         let harness = makeHarness()
         harness.fetcher.chromiumResponse = validPNGBytes()
@@ -380,11 +376,11 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty, "step 1 hitting means step 2 must never run")
     }
 
-    // MARK: §8.2 — 第 1 步挂住时，这一行仍然走得到第 2 步，而且这一轮走得完
+    // MARK: §8.2: A blocked step 1 still reaches step 2 and completes the round
 
-    /// 丢了回调的 bridge。**这条用例的第一个断言其实是「它会返回」**：不理会取消的第 1 步
-    /// 会让任务组永远解不开，于是 `drainOnce()` 不返回、`run(_:)` 不返回、引擎那条串行轮次
-    /// 队列此后一轮都跑不动——那不是一条变红的断言，而是一次挂死。
+    /// Lost bridge callback. The first effective assertion is that this test returns:
+    /// a cancellation-insensitive step 1 blocks the task group, drainOnce, run, and
+    /// every later engine round. That manifests as a hang, not a failed assertion.
     func testALostBridgeCallbackFallsThroughToStepTwo() async {
         let harness = makeHarness()
         harness.fetcher.chromiumNeverCompletes = true
@@ -400,11 +396,11 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(writes, 1)
     }
 
-    // MARK: §8.2 — 第 1 步的子预算严格小于一行的总预算
+    // MARK: §8.2: Step 1's budget is strictly smaller than the total per-row budget
 
-    /// 没有这道子预算，一个系统性变慢的 bridge 会把第 2 步饿到**恰好零**：预算用完时连
-    /// 请求都不发，那一行就这么失败掉，而且不会重新排队。那种故障在日志上只表现为
-    /// `from_network=0`，与「本机历史里什么都有」长得一模一样。
+    /// Without a sub-budget, a consistently slow bridge leaves zero time for step 2:
+    /// no request is sent, the row fails, and it is not requeued. Logs show from_network=0,
+    /// indistinguishable from finding every icon in local history.
     func testStepOneCannotConsumeTheWholeRowBudget() async {
         XCTAssertLessThan(PhiFaviconBackfillQueue.historyLookupTimeout,
                           PhiFaviconBackfillQueue.perItemTimeout)
@@ -424,7 +420,7 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertTrue(line.contains("from_history=0"))
     }
 
-    // MARK: §8.3 — 退休时丢弃未完成项并取消在飞的请求
+    // MARK: §8.3: Retirement discards unfinished entries and cancels in-flight requests
 
     func testStopDiscardsPendingRowsAndCancelsTheFetcher() async {
         let harness = makeHarness()
@@ -436,20 +432,19 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(afterStop.attempted, 0)
         XCTAssertEqual(afterStop.succeeded, 0)
         XCTAssertEqual(afterStop.failed, 0)
-        // `stop()` 同步返回，清理排一次主 actor 跃迁再做。
+        // stop returns synchronously; cleanup follows one main-actor hop.
         for _ in 0..<20 { await Task.yield() }
         let cancels = harness.fetcher.cancelAllCalls
         XCTAssertEqual(cancels, 1)
     }
 }
 
-// MARK: - 过滤表
+// MARK: - Host filter
 
-/// `PhiFaviconHostFilter.allows` 的表驱动用例。
-///
-/// 这是本任务唯一一块直接测生产判据的覆盖：CASE 10.5 / 10.6 经由假件间接用到它，但那两条
-/// 只走六个 host。真正危险的是**同一个地址的别的写法**——展开的 IPv6 回环、十六进制 v4
-/// 映射、八进制与十进制整数 IPv4 —— 它们全都解析成 127.0.0.1，而没有一个长得像 `127.x`。
+/// Table-driven tests of PhiFaviconHostFilter.allows. This directly covers the
+/// production predicate; CASE 10.5/10.6 use it indirectly for only six hosts.
+/// Alternate spellings are critical: expanded IPv6 loopback, hexadecimal IPv4
+/// mappings, octal IPv4, and integer IPv4 all resolve to loopback without looking like 127.x.
 @MainActor
 final class PhiFaviconHostFilterTests: XCTestCase {
 
@@ -486,21 +481,21 @@ final class PhiFaviconHostFilterTests: XCTestCase {
         check("http://0.0.0.0/x", false)
     }
 
-    /// 这四行是审阅点名的四种绕过写法，每一种都落在 127.0.0.1 上。
+    /// Review identified these four bypass spellings, each resolving to 127.0.0.1.
     func testAlternateIPv4AndIPv6EncodingsAreRejected() {
-        check("http://0177.0.0.1/x", false)        // 八进制：0177 = 127
-        check("http://2130706433/x", false)        // 十进制整数
-        check("http://127.1/x", false)             // 两段
-        check("http://0x7f.0.0.1/x", false)        // 十六进制
-        check("http://[::1]/x", false)             // 紧凑 IPv6 回环
-        check("http://[0:0:0:0:0:0:0:1]/x", false) // 展开的同一个地址
-        check("http://[::ffff:7f00:1]/x", false)   // 十六进制 v4 映射
+        check("http://0177.0.0.1/x", false)        // Octal: 0177 = 127
+        check("http://2130706433/x", false)        // Decimal integer
+        check("http://127.1/x", false)             // Two-part IPv4
+        check("http://0x7f.0.0.1/x", false)        // Hexadecimal
+        check("http://[::1]/x", false)             // Compressed IPv6 loopback
+        check("http://[0:0:0:0:0:0:0:1]/x", false) // Expanded form of the same address
+        check("http://[::ffff:7f00:1]/x", false)   // Hexadecimal IPv4-mapped form
         check("http://[fe80::1]/x", false)         // link-local
         check("http://[fd00::1]/x", false)         // unique local
     }
 
-    /// 规则是「数字字面量一律拒」，公网地址也不例外——favicon 的 host 来自书签里的页面
-    /// URL，那些是 DNS 名字。
+    /// Reject all numeric address literals, including public addresses. Favicon hosts
+    /// come from bookmarked page URLs and are expected to be DNS names.
     func testEvenAPublicIPLiteralIsRejected() {
         check("https://93.184.216.34/x", false)
     }

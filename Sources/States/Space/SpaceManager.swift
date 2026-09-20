@@ -580,21 +580,15 @@ final class SpaceManager: ObservableObject {
     /// memory). Updated only on the main thread via the publisher sink.
     private var cachedURLRules: [SpaceRoutingRule] = []
 
-    /// spec §5.8 第 3 条（8b-4 fix round 1）：`cachedURLRules` **换过一次**的信号。
+    /// Signals replacement of cachedURLRules (spec §5.8 item 3, 8b-4 fix round 1). A counter is required
+    /// because SwiftData mutates existing model instances: publishing the array can notify objectWillChange
+    /// while value-based consumers still compare it equal. Incrementing covers both field edits and
+    /// whole-table replacement.
     ///
-    /// **为什么是一个计数器而不是把 `cachedURLRules` 变成 `@Published`**：那份缓存装的是
-    /// SwiftData 的 `@Model` 实例，而 SwiftData **就地刷新同一批实例**——一次「只改了 host」的
-    /// 落地之后数组的元素身份逐个不变，`@Published` 的 `objectWillChange` 发得出来，但任何
-    /// 按值比较的下游（含 `removeDuplicates`）都会把它当成「没变」。计数器每次自增，所以
-    /// 「就地改了一个字段」与「整批换掉」在订阅者眼里是同一件事。
-    ///
-    /// **唯一的写点是下面那三处改 `cachedURLRules` 的地方**（publisher 的 sink、
-    /// `reloadURLRulesFromStore()`、`unbind()`）。`applyRuleEdits` 与 §6.6 那张表里的每一个
-    /// 写面都以 `reloadURLRulesFromStore()` 收尾，所以它们自动带上这一次自增。
-    ///
-    /// 订阅者只有 `URLRulesEditor`（`.onReceive` → 按字段刷新，§5.8 第 3 条）；它拿到信号之后
-    /// 读的是 `allRules`。**视图绝不直连 `LocalStore.urlRulesPublisher()`**：那既捅穿视图层的
-    /// store 边界，又会踩上面那条 `removeDuplicates` 的坑。
+    /// Write only at the three cache replacement sites: publisher sink, reloadURLRulesFromStore(), and
+    /// unbind(). applyRuleEdits and all §6.6 writes finish with reload and inherit the increment. The editor
+    /// consumes this signal and reads allRules for field refresh. Views must not directly subscribe to
+    /// LocalStore.urlRulesPublisher(), crossing the store boundary and encountering model deduplication.
     @Published private(set) var urlRulesRevision: Int = 0
 
     /// Resolves a local `spaceId` to its account-level Space sync uuid, nil
@@ -1002,7 +996,8 @@ final class SpaceManager: ObservableObject {
         refreshAccountBindingForBrowserAccess()
     }
 
-    // 只给 `makeForTesting(boundTo:)` 用的构造器：什么都不注册、什么都不绑，只置 `boundAccount`。
+    // Initializer solely for makeForTesting(boundTo:): assign boundAccount without registering or binding
+    // anything.
     private init(testAccount: Account?) {
         boundAccount = testAccount
     }
@@ -5897,16 +5892,13 @@ final class SpaceManager: ObservableObject {
         // orphan sweep silent: agent Spaces never get one.
         MainActor.assumeIsolated { PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId) }
         closeSpaceWindows(spaceId: spaceId)
-        // Cascade-delete the Space row, its tagged tabs/bookmarks, and its
-        // URL rules in a SINGLE write (LocalStore.deleteSpace intentionally
-        // leaves the cascade decision to the caller). Doing this as one
-        // transaction avoids a crash mid-delete leaving a content-less ghost
-        // Space or orphaned rows, and avoids publishing an inconsistent
-        // strip/bookmark state between separate saves. Without the rule
-        // cleanup they would linger as inert rows that keep being pushed to
-        // Chromium and dangle in the rules editor.
-        // §6.6 第 5 行（裁定 6）：等级联提交之后再重读一次路由表——级联软删了这个 Space 的规则行，
-        // 而 `urlRulesPublisher` 的 `removeDuplicates` 可能吞掉那次变化（R-M3-4a-34）。
+        // Cascade-delete the Space, tagged tabs/bookmarks and rules in one transaction to prevent ghost
+        // Spaces/orphan rows after a crash and inconsistent intermediate UI publications.
+        // LocalStore.deleteSpace leaves the cascade decision to callers. Rules must be removed too, or remain
+        // inert entries pushed to Chromium and shown in the editor.
+        //
+        // After cascade commit, reread routing (§6.6 row 5 / ruling 6): it soft-deletes this Space's rules,
+        // but urlRulesPublisher deduplication can swallow the change (R-M3-4a-34).
         if let account = boundAccount {
             Task { @MainActor [weak self] in
                 do {
@@ -6605,9 +6597,9 @@ final class SpaceManager: ObservableObject {
     /// Read-only test surface: how many times `reloadURLRulesFromStore()` ran.
     private(set) var urlRuleReloadCountForTesting = 0
 
-    // 仅供测试（CASE U-24c (a)）：造一个只绑了 `boundAccount` 的实例——走 `init(testAccount:)`，
-    // 不注册通知观察者、不 `bind(to:)`、不接 publisher、不跑 `ensureDefaultSpace`、不碰 `shared`
-    // 与 `AccountController`。生产代码绝不能调用它；`Sources/` 里除本定义外零引用。
+    // Test-only factory (CASE U-24c (a)): set boundAccount via init(testAccount:), without observers,
+    // bind(to:), publishers, ensureDefaultSpace, shared or AccountController. Production must never call this;
+    // Sources contains no references besides the definition.
     @MainActor
     static func makeForTesting(boundTo account: Account?) -> SpaceManager {
         SpaceManager(testAccount: account)
@@ -7608,34 +7600,30 @@ final class SpaceManager: ObservableObject {
     private func handleURLRulesUpdate(_ rules: [SpaceRoutingRule]) {
         cachedURLRules = rules
         hasLoadedURLRules = true
-        // §5.8 第 3 条：缓存换过了 ⇒ 打开着的 sheet 该按字段刷新一次。
+        // §5.8 item 3: replacing the cache requires field refresh in any open editor sheet.
         urlRulesRevision &+= 1
         pushRoutingTableToChromium()
     }
 
-    /// 从 `LocalStore` 重新 fetch（软删行已被 `getAllURLRules()` 过滤掉，R-M3-4a-51）、
-    /// 替换 `cachedURLRules`、再走既有的 `pushRoutingTableToChromium()`。**非 private**：
-    /// §6.6 那张穷举表里的每一个写面都调它，同步的落地段经协调器在 main actor 上调它。
+    /// Refetch LocalStore rules (getAllURLRules filters soft-deleted rows, R-M3-4a-51), replace
+    /// cachedURLRules, then pushRoutingTableToChromium. Non-private because every §6.6 write path calls it;
+    /// sync landing goes through the coordinator on the main actor.
     ///
-    /// **不调 `handleURLRulesUpdate(_:)`**（它是 private 而且收 model 对象，正是 §5.6 禁止
-    /// 同步层持有的东西），**也不只调 `pushRoutingTableToChromium()`**（它只从 `cachedURLRules`
-    /// 编译载荷，而那份缓存只由 publisher 的 sink 刷新，推出去的还是旧表），**更不依赖
-    /// `urlRulesPublisher` 自己发射**（`removeDuplicates` 比的是 SwiftData 就地刷新的同一批
-    /// 实例，一次只改 host 的落地会被它吞掉）。R-M3-4a-34 / RR-R3。
+    /// Do not call private handleURLRulesUpdate with model objects forbidden to sync by §5.6, merely push
+    /// stale cached rules, or rely on publisher deduplication over mutable SwiftData instances (R-M3-4a-34 /
+    /// RR-R3).
     ///
-    /// **解析器不缓存**（R-M3-4a-46）：本函数只负责「重读 + 换缓存 + 推」，裁决键与
-    /// `ruleTieBreakKeyResolver` 接在 `pushRoutingTableToChromium` 里、每次载荷构建现算。
-    ///
-    /// `@MainActor` 是硬要求（见 `applyRemoteRebind` 上的规则）：`getAllURLRules()` 读的是
-    /// SwiftData 的主上下文。
+    /// Do not cache the resolver (R-M3-4a-46): pushRoutingTableToChromium resolves tie-break keys anew per
+    /// payload. Main-actor isolation is required because getAllURLRules reads mainContext, as for
+    /// applyRemoteRebind.
     @MainActor
     func reloadURLRulesFromStore() {
         guard let account = boundAccount else { return }
         cachedURLRules = account.localStorage.getAllURLRules()
         hasLoadedURLRules = true
         urlRuleReloadCountForTesting += 1
-        // §5.8 第 3 条：`applyRuleEdits` 与 §6.6 那张表里的每一个写面都以本函数收尾，所以
-        // 「任何改了 `cachedURLRules` 的路径都发一次信号」这条在这一行上成立。
+        // §5.8 item 3: applyRuleEdits and every §6.6 write end here, ensuring every cache replacement emits a
+        // revision.
         urlRulesRevision &+= 1
         pushRoutingTableToChromium()
     }
@@ -7686,7 +7674,7 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         updated = Space.reconcile(updated, with: spaces)
-        // 换掉 `spaces` 之前先记下旧的 id 集合：末尾那道路由表刷新的判据是「集合真的变了」。
+        // Capture prior IDs before replacing spaces; refresh routing only if the set changes.
         let previousSpaceIds = Set(spaces.map(\.spaceId))
         spaces = updated
         let defaultSpaceId = currentDefaultSpaceId
@@ -7782,15 +7770,15 @@ final class SpaceManager: ObservableObject {
             slot.respawnWindow(forSpaceId: spaceId)
         }
 
-        // R-M3-4a-50 第 6 行：Space 的出现 / 消失 / 隐藏就是路由表的输入（R-M3-4a-31 之后
-        // 过滤判据接上 `spaces` + hidden）。只在集合真的变了时刷新——名字 / 图标 / 次序变动
-        // 与路由无关，§6.6 明确把它们排除在刷新之外。
+        // R-M3-4a-50 row 6: appearing, disappearing or hidden Spaces affect routing through spaces/hidden
+        // filtering (R-M3-4a-31). Refresh only when the set changes; name/icon/order changes are explicitly
+        // excluded by §6.6.
         if validIds != previousSpaceIds {
             MainActor.assumeIsolated { reloadURLRulesFromStore() }
         }
 
-        // Space 集合变了时上面已经刷过路由表；这里只补提交单（names / icons / order changes
-        // only need the submenu list refreshed).
+        // Routing already refreshed above if the Space set changed. Here only refresh the submenu for
+        // name/icon/order changes.
         pushOpenLinkSpaceMenuToChromium()
 
         // A cold-start repair adjudication deferred on an unresolved

@@ -1,13 +1,13 @@
 import XCTest
 @testable import Phi
 
-/// **`Sources/**` 里不允许出现 CJK base 字符串**（§7.3）。目录的 `sourceLanguage`
-/// 是 `en`，key 就是英文原文，所以一条中文 base 串既进不了目录、也没法被翻译。
+/// CJK base strings are forbidden in Sources (§7.3): the catalog sourceLanguage is en
+/// and keys are English source text, so a Chinese base string cannot be cataloged or translated.
 ///
-/// **注释与文档注释里的中文照旧允许**——这条守卫管的是会被抽取成 key 的字符串字面量
-/// （外加 `#Preview` 里那种不进目录但会上屏的裸字面量），不是注释语言。
+/// This guard checks literals extracted as keys and visible bare Preview literals.
+/// It skips comments and documentation comments; repository comment-language rules apply separately.
 final class SourceStringLanguageTests: XCTestCase {
-    /// U+4E00–U+9FFF（统一表意文字）、U+3000–U+303F（CJK 标点）、U+FF00–U+FFEF（全角）。
+    /// U+4E00–U+9FFF unified ideographs, U+3000–U+303F CJK punctuation, U+FF00–U+FFEF fullwidth forms.
     private static let cjkRanges: [ClosedRange<UInt32>] = [
         0x4E00...0x9FFF, 0x3000...0x303F, 0xFF00...0xFFEF
     ]
@@ -34,16 +34,16 @@ final class SourceStringLanguageTests: XCTestCase {
             }
         }
         XCTAssertTrue(offenders.isEmpty, """
-            base 文案一律英文，Localizable.xcstrings 的 sourceLanguage 是 en：
+            Base strings must be English; Localizable.xcstrings has sourceLanguage en:
             \(offenders.joined(separator: "\n"))
             """)
     }
 
-    /// **必须能容忍行尾中文注释。** 只按行首前缀跳过是错的形状：本仓库的代码注释以
-    /// 中文为主，第一条 `table.cursors[u] = cursor  // 按 syncUuid 键` 就会在一个与
-    /// 文案毫无关系的 commit 上把守卫弄红——而本里程碑本身就要求写大量这种注释。
-    ///
-    /// 已知的刻意简化：`/* … */` 块注释按代码处理（本仓库不用它写中文注释）。
+    /// Ignore trailing comments as well as whole comment lines. A line-prefix-only
+    /// filter incorrectly treats CJK in an inline comment as a base-string violation,
+    /// failing unrelated changes. This scanner targets string language, not comment language.
+    /// Known deliberate simplification: block comments are treated as code; the repository
+    /// does not use them for CJK comments.
     private static func strippingComments(_ line: String) -> String {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix("//") || trimmed.hasPrefix("*") { return "" }
@@ -61,7 +61,7 @@ final class SourceStringLanguageTests: XCTestCase {
             } else if character == "\"" {
                 inString.toggle()
             } else if !inString, character == "/", next < line.endIndex, line[next] == "/" {
-                break   // 行内注释从这里开始
+                break   // An inline comment starts here
             }
             out.append(character)
             index = next
@@ -73,8 +73,8 @@ final class SourceStringLanguageTests: XCTestCase {
         cjkRanges.contains { $0.contains(scalar.value) }
     }
 
-    /// `…/Tests/PhiBrowserTests/Sync/Keys/SourceStringLanguageTests.swift` → 仓库根是
-    /// 五个 `deletingLastPathComponent()`（与 `SyncUITextSelectionTests` 同款）。
+    /// Five deletingLastPathComponent() calls reach the repository root from
+    /// Tests/PhiBrowserTests/Sync/Keys/SourceStringLanguageTests.swift, as in SyncUITextSelectionTests.
     private static func repositoryRoot() -> URL {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { url = url.deletingLastPathComponent() }

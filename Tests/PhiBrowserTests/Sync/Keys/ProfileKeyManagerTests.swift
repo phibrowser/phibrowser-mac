@@ -9,7 +9,7 @@ final class ProfileKeyManagerTests: XCTestCase {
     final class MemoryMappingStore: ProfileSyncMappingStore {
         var map: [String: String] = [:]
         func globalUuid(forProfileId id: String) -> String? { map[id] }
-        /// 这个假件的用例与落盘无关，所以只补签名、恒回 true，不加失败旋钮。
+        /// Persistence is outside these cases; satisfy the signature with true and no failure control.
         func setGlobalUuid(_ uuid: String, forProfileId id: String) -> Bool {
             map[id] = uuid
             return true

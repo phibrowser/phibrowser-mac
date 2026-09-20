@@ -8,13 +8,13 @@ import SwiftData
 import XCTest
 @testable import Phi
 
-// URL 规则存储侧的 throwing 兄弟（M3-4a）。Task 4 放 CASE C-1 / C-2 / C-10 / C-11；
-// Task 5 往同一个文件里追加 C-6 ~ C-9、C-12、U-6、U-15e、置位表、U-13 / U-13c、U-14-legacy。
+// Throwing URL-rule storage APIs (M3-4a). Task 4 adds CASE C-1/C-2/C-10/C-11; Task 5
+// adds C-6–C-9, C-12, U-6, U-15e, the flag-setting table, U-13/U-13c, and U-14-legacy.
 //
-// 与 `LocalStoreCompatibilityTests` 的分工：那个文件整个跑在文本占位文件与两个一次性
-// schema 上，打不开一个真的 V11 库，也永远跑不到 `migrateV11toV12` 一行（RT-8）。全仓除
-// `LocalStore.swift` 与 `AppController+UserDataBackup.swift` 两个生产引用外没有任何测试引用
-// `TabDataModelMigrationPlan`——这里的 C-1 / C-11 是整条 V11 → V12 迁移唯一的真库探针。
+// LocalStoreCompatibilityTests uses placeholder files and disposable schemas; it cannot
+// open a real V11 store or run migrateV11toV12 (RT-8). Apart from production references
+// in LocalStore.swift and AppController+UserDataBackup.swift, no other tests reference
+// TabDataModelMigrationPlan. C-1/C-11 are the only real-store V11-to-V12 migration probes.
 @MainActor
 final class LocalStoreURLRuleThrowingTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -70,10 +70,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         try container.mainContext.save()
     }
 
-    // MARK: - CASE C-1 —— 真库 V11 → V12 迁移
+    // MARK: - CASE C-1: Real-store V11-to-V12 migration
 
-    // 防的是什么：没有这一条，「五个模型漏声明一个」「新列打错类型让 lightweight 退化成需要
-    // 自定义映射」「回填铸的是大写 uuid」三种缺陷全部绿着上线。
+    // Detects an omitted model among the five, a mistyped column that prevents lightweight
+    // migration, and uppercase UUIDs minted by backfill.
     func testV11StoreMigratesToV12PreservingEveryRuleAndBackfillingSyncId() throws {
         let directory = try makeTemporaryDirectory()
         let seeded = try seedV11Store(at: directory, rules: Self.fourRules)
@@ -88,7 +88,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             sortBy: [SortDescriptor(\.spaceId), SortDescriptor(\.sortOrder)]
         ))
 
-        // 行数逐类不变。
+        // Preserve the row count for every model type.
         XCTAssertEqual(profiles.count, 2)
         XCTAssertEqual(spaces.count, 3)
         XCTAssertEqual(tabs.count, seeded.tabCount)
@@ -97,7 +97,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(Set(spaces.map(\.spaceId)), Set(seeded.spaceIds))
         XCTAssertEqual(Set(tabs.map(\.guid)), Set(seeded.tabGuids))
 
-        // 每条规则的七个 V11 字段逐字保留（含那条 `pathPrefix == nil`）。
+        // Preserve all seven V11 rule fields exactly, including the nil pathPrefix.
         let byId = Dictionary(uniqueKeysWithValues: rules.map { ($0.id, $0) })
         XCTAssertEqual(Set(byId.keys), Set(Self.fourRules.map(\.id)))
         for seed in Self.fourRules {
@@ -111,7 +111,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
         XCTAssertTrue(Self.fourRules.contains { $0.pathPrefix == nil })
 
-        // `syncId` 四条全部非 nil、互不相同、小写（R-M3-4a-23 的回填）。
+        // All four syncIds are nonnil, distinct, and lowercase (R-M3-4a-23 backfill).
         let syncIds = try rules.map { try XCTUnwrap($0.syncId, "rule \($0.id) has no syncId after migration") }
         XCTAssertEqual(Set(syncIds).count, 4)
         for syncId in syncIds {
@@ -119,7 +119,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             XCTAssertNotNil(UUID(uuidString: syncId))
         }
 
-        // 其余五列保持默认。
+        // The other five columns retain their defaults.
         for row in rules {
             XCTAssertNil(row.contentUpdatedDate)
             XCTAssertNil(row.targetUpdatedDate)
@@ -128,18 +128,18 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             XCTAssertNil(row.mergePartnerSyncId)
         }
 
-        // `ProfileModel` 的两列在 M3-4a 里是死列：迁移不回填。
+        // The two ProfileModel columns are unused in M3-4a and are not backfilled.
         for profile in profiles {
             XCTAssertNil(profile.syncId)
             XCTAssertNil(profile.createdDate)
         }
     }
 
-    // MARK: - CASE C-2 —— 迁移计划的结构断言
+    // MARK: - CASE C-2: Migration-plan structure assertions
 
-    // 防的是什么：漏把 `migrateV11toV12` 加进 `stages` 时今天没有任何东西会发现——`schemas`
-    // 里有 V12、typealias 指向 V12，SwiftData 会按 lightweight 推断跑通，于是 `didMigrate`
-    // 的 `syncId` 回填整个不执行。这一条是它唯一的探测器。
+    // If migrateV11toV12 is omitted from stages, schemas and the typealias still name V12,
+    // so SwiftData can infer a lightweight migration while skipping didMigrate's syncId
+    // backfill entirely. This is the only detector of that omission.
     func testMigrationPlanEndsAtV12WithOneStagePerUpgrade() throws {
         let schemas = TabDataModelMigrationPlan.schemas
         let stages = TabDataModelMigrationPlan.stages
@@ -152,12 +152,13 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(TabDataModelSchemaV12.models.count, 5)
     }
 
-    // MARK: - CASE C-10 —— `deletedDate` 的默认读过滤（R-M3-4a-51）
+    // MARK: - CASE C-10: Default deletedDate read filtering (R-M3-4a-51)
 
-    // 防的是什么：软删行留在默认读口里就留在了稠密 `sortOrder` 重排的定义域里——删除方桶里
-    // 它占着下标，而跟随端（入站 tombstone 是硬删）没有它，于是同一条规则在两台上的
-    // `sortOrder` 相差「它前面软删行的条数」，跨 Space 平手时两台裁出不同赢家。漏改
-    // publisher 那一条还会让编辑器与 Chromium 的路由表继续显示并继续路由一条已删的规则。
+    // Including soft-deleted rows in default reads includes them in dense sortOrder
+    // normalization. The deleting device retains those indexes, while the follower hard-deletes
+    // inbound tombstones; indexes then differ by the number of preceding deleted rows,
+    // changing cross-Space tie winners. An unfiltered publisher also keeps deleted rules
+    // visible in the editor and active in Chromium routing.
     func testDefaultReadPathsHideSoftDeletedRules() throws {
         let directory = try makeTemporaryDirectory()
         let store = LocalStore(
@@ -167,7 +168,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         )
         let context = try XCTUnwrap(store.getMainContext())
 
-        // 先订阅并取到首发值（空库），再插行、再 save。
+        // Subscribe and receive the initial empty-store value before inserting and saving rows.
         var emissions: [[SpaceRoutingRule]] = []
         let postSave = expectation(description: "urlRulesPublisher re-emits after the save")
         let cancellable = store.urlRulesPublisher()
@@ -187,17 +188,17 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         context.insert(SpaceURLRule(id: "b-0", spaceId: "space-b", host: "d.example", sortOrder: 0))
         try context.save()
 
-        // ① 全量读口。
+        // ① Read all rules.
         let all = store.getAllURLRules()
         XCTAssertEqual(all.map(\.id), ["a-0", "a-2", "b-0"])
         XCTAssertFalse(all.contains { $0.id == softDeletedId })
 
-        // ② 按 Space 读口：不做重编号，`sortOrder` 序列是 [0, 2]。
+        // ② Read by Space without renumbering: sortOrder remains [0, 2].
         let spaceA = store.getURLRules(forSpaceId: "space-a")
         XCTAssertEqual(spaceA.map(\.id), ["a-0", "a-2"])
         XCTAssertEqual(spaceA.map(\.sortOrder), [0, 2])
 
-        // ③ publisher 在 `NSManagedObjectContextDidSave` 之后发出的那一次值。
+        // ③ The publisher value emitted after NSManagedObjectContextDidSave.
         wait(for: [postSave], timeout: 5)
         XCTAssertEqual(emissions.count, 2)
         let published = try XCTUnwrap(emissions.last)
@@ -207,17 +208,17 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertFalse(published.contains { $0.id == softDeletedId })
     }
 
-    // MARK: - CASE C-11 —— `syncId` 回填：n 行 → n 个互不相同的小写 uuid，且幂等（R-M3-4a-23）
+    // MARK: - CASE C-11: Idempotent backfill of n distinct lowercase UUIDs for n rows (R-M3-4a-23)
 
-    // 防的是什么：(a) 回填不 `.lowercased()` 时，本机身份与账户上其它设备铸的小写 uuid 大小写
-    // 不一致，按 `syncId` 寻址的 per-row 原语会在同一条规则上分裂成两条；(b) 回填不带
-    // `where rule.syncId == nil` 守卫时，任何一次重跑都会给已经发布过的行重铸身份——账户上那条
-    // 实体瞬间变成孤儿，终态两条规则且旧那条永远无人认领。
+    // Without lowercased(), local identities differ from other devices' lowercase UUIDs and
+    // per-row syncId addressing can split one rule into two. Without the syncId == nil guard,
+    // a repeat backfill remints published identities, orphaning account entities and leaving
+    // two rules with the old one permanently unclaimed.
     func testSyncIdBackfillMintsDistinctLowercaseUUIDsAndIsIdempotent() throws {
         let directory = try makeTemporaryDirectory()
         _ = try seedV11Store(at: directory, rules: Self.sixRules)
 
-        // ① 第一次打开：生产迁移计划跑 `migrateV11toV12`，记下六条行的 `syncId`。
+        // ① First open: run production migrateV11toV12 and record the six syncIds.
         let firstOpen = try readSyncIdsAfterProductionOpen(at: directory)
         XCTAssertEqual(firstOpen.count, 6)
         XCTAssertEqual(Set(firstOpen.values).count, 6)
@@ -226,8 +227,8 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             XCTAssertNotNil(UUID(uuidString: syncId))
         }
 
-        // ② 第二次打开：库已是 V12，`didMigrate` 不再被调用；在这个上下文里手工跑一遍回填
-        // 闭包的等价读写，证明闭包本身幂等。
+        // ② Reopen the V12 store, which skips didMigrate; manually repeat equivalent backfill
+        // reads and writes in this context to prove the closure itself is idempotent.
         let container = try openWithProductionMigrationPlan(at: directory)
         let context = container.mainContext
         let rules = try context.fetch(FetchDescriptor<SpaceURLRule>())
@@ -262,7 +263,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         var tabCount: Int { tabGuids.count }
     }
 
-    // 四条分散在两个 Space 的桶里、`sortOrder` 稠密，其中一条 `pathPrefix == nil`。
+    // Four rows in two Space buckets with dense sortOrder; one has nil pathPrefix.
     private static let fourRules: [SeedRule] = [
         SeedRule(id: "rule-a-0", spaceId: "space-a", host: "a.example", pathPrefix: "/docs",
                  askBeforeRouting: false, sortOrder: 0, createdDate: Date(timeIntervalSince1970: 1_700_000_001)),
@@ -289,9 +290,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         return directory
     }
 
-    /// 用显式列出的 V11 模型类型建一个真的 `ModelContainer`（形状照
-    /// `PinnedTabScopeTests.seedV8Store(at:)`），写 2 个 Profile、3 个 Space、`rules` 与
-    /// 3 条 tab，`save()` 后释放容器。
+    /// Create a real ModelContainer with explicit V11 model types, following
+    /// PinnedTabScopeTests.seedV8Store(at:). Write two Profiles, three Spaces, the rules,
+    /// and three tabs; save and release the container.
     @discardableResult
     private func seedV11Store(at directory: URL, rules: [SeedRule]) throws -> SeededV11Store {
         let configuration = ModelConfiguration(
@@ -356,8 +357,8 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         return SeededV11Store(profileIds: profileIds, spaceIds: spaceIds, tabGuids: tabGuids)
     }
 
-    /// 用生产的 `TabDataModelMigrationPlan` 与 V12 typealias 重开同一份库；模型清单逐字照
-    /// `LocalStore.swift` 的 `ModelContainer(for:…)`。
+    /// Reopen the store with production TabDataModelMigrationPlan and V12 aliases, using
+    /// the exact model list from LocalStore.swift's ModelContainer(for:).
     private func openWithProductionMigrationPlan(at directory: URL) throws -> ModelContainer {
         let configuration = ModelConfiguration(
             url: directory.appendingPathComponent("LocalStore.sqlite")
@@ -373,7 +374,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         )
     }
 
-    /// 打开一次、按 `id` 读出每条规则的 `syncId`，容器在返回前释放。
+    /// Open once and read each rule's syncId by id; release the container before returning.
     private func readSyncIdsAfterProductionOpen(at directory: URL) throws -> [String: String] {
         let container = try openWithProductionMigrationPlan(at: directory)
         let rules = try container.mainContext.fetch(FetchDescriptor<SpaceURLRule>())
@@ -384,24 +385,24 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         return byId
     }
 
-    // MARK: - Task 5 —— 写入口、per-row 原语、归一化、级联 origin
+    // MARK: - Task 5: Write APIs, per-row primitives, normalization, and cascade origin
 
     private static let spaceOne = "space-1"
     private static let spaceTwo = "space-2"
     private static let spaceThree = "space-3"
-    // `nonisolated`：`landing(...)` 的默认实参在 actor 隔离之外求值，主 actor 隔离的静态量
-    // 在那里引用会告警；这是个不可变的 `Sendable` 常量，脱离隔离是安全的。
+    // nonisolated: landing's default arguments are evaluated outside actor isolation.
+    // Referencing a main-actor static there warns; this immutable Sendable constant is safe to isolate independently.
     private nonisolated static let t0 = Date(timeIntervalSince1970: 1_700_000_000)
     private static let t1 = Date(timeIntervalSince1970: 1_700_000_500)
 
-    // MARK: CASE C-6 —— 唯一的对外入口真的抛，且没有 fire-and-forget 兄弟（R-M3-4a-49）
+    // MARK: CASE C-6: The sole public API throws, with no fire-and-forget alternative (R-M3-4a-49)
 
-    // 防的是什么：今天的两条 replace 路径是 `performBackgroundWrite`，`writeActor == nil` 时直接
-    // `return`，块内失败再被 `catch { AppLogError… }` 吞掉——「静默返回」与「成功落地」在调用方
-    // 看来一模一样。留一个非抛出兄弟的实现会让调用方随时退回这条老路。
+    // The old replace paths used performBackgroundWrite, returned silently for nil writeActor,
+    // and swallowed body errors in catch { AppLogError... }. Callers could not distinguish
+    // failure from persistence; retaining a nonthrowing API would let them return to that path.
     func testApplyURLRuleEditsThrowsStoreUnavailableWhenTheStoreNeverOpened() async throws {
-        // (a) 用一个同名普通文件占住 store 目录路径：`LocalStore.init` 的 `try? createDirectory`
-        // 落空、`prepareStore` 的 `createDirectory` 抛 ⇒ `.failed`、`writeActor == nil`。
+        // (a) Occupy the store directory path with a regular file. LocalStore.init's try?
+        // createDirectory fails, then prepareStore's createDirectory throws: failed state, nil writeActor.
         let parent = try makeTemporaryDirectory()
         let blocked = parent.appendingPathComponent("localDB", isDirectory: false)
         XCTAssertTrue(FileManager.default.createFile(atPath: blocked.path, contents: Data()))
@@ -424,7 +425,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
     }
 
     func testApplyURLRuleEditsRejectsASyncIdCollisionAndLeavesEveryColumnUntouched() async throws {
-        // (b) 正常 store，两条行 `A`（R1）与 `B`（R2）。
+        // (b) A normal store containing A (R1) and B (R2).
         let store = try makeStore()
         try await seed([
             RuleSeed(id: "A", spaceId: Self.spaceOne, host: "a.example", sortOrder: 0,
@@ -445,8 +446,8 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         let after = try allRows(in: store)
         XCTAssertEqual(after, before)
 
-        // 结构断言：`LocalStore` 上不存在非抛出的 `applyURLRuleEdits(upserts:deletedIds:)`，
-        // 两条 replace 也已经不在了。
+        // Structural assertion: LocalStore has no nonthrowing applyURLRuleEdits(upserts:deletedIds:)
+        // and neither old replace API remains.
         let source = try String(contentsOf: Self.repoFile("Sources/LocalStorage/LocalStore+SpaceURLRule.swift"),
                                 encoding: .utf8)
         XCTAssertFalse(source.contains("func applyURLRuleEdits("))
@@ -455,11 +456,12 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertTrue(source.contains("func applyURLRuleEditsThrowing("))
     }
 
-    // MARK: CASE C-7 —— 只碰点名的行，只碰点名的字段
+    // MARK: CASE C-7: Change only the named rows and fields
 
-    // 防的是什么：delete-then-insert 的旧形状让每一次保存重铸全桶的 `id`；给软删行置位的实现让它对
-    // 入站 tombstone 让位；不重排 `r2` 的实现在桶里留下 0/2 的空洞。(b) 防的是 insert 支拿 `nil`
-    // 单元去填默认值——一条 `host` 或 `spaceId` 为空串的行会进路由表、进快照、进账户。
+    // Delete-then-insert used to remint every id in the bucket on save. Marking soft-deleted
+    // rows would let them yield to inbound tombstones; failing to renumber r2 leaves indexes
+    // 0/2. Part (b) prevents the insert branch from replacing nil cells with defaults and
+    // letting empty host or spaceId values enter routing, snapshots, and the account.
     func testApplyURLRuleEditsTouchesOnlyTheNamedRowsAndFields() async throws {
         let store = try makeStore()
         try await seed([
@@ -506,7 +508,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(r1.syncId, "R1")
         XCTAssertEqual(r1.contentUpdatedDate, Self.t0)
 
-        // `r2` 一个字节不动，只有 `sortOrder` 因软删留洞重编成 1（裁定 4）。
+        // r2 remains unchanged except sortOrder becomes 1 to close the soft-deletion gap (ruling 4).
         var r2Expected = try XCTUnwrap(before["r2"])
         r2Expected.sortOrder = 1
         XCTAssertEqual(after["r2"], r2Expected)
@@ -519,7 +521,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         ], in: store)
         let before = try allRows(in: store)
 
-        // `content` 非 nil、`spaceId = nil`。
+        // Nonnil content, nil spaceId.
         await assertThrows(.noCandidateSurvived) {
             try await store.applyURLRuleEditsThrowing(
                 upserts: [LocalStore.URLRuleDraft(
@@ -530,7 +532,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
                 deletedIds: []
             )
         }
-        // 反过来：`spaceId` 非 nil、`content = nil`。
+        // Conversely: nonnil spaceId, nil content.
         await assertThrows(.noCandidateSurvived) {
             try await store.applyURLRuleEditsThrowing(
                 upserts: [LocalStore.URLRuleDraft(id: "fresh-2", content: nil, spaceId: Self.spaceOne)],
@@ -542,11 +544,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(after.count, 1)
     }
 
-    // MARK: CASE C-8 —— 跨桶 `id` 是一次正当的改目标（R-M3-4a-80）
+    // MARK: CASE C-8: An id crossing buckets is a valid target change (R-M3-4a-80)
 
-    // 防的是什么：按目标 Space 桶分建索引的实现会把这次改目标判成调用方错误、抛 `rowAlreadyMapped`；
-    // 走「命中不到 ⇒ 插新行」的实现更糟——同一条规则变成两条、带着同一个 `syncId`；只重排目标桶的
-    // 实现在 S1 留下 0/2。
+    // A per-target-Space index mistakes this move for a caller error and throws rowAlreadyMapped.
+    // Inserting on lookup failure instead creates two rules sharing one syncId. Normalizing
+    // only the target bucket leaves indexes 0/2 in S1.
     func testRetargetKeepsIdentityAndRedensifiesBothBuckets() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -613,11 +615,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceThree, in: after), [0])
     }
 
-    // MARK: CASE C-8b —— `rowAlreadyMapped` 的规则侧唯一形状是 `syncId` 撞车（R-M3-4a-80）
+    // MARK: CASE C-8b: Rules use rowAlreadyMapped only for syncId collisions (R-M3-4a-80)
 
-    // 防的是什么：只守「行已带另一个 `syncId`」而不守「这个 `syncId` 已属于另一条 `id`」的实现让两条
-    // 本机行带上同一个账户身份；逐条提交（不靠 `performThrowing` 的 `rollback()`）的实现会留下半
-    // 应用状态。合法的那条 upsert 排在前面，让回滚真的有东西可回。
+    // Checking only whether a row already has another syncId misses a syncId owned by a
+    // different id, allowing duplicate account identities. Per-row commits without
+    // performThrowing rollback leave partial application. Put the valid upsert first so rollback has real work to undo.
     func testSyncIdOwnedByAnotherRowRejectsAndRollsBackTheLegitimateSibling() async throws {
         let store = try makeStore()
         try await seed([
@@ -642,11 +644,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(after["B"]?.host, "b.example")
     }
 
-    // MARK: CASE C-9 —— per-row 原语的 `syncId` 守卫与软删寻址（R-M3-4a-56 / R-M3-4a-42(a)）
+    // MARK: CASE C-9: Per-row syncId guards and soft-deleted addressing (R-M3-4a-56 / R-M3-4a-42(a))
 
-    // 防的是什么：按默认读口（`deletedDate == nil` 过滤）寻址的实现会对一条软删行插出第二条同
-    // `syncId` 的行；入站 tombstone 走软删的实现让跟随端的行永远清不掉；落地铸 `now` 的实现让引擎
-    // 的一次写伪造出新鲜度，去赢对端一次真实的用户编辑。
+    // Using default reads filtered by deletedDate == nil inserts a duplicate syncId for
+    // a soft-deleted row. Soft-deleting inbound tombstones never removes follower rows;
+    // stamping application with now fabricates freshness that can beat real remote edits.
     func testPerRowPrimitivesAddressSoftDeletedRowsAndNeverMintStamps() async throws {
         let store = try makeStore()
         try await seed([
@@ -660,8 +662,8 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         let remoteContent = Date(timeIntervalSince1970: 1_650_000_000)
         let remoteTarget = Date(timeIntervalSince1970: 1_660_000_000)
 
-        // ① 命中那条软删行：不插第二条、同一次行写里清 `deletedDate` 与 `mergePartnerSyncId`、
-        // 两枚戳逐字等于入参、`pendingLocalEdit` 一个字节没动。
+        // ① Address the soft-deleted row without duplication; clear deletedDate and
+        // mergePartnerSyncId in the same write, preserve both input timestamps, and leave pendingLocalEdit unchanged.
         try await store.upsertURLRuleThrowing(syncId: "R1", spaceId: Self.spaceOne, host: "a.example",
                                               pathPrefix: nil, ask: false, sortOrder: 0,
                                               createdDate: remoteCreated,
@@ -679,18 +681,19 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(a.targetUpdatedDate, remoteTarget)
         XCTAssertTrue(a.pendingLocalEdit)
 
-        // ② 真删：那一行从库里消失。
+        // ② Hard deletion removes the row from the store.
         try await store.hardDeleteURLRuleThrowing(syncId: "R1")
         let afterDelete = try allRows(in: store)
         XCTAssertEqual(afterDelete.count, 1)
         XCTAssertNil(afterDelete["A"])
         XCTAssertEqual(afterDelete["B"], afterUpsert["B"])
-        // 命中不到就静默返回（入站 tombstone 落在本机已无行的身份上）。
+        // A missing identity is a silent no-op for an inbound tombstone with no local row.
         try await store.hardDeleteURLRuleThrowing(syncId: "R1")
         XCTAssertEqual(try allRows(in: store).count, 1)
 
-        // ③ 先把 `B.syncId` 换成 R3，再落一条 R2。原语只按 `syncId` 寻址（签名里没有本机
-        // `id`），所以 R2 在全表命中不到 ⇒ 建行、B 一个字节不碰——见 ledger Task 5 的备注。
+        // ③ Change B.syncId to R3, then apply R2. The primitive addresses only syncId, with
+        // no local id parameter: R2 is absent from the full table, so create a row without
+        // changing B (see the Task 5 ledger note).
         try await store.performBackgroundWriteAndWaitThrowing { context in
             let rows = try context.fetch(FetchDescriptor<SpaceURLRule>(
                 predicate: #Predicate { $0.id == "B" }
@@ -711,7 +714,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(landedR2.host, "b2.example")
         XCTAssertNotEqual(landedR2.id, "B")
 
-        // ④ 从没见过的身份 ⇒ 建一条新行（R-M3-4a-42(a)，不抛 `.rowNotFound`）。
+        // ④ An unseen identity creates a row rather than throwing rowNotFound (R-M3-4a-42(a)).
         try await store.upsertURLRuleThrowing(syncId: "R-never-seen", spaceId: Self.spaceTwo,
                                               host: " New.Example. ", pathPrefix: "/x/",
                                               ask: true, sortOrder: 0,
@@ -735,12 +738,13 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertFalse(fresh.pendingLocalEdit, "the engine's writes never raise the edit flag")
     }
 
-    // MARK: CASE C-12 —— `syncId == nil` 的 draft 命中软删行 ⇒ 建新行（R-M3-4a-104 / 计划裁定 8）
+    // MARK: CASE C-12: A draft with nil syncId matching a soft-deleted row creates a new row (R-M3-4a-104 / ruling 8)
 
-    // 防的是什么：「不看 `deletedDate`、命中就地 upsert」的那一版把用户那次编辑写进一条隐身的行，随后
-    // 那条 tombstone 的 `.applied` 把它连编辑一起硬删——「保存成功、规则消失」。反过来「命中软删行就
-    // 复活」同样红：复活只走 3b。复用 `draft.id` 建新行当场违 `@Attribute(.unique)`。变体 ② 防的是
-    // 把两个入口的软删语义合并：per-row 原语那一侧（C-9 ①）必须命中软删行并清 `deletedDate`。
+    // An in-place upsert ignoring deletedDate writes the edit into an invisible row, then
+    // tombstone acceptance hard-deletes it: a successful save loses the rule. Resurrecting
+    // the row is also wrong; only 3b does that. Reusing draft.id violates Attribute.unique.
+    // Variant ② keeps the APIs distinct: the per-row primitive in C-9 ① must address the
+    // soft-deleted row and clear deletedDate.
     private static let softDeletedHitSeeds: [RuleSeed] = [
         RuleSeed(id: "I", spaceId: spaceOne, host: "old.example", sortOrder: 0, syncId: "R1",
                  contentUpdatedDate: t0, deletedDate: t1, pendingLocalEdit: false, mergePartnerSyncId: "R9"),
@@ -785,7 +789,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertNil(fresh.deletedDate)
         XCTAssertNil(fresh.mergePartnerSyncId)
         XCTAssertTrue(fresh.pendingLocalEdit)
-        XCTAssertNil(fresh.contentUpdatedDate, "a new row does not mint a content stamp (裁定 5)")
+        XCTAssertNil(fresh.contentUpdatedDate, "a new row does not mint a content stamp (ruling 5)")
         XCTAssertNil(fresh.targetUpdatedDate)
         XCTAssertEqual(fresh.sortOrder, 0)
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1])
@@ -824,11 +828,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertTrue(row.pendingLocalEdit)
     }
 
-    // MARK: CASE U-6 —— 归一化是不动点（R-M3-4a-21 / §8.1）
+    // MARK: CASE U-6: Normalization is a fixed point (R-M3-4a-21 / §8.1)
 
-    // 防的是什么：今天的实现在解码之前剥尾斜杠，`f("/%2F") == "//"` 是一次静默的语义扩大；「先剥点再
-    // trim」的分步 host 写法对 `"a. ."` 给出 `"a."`。不动点一旦不成立，每一次归一都换来一次
-    // `mustRepublish` 加一次多余 commit，永不收敛。
+    // Stripping trailing slashes before decoding makes f("/%2F") == "//", silently widening
+    // semantics. Stripping dots before trimming maps host "a. ." to "a.". Without a fixed
+    // point, every normalization triggers mustRepublish and another commit, preventing convergence.
     func testNormalizationIsAFixedPoint() {
         let hosts = ["GitHub.COM", "github.com.", "github.com..", "github.com .", "github.com ..",
                      "github.com . .", "a. .", "a. . .", " github.com. ", " *.Figma.com "]
@@ -840,9 +844,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             }
         }
 
-        // 200 组随机构造，确定性种子。
+        // Two hundred randomly generated inputs with a deterministic seed.
         var generator = SeededGenerator(seed: 0x5EED_5EED)
-        let atoms = ["a", "Z", "7", ".", " ", "\n", "/", "%", "2F", "é", "中", "-"]
+        let atoms = ["a", "Z", "7", ".", " ", "\n", "/", "%", "2F", "é", "\u{4e2d}", "-"]
         for _ in 0..<200 {
             let host = (0..<Int.random(in: 0...8, using: &generator))
                 .map { _ in atoms[Int.random(in: 0..<atoms.count, using: &generator)] }
@@ -853,7 +857,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             assertFixedPoint(host: host, pathPrefix: path)
         }
 
-        // 具体值。
+        // Concrete expected values.
         XCTAssertEqual(LocalStore.normalizedPathPrefix("/%2F"), "/")
         XCTAssertEqual(LocalStore.normalizedPathPrefix("/foo%2F"), "/foo")
         XCTAssertEqual(LocalStore.normalizedPathPrefix("/a%252F"), "/a%252F")
@@ -891,7 +895,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(viaDraft.pathPrefix, unit.pathPrefix)
         XCTAssertEqual(landed.host, unit.host)
         XCTAssertEqual(landed.pathPrefix, unit.pathPrefix)
-        // 扁平便利构造器也经 `ContentUnit` 转一道。
+        // The flat convenience initializer also passes through ContentUnit.
         let flat = LocalStore.URLRuleDraft(host: rawHost, pathPrefix: rawPath, spaceId: Self.spaceOne)
         XCTAssertEqual(flat.content?.host, unit.host)
         XCTAssertEqual(flat.content?.pathPrefix, unit.pathPrefix)
@@ -899,10 +903,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(flat.pathPrefix, unit.pathPrefix)
     }
 
-    // MARK: CASE U-15e —— 改目标是搬桶，store 半边（R-M3-4a-80）
+    // MARK: CASE U-15e: Retargeting moves buckets, store side (R-M3-4a-80)
 
-    // 防的是什么：同 C-8，外加「把 retarget 拆成 delete + insert」的实现——它换了 `syncId`，账户上那条
-    // 规则的历史（两枚戳）就此断掉。
+    // Covers C-8 plus implementations that split retargeting into delete and insert:
+    // changing syncId severs the account rule's history, including both timestamps.
     func testSingleRetargetUpsertMovesTheRowBetweenBuckets() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -944,12 +948,12 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(try allRows(in: store), before)
     }
 
-    // MARK: CASE 5.置位表 —— §4.3 那张表逐行一条（R-M3-4a-11 / 48 / 65 / 69 / 72）
+    // MARK: CASE 5 flag-setting table: One case per §4.3 row (R-M3-4a-11 / 48 / 65 / 69 / 72)
 
-    // 防的是什么：「整行变了就两枚戳都盖」的实现让一次改名推进 `targetUpdatedDate`（⑤ 是它的直接
-    // 探针）；把 `nil` 单元当成「写 nil / 写默认值」的实现会在 ① 里把 `spaceId` 写空、在 ② 里把
-    // `host` 清掉；「只要进了 `upserts` 就置位」的实现让 ④ / ⑥ 那种无操作行也退出静止；「拖动不置位」
-    // 的实现让用户的排序意图在下一次收敛里被机器写覆盖。
+    // Stamping both groups on any row change advances targetUpdatedDate for a rename (⑤).
+    // Treating nil cells as explicit nil/default writes clears spaceId in ① and host in ②.
+    // Flagging every upsert makes no-ops ④/⑥ leave quiescence; not flagging drag operations
+    // lets convergence overwrite the user's ordering intent with machine writes.
     private static let stampTableSeeds: [RuleSeed] = [
         RuleSeed(id: "r0", spaceId: spaceOne, host: "r0.example", pathPrefix: "/r0", sortOrder: 0,
                  syncId: "R0", contentUpdatedDate: t0, targetUpdatedDate: t0),
@@ -1053,7 +1057,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
     func testStampTableContentOnlySaveDoesNotEatARemoteRetarget() async throws {
         let store = try makeStore()
         try await seed(Self.stampTableSeeds, in: store)
-        // 模拟 sheet 打开期间落地的一次远端改目标。
+        // Simulate a remote retarget applied while the sheet is open.
         try await store.performBackgroundWriteAndWaitThrowing { context in
             let rows = try context.fetch(FetchDescriptor<SpaceURLRule>(
                 predicate: #Predicate { $0.id == "r0" }
@@ -1094,11 +1098,12 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(after["r0"]).pendingLocalEdit)
     }
 
-    // MARK: CASE U-13 —— 用户删 Space，store 半边（R-M3-4a-24 / 41 / 85）
+    // MARK: CASE U-13: User deletes a Space, store side (R-M3-4a-24 / 41 / 85)
 
-    // 防的是什么：把规则那一段留成 `context.delete` 的实现让行没了、`deletedDate` 无从谈起，而
-    // `SpaceModel` 同批删掉 ⇒ 映射还在 ⇒ `urlrules tombstones == 0`，那些实体成为任何设备都删不掉的
-    // 孤儿；按共享 body 一刀切置位的实现让这三条软删行对入站 tombstone 让位。
+    // Hard-deleting rules loses deletedDate. Deleting SpaceModel in the same batch while
+    // retaining its mapping yields zero URL-rule tombstones and account orphans no device
+    // can delete. Flagging every row in the shared body makes these three soft-deleted
+    // rows yield to inbound tombstones.
     func testUserIntentCascadeSoftDeletesRulesWithoutRaisingTheEditFlag() async throws {
         let store = try makeStore()
         try await seedCascadeFixture(in: store, preSoftDeletedRuleId: nil)
@@ -1121,11 +1126,12 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertNil(rows["s2-0"]?.deletedDate)
     }
 
-    // MARK: CASE U-13c —— purge 不是删除意图，store 半边（R-M3-4a-85）
+    // MARK: CASE U-13c: Purge is not deletion intent, store side (R-M3-4a-85)
 
-    // 防的是什么：把 purge 判成 `.userIntent`（或按共享 body 一刀切软删）的实现给这些行写上
-    // `deletedDate` ⇒ §5.7 起源 (b) 成立 ⇒ 绕过两道归属门 ⇒ 一条停放在别的 Space 下、对端此刻仍然
-    // 有效的规则被从账户上删掉。给 `origin` 加默认值的实现让两个入口里的哪一个漏传都编译得过。
+    // Treating purge as userIntent, or unconditionally soft-deleting in the shared body,
+    // sets deletedDate and triggers §5.7 origin (b), bypassing both ownership gates. That
+    // can delete a rule parked under another Space while it remains valid remotely.
+    // A default origin argument would hide a missing argument at either entry point.
     func testRetentionPurgeCascadeHardDeletesRules() async throws {
         let store = try makeStore()
         try await seedCascadeFixture(in: store, preSoftDeletedRuleId: "s1-2")
@@ -1155,11 +1161,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(["s1-0", "s1-1", "s1-2"].map { rows[$0]?.pendingLocalEdit }, [false, false, false])
     }
 
-    // MARK: CASE U-14-legacy —— 非 UUID 形的历史 `id`，store 半边（R-M3-4a-13 / 裁定 3）
+    // MARK: CASE U-14-legacy: Historical non-UUID id, store side (R-M3-4a-13 / ruling 3)
 
-    // 防的是什么：照 §4.3 第 3 条字面实现（`id` 不命中就插新行）会插出第二条带 `R1` 的行——下一轮快照
-    // 两条行争同一个账户身份；把 `syncId` 兜底写成「抛 `rowAlreadyMapped`」的实现让编辑器保存这条
-    // 规则时整批失败。
+    // Following §4.3 rule 3 literally and inserting on an id miss creates a second R1 row,
+    // so the next snapshot has two rows claiming one account identity. Throwing
+    // rowAlreadyMapped for the syncId fallback instead makes editor saves fail the entire batch.
     func testLegacyIdIsAdoptedThroughTheSyncIdFallback() async throws {
         let store = try makeStore()
         try await seed([
@@ -1189,13 +1195,13 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2])
     }
 
-    // MARK: - Task 8 —— 落地批次入口、`AccountPhiURLRuleAccess`、落地后的读、`urlRuleChangesPublisher`
+    // MARK: - Task 8: Batch application, AccountPhiURLRuleAccess, committed reads, and urlRuleChangesPublisher
 
-    // MARK: CASE U-10 —— owner 变化不换身份，两桶都重排（R-M3-4a-3 / R-M3-4a-51）
+    // MARK: CASE U-10: Owner changes preserve identity and normalize both buckets (R-M3-4a-3 / R-M3-4a-51)
 
-    // 防的是什么：把 rehome 做成「删旧行 + 插新行」会换掉 `id` 与 `syncId`，下一轮差分把旧身份判成本机
-    // 删除并发一条 tombstone；只重排一个桶会在源桶留下一个空洞下标，而 `sortOrder` 是 `Specificity`
-    // 的第三项。
+    // Delete-plus-insert rehoming changes id and syncId, making the next diff tombstone
+    // the old identity. Normalizing only one bucket leaves a source index gap; sortOrder
+    // is the third Specificity component.
     func testSyncMoveRehomesTheRowKeepingIdentityAndDensifiesBothBuckets() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -1220,10 +1226,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceTwo, in: after), [0, 1, 2])
     }
 
-    // MARK: CASE U-10b —— 纯重排不得被翻译成 rehome（真库半边）
+    // MARK: CASE U-10b: A pure reorder must not become a rehome (real-store half)
 
-    // 防的是什么：把 `.move` 一律当 rehome 的实现会白重排一个这一页根本没被碰过的桶——一次无意义的
-    // 写经 §6.5 的 publisher 变成一次多余的推送轮，稳态 `pushed == 0` 当场破。
+    // Treating every move as a rehome needlessly normalizes an untouched bucket.
+    // That write triggers §6.5's publisher and an extra push round, violating steady-state pushed == 0.
     func testDemotedReorderTouchesOnlyItsOwnBucket() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -1248,10 +1254,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2])
     }
 
-    // MARK: CASE U-10c —— 改目标到 Incognito：写的是裸前缀常量
+    // MARK: CASE U-10c: Retarget to Incognito using the bare prefix constant
 
-    // 防的是什么：把保留常量解析成某个活的 incognito 运行期 id 会让这条规则在下次启动后变成死目标
-    // （`isRoutableRuleTarget` 对它返回 false）。
+    // Resolving the reserved constant to a live incognito runtime id makes the rule's
+    // target invalid after restart, when isRoutableRuleTarget returns false.
     func testSyncMoveToTheIncognitoTargetWritesTheBarePrefix() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -1275,9 +1281,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(SpaceManager.incognitoRuleTargetId, in: after), [0])
     }
 
-    // MARK: CASE U-10d —— Incognito 改回 Space：两个桶各重排一次
+    // MARK: CASE U-10d: Incognito to Space normalizes both buckets once
 
-    // 防的是什么：把保留常量那个桶当成「不是真桶」跳过的实现会在 incognito 桶里留下空洞。
+    // Skipping the reserved-constant bucket as unreal leaves an index gap in Incognito.
     func testSyncMoveFromIncognitoBackToASpaceDensifiesBothBuckets() async throws {
         let store = try makeStore()
         let incognito = SpaceManager.incognitoRuleTargetId
@@ -1303,7 +1309,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2], "S1 was not touched")
     }
 
-    // MARK: CASE U-10e ② —— 一身份一页一次写，真库半边
+    // MARK: CASE U-10e ②: One write per identity per page, real-store half
 
     func testMergedMoveAndUpdateLandsOnceWithBothBucketsDense() async throws {
         let store = try makeStore()
@@ -1325,10 +1331,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceTwo, in: after), [0, 1, 2])
     }
 
-    // MARK: CASE U-10f —— 行不存在时按载荷建行（R-M3-4a-42(a) / R-M3-4a-56）
+    // MARK: CASE U-10f: Create missing rows from the payload (R-M3-4a-42(a) / R-M3-4a-56)
 
-    // 防的是什么：抛 `rowNotFound` 的实现会让整批永久重试；按 `allURLRules()`（过滤软删）判定「行不
-    // 存在」的实现会插进第二条同 `syncId` 的行——`.unique` 只建在 `id` 上，数据库不会挡。
+    // Throwing rowNotFound retries the batch forever. Checking allURLRules(), which filters
+    // soft deletions, can insert a second row with the same syncId; uniqueness applies
+    // only to id, so the database cannot prevent this.
     func testUpdateForAnUnknownIdentityCreatesTheRowFromThePayload() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -1353,8 +1360,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
     }
 
-    // 救回的那一行在 `siblings(inSpaceId:)` 的活行定义域里从没被数过，落在载荷下标上会撞上一条活行
-    // （R-M3-4a-3 / RR-B9），所以救回也算「进了桶」：这里刻意让它落在一个**已被占用**的下标上。
+    // The restored row was excluded from siblings(inSpaceId:)'s live rows. Its payload
+    // index can collide with a live row (R-M3-4a-3 / RR-B9), so restoration counts as
+    // entering the bucket. Deliberately restore to an occupied index.
     func testUpdateHittingASoftDeletedRowRevivesItInPlaceWithoutASecondRow() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds + [
@@ -1375,24 +1383,26 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertNil(revived.mergePartnerSyncId)
         XCTAssertEqual(revived.host, "revived.example")
         XCTAssertFalse(revived.pendingLocalEdit)
-        // 全置换、无重复：按落地前的 `(sortOrder, id)`，`s1-1`(1) 排在 `s1-9`(1) 前面，`s1-2` 被顶到 3。
+        // A complete permutation with no duplicates: pre-apply (sortOrder, id) puts s1-1(1)
+        // before s1-9(1), displacing s1-2 to index 3.
         XCTAssertEqual(bucketOrder(Self.spaceOne, in: after), [0, 1, 2, 3])
         XCTAssertEqual(["s1-0", "s1-1", "s1-9", "s1-2"].compactMap { after[$0]?.sortOrder }, [0, 1, 2, 3])
         XCTAssertEqual(after["s2-0"], before["s2-0"], "the other bucket is not written")
         XCTAssertEqual(after["s2-1"], before["s2-1"])
     }
 
-    // MARK: CASE U-16 —— 稠密 `sortOrder` 的收尾重排，含无身份行与停放行（R-M3-4a-3 / §8.3）
+    // MARK: CASE U-16: Final dense sortOrder includes unidentified and parked rows (R-M3-4a-3 / §8.3)
 
-    // 防的是什么：只重排「本轮参与同步的那几条」会让被排除的兄弟留着旧下标并与新写的撞上。
+    // Normalizing only this round's sync participants leaves excluded siblings' stale
+    // indexes colliding with newly written indexes.
     func testTrailingDensificationRenumbersEveryLiveRowInTheBucket() async throws {
         let store = try makeStore()
         try await seed([
             RuleSeed(id: "p0", spaceId: Self.spaceOne, host: "p0.example", sortOrder: 0, syncId: "R-p0"),
             RuleSeed(id: "p1", spaceId: Self.spaceOne, host: "p1.example", sortOrder: 3, syncId: "R-p1"),
-            // 从没上过账户。
+            // Never published to the account.
             RuleSeed(id: "u2", spaceId: Self.spaceOne, host: "u2.example", sortOrder: 3, syncId: nil),
-            // 对应游标停放中：行在库里，同步侧这一轮不碰它。
+            // The cursor is parked: the row exists, but sync does not touch it this round.
             RuleSeed(id: "p3", spaceId: Self.spaceOne, host: "p3.example", sortOrder: 7, syncId: "R-p3"),
             RuleSeed(id: "p4", spaceId: Self.spaceOne, host: "p4.example", sortOrder: 9, syncId: "R-p4"),
             RuleSeed(id: "s2-0", spaceId: Self.spaceTwo, host: "s2-0.example", sortOrder: 4, syncId: "R-s2-0"),
@@ -1410,10 +1420,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(after["s2-0"]?.sortOrder, 4, "an untouched bucket keeps its values")
     }
 
-    // MARK: CASE U-26 —— 落地写远端戳，两个都写，一枚 `now` 都不铸（R-M3-4a-20 / R-M3-4a-48）
+    // MARK: CASE U-26: Apply both remote timestamps without minting now (R-M3-4a-20 / R-M3-4a-48)
 
-    // 防的是什么：落地铸 `now` 会让跟随端那两列严格新于账户上的戳；一旦游标文件报损触发整类型重放，
-    // 它就以伪造的戳首发并赢下作者真正的编辑。两个戳只写一个的实现在第二段红。
+    // Stamping application with now makes the follower newer than the account. If cursor
+    // corruption triggers full-type replay, the fabricated freshness wins against the
+    // author's real edit. The second section catches writing only one of the two stamps.
     func testLandingWritesBothRemoteStampsAndNeverNow() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds, in: store)
@@ -1433,7 +1444,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(created.contentUpdatedDate), wallClock.addingTimeInterval(-86_400))
         XCTAssertLessThan(try XCTUnwrap(created.targetUpdatedDate), wallClock.addingTimeInterval(-86_400))
 
-        // 第二段：只改内容的 `.update`，内容组戳 900、目标戳仍 700。
+        // Second section: content-only update, content stamp 900 and target stamp still 700.
         let contentOnly = landing("R7", spaceId: Self.spaceOne, host: "r7-edited.example", sortOrder: 3,
                                   createdDate: Date(timeIntervalSince1970: 0.300),
                                   contentUpdatedDate: Date(timeIntervalSince1970: 0.900),
@@ -1448,11 +1459,11 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(milliseconds(updated.createdDate), 300)
     }
 
-    // MARK: CASE U-24 —— 落地之后的刷新读的是已提交的表（R-M3-4a-34 / R-M3-4a-49）
+    // MARK: CASE U-24: Post-apply refresh reads committed rows (R-M3-4a-34 / R-M3-4a-49)
 
-    // 防的是什么：批次入口若走 `performBackgroundWrite`（返回时事务还没提交），紧跟其后的重新 fetch
-    // 读到的是旧值。先读一次让主上下文登记这几行（`SpaceManager.cachedURLRules` 持的正是它们），
-    // 再断言 `await` 返回后**立刻**读到新值。
+    // performBackgroundWrite returns before commit, so an immediate refetch sees stale
+    // values. Read first to register rows in the main context, as SpaceManager.cachedURLRules
+    // does, then assert the new values are visible immediately after await returns.
     func testReadRightAfterLandingSeesTheCommittedTable() async throws {
         let store = try makeStore()
         try await seed(Self.twoBucketSeeds + [
@@ -1470,7 +1481,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertFalse(rules.contains { $0.id == "s1-9" }, "soft-deleted rows stay filtered")
     }
 
-    // MARK: CASE U-24b —— 编辑器写面的刷新同样看见已提交的表
+    // MARK: CASE U-24b: Editor writes also refresh from committed rows
 
     func testReadRightAfterAnEditorWriteSeesTheCommittedTable() async throws {
         let store = try makeStore()
@@ -1487,7 +1498,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(rules.first { $0.id == "s1-0" }?.host, "new.example")
     }
 
-    // MARK: CASE U-24c —— agent 三个写面共用同一块地板（新增 / 改 host / 删）
+    // MARK: CASE U-24c: All three agent writes share the same commit guarantee (add, edit host, delete)
 
     func testAgentWriteFacesShareTheCommittedFloorAndSoftDeleteStaysVisibleToSync() async throws {
         let store = try makeStore()
@@ -1516,7 +1527,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertFalse(try access.allURLRules().contains { $0.id == "new-1" })
     }
 
-    // MARK: CASE U-24d —— Space 集合变化也要刷新，真库半边（R-M3-4a-50 第 6 行）
+    // MARK: CASE U-24d: Space collection changes also refresh, real-store half (R-M3-4a-50 row 6)
 
     func testUserIntentCascadeHidesTheSpacesRulesFromTheDefaultRead() async throws {
         let store = try makeStore()
@@ -1532,7 +1543,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(unfiltered.values.filter { $0.spaceId == Self.spaceTwo && $0.deletedDate != nil }.count, 2)
     }
 
-    // MARK: `AccountPhiURLRuleAccess` —— 两个读口、缓存读者、`liveOwners`、`apply` 之后的重读
+    // MARK: AccountPhiURLRuleAccess: Both reads, cache readers, liveOwners, and post-apply rereads
 
     func testAccountAccessReadsFilterSoftDeletedRowsAndApplyRebuildsTheSnapshot() async throws {
         let store = try makeStore()
@@ -1562,11 +1573,12 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
                        "apply rebuilds the page snapshot")
     }
 
-    // MARK: CASE U-8p —— store 级变化信号：塌缩成一次、订阅当刻不发、软删也发（§6.5 / R-M3-4a-51）
+    // MARK: CASE U-8p: Store signal coalesces, omits initial emission, and includes soft deletion (§6.5 / R-M3-4a-51)
 
-    // 防的是什么：不塌缩时一次 30 条的落地会排 30 轮推送；seed 当前值会让每次挂订阅都凭空多一轮；
-    // 值快照建在过滤后的定义域上时一次软删（本机删除意图的全部载体）会被吞掉。软删的是桶尾那条，
-    // 于是这次写除了 `deletedDate` 之外一个字节都没改。
+    // Without coalescing, 30 applied rows queue 30 push rounds; seeding the current value
+    // adds a round on every subscription. A snapshot built from filtered rows suppresses
+    // soft deletion, the sole carrier of local delete intent. Delete the last bucket row
+    // so only deletedDate changes.
     func testURLRuleChangesPublisherCollapsesBurstsDoesNotSeedAndEmitsForSoftDeletes() async throws {
         let store = try makeStore()
         var received = 0
@@ -1576,7 +1588,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
 
         waitPastDebounceWindow(Self.shortDebounceWindow)
         let afterQuietPeriod = received
-        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
+        XCTAssertEqual(afterQuietPeriod, 0, "Subscription does not emit the current value")
 
         for index in 0..<30 {
             try await store.applyURLRuleEditsThrowing(
@@ -1587,7 +1599,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
         waitPastDebounceWindow(Self.shortDebounceWindow)
         let afterBurst = received
-        XCTAssertEqual(afterBurst, 1, "30 次写入在防抖窗口里塌成一次")
+        XCTAssertEqual(afterBurst, 1, "Thirty writes collapse into one debounced emission")
 
         try await store.applyURLRuleEditsThrowing(upserts: [], deletedIds: ["burst-29"])
         waitPastDebounceWindow(Self.shortDebounceWindow)
@@ -1599,7 +1611,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
 
     private static let shortDebounceWindow: TimeInterval = 0.2
 
-    /// 落地载荷；三枚戳默认 `t0`，用例要钉戳时自己传。
+    /// Application payload; all three timestamps default to t0 unless a case supplies explicit values.
     private func landing(_ syncId: String, spaceId: String, host: String, pathPrefix: String? = nil,
                          ask: Bool = false, sortOrder: Int,
                          createdDate: Date = LocalStoreURLRuleThrowingTests.t0,
@@ -1614,12 +1626,13 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         date.map { Int(($0.timeIntervalSince1970 * 1_000).rounded()) }
     }
 
-    // MARK: - 8b-1 —— CASE M-32（re-key 的 `syncId` 撞车整批回滚）
+    // MARK: - 8b-1: CASE M-32 (a re-key syncId collision rolls back the whole batch)
 
-    // 防的是什么：书签那条认领守卫（`syncId == nil || syncId == 新值`）对规则的 re-key 会让每一次认领
-    // 都抛（规则的 re-key 必然改写一个非 nil 的旧值）；反过来，不做撞车检查的实现让两条行争同一个账户
-    // 身份（`.unique` 只建在 `id` 上）⇒ 本机没有活行认领其中一条 ⇒ 下一轮差分为它发一条 tombstone。
-    // (a) 那一条钉住「相等则幂等接受」，少了它 CASE M-13 的重投会抛。
+    // The bookmark claim guard (nil syncId or equal new value) rejects every rule re-key,
+    // which necessarily replaces a nonnil identity. Omitting collision checks lets two
+    // rows share an account identity (only id is unique), leaving an identity unclaimed
+    // and tombstoned by the next diff. Part (a) requires idempotent acceptance of equality;
+    // otherwise CASE M-13 replay throws.
     private static let rekeySeeds: [RuleSeed] = [
         RuleSeed(id: "i1", spaceId: spaceOne, host: "a.example", sortOrder: 0, syncId: "local-a",
                  contentUpdatedDate: t0, targetUpdatedDate: t0),
@@ -1629,7 +1642,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
                  contentUpdatedDate: t0, targetUpdatedDate: t0),
     ]
 
-    /// 同批一条对别的身份的 `.update`，好让「整批回滚」真的有东西可回。
+    /// Update another identity in the same batch so rollback has actual work to undo.
     private var unrelatedUpdate: URLRuleSyncOp {
         .update(landing("R3", spaceId: Self.spaceTwo, host: "changed.example", sortOrder: 0,
                         contentUpdatedDate: Self.t1))
@@ -1646,13 +1659,13 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
 
         let after = try allRows(in: store)
-        XCTAssertEqual(after, before, "库里零变化")
+        XCTAssertEqual(after, before, "The store remains unchanged")
         XCTAssertEqual(after["i1"]?.syncId, "local-a")
         XCTAssertEqual(after["i2"]?.syncId, "remote-b")
-        XCTAssertEqual(after["i3"]?.host, "c.example", "那条 .update 也没写进去")
+        XCTAssertEqual(after["i3"]?.host, "c.example", "The update is also rolled back")
     }
 
-    /// (a) 幂等：`to` 等于行现值 ⇒ 零抛出、零行写。
+    /// (a) Idempotence: to equals the current value, so no throw and no row write.
     func testRekeyOntoTheRowsOwnSyncIdIsAnIdempotentNoOp() async throws {
         let store = try makeStore()
         try await seed(Self.rekeySeeds, in: store)
@@ -1660,10 +1673,10 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
 
         try await store.applyURLRuleSyncBatchThrowing([.rekey(localId: "i1", to: "local-a", values: nil)])
 
-        XCTAssertEqual(try allRows(in: store), before, "零行写")
+        XCTAssertEqual(try allRows(in: store), before, "No row writes")
     }
 
-    /// (b) `localId` 在库里不存在 ⇒ `rowNotFound`、整批回滚。
+    /// (b) Missing localId throws rowNotFound and rolls back the entire batch.
     func testRekeyOfAnUnknownLocalIdThrowsRowNotFoundAndRollsBackTheBatch() async throws {
         let store = try makeStore()
         try await seed(Self.rekeySeeds, in: store)
@@ -1677,7 +1690,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertEqual(try allRows(in: store), before)
     }
 
-    /// (c) 软删行不认领 ⇒ `rowNotFound`、整批回滚。
+    /// (c) A soft-deleted row cannot be claimed: rowNotFound and full rollback.
     func testRekeyOfASoftDeletedRowThrowsRowNotFoundAndRollsBackTheBatch() async throws {
         let store = try makeStore()
         var seeds = Self.rekeySeeds
@@ -1696,8 +1709,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         XCTAssertNotNil(after["i1"]?.deletedDate)
     }
 
-    /// 正面：re-key 只写 `syncId`（不盖戳、不置位、不动 `mergePartnerSyncId`）；带 `values` 时字段合并
-    /// 结果在同一个写块里按**新**身份落地，`pendingLocalEdit` 仍然一个字节不碰。
+    /// Positive case: re-key writes only syncId, preserving stamps, flags, and
+    /// mergePartnerSyncId. With values, the merged fields apply under the new identity
+    /// in the same write block, still leaving pendingLocalEdit untouched.
     func testRekeyWritesOnlyTheSyncIdAndLandsTheMergedValuesUnderTheNewIdentity() async throws {
         let store = try makeStore()
         var seeds = Self.rekeySeeds
@@ -1709,9 +1723,9 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         let rekeyed = try row("i1", in: store)
         XCTAssertEqual(rekeyed.syncId, "acc-1")
         XCTAssertEqual(rekeyed.host, "a.example")
-        XCTAssertEqual(rekeyed.contentUpdatedDate, Self.t0, "不盖戳")
-        XCTAssertTrue(rekeyed.pendingLocalEdit, "不清位")
-        XCTAssertEqual(rekeyed.mergePartnerSyncId, "w", "不动这一列")
+        XCTAssertEqual(rekeyed.contentUpdatedDate, Self.t0, "The timestamp is unchanged")
+        XCTAssertTrue(rekeyed.pendingLocalEdit, "The flag is not cleared")
+        XCTAssertEqual(rekeyed.mergePartnerSyncId, "w", "This column remains unchanged")
 
         try await store.applyURLRuleSyncBatchThrowing([
             .rekey(localId: "i1", to: "acc-2",
@@ -1720,21 +1734,21 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         ])
         let landed = try row("i1", in: store)
         XCTAssertEqual(landed.syncId, "acc-2")
-        XCTAssertEqual(landed.host, "merged.example", "合并结果按新身份命中同一行")
+        XCTAssertEqual(landed.host, "merged.example", "Merged values address the same row through its new identity")
         XCTAssertEqual(landed.contentUpdatedDate, Self.t1)
         XCTAssertTrue(landed.pendingLocalEdit)
         XCTAssertEqual(landed.mergePartnerSyncId, "w")
-        XCTAssertEqual(try allRows(in: store).count, 3, "没有第二条行")
+        XCTAssertEqual(try allRows(in: store).count, 3, "No duplicate row is inserted")
     }
 
-    /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地（照 `LocalStoreBookmarkThrowingTests`）。
+    /// Wait the debounce window plus main-queue delivery allowance, as in LocalStoreBookmarkThrowingTests.
     private func waitPastDebounceWindow(_ window: TimeInterval) {
         RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
     }
 
     // MARK: - Task 5 fixtures
 
-    /// 一条行的十三列，落进写块里再建 `SpaceURLRule`（`@Model` 实例不跨上下文）。
+    /// The thirteen row columns; construct SpaceURLRule inside the write block so Model instances never cross contexts.
     private struct RuleSeed {
         var id: String
         var spaceId: String
@@ -1751,7 +1765,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         var mergePartnerSyncId: String? = nil
     }
 
-    /// 一条行十三列的值快照，读自 `getMainContext()` 的全表 fetch（含软删行）。
+    /// Value snapshot of all thirteen columns, fetched from the main context including soft-deleted rows.
     private struct RuleRow: Equatable {
         var id: String
         var spaceId: String
@@ -1784,7 +1798,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
     }
 
-    // S1 三条（0/1/2）、S2 两条（0/1），五条都带 `syncId` 与固定的 `contentUpdatedDate`。
+    // Three S1 rows (0/1/2) and two S2 rows (0/1), all with syncId and a fixed contentUpdatedDate.
     private static let twoBucketSeeds: [RuleSeed] = [
         RuleSeed(id: "s1-0", spaceId: spaceOne, host: "s1-0.example", sortOrder: 0, syncId: "R-s1-0",
                  contentUpdatedDate: t0),
@@ -1827,8 +1841,8 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
     }
 
-    /// U-13 / U-13c 的现场：S1 一行 `SpaceModel`、两条 S1 的 `TabDataModel`（另一条 S2 的做对照）、
-    /// S1 三条规则（`pendingLocalEdit = false`）、S2 一条对照规则。
+    /// U-13/U-13c fixture: one S1 SpaceModel, two S1 tabs and an S2 control tab, three
+    /// S1 rules with pendingLocalEdit = false, and one S2 control rule.
     private func seedCascadeFixture(in store: LocalStore, preSoftDeletedRuleId: String?) async throws {
         try await store.performBackgroundWriteAndWaitThrowing { context in
             context.insert(SpaceModel(spaceId: Self.spaceOne, profileId: "Default", name: "One",
@@ -1882,7 +1896,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         try XCTUnwrap(try allRows(in: store)[id], "rule \(id) is missing", file: file, line: line)
     }
 
-    /// 该桶活行的 `sortOrder` 升序序列（软删行不参与）。
+    /// Ascending sortOrder values for live rows in the bucket, excluding soft-deleted rows.
     private func bucketOrder(_ spaceId: String, in rows: [String: RuleRow]) -> [Int] {
         rows.values
             .filter { $0.spaceId == spaceId && $0.deletedDate == nil }
@@ -1894,7 +1908,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
-    /// `now` 的区间断言：戳落在调用前后两次取值之间。
+    /// Assert now falls between timestamps taken immediately before and after the call.
     private func assertStampedNow(_ stamp: Date?, between start: Date, and end: Date,
                                   file: StaticString = #filePath, line: UInt = #line) {
         guard let stamp else {
@@ -1916,7 +1930,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
                        file: file, line: line)
     }
 
-    // 断言是 autoclosure，先取值再断言。
+    // Assertions use autoclosures; read values before asserting.
     private func assertThrows(_ expected: LocalStoreWriteError,
                               file: StaticString = #filePath,
                               line: UInt = #line,
@@ -1931,7 +1945,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
     }
 
-    /// 仓库根下的一个源文件（`#filePath` 是 `Tests/PhiBrowserTests/<this>.swift`）。
+    /// A source file relative to the repository root; #filePath is Tests/PhiBrowserTests/<this>.swift.
     private static func repoFile(_ relativePath: String) -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -1940,7 +1954,7 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             .appendingPathComponent(relativePath)
     }
 
-    /// 确定性的随机源（SplitMix64），让 U-6 的 200 组构造可复现。
+    /// Deterministic SplitMix64 random source keeps U-6's 200 generated inputs reproducible.
     private struct SeededGenerator: RandomNumberGenerator {
         private var state: UInt64
 

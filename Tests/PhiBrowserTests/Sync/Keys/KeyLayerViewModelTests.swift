@@ -163,14 +163,13 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertFalse(controller.needsPairing)
     }
 
-    /// §5.1 的幂等，`.createLocal` 这一支。
-    ///
-    /// 向导的原地重试是常态：Space 侧失败停在 `.error(_, .backToSpaces)`，Retry 回到
-    /// 第 2 步，下一次 Finish **重放同一份冻结的** `profileDecisions`。
-    /// `createLocalProfileAndAdopt` 自己的重入判据只覆盖「profile 建好了但认领失败」
-    /// （`reusablePendingProfile(forUuid:)`），而那一项在第一次认领**成功**之后就被清
-    /// 成了 nil。少了决定层的这条判据，重放会走 `uniqueDisplayName` 建出第二个
-    /// "Home (2)"——映射表仍然正确，但那个空 profile 是永久且用户可见的。
+    /// §5.1 idempotence for createLocal.
+    /// In-place retries are normal: a Space failure enters error(_, .backToSpaces), Retry
+    /// returns to step 2, and Finish replays the frozen profileDecisions.
+    /// createLocalProfileAndAdopt's reusablePendingProfile only covers creation followed
+    /// by failed adoption; successful adoption clears it. Without decision-layer idempotence,
+    /// replay calls uniqueDisplayName and creates a permanent, visible empty Home (2),
+    /// even though the mapping remains correct.
     func testReplayingACreateLocalDecisionDoesNotCreateASecondProfile() async throws {
         let api = AccountKeyManagerTests.FakeAPI()
         let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
@@ -196,10 +195,10 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertEqual(creator.createCalls, ["Home"])
         let created = try XCTUnwrap(controller.localProfileId(forGlobalUuid: "uuid-remote"))
 
-        // Retry 重放同一份决定。
+        // Retry replays the same decision.
         let replay = await vm.applyPairingDecisions(decisions, controller: controller)
         XCTAssertTrue(replay)
-        XCTAssertEqual(creator.createCalls, ["Home"], "重放不许再建一个 “Home (2)”")
+        XCTAssertEqual(creator.createCalls, ["Home"], "Replay must not create another Home (2)")
         XCTAssertEqual(controller.localProfileId(forGlobalUuid: "uuid-remote"), created)
     }
 

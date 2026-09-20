@@ -1,19 +1,18 @@
 import XCTest
 @testable import Phi
 
-/// R-M3-4a-83 的第一个出口：`AccountUserDefaults` 六个写入面的「回传 + 回滚」。
+/// R-M3-4a-83, first boundary: return values and rollback for all six AccountUserDefaults write APIs.
 ///
-/// **注入落盘失败的手法是「把目录改成只读」，不是假件。** 这六个面要验的正是**真实**的
-/// `persistLocked` 失败，内存假件覆盖不到（`SpaceSyncMappingManagerTests` 的生产 store
-/// 那一组已经为同一个理由写过一次）。`.atomic` 写要在同目录建临时文件，所以目录一旦是
-/// `0o500`（r-x）写必然失败、读照常；**测试进程不是 root**，所以这个注入是确定的。
+/// Make the directory read-only to force real `persistLocked` failures; in-memory fakes cannot cover
+/// this (also used by the production-store tests in SpaceSyncMappingManagerTests). An `.atomic` write
+/// needs a temporary file in the same directory: mode 0o500 preserves reads and deterministically
+/// fails writes for the non-root test process.
 ///
-/// 每条用例一个全新的随机 userID，副作用是
-/// `FileSystemUtils.phiBrowserDataDirectory()/users/<uuid>/`，在 `tearDown` 里**先恢复
-/// 权限再**删掉那棵子树——顺序反过来的话只读目录删不掉，下一次跑测试会累积残留。
+/// Each case uses a random userID under FileSystemUtils.phiBrowserDataDirectory()/users/<uuid>/.
+/// tearDown restores permissions before deleting that subtree; reversing the order leaves residue.
 final class AccountUserDefaultsRollbackTests: XCTestCase {
 
-    /// CASE 2a.6 用的 codable 载荷。
+    /// Codable payload for CASE 2a.6.
     private struct Payload: Codable, Equatable {
         var a: String
     }
@@ -32,7 +31,7 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
     private func makeAccount() -> Account {
         let account = Account(userID: UUID().uuidString)
         scratchAccounts.append(account)
-        // `userDefaults` 是 lazy：这一次访问才真正建出 `defaults/` 目录。
+        // userDefaults is lazy; this access creates the defaults/ directory.
         _ = account.userDefaults
         return account
     }
@@ -45,7 +44,7 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
         defaultsDirectory(for: account).appendingPathComponent("account_defaults.plist")
     }
 
-    /// `0o500` = 可读可进入、**不可写**，于是 `.atomic` 写建不出同目录的临时文件。
+    /// 0o500 allows reads and traversal but blocks the temporary file required by `.atomic` writes.
     private static func setDefaultsDirectoryWritable(_ writable: Bool, for account: Account) throws {
         try FileManager.default.setAttributes(
             [.posixPermissions: writable ? 0o700 : 0o500],
@@ -58,33 +57,31 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
     // MARK: - CASE 2a.1
 
-    /// CASE 2a.1 — `set(_:forKey:)`（String 键）写盘失败回滚。
-    ///
-    /// 防的是什么：只回传不回滚的那一版——`object(forKey:)` 在第一次之后就回 `"v2"`，
-    /// 而盘上还是 `"v1"`。那正是 §2.7「plist 写失败之后的第二轮」整行的病根。
+    /// CASE 2a.1: set(_:forKey:) with a String key rolls back failed disk writes.
+    /// Returning failure without rollback leaves object(forKey:) at v2 while disk remains v1,
+    /// the cause of the second-round failure after a plist write error in §2.7.
     func testAFailedWriteRollsBackTheStringKeyFace() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
         XCTAssertTrue(defaults.set("v1", forKey: "k"))
 
         try setWritable(false, for: account)
-        XCTAssertFalse(defaults.set("v2", forKey: "k"), "写盘失败 ⇒ false")
+        XCTAssertFalse(defaults.set("v2", forKey: "k"), "A failed disk write returns false")
         XCTAssertEqual(defaults.object(forKey: "k") as? String, "v1",
-                       "内存回到写之前那一份：内存永不领先磁盘")
+                       "Memory returns to the pre-write state and never gets ahead of disk")
 
         try setWritable(true, for: account)
         XCTAssertTrue(defaults.set("v3", forKey: "k"))
         XCTAssertEqual(defaults.object(forKey: "k") as? String, "v3")
         XCTAssertEqual(AccountUserDefaults(account: account).string(forKey: "k"), "v3",
-                       "同一个账户上新建的实例读盘，盘上确实是它")
+                       "A fresh instance for the same account reads the persisted value")
     }
 
     // MARK: - CASE 2a.2
 
-    /// CASE 2a.2 — `set(_:forKey: DefaultsKey)` 同形。
-    ///
-    /// 防的是什么：B2-13 点名的「不能只点一个重载」。两个重载各有各的 `queue.sync` 块，
-    /// 改一个漏一个在类型上完全无声。
+    /// CASE 2a.2: the same contract for set(_:forKey: DefaultsKey).
+    /// B2-13 requires checking both overloads: each has its own queue.sync block,
+    /// and the type system cannot detect a missing rollback in one of them.
     func testAFailedWriteRollsBackTheDefaultsKeyOverloadToo() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
@@ -103,10 +100,9 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
     // MARK: - CASE 2a.3
 
-    /// CASE 2a.3 — `removeObject(forKey:)` 失败不留半删状态。
-    ///
-    /// 防的是什么：转发面漏掉回传（写成 `set(nil, forKey: key)` 而不 `return`）的实现，
-    /// 调用方永远拿到 `true`。
+    /// CASE 2a.3: failed removeObject(forKey:) leaves no partial deletion.
+    /// A forwarding implementation that calls set(nil, forKey: key) without returning its result
+    /// would always report true.
     func testAFailedRemoveObjectLeavesTheValueInPlaceAndReportsIt() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
@@ -114,7 +110,7 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
         try setWritable(false, for: account)
         XCTAssertFalse(defaults.removeObject(forKey: "k"))
-        XCTAssertEqual(defaults.object(forKey: "k") as? String, "v1", "没有「半删」这个状态")
+        XCTAssertEqual(defaults.object(forKey: "k") as? String, "v1", "Deletion cannot partially succeed")
 
         try setWritable(true, for: account)
         XCTAssertTrue(defaults.removeObject(forKey: "k"))
@@ -124,10 +120,9 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
     // MARK: - CASE 2a.4
 
-    /// CASE 2a.4 — `set(_:forCodableKey:)` 的两条出路。
-    ///
-    /// 防的是什么：这是 `AccountPhiSpaceSyncStateStore.save` 与两张映射 store 共用的那一条
-    /// 转发链；它不回传，上面三个 store 的 Bool 全是假的。
+    /// CASE 2a.4: both outcomes of set(_:forCodableKey:).
+    /// AccountPhiSpaceSyncStateStore.save and both mapping stores share this forwarding chain;
+    /// without propagating the result, all three stores report incorrect Bool values.
     func testAFailedCodableWriteRollsBackAndReportsFalse() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
@@ -149,10 +144,9 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
     // MARK: - CASE 2a.5
 
-    /// CASE 2a.5 — `removeAll()` 失败把**整张**字典还回来。
-    ///
-    /// 防的是什么：回滚写成「只还原被碰过的那一个键」的实现在别的五个面上看不出差别，
-    /// 只有 `removeAll` 能把它照出来——而它的失败态是整份账户偏好在内存里凭空消失。
+    /// CASE 2a.5: failed removeAll() restores the entire dictionary.
+    /// The other five APIs cannot detect rollback that restores only the touched key;
+    /// here that bug makes all account preferences disappear from memory.
     func testAFailedRemoveAllRestoresTheWholeDictionary() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
@@ -177,12 +171,11 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
 
     // MARK: - CASE 2a.6
 
-    /// CASE 2a.6 — CAS 面三个分支（`set(_:forCodableKey:ifCurrentDataEquals:)`）。
-    ///
-    /// 防的是什么：语义从「调用发生了」收口成「已改变**且**已落盘」之后，唯一调用方
-    /// （`Account.swift` 的头像缓存，它今天就丢这个返回值）行为必须一字不变：三个分支里
-    /// 只有 (c) 为真，与之前的 (a)=false / (b)=true / (c)=true 相比只有 (b) 变号——而 (b)
-    /// 之前正是一次**假阳**，值写进了内存、没写进盘。
+    /// CASE 2a.6: the three CAS branches of set(_:forCodableKey:ifCurrentDataEquals:).
+    /// The result means changed AND persisted, rather than merely called. The sole caller,
+    /// the avatar cache in Account.swift, discards it and must retain its behavior. Only (c)
+    /// returns true; previously (a)=false, (b)=true, (c)=true. Branch (b) was a false positive
+    /// that changed memory without changing disk.
     func testTheCompareAndSwapFaceMeansChangedAndPersisted() throws {
         let account = makeAccount()
         let defaults = account.userDefaults
@@ -194,19 +187,19 @@ final class AccountUserDefaultsRollbackTests: XCTestCase {
         let modifiedBefore = try FileManager.default
             .attributesOfItem(atPath: plist.path)[.modificationDate] as? Date
 
-        // (a) 比不中：零改动，**磁盘零写**。
+        // (a) No match: no changes and no disk writes.
         XCTAssertFalse(defaults.set(p2, forCodableKey: "p", ifCurrentDataEquals: Data([0x09])))
         XCTAssertEqual(defaults.data(forKey: "p"), d1)
         let modifiedAfter = try FileManager.default
             .attributesOfItem(atPath: plist.path)[.modificationDate] as? Date
-        XCTAssertEqual(modifiedBefore, modifiedAfter, "比不中的那一支一个字节都不许写")
+        XCTAssertEqual(modifiedBefore, modifiedAfter, "The nonmatching branch must not write any bytes")
 
-        // (b) 比中但写盘失败 ⇒ 回滚。之前这里回 true。
+        // (b) Match followed by disk failure rolls back; this previously returned true.
         try setWritable(false, for: account)
         XCTAssertFalse(defaults.set(p2, forCodableKey: "p", ifCurrentDataEquals: d1))
-        XCTAssertEqual(defaults.data(forKey: "p"), d1, "回滚可见：内存仍然是 P1")
+        XCTAssertEqual(defaults.data(forKey: "p"), d1, "Rollback leaves P1 in memory")
 
-        // (c) 比中且落盘 ⇒ true。
+        // (c) Match and successful persistence returns true.
         try setWritable(true, for: account)
         XCTAssertTrue(defaults.set(p2, forCodableKey: "p", ifCurrentDataEquals: d1))
         let stored: Payload? = defaults.codableValue(forKey: "p")

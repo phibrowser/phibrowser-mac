@@ -11,8 +11,8 @@ struct KeyLayerView: View {
     var controller: SyncKeyController? = nil
     var onFinish: () -> Void = {}
 
-    /// `ProfilePairingView` 的两个 `@State` 已上提为 `@Binding`（§5.3），Devices pane
-    /// 没有向导 VM，所以这里持那个最小的壳。
+    /// ProfilePairingView's two State values were lifted to Binding (§5.3). The Devices pane has no wizard VM,
+    /// so owns this minimal selection store.
     @StateObject private var pairingSelections = ProfilePairingSelectionStore()
 
     /// Run-loop modes the deferred `onFinish()` may be delivered in.
@@ -65,9 +65,8 @@ struct KeyLayerView: View {
                                        onSubmit: { decisions in
                         Task { await viewModel.submitPairing(decisions, controller: controller) }
                     })
-                    // 与今天 `ProfilePairingView.init` 的 `@State` 种子等价：那份种子在
-                    // view 第一次构造时算一次，这里在它出现时算一次，并在候选表被重载
-                    // （`applyPairingDecisions` 的失败路径）之后重新播种。
+                    // Equivalent to ProfilePairingView.init's initial State seed: seed on appearance, then
+                    // reseed after candidate reloads following applyPairingDecisions failure.
                     .onAppear { pairingSelections.seed(locals: locals, remotes: remotes) }
                     .onChange(of: locals.map(\.profileId)) { _ in
                         pairingSelections.seed(locals: locals, remotes: remotes)

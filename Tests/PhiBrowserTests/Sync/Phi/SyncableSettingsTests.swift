@@ -440,10 +440,10 @@ final class SyncableSettingsTests: XCTestCase {
 
     // MARK: - pinned-tab scope mirror (M3-3 §7.1)
 
-    /// CASE 8.1 — the mirror key is an ordinary synced setting and round-trips.
-    ///
-    /// 参数顺序是 `(值, defaults)`，值是生成的 protobuf 结构体（`stringValue` 属性 /
-    /// `OneOf_V.stringValue` case），不是手写枚举：两种写法都编译不过，这条用例把它钉住。
+    /// CASE 8.1: the mirror key is an ordinary synced setting and round-trips.
+    /// Argument order is (value, defaults), with a generated protobuf value using
+    /// stringValue/OneOf_V.stringValue, not a handwritten enum. Reversed or custom
+    /// forms do not compile; this test fixes the contract.
     func testPinnedTabScopeSettingRoundTripsAndIsRegistered() {
         let setting = PinnedTabScopeMirror.pinnedTabScope
 
@@ -564,7 +564,7 @@ final class SyncableSettingsTests: XCTestCase {
     }
 }
 
-// MARK: - valueSignature：去抖动推送触发器的去重判据
+// MARK: - valueSignature: Deduplication for debounced push triggers
 
 /// The `UserDefaults.didChangeNotification` subscription in `PhiChromiumCoordinator` cannot
 /// see WHICH key changed, and the sync engine writes the very same domain on every round

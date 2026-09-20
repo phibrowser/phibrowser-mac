@@ -63,11 +63,10 @@ final class SyncKeyController {
     let manager: AccountKeyManager
     let approvals: DeviceApprovalService
     let profileKeys: ProfileKeyManager
-    /// D6 §2.2：本地 spaceId <-> 账户 syncUuid 的映射层。`nil` 与 `spaceStateStore`
-    /// 同款含义——「这个 controller 没有 Space 段」（单元测试，以及任何还没接线的
-    /// 构造点）。**绝不给它一个内存默认值**：一个静默的进程内映射表会让每次启动重铸
-    /// 一遍 syncUuid，账户里于是每台机器每次启动都多出一份重复 Space；`nil` 的失败
-    /// 方向是「一条都不发布」，由 §9.3 的 `unmapped=<n>` 计数暴露。
+    /// D6 §2.2 local spaceId ↔ account syncUuid mapping layer. Nil means no Space section, like
+    /// spaceStateStore, for tests/unwired construction. Never provide an in-memory default: reminting on every
+    /// launch would duplicate account Spaces. Nil fails by publishing nothing, exposed via unmapped counts
+    /// (§9.3).
     let spaceKeys: SpaceSyncMappingManager?
 
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
@@ -80,21 +79,17 @@ final class SyncKeyController {
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
-    /// M3-3 §9.1：归属项（书签 / pin）的两张 per-kind 游标表，自撤销时**删文件**（不是保存
-    /// 一张空表）。空数组与 `spaceStateStore == nil` 同款含义——「这个 controller 没有归属项
-    /// 段」（单元测试，以及任何还没接线的构造点）。
-    ///
-    /// 持的是 store 而不是两个 URL：删文件是 `PhiOwnedItemStateStore` 契约里的一条
-    /// （`deleteFile()`），自己拼路径等于把 §3.5 的落点抄第二遍。
+    /// M3-3 §9.1 per-kind bookmark/pin cursor stores, whose files are deleted during self-revocation rather
+    /// than saved empty. An empty array means no owned-item section for tests/unwired construction. Retain
+    /// stores, not URLs: PhiOwnedItemStateStore.deleteFile owns deletion and avoids duplicating §3.5 paths.
     private let ownedItemStores: [any PhiOwnedItemStateStore]
-    /// M3-4a §4.4：自撤销要删的第三个文件——账户目录里的 `marker.json`（共享进度 marker 与
-    /// store birthday）。它不是游标表，所以不进 `ownedItemStores` 那个数组；nil 与空数组
-    /// 同款含义（单元测试，以及任何还没接线的构造点）。
+    /// M3-4a §4.4 self-revocation also deletes account marker.json, containing shared progress and store
+    /// birthday. It is not a cursor table, so stays outside ownedItemStores. Nil means unwired/test
+    /// construction, like the empty array.
     private let markerStore: (any PhiSyncMarkerStore)?
-    /// M3-3 §9.1 的第二半：抹掉本机全部 `syncId`（**行保留**，只把那一列置 nil）。
-    ///
-    /// 注入成一个窄闭包，与 `notifyChromium` 同形：controller 今天既不持 `Account` 也不持
-    /// `LocalStore`，而自撤销的单元测试不该为了这一步去够真库。
+    /// Second half of M3-3 §9.1: clear local syncId columns while preserving rows. A narrow closure like
+    /// notifyChromium keeps the controller independent of Account/LocalStore and lets self-revocation tests
+    /// avoid the real database.
     private let clearAllSyncIds: (@Sendable () async throws -> Void)?
 
     /// What an announcement says about the two pairing predicates it arrives
@@ -213,9 +208,9 @@ final class SyncKeyController {
 
     // MARK: - Space sync identity (M3-2b §2.2)
 
-    /// 主 actor 门面，形状照 `localProfileId(forGlobalUuid:)`（上面那两个）：
-    /// `AccountPhiSpaceAccess` 经既有的 `controller` 引用读写 Space 映射，
-    /// 引擎只经 `PhiSpaceLocalAccess` 碰到这里，不新增任何依赖。
+    /// Main-actor facade matching localProfileId(forGlobalUuid:). AccountPhiSpaceAccess uses its existing
+    /// controller reference for Space mappings; the engine reaches this only through PhiSpaceLocalAccess, with
+    /// no new dependency.
     func syncUuid(forSpaceId spaceId: String) -> String? {
         spaceKeys?.syncUuid(forSpaceId: spaceId)
     }
@@ -283,39 +278,31 @@ final class SyncKeyController {
         // whose cursor no longer exists.
         spaceKeys?.removeAllMappings()
 
-        // 4. M3-3 §9.1 的归属项两步，**次序不能反过来：先删三张游标表的文件（书签 / pin /
-        //    URL Rule，M3-4a），再清 `syncId`**（E14）。两种中途失败的后果不对称——
-        //    「文件没了、`syncId` 还在」是**可恢复**的：重新加入时那一次整类型重放
-        //    （R-M3-3-13 正是为这个形状写的）按身份把每条实体重新落回它原来那一行，游标
-        //    自己长回来；
-        //    「`syncId` 清了、文件还在」是**灾难**：游标说「我发布过这些身份」，本机却没有
-        //    任何行带这些身份，§4.7 的差分把**整张表**判成本机删除，重新加入后发出一批
-        //    tombstone，删掉账户上的整棵树。
+        // 4. Preserve self-revocation order (M3-3 §9.1 / E14): delete bookmark/pin/URL Rule cursor files
+        // first, then clear syncId. Files absent with identities retained is recoverable: full-type replay
+        // (R-M3-3-13) matches entities back to rows and rebuilds cursors. Clearing identities while retaining
+        // cursors makes §4.7 diff interpret the entire tree as locally deleted and tombstone it on rejoin.
+        // Delete files instead of saving valid empty tables, so load reports lost state and triggers replay
+        // (§3.5).
         //
-        //    删文件而不是保存一张空表（§3.5 的 `deleteFile()` 契约）：一张「正常的空表」
-        //    会让下一次 `load` 再也报不出损，于是那一次整类型重放不会发生。
-        //
-        //    **URL Rule 那一张只走第一步、不走第二步**（M3-4a §4.4 末两段）：下面的
-        //    `clearAllSyncIds` 闭包只覆盖书签。规则的 `syncId` 在插入点铸造（R-M3-4a-23），
-        //    清掉之后下一次写入重铸一个**新的**，重新加入时账户上那些旧身份没有任何设备
-        //    认领 ⇒ 孤儿实体；而规则的认领只对**从未发布**的行成立（R-M3-4a-53），D30 救不了。
-        //    留着 `syncId` 正好让重新加入时每条规则经「报损重放 + 按身份匹配本机行」认回它
-        //    自己那条实体（游标文件已经删掉）。
+        // URL Rules only undergo file deletion (M3-4a §4.4 final paragraphs). The closure clears bookmark IDs
+        // only. Rule IDs minted on insertion (R-M3-4a-23) must survive: reminting would orphan prior account
+        // entities, and claiming only covers never-published rows (R-M3-4a-53), so D30 cannot recover them.
+        // Retained IDs let lost-state replay reclaim the same entities.
         for store in ownedItemStores { store.deleteFile() }
-        // M3-4a §4.4：第三个要删的文件——`marker.json`。**仍然排在 `clearAllSyncIds()` 之前**：
-        // 上面那段论证里「文件没了、`syncId` 还在」是可恢复的一侧，marker 属于同一侧。删，
-        // 不是存一张空表：游标表删了而 marker 留着，重新加入时 marker 说「我已经越过账户的
-        // 全部历史」，那一次本该按身份把实体认回本机行的整类型重放一条实体都收不到，而游标表
-        // 是空的 ⇒ 差分把整张表判成「本机已删」⇒ 一批 tombstone 删掉账户上每一台设备的数据。
+        // M3-4a §4.4: delete marker.json before clearAllSyncIds too. Retained identities with absent files are
+        // recoverable. Keeping the old marker after cursor deletion would skip historical entities needed for
+        // replay/reclaim, allowing diff to interpret the tree as deleted and publish destructive tombstones.
+        // Delete the file; do not save an empty table.
         markerStore?.deleteFile()
         do {
-            // 行保留、只清 `syncId` 那一列——自撤销不是删数据。重新加入时这台机器的树是
-            // 「全部未同步」，§6 的认领会按 D10 与账户树重新对齐。
+            // Preserve rows and clear only syncId: self-revocation does not delete user data. On rejoin,
+            // §6/D10 claiming aligns this now-unsynced tree with the account.
             try await clearAllSyncIds?()
         } catch {
-            // **只记 warn、不中断、也不回滚上面那次删文件**。服务端已经把这台设备撤销掉
-            // 了，离开账户无论如何都已成事实；而停在「文件没了、`syncId` 还在」正是上面
-            // 论证里可恢复的那一侧。处理方向与 step 2 的设备密钥轮换失败逐字相同。
+            // Warn without interrupting or restoring deleted files. Server revocation already took effect;
+            // identities retained with absent files is the recoverable state described above, matching step 2
+            // device-key rotation failure handling.
             AppLogWarn("[phi-sync] clearing local sync ids failed; the rows keep their identities (\(PhiSyncLog.describe(error)))")
         }
 
@@ -694,15 +681,10 @@ final class SyncKeyController {
     /// has a profile this Mac does not" is exactly the ambiguity the modal exists
     /// to resolve, and auto-claiming would take the choice away from the user.
     func ensureLocalProfilesForAccount() async -> ProfileRefreshOutcome {
-        // Same gate as the Space section (§3.5), and deliberately NOT "is the
-        // modal on screen": setting the flag and presenting the modal are two
-        // events with a window between them, and a relaunch mid-pairing has
-        // another one.
-        //
-        // `.skipped`, not `.failed`: §11 defines a gate-shut round as
-        // `profile_refresh=skipped` and says in so many words that it is 不是失败.
-        // Folding it into `.failed` would misreport the counter AND make the
-        // engine treat a deliberate no-op as a retryable error.
+        // Same gate as the Space section (§3.5), not modal visibility: flag-setting and presentation are
+        // separate events, and relaunch during pairing adds another gap. A gate-closed round is
+        // profile_refresh=skipped, explicitly not failure (§11). Reporting failed would miscount and make the
+        // engine retry an intentional no-op.
         guard !ProfilePairingGate.joinPairingPending else {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
@@ -799,16 +781,13 @@ final class SyncKeyController {
         return outcome
     }
 
-    /// Temporary M2-5 diagnostic (issue ②, Needs-passphrase): records which key
-    /// a profile resolved to, tagged by source, so a delivered passphrase can be
-    /// compared across sessions — a changed hash for the same uuid is the
-    /// envelope/keybag key desync we're hunting. Logs only a short SHA-256
-    /// prefix, never the passphrase itself. Remove once ② is root-caused.
+    /// Temporary M2-5 diagnostic (issue 2, Needs-passphrase): identify resolved keys by source to compare
+    /// delivered passphrases across sessions. A changed hash for the same UUID signals envelope/keybag
+    /// desynchronization. Log only a short SHA-256 prefix, never the passphrase; remove after diagnosing issue
+    /// 2.
     ///
-    /// R12: the account-global uuid is truncated to 8 characters, like every
-    /// other uuid / tag hash this milestone logs. `AppLogInfo` goes to the
-    /// CocoaLumberjack FILE logger, which is the artifact support asks users to
-    /// upload, and "永不记录 profile_uuid 全串" is a constraint on that file.
+    /// R12 truncates account UUIDs to eight characters, like other milestone UUID/tag hashes. AppLogInfo
+    /// reaches the support-uploaded CocoaLumberjack file, which must never contain full profile_uuid values.
     private func probeResolve(_ source: String, profileId: String, uuid: String, passphrase: String) {
         let ppHash = SHA256.hash(data: Data(passphrase.utf8)).prefix(6)
             .map { String(format: "%02x", $0) }.joined()

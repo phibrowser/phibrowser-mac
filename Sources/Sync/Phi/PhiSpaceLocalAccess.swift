@@ -66,48 +66,41 @@ protocol PhiSpaceLocalAccess: AnyObject {
     func globalUuid(forProfileId profileId: String) -> String?
     func localProfileId(forGlobalUuid uuid: String) -> String?
 
-    /// Does this device still have that local Chromium profile? §6.2 A0's
-    /// dead-mapping criterion, written exactly as §3.6 states it: "反查命中但该
-    /// profileId 已不在 `ProfileManager.shared.userAssignableProfiles` 里".
-    /// A reverse lookup alone cannot answer it -- `globalUuid(forProfileId:)`
-    /// reads back the very mapping the reverse lookup resolved FROM, so it
-    /// always says yes.
+    /// Does this device still have that Chromium profile? §6.2 A0 / §3.6 defines a dead mapping as a
+    /// reverse-lookup hit whose profileId is absent from ProfileManager.shared.userAssignableProfiles. A
+    /// forward lookup cannot answer: it reads the same mapping the reverse lookup came from and always says
+    /// yes.
     func isKnownLocalProfile(_ profileId: String) -> Bool
 
-    /// §3.6's "唯一的例外 / 唯一自愈路径": drop one dead mapping so the next
-    /// round's refresh lists that uuid as missing and rebuilds the profile.
+    /// §3.6's sole exception/recovery path: drop a dead mapping so next round's refresh sees the UUID as
+    /// missing and recreates its profile.
     func dropMapping(forProfileId profileId: String)
 
     // MARK: - Space identity mapping (M3-2b §3.4)
     //
-    // 翻译 seam 就在这个协议的**上方**，不在它下方：写方法（`create` / `update` /
-    // `rebind` / `applyThemeState` / `applyOrder` / `hide` / `purge`）的参数
-    // **一律仍是本地 id**。把任何一个改成收 syncUuid，都是把翻译责任推给
-    // `LocalStore`，那正是 §2.4 的不变量禁止的事。
+    // Translation sits above this protocol. All write APIs still take local IDs:
+    // create/update/rebind/applyThemeState/applyOrder/hide/purge. Accepting syncUuid there would push
+    // translation into LocalStore, violating §2.4.
 
     func syncUuid(forSpaceId spaceId: String) -> String?
     func localSpaceId(forSyncUuid uuid: String) -> String?
-    /// 首次 snapshot 前的懒铸造（R-D6-7）。
+    /// Lazy minting before the first snapshot (R-D6-7).
     func ensureMapped(spaceId: String) throws -> String
-    /// 落地一个账户里有、本机没有的 Space 之后回写映射（§3.4）。
+    /// Persist mapping after landing an account Space absent locally (§3.4).
     func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws
-    /// 死映射自愈：反查命中、但 `getAllSpaces()` 里已经没有那一行。
+    /// Repair a dead mapping whose reverse lookup resolves a row absent from getAllSpaces.
     func dropSpaceMapping(forSpaceId spaceId: String)
-    /// `getAllSpaces()` 里还有没有这一行。`syncUuid(forSpaceId:)` 回答不了——它读回
-    /// 的正是反查解析 FROM 的那张表，永远说有（与 `isKnownLocalProfile` 同款理由）。
+    /// Whether getAllSpaces still contains the row. syncUuid(forSpaceId:) only rereads the mapping used by
+    /// reverse lookup and always answers yes, as with isKnownLocalProfile.
     func isKnownLocalSpace(_ spaceId: String) -> Bool
-    /// tag 索引的第二个种子（§3.4）：一个刚被向导映射、还没 commit 过的 Space 没有
-    /// 游标，而账户里那条实体的 tombstone 随时可能先到。
+    /// Second tag-index seed (§3.4): a wizard-mapped Space may lack a cursor before its first commit, while
+    /// the account tombstone can arrive first.
     func allSpaceMappings() -> [String: String]
 
-    /// 配对向导第 2 步的左列（§5.4）。只应用 §6.5 的**身份类**排除 —— incognito
-    /// 与两种 agent 特征 —— 而**不**应用 `currentSpaces()` 的「该 Space 的 profile
-    /// 已有映射」判据。含默认 Space。
-    ///
-    /// 这不是口味问题，是向导能否工作的前提：profile-映射那一条是一条**发布**前置
-    /// 条件，而按 R-D6-3，第 1 步的 Profile 决定要到 Finish 才应用——向导开着的时候
-    /// 正在被配对的那些 Profile 按定义还没有映射，用 `currentSpaces()` 取左列等于把
-    /// 它们下面的 Space 全部藏掉，左列只剩那条只读的默认行。
+    /// Pairing step-2 local column (§5.4), applying only §6.5 identity exclusions: incognito and both agent
+    /// characteristics. Include default Space and do not require mapped Profiles. That is a publication
+    /// precondition, while step-1 Profile decisions apply only at Finish (R-D6-3); currentSpaces would hide
+    /// all Spaces being paired.
     func pairableSpaces() -> [PhiLocalSpace]
 
     func isImporting(intoSpaceId spaceId: String) -> Bool
@@ -131,8 +124,8 @@ protocol PhiSpaceLocalAccess: AnyObject {
     func applyThemeState(spaceId: String, themeId: String?,
                          opacityLight: Double?, opacityDark: Double?) async throws
     func applyOrder(_ orderedSpaceIds: [String]) async throws
-    /// 远端软删（§9.2）。**单向**：D6 删掉 D2 的「加入账户同步」之后，`unhide` 没有
-    /// 任何可能的调用方，一条行一旦 hidden 就只会走 30 天窗口后的清理。
+    /// Remote soft deletion (§9.2), one-way after D6 removed D2 account-join behavior. No unhide callers
+    /// remain; hidden rows proceed only to 30-day cleanup.
     func hide(spaceId: String) async throws
     func purge(spaceId: String) async throws
 }
@@ -151,13 +144,10 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     // MARK: - Reads
 
-    /// §6.5 的排除清单，一份实现两个入口。`requireMappedProfile` 是**发布**前置
-    /// 条件（agent fallback profile 结构上永远不会被注册，所以绑在它上面的 Space
-    /// 不能发布）；配对向导要看的是**身份**，所以它传 false（§3.4 末）。
-    ///
-    /// §6.5's exclusion list applied AT THE SOURCE, not as an afterthought
-    /// filter: incognito and both agent signatures never reach the sync layer
-    /// at all.
+    /// One §6.5 exclusion implementation for two entry points. requireMappedProfile is a publication
+    /// prerequisite; agent fallback Profiles never register. Pairing asks only about identity and passes false
+    /// (§3.4 final paragraph). Apply exclusions at source so incognito and both agent signatures never reach
+    /// sync.
     private func localSpaces(requireMappedProfile: Bool) -> [PhiLocalSpace] {
         let pins = account.userDefaults.spaceThemeIds()
         let opacities = account.userDefaults.spaceOverlayOpacities()

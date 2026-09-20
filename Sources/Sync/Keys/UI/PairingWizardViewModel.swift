@@ -8,14 +8,13 @@ import Foundation
 
 enum PairingWizardStep: Equatable { case profiles, spaces }
 
-/// Retry 从 `.error` 出去的两条路。**没有 `.backToConfirm`**：`resume` 不是「来源
-/// 页」，它只有两个取值，都指向一个**能被重新算出来的**落点（一次重新加载 / 第 2 步的
-/// 那份选择），所以确认页不需要被记住。
+/// Two Retry destinations from error. No backToConfirm: resume describes a recomputable destination, either
+/// reload or retained step-2 selections, rather than remembering the source page.
 enum ErrorResume: Equatable {
-    /// 两个加载中至少一个失败（`start()` 自己置的）。Retry 重跑 `start()`。
+    /// At least one of the two loads failed in start(); Retry reruns start().
     case reload
-    /// 提交序列在**第 2 步的 Space 决定**上失败。Retry 直接回 `.spaces`，两步的选择
-    /// 全留，用户再按一次 Finish——重来的安全由幂等规则负责，不由这个 case 负责。
+    /// Submission failed on step-2 Space decisions. Retry returns to spaces with both steps' selections
+    /// intact; the user presses Finish again, and idempotency makes replay safe.
     case backToSpaces
 }
 
@@ -23,17 +22,17 @@ enum PairingWizardPhase: Equatable {
     case loading
     case profiles(locals: [PairingLocal], remotes: [RemoteProfile])
     case spaces(SpacePairingModel.Input)
-    /// D7 / R-D7-1：第 2 步之后、提交序列之前的覆盖确认页。载荷是**算好的**差异，
-    /// 不是选择——`spaceSelections` 仍然是唯一的可变状态，Back 什么都不用还原。
-    /// 空数组在这里是**非法**的：无差异时 Finish 根本不进这个 case。
+    /// D7 / R-D7-1 confirmation after step 2 and before submission. Carries computed differences, not
+    /// selections; spaceSelections remains the sole mutable state, so Back restores nothing. Empty arrays are
+    /// invalid because Finish skips confirmation without differences.
     case confirmOverwrite([SpaceOverwriteDiff])
     case submitting
     case done
     case error(message: String, resume: ErrorResume)
 }
 
-/// 向导的文案。集中在一处，于是 `KeyLayerViewModel` 的两条 R12 替换与向导用的是
-/// **同一条目录项**（key 即英文原文，两份不同的 comment 会在重新生成时打架）。
+/// Centralized wizard strings shared by KeyLayerViewModel's two R12 replacements. Each English key uses the
+/// same catalog entry/comment to avoid conflicting generated comments.
 enum PairingWizardStrings {
     static let profileLoadFailed = NSLocalizedString(
         "Couldn’t load your account’s profiles. Check your connection and retry.",
@@ -58,23 +57,19 @@ enum PairingWizardStrings {
         comment: "Pairing wizard - applying the decisions failed")
 }
 
-/// `Result` 的 Failure 必须 conform `Error`，而 `String` 不 conform（树上也没有这样一条
-/// extension）。载荷仍然就是要渲染的那句话，只是套了一层。
+/// Result.Failure must conform to Error; String does not. Wrap the message that will be rendered.
 private struct PairingWizardLoadFailure: Error { let message: String }
 
-/// 预览与期限之间的一次性闸门：谁先到谁交卷，续体只能被恢复一次，第二个到达者是空
-/// 操作。
+/// One-shot gate between preview and deadline: the first finisher resumes the continuation; the second is a
+/// no-op.
 ///
-/// **为什么不是 `withTaskGroup`。** 任务组在返回之前**必然**等待每一个子任务，而预览
-/// 那个子任务取消不掉：`PhiSyncEngine.serialized(_:)` 把轮体放进一个**非结构化**
-/// `Task {}`（不继承取消），随后 `await task.value` 是个非 throwing 的 `Task`，调用方
-/// 被取消它也不会提前返回；`runPreview` 自己也只看 `isStopped`，从不看
-/// `Task.isCancelled`。于是 `group.cancelAll()` 对真正在跑的那段工作是空操作，期限只
-/// 改变**报什么**，改变不了**什么时候报**——加载页（`.loading` 没有 Retry 按钮，窗口
-/// 也没有关闭键）会一直停在那里。
+/// Do not use withTaskGroup: groups await every child, but PhiSyncEngine.serialized runs an unstructured Task
+/// that does not inherit cancellation, awaits a nonthrowing task.value, and runPreview checks isStopped rather
+/// than Task.isCancelled. cancelAll would not stop that work, so the deadline would change the result without
+/// changing when loading ends.
 ///
-/// 被放弃的那一轮预览留在引擎队列上跑完，无害：§4.3 保证它一个字节都不持久化；它自己
-/// 的预算（`PhiSyncEngine.previewDeadlineMs`）负责让它真的停下来。
+/// The abandoned preview safely finishes in the engine queue: §4.3 forbids persistence, and its own
+/// previewDeadlineMs budget eventually stops it.
 private final class PreviewRace: @unchecked Sendable {
     typealias Outcome = Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
 
@@ -85,7 +80,7 @@ private final class PreviewRace: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    /// `nil` = 期限先到。
+    /// nil means the deadline won.
     func finish(_ outcome: Outcome) {
         lock.lock()
         let pending = continuation
@@ -95,32 +90,28 @@ private final class PreviewRace: @unchecked Sendable {
     }
 }
 
-/// 两步（外加 D7 的覆盖确认页）配对向导的状态机（§5.2 / §5.5）。
-///
-/// **向导有自己的 phase 枚举，绝不写 `KeyLayerPhase`**（R-D6-11）：`phase` 的第二个
-/// 写者正是那条把模态钉死在 `.working` 的缺陷。向导**读** `keyLayer.phase` 只在两处，
-/// 且都是取载荷：`.loading` 结束时取 `.pairingProfiles` 的载荷，以及
-/// `applyPairingDecisions` 返回 false 之后**重读**它刚重载过的候选表。
+/// State machine for the two-step pairing wizard plus D7 confirmation (§5.2 / §5.5). Own a separate phase
+/// enum; never write KeyLayerPhase (R-D6-11), whose second writer caused the modal to stick in working. Read
+/// keyLayer.phase only for pairingProfiles payload after loading and freshly reloaded candidates after
+/// applyPairingDecisions returns false.
 @MainActor
 final class PairingWizardViewModel: ObservableObject {
     @Published private(set) var phase: PairingWizardPhase = .loading
     @Published private(set) var step: PairingWizardStep = .profiles
 
-    /// 第 1 步的可变状态（§5.3 的上提）：`ProfilePairingView` 今天的两个 `private
-    /// @State` 搬到这里，view 改收 `@Binding`。没有这一步，把主按钮搬进页脚之后页脚
-    /// 既读不到 `allRowsDecided` 的入参，也读不到 `decisions()`。
+    /// Lift step-1 mutable state from ProfilePairingView into bindings (§5.3), allowing the footer to read
+    /// allRowsDecided inputs and decisions after moving the primary button.
     @Published var profileSelections: [String: ProfilePairingModel.Choice] = [:]
     @Published var profileRemoteChoices: [String: ProfilePairingModel.RemoteChoice] = [:]
-    /// 第 2 步**唯一**的可变状态。Back / Continue 往返不清，`.error` → Retry 也不清。
+    /// Step 2's sole mutable state, retained through Back/Continue and error → Retry.
     @Published private(set) var spaceSelections: [String: SpacePairingModel.Assignment] = [:]
 
-    /// `keyLayer.isSubmitting` 在**这个**对象上的镜像。视图只 `@StateObject` 观察向导
-    /// VM，跨对象读 `keyLayer.isSubmitting` 既不触发重画、在 `.error` 出现的那一刻也
-    /// 早被 `applyPairingDecisions` 的 `defer` 清掉了——所以页脚一律读这一条，**不要
-    /// 再把 `keyLayer.isSubmitting` 加回去**（§6.5 的判据见 `PairingWizardView.actions`）。
+    /// Mirror submission state on this observed wizard VM. The view neither observes keyLayer.isSubmitting
+    /// changes nor can rely on it after applyPairingDecisions clears it in defer. Footer logic must use this
+    /// property, never restore cross-object reads (§6.5; PairingWizardView.actions).
     @Published private(set) var isApplying = false
 
-    /// 向导自己建的那一个（这一句从 `AppModalPairingHost.present` 搬进来），只读不写。
+    /// Created by the wizard (moved from AppModalPairingHost.present); this reference is read-only.
     let keyLayer: KeyLayerViewModel
 
     private let previewAccountSpaces: () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
@@ -128,30 +119,22 @@ final class PairingWizardViewModel: ObservableObject {
     private let themeDisplayName: (String) -> String?
     private let loadDeadline: Duration
 
-    /// 上一条的默认值，**与 init 的默认实参同源**，并且**与
-    /// `PhiSyncEngine.previewDeadlineMs` 逐字相等**——两道期限取值相同是一条不变式
-    /// （见 `loadAccountSpaces`），只抬一边会让界面在引擎还在翻页时就放弃，而被放弃的那
-    /// 一轮预览继续占着 round 队列。落成 `static` 是为了让用例钉得住它：默认实参本身读不到。
+    /// Default shared with init and exactly equal to PhiSyncEngine.previewDeadlineMs; both deadlines must
+    /// match (see loadAccountSpaces). Raising only one lets UI abandon a still-paging preview occupying the
+    /// round queue. Expose a static value so tests can pin the default.
     ///
-    /// `nonisolated` 不是装饰：**默认实参在非隔离的上下文里求值**，而这个类型是
-    /// `@MainActor`，少了它下面那行默认实参在 Swift 6 语言模式里直接是个错误。
-    /// `Duration` 是 `Sendable` 的不可变值，跨隔离读它安全。
+    /// nonisolated is required because default arguments evaluate in a nonisolated context, otherwise Swift 6
+    /// rejects this MainActor type's default. Duration is an immutable Sendable value.
     nonisolated static let defaultLoadDeadline: Duration =
         .milliseconds(PhiSyncEngine.previewDeadlineMs)
 
-    /// `start()` 的世代号。`AppModalPairingHost.reloadAllowed` 对 `.loading` **故意**
-    /// 放行（一次卡住的加载要有第二次机会），所以两趟 `start()` 交叠是设计内的常态，
-    /// 不是异常——`reloadPresented()` 直接调 `start()`，绕过 `retry()` 的
-    /// `guard case .error`。没有这个守卫，两种坏结果都可达：
-    ///  - 第二趟的 `keyLayer.startPairing` 取消掉第一趟的 profile 加载，于是第一趟
-    ///    提前醒来、看见 `keyLayer.phase` 还是 `.working`，把一个 `.error(_, .reload)`
-    ///    盖在一次其实没问题的加载上；
-    ///  - 第一趟先落地、用户已经在第 1/2 步做完选择，第二趟的预览随后回来，重跑同一段
-    ///    成功分支，把 `profileSelections` / `spaceSelections` 一起清掉并把 `step` 拽回
-    ///    `.profiles`——正是 `reloadAllowed` 拒绝那四个交互态要防的输入丢失。
+    /// Generation for start(). reloadAllowed deliberately permits restarting loading, so overlapping loads are
+    /// normal: reloadPresented calls start directly, bypassing retry's error guard. Without generation checks,
+    /// a canceled first profile load could overwrite a healthy second load with error, or an older preview
+    /// could reset completed user choices and return to profiles.
     ///
-    /// 形状与 `KeyLayerViewModel.runPairingLoad` 的 `Task.isCancelled` 守卫同源：
-    /// **两次 await 之后的每一次写，都要先确认自己还是最新的那一趟。**
+    /// As with KeyLayerViewModel.runPairingLoad cancellation checks, every write after either await must first
+    /// confirm this is the newest load.
     private var loadGeneration = 0
 
     private var loadedLocals: [PairingLocal] = []
@@ -184,7 +167,7 @@ final class PairingWizardViewModel: ObservableObject {
         SpacePairingModel(input: spacesInput, selections: spaceSelections)
     }
 
-    /// 第 1 步的启用判据，逐字复用既有的那一条（KeyLayerViewModel.allRowsDecided）。
+    /// Step-1 enablement exactly reuses KeyLayerViewModel.allRowsDecided.
     var profileRowsDecided: Bool {
         let live = profileModel
         return keyLayer.allRowsDecided(remotes: loadedRemotes,
@@ -192,35 +175,30 @@ final class PairingWizardViewModel: ObservableObject {
                                        createLocalUuids: live.createLocalUuids)
     }
 
-    // MARK: - 宿主的唯一驱动入口
+    // MARK: - Sole host entry point
 
     func start(controller: SyncKeyController) async {
         loadGeneration += 1
         let generation = loadGeneration
         phase = .loading
-        // 两次加载**并发发起**（互不依赖），但**必须都成功**才进 `.profiles`：第 2 步
-        // 的 Account 列没有数据源就没法渲染，而在第 1 步之后才发现这件事，等于让用户
-        // 白做一遍决定。
+        // Start independent loads concurrently, but require both before profiles: step 2 needs account data,
+        // and discovering its absence after step-1 decisions would waste the user's work.
         async let profileLoad: Void = keyLayer.startPairing(controller: controller)
         async let spaceLoad = loadAccountSpaces()
         await profileLoad
 
-        // 每一次 await 之后的**第一件事**：确认自己还是最新的那一趟。往下一个字节都不写
-        // （见 `loadGeneration`）。
+        // First action after each await: confirm the newest generation before writing anything (see
+        // loadGeneration).
         guard generation == loadGeneration else {
             AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
             return
         }
 
-        // profile 那一半失败就**立刻**报错，不再等预览。预览最长要走
-        // `PhiSyncEngine.previewDeadlineMs` = 120 s，而这一页已经注定进不了 `.profiles`：
-        // 让用户对着加载页再等两分钟，换来的还是同一句话。
-        //
-        // `async let spaceLoad` 在离开作用域时被隐式取消并等待，于是这个 `Task` 还会活到
-        // 那一轮预览自己结束为止——但**界面此刻已经切到 `.error`**（`phase` 是
-        // `@Published`），没有任何调用方在等 `start()` 的返回值（两个调用点都是
-        // `Task { await viewModel.start(…) }`）。取消本身对那一轮预览是空操作（同
-        // `PreviewRace` 的注释），丢弃它无害：§4.3 保证它一个字节都不持久化。
+        // Report profile failure immediately instead of waiting up to 120 s for a preview that cannot make
+        // this page succeed. Leaving scope still cancels/awaits async-let spaceLoad, so the Task may live
+        // until preview ends, but Published phase already shows error and callers do not await start's result.
+        // Preview cancellation cannot stop its work (see PreviewRace); abandoning it is safe because §4.3
+        // forbids persistence.
         guard case .pairingProfiles(let locals, let remotes) = keyLayer.phase else {
             let message: String
             if case .error(let existing) = keyLayer.phase { message = existing }
@@ -250,10 +228,10 @@ final class PairingWizardViewModel: ObservableObject {
         }
     }
 
-    // MARK: - 第 1 步
+    // MARK: - Step 1
 
-    /// 「Continue」**只做校验**：把决定冻结、把 `step` 切到 `.spaces`。不发网络、不写
-    /// 映射、不碰 `joinPairingPending`。
+    /// Continue only validates, freezes decisions and moves to spaces. No network, mapping writes or
+    /// joinPairingPending changes.
     func continueToSpaces() {
         guard profileRowsDecided else { return }
         profileDecisions = profileModel.decisions()
@@ -268,10 +246,9 @@ final class PairingWizardViewModel: ObservableObject {
         logStep()
     }
 
-    // MARK: - 第 2 步
+    // MARK: - Step 2
 
-    /// 仅有的两个 mutator。D7 的确认页**不新增第三个**：Back 只是把 phase 换回
-    /// `.spaces`，选择从来没被动过。
+    /// The only two mutators. D7 adds none: Back changes phase to spaces while selections remain intact.
     func assign(_ assignment: SpacePairingModel.Assignment?, to localSpaceId: String) {
         var updated = spaceSelections
         if let assignment { updated[localSpaceId] = assignment }
@@ -283,50 +260,48 @@ final class PairingWizardViewModel: ObservableObject {
         spaceSelections = spaceModel.addAllAsNew()
     }
 
-    // MARK: - Finish / 确认页 / 提交
+    // MARK: - Finish / confirmation / submission
 
-    /// 第 2 步的「Finish」。**它不再是提交点**：先算 D7 的差异（纯本地），有差异就先
-    /// 把确认页交出去，一个字节都不写。
+    /// Step-2 Finish computes D7 differences locally before submitting. If any exist, show confirmation
+    /// without writing anything.
     func finish(controller: SyncKeyController) async {
         let diffs = SpaceOverwriteDiff.diffs(decisions: spaceModel.decisions(),
                                              locals: spacesInput.locals,
                                              accountSpaces: spacesInput.accountSpaces,
                                              themeDisplayName: themeDisplayName)
-        // §9.1 第三条：**空差异也记**——「这次 Finish 到底出没出确认页」只有这一条
-        // 线索。所以它在守卫**之前**，不在 `.confirmOverwrite` 分支里面。只有两个计数，
-        // 没有名称、字段名与新旧值（R12）。
+        // §9.1 item 3: log even empty diffs before the guard, the only trace of whether Finish showed
+        // confirmation. R12 permits just two counts, no names, field names or old/new values.
         AppLogInfo("[phi-sync] pairing wizard overwrite: spaces=\(diffs.count) "
                    + "fields=\(diffs.reduce(0) { $0 + $1.changes.count })")
         guard diffs.isEmpty else { phase = .confirmOverwrite(diffs); return }
         await applyDecisions(controller: controller)
     }
 
-    /// 确认页的两个出口。Back 不还原任何东西——`spaceSelections` 从来没被动过。
+    /// Confirmation exits. Back restores nothing because spaceSelections was never changed.
     func backFromConfirmation() { phase = .spaces(spacesInput) }
 
     func applyConfirmedOverwrite(controller: SyncKeyController) async {
         await applyDecisions(controller: controller)
     }
 
-    /// Retry 的两条路（§6.5）。一个 Retry 两种动作，判据只有 `resume` 这一个。
+    /// Two Retry paths (§6.5), selected solely by resume.
     func retry(controller: SyncKeyController) async {
         guard case .error(_, let resume) = phase else { return }
         switch resume {
         case .reload:
             await start(controller: controller)
         case .backToSpaces:
-            // 重跑 `start()` 会把 `spacesInput` 与用户在第 2 步的指派一起冲掉（幂等
-            // 只保证重写映射安全，不保证选择还在）。
+            // Do not rerun start here: it clears spacesInput and step-2 assignments. Idempotent mapping writes
+            // do not preserve user selections.
             phase = .spaces(spacesInput)
         }
     }
 
-    /// R-D6-3 的提交序列，一字未变；两个入口（无差异的 Finish、确认页的 Apply）共用
-    /// 它，**不许**出现第二条应用路径。
+    /// The unchanged R-D6-3 submission sequence shared by no-diff Finish and confirmation Apply; no second
+    /// application path is permitted.
     private func applyDecisions(controller: SyncKeyController) async {
-        // 再入闸。两个入口（无差异的 Finish、确认页的 Apply）都是 `Task { await … }`，
-        // 一次双击就能让两趟提交交叠，而序列里的每一步都只在**顺序**重放下才是幂等的
-        // （`.createLocal` 会建出第二个空 profile，`.addAsNew` 会铸第二个 uuid）。
+        // Reject reentrant submission: both Task-based entry points can overlap on a double-click. Idempotency
+        // requires sequential replay; concurrent createLocal/addAsNew could create a second profile/UUID.
         guard !isApplying else {
             AppLogInfo("[phi-sync] pairing wizard: a submit is already applying; ignoring the second one")
             return
@@ -337,43 +312,40 @@ final class PairingWizardViewModel: ObservableObject {
         var spaceMaps = 0
         var spaceMints = 0
 
-        // 1. Profile 决定。
+        // 1. Profile decisions.
         guard await keyLayer.applyPairingDecisions(profileDecisions, controller: controller) else {
             step = .profiles
-            // 载荷只有一个来源：`applyPairingDecisions` 失败时自己调 `startPairing`
-            // 重载了候选表，结果就在 `keyLayer.phase` 里。这是第二处「读 phase」，
-            // 仍然只读不写。
+            // Use the sole payload source: failed applyPairingDecisions reloads candidates via startPairing
+            // into keyLayer.phase. This second phase read still never writes it.
             if case .pairingProfiles(let locals, let remotes) = keyLayer.phase {
                 loadedLocals = locals
                 loadedRemotes = remotes
                 reseedProfileSelections(locals: locals, remotes: remotes)
                 phase = .profiles(locals: locals, remotes: remotes)
             } else {
-                // 重载本身也失败了；恢复目标是重跑两个加载。
+                // Candidate reload also failed; Retry must rerun both loads.
                 phase = .error(message: PairingWizardStrings.profileLoadFailed, resume: .reload)
             }
             logApplied(spaceMaps: spaceMaps, spaceMints: spaceMints, ok: false)
             return
         }
 
-        // 2. Space 决定。写的是**映射表**（`sync.spaceGlobalUuids`），不是**同步表**
-        //    （`sync.phiSpaces`），两张表没有交集，所以这里不需要排进引擎的 round
-        //    队列；而且写映射的时刻 Space 段的门还关着（第 3 步才清标志），引擎不会
-        //    同时在读这些映射做 snapshot。这就是「为什么这里可以在主 actor 上直接写」
-        //    的全部理由（§5.6）。
+        // 2. Space decisions write sync.spaceGlobalUuids mappings, not sync.phiSpaces state. The tables are
+        // disjoint and the Space gate remains closed until step 3, so the engine cannot snapshot these
+        // mappings concurrently. This permits direct main-actor writes without engine round scheduling (§5.6).
         do {
             for decision in spaceModel.decisions() {
                 if try apply(decision, controller: controller) { spaceMints += 1 }
                 else { spaceMaps += 1 }
             }
         } catch {
-            // 停在第 2 步。原地重来见 §5.1 的幂等规则。
+            // Stay on step 2; §5.1 idempotency makes retry safe.
             phase = .error(message: PairingWizardStrings.applyFailed, resume: .backToSpaces)
             logApplied(spaceMaps: spaceMaps, spaceMints: spaceMints, ok: false)
             return
         }
 
-        // 3. 门。映射（Profile 与 Space 两张表）在门打开之前就已经全部写好。
+        // 3. Open the gate only after both Profile and Space mapping tables are fully written.
         ProfilePairingGate.joinPairingPending = false
         // 4.
         await controller.resolveMappings()
@@ -381,14 +353,12 @@ final class PairingWizardViewModel: ObservableObject {
         logApplied(spaceMaps: spaceMaps, spaceMints: spaceMints, ok: true)
     }
 
-    /// 返回 true 表示**这一次**真的铸了一个新 uuid（`.addAsNew` 的首次应用），false 表示
-    /// 它是一次认领、或是一次「已经是想要的值」的重放。计数是元数据（§9.1），重放不该
-    /// 被算成第二次铸造。
+    /// Return true only when this call mints a new UUID on first addAsNew application; claims and
+    /// already-satisfied replays return false, preserving §9.1 metadata counts.
     ///
-    /// 幂等（§5.1）：已写下的映射撞 `.alreadyMapped` 时，**若既有映射等于这一行想写的
-    /// 值，视为已完成**；不等则是硬错误（用户在两次尝试之间改了选择而第一次已经写下
-    /// ——不应该发生，但必须被看见）。两支决定各有各的「等于想写的值」判据：`.existing`
-    /// 比的是选中的那个 uuid，`.addAsNew` 比的是「这个 uuid 是不是账户里的某一条」。
+    /// Idempotency (§5.1): alreadyMapped succeeds only if the existing mapping matches the desired decision;
+    /// otherwise expose a hard error, including changed choices after partial success. existing compares the
+    /// selected UUID; addAsNew checks whether its UUID belongs to the account list.
     private func apply(_ decision: (localSpaceId: String, assignment: SpacePairingModel.Assignment),
                        controller: SyncKeyController) throws -> Bool {
         switch decision.assignment {
@@ -397,30 +367,28 @@ final class PairingWizardViewModel: ObservableObject {
                 try controller.mapSpace(decision.localSpaceId, toSyncUuid: syncUuid)
             } catch SpaceSyncMappingError.alreadyMapped {
                 guard controller.syncUuid(forSpaceId: decision.localSpaceId) == syncUuid else {
-                    // R12：只记「不相等」这个事实，不记 uuid。
+                    // R12: log mismatch only, never UUIDs.
                     AppLogError("[phi-sync] pairing wizard: an existing Space mapping disagrees with the choice (expected != actual)")
                     throw SpaceSyncMappingError.alreadyMapped
                 }
             }
             return false
         case .addAsNew:
-            // `ensureSpaceMapped` 是「不铸第二个」意义上的幂等，**不是这一行想要的那种
-            // 幂等**：它对一个已经映射到**账户某条 Space** 的本地行会静默成功并保留原
-            // 值。于是一次部分应用之后，用户把那一行**改选**成 Add as new（他要的正是
-            // 保住本机的名字/图标/颜色）、Finish——D7 的差异跳过 `.addAsNew` 行，确认页
-            // 不出现，映射却原封不动，首次同步走 A1「无基线 ⇒ 整条采纳」，恰好覆盖掉他
-            // 想保住的那些字段。所以这一支要和 `.existing` 一样**显式**判：
-            //  - 没有映射 ⇒ 铸一个（真正的新身份）；
-            //  - 有映射，但那个 uuid 不在账户列表里 ⇒ 是本机自己早先铸的，视为已完成；
-            //  - 有映射，且那个 uuid 就是账户里的某条 ⇒ 硬错误，和 `.existing` 的
-            //    「expected != actual」同一条理由：绝不静默执行一个已被用户撤销的决定。
+            // ensureSpaceMapped only prevents a second UUID; it does not enforce addAsNew intent. After
+            // partial application, a user might switch an existing-account choice to addAsNew to retain local
+            // fields. Silently retaining the account mapping would skip D7 confirmation, then A1 baseline-free
+            // adoption would overwrite those fields.
+            //
+            // Explicitly distinguish: absent mapping → mint; mapped UUID absent from the account list →
+            // previously minted locally, done; mapped UUID present in the account list → hard mismatch, never
+            // silently execute a revoked decision.
             if let existing = controller.syncUuid(forSpaceId: decision.localSpaceId) {
                 guard !spacesInput.accountSpaces.contains(where: { $0.syncUuid == existing }) else {
-                    // R12：只记「这一行还绑在账户的某条 Space 上」这个事实，不记 uuid。
+                    // R12: log only that the row remains bound to an account Space, never its UUID.
                     AppLogError("[phi-sync] pairing wizard: an \"add as new\" row is still bound to an account Space (expected != actual)")
                     throw SpaceSyncMappingError.alreadyMapped
                 }
-                return false            // 本机早先铸的那一个，没有新铸
+                return false            // Already minted locally; no new identity.
             }
             _ = try controller.ensureSpaceMapped(spaceId: decision.localSpaceId)
             return true
@@ -434,9 +402,9 @@ final class PairingWizardViewModel: ObservableObject {
         profileRemoteChoices = [:]
     }
 
-    /// §5.2 的三级取名：`remotes`（未认领的账户 Profile，解开的注册名）→ 已映射的账户
-    /// Profile 的本地显示名 → 都不命中就**没有名字**（视图渲染成 `—`，且不影响任何
-    /// 判据）。两份材料合起来覆盖账户里的每一个 Profile，所以第 1 步不必提前提交。
+    /// §5.2 name resolution: decrypted registration name from unclaimed remotes → local display name of a
+    /// mapped account Profile → no name, rendered as an em dash without affecting predicates. Together the two
+    /// sources cover account Profiles without early step-1 submission.
     private func makeSpacesInput(accountSpaces: [PhiAccountSpaceSummary],
                                  remotes: [RemoteProfile],
                                  controller: SyncKeyController) -> SpacePairingModel.Input {
@@ -460,28 +428,26 @@ final class PairingWizardViewModel: ObservableObject {
                                        accountProfileNames: accountNames)
     }
 
-    /// §4.5 的期限 + §4.6 的错误映射，一处。`URLSession` 默认每请求 60 s，而预览是一次
-    /// **分页**拉取，不设期限就可能让加载页停几分钟。R12：具体错误只进日志。
+    /// Centralize §4.5 deadline and §4.6 error mapping. A paginated preview with per-request URLSession
+    /// defaults of 60 s could otherwise stall for minutes. R12 logs detailed errors only.
     ///
-    /// **期限一共两道，取值相同，职责不同**（M3-3 §5.8 把两者一起从 45 s 抬到 120 s：
-    /// 书签与 pin 之后，一次预览要走过整个账户才数得清有几个 Space；加载页为此有一条
-    /// 明说要等多久的进度文案）：这一道保证**界面**不卡（无论底下那一轮
-    /// 怎么样，到点就返回），`PhiSyncEngine.previewDeadlineMs` 那一道保证**工作**真的
-    /// 停下来（轮体自己不再往下翻页，round 队列随之让开）。少了任何一道都不够：这一道
-    /// 管不了引擎队列，那一道管不了单次请求的 60 s。
+    /// Two equal deadlines have separate duties: UI returns promptly regardless of underlying work;
+    /// PhiSyncEngine.previewDeadlineMs stops further pages and releases the round queue. Either alone is
+    /// insufficient: UI cannot free the engine, and engine paging checks cannot shorten an in-flight request.
+    /// M3-3 §5.8 raised both from 45 to 120 s because counting Spaces now traverses bookmarks/pins across the
+    /// account; loading copy states that wait.
     private func loadAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PairingWizardLoadFailure> {
         let preview = previewAccountSpaces
         let deadline = loadDeadline
-        // 两个赛跑者都是**非结构化**任务，交卷走一次性闸门（`PreviewRace` 的注释写了
-        // 为什么任务组在这里不成立）。于是期限那一支**立刻**返回，界面不会等在一个
-        // 取消不掉的子任务上。
+        // Both racers are unstructured tasks using the one-shot PreviewRace gate. The deadline returns
+        // immediately without waiting for an uncancelable child, unlike a task group.
         let outcome: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>? =
             await withCheckedContinuation { continuation in
                 let race = PreviewRace(continuation)
                 Task { race.finish(await preview()) }
                 Task {
                     try? await Task.sleep(for: deadline)
-                    race.finish(nil)    // 期限先到
+                    race.finish(nil)    // The deadline won.
                 }
             }
         guard let outcome else {
@@ -497,21 +463,21 @@ final class PairingWizardViewModel: ObservableObject {
             case .engineUnavailable, .retired:
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewUnavailable))
             case .timedOut:
-                // 引擎那一侧的同一条期限（`PhiSyncEngine.previewDeadlineMs`）。文案与
-                // 向导自己的期限**同一句**：对用户来说两者是同一件事。
+                // Use the same timeout message for the engine deadline and wizard deadline; users experience
+                // the same outcome.
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewTimedOut))
             case .truncated:
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewTruncated))
             case .transport:
-                // `.transport("not_my_birthday")` **不是死路**：设置同步照常按 60 s
-                // 跑，它自己的 birthday 重试会把 `storedBirthday` 修好，所以下一次
-                // Retry 就能过——唯一出口不是自撤销。
+                // transport(not_my_birthday) is recoverable: settings sync continues every 60 s and its
+                // birthday retry repairs storedBirthday. A subsequent Retry can succeed; self-revocation is
+                // not the only exit.
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewFailed))
             }
         }
     }
 
-    /// R12：日志里只出现这些固定 code，绝不是插值出来的错误文本。
+    /// R12: log only these fixed codes, never interpolated error descriptions.
     private static func code(for error: PhiSpacePreviewError) -> String {
         switch error {
         case .engineUnavailable: return "engine_unavailable"
@@ -522,7 +488,7 @@ final class PairingWizardViewModel: ObservableObject {
         }
     }
 
-    // MARK: - §9.1 的两条日志（只有计数与布尔）
+    // MARK: - §9.1 logs (counts and booleans only)
 
     private func logStep() {
         let undecided: Int

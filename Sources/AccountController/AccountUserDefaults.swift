@@ -7,18 +7,16 @@ import Foundation
 
 /// Account-scoped preferences persisted to a plist under `account.userDataStorage/defaults`.
 ///
-/// **内存永不领先磁盘（R-M3-4a-83）。** 六个写入面全部在同一个 `queue.sync` 块内先拍
-/// 一份 `storage` 的快照，落盘失败就把快照写回去。于是进程内的字典与 plist 永远是同一
-/// 份：一次失败的写不会在内存里留下一个「已经改过」的值，让下一轮的读-改-写以为没有
-/// 变化而早退——那正是 §2.7「plist 写失败之后的第二轮」整行的病根。
+/// Memory must never lead disk (R-M3-4a-83). All six write APIs snapshot `storage` and restore it on
+/// persistence failure within the same `queue.sync` block. A failed write must not leave an in-memory value
+/// that causes the next read-modify-write to skip persistence (§2.7, second round after plist write failure).
 ///
-/// 六个面里只有四个自带 `queue.sync`（两个 `set(_:forKey:)` 重载、CAS 面、`removeAll()`）；
-/// `removeObject(forKey:)` 与 `set(_:forCodableKey:)` 是转发面，**不各开一个块**：再套
-/// 一层会让快照跨两次入队，中间可以插进另一个写者，回滚就会把别人的写一起抹掉。它们的
-/// 快照与回滚发生在被转发的那个块里。
+/// Only four APIs own a `queue.sync` block: both `set(_:forKey:)` overloads, CAS, and `removeAll()`.
+/// `removeObject(forKey:)` and `set(_:forCodableKey:)` delegate snapshot and rollback to those blocks. A
+/// separate block could interleave with another writer and roll back its changes.
 ///
-/// 返回值的语义：前五个面是「**已落盘**」，第六个（`ifCurrentDataEquals:` 的 CAS 面）
-/// 是「**已改变且已落盘**」。前五个带 `@discardableResult`，所以非同步调用方一处不改。
+/// The first five APIs return whether persistence succeeded and use `@discardableResult` for existing callers.
+/// CAS (`ifCurrentDataEquals:`) returns whether the value changed AND persisted.
 final class AccountUserDefaults {
     private let account: Account
     private let storeURL: URL
@@ -48,7 +46,7 @@ final class AccountUserDefaults {
         }
     }
     
-    /// true = 已落盘。失败时 `storage` 回到写之前那一份（R-M3-4a-83）。
+    /// Returns true after persistence; restores the previous `storage` on failure (R-M3-4a-83).
     @discardableResult
     func set(_ value: Any?, forKey key: String) -> Bool {
         queue.sync {
@@ -66,8 +64,8 @@ final class AccountUserDefaults {
         }
     }
 
-    /// `DefaultsKey` 重载有**自己的** `queue.sync` 块，所以回滚也要自己写一遍：
-    /// 只改一个重载在类型上完全无声。
+    /// The `DefaultsKey` overload owns its `queue.sync` block and must implement rollback too; updating only
+    /// one overload produces no type error.
     @discardableResult
     func set(_ value: Any?, forKey key: DefaultsKey) -> Bool {
         queue.sync {
@@ -85,8 +83,8 @@ final class AccountUserDefaults {
         }
     }
 
-    /// 转发面：快照与回滚在 `set(_:forKey:)` 的那个 `queue.sync` 块里，这里只把
-    /// Bool 转出来。
+    /// Delegates snapshot and rollback to `set(_:forKey:)` within its `queue.sync` block and forwards the
+    /// result.
     @discardableResult
     func removeObject(forKey key: String) -> Bool {
         set(nil, forKey: key)
@@ -116,8 +114,8 @@ final class AccountUserDefaults {
         object(forKey: key) as? Date
     }
     
-    /// 第二个转发面：编码之后走 `set(_:forKey:)`，回滚同样在那个块里。编码抛错是
-    /// 「一个字节都没写」，回 false。
+    /// After encoding, delegates persistence and rollback to `set(_:forKey:)`. Encoding failure writes nothing
+    /// and returns false.
     @discardableResult
     func set<T: Encodable>(_ value: T?, forCodableKey key: String) -> Bool {
         guard let value = value else {
@@ -132,12 +130,11 @@ final class AccountUserDefaults {
         }
     }
 
-    /// Atomically writes an encoded value only when the stored data has not
-    /// changed since the caller captured `expectedData`.
+    /// Atomically writes an encoded value only when the stored data has not changed since the caller captured
+    /// `expectedData`.
     ///
-    /// **这一个面的 true 是「已改变 *且* 已落盘」**（R-M3-4a-83）：比不中回 false 并且
-    /// 磁盘零写，比中但落盘失败也回 false 并把 `storage` 还原——后者今天是一次假阳，
-    /// 值进了内存、没进 plist。
+    /// Here true means changed AND persisted (R-M3-4a-83). A mismatch returns false without writing;
+    /// persistence failure also returns false and restores `storage`, avoiding an in-memory-only success.
     @discardableResult
     func set<T: Encodable>(
         _ value: T,
@@ -174,8 +171,8 @@ final class AccountUserDefaults {
         }
     }
     
-    /// 失败时还原的是**整张字典**，不是被碰过的那一个键：这个面的失败态是整份账户
-    /// 偏好在内存里凭空消失。
+    /// Restore the entire dictionary on failure; otherwise all account preferences would disappear from
+    /// memory.
     @discardableResult
     func removeAll() -> Bool {
         queue.sync {
@@ -217,7 +214,7 @@ final class AccountUserDefaults {
         }
     }
     
-    /// 调用方**必须**已经持有 `queue`，并且必须处理 false：六个写入面按它回滚。
+    /// The caller must hold `queue` and handle false: all six write APIs use it to trigger rollback.
     private func persistLocked() -> Bool {
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: storage, format: .xml, options: 0)

@@ -243,14 +243,16 @@ the other lists do. Users can uncheck it in the sheet.
 
 | Setting | Pref | Default |
 | --- | --- | --- |
-| Block ads | `phi.content_blocking.block_ads` | true |
-| Block cookie banners | `phi.content_blocking.block_cookie_banners` | true |
-| Block trackers | `phi.content_blocking.block_trackers` | true |
+| Block ads | `phi.content_blocking.block_ads` | false |
+| Block cookie banners | `phi.content_blocking.block_cookie_banners` | false |
+| Block trackers | `phi.content_blocking.block_trackers` | false |
 | List overrides | `phi.content_blocking.list_overrides` (dict id -> bool) | empty; catalog defaults apply |
 | Site exceptions | `phi.content_blocking.site_exceptions` (list of registrable domains) | empty |
 
-Defaults match the reference design's enabled state. Confirmed by the owner
-on 2026-09-17.
+All three toggles start off; the user opts in from Privacy settings. The
+feature flag stays on so a toggle takes effect without a restart. Decided
+by the owner on 2026-09-20 (it replaces the 2026-09-17 decision to start
+enabled).
 
 Profile behavior:
 
@@ -538,7 +540,8 @@ identity, milestone patch replay, license inventory, budgets in §12.
 
 Confirmed on 2026-09-17:
 
-- All three categories default on (§6).
+- All three categories default on (§6). Superseded on 2026-09-20: they
+  default off, see §6.
 - Regional list set for v1 is the five verified entries in §5, with
   language-based defaults; Japanese added 2026-09-17 because of the user
   base.

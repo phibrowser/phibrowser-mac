@@ -71,7 +71,7 @@ Session notes (append, newest first):
 - Comments in upstream hunks start with `// Phi:` and say why.
 - Phi-owned directories: `components/phinomenon/content_blocking/`, `chrome/browser/phinomenon/content_blocking/`, `chrome/renderer/phinomenon/content_blocking/`. Prefer them over upstream edits whenever equivalent.
 - Pref names: `phi.content_blocking.block_ads`, `phi.content_blocking.block_cookie_banners`, `phi.content_blocking.block_trackers`, `phi.content_blocking.list_overrides`, `phi.content_blocking.site_exceptions`.
-- Feature: `base::Feature kPhiContentBlocking`, default `FEATURE_DISABLED_BY_DEFAULT` until Task D5.
+- Feature: `base::Feature kPhiContentBlocking`, `FEATURE_ENABLED_BY_DEFAULT` since 2026-09-20; the three toggle prefs default to off (owner decision, 2026-09-20), test fixtures turn them on with `SetAllTogglesForTesting`.
 - Catalog list ids: `easylist`, `ublock-ads`, `ublock-unbreak`, `easyprivacy`, `ublock-privacy`, `easylist-cookie`, `easylist-polish`, `adguard-russian`, `adguard-chinese`, `adguard-japanese`, `bulgarian`, `phi-specific`. Categories: `ads`, `trackers`, `cookies`, `regional`, `phi`.
 - No scriptlets, no redirects, no procedural filters except `:style()` on plain selectors. No consent clicking.
 - Build and test configuration: `out/PhiTest` with `is_phi_browser=true is_mac_phi=true is_component_build=false is_official_build=false dcheck_always_on=true symbol_level=0 use_system_xcode=true`. `out/PhiDebug` cannot link `browser_tests`.

@@ -47,6 +47,11 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
     func testSummaryNamesTheCheckedListsAndTheirState() {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", checked: false)])), "No rule sets selected")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads")])), "easylist, ublock-ads")
+        // Custom lists apply to every toggle and are counted on each line.
+        let withCustom = state([list("easylist", "ads"), list("custom-1", "custom", custom: true)])
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: withCustom), "easylist + 1 custom")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .trackers, in: withCustom), "1 custom")
+        XCTAssertEqual(ContentBlockingRuleSets.actionLabel(for: .trackers, in: withCustom), "Change…")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false)])), "easylist · 1 not downloaded")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", available: false, downloading: true)])), "easylist · Downloading…")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads", available: false, error: "HTTP 404")])), "easylist, ublock-ads · 1 not downloaded")

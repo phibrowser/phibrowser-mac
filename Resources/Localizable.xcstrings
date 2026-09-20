@@ -69884,6 +69884,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.ruleSets.customSection" : {
+      "comment" : "Choose rule sets sheet - Section title above the user's custom lists",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your custom lists (apply to every toggle)"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.ruleSets.download" : {
       "comment" : "Choose rule sets sheet - Button that downloads the checked lists that are missing",
       "extractionState" : "extracted_with_value",
@@ -69988,6 +70000,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Choose rule sets…"
+          }
+        }
+      }
+    },
+    "settings.privacy.contentBlocking.summary.custom" : {
+      "comment" : "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d custom"
           }
         }
       }

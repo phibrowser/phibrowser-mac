@@ -97,8 +97,8 @@ struct PrivacySettingsView: View {
                 }
                 .padding(.vertical, 12)
             }
-            if let statusLine {
-                Text(statusLine)
+            ForEach(Self.diagnosticsLines(for: model.settings?.state), id: \.self) { line in
+                Text(line)
                     .font(.system(size: 11))
                     .themedForeground(.textTertiary)
                     .padding(.horizontal, 4)
@@ -106,16 +106,29 @@ struct PrivacySettingsView: View {
         }
     }
 
-    private var statusLine: String? {
-        guard let state = model.settings?.state else { return nil }
+    /// The small print under the group: the session's blocked count while
+    /// rules are live, then the status and its detail when something is off.
+    static func diagnosticsLines(for state: ContentBlockingState?) -> [String] {
+        guard let state else { return [] }
+        var lines: [String] = []
+        switch state.status {
+        case .active, .degraded:
+            lines.append(String(format: NSLocalizedString("settings.privacy.contentBlocking.status.blockedThisSession", value: "Blocked this session: %d", comment: "Privacy settings - Status line with the number of requests blocked since the profile was loaded; %d is the count"), state.sessionBlockedCount))
+        case .building, .disabled:
+            break
+        }
         switch state.status {
         case .degraded:
-            return NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use")
+            lines.append(NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use"))
+            if !state.statusDetail.isEmpty {
+                lines.append(state.statusDetail)
+            }
         case .disabled:
-            return NSLocalizedString("settings.privacy.contentBlocking.status.disabled", value: "Content blocking is off", comment: "Privacy settings - Status line shown when every content blocking toggle is off")
+            lines.append(NSLocalizedString("settings.privacy.contentBlocking.status.disabled", value: "Content blocking is off", comment: "Privacy settings - Status line shown when every content blocking toggle is off"))
         case .active, .building:
-            return nil
+            break
         }
+        return lines
     }
 
     private func toggleRow(title: String,

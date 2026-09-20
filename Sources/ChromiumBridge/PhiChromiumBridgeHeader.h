@@ -56,6 +56,12 @@ typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
 @property (nonatomic, assign, readonly) int64_t generationId;
 /// Unix seconds; 0 while no generation is published.
 @property (nonatomic, assign, readonly) NSTimeInterval builtAt;
+/// Requests blocked for the profile since it was loaded. Session-only,
+/// never persisted.
+@property (nonatomic, assign, readonly) uint64_t sessionBlockedCount;
+/// One line about the published rule set (rule counts, list ids) for the
+/// Privacy pane's diagnostics; empty while none is published.
+@property (nonatomic, copy, readonly) NSString *lastBuildLog;
 @end
 // Window types reported by Chromium bridge.
 // Note: ChromiumBrowserTypeIncognito means TYPE_NORMAL + incognito profile.
@@ -1864,6 +1870,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                  domain:(NSString *)domain
                                 enabled:(BOOL)enabled
                              completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// The domain `setContentBlockingSiteException:` keys the page at `url` by:
+/// its registrable domain, or its host when it has none (an IP address,
+/// localhost). Empty for URLs that are not http(s). Synchronous, UI thread,
+/// needs no profile; the toolbar toggle uses it so it matches the service.
+- (NSString *)contentBlockingSiteExceptionDomainForURL:(NSString *)url;
 
 /// Opens one of `profileId`'s data/settings pages in a browser window for that
 /// profile (creating one if needed). `page` is one of @"privacy",

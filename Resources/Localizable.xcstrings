@@ -484,6 +484,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.status.blockedThisSession" : {
+      "comment" : "Privacy settings - Status line with the number of requests blocked since the profile was loaded; %d is the count",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Blocked this session: %d"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.status.degraded" : {
       "comment" : "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use",
       "extractionState" : "extracted_with_value",
@@ -24559,6 +24571,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除 Cookie"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.contentBlocking.toggle" : {
+      "comment" : "Address bar menu - Checkmark item that turns ad, tracker and cookie banner blocking off or on for the current website",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Content blocking on this site"
           }
         }
       }

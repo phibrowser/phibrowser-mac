@@ -43,6 +43,10 @@ private final class FakeContentBlockingBridge: ContentBlockingBridging {
                                          completion: @escaping (Bool, String?) -> Void) {
         completion(!failWrites, failWrites ? "nope" : nil)
     }
+
+    func contentBlockingSiteExceptionDomain(forURL url: String) -> String {
+        URL(string: url)?.host ?? ""
+    }
 }
 
 /// Swift stand-ins for the framework's protocol-typed snapshot objects.
@@ -76,6 +80,8 @@ final class FakeSettings: NSObject, PhiContentBlockingSettings {
     var statusDetail: String
     var generationId: Int64
     var builtAt: TimeInterval
+    var sessionBlockedCount: UInt64 = 0
+    var lastBuildLog: String = ""
 
     init(blockAds: Bool = true, blockCookieBanners: Bool = true, blockTrackers: Bool = false,
          status: String = "active", lists: [any PhiContentBlockingListInfo]? = nil,

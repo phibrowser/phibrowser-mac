@@ -32,6 +32,10 @@ private final class RecordingBridge: ContentBlockingBridging {
                                          completion: @escaping (Bool, String?) -> Void) {
         completion(true, nil)
     }
+
+    func contentBlockingSiteExceptionDomain(forURL url: String) -> String {
+        URL(string: url)?.host ?? ""
+    }
 }
 
 final class PrivacySettingsViewTests: XCTestCase {
@@ -84,5 +88,38 @@ final class PrivacySettingsViewTests: XCTestCase {
         XCTAssertEqual(bridge.categoryCalls.first?.0, "Work")
         XCTAssertEqual(bridge.categoryCalls.first?.1, .trackers)
         XCTAssertEqual(bridge.categoryCalls.first?.2, false)
+    }
+}
+
+final class PrivacySettingsDiagnosticsTests: XCTestCase {
+    private func state(_ status: ContentBlockingState.Status, blocked: Int = 0, detail: String = "") -> ContentBlockingState {
+        ContentBlockingState(blockAds: true, blockCookieBanners: true, blockTrackers: true,
+                             lists: [], siteExceptions: [], status: status, statusDetail: detail,
+                             sessionBlockedCount: blocked, lastBuildLog: "")
+    }
+
+    func testNothingWhileStateIsUnknownOrBuilding() {
+        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: nil), [])
+        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.building)), [])
+    }
+
+    func testActiveShowsTheSessionCount() {
+        let lines = PrivacySettingsView.diagnosticsLines(for: state(.active, blocked: 42))
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines[0].contains("42"), lines[0])
+    }
+
+    func testDegradedShowsCountStatusAndDetail() {
+        let lines = PrivacySettingsView.diagnosticsLines(for: state(.degraded, blocked: 3, detail: "cache unreadable"))
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertTrue(lines[0].contains("3"))
+        XCTAssertEqual(lines[2], "cache unreadable")
+        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.degraded)).count, 2)
+    }
+
+    func testDisabledShowsOnlyTheOffLine() {
+        let lines = PrivacySettingsView.diagnosticsLines(for: state(.disabled, blocked: 9))
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertFalse(lines[0].contains("9"))
     }
 }

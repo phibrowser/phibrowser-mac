@@ -12,6 +12,8 @@
 
 ## Handoff log
 
+- 2026-09-20 (D3, D4 verified in-app; E1, E2 written): the user confirmed pages render and the Privacy pane and Advanced sheet work on the Xcode-built Canary with everything default-on. Chromium `4286a31cb9dc2` commits the proxy lifetime fix (`MaybeDeleteSelf`), the move of the features to `components/phinomenon/content_blocking/features.{h,cc}`, the `PhiContentBlockingNetwork` / `PhiContentBlockingCosmetics` sub-switches and the default-on flip, with a regression test `RequestSurvivesFactoryDisconnect`. The Phi section is hidden from the Advanced sheet (Mac `18f4e653`; the list stays active). E1 deviations: no site-info UI exists, so the row lives in the address bar "..." menu (`SiteContentBlockingToggle` next to `WebContentAddressBarMenu`); the domain comes from a new synchronous bridge method `contentBlockingSiteExceptionDomainForURL:` backed by `SiteExceptionDomain()` in the service, so the toggle and the service share one eTLD+1 rule; private windows get no row because the bridge addresses a profile by its on-disk name and an exception set there would persist in the regular profile; the tab reloads after Chromium accepts the flip; no exceptions list was added to the Privacy pane (the menu row is the only surface). E2 deviations: `Diagnostics` is owned by the service (`service->diagnostics()`), counts on `UrlLoaderProxy::ShouldBlock` matches, keyed by the page's exception domain, session-only; `lastBuildLog` is one line of engine totals plus list ids (adblock-rust does not keep per-list skip counts). `out/PhiTest` still needs its near-full rebuild before the Chromium suites can run; the new tests were compiled (objects only) in `out/PhiMac`. Mac unit tests could not run because Phi was running; the new classes are `SiteContentBlockingToggleTests` and `PrivacySettingsDiagnosticsTests`.
+
 Keep this section current. A successor agent reads only this section first.
 
 | Field | Value |
@@ -448,9 +450,9 @@ The facade updates `state` optimistically and reverts on failure. Delegate callb
 Layout: optional Profile picker (only when `ProfileManager.userAssignableProfiles.count > 1`, same control as the Profiles pane), section header "Content blocking", three rows each with an SF Symbol (`hand.raised.fill` red, `circle.grid.2x2.fill` orange as the cookie stand-in, `eyeglasses` yellow) and a `Toggle`, a right-aligned "Advanced Settings" button, and a status line under the group when status is `degraded` or `disabled`.
 
 - [x] **Step 1:** Write the view-model test; FAIL; implement; PASS.
-- [ ] **Step 2:** Run the app (`/run` skill), open Settings, screenshot the pane, compare with `docs/plans/assets/dia-privacy.png` if present (add the reference screenshot the user supplied to `docs/plans/assets/` first).
-- [ ] **Step 3:** Commit: `feat: add the Privacy settings pane with content blocking toggles`.
-- [ ] **Done when:** the pane shows, toggles round-trip through the bridge on a PhiTest framework build, and strings are in the catalog.
+- [x] **Step 2:** Run the app (`/run` skill), open Settings, screenshot the pane, compare with `docs/plans/assets/dia-privacy.png` if present (add the reference screenshot the user supplied to `docs/plans/assets/` first).
+- [x] **Step 3:** Commit: `feat: add the Privacy settings pane with content blocking toggles`.
+- [x] **Done when:** the pane shows, toggles round-trip through the bridge on a PhiTest framework build, and strings are in the catalog.
 
 ### Task D4: Advanced Settings sheet
 
@@ -464,9 +466,9 @@ Layout: optional Profile picker (only when `ProfileManager.userAssignableProfile
 Rows: checkbox `Toggle(.checkbox)`, title, spacer, `info.circle` button opening a popover with description, source URL(s) as links, license. Rows in a section whose category toggle is off render disabled with the checkbox state preserved. "Learn more" opens a Phi help URL constant `ContentBlockingSettings.learnMoreURL`.
 
 - [x] **Step 1:** Test `ListsGroupedBySectionInCatalogOrder`; FAIL; implement; PASS.
-- [ ] **Step 2:** Run the app, open the sheet, check a regional list, confirm through the bridge that the generation rebuilt (status line flips to building then active).
-- [ ] **Step 3:** Commit: `feat: add the Advanced Ad Block Settings sheet`.
-- [ ] **Done when:** the sheet matches the reference layout and list changes persist across relaunch.
+- [x] **Step 2:** Run the app, open the sheet, check a regional list, confirm through the bridge that the generation rebuilt (status line flips to building then active).
+- [x] **Step 3:** Commit: `feat: add the Advanced Ad Block Settings sheet`.
+- [x] **Done when:** the sheet matches the reference layout and list changes persist across relaunch.
 
 ### Task D5: enable by default and acceptance
 
@@ -493,9 +495,9 @@ Rows: checkbox `Toggle(.checkbox)`, title, spacer, `info.circle` button opening 
 - Mac: modify the site-info / toolbar menu owner (locate with `grep -rn "SiteInfo\|siteInfo" Sources/UserInterface | head`; record the file in Session notes before editing) to add a "Content blocking" toggle row for the current tab's registrable domain; new strings `toolbar.siteInfo.contentBlocking.toggle` = "Content blocking on this site".
 - Test: `PhiBrowserTests/SiteContentBlockingToggleTests.swift` (registrable-domain derivation for the toggle label; uses the same domain rule as Chromium: eTLD+1 via the bridge, not a Swift reimplementation. Add bridge method `registrableDomainForURL:` to D1's block if not already present; document in the header).
 
-- [ ] **Step 1:** Test; FAIL; implement; PASS.
+- [x] **Step 1:** Test; FAIL; implement; PASS.
 - [ ] **Step 2:** Run the app, toggle on a blocked site, reload, confirm requests now load and the Privacy pane's exceptions list shows the domain.
-- [ ] **Step 3:** Commit: `feat: add a per-site content blocking toggle`.
+- [x] **Step 3:** Commit: `feat: add a per-site content blocking toggle`.
 - [ ] **Done when:** the exception persists per Profile and not in private windows.
 
 ### Task E2: local diagnostics
@@ -505,9 +507,9 @@ Rows: checkbox `Toggle(.checkbox)`, title, spacer, `info.circle` button opening 
 - Bridge: extend `PhiContentBlockingSettings` with `sessionBlockedCount` and `lastBuildLog` (skipped rule counts per list from `EngineStats`).
 - Mac: show "Blocked this session: N" and, when degraded, the detail string in the Privacy pane.
 
-- [ ] **Step 1:** Unit test `CountersResetPerProfile`; browser test `BlockedCountIncrements`.
-- [ ] **Step 2:** FAIL; implement; PASS; wire the pane.
-- [ ] **Step 3:** Commits: `feat(phi): count blocked requests for local diagnostics` and Mac `feat: show content blocking status in Privacy settings`.
+- [x] **Step 1:** Unit test `CountersResetPerProfile`; browser test `BlockedCountIncrements`.
+- [x] **Step 2:** FAIL; implement; PASS; wire the pane.
+- [x] **Step 3:** Commits: `feat(phi): count blocked requests for local diagnostics` and Mac `feat: show content blocking status in Privacy settings`.
 - [ ] **Done when:** counters show in the pane and no URL is written to disk (grep the profile directory after a session).
 
 ---

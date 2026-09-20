@@ -45,6 +45,10 @@ struct ContentBlockingState: Equatable {
     var siteExceptions: [String]
     var status: Status
     var statusDetail: String
+    /// Requests blocked for the profile since it was loaded. Session-only.
+    var sessionBlockedCount: Int = 0
+    /// One line about the published rule set; empty while none is.
+    var lastBuildLog: String = ""
 }
 
 /// The four bridge calls the facade needs, so tests can substitute a fake
@@ -64,6 +68,10 @@ protocol ContentBlockingBridging {
                                          domain: String,
                                          enabled: Bool,
                                          completion: @escaping (Bool, String?) -> Void)
+    /// The domain a site exception for the page at `url` is keyed by, as
+    /// Chromium computes it. Empty when the URL is not a site or the bridge
+    /// cannot say.
+    func contentBlockingSiteExceptionDomain(forURL url: String) -> String
 }
 
 /// Adapts the live Chromium bridge to `ContentBlockingBridging`. Every call
@@ -120,6 +128,13 @@ struct LiveContentBlockingBridge: ContentBlockingBridging {
         }
         bridge.setContentBlockingSiteException(profileId, domain: domain, enabled: enabled,
                                                completion: completion)
+    }
+
+    func contentBlockingSiteExceptionDomain(forURL url: String) -> String {
+        guard supports(#selector(PhiChromiumBridgeProtocol.contentBlockingSiteExceptionDomain(forURL:))) else {
+            return ""
+        }
+        return bridge.contentBlockingSiteExceptionDomain(forURL: url)
     }
 }
 
@@ -239,6 +254,14 @@ final class ContentBlockingSettings: ObservableObject {
         }
     }
 
+    /// The exception key for the page at `url`, or nil when the page is not
+    /// a site (chrome://, file:, an empty URL) or the bridge is unavailable.
+    func siteExceptionDomain(forURL url: String) -> String? {
+        guard let bridge else { return nil }
+        let domain = bridge.contentBlockingSiteExceptionDomain(forURL: url)
+        return domain.isEmpty ? nil : domain
+    }
+
     // MARK: - Projection
 
     static func projected(_ settings: any PhiContentBlockingSettings) -> ContentBlockingState {
@@ -258,7 +281,9 @@ final class ContentBlockingSettings: ObservableObject {
             },
             siteExceptions: settings.siteExceptions,
             status: ContentBlockingState.Status(rawValue: settings.status) ?? .disabled,
-            statusDetail: settings.statusDetail)
+            statusDetail: settings.statusDetail,
+            sessionBlockedCount: Int(clamping: settings.sessionBlockedCount),
+            lastBuildLog: settings.lastBuildLog)
     }
 }
 

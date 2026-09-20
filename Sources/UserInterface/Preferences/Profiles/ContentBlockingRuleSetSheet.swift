@@ -44,7 +44,10 @@ enum ContentBlockingRuleSets {
         if checked.isEmpty && custom.isEmpty {
             return NSLocalizedString("settings.privacy.contentBlocking.summary.noneSelected", value: "No rule sets selected", comment: "Profile settings - Line under a content blocking toggle when no filter list is checked for it")
         }
-        var names = checked.map(\.title).joined(separator: ", ")
+        // Up to two names read well; more become a count.
+        var names = checked.count <= 2
+            ? checked.map(\.title).joined(separator: ", ")
+            : String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.count", value: "%d rule sets", comment: "Profile settings - Line under a content blocking toggle when three or more filter lists are checked; %d is the count"), checked.count)
         if !custom.isEmpty {
             let customPart = String(format: NSLocalizedString("settings.privacy.contentBlocking.summary.custom", value: "%d custom", comment: "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count"), custom.count)
             names = names.isEmpty ? customPart : names + " + " + customPart

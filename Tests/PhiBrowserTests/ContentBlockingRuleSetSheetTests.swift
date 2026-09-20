@@ -47,6 +47,7 @@ final class ContentBlockingRuleSetSheetTests: XCTestCase {
     func testSummaryNamesTheCheckedListsAndTheirState() {
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads", checked: false)])), "No rule sets selected")
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("easylist", "ads"), list("ublock-ads", "ads")])), "easylist, ublock-ads")
+        XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: state([list("a", "ads"), list("b", "ads"), list("c", "regional")])), "3 rule sets")
         // Custom lists apply to every toggle and are counted on each line.
         let withCustom = state([list("easylist", "ads"), list("custom-1", "custom", custom: true)])
         XCTAssertEqual(ContentBlockingRuleSets.summary(for: .ads, in: withCustom), "easylist + 1 custom")

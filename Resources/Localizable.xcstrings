@@ -70004,6 +70004,18 @@
         }
       }
     },
+    "settings.privacy.contentBlocking.summary.count" : {
+      "comment" : "Profile settings - Line under a content blocking toggle when three or more filter lists are checked; %d is the count",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d rule sets"
+          }
+        }
+      }
+    },
     "settings.privacy.contentBlocking.summary.custom" : {
       "comment" : "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count",
       "extractionState" : "extracted_with_value",

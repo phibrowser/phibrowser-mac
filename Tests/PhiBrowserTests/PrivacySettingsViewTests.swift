@@ -103,18 +103,16 @@ final class PrivacySettingsDiagnosticsTests: XCTestCase {
         XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.building)), [])
     }
 
-    func testActiveShowsTheSessionCount() {
-        let lines = PrivacySettingsView.diagnosticsLines(for: state(.active, blocked: 42))
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertTrue(lines[0].contains("42"), lines[0])
+    func testActiveShowsNothingAndHidesTheSessionCount() {
+        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.active, blocked: 42)), [])
     }
 
-    func testDegradedShowsCountStatusAndDetail() {
+    func testDegradedShowsStatusAndDetail() {
         let lines = PrivacySettingsView.diagnosticsLines(for: state(.degraded, blocked: 3, detail: "cache unreadable"))
-        XCTAssertEqual(lines.count, 3)
-        XCTAssertTrue(lines[0].contains("3"))
-        XCTAssertEqual(lines[2], "cache unreadable")
-        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.degraded)).count, 2)
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertFalse(lines[0].contains("3"))
+        XCTAssertEqual(lines[1], "cache unreadable")
+        XCTAssertEqual(PrivacySettingsView.diagnosticsLines(for: state(.degraded)).count, 1)
     }
 
     func testDisabledShowsOnlyTheOffLine() {

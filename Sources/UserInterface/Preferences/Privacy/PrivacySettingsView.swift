@@ -106,17 +106,12 @@ struct PrivacySettingsView: View {
         }
     }
 
-    /// The small print under the group: the session's blocked count while
-    /// rules are live, then the status and its detail when something is off.
+    /// The small print under the group: the status and its detail when
+    /// something is off. The session's blocked count stays in the state for
+    /// diagnosis but is not shown (owner decision, 2026-09-20).
     static func diagnosticsLines(for state: ContentBlockingState?) -> [String] {
         guard let state else { return [] }
         var lines: [String] = []
-        switch state.status {
-        case .active, .degraded:
-            lines.append(String(format: NSLocalizedString("settings.privacy.contentBlocking.status.blockedThisSession", value: "Blocked this session: %d", comment: "Privacy settings - Status line with the number of requests blocked since the profile was loaded; %d is the count"), state.sessionBlockedCount))
-        case .building, .disabled:
-            break
-        }
         switch state.status {
         case .degraded:
             lines.append(NSLocalizedString("settings.privacy.contentBlocking.status.degraded", value: "Filtering is running with the last good rules", comment: "Privacy settings - Status line shown when the latest rule build failed and the previous rules stay in use"))

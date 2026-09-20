@@ -49,9 +49,6 @@ struct ContentBlockingAdvancedSheet: View {
     @ObservedObject var settings: ContentBlockingSettings
     @Environment(\.dismiss) private var dismiss
 
-    /// Help page opened by "Learn more".
-    static let learnMoreURL = URL(string: "https://phibrowser.com/help/content-blocking")!
-
     /// Sections the sheet never shows. The Phi first-party list stays active
     /// in the engine (it follows whichever pane toggle is on) but is not
     /// user-selectable, so it is hidden rather than listed.
@@ -73,14 +70,10 @@ struct ContentBlockingAdvancedSheet: View {
             Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.title", value: "Advanced Ad Block Settings", comment: "Advanced ad block settings - Sheet title"))
                 .font(.system(size: 15, weight: .semibold))
                 .themedForeground(.textPrimary)
-            HStack(spacing: 4) {
-                Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Block common components found across the web by using additional rules and filters.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
-                    .font(.system(size: 12))
-                    .themedForeground(.textSecondary)
-                Link(NSLocalizedString("settings.privacy.contentBlocking.advanced.learnMore", value: "Learn more", comment: "Advanced ad block settings - Link to the help page about content blocking"),
-                     destination: Self.learnMoreURL)
-                    .font(.system(size: 12))
-            }
+            Text(NSLocalizedString("settings.privacy.contentBlocking.advanced.intro", value: "Choose the filter lists Phi applies. Lists in a section only take effect while that section's switch is on in Privacy settings.", comment: "Advanced ad block settings - Introductory sentence under the sheet title"))
+                .font(.system(size: 12))
+                .themedForeground(.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 20) {
                     if let state = settings.state {

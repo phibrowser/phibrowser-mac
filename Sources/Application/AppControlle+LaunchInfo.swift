@@ -53,6 +53,73 @@ final class ApplicationOpenedThrottle {
     }
 }
 
+/// Reproduces the PostHog SDK's `Application Installed` / `Application
+/// Updated` launch events, which the SDK's lifecycle integration stopped
+/// sending when `captureApplicationLifecycleEvents` was turned off (e748d9f4).
+///
+/// Same UserDefaults keys, event names, property names and value types as
+/// `PostHogAppLifeCycleIntegration.captureAppInstallOrUpdated`, so a user
+/// upgrading from a build where the SDK wrote the keys is seen as Updated,
+/// not Installed, and existing dashboards keep working. The decision is keyed
+/// on the build, as in the SDK: no stored build is an install, an unchanged
+/// build is nothing, anything else is an update. Store and bundle values are
+/// injectable for tests.
+final class ApplicationVersionEventTracker {
+    static let versionKey = "PHGVersionKey"
+    static let buildKey = "PHGBuildKeyV2"
+    static let installedEvent = "Application Installed"
+    static let updatedEvent = "Application Updated"
+
+    private let defaults: UserDefaults
+    private let currentVersion: String?
+    private let currentBuild: String?
+
+    init(defaults: UserDefaults = .standard,
+         currentVersion: String? = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+         currentBuild: String? = Bundle.main.infoDictionary?["CFBundleVersion"] as? String) {
+        self.defaults = defaults
+        self.currentVersion = currentVersion
+        self.currentBuild = currentBuild
+    }
+
+    /// The event this launch should send, if any, then records the current
+    /// version and build so the next launch compares against them.
+    func consumeLaunch() -> (event: String, properties: [String: Any])? {
+        let previousVersion = defaults.string(forKey: Self.versionKey)
+        let previousBuild = defaults.string(forKey: Self.buildKey)
+
+        var properties: [String: Any] = [:]
+        let event: String
+        if let previousBuild {
+            // Do not send version updates if its the same (SDK wording).
+            if previousBuild == currentBuild { return nil }
+            event = Self.updatedEvent
+            if let previousVersion {
+                properties["previous_version"] = previousVersion
+            }
+            properties["previous_build"] = Self.buildValue(previousBuild)
+        } else {
+            event = Self.installedEvent
+        }
+
+        if let currentVersion {
+            properties["version"] = currentVersion
+            defaults.set(currentVersion, forKey: Self.versionKey)
+        }
+        if let currentBuild {
+            properties["build"] = Self.buildValue(currentBuild)
+            defaults.set(currentBuild, forKey: Self.buildKey)
+        }
+        return (event, properties)
+    }
+
+    /// The SDK sends a build as an Int when it parses as one, else the string.
+    private static func buildValue(_ build: String) -> Any {
+        if let int = Int(build) { return int }
+        return build
+    }
+}
+
 extension AppController {
     /// Public read-only launch context exposed to the rest of the app.
     struct LaunchContext {
@@ -223,6 +290,15 @@ extension AppController {
     }
 
     // MARK: - Launch Preferences Analytics
+
+    /// Captures `Application Installed` or `Application Updated` once per
+    /// launch when the build changed, exactly as the SDK's lifecycle
+    /// integration did before it was turned off. Runs before the launch
+    /// `Application Opened`, where the SDK's `didFinishLaunching` hook sat.
+    func captureApplicationInstallOrUpdate() {
+        guard let launchEvent = ApplicationVersionEventTracker().consumeLaunch() else { return }
+        PostHogSDK.shared.capture(launchEvent.event, properties: launchEvent.properties)
+    }
 
     /// Captures `Application Opened` in the shape the PostHog SDK's lifecycle
     /// integration gave it (`from_background`, plus the bundle version and

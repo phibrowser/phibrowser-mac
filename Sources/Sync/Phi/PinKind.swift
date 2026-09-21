@@ -24,6 +24,12 @@ enum PinKind: OwnedItemKind {
     static var tagPrefix: String { PhiSyncEntity.pinTagPrefix }
     static var entityName: String { PhiSyncEntity.pinEntityName }
 
+    /// Ruling C4: a pin yields to an unpublished local edit, like a bookmark or a URL rule.
+    /// Scope migration is not a delete an edit may beat: it tombstones the old (lineage, owner)
+    /// identity and creates a new one, and no live row claims the old identity afterwards, so
+    /// the predicate in `SyncableOwnedItems.unpublishedEdits` is false for it (T5).
+    static var tombstoneYieldsToLocalEdits: Bool { true }
+
     // MARK: - Lineage normalization
 
     /// Convert local pinLineageId (uppercase UUID().uuidString) to wire pin_uuid.
@@ -155,6 +161,14 @@ enum PinKind: OwnedItemKind {
     /// timestamp records that change.
     static func locationStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
         entity.rank.updatedAtMs
+    }
+
+    /// A9's content half (C4-a): the newest of the three content stamps, matching
+    /// `contentSignature`'s field set. A remote rename or retitle now cancels a local pending
+    /// deletion exactly as a remote reorder out of a deleted scope already did.
+    static func contentStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
+        max(entity.title.updatedAtMs, entity.url.updatedAtMs,
+            entity.splitPartnerUuid.updatedAtMs)
     }
 
     /// Value bytes of the three content fields with timestamps zeroed, like SyncableSettings.signature(of:).

@@ -254,6 +254,12 @@ struct OwnedLandingInput {
     /// engine updates cursors only after land returns; input.table still holds the older stamp
     /// (CASE M-33(d)).
     var rebaselined: [String: Data] = [:]
+    /// OwnedItemPlan.yieldedTombstones, for the same reason as `rebaselined`: the cursor bookkeeping
+    /// that records a yield runs only after land returns, so `input.table` cannot be asked whether
+    /// an identity yielded this round. Bookmark landing needs it to tell a yielded child it is
+    /// lifting out of a deleted folder — whose republish has no baseline and therefore needs a
+    /// recorded location edit — from an ordinary lift, which keeps its baseline and its stamp (C4).
+    var yieldedTombstones: Set<String> = []
 }
 
 /// Landing results have three distinct outcomes with different recovery directions; a single
@@ -3724,7 +3730,8 @@ actor PhiSyncEngine {
                               convergeAllowed: ownedItemsPublishAllowed,
                               // Pass rebaselined explicitly because cursor write-back occurs only
                               // after landing (R-M3-4a-97).
-                              rebaselined: output.plan.rebaselined))
+                              rebaselined: output.plan.rebaselined,
+                              yieldedTombstones: output.plan.yieldedTombstones))
         guard !isStopped else { return }
         // Variant reminting runs inside the landing batch; take its count from the outcome (section
         // 7.2 / A11).
@@ -4057,13 +4064,21 @@ actor PhiSyncEngine {
                     yieldWithheld.insert(identity)
                     continue
                 }
+                // T6: only a SPACE-owned identity can be revoked by its Space disappearing. A
+                // pin can also be owned by a Profile or by the literal app key, and those have
+                // no Space cursor to consult; testing spaceCursors[owner] alone would withhold
+                // such a yield every round, forever. Nothing can revoke it, so the yield stands.
+                let owner = cursor.ownerUuid
+                let spaceCursor = owner.flatMap { spaceCursors[$0] }
+                let ownerIsSpace = spaceCursor != nil
+                    || (owner.map { maps.resolver.localSpaceId($0) != nil } ?? false)
+                guard ownerIsSpace else { continue }
                 // Revoke the yield only when the target Space cursor is actually hidden or purged:
-                // the rule should disappear with its Space. All other causes, including unresolved
+                // the item should disappear with its Space. All other causes, including unresolved
                 // mappings, unloaded Space lists or newly pending work, retain the row, deletedAtMs
                 // and pendingLocalEdit unchanged, with no tombstone or rule-3b publication this
                 // round. Reevaluate next round.
-                guard let owner = cursor.ownerUuid, let spaceCursor = spaceCursors[owner],
-                      spaceCursor.hidden || spaceCursor.purgedAtMs != nil else {
+                guard let spaceCursor, spaceCursor.hidden || spaceCursor.purgedAtMs != nil else {
                     yieldWithheld.insert(identity)
                     continue
                 }
@@ -5188,9 +5203,9 @@ extension OwnedKindRegistration {
             reportsAdoption: true,
             reportsScope: false,
             reportsRuleCounters: false,
-            // Bookmarks and pins do not yield tombstones in this milestone and never enter the
-            // round-end rule-3b recheck (sections 6.1/14.1).
-            tombstoneYieldsToLocalEdits: false,
+            // Ruling C4: bookmarks yield like rules, so they also enter the round-end rule-3b
+            // recheck that republishes a yielded row over its tombstone.
+            tombstoneYieldsToLocalEdits: BookmarkKind.tombstoneYieldsToLocalEdits,
             landsEmptyBatch: false,
             identity: { envelope in
                 guard let entity = BookmarkKind.entity(from: envelope) else { return nil }
@@ -5348,10 +5363,30 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     context.adoptedMerges = adoption.merges
     context.adoptedFieldWrites = adoption.fieldWrites
     context.tombstonedIdentities = input.tombstoned
+    // Include this round's tombstoned identities in the projection domain (C4): α needs the
+    // current local projection of the very rows a tombstone is about, which arrivals and parked
+    // payloads alone never cover. The URL-rule closure has always done this.
     context.localProjections = bookmarkLocalProjections(
         for: Set(arrivals.map { BookmarkKind.identity(of: $0.entity) })
-            .union(input.parked.keys),
+            .union(input.parked.keys)
+            .union(input.tombstoned),
         table: input.table, resolve: resolve, now: input.now, state: state)
+    // The derived α predicate (C4 / R4.2). Both inputs are restricted to the projection domain,
+    // which is what carries the "a live local row currently claims this identity" conjunct.
+    context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+        BookmarkKind.self, projections: context.localProjections, table: input.table)
+    context.unpublished = SyncableOwnedItems.unpublishedMerges(
+        projections: context.localProjections, table: input.table)
+    // A tombstone can be redelivered: a duplicate page, or the replay a failed marker write forces.
+    // The derived predicate cannot recognise the edit a second time, because yielding cleared the
+    // baseline it compares against, so an identity already IN the yielded state keeps yielding for
+    // as long as a live local row claims it. Rules get this for free from their pendingLocalEdit
+    // column, which a yield deliberately leaves standing.
+    for identity in input.tombstoned where state.identityToGuid[identity] != nil {
+        guard let cursor = input.table.cursors[identity], cursor.deletedAtMs != nil,
+              cursor.reconciled == nil else { continue }
+        context.pendingLocalEdits.insert(identity)
+    }
     context.liveLocalParents = Set(state.locals.filter(\.isFolder).compactMap(\.syncId))
     context.deletedSubtree = bookmarkDeletedSubtree(input.tombstoned, state: state)
     out.plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals,
@@ -5545,6 +5580,15 @@ private func landBookmarks(_ input: OwnedLandingInput,
     for item in work where item.step.kind == .create && guidOf[item.step.identity] == nil {
         guidOf[item.step.identity] = UUID().uuidString
     }
+    // A9 cancelled a local deletion whose row is already gone (C4 direction ii): the edit that
+    // beat the delete has to bring the row back, so premint a GUID and let the move/update
+    // branches below rebuild it. Without this the plan's steps would be dropped for want of a
+    // GUID, the next round's diff would see the row missing again, and the delete would win
+    // after all. The cursor still carries pendingDelete here; the engine clears it after landing.
+    for item in work where guidOf[item.step.identity] == nil && item.step.kind != .delete
+        && input.table.cursors[item.step.identity]?.pendingDelete == true {
+        guidOf[item.step.identity] = UUID().uuidString
+    }
     guard !work.isEmpty else { return outcome }
 
     let deletedIdentities = Set(work.filter { $0.step.kind == .delete }.map(\.step.identity))
@@ -5584,10 +5628,15 @@ private func landBookmarks(_ input: OwnedLandingInput,
         guard let guid = resolvedGuid else { continue }
 
         if item.step.kind == .update || item.step.kind == .delete {
-            guard let row = projected[guid] else { continue }
-            placed.append((item, guid, BookmarkSiblingGroup(spaceId: row.spaceId,
-                                                            parentGuid: row.parentGuid)))
-            continue
+            if let row = projected[guid] {
+                placed.append((item, guid, BookmarkSiblingGroup(spaceId: row.spaceId,
+                                                                parentGuid: row.parentGuid)))
+                continue
+            }
+            // An update whose local row is gone belongs to an identity whose deletion A9 just
+            // cancelled (C4 direction ii). Fall through to the location branch, which rebuilds
+            // the row from the payload; a delete in that state was already finalized above.
+            guard item.step.kind == .update, item.entity != nil else { continue }
         }
 
         guard let entity = item.entity else { continue }
@@ -5646,11 +5695,20 @@ private func landBookmarks(_ input: OwnedLandingInput,
     }
 
     // R-M3-3-17's three steps: step 2 must be a no-op for an empty set (CASE 6.10c).
+    // This is also C4's tree rule (T1/T2): a folder tombstone never cascades over a child that
+    // yielded to a local edit or that the deleting device never saw. Both survive here, at the
+    // Space root, and the folder stays deleted — the chain is lifted, never resurrected. Without
+    // this the store would refuse the whole batch with folderNotEmpty and retry it forever.
     var childrenOf: [String: [String]] = [:]
     for (guid, row) in projected {
         guard let parent = row.parentGuid else { continue }
         childrenOf[parent, default: []].append(guid)
     }
+    // Lifted children that yielded to a tombstone this round. Their republish has no baseline, so
+    // the location it carries would be stamped 0 unless this move is recorded as an edit; see
+    // `BookmarkApplyOp.move`. The cursor cannot answer this yet: the yield bookkeeping that clears
+    // the baselines runs only after landing returns.
+    var liftedYields: Set<String> = []
     for guid in deletedGuids where projected[guid]?.isFolder == true {
         var stack = childrenOf[guid] ?? []
         var hops = 0
@@ -5664,6 +5722,9 @@ private func landBookmarks(_ input: OwnedLandingInput,
             projected[child] = row
             parentOf.removeValue(forKey: child)
             touched.insert(BookmarkSiblingGroup(spaceId: row.spaceId, parentGuid: nil))
+            if let identity = row.syncId, input.yieldedTombstones.contains(identity) {
+                liftedYields.insert(child)
+            }
         }
     }
     for guid in deletedGuids { projected.removeValue(forKey: guid) }
@@ -5698,6 +5759,19 @@ private func landBookmarks(_ input: OwnedLandingInput,
     func emit(_ op: BookmarkApplyOp, in spaceId: String) {
         opsBySpace[spaceId, default: []].append(op)
     }
+    /// A9 cancelled this identity's deletion while its local row was already gone (C4 direction
+    /// ii): rebuild the row instead of moving or patching one that no longer exists. Mirrors the
+    /// create branch, which emits a move when the row unexpectedly does exist. Returns false when
+    /// the row is present and the ordinary operation applies.
+    func recreatedMissingRow(guid: String, identity: String, in group: BookmarkSiblingGroup)
+        -> Bool {
+        guard state.rowByGuid[guid] == nil, var row = projected[guid] else { return false }
+        row.index = indexOf[guid] ?? 0
+        emit(.create(row), in: group.spaceId)
+        createdRowsByIdentity[identity] = row
+        indexed.insert(guid)
+        return true
+    }
 
     for entry in placed {
         let identity = entry.item.step.identity
@@ -5723,11 +5797,17 @@ private func landBookmarks(_ input: OwnedLandingInput,
                 indexed.insert(entry.guid)
             }
         case .move:
+            if recreatedMissingRow(guid: entry.guid, identity: identity, in: entry.group) {
+                continue
+            }
             emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
                        inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),
                  in: entry.group.spaceId)
             indexed.insert(entry.guid)
         case .update:
+            if recreatedMissingRow(guid: entry.guid, identity: identity, in: entry.group) {
+                continue
+            }
             if let entity = entry.item.entity {
                 emit(.update(guid: entry.guid, fields: bookmarkPatch(entity)),
                      in: entry.group.spaceId)
@@ -5750,7 +5830,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
             .sorted { (indexOf[$0.guid] ?? 0, $0.guid) < (indexOf[$1.guid] ?? 0, $1.guid) }
         for row in movers {
             emit(.move(guid: row.guid, toParentGuid: group.parentGuid,
-                       inSpaceId: group.spaceId, index: indexOf[row.guid] ?? row.index),
+                       inSpaceId: group.spaceId, index: indexOf[row.guid] ?? row.index,
+                       recordsLocationEdit: liftedYields.contains(row.guid)),
                  in: group.spaceId)
         }
     }
@@ -6003,9 +6084,8 @@ extension OwnedKindRegistration {
             // Only pin counters expose relineaged and scope_mismatch.
             reportsScope: true,
             reportsRuleCounters: false,
-            // Bookmarks and pins do not yield tombstones or enter the rule-3b recheck in this
-            // milestone (sections 6.1/14.1).
-            tombstoneYieldsToLocalEdits: false,
+            // Ruling C4: pins yield like bookmarks and rules.
+            tombstoneYieldsToLocalEdits: PinKind.tombstoneYieldsToLocalEdits,
             landsEmptyBatch: false,
             identity: { envelope in
                 guard let entity = PinKind.entity(from: envelope) else { return nil }
@@ -6209,8 +6289,27 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     var context = OwnedItemPlanContext()
     context.tombstonedIdentities = input.tombstoned
     context.localProjections = pinLocalProjections(
-        for: Set(arrivals.map { PinKind.identity(of: $0.entity) }).union(input.parked.keys),
+        for: Set(arrivals.map { PinKind.identity(of: $0.entity) }).union(input.parked.keys)
+            .union(input.tombstoned),
         table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
+    // Same derived α predicate as bookmarks (C4 / R4.2). `pinLocalProjections` keys on
+    // PinKind.identity(of: row,...), so an entry exists only while a live, non-dormant row still
+    // claims that (lineage, owner) pair — the conjunct that keeps a scope migration's tombstones
+    // from being beaten by an edit (T5).
+    context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+        PinKind.self, projections: context.localProjections, table: input.table)
+    context.unpublished = SyncableOwnedItems.unpublishedMerges(
+        projections: context.localProjections, table: input.table)
+    // Keep yielding across a redelivered tombstone, as the bookmark closure does: after a yield
+    // there is no baseline left for the derived predicate to compare against.
+    let liveIdentities = Set(state.locals.compactMap {
+        PinKind.identity(of: $0, resolve: input.maps.resolver, scope: state.localScope)
+    })
+    for identity in input.tombstoned where liveIdentities.contains(identity) {
+        guard let cursor = input.table.cursors[identity], cursor.deletedAtMs != nil,
+              cursor.reconciled == nil else { continue }
+        context.pendingLocalEdits.insert(identity)
+    }
     // Pass scope mismatch to the pure planner, yielding no steps and parking all arrivals (section
     // 7.3). Pins are flat, so liveLocalParents and deletedSubtree stay empty and those A9
     // conditions are vacuous.

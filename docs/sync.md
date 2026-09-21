@@ -267,10 +267,13 @@ stamp of the value it overwrites:
 - bookmarks and pins — content fields take `contentUpdatedDate ?? createdDate`.
   The bookmark **location** merge unit (`space_uuid` + `parent_uuid`, one shared
   stamp) takes `locationUpdatedDate`, the optional column schema V13 adds to
-  `TabDataModel`. Only a local user move writes it: a reorder inside one parent
-  is rank, a landed remote move is not an edit, and the Space retag a moved
-  folder performs on its descendants is diagnostic and never republished
-  (R-M3-3-18). A row with no recorded move — pre-V13, or one whose location only
+  `TabDataModel`. A local user move writes it; a reorder inside one parent is
+  rank, a landed remote move is not an edit, and the Space retag a moved folder
+  performs on its descendants is diagnostic and never republished (R-M3-3-18).
+  The one engine-authored writer is C4's lift of a yielded child out of a
+  remotely deleted folder, a location this device must defend against peers that
+  still hold the old parent ("Edit beats delete"). A row with no recorded move —
+  pre-V13, or one whose location only
   ever arrived from a peer — keeps the pre-V13 behaviour exactly: `hlcNow()`
   against a baseline, stamp 0 without one.
 - URL rules — content takes `contentUpdatedDate`, the target takes
@@ -341,12 +344,23 @@ instead of leaving a location any peer can overwrite at will.
 
 `cursor.deleteDecidedAtMs` is written from `hlcNow()`, not `now()`, and this is
 mandatory rather than tidy. A9 (`SyncableOwnedItems.plan`) compares it against
-`K.locationStamp(of: merged)`, a wire LWW stamp: if the decision stayed on wall
-clock while stamps moved to logical time, then on any account whose logical
-time has run ahead of wall clock *every* inbound entity would look newer than
-the deletion and A9 would cancel *every* local delete. `deletedAtMs` is the
-opposite case — it drives the 30-day retention expiry against `now()` — and
-stays wall clock. Both ends carry a comment saying so.
+`max(K.locationStamp(of: merged), K.contentStamp(of: merged))`, both wire LWW
+stamps: if the decision stayed on wall clock while stamps moved to logical time,
+then on any account whose logical time has run ahead of wall clock *every*
+inbound entity would look newer than the deletion and A9 would cancel *every*
+local delete. `deletedAtMs` is the opposite case — it drives the 30-day
+retention expiry against `now()` — and stays wall clock. Both ends carry a
+comment saying so.
+
+The `contentStamp` half is ruling C4-a and is new: M3-3 shipped A9 on the
+location stamp alone (CASE U-23), so a remote **rename** that arrived after this
+device had decided to delete still lost. The other two conjuncts are unchanged —
+the cancelled deletion must land under a live parent and outside a subtree a
+remote tombstone is removing this round — and they are what keeps a cancelled
+deletion from landing an orphan. `contentStamp` is a kind query beside
+`locationStamp`: the newest of the four bookmark content stamps, of the three pin
+content stamps, or the URL rule's content-group carrier; its protocol default is
+`locationStamp`, so a kind that declares no content unit keeps A9 as shipped.
 
 ### Mixed versions
 
@@ -357,6 +371,123 @@ healthy account (`maxSeen` ≈ wall) the two are indistinguishable. The one real
 cost, stated plainly: on an account whose logical time has run ahead of wall
 clock, an **old** client's edits can lose to the values it is trying to
 overwrite, with no user-visible explanation, bounded by the skew.
+
+## Edit beats delete
+
+Ruling C4. When a delete and an edit of the same item are concurrent, **the edit
+wins**, whichever side reached the server first, for bookmarks, folders, pinned
+tabs and URL rules alike. The reason is asymmetry of cost, not symmetry of
+mechanism: a delete is easy to redo, an edit is not, and a wrongly kept deletion
+costs more than a wrongly kept item. This supersedes M3-3's decision to keep
+bookmarks and pins out of yielding on grounds of volume; the blast radius is held
+down by the predicate below instead, and by `resurrected` on the counter line,
+whose steady state is ~0.
+
+**Say it plainly, because users see it:** an item you deleted can reappear on
+your device when another device had an unpublished edit of it. Deleting it again
+after that edit has published removes it everywhere. The folder you deleted stays
+gone, but the bookmark being edited inside it reappears at the top level of that
+Space.
+
+### Direction (i) — an inbound tombstone meets an unpublished local edit
+
+The item **yields**: the local row is kept, both cursor baselines are cleared,
+the tombstone's entity id and version are harvested, `deletedAtMs` is written and
+kept, and the end of the publish segment republishes the item at
+`baseVersion` = that tombstone's version. Convergence here is by **version, not
+by stamp**: a deletion carries no LWW stamp, so the resurrection does not have to
+out-stamp anything — the server hands every device a strictly newer version of
+the same client tag, including the device that deleted it. Rules may instead
+transfer the edit to a quiescent merge partner; bookmarks and pins have no merge
+partner, so yielding is their only outcome.
+
+What counts as an unpublished edit is **derived**, not a column
+(`SyncableOwnedItems.unpublishedEdits`): a live local row currently claims the
+identity, its cursor has a baseline, and the round's projection differs from that
+baseline in its content signature or its owner reference. It is OR'd with the
+value-based `server != reconciled` ("we won a merge and owe the account a
+republish"), matching rules.
+
+- **Rank is not an edit.** Dragging an item does not resurrect it, dense
+  re-indexing must never look like intent, and the projection carries the
+  baseline's rank anyway. `is_folder` is an invariant, refused rather than merged.
+- **"A live local row currently claims it" is a hard conjunct**, not an
+  implementation accident. It is what makes pin scope migration safe (T5): a
+  migration is a tombstone under the old `(lineage, owner)` identity plus a create
+  under the new one, and after it no live row claims the old identity, so its
+  tombstone hard-deletes. Two further protections stand in front of it — a scope
+  mismatch parks every arrival *and* every tombstone before either yield branch
+  runs, and `normalizeVariants` re-lineaging has the same shape.
+- A bookmark whose parent folder is still unpublished has no projection, so it
+  does not yield. That is the conservative direction and is left as is.
+
+### Direction (ii) — a local pending delete meets an inbound edit
+
+A9, extended by C4-a from a newer location stamp to a newer stamp on any merge
+unit; see "`deleteDecidedAtMs` and A9" above for the condition and the clock it
+depends on. When the cancelled item's local row is already gone, landing
+**recreates** it from the payload rather than dropping the steps — otherwise the
+next round's diff would find the row missing and the delete would win after all.
+
+For URL rules the boundary is drawn by branch order rather than by a second
+predicate: an inbound entity for a soft-deleted rule reaches A9 only after the
+transfer and park branches have found no merge partner at all. A collapse loser
+points at its winner for as long as that winner exists, so an **engine-authored**
+collapse deletion is never the one an edit cancels; when the winner is gone too,
+the group is empty and keeping the edited rule is the coherent outcome.
+
+### Trees: lift, never resurrect the folder chain
+
+- A child **edited** inside a folder another device deleted yields, and the
+  folder's deletion lifts it to the Space root. The folder stays deleted.
+  Resurrecting it on the strength of a child's edit would be a much larger claim,
+  and it would have to resurrect the whole ancestor chain to be coherent.
+- A child **added** inside such a folder is not an edit of the folder either. It
+  has no cursor, so it cannot yield; the same lift keeps it, and it publishes as
+  a new root-level bookmark.
+- A **rename of the folder itself** is an edit of the folder, so the folder
+  yields and reappears — empty, plus any children that yielded in their own
+  right. Its other children were deleted with an intent nobody contradicted.
+- The same rule covers direction (ii): a child whose deletion an inbound edit
+  cancels while its folder's deletion stands is lifted to the root. `classify`
+  therefore treats a cursor with a local `pendingDelete` as a dead parent — the
+  folder's row is already gone here — unless that folder's own arrival is in the
+  same working set, in which case the child stays inside it.
+- The landing transaction is where this is enforced. A folder `.delete` that
+  still has children is **refused** by the store (`folderNotEmpty`), so lifting
+  the survivors is not an optimisation: without it the whole batch would roll back
+  and retry forever. `landBookmarks` lifts every surviving descendant to the Space
+  root in the same batch, phase-ordered before the delete.
+- A lifted child's new location is an engine-authored decision this device must
+  defend against peers that still believe it lives inside the folder, so the lift
+  **records** `locationUpdatedDate` when the child is in the yielded state — the
+  one exception to "only a local user move writes that column". Its republish has
+  no baseline, and without a recorded move the no-baseline path would stamp the
+  location 0, which any peer could overwrite at will.
+
+### Pinned tabs
+
+- A resurrected pin whose split partner was deleted (and did not itself yield)
+  comes back **unlinked, silently**. No code enforces this: deleting the partner
+  already clears the back-reference in the same transaction, and the republished
+  pin carries the empty link at `hlcNow()`, which beats a peer's stale non-empty
+  one. Yielding both halves because one was edited is explicitly not done — the
+  user deleted the other half and did not touch it.
+- Scope migration is never a delete an edit can beat (T5, above).
+- Only a **Space-owned** identity can have its yield revoked by a hidden or
+  purged Space. A Profile- or App-scoped pin has no Space cursor to consult, so
+  it is admitted rather than withheld; testing `spaceCursors[owner]` alone would
+  have withheld those yields every round, forever (T6).
+
+### Mixed versions
+
+The resurrection is protocol-invisible: an ordinary update at the tombstone's
+version. An old client receives a live entity whose version exceeds its cursor's
+and already resurrects it. Only new clients *yield*, so an old client that
+receives a tombstone for a bookmark it has just edited still hard-deletes it and
+loses the edit — nothing regresses, the guarantee is simply not yet universal.
+There is no cursor-file format change. After a yield, a downgrade leaves the row
+live and unpublished until the build is upgraded or the tombstone cursor expires.
 
 ## Refusals, retries and account switches
 
@@ -500,7 +631,8 @@ written" restart window falls on them.
   version. Every publish segment re-checks that admission, because the
   republication can fail or be interrupted; a rule whose target Space has since
   gone hidden or purged has the yield revoked and the row hard-deleted instead.
-  Bookmarks and pinned tabs never yield: the switch is off for those kinds.
+  Bookmarks and pinned tabs yield as well since ruling C4, without the transfer
+  and park branches, which need a merge partner; see "Edit beats delete".
 - While a rule's inbound entity is parked because its merge partner is not at
   rest, the round's diff emits no tombstone for it and writes nothing at all
   into its cursor. Both conjuncts matter: an owner-shaped park is not covered by
@@ -541,9 +673,17 @@ The marker boundary and the URL rule kind add five test files:
 logical clock itself, the stamp-0 invariants that survive it, the offline-edit
 scenarios for both a rename and a move, the §4.3 carrier rule under the location
 edit date, and A9's boundary on an account whose logical time has run a year
-ahead of wall clock. The write side — which gestures record
-`locationUpdatedDate` and which deliberately do not — lives in
-`Tests/PhiBrowserTests/LocalStoreBookmarkThrowingTests.swift`.
+ahead of wall clock, for the location stamp and for C4-a's content stamp. The
+write side — which gestures record `locationUpdatedDate` and which deliberately
+do not — lives in `Tests/PhiBrowserTests/LocalStoreBookmarkThrowingTests.swift`.
+
+"Edit beats delete" is covered in three places: the derived predicate, the tree
+outcomes and both A9 halves in `SyncableOwnedItemsTests.swift`; the rules
+boundary, including a collapse loser whose soft delete an edit must not cancel,
+in `URLRuleMergeTests.swift`; and the engine half — the republish at the
+tombstone's own version, the `resurrected` counter, the folder-delete lift, a
+redelivered tombstone that must not undo its own yield, a Profile-scoped pin's
+yield, and the unlinked split partner — in `PhiSyncEngineOwnedItemsTests.swift`.
 
 One suite is **not** compile-only. The hostless convergence harness runs:
 
@@ -560,8 +700,10 @@ production `PhiHybridClock` (`SYNC_CONV_HLC=0` replays the pre-C2 wall-clock
 behaviour for comparison, and the skew scenarios always run both). Under clock
 skew the harness asserts that a **causally later** edit always wins — an edit
 whose author had already observed every competing edit — while reporting
-concurrent losses, which LWW gives up by definition. See
-`Tests/SyncConvergence/README.md`.
+concurrent losses, which LWW gives up by definition. Layer 2 also asserts ruling
+C4 in both directions, using the production decision functions: an item whose
+delete an edit beat exists on every replica, and a delete no edit contradicted
+stays gone everywhere. See `Tests/SyncConvergence/README.md`.
 
 The Chromium half of the routing tie-break is covered by
 `phi_url_router_unittest.cc` in the fork, which is built and run separately

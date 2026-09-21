@@ -151,7 +151,9 @@ skip lower-versioned rows another replica wrote in between.
 
 The scheduler interleaves: local edits of random fields, deletes, pulls,
 commits, duplicate page delivery, dropped responses followed by retry, replicas
-going offline for 5–40 steps, and per-replica clock skew. Pull and commit are
+going offline for 5–40 steps, and per-replica clock skew. A delete is issued at
+most once per identity, so the edit-beats-delete expectation below stays
+well defined. Pull and commit are
 separate actions precisely so another replica can commit in between and the
 CONFLICT path is really exercised. Edits stamp exactly the way the production
 `stamp` functions do: a merge unit takes the edit time only when its value
@@ -164,7 +166,12 @@ After a bounded quiescing loop the harness asserts:
 * every replica holds the same identities with the same values;
 * the loop actually reached quiescence — hitting the bound is a republish
   livelock even when the final states agree, so it is its own property;
-* a deleted identity is gone from every replica and never resurrects.
+* **edit beats delete (C4)**, in both directions and in one property: an
+  identity whose delete no edit contradicted is gone from every replica and
+  never resurrects, and an identity whose delete an edit beat is present on
+  every replica. A summed non-vacuity check fails the run if the scheduler
+  produced no delete-versus-edit race at all, so the property can never pass
+  because nothing happened.
 
 Bookmark tree invariants are checked against the **production planner** rather
 than a re-implementation: the converged set is fed to
@@ -226,18 +233,26 @@ and remain the XCTest suites' job:
 * pagination, the page budget, and the per-page marker boundary
   (`marker_advanced`, `cursor_save_failed`);
 * encryption, client-tag validation and the unreadable-payload paths;
-* `plan`'s parking, adoption (§6), claim/collapse/yield for URL rules, and A9's
-  "a newer inbound location cancels a local deletion" — the model treats a
-  local delete as terminal, which is `plan`'s default for bookmarks and pins
-  (`supersededByDelete`) but not the rule kind's yield behaviour;
+* `plan`'s parking, adoption (§6), and claim/collapse/transfer for URL rules.
+  Delete-versus-edit **is** modelled now, through the production decisions:
+  `SyncableOwnedItems.unpublishedEdits` decides direction (i) and
+  `max(K.locationStamp, K.contentStamp) > deleteDecidedAtMs` decides direction
+  (ii), both called from `Scenarios.swift` rather than reimplemented. What the
+  flat model cannot carry is A9's other two conjuncts — a live parent and
+  "outside a subtree a tombstone is removing this round" — and the transfer
+  outcome, which needs a merge partner; those stay XCTest's job. The tree half
+  of C4 is checked separately against the production planner
+  (`checkAnEditedChildSurvivesItsFoldersDeletion`): an edited child yields while
+  its folder dies, an arrival still naming the dead folder lifts to the Space
+  root, and the lifted node satisfies the same reachability invariants.
 * Space hide/purge and the 30-day retention lifecycle (Spaces and settings
   therefore have deletes switched off in the model);
 * landing into local storage, dense-order projection and the routing refresh;
 * `plannedOrder`, deliberately: its signature is in flux on this branch.
 
-Adding the rule yield path and A9 to the scheduler is the obvious next step; it
-needs a local-row model (soft deletes, `pendingLocalEdit`, merge partners)
-beside the entity model.
+The rule-specific half of the yield path -- transfer to a quiescent merge
+partner -- is still outside the model; it needs a local-row model (soft deletes,
+`pendingLocalEdit`, merge partners) beside the entity model.
 
 ## Limitations
 

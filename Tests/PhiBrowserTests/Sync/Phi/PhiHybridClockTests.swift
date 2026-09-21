@@ -323,4 +323,36 @@ final class PhiHybridClockTests: XCTestCase {
         XCTAssertEqual(freshPlan.cancelledDeletes, ["b1"])
         XCTAssertEqual(freshPlan.supersededByDelete, 0)
     }
+
+    /// The same boundary for C4-a's content half. `contentStamp` is compared against the same
+    /// hybrid-logical decision, so a stale CONTENT edit must lose on a skewed account exactly as
+    /// a stale move does -- otherwise the extension would cancel every local delete on any
+    /// account whose logical time has run ahead of wall clock.
+    func testAnInboundContentEditOlderThanAnHlcDeleteDecisionDoesNotCancelIt() {
+        let skewedLogicalTime: Int64 = 1_700_000_000_000 + 365 * 24 * 3_600_000
+        let baseline = bookmarkPayload(uuid: "b1", locationStamp: skewedLogicalTime - 10_000,
+                                       contentStamp: skewedLogicalTime - 10_000)
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = pendingDeleteCursor(decidedAtMs: skewedLogicalTime,
+                                                  reconciled: baselineBytes(baseline))
+
+        func plan(contentStamp: Int64) -> OwnedItemPlan {
+            let arrival = bookmarkPayload(uuid: "b1", title: "renamed",
+                                          locationStamp: skewedLogicalTime - 10_000,
+                                          contentStamp: contentStamp)
+            return SyncableOwnedItems.plan(
+                BookmarkKind.self,
+                arrivals: [OwnedItemArrival(entity: arrival, entityId: "srv-1", version: 2)],
+                parked: [:], table: table, resolve: OwnerResolver.fixture(),
+                context: OwnedItemPlanContext())
+        }
+
+        let stale = plan(contentStamp: skewedLogicalTime - 1)
+        XCTAssertEqual(stale.supersededByDelete, 1)
+        XCTAssertTrue(stale.cancelledDeletes.isEmpty)
+
+        let fresh = plan(contentStamp: skewedLogicalTime + 1)
+        XCTAssertEqual(fresh.cancelledDeletes, ["b1"])
+        XCTAssertEqual(fresh.supersededByDelete, 0)
+    }
 }

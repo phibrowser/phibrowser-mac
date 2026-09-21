@@ -17,6 +17,11 @@ enum BookmarkKind: OwnedItemKind {
     static var tagPrefix: String { PhiSyncEntity.bookmarkTagPrefix }
     static var entityName: String { PhiSyncEntity.bookmarkEntityName }
 
+    /// Ruling C4: a bookmark or folder yields to an unpublished local edit, like a URL rule.
+    /// See the protocol declaration for the rationale and `SyncableOwnedItems.unpublishedEdits`
+    /// for the predicate that keeps the blast radius to rows the user demonstrably edited.
+    static var tombstoneYieldsToLocalEdits: Bool { true }
+
     // MARK: - Identity and envelope
 
     static func identity(of entity: Phi_PhiBookmarkEntity) -> String { entity.bookmarkUuid }
@@ -111,6 +116,14 @@ enum BookmarkKind: OwnedItemKind {
         entity.parentUuid.stringValue.isEmpty
             ? entity.spaceUuid.updatedAtMs
             : entity.parentUuid.updatedAtMs
+    }
+
+    /// A9's content half (C4-a): the newest of the four content stamps. Unlike location this is
+    /// a max rather than a designated carrier, because content fields are four independent
+    /// merge units and any one of them being newer than the deletion is a user edit.
+    static func contentStamp(of entity: Phi_PhiBookmarkEntity) -> Int64 {
+        max(entity.title.updatedAtMs, entity.url.updatedAtMs,
+            entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs)
     }
 
     /// Stamping (§4.2 items 4/5): location members share one stamp when location changes, never for reorder

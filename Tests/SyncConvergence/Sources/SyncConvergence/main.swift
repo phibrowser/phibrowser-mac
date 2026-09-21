@@ -50,6 +50,7 @@ runRankProperties(iterations: iterations, generators: &generators, report: repor
 runClockProperties(iterations: iterations, generators: &generators, report: report)
 checkPlannerRefusesAnInjectedCycle(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
+checkAnEditedChildSurvivesItsFoldersDeletion(report: report)
 print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner "
       + "and the rank primitives")
 
@@ -69,6 +70,14 @@ func describe(_ name: String, _ outcome: SimOutcome, report: Report, assertInten
     report.check("simulation.\(name).all-replicas-converge", outcome.converged,
                  outcome.divergence ?? "")
     report.markPassed("simulation.\(name).all-replicas-converge")
+    // Ruling C4, both directions, over the same run: an item whose delete an edit beat exists
+    // everywhere, and a delete nobody contradicted stays gone everywhere.
+    report.check("simulation.\(name).an-edit-beats-a-concurrent-delete",
+                 outcome.editBeatsDeleteViolations.isEmpty,
+                 "\(outcome.editBeatsDeleteViolations.count) identities broke C4 after "
+                 + "quiescence (\(outcome.yields) yields, \(outcome.cancelledDeletes) cancelled "
+                 + "deletes). First case -- \(outcome.editBeatsDeleteViolations.first ?? "")")
+    report.markPassed("simulation.\(name).an-edit-beats-a-concurrent-delete")
     report.check("simulation.\(name).reaches-quiescence", outcome.quiesced,
                  "still committing after \(outcome.rounds) idle sync rounds "
                  + "(\(outcome.quiesceCommits) commits, \(outcome.conflicts) conflicts): the "
@@ -193,6 +202,15 @@ if includeSkew {
     }
 }
 
+// The C4 property above is only as good as the number of delete-versus-edit races the scheduler
+// actually produced. Sum them over every scenario and fail if the run produced none at all, so a
+// green report can never mean "no delete ever met an edit".
+let raced = summaries.reduce(into: 0) { $0 += $1.outcome.yields + $1.outcome.cancelledDeletes }
+report.check("simulation.edit-beats-delete-is-actually-exercised", raced > 0,
+             "no delete met a concurrent edit in any scenario on this seed; the C4 property "
+             + "passed vacuously. Raise SYNC_CONV_STEPS or pick another SYNC_CONV_SEED.")
+report.markPassed("simulation.edit-beats-delete-is-actually-exercised")
+
 print("")
 print("Layer 2: merge-level replica simulations")
 for summary in summaries {
@@ -202,6 +220,7 @@ for summary in summaries {
           + " commits=\(o.commits) conflicts=\(o.conflicts)"
           + " dup-pages=\(o.duplicatePages) dropped=\(o.droppedPages)"
           + " offline=\(o.offlineEpisodes) deletes=\(o.deletes)"
+          + " yields=\(o.yields) cancelled-deletes=\(o.cancelledDeletes)"
           + " quiesce-rounds=\(o.rounds)\(o.quiesced ? "" : "(BOUND)")"
           + " quiesce-commits=\(o.quiesceCommits)"
           + " intent-losses=\(o.intentLosses.count)/\(o.intentChecked)"

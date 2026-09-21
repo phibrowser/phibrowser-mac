@@ -164,10 +164,24 @@ enum URLRuleKind: OwnedItemKind {
     }
 
     /// Read only the target field's own stamp (R-M3-4a-25), as bookmark location stamping does.
-    /// `stamp` writes it; this accessor reads it. Using content time for A9's first condition would
-    /// let a newer remote content edit cancel a local deletion (CASE U-23).
+    /// `stamp` writes it; this accessor reads it. CASE U-23 originally kept content time out of
+    /// A9's first condition; ruling C4-a reinstates it through `contentStamp` instead, so the
+    /// carrier rule here is unchanged and the two units stay separate.
     static func locationStamp(of entity: Phi_PhiURLRuleEntity) -> Int64 {
         entity.targetSpaceUuid.updatedAtMs
+    }
+
+    /// A9's content half (C4-a): the content group's carrier stamp. The three members always
+    /// share one stamp (§8.2 rule 1), so `host` is the whole group.
+    ///
+    /// U-23's residue is handled by branch order, not by a second predicate: an inbound entity
+    /// for a rule this device soft-deleted reaches A9 only after the transfer and park branches
+    /// above have found no merge partner at all. A collapse loser always points at its winner
+    /// while that winner exists, so an engine-authored collapse deletion is never the one an
+    /// edit cancels; when the winner is gone too, the group is empty and keeping the edited rule
+    /// is the coherent outcome.
+    static func contentStamp(of entity: Phi_PhiURLRuleEntity) -> Int64 {
+        entity.host.updatedAtMs
     }
 
     /// §8.2 stamping (D33): engine writes mint no edit stamps; only derived rank uses `now`.

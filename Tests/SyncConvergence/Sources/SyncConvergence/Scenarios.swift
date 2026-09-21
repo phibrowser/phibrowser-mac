@@ -189,7 +189,10 @@ func bookmarksSimKind() -> SimKind<Phi_PhiBookmarkEntity> {
         },
         stamps: { stamps([$0.spaceUuid, $0.parentUuid, $0.rank, $0.title, $0.url,
                           $0.secondaryURL, $0.secondaryTitle]) },
-        merge: { BookmarkKind.merge(local: $0, remote: $1) })
+        merge: { BookmarkKind.merge(local: $0, remote: $1) },
+        holdsUnpublishedEdit: { holdsUnpublishedEdit(BookmarkKind.self, local: $0, baseline: $1) },
+        beatsDeleteDecision: { beatsDeleteDecision(BookmarkKind.self, remote: $0,
+                                                   decidedAtMs: $1) })
 }
 
 // MARK: - Pins
@@ -229,7 +232,9 @@ func pinsSimKind() -> SimKind<Phi_PhiPinTabEntity> {
             return out
         },
         stamps: { stamps([$0.rank, $0.title, $0.url, $0.splitPartnerUuid]) },
-        merge: { PinKind.merge(local: $0, remote: $1) })
+        merge: { PinKind.merge(local: $0, remote: $1) },
+        holdsUnpublishedEdit: { holdsUnpublishedEdit(PinKind.self, local: $0, baseline: $1) },
+        beatsDeleteDecision: { beatsDeleteDecision(PinKind.self, remote: $0, decidedAtMs: $1) })
 }
 
 // MARK: - URL rules
@@ -296,7 +301,35 @@ func rulesSimKind() -> SimKind<Phi_PhiURLRuleEntity> {
             return out
         },
         stamps: { stamps([$0.host, $0.pathPrefix, $0.ask, $0.targetSpaceUuid, $0.rank]) },
-        merge: { URLRuleKind.merge(local: $0, remote: $1) })
+        merge: { URLRuleKind.merge(local: $0, remote: $1) },
+        holdsUnpublishedEdit: { holdsUnpublishedEdit(URLRuleKind.self, local: $0, baseline: $1) },
+        beatsDeleteDecision: { beatsDeleteDecision(URLRuleKind.self, remote: $0,
+                                                   decidedAtMs: $1) })
+}
+
+// MARK: - C4 "edit beats delete": the two production decisions
+
+/// Direction (i). `SyncableOwnedItems.unpublishedEdits` is the production predicate, and it reads
+/// a projection table plus a cursor table, so build the one-entry pair the engine would hand it:
+/// the round's local projection and the cursor whose `reconciled` is the baseline. Membership of
+/// the projection map is what carries the "a live local row currently claims this identity"
+/// conjunct in production; here the caller only reaches this closure when the row is live.
+func holdsUnpublishedEdit<K: OwnedItemKind>(_ kind: K.Type, local: K.Entity,
+                                            baseline: K.Entity) -> Bool {
+    guard let projection = try? K.envelope(local).serializedData(),
+          let baselineBytes = try? K.envelope(baseline).serializedData() else { return false }
+    var table = PhiOwnedItemTable()
+    var cursor = PhiOwnedItemCursor()
+    cursor.reconciled = baselineBytes
+    table.cursors["x"] = cursor
+    return !SyncableOwnedItems.unpublishedEdits(K.self, projections: ["x": projection],
+                                                table: table).isEmpty
+}
+
+/// Direction (ii): A9's first conjunct as ruling C4-a amends it, from the production kind queries.
+func beatsDeleteDecision<K: OwnedItemKind>(_ kind: K.Type, remote: K.Entity,
+                                           decidedAtMs: Int64) -> Bool {
+    max(K.locationStamp(of: remote), K.contentStamp(of: remote)) > decidedAtMs
 }
 
 // MARK: - Bookmark tree invariants
@@ -500,4 +533,92 @@ func checkAnOfflineMoveLosesToALaterOnlineMove(report: Report) {
     report.markPassed("bookmarks.an-offline-move-carries-its-move-time")
     report.markPassed("bookmarks.an-offline-move-loses-to-a-later-online-move")
     report.markPassed("bookmarks.a-merged-location-keeps-one-stamp-on-both-members")
+}
+
+// MARK: - C4 tree case: a folder deleted while one of its children was edited
+
+/// T1, through the production planner. Another device deleted folder F and its child C, publishing
+/// the tombstones subtree-first; this device holds an unpublished rename of C. The three things
+/// that must hold are checked in one place because they are one outcome:
+///
+/// 1. C yields and no delete step is produced for it, while F is deleted -- the chain is lifted,
+///    never resurrected;
+/// 2. an arrival that still names the dead folder as its parent is LIFTED to the Space root rather
+///    than parked, which is what puts C at the top level on every device;
+/// 3. the resulting single-node tree satisfies the same reachability invariants the converged sets
+///    are held to.
+func checkAnEditedChildSurvivesItsFoldersDeletion(report: Report) {
+    func bookmark(_ uuid: String, parent: String, title: String, stamp: Int64,
+                  isFolder: Bool) -> Phi_PhiBookmarkEntity {
+        var out = Phi_PhiBookmarkEntity()
+        out.bookmarkUuid = uuid
+        out.spaceUuid = settingValue(simSpaceUuid, stamp)
+        out.parentUuid = settingValue(parent, stamp)
+        out.rank = settingValue("V", stamp)
+        out.isFolder = isFolder
+        out.title = settingValue(title, stamp)
+        out.url = settingValue(isFolder ? "https://bookmark.phi/folder" : "https://a.example/",
+                               stamp)
+        out.secondaryURL = settingValue("", stamp)
+        out.secondaryTitle = settingValue("", stamp)
+        return out
+    }
+    func bytes(_ entity: Phi_PhiBookmarkEntity) -> Data {
+        (try? BookmarkKind.envelope(entity).serializedData()) ?? Data()
+    }
+
+    let folder = bookmark("tree-folder", parent: "", title: "F", stamp: 1_000, isFolder: true)
+    let childBaseline = bookmark("tree-child", parent: "tree-folder", title: "C", stamp: 1_000,
+                                 isFolder: false)
+    var edited = childBaseline
+    edited.title = settingValue("renamed", 2_000)
+
+    var table = PhiOwnedItemTable()
+    var folderCursor = PhiOwnedItemCursor()
+    folderCursor.reconciled = bytes(folder)
+    folderCursor.entityId = "srv-f"
+    folderCursor.version = 4
+    var childCursor = PhiOwnedItemCursor()
+    childCursor.reconciled = bytes(childBaseline)
+    childCursor.entityId = "srv-c"
+    childCursor.version = 5
+    table.cursors["tree-folder"] = folderCursor
+    table.cursors["tree-child"] = childCursor
+
+    var context = OwnedItemPlanContext()
+    context.tombstonedIdentities = ["tree-folder", "tree-child"]
+    context.localProjections = ["tree-child": bytes(edited)]
+    context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+        BookmarkKind.self, projections: context.localProjections, table: table)
+
+    let landing = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: [], parked: [:],
+                                          table: table, resolve: simResolver(), context: context)
+    let deletes = landing.steps.filter { $0.kind == .delete }.map(\.identity)
+    report.check("bookmarks.tree.an-edited-child-yields-while-its-folder-dies",
+                 landing.yieldedTombstones == ["tree-child"] && deletes == ["tree-folder"],
+                 "yielded=\(landing.yieldedTombstones.sorted()) deleted=\(deletes) "
+                 + "predicate=\(context.pendingLocalEdits.sorted())")
+
+    // The child's republish reaches a peer that still holds the dead folder as its parent.
+    var afterFolderDied = table
+    afterFolderDied.cursors["tree-folder"]?.deletedAtMs = 9_000
+    afterFolderDied.cursors["tree-folder"]?.reconciled = nil
+    let lift = SyncableOwnedItems.plan(
+        BookmarkKind.self,
+        arrivals: [OwnedItemArrival(entity: edited, entityId: "srv-c", version: 11)],
+        parked: [:], table: afterFolderDied, resolve: simResolver(),
+        context: OwnedItemPlanContext())
+    report.check("bookmarks.tree.a-child-of-a-dead-folder-lifts-to-the-space-root",
+                 lift.lifted == 1 && lift.steps.first?.newParentUuid == ""
+                     && lift.parked.isEmpty,
+                 "lifted=\(lift.lifted) parent=\(lift.steps.first?.newParentUuid ?? "nil") "
+                 + "parked=\(lift.parked.keys.sorted())")
+
+    var lifted = edited
+    lifted.parentUuid = settingValue("", 9_001)
+    lifted.spaceUuid = settingValue(simSpaceUuid, 9_001)
+    checkBookmarkTree(["tree-child": lifted], report: report, label: "bookmarks.tree.after-lift")
+
+    report.markPassed("bookmarks.tree.an-edited-child-yields-while-its-folder-dies")
+    report.markPassed("bookmarks.tree.a-child-of-a-dead-folder-lifts-to-the-space-root")
 }

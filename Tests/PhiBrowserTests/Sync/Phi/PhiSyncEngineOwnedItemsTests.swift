@@ -4595,3 +4595,244 @@ extension PhiSyncEngineOwnedItemsTests {
         XCTAssertEqual(spaceStore.saveCalls, spaceSaves, "The same holds for the Space table")
     }
 }
+
+// MARK: - C4 "edit beats delete" at the engine level
+
+extension PhiSyncEngineOwnedItemsTests {
+
+    /// Direction (i), flat: an inbound tombstone for a bookmark this device renamed but has not
+    /// published keeps the row and republishes it OVER the tombstone, at the tombstone's own
+    /// version. Convergence is by version, not by stamp: the account hands every device a
+    /// strictly newer version of the same client tag, including the device that deleted it.
+    func testATombstoneYieldsToAnUnpublishedRenameAndRepublishesAtTheTombstoneVersion() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a", title: "renamed",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "T"),
+                                                    entityId: "srv-b1", version: 8)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.map(\.guid), ["G1"], "The edited row survives the tombstone")
+        let live = bookmarkCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1, "The yield republishes exactly once")
+        XCTAssertEqual(live.first?.baseVersion, 8, "Publish over the tombstone's own version")
+        XCTAssertEqual(committedBookmark(live[0])?.title.stringValue, "renamed")
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.resurrected, 1, "The resurrection is counted, not silent")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["b1"]?.deletedAtMs, "An applied republish clears deletedAtMs")
+    }
+
+    /// The control: an untouched bookmark is still hard-deleted by the same tombstone, with no
+    /// republication and no resurrection counted. Without this the test above could pass because
+    /// yielding had become unconditional.
+    func testATombstoneForAnUntouchedBookmarkStillDeletesIt() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 8)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.rows.isEmpty, "A never-edited row is deleted as before")
+        XCTAssertTrue(bookmarkCommits(client).filter { !$0.deleted }.isEmpty)
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.resurrected, 0)
+    }
+
+    /// T1 and the cascade trap: tombstones for a folder and its child arrive together while this
+    /// device holds an unpublished rename of the child. The child yields, the folder is deleted,
+    /// and the child is LIFTED to the Space root inside the same landing batch — the folder
+    /// delete must never carry a surviving child away with it, and the store refuses a folder
+    /// delete that still has children, so the lift is what keeps the batch applying at all.
+    func testAFolderDeletionLiftsTheChildThatYieldedInsteadOfCascading() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G-F", syncId: "f1", spaceId: "space-a", isFolder: true, title: "F"),
+            .fixture(guid: "G-C", syncId: "c1", spaceId: "space-a", parentGuid: "G-F",
+                     title: "renamed", contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["f1"] = publishedCursor(
+            alignedPayload(uuid: "f1", isFolder: true, title: "F"), entityId: "srv-f1", version: 7)
+        store.table.cursors["c1"] = publishedCursor(
+            alignedPayload(uuid: "c1", parentUuid: "f1", title: "T"), entityId: "srv-c1",
+            version: 8)
+        let client = FakePhiSyncClient()
+        // Subtree-first publication (A5): the child's tombstone precedes the folder's.
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("c1"), version: 8, entityId: "srv-c1"),
+                  remoteTombstone(tag: bookmarkTag("f1"), version: 9, entityId: "srv-f1")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.map(\.guid), ["G-C"], "The folder is gone, the child survives")
+        XCTAssertNil(access.rows.first?.parentGuid, "The survivor sits at the Space root")
+        XCTAssertNotNil(access.rows.first?.locationUpdatedDate,
+                        "The lift is a location decision this device has to defend")
+        let live = bookmarkCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1, "Only the child republishes; the folder stays deleted")
+        XCTAssertEqual(committedBookmark(live[0])?.bookmarkUuid, "c1")
+        XCTAssertEqual(committedBookmark(live[0])?.parentUuid.stringValue, "",
+                       "It comes back at the root, not inside the folder that was deleted")
+        XCTAssertGreaterThan(committedBookmark(live[0])?.spaceUuid.updatedAtMs ?? 0, 0,
+                             "A lifted location must not be stamped 0, which any peer overwrites")
+    }
+
+    /// Direction (ii): the local row is already gone and its deletion is in flight when a remote
+    /// content edit stamped after the decision arrives. A9 cancels the deletion (C4-a) and the
+    /// landing RECREATES the row; dropping the steps would let the next round's diff tombstone it
+    /// again and the delete would win after all.
+    func testAContentEditNewerThanTheDecisionCancelsADeleteAndRebuildsTheRow() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [])
+        let store = MemoryOwnedItemStore()
+        var cursor = publishedCursor(alignedPayload(uuid: "b1", title: "T"), entityId: "srv-b1",
+                                     version: 8)
+        cursor.pendingDelete = true
+        cursor.deleteDecidedAtMs = 1_000
+        store.table.cursors["b1"] = cursor
+        let client = FakePhiSyncClient()
+        let edited = bookmarkPayload(uuid: "b1", title: "renamed", locationStamp: 100,
+                                     contentStamp: 2_000, createdAtMs: Self.rowCreatedAtMs)
+        client.scriptedPages = [
+            page([remoteEntity(envelope(edited), tag: bookmarkTag("b1"), version: 9,
+                               entityId: "srv-b1", key: key)]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.map(\.title), ["renamed"], "The edit brought the row back")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.pendingDelete, false)
+        XCTAssertEqual(table.cursors["b1"]?.deleteDecidedAtMs, 0)
+        XCTAssertTrue(bookmarkCommits(client).filter(\.deleted).isEmpty,
+                      "No tombstone goes out for the identity whose deletion was cancelled")
+    }
+
+    /// T6: a PROFILE-scoped pin has no Space cursor, so a revocation check that only asks
+    /// `spaceCursors[owner]` would withhold its yield every round, forever. It must republish.
+    func testAYieldedProfileScopedPinStillRepublishes() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakePinAccess(scope: .profile, rows: [
+            .fixture(lineageId: "LX", guid: "P1", profileId: "Default", title: "renamed",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["lx:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "pu-1", title: "T"), entityId: "srv-p1",
+            version: 8)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: pinTag("lx"), version: 8, entityId: "srv-p1")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.map(\.guid), ["P1"], "The edited pin survives the tombstone")
+        let live = pinCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1, "A Profile-scoped yield is admitted, not withheld")
+        XCTAssertEqual(live.first?.baseVersion, 8)
+        XCTAssertEqual(committedPin(live[0])?.title.stringValue, "renamed")
+    }
+
+    /// T4b: the resurrected pin's split partner was deleted and did not itself yield, so it comes
+    /// back UNLINKED and silently. Nothing should be left waiting on a partner lineage that no
+    /// longer exists anywhere.
+    func testAResurrectedPinWhoseSplitPartnerDiedComesBackUnlinked() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        // The partner row is already gone: deleting a split pin clears the back-reference in the
+        // same transaction, so the surviving row no longer names it.
+        let access = FakePinAccess(scope: .profile, rows: [
+            .fixture(lineageId: "LX", guid: "P1", profileId: "Default", title: "renamed",
+                     splitPartnerLineageId: nil,
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["lx:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "pu-1", title: "T", splitPartner: "lq"),
+            entityId: "srv-p1", version: 8)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: pinTag("lx"), version: 8, entityId: "srv-p1")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let live = pinCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1)
+        XCTAssertEqual(committedPin(live[0])?.splitPartnerUuid.stringValue, "",
+                       "The dangling link is dropped, not carried forward forever")
+        XCTAssertGreaterThan(committedPin(live[0])?.splitPartnerUuid.updatedAtMs ?? 0, 0,
+                             "The cleared link carries a real stamp so a peer's stale link loses")
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertNil(table.cursors["lx:pu-1"]?.pendingPartnerLineage)
+    }
+
+    /// The sharpest risk in C4: a yield destroyed by the very next page. A tombstone is
+    /// redelivered whenever a page is replayed -- a duplicate delivery, or the replay a failed
+    /// marker write forces -- and by then yielding has cleared the baseline the derived predicate
+    /// compares against. The identity must keep yielding while a live local row claims it.
+    func testARedeliveredTombstoneDoesNotDestroyTheYieldItJustCreated() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a", title: "renamed",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "T"),
+                                                    entityId: "srv-b1", version: 8)
+        let client = FakePhiSyncClient()
+        // Both pages belong to ONE pull, so the second arrives before any republish.
+        client.scriptedPages = [
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")],
+                 marker: "m1", changesRemaining: true),
+            page([remoteTombstone(tag: bookmarkTag("b1"), version: 8, entityId: "srv-b1")],
+                 marker: "m2"),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.map(\.guid), ["G1"], "The second page must not delete the row")
+        let live = bookmarkCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1, "One republish, not two")
+        XCTAssertEqual(live.first?.baseVersion, 8)
+    }
+}

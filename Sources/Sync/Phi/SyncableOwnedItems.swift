@@ -104,12 +104,16 @@ struct OwnedItemPlanContext {
     }
 
     // MARK: §8.4.4's four named inputs (R-M3-4a-73, 8b-3)
-    // Bookmark/pin contexts leave these empty, making the new branches unreachable.
     // Keep criteria in the kind: signatures and soft deletion are rule-specific
     // and this generic context cannot inspect row flags.
+    // Under C4 the bookmark and pin adapters fill the first two from the derived
+    // predicate (SyncableOwnedItems.unpublishedEdits/unpublishedMerges) and still
+    // leave mergePartners/partnerNotAtRest empty: those two kinds have no merge
+    // partner, so α and β always take the yield outcome rather than transfer or park.
 
     /// Identities meeting α's first three conditions (row exists, not soft-deleted,
-    /// with signature) and pendingLocalEdit=true.
+    /// with signature) and pendingLocalEdit=true; for bookmarks and pins, a live local
+    /// row whose projection differs from its baseline in content or location.
     var pendingLocalEdits: Set<String> = []
     /// Identities meeting α's first three conditions and nonnil, unequal server
     /// and reconciled values, matching publication's pending set.
@@ -394,10 +398,21 @@ protocol OwnedItemKind {
     static func targetOwnerUuid(of entity: Entity) -> String?
 
     /// §8.4.4: inbound deletion yields to unpublished user intent for this kind.
-    /// True for rules; false for bookmarks/pins in this milestone (§6.1 / §14.1).
-    /// Bookmark volume and deletion frequency differ; making every deletion
-    /// resurrect across all kinds would create a different data-loss problem.
+    /// Ruling C4 makes this true for every kind — bookmarks, folders, pins and rules.
+    /// Its rationale, which also settles any later delete-vs-edit question: a delete is
+    /// easy to redo, an edit is not, and a wrongly kept deletion costs the user more than
+    /// a wrongly kept item. It supersedes M3-3's "bookmark volume and deletion frequency
+    /// differ" reason for keeping bookmarks and pins out; the blast radius is instead kept
+    /// narrow by the predicate below, which fires only for an item the user demonstrably
+    /// edited and has not published yet.
     static var tombstoneYieldsToLocalEdits: Bool { get }
+
+    /// A9's content half (C4-a): the newest stamp among the entity's CONTENT merge units.
+    /// `plan` compares `max(locationStamp, contentStamp)` against `deleteDecidedAtMs`, so a
+    /// remote rename cancels a local pending deletion exactly as a remote move already did.
+    /// The default is `locationStamp`, which keeps A9 as M3-3 shipped it for any kind that
+    /// declares no content unit of its own.
+    static func contentStamp(of entity: Entity) -> Int64
 
     /// §8.4.4 transfer source: derive RuleProjection from an entity. α uses X's
     /// local projection; β uses this round's merged entity. Keep extraction in
@@ -410,8 +425,11 @@ protocol OwnedItemKind {
 extension OwnedItemKind {
     /// Default nil preserves BookmarkKind/PinKind implementations and behavior.
     static func targetOwnerUuid(of entity: Entity) -> String? { nil }
-    /// Default off makes both new branches unreachable for bookmarks/pins (ruling 10).
+    /// All three shipped kinds override this to true under C4. The default stays off so a
+    /// kind added later opts in deliberately rather than by inheritance.
     static var tombstoneYieldsToLocalEdits: Bool { false }
+    /// Default keeps A9's first conjunct on location alone (C4-a).
+    static func contentStamp(of entity: Entity) -> Int64 { locationStamp(of: entity) }
     /// Default nil for the same compatibility guarantee.
     static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection? { nil }
 }
@@ -713,6 +731,54 @@ enum SyncableOwnedItems {
                                         deferred: deferredDeletions)
     }
 
+    // MARK: - Derived yield predicate (C4 direction i)
+
+    /// Identities whose live local row holds an edit this device has not published yet: α's
+    /// first input for the two kinds that have no `pendingLocalEdit` column. Bookmarks and pins
+    /// derive it rather than migrate a column in, because the round's projection already knows.
+    ///
+    /// `projections` is `OwnedItemPlanContext.localProjections`, so membership already carries
+    /// two conjuncts: the adapter builds an entry only when a LIVE local row currently claims
+    /// that identity and its cursor has a baseline. The live-row conjunct is load-bearing for
+    /// pins — after a scope migration the old (lineage, owner) identity is claimed by no live
+    /// row, so its tombstone hard-deletes instead of being beaten by an edit (T5).
+    ///
+    /// An edit is a changed content signature or a changed owner reference. Rank is excluded:
+    /// a reorder is not intent to keep a deleted item, dense re-indexing would otherwise look
+    /// like one, and the projection carries the baseline's rank anyway. `is_folder` is an
+    /// invariant, refused rather than merged.
+    static func unpublishedEdits<K: OwnedItemKind>(_ kind: K.Type,
+                                                   projections: [String: Data],
+                                                   table: PhiOwnedItemTable) -> Set<String> {
+        var out: Set<String> = []
+        for (identity, bytes) in projections {
+            guard let baselineBytes = table.cursors[identity]?.reconciled,
+                  let projectedEnvelope = try? Phi_PhiEntity(serializedBytes: bytes),
+                  let projected = K.entity(from: projectedEnvelope),
+                  let baselineEnvelope = try? Phi_PhiEntity(serializedBytes: baselineBytes),
+                  let baseline = K.entity(from: baselineEnvelope) else { continue }
+            guard K.contentSignature(of: projected) != K.contentSignature(of: baseline)
+                    || K.ownerUuids(of: projected) != K.ownerUuids(of: baseline) else { continue }
+            out.insert(identity)
+        }
+        return out
+    }
+
+    /// α's second input: the value-based "we won a merge and owe the account a republish"
+    /// (`server != reconciled`), which is a different claim from "the user edited this row".
+    /// Rules OR the two; bookmarks and pins now do the same. Keep the same projection domain so
+    /// both disjuncts carry the live-row conjunct.
+    static func unpublishedMerges(projections: [String: Data],
+                                  table: PhiOwnedItemTable) -> Set<String> {
+        var out: Set<String> = []
+        for identity in projections.keys {
+            guard let cursor = table.cursors[identity], let server = cursor.server,
+                  let reconciled = cursor.reconciled, server != reconciled else { continue }
+            out.insert(identity)
+        }
+        return out
+    }
+
     // MARK: - Inbound plan (§4.4)
 
     /// Current arrivals plus parked items produce a plan ordered in four phases
@@ -815,8 +881,14 @@ enum SyncableOwnedItems {
         // one invalid ciphertext could irreversibly flatten a whole account subtree.
         func classify(_ uuid: String) -> OwnerState {
             if survivorIdentities.contains(uuid) { return .item(uuid) }
+            // A local pending deletion counts as a dead parent (C4 direction ii inside a tree):
+            // the folder's row is already gone here, so a child whose deletion an inbound edit
+            // cancels has nothing to attach to and must lift to the Space root rather than park
+            // until the tombstone is accepted. The survivor test above still wins, so a folder
+            // whose own arrival cancels ITS deletion this round keeps its children.
             if context.tombstonedIdentities.contains(uuid)
-                || table.cursors[uuid]?.deletedAtMs != nil { return .lift }
+                || table.cursors[uuid]?.deletedAtMs != nil
+                || table.cursors[uuid]?.pendingDelete == true { return .lift }
             if context.liveLocalParents.contains(uuid) { return .external }
             if resolve.localSpaceId(uuid) != nil { return resolve.isEligibleSpace(uuid) ? .external : .unresolved }
             if resolve.localProfileId(uuid) != nil { return .external }
@@ -968,7 +1040,13 @@ enum SyncableOwnedItems {
                 // stamp, the right was written from `hlcNow()` in `tombstones(...)` above.
                 // They must stay on the same clock or this comparison loses its meaning.
                 let decidedAt = cursor?.deleteDecidedAtMs ?? 0
-                let newerThanDeletion = K.locationStamp(of: merged) > decidedAt
+                // C4-a extends A9 from a newer LOCATION stamp to a newer stamp on ANY merge
+                // unit: an edit beats a delete in this direction too, whichever side reached
+                // the server first. M3-3 deliberately left content out (CASE U-23), which made
+                // "edit beats delete" hold only for an edit that arrived before this device
+                // decided to delete; the owner's ruling removes that asymmetry.
+                let newerThanDeletion = max(K.locationStamp(of: merged),
+                                            K.contentStamp(of: merged)) > decidedAt
                 let parentIsLive = landingParent.map {
                     $0.isEmpty || landedIdentities.contains($0) || context.liveLocalParents.contains($0)
                 } ?? true

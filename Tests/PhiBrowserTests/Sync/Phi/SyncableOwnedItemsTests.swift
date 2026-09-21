@@ -1765,12 +1765,14 @@ extension PinKindTests {
 
     // MARK: - CASE 4b.12 / 4b.13
 
-    /// CASE 4b.12 (spec 17a): pendingDelete discards an ordinary update; local deletion wins.
-    func testAnOrdinaryUpdateArrivingOnAPendingDeleteIsDiscarded() {
+    /// CASE 4b.12 (spec 17a), as amended by ruling C4-a: an update STALER than the deletion
+    /// decision is still discarded and local deletion wins. Content newer than the decision now
+    /// cancels it instead — see the C4 section at the end of this file — so this case has to
+    /// hold both stamps below the decision to keep testing what it was written for.
+    func testAnOrdinaryUpdateOlderThanTheDeleteDecisionIsDiscarded() {
         let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
-        // Only title changed: content stamp 2000, but location stamp (pin rank) remains 100.
         let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "\u{65b0}\u{6807}\u{9898}",
-                                rankStamp: 100, contentStamp: 2_000)
+                                rankStamp: 100, contentStamp: 500)
 
         let plan = planned([arrival(edited)], table: table)
 
@@ -1788,8 +1790,10 @@ extension PinKindTests {
     /// the protocol tuple; bare payloads contain neither field.
     func testTheDiscardedArrivalStillHarvestsItsServerTriple() {
         let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        // Both stamps stay below the decision, so C4-a's content conjunct leaves this arrival
+        // discarded and the harvest is still the only thing under test.
         let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "\u{65b0}\u{6807}\u{9898}",
-                                rankStamp: 100, contentStamp: 2_000)
+                                rankStamp: 100, contentStamp: 500)
 
         let plan = planned([arrival(edited, entityId: "e-server", version: 77)], table: table)
 
@@ -2418,5 +2422,277 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(stamped.createdAtMs, earlier)
         XCTAssertEqual(stamped.source, 3)
         XCTAssertEqual(merged, stamped, "Like bookmarks, the projection is a merge fixed point")
+    }
+}
+
+// MARK: - C4 "edit beats delete", direction (i): bookmarks
+
+/// Ruling C4 turns the yield switch on for bookmarks and folders. The predicate is derived from
+/// the round's projection rather than a new column, so these tests drive
+/// `SyncableOwnedItems.unpublishedEdits` with the same projection bytes the bookmark plan closure
+/// builds, then feed the result into `plan` as `context.pendingLocalEdits`.
+extension SyncableOwnedItemsTests {
+
+    /// The projection an adapter would publish for `local`, stamped against `baseline` exactly as
+    /// `bookmarkLocalProjections` does.
+    private func projectionBytes(_ local: PhiLocalBookmark,
+                                 baseline: Phi_PhiBookmarkEntity,
+                                 parentIdentity: String? = nil) -> Data {
+        let projected = BookmarkKind.project(local, resolve: OwnerResolver.fixture(), scope: nil,
+                                             parentIdentity: parentIdentity)
+        let stamped = BookmarkKind.stamp(projected ?? Phi_PhiBookmarkEntity(), baseline: baseline,
+                                         local: local, rank: BookmarkKind.rank(of: baseline),
+                                         now: 5_000)
+        return baselineBytes(stamped)
+    }
+
+    private func yieldContext(_ identity: String, projection: Data,
+                              table: PhiOwnedItemTable) -> OwnedItemPlanContext {
+        var context = OwnedItemPlanContext()
+        context.tombstonedIdentities = [identity]
+        context.localProjections = [identity: projection]
+        context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+            BookmarkKind.self, projections: context.localProjections, table: table)
+        context.unpublished = SyncableOwnedItems.unpublishedMerges(
+            projections: context.localProjections, table: table)
+        return context
+    }
+
+    /// An inbound tombstone for a bookmark this device has renamed but not published keeps the
+    /// row: no delete step, and the identity is reported as yielded so the engine can harvest the
+    /// tombstone's version and republish over it.
+    func testAnInboundTombstoneYieldsToAnUnpublishedBookmarkRename() {
+        let baseline = bookmarkPayload(uuid: "b1", title: "T")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline, entityId: "srv-b1", version: 9)
+        let edited = row(identity: "b1", title: "renamed",
+                         contentUpdatedDate: Date(timeIntervalSince1970: 4_000))
+        let context = yieldContext("b1", projection: projectionBytes(edited, baseline: baseline),
+                                   table: table)
+
+        let plan = planned([], table: table, context: context)
+
+        XCTAssertEqual(context.pendingLocalEdits, ["b1"], "A changed title is an unpublished edit")
+        XCTAssertEqual(plan.yieldedTombstones, ["b1"])
+        XCTAssertTrue(deleteIdentities(plan).isEmpty, "The row must survive the tombstone")
+    }
+
+    /// A move is intent just as a rename is: the owner reference is the second half of the
+    /// predicate, so a bookmark dragged into another folder also yields.
+    func testAnUnpublishedMoveAlsoYields() {
+        let baseline = bookmarkPayload(uuid: "b1", parentUuid: "b-folder")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline, entityId: "srv-b1", version: 9)
+        let moved = row(identity: "b1")            // Now a root-level row: parent_uuid is empty.
+        let context = yieldContext("b1", projection: projectionBytes(moved, baseline: baseline),
+                                   table: table)
+
+        let plan = planned([], table: table, context: context)
+
+        XCTAssertEqual(plan.yieldedTombstones, ["b1"])
+        XCTAssertTrue(deleteIdentities(plan).isEmpty)
+    }
+
+    /// Rank is NOT an edit (R4.5). A drag must not resurrect a deleted bookmark, and dense
+    /// re-indexing must never look like intent.
+    func testARankOnlyDifferenceDoesNotYield() {
+        let baseline = bookmarkPayload(uuid: "b1", rank: "V")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline, entityId: "srv-b1", version: 9)
+        var reordered = baseline
+        reordered.rank = stamped("h", at: 4_000)
+        let context = yieldContext("b1", projection: baselineBytes(reordered), table: table)
+
+        let plan = planned([], table: table, context: context)
+
+        XCTAssertTrue(context.pendingLocalEdits.isEmpty, "A reorder is not an edit")
+        XCTAssertTrue(plan.yieldedTombstones.isEmpty)
+        XCTAssertEqual(deleteIdentities(plan), ["b1"])
+    }
+
+    /// The ordinary case has to keep working: an untouched row is hard-deleted, with no
+    /// resurrection from stale pre-delete state.
+    func testANeverEditedBookmarkIsStillHardDeleted() {
+        let baseline = bookmarkPayload(uuid: "b1")
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = landedCursor(baseline, entityId: "srv-b1", version: 9)
+        let untouched = row(identity: "b1")
+        let context = yieldContext("b1", projection: projectionBytes(untouched, baseline: baseline),
+                                   table: table)
+
+        let plan = planned([], table: table, context: context)
+
+        XCTAssertTrue(context.pendingLocalEdits.isEmpty)
+        XCTAssertTrue(plan.yieldedTombstones.isEmpty)
+        XCTAssertEqual(deleteIdentities(plan), ["b1"])
+    }
+
+    /// T1/T2: a folder tombstone is not beaten by an edit of, or an addition to, one of its
+    /// children. Only the child yields; the folder is deleted and the engine's landing lifts the
+    /// survivor to the Space root.
+    func testAFolderStillDiesWhenOnlyItsChildWasEdited() {
+        let folder = bookmarkPayload(uuid: "f1", isFolder: true)
+        let child = bookmarkPayload(uuid: "c1", parentUuid: "f1")
+        var table = PhiOwnedItemTable()
+        table.cursors["f1"] = landedCursor(folder, entityId: "srv-f1", version: 4)
+        table.cursors["c1"] = landedCursor(child, entityId: "srv-c1", version: 5)
+        let editedChild = row(identity: "c1", parentGuid: "g-f1", title: "renamed",
+                              contentUpdatedDate: Date(timeIntervalSince1970: 4_000))
+        var context = OwnedItemPlanContext()
+        context.tombstonedIdentities = ["f1", "c1"]
+        context.localProjections = ["c1": projectionBytes(editedChild, baseline: child,
+                                                          parentIdentity: "f1")]
+        context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+            BookmarkKind.self, projections: context.localProjections, table: table)
+
+        let plan = planned([], table: table, context: context)
+
+        XCTAssertEqual(plan.yieldedTombstones, ["c1"], "An edited child yields on its own")
+        XCTAssertEqual(deleteIdentities(plan), ["f1"], "The folder chain is never resurrected")
+    }
+}
+
+// MARK: - C4 "edit beats delete", direction (ii): bookmarks
+
+extension SyncableOwnedItemsTests {
+
+    /// C4-a: a remote rename stamped after this device decided to delete cancels the deletion,
+    /// which A9 previously did only for a move. The item the user edited survives.
+    func testARemoteRenameNewerThanTheDeleteDecisionCancelsTheDelete() {
+        let baseline = bookmarkPayload(uuid: "b1", locationStamp: 100, contentStamp: 100)
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = pendingDeleteCursor(decidedAtMs: 1_000,
+                                                  reconciled: baselineBytes(baseline))
+        let renamed = bookmarkPayload(uuid: "b1", title: "renamed", locationStamp: 100,
+                                      contentStamp: 2_000)
+
+        let plan = planned([arrival(renamed)], table: table)
+
+        XCTAssertEqual(plan.cancelledDeletes, ["b1"])
+        XCTAssertEqual(plan.supersededByDelete, 0)
+        XCTAssertEqual(plan.steps.map(\.identity), ["b1"])
+    }
+
+    /// The boundary stays where it was: an edit made BEFORE the deletion decision loses, so the
+    /// extension did not turn A9 into "every arrival cancels every delete".
+    func testARemoteRenameOlderThanTheDeleteDecisionStillLoses() {
+        let baseline = bookmarkPayload(uuid: "b1", locationStamp: 100, contentStamp: 100)
+        var table = PhiOwnedItemTable()
+        table.cursors["b1"] = pendingDeleteCursor(decidedAtMs: 1_000,
+                                                  reconciled: baselineBytes(baseline))
+        let renamed = bookmarkPayload(uuid: "b1", title: "renamed", locationStamp: 100,
+                                      contentStamp: 999)
+
+        let plan = planned([arrival(renamed)], table: table)
+
+        XCTAssertTrue(plan.cancelledDeletes.isEmpty)
+        XCTAssertEqual(plan.supersededByDelete, 1)
+    }
+
+    /// Direction (ii) inside a tree: the child's deletion is cancelled while its folder's
+    /// deletion stands, so the child lands at the Space root rather than parking forever on a
+    /// parent whose local row is already gone.
+    func testACancelledChildDeleteLiftsWhenItsFolderDeleteStands() {
+        let folderBaseline = bookmarkPayload(uuid: "f1", isFolder: true)
+        let childBaseline = bookmarkPayload(uuid: "c1", parentUuid: "f1")
+        var table = PhiOwnedItemTable()
+        table.cursors["f1"] = pendingDeleteCursor(decidedAtMs: 1_000, entityId: "srv-f1",
+                                                  version: 4,
+                                                  reconciled: baselineBytes(folderBaseline))
+        table.cursors["c1"] = pendingDeleteCursor(decidedAtMs: 1_000, entityId: "srv-c1",
+                                                  version: 5,
+                                                  reconciled: baselineBytes(childBaseline))
+        let renamed = bookmarkPayload(uuid: "c1", parentUuid: "f1", title: "renamed",
+                                      contentStamp: 2_000)
+
+        let plan = planned([arrival(renamed)], table: table)
+
+        XCTAssertEqual(plan.cancelledDeletes, ["c1"])
+        XCTAssertEqual(plan.lifted, 1, "A locally dying folder is a dead parent, not a park")
+        XCTAssertEqual(plan.steps.first?.newParentUuid, "", "Empty parent means the Space root")
+        XCTAssertTrue(plan.parked.isEmpty)
+    }
+}
+
+// MARK: - C4 "edit beats delete": pins
+
+extension PinKindTests {
+
+    private func pinProjectionBytes(_ local: PhiLocalPin,
+                                    baseline: Phi_PhiPinTabEntity,
+                                    scope: PinnedTabScope = .profile) -> Data {
+        let projected = PinKind.project(local, resolve: OwnerResolver.fixture(), scope: scope,
+                                        parentIdentity: nil)
+        let stamped = PinKind.stamp(projected ?? Phi_PhiPinTabEntity(), baseline: baseline,
+                                    local: local, rank: PinKind.rank(of: baseline), now: 5_000)
+        return baselineBytes(stamped)
+    }
+
+    /// Direction (i) for pins: an inbound tombstone yields to an unpublished retitle.
+    func testAnInboundTombstoneYieldsToAnUnpublishedPinEdit() {
+        let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "T")
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:pu-1"] = ownedCursor(reconciled: baselineBytes(baseline),
+                                               entityId: "srv-1", version: 9, ownerUuid: "pu-1")
+        let edited = pinRow(title: "renamed",
+                            contentUpdatedDate: Date(timeIntervalSince1970: 4_000))
+        var context = OwnedItemPlanContext()
+        context.tombstonedIdentities = ["lx:pu-1"]
+        context.localProjections = ["lx:pu-1": pinProjectionBytes(edited, baseline: baseline)]
+        context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+            PinKind.self, projections: context.localProjections, table: table)
+
+        let plan = SyncableOwnedItems.plan(PinKind.self, arrivals: [], parked: [:], table: table,
+                                           resolve: OwnerResolver.fixture(), context: context)
+
+        XCTAssertEqual(context.pendingLocalEdits, ["lx:pu-1"])
+        XCTAssertEqual(plan.yieldedTombstones, ["lx:pu-1"])
+        XCTAssertTrue(plan.steps.isEmpty, "No delete step: the row survives")
+    }
+
+    /// T5: a scope migration is a tombstone under the old (lineage, owner) identity plus a create
+    /// under the new one. No live row claims the old identity afterwards, so the projection domain
+    /// is empty for it, the predicate is false, and the migration tombstone hard-deletes. This is
+    /// the only thing standing between C4 and "every scope migration resurrects its pins".
+    func testAScopeMigrationTombstoneIsNeverBeatenByAnEdit() {
+        let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1")
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:pu-1"] = ownedCursor(reconciled: baselineBytes(baseline),
+                                               entityId: "srv-1", version: 9, ownerUuid: "pu-1")
+        // The migrated row claims the SPACE identity; the Profile identity is claimed by nothing
+        // live, exactly as PinKind.identity(of local:) reports for a dormant backup.
+        let migrated = pinRow(guid: "p2", spaceId: "space-a", profileId: "Default", title: "T")
+        var context = OwnedItemPlanContext()
+        context.tombstonedIdentities = ["lx:pu-1"]
+        context.localProjections = ["lx:su-1": pinProjectionBytes(migrated, baseline: baseline,
+                                                                  scope: .space)]
+        context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
+            PinKind.self, projections: context.localProjections, table: table)
+
+        let plan = SyncableOwnedItems.plan(PinKind.self, arrivals: [], parked: [:], table: table,
+                                           resolve: OwnerResolver.fixture(), context: context)
+
+        XCTAssertTrue(context.pendingLocalEdits.isEmpty, "No live row claims the old identity")
+        XCTAssertTrue(plan.yieldedTombstones.isEmpty)
+        XCTAssertEqual(plan.steps.map(\.kind), [.delete])
+    }
+
+    /// Direction (ii) for pins under C4-a: a remote retitle stamped after the deletion decision
+    /// cancels it, where before only a rank change (the pin's position dimension) could.
+    func testARemotePinRetitleNewerThanTheDeleteDecisionCancelsTheDelete() {
+        let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        let retitled = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "renamed",
+                                  rankStamp: 100, contentStamp: 2_000)
+
+        let plan = SyncableOwnedItems.plan(PinKind.self,
+                                           arrivals: [OwnedItemArrival(entity: retitled,
+                                                                       entityId: "srv-1",
+                                                                       version: 2)],
+                                           parked: [:], table: table,
+                                           resolve: OwnerResolver.fixture(),
+                                           context: OwnedItemPlanContext())
+
+        XCTAssertEqual(plan.cancelledDeletes, ["lx:pu-1"])
+        XCTAssertEqual(plan.supersededByDelete, 0)
     }
 }

@@ -52,7 +52,16 @@ enum BookmarkApplyOp: Equatable {
     case claim(guid: String, syncId: String)
     case create(PhiLocalBookmark)
     /// Location change writes parent, Space and sibling position together (§4.3).
-    case move(guid: String, toParentGuid: String?, inSpaceId: String, index: Int)
+    ///
+    /// `recordsLocationEdit` stamps `locationUpdatedDate` (schema V13). Landing a peer's move
+    /// leaves it false — restamping there would republish every landed move as this device's own
+    /// edit. It is true for exactly one engine-authored gesture: lifting a child out of a folder
+    /// another device deleted while this device was holding an unpublished edit of that child
+    /// (C4 / R4.6). The republish over the tombstone has no baseline, so without a recorded move
+    /// its location would be stamped 0 and any peer could put the child back inside the folder
+    /// it was lifted out of.
+    case move(guid: String, toParentGuid: String?, inSpaceId: String, index: Int,
+              recordsLocationEdit: Bool = false)
     case update(guid: String, fields: BookmarkFieldPatch)
     case delete(guid: String)
 }
@@ -99,7 +108,7 @@ struct BookmarkApplyBatch {
         switch op {
         case .claim(let guid, _): return guid
         case .create(let row): return row.guid
-        case .move(let guid, _, _, _): return guid
+        case .move(let guid, _, _, _, _): return guid
         case .update(let guid, _): return guid
         case .delete(let guid): return guid
         }

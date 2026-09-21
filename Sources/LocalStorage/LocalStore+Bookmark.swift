@@ -2407,7 +2407,7 @@ extension LocalStore {
                 // Claiming is not editing: write identity without changing `contentUpdatedDate`.
                 node.syncId = syncId
 
-            case .move(let guid, let parentGuid, let spaceId, let index):
+            case .move(let guid, let parentGuid, let spaceId, let index, let recordsLocationEdit):
                 try flushCreates()
                 // Remember the old parent before moving so it is normalized too.
                 remember(try bookmarkNode(with: guid, in: context)?.parent)
@@ -2418,14 +2418,16 @@ extension LocalStore {
                     ?? Self.defaultProfileId
                 // Landing, not editing: write the location without changing `locationUpdatedDate`, the same
                 // rule `.claim` follows for `contentUpdatedDate`. Restamping here would republish every
-                // landed move as this device's own edit.
+                // landed move as this device's own edit. The one exception the caller can ask for is the
+                // C4 lift out of a remotely deleted folder, which this device must defend against peers
+                // that still hold the old parent (see `BookmarkApplyOp.move`).
                 try moveBookmarkBody(guid,
                                      profileId: targetProfileId,
                                      toParentGuid: parentGuid,
                                      toSpaceId: spaceId,
                                      index: index,
                                      strictParent: true,
-                                     recordsLocationEdit: false,
+                                     recordsLocationEdit: recordsLocationEdit,
                                      in: context)
                 remember(try bookmarkNode(with: guid, in: context)?.parent)
 
@@ -2487,7 +2489,7 @@ extension LocalStore {
             switch op {
             case .create(let row):
                 spaceIds.insert(row.spaceId)
-            case .move(_, _, let spaceId, _):
+            case .move(_, _, let spaceId, _, _):
                 spaceIds.insert(spaceId)
             case .claim(let guid, _), .update(let guid, _), .delete(let guid):
                 if let spaceId = try bookmarkNode(with: guid, in: context)?.spaceId {

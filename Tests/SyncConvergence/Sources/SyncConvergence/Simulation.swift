@@ -106,6 +106,18 @@ struct SimKind<E: SwiftProtobuf.Message & Equatable> {
     var stamps: (E) -> [Int64]
     var merge: (E, E) -> E
     var supportsDelete: Bool = true
+
+    // MARK: C4 "edit beats delete" -- both decisions come from production code
+
+    /// Direction (i): does this replica hold an unpublished edit of the identity a tombstone has
+    /// just arrived for? `SyncableOwnedItems.unpublishedEdits` answers it, over the same two
+    /// values the engine gives it: the current local projection and the cursor's baseline.
+    var holdsUnpublishedEdit: ((E, E) -> Bool)?
+    /// Direction (ii): is this inbound entity newer than the moment this replica decided to
+    /// delete? `max(K.locationStamp, K.contentStamp) > deleteDecidedAtMs`, A9 as amended by C4-a.
+    /// The other two A9 conjuncts (a live parent, outside a subtree being deleted) are tree
+    /// conditions the flat model does not carry; see the README.
+    var beatsDeleteDecision: ((E, Int64) -> Bool)?
 }
 
 // MARK: - Replica
@@ -120,13 +132,21 @@ final class SimReplica<E: SwiftProtobuf.Message & Equatable> {
     var clock = PhiHybridClock()
 
     var store: [String: E] = [:]
-    /// Identities this replica has deleted. A local delete is terminal here:
-    /// a live arrival for a deleted identity is discarded, which is what
-    /// `plan`'s `supersededByDelete` does for bookmarks and pins by default.
+    /// Identities this replica has deleted. A delete is no longer terminal: ruling C4 lets an
+    /// edit beat it in both directions, so a live arrival newer than the decision cancels a
+    /// pending delete, and an inbound tombstone yields to an unpublished local edit.
     var deleted: Set<String> = []
     var baseVersion: [String: Int64] = [:]
     var reconciled: [String: E] = [:]
     var deleteAcknowledged: Set<String> = []
+    /// Logical time at which a local delete was decided, the model's `deleteDecidedAtMs`. Written
+    /// from the production clock, like the engine's `hlcNow()` argument to `tombstones(...)`.
+    var deleteDecidedAt: [String: Int64] = [:]
+    /// Identities whose tombstone this replica yielded to and has not republished yet: the cursor
+    /// state `deletedAtMs != nil && reconciled == nil` with a live local row. A redelivered
+    /// tombstone must not hard-delete them -- the baseline the yield cleared is exactly what the
+    /// derived predicate would need to recognise the edit a second time.
+    var yielded: Set<String> = []
     var watermark: Int64 = 0
     /// Pull-before-commit: set by a completed pull, cleared by a commit round.
     var drained = false
@@ -165,6 +185,16 @@ struct SimOutcome {
     var droppedPages = 0
     var offlineEpisodes = 0
     var deletes = 0
+    /// C4 direction (i): tombstones that met an unpublished local edit and were republished over.
+    var yields = 0
+    /// C4 direction (ii): pending local deletes cancelled by an inbound edit newer than them.
+    var cancelledDeletes = 0
+    /// Identities a delete was issued for that must still exist at the end, because an edit beat
+    /// that delete in one direction or the other, and the ones that must be gone.
+    var savedByAnEdit: Set<String> = []
+    var deletedWithoutAnEdit: Set<String> = []
+    /// Identities that break C4 after quiescence, with the direction each one broke.
+    var editBeatsDeleteViolations: [String] = []
     /// Identities whose converged content is NOT the latest edit by true wall
     /// clock, split by what a clock can actually promise.
     ///
@@ -202,6 +232,9 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
             replica.clockSkewMs = clockSkew[index]
         }
 
+        /// Identities a delete has already been issued for; see the scheduler's delete case.
+        var deleteIssued: Set<String> = []
+
         // True wall-clock order of content edits, independent of any replica's
         // skewed clock. This is the "intent" the design wants LWW to honour.
         var lastContentEdit: [String: (step: Int, value: String, causal: Bool)] = [:]
@@ -219,6 +252,16 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
             highestContentStamp[identity] = kind.contentStamp(seed)
         }
 
+        /// A delete erases the intent probe's bookkeeping for that identity. When C4 brings the
+        /// item back, the surviving value's content stamp is a real competing stamp again, so the
+        /// ceiling has to come back with it: without this, the next edit anywhere would be
+        /// measured against nothing, be called CAUSAL, and be reported as a defect when it loses
+        /// to a value its author had never seen.
+        func reviveIntentCeiling(_ identity: String, _ survivor: E) {
+            let stamp = kind.contentStamp(survivor)
+            highestContentStamp[identity] = max(highestContentStamp[identity] ?? Int64.min, stamp)
+        }
+
         func pull(_ replica: SimReplica<E>, duplicate: Bool) {
             let page = server.getUpdates(since: replica.watermark)
             let deliveries = duplicate ? 2 : 1
@@ -226,6 +269,26 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
                 for item in page {
                     replica.baseVersion[item.tag] = item.row.version
                     if item.row.deleted {
+                        // C4 direction (i). A tombstone this replica has already yielded to keeps
+                        // yielding while the row is live and unpublished: the redelivered page of
+                        // a duplicate delivery or a replayed marker page must not undo the yield.
+                        guard !replica.yielded.contains(item.tag) else { continue }
+                        if let local = replica.store[item.tag],
+                           let baseline = replica.reconciled[item.tag],
+                           kind.holdsUnpublishedEdit?(local, baseline) == true {
+                            // The yield: keep the row, clear the baseline, and let the commit loop
+                            // republish it at this tombstone's own version.
+                            replica.reconciled.removeValue(forKey: item.tag)
+                            replica.deleted.remove(item.tag)
+                            replica.deleteAcknowledged.remove(item.tag)
+                            replica.deleteDecidedAt.removeValue(forKey: item.tag)
+                            replica.yielded.insert(item.tag)
+                            outcome.yields += 1
+                            outcome.savedByAnEdit.insert(item.tag)
+                            outcome.deletedWithoutAnEdit.remove(item.tag)
+                            reviveIntentCeiling(item.tag, local)
+                            continue
+                        }
                         replica.store.removeValue(forKey: item.tag)
                         replica.reconciled.removeValue(forKey: item.tag)
                         replica.deleted.insert(item.tag)
@@ -234,8 +297,28 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
                     }
                     guard let payload = item.row.payload,
                           let remote = try? E(serializedBytes: payload) else { continue }
-                    // A tombstone this replica already holds is terminal.
-                    guard !replica.deleted.contains(item.tag) else { continue }
+                    if replica.deleted.contains(item.tag) {
+                        if replica.deleteAcknowledged.contains(item.tag) {
+                            // The account already holds this replica's tombstone, so a live entity
+                            // above it is a peer's republish over it: L2 resurrection.
+                            replica.deleted.remove(item.tag)
+                            replica.deleteAcknowledged.remove(item.tag)
+                            reviveIntentCeiling(item.tag, remote)
+                        } else {
+                            // C4 direction (ii) / A9: an edit stamped after this replica decided
+                            // to delete cancels the deletion; an older one loses to it.
+                            let decided = replica.deleteDecidedAt[item.tag] ?? 0
+                            guard kind.beatsDeleteDecision?(remote, decided) == true else {
+                                continue
+                            }
+                            replica.deleted.remove(item.tag)
+                            replica.deleteDecidedAt.removeValue(forKey: item.tag)
+                            outcome.cancelledDeletes += 1
+                            outcome.savedByAnEdit.insert(item.tag)
+                            outcome.deletedWithoutAnEdit.remove(item.tag)
+                            reviveIntentCeiling(item.tag, remote)
+                        }
+                    }
                     // Fold every landed LWW stamp into logical time, the way
                     // `PhiSyncEngine.observeStamps` does at landing. Only the
                     // entity's `PhiSettingValue` stamps, never `created_at_ms`.
@@ -275,6 +358,9 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
                 case .applied(let version):
                     replica.baseVersion[identity] = version
                     replica.reconciled[identity] = entity
+                    // An accepted republish ends the yielded state, exactly as `.applied` clearing
+                    // `deletedAtMs` does in the engine.
+                    replica.yielded.remove(identity)
                     // The GetUpdates watermark is NOT advanced here. A commit
                     // returns the new version of ONE entity; jumping the shared
                     // progress marker to it would skip every lower-versioned row
@@ -322,9 +408,22 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
                 guard kind.supportsDelete, rng.chance(20),
                       let identity = replica.store.keys.sorted().randomElement(using: &rng)
                 else { break }
+                // At most one delete per identity per run, so the C4 assertions below have a
+                // well-defined expectation: a second delete after a resurrection would make
+                // "it must exist at the end" depend on which action came last.
+                guard deleteIssued.insert(identity).inserted else { break }
                 replica.store.removeValue(forKey: identity)
                 replica.reconciled.removeValue(forKey: identity)
                 replica.deleted.insert(identity)
+                // The decision time is logical, like the engine's `hlcNow()` argument to
+                // `tombstones(...)`: comparing a wall-clock decision against logical stamps would
+                // make every arrival look newer on an account whose logical time has run ahead.
+                replica.deleteDecidedAt[identity] = hybridClock
+                    ? replica.clock.stamp(wallMs: replica.now(step: step))
+                    : replica.now(step: step)
+                if !outcome.savedByAnEdit.contains(identity) {
+                    outcome.deletedWithoutAnEdit.insert(identity)
+                }
                 lastContentEdit.removeValue(forKey: identity)
                 highestContentStamp.removeValue(forKey: identity)
                 outcome.deletes += 1
@@ -397,13 +496,24 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
             if !outcome.converged { break }
         }
 
-        // Deleted identities stay deleted everywhere.
-        let deletedEverywhere = replicas.reduce(into: Set<String>()) { $0.formUnion($1.deleted) }
-        for identity in deletedEverywhere.sorted() {
+        // --- Edit beats delete (C4) --------------------------------------------
+        // A delete nobody contradicted stays deleted everywhere: no replica may resurrect it from
+        // stale pre-delete state. A delete an edit beat, in either direction, leaves the item
+        // present on every replica -- which, given convergence above, means present at all.
+        for identity in outcome.deletedWithoutAnEdit.sorted() {
             for replica in replicas where replica.store[identity] != nil {
-                outcome.converged = false
-                outcome.divergence = (outcome.divergence ?? "")
-                    + "\n  resurrected tombstone \(identity) on replica \(replica.id)"
+                outcome.editBeatsDeleteViolations.append(
+                    "\(identity): deleted with no concurrent edit, but replica \(replica.id) "
+                    + "still holds it -- a tombstone was resurrected from stale state")
+                break
+            }
+        }
+        for identity in outcome.savedByAnEdit.sorted() {
+            for replica in replicas where replica.store[identity] == nil {
+                outcome.editBeatsDeleteViolations.append(
+                    "\(identity): an edit beat the delete, but replica \(replica.id) lost the "
+                    + "item -- the edit did not survive")
+                break
             }
         }
 

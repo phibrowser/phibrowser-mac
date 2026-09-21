@@ -352,6 +352,27 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(forward.spaceUuid.stringValue, "su-2")
     }
 
+    /// CASE 4a.14b: a tied ballot must not leave the member the ballot does not cover ordered by
+    /// ARGUMENT. A descendant's space_uuid is diagnostic: it is copied from the baseline and never
+    /// republished (R-M3-3-18), so two devices legitimately hold different values for it while
+    /// agreeing on the parent. Their ballots are then byte-identical, `lwwWinner` returns its left
+    /// argument, and taking the member from that side would leave the two devices holding
+    /// different bytes for one identity — and resolving a lifted orphan's landing Space
+    /// differently. The location itself and §4.3's carrier stamp are unaffected.
+    func testATiedLocationResolvesTheDiagnosticSpaceUuidSymmetrically() {
+        let a = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", parentUuid: "p1", locationStamp: 100)
+        let b = bookmarkPayload(uuid: "b1", spaceUuid: "su-2", parentUuid: "p1", locationStamp: 100)
+
+        let forward = BookmarkKind.merge(local: a, remote: b)
+        let backward = BookmarkKind.merge(local: b, remote: a)
+
+        XCTAssertEqual(forward, backward)
+        XCTAssertEqual(forward.parentUuid.stringValue, "p1")
+        XCTAssertEqual(forward.spaceUuid.stringValue, "su-2")
+        XCTAssertEqual(forward.spaceUuid.updatedAtMs, 100)
+        XCTAssertEqual(forward.parentUuid.updatedAtMs, 100)
+    }
+
     // MARK: - CASE 4a.15 / 4a.16
 
     /// CASE 4a.15: descendant space_uuid does not participate in change detection

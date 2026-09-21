@@ -226,8 +226,23 @@ enum BookmarkKind: OwnedItemKind {
         let remoteBallot = locationBallot(remote)
         let localWins = SyncableSettings.lwwWinner(localBallot, remoteBallot) == localBallot
         let winner = localWins ? local : remote
-        merged.spaceUuid = winner.spaceUuid
-        merged.parentUuid = winner.parentUuid
+        if localBallot == remoteBallot {
+            // Exact ballot tie: both sides already name the same location, so `winner` is only
+            // "whichever argument came first". Taking the location members from that arbitrary
+            // side makes the merge asymmetric in the member the ballot does not cover — for a
+            // descendant that is the diagnostic space_uuid, which is copied from the baseline and
+            // never republished (R-M3-3-18), so it still names the pre-move Space and the two sides
+            // legitimately disagree about it. Two devices would then hold different BYTES for one
+            // identity and resolve a lifted orphan's landing Space differently. Resolve the members
+            // through the shared winner (R4) on their own values instead, which is symmetric by
+            // construction. Which LOCATION wins does not change — the tie already proved both sides
+            // agree on it — and the carrier stamp below still overwrites both members.
+            merged.spaceUuid = SyncableSettings.lwwWinner(local.spaceUuid, remote.spaceUuid)
+            merged.parentUuid = SyncableSettings.lwwWinner(local.parentUuid, remote.parentUuid)
+        } else {
+            merged.spaceUuid = winner.spaceUuid
+            merged.parentUuid = winner.parentUuid
+        }
         // §4.3: stamp both members equally when sending the entity.
         let stamp = locationStamp(of: winner)
         merged.spaceUuid.updatedAtMs = stamp

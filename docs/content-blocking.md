@@ -27,6 +27,9 @@ Chromium fork.
   keyed by the registrable domain; exceptions persist per profile and stay in
   memory only for private windows. Private windows show no such row because
   the bridge addresses regular profiles only.
+- Usage is measured by three booleans in the launch-time
+  `user_defaults_snapshot` event, read from a Mac-side mirror of the switches;
+  see `docs/analytics.md`.
 - Nothing about blocking is written to disk beyond prefs and list files: no
   URLs, no per-site counters. A session blocked-request count exists in
   memory for diagnostics and is not shown.

@@ -160,8 +160,11 @@ final class ContentBlockingSettingsTests: XCTestCase {
         center = NotificationCenter()
     }
 
+    private var mirrored: [ContentBlockingState] = []
+
     private func makeFacade() -> ContentBlockingSettings {
-        ContentBlockingSettings(profileId: "Default", bridge: bridge, notificationCenter: center)
+        ContentBlockingSettings(profileId: "Default", bridge: bridge, notificationCenter: center,
+                                mirrorSwitches: { [weak self] in self?.mirrored.append($0) })
     }
 
     private func waitForMain() {
@@ -226,6 +229,28 @@ final class ContentBlockingSettingsTests: XCTestCase {
         XCTAssertEqual(bridge.categoryCalls.count, 1)
         XCTAssertEqual(bridge.categoryCalls.first?.0, .trackers)
         XCTAssertEqual(bridge.categoryCalls.first?.1, true)
+    }
+
+    func testMirrorsSwitchChangesOnly() {
+        let facade = makeFacade()
+        facade.refresh()
+        waitForMain()
+        XCTAssertEqual(mirrored.map(\.blockTrackers), [false])
+
+        // Same switches again (a list or download event): nothing to mirror.
+        facade.refresh()
+        waitForMain()
+        XCTAssertEqual(mirrored.count, 1)
+
+        facade.setCategory(.trackers, enabled: true)
+        waitForMain()
+        XCTAssertEqual(mirrored.map(\.blockTrackers), [false, true])
+
+        // A refused write mirrors the optimistic value, then the reverted one.
+        bridge.failWrites = true
+        facade.setCategory(.trackers, enabled: false)
+        waitForMain()
+        XCTAssertEqual(mirrored.map(\.blockTrackers), [false, true, false, true])
     }
 
     func testSetCategoryRevertsOnFailure() {

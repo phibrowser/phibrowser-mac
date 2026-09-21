@@ -355,7 +355,7 @@ extension AppController {
         )
         let appearance = UserAppearanceChoice(rawValue: appearanceRawValue) ?? .system
 
-        PostHogSDK.shared.capture("user_defaults_snapshot", properties: [
+        var properties: [String: Any] = [
             "new_tab_behavior": PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue()
                 ? "ntp"
                 : "omnibox",
@@ -385,7 +385,10 @@ extension AppController {
             "bitwarden_enabled": PhiPreferences.PasswordManagerSettings.bitwardenEnabled.loadValue(),
             "open_external_links_in_kiosk": PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue(),
             "open_kiosk_on_command_option_click": PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.loadValue()
-        ])
+        ]
+        // Chromium owns these switches and is not up yet; read the Mac-side mirror.
+        properties.merge(ContentBlockingAnalytics.snapshotProperties()) { current, _ in current }
+        PostHogSDK.shared.capture("user_defaults_snapshot", properties: properties)
     }
 
     private static func analyticsValue(for appearance: UserAppearanceChoice) -> String {

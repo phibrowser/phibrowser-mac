@@ -246,17 +246,35 @@ extension Notification.Name {
 /// for views. Writes update `state` optimistically and revert when the
 /// bridge reports failure. Views never touch the bridge directly.
 final class ContentBlockingSettings: ObservableObject {
-    @Published private(set) var state: ContentBlockingState?
+    @Published private(set) var state: ContentBlockingState? {
+        didSet {
+            // Only the switches are mirrored; list and download changes are not.
+            guard let state,
+                  oldValue == nil
+                    || state.blockAds != oldValue?.blockAds
+                    || state.blockCookieBanners != oldValue?.blockCookieBanners
+                    || state.blockTrackers != oldValue?.blockTrackers else { return }
+            mirrorSwitches(state)
+        }
+    }
 
     let profileId: String
     private let bridge: ContentBlockingBridging?
     private var statusObserver: NSObjectProtocol?
+    private let mirrorSwitches: (ContentBlockingState) -> Void
 
     init(profileId: String,
          bridge: ContentBlockingBridging? = ChromiumLauncher.sharedInstance().bridge.map(LiveContentBlockingBridge.init),
-         notificationCenter: NotificationCenter = .default) {
+         notificationCenter: NotificationCenter = .default,
+         mirrorSwitches: ((ContentBlockingState) -> Void)? = nil) {
         self.profileId = profileId
         self.bridge = bridge
+        // Feeds the content blocking fields of `user_defaults_snapshot`.
+        self.mirrorSwitches = mirrorSwitches ?? { state in
+            ContentBlockingAnalytics.mirror(
+                state, profileId: profileId,
+                knownProfileIds: Set(ProfileManager.shared.profiles.map(\.profileId)))
+        }
         statusObserver = notificationCenter.addObserver(
             forName: .contentBlockingStatusChanged, object: nil, queue: .main
         ) { [weak self] notification in

@@ -55,7 +55,10 @@ let simBookmarkIdentities = ["bm-0001", "bm-0002", "bm-0003", "bm-0004", "bm-000
 // MARK: - Settings
 
 func settingsSimKind() -> SimKind<Phi_PhiSettingEntity> {
-    let keys = ["PhiCurrentThemeId", "layoutMode", "alwaysShowURLPath"]
+    // `PhiDefaultSpaceUuid` rides as one more register: C1 carries the default-Space role as a
+    // plain string key in this same map, so the simulation exercises it for free.
+    let keys = ["PhiCurrentThemeId", "layoutMode", "alwaysShowURLPath",
+                PhiDefaultSpaceMirror.key]
     return SimKind(
         name: "settings",
         create: { _, stamper, _ in

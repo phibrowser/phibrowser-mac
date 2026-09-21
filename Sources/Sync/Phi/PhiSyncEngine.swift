@@ -2469,6 +2469,17 @@ actor PhiSyncEngine {
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
             let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
+            // C1 / defect 0.3-2: the well-known default row is deletable now, so `land` can
+            // legitimately reach its CREATE branch for this identity on a device whose row is
+            // gone. D1 keeps `profile_uuid` off the wire for it, so there is no account binding
+            // to resolve -- recreate it under this device's own Default profile, the same one
+            // `LocalStore.ensureDefaultSpace` uses on first launch. Without this the entity
+            // parks forever on `unresolvedProfile`. If that profile is not (yet) known here,
+            // `land` throws and the existing catch parks and retries.
+            if isDefault, existing == nil,
+               await spaceAccess.isKnownLocalProfile(LocalStore.defaultProfileId) {
+                profileId = LocalStore.defaultProfileId
+            }
             let merged: Phi_PhiSpaceEntity
             if let bytes = cursor.reconciled,
                let baseline = try? Phi_PhiSpaceEntity(serializedBytes: bytes) {
@@ -2631,14 +2642,15 @@ actor PhiSyncEngine {
 
         for item in work {
             guard !isStopped else { return }
-            // D1: the default Space cannot be deleted locally (`deleteSpace`
-            // refuses at SpaceManager.swift:1362) and by definition cannot be
-            // deleted remotely either. `item.uuid` is a syncUuid, so the constant
-            // it is compared against is the syncUuid-space one (§2.4).
-            guard item.uuid != SyncableSpaces.defaultSpaceUuid else {
-                AppLogInfo("[phi-sync] ignoring a tombstone for the default Space")
-                continue
-            }
+            // C1: a tombstone for the `default-space` IDENTITY lands like any other Space's.
+            // This used to be refused here, on the strength of a comment claiming
+            // `deleteSpace` refuses it locally -- it does not (it refuses only Incognito
+            // Spaces and the last remaining user Space), so the account could hold a
+            // tombstone every peer silently ignored, diverging forever. The role that used to
+            // be pinned to this identity is now the account register
+            // (`PhiDefaultSpaceMirror`), which is what survives the deletion; D1's field
+            // suppressions stay on the identity and are unaffected by a delete.
+            let isDefaultIdentity = item.uuid == SyncableSpaces.defaultSpaceUuid
             var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
             if let entityId = cursor.entityId, !item.entityId.isEmpty, entityId != item.entityId {
                 // The server never rewrites `client_tag_hash` on an update
@@ -2659,6 +2671,27 @@ actor PhiSyncEngine {
             if let localSpaceId {
                 if await spaceAccess.isImporting(intoSpaceId: localSpaceId) {
                     // No modal: nobody is there to see it. Persist the intent instead.
+                    cursor.pendingTombstone = true
+                    table.cursors[item.uuid] = cursor
+                    continue
+                }
+                // C1 safety case. Hiding the last live user Space leaves this device with none,
+                // which is exactly the invariant `deleteSpace`'s "never delete the last user
+                // Space" guard holds locally -- and nothing downstream of `hide` re-checks it.
+                // The deleting device legitimately had a successor; this one may not have
+                // received it yet (a later page, or a Space the pairing wizard has not mapped).
+                // Defer with the same parking the import lock uses: `pendingTombstone` is
+                // retried at the top of every round, so the tombstone lands as soon as any
+                // other user Space is live here.
+                //
+                // Scoped to the default IDENTITY, which is the case this guard was added for:
+                // that row exists on every device from first launch, so it is the one most
+                // likely to be a device's only user Space, and until C1 its tombstone was
+                // ignored outright. An ordinary Space's tombstone keeps today's behaviour
+                // (hide unconditionally) -- widening the rule is a separate decision, because
+                // a parked tombstone has no give-up condition (backlog B-5).
+                if isDefaultIdentity, await liveLocalUserSpaceIds(table: table) == [localSpaceId] {
+                    AppLogWarn("[phi-sync] deferring the default Space tombstone: it would hide the last live user Space")
                     cursor.pendingTombstone = true
                     table.cursors[item.uuid] = cursor
                     continue
@@ -2706,6 +2739,20 @@ actor PhiSyncEngine {
             // maps stay on disk for the whole retention window.
             AppLogInfo("[phi-sync] space soft-deleted by a remote tombstone")
         }
+    }
+
+    /// The local user Spaces a tombstone could still leave standing: `pairableSpaces()` --
+    /// §6.5's identity exclusions only, so agent and Incognito Spaces are out and the default
+    /// Space is in, with no mapping requirement -- minus every row this table has already
+    /// hidden or soft-deleted. Recomputed per tombstone because a hide earlier in the same
+    /// loop changes the answer.
+    private func liveLocalUserSpaceIds(table: PhiSpaceSyncTable) async -> Set<String> {
+        guard let spaceAccess else { return [] }
+        var gone: Set<String> = []
+        for (uuid, cursor) in table.cursors where cursor.hidden || cursor.deletedAtMs != nil {
+            if let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) { gone.insert(local) }
+        }
+        return Set(await spaceAccess.pairableSpaces().map(\.spaceId)).subtracting(gone)
     }
 
     /// Records a pull that could not read the account's entity, and — for a tombstone only —

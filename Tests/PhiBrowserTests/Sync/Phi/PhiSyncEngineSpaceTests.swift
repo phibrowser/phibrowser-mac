@@ -1654,7 +1654,33 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(store.table.cursors.isEmpty)
     }
 
-    func testTheDefaultSpaceTombstoneIsIgnored() async throws {
+    /// C1: the `default-space` IDENTITY is an ordinary deletable Space now. Its tombstone used
+    /// to be ignored here on the strength of a stale comment, so the account held a delete
+    /// every peer dropped; it must land like any other — hide, `deletedAtMs`, retention.
+    func testTheDefaultSpaceTombstoneLandsLikeAnyOtherSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("LOCAL-1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid), ciphertext: Data(), version: 3,
+                    entityId: "srv-d", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.hide(LocalStore.defaultSpaceId)))
+        let cursor = try XCTUnwrap(store.table.cursors[SyncableSpaces.defaultSpaceUuid])
+        XCTAssertTrue(cursor.hidden)
+        XCTAssertNotNil(cursor.deletedAtMs, "the 30-day retention window starts here")
+    }
+
+    /// C1 safety case: the deleting device had a successor, this one has not received it yet.
+    /// Hiding would leave zero live user Spaces, which is the invariant `deleteSpace` holds
+    /// locally, so the tombstone parks on the existing `pendingTombstone` machinery and lands
+    /// on the round after another user Space becomes live.
+    func testTheDefaultSpaceTombstoneIsDeferredWhileItWouldHideTheLastLiveUserSpace() async throws {
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0)]
         let store = MemorySpaceStore()
@@ -1665,8 +1691,55 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertNil(store.table.cursors[SyncableSpaces.defaultSpaceUuid]?.deletedAtMs)
+
         XCTAssertTrue(access.calls.filter { $0 == .hide(LocalStore.defaultSpaceId) }.isEmpty)
+        let parked = try XCTUnwrap(store.table.cursors[SyncableSpaces.defaultSpaceUuid])
+        XCTAssertTrue(parked.pendingTombstone,
+                      "the shared marker has moved past it; the intent must survive here or it is lost")
+        XCTAssertNil(parked.deletedAtMs)
+
+        // The successor arrives (a later page, or a Space the wizard has now paired).
+        access.spaces.append(localSpace("LOCAL-1", "Work", order: 1))
+        access.spaceMappings["LOCAL-1"] = "sync-1"
+        await engine.pullOnce()   // the tombstone is NOT redelivered
+
+        XCTAssertTrue(access.calls.contains(.hide(LocalStore.defaultSpaceId)))
+        let landed = try XCTUnwrap(store.table.cursors[SyncableSpaces.defaultSpaceUuid])
+        XCTAssertTrue(landed.hidden)
+        XCTAssertFalse(landed.pendingTombstone)
+    }
+
+    /// C1 / defect 0.3-2: a live `default-space` entity on a device whose default row was
+    /// deleted used to park forever — the engine left `profileId` nil for the identity and
+    /// `land` threw `unresolvedProfile`. It is created under this device's own Default
+    /// profile, and D1 still applies: no `theme_id`, no rebind.
+    func testTheDefaultIdentityIsCreatedUnderTheDevicesOwnProfileWhenItsRowIsGone() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid),
+                    ciphertext: try ciphertext(spaceEntity(SyncableSpaces.defaultSpaceUuid,
+                                                           name: "Default")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.create(LocalStore.defaultSpaceId)),
+                      "the well-known row is recreated under its own id, never a minted one")
+        let created = try XCTUnwrap(access.spaces.first { $0.spaceId == LocalStore.defaultSpaceId })
+        XCTAssertEqual(created.profileId, "Default")
+        XCTAssertNil(created.themeId, "D1: the identity carries no theme_id")
+        XCTAssertFalse(access.calls.contains(.themeState(LocalStore.defaultSpaceId)),
+                       "D1: no theme state is applied for the identity")
+        XCTAssertTrue(access.calls.filter { if case .rebind = $0 { return true }; return false }.isEmpty,
+                      "D1: the identity is never rebound")
+        XCTAssertNil(access.spaceMappings[LocalStore.defaultSpaceId],
+                     "the identity resolves through the constant branch, never a mapping row")
+        XCTAssertNotNil(store.table.cursors[SyncableSpaces.defaultSpaceUuid]?.reconciled)
     }
 
     func testAnImportLockDefersTheTombstoneAndPersistsTheIntent() async throws {

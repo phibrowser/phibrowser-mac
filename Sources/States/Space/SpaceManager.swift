@@ -1028,6 +1028,13 @@ final class SpaceManager: ObservableObject {
     /// hand-off survives relaunches. Falls back to the well-known id when
     /// no store is bound yet (early launch, kiosk) — the pre-hand-off
     /// behavior.
+    ///
+    /// C1: the persisted pointer is now also the applied cache of the
+    /// account-level register (`PhiDefaultSpaceMirror`), written by
+    /// `applyAccountDefaultSpace(syncUuid:)`. The resolution order and this
+    /// signature are unchanged — every reader keeps reading one local id —
+    /// and a register this device cannot resolve simply leaves the pointer
+    /// alone, so it falls through to the steps below.
     var currentDefaultSpaceId: String {
         let persisted = boundAccount?.userDefaults
             .string(forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue)
@@ -1039,9 +1046,80 @@ final class SpaceManager: ObservableObject {
         if known.contains(where: { $0.spaceId == LocalStore.defaultSpaceId }) {
             return LocalStore.defaultSpaceId
         }
-        // The recorded holder is gone (e.g. a restored backup) — the first
-        // user Space takes the role until the next hand-off persists.
-        return known.first?.spaceId ?? LocalStore.defaultSpaceId
+        // The recorded holder is gone (e.g. a restored backup, or a register
+        // naming a Space this device has not paired) — the first user Space
+        // in ACCOUNT order takes the role until the next hand-off persists.
+        //
+        // `sortOrder` IS that account order: `SyncableSpaces.plannedOrder`
+        // projects the account ranks onto it, tying on `space_uuid`
+        // (6d945861), and `reorderSpaces` numbers the result uniquely. So the
+        // list order already answers "first by (rank, space_uuid)" for every
+        // Space the account ordering has reached, with no sync lookup here —
+        // which matters, because this property is nonisolated and has 40+
+        // readers, while the syncUuid table is main-actor state.
+        // The tie-break below only decides rows that order has NOT reached
+        // yet, and it prefers the synced `createdDate` over the store's
+        // device-local `profileId` tie-break so two devices still agree; the
+        // local id is the last resort.
+        return known.min { lhs, rhs in
+            if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            if lhs.createdDate != rhs.createdDate { return lhs.createdDate < rhs.createdDate }
+            return lhs.spaceId < rhs.spaceId
+        }?.spaceId ?? LocalStore.defaultSpaceId
+    }
+
+    /// Mirror → local (C1 step 4): point the role at the account's chosen
+    /// holder, when this device can honour it.
+    ///
+    /// The register is an account sync uuid. It is honoured only when it
+    /// resolves to a live, non-hidden USER Space here — `userSpaces` is
+    /// already filtered for hidden Spaces (`handleSpacesUpdate`) and for
+    /// agent / Incognito Spaces, which can never hold the role. Anything else
+    /// (not arrived, not paired, hidden inside the 30-day window, purged)
+    /// leaves the local pointer exactly as it was: FALL BACK AND NEVER WRITE
+    /// BACK. Clearing or rewriting the register would be a device-local
+    /// decision that wins account-wide and races the next hand-off.
+    ///
+    /// Idempotent, so the re-evaluation hooks can call it freely.
+    @MainActor
+    func applyAccountDefaultSpace(syncUuid uuid: String) {
+        guard let account = boundAccount,
+              let localSpaceId = PhiSpaceSyncState.shared.localSpaceIdLookup?(uuid),
+              userSpaces.contains(where: { $0.spaceId == localSpaceId }) else { return }
+        let key = AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue
+        guard account.userDefaults.string(forKey: key) != localSpaceId else { return }
+        account.userDefaults.set(localSpaceId, forKey: key)
+        AppLogInfo("[SpaceManager] default Space role applied from the account register")
+        // The same refresh the hand-off triggers, so the app chrome follows
+        // the new holder immediately.
+        publishResolvedDefaultSpaceThemeIfNeeded(spaceId: localSpaceId)
+    }
+
+    /// Re-evaluate the published register against the Space list as it is
+    /// now. The named Space can arrive on a later page or be paired long
+    /// after the register landed, and this is what makes the role snap to it
+    /// then — without a write when it still does not resolve.
+    @MainActor
+    func applyAccountDefaultSpaceIfPublished() {
+        guard let uuid = UserDefaults.standard.string(forKey: PhiDefaultSpaceMirror.key),
+              !uuid.isEmpty else { return }
+        applyAccountDefaultSpace(syncUuid: uuid)
+    }
+
+    /// Local → mirror (C1 step 2): record the new role holder's ACCOUNT
+    /// identity, the way `LocalStore.changePinnedTabScope` records the scope.
+    /// The key is an ordinary synced setting, so the debounced defaults
+    /// trigger stamps and pushes it; nothing here talks to the engine.
+    /// A Space with no account identity yet publishes nothing — a local id
+    /// must never reach the wire (D6 §2.4), and an empty register would be
+    /// indistinguishable from "this account has no role published".
+    @MainActor
+    private func publishAccountDefaultSpace(_ spaceId: String) {
+        guard let uuid = PhiSpaceSyncState.shared.syncUuidLookup?(spaceId) else {
+            AppLogInfo("[SpaceManager] default Space role not published: the successor has no account identity")
+            return
+        }
+        UserDefaults.standard.set(uuid, forKey: PhiDefaultSpaceMirror.key)
     }
 
     /// Whether the UI may offer Delete for this Space. Everything is
@@ -5882,6 +5960,13 @@ final class SpaceManager: ObservableObject {
                 successor.spaceId,
                 forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue
             )
+            // C1 step 2: the role is account state, so the same hand-off
+            // publishes the successor's ACCOUNT identity. `remainingUserSpaces`
+            // is `userSpaces`, so an agent or Incognito Space can never reach
+            // this. An unmapped successor writes nothing (R1.2): the register
+            // keeps naming the Space being deleted and every device falls back
+            // until a later hand-off publishes a mapped one.
+            MainActor.assumeIsolated { publishAccountDefaultSpace(successor.spaceId) }
             AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
         }
@@ -7677,6 +7762,11 @@ final class SpaceManager: ObservableObject {
         // Capture prior IDs before replacing spaces; refresh routing only if the set changes.
         let previousSpaceIds = Set(spaces.map(\.spaceId))
         spaces = updated
+        // C1 step 3, re-evaluation: this is where a Space the account register
+        // names becomes resolvable — it landed on a later page, or a purge /
+        // unhide changed the live set. Runs before the theme republish below so
+        // the chrome follows the holder the register just gained.
+        MainActor.assumeIsolated { applyAccountDefaultSpaceIfPublished() }
         let defaultSpaceId = currentDefaultSpaceId
         if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: defaultSpaceId)

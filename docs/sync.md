@@ -125,6 +125,100 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   replays the page and performs that adoption a second time. It is recorded in
   the milestone's design errata and is not fixed here.
 
+## Default Space role
+
+Two things that used to be one, and are now separate by name (ruling C1):
+
+- The **identity** `"default-space"` — the well-known first-launch Space row
+  (`LocalStore.defaultSpaceId`) and the reserved account uuid it is hard-wired
+  to (`SyncableSpaces.defaultSpaceUuid`). It needs no mapping row and it carries
+  D1's two field suppressions: `profile_uuid` and `theme_id` are neither emitted
+  nor applied for it. Those suppressions are attached to the IDENTITY, tested as
+  `uuid == defaultSpaceUuid` in both directions, and they do **not** follow the
+  role.
+- The **role** — the Space windows opened without context land on, the app-chrome
+  theme anchor, and the pre-selected import target. It starts on the identity and
+  moves when its holder is deleted.
+
+The role is **synced state**: one account-level LWW register, the string key
+`PhiDefaultSpaceUuid` in the existing `phi-settings` map, whose value is the
+holder's account Space uuid. `PhiDefaultSpaceMirror` owns the key, both closures
+and the mount-time reseed, exactly as `PinnedTabScopeMirror` does for the
+pinned-tab scope; there is no proto change and no new channel. One register
+cannot hold zero or two holders, which is why this is not a per-Space flag.
+
+- **Local → register.** The one hand-off inside `SpaceManager.deleteSpace` also
+  publishes the successor's account uuid. An unmapped successor publishes
+  nothing: a local id must never reach the wire, and every device falls back
+  until a later hand-off names a mapped Space. Agent and Incognito Spaces can
+  never hold the role — the hand-off picks from `userSpaces`.
+- **Register → local.** `SpaceManager.applyAccountDefaultSpace(syncUuid:)` writes
+  `AccountUserDefaults.defaultSpaceId`, which is now the *applied cache* of the
+  register, and republishes the default-Space theme. `currentDefaultSpaceId` and
+  its 40+ readers are unchanged; only its last-resort fallback moved from "first
+  in the local list" to the first live user Space in account order, ties broken
+  on the synced `createdDate` rather than the device-local `profileId`.
+- **Fall back, and never write back.** A register naming a Space that has not
+  arrived, is not paired, is hidden inside the 30-day window, or was purged is
+  left standing and the local pointer is left alone. Clearing it would be a
+  device-local decision that wins account-wide, and the fallback is a pure
+  function of the synced Space set, so every device agrees without a write.
+- **Re-evaluation.** The register is re-applied when the settings entity lands
+  (the `phiSyncedSettingsDidApply` observer), when the Space list changes
+  (`handleSpacesUpdate`, which covers a Space that arrived on a later page, an
+  unhide and a purge), and after every mapping pass
+  (`.phiProfileMappingsDidResolve`, which covers a Space paired by the wizard
+  without any local row changing). All three call the same idempotent apply.
+- **Seeding.** The mount-time reseed writes the key at stamp **0**, from the
+  local pointer's account identity or else from the well-known default identity.
+  Seeding is not a user action, so it loses to any real hand-off, and two
+  devices seeding different values converge on `lwwWinner`'s byte tie-break.
+- **Account switches drop the key.** The mirror lives in the device-wide
+  `UserDefaults.standard`, and unlike the other mirrored settings its value is
+  an account identity. `resetPhiSyncCursorIfAccountChanged` removes the key and
+  both sidecars, so the next account never publishes the previous account's
+  Space uuid; the mount-time reseed then writes that account's own answer.
+- **Mixed versions.** An old client neither reads nor writes the key; `merge`
+  carries it through and `apply` refuses to write unregistered keys, so a round
+  trip through an old client preserves the account's role. The old client keeps
+  its own device-local role until it updates — no worse than before C1, when
+  every client had one.
+- **Not in the D7 overwrite confirmation.** The role is not a per-Space field
+  and the register is self-correcting, so the join-time diff does not mention it.
+
+Consequence accepted with the ruling: once the role sits on an ordinary Space,
+that Space carries its own `theme_id`, so the global theme picker (which writes
+`setTheme(forSpaceId: currentDefaultSpaceId)`) pins and syncs a theme on it.
+`resolvedThemeId` still falls back to the global theme when the holder has no
+pin.
+
+### Deleting the identity
+
+The `default-space` row is an ordinary deletable Space. `deleteSpace` refuses
+only Incognito Spaces and the last remaining user Space, so a local delete of it
+was always allowed and always queued a tombstone — but the engine used to ignore
+an inbound `default-space` tombstone, and `SyncableSpaces.land` assumed the row
+always existed locally. Both are fixed:
+
+- A `default-space` tombstone lands like any other: hide → `deletedAtMs` →
+  30-day retention → purge.
+- A live `default-space` entity whose local row is gone is created under this
+  device's own `Default` profile (D1 publishes no `profile_uuid` to resolve for
+  it), still with no `theme_id` and no rebind. Before, it parked forever on
+  `unresolvedProfile`.
+- **Safety case.** Hiding the last live user Space would leave a device with
+  none, which is the invariant `deleteSpace`'s own guard holds. When the
+  `default-space` tombstone would do that — the deleting device had a successor
+  this one has not received or paired yet — it is deferred on the existing
+  `pendingTombstone` parking and retried every round, so it lands as soon as any
+  other user Space is live here. The residual is a divergence window: the Space
+  stays visible on that device until then, and a parked tombstone has no give-up
+  condition (backlog B-5). The guard is scoped to this identity; an ordinary
+  Space's tombstone still hides unconditionally, as it always has.
+- In a mixed account, old clients still ignore the tombstone, so the Space
+  lingers there until they update; the tombstone is the current value of that
+  row and is redelivered on their next full replay.
+
 ## Stamps and the hybrid logical clock
 
 Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of

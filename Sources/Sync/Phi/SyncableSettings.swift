@@ -108,8 +108,13 @@ enum SyncableSettings {
     /// which is not a preference at all locally but a SwiftData row. It rides here as a
     /// mirror preference; `PinnedTabScopeMirror` owns the key, both closures and the
     /// mount-time reseed that keeps the mirror and the row together.
+    ///
+    /// C1 adds a second member of the same shape: the default-Space ROLE, which is an
+    /// account-scoped `UserDefaults` pointer locally. `PhiDefaultSpaceMirror` owns its key,
+    /// both closures and its mount-time reseed.
     static let all: [SyncableSetting] = generalBools
-        + [layoutMode, autoPictureInPictureMode, PinnedTabScopeMirror.pinnedTabScope]
+        + [layoutMode, autoPictureInPictureMode, PinnedTabScopeMirror.pinnedTabScope,
+           PhiDefaultSpaceMirror.defaultSpace]
         + themeSettings
 
     // MARK: General (Bool)

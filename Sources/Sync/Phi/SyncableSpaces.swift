@@ -511,9 +511,13 @@ extension SyncableSpaces {
             : Date()
 
         guard let existing else {
-            // Create. The default Space always exists locally, so this branch is
-            // only ever a genuinely new Space; its profile must resolve or the
-            // caller parked it (§3.5 fallback B) before getting here.
+            // Create. Usually a genuinely new Space, whose profile must resolve or the caller
+            // parked it (§3.5 fallback B) before getting here. C1 adds one more case: the
+            // well-known default row is deletable, so this identity can also be absent
+            // locally, and the caller resolves this device's own Default profile for it (D1
+            // publishes no `profile_uuid` to resolve). `localSpaceId` comes from the constant
+            // branch, so the row is recreated under the well-known id; `theme_id` and the
+            // rebind stay suppressed below, exactly as for a default Space that never left.
             guard let profileId else { throw SyncableSpacesError.unresolvedProfile }
             // Never use merged.spaceUuid (§2.4): local row ids and syncUuid are separate namespaces, and
             // SpaceModel.spaceId has @Attribute(.unique).

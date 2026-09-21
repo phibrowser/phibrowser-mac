@@ -316,6 +316,7 @@ import PostHog
             AccountController.shared.reconcilePostHogIdentityForAnonymousLaunchIfNeeded(
                 isMetricsReportingEnabled: isMetricsReportingEnabled
             )
+            captureApplicationInstallOrUpdate()
             captureApplicationOpened()
             observeApplicationActivationForAnalytics()
             captureUserDefaultsSnapshot()

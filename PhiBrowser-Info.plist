@@ -49,7 +49,6 @@
 			<string>Phi</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>phi</string>
 				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			</array>
 		</dict>

@@ -12,6 +12,76 @@ NS_ASSUME_NONNULL_BEGIN
 @protocol BookmarkWrapper;
 @protocol DownloadItemWrapper;
 @class ASWebAuthenticationSessionRequest;
+
+// ==========================================================================
+// Content blocking (Privacy pane)
+// ==========================================================================
+
+/// The three Privacy pane toggles.
+typedef NS_ENUM(NSInteger, PhiContentBlockingCategory) {
+  PhiContentBlockingCategoryAds = 0,
+  PhiContentBlockingCategoryCookieBanners = 1,
+  PhiContentBlockingCategoryTrackers = 2,
+};
+
+/// One catalog filter list as shown in the Advanced sheet. Titles and
+/// descriptions are Mac-side strings keyed by `listId`. A protocol, like
+/// WebContentWrapper: the framework does not export class symbols.
+@protocol PhiContentBlockingListInfo <NSObject>
+@property (nonatomic, copy, readonly) NSString *listId;
+/// One of @"ads", @"trackers", @"cookies", @"regional", @"phi".
+@property (nonatomic, copy, readonly) NSString *category;
+@property (nonatomic, copy, readonly) NSString *homepage;
+@property (nonatomic, copy, readonly) NSString *license;
+/// BCP 47 primary subtags that switch a regional list on by default.
+@property (nonatomic, copy, readonly) NSArray<NSString *> *langs;
+/// The checkbox state (user override, else catalog/language default).
+@property (nonatomic, assign, readonly) BOOL checked;
+@property (nonatomic, assign, readonly) BOOL defaultChecked;
+/// Custom lists (`category` @"custom"): the user's name and, when the list
+/// is downloaded, its URL (empty for pasted rules).
+@property (nonatomic, copy, readonly) NSString *name;
+@property (nonatomic, assign, readonly) BOOL custom;
+@property (nonatomic, copy, readonly) NSString *sourceURL;
+/// Whether the list's text is on disk. Downloaded lists start unavailable
+/// until the first fetch completes; `fetchedAt` is Unix seconds (0 while
+/// never fetched) and `lastError` the last download failure, if any.
+@property (nonatomic, assign, readonly) BOOL available;
+/// A download the user asked for is in progress; `downloadedBytes` of
+/// `totalBytes` received so far (`totalBytes` is -1 when the server did not
+/// announce a size). `contentBlockingStatusChanged:` fires as they change.
+@property (nonatomic, assign, readonly) BOOL downloading;
+@property (nonatomic, assign, readonly) int64_t downloadedBytes;
+@property (nonatomic, assign, readonly) int64_t totalBytes;
+@property (nonatomic, assign, readonly) NSTimeInterval fetchedAt;
+@property (nonatomic, copy, readonly) NSString *lastError;
+@end
+
+/// A snapshot of one profile's content blocking state.
+@protocol PhiContentBlockingSettings <NSObject>
+@property (nonatomic, assign, readonly) BOOL blockAds;
+@property (nonatomic, assign, readonly) BOOL blockCookieBanners;
+@property (nonatomic, assign, readonly) BOOL blockTrackers;
+@property (nonatomic, copy, readonly) NSArray<id<PhiContentBlockingListInfo>> *lists;
+/// Registrable domains where blocking is off.
+@property (nonatomic, copy, readonly) NSArray<NSString *> *siteExceptions;
+/// One of @"active", @"building", @"degraded", @"disabled", @"no_lists"
+/// (a toggle is on but none of its lists is downloaded; `statusDetail` has
+/// the last download error, if any).
+@property (nonatomic, copy, readonly) NSString *status;
+/// Human-readable reason when `status` is @"degraded"; empty otherwise.
+@property (nonatomic, copy, readonly) NSString *statusDetail;
+/// 0 while no generation is published.
+@property (nonatomic, assign, readonly) int64_t generationId;
+/// Unix seconds; 0 while no generation is published.
+@property (nonatomic, assign, readonly) NSTimeInterval builtAt;
+/// Requests blocked for the profile since it was loaded. Session-only,
+/// never persisted.
+@property (nonatomic, assign, readonly) uint64_t sessionBlockedCount;
+/// One line about the published rule set (rule counts, list ids) for the
+/// Privacy pane's diagnostics; empty while none is published.
+@property (nonatomic, copy, readonly) NSString *lastBuildLog;
+@end
 // Window types reported by Chromium bridge.
 // Note: ChromiumBrowserTypeIncognito means TYPE_NORMAL + incognito profile.
 // Non-normal incognito windows (e.g. DevTools, Popup opened from incognito)
@@ -866,6 +936,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // profile has no resolved sync key. Keys: @"uuid" (NSString, account-global
 // profile UUID), @"passphrase" (NSString, 64-char lowercase hex).
 - (nullable NSDictionary<NSString *, id> *)getPhiProfileSyncInfo:(NSString *)profileId;
+/// Content blocking of `profileId` published a new rule generation or changed
+/// status (active / building / degraded / disabled). Re-read the settings
+/// with -getContentBlockingSettings:completion:. UI thread.
+- (void)contentBlockingStatusChanged:(NSString *)profileId;
+
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>
@@ -923,7 +998,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                     atIndex:(NSInteger)index
                    windowId:(NSInteger)windowId
                  customGuid:(NSString* _Nullable)customGuid;
-                 
+
 // Unlike createNewTabWithUrl, this reuses an existing tab for the same URL when possible.
 - (void)openTabWithUrl:(NSString *)urlString windowId:(int64_t)windowId;
 
@@ -1798,6 +1873,71 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)setDownloadLocation:(NSString *)profileId
                        path:(NSString *)path
                  completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Reads `profileId`'s content blocking state. `completion` fires on the UI
+/// thread with the snapshot, or nil and an error.
+- (void)getContentBlockingSettings:(NSString *)profileId
+                        completion:(void (^)(id<PhiContentBlockingSettings> _Nullable settings, NSString * _Nullable error))completion;
+
+/// Turns one of the three Privacy pane toggles on or off. The rule set is
+/// rebuilt in the background; `contentBlockingStatusChanged:` reports it.
+- (void)setContentBlockingCategory:(NSString *)profileId
+                          category:(PhiContentBlockingCategory)category
+                           enabled:(BOOL)enabled
+                        completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Records the user's choice for one Advanced sheet list (`listId` from
+/// PhiContentBlockingListInfo). Unknown ids fail.
+- (void)setContentBlockingList:(NSString *)profileId
+                        listId:(NSString *)listId
+                       enabled:(BOOL)enabled
+                    completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Adds a custom filter list to `profileId`: either `url` (http(s), downloaded
+/// and refreshed daily) or `rules` (filter text stored as given), exactly one
+/// non-empty. `completion` fires on the UI thread with the new list id, or nil
+/// and an error.
+- (void)addContentBlockingCustomList:(NSString *)profileId
+                                name:(NSString *)name
+                                 url:(NSString * _Nullable)url
+                               rules:(NSString * _Nullable)rules
+                          completion:(void (^)(NSString * _Nullable listId, NSString * _Nullable error))completion;
+
+/// Removes a custom list and its stored text. Unknown ids fail.
+- (void)removeContentBlockingCustomList:(NSString *)profileId
+                                 listId:(NSString *)listId
+                             completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Downloads every enabled downloadable list again now; `contentBlockingStatusChanged:`
+/// reports the rebuild when one changed.
+- (void)refreshContentBlockingLists:(NSString *)profileId
+                         completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Downloads the given lists now, whether or not they are checked. Every
+/// download is an explicit user action: Chromium never fetches a list on its
+/// own. Fails when none of the ids is a downloadable list.
+- (void)downloadContentBlockingLists:(NSString *)profileId
+                             listIds:(NSArray<NSString *> *)listIds
+                          completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Deletes a list's downloaded text and unchecks it so it is not fetched
+/// again until the user asks. Fails for the bundled Phi list and unknown ids.
+- (void)deleteContentBlockingListDownload:(NSString *)profileId
+                                   listId:(NSString *)listId
+                               completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Adds (`enabled` YES) or removes a registrable-domain exception where
+/// blocking is off for `profileId`.
+- (void)setContentBlockingSiteException:(NSString *)profileId
+                                 domain:(NSString *)domain
+                                enabled:(BOOL)enabled
+                             completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// The domain `setContentBlockingSiteException:` keys the page at `url` by:
+/// its registrable domain, or its host when it has none (an IP address,
+/// localhost). Empty for URLs that are not http(s). Synchronous, UI thread,
+/// needs no profile; the toolbar toggle uses it so it matches the service.
+- (NSString *)contentBlockingSiteExceptionDomainForURL:(NSString *)url;
 
 /// Opens one of `profileId`'s data/settings pages in a browser window for that
 /// profile (creating one if needed). `page` is one of @"privacy",

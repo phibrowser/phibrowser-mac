@@ -191,6 +191,17 @@ final class WebContentAddressBarMenuPresenter {
         )
         settingsItem.submenu = buildSettingsSubmenu(rawURLString)
 
+        // The page picks up the new rule set on its next load.
+        if let contentBlocking = MainActor.assumeIsolated({
+            SiteContentBlockingToggle.current(browserState: browserState, urlString: rawURLString)
+        }) {
+            let item = MainActor.assumeIsolated {
+                contentBlocking.makeMenuItem { resolvedTab?.reload() }
+            }
+            item.image = menuSymbol(named: "shield.lefthalf.filled")
+            menu.addItem(item)
+        }
+
         menu.addItem(.separator())
 
         let alwaysShowURLPath = PhiPreferences.GeneralSettings.alwaysShowURLPath.loadValue()

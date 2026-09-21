@@ -50,6 +50,7 @@ struct ProfileDetailSettingsView: View {
                     }
                 }
             }
+            ContentBlockingSettingsSection(profileId: profileId)
             dataAndSettingsSection
         }
         .frame(maxWidth: .infinity, alignment: .leading)

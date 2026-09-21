@@ -1818,6 +1818,12 @@ extension PhiChromiumCoordinator {
         PhiPreferences.GeneralSettings.peekViewEnabled.loadValue()
             && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
     }
+
+    // Content blocking of a profile published a new rule generation or
+    // changed status; the Privacy pane's facade re-reads on this.
+    func contentBlockingStatusChanged(_ profileId: String) {
+        NotificationCenter.default.post(name: .contentBlockingStatusChanged, object: profileId)
+    }
 }
 
 extension Int64 {

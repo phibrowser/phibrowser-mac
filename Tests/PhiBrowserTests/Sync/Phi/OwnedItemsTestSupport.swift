@@ -926,12 +926,14 @@ extension PhiLocalBookmark {
                         secondaryTitle: String? = nil,
                         source: Int = 0,
                         createdDate: Date = Date(timeIntervalSince1970: 1_000),
-                        contentUpdatedDate: Date? = nil) -> PhiLocalBookmark {
+                        contentUpdatedDate: Date? = nil,
+                        locationUpdatedDate: Date? = nil) -> PhiLocalBookmark {
         PhiLocalBookmark(syncId: syncId, guid: guid, spaceId: spaceId, profileId: profileId,
                          parentGuid: parentGuid, index: index, isFolder: isFolder,
                          title: title, url: url, secondaryUrl: secondaryUrl,
                          secondaryTitle: secondaryTitle, source: source,
-                         createdDate: createdDate, contentUpdatedDate: contentUpdatedDate)
+                         createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
+                         locationUpdatedDate: locationUpdatedDate)
     }
 }
 

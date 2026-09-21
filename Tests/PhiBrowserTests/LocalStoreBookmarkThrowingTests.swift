@@ -380,6 +380,108 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(try row(bookmark, in: store)).contentUpdatedDate)
     }
 
+    // MARK: - locationUpdatedDate (schema V13, C2 / R2.2)
+
+    // A user move records the location edit time, so `BookmarkKind.stamp` can publish the move's
+    // own time instead of the reconnect's. A drag that only reorders siblings under the same
+    // parent is rank, which has its own stamp, and must leave the column alone.
+    func testAUserMoveStampsLocationUpdatedDateAndAReorderDoesNot() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil)
+        let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                              title: "A",
+                                                              profileId: Self.profileId,
+                                                              parentId: nil)
+        drainMainQueue()
+        XCTAssertNil(try XCTUnwrap(try row(bookmark, in: store)).locationUpdatedDate)
+
+        store.moveBookmark(bookmark, profileId: Self.profileId, to: folder, newIndex: 0)
+        await flushWrites(store)
+        drainMainQueue()
+        let afterMove = try XCTUnwrap(try XCTUnwrap(try row(bookmark, in: store)).locationUpdatedDate)
+
+        // Same parent, different index: a reorder.
+        store.moveBookmark(bookmark, profileId: Self.profileId, to: folder, newIndex: 5)
+        await flushWrites(store)
+        drainMainQueue()
+        XCTAssertEqual(try XCTUnwrap(try row(bookmark, in: store)).locationUpdatedDate, afterMove)
+    }
+
+    // Landing is not editing. Restamping here would publish every landed remote move back as this
+    // device's own edit on the next round — the location twin of the `.claim` rule for
+    // contentUpdatedDate.
+    func testLandingARemoteMoveLeavesLocationUpdatedDateAlone() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil)
+        let bookmark = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                              title: "A",
+                                                              profileId: Self.profileId,
+                                                              parentId: nil)
+
+        try await store.applyBookmarkSyncBatchThrowing([
+            .move(guid: bookmark, toParentGuid: folder, inSpaceId: LocalStore.defaultSpaceId,
+                  index: 0),
+        ])
+        drainMainQueue()
+
+        let landed = try XCTUnwrap(try row(bookmark, in: store))
+        XCTAssertEqual(landed.parent?.guid, folder, "the move really landed")
+        XCTAssertNil(landed.locationUpdatedDate)
+    }
+
+    // The sync-only cross-Space primitive is a landing path too, and its descendant retag is
+    // diagnostic and never republished (R-M3-3-18).
+    func testMoveBookmarksThrowingLeavesLocationUpdatedDateAloneOnTheSubtree() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil,
+                                                             spaceId: LocalStore.defaultSpaceId)
+        let child = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                           title: "Child",
+                                                           profileId: Self.profileId,
+                                                           parentId: folder,
+                                                           spaceId: LocalStore.defaultSpaceId)
+
+        try await store.moveBookmarksThrowing(guids: [folder],
+                                              toSpaceId: Self.otherSpaceId,
+                                              profileId: Self.profileId)
+        drainMainQueue()
+
+        XCTAssertEqual(try XCTUnwrap(try row(folder, in: store)).spaceId, Self.otherSpaceId)
+        XCTAssertNil(try XCTUnwrap(try row(folder, in: store)).locationUpdatedDate)
+        XCTAssertNil(try XCTUnwrap(try row(child, in: store)).locationUpdatedDate)
+    }
+
+    // A UI cross-Space move is a user edit, but only for the row the user moved: a descendant's
+    // space_uuid is diagnostic and never republished, so its column stays nil.
+    func testMovingBookmarksToAnotherSpaceStampsOnlyTheMovedRow() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil,
+                                                             spaceId: LocalStore.defaultSpaceId)
+        let child = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                           title: "Child",
+                                                           profileId: Self.profileId,
+                                                           parentId: folder,
+                                                           spaceId: LocalStore.defaultSpaceId)
+
+        store.moveBookmarks([folder],
+                            sourceProfileId: Self.profileId,
+                            toSpaceId: Self.otherSpaceId,
+                            targetProfileId: Self.profileId)
+        await flushWrites(store)
+        drainMainQueue()
+
+        XCTAssertNotNil(try XCTUnwrap(try row(folder, in: store)).locationUpdatedDate)
+        XCTAssertNil(try XCTUnwrap(try row(child, in: store)).locationUpdatedDate)
+    }
+
     // MARK: - Fire-and-forget APIs
 
     // CASE 2a.14: making the UI path throw during body extraction would turn user-side races into crashes.

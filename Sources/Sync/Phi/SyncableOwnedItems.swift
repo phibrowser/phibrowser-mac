@@ -1199,7 +1199,15 @@ enum SyncableOwnedItems {
             // merge, not a publication. Location and rank must stay at stamp 0 so a derived local
             // position cannot beat the arrival, and content keeps its bare edit time so an old
             // untouched local row cannot claim the account's logical time during claiming.
-            projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
+            //
+            // `locationUpdatedDate` is cleared for the same reason, and clearing it is what keeps
+            // location at 0 now that the column exists: the location projected here is the ARRIVAL's
+            // (`parentIdentity` above comes from the remote entity), so stamping it with this
+            // device's move time would hand an unchanged location a higher stamp than the account
+            // holds and republish every adopted row.
+            var atRest = row
+            atRest.locationUpdatedDate = nil
+            projected = BookmarkKind.stamp(projected, baseline: nil, local: atRest,
                                            rank: "", now: 0, hlcMax: 0)
             // The unidentified local projection has an empty UUID; the merge adopts the remote UUID.
             let merged = BookmarkKind.merge(local: projected, remote: entity)

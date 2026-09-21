@@ -361,6 +361,7 @@
 		A57A00000000000000000002 /* agent.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000001 /* agent.json */; };
 		A57A00000000000000000004 /* inputting.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000003 /* inputting.json */; };
 		A26D0443C3C4667246975164 /* TabDataModelSchemaV12.swift in Sources */ = {isa = PBXBuildFile; fileRef = E08D677F10AA9CACCB10A15C /* TabDataModelSchemaV12.swift */; };
+		B7C4E1A2D93F5068C1AE4B27 /* TabDataModelSchemaV13.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */; };
 		A708002022E87F3806A09FDA /* phi_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
@@ -1384,6 +1385,7 @@
 		DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingHostingViewController.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000004 /* DeveloperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsView.swift; sourceTree = "<group>"; };
 		E08D677F10AA9CACCB10A15C /* TabDataModelSchemaV12.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV12.swift; sourceTree = "<group>"; };
+		2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV13.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-OpenSource.entitlements"; sourceTree = "<group>"; };
 		EAD000000000000000000011 /* ReaderExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtractionService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000013 /* BrowserState+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+Reader.swift"; sourceTree = "<group>"; };
@@ -1857,6 +1859,7 @@
 				F02B00120000000000000002 /* TabDataModelSchemaV10.swift */,
 				79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV11.swift */,
 				E08D677F10AA9CACCB10A15C /* TabDataModelSchemaV12.swift */,
+				2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -3943,6 +3946,7 @@
 				8ADAB5612D010D1B7285F467 /* PhiSyncInvalidation.swift in Sources */,
 				77412B67E81DF25046BBC581 /* PhiSyncMarkerFile.swift in Sources */,
 				A26D0443C3C4667246975164 /* TabDataModelSchemaV12.swift in Sources */,
+				B7C4E1A2D93F5068C1AE4B27 /* TabDataModelSchemaV13.swift in Sources */,
 				49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV11.swift in Sources */,
 				5D1FCB130435E47C4C7D387A /* PhiURLRuleLocalAccess.swift in Sources */,
 				8D581F000AB58C74FB7409F6 /* URLRuleKind.swift in Sources */,

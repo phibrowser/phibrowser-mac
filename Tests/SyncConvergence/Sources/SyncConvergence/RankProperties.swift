@@ -163,7 +163,8 @@ func runRankProperties(iterations: Int, generators: inout Generators, report: Re
                                          url: URL(string: "https://a.example/")!,
                                          secondaryUrl: nil, secondaryTitle: nil, source: 0,
                                          createdDate: Date(timeIntervalSince1970: 0),
-                                         contentUpdatedDate: nil))
+                                         contentUpdatedDate: nil,
+                                         locationUpdatedDate: nil))
             ranks[syncId] = generators.rng.chance(3) ? generators.rng.pick(Pool.legalRanks)
                                                      : randomLegalRank(&generators.rng)
         }

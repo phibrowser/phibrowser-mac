@@ -31,6 +31,10 @@ struct PhiLocalBookmark: Equatable, Sendable {
     var createdDate: Date
     /// nil means content was never edited; use createdDate for comparison (§6.2).
     var contentUpdatedDate: Date?
+    /// Last local user move of the §4.3 location merge unit (parent and Space share one stamp). nil means no
+    /// recorded move — a create, a pre-V13 row, or a row whose location only ever arrived from a peer — and
+    /// `BookmarkKind.stamp` then falls back to the round clock as it did before V13.
+    var locationUpdatedDate: Date?
 }
 
 /// Fields and values for one update. Nested optionals: outer selects whether to change, inner selects the
@@ -436,6 +440,7 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
                          secondaryTitle: model.secondaryTitle,
                          source: model.source,
                          createdDate: model.createdDate,
-                         contentUpdatedDate: model.contentUpdatedDate)
+                         contentUpdatedDate: model.contentUpdatedDate,
+                         locationUpdatedDate: model.locationUpdatedDate)
     }
 }

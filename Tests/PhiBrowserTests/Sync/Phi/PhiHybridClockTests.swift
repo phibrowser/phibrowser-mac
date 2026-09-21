@@ -173,6 +173,118 @@ final class PhiHybridClockTests: XCTestCase {
                        "the genuinely later edit wins; publish time no longer decides")
     }
 
+    // MARK: - Bookmark location (schema V13)
+
+    /// The location analogue of scenario 7. A bookmark moved offline publishes the MOVE time; `now`
+    /// is the reconnect an hour later and must not reach the location group.
+    func testAnOfflineMovePublishesTheMoveTimeNotTheReconnectTime() throws {
+        let baseline = bookmarkPayload(uuid: "b1", locationStamp: 1_000)
+        let moved = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-b",
+                                             createdDate: Date(timeIntervalSince1970: 1),
+                                             locationUpdatedDate: Date(timeIntervalSince1970: 2_000))
+
+        let stamped = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(moved, resolve: OwnerResolver.fixture(),
+                                               scope: nil, parentIdentity: nil)),
+            baseline: baseline, local: moved, rank: BookmarkKind.rank(of: baseline),
+            now: 5_000_000, hlcMax: 1_000)
+
+        XCTAssertEqual(BookmarkKind.locationStamp(of: stamped), 2_000_000, "the move time, not `now`")
+        XCTAssertNotEqual(BookmarkKind.locationStamp(of: stamped), 5_000_000)
+    }
+
+    /// AM-1 on the location unit. A device whose clock runs an hour behind moves a bookmark it had
+    /// already merged from a peer: the bare edit column would be SMALLER than the stamp it
+    /// overwrites, and the causally later move would lose.
+    func testASlowClockMoveIsRaisedAboveTheBaselineLocationStamp() throws {
+        let baseline = bookmarkPayload(uuid: "b1", locationStamp: 9_000_000)
+        let moved = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-b",
+                                             createdDate: Date(timeIntervalSince1970: 1),
+                                             locationUpdatedDate: Date(timeIntervalSince1970: 5_000))
+
+        let stamped = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(moved, resolve: OwnerResolver.fixture(),
+                                               scope: nil, parentIdentity: nil)),
+            baseline: baseline, local: moved, rank: BookmarkKind.rank(of: baseline),
+            now: 9_500_000, hlcMax: 9_000_000)
+
+        XCTAssertEqual(BookmarkKind.locationStamp(of: stamped), 9_000_001)
+    }
+
+    /// A row with no recorded move — pre-V13, or one whose location only ever arrived from a peer —
+    /// keeps the behaviour that shipped before the column existed: the round clock with a baseline,
+    /// 0 without one, so a derived position still cannot outrank a real action (R2.3).
+    func testALocationWithNoRecordedMoveKeepsTheRoundClockAndTheStampZeroFloor() throws {
+        let resolve = OwnerResolver.fixture()
+        let unmoved = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-b",
+                                               createdDate: Date(timeIntervalSince1970: 1))
+
+        let againstBaseline = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(unmoved, resolve: resolve, scope: nil,
+                                               parentIdentity: nil)),
+            baseline: bookmarkPayload(uuid: "b1", locationStamp: 1_000), local: unmoved,
+            rank: "V", now: 5_000_000, hlcMax: 1_000)
+        XCTAssertEqual(BookmarkKind.locationStamp(of: againstBaseline), 5_000_000)
+
+        let created = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(unmoved, resolve: resolve, scope: nil,
+                                               parentIdentity: nil)),
+            baseline: nil, local: unmoved, rank: "V", now: 5_000_000, hlcMax: 8_000)
+        XCTAssertEqual(created.spaceUuid.updatedAtMs, 0)
+        XCTAssertEqual(created.parentUuid.updatedAtMs, 0)
+    }
+
+    /// R4.6's prerequisite: a republish after a tombstone yield has no baseline, so a deliberate
+    /// move would be stamped 0 and any peer could overwrite it. With a recorded move the
+    /// no-baseline path takes AM-1's floor instead.
+    func testARecordedMoveSurvivesTheNoBaselinePath() throws {
+        let lifted = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-b",
+                                              createdDate: Date(timeIntervalSince1970: 1),
+                                              locationUpdatedDate: Date(timeIntervalSince1970: 2))
+
+        let stamped = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(lifted, resolve: OwnerResolver.fixture(),
+                                               scope: nil, parentIdentity: nil)),
+            baseline: nil, local: lifted, rank: "V", now: 5_000_000, hlcMax: 8_000)
+
+        XCTAssertEqual(BookmarkKind.locationStamp(of: stamped), 8_001)
+        XCTAssertEqual(stamped.rank.updatedAtMs, 0, "rank stays derived")
+    }
+
+    /// §4.3's carrier rule is unchanged by the column: one stamp is written to BOTH members, and
+    /// `locationStamp(of:)` reads space_uuid for a root and parent_uuid for a descendant.
+    func testTheLocationStampIsWrittenToBothMembersForRootsAndDescendants() throws {
+        let resolve = OwnerResolver.fixture()
+        let moveDate = Date(timeIntervalSince1970: 2_000)
+
+        let root = PhiLocalBookmark.fixture(guid: "g-b1", syncId: "b1", spaceId: "space-b",
+                                            createdDate: Date(timeIntervalSince1970: 1),
+                                            locationUpdatedDate: moveDate)
+        let stampedRoot = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(root, resolve: resolve, scope: nil,
+                                               parentIdentity: nil)),
+            baseline: bookmarkPayload(uuid: "b1", locationStamp: 1_000), local: root,
+            rank: "V", now: 5_000_000, hlcMax: 1_000)
+        XCTAssertEqual(stampedRoot.spaceUuid.updatedAtMs, 2_000_000)
+        XCTAssertEqual(stampedRoot.parentUuid.updatedAtMs, stampedRoot.spaceUuid.updatedAtMs)
+        XCTAssertEqual(BookmarkKind.locationStamp(of: stampedRoot),
+                       stampedRoot.spaceUuid.updatedAtMs, "a root carries on space_uuid")
+
+        let child = PhiLocalBookmark.fixture(guid: "g-b2", syncId: "b2", spaceId: "space-a",
+                                             parentGuid: "g-b1",
+                                             createdDate: Date(timeIntervalSince1970: 1),
+                                             locationUpdatedDate: moveDate)
+        let stampedChild = BookmarkKind.stamp(
+            try XCTUnwrap(BookmarkKind.project(child, resolve: resolve, scope: nil,
+                                               parentIdentity: "b1")),
+            baseline: bookmarkPayload(uuid: "b2", parentUuid: "b9", locationStamp: 1_000),
+            local: child, rank: "V", now: 5_000_000, hlcMax: 1_000)
+        XCTAssertEqual(stampedChild.parentUuid.updatedAtMs, 2_000_000)
+        XCTAssertEqual(stampedChild.spaceUuid.updatedAtMs, stampedChild.parentUuid.updatedAtMs)
+        XCTAssertEqual(BookmarkKind.locationStamp(of: stampedChild),
+                       stampedChild.parentUuid.updatedAtMs, "a descendant carries on parent_uuid")
+    }
+
     // MARK: - A9 boundary on a skewed account (R2.5(c) scenario 10)
 
     /// `deleteDecidedAtMs` is written from `hlcNow()`, so it is comparable with the LWW location

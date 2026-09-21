@@ -171,9 +171,14 @@ stamp of the value it overwrites:
   time. It only runs early once `hasAdopted` is true: with no sidecar history
   `snapshot` treats every registered key as changed.
 - bookmarks and pins — content fields take `contentUpdatedDate ?? createdDate`.
-  Bookmark **location** and every **rank** stay on `hlcNow()`: location has no
-  edit-date column until schema V13, and ruling Q-R2-5 leaves a drag on the
-  round clock.
+  The bookmark **location** merge unit (`space_uuid` + `parent_uuid`, one shared
+  stamp) takes `locationUpdatedDate`, the optional column schema V13 adds to
+  `TabDataModel`. Only a local user move writes it: a reorder inside one parent
+  is rank, a landed remote move is not an edit, and the Space retag a moved
+  folder performs on its descendants is diagnostic and never republished
+  (R-M3-3-18). A row with no recorded move — pre-V13, or one whose location only
+  ever arrived from a peer — keeps the pre-V13 behaviour exactly: `hlcNow()`
+  against a baseline, stamp 0 without one.
 - URL rules — content takes `contentUpdatedDate`, the target takes
   `targetUpdatedDate`; both were already edit-time and now carry the AM-1 bump,
   which closes the same slow-clock hole. `rank` uses `hlcNow()`.
@@ -185,6 +190,14 @@ stamp of the value it overwrites:
 The bare edit column is never enough on its own: a device whose clock runs
 behind would replace a value it merged from a peer with a *smaller* stamp and
 lose its own, causally later, edit — which is the defect C2 exists to remove.
+
+Everything else is still stamped at publish time, on `hlcNow()`:
+
+| quantity | why it has no edit time |
+| --- | --- |
+| every **rank**, on every kind | a drag has no edit-date column on any kind, and ruling Q-R2-5 leaves it that way; M3-4a §14.3 item 11 already registers the cost |
+| pin `split_partner_uuid` | the only column it could borrow is shared with sync landing (above) |
+| every **Space** field | `SpaceModel` has no edit-date column, and `theme_id` / opacity / the profile binding are not on the row at all; R2.2's option S2 would cover them and is not shipped |
 
 ### Where `maxSeen` lives, and why it is not beside the marker
 
@@ -223,9 +236,12 @@ gracefully into a Lamport counter, which still orders causally related edits
 correctly.
 
 Stamp 0 is untouched by all of this. It still means "derived, must never beat a
-real action" — no-baseline ranks, no-baseline bookmark location, the reseeded
-scope mirror — it is never produced by the clock, and observing it is a no-op
-because `max` is.
+real action" — no-baseline ranks, a no-baseline bookmark location with no
+recorded move, the reseeded scope mirror — it is never produced by the clock,
+and observing it is a no-op because `max` is. A no-baseline location that *does*
+record a move takes AM-1's `hlcMax` floor instead: that is what will let a
+deliberately lifted bookmark survive a republish over a tombstone (R4.6),
+instead of leaving a location any peer can overwrite at will.
 
 ### `deleteDecidedAtMs` and A9
 
@@ -420,16 +436,20 @@ The marker boundary and the URL rule kind add five test files:
   automatic merge passes (claim, collapse, yield) end to end through the
   engine.
 - `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` — the store-level
-  throwing primitives, the batch entry, the V11-to-V12 migration cases (V12 is
-  the schema that adds the six sync columns to `SpaceURLRule`) and the
+  throwing primitives, the batch entry, every real-store migration case (V11 to
+  V12, which adds the six sync columns to `SpaceURLRule`; V12 to V13, which adds
+  `TabDataModel.locationUpdatedDate` and backfills nothing) and the
   routing-table refresh.
 - `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift` — the
   `AccountUserDefaults` write-face rollback.
 
 `Tests/PhiBrowserTests/Sync/Phi/PhiHybridClockTests.swift` covers the hybrid
-logical clock itself, the stamp-0 invariants that survive it, the two offline-edit
-scenarios, and A9's boundary on an account whose logical time has run a year
-ahead of wall clock.
+logical clock itself, the stamp-0 invariants that survive it, the offline-edit
+scenarios for both a rename and a move, the §4.3 carrier rule under the location
+edit date, and A9's boundary on an account whose logical time has run a year
+ahead of wall clock. The write side — which gestures record
+`locationUpdatedDate` and which deliberately do not — lives in
+`Tests/PhiBrowserTests/LocalStoreBookmarkThrowingTests.swift`.
 
 One suite is **not** compile-only. The hostless convergence harness runs:
 

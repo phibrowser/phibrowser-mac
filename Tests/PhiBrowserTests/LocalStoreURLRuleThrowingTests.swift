@@ -14,7 +14,8 @@ import XCTest
 // LocalStoreCompatibilityTests uses placeholder files and disposable schemas; it cannot
 // open a real V11 store or run migrateV11toV12 (RT-8). Apart from production references
 // in LocalStore.swift and AppController+UserDataBackup.swift, no other tests reference
-// TabDataModelMigrationPlan. C-1/C-11 are the only real-store V11-to-V12 migration probes.
+// TabDataModelMigrationPlan. C-1/C-11 are the only real-store V11-to-V12 migration probes,
+// and C-1b is the V12-to-V13 one: every real-store migration probe lives in this file.
 @MainActor
 final class LocalStoreURLRuleThrowingTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -135,21 +136,55 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
         }
     }
 
+    // MARK: - CASE C-1b: Real-store V12-to-V13 migration
+
+    // V13 adds one optional column, TabDataModel.locationUpdatedDate (C2 / R2.2). Detects an
+    // omitted model among the five, a mistyped column that prevents lightweight migration, and a
+    // backfill: nil means "no recorded move", and inventing a date here would publish a fabricated
+    // move time for every existing bookmark on the next sync round.
+    func testV12StoreMigratesToV13LeavingLocationUpdatedDateNil() throws {
+        let directory = try makeTemporaryDirectory()
+        let seeded = try seedV12Store(at: directory, rules: Self.fourRules)
+
+        let container = try openWithProductionMigrationPlan(at: directory)
+        let context = container.mainContext
+
+        let tabs = try context.fetch(FetchDescriptor<TabDataModel>())
+        let rules = try context.fetch(FetchDescriptor<SpaceURLRule>())
+        XCTAssertEqual(tabs.count, seeded.tabCount)
+        XCTAssertEqual(Set(tabs.map(\.guid)), Set(seeded.tabGuids))
+        XCTAssertEqual(rules.count, 4)
+
+        for tab in tabs {
+            XCTAssertNil(tab.locationUpdatedDate, "the new column is not backfilled")
+        }
+        // The V11/V12 columns seeded above survive the upgrade untouched.
+        let byGuid = Dictionary(uniqueKeysWithValues: tabs.map { ($0.guid, $0) })
+        XCTAssertEqual(try XCTUnwrap(byGuid["tab-0"]).syncId, "tab-0-identity")
+        XCTAssertEqual(try XCTUnwrap(byGuid["tab-0"]).contentUpdatedDate,
+                       Self.seededContentEditDate)
+        XCTAssertEqual(Set(rules.compactMap(\.syncId)).count, 4)
+    }
+
     // MARK: - CASE C-2: Migration-plan structure assertions
 
-    // If migrateV11toV12 is omitted from stages, schemas and the typealias still name V12,
-    // so SwiftData can infer a lightweight migration while skipping didMigrate's syncId
-    // backfill entirely. This is the only detector of that omission.
-    func testMigrationPlanEndsAtV12WithOneStagePerUpgrade() throws {
+    // If migrateV11toV12 or migrateV12toV13 is omitted from stages, schemas and the typealias
+    // still name the newest schema, so SwiftData can infer a lightweight migration while skipping
+    // didMigrate's syncId backfill entirely. This is the only detector of that omission.
+    func testMigrationPlanEndsAtV13WithOneStagePerUpgrade() throws {
         let schemas = TabDataModelMigrationPlan.schemas
         let stages = TabDataModelMigrationPlan.stages
 
-        XCTAssertEqual(schemas.count, 12)
+        XCTAssertEqual(schemas.count, 13)
         XCTAssertEqual(stages.count, schemas.count - 1)
         let last = try XCTUnwrap(schemas.last)
-        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV12.self))
+        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV13.self))
         XCTAssertEqual(TabDataModelSchemaV12.versionIdentifier, Schema.Version(12, 0, 0))
-        XCTAssertEqual(TabDataModelSchemaV12.models.count, 5)
+        XCTAssertEqual(TabDataModelSchemaV13.versionIdentifier, Schema.Version(13, 0, 0))
+        XCTAssertEqual(TabDataModelSchemaV13.models.count, 5)
+        // The compatibility manifest gates the downgrade path and must move with the schema.
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 13)
+        XCTAssertTrue(LocalStore.compatibilityConfiguration.canReadStoreFormatVersion(13))
     }
 
     // MARK: - CASE C-10: Default deletedDate read filtering (R-M3-4a-51)
@@ -372,6 +407,80 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
             migrationPlan: TabDataModelMigrationPlan.self,
             configurations: configuration
         )
+    }
+
+    /// The V11/V12 sync columns the V12-to-V13 case checks survive the upgrade.
+    private nonisolated static let seededContentEditDate = Date(timeIntervalSince1970: 1_700_000_300)
+
+    /// The V12 sibling of `seedV11Store`, with the V12 sync columns populated so the V13 upgrade
+    /// is shown to preserve them rather than merely to succeed.
+    @discardableResult
+    private func seedV12Store(at directory: URL, rules: [SeedRule]) throws -> SeededV11Store {
+        let configuration = ModelConfiguration(
+            url: directory.appendingPathComponent("LocalStore.sqlite")
+        )
+        let container = try ModelContainer(
+            for: TabDataModelSchemaV12.ProfileModel.self,
+            TabDataModelSchemaV12.TabDataModel.self,
+            TabDataModelSchemaV12.SpaceModel.self,
+            TabDataModelSchemaV12.SpaceURLRule.self,
+            TabDataModelSchemaV12.BrowserDataSettingsModel.self,
+            configurations: configuration
+        )
+        let context = container.mainContext
+
+        let profileIds = ["Default", "Work"]
+        for profileId in profileIds {
+            context.insert(TabDataModelSchemaV12.ProfileModel(profileId: profileId))
+        }
+
+        let spaceIds = ["space-a", "space-b", "space-c"]
+        for (index, spaceId) in spaceIds.enumerated() {
+            context.insert(TabDataModelSchemaV12.SpaceModel(
+                spaceId: spaceId,
+                profileId: index < 2 ? "Default" : "Work",
+                name: "Space \(index)",
+                colorHex: "#000000",
+                iconName: "globe",
+                sortOrder: index,
+                createdDate: Date(timeIntervalSince1970: 1_700_000_100),
+                updatedDate: Date(timeIntervalSince1970: 1_700_000_100)
+            ))
+        }
+
+        let tabGuids = ["tab-0", "tab-1", "tab-2"]
+        for (index, guid) in tabGuids.enumerated() {
+            let tab = TabDataModelSchemaV12.TabDataModel(
+                title: "Tab \(index)",
+                guid: guid,
+                index: index,
+                url: try XCTUnwrap(URL(string: "https://tab\(index).example")),
+                favicon: nil,
+                createdDate: Date(timeIntervalSince1970: 1_700_000_200),
+                updatedDate: Date(timeIntervalSince1970: 1_700_000_200)
+            )
+            tab.profileId = "Default"
+            if guid == "tab-0" {
+                tab.syncId = "tab-0-identity"
+                tab.contentUpdatedDate = Self.seededContentEditDate
+            }
+            context.insert(tab)
+        }
+
+        for seed in rules {
+            context.insert(TabDataModelSchemaV12.SpaceURLRule(
+                id: seed.id,
+                spaceId: seed.spaceId,
+                host: seed.host,
+                pathPrefix: seed.pathPrefix,
+                askBeforeRouting: seed.askBeforeRouting,
+                sortOrder: seed.sortOrder,
+                createdDate: seed.createdDate,
+                syncId: UUID().uuidString.lowercased()
+            ))
+        }
+        try context.save()
+        return SeededV11Store(profileIds: profileIds, spaceIds: spaceIds, tabGuids: tabGuids)
     }
 
     /// Open once and read each rule's syncId by id; release the container before returning.

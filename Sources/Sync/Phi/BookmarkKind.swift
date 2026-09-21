@@ -113,32 +113,40 @@ enum BookmarkKind: OwnedItemKind {
             : entity.parentUuid.updatedAtMs
     }
 
-    /// Stamping (§4.2 items 4/5): location members share now if location changes, never for reorder alone;
-    /// rank has its own independent stamp; content fields compare signatures and stamp changed values
+    /// Stamping (§4.2 items 4/5): location members share one stamp when location changes, never for reorder
+    /// alone; rank has its own independent stamp; content fields compare signatures and stamp changed values
     /// individually.
     ///
-    /// Without a baseline, stamp location/rank as 0 so derived local positions cannot outrank real remote
-    /// actions. Content uses contentUpdatedDate ?? createdDate raised to `hlcMax + 1` (AM-1): the edit time
-    /// is what the user meant, but a create or a post-yield republish has overwritten nothing, so the
-    /// account's logical time is the floor.
+    /// Without a baseline, stamp rank as 0 so derived local positions cannot outrank real remote actions, and
+    /// stamp location 0 too unless the row records a real move. Content uses contentUpdatedDate ?? createdDate
+    /// raised to `hlcMax + 1` (AM-1): the edit time is what the user meant, but a create or a post-yield
+    /// republish has overwritten nothing, so the account's logical time is the floor. A recorded move takes
+    /// the same floor, which is what makes a deliberate lift survive a republish over a tombstone (R4.6);
+    /// without one there is no move to defend and 0 is still correct.
     ///
     /// With a baseline, first merge created_at_ms and source too (R-exec-16); see below.
     ///
-    /// C2: content fields carry their EDIT time (`contentUpdatedDate`), not the publish time. `now` is the
-    /// round's hybrid-logical stamp and stays with location and rank, neither of which has an edit-date
-    /// column yet (location gets one in Phase 2 / schema V13; rank stays on `now` by ruling Q-R2-5).
+    /// C2: content fields carry their EDIT time (`contentUpdatedDate`) and location its own
+    /// (`locationUpdatedDate`, schema V13), not the publish time. `now` is the round's hybrid-logical stamp
+    /// and remains the source for rank (ruling Q-R2-5) and for a location with no recorded move — a pre-V13
+    /// row, or one whose location only ever arrived from a peer.
     static func stamp(_ projected: Phi_PhiBookmarkEntity, baseline: Phi_PhiBookmarkEntity?,
                       local: PhiLocalBookmark, rank: String, now: Int64,
                       hlcMax: Int64 = 0) -> Phi_PhiBookmarkEntity {
         var out = projected
         out.rank = string(rank)
         let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
+        let locationEdit = local.locationUpdatedDate.map(milliseconds)
 
         guard let baseline else {
             let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
                                                    overwrittenStampMs: hlcMax)
-            out.spaceUuid.updatedAtMs = 0
-            out.parentUuid.updatedAtMs = 0
+            // §4.3: one stamp, written to both members; `locationStamp(of:)` picks the carrier on the way out.
+            let located = locationEdit.map {
+                PhiHybridClock.editStamp(editWallMs: $0, overwrittenStampMs: hlcMax)
+            } ?? 0
+            out.spaceUuid.updatedAtMs = located
+            out.parentUuid.updatedAtMs = located
             out.rank.updatedAtMs = 0
             out.title.updatedAtMs = created
             out.url.updatedAtMs = created
@@ -163,8 +171,19 @@ enum BookmarkKind: OwnedItemKind {
         // overwrite concurrent remote sorting.
         if !out.parentUuid.stringValue.isEmpty { out.spaceUuid = baseline.spaceUuid }
 
-        let locationStamp = locationValue(out) == locationValue(baseline)
-            ? Self.locationStamp(of: baseline) : now
+        // §4.3 location is one merge unit, so one stamp goes to both members. A changed location takes the
+        // move's own time raised above the stamp it overwrites (AM-1); `now` remains the fallback for a row
+        // with no recorded move, which is what every row carried before V13.
+        let baselineLocation = Self.locationStamp(of: baseline)
+        let locationStamp: Int64
+        if locationValue(out) == locationValue(baseline) {
+            locationStamp = baselineLocation
+        } else if let locationEdit {
+            locationStamp = PhiHybridClock.editStamp(editWallMs: locationEdit,
+                                                     overwrittenStampMs: baselineLocation)
+        } else {
+            locationStamp = now
+        }
         out.spaceUuid.updatedAtMs = locationStamp
         out.parentUuid.updatedAtMs = locationStamp
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)

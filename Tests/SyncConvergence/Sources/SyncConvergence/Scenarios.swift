@@ -417,3 +417,84 @@ func checkPlannerRefusesAnInjectedCycle(report: Report) {
                  "steps=\(plan.steps.map(\.identity)) refused=\(plan.refused)")
     report.markPassed("planner.refuses-an-injected-cycle")
 }
+
+// MARK: - Bookmark location intent
+
+/// The location analogue of the rename regression C2 was opened for, run through
+/// the production `BookmarkKind.stamp`: replica A moves a bookmark at T1 while
+/// offline, replica B moves the same bookmark at T2 > T1 while online, and A
+/// only reconnects and publishes at T3 > T2. B's move is the later one by true
+/// wall clock, so B must win.
+///
+/// Before V13 the location group had no edit-date column, so A's projection was
+/// stamped T3 at publish time and beat B every time. The column makes the
+/// offline move carry T1; AM-1 keeps it above the stamp it overwrites without
+/// letting it reach T3.
+func checkAnOfflineMoveLosesToALaterOnlineMove(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let t1 = t0 + 60_000            // A moves the bookmark, offline
+    let t2 = t0 + 120_000           // B moves it, online
+    let t3 = t0 + 3_600_000         // A reconnects and publishes
+
+    let resolve = OwnerResolver(
+        syncUuid: { $0 == "local-space" ? simSpaceUuid : nil },
+        localSpaceId: { $0 == simSpaceUuid ? "local-space" : nil },
+        isEligibleSpace: { _ in true },
+        globalUuid: { _ in nil },
+        localProfileId: { _ in nil })
+
+    // The account value both replicas start from: at the Space root, stamped t0.
+    var baseline = Phi_PhiBookmarkEntity()
+    baseline.bookmarkUuid = "bm-0001"
+    baseline.spaceUuid = settingValue(simSpaceUuid, t0)
+    baseline.parentUuid = settingValue("", t0)
+    baseline.rank = settingValue("V", t0)
+    baseline.isFolder = false
+    baseline.title = settingValue("title", t0)
+    baseline.url = settingValue("https://a.example/", t0)
+    baseline.secondaryURL = settingValue("", t0)
+    baseline.secondaryTitle = settingValue("", t0)
+
+    // A's row after its offline move into folder bm-0002.
+    let moved = PhiLocalBookmark(
+        syncId: "bm-0001", guid: "guid-1", spaceId: "local-space", profileId: "p",
+        parentGuid: "guid-2", index: 0, isFolder: false, title: "title",
+        url: URL(string: "https://a.example/")!, secondaryUrl: nil, secondaryTitle: nil,
+        source: 0, createdDate: Date(timeIntervalSince1970: Double(t0) / 1_000),
+        contentUpdatedDate: nil,
+        locationUpdatedDate: Date(timeIntervalSince1970: Double(t1) / 1_000))
+    guard let projected = BookmarkKind.project(moved, resolve: resolve, scope: nil,
+                                               parentIdentity: "bm-0002") else {
+        report.check("bookmarks.an-offline-move-loses-to-a-later-online-move", false,
+                     "projection failed: the resolver no longer maps the simulated Space")
+        return
+    }
+    // `now` is the reconnect, which is what the pre-V13 code stamped.
+    let published = BookmarkKind.stamp(projected, baseline: baseline, local: moved,
+                                       rank: BookmarkKind.rank(of: baseline), now: t3,
+                                       hlcMax: t0)
+
+    // B's move, made online at t2, into folder bm-0003.
+    var fromB = baseline
+    fromB.parentUuid = settingValue("bm-0003", t2)
+    fromB.spaceUuid = settingValue(simSpaceUuid, t2)
+
+    let merged = BookmarkKind.merge(local: published, remote: fromB)
+
+    report.check("bookmarks.an-offline-move-carries-its-move-time",
+                 BookmarkKind.locationStamp(of: published) == t1,
+                 "published location stamp \(BookmarkKind.locationStamp(of: published)), "
+                 + "expected the move time \(t1) and not the publish time \(t3)")
+    report.check("bookmarks.an-offline-move-loses-to-a-later-online-move",
+                 merged.parentUuid.stringValue == "bm-0003",
+                 "converged parent \(merged.parentUuid.stringValue) at stamp "
+                 + "\(BookmarkKind.locationStamp(of: merged)); the later true-time move was B's")
+    // §4.3: whichever side wins, both members leave with the same stamp.
+    report.check("bookmarks.a-merged-location-keeps-one-stamp-on-both-members",
+                 merged.spaceUuid.updatedAtMs == merged.parentUuid.updatedAtMs,
+                 "space_uuid@\(merged.spaceUuid.updatedAtMs) "
+                 + "parent_uuid@\(merged.parentUuid.updatedAtMs)")
+    report.markPassed("bookmarks.an-offline-move-carries-its-move-time")
+    report.markPassed("bookmarks.an-offline-move-loses-to-a-later-online-move")
+    report.markPassed("bookmarks.a-merged-location-keeps-one-stamp-on-both-members")
+}

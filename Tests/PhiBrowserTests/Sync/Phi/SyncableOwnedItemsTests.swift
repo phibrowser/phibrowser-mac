@@ -588,12 +588,14 @@ extension SyncableOwnedItemsTests {
     private func markRow(identity: String?, guid: String, url: String,
                          title: String = "T", spaceId: String = "space-a",
                          parentGuid: String? = nil, index: Int = 0,
-                         contentUpdatedDate: Date? = nil) -> PhiLocalBookmark {
+                         contentUpdatedDate: Date? = nil,
+                         locationUpdatedDate: Date? = nil) -> PhiLocalBookmark {
         PhiLocalBookmark.fixture(guid: guid, syncId: identity, spaceId: spaceId,
                                  parentGuid: parentGuid, index: index, title: title,
                                  url: URL(string: url)!,
                                  createdDate: Date(timeIntervalSince1970: 1),
-                                 contentUpdatedDate: contentUpdatedDate)
+                                 contentUpdatedDate: contentUpdatedDate,
+                                 locationUpdatedDate: locationUpdatedDate)
     }
 
     /// CASE 4a.23 (spec 13): basic adoption claims a local row rather than copying it.
@@ -635,6 +637,27 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(rank, "k")
         XCTAssertEqual(locationStamp, 100)
         XCTAssertTrue(republishes)
+    }
+
+    /// The claiming projection stays at location stamp 0 even for a row the user moved locally
+    /// (schema V13). The location projected here is the ARRIVAL's -- `recordMerge` takes
+    /// `parentIdentity` from the remote entity -- so letting `locationUpdatedDate` stamp it would
+    /// hand an unchanged location a stamp above the account's and republish every adopted row.
+    func testAdoptionKeepsLocationAtStampZeroEvenForALocallyMovedRow() {
+        let moved = markRow(identity: nil, guid: "g1", url: "https://e.example",
+                            locationUpdatedDate: Date(timeIntervalSince1970: 9_000_000))
+        // Every remote stamp is above the local row's derived content stamp, so the ONLY thing that
+        // could make this pair republish is the location group.
+        let remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", locationStamp: 100,
+                                     rankStamp: 2_000, contentStamp: 2_000)
+
+        let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [moved],
+                                                resolve: resolve)
+
+        let merged = mergedEntity(adoption, "b1")
+        XCTAssertEqual(merged.map(BookmarkKind.locationStamp(of:)), 100)
+        XCTAssertFalse(adoption.mustRepublish.contains("b1"),
+                       "an adopted row whose location did not change must not republish")
     }
 
     /// Decode the merged entity produced by adopt.

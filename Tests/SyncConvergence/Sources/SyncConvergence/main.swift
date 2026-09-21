@@ -49,6 +49,7 @@ runLayer1(iterations: iterations, generators: &generators, report: report)
 runRankProperties(iterations: iterations, generators: &generators, report: report)
 runClockProperties(iterations: iterations, generators: &generators, report: report)
 checkPlannerRefusesAnInjectedCycle(report: report)
+checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
 print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner "
       + "and the rank primitives")
 

@@ -694,6 +694,7 @@ extension LocalStore {
                                           toSpaceId: nil,
                                           index: newIndex,
                                           strictParent: false,
+                                          recordsLocationEdit: true,
                                           in: context)
             } catch {
                 AppLogError("Failed to move bookmark: \(error)")
@@ -706,6 +707,9 @@ extension LocalStore {
     ///
     /// Existing `moveBookmark` uses the row's own Space and cannot move across Spaces; `moveBookmarks` always
     /// targets a Space root. `toParentGuid == nil` targets this Space's canonical root.
+    ///
+    /// Landing a remote move, so it leaves `locationUpdatedDate` alone: the column records when THIS device's
+    /// user moved the row, and restamping it here would republish a landed move as a local edit.
     func moveBookmarkThrowing(guid: String,
                               toParentGuid parentGuid: String?,
                               inSpaceId spaceId: String,
@@ -722,17 +726,22 @@ extension LocalStore {
                                       toSpaceId: spaceId,
                                       index: index,
                                       strictParent: true,
+                                      recordsLocationEdit: false,
                                       in: context)
         }
     }
 
     /// Single implementation shared by both entry points.
+    ///
+    /// `recordsLocationEdit` is true only for a local user gesture: it stamps `locationUpdatedDate`, which
+    /// `BookmarkKind.stamp` publishes as the location group's edit time (§4.3 / C2).
     private func moveBookmarkBody(_ guid: String,
                                   profileId: String,
                                   toParentGuid parentId: String?,
                                   toSpaceId requestedSpaceId: String?,
                                   index newIndex: Int?,
                                   strictParent: Bool,
+                                  recordsLocationEdit: Bool,
                                   in context: ModelContext) throws {
         guard let node = try bookmarkNode(with: guid, in: context) else {
             throw LocalStoreWriteError.rowNotFound
@@ -763,6 +772,13 @@ extension LocalStore {
         normalizeIndexes(for: siblings)
 
         let now = Date()
+        // §4.3 location is parent + Space together. A drag that only reorders siblings under the same parent
+        // is rank, which carries its own stamp, so it must not look like a move. Read `node.spaceId` before
+        // the retag below overwrites it.
+        if recordsLocationEdit,
+           originalParent?.guid != parent.guid || requestedSpaceId.map({ $0 != node.spaceId }) == true {
+            node.locationUpdatedDate = now
+        }
         // Retag only when sync explicitly supplies a destination Space. UI calls pass nil and retain the
         // existing `node.updatedDate = Date()` behavior.
         if let requestedSpaceId,
@@ -855,8 +871,11 @@ extension LocalStore {
                     if let originalParent = node.parent {
                         sourceParentsByGuid[originalParent.guid] = originalParent
                     }
+                    let movedOut = node.parent?.guid != targetParent.guid
                     node.parent = targetParent
                     node.updatedDate = Date()
+                    // A selection dropped back into its own parent is a reorder, not a move (§4.3).
+                    if movedOut { node.locationUpdatedDate = node.updatedDate }
                 }
 
                 for parent in sourceParentsByGuid.values where parent.guid != targetParent.guid {
@@ -878,6 +897,7 @@ extension LocalStore {
                         try self.liftUnselectedChildren(from: node,
                                                         selectedGuids: selectedGuids,
                                                         updatedDate: now,
+                                                        recordsLocationEdit: true,
                                                         in: context)
                     }
                 }
@@ -905,6 +925,7 @@ extension LocalStore {
                                            toSpaceId: targetSpaceId,
                                            targetProfileId: targetProfileId,
                                            readOnlyTargetRoot: false,
+                                           recordsLocationEdit: true,
                                            in: context)
             } catch {
                 AppLogError("Failed to move bookmarks to Space: \(error)")
@@ -914,6 +935,9 @@ extension LocalStore {
 
     /// Throwing sibling used ONLY by the sync layer (§4.9). Source and destination share a Profile: account
     /// rows do not move between Chromium profiles.
+    ///
+    /// Landing a remote move, so `locationUpdatedDate` is left alone for the same reason as
+    /// `moveBookmarkThrowing`.
     func moveBookmarksThrowing(guids: [String],
                                toSpaceId targetSpaceId: String,
                                profileId: String) async throws {
@@ -923,6 +947,7 @@ extension LocalStore {
                                        toSpaceId: targetSpaceId,
                                        targetProfileId: profileId,
                                        readOnlyTargetRoot: true,
+                                       recordsLocationEdit: false,
                                        in: context)
         }
     }
@@ -933,6 +958,7 @@ extension LocalStore {
                                    toSpaceId targetSpaceId: String,
                                    targetProfileId: String,
                                    readOnlyTargetRoot: Bool,
+                                   recordsLocationEdit: Bool,
                                    in context: ModelContext) throws {
         // An empty list is a caller bug, not a successful no-op.
         guard !guids.isEmpty else {
@@ -983,6 +1009,9 @@ extension LocalStore {
                 sourceParentsByGuid[parent.guid] = parent
             }
             node.parent = targetRoot
+            // Only the moved row: `retagBookmarkSubtree` also rewrites every descendant's Space, and a
+            // descendant's space_uuid is diagnostic and never republished (R-M3-3-18).
+            if recordsLocationEdit { node.locationUpdatedDate = now }
             try retagBookmarkSubtree(node,
                                      profileId: targetProfileId,
                                      profile: targetProfile,
@@ -1015,6 +1044,7 @@ extension LocalStore {
                 try liftUnselectedChildren(from: node,
                                            selectedGuids: requestedGuids,
                                            updatedDate: now,
+                                           recordsLocationEdit: recordsLocationEdit,
                                            in: context)
             }
         }
@@ -1688,10 +1718,14 @@ private extension LocalStore {
                           to parent: TabDataModel,
                           at index: Int,
                           updatedDate: Date,
+                          recordsLocationEdit: Bool,
                           in context: ModelContext) throws {
         let originalParent = node.parent
         node.parent = parent
         node.updatedDate = updatedDate
+        if recordsLocationEdit, originalParent?.guid != parent.guid {
+            node.locationUpdatedDate = updatedDate
+        }
 
         if let originalParent, originalParent.guid != parent.guid {
             let originalSiblings = try children(of: originalParent, in: context)
@@ -1704,9 +1738,12 @@ private extension LocalStore {
         normalizeIndexes(for: siblings)
     }
 
+    /// `recordsLocationEdit` follows the gesture that triggered the lift: a user batch move re-parents these
+    /// children, a landed remote move does not.
     func liftUnselectedChildren(from folder: TabDataModel,
                                 selectedGuids: Set<String>,
                                 updatedDate: Date,
+                                recordsLocationEdit: Bool,
                                 in context: ModelContext) throws {
         guard let parent = folder.parent else { return }
 
@@ -1722,6 +1759,7 @@ private extension LocalStore {
                     try liftUnselectedChildren(from: child,
                                                selectedGuids: selectedGuids,
                                                updatedDate: updatedDate,
+                                               recordsLocationEdit: recordsLocationEdit,
                                                in: context)
                 }
                 continue
@@ -1740,6 +1778,7 @@ private extension LocalStore {
                                          to: folder,
                                          at: descendantInsertionIndex,
                                          updatedDate: updatedDate,
+                                         recordsLocationEdit: recordsLocationEdit,
                                          in: context)
                     descendantInsertionIndex += 1
                     if descendant.dataType == .bookmarkFolder,
@@ -1749,6 +1788,7 @@ private extension LocalStore {
                         try liftUnselectedChildren(from: descendant,
                                                    selectedGuids: selectedGuids,
                                                    updatedDate: updatedDate,
+                                                   recordsLocationEdit: recordsLocationEdit,
                                                    in: context)
                     }
                 }
@@ -1762,6 +1802,7 @@ private extension LocalStore {
                                  to: parent,
                                  at: folderIndex + siblingOffsetAfterFolder,
                                  updatedDate: updatedDate,
+                                 recordsLocationEdit: recordsLocationEdit,
                                  in: context)
             siblingOffsetAfterFolder += 1
         }
@@ -1769,6 +1810,8 @@ private extension LocalStore {
         normalizeIndexes(for: try children(of: folder, in: context))
     }
 
+    /// Never writes `locationUpdatedDate`: the caller stamps the row the user actually moved, and a
+    /// descendant's space_uuid is diagnostic and never republished (R-M3-3-18).
     func retagBookmarkSubtree(_ node: TabDataModel,
                               profileId: String,
                               profile: ProfileModel,
@@ -2373,12 +2416,16 @@ extension LocalStore {
                 let targetProfileId = try profileId(ofSpaceId: spaceId, in: context)
                     ?? bookmarkNodeProfileId(guid, in: context)
                     ?? Self.defaultProfileId
+                // Landing, not editing: write the location without changing `locationUpdatedDate`, the same
+                // rule `.claim` follows for `contentUpdatedDate`. Restamping here would republish every
+                // landed move as this device's own edit.
                 try moveBookmarkBody(guid,
                                      profileId: targetProfileId,
                                      toParentGuid: parentGuid,
                                      toSpaceId: spaceId,
                                      index: index,
                                      strictParent: true,
+                                     recordsLocationEdit: false,
                                      in: context)
                 remember(try bookmarkNode(with: guid, in: context)?.parent)
 

@@ -5121,7 +5121,8 @@ private extension PhiLocalBookmark {
                          parentGuid: nil, index: 0, isFolder: false, title: "",
                          url: URL(string: "https://bookmark.phi/folder")!,
                          secondaryUrl: nil, secondaryTitle: nil, source: 0,
-                         createdDate: Date(timeIntervalSince1970: 0), contentUpdatedDate: nil)
+                         createdDate: Date(timeIntervalSince1970: 0), contentUpdatedDate: nil,
+                         locationUpdatedDate: nil)
     }
 }
 
@@ -5591,7 +5592,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
                     ? nil : entity.secondaryTitle.stringValue,
                 source: Int(entity.source),
                 createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
-                contentUpdatedDate: nil)
+                contentUpdatedDate: nil, locationUpdatedDate: nil)
         }
         touched.insert(group)
         placed.append((item, guid, group))

@@ -142,6 +142,16 @@ final class SiteContentBlockingToggleTests: XCTestCase {
         XCTAssertEqual(toggle.isBlocking, false, "a rejected write leaves the previous state")
     }
 
+    /// Lets the queued main-queue hops run: the facade's refresh completion,
+    /// then the menu item's `receive(on: .main)` subscription.
+    private func drainMain(_ hops: Int = 3) {
+        for _ in 0..<hops {
+            let done = expectation(description: "main queue drained")
+            DispatchQueue.main.async { done.fulfill() }
+            wait(for: [done], timeout: 1)
+        }
+    }
+
     func testMenuItemStartsIndeterminateAndFollowsTheState() throws {
         let bridge = DomainBridge()
         let toggle = try XCTUnwrap(toggle(bridge: bridge))
@@ -149,18 +159,21 @@ final class SiteContentBlockingToggleTests: XCTestCase {
         let item = toggle.makeMenuItem { reloads += 1 }
         XCTAssertEqual(item.title, SiteContentBlockingToggle.title)
         XCTAssertNotNil(item.target)
-        XCTAssertNotNil(item.action)
 
-        let read = expectation(description: "state read")
-        DispatchQueue.main.async { read.fulfill() }
-        wait(for: [read], timeout: 1)
+        drainMain()
         XCTAssertEqual(item.state, .on)
         XCTAssertTrue(item.isEnabled)
 
-        _ = item.target?.perform(item.action, with: item)
-        let written = expectation(description: "written")
-        DispatchQueue.main.async { written.fulfill() }
-        wait(for: [written], timeout: 1)
+        // Regression: a method named perform(_:) makes #selector resolve to
+        // NSObject's performSelector:, and the click never arrives.
+        let action = try XCTUnwrap(item.action)
+        XCTAssertEqual(NSStringFromSelector(action), "toggleSiteBlocking:")
+        let target = try XCTUnwrap(item.target as? NSObject)
+        XCTAssertTrue(target.responds(to: action))
+        _ = target.perform(action, with: item)
+        drainMain()
+        XCTAssertEqual(bridge.exceptionCalls.count, 1)
+        XCTAssertEqual(bridge.exceptionCalls.first?.2, true)
         XCTAssertEqual(item.state, .off)
         XCTAssertEqual(reloads, 1)
     }

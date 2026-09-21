@@ -1458,3 +1458,43 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(client.commits.isEmpty, "the trailing push ran after shutdown")
     }
 }
+
+// MARK: - C2 / R2.1: the hybrid logical clock is account-scoped cursor state
+
+extension PhiSyncEngineTests {
+
+    /// `hlcMax` goes through `writeState`, which carries the retirement guard, for the same
+    /// reason the rest of `stateKeys` does: a retired engine still holds the signed-out
+    /// account's `UserDefaults`, and advancing logical time there would hand the account
+    /// mounted next a clock it never earned.
+    func testARetiredEngineDoesNotWriteTheHybridClock() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 9_000_000),
+                                               key: key),
+                    version: 5)
+        let engine = makeEngine(client, key: key, now: 1_000)
+
+        engine.shutdown()                        // synchronous, exactly as `stopPhiSync()` calls it
+        await engine.pullOnce()
+        await engine.pushLocalSettings()
+
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.hlcMaxStateKey),
+                     "a retired engine must leave the next account's logical time alone")
+    }
+
+    /// The other half: a live engine does persist it, so the case above is not passing merely
+    /// because nothing ever writes the key.
+    func testALiveEngineRecordsTheHybridClockItLandedFrom() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 9_000_000),
+                                               key: key),
+                    version: 5)
+
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        let stored = (defaults.object(forKey: PhiSyncEngine.hlcMaxStateKey) as? NSNumber)?.int64Value
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(stored), 9_000_000)
+    }
+}

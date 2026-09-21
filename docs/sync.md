@@ -125,6 +125,129 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   replays the page and performs that adoption a second time. It is recorded in
   the milestone's design errata and is not fixed here.
 
+## Stamps and the hybrid logical clock
+
+Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of
+epoch milliseconds. Ruling C2 replaced the "devices run NTP" premise behind
+those stamps with a hybrid logical clock, stamped at **edit** time rather than
+at publish time. The wire format did not change: stamps are simply integers
+that can now run ahead of wall clock.
+
+`Sources/Sync/Phi/PhiHybridClock.swift` holds the formula and nothing else. It
+is a value type of its own so the engine and the hostless convergence harness
+run the *same* code rather than two copies that could drift.
+
+```
+stamp()  = max(wallMs, maxSeen + 1)          // also advances maxSeen
+observe(s) = maxSeen = max(maxSeen, s)
+editStamp(editWallMs, overwritten) = max(editWallMs, overwritten + 1)
+```
+
+`maxSeen` is the largest stamp this device has ever issued or landed.
+`+ 1` saturates: `Int64.max` is a legal stamp on the wire and must not trap.
+
+### Two clocks, and which quantity uses which
+
+`PhiSyncEngine` keeps both. Mixing them up is the most dangerous mistake in
+this area, so the split is explicit:
+
+| clock | quantities |
+| --- | --- |
+| `hlcNow()` — hybrid logical | the `now:` argument of every `snapshot` / `stamp` call (settings, Spaces, bookmarks, pins, URL rules), `clearedPinSplitPartner`, all rank stamps, and **`deleteDecidedAtMs`** |
+| `now()` — wall clock | retention sweeps, `deletedAtMs`, `purgedAtMs`, `refusedAtMs`, the unreadable-tag record, round deadlines, `lastProfileRefreshAtMs` |
+
+The rule of thumb: a value that is *compared against another wire stamp* is
+logical; a value that is *compared against wall clock* (a 30-day window, a
+timeout) stays wall clock.
+
+### Edit-time stamping (AM-1)
+
+A changed merge unit takes the row's own edit-date column, raised one above the
+stamp of the value it overwrites:
+
+- settings — `SyncableSettings.snapshot` stamps a changed key
+  `max(now, previousSidecarStamp + 1)`, and the pass now runs from the debounced
+  local-change path **before** the pull gate, so an offline edit carries its own
+  time. It only runs early once `hasAdopted` is true: with no sidecar history
+  `snapshot` treats every registered key as changed.
+- bookmarks and pins — content fields take `contentUpdatedDate ?? createdDate`.
+  Bookmark **location** and every **rank** stay on `hlcNow()`: location has no
+  edit-date column until schema V13, and ruling Q-R2-5 leaves a drag on the
+  round clock.
+- URL rules — content takes `contentUpdatedDate`, the target takes
+  `targetUpdatedDate`; both were already edit-time and now carry the AM-1 bump,
+  which closes the same slow-clock hole. `rank` uses `hlcNow()`.
+- pin `split_partner_uuid` stays on `hlcNow()`. Ruling Q-R2-3 wants it folded
+  into the content stamp, but `updateTabSplitPartnerBody` is shared with sync
+  landing, so setting `contentUpdatedDate` there would restamp landed remote
+  links as local edits.
+
+The bare edit column is never enough on its own: a device whose clock runs
+behind would replace a value it merged from a peer with a *smaller* stamp and
+lose its own, causally later, edit — which is the defect C2 exists to remove.
+
+### Where `maxSeen` lives, and why it is not beside the marker
+
+`phi.sync.hlcMax` is in `UserDefaults.standard`, in `PhiSyncEngine.stateKeys`.
+This is deliberately the **opposite** decision from the marker above, for the
+opposite reason. A user-data import replaces the account directory, so
+`marker.json` and the cursor tables roll back together with the database — that
+is exactly right for a progress marker. Logical time must not roll back with
+it: a rewound `maxSeen` lets this device re-issue stamps the account already
+holds, so an edit made after the restore can lose to the value it is trying to
+overwrite. It is still account-scoped, because logical time is per account, and
+`stateKeys` is what makes it so.
+
+Losing it is cheap. On an account switch or a clean install `stateKeys` is
+wiped and `maxSeen` restarts at wall clock; because pull-before-commit is
+mandatory, the first pull of the first round re-learns it from every landed
+stamp before any commit can be sent.
+
+### What is observed, and the no-clamp rule
+
+Only `PhiSettingValue.updated_at_ms` values are folded into `maxSeen`, at
+landing time, before anything in the same round stamps. Explicitly **not**
+`created_at_ms` — a creation instant merged with `min()`, so a peer claiming
+the year 2099 must not drag the account's logical time — and not `deletedAtMs`,
+`purgedAtMs` or `refusedAtMs`.
+
+**Inbound stamps are never rewritten, and `maxSeen` is never clamped.** A clamp
+on receive would change the merge input, and two devices with different wall
+clocks would clamp differently, so `SyncableSettings.lwwWinner` — whose whole
+contract is that it depends only on the two values — would pick different
+winners on different devices. That is divergence, not a repair. Clamping only
+`maxSeen` adoption is convergence-safe but worse in practice: the device with
+the broken clock would then win every field permanently. A device a year ahead
+therefore drags the account's logical time with it, and the clock degrades
+gracefully into a Lamport counter, which still orders causally related edits
+correctly.
+
+Stamp 0 is untouched by all of this. It still means "derived, must never beat a
+real action" — no-baseline ranks, no-baseline bookmark location, the reseeded
+scope mirror — it is never produced by the clock, and observing it is a no-op
+because `max` is.
+
+### `deleteDecidedAtMs` and A9
+
+`cursor.deleteDecidedAtMs` is written from `hlcNow()`, not `now()`, and this is
+mandatory rather than tidy. A9 (`SyncableOwnedItems.plan`) compares it against
+`K.locationStamp(of: merged)`, a wire LWW stamp: if the decision stayed on wall
+clock while stamps moved to logical time, then on any account whose logical
+time has run ahead of wall clock *every* inbound entity would look newer than
+the deletion and A9 would cancel *every* local delete. `deletedAtMs` is the
+opposite case — it drives the 30-day retention expiry against `now()` — and
+stays wall clock. Both ends carry a comment saying so.
+
+### Mixed versions
+
+There is no format flag and no negotiation. An old client compares stamps with
+`>` exactly as before and converges with a new client on every field; it simply
+stamps plain wall clock, which is `<=` what a new client would stamp. On a
+healthy account (`maxSeen` ≈ wall) the two are indistinguishable. The one real
+cost, stated plainly: on an account whose logical time has run ahead of wall
+clock, an **old** client's edits can lose to the values it is trying to
+overwrite, with no user-visible explanation, bounded by the skew.
+
 ## Refusals, retries and account switches
 
 Rules established by the 2026-09-20 review of the integration branch. Each is
@@ -302,6 +425,29 @@ The marker boundary and the URL rule kind add five test files:
   routing-table refresh.
 - `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift` — the
   `AccountUserDefaults` write-face rollback.
+
+`Tests/PhiBrowserTests/Sync/Phi/PhiHybridClockTests.swift` covers the hybrid
+logical clock itself, the stamp-0 invariants that survive it, the two offline-edit
+scenarios, and A9's boundary on an account whose logical time has run a year
+ahead of wall clock.
+
+One suite is **not** compile-only. The hostless convergence harness runs:
+
+```sh
+bash build-scripts/test-sync-convergence.sh          # ~20 s, seeded
+```
+
+It compiles the production merge files (symlinked, at their real `internal`
+visibility) plus `PhiHybridClock` into one SwiftPM executable — no `xcodebuild`,
+no Phi host, no Chromium framework, no network. Layer 1 asserts the algebraic
+properties of each `merge` and of the clock; Layer 2 runs 3+ simulated replicas
+against a model of the real server, with each replica stamping through the
+production `PhiHybridClock` (`SYNC_CONV_HLC=0` replays the pre-C2 wall-clock
+behaviour for comparison, and the skew scenarios always run both). Under clock
+skew the harness asserts that a **causally later** edit always wins — an edit
+whose author had already observed every competing edit — while reporting
+concurrent losses, which LWW gives up by definition. See
+`Tests/SyncConvergence/README.md`.
 
 The Chromium half of the routing tie-break is covered by
 `phi_url_router_unittest.cc` in the fork, which is built and run separately

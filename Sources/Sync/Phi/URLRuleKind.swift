@@ -186,14 +186,24 @@ enum URLRuleKind: OwnedItemKind {
     /// With a baseline, first fold in creation time and source (R-exec-16 / R-19), following
     /// bookmarks. Values that cannot be represented locally must not cause perpetual byte
     /// differences and alternating commits.
+    /// C2 / AM-1: the edit columns were already the source here, which is why this kind is the pattern the
+    /// others now copy — but they were used bare, so this kind had the same slow-clock hole: a device whose
+    /// clock runs behind edits a rule it merged from a peer, its edit column is below the stamp it
+    /// overwrites, and the causally later edit loses. Both units are therefore raised one above the value
+    /// they replace (the baseline's stamp, or `hlcMax` with no baseline).
     static func stamp(_ projected: Phi_PhiURLRuleEntity, baseline: Phi_PhiURLRuleEntity?,
-                      local: PhiLocalURLRule, rank: String, now: Int64) -> Phi_PhiURLRuleEntity {
+                      local: PhiLocalURLRule, rank: String, now: Int64,
+                      hlcMax: Int64 = 0) -> Phi_PhiURLRuleEntity {
         var out = projected
         out.rank = string(rank)
 
         guard let baseline else {
-            setContentStamp(&out, milliseconds(local.contentUpdatedDate ?? local.createdDate))
-            out.targetSpaceUuid.updatedAtMs = milliseconds(local.targetUpdatedDate ?? local.createdDate)
+            setContentStamp(&out, PhiHybridClock.editStamp(
+                editWallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+                overwrittenStampMs: hlcMax))
+            out.targetSpaceUuid.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
+                overwrittenStampMs: hlcMax)
             out.rank.updatedAtMs = 0
             return out
         }
@@ -204,14 +214,20 @@ enum URLRuleKind: OwnedItemKind {
         if baseline.source != 0 { out.source = baseline.source }
 
         let contentChanged = contentSignature(of: out) != contentSignature(of: baseline)
+        // The host is the fixed carrier of the group's stamp (R-M3-4a-40), so the baseline value this edit
+        // overwrites is the host's, never the maximum of the three members.
         setContentStamp(&out, contentChanged
-                            ? milliseconds(local.contentUpdatedDate ?? local.createdDate)
+                            ? PhiHybridClock.editStamp(
+                                editWallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+                                overwrittenStampMs: baseline.host.updatedAtMs)
                             : baseline.host.updatedAtMs)
 
         let targetChanged = SyncableSettings.signature(of: out.targetSpaceUuid)
             != SyncableSettings.signature(of: baseline.targetSpaceUuid)
         if targetChanged {
-            out.targetSpaceUuid.updatedAtMs = milliseconds(local.targetUpdatedDate ?? local.createdDate)
+            out.targetSpaceUuid.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
+                overwrittenStampMs: baseline.targetSpaceUuid.updatedAtMs)
             out.rank.updatedAtMs = now
         } else {
             out.targetSpaceUuid.updatedAtMs = baseline.targetSpaceUuid.updatedAtMs
@@ -360,12 +376,16 @@ enum URLRuleKind: OwnedItemKind {
         entity.ask.updatedAtMs = stamp
     }
 
-    /// Preserve the baseline stamp when value signatures match; otherwise use `now`.
+    /// Preserve the baseline stamp when value signatures match; otherwise stamp the edit, raised one above
+    /// the stamp it overwrites (AM-1); see BookmarkKind's same-named function. Only `rank` uses this here,
+    /// and its `editWallMs` is already the round's hybrid stamp, so the bump is a no-op.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
-                                  _ now: Int64) -> Int64 {
+                                  _ editWallMs: Int64) -> Int64 {
         SyncableSettings.signature(of: value) == SyncableSettings.signature(of: baseline)
-            ? baseline.updatedAtMs : now
+            ? baseline.updatedAtMs
+            : PhiHybridClock.editStamp(editWallMs: editWallMs,
+                                       overwrittenStampMs: baseline.updatedAtMs)
     }
 
     private static func mergedSource(_ left: Int32, _ right: Int32) -> Int32 {

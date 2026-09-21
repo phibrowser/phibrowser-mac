@@ -376,8 +376,11 @@ protocol OwnedItemKind {
     static func localEdge(of local: Local) -> (id: String, parentId: String?)
     static func rank(of entity: Entity) -> String
     static func locationStamp(of entity: Entity) -> Int64
+    /// `now` is the round's hybrid-logical stamp; `hlcMax` is the logical time the round started from,
+    /// AM-1's floor for a merge unit with no baseline. A changed unit WITH a baseline takes its own
+    /// edit-date column, raised one above the baseline's stamp.
     static func stamp(_ projected: Entity, baseline: Entity?, local: Local,
-                      rank: String, now: Int64) -> Entity
+                      rank: String, now: Int64, hlcMax: Int64) -> Entity
     /// Content-value bytes with timestamps zeroed, like SyncableSettings.signature.
     /// Use these to decide field patches; whole-entity comparison would turn
     /// remote restamps into empty updates. Exclude location/rank, carried by move.
@@ -449,9 +452,11 @@ enum SyncableOwnedItems {
     /// Precondition: locals are in sibling order, for bookmarks spaceId/parentGuid/index/guid
     /// per allBookmarks. assignRanks takes this as current local order; another
     /// ordering would needlessly change ranks every round.
+    /// `hlcMax` is AM-1's floor for a row with no baseline; 0 means "no floor", which is what a
+    /// caller with no engine clock wants.
     static func snapshot<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                            table: PhiOwnedItemTable, resolve: OwnerResolver,
-                                           scope: PinnedTabScope?, now: Int64)
+                                           scope: PinnedTabScope?, now: Int64, hlcMax: Int64 = 0)
         -> OwnedItemSnapshotResult<K.Entity> {
         var skippedUnmappedOwner = 0
         var skippedIneligibleOwner = 0
@@ -581,7 +586,8 @@ enum SyncableOwnedItems {
             let rank = assigned[candidate.identity] ?? baselineRank(candidate.identity) ?? "V"
             entities[candidate.identity] = K.stamp(candidate.entity,
                                                    baseline: baselines[candidate.identity],
-                                                   local: candidate.local, rank: rank, now: now)
+                                                   local: candidate.local, rank: rank, now: now,
+                                                   hlcMax: hlcMax)
         }
         return OwnedItemSnapshotResult(entities: entities,
                                        skippedUnmappedOwner: skippedUnmappedOwner,
@@ -675,6 +681,14 @@ enum SyncableOwnedItems {
             // a blocked pending arrival, since planning parks before reaching deletion
             // handling. Restamping would continually advance A9's comparison boundary
             // and prevent concurrent moves from cancelling deletion.
+            //
+            // C2 / R2.1: `nowMs` here is the HYBRID LOGICAL clock, not wall clock. A9 below
+            // compares this field against `K.locationStamp(of: merged)`, an LWW wire stamp. If
+            // the two clocks diverge -- this one on wall time while stamps run on logical time
+            // that has pulled ahead of it -- every inbound entity looks newer than the deletion
+            // and A9 cancels every local delete. The engine's `tombstones(...)` call site
+            // passes `hlcNow()` for exactly this reason. `deletedAtMs` is the opposite: it
+            // drives the 30-day retention expiry and stays wall clock.
             if !cursor.pendingDelete { updated.deleteDecidedAtMs = nowMs }
             if updated != cursor { cursorUpdates[identity] = updated }
         }
@@ -950,6 +964,9 @@ enum SyncableOwnedItems {
                         continue
                     }
                 }
+                // Both sides are hybrid-logical values (C2 / R2.1): the left is a wire LWW
+                // stamp, the right was written from `hlcNow()` in `tombstones(...)` above.
+                // They must stay on the same clock or this comparison loses its meaning.
                 let decidedAt = cursor?.deleteDecidedAtMs ?? 0
                 let newerThanDeletion = K.locationStamp(of: merged) > decidedAt
                 let parentIsLive = landingParent.map {
@@ -1178,8 +1195,12 @@ enum SyncableOwnedItems {
                                                            ? nil : parentIdentity) else {
                 return false
             }
+            // now/hlcMax are both 0 on purpose: this projection is the LOCAL SIDE of an adoption
+            // merge, not a publication. Location and rank must stay at stamp 0 so a derived local
+            // position cannot beat the arrival, and content keeps its bare edit time so an old
+            // untouched local row cannot claim the account's logical time during claiming.
             projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
-                                           rank: "", now: 0)
+                                           rank: "", now: 0, hlcMax: 0)
             // The unidentified local projection has an empty UUID; the merge adopts the remote UUID.
             let merged = BookmarkKind.merge(local: projected, remote: entity)
             guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else {

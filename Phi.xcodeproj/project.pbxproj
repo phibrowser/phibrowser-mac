@@ -171,6 +171,7 @@
 		43C532DAE84A4F0EAACC5F85 /* AdvancedSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */; };
 		3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */; };
 		3E0CF4A966BCAA02B16EB715 /* PinnedTabScopeMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */; };
+		E6286B95132C8EB3B8FCBE48 /* PhiHybridClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 686180214AA06E31EB555BEB /* PhiHybridClock.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
 		49ECA05E0E0E374C6D2CA9C2 /* AdvancedSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B568F1D10AE6DD4026219CF /* AdvancedSettingHostingViewController.swift */; };
 		4A0B34B89EDDDD8EF26394E7 /* ContentBlockingListInfoPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */; };
@@ -1015,6 +1016,7 @@
 		5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPaneHostView.swift; sourceTree = "<group>"; };
 		5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTabDropContainer.swift; sourceTree = "<group>"; };
 		60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PinnedTabScopeMirror.swift; sourceTree = "<group>"; };
+		686180214AA06E31EB555BEB /* PhiHybridClock.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiHybridClock.swift; sourceTree = "<group>"; };
 		60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = phi_entity.pb.swift; sourceTree = "<group>"; };
 		6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesRemoveDeviceModel.swift; sourceTree = "<group>"; };
 		6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JoinMethodChoiceView.swift; path = UI/JoinMethodChoiceView.swift; sourceTree = "<group>"; };
@@ -2025,6 +2027,7 @@
 				34F236AC381F208106EF9B34 /* BookmarkKind.swift */,
 				69E9284FAF9F3D97D76D7072 /* PinKind.swift */,
 				60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */,
+				686180214AA06E31EB555BEB /* PhiHybridClock.swift */,
 				0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */,
 				A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */,
 				38B4BC3A8362D0949084AC79 /* PhiSyncMarkerFile.swift */,
@@ -3935,6 +3938,7 @@
 				B8C1B3DE901D130723BDFF30 /* BookmarkKind.swift in Sources */,
 				AE8E3290D9DF13FF422A4948 /* PinKind.swift in Sources */,
 				3E0CF4A966BCAA02B16EB715 /* PinnedTabScopeMirror.swift in Sources */,
+				E6286B95132C8EB3B8FCBE48 /* PhiHybridClock.swift in Sources */,
 				DB3B811377A5EF1C83D51CA0 /* PhiFaviconBackfillQueue.swift in Sources */,
 				8ADAB5612D010D1B7285F467 /* PhiSyncInvalidation.swift in Sources */,
 				77412B67E81DF25046BBC581 /* PhiSyncMarkerFile.swift in Sources */,

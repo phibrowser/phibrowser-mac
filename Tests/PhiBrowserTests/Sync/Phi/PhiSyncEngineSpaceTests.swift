@@ -2537,3 +2537,51 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                         "Settings apply normally")
     }
 }
+
+// MARK: - C2 / R2.1: what the hybrid logical clock observes
+
+extension PhiSyncEngineSpaceTests {
+
+    private var hlcMax: Int64? {
+        (defaults.object(forKey: PhiSyncEngine.hlcMaxStateKey) as? NSNumber)?.int64Value
+    }
+
+    /// Landing an entity folds its LWW stamps into logical time, so the next stamp this device
+    /// issues cannot fall under a value it has just merged.
+    func testLandingASpaceEntityRaisesTheHybridClockToItsStamps() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "u1"], access: access)
+        let client = FakePhiSyncClient()
+        var entity = spaceEntity("u1")
+        entity.name.updatedAtMs = 9_000_000
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(entity), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(hlcMax, 9_000_000)
+    }
+
+    /// `created_at_ms` is NOT a logical stamp: it is a creation instant merged with `min()`, and
+    /// a peer (or a broken clock) claiming the year 2099 must not drag the whole account's
+    /// logical time with it -- every later stamp on every device would inherit the skew.
+    func testAYear2099CreationDateDoesNotRaiseTheHybridClock() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "u1"], access: access)
+        let client = FakePhiSyncClient()
+        var entity = spaceEntity("u1")
+        let year2099: Int64 = 4_070_908_800_000
+        entity.createdAtMs = year2099
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(entity), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertLessThan(try XCTUnwrap(hlcMax), year2099,
+                          "a creation instant must never become the account's logical time")
+    }
+}

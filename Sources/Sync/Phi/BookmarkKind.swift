@@ -118,24 +118,32 @@ enum BookmarkKind: OwnedItemKind {
     /// individually.
     ///
     /// Without a baseline, stamp location/rank as 0 so derived local positions cannot outrank real remote
-    /// actions. Content uses contentUpdatedDate ?? createdDate: publishing an old untouched local bookmark
-    /// with now could overwrite a recent rename during path/URL claiming.
+    /// actions. Content uses contentUpdatedDate ?? createdDate raised to `hlcMax + 1` (AM-1): the edit time
+    /// is what the user meant, but a create or a post-yield republish has overwritten nothing, so the
+    /// account's logical time is the floor.
     ///
     /// With a baseline, first merge created_at_ms and source too (R-exec-16); see below.
+    ///
+    /// C2: content fields carry their EDIT time (`contentUpdatedDate`), not the publish time. `now` is the
+    /// round's hybrid-logical stamp and stays with location and rank, neither of which has an edit-date
+    /// column yet (location gets one in Phase 2 / schema V13; rank stays on `now` by ruling Q-R2-5).
     static func stamp(_ projected: Phi_PhiBookmarkEntity, baseline: Phi_PhiBookmarkEntity?,
-                      local: PhiLocalBookmark, rank: String, now: Int64) -> Phi_PhiBookmarkEntity {
+                      local: PhiLocalBookmark, rank: String, now: Int64,
+                      hlcMax: Int64 = 0) -> Phi_PhiBookmarkEntity {
         var out = projected
         out.rank = string(rank)
         let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
 
         guard let baseline else {
+            let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
+                                                   overwrittenStampMs: hlcMax)
             out.spaceUuid.updatedAtMs = 0
             out.parentUuid.updatedAtMs = 0
             out.rank.updatedAtMs = 0
-            out.title.updatedAtMs = contentStamp
-            out.url.updatedAtMs = contentStamp
-            out.secondaryURL.updatedAtMs = contentStamp
-            out.secondaryTitle.updatedAtMs = contentStamp
+            out.title.updatedAtMs = created
+            out.url.updatedAtMs = created
+            out.secondaryURL.updatedAtMs = created
+            out.secondaryTitle.updatedAtMs = created
             return out
         }
 
@@ -160,10 +168,12 @@ enum BookmarkKind: OwnedItemKind {
         out.spaceUuid.updatedAtMs = locationStamp
         out.parentUuid.updatedAtMs = locationStamp
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
-        out.title.updatedAtMs = restamped(out.title, baseline.title, now)
-        out.url.updatedAtMs = restamped(out.url, baseline.url, now)
-        out.secondaryURL.updatedAtMs = restamped(out.secondaryURL, baseline.secondaryURL, now)
-        out.secondaryTitle.updatedAtMs = restamped(out.secondaryTitle, baseline.secondaryTitle, now)
+        out.title.updatedAtMs = restamped(out.title, baseline.title, contentStamp)
+        out.url.updatedAtMs = restamped(out.url, baseline.url, contentStamp)
+        out.secondaryURL.updatedAtMs = restamped(out.secondaryURL, baseline.secondaryURL,
+                                                 contentStamp)
+        out.secondaryTitle.updatedAtMs = restamped(out.secondaryTitle, baseline.secondaryTitle,
+                                                   contentStamp)
         return out
     }
 
@@ -266,13 +276,20 @@ enum BookmarkKind: OwnedItemKind {
         return ballot
     }
 
-    /// Keep the baseline timestamp when field signatures match; otherwise stamp now. Signature means bytes
-    /// with updatedAtMs zeroed (R4 single implementation).
+    /// Keep the baseline timestamp when field signatures match; otherwise stamp the edit. Signature means
+    /// bytes with updatedAtMs zeroed (R4 single implementation).
+    ///
+    /// AM-1: a changed field's stamp is `max(editWallMs, baselineStamp + 1)`, never the bare edit column. A
+    /// device whose clock runs behind would otherwise overwrite a value it merged from a peer with a SMALLER
+    /// stamp, and the causally later edit would lose — the failure C2 exists to remove. For rank, whose
+    /// `editWallMs` is already the round's hybrid stamp, the bump is a no-op.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
-                                  _ now: Int64) -> Int64 {
+                                  _ editWallMs: Int64) -> Int64 {
         SyncableSettings.signature(of: value) == SyncableSettings.signature(of: baseline)
-            ? baseline.updatedAtMs : now
+            ? baseline.updatedAtMs
+            : PhiHybridClock.editStamp(editWallMs: editWallMs,
+                                       overwrittenStampMs: baseline.updatedAtMs)
     }
 
     private static func mergedSource(_ left: Int32, _ right: Int32) -> Int32 {

@@ -390,6 +390,71 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(counters?.parked, 0)
     }
 
+    /// A paired device whose Space `s-2` is bound to the non-default Profile `Work` and holds no
+    /// local rows of the kind under test (review A4/A5).
+    private func makeSpaceAccessOnWorkProfile() -> FakePhiSpaceAccess {
+        let spaceAccess = FakePhiSpaceAccess()
+        spaceAccess.spaceMappings = ["s-2": "su-2"]
+        spaceAccess.spaces = [PhiLocalSpace(spaceId: "s-2", profileId: "Work", name: "S", colorHex: "#3A6FF8",
+                                            iconName: "emoji:1F4BC", sortOrder: 0,
+                                            createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                                            opacityLight: nil, opacityDark: nil)]
+        spaceAccess.uuidByProfileId = ["Default": "pu-1", "Work": "pu-2"]
+        spaceAccess.profileIdByUuid = ["pu-1": "Default", "pu-2": "Work"]
+        spaceAccess.knownLocalProfileIds = ["Default", "Work"]
+        return spaceAccess
+    }
+
+    /// Review A4: the first bookmark landed into a Space bound to a non-default Profile used to
+    /// be created under the default Profile (no sibling row to copy from), and the store finds
+    /// no root for that (Profile, Space) pair — the whole Space's batch parked on every round.
+    /// The row belongs to the Space's own Profile.
+    func testABookmarkLandedIntoASpaceOnAnotherProfileBelongsToThatSpacesProfile() async throws {
+        let spaceAccess = makeSpaceAccessOnWorkProfile()
+        let access = FakeBookmarkAccess()
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(bookmarkPayload(uuid: "b1", spaceUuid: "su-2")),
+                         tag: bookmarkTag("b1"), version: 11, entityId: "srv-b1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.applied, 1)
+        let landed = access.rows.first { $0.syncId == "b1" }
+        XCTAssertEqual(landed?.spaceId, "s-2")
+        XCTAssertEqual(landed?.profileId, "Work", "the row belongs to the Space's Profile, not the default one")
+    }
+
+    /// Review A5: the same for a Space-scoped pin. Space-scope queries match on both ids, so a
+    /// pin created under the default Profile persisted but was invisible to the Space's windows.
+    func testASpaceScopedPinLandedIntoASpaceOnAnotherProfileBelongsToThatSpacesProfile() async throws {
+        let spaceAccess = makeSpaceAccessOnWorkProfile()
+        let pinAccess = FakePinAccess(scope: .space, account: .space)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "su-2")),
+                         tag: pinTag("lx", owner: "su-2"), version: 9, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(counters?.applied, 1)
+        let landed = pinAccess.rows.first { PinKind.lineageKey($0.lineageId) == "lx" }
+        XCTAssertEqual(landed?.spaceId, "s-2")
+        XCTAssertEqual(landed?.profileId, "Work", "the pin belongs to the Space's Profile, not the default one")
+    }
+
     /// CASE 6.8: publish 250 items per round, in 10 batches of 25.
     func testThePublishSliceIsCappedAtTwoHundredAndFiftyPerRound() async throws {
         let spaceAccess = makeSpaceAccess()

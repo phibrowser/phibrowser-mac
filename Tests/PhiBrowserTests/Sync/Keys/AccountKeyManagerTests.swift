@@ -18,7 +18,12 @@ final class AccountKeyManagerTests: XCTestCase {
             return true
         }
         func getAccount() async throws -> AccountKeyStateDTO? { account }
+        /// The next `postDevice` throws this and clears it (review A8 / A10).
+        var postDeviceErrorOnce: Error?
+        private(set) var postDeviceCalls = 0
         func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {
+            postDeviceCalls += 1
+            if let error = postDeviceErrorOnce { postDeviceErrorOnce = nil; throw error }
             if let arkEnvelope { envelopes[deviceKeyId] = arkEnvelope }
         }
         func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
@@ -141,10 +146,26 @@ final class AccountKeyManagerTests: XCTestCase {
     // (SHA-256 of the public key, first 16 bytes, base64url), but backed by a
     // process-local key instead of the Keychain — keeps this suite independent of
     // the Data Protection Keychain entitlement.
+    /// In-memory `PendingDeviceRegistrationStoring` (review A8), shared between two managers to
+    /// model a relaunch.
+    final class MemoryPendingRegistrations: PendingDeviceRegistrationStoring {
+        private(set) var envelopes: [String: Data] = [:]
+        func load(deviceKeyId: String) -> Data? { envelopes[deviceKeyId] }
+        func save(_ envelope: Data, deviceKeyId: String) { envelopes[deviceKeyId] = envelope }
+        func clear(deviceKeyId: String) { envelopes.removeValue(forKey: deviceKeyId) }
+    }
+
     final class FakeDeviceKeyProvider: DeviceKeyProviding {
-        private let privateKey = Curve25519.KeyAgreement.PrivateKey()
+        private var privateKey = Curve25519.KeyAgreement.PrivateKey()
+        private(set) var rotations = 0
 
         func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey { privateKey }
+
+        /// Mint a fresh identity, as `DeviceKeyStore.rotateForCurrentAccount()` does (review A10).
+        func rotate() throws {
+            privateKey = Curve25519.KeyAgreement.PrivateKey()
+            rotations += 1
+        }
 
         func deviceKeyId() throws -> String {
             let digest = SHA256.hash(data: privateKey.publicKey.rawRepresentation)
@@ -174,6 +195,64 @@ final class AccountKeyManagerTests: XCTestCase {
         XCTAssertEqual(result, .unlocked)
         XCTAssertEqual(fresh.currentARK!.withUnsafeBytes { Data($0) },
                        mgr.currentARK!.withUnsafeBytes { Data($0) })
+    }
+
+    /// Review A8: `PUT /keys/v1/account` succeeded, `POST /keys/v1/devices` did not. The old
+    /// code threw, dropping the ARK and the recovery code with the account already initialized
+    /// on the server — every retry 409, no reset, an account nobody could ever open. The
+    /// recovery code must reach the caller, this device must keep working, and the
+    /// registration is finished from the parked local copy on the next unlock.
+    func testBootstrapSurvivesAFailedDeviceRegistrationAndFinishesItOnTheNextUnlock() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let pending = MemoryPendingRegistrations()
+        api.postDeviceErrorOnce = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider, pendingRegistrations: pending)
+
+        let code = try await mgr.bootstrap()
+
+        XCTAssertFalse(code.isEmpty, "the recovery code is the one thing that must never be lost")
+        XCTAssertNotNil(mgr.currentARK, "this device keeps working on the ARK it minted")
+        XCTAssertTrue(api.envelopes.isEmpty, "precondition: the server never received the device envelope")
+        XCTAssertNotNil(pending.load(deviceKeyId: try provider.deviceKeyId()), "the registration is parked locally")
+
+        // Relaunch: no envelope on the server, but the parked one finishes the registration.
+        let fresh = AccountKeyManager(api: api, deviceKeyProvider: provider, pendingRegistrations: pending)
+        let result = try await fresh.unlockAtStartup()
+        XCTAssertEqual(result, .unlocked)
+        XCTAssertEqual(api.envelopes.count, 1)
+        XCTAssertNil(pending.load(deviceKeyId: try provider.deviceKeyId()))
+        XCTAssertEqual(fresh.currentARK!.withUnsafeBytes { Data($0) },
+                       mgr.currentARK!.withUnsafeBytes { Data($0) })
+
+        // And the recovery code the user was shown still admits another device.
+        let second = makeManager(api)
+        try await second.joinWithRecoveryCode(code)
+        XCTAssertEqual(second.currentARK!.withUnsafeBytes { Data($0) },
+                       mgr.currentARK!.withUnsafeBytes { Data($0) })
+    }
+
+    /// Review A10: the server refuses a revoked device fingerprint forever (409
+    /// `device_revoked`). Re-registering the same key would loop; the manager mints a new
+    /// identity and retries once, so a Mac whose key was revoked can rejoin.
+    func testARevokedDeviceIdentityIsRotatedAndTheJoinRetried() async throws {
+        let api = FakeAPI()
+        let code = try await makeManager(api).bootstrap()
+
+        let provider = FakeDeviceKeyProvider()
+        let revokedId = try provider.deviceKeyId()
+        api.postDeviceErrorOnce = KeyAPIError.http(409, #"{"error":"device_revoked"}"#)
+        let joiner = AccountKeyManager(api: api, deviceKeyProvider: provider)
+
+        try await joiner.joinWithRecoveryCode(code)
+
+        XCTAssertEqual(provider.rotations, 1)
+        let newId = try provider.deviceKeyId()
+        XCTAssertNotEqual(newId, revokedId)
+        XCTAssertNotNil(api.envelopes[newId], "the retry registered the fresh identity")
+        XCTAssertNil(api.envelopes[revokedId])
+        XCTAssertEqual(api.postDeviceCalls, 3, "bootstrap, the refused attempt, the retry")
+        XCTAssertNotNil(joiner.currentARK)
     }
 
     func testSecondDeviceJoinsWithRecoveryCode() async throws {

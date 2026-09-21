@@ -510,6 +510,34 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(siblingTitle, "Sibling", "No partial success: the update in the same batch also rolls back")
     }
 
+    // Review A4: a Space row that exists but never materialized its bookmark root (a pre-Spaces
+    // row never opened in a window, the default Space on a fresh device) must not park the
+    // account's whole bookmark batch forever. Landing a parentless row materializes the root the
+    // way Space creation does, inside the same transaction.
+    func testLandingAParentlessBookmarkMaterializesAMissingSpaceRoot() async throws {
+        let store = try await makeStoreWithSpaces()
+        try await store.performBackgroundWriteAndWaitThrowing { context in
+            guard let root = try store.existingBookmarkRoot(profileId: Self.profileId,
+                                                            spaceId: Self.otherSpaceId,
+                                                            in: context) else { return }
+            let spaceId = Self.otherSpaceId
+            let spaces = try context.fetch(FetchDescriptor<SpaceModel>(
+                predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId }))
+            for space in spaces { space.bookmarkRoot = nil }
+            context.delete(root)
+        }
+
+        try await store.applyBookmarkSyncBatchThrowing([
+            .create(.fixture(guid: "g-landed", syncId: "b-landed", spaceId: Self.otherSpaceId,
+                             profileId: Self.profileId, title: "Landed")),
+        ])
+
+        let landed = try row("g-landed", in: store)
+        XCTAssertNotNil(landed, "the row lands instead of parking on rowNotFound")
+        let root = try await rootGuid(in: store, spaceId: Self.otherSpaceId)
+        XCTAssertEqual(landed?.parent?.guid, root, "the landed row hangs off the freshly materialized root")
+    }
+
     // F2, positive control: empty folders remain deletable.
     func testDeletingAnEmptyFolderStillSucceeds() async throws {
         let store = try await makeStoreWithSpaces()

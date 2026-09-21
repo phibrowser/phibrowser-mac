@@ -25,6 +25,15 @@ enum KeyLayerPhase: Equatable {
     /// profile and more than one unclaimed remote profile — `resolveMappings()`
     /// can't disambiguate on its own, so the user picks.
     case pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile])
+
+    /// True while the window must not be closed by the user (review A9). `bootstrap()` has
+    /// already initialized the account on the server by the time the recovery code is on
+    /// screen; it is shown exactly once, a second bootstrap is refused, and there is no
+    /// "regenerate". Closing the window without confirming would lose it for good.
+    var requiresAcknowledgement: Bool {
+        if case .showingRecoveryCode = self { return true }
+        return false
+    }
 }
 
 /// Thrown when the pairing load runs past its deadline. Deliberately private
@@ -507,6 +516,7 @@ struct PreviewDeviceKeyProvider: DeviceKeyProviding {
     private let privateKey = Curve25519.KeyAgreement.PrivateKey()
     func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey { privateKey }
     func deviceKeyId() throws -> String { "preview-device" }
+    func rotate() throws {}
 }
 
 extension KeyLayerViewModel {

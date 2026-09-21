@@ -1999,10 +1999,11 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
     // MARK: - CASE B2-13 (.unusable does not interrupt drain)
 
     /// CASE B2-13: undecodable settings on page 2 must not stop the five-page drain. Request markers are
-    /// nil/1/2/3/4 (R-M3-4a-76); no nonnil marker persists after page 2 and disk ends nil with
-    /// .unusableSettings. Settings publication is suppressed but pushOwnedItems runs. Preseed drainInProgress
-    /// and hasDrainedFullReplay true to prevent guard 1 from resetting the publication prerequisite at nil
-    /// entry. Suppression skips final drain bookkeeping, leaving both flags unchanged.
+    /// nil/1/2/3/4 (R-M3-4a-76). Review A3: the marker is no longer rewound for unusable settings — it is
+    /// shared with every other kind — so every page persists its marker normally, disk ends at page 5,
+    /// and the refusal is recorded durably instead; the outcome is still .unusableSettings. Settings
+    /// publication is suppressed but pushOwnedItems runs. Preseed drainInProgress and hasDrainedFullReplay
+    /// true to prevent guard 1 from resetting the publication prerequisite at nil entry.
     func testAnUnusableSettingsEntityDoesNotInterruptTheDrain() async throws {
         let spaceAccess = makeSpaceAccess()
         let spaceStore = MemorySpaceStore()
@@ -2040,9 +2041,10 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                        [nil, Data("1".utf8), Data("2".utf8), Data("3".utf8), Data("4".utf8)])
         XCTAssertEqual(pages, 5)
         XCTAssertEqual(markerStore.saves.first?.marker, Data("1".utf8), "Page 1 persisted normally")
-        XCTAssertTrue(markerStore.saves.dropFirst().allSatisfy { $0.marker == nil },
-                      "No nonnil marker writes after page 2")
-        XCTAssertNil(markerStore.file.marker, "The on-disk marker is nil at round end")
+        XCTAssertEqual(markerStore.saves.map(\.marker),
+                       ["1", "2", "3", "4", "5"].map { Data($0.utf8) },
+                       "Every page persists its marker; unusable settings do not rewind the shared marker")
+        XCTAssertEqual(markerStore.file.marker, Data("5".utf8), "The on-disk marker is page 5 at round end")
         XCTAssertEqual(outcome, .unusableSettings)
         XCTAssertTrue(settingsCommits(client).isEmpty, "`maySettingsPublish == false`")
         XCTAssertEqual(ownedStore.hadRecordsSeen.count, 2, "pushOwnedItems ran: publication loaded the table")
@@ -2402,6 +2404,37 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(markerStore.file.marker, Data("0".utf8), "Marker still does not advance")
         XCTAssertTrue(markerStore.saves.isEmpty)
         XCTAssertFalse(spaceStore.table.markerMovedWhileGateShut)
+    }
+
+    // MARK: - Review A2 (a loss observed at round entry survives a landing that rewrites the file)
+
+    /// Review A2: the bookmark cursor file is lost (`bookmarksHadRecords == true`, empty table at round
+    /// entry) and the same pull lands one incoming bookmark, which writes a one-cursor file back before
+    /// publication re-loads the table. A non-empty file no longer reports loss, so without the entry
+    /// observation publication would find no loss, never arm the replay, and commit every cursor-less
+    /// local row — here `gl` — as an `entityId = nil` create over the account tree. The loss observed at
+    /// entry must stand: replay armed marker-first, latch set, nothing published this round.
+    func testALossObservedAtRoundEntryStillArmsTheReplayAfterLandingRewroteTheFile() async throws {
+        let spaceStore = drainedSpaceStore()
+        spaceStore.table.bookmarksHadRecords = true
+        let access = FakeBookmarkAccess(rows: [.fixture(guid: "gl", syncId: "bl", spaceId: "s-1",
+                                                        title: "Local, cursor lost")])
+        let ownedStore = MemoryOwnedItemStore()               // Empty at entry: the cursor file was lost
+        let markerStore = markerStore(marker: "0")
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([bookmarkEntity("b1", version: 7, entityId: "e1")], marker: "7")]
+        let engine = makeOwnedEngine(client: client, markerStore: markerStore, spaceStore: spaceStore,
+                                     ownedKinds: [.bookmarks(access: access, store: ownedStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertNotNil(ownedStore.table.cursors["b1"], "landing still persists the page it received")
+        XCTAssertTrue(client.commits.isEmpty,
+                      "no cursor-less local row may be published as a create while the tree is unread")
+        XCTAssertNil(markerStore.file.marker, "publication armed the replay from the loss seen at entry")
+        XCTAssertTrue(spaceStore.table.bookmarksReplayedForEmptyTable, "the per-kind latch is consumed")
+        XCTAssertTrue(spaceStore.table.drainInProgress)
+        XCTAssertFalse(spaceStore.table.hasDrainedFullReplay)
     }
 
     // MARK: - CASE 2b-L1 (failed loss-replay arming blocks kind publication and file recreation)

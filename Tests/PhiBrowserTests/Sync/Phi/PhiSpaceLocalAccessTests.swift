@@ -154,7 +154,12 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         spaces[index].opacityLight = opacityLight
         spaces[index].opacityDark = opacityDark
     }
+    /// Persistent, and independent of `errorOnNextWrite`, which the landing writes that precede
+    /// the reorder would consume first (review A6).
+    var applyOrderError: Error?
+
     func applyOrder(_ orderedSpaceIds: [String]) async throws {
+        if let applyOrderError { throw applyOrderError }
         try failIfArmed(); calls.append(.order(orderedSpaceIds))
         for (index, spaceId) in orderedSpaceIds.enumerated() {
             guard let at = spaces.firstIndex(where: { $0.spaceId == spaceId }) else { continue }

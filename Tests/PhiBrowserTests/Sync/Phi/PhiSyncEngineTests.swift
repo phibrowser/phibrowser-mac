@@ -502,9 +502,39 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
         XCTAssertTrue(client.commits.isEmpty, "an entity this device cannot read must not be overwritten")
         XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.ciphertext, foreign)
-        // The marker is rewound so the next round sees the entity again and can heal once the
-        // right domain key is available.
-        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey))
+        // Review A3: the marker is NOT rewound — it is shared with every other kind, and a
+        // rewind re-downloaded the whole type every round. The refusal is recorded instead.
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.markerStateKey))
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.unreadableSettingsStateKey))
+    }
+
+    /// Review A3: the record of an unreadable entity is what lets the engine re-read it once
+    /// something that could make it readable has changed. A pull under a different domain key
+    /// replays the type from the beginning exactly once, applies the entity, and forgets the
+    /// record; a pull under the same key does not replay at all.
+    func testAnUndecryptableEntityIsReReadOnceTheDomainKeyChanges() async throws {
+        let rightKey = SymmetricKey(size: .bits256)
+        let wrongKey = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: rightKey), version: 5)
+        defaults.set(false, forKey: settingKey)
+
+        await makeEngine(client, key: wrongKey, now: 1_000).pullOnce()
+        XCTAssertFalse(defaults.bool(forKey: settingKey))
+        let markerAfterRefusal = defaults.data(forKey: PhiSyncEngine.markerStateKey)
+        XCTAssertNotNil(markerAfterRefusal)
+
+        // Same key: nothing has changed that could make the bytes readable, so no replay.
+        await makeEngine(client, key: wrongKey, now: 2_000).pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, markerAfterRefusal)
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.unreadableSettingsStateKey))
+
+        // The right key arrives (a re-mint this device has now caught up with): one replay.
+        await makeEngine(client, key: rightKey, now: 3_000).pullOnce()
+        XCTAssertNil(client.getUpdatesCalls.last?.marker, "the heal replays the type from the beginning")
+        XCTAssertTrue(defaults.bool(forKey: settingKey), "the entity is applied once it can be read")
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.unreadableSettingsStateKey))
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey), "the baseline is re-established")
     }
 
     /// The same protection has to survive a relaunch: the entity id and version persist but the

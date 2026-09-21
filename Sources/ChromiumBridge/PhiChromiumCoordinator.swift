@@ -186,13 +186,24 @@ import SwiftUI
     /// them for the next launch (§2.10), and `buildPhiSyncEngine` runs that migration right
     /// after this wipe — so what is cleared here is the previous account's leftover, which
     /// would otherwise be carried into the new account's `marker.json`.
+    ///
+    /// Review A7: the account directory's `marker.json` goes too, when a store for it is
+    /// handed in. The marker is per account, but the entity cursor it was advanced alongside
+    /// (`stateKeys`, in the shared `UserDefaults.standard`) has just been wiped: a device that
+    /// returns to an account it used before would otherwise resume from an advanced marker
+    /// with no entity id, `hasAdopted` and no baseline — the server never re-sends the settings
+    /// entity, the next push takes the create path, and the server's `client_tag_hash` upsert
+    /// overwrites that account's settings with whatever the shared defaults hold now. A full
+    /// replay on every account switch is the price, and it is the only safe resume.
     @discardableResult
-    static func resetPhiSyncCursorIfAccountChanged(accountId: String, defaults: UserDefaults) -> Bool {
+    static func resetPhiSyncCursorIfAccountChanged(accountId: String, defaults: UserDefaults,
+                                                   markerStore: (any PhiSyncMarkerStore)? = nil) -> Bool {
         guard defaults.string(forKey: phiSyncCursorOwnerKey) != accountId else { return false }
         defaults.set(accountId, forKey: phiSyncCursorOwnerKey)
         let keys = PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys
         let hadCursor = keys.contains { defaults.object(forKey: $0) != nil }
         for key in keys { defaults.removeObject(forKey: key) }
+        markerStore?.deleteFile()
         return hadCursor
     }
 
@@ -375,7 +386,8 @@ import SwiftUI
 
         // Do this before the engine exists so no round can read a half-cleared cursor.
         let defaults = UserDefaults.standard
-        if Self.resetPhiSyncCursorIfAccountChanged(accountId: accountId, defaults: defaults) {
+        if Self.resetPhiSyncCursorIfAccountChanged(accountId: accountId, defaults: defaults,
+                                                   markerStore: markerStore) {
             AppLogInfo("[phi-sync] dropped the previous account's settings cursor")
         }
         // M3-4a §2.10: migrate legacy `phi.sync.marker` / `phi.sync.storeBirthday` keys to account-scoped
@@ -840,7 +852,9 @@ import SwiftUI
         profilesCancellable?.cancel()
         profilesCancellable = nil
         stopPhiSync()
-        syncKeyController?.clearResolved()
+        // `retire()`, not `clearResolved()` (review A11): a pass parked in a network call
+        // survives this teardown and would otherwise resume on the next account's token.
+        syncKeyController?.retire()
         syncKeyController = nil
         ProfilePairingGate.shared.stop()
         // The facade's seams are bound to the account that has just gone away: the store

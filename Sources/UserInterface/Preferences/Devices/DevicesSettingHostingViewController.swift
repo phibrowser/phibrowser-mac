@@ -40,6 +40,9 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     private weak var boundManager: AccountKeyManager?
     private var hostingController: ThemedHostingController<DevicesSettingView>?
     private var keyLayerWindow: NSWindow?
+    /// The key-layer window's view model, kept so `windowShouldClose` can refuse to close
+    /// over an unacknowledged recovery code (review A9).
+    private var keyLayerViewModel: KeyLayerViewModel?
 
     override func loadView() {
         view = NSView()
@@ -135,7 +138,9 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     private func presentKeyLayer(startPairing: Bool = false) {
         if let existing = keyLayerWindow { existing.makeKeyAndOrderFront(nil); return }
         let vm = KeyLayerViewModel(manager: syncStack.manager)
+        keyLayerViewModel = vm
         let root = KeyLayerView(viewModel: vm, controller: syncKeyController, onFinish: { [weak self] in
+            self?.keyLayerViewModel = nil
             self?.keyLayerWindow?.close()
             self?.keyLayerWindow = nil
             Task { @MainActor in await self?.viewModel.loadAll() }
@@ -158,5 +163,24 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         }
     }
 
-    func windowWillClose(_ notification: Notification) { keyLayerWindow = nil }
+    /// Review A9: the recovery code is shown once and the account is already initialized on
+    /// the server, so the window stays up until the user confirms they saved it. A synchronous
+    /// `NSAlert.runModal()` that awaits nothing is the documented exemption from the
+    /// nested-run-loop rule (AGENTS.md, UI Layer).
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard keyLayerViewModel?.phase.requiresAcknowledgement == true else { return true }
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Save your recovery code first",
+                                              comment: "Key layer - title of the alert shown when closing the window before confirming the recovery code was saved")
+        alert.informativeText = NSLocalizedString("This code is shown only once. Without it, no other device can join your account if this Mac is lost. Confirm you have saved it to continue.",
+                                                  comment: "Key layer - body of the alert shown when closing the window before confirming the recovery code was saved")
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "Key layer - dismiss the save-your-recovery-code alert"))
+        alert.runModal()
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        keyLayerWindow = nil
+        keyLayerViewModel = nil
+    }
 }

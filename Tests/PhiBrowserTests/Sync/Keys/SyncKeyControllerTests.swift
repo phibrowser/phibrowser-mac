@@ -49,6 +49,36 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertEqual(c.profileSyncInfo(forProfileId: "Default")!.passphrase.count, 64)
     }
 
+    /// Review A11: the account is torn down while a pass is parked inside the first
+    /// registration's network call. The pass resumes — on whatever token `AuthManager` now
+    /// holds — and used to carry on registering every remaining unmapped local Profile,
+    /// sealed with the retired account's ARK. After `retire()` a resumed pass writes nothing
+    /// more and caches nothing.
+    func testARetiredControllerStopsRegisteringOnceItsParkedPassResumes() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let store = MemoryMappingStore()
+        let (c, _) = makeController(api: api, provider: provider,
+                                    localsProvider: { [(profileId: "Default", displayName: "Default"),
+                                                       (profileId: "Profile 1", displayName: "Work")] },
+                                    store: store)
+        // The account goes away while the first PUT is in flight.
+        api.beforePutProfileKey = { await MainActor.run { c.retire() } }
+
+        await c.silentUnlockAndResolve()
+
+        XCTAssertLessThanOrEqual(api.profileEnvelopes.count, 1,
+                                 "at most the request already in flight lands; nothing starts after retirement")
+        XCTAssertTrue(c.resolved.isEmpty, "a retired controller caches nothing")
+        XCTAssertFalse(c.needsPairing)
+        XCTAssertTrue(c.isRetired)
+
+        // And a later trigger on the same instance is a no-op too.
+        await c.silentUnlockAndResolve()
+        XCTAssertLessThanOrEqual(api.profileEnvelopes.count, 1)
+    }
+
     func testSingleRemoteSingleLocalAutoAdopts() async throws {
         let api = FakeAPI()
         // Device A bootstraps and registers one profile.

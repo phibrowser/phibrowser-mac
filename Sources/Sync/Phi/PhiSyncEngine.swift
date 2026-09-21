@@ -97,6 +97,8 @@ struct OwnedOwnerMaps {
     var eligibleSpaceUuids: Set<String> = []
     var globalUuidByProfileId: [String: String] = [:]
     var localProfileIdByGlobalUuid: [String: String] = [:]
+    /// Local spaceId to the Profile that Space is bound to, from `currentSpaces()` (review A4/A5).
+    var localProfileIdBySpaceId: [String: String] = [:]
 
     /// Literal used in the third client-tag segment and ownerUuid for app-scoped pins (sections
     /// 2.4/2.5). It is not a UUID and appears in neither mapping table.
@@ -127,7 +129,8 @@ struct OwnedOwnerMaps {
                                || $0 == SyncableSpaces.incognitoSpaceUuid
                                || maps.eligibleSpaceUuids.contains($0) },
             globalUuid: { selfMapped($0, maps.globalUuidByProfileId) },
-            localProfileId: { selfMapped($0, maps.localProfileIdByGlobalUuid) })
+            localProfileId: { selfMapped($0, maps.localProfileIdByGlobalUuid) },
+            localProfileIdForSpace: { maps.localProfileIdBySpaceId[$0] })
     }
 }
 
@@ -530,8 +533,14 @@ actor PhiSyncEngine {
     /// `markerStateKey` left this list in M3-4a: the marker and the birthday are in the
     /// account directory's `marker.json` now, so `resetSyncState()` and the self-revocation
     /// delete that file instead of wiping keys for them.
+    /// Review A3: the durable record of a settings entity this device could not read, with the
+    /// domain-key fingerprint and build it was refused under. Replaces the marker rewind that
+    /// used to re-download the whole data type every round (and block the drain — and with it
+    /// every Space and owned-item publication — for as long as the entity stayed unreadable).
+    static let unreadableSettingsStateKey = statePrefix + "unreadableSettings"
+
     static let stateKeys = [entityIdStateKey, versionStateKey, lastEntityStateKey,
-                            tombstoneRoundsStateKey, hasAdoptedStateKey]
+                            tombstoneRoundsStateKey, hasAdoptedStateKey, unreadableSettingsStateKey]
 
     /// The two keys the marker and the birthday lived under before M3-4a. Not in `stateKeys`,
     /// but still on every *account-scope* wipe (`resetPhiSyncCursorIfAccountChanged`, the
@@ -658,6 +667,9 @@ actor PhiSyncEngine {
     /// Kinds already initialized this round. Enforces at most one fetch (section 5.7(2)) when
     /// either pull or push can enter first.
     private var ownedRoundStarted: Set<String> = []
+    /// Kinds whose cursor table the store reported lost at round entry (review A2). Publication
+    /// treats them as lost even after landing has written a partial file back.
+    private var ownedLossObservedAtEntry: Set<String> = []
 
     /// Cached identity mappings for this round, avoiding repeated main-actor round trips.
     private var ownedMapsThisRound: OwnedOwnerMaps?
@@ -924,33 +936,58 @@ actor PhiSyncEngine {
     private func applySpaceGate(_ enabled: Bool) {
         guard enabled != spaceSectionEnabled else { return }
         spaceSectionEnabled = enabled
-        mutateSpaceTable { table in
-            table.spaceSectionEnabled = enabled
-            // Two triggers, one action. `markerMovedWhileGateShut` covers every shut episode this
-            // build observed. `!hasDrainedFullReplay` covers the one it could not observe: the
-            // M3-1 -> M3-2 UPGRADE, where the device already holds a non-nil `phi.sync.marker`
-            // from months of settings sync, an empty `sync.phiSpaces` (so `hadRecords == false`
-            // and guard 2's second trigger is disabled too), and no flag was ever set because the
-            // flag did not exist. Without this disjunct nothing ever drops that marker: the pull
-            // never sees `storedMarker == nil`, so `drainInProgress` is never armed,
-            // `hasDrainedFullReplay` stays false forever, `pushSpaces` returns at its own guard,
-            // and the device silently never publishes a single Space.
-            // Idempotent: once a drain completes, only a real shut episode re-arms it.
-            if enabled, table.markerMovedWhileGateShut || !table.hasDrainedFullReplay {
-                // Both kinds share ONE progress marker for data type 2000, so every Space entity
-                // the settings pulls walked past while the gate was shut will never be delivered
-                // again. Replay the type, and re-arm guard 1 so nothing is committed until the
-                // replay finishes.
-                AppLogInfo("[phi-sync] space gate opened (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
-                storedMarker = nil
-                table.markerMovedWhileGateShut = false
-                table.hasDrainedFullReplay = false
-                table.drainInProgress = true
-                // Deliberately untouched: reconciled / server / entityId / version / hidden /
-                // deletedAtMs / purgedAtMs. The ACCOUNT did not change; clearing them would
-                // re-arm the wholesale adopt and silently drop local edits that were just
-                // stamped.
-            }
+        guard mutateSpaceTable({ $0.spaceSectionEnabled = enabled }) else {
+            roundOutcome = .cursorSaveFailed
+            return
+        }
+        guard enabled else { return }
+        if !armSpaceReplayIfNeeded() { roundOutcome = .cursorSaveFailed }
+    }
+
+    /// The replay half of a gate opening, marker first (R-M3-4a-89 / ruling 3), shared with the
+    /// entry of every live pull so a failed attempt is retried from the persisted latch rather
+    /// than lost.
+    ///
+    /// Two triggers, one action. `markerMovedWhileGateShut` covers every shut episode this build
+    /// observed. `!hasDrainedFullReplay` (with no drain in progress) covers the one it could not
+    /// observe: the M3-1 -> M3-2 UPGRADE, where the device already holds a non-nil
+    /// `phi.sync.marker` from months of settings sync, an empty `sync.phiSpaces` (so
+    /// `hadRecords == false` and guard 2's second trigger is disabled too), and no flag was ever
+    /// set because the flag did not exist. Without this disjunct nothing ever drops that marker:
+    /// the pull never sees `storedMarker == nil`, so `drainInProgress` is never armed,
+    /// `hasDrainedFullReplay` stays false forever, `pushSpaces` returns at its own guard, and the
+    /// device silently never publishes a single Space. Idempotent: once a drain completes, only a
+    /// real shut episode re-arms it.
+    ///
+    /// Both kinds share ONE progress marker for data type 2000, so every Space entity the
+    /// settings pulls walked past while the gate was shut will never be delivered again. Replay
+    /// the type, and re-arm guard 1 so nothing is committed until the replay finishes.
+    ///
+    /// Order matters because `marker.json` and the Space plist cannot commit atomically: the
+    /// nil marker is persisted FIRST; only after that write is acknowledged is the latch consumed
+    /// and the drain armed. A failed marker write leaves the latch standing and the old marker on
+    /// disk, which is a safe, retryable state. The opposite order — consume the latch, then fail
+    /// the marker write — would let the next incremental pull stamp `hasDrainedFullReplay` over a
+    /// gap, and the entities the gap covered would never be delivered.
+    ///
+    /// Returns false only when a durable write failed; the write helper already counted it.
+    @discardableResult
+    private func armSpaceReplayIfNeeded() -> Bool {
+        let table = loadSpaceTable()
+        guard table.markerMovedWhileGateShut || (!table.hasDrainedFullReplay && !table.drainInProgress) else {
+            return true
+        }
+        AppLogInfo("[phi-sync] space gate open (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
+        // Re-clearing an already nil marker is a no-write success.
+        guard persistStoredMarker(nil) else { return false }
+        // Deliberately untouched: reconciled / server / entityId / version / hidden /
+        // deletedAtMs / purgedAtMs. The ACCOUNT did not change; clearing them would
+        // re-arm the wholesale adopt and silently drop local edits that were just
+        // stamped.
+        return mutateSpaceTable { table in
+            table.markerMovedWhileGateShut = false
+            table.hasDrainedFullReplay = false
+            table.drainInProgress = true
         }
     }
 
@@ -1248,6 +1285,7 @@ actor PhiSyncEngine {
         ownedReadFailed = []
         ownedTagIndices = [:]
         ownedRoundStarted = []
+        ownedLossObservedAtEntry = []
         ownedParkedRetryDone = []
         ownedMapsThisRound = nil
         // Reset B-2 round counters here (sections 2.5/2.8); pulls within a round accumulate them.
@@ -1556,9 +1594,52 @@ actor PhiSyncEngine {
 
     /// Marker suppression is round-level state, not a loop break (R-M3-4a-37). With resetToNil,
     /// advance the in-memory request marker page by page (R-M3-4a-76), suppress all page
-    /// persistence, then persist nil at round end. Triggered by guard-2 empty-table replay or
-    /// unusable settings.
+    /// persistence, then persist nil at round end. Triggered by guard-2 empty-table replay.
+    /// Unusable settings no longer suppress the marker (review A3): see
+    /// `UnreadableSettingsRecord`.
     private enum MarkerSuppression { case none, resetToNil }
+
+    /// Review A3. Why the marker must not rewind for an unreadable settings entity: the marker
+    /// is shared by every kind on data type 2000, so rewinding it re-downloads the whole type
+    /// every round, keeps `drainInProgress` from ever finalizing, and thereby holds Space and
+    /// owned-item publication for as long as the entity stays unreadable — which for a foreign
+    /// payload or a re-minted key is forever on this build. Instead the refusal is recorded
+    /// here, durably, together with what it was refused under. The marker advances normally;
+    /// the durable refusal to publish over the entity is `storedLastEntity == nil` with a
+    /// non-nil `storedEntityId`, which `pushSettings` already honours. The record is what lets a
+    /// later pull re-read the entity exactly when something that could make it readable has
+    /// changed: a different domain key, or a newer build.
+    struct UnreadableSettingsRecord: Codable, Equatable {
+        var reason: String
+        var keyFingerprint: Data
+        var build: String
+
+        /// A tombstone heals by the round counter, never by a key or build change. Undecryptable
+        /// bytes may open under a re-minted key or an envelope version a newer build knows;
+        /// a foreign payload only under a newer build.
+        func isHealable(keyFingerprint current: Data, build currentBuild: String) -> Bool {
+            switch reason {
+            case UnusableReason.tombstone.rawValue: return false
+            case UnusableReason.undecryptable.rawValue:
+                return keyFingerprint != current || build != currentBuild
+            default: return build != currentBuild
+            }
+        }
+    }
+
+    /// What identifies "this build" for `UnreadableSettingsRecord`: a newer build is the only
+    /// thing that can make a foreign payload readable.
+    static let buildIdentity: String = {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? ""
+        let build = info?["CFBundleVersion"] as? String ?? ""
+        return "\(version)/\(build)"
+    }()
+
+    /// The fingerprint `UnreadableSettingsRecord` keys on. Never logged (R12).
+    private static func fingerprint(of key: SymmetricKey) -> Data {
+        Data(SHA256.hash(data: key.withUnsafeBytes { Data($0) }))
+    }
 
     /// The eight named section 2.8 outcomes describe existing early-return/failure paths, not new
     /// behavior. rawValue is safe for R12 logs.
@@ -1619,6 +1700,21 @@ actor PhiSyncEngine {
         // holding the *previous* account's domain key, so everything below is off-limits.
         guard !isStopped else { return false }
 
+        // Review A3: a settings entity refused under an older key or build is re-read by ONE
+        // full replay, armed marker-first (R-M3-4a-89) the moment something that could make
+        // it readable has changed. Persist the nil marker before forgetting the record, so a
+        // failed write leaves both the record and the old marker standing for a retry.
+        let keyFingerprint = Self.fingerprint(of: key)
+        if let record = unreadableSettingsRecord,
+           record.isHealable(keyFingerprint: keyFingerprint, build: Self.buildIdentity) {
+            AppLogInfo("[phi-sync] settings entity was unusable (\(record.reason)) under a previous key or build; replaying data type \(PhiSyncEntity.dataTypeID) to re-read it")
+            guard persistStoredMarker(nil) else {
+                roundOutcome = .cursorSaveFailed
+                return false
+            }
+            unreadableSettingsRecord = nil
+        }
+
         // Guard 1 (§5.5): the drain is a PROCESS, not the property of one pull. It is armed
         // only while the Space section is live — a gated-off pull hands the Space section
         // nothing, so letting it satisfy the guard would let a fresh device publish its
@@ -1631,8 +1727,15 @@ actor PhiSyncEngine {
         // too — and BEFORE that page's marker (R-M3-4a-77): a flag written after the marker
         // is simply gone when the marker write succeeds and the flag write does not, with the
         // marker left standing past whatever it walked over.
-        let spaceTableAtEntry = loadSpaceTable()
         let spaceLive = spaceSectionEnabled && spaceStore != nil && spaceAccess != nil
+        // A gate opening whose nil-marker write failed left `markerMovedWhileGateShut` standing
+        // (review A1). Retry it here, marker first, before anything reads the table: with the
+        // latch set the old marker on disk stands past entities this device has never seen.
+        if spaceLive, !armSpaceReplayIfNeeded() {
+            roundOutcome = .cursorSaveFailed
+            return false
+        }
+        let spaceTableAtEntry = loadSpaceTable()
         if spaceLive, storedMarker == nil, !spaceTableAtEntry.drainInProgress {
             // Persisted immediately, not at the tail: page 1 already makes the marker
             // non-nil, so a round that dies on page 2 would otherwise leave a non-nil marker
@@ -1841,6 +1944,7 @@ actor PhiSyncEngine {
                 switch view {
                 case .usable(let remote) where pageCarriedSettingsEntity:
                     tombstoneRounds = 0
+                    unreadableSettingsRecord = nil
                     // Wholesale only until this device has settings history of its own — which
                     // is `hasAdopted`, not "do we know which row they live in": a cursor
                     // dropped by the tombstone heal or the full-replay branch must not cost
@@ -1848,13 +1952,17 @@ actor PhiSyncEngine {
                     apply(remote, adopt: !hasAdopted)
                 case .unusable(let reason) where pageCarriedSettingsEntity:
                     // Unreadable settings must neither land nor authorize a settings push using the
-                    // harvested ID/version, which could overwrite data from a newer client. Rewind
-                    // so a repaired domain key or newer build can retry.
-                    // Use round-level suppression (R-M3-4a-37), continue all remaining pages with
-                    // the in-memory marker (R-M3-4a-76), then persist nil at round end. Breaking
-                    // here would permanently miss higher-version entities.
-                    markerSuppression = .resetToNil
-                    // The baseline goes with the marker, and that is what makes the refusal
+                    // harvested ID/version, which could overwrite data from a newer client. The
+                    // marker is NOT rewound (review A3): it is shared with every other kind, and
+                    // rewinding it re-downloaded the whole type every round and held the drain —
+                    // and every Space and owned-item publication — for as long as the entity
+                    // stayed unreadable. The refusal is recorded durably instead, keyed on the
+                    // domain key and build it was refused under; the entry of a later pull replays
+                    // the type once when either has changed. Pages keep landing (R-M3-4a-76).
+                    unreadableSettingsRecord = UnreadableSettingsRecord(
+                        reason: reason.rawValue, keyFingerprint: keyFingerprint,
+                        build: Self.buildIdentity)
+                    // The baseline goes with the record, and that is what makes the refusal
                     // durable rather than a one-round suppression. `push`'s guard reads "an
                     // entity id with no baseline" as "the server holds bytes this device has not
                     // read"; a device that had synced before would otherwise keep the baseline
@@ -1983,7 +2091,14 @@ actor PhiSyncEngine {
 
         // Round-level absent handling: no page in the drain carried settings (R-M3-4a-38).
         if !sawSettingsEntity, roundOutcome != .cursorSaveFailed {
-            tombstoneRounds = 0
+            if unreadableSettingsRecord?.reason == UnusableReason.tombstone.rawValue {
+                // The marker walked past the tombstone in an earlier round (review A3), so the
+                // server no longer re-sends it; the durable record says the row is still gone,
+                // and every pull that finds no replacement counts towards the heal.
+                noteUnusable(.tombstone)
+            } else {
+                tombstoneRounds = 0
+            }
             if drained, startedFromScratch, storedEntityId != nil {
                 // A full replay carried no settings entity: the row this device points at is
                 // gone (a namespace change, a targeted delete, a partial restore). Keeping the
@@ -1994,10 +2109,10 @@ actor PhiSyncEngine {
             }
         }
         if markerSuppression == .resetToNil {
-            // Idempotent for guard-2 suppression; the first nil-marker write for unusable settings.
+            // Guard-2 suppression only (review A3): idempotent re-clear of the nil marker.
             storedMarker = nil
-            if roundOutcome == .ok, case .unusable = view { roundOutcome = .unusableSettings }
         }
+        if roundOutcome == .ok, case .unusable = view { roundOutcome = .unusableSettings }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
         // persisted by the page that observed it, before that page's marker (R-M3-4a-77).
 
@@ -2127,6 +2242,9 @@ actor PhiSyncEngine {
     /// its entity and the round moves on.
     private func applySpaces(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {
         guard !isStopped, let spaceAccess else { return }
+        // What this page found on disk; restored if the page's account-wide reorder fails
+        // (review A6), so no baseline outlives the local write it describes.
+        let tableAtEntry = table
 
         // §3.5 fallback A is transient by design. As soon as a held binding
         // resolves -- §3.6 created the profile, or a dead mapping was rebuilt --
@@ -2422,7 +2540,20 @@ actor PhiSyncEngine {
             // their own slots".
             let order = SyncableSpaces.plannedOrder(
                 localOrder: await spaceAccess.allSpacesForOrdering(), syncedRanks: ranks)
-            try? await spaceAccess.applyOrder(order)
+            do {
+                try await spaceAccess.applyOrder(order)
+            } catch {
+                // Review A6: the rank baselines landed above already describe the peer's order.
+                // Keeping them while the local strip stays stale would make the next snapshot
+                // stamp this device's OLD order with a fresh timestamp and push it — reverting
+                // the peer's reorder account-wide. Treat the reorder as the page's persistence
+                // failure it is: roll the table back to how this page found it, count the
+                // failure so the marker does not advance and nothing publishes this round, and
+                // let the page replay (landing is idempotent) with the reorder retried.
+                AppLogError("[phi-sync] account-wide reorder failed (\(PhiSyncLog.describe(error))); replaying this page next round")
+                table = tableAtEntry
+                cursorSaveFailures += 1
+            }
         }
     }
 
@@ -2550,6 +2681,10 @@ actor PhiSyncEngine {
         }
         AppLogError("[phi-sync] settings entity has been a tombstone for \(rounds) consecutive pulls; dropping the entity cursor so the next local change re-creates it")
         clearEntityCursor()
+        // The heal is complete: the row is forgotten and the next local change creates. Forget
+        // the record too, or every later pull would count and "heal" again (review A3).
+        unreadableSettingsRecord = nil
+        tombstoneRounds = 0
     }
 
     private func apply(_ remote: Phi_PhiSettingEntity, adopt: Bool) {
@@ -3015,6 +3150,8 @@ actor PhiSyncEngine {
         maps.localSpaceIdBySyncUuid[SyncableSpaces.defaultSpaceUuid] = LocalStore.defaultSpaceId
         let spaces = await spaceAccess.currentSpaces()
         for space in spaces {
+            // The Space's own Profile binding, for rows landed into it (review A4/A5).
+            maps.localProfileIdBySpaceId[space.spaceId] = space.profileId
             // Section 4.2 rule 1: present in currentSpaces(), mapped to a syncUuid, and neither
             // hidden nor purged.
             if let uuid = maps.syncUuidBySpaceId[space.spaceId] {
@@ -3043,7 +3180,13 @@ actor PhiSyncEngine {
         for registration in ownedKinds {
             guard !ownedRoundStarted.contains(registration.label) else { continue }
             ownedRoundStarted.insert(registration.label)
-            let table = loadOwnedTable(registration, armsReplayOnLoss: false).table
+            let loaded = loadOwnedTable(registration, armsReplayOnLoss: false)
+            let table = loaded.table
+            // Review A2: remember a loss the store reported here. Landing may write a partial
+            // table back before publication re-loads, and a non-empty file no longer reports
+            // loss — publication must still arm the replay, or every cursor-less local row is
+            // committed as a create over the account tree.
+            if loaded.reportedLoss { ownedLossObservedAtEntry.insert(registration.label) }
             var identities: Set<String> = []
             do {
                 try await registration.beginRound()
@@ -3073,12 +3216,19 @@ actor PhiSyncEngine {
     /// Persist marker reset before the per-kind latch/drain flags. Reversing them could leave an
     /// old marker with a consumed latch: an empty incremental response would falsely complete
     /// replay, and an unreadable table could never rearm its latch. Both writes must be confirmed.
+    ///
+    /// `lost` means this call armed the replay; `reportedLoss` is what the store (or an earlier
+    /// observation this round, `lossObservedEarlier`) said, independent of arming.
     private func loadOwnedTable(_ registration: OwnedKindRegistration,
-                                armsReplayOnLoss: Bool)
-        -> (table: PhiOwnedItemTable, lost: Bool) {
+                                armsReplayOnLoss: Bool,
+                                lossObservedEarlier: Bool = false)
+        -> (table: PhiOwnedItemTable, lost: Bool, reportedLoss: Bool) {
         let spaceTable = loadSpaceTable()
-        let (table, reportedLoss) = registration.store
+        let (table, storeReportedLoss) = registration.store
             .load(hadRecords: spaceTable[keyPath: registration.flags.hadRecords])
+        // Review A2: a loss observed at round entry stands even if landing has since written a
+        // non-empty file — that file is partial, and the account tree must be replayed.
+        let reportedLoss = storeReportedLoss || lossObservedEarlier
         ownedTables[registration.label] = table
         guard reportedLoss else {
             // Unlike the permanent Space latch, the per-kind latch rearms after a successful load
@@ -3088,20 +3238,20 @@ actor PhiSyncEngine {
                spaceTable[keyPath: registration.flags.replayedForEmptyTable] {
                 mutateSpaceTable { $0[keyPath: registration.flags.replayedForEmptyTable] = false }
             }
-            return (table, false)
+            return (table, false, reportedLoss)
         }
-        guard armsReplayOnLoss else { return (table, false) }
+        guard armsReplayOnLoss else { return (table, false, reportedLoss) }
         // Use this kind's one-shot latch (A2), never the permanent Space didReplayForEmptyTable
         // latch, which may already have been consumed before the first bookmark/pin file loss.
         guard !spaceTable[keyPath: registration.flags.replayedForEmptyTable] else {
-            return (table, true)
+            return (table, true, reportedLoss)
         }
         // First persist the nil marker. Failure leaves the latch/drain flags unchanged, reports
         // cursorSaveFailed and closes publication, so next round can retry. Update the engine
         // property because this helper also runs outside pull; the write helper counts failures.
         guard persistStoredMarker(nil) else {
             roundOutcome = .cursorSaveFailed
-            return (table, false)
+            return (table, false, reportedLoss)
         }
         // After confirmed marker reset, persist the per-kind latch and drain flags. Failure rolls
         // the mirror back (R-M3-4a-83), leaving reset-marker/unconsumed-latch for retry. Repeating
@@ -3112,13 +3262,13 @@ actor PhiSyncEngine {
             updated.drainInProgress = true
         }) else {
             roundOutcome = .cursorSaveFailed
-            return (table, false)
+            return (table, false, reportedLoss)
         }
         // Both failure branches return (table, false): lost=true means this attempt successfully
         // armed replay. Log only after both writes succeed.
         AppLogWarn("[phi-sync] owned-item cursor table lost kind=\(registration.label); "
                    + "replaying data type \(PhiSyncEntity.dataTypeID) once")
-        return (table, true)
+        return (table, true, reportedLoss)
     }
 
     /// Persist the kind's table and maintain per-kind flags. HadRecords becomes true on the first
@@ -3694,7 +3844,9 @@ actor PhiSyncEngine {
         // contrary to section 2.5(6). The round-entry canPublishThisRound prerequisite is separate
         // (R-M3-4a-103).
         let failuresBeforeLoad = cursorSaveFailures
-        let loaded = loadOwnedTable(registration, armsReplayOnLoss: true)
+        let loaded = loadOwnedTable(
+            registration, armsReplayOnLoss: true,
+            lossObservedEarlier: ownedLossObservedAtEntry.contains(registration.label))
         guard !loaded.lost else { return }
         // If either replay-arming write failed, loadOwnedTable returns lost=false and the earlier
         // guards would allow publication against an empty table. Stop here without publishing or
@@ -4574,6 +4726,8 @@ actor PhiSyncEngine {
     private func clearRemoteCursor() {
         clearEntityCursor()
         storedMarker = nil
+        // A full replay re-reads the settings entity anyway (review A3).
+        unreadableSettingsRecord = nil
     }
 
     /// The store this device was tracking is gone (NOT_MY_BIRTHDAY): every cursor that
@@ -4722,6 +4876,15 @@ actor PhiSyncEngine {
             return try? Phi_PhiSettingEntity(serializedBytes: bytes)
         }
         set { writeState(newValue.flatMap { try? $0.serializedData() }, forKey: Self.lastEntityStateKey) }
+    }
+
+    /// See `UnreadableSettingsRecord` (review A3). Account-scoped like the other cursor keys.
+    private var unreadableSettingsRecord: UnreadableSettingsRecord? {
+        get {
+            guard let bytes = defaults.data(forKey: Self.unreadableSettingsStateKey) else { return nil }
+            return try? JSONDecoder().decode(UnreadableSettingsRecord.self, from: bytes)
+        }
+        set { writeState(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Self.unreadableSettingsStateKey) }
     }
 }
 
@@ -5260,7 +5423,12 @@ private func landBookmarks(_ input: OwnedLandingInput,
         } else {
             projected[guid] = PhiLocalBookmark(
                 syncId: identity, guid: guid, spaceId: group.spaceId,
-                profileId: state.locals.first { $0.spaceId == group.spaceId }?.profileId
+                // The Space's own Profile first (review A4): a row created under any other
+                // Profile has no root to land in — `existingBookmarkRoot` matches on both ids —
+                // and the whole Space's batch parks on every round. The sibling and default
+                // fallbacks only remain for a Space the owner map did not describe.
+                profileId: resolve.localProfileIdForSpace(group.spaceId)
+                    ?? state.locals.first { $0.spaceId == group.spaceId }?.profileId
                     ?? LocalStore.defaultProfileId,
                 parentGuid: group.parentGuid, index: 0, isFolder: entity.isFolder,
                 title: entity.title.stringValue,
@@ -5952,9 +6120,12 @@ private func landPins(_ input: OwnedLandingInput,
         }
         if let spaceId = resolve.localSpaceId(ownerKey) {
             guard scope == .space else { return nil }
-            // A Space-scoped pin has both fields. Reuse another row's Profile in that Space, or the
-            // default Profile if none exists, matching bookmark landing's fallback.
-            let profileId = state.locals.first { $0.spaceId == spaceId }?.profileId
+            // A Space-scoped pin has both fields: the Space's own Profile first (review A5) —
+            // Space-scope queries match on both ids, so a pin created under any other Profile is
+            // invisible to that Space's windows — then another row's Profile in that Space, then
+            // the default Profile, matching bookmark landing's fallback order.
+            let profileId = resolve.localProfileIdForSpace(spaceId)
+                ?? state.locals.first { $0.spaceId == spaceId }?.profileId
                 ?? LocalStore.defaultProfileId
             return (spaceId, profileId)
         }

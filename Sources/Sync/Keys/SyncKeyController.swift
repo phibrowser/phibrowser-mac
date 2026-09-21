@@ -351,6 +351,7 @@ final class SyncKeyController {
     /// `resolveMappings()` the same uncertainty would fail *open* — minting a
     /// fresh UUID over a live mapping — so there it must be preserved instead.
     func silentUnlockAndResolve() async {
+        guard !isRetired else { return }
         let result: UnlockResult
         do {
             result = try await manager.unlockAtStartup()
@@ -358,6 +359,8 @@ final class SyncKeyController {
             clearResolved()  // transient (offline etc.) — a later trigger retries
             return
         }
+        // The unlock is an `await`; the account may have gone away inside it (review A11).
+        guard !isRetired else { return }
         guard result == .unlocked else {
             clearResolved()
             return
@@ -389,6 +392,23 @@ final class SyncKeyController {
         needsPairingActionable = false
         if wasPopulated { notifyChromium() }
         announceMappingsResolved(.cleared)
+    }
+
+    /// Set by `retire()` and never cleared: the account this controller was built for is gone
+    /// (sign-out, account switch, self-revocation). A pass that was parked in a network call
+    /// when that happened resumes on the next account's bearer token — its API client reads
+    /// the token from the global `AuthManager` on every request — and would register every
+    /// unmapped local Profile into the NEW account, sealed with the OLD account's ARK
+    /// (review A11). Every write in a pass is gated on this after each suspension.
+    private(set) var isRetired = false
+
+    /// The teardown entry (review A11): clears the cache like `clearResolved()`, cancels the
+    /// running pass, and marks the controller so a pass that cannot be cancelled mid-request
+    /// still writes nothing once it resumes.
+    func retire() {
+        isRetired = true
+        resolveTask?.cancel()
+        clearResolved()
     }
 
     /// Re-runs resolution after external events (pairing applied, approval
@@ -458,6 +478,7 @@ final class SyncKeyController {
     private var resolvePending = false
 
     private func resolveMappingsOnce() async {
+        guard !isRetired else { return }
         var next: [String: (uuid: String, passphrase: String)] = [:]
         let locals = localProfilesProvider()
         var unmappedLocals: [(profileId: String, displayName: String)] = []
@@ -494,7 +515,10 @@ final class SyncKeyController {
         let remoteUuids: Set<String>
         do {
             remoteUuids = try await profileKeys.accountProfileUuids()
+            // Review A11: the listing may have answered for the NEXT account; write nothing.
+            guard !isRetired else { return }
         } catch {
+            guard !isRetired else { return }
             // Unknown remote set (offline / 5xx / 401 / still locked). Hold the
             // previous answer -- NEVER flip an app-modal gate true on a blip --
             // and still announce, or the gate and the Space gate miss a state
@@ -513,6 +537,9 @@ final class SyncKeyController {
             if unclaimed.isEmpty {
                 // First device (or all remotes already claimed): register the rest.
                 for local in unmappedLocals {
+                    // Review A11: every registration is a network write sealed with this
+                    // controller's ARK; none may start once the account is gone.
+                    guard !isRetired else { return }
                     // `alreadyMapped` cannot normally reach here (only unmapped
                     // locals are in this list); if it does, skipping is correct
                     // — same handling as any other transient registration miss.
@@ -523,6 +550,7 @@ final class SyncKeyController {
                     }
                 }
             } else if unclaimed.count == 1, unmappedLocals.count == 1 {
+                guard !isRetired else { return }
                 if let uuid = unclaimed.first,
                    let rec = try? await profileKeys.adoptRemoteProfile(
                     uuid: uuid, forLocalProfile: unmappedLocals[0].profileId) {
@@ -532,6 +560,8 @@ final class SyncKeyController {
             }
         }
 
+        // Review A11: a pass that resumed after retirement must neither cache nor announce.
+        guard !isRetired else { return }
         // Monotonic within a signed-in session: merge rather than replace, so a
         // partial pass can never erase a previously-good entry. The cache is
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).

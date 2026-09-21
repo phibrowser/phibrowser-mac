@@ -2208,12 +2208,27 @@ extension LocalStore {
                     throw LocalStoreWriteError.rowNotFound
                 }
             } else {
-                guard let root = try existingBookmarkRoot(profileId: row.profileId,
-                                                          spaceId: row.spaceId,
-                                                          in: context) else {
-                    throw LocalStoreWriteError.rowNotFound
+                if let root = try existingBookmarkRoot(profileId: row.profileId,
+                                                       spaceId: row.spaceId,
+                                                       in: context) {
+                    parent = root
+                } else {
+                    // Review A4: a Space that exists but has never materialized its root (the
+                    // default Space on a fresh device, or a pre-Spaces row never opened in a
+                    // window) must not park the account's whole bookmark batch forever. This is
+                    // a write transaction already, so materialize the root the way Space
+                    // creation does. A Space row that is absent altogether still parks.
+                    let spaceId = row.spaceId
+                    let profileId = row.profileId
+                    let spaceDescriptor = FetchDescriptor<SpaceModel>(
+                        predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId && $0.profileId == profileId })
+                    guard try context.fetchCount(spaceDescriptor) > 0,
+                          let root = try bookmarkRoot(profileId: profileId, spaceId: spaceId,
+                                                      in: context, createIfNeeded: true) else {
+                        throw LocalStoreWriteError.rowNotFound
+                    }
+                    parent = root
                 }
-                parent = root
             }
 
             let node = TabDataModel(title: row.title,

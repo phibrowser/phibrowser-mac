@@ -125,6 +125,62 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   replays the page and performs that adoption a second time. It is recorded in
   the milestone's design errata and is not fixed here.
 
+## Refusals, retries and account switches
+
+Rules established by the 2026-09-20 review of the integration branch. Each is
+pinned by a test named in its own `// Review A<n>` comment in the code.
+
+- **Opening the Space gate is marker-first.** The nil marker is persisted
+  before `markerMovedWhileGateShut` is consumed and the drain armed; a failed
+  marker write leaves the latch standing and every live pull retries the
+  arming from it (`PhiSyncEngine.armSpaceReplayIfNeeded`). The two files
+  cannot commit atomically, and the opposite order let an incremental pull
+  finalize a drain over the entities the shut episode walked past.
+- **A loss observed at round entry stands.** Publication treats an owned
+  cursor table as lost when the store reported loss at round entry, even if
+  the landing in between wrote a non-empty file back; otherwise cursor-less
+  local rows were committed as `entityId = nil` creates over the account tree.
+- **Unreadable settings never rewind the shared marker.** A tombstoned,
+  undecryptable or foreign settings entity is recorded durably
+  (`phi.sync.unreadableSettings`: reason, domain-key fingerprint, build); the
+  marker advances page by page and the drain finalizes as usual, so Space and
+  owned-item publication continue. `pushSettings` keeps refusing through
+  `storedEntityId != nil && storedLastEntity == nil`. The entry of a later
+  pull replays the data type once, marker-first, when the domain key or the
+  build has changed; a tombstone heals by the round counter, which now counts
+  rounds from the record rather than requiring the tombstone to be re-sent.
+- **A failed account-wide reorder fails its page.** The Space table rolls
+  back to what the page found, the failure counts as a cursor-save failure
+  (marker held, no publication), and the replay retries the reorder; kept rank
+  baselines would otherwise republish the stale local order over the peer's.
+- **Rows landed into a Space belong to that Space's Profile.** Bookmark and
+  Space-scoped pin landing resolve the Profile from the Space binding
+  (`OwnerResolver.localProfileIdForSpace`) before any sibling or default
+  fallback, and landing a parentless bookmark materializes a missing root for
+  an existing Space instead of parking the batch on `rowNotFound`.
+- **An account switch drops the account's `marker.json`.** The entity cursor
+  in `UserDefaults.standard` is wiped on a switch; resuming a previously used
+  account from its advanced marker with no entity id would make the next push
+  a create that overwrites that account's settings. One full replay per
+  switch is the price.
+- **Bootstrap never loses the ARK after the account exists.** Once
+  `PUT /keys/v1/account` succeeded the ARK is cached and the recovery code is
+  returned no matter what; a failed device registration is parked as the ARK
+  sealed to this device's own key (`phi.sync.pendingDeviceRegistration.<id>`,
+  ciphertext only) and finished by `unlockAtStartup()`. The recovery-code
+  window refuses to close until the user confirms they saved the code.
+- **A revoked device identity is rotated, not resubmitted.** `POST
+  /keys/v1/devices` answering 409 rotates the device key and retries once. The
+  key is stored `ThisDeviceOnly`, so a migrated or restored Mac does not share
+  an identity with its source.
+- **A retired `SyncKeyController` writes nothing.** Teardown calls
+  `retire()`; a pass parked in a network call when the account went away
+  resumes on the next account's token and used to register every unmapped
+  local Profile into it under the old ARK.
+- **Guest migration ignores soft-deleted rules** on both stores: a Space
+  deletion soft-deletes its rules for the sync tombstone, and a Guest store has
+  no engine to purge them.
+
 ## URL Rules
 
 URL rules are the fifth entity kind (`phi-urlrule`) and the third owned-item

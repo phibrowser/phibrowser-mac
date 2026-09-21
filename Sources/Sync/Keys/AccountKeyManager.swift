@@ -26,11 +26,41 @@ extension KeyEnvelopeAPIClient: KeyEnvelopeAPI {}
 protocol DeviceKeyProviding {
     func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey
     func deviceKeyId() throws -> String
+    /// Mint a fresh device identity in place (review A10): the server never un-revokes a
+    /// fingerprint, so a revoked one must be replaced before this device can register again.
+    func rotate() throws
 }
-extension DeviceKeyStore: DeviceKeyProviding {}
+extension DeviceKeyStore: DeviceKeyProviding {
+    func rotate() throws { try rotateForCurrentAccount() }
+}
 
 enum AccountKeyError: Error { case alreadyInitialized, badRecoveryCode, notInitialized, randomGenerationFailed(OSStatus) }
 enum UnlockResult { case unlocked, needsJoin, notSignedIn }
+
+/// Review A8. Where `bootstrap()` parks the ARK when the account was created on the server but
+/// this device's registration did not go through: the ARK sealed to THIS device's public key —
+/// exactly the bytes the server would hold as the device envelope, so nothing leaves the
+/// zero-knowledge posture — keyed by the device key id. `unlockAtStartup()` finishes the
+/// registration from it. Without this, a failed `POST /keys/v1/devices` after a successful
+/// `PUT /keys/v1/account` left an account nobody could open: the ARK and the recovery code
+/// only ever lived in `bootstrap()`'s locals, every retry answered 409 `already_initialized`,
+/// and the API has no reset.
+protocol PendingDeviceRegistrationStoring: AnyObject {
+    func load(deviceKeyId: String) -> Data?
+    func save(_ envelope: Data, deviceKeyId: String)
+    func clear(deviceKeyId: String)
+}
+
+/// Default store: `UserDefaults.standard`, one key per device id. The value is ciphertext.
+final class DefaultsPendingDeviceRegistrationStore: PendingDeviceRegistrationStoring {
+    static let keyPrefix = "phi.sync.pendingDeviceRegistration."
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    private func key(_ deviceKeyId: String) -> String { Self.keyPrefix + deviceKeyId }
+    func load(deviceKeyId: String) -> Data? { defaults.data(forKey: key(deviceKeyId)) }
+    func save(_ envelope: Data, deviceKeyId: String) { defaults.set(envelope, forKey: key(deviceKeyId)) }
+    func clear(deviceKeyId: String) { defaults.removeObject(forKey: key(deviceKeyId)) }
+}
 
 struct JoinTicket: Equatable { let requestId: String; let verificationCode: String }
 enum JoinPollResult: Equatable { case pending(deadline: Date); case approved; case denied; case expired }
@@ -117,9 +147,13 @@ final class AccountKeyManager {
 
     var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
-    init(api: KeyEnvelopeAPI, deviceKeyProvider: DeviceKeyProviding) {
+    private let pendingRegistrations: PendingDeviceRegistrationStoring
+
+    init(api: KeyEnvelopeAPI, deviceKeyProvider: DeviceKeyProviding,
+         pendingRegistrations: PendingDeviceRegistrationStoring = DefaultsPendingDeviceRegistrationStore()) {
         self.api = api
         self.deviceKeyProvider = deviceKeyProvider
+        self.pendingRegistrations = pendingRegistrations
     }
 
     func bootstrap() async throws -> String {
@@ -136,9 +170,35 @@ final class AccountKeyManager {
             kdfParams: Data("{}".utf8), recoveryEnvelope: recoveryEnvelope)
         guard created else { throw AccountKeyError.alreadyInitialized }
 
-        try await registerThisDevice(ark: ark)
+        // From here the account exists on the server and this process holds the only copy of
+        // the ARK outside the recovery envelope (review A8). Nothing below may lose it: the
+        // ARK is cached first so this device works either way, the recovery code reaches the
+        // caller no matter what, and a registration that fails is parked locally and finished
+        // by `unlockAtStartup()` — never thrown, which would drop both and leave an account
+        // that answers 409 to every retry and has no reset.
         currentARK = ark
+        do {
+            try await registerThisDevice(ark: ark)
+        } catch {
+            AppLogError("[phi-sync] account bootstrapped but device registration failed (\(PhiSyncLog.describe(error))); parking it for the next unlock")
+            parkRegistration(ark: ark)
+        }
         return display
+    }
+
+    /// Seal the ARK to this device's own public key and keep it until registration succeeds.
+    /// A Keychain failure here is logged and swallowed: the recovery code is still returned,
+    /// which is the one thing that must never fail.
+    private func parkRegistration(ark: SymmetricKey) {
+        do {
+            let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
+            let deviceKeyId = try deviceKeyProvider.deviceKeyId()
+            let envelope = try PhiKeyCrypto.sealToPublicKey(ark.withUnsafeBytes { Data($0) },
+                                                            recipient: priv.publicKey)
+            pendingRegistrations.save(envelope, deviceKeyId: deviceKeyId)
+        } catch {
+            AppLogError("[phi-sync] could not park the device registration (\(PhiSyncLog.describe(error))); the recovery code is the only way back in")
+        }
     }
 
     func joinWithRecoveryCode(_ code: String) async throws {
@@ -163,7 +223,26 @@ final class AccountKeyManager {
             // device that simply hasn't joined yet.
             return .notSignedIn
         }
-        guard let envelope else { return .needsJoin }  // no envelope for this device (404) — it needs to join
+        guard let envelope else {
+            // No envelope for this device (404). Before calling that "needs to join": a bootstrap
+            // on this device may have parked its registration (review A8). Finish it from the
+            // local copy; if the server still refuses, this session runs on the ARK it holds and
+            // the next unlock retries.
+            if let parked = pendingRegistrations.load(deviceKeyId: deviceKeyId) {
+                let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
+                let ark = SymmetricKey(data: try PhiKeyCrypto.openWithPrivateKey(parked, privateKey: priv))
+                do {
+                    try await registerThisDevice(ark: ark)
+                    pendingRegistrations.clear(deviceKeyId: deviceKeyId)
+                    AppLogInfo("[phi-sync] finished the parked device registration")
+                } catch {
+                    AppLogWarn("[phi-sync] parked device registration still failing (\(PhiSyncLog.describe(error))); retrying next unlock")
+                }
+                currentARK = ark
+                return .unlocked
+            }
+            return .needsJoin
+        }
         let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
         let arkBytes = try PhiKeyCrypto.openWithPrivateKey(envelope, privateKey: priv)
         currentARK = SymmetricKey(data: arkBytes)
@@ -201,7 +280,23 @@ final class AccountKeyManager {
         }
     }
 
+    /// Registers this device, and — on the one refusal that can never clear on its own —
+    /// re-mints its identity and retries once (review A10). The server answers 409
+    /// `device_revoked` to a fingerprint it has revoked, forever; the old code re-posted
+    /// the same key on every join attempt and surfaced it as an endless "waiting for
+    /// approval" or "invalid recovery code". The ARK is already in hand here (opened with
+    /// the old key), so a fresh key can seal it and register.
     private func registerThisDevice(ark: SymmetricKey) async throws {
+        do {
+            try await postRegistration(ark: ark)
+        } catch KeyAPIError.http(409, let body) {
+            AppLogWarn("[phi-sync] device registration refused (409 \(body.prefix(64))); rotating the device key and retrying once")
+            try deviceKeyProvider.rotate()
+            try await postRegistration(ark: ark)
+        }
+    }
+
+    private func postRegistration(ark: SymmetricKey) async throws {
         let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
         let deviceKeyId = try deviceKeyProvider.deviceKeyId()
         let arkBytes = ark.withUnsafeBytes { Data($0) }

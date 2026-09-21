@@ -147,11 +147,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     private func makeEngine(access: FakePhiSpaceAccess,
                             store: MemorySpaceStore,
                             client: FakePhiSyncClient,
+                            markerStore: (any PhiSyncMarkerStore)? = nil,
                             clock: Clock = Clock()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
                       defaults: defaults, deviceKeyId: "devA",
                       settings: [],
                       spaceAccess: access, spaceStore: store,
+                      markerStore: markerStore,
                       now: { clock.read() })
     }
 
@@ -214,6 +216,56 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let sibling = try PhiEntityCodec.decrypt(siblingRow.ciphertext, key: key).space
         XCTAssertLessThan(sibling.rank.stringValue, entity.rank.stringValue,
                           "The locally dragged sibling must keep its order on the server too")
+    }
+
+    /// Review A6: a peer reorders the strip; this device lands the new rank baselines but the
+    /// account-wide reorder of its local rows fails. The old code swallowed that failure and
+    /// kept the baselines, so the very next snapshot stamped the stale local order with a
+    /// fresh timestamp and pushed it — reverting the peer's drag for the whole account. The
+    /// reorder is a persistence failure of the page: the page's table changes roll back, the
+    /// marker does not advance, nothing publishes, and the replay applies the order.
+    func testAFailedAccountWideReorderReplaysThePageInsteadOfRepublishingTheStaleOrder() async throws {
+        struct ReorderFailed: Error {}
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = ["s-1", "s-2"].enumerated().map { index, id in
+            PhiLocalSpace(spaceId: id, profileId: "Default", name: "Work", colorHex: "#3A6FF8",
+                          iconName: "emoji:1F4BC", sortOrder: index,
+                          createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                          opacityLight: nil, opacityDark: nil)
+        }
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["s-1": "sync-1", "s-2": "sync-2"], access: access)
+        let client = FakePhiSyncClient()
+        // The peer's order puts s-2 first.
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(rankedEntity("sync-1", rank: "b")), version: 3)
+        client.seed(tagHash: spaceHash("sync-2"),
+                    ciphertext: try ciphertext(rankedEntity("sync-2", rank: "a")), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        access.applyOrderError = ReorderFailed()
+        let cursorsBefore = store.table.cursors
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertEqual(store.table.cursors, cursorsBefore,
+                       "no baseline may describe a local order that was never written")
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey), "the page marker did not advance")
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "the stale local order must not be republished over the peer's")
+        XCTAssertEqual(access.spaces.sorted { $0.sortOrder < $1.sortOrder }.map(\.spaceId), ["s-1", "s-2"])
+
+        access.applyOrderError = nil
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.spaces.sorted { $0.sortOrder < $1.sortOrder }.map(\.spaceId), ["s-2", "s-1"],
+                       "the replayed page applies the peer's order")
+        XCTAssertTrue(spaceCommits(client).isEmpty, "converged: there is nothing to republish")
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.markerStateKey))
     }
 
     private func assertFailedPullBlocksPublication(afterConflict: Bool) async throws {
@@ -451,6 +503,105 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
         XCTAssertTrue(store.table.hasDrainedFullReplay)
         XCTAssertFalse(store.table.drainInProgress)
+    }
+
+    /// Review A1: `marker.json` and the Space table cannot be written atomically, so opening the
+    /// gate must persist the nil marker FIRST and only then consume `markerMovedWhileGateShut`
+    /// and arm the drain — the same order guard 2 and the owned-kind loss path use. If the
+    /// marker write fails, the latch must survive and the next pull must retry the replay;
+    /// otherwise the old marker stands past every Space entity the shut episode walked over,
+    /// the next incremental pull stamps `hasDrainedFullReplay`, and those entities are lost.
+    func testAFailedNilMarkerWriteWhenTheGateOpensKeepsTheLatchAndRetriesNextRound() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        let marker = MemoryMarkerStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client, markerStore: marker)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        let markerAfterFirstDrain = marker.file.marker
+        XCTAssertNotNil(markerAfterFirstDrain)
+
+        await engine.setSpaceSyncEnabled(false)
+        client.seed(tagHash: spaceHash("u2"),
+                    ciphertext: try ciphertext(spaceEntity("u2")), version: 7)
+        await engine.pullOnce()                       // gated-off pull; the marker walks past u2
+        XCTAssertTrue(store.table.markerMovedWhileGateShut)
+        let markerBeforeReopen = marker.file.marker
+        XCTAssertNotEqual(markerBeforeReopen, markerAfterFirstDrain)
+
+        marker.failSaveOnCallNumber = marker.saves.count + 1
+        await engine.setSpaceSyncEnabled(true)        // the nil-marker write fails
+        let gateOutcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(gateOutcome, .cursorSaveFailed)
+        XCTAssertEqual(marker.file.marker, markerBeforeReopen, "a failed write must leave the marker as it was")
+        XCTAssertTrue(store.table.markerMovedWhileGateShut,
+                      "the latch is the only record of the gap; it may be consumed only after the nil marker is on disk")
+        XCTAssertFalse(store.table.drainInProgress)
+        XCTAssertTrue(store.table.hasDrainedFullReplay,
+                      "the drain flags must not be touched while the old marker still stands")
+        XCTAssertTrue(store.table.spaceSectionEnabled)
+
+        // The next round retries from the persisted latch: nil marker first, then the flags.
+        let getUpdatesBefore = client.getUpdatesCalls.count
+        await engine.pullOnce()
+        XCTAssertNil(client.getUpdatesCalls[getUpdatesBefore].marker,
+                     "the retry must replay the data type from the beginning")
+        XCTAssertFalse(store.table.markerMovedWhileGateShut)
+        XCTAssertFalse(store.table.drainInProgress)
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertTrue(access.spaces.contains { access.syncUuid(forSpaceId: $0.spaceId) == "u2" },
+                      "the Space the shut episode walked past must land on the retry")
+    }
+
+    /// Review A3: the account's settings entity is sealed with a key this device does not hold
+    /// (a re-mint it has not caught up with). That refusal is settings-only. The first drain must
+    /// still finalize, the marker must persist, and the Spaces this device holds must publish —
+    /// otherwise a fresh device could never publish a single Space for as long as the entity
+    /// stayed unreadable, and it re-downloaded the whole type every round trying.
+    func testAnUnreadableSettingsEntityDoesNotHoldTheDrainOrSpacePublication() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [PhiLocalSpace(spaceId: "s-1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1), themeId: nil,
+                                       opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        let marker = MemoryMarkerStore()
+        let client = FakePhiSyncClient()
+        var wrapper = Phi_PhiEntity()
+        wrapper.space = spaceEntity("ignored")
+        client.seed(tagHash: PhiSyncEntity.settingsClientTagHash,
+                    ciphertext: try PhiEntityCodec.encrypt(wrapper, key: SymmetricKey(size: .bits256)),
+                    version: 5)
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 6)
+        let engine = makeEngine(access: access, store: store, client: client, markerStore: marker)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .unusableSettings)
+        XCTAssertTrue(store.table.hasDrainedFullReplay, "the drain saw every page; settings alone were refused")
+        XCTAssertFalse(store.table.drainInProgress)
+        XCTAssertNotNil(marker.file.marker, "the shared marker persists; only the settings entity is held")
+        XCTAssertTrue(access.spaces.contains { access.syncUuid(forSpaceId: $0.spaceId) == "u1" },
+                      "the Space on the same drain lands")
+        XCTAssertFalse(spaceCommits(client).isEmpty,
+                       "this device's own Space publishes in the same round")
+        XCTAssertFalse(client.commits.contains { $0.clientTagHash == PhiSyncEntity.settingsClientTagHash },
+                       "settings publication stays refused")
+
+        // A second round under the same key does not re-download the type.
+        let calls = client.getUpdatesCalls.count
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls[calls].marker, marker.file.marker)
     }
 
     func testOpeningTheGateWithNoMarkerMovementDoesNotReplay() async throws {

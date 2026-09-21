@@ -29,6 +29,12 @@ struct OwnerResolver {
     var globalUuid: (String) -> String?
     /// Profile UUID to local profileId.
     var localProfileId: (String) -> String?
+    /// Local spaceId to the local profileId the Space is bound to (review A4/A5). A row landed
+    /// into a Space belongs to that Space's Profile — never to whichever Profile a sibling row
+    /// happens to carry, and never to the default Profile by fallback: a bookmark created under
+    /// the wrong Profile has no root to land in, and a pin created under it is invisible to the
+    /// Space's windows.
+    var localProfileIdForSpace: (String) -> String? = { _ in nil }
 }
 
 /// Protocol tuple plus payload. plan needs server-assigned entityId/version

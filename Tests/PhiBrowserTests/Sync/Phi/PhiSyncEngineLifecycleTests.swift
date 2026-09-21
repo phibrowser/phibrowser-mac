@@ -89,6 +89,26 @@ final class PhiSyncEngineLifecycleTests: XCTestCase {
                        "auth0|bob")
     }
 
+    /// Review A7: the account directory's `marker.json` is dropped on an account switch too.
+    /// The marker was advanced alongside the entity cursor that was just wiped; resuming an
+    /// account from an advanced marker with no entity id and no baseline makes the next push a
+    /// create that overwrites that account's settings on the server. Same account: kept.
+    func testAccountSwitchDeletesTheAccountsMarkerFileButTheSameAccountKeepsIt() {
+        let markerStore = MemoryMarkerStore(file: PhiSyncMarkerFile(marker: Data([0x09]), storeBirthday: "b"))
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(
+            accountId: "auth0|alice", defaults: defaults, markerStore: markerStore)
+        markerStore.file = PhiSyncMarkerFile(marker: Data([0x09]), storeBirthday: "b")
+
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(
+            accountId: "auth0|alice", defaults: defaults, markerStore: markerStore)
+        XCTAssertEqual(markerStore.file.marker, Data([0x09]), "the same account resumes from its marker")
+
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(
+            accountId: "auth0|bob", defaults: defaults, markerStore: markerStore)
+        XCTAssertTrue(markerStore.deleted)
+        XCTAssertNil(markerStore.file.marker, "a switched-to account replays from the beginning")
+    }
+
     /// The ownership record must not be one of the engine's own state keys: the engine wipes
     /// those on NOT_MY_BIRTHDAY, and forgetting the owner there would make the very next
     /// mount look like an account switch.

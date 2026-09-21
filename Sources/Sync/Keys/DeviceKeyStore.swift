@@ -83,8 +83,11 @@ final class DeviceKeyStore {
     /// it either replaces the value or leaves the old one in place.
     func rotateForCurrentAccount() throws {
         let raw = PhiKeyCrypto.generateDeviceKeyPair().rawRepresentation
+        // The update also (re)stamps the this-device-only class (review A10), migrating an
+        // item written before it was required.
         let status = SecItemUpdate(baseQuery as CFDictionary,
-                                   [kSecValueData as String: raw] as CFDictionary)
+                                   [kSecValueData as String: raw,
+                                    kSecAttrAccessible as String: Self.accessibility] as CFDictionary)
         switch status {
         case errSecSuccess:
             return
@@ -128,12 +131,20 @@ final class DeviceKeyStore {
         return try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data)
     }
 
+    /// This-device-only (review A10): the private key IS the device's identity, and a
+    /// migrated or restored Mac carrying it would share that identity — "Remove this device"
+    /// on one then revokes the other, which drops to `.needsJoin` and is refused with 409
+    /// `device_revoked`. `kSecAttrSynchronizable: false` only keeps it out of iCloud Keychain;
+    /// this is the class that keeps it out of backups, as the other identity-bearing items
+    /// in this app already use.
+    static let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
     /// Writes only ever land on `baseQuery` -- the legacy item is a read-only
     /// migration source.
     private func store(_ raw: Data) throws {
         var attrs = baseQuery
         attrs[kSecValueData as String] = raw
-        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        attrs[kSecAttrAccessible as String] = Self.accessibility
         let status = SecItemAdd(attrs as CFDictionary, nil)
         guard status == errSecSuccess else { throw DeviceKeyStoreError.keychainFailure(status) }
     }

@@ -1507,7 +1507,8 @@ extension OwnerResolver {
     /// Profile/App pins use the other members. Rejecting them here would stop whole pin kinds from publishing.
     static func fixture(spaceUuids: [String: String] = ["space-a": "su-1", "space-b": "su-2"],
                         profileUuids: [String: String] = ["Default": "pu-1"],
-                        ineligible: Set<String> = []) -> OwnerResolver {
+                        ineligible: Set<String> = [],
+                        spaceProfiles: [String: String] = [:]) -> OwnerResolver {
         var spacesByUuid: [String: String] = [:]
         for (localId, uuid) in spaceUuids { spacesByUuid[uuid] = localId }
         var profilesByUuid: [String: String] = [:]
@@ -1516,6 +1517,7 @@ extension OwnerResolver {
                              localSpaceId: { spacesByUuid[$0] },
                              isEligibleSpace: { !ineligible.contains($0) },
                              globalUuid: { profileUuids[$0] },
-                             localProfileId: { profilesByUuid[$0] })
+                             localProfileId: { profilesByUuid[$0] },
+                             localProfileIdForSpace: { spaceProfiles[$0] })
     }
 }

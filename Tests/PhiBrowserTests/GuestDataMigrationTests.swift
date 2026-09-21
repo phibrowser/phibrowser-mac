@@ -61,6 +61,52 @@ final class GuestDataMigrationTests: XCTestCase {
         try await target.store.closeForAccountDirectoryRemoval()
     }
 
+    /// Review A12: deleting a Space soft-deletes its URL rules (`deletedDate`) so the sync engine
+    /// can publish tombstones, but a Guest store has no engine to ever purge them. Migration
+    /// used to read those rows: the Guest snapshot referenced a Space that no longer existed
+    /// (`targetStateConflict`, the whole migration failed), a soft-deleted account rule with
+    /// the same signature made the planner skip a live Guest rule, and deleted Guest rules
+    /// were re-imported as live. Soft-deleted rules are invisible to migration on both sides.
+    func testSoftDeletedRulesAreInvisibleToGuestMigration() async throws {
+        let source = try makeStore(userID: "guest-source-soft-deleted")
+        let target = try makeStore(userID: "target-user-soft-deleted")
+        try seedRichGuestStore(source)
+        try seedExistingTargetStore(target)
+        // The Guest deleted the Work Space: its rule is soft-deleted, its Space row is gone.
+        try await source.deleteSpaceCascadeThrowing(spaceId: "space-work", origin: .userIntent)
+        // The account deleted the rule that shares a signature with the Guest's default-Space rule.
+        try await target.performBackgroundWriteAndWaitThrowing { context in
+            for rule in try context.fetch(FetchDescriptor<SpaceURLRule>()) where rule.id == "target-rule" {
+                rule.deletedDate = Date()
+            }
+        }
+
+        let snapshot = try await source.makeGuestDataMigrationSnapshot(
+            sourceUserID: source.account.userID,
+            themes: .empty
+        )
+        XCTAssertFalse(snapshot.urlRules.contains { $0.id == "guest-work-rule" },
+                       "a rule the Guest deleted with its Space is not migrated")
+
+        let operationID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let mappings = try await target.planGuestDataImport(snapshot, operationID: operationID)
+        XCTAssertTrue(mappings.skippedURLRules.isEmpty,
+                      "a soft-deleted account rule must not shadow the live Guest rule with the same signature")
+
+        try await target.importGuestData(
+            snapshot,
+            operationID: operationID,
+            targetUserID: target.account.userID,
+            mappings: mappings
+        )
+        drainMainQueue()
+        let live = target.getAllURLRules()
+        XCTAssertTrue(live.contains { $0.host == "existing.example" && $0.pathPrefix == "/same" },
+                      "the live Guest rule was imported")
+        XCTAssertFalse(live.contains { $0.host == "work.example" },
+                       "the rule the Guest deleted did not come back to life")
+    }
+
     func testPendingGuestAccessRequiresRecoveryBeforeSourceStaging() {
         let targetUserID = "journal-target"
 

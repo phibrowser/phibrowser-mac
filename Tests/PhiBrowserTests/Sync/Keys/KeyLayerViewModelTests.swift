@@ -4,6 +4,30 @@ import CryptoKit
 
 @MainActor
 final class KeyLayerViewModelTests: XCTestCase {
+    /// Review A9: only the recovery-code screen pins the window open. Every other phase can
+    /// be closed, and the `.done` phase in particular is what `confirmSaved()` moves to.
+    func testOnlyTheRecoveryCodeScreenRequiresAcknowledgementBeforeClosing() {
+        XCTAssertTrue(KeyLayerPhase.showingRecoveryCode("ABCDE-FGHIJ").requiresAcknowledgement)
+        for phase in [KeyLayerPhase.idle, .enteringRecoveryCode, .chooseJoinMethod, .joinDenied,
+                      .joinExpired, .working, .done, .error("x"),
+                      .waitingForApproval(code: "1234", deadline: Date()),
+                      .pairingProfiles(locals: [], remotes: [])] {
+            XCTAssertFalse(phase.requiresAcknowledgement, "\(phase)")
+        }
+    }
+
+    /// Review A9: the window may not close while the code is on screen, and confirming is
+    /// what releases it. The window-delegate half is AppKit; this pins the state it reads.
+    func testConfirmingTheRecoveryCodeReleasesTheWindow() async {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let vm = KeyLayerViewModel(manager: AccountKeyManager(
+            api: api, deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider()))
+        await vm.startBootstrap()
+        XCTAssertTrue(vm.phase.requiresAcknowledgement)
+        await vm.confirmSaved()
+        XCTAssertFalse(vm.phase.requiresAcknowledgement)
+    }
+
     func testBootstrapMovesToShowingCodeThenDone() async {
         let api = AccountKeyManagerTests.FakeAPI()
         let deviceKeyProvider = AccountKeyManagerTests.FakeDeviceKeyProvider()

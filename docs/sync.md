@@ -297,7 +297,8 @@ The marker boundary and the URL rule kind add five test files:
   automatic merge passes (claim, collapse, yield) end to end through the
   engine.
 - `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` — the store-level
-  throwing primitives, the batch entry, the V11 migration cases and the
+  throwing primitives, the batch entry, the V11-to-V12 migration cases (V12 is
+  the schema that adds the six sync columns to `SpaceURLRule`) and the
   routing-table refresh.
 - `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift` — the
   `AccountUserDefaults` write-face rollback.

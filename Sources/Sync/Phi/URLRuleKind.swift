@@ -442,7 +442,7 @@ extension URLRuleKind {
     /// Failure makes the row inert: exclude it from groups, M1/M2/M3, and snapshots. Never
     /// substitute a fallback owner such as nil, empty string, or local id: different targets could
     /// collapse into one group, soft-deleting an unpublished row that cannot even emit a tombstone.
-    /// Inject normalization rather than reaching into storage. Normalize the row here too: V11
+    /// Inject normalization rather than reaching into storage. Normalize the row here too: V12
     /// backfilled rows may be noncanonical (M-8's `GitHub.com.`), while idempotence preserves
     /// already normalized values.
     static func signature(of row: PhiLocalURLRule, resolve: OwnerResolver,
@@ -483,7 +483,7 @@ extension URLRuleKind {
     /// §8.4.1 rule 3: at rest means all ten predicates, evaluated in spec order. M2 grouping,
     /// winner selection, and §8.4.4 partner eligibility share this implementation.
     /// Only rows with `syncId` can qualify: it addresses predicate 1 and orders winners. Exclude
-    /// missed V11 backfills without force-unwrapping. Predicates 1/2/3/4/5/9 read cursors; 6/7 read
+    /// missed V12 backfills without force-unwrapping. Predicates 1/2/3/4/5/9 read cursors; 6/7 read
     /// rows; 8 uses the resolver; 10 uses this page's arrivals. Compute once per page during
     /// pre-pass, using that page's inclusive read and current table. Later writes on the same page
     /// do not alter that captured decision (R-62).
@@ -976,7 +976,7 @@ extension URLRuleKind {
                              accountStamps: [String: Date]) -> URLRuleConvergence {
         let normalize = mergeNormalize
         var out = URLRuleConvergence()
-        /// Comparable content group: normalize all three member values; legacy V11-backfilled rows
+        /// Comparable content group: normalize all three member values; legacy V12-backfilled rows
         /// were not normalized.
         func content(_ row: PhiLocalURLRule) -> (String, String?, Bool) {
             let normalized = normalize(row.host, row.pathPrefix)

@@ -734,7 +734,8 @@ final class SyncableSpacesTests: XCTestCase {
         let order = SyncableSpaces.plannedOrder(
             localOrder: [local("hidden", order: 0), local("s2", order: 1),
                          local("s1", order: 2), local("agent", order: 3)],
-            syncedRanks: ["s1": "A", "s2": "B"])
+            syncedRanks: ["s1": (rank: "A", uuid: "sync-1"),
+                          "s2": (rank: "B", uuid: "sync-2")])
         XCTAssertEqual(order, ["hidden", "s1", "s2", "agent"])
     }
 
@@ -748,7 +749,8 @@ final class SyncableSpacesTests: XCTestCase {
         let order = SyncableSpaces.plannedOrder(
             localOrder: [local("s2", order: 0), local("agent", order: 1),
                          local("s1", order: 2), local("unmapped", order: 3)],
-            syncedRanks: ["s1": "A", "s2": "B"])
+            syncedRanks: ["s1": (rank: "A", uuid: "sync-1"),
+                          "s2": (rank: "B", uuid: "sync-2")])
         XCTAssertEqual(order, ["s1", "agent", "s2", "unmapped"])
         XCTAssertEqual(order.count, 4, "every local Space must be renumbered in one write")
     }
@@ -764,13 +766,39 @@ final class SyncableSpacesTests: XCTestCase {
                           createdDate: Date(timeIntervalSince1970: 1),
                           themeId: nil, opacityLight: nil, opacityDark: nil)
         }
-        let byLocalId = ["LOCAL-1": "V", "LOCAL-2": "F", "LOCAL-3": "k"]
+        let byLocalId = ["LOCAL-1": (rank: "V", uuid: "sync-1"),
+                         "LOCAL-2": (rank: "F", uuid: "sync-2"),
+                         "LOCAL-3": (rank: "k", uuid: "sync-3")]
         XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: byLocalId),
                        ["LOCAL-2", "LOCAL-1", "LOCAL-3"])
-        let bySyncUuid = ["sync-1": "V", "sync-2": "F", "sync-3": "k"]
+        let bySyncUuid = ["sync-1": (rank: "V", uuid: "sync-1"),
+                          "sync-2": (rank: "F", uuid: "sync-2"),
+                          "sync-3": (rank: "k", uuid: "sync-3")]
         XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: bySyncUuid),
                        ["LOCAL-1", "LOCAL-2", "LOCAL-3"],
                        "Partial translation silently does nothing; keep translation in the engine")
+    }
+
+    /// Two devices that inserted at the same slot hold the SAME fractional rank for two
+    /// different Spaces. The tie must break on the account sync uuid, the way
+    /// `longestIncreasingKeptSet` and the wire contract do: local ids differ per device, so a
+    /// local-id tie-break leaves the two strips in different orders for good.
+    func testPlannedOrderBreaksTiedRanksOnTheSyncUuidSoBothDevicesAgree() {
+        // Device A calls them A-1/A-2 and lists them in one order; device B calls the same two
+        // account Spaces B-9/B-8 and lists them in the other.
+        let deviceA = [local("A-1", order: 0), local("A-2", order: 1)]
+        let deviceB = [local("B-9", order: 0), local("B-8", order: 1)]
+        let ranksA = ["A-1": (rank: "V", uuid: "sync-beta"),
+                      "A-2": (rank: "V", uuid: "sync-alpha")]
+        let ranksB = ["B-9": (rank: "V", uuid: "sync-alpha"),
+                      "B-8": (rank: "V", uuid: "sync-beta")]
+
+        let orderA = SyncableSpaces.plannedOrder(localOrder: deviceA, syncedRanks: ranksA)
+        let orderB = SyncableSpaces.plannedOrder(localOrder: deviceB, syncedRanks: ranksB)
+
+        XCTAssertEqual(orderA.map { ranksA[$0]?.uuid }, ["sync-alpha", "sync-beta"])
+        XCTAssertEqual(orderB.map { ranksB[$0]?.uuid }, ["sync-alpha", "sync-beta"],
+                       "tied ranks must resolve to the same account order on every device")
     }
 
     // MARK: - One thousandths-unit encoder (§5.7)

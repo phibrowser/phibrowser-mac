@@ -447,6 +447,33 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-1")
     }
 
+    /// The stored version is the base the next commit sends, so a page that re-serves the
+    /// settings entity at an older version must not lower it — that base would conflict for
+    /// nothing. The owned kinds take `max(version)` for the same reason (`harvestTriple`).
+    func testAReservedOlderSettingsPageDoesNotLowerTheStoredVersion() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        let bytes = try ciphertext(settingEntity(settingKey, true, at: 999), key: key)
+        client.seed(ciphertext: bytes, version: 9)
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber,
+                       NSNumber(value: Int64(9)))
+
+        // The same entity comes back on a later page, at a version the device is already past.
+        client.scriptedPages = [
+            .init(entities: [PhiRemoteEntity(entityId: "srv-seed",
+                                             clientTagHash: PhiSyncEntity.settingsClientTagHash,
+                                             version: 4, ciphertext: bytes, deleted: false)],
+                  newMarker: Data("10".utf8), changesRemaining: false),
+        ]
+        await makeEngine(client, key: key, now: 2_000).pullOnce()
+
+        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber,
+                       NSNumber(value: Int64(9)),
+                       "a re-served page must not rewind the base version of the next commit")
+        XCTAssertTrue(client.commits.isEmpty, "re-serving what was already applied publishes nothing")
+    }
+
     /// R5 echo suppression: applying a remote value must not look like a local edit, so the
     /// pull's trailing push finds nothing to publish and never calls commit.
     func testRemoteApplyProducesNoPush() async throws {

@@ -1910,7 +1910,12 @@ actor PhiSyncEngine {
                         continue
                     }
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
-                    storedVersion = entity.version
+                    // Take max(version), like `harvestTriple`: pagination and replayed pages can
+                    // serve the same entity repeatedly, and a re-served older version would lower
+                    // the base the next commit sends and buy a CONFLICT round for nothing. The
+                    // resets that legitimately lower it — a new store birthday, an account switch,
+                    // the tombstone heal — go through `clearEntityCursor()` instead.
+                    storedVersion = max(storedVersion ?? 0, entity.version)
                     // Update the round-level settings view; all four branches count as this page
                     // carrying a settings entity (R-M3-4a-38).
                     sawSettingsEntity = true
@@ -2519,8 +2524,9 @@ actor PhiSyncEngine {
         if landedAny {
             // Translate syncUuid cursor keys to local IDs here, before plannedOrder reads
             // syncedRanks[spaceId]. Partial translation would silently miss every lookup and make
-            // account reordering a no-op (D6).
-            var ranks: [String: String] = [:]
+            // account reordering a no-op (D6). The uuid rides along as the value's second half:
+            // it is what equal ranks tie on, and it is only available in this namespace.
+            var ranks: [String: (rank: String, uuid: String)] = [:]
             for (uuid, cursor) in table.cursors {
                 guard cursor.hidden == false, cursor.deletedAtMs == nil,
                       let bytes = cursor.reconciled,
@@ -2529,7 +2535,7 @@ actor PhiSyncEngine {
                 // A locally dragged sibling may have no incoming entity in this pull. Its
                 // current rank must participate without advancing its unsent baseline.
                 let projected = localProjections[uuid].map { SyncableSpaces.merge(local: $0, remote: entity) }
-                ranks[local] = (projected ?? entity).rank.stringValue
+                ranks[local] = (rank: (projected ?? entity).rank.stringValue, uuid: uuid)
             }
             // `allSpacesForOrdering()`, NOT `currentSpaces()`: the result goes
             // straight to `LocalStore.reorderSpaces`, which renumbers exactly the

@@ -603,16 +603,25 @@ extension SyncableSpaces {
     /// syncedRanks is keyed by local spaceId (D6). Partial identity translation
     /// silently makes every lookup nil and the entire account reorder a no-op.
     /// The engine translates when assembling ranks in applySpaces (§3.4).
+    ///
+    /// Each value carries the Space's account sync uuid alongside its rank
+    /// because equal ranks tie on the uuid, never on the local spaceId: two
+    /// devices inserting at the same slot compute the identical fractional rank,
+    /// and local ids differ per device, so a local-id tie-break would leave the
+    /// two strips in different orders forever. Same total order as
+    /// `longestIncreasingKeptSet` and the wire contract (phi_entity.proto's
+    /// `rank`: "Ties break on space_uuid").
     static func plannedOrder(localOrder: [PhiLocalSpace],
-                             syncedRanks: [String: String]) -> [String] {
+                             syncedRanks: [String: (rank: String, uuid: String)]) -> [String] {
         let syncedSlots = localOrder.enumerated()
             .filter { syncedRanks[$0.element.spaceId] != nil }
             .map(\.offset)
         let sortedSynced = syncedSlots
             .map { localOrder[$0].spaceId }
             .sorted {
-                let l = syncedRanks[$0] ?? "", r = syncedRanks[$1] ?? ""
-                return l == r ? $0 < $1 : l < r
+                let l = syncedRanks[$0] ?? (rank: "", uuid: ""),
+                    r = syncedRanks[$1] ?? (rank: "", uuid: "")
+                return l.rank == r.rank ? l.uuid < r.uuid : l.rank < r.rank
             }
         var out = localOrder.map(\.spaceId)
         for (slot, spaceId) in zip(syncedSlots, sortedSynced) { out[slot] = spaceId }

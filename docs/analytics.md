@@ -147,7 +147,7 @@ are out of scope.
 | `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `highlight_link_copied` | A highlight link is copied while `shortHighlightLinksEnabled` is enabled at callback time; includes only `is_short_link` (bool), covering short-link success and long-link fallback | `ChromiumBridge/PhiChromiumCoordinator.swift` |
-| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
+| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), Peek/Kiosk preferences, and the content blocking switches (`block_ads_enabled`, `block_cookie_banners_enabled`, `block_trackers_enabled`; true when any profile has the switch on) | `Application/AppControlle+LaunchInfo.swift` |
 | *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
 
 For `highlight_link_copied`, the fraction of events with `is_short_link = true`
@@ -162,6 +162,13 @@ reports only source and aggregate success, so per-type counts are unsupported.
 Bookmark persistence success uses the completion reported by the existing
 LocalStore async API; lower-level model save failures remain local logs rather
 than analytics failures.
+
+The content blocking switches live in Chromium's profile prefs, which are not
+readable when the snapshot is captured. `ContentBlockingSettings` mirrors them
+into UserDefaults (`metrics.contentBlocking.switchesByProfile`) whenever it
+learns them, and the snapshot reads that mirror
+(`States/ContentBlockingAnalytics.swift`). A profile whose settings were never
+opened on this version reports off. No list, URL or site is reported.
 
 `language_changed` is emitted only by Phi's picker. A language change made in
 macOS System Settings is not observable as a user action inside the running

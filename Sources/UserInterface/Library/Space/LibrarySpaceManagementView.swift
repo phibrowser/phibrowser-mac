@@ -25,6 +25,8 @@ struct LibrarySpaceManagementView: NSViewControllerRepresentable {
 
 struct LibrarySpaceItemDrag: Codable {
     static let type = NSPasteboard.PasteboardType("com.phibrowser.library.space-items")
+    static let didBegin = Notification.Name("LibrarySpaceItemDragDidBegin")
+    static let didEnd = Notification.Name("LibrarySpaceItemDragDidEnd")
     let storeID: UUID
     let profileID: String
     let spaceID: String
@@ -50,7 +52,11 @@ struct LibrarySpaceItemDrag: Codable {
     }
 
     static func read(_ info: NSDraggingInfo) -> Self? {
-        guard let data = info.draggingPasteboard.data(forType: type) else { return nil }
+        read(info.draggingPasteboard)
+    }
+
+    static func read(_ pasteboard: NSPasteboard) -> Self? {
+        guard let data = pasteboard.data(forType: type) else { return nil }
         return try? JSONDecoder().decode(Self.self, from: data)
     }
 }
@@ -78,6 +84,8 @@ final class LibrarySpaceManagementController: NSViewController,
     private let pinLayout = PinnedTabLayout()
     private let outline = LibraryBookmarkOutline()
     private var pinHeight: NSLayoutConstraint!
+    private var bookmarkTopSpacing: NSLayoutConstraint!
+    private var isDraggingItems = false
     private var subscriptions = Set<AnyCancellable>()
     private var displayedPins: [LibrarySpaceContents.Item] = []
     private var snapshot: DiffableOutlineSnapshot<AnyHashable>?
@@ -168,11 +176,12 @@ final class LibrarySpaceManagementController: NSViewController,
         add.setAccessibilityLabel(add.toolTip)
         [pinScroll, scroll, add].forEach { $0.translatesAutoresizingMaskIntoConstraints = false; view.addSubview($0) }
         pinHeight = pinScroll.heightAnchor.constraint(equalToConstant: 48)
+        bookmarkTopSpacing = scroll.topAnchor.constraint(equalTo: pinScroll.bottomAnchor, constant: 8)
         NSLayoutConstraint.activate([
             pinScroll.topAnchor.constraint(equalTo: view.topAnchor),
             pinScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             pinScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor), pinHeight,
-            scroll.topAnchor.constraint(equalTo: pinScroll.bottomAnchor, constant: 8),
+            bookmarkTopSpacing,
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: add.topAnchor, constant: -8),
@@ -187,6 +196,22 @@ final class LibrarySpaceManagementController: NSViewController,
             updatePinHeight()
         }.store(in: &subscriptions)
         contents.bookmarkManager.$rootFolder.sink { [weak self] root in self?.reloadBookmarks(root.children) }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: LibrarySpaceItemDrag.didBegin)
+            .sink { [weak self] notification in
+                guard let self, let pasteboard = notification.object as? NSPasteboard,
+                      let drag = LibrarySpaceItemDrag.read(pasteboard),
+                      drag.storeID == contents.storeIdentifier,
+                      drag.isPin || drag.ids.allSatisfy({ self.contents.store?.getTab(by: $0)?.dataType == .bookmark }) else { return }
+                isDraggingItems = true
+                updatePinHeight()
+            }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: LibrarySpaceItemDrag.didEnd)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                isDraggingItems = false
+                pinDropIndicator.isHidden = true
+                updatePinHeight()
+            }.store(in: &subscriptions)
     }
 
     override func viewDidAppear() {
@@ -210,14 +235,17 @@ final class LibrarySpaceManagementController: NSViewController,
         pinLayout.prepare()
         let height = max(45, pinLayout.contentHeight)
         pins.setFrameSize(NSSize(width: max(view.bounds.width, 1), height: height))
-        pinHeight.constant = min(height, max(45, view.bounds.height * 0.4))
+        let collapsed = displayedPins.isEmpty && !isDraggingItems
+        pinScroll.isHidden = collapsed
+        pinHeight.constant = collapsed ? 0 : min(height, max(45, view.bounds.height * 0.4))
+        bookmarkTopSpacing.constant = collapsed ? 0 : 8
     }
 
     private func reloadBookmarks(_ items: [Bookmark]) {
         let selected = Set(outline.selectedRowIndexes.compactMap { (outline.item(atRow: $0) as? Bookmark)?.guid })
         let next = SidebarDiffableSnapshotBuilder(rootItems: items).makeSnapshot()
         isReloading = true
-        outline.reloadWith(next, animated: false, updateDataSource: { [weak self] in
+        outline.reloadWith(next, animated: true, updateDataSource: { [weak self] in
             self?.snapshot = next
         }, completion: { [weak self] in
             guard let self else { return }
@@ -323,7 +351,7 @@ final class LibrarySpaceManagementController: NSViewController,
         return displayedPins.count
     }
     private func updatePinDrop(_ info: NSDraggingInfo) -> NSDragOperation {
-        let accepted = validDrag(info, isPin: true) != nil
+        let accepted = validPinDrop(info) != nil
         let index = pinDropIndex(info)
         recordDropValidation("pin index=\(index) accepted=\(accepted)")
         guard accepted else { pinDropIndicator.isHidden = true; return [] }
@@ -347,18 +375,37 @@ final class LibrarySpaceManagementController: NSViewController,
         log("pin.drag.begin", ids: [id])
         return LibrarySpaceItemDrag(contents: contents, ids: [id], isPin: true).writer()
     }
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        willBeginAt screenPoint: NSPoint, forItemsAt indexPaths: Set<IndexPath>) {
+        NotificationCenter.default.post(name: LibrarySpaceItemDrag.didBegin, object: session.draggingPasteboard)
+    }
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
+        NotificationCenter.default.post(name: LibrarySpaceItemDrag.didEnd, object: nil)
+    }
+    func outlineView(_ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
+                     willBeginAt screenPoint: NSPoint, forItems draggedItems: [Any]) {
+        NotificationCenter.default.post(name: LibrarySpaceItemDrag.didBegin, object: session.draggingPasteboard)
+    }
+    func outlineView(_ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
+                     endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        NotificationCenter.default.post(name: LibrarySpaceItemDrag.didEnd, object: nil)
+    }
     func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: NSDraggingInfo,
                         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
                         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
-        guard validDrag(draggingInfo, isPin: true) != nil else { return [] }
+        guard validPinDrop(draggingInfo) != nil else { return [] }
         proposedDropIndexPath.pointee = NSIndexPath(forItem: min(max(proposedDropIndexPath.pointee.item, 0), displayedPins.count), inSection: PinnedTabLayout.Section.tabs.rawValue)
         proposedDropOperation.pointee = .before
         return .move
     }
     func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: NSDraggingInfo,
                         indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
-        guard let drag = validDrag(draggingInfo, isPin: true), let id = drag.ids.first, let store = validStore() else { return false }
+        guard let drag = validPinDrop(draggingInfo), let id = drag.ids.first, let store = validStore() else { return false }
         let index = displayedPins.prefix(indexPath.item).reduce(0) { $0 + ($1.secondaryID == nil ? 1 : 2) }
+        if !drag.isPin {
+            return acceptBookmarksAsPins(draggingInfo, drag: drag, index: index)
+        }
         let mirrored = samePinnedOwner(profileID: drag.profileID, spaceID: drag.spaceID)
         AppLogInfo("[LibrarySpaces] pin.drop sameOwner=\(mirrored) target=\(contents.scope.spaceId) source=\(drag.spaceID)")
         Task {
@@ -413,13 +460,17 @@ final class LibrarySpaceManagementController: NSViewController,
         if destination == nil, childIndex == NSOutlineViewDropOnItemIndex {
             childIndex = roots.count
         }
-        let accepted = bookmarkDropPlan(info, item: destination, index: childIndex) != nil
+        let accepted = pinBookmarkDropIsValid(info, item: destination)
+            || bookmarkDropPlan(info, item: destination, index: childIndex) != nil
         recordDropValidation("bookmark parent=\((destination as? Bookmark)?.guid ?? "root") index=\(childIndex) accepted=\(accepted)")
         guard accepted else { return [] }
         outlineView.setDropItem(destination, dropChildIndex: childIndex)
         return .move
     }
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        if pinBookmarkDropIsValid(info, item: item) {
+            return acceptPinAsBookmark(info, parent: item as? Bookmark, index: max(index, 0))
+        }
         guard let drag = validDrag(info, isPin: false), validStore() != nil,
               let plan = bookmarkDropPlan(info, item: item, index: index) else { return false }
         if drag.spaceID == contents.scope.spaceId && drag.profileID == contents.scope.profileId {
@@ -437,11 +488,96 @@ final class LibrarySpaceManagementController: NSViewController,
         if let parent = item as? Bookmark { expandedIDs.insert(parent.guid); outline.expandItem(parent) }
         return true
     }
-    private func validDrag(_ info: NSDraggingInfo, isPin: Bool) -> LibrarySpaceItemDrag? {
+    private func validDrag(_ info: NSDraggingInfo, isPin: Bool? = nil) -> LibrarySpaceItemDrag? {
         guard validStore() != nil, let drag = LibrarySpaceItemDrag.read(info),
-              drag.storeID == contents.storeIdentifier, drag.isPin == isPin, !drag.ids.isEmpty,
-              !isPin || drag.pinnedScope == contents.store?.pinnedTabScope().rawValue else { return nil }
+              drag.storeID == contents.storeIdentifier, isPin == nil || drag.isPin == isPin,
+              !drag.ids.isEmpty,
+              !drag.isPin || drag.pinnedScope == contents.store?.pinnedTabScope().rawValue,
+              let source = sourceController(info), source.validStore() != nil,
+              source.contents.scope.profileId == drag.profileID,
+              source.contents.scope.spaceId == drag.spaceID,
+              source.contents.storeIdentifier == drag.storeID else { return nil }
         return drag
+    }
+
+    private func sourceController(_ info: NSDraggingInfo) -> LibrarySpaceManagementController? {
+        if let collection = info.draggingSource as? NSCollectionView {
+            return collection.dataSource as? LibrarySpaceManagementController
+        }
+        return (info.draggingSource as? NSOutlineView)?.dataSource as? LibrarySpaceManagementController
+    }
+
+    private func validPinDrop(_ info: NSDraggingInfo) -> LibrarySpaceItemDrag? {
+        guard let drag = validDrag(info), let source = sourceController(info) else { return nil }
+        if drag.isPin {
+            return drag.ids.count == 1 && source.displayedPins.contains(where: { $0.id == drag.ids[0] }) ? drag : nil
+        }
+        return drag.ids.allSatisfy {
+            source.validBookmark($0) && source.contents.bookmarkManager.bookmark(withGuid: $0)?.isFolder == false
+        } ? drag : nil
+    }
+
+    private func pinBookmarkDropIsValid(_ info: NSDraggingInfo, item: Any?) -> Bool {
+        guard let drag = validPinDrop(info), drag.isPin else { return false }
+        guard let item else { return true }
+        guard let folder = item as? Bookmark, folder.isFolder else { return false }
+        return validBookmarkFolder(folder.guid)
+    }
+
+    private func acceptBookmarksAsPins(_ info: NSDraggingInfo, drag: LibrarySpaceItemDrag, index: Int) -> Bool {
+        guard let store = validStore(), let source = sourceController(info) else { return false }
+        let bookmarks = drag.ids.compactMap { source.contents.bookmarkManager.bookmark(withGuid: $0) }
+        guard bookmarks.count == drag.ids.count else { return false }
+        if samePinnedOwner(profileID: drag.profileID, spaceID: drag.spaceID), let state = source.conversionState {
+            // Use the sidebar path when a runtime exists, retaining live tab and split bindings.
+            source.prepareLiveBookmarksForRemoval(bookmarks, moving: true, excluding: state)
+            var afterGuid = displayedPins.flatMap { [$0.id, $0.secondaryID].compactMap { $0 } }.prefix(index).last
+            for bookmark in bookmarks {
+                guard let guid = state.moveBookmarkOut(bookmark, afterPinnedGuid: afterGuid) else { return false }
+                afterGuid = guid
+            }
+        } else {
+            Task {
+                do {
+                    source.prepareLiveBookmarksForRemoval(bookmarks, moving: true)
+                    try await store.convertBookmarksToPinnedTabs(drag.ids,
+                        sourceProfileId: drag.profileID, sourceSpaceId: drag.spaceID,
+                        targetProfileId: contents.scope.profileId, targetSpaceId: contents.scope.spaceId,
+                        destinationIndex: index)
+                } catch { AppLogError("[LibrarySpaces] bookmark.pin.failed error=\(error)") }
+            }
+        }
+        return true
+    }
+
+    private func acceptPinAsBookmark(_ info: NSDraggingInfo, parent: Bookmark?, index: Int) -> Bool {
+        guard let drag = validDrag(info, isPin: true), let id = drag.ids.first,
+              let store = validStore() else { return false }
+        if samePinnedOwner(profileID: drag.profileID, spaceID: drag.spaceID), let state = conversionState,
+           let pin = state.pinnedTabs.first(where: { $0.guidInLocalDB == id }) {
+            let ids = Set([id, pin.splitPartnerGuid].compactMap { $0 })
+            state.movePinnedTabOut(pinnedGuid: id, toBookmark: parent?.guid, index: index)
+            detachRemovedPins(ids)
+        } else {
+            Task {
+                do {
+                    let removed = try await store.convertPinnedTabToBookmark(id,
+                        sourceProfileId: drag.profileID, sourceSpaceId: drag.spaceID,
+                        targetProfileId: contents.scope.profileId, targetSpaceId: contents.scope.spaceId,
+                        parentGuid: parent?.guid, destinationIndex: index)
+                    detachRemovedPins(removed)
+                } catch { AppLogError("[LibrarySpaces] pin.bookmark.failed error=\(error)") }
+            }
+        }
+        if let parent { expandedIDs.insert(parent.guid); outline.expandItem(parent) }
+        return true
+    }
+
+    private var conversionState: BrowserState? {
+        liveState ?? SpaceSessionControllersManager.shared.getAllWindows().map(\.browserState).first {
+            !$0.isIncognito && $0.localStore.identifier == contents.storeIdentifier
+                && $0.profileId == contents.scope.profileId && $0.spaceId == contents.scope.spaceId
+        }
     }
 
     private func samePinnedOwner(profileID: String, spaceID: String) -> Bool {
@@ -486,10 +622,10 @@ final class LibrarySpaceManagementController: NSViewController,
         }
     }
 
-    private func prepareLiveBookmarksForRemoval(_ bookmarks: [Bookmark], moving: Bool) {
+    private func prepareLiveBookmarksForRemoval(_ bookmarks: [Bookmark], moving: Bool, excluding state: BrowserState? = nil) {
         Self.prepareLiveBookmarksForRemoval(bookmarks, scope: contents.scope,
             storeIdentifier: contents.storeIdentifier,
-            states: SpaceSessionControllersManager.shared.getAllWindows().map(\.browserState),
+            states: SpaceSessionControllersManager.shared.getAllWindows().map(\.browserState).filter { $0 !== state },
             moving: moving)
     }
 
@@ -596,17 +732,17 @@ final class LibrarySpaceManagementController: NSViewController,
             addAction(NSLocalizedString("library.spaces.editItem", value: "Edit…", comment: "Library Space menu - edit item"), to: menu) { [weak self] in self?.editBookmark(bookmark, parent: bookmark.parent, folder: bookmark.isFolder) }
             addMoveActions(to: menu, ids: targets.map(\.guid), isPin: false)
             addAction(NSLocalizedString("library.spaces.deleteItem", value: "Delete", comment: "Library Space menu - delete item"), to: menu) { [weak self] in self?.deleteBookmarks(targets) }
-            menu.addItem(.separator())
+        } else {
+            addCreateActions(to: menu, parent: nil)
         }
-        addCreateActions(to: menu, parent: bookmark?.isFolder == true ? bookmark : bookmark?.parent)
         log("bookmark.menu", ids: bookmark.map { [$0.guid] } ?? [])
         return menu
     }
     private func populatePinMenu(_ menu: NSMenu, item: LibrarySpaceContents.Item) {
         menu.removeAllItems()
         addAction(NSLocalizedString("library.spaces.openItem", value: "Open", comment: "Library Space menu - open item"), to: menu) { [weak self] in self?.open(itemID: item.id, isPin: true) }
-        for tab in [item.pin, item.secondaryPin].compactMap({ $0 }) {
-            addAction(item.secondaryPin == nil ? NSLocalizedString("library.spaces.editItem", value: "Edit…", comment: "Library Space menu - edit item") : tab.title, to: menu) { [weak self] in self?.editPin(tab) }
+        addAction(NSLocalizedString("library.spaces.editItem", value: "Edit…", comment: "Library Space menu - edit item"), to: menu) { [weak self] in
+            self?.editPin(item.pin, secondaryTab: item.secondaryPin)
         }
         addMoveActions(to: menu, ids: [item.id], isPin: true)
         addAction(NSLocalizedString("library.spaces.deleteItem", value: "Delete", comment: "Library Space menu - delete item"), to: menu) { [weak self] in
@@ -721,15 +857,20 @@ final class LibrarySpaceManagementController: NSViewController,
             log("bookmark.edit.save", ids: bookmark.map { [$0.guid] } ?? [])
         }
     }
-    private func editPin(_ tab: Tab?) {
+    private func editPin(_ tab: Tab?, secondaryTab: Tab? = nil) {
         guard validStore() != nil else { return }
         EditPinnedTabPresenter.presentModal(
             mode: tab == nil ? .newPin : .pin,
             title: tab?.title ?? "", urlString: tab?.url ?? "",
+            secondaryUrlString: secondaryTab?.url, secondaryTitleString: secondaryTab?.title,
             from: view.window,
             onValidate: { [weak self] result in
                 guard let self, let store = validStore(),
                       store.normalizedURL(from: result.url) != nil,
+                      secondaryTab == nil || store.normalizedURL(from: result.secondaryUrl) != nil,
+                      secondaryTab == nil || contents.pins.contains(where: {
+                          $0.id == tab?.guidInLocalDB && $0.secondaryID == secondaryTab?.guidInLocalDB
+                      }),
                       tab == nil || store.getAllPinnedTabs(for: contents.scope.profileId, spaceId: contents.scope.spaceId)
                         .contains(where: { $0.guid == tab?.guidInLocalDB }) else {
                     NSSound.beep()
@@ -742,12 +883,19 @@ final class LibrarySpaceManagementController: NSViewController,
                   let url = URL(string: URLProcessor.processUserInput(rawURL)) else { return }
             if let id = tab?.guidInLocalDB {
                 guard store.getAllPinnedTabs(for: contents.scope.profileId, spaceId: contents.scope.spaceId).contains(where: { $0.guid == id }) else { return }
+                if let secondaryTab {
+                    guard let secondaryID = secondaryTab.guidInLocalDB,
+                          contents.pins.contains(where: { $0.id == id && $0.secondaryID == secondaryID }),
+                          let secondaryURL = store.normalizedURL(from: result.secondaryUrl) else { return }
+                    store.updatePinnedTab(resolving: secondaryID, profileId: contents.scope.profileId,
+                                          spaceId: contents.scope.spaceId, url: secondaryURL, title: result.secondaryTitle)
+                }
                 store.updatePinnedTab(resolving: id, profileId: contents.scope.profileId, spaceId: contents.scope.spaceId, url: url, title: result.title)
             } else {
                 store.createPinnedTab(guid: UUID().uuidString, url: url.absoluteString, title: result.title ?? "",
                                       profileId: contents.scope.profileId, spaceId: contents.scope.spaceId)
             }
-            log("pin.edit.save", ids: tab?.guidInLocalDB.map { [$0] } ?? [])
+            log("pin.edit.save", ids: [tab?.guidInLocalDB, secondaryTab?.guidInLocalDB].compactMap { $0 })
         }
     }
     @objc private func toggleClickedFolder() {

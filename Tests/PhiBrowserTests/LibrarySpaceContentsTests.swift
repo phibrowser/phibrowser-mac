@@ -172,6 +172,69 @@ final class LibrarySpaceContentsTests: XCTestCase {
         try await checkLiveBookmarkRemoval(moving: true)
     }
 
+    func testBookmarkPinConversionPreservesBatchOrderAndSplitAcrossSpaces() async throws {
+        try seedSpaces()
+        store.createBookmark(url: "https://single.example", title: "Single", profileId: "p",
+                             parentId: nil, guid: "single", spaceId: "a")
+        store.createBookmark(url: "https://left.example", title: "Left", profileId: "p",
+                             parentId: nil, guid: "split", spaceId: "a",
+                             secondaryUrl: "https://right.example", secondaryTitle: "Right", layout: "horizontal")
+        store.createPinnedTab(guid: "existing", url: "https://existing.example", title: "Existing",
+                              profileId: "q", spaceId: "b")
+        await settleStore()
+
+        try await store.convertBookmarksToPinnedTabs(["single", "split"], sourceProfileId: "p", sourceSpaceId: "a",
+            targetProfileId: "q", targetSpaceId: "b", destinationIndex: 0)
+        await settleStore()
+        let pins = store.getAllPinnedTabs(for: "q", spaceId: "b").sorted { $0.index < $1.index }
+        XCTAssertEqual(pins.map(\.title), ["Single", "Left", "Right", "Existing"])
+        XCTAssertEqual(pins[1].splitPartnerGuid, pins[2].guid)
+        XCTAssertEqual(pins[2].splitPartnerGuid, pins[1].guid)
+        XCTAssertEqual(pins[1].layout, "horizontal")
+        XCTAssertNil(store.getTab(by: "single"))
+        XCTAssertNil(store.getTab(by: "split"))
+
+        store.createDirectory(title: "Folder", profileId: "p", parentId: nil, guid: "folder", spaceId: "a")
+        await settleStore()
+        let removed = try await store.convertPinnedTabToBookmark(pins[2].guid,
+            sourceProfileId: "q", sourceSpaceId: "b", targetProfileId: "p", targetSpaceId: "a",
+            parentGuid: "folder", destinationIndex: 0)
+        await settleStore()
+        XCTAssertEqual(removed, Set([pins[1].guid, pins[2].guid]))
+        let bookmark = try XCTUnwrap(store.fetchBookmarks(parentId: "folder", profileId: "p", spaceId: "a").first)
+        XCTAssertEqual(bookmark.url.absoluteString, "https://left.example")
+        XCTAssertEqual(bookmark.secondaryUrl?.absoluteString, "https://right.example")
+        XCTAssertEqual(bookmark.secondaryTitle, "Right")
+        XCTAssertEqual(bookmark.layout, "horizontal")
+        XCTAssertEqual(store.getAllPinnedTabs(for: "q", spaceId: "b").sorted { $0.index < $1.index }.map(\.title),
+                       ["Single", "Existing"])
+    }
+
+    func testBookmarkPinConversionRejectsFoldersAndStaleScopesWithoutDeletingSources() async throws {
+        try seedSpaces()
+        store.createDirectory(title: "Folder", profileId: "p", parentId: nil, guid: "folder", spaceId: "a")
+        store.createBookmark(url: "https://single.example", title: "Single", profileId: "p",
+                             parentId: nil, guid: "single", spaceId: "a")
+        store.createPinnedTab(guid: "pin", url: "https://pin.example", title: "Pin", profileId: "q", spaceId: "b")
+        await settleStore()
+        for (ids, sourceSpace) in [(["single", "folder"], "a"), (["single"], "b")] {
+            do {
+                try await store.convertBookmarksToPinnedTabs(ids, sourceProfileId: "p", sourceSpaceId: sourceSpace,
+                    targetProfileId: "q", targetSpaceId: "b", destinationIndex: 0)
+                XCTFail("Invalid source should be rejected")
+            } catch is BookmarkPinConversionError { }
+        }
+        do {
+            _ = try await store.convertPinnedTabToBookmark("pin", sourceProfileId: "q", sourceSpaceId: "b",
+                targetProfileId: "q", targetSpaceId: "b", parentGuid: "folder", destinationIndex: 0)
+            XCTFail("A folder in another Space should be rejected")
+        } catch is BookmarkPinConversionError { }
+        await settleStore()
+        XCTAssertNotNil(store.getTab(by: "single"))
+        XCTAssertNotNil(store.getTab(by: "folder"))
+        XCTAssertEqual(store.getAllPinnedTabs(for: "q", spaceId: "b").map(\.guid), ["pin"])
+    }
+
     func testLibraryDeletionClearsBookmarksInEveryMatchingWindow() async throws {
         try await checkLiveBookmarkRemoval(moving: false)
     }

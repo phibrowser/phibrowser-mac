@@ -7,7 +7,101 @@ import Foundation
 import SwiftData
 import Combine
 
+enum BookmarkPinConversionError: Error {
+    case invalidSource
+    case invalidDestination
+}
+
 extension LocalStore {
+    /// Converts closed or cross-Space bookmarks without requiring a window runtime.
+    /// Creation and removal share one transaction so a failed drop preserves its source.
+    func convertBookmarksToPinnedTabs(_ guids: [String], sourceProfileId: String, sourceSpaceId: String,
+                                      targetProfileId: String, targetSpaceId: String,
+                                      destinationIndex: Int) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            guard !guids.isEmpty, Set(guids).count == guids.count else {
+                throw BookmarkPinConversionError.invalidSource
+            }
+            let bookmarks = try guids.map { guid in
+                guard let node = try self.bookmarkNode(with: guid, in: context),
+                      node.dataType == .bookmark, node.profileId == sourceProfileId,
+                      node.spaceId == sourceSpaceId else {
+                    throw BookmarkPinConversionError.invalidSource
+                }
+                return node
+            }
+            var pins = try self.pinnedTabs(profileId: targetProfileId, spaceId: targetSpaceId,
+                                           scope: self.pinnedTabScope(in: context), in: context)
+            let now = Date()
+            var created: [TabDataModel] = []
+            for bookmark in bookmarks {
+                let urls = [bookmark.url, bookmark.secondaryUrl].compactMap { $0 }
+                var unit: [TabDataModel] = []
+                for (pane, url) in urls.enumerated() {
+                    let guid = UUID().uuidString
+                    let pin = TabDataModel(title: pane == 0 ? bookmark.title : (bookmark.secondaryTitle ?? bookmark.title),
+                        guid: guid, index: 0, url: url, favicon: pane == 0 ? bookmark.favicon : nil,
+                        createdDate: now, updatedDate: now)
+                    pin.dataType = .pinnedTab
+                    pin.isCreatedByChromium = false
+                    pin.pinLineageId = guid
+                    try self.applyCurrentPinnedTabOwner(profileId: targetProfileId, spaceId: targetSpaceId,
+                                                         to: pin, in: context)
+                    context.insert(pin)
+                    unit.append(pin)
+                }
+                if unit.count == 2 {
+                    unit[0].splitPartnerGuid = unit[1].guid
+                    unit[1].splitPartnerGuid = unit[0].guid
+                    unit.forEach { $0.layout = bookmark.layout }
+                }
+                created.append(contentsOf: unit)
+            }
+            pins.insert(contentsOf: created, at: min(max(destinationIndex, 0), pins.count))
+            self.normalizeIndexes(for: pins)
+            let removed = Set(guids)
+            for bookmark in bookmarks {
+                if let parent = bookmark.parent {
+                    self.normalizeIndexes(for: try self.children(of: parent, in: context).filter { !removed.contains($0.guid) })
+                }
+                context.delete(bookmark)
+            }
+        }
+    }
+
+    /// Saves a pin unit as one bookmark, preserving both panes and their order.
+    func convertPinnedTabToBookmark(_ guid: String, sourceProfileId: String, sourceSpaceId: String,
+                                    targetProfileId: String, targetSpaceId: String,
+                                    parentGuid: String?, destinationIndex: Int) async throws -> Set<String> {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            let pins = try self.pinnedTabs(profileId: sourceProfileId, spaceId: sourceSpaceId,
+                                           scope: self.pinnedTabScope(in: context), in: context)
+            guard let source = pins.first(where: { $0.guid == guid }) else {
+                throw BookmarkPinConversionError.invalidSource
+            }
+            let unit = try Self.pinnedTransferUnit(containing: source, partnerGuidHint: nil, in: pins)
+            guard let primary = unit.first else { throw BookmarkPinConversionError.invalidSource }
+            if let parentGuid {
+                guard let folder = try self.bookmarkNode(with: parentGuid, in: context),
+                      folder.dataType == .bookmarkFolder, folder.profileId == targetProfileId,
+                      folder.spaceId == targetSpaceId else { throw BookmarkPinConversionError.invalidDestination }
+            }
+            guard let parent = try self.resolveParent(for: parentGuid, profileId: targetProfileId,
+                                                      spaceId: targetSpaceId, in: context) else {
+                throw BookmarkPinConversionError.invalidDestination
+            }
+            let secondary = unit.count == 2 ? unit[1] : nil
+            _ = try self.insertBookmarkNode(title: primary.title, profileId: targetProfileId, url: primary.url,
+                parent: parent, index: destinationIndex, guid: nil, spaceId: targetSpaceId,
+                secondaryUrl: secondary?.url, secondaryTitle: secondary?.title,
+                layout: primary.layout ?? secondary?.layout, favicon: primary.favicon, now: Date(), in: context)
+            let removed = Set(unit.map(\.guid))
+            unit.forEach { context.delete($0) }
+            self.normalizeIndexes(for: pins.filter { !removed.contains($0.guid) })
+            return removed
+        }
+    }
+
     static let defaultRootDirIdentifier = "default-root-dir"
     private static let folderPlaceholderURL: URL = {
         URL(string: "https://bookmark.phi/folder")!

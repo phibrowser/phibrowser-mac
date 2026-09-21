@@ -303,7 +303,7 @@ extension LocalStore {
         }
     }
 
-    private static func pinnedTransferUnit(
+    static func pinnedTransferUnit(
         containing source: TabDataModel,
         partnerGuidHint: String?,
         in sourceTabs: [TabDataModel]

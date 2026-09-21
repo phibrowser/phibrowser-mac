@@ -391,11 +391,22 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
                 replica.store[identity] = edited
                 // A local stamp advances logical time exactly as `hlcNow()` does.
                 for stamp in kind.stamps(edited) { replica.clock.observe(stamp) }
-                // Record only an edit that actually CHANGED the content value,
-                // keyed by the TRUE step and never by the replica's clock -- that
-                // is the whole point of the probe. Recording every edit would log
-                // the stale content a rank-only edit happened to be holding.
-                if kind.content(edited) != kind.content(current) {
+                // Record an edit that restamped the content MERGE UNIT, keyed by the
+                // TRUE step and never by the replica's clock -- that is the whole
+                // point of the probe. The unit, not the string `content` reads out
+                // of it, is what LWW arbitrates: a URL rule carries host,
+                // path_prefix and ask on ONE stamp (§8.2 rule 1), so editing the
+                // path or the ask flag raises the group's carrier stamp while the
+                // host stays put. Such an edit is a competing content value like any
+                // other; keying the probe on the readout instead would neither
+                // record it nor raise the ceiling, and a later edit elsewhere would
+                // then be measured against a stale ceiling, called CAUSAL, and
+                // reported as a defect when it loses to a value its author had never
+                // seen. For the other four kinds the unit has one member, so this is
+                // the same condition as before: `stamped` restamps exactly when the
+                // value changes. A rank-only edit still records nothing, because it
+                // leaves the content unit's stamp alone.
+                if kind.contentStamp(edited) != kind.contentStamp(current) {
                     // Causal iff this replica's content unit already carried a
                     // stamp at least as high as every earlier content edit's: AM-1
                     // then stamps the new value above all of them.

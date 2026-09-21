@@ -231,7 +231,7 @@ final class LibrarySpaceManagementController: NSViewController,
             restore(items)
             outline.selectRowIndexes(IndexSet((0..<outline.numberOfRows).filter {
                 guard let bookmark = self.outline.item(atRow: $0) as? Bookmark else { return false }
-                return selected.contains(bookmark.guid)
+                return !bookmark.isFolder && selected.contains(bookmark.guid)
             }), byExtendingSelection: false)
             isReloading = false
         })
@@ -272,6 +272,9 @@ final class LibrarySpaceManagementController: NSViewController,
         return snapshot.item(for: ids[index]) ?? contents.bookmarkManager.rootFolder
     }
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { (item as? Bookmark)?.isFolder == true }
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        (item as? Bookmark)?.isFolder == false
+    }
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let bookmark = item as? Bookmark else { return nil }
         let identifier = NSUserInterfaceItemIdentifier("libraryBookmark")
@@ -583,13 +586,16 @@ final class LibrarySpaceManagementController: NSViewController,
         let menu = NSMenu()
         let bookmark = row >= 0 && row < outline.numberOfRows ? outline.item(atRow: row) as? Bookmark : nil
         if let bookmark {
-            if !outline.selectedRowIndexes.contains(row) { outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
+            if !bookmark.isFolder && !outline.selectedRowIndexes.contains(row) {
+                outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
+            let targets = bookmark.isFolder ? [bookmark] : selectedBookmarks
             if !bookmark.isFolder {
                 addAction(NSLocalizedString("library.spaces.openItem", value: "Open", comment: "Library Space menu - open item"), to: menu) { [weak self] in self?.open(itemID: bookmark.guid, isPin: false) }
             }
             addAction(NSLocalizedString("library.spaces.editItem", value: "Edit…", comment: "Library Space menu - edit item"), to: menu) { [weak self] in self?.editBookmark(bookmark, parent: bookmark.parent, folder: bookmark.isFolder) }
-            addMoveActions(to: menu, ids: selectedBookmarks.map(\.guid), isPin: false)
-            addAction(NSLocalizedString("library.spaces.deleteItem", value: "Delete", comment: "Library Space menu - delete item"), to: menu) { [weak self] in self?.deleteSelectedBookmarks() }
+            addMoveActions(to: menu, ids: targets.map(\.guid), isPin: false)
+            addAction(NSLocalizedString("library.spaces.deleteItem", value: "Delete", comment: "Library Space menu - delete item"), to: menu) { [weak self] in self?.deleteBookmarks(targets) }
             menu.addItem(.separator())
         }
         addCreateActions(to: menu, parent: bookmark?.isFolder == true ? bookmark : bookmark?.parent)
@@ -642,38 +648,96 @@ final class LibrarySpaceManagementController: NSViewController,
     }
     private var selectedBookmarks: [Bookmark] { outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Bookmark } }
     private func deleteSelectedBookmarks() {
+        deleteBookmarks(selectedBookmarks)
+    }
+    private func deleteBookmarks(_ targets: [Bookmark]) {
         guard validStore() != nil else { return }
-        let ids = selectedBookmarks.map(\.guid).filter(validBookmark)
+        let ids = targets.map(\.guid).filter(validBookmark)
         let bookmarks = ids.compactMap { contents.bookmarkManager.bookmark(withGuid: $0) }
         prepareLiveBookmarksForRemoval(bookmarks, moving: false)
         bookmarks.forEach { contents.bookmarkManager.removeBookmark($0) }
         log("bookmark.delete", ids: ids)
     }
+    private func validBookmarkFolder(_ id: String?) -> Bool {
+        guard let id else { return true }
+        guard let row = validStore()?.getTab(by: id) else { return false }
+        return row.dataType == .bookmarkFolder && row.profileId == contents.scope.profileId
+            && row.spaceId == contents.scope.spaceId
+    }
+
     private func editBookmark(_ bookmark: Bookmark?, parent: Bookmark?, folder: Bool) {
-        guard validStore() != nil, bookmark == nil || validBookmark(bookmark!.guid) else { return }
+        guard let store = validStore(), bookmark == nil || validBookmark(bookmark!.guid) else { return }
+        let originalParentGuid = parent?.guid
+        let secondaryURL = bookmark?.secondaryUrl
+        // Folder creation and bookmark writes are queued in order; the new folder
+        // may not have reached the main-context subscription when Save runs.
+        var createdFolderGuid: String?
         log(bookmark == nil ? "bookmark.create.begin" : "bookmark.edit.begin", ids: bookmark.map { [$0.guid] } ?? [])
-        EditPinnedTabPresenter.presentModal(mode: folder ? (bookmark == nil ? .newFolder : .folder) : .bookmark,
+        EditPinnedTabPresenter.presentModal(
+            mode: folder ? (bookmark == nil ? .newFolder : .folder) : (bookmark == nil ? .newBookmark : .bookmark),
             title: bookmark?.title ?? "", urlString: bookmark?.url ?? "",
-            secondaryUrlString: bookmark?.secondaryUrl, secondaryTitleString: bookmark?.secondaryTitle,
-            profileId: contents.scope.profileId, spaceId: contents.scope.spaceId, from: view.window) { [weak self] result in
-                guard let self, validStore() != nil, parent == nil || validBookmark(parent!.guid) else { return }
-                if let bookmark {
-                    guard validBookmark(bookmark.guid) else { return }
-                    actionManager.updateBookmark(guid: bookmark.guid, title: result.title,
-                        url: folder ? nil : result.url, secondaryUrl: bookmark.secondaryUrl == nil ? nil : .some(result.secondaryUrl),
-                        secondaryTitle: bookmark.secondaryUrl == nil ? nil : .some(result.secondaryTitle))
-                } else if folder {
-                    actionManager.addFolder(title: result.title ?? "", to: parent)
-                } else {
-                    if let url = result.url { actionManager.addBookmark(title: result.title ?? "", url: url, to: parent) }
+            secondaryUrlString: secondaryURL, secondaryTitleString: bookmark?.secondaryTitle,
+            modelContainer: store.container,
+            profileId: contents.scope.profileId, spaceId: contents.scope.spaceId,
+            initialFolderGuid: originalParentGuid,
+            from: view.window,
+            onCreateFolder: { [weak self] name in
+                guard let self, validStore() != nil else { return nil }
+                let guid = UUID().uuidString
+                actionManager.addFolder(title: name, guid: guid)
+                createdFolderGuid = guid
+                return guid
+            },
+            onValidate: { [weak self] result in
+                guard let self, let store = validStore(),
+                      bookmark == nil || validBookmark(bookmark!.guid),
+                      validBookmarkFolder(folder ? originalParentGuid : result.parentFolderGuid),
+                      folder || store.normalizedURL(from: result.url) != nil,
+                      secondaryURL == nil || store.normalizedURL(from: result.secondaryUrl) != nil else {
+                    NSSound.beep()
+                    return false
                 }
-                if let parent { expandedIDs.insert(parent.guid) }
-                log("bookmark.edit.save", ids: bookmark.map { [$0.guid] } ?? [])
+                return true
             }
+        ) { [weak self] result in
+            guard let self, let store = validStore(), bookmark == nil || validBookmark(bookmark!.guid) else { return }
+            let parentGuid = folder ? originalParentGuid : result.parentFolderGuid
+            guard (parentGuid != nil && parentGuid == createdFolderGuid) || validBookmarkFolder(parentGuid) else { return }
+            if let bookmark {
+                actionManager.updateBookmark(guid: bookmark.guid, title: result.title,
+                    url: folder ? nil : result.url,
+                    secondaryUrl: secondaryURL == nil ? nil : .some(result.secondaryUrl ?? ""),
+                    secondaryTitle: secondaryURL == nil ? nil : .some(result.secondaryTitle ?? ""))
+                if !folder && parentGuid != originalParentGuid {
+                    store.moveBookmark(bookmark.guid, profileId: contents.scope.profileId,
+                                       to: parentGuid, newIndex: Int.max)
+                }
+            } else if folder {
+                actionManager.addFolder(title: result.title ?? "", to: parent)
+            } else if let url = result.url {
+                actionManager.addBookmark(title: result.title ?? "", url: url, toParentGuid: parentGuid)
+            }
+            if let parentGuid { expandedIDs.insert(parentGuid) }
+            log("bookmark.edit.save", ids: bookmark.map { [$0.guid] } ?? [])
+        }
     }
     private func editPin(_ tab: Tab?) {
         guard validStore() != nil else { return }
-        EditPinnedTabPresenter.presentModal(mode: .bookmark, title: tab?.title ?? "", urlString: tab?.url ?? "", from: view.window) { [weak self] result in
+        EditPinnedTabPresenter.presentModal(
+            mode: tab == nil ? .newPin : .pin,
+            title: tab?.title ?? "", urlString: tab?.url ?? "",
+            from: view.window,
+            onValidate: { [weak self] result in
+                guard let self, let store = validStore(),
+                      store.normalizedURL(from: result.url) != nil,
+                      tab == nil || store.getAllPinnedTabs(for: contents.scope.profileId, spaceId: contents.scope.spaceId)
+                        .contains(where: { $0.guid == tab?.guidInLocalDB }) else {
+                    NSSound.beep()
+                    return false
+                }
+                return true
+            }
+        ) { [weak self] result in
             guard let self, let store = validStore(), let rawURL = result.url,
                   let url = URL(string: URLProcessor.processUserInput(rawURL)) else { return }
             if let id = tab?.guidInLocalDB {

@@ -277,6 +277,30 @@
         }
       }
     },
+    "library.navigation.hideSidebar" : {
+      "comment" : "Library - Tooltip and accessibility label for collapsing the navigation sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Sidebar"
+          }
+        }
+      }
+    },
+    "library.navigation.showSidebar" : {
+      "comment" : "Library - Tooltip and accessibility label for expanding the navigation sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Sidebar"
+          }
+        }
+      }
+    },
     "library.navigation.spaces" : {
       "comment" : "Library - Spaces category",
       "extractionState" : "manual",
@@ -30594,6 +30618,30 @@
         }
       }
     },
+    "common.bookmarkEditor.createTitle" : {
+      "comment" : "Bookmark creator - title of the sheet to create a bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Bookmark"
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.createSubtitle" : {
+      "comment" : "Bookmark creator - subtitle of the sheet to create a bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a name, address, and folder for this bookmark."
+          }
+        }
+      }
+    },
     "common.bookmarkEditor.editSplitSubtitle" : {
       "comment" : "Bookmark editor - Subtitle explaining split-view bookmark editing",
       "extractionState" : "extracted_with_value",
@@ -34550,6 +34598,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新無痕分頁"
+          }
+        }
+      }
+    },
+    "common.pinnedTabEditor.createTitle" : {
+      "comment" : "Pinned tab creator - title of the sheet to create a pinned tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Pinned Tab"
+          }
+        }
+      }
+    },
+    "common.pinnedTabEditor.createSubtitle" : {
+      "comment" : "Pinned tab creator - subtitle of the sheet to create a pinned tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a name and address for this pinned tab."
           }
         }
       }

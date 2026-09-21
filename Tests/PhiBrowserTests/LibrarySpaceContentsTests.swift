@@ -291,6 +291,56 @@ final class LibrarySpaceContentsTests: XCTestCase {
         XCTAssertEqual(replacement.collectionView(NSCollectionView(), numberOfItemsInSection: 1), 2)
     }
 
+    func testBookmarkEditorsShowOnlyTheirSpaceFoldersAndSelectCurrentParent() async throws {
+        try seedSpaces()
+        let container = try XCTUnwrap(store.container)
+        store.createDirectory(title: "Folder A", profileId: "p", parentId: nil, guid: "folder-a", spaceId: "a")
+        store.createDirectory(title: "Nested A", profileId: "p", parentId: "folder-a", guid: "nested-a", spaceId: "a")
+        store.createDirectory(title: "Folder B", profileId: "q", parentId: nil, guid: "folder-b", spaceId: "b")
+        await settleStore()
+
+        for mode in [EditPinnedTabMode.newBookmark, .bookmark] {
+            let host = NSHostingView(rootView: EditPinnedTabView(
+                mode: mode, title: "Bookmark", urlString: "https://example.com",
+                profileId: "p", spaceId: "a", initialFolderGuid: "nested-a"
+            ).modelContainer(container))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            await settleStore()
+            let picker = try XCTUnwrap(folderPicker(in: host))
+            let folderIDs = picker.itemArray.compactMap { $0.representedObject as? String }
+            XCTAssertTrue(folderIDs.contains("folder-a"))
+            XCTAssertTrue(folderIDs.contains("nested-a"))
+            XCTAssertFalse(folderIDs.contains("folder-b"))
+            XCTAssertEqual(picker.selectedItem?.representedObject as? String, "nested-a")
+        }
+    }
+
+    func testPinEditorsDoNotShowBookmarkFolderPicker() async {
+        for mode in [EditPinnedTabMode.newPin, .pin] {
+            let host = NSHostingView(rootView: EditPinnedTabView(
+                mode: mode, title: "Pin", urlString: "https://example.com"
+            ))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            await Task.yield()
+            XCTAssertNil(folderPicker(in: host))
+        }
+    }
+
+    private func folderPicker(in view: NSView) -> NSPopUpButton? {
+        if let picker = view as? NSPopUpButton { return picker }
+        return view.subviews.lazy.compactMap { self.folderPicker(in: $0) }.first
+    }
+
     private func managementController(in view: NSView) -> LibrarySpaceManagementController? {
         if let controller = view.nextResponder as? LibrarySpaceManagementController { return controller }
         return view.subviews.lazy.compactMap { self.managementController(in: $0) }.first

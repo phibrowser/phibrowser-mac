@@ -102,7 +102,10 @@ Messages use existing `sendMessageToApp(type, payload, {timeout})` with one
 request-scoped reply through `ExtensionMessaging`. Common caller fields are
 `profileId`, `windowId`, optional fixed `boundTabId`. Standalone Phi Chat instead
 sends `sourceKind: "phi-chat"` and a page-lifetime UUID `sourceId`, with no source
-window or binding. Replies are
+window or binding. Its restore lands while the shim owns the foreground, so the
+destination window is fronted with `NSApp.activate(ignoringOtherApps:)`: cooperative
+activation is declined on macOS 26 and `makeKeyAndOrderFront` alone leaves Phi behind
+the shim (2026-09-21). Replies are
 `{ok:true,result:...}` or `{ok:false,error:<known code>}`; errors never echo URLs.
 
 A sidebar reference is `{profileId, windowId, chatTabId, boundTabId}`. `chatTabId`

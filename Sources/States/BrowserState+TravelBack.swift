@@ -270,6 +270,11 @@ extension BrowserState {
         try travelBackCheck([destination], deadline: deadline)
         destination.webContentWrapper?.setAsActiveTab()
         focuseTab(destination)
+        // The Phi Chat shim owns the foreground when it asks for a restore, and
+        // makeKeyAndOrderFront alone cannot make a window key while Phi is
+        // inactive. Cooperative activation is declined on macOS 26 (see
+        // `AppController.showSettings`), so take the foreground outright.
+        NSApp.activate(ignoringOtherApps: true)
         MainBrowserWindowControllersManager.shared.controller(for: windowId)?.window?.makeKeyAndOrderFront(nil)
         let identifier = chatIdentifier(for: destination)
         // Request-driven creation bypasses the view's historical 300 ms timer.

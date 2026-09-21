@@ -173,6 +173,15 @@ pinned by a test named in its own `// Review A<n>` comment in the code.
   /keys/v1/devices` answering 409 rotates the device key and retries once. The
   key is stored `ThisDeviceOnly`, so a migrated or restored Mac does not share
   an identity with its source.
+- **Key API requests are bound to the stack's account.** `SyncKeyStack.make`
+  builds its token provider around the account id it was given: a request
+  from a stack whose account is no longer the signed-in one gets no token, and
+  `KeyEnvelopeAPIClient` never sends a request without one (it throws a
+  transport error instead of an empty bearer, which callers must treat as
+  transient, not as a sign-out). A bootstrap suspended across a sign-out of A
+  and a sign-in as B therefore fails its `POST /keys/v1/devices` under B and
+  is finished under A from the parked registration. Token renewal within the
+  same account passes: the id is compared, not the token.
 - **A retired `SyncKeyController` writes nothing.** Teardown calls
   `retire()`; a pass parked in a network call when the account went away
   resumes on the next account's token and used to register every unmapped

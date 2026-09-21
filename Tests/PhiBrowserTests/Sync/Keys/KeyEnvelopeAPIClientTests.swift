@@ -9,6 +9,26 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
                                     tokenProvider: { "stub-token" })
     }
 
+    /// PR #145 review P1 ("bind key API requests to the stack's account identity"): a request
+    /// whose token provider answers nil — the stack's account is no longer the signed-in one, or
+    /// the token is mid-renewal — is never sent. Before, it went out as `Bearer ` (empty), the
+    /// server answered 401, and callers read that as a sign-out.
+    func testANilTokenNeverSendsTheRequest() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let client = KeyEnvelopeAPIClient(session: URLSession(configuration: config), tokenProvider: { nil })
+        StubURLProtocol.handler = { req in
+            XCTFail("no request may be sent without a token; got \(req.httpMethod ?? "?") \(req.url?.path ?? "")")
+            return (500, Data())
+        }
+        do {
+            _ = try await client.getDeviceEnvelope(deviceKeyId: "dev-abcd1234")
+            XCTFail("expected a transport error")
+        } catch KeyAPIError.transport(let underlying) {
+            XCTAssertEqual((underlying as? URLError)?.code, .userAuthenticationRequired)
+        }
+    }
+
     func testPutAccountSuccessAndConflict() async throws {
         StubURLProtocol.handler = { req in
             XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer stub-token")

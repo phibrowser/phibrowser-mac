@@ -235,7 +235,14 @@ final class KeyEnvelopeAPIClient {
         guard let url = URL(string: baseURL + path) else { throw KeyAPIError.decode }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.setValue("Bearer \(await tokenProvider() ?? "")", forHTTPHeaderField: "Authorization")
+        // No token, no request. A nil token means either "this stack's account is no longer
+        // the signed-in one" (`SyncKeyStack.boundToken`) or "the token is being renewed";
+        // both are transient from the caller's point of view and neither may go out as an
+        // empty bearer, which the server answers with 401 and callers read as a sign-out.
+        guard let token = await tokenProvider(), !token.isEmpty else {
+            throw KeyAPIError.transport(URLError(.userAuthenticationRequired))
+        }
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: body)

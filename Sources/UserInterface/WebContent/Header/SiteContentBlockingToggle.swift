@@ -71,7 +71,7 @@ struct SiteContentBlockingToggle {
         }
         item.representedObject = target
         item.target = target
-        item.action = #selector(MenuItemTarget.perform(_:))
+        item.action = #selector(MenuItemTarget.toggleSiteBlocking(_:))
         settings.refresh()
         return item
     }
@@ -87,7 +87,9 @@ struct SiteContentBlockingToggle {
             self.onToggled = onToggled
         }
 
-        @objc func perform(_ sender: NSMenuItem) {
+        // Not `perform(_:)`: that name is NSObject's `performSelector:`, and
+        // `#selector` resolves to it, so the click would never arrive here.
+        @objc func toggleSiteBlocking(_ sender: NSMenuItem) {
             toggle.toggle { accepted in
                 // The facade completes on the main queue.
                 MainActor.assumeIsolated {

@@ -769,6 +769,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// thread per settings page load — must not block (answer from cache).
 - (NSDictionary<NSString *, id> * _Nullable)getPhiAccountInfo;
 
+/// Stable native sync identity, independent of access-token renewal or reauth.
+/// Return {subject: NSString, email: NSString (optional)} when signed in, an
+/// empty dictionary for confirmed sign-out, and nil while restoring a session.
+/// Optional for older clients. Called synchronously on the UI thread.
+- (nullable NSDictionary<NSString *, id> *)getPhiSyncAccountInfo;
+
 /// The user pressed "export account data" on the Phi account subpage in
 /// chrome://settings. Mac owns the verification UI and all authenticated
 /// network calls; Chromium only relays the action. Called on the UI thread —
@@ -926,6 +932,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// must guard with respondsToSelector: (skew).
 - (void)collapseAIChatForTabId:(int64_t)tabId windowId:(int64_t)windowId;
 
+// Sync key layer (M2-4). Returns nil while the key layer is locked or this
+// profile has no resolved sync key. Keys: @"uuid" (NSString, account-global
+// profile UUID), @"passphrase" (NSString, 64-char lowercase hex).
+- (nullable NSDictionary<NSString *, id> *)getPhiProfileSyncInfo:(NSString *)profileId;
 /// Content blocking of `profileId` published a new rule generation or changed
 /// status (active / building / degraded / disabled). Re-read the settings
 /// with -getContentBlockingSettings:completion:. UI thread.
@@ -1975,6 +1985,27 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// array to clear. The Mac client is the source of truth and re-pushes on every
 /// change. Must be called on the main thread.
 - (void)setUserReclaimedTabs:(NSArray<NSNumber *> *)tabIds;
+
+@optional
+
+/// Phi auth session state changed on the Mac side (login, logout, token
+/// renewal completion, reauthentication required). No payload by design:
+/// Chromium re-reads the session via GetAuth0AccessTokenSyncly() and
+/// reconciles, so redundant or coalesced calls are harmless. Optional so an
+/// older framework paired with a newer Mac client degrades to poll-only.
+- (void)notifyPhiAuthStateChanged;
+
+// Payload-free ping: profile sync keys became available or changed on the
+// Mac side. Chromium re-pulls via getPhiProfileSyncInfo:.
+- (void)notifyPhiSyncKeysChanged;
+
+// M4 routing metadata. Empty profileUUID + dataTypeIds requests account catch-up.
+// Optional for compatibility with an older polling-only framework.
+- (void)notifyPhiSyncInvalidationForAccount:(NSString *)accountId
+                              profileUUID:(NSString *)profileUUID
+                              dataTypeIds:(NSArray<NSNumber *> *)dataTypeIds
+                        excludingClientId:(NSString *)excludingClientId
+    NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:));
 
 @end
 

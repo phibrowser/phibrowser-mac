@@ -6,11 +6,11 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV10.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV10.ProfileModel
-typealias SpaceModel = TabDataModelSchemaV10.SpaceModel
-typealias SpaceURLRule = TabDataModelSchemaV10.SpaceURLRule
-typealias BrowserDataSettingsModel = TabDataModelSchemaV10.BrowserDataSettingsModel
+typealias TabDataModel = TabDataModelSchemaV12.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV12.ProfileModel
+typealias SpaceModel = TabDataModelSchemaV12.SpaceModel
+typealias SpaceURLRule = TabDataModelSchemaV12.SpaceURLRule
+typealias BrowserDataSettingsModel = TabDataModelSchemaV12.BrowserDataSettingsModel
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -31,11 +31,13 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             TabDataModelSchemaV8.self,
             TabDataModelSchemaV9.self,
             TabDataModelSchemaV10.self,
+            TabDataModelSchemaV11.self,
+            TabDataModelSchemaV12.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -162,11 +164,36 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
         }
     )
 
-    /// Additive: introduces the generic `icon` identifier. Existing rows use
-    /// the model's `default` value and require no data movement.
+    /// Preserve the released V10 bookmark icons and split layouts.
     static let migrateV9toV10 = MigrationStage.lightweight(
         fromVersion: TabDataModelSchemaV9.self,
         toVersion: TabDataModelSchemaV10.self
+    )
+
+    /// Add bookmark and pinned-tab sync identity and content timestamps.
+    static let migrateV10toV11 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV10.self,
+        toVersion: TabDataModelSchemaV11.self
+    )
+
+    /// Additive: the six `SpaceURLRule` account-sync columns and the two
+    /// `ProfileModel` columns. All six rule columns are optional or carry a
+    /// default, so the stage itself is lightweight; the `didMigrate` closure
+    /// only backfills `syncId` (R-M3-4a-23: every live rule row has one).
+    /// The backfill is per-device, so the "same" pre-sync rule on two machines
+    /// becomes two entities — collapsed by the deterministic merge (spec §8.4).
+    /// `ProfileModel`'s two columns are deliberately **not** backfilled.
+    static let migrateV11toV12 = MigrationStage.custom(
+        fromVersion: TabDataModelSchemaV11.self,
+        toVersion: TabDataModelSchemaV12.self,
+        willMigrate: { _ in },
+        didMigrate: { context in
+            let rules = try context.fetch(FetchDescriptor<TabDataModelSchemaV12.SpaceURLRule>())
+            for rule in rules where rule.syncId == nil {
+                rule.syncId = UUID().uuidString.lowercased()
+            }
+            try context.save()
+        }
     )
 
     static let migrateV2toV3 = MigrationStage.custom(

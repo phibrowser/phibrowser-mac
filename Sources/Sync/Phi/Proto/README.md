@@ -1,0 +1,311 @@
+# Phi sync protobuf sources
+
+Everything the Swift phi sync engine needs to talk protobuf, in three parts:
+
+| Path | What it is |
+| --- | --- |
+| `phi_entity.proto` | The **payload** schema (proto3, package `phi`). Authored here. A serialized `PhiEntity` is what gets sealed with AES-GCM under the Phi domain key. |
+| `sync/*.proto` | **Trimmed, wire-compatible copies** of Chromium's sync protocol (proto2, package `sync_pb`). |
+| `Generated/*.pb.swift` | `protoc` output. Do not edit by hand — run `./Sources/Sync/Phi/Proto/generate.sh` from the repo root. |
+
+## Toolchain
+
+| Tool | Version |
+| --- | --- |
+| `protoc` | 36.1 (`brew install protobuf`) |
+| `protoc-gen-swift` | 1.38.1 (`brew install swift-protobuf`) |
+| SwiftProtobuf runtime | 1.38.1, pinned in `PackageCollection/Package.swift` |
+
+The runtime version **must** match `protoc-gen-swift`; `generate.sh` warns when it does not.
+Generation uses `--swift_opt=Visibility=Internal`, so every generated type is `internal` to
+the `Phi` module.
+
+## Generated Swift type names
+
+`protoc-gen-swift` prefixes each type with the camel-cased proto package:
+
+- package `phi` → `Phi_PhiEntity`, `Phi_PhiSettingEntity`, `Phi_PhiSettingValue`,
+  `Phi_PhiSpaceEntity`, `Phi_PhiBookmarkEntity`, `Phi_PhiPinTabEntity`, `Phi_PhiURLRuleEntity`
+- package `sync_pb` → `SyncPb_ClientToServerMessage`, `SyncPb_SyncEntity`, … (note: `SyncPb_`,
+  **not** `Sync_pb_`)
+
+## Scope decision: trimmed subset, not a full vendor
+
+`entity_specifics.proto` imports ~50 per-datatype specifics files, and `sync.proto` pulls in a
+large transitive closure (client_commands, client_debug_info, password sharing, sharing
+messages, unique_position, deletion_origin, …). Generating all of it would add thousands of
+lines of Swift for types the phi engine never touches.
+
+Instead, `sync/` holds hand-trimmed copies: **same package, same message names, same field
+numbers, types and labels**, with unused fields omitted. This is safe because:
+
+- Protobuf ignores fields it does not know about when parsing, and `SwiftProtobuf` keeps them
+  in `unknownFields` and re-emits them on serialize (covered by
+  `testUnknownFieldsSurviveTheTrimmedSchema`), so the server's full messages still decode.
+- Every field the client *sends* keeps its upstream number/type, so the server — which
+  unmarshals with the full Chromium schema — reads exactly what it expects.
+- `required` stays `required` (`ClientToServerMessage.share`, `.message_contents`), so a
+  message that would be rejected by the server also fails to serialize here.
+- `CommitResponse.EntryResponse` stays a proto2 **group** (start/end-group wire encoding, not
+  length-delimited); changing it to a nested message would silently break decoding.
+
+Source of truth: `sync-service` repo, branch `feature/m3-phi-sync`, directory
+`proto/src/components/sync/protocol/`, vendored from **Chromium 150.0.7871.47**.
+`phi_specifics.proto` is authored by the sync-service project (Apache-2.0), not Chromium; all
+other files are Chromium (BSD-style license).
+
+## Field-fidelity table
+
+Every field kept in `sync/` below, with the number/type/label copied from the source proto.
+Fields *not* listed were dropped; dropped-field lists are in the comments of each trimmed file.
+
+### `sync/sync.proto` (source: `sync.proto`)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `CommitMessage` | `entries` | 1 | repeated `SyncEntity` |
+| `CommitMessage` | `cache_guid` | 2 | optional `string` |
+| `GetUpdatesMessage` | `caller_info` | 2 | optional `GetUpdatesCallerInfo` |
+| `GetUpdatesMessage` | `fetch_folders` | 3 | optional `bool` [default = true] |
+| `GetUpdatesMessage` | `from_progress_marker` | 6 | repeated `DataTypeProgressMarker` |
+| `GetUpdatesMessage` | `get_updates_origin` | 9 | optional `SyncEnums.GetUpdatesOrigin` |
+| `ClientStatus` | `is_sync_feature_enabled` | 2 | optional `bool` |
+| `ClientToServerMessage` | `share` | 1 | **required** `string` |
+| `ClientToServerMessage` | `protocol_version` | 2 | optional `int32` [default = 99] |
+| `ClientToServerMessage` | `message_contents` | 3 | **required** `Contents` |
+| `ClientToServerMessage` | `commit` | 4 | optional `CommitMessage` |
+| `ClientToServerMessage` | `get_updates` | 5 | optional `GetUpdatesMessage` |
+| `ClientToServerMessage` | `store_birthday` | 7 | optional `string` |
+| `ClientToServerMessage` | `client_status` | 13 | optional `ClientStatus` |
+| `ClientToServerMessage.Contents` | `COMMIT` / `GET_UPDATES` / `DEPRECATED_3` / `DEPRECATED_4` / `CLEAR_SERVER_DATA` | 1 / 2 / 3 / 4 / 5 | enum |
+| `CommitResponse.ResponseType` | `SUCCESS` / `CONFLICT` / `RETRY` / `INVALID_MESSAGE` / `OVER_QUOTA` / `TRANSIENT_ERROR` | 1 / 2 / 3 / 4 / 5 / 6 | enum |
+| `CommitResponse` | `EntryResponse` | 1 | repeated **group** |
+| `CommitResponse.EntryResponse` | `response_type` | 2 | optional `ResponseType` |
+| `CommitResponse.EntryResponse` | `id_string` | 3 | optional `string` |
+| `CommitResponse.EntryResponse` | `version` | 6 | optional `int64` |
+| `CommitResponse.EntryResponse` | `error_message` | 9 | optional `string` |
+| `CommitResponse.EntryResponse` | `mtime` | 10 | optional `int64` [deprecated] |
+| `GetUpdatesResponse` | `entries` | 1 | repeated `SyncEntity` |
+| `GetUpdatesResponse` | `changes_remaining` | 4 | optional `int64` |
+| `GetUpdatesResponse` | `new_progress_marker` | 5 | repeated `DataTypeProgressMarker` |
+| `ClientToServerResponse` | `commit` | 1 | optional `CommitResponse` |
+| `ClientToServerResponse` | `get_updates` | 2 | optional `GetUpdatesResponse` |
+| `ClientToServerResponse` | `error_code` | 4 | optional `SyncEnums.ErrorType` [default = UNKNOWN] |
+| `ClientToServerResponse` | `error_message` | 5 | optional `string` |
+| `ClientToServerResponse` | `store_birthday` | 6 | optional `string` |
+| `ClientToServerResponse` | `error` | 13 | optional `Error` |
+| `ClientToServerResponse.Error` | `error_type` | 1 | optional `SyncEnums.ErrorType` [default = UNKNOWN] |
+| `ClientToServerResponse.Error` | `error_description` | 2 | optional `string` |
+| `ClientToServerResponse.Error` | `action` | 4 | optional `SyncEnums.Action` [default = UNKNOWN_ACTION] |
+| `ClientToServerResponse.Error` | `error_data_type_ids` | 5 | repeated `int32` |
+
+### `sync/sync_entity.proto` (source: `sync_entity.proto`)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `SyncEntity` | `id_string` | 1 | optional `string` |
+| `SyncEntity` | `parent_id_string` | 2 | optional `string` |
+| `SyncEntity` | `version` | 4 | optional `int64` |
+| `SyncEntity` | `mtime` | 5 | optional `int64` |
+| `SyncEntity` | `ctime` | 6 | optional `int64` |
+| `SyncEntity` | `name` | 7 | optional `string` |
+| `SyncEntity` | `non_unique_name` | 8 | optional `string` |
+| `SyncEntity` | `server_defined_unique_tag` | 10 | optional `string` |
+| `SyncEntity` | `deleted` | 18 | optional `bool` [default = false] |
+| `SyncEntity` | `originator_cache_guid` | 19 | optional `string` |
+| `SyncEntity` | `originator_client_item_id` | 20 | optional `string` |
+| `SyncEntity` | `specifics` | 21 | optional `EntitySpecifics` |
+| `SyncEntity` | `folder` | 22 | optional `bool` [default = false] |
+| `SyncEntity` | `client_tag_hash` | 23 | optional `string` |
+
+`non_unique_name` (8), `server_defined_unique_tag` (10) and `folder` (22) are beyond the
+minimum the brief listed; they are kept because the sync-service `toSyncEntity` populates all
+three on every GetUpdates entry.
+
+### `sync/entity_specifics.proto` (source: `entity_specifics.proto`)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `EntitySpecifics` | `encrypted` | 1 | optional `EncryptedData` |
+| `EntitySpecifics` | `phi` | **2000** | optional `PhiSpecifics` |
+
+`phi` is a standalone field upstream, deliberately **not** inside the `specifics_variant`
+oneof, so the engine reads and writes it directly with no oneof switch. Field 2000 is also the
+`data_type_id` used in `DataTypeProgressMarker`. `PhiEntityProtoTests` asserts the on-the-wire
+tag bytes (`(2000 << 3) | 2 == 16002` → `0x82 0x7D`).
+
+### `sync/phi_specifics.proto` (source: `phi_specifics.proto`, verbatim)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `PhiSpecifics` | `ciphertext` | 1 | optional `bytes` |
+
+### `sync/encryption.proto` (source: `encryption.proto`, verbatim)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `EncryptedData` | `key_name` | 1 | optional `string` |
+| `EncryptedData` | `blob` | 2 | optional `string` |
+
+Kept only because `EntitySpecifics.encrypted` (field 1) references it. Phi data is **not**
+Nigori-encrypted — it is AES-GCM sealed under the Phi domain key inside `PhiSpecifics` — so the
+engine never populates `encrypted`.
+
+### `sync/data_type_progress_marker.proto` (source: `data_type_progress_marker.proto`)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `DataTypeProgressMarker` | `data_type_id` | 1 | optional `int32` |
+| `DataTypeProgressMarker` | `token` | 2 | optional `bytes` |
+| `DataTypeProgressMarker` | `gc_directive` | 6 | optional `GarbageCollectionDirective` |
+| `DataTypeContext` | `data_type_id` | 1 | optional `int32` |
+| `DataTypeContext` | `context` | 2 | optional `bytes` |
+| `DataTypeContext` | `version` | 3 | optional `int64` |
+| `GarbageCollectionDirective` | `type` | 1 | optional `Type` [default = UNKNOWN, deprecated] |
+| `GarbageCollectionDirective` | `version_watermark` | 2 | optional `int64` |
+| `GarbageCollectionDirective.Type` | `UNKNOWN` / `VERSION_WATERMARK` / `DEPRECATED_AGE_WATERMARK` / `DEPRECATED_MAX_ITEM_COUNT` | 0 / 1 / 2 / 3 | enum |
+
+### `sync/get_updates_caller_info.proto` (source: `get_updates_caller_info.proto`, verbatim)
+
+| Message | Field | Number | Label + type |
+| --- | --- | --- | --- |
+| `GetUpdatesCallerInfo` | `notifications_enabled` | 2 | optional `bool` |
+
+### `sync/sync_enums.proto` (source: `sync_enums.proto`)
+
+Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstream number.
+
+| Enum | Values (name = number) |
+| --- | --- |
+| `SyncEnums.ErrorType` | `SUCCESS`=0, `NOT_MY_BIRTHDAY`=2, `THROTTLED`=3, `TRANSIENT_ERROR`=8, `MIGRATION_DONE`=9, `DISABLED_BY_ADMIN`=10, `PARTIAL_FAILURE`=12, `CLIENT_DATA_OBSOLETE`=13, `ENCRYPTION_OBSOLETE`=14, `UNKNOWN`=100 |
+| `SyncEnums.Action` | `UPGRADE_CLIENT`=0, `UNKNOWN_ACTION`=5 |
+| `SyncEnums.GetUpdatesOrigin` | `UNKNOWN_ORIGIN`=0, `PERIODIC`=4, `NEWLY_SUPPORTED_DATATYPE`=7, `MIGRATION`=8, `NEW_CLIENT`=9, `RECONFIGURATION`=10, `GU_TRIGGER`=12, `PROGRAMMATIC`=14, `DEVICE_STATISTICS_METRICS`=15 (13 reserved, was `RETRY`) |
+
+## `phi_entity.proto` (authored here)
+
+| Message | Field | Number | Type |
+| --- | --- | --- | --- |
+| `PhiEntity` | `kind.setting` | 1 | `PhiSettingEntity` (oneof `kind`) |
+| `PhiEntity` | `kind.space` | 2 | `PhiSpaceEntity` (oneof `kind`, M3-2) |
+| `PhiEntity` | `kind.bookmark` | 3 | `PhiBookmarkEntity` (oneof `kind`, M3-3) |
+| `PhiEntity` | `kind.pin_tab` | 4 | `PhiPinTabEntity` (oneof `kind`, M3-3) |
+| `PhiEntity` | `kind.url_rule` | 5 | `PhiURLRuleEntity` (oneof `kind`, M3-4a) |
+| `PhiSpaceEntity` | `space_uuid` | 1 | `string` (account-level sync uuid, M3-2b) |
+| `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `color_hex` | 4 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `rank` | 5 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `profile_uuid` | 6 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `theme_id` | 7 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `overlay_opacity_light` | 8 | `PhiSettingValue` (int, milli-units) |
+| `PhiSpaceEntity` | `overlay_opacity_dark` | 9 | `PhiSettingValue` (int, milli-units) |
+| `PhiSpaceEntity` | `created_at_ms` | 10 | `int64` (merged with `min()`, not LWW) |
+| `PhiSettingEntity` | `values` | 1 | `map<string, PhiSettingValue>` |
+| `PhiSettingValue` | `updated_at_ms` | 1 | `int64` |
+| `PhiSettingValue` | `v.bool_value` | 2 | `bool` (oneof `v`) |
+| `PhiSettingValue` | `v.string_value` | 3 | `string` (oneof `v`) |
+| `PhiSettingValue` | `v.int_value` | 4 | `int64` (oneof `v`) |
+| `PhiBookmarkEntity` | `bookmark_uuid` | 1 | `string` (lowercase, minted once; never the local `guid`) |
+| `PhiBookmarkEntity` | `space_uuid` | 2 | `PhiSettingValue` (account-level Space sync uuid; authoritative only at root level) |
+| `PhiBookmarkEntity` | `parent_uuid` | 3 | `PhiSettingValue` (`""` = directly under the Space's bookmark root) |
+| `PhiBookmarkEntity` | `rank` | 4 | `PhiSettingValue` (fractional index, own timestamp) |
+| `PhiBookmarkEntity` | `is_folder` | 5 | `bool` (INVARIANT, not LWW) |
+| `PhiBookmarkEntity` | `title` | 6 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `url` | 7 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `secondary_url` | 8 | `PhiSettingValue` (split-view right pane; `""` = not split) |
+| `PhiBookmarkEntity` | `secondary_title` | 9 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `source` | 10 | `int32` (`TabSource` raw value; written once, merged deterministically) |
+| `PhiBookmarkEntity` | `created_at_ms` | 11 | `int64` (merged with `min()`, not LWW) |
+| `PhiPinTabEntity` | `pin_uuid` | 1 | `string` (lowercase-normalized `pinLineageId`; not unique by itself) |
+| `PhiPinTabEntity` | `owner.space_uuid` | 2 | `string` (oneof `owner`, Space scope) |
+| `PhiPinTabEntity` | `owner.profile_uuid` | 3 | `string` (oneof `owner`, Profile scope) |
+| `PhiPinTabEntity` | `rank` | 4 | `PhiSettingValue` (plain LWW, per owner) |
+| `PhiPinTabEntity` | `title` | 5 | `PhiSettingValue` |
+| `PhiPinTabEntity` | `url` | 6 | `PhiSettingValue` |
+| `PhiPinTabEntity` | `split_partner_uuid` | 7 | `PhiSettingValue` (the PARTNER's `pin_uuid`; `""` = not split) |
+| `PhiPinTabEntity` | `source` | 8 | `int32` (same rule as `PhiBookmarkEntity.source`) |
+| `PhiPinTabEntity` | `created_at_ms` | 9 | `int64` (merged with `min()`, not LWW) |
+| `PhiURLRuleEntity` | `rule_uuid` | 1 | `string` (lowercase, minted once; never the local `id`) |
+| `PhiURLRuleEntity` | `host` | 2 | `PhiSettingValue` (content-group; carries the group's shared timestamp) |
+| `PhiURLRuleEntity` | `path_prefix` | 3 | `PhiSettingValue` (content-group; timestamp shared with `host`, ignored on receipt) |
+| `PhiURLRuleEntity` | `ask` | 4 | `PhiSettingValue` (bool; content-group, same timestamp rule as `path_prefix`) |
+| `PhiURLRuleEntity` | `target_space_uuid` | 5 | `PhiSettingValue` (own timestamp; the LOCATION carrier, not part of identity) |
+| `PhiURLRuleEntity` | `rank` | 6 | `PhiSettingValue` (fractional index, own timestamp) |
+| `PhiURLRuleEntity` | `created_at_ms` | 7 | `int64` (merged with `min()`, not LWW) |
+| `PhiURLRuleEntity` | `source` | 8 | `int32` (written once, merged deterministically) |
+
+Since M3-2b, `space_uuid` is the **account-level** sync uuid resolved through the device's
+`sync.spaceGlobalUuids` mapping table, not the local `SpaceModel.spaceId`. Nothing else about
+the wire format changed.
+
+Reserved ranges are **declared in the proto**, not just described here: `PhiSpaceEntity`
+reserves 11-14, `PhiBookmarkEntity` 12-15, `PhiPinTabEntity` 10-13 and `PhiURLRuleEntity` 9-12,
+all for M3-4b / M4 (the 5 slot on `PhiEntity.kind` is spoken for as of this commit).
+Until M3-3 these were comments only, which protoc does not enforce; with the declarations in
+place, reusing one of those numbers is a compile failure rather than a code-review catch. The
+declarations are wire-neutral (a reserved range emits no field), and
+`PhiEntityGoldenBytesTests` pins that an unknown field inside each range survives a decode and
+re-encode verbatim. That probe cannot detect a *re-declared* number — a build that gave field
+12 a real name would decode the same bytes into that field and the test would still see the
+known fields it asserts on. The `reserved` keyword is the guard; the test only pins the
+preservation half.
+
+`PhiPinTabEntity.owner` is the one field in this schema that is **not** always emitted: an
+absent `owner` IS the App scope, because absence here is one of three exhaustive values rather
+than "an older client never knew about it".
+
+**Reserved-field preservation is a contract, not a side effect.** A build that does not know a
+reserved field must still hand it back untouched, or two clients of different versions strip
+each other's content on every round. `SwiftProtobuf` parks them in `unknownFields`, so the rule
+for any code that rebuilds one of these payload messages is: start from the message that
+carries the authoritative bytes and overwrite the known fields, never from a fresh
+`Phi_Phi…Entity()`. All three merge implementations start from `remote` for exactly this
+reason, each pinned by its own test:
+
+| Message | Merge | Pinned by |
+| --- | --- | --- |
+| `PhiSpaceEntity` | `SyncableSpaces.merge(local:remote:)` | `SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` |
+| `PhiBookmarkEntity` | `BookmarkKind.merge(local:remote:)` | `SyncableOwnedItemsTests.testUnknownFieldsSurviveAMerge` |
+| `PhiPinTabEntity` | `PinKind.merge(local:remote:)` | (shares the rule; no dedicated probe) |
+
+## Client tags
+
+The server assigns entity ids, so cross-device convergence runs entirely through
+`client_tag_hash` = `base64(SHA1(<serialized empty phi specifics> + client_tag))`. The prefix is
+per DATA TYPE (2000), so every kind shares it. The tags themselves live in
+`PhiSyncProtocolClient.swift` (`enum PhiSyncEntity`) and their hashes are pinned as literals by
+`PhiEntityGoldenBytesTests`.
+
+| Kind | Client tag | `SyncEntity.name` (plaintext on the server) |
+| --- | --- | --- |
+| `setting` | `phi-settings` (the single settings entity) | `phi-settings` |
+| `space` | `phi-space:<space_uuid>` | `phi-space` |
+| `bookmark` | `phi-bookmark:<bookmark_uuid>` | `phi-bookmark` |
+| `pin_tab` | `phi-pin:<lineage>:<ownerKey>` | `phi-pin` |
+| `url_rule` | `phi-urlrule:<rule_uuid>` | `phi-urlrule` |
+
+`ownerKey` is the `space_uuid`, the `profile_uuid`, or the literal `app`; a pin's identity is
+the PAIR (lineage, owner), so one lineage living in N Spaces is N entities. The `<lineage>` put
+into the tag **must already be normalized to lowercase** by the same helper the local index and
+the landing matcher use -- an un-normalized lineage produces a self-consistent hash that no
+other device will ever compute. `url_rule`'s identity, by contrast, is `rule_uuid` **alone**
+(D13): the target Space is not part of it, so retargeting a rule never re-mints its tag.
+
+`name` is the only part of an entity the server stores in plaintext, so it is **a constant per
+kind**: never a title, a URL, or a tag carrying a uuid. The constant is also what makes the
+server's `ON CONFLICT ... WHERE entities.name IS DISTINCT FROM ...` check treat a repeated
+commit as a no-op.
+
+## Keeping this in sync
+
+If the server-side protos change (a new field on `PhiSpecifics`, a new `SyncEnums.ErrorType`,
+…), copy the change here with the same number/type/label, re-run `generate.sh`, and update the
+table above. Re-vendoring Chromium in sync-service does **not** automatically affect this
+directory.
+
+`PhiEntity.kind` is an open oneof. Adding a kind means: a new field NUMBER that
+is never reused (M3-2 took 2; M3-3 took 3 and 4; M3-4a took 5 for URL rules; 6
+is spoken for by M3-4b's profiles), a re-run of `generate.sh`, one table row per
+field above, a row in the client-tag table, and a receiver that IGNORES ONLY the
+unknown entity -- never one that rewinds the shared progress marker, because
+every kind shares a single marker for data type 2000.

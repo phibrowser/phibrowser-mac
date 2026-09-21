@@ -168,8 +168,11 @@ struct ProfilesSettingsView: View {
     private var canDeleteSelected: Bool {
         guard let profile = selectedProfile,
               profile.profileId != LocalStore.defaultProfileId else { return false }
-        // Store-read, not the `spaces` cache — see `isProfileInUse`.
-        return !spaceManager.isProfileInUse(profile.profileId)
+        // Local references AND account references: once Spaces sync, a Profile
+        // referenced only by a Space that lives on another Mac would look
+        // deletable (§9.4).
+        guard !spaceManager.isProfileInUse(profile.profileId) else { return false }
+        return !PhiSpaceSyncState.shared.blocksProfileDeletion(localProfileId: profile.profileId)
     }
 
     private func selectInitialProfile() {
@@ -243,6 +246,27 @@ struct ProfilesSettingsView: View {
         alert.informativeText = NSLocalizedString("settings.profiles.deleteConfirmation.browserDataAndChats", value: "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again.",
             comment: "Profiles settings - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable"
         )
+        // §9.4: deliberately fail-OPEN plus a warning rather than fail-closed.
+        // `blocksProfileDeletion` answers false until the account's Spaces have
+        // been drained once, and on a long-offline or long-ARK-locked Mac a
+        // fail-closed prompt might never clear.
+        //
+        // Gated on account Space sync being live for this Mac as well, and not on
+        // the drain flag alone: `hasDrainedFullReplay` is a per-process cache the
+        // engine pushes back after every table write, so with no engine at all
+        // (signed out, or the Spaces feature off) it stays false forever and the
+        // paragraph below would warn about "the Spaces in your account" on a Mac
+        // that has no account Spaces. Same pair of conditions the app menu's own
+        // profile-delete guard uses (`AppController+Menu.validateUserInterfaceItem`).
+        // This pane, unlike that menu item, is registered unconditionally.
+        if PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+           LoginController.shared.isLoggedin(),
+           !PhiSpaceSyncState.shared.hasDrainedFullReplay {
+            alert.informativeText += "\n\n" + NSLocalizedString(
+                "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open.",
+                comment: "Extra warning shown when the account's Spaces have not been synced yet"
+            )
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: NSLocalizedString("settings.profiles.deleteConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
         alert.addButton(withTitle: NSLocalizedString("settings.profiles.deleteConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))

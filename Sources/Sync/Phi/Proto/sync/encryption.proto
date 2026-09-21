@@ -1,0 +1,20 @@
+// TRIMMED COPY of components/sync/protocol/encryption.proto from Chromium 150.0.7871.47, as
+// vendored in sync-service (branch feature/m3-phi-sync). Only the fields the Phi
+// sync engine sends or reads are kept; every kept field carries the EXACT number,
+// type and label of the upstream definition, so these messages are wire
+// compatible with the server's full messages (protobuf drops unknown fields on
+// parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license; phi_specifics.proto is
+// authored by this project (Apache-2.0).
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+message EncryptedData {
+  optional string key_name = 1;
+  optional string blob = 2;  // base64-encoded.
+}

@@ -1133,7 +1133,13 @@ extension LocalStore {
             let storedProfiles = try context.fetch(FetchDescriptor<ProfileModel>())
             let storedSpaces = try context.fetch(FetchDescriptor<SpaceModel>())
             let allModels = try context.fetch(FetchDescriptor<TabDataModel>())
+            // Live rules only (review A12). A Space deletion soft-deletes its rules
+            // (`deletedDate`) so the sync engine can publish tombstones, and a Guest store has
+            // no engine to ever purge them: their Space row is gone, and reading them here
+            // both referenced a missing Space (`targetStateConflict`, so the whole migration
+            // failed) and would have re-imported rules the user deleted as live ones.
             let allRules = try context.fetch(FetchDescriptor<SpaceURLRule>())
+                .filter { $0.deletedDate == nil }
 
             let settingsID = BrowserDataSettingsModel.singletonId
             let settings = try context.fetch(
@@ -1340,7 +1346,10 @@ extension LocalStore {
             let targetProfiles = try context.fetch(FetchDescriptor<ProfileModel>())
             let targetSpaces = try context.fetch(FetchDescriptor<SpaceModel>())
             let targetModels = try context.fetch(FetchDescriptor<TabDataModel>())
+            // Live rules only (review A12): a soft-deleted account rule must neither shadow a
+            // live Guest rule with the same signature nor take a sort slot.
             let targetRules = try context.fetch(FetchDescriptor<SpaceURLRule>())
+                .filter { $0.deletedDate == nil }
             let settingsID = BrowserDataSettingsModel.singletonId
             let settings = try context.fetch(
                 FetchDescriptor<BrowserDataSettingsModel>(

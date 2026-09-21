@@ -1,0 +1,621 @@
+// Copyright 2026 Phinomenon Inc.
+//
+// Use of this source code is governed by an Apache license that can be
+// found in the LICENSE file.
+
+import Foundation
+
+/// Explicit error for land's only no-op path (§3.4).
+/// Throw rather than return an optional: a non-Void result disallows bare return, and the caller's catch
+/// already parks the entity in pendingApply. String? would conflate no landing with landing without an id, yet
+/// the engine uses the result to write mappings. This should be unreachable because §3.5 fallback B already
+/// parks entities with no baseline and an unresolved profile.
+enum SyncableSpacesError: Error, Equatable {
+    case unresolvedProfile
+}
+
+/// Space-side snapshot / merge / apply plus the rank primitives behind D4's
+/// "one drag rewrites one entity". Everything here is a pure function: the
+/// engine owns all persistence (§6.2 -- `snapshot` writes nothing).
+enum SyncableSpaces {
+
+    // MARK: - Fractional ranks (§7)
+
+    /// Strictly ASCII-ascending base-62, so plain lexicographic comparison IS
+    /// numeric comparison of the implied fraction `0.<rank>`.
+    static let rankAlphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+    private static var rankIndex: [Character: Int] {
+        var map: [Character: Int] = [:]
+        for (i, c) in rankAlphabet.enumerated() { map[c] = i }
+        return map
+    }
+
+    /// A rank strictly between `a` and `b`, never ending in the lowest digit
+    /// (so there is always room below it).
+    ///
+    /// - Precondition: when both bounds are present they must satisfy `a < b`.
+    ///   `a == b` HAS NO SOLUTION -- the representation only guarantees a value
+    ///   between two *different* ranks -- so this traps rather than looping or
+    ///   returning an endpoint. Callers separate tied endpoints first
+    ///   (`assignRanks`'s tie-interval rule).
+    /// - Precondition: the upper bound is never empty and never ends in the
+    ///   lowest digit. Both are the same impossibility: nothing over this
+    ///   alphabet -- not even the empty string -- is lexicographically less
+    ///   than `""` or than `"0"`, so "strictly below `b`" has no solution for
+    ///   either. Every rank this file produces is non-empty and ends in a
+    ///   midpoint digit >= 1 (this type's own invariant), which is exactly
+    ///   what makes any OTHER upper bound always solvable: for `"<prefix>0"`
+    ///   the only room left is under the prefix. Trapping here is the same
+    ///   honesty as the `a == b` case -- silently returning a value ABOVE the
+    ///   bound would corrupt the account's order.
+    /// SyncableOwnedItems (M3-3) also uses this implementation for bookmark and
+    /// pin ranks; keep one shared implementation (R4).
+    static func rankBetween(_ a: String?, _ b: String?) -> String {
+        if let a, let b { precondition(a < b, "rankBetween requires a < b") }
+        precondition(b.map { !$0.isEmpty && !$0.hasSuffix("0") } ?? true,
+                     "an empty rank and a rank ending in the lowest digit are not legal upper bounds")
+        let index = rankIndex
+        let base = rankAlphabet.count
+        let lower = (a ?? "").map { index[$0] ?? 0 }
+        let upper = b.map { $0.map { index[$0] ?? 0 } }
+
+        var out: [Int] = []
+        var position = 0
+        while true {
+            let lo = position < lower.count ? lower[position] : 0
+            let hi: Int
+            if let upper {
+                // Once `out` is already strictly greater than the prefix of the
+                // upper bound, the bound stops constraining further digits.
+                hi = position < upper.count && out.elementsEqual(upper.prefix(position)) ? upper[position] : base
+            } else {
+                hi = base
+            }
+            if hi - lo > 1 {
+                out.append((lo + hi) / 2)
+                break
+            }
+            // Digits are adjacent (or equal): keep the lower digit and refine.
+            out.append(lo)
+            position += 1
+        }
+        // The loop only ever exits through the `hi - lo > 1` branch, whose digit
+        // is `(lo + hi) / 2` with `lo >= 0` and `hi >= lo + 2` -- i.e. always
+        // >= 1. So the result structurally never ends in the lowest digit and
+        // needs no trailing-zero pass.
+        return String(out.map { rankAlphabet[$0] })
+    }
+
+    // MARK: - Longest increasing kept set (§7)
+
+    /// Indices to LEAVE ALONE: the longest strictly increasing subsequence of
+    /// the local order under the total order `(rank, uuid)`. Elements with no
+    /// rank (brand new, or a device snapshotting an old Space for the first
+    /// time) never join it, so they always land in the complement and get a
+    /// rank from the interval rule. Patience sorting, O(n log n).
+    /// SyncableOwnedItems (M3-3) also uses this implementation unchanged.
+    static func longestIncreasingKeptSet(_ keys: [(rank: String?, uuid: String)]) -> Set<Int> {
+        struct Key: Comparable {
+            let rank: String
+            let uuid: String
+            static func < (l: Key, r: Key) -> Bool {
+                l.rank == r.rank ? l.uuid < r.uuid : l.rank < r.rank
+            }
+        }
+        var tailKey: [Key] = []
+        var tailIndex: [Int] = []
+        var previous = [Int](repeating: -1, count: keys.count)
+
+        for (i, element) in keys.enumerated() {
+            guard let rank = element.rank else { continue }
+            let key = Key(rank: rank, uuid: element.uuid)
+            // First tail strictly greater than `key` -> replace it (strict LIS).
+            var lo = 0, hi = tailKey.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if tailKey[mid] < key { lo = mid + 1 } else { hi = mid }
+            }
+            previous[i] = lo > 0 ? tailIndex[lo - 1] : -1
+            if lo == tailKey.count {
+                tailKey.append(key)
+                tailIndex.append(i)
+            } else {
+                tailKey[lo] = key
+                tailIndex[lo] = i
+            }
+        }
+        guard !tailIndex.isEmpty else { return [] }
+        var kept: Set<Int> = []
+        // The last tail slot always holds the end of SOME longest increasing
+        // subsequence, so it is the reconstruction entry point; no separate
+        // "best end" bookkeeping is needed.
+        var cursor = tailIndex[tailIndex.count - 1]
+        while cursor >= 0 {
+            kept.insert(cursor)
+            cursor = previous[cursor]
+        }
+        return kept
+    }
+
+    // MARK: - Rank assignment (§7)
+
+    /// New ranks for the Spaces that must be rewritten this snapshot, keyed by
+    /// uuid. `order` is the CURRENT LOCAL strip order of the sync-eligible
+    /// Spaces with their shadow ranks. Elements inside the kept set are absent
+    /// from the result: they are not rewritten, get no new timestamp and do not
+    /// enter this round's commit batch.
+    /// SyncableOwnedItems (M3-3) also calls this per group: bookmarks by parent,
+    /// pins by owner, passing each group's order.
+    ///
+    /// rankBetween is injectable and defaults to this type's implementation,
+    /// preserving existing callers and behavior. It lets SyncableOwnedItems route
+    /// generation through its forwarder so RankProbe counts actual calls; an
+    /// unconnected probe would vacuously pass the assertion that invalid ranks
+    /// never reach precondition.
+    static func assignRanks(order: [(uuid: String, rank: String?)],
+                            rankBetween: (String?, String?) -> String
+                                = SyncableSpaces.rankBetween) -> [String: String] {
+        let kept = longestIncreasingKeptSet(order.map { (rank: $0.rank, uuid: $0.uuid) })
+        var keptFlags = [Bool](repeating: false, count: order.count)
+        for i in kept { keptFlags[i] = true }
+
+        var assigned: [String: String] = [:]
+        // Effective rank of an element: a freshly assigned one wins over the shadow.
+        func effective(_ i: Int) -> String? { assigned[order[i].uuid] ?? order[i].rank }
+
+        var i = 0
+        while i < order.count {
+            guard !keptFlags[i] else { i += 1; continue }
+
+            // Left endpoint: the nearest FINALIZED rank to the left (kept, or
+            // generated earlier in this same pass), so several complement
+            // elements in one gap come out strictly increasing.
+            var left: String?
+            var j = i - 1
+            while j >= 0 {
+                if let r = effective(j) { left = r; break }
+                j -= 1
+            }
+            // Right endpoint: the nearest kept rank to the right. The tie
+            // interval rule (§7): while it is not strictly greater than `left`,
+            // evict it from the kept set into the complement and look further
+            // right.
+            var right: String?
+            var k = i + 1
+            while k < order.count {
+                if keptFlags[k], let r = order[k].rank {
+                    if let left, !(left < r) {
+                        keptFlags[k] = false   // evicted; it gets a new rank below
+                        k += 1
+                        continue
+                    }
+                    right = r
+                    break
+                }
+                k += 1
+            }
+            assigned[order[i].uuid] = rankBetween(left, right)
+            i += 1
+        }
+        return assigned
+    }
+}
+
+extension SyncableSpaces {
+
+    /// D1: account sync uuid. Equality with LocalStore.defaultSpaceId is a convention, not a shared namespace:
+    /// D6 separates local ids from syncUuid. Do not assign it from LocalStore.defaultSpaceId and couple them
+    /// again. SpaceSyncMappingManagerTests asserts the matching values.
+    static let defaultSpaceUuid = "default-space"
+
+    /// D12 / R-M3-4a-6: reserved account constant for URL rules targeting Incognito. Like defaultSpaceUuid, it
+    /// is a literal outside the mapping table that cannot be destroyed in either direction. It is not a Space
+    /// identity and never appears in PhiSpaceEntity fields or the Space phase; only rules use it.
+    /// OwnedOwnerMaps.resolver resolves it to itself, following app's precedent, and
+    /// SpaceSyncMappingManager.map rejects it on both sides.
+    static let incognitoSpaceUuid = "incognito-space"
+
+    // MARK: - Snapshot (§6.2 S1-S4)
+
+    /// The outgoing entity for every sync-eligible Space, keyed by **syncUuid**.
+    ///
+    /// PURE: unlike M3-1's `SyncableSettings.snapshot`, this writes nothing at
+    /// all. Baselines move only at the five write points in §6.2.
+    ///
+    /// D6: syncUuid resolves local spaceId to account sync uuid. Skip unmapped
+    /// Spaces entirely, just as an unmapped profile triggers continue below:
+    /// local ids never reach the wire. Results use only syncUuid, leaving
+    /// spaceCommitEntries and conflict-retry sets unchanged.
+    static func snapshot(spaces: [PhiLocalSpace],
+                         table: PhiSpaceSyncTable,
+                         globalUuid: (String) -> String?,
+                         syncUuid: (String) -> String?,
+                         now: Int64) -> [String: Phi_PhiSpaceEntity] {
+        // §6.5 exclusions are applied at the source (`currentSpaces()`); what is
+        // left out here is the mapping half and the cursor-driven half.
+        let eligible: [(space: PhiLocalSpace, uuid: String)] = spaces.compactMap { space in
+            guard let uuid = syncUuid(space.spaceId) else { return nil }
+            guard let cursor = table.cursors[uuid] else { return (space, uuid) }
+            guard !cursor.hidden, cursor.deletedAtMs == nil, cursor.refusedAtMs == nil else {
+                return nil
+            }
+            // A PARKED uuid must not be published over. `pendingApply != nil`
+            // means the account holds an entity for this uuid that this device
+            // has not landed yet (§6.2's fallback B, a landing failure, a mapping
+            // write failure, a rebind that did not take effect). All four leave
+            // `reconciled == nil` on a first landing, so this Space would be
+            // snapshotted WITH NO BASELINE and every field -- name, icon, colour,
+            // theme, opacity and `profile_uuid` -- stamped `now`, then committed
+            // at the parked cursor's harvested `entityId` / `version`. That is
+            // the exact inversion of D7's promise ("the account's values replace
+            // what's on this Mac"): the account's Space would be replaced
+            // account-wide by this Mac's values, at a timestamp that also wins
+            // every peer's LWW.
+            //
+            // §5.6 already says "no baseline until it landed"; this is the same
+            // rule applied to the PUBLISH side, and the same reasoning as guard
+            // 3's `unreadableTagHashes` in `spaceCommitEntries` -- a row this
+            // build cannot yet reconcile is a row it must not overwrite.
+            //
+            // Pre-D6 this was structurally impossible: the cursor was keyed by
+            // the publisher's LOCAL spaceId, so a parked uuid could never appear
+            // in a snapshot that iterates local rows. D6's mapping layer is what
+            // lets a mapping exist before the entity has ever landed.
+            //
+            // The cost is that a permanently parked Space stops publishing local
+            // edits until its incoming entity lands. That is the correct
+            // direction, and §11's `parked` counter (steady state 0) is where it
+            // shows up. The held re-park path is unaffected: it requires
+            // `pendingApply == nil` to re-park, and a cursor that lands clears
+            // `pendingApply`.
+            guard cursor.pendingApply == nil else { return nil }
+            return (space, uuid)
+        }
+        let baselines = eligible.reduce(into: [String: Phi_PhiSpaceEntity]()) { out, item in
+            guard let bytes = table.cursors[item.uuid]?.reconciled,
+                  let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { return }
+            out[item.uuid] = entity
+        }
+        // The single decode boundary for the rank channel. A baseline is peer
+        // bytes: `rank` is an optional message field, so one that never carried
+        // a rank decodes to `""`, and a peer may publish any string at all --
+        // nothing on the wire is validated. Only a rank this file could itself
+        // have produced may reach `rankBetween` (see `isLegalRank`); anything
+        // else degrades to "no rank", so the Space joins `assignRanks`'s
+        // complement and is handed a real one. Publishing a rank the account has
+        // never seen IS a local write, so a normalized element always lands in
+        // `newRanks` and is stamped `now` by the branch below.
+        func baselineRank(_ uuid: String) -> String? {
+            guard let rank = baselines[uuid]?.rank.stringValue, isLegalRank(rank) else { return nil }
+            return rank
+        }
+        // Rank channel: one pass over the CURRENT local order (§7), entirely in the syncUuid namespace.
+        let newRanks = assignRanks(order: eligible.map {
+            (uuid: $0.uuid, rank: baselineRank($0.uuid))
+        })
+
+        var out: [String: Phi_PhiSpaceEntity] = [:]
+        for (space, uuid) in eligible {
+            let baseline = baselines[uuid]
+            let isDefault = uuid == defaultSpaceUuid
+
+            var entity = Phi_PhiSpaceEntity()
+            entity.spaceUuid = uuid
+            entity.name = stamped(string(space.name), baseline?.name, now)
+            entity.iconName = stamped(string(space.iconName), baseline?.iconName, now)
+            entity.colorHex = stamped(string(space.colorHex), baseline?.colorHex, now)
+
+            // §6.2 S3's rank exception: with no baseline the rank is DERIVED
+            // from this device's local order, and derived order must never beat
+            // a real drag anywhere in the account -- so it carries timestamp 0.
+            let rankValue = newRanks[uuid] ?? baselineRank(uuid) ?? "V"
+            var rank = string(rankValue)
+            if baseline == nil {
+                rank.updatedAtMs = 0
+            } else if newRanks[uuid] != nil {
+                rank.updatedAtMs = now
+            } else {
+                rank.updatedAtMs = baseline?.rank.updatedAtMs ?? 0
+            }
+            entity.rank = rank
+
+            if !isDefault {
+                // §3.5 fallback A: a held remote binding is echoed back with the
+                // BASELINE's timestamp, never `now`. Stamping it would make this
+                // device win a binding it cannot even resolve and pin it on the
+                // whole account.
+                //
+                // The hold applies ONLY while the row is still on the profile it
+                // was taken against. Once the user rebinds this Space locally,
+                // §3.5's second clause takes over: the hold is stale, the new
+                // binding is a normal field write and gets stamped `now`. Without
+                // the `heldForLocalProfileId` check the held branch would win
+                // forever and this device could never publish a binding for that
+                // Space again. heldForLocalProfileId still compares local
+                // profile ids, independently of identity translation.
+                let cursor = table.cursors[uuid]
+                let heldAgainst: String? = cursor?.heldForLocalProfileId
+                let holdStillApplies = heldAgainst == space.profileId
+                if holdStillApplies, let held = cursor?.heldProfileUuid, let baseline {
+                    var binding = string(held)
+                    binding.updatedAtMs = baseline.profileUuid.updatedAtMs
+                    entity.profileUuid = binding
+                } else if let profileUuid = globalUuid(space.profileId) {
+                    entity.profileUuid = stamped(string(profileUuid), baseline?.profileUuid, now)
+                } else {
+                    // No mapping: skip the whole Space this round rather than
+                    // put a device-local Chromium basename on the wire.
+                    continue
+                }
+                entity.themeID = stamped(string(space.themeId ?? ""), baseline?.themeID, now)
+            }
+
+            entity.overlayOpacityLight =
+                stamped(milli(space.opacityLight), baseline?.overlayOpacityLight, now)
+            entity.overlayOpacityDark =
+                stamped(milli(space.opacityDark), baseline?.overlayOpacityDark, now)
+            entity.createdAtMs = Int64(space.createdDate.timeIntervalSince1970 * 1000)
+            out[uuid] = entity
+        }
+        return out
+    }
+
+    /// `rankAlphabet` as a set: the decode boundary tests every character of
+    /// every baseline rank, and `rankIndex` rebuilds its map on every access.
+    private static let rankCharacters = Set(rankAlphabet)
+
+    /// Whether a rank is one this file could itself have produced, and so one
+    /// `rankBetween` may safely be handed. All three rejected shapes are unsafe
+    /// in the same way -- they make "strictly between the bounds" unanswerable:
+    ///
+    /// - empty, and ending in the alphabet's lowest digit: `rankBetween`'s own
+    ///   documented pair of illegal upper bounds ("the same impossibility"),
+    ///   which it traps on rather than returning a rank above the bound. A
+    ///   `precondition` is live in every configuration this target builds, so
+    ///   letting either through means peer bytes can halt the browser.
+    /// - a character outside `rankAlphabet`: traps nothing, but `rankBetween`
+    ///   reads an unknown character as the lowest digit, which breaks the
+    ///   lexicographic == numeric equivalence the whole channel rests on -- the
+    ///   "midpoint" it computes need not lie between the bounds it was given.
+    /// Internal for reuse by SyncableOwnedItems (M3-3). Bookmark ranks are
+    /// comparable only within a parent, and one invalid rank can corrupt the
+    /// whole folder. Both callers use this decoding boundary to protect
+    /// rankBetween's precondition.
+    static func isLegalRank(_ rank: String) -> Bool {
+        !rank.isEmpty && !rank.hasSuffix("0") && rank.allSatisfy(rankCharacters.contains)
+    }
+
+    private static func string(_ s: String) -> Phi_PhiSettingValue {
+        var v = Phi_PhiSettingValue()
+        v.stringValue = s
+        return v
+    }
+
+    /// Thousandths encoding shared by outbound milli(_:) and D7 overwrite-confirmation diffs (§5.7). Change
+    /// precision only here.
+    /// -1 means no custom opacity; opacity(_:) checks < 0, so any negative value clears custom opacity.
+    static func opacityMilliUnits(_ value: Double?) -> Int64 {
+        value.map { Int64(($0 * 1000).rounded()) } ?? -1
+    }
+
+    /// Milli-units, `-1` for "no custom opacity". Integers rather than a new
+    /// double case keep the shipped M3-1 message untouched, and the resolution
+    /// is far below the slider's, so an applied value snapshots back identically.
+    private static func milli(_ value: Double?) -> Phi_PhiSettingValue {
+        var v = Phi_PhiSettingValue()
+        v.intValue = opacityMilliUnits(value)
+        return v
+    }
+
+    /// §6.2 S2/S3: same bytes as the baseline (timestamp zeroed) -> keep the
+    /// baseline's timestamp; different -> stamp `now`.
+    private static func stamped(_ value: Phi_PhiSettingValue,
+                                _ baseline: Phi_PhiSettingValue?,
+                                _ now: Int64) -> Phi_PhiSettingValue {
+        var out = value
+        if let baseline,
+           SyncableSettings.signature(of: baseline) == SyncableSettings.signature(of: value) {
+            out.updatedAtMs = baseline.updatedAtMs
+        } else {
+            out.updatedAtMs = now
+        }
+        return out
+    }
+
+    // MARK: - Merge
+
+    /// Field-by-field LWW through the SHARED winner (R4), `min()` for
+    /// `created_at_ms`, identity for `space_uuid`.
+    ///
+    /// Starts from `remote`, and that is the whole point of merging at all
+    /// (§6.2: merging with the server preserves newer clients' reserved fields
+    /// 11–14, unlike sending the snapshot alone). A fresh `Phi_PhiSpaceEntity()` would carry no
+    /// `unknownFields`, so every reserved field a newer client wrote would be
+    /// stripped on the way through this build -- and worse than once: after a
+    /// pull, `cursor.server` holds the unknown bytes while the merged entity does
+    /// not, so `toSend != server` fires a commit that strips them again on EVERY
+    /// round. Both call sites pass the authoritative peer/server bytes as
+    /// `remote`, and every one of the ten known fields is assigned below, so the
+    /// only thing inherited is the part this build cannot name.
+    static func merge(local: Phi_PhiSpaceEntity, remote: Phi_PhiSpaceEntity) -> Phi_PhiSpaceEntity {
+        var merged = remote
+        merged.spaceUuid = local.spaceUuid.isEmpty ? remote.spaceUuid : local.spaceUuid
+        merged.name = SyncableSettings.lwwWinner(local.name, remote.name)
+        merged.iconName = SyncableSettings.lwwWinner(local.iconName, remote.iconName)
+        merged.colorHex = SyncableSettings.lwwWinner(local.colorHex, remote.colorHex)
+        merged.rank = SyncableSettings.lwwWinner(local.rank, remote.rank)
+        if local.hasProfileUuid || remote.hasProfileUuid {
+            merged.profileUuid = SyncableSettings.lwwWinner(local.profileUuid, remote.profileUuid)
+        }
+        if local.hasThemeID || remote.hasThemeID {
+            merged.themeID = SyncableSettings.lwwWinner(local.themeID, remote.themeID)
+        }
+        merged.overlayOpacityLight =
+            SyncableSettings.lwwWinner(local.overlayOpacityLight, remote.overlayOpacityLight)
+        merged.overlayOpacityDark =
+            SyncableSettings.lwwWinner(local.overlayOpacityDark, remote.overlayOpacityDark)
+        // NOT last-writer-wins: the earliest creation instant is the true one,
+        // and it is `getAllSpaces`'s last tiebreak, so it must agree everywhere.
+        let candidates = [local.createdAtMs, remote.createdAtMs].filter { $0 > 0 }
+        merged.createdAtMs = candidates.min() ?? 0
+        return merged
+    }
+
+    // MARK: - Refusal (§6.5)
+
+    /// Entities this device refuses to MATERIALIZE, even from a peer: refusing
+    /// keeps a buggy or hostile peer from conjuring ghost Spaces that the
+    /// receiver's own agent sweep would then delete and tombstone back.
+    /// Refusing is NOT a claim that the account should not hold it, so nothing
+    /// here ever pushes a tombstone (§9.2).
+    ///
+    /// D6: do not inspect space_uuid. Wire uuids are random syncUuids, so an
+    /// incognito-prefix check could never match and would imply nonexistent
+    /// protection. Local incognito/agent Spaces cannot obtain mappings: the
+    /// AccountPhiSpaceAccess exclusion list serves both currentSpaces() and
+    /// pairableSpaces(). They never enter snapshot or acquire syncUuids.
+    static func refuses(_ entity: Phi_PhiSpaceEntity) -> Bool {
+        let name = entity.name.stringValue
+        let icon = entity.iconName.stringValue
+        let color = entity.colorHex.stringValue
+        if AgentSpaceManager.isAgentSpaceModel(name: name, iconName: icon, colorHex: color) {
+            return true
+        }
+        return AgentSpaceManager.isPersistentAgentSpaceModel(iconName: icon, colorHex: color)
+    }
+
+    // MARK: - Landing one entity (§6.2 A2)
+
+    /// Theme / opacity FIRST (so the window repaint `reapplyResolvedTheme`
+    /// triggers already sees the final `color_hex`), then the rebind, then the
+    /// row fields. The account-wide reorder is the caller's job -- it runs once
+    /// per round, after every entity has landed.
+    ///
+    /// Every step is awaited and may throw; the caller writes NO baseline until
+    /// this returns without throwing (§5.6).
+    ///
+    /// D6: localSpaceId is the resolved local row id; nil means locally absent.
+    /// Return the local spaceId used for landing so the engine can write the
+    /// mapping (§3.4).
+    @discardableResult
+    static func land(_ merged: Phi_PhiSpaceEntity,
+                     existing: PhiLocalSpace?,
+                     localSpaceId: String?,
+                     profileId: String?,
+                     access: any PhiSpaceLocalAccess) async throws -> String {
+        let uuid = merged.spaceUuid
+        let isDefault = uuid == defaultSpaceUuid
+        let createdDate = merged.createdAtMs > 0
+            ? Date(timeIntervalSince1970: TimeInterval(merged.createdAtMs) / 1000)
+            : Date()
+
+        guard let existing else {
+            // Create. The default Space always exists locally, so this branch is
+            // only ever a genuinely new Space; its profile must resolve or the
+            // caller parked it (§3.5 fallback B) before getting here.
+            guard let profileId else { throw SyncableSpacesError.unresolvedProfile }
+            // Never use merged.spaceUuid (§2.4): local row ids and syncUuid are separate namespaces, and
+            // SpaceModel.spaceId has @Attribute(.unique).
+            let newId = localSpaceId ?? UUID().uuidString
+            try await access.create(PhiLocalSpace(
+                spaceId: newId, profileId: profileId,
+                name: merged.name.stringValue, colorHex: merged.colorHex.stringValue,
+                iconName: merged.iconName.stringValue, sortOrder: Int.max,
+                createdDate: createdDate,
+                themeId: isDefault ? nil : themeId(merged),
+                opacityLight: opacity(merged.overlayOpacityLight),
+                opacityDark: opacity(merged.overlayOpacityDark)))
+            if !isDefault {
+                // This is the normal localSpaceId == nil path: an account Space absent locally (R-D6-7's main
+                // creation path). Use newId here.
+                try await access.applyThemeState(
+                    spaceId: newId, themeId: themeId(merged),
+                    opacityLight: opacity(merged.overlayOpacityLight),
+                    opacityDark: opacity(merged.overlayOpacityDark))
+            }
+            return newId
+        }
+
+        // existing was looked up by localSpaceId, so they agree. Use ?? instead of a force unwrap: this path
+        // can block the App, and unwrapping provides no benefit.
+        let localId = localSpaceId ?? existing.spaceId
+
+        if !isDefault || opacity(merged.overlayOpacityLight) != existing.opacityLight
+            || opacity(merged.overlayOpacityDark) != existing.opacityDark {
+            try await access.applyThemeState(
+                spaceId: localId,
+                themeId: isDefault ? existing.themeId : themeId(merged),
+                opacityLight: opacity(merged.overlayOpacityLight),
+                opacityDark: opacity(merged.overlayOpacityDark))
+        }
+
+        // A rebind is exactly this one field changing on the wire (M1 §5); the
+        // LOCAL re-stamping of the Space's bookmark rows is a denormalization
+        // `SpaceManager.applyRemoteRebind` performs, never a bookmark edit.
+        if !isDefault, let profileId, profileId != existing.profileId {
+            try await access.rebind(spaceId: localId, toProfileId: profileId)
+        }
+
+        let newName = merged.name.stringValue
+        let newColor = merged.colorHex.stringValue
+        let newIcon = merged.iconName.stringValue
+        let newCreated = abs(createdDate.timeIntervalSince1970
+                             - existing.createdDate.timeIntervalSince1970) > 0.0005
+            ? createdDate : nil
+        if newName != existing.name || newColor != existing.colorHex
+            || newIcon != existing.iconName || newCreated != nil {
+            try await access.update(
+                spaceId: localId,
+                name: newName == existing.name ? nil : newName,
+                colorHex: newColor == existing.colorHex ? nil : newColor,
+                iconName: newIcon == existing.iconName ? nil : newIcon,
+                createdDate: newCreated)
+        }
+        return localId
+    }
+
+    private static func themeId(_ entity: Phi_PhiSpaceEntity) -> String? {
+        let id = entity.themeID.stringValue
+        return id.isEmpty ? nil : id
+    }
+
+    private static func opacity(_ value: Phi_PhiSettingValue) -> Double? {
+        value.intValue < 0 ? nil : Double(value.intValue) / 1000
+    }
+
+    // MARK: - Order projection (§7)
+
+    /// The full local order with ONLY the synced Spaces re-sorted, in place.
+    /// Local-only (hidden), agent and incognito Spaces keep their own slots
+    /// instead of being pushed to the end.
+    ///
+    /// `localOrder` MUST be the UNFILTERED local order --
+    /// `PhiSpaceLocalAccess.allSpacesForOrdering()`, not `currentSpaces()`.
+    /// The result is handed straight to `LocalStore.reorderSpaces`, which
+    /// assigns `index` as `sortOrder` to exactly the ids in the list and
+    /// documents that "Ids absent from the list keep their existing
+    /// `sortOrder`" (LocalStore+Space.swift:322-353). Pass the §6.5-filtered
+    /// view and every agent Space and every Space on an unmapped profile keeps
+    /// a stale value while the synced ones are renumbered 0..n-1 -- which is
+    /// the opposite of the promise in the paragraph above.
+    ///
+    /// syncedRanks is keyed by local spaceId (D6). Partial identity translation
+    /// silently makes every lookup nil and the entire account reorder a no-op.
+    /// The engine translates when assembling ranks in applySpaces (§3.4).
+    static func plannedOrder(localOrder: [PhiLocalSpace],
+                             syncedRanks: [String: String]) -> [String] {
+        let syncedSlots = localOrder.enumerated()
+            .filter { syncedRanks[$0.element.spaceId] != nil }
+            .map(\.offset)
+        let sortedSynced = syncedSlots
+            .map { localOrder[$0].spaceId }
+            .sorted {
+                let l = syncedRanks[$0] ?? "", r = syncedRanks[$1] ?? ""
+                return l == r ? $0 < $1 : l < r
+            }
+        var out = localOrder.map(\.spaceId)
+        for (slot, spaceId) in zip(syncedSlots, sortedSynced) { out[slot] = spaceId }
+        return out
+    }
+}

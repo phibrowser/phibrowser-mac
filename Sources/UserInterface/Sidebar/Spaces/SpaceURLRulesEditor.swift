@@ -11,29 +11,60 @@ import SwiftUI
 /// picker so the user can manage all rules in one list — moving a rule from
 /// one Space to another is a picker change, not a delete-and-recreate.
 ///
-/// Persists via `SpaceManager.setAllRules(_:)`, which replaces every Space's
-/// rule set atomically and pushes the recompiled routing table down to
-/// Chromium in one shot. No direct LocalStore writes from the view, no
-/// manual bridge calls.
+/// Persists through `SpaceManager.applyRuleEdits(upserts:deletedIds:)`, which
+/// touches only the rows this sheet names — rows it never saw are left alone,
+/// including ones that landed from another device while it was open. The
+/// routing table is refreshed once, after the write commits. No direct
+/// LocalStore writes from the view, no manual bridge calls.
 ///
 /// Stays intentionally small: one host per row matched as either a domain
 /// suffix (host + all subdomains) or an exact domain, enable toggle,
-/// drag-to-reorder within the flat list. Sort order is preserved per target
-/// Space at save time.
+/// drag-to-reorder within the flat list. Dense per-target sort order is the
+/// store's job, not this view's.
 struct URLRulesEditor: View {
     @ObservedObject var manager: SpaceManager
     let onClose: () -> Void
 
     @State private var rows: [Row] = []
-    /// Snapshot of the persisted rules taken when the sheet opened, so we
-    /// can detect a no-op save and skip the LocalStore round-trip.
-    @State private var initialFingerprint: String = ""
     @State private var editingStoreIdentifier: UUID?
+    /// The rows exactly as `load()` built them. Kept for the §5.8 call shape;
+    /// M5 (8b-4) moved the "did the user touch this row" answer to `dirty`.
+    @State private var loadedRows: [Row] = []
+    /// Rows the user deleted in this sheet, in deletion order. Only the ones
+    /// that came from the store (`storeId != nil`) turn into `deletedIds`.
+    @State private var removedRows: [Row] = []
+    /// M5 / R-M3-4a-72: track user-touched controls per row since load(). Touch tracking is distinct from
+    /// save-time comparison against current stored rows (ruling 8).
+    @State private var dirty: [UUID: RowDirty] = [:]
+    /// Only field refresh increments this token (spec §5.8 item 3), the sole exception to
+    /// RuleTableView.updateNSView's unchanged-ID early return. Do not replace it with a rows content
+    /// fingerprint: that would configure on every keystroke and disturb the active field editor.
+    @State private var refreshToken: Int = 0
+    /// Rows whose values actually changed in the last field refresh, updated with refreshToken. Reconfigure
+    /// only these: configure always writes valueField.stringValue and rebuilds the target popup, disturbing
+    /// unchanged rows.
+    @State private var refreshedIds: Set<UUID> = []
 
     /// Sentinel selection in a row's target-Space picker meaning "don't route
     /// to a fixed Space — prompt every time". Distinct from any real
     /// `spaceId` (UUID strings / "default-space"), so it can never collide.
     static let askSpaceTag = "__phi_ask__"
+
+    /// M5 / R-M3-4a-72: touched controls for one row. Track controls, not separate host/pathPrefix columns
+    /// (ruling 7): one text field and MatchType encode those columns only at Save, and content is one
+    /// shared-stamp merge unit (§4.3 item 4). Ask has no separate control either: the target picker sentinel
+    /// dirties ask only; selecting a real Space dirties both ask and target.
+    struct RowDirty: OptionSet {
+        let rawValue: Int
+        /// Text field, split into host/pathPrefix by MatchType.encode.
+        static let value     = RowDirty(rawValue: 1 << 0)
+        static let matchType = RowDirty(rawValue: 1 << 1)
+        static let ask       = RowDirty(rawValue: 1 << 2)
+        static let target    = RowDirty(rawValue: 1 << 3)
+        static let order     = RowDirty(rawValue: 1 << 4)
+        /// Three controls for the single content-group merge unit (§4.3 item 4 / D15).
+        static let content: RowDirty = [.value, .matchType, .ask]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -49,6 +80,12 @@ struct URLRulesEditor: View {
             load()
         }
         .onChange(of: manager.storeIdentifier) { _, _ in onClose() }
+        // Refresh fields when the store changes while the sheet is open (spec §5.8 item 3). Read
+        // manager.urlRulesRevision's wrapped value: ObservedObject redraw plus Published lets onChange compare
+        // revisions. Do not subscribe to its projected publisher; private(set) makes that projection private.
+        // Default initial=false also avoids refreshing empty rows before onAppear/load and treating the whole
+        // store as new rows.
+        .onChange(of: manager.urlRulesRevision) { _, _ in refreshFromStore() }
     }
 
     private var header: some View {
@@ -85,7 +122,9 @@ struct URLRulesEditor: View {
         // last rule doesn't tear down the NSView tree mid-animation and adding
         // the first rule doesn't rebuild it. The empty-state placeholder lives
         // inside the host (see RuleTableView.makeEmptyOverlay).
-        RuleTableView(rows: $rows, spaces: ruleTargetSpaces)
+        RuleTableView(rows: $rows, removedRows: $removedRows, dirty: $dirty,
+                      refreshToken: refreshToken, refreshedIds: refreshedIds,
+                      spaces: ruleTargetSpaces)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -117,60 +156,318 @@ struct URLRulesEditor: View {
 
     private func load() {
         rows = manager.allRules.map(Row.init(from:))
-        initialFingerprint = fingerprint(of: rows)
+        loadedRows = rows
+        removedRows = []
+        // M5: a new load starts a fresh dirty map. The old whole-table fingerprint guard is gone: save-time
+        // unit comparison now handles changed-then-reverted edits, and no dirty bits yields no upserts.
+        dirty = [:]
+    }
+
+    /// State-writing half of field refresh (spec §5.8 item 3, 8b-4 fix round 1). The pure refreshRows helper
+    /// owns all decisions, like computeEditSet. Read stored values from manager.allRules; views never access
+    /// the store directly.
+    private func refreshFromStore() {
+        let merged = Self.refreshRows(rows: rows, loaded: loadedRows, removed: removedRows,
+                                      stored: manager.allRules, dirty: dirty)
+        guard merged.changed else { return }
+        rows = merged.rows
+        // Dirty-tracking baseline follows the store (§5.8 item 4).
+        loadedRows = merged.loaded
+        // Dropped rows have no dirty bits, making this effectively a no-op while preserving the structural
+        // invariant that dirty keys are a subset of rows. Never clear existing dirty bits (ruling 10).
+        for id in merged.droppedIds { dirty[id] = nil }
+        // Request targeted configuration of rows with changed values, bypassing the unchanged-ID early return.
+        refreshedIds = merged.changedIds
+        refreshToken &+= 1
+    }
+
+    /// Field-refresh result. If changed is false, the caller writes no State and causes no redraw.
+    struct RefreshResult {
+        var rows: [Row]
+        var loaded: [Row]
+        /// Untouched rows now absent from the store; remove them from the sheet during refresh.
+        var droppedIds: Set<UUID>
+        /// Rows with changed visible controls (match type, text, ask, target). Reconfigure only these;
+        /// configure always rewrites text and rebuilds the target popup, disturbing unchanged cells or active
+        /// selection/caret. Exclude syncId/createdDate, which are not rendered even though remote
+        /// created_at_ms often changes. Added/dropped rows change ID structure and use updateNSView's
+        /// structural path instead; changed still remains true.
+        var changedIds: Set<UUID>
+        var changed: Bool
+    }
+
+    /// Pure field-refresh contract (spec §5.8 item 3), independent of views like computeEditSet. Never refresh
+    /// any user-touched field, not just the currently edited one (ruling 10). Dirty bits record touch while
+    /// save compares current store values; replacing dirty input with landed values would silently erase the
+    /// user's change by making Save compare equal (CASE U-15d 5). Refreshing untouched fields adds no dirty
+    /// bits/upserts as the baseline follows storage (§5.8 item 4; U-15d 4).
+    ///
+    /// Group by controls (ruling 7): if text or match type is dirty, preserve both; if ask or target is dirty,
+    /// preserve the whole shared picker.
+    ///
+    /// New sheet rows (nil storeId) remain untouched. Missing stored rows with dirty bits remain for Save
+    /// recovery (R-M3-4a-101 / 104); missing clean rows are dropped without resurrection (ruling 11). Append
+    /// newly stored rows without dirtying or reordering; save computes order by bucketIndex.
+    ///
+    /// Both removed and dirty are read-only. Include removed rows when identifying already represented stored
+    /// rows: editor deletions persist only on Save, so omitting them would reappend those rows and visually
+    /// undo deletion. Refresh never clears dirty bits or changes removedRows.
+    static func refreshRows(rows: [Row], loaded: [Row], removed: [Row], stored: [SpaceRoutingRule],
+                            dirty: [UUID: RowDirty]) -> RefreshResult {
+        var storedByStoreId: [String: SpaceRoutingRule] = [:]
+        for rule in stored where storedByStoreId[rule.id] == nil { storedByStoreId[rule.id] = rule }
+        var loadedById: [UUID: Row] = [:]
+        for row in loaded where loadedById[row.id] == nil { loadedById[row.id] = row }
+
+        var updatedRows: [Row] = []
+        var updatedLoaded: [Row] = []
+        var droppedIds: Set<UUID> = []
+        var changedIds: Set<UUID> = []
+        var changed = false
+
+        for row in rows {
+            guard let storeId = row.storeId else {
+                updatedRows.append(row)
+                if let baseline = loadedById[row.id] { updatedLoaded.append(baseline) }
+                continue
+            }
+            let bits = dirty[row.id] ?? []
+            guard let current = storedByStoreId[storeId] else {
+                // The row is absent after remote hard deletion or M2 / §8.4.4 (β) soft deletion. allRules
+                // filters soft-deleted rows (R-M3-4a-51), so both appear identical here.
+                if bits.isEmpty {
+                    droppedIds.insert(row.id)
+                    changed = true
+                } else {
+                    updatedRows.append(row)
+                    if let baseline = loadedById[row.id] { updatedLoaded.append(baseline) }
+                }
+                continue
+            }
+            var merged = row
+            var baseline = loadedById[row.id] ?? row
+            if bits.intersection([.value, .matchType]).isEmpty {
+                let decoded = MatchType.decode(host: current.host, pathPrefix: current.pathPrefix)
+                merged.matchType = decoded.0
+                merged.value = decoded.1
+                baseline.matchType = decoded.0
+                baseline.value = decoded.1
+            }
+            if bits.intersection([.ask, .target]).isEmpty {
+                merged.askBeforeRouting = current.askBeforeRouting
+                merged.targetSpaceId = current.spaceId
+                baseline.askBeforeRouting = current.askBeforeRouting
+                baseline.targetSpaceId = current.spaceId
+            }
+            // Only the four fields rendered by RuleCellView.configure contribute changedIds; changes to the
+            // following two columns need no cell reconfiguration.
+            if merged.matchType != row.matchType || merged.value != row.value
+                || merged.askBeforeRouting != row.askBeforeRouting
+                || merged.targetSpaceId != row.targetSpaceId {
+                changedIds.insert(row.id)
+            }
+            // Follow concurrent identity re-key and remote created_at_ms, but exclude these invisible,
+            // noneditable fields from changedIds.
+            merged.syncId = current.syncId
+            merged.createdDate = current.createdDate
+            baseline.syncId = current.syncId
+            baseline.createdDate = current.createdDate
+            if merged != row { changed = true }
+            updatedRows.append(merged)
+            updatedLoaded.append(baseline)
+        }
+
+        // A stored row is represented by rows UNION removed. Editor-deleted rows remain stored until Save and
+        // must not be reappended as newly discovered rows.
+        var seen = Set(rows.compactMap(\.storeId))
+        seen.formUnion(removed.compactMap(\.storeId))
+        for rule in stored where !seen.contains(rule.id) {
+            let appended = Row(from: rule)
+            updatedRows.append(appended)
+            updatedLoaded.append(appended)
+            changed = true
+        }
+
+        return RefreshResult(rows: updatedRows, loaded: updatedLoaded,
+                             droppedIds: droppedIds, changedIds: changedIds, changed: changed)
     }
 
     private func addBlankRow() {
         guard let firstSpaceId = ruleTargetSpaces.first?.spaceId else { return }
+        // New rows bypass dirty filtering (rulings 11/12) and supply all three units to
+        // applyURLRuleEditsBody's insert branch. Set no dirty bits here.
         rows.append(Row(defaultSpaceId: firstSpaceId))
     }
 
     private func save() {
         guard let editingStoreIdentifier,
-              manager.acceptsStoreAction(from: editingStoreIdentifier),
-              fingerprint(of: rows) != initialFingerprint else { return }
-        let validSpaceIds = Set(ruleTargetSpaces.map(\.spaceId))
-        let validPromptSpaceIds = validSpaceIds.subtracting([SpaceManager.kioskRuleTargetId])
-        var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
-        for row in rows {
-            let trimmedValue = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else { continue }
-            // Resolve the bucket Space. An auto-route rule must target a live
-            // Space; an "ask every time" rule only uses its target as the
-            // prompt's default, so if that Space was deleted fall back to any
-            // Space rather than dropping the rule.
-            let targetSpaceId: String
-            if row.askBeforeRouting,
-               validPromptSpaceIds.contains(row.targetSpaceId) {
-                targetSpaceId = row.targetSpaceId
-            } else if row.askBeforeRouting,
-                      let fallback = ruleTargetSpaces.first(where: {
-                          validPromptSpaceIds.contains($0.spaceId)
-                      })?.spaceId {
-                targetSpaceId = fallback
-            } else if validSpaceIds.contains(row.targetSpaceId) {
-                targetSpaceId = row.targetSpaceId
-            } else {
-                continue
+              manager.acceptsStoreAction(from: editingStoreIdentifier) else { return }
+        let rows = self.rows
+        let loaded = self.loadedRows
+        let removed = self.removedRows
+        let dirty = self.dirty
+        let manager = self.manager
+        // Await commit on the main actor. Failure logs only describe(error), without host/ID (R12), preserving
+        // sheet drafts. applyRuleEdits refreshes routing after commit (R-M3-4a-34).
+        Task { @MainActor in
+            guard manager.acceptsStoreAction(from: editingStoreIdentifier) else { return }
+            // Ruling 8: compare against a fresh manager.allRules after reloadURLRulesFromStore (§5.8 item 4).
+            // loadedRows describes touch history, never current equality. Preserve the view/store boundary;
+            // the extra routing push is idempotent with the post-Save push.
+            manager.reloadURLRulesFromStore()
+            let edits = Self.computeEditSet(rows: rows, loaded: loaded, removed: removed,
+                                            stored: manager.allRules, dirty: dirty)
+            // If both edit sets are empty, do not even call applyRuleEdits: no writes, flags or refresh.
+            guard !edits.isEmpty else { return }
+            do {
+                try await manager.applyRuleEdits(upserts: edits.upserts, deletedIds: edits.deletedIds,
+                                                 expectedStoreIdentifier: editingStoreIdentifier)
+            } catch {
+                AppLogError("[URLRulesEditor] applyRuleEdits failed: \(PhiSyncLog.describe(error))")
             }
-            let (host, pathPrefix) = row.matchType.encode(value: trimmedValue)
-            guard !host.isEmpty else { continue }
-            let draft = LocalStore.URLRuleDraft(
-                id: row.id.uuidString,
-                host: host,
-                pathPrefix: pathPrefix,
-                askBeforeRouting: row.askBeforeRouting,
-                createdDate: row.createdDate
-            )
-            byTarget[targetSpaceId, default: []].append(draft)
         }
-        manager.setAllRules(byTarget, expectedStoreIdentifier: editingStoreIdentifier)
     }
 
-    private func fingerprint(of rows: [Row]) -> String {
-        rows.map { row in
-            "\(row.id.uuidString)|\(row.askBeforeRouting ? 1 : 0)|\(row.targetSpaceId)|\(row.matchType.rawValue)|\(row.value)"
-        }.joined(separator: "\n")
+    /// One Save's worth of edits, addressed row by row (R-M3-4a-30).
+    struct EditSet {
+        var upserts: [LocalStore.URLRuleDraft]
+        var deletedIds: Set<String>
+
+        var isEmpty: Bool { upserts.isEmpty && deletedIds.isEmpty }
+    }
+
+    /// Pure §5.8 contract, testable without a view.
+    ///
+    /// Rules (§5.8 items 1/2/5; M5 rulings 11/12; R-M3-4a-72): process deletion before dirty filtering.
+    /// Cleared existing rows and removed rows contribute original storeId, never reminted row.id, to
+    /// deletedIds. Ignore empty/unpersisted new rows. Deletion never reads dirty bits (R-M3-4a-69). New rows
+    /// bypass dirty filtering and use complete upserts with nil syncId minted on insertion (R-M3-4a-23).
+    /// Existing clean rows are skipped even if remotely deleted; never resurrect untouched data.
+    ///
+    /// For a dirty existing row absent from stored, emit a complete recovery draft using current sheet values,
+    /// original local ID and nil syncId (R-M3-4a-101). Hard and soft deletion look identical here;
+    /// applyURLRuleEditsBody step 2b distinguishes them transactionally (R-M3-4a-104). Never reuse the old
+    /// identity; resurrection belongs only to 3b. Check recovery before unit comparisons or incomplete insert
+    /// drafts could throw noCandidateSurvived and roll back the batch.
+    ///
+    /// Otherwise compare touched content/target/order units independently against current stored values,
+    /// omitting equal units. All nil means no upsert, write, stamp or flag. No third whole-bucket reorder pass
+    /// (ruling 12): dirty only the dragged row's order; store step 8 densely renumbers siblings without flags.
+    /// Dirtying the entire bucket prevents quiescence and makes every rule yield to remote deletion (CASE
+    /// U-21). Keep loaded in the signature for §5.8 call shape; dirty tracks touches after M5.
+    static func computeEditSet(rows: [Row],
+                               loaded: [Row],
+                               removed: [Row],
+                               stored: [SpaceRoutingRule],
+                               dirty: [UUID: RowDirty]) -> EditSet {
+        var storedByStoreId: [String: SpaceRoutingRule] = [:]
+        for rule in stored where storedByStoreId[rule.id] == nil { storedByStoreId[rule.id] = rule }
+
+        struct Live {
+            var row: Row
+            var host: String
+            var pathPrefix: String?
+            var bucketIndex: Int
+        }
+        var upserts: [LocalStore.URLRuleDraft] = []
+        var deletedIds: Set<String> = []
+        var live: [Live] = []
+        var bucketCounts: [String: Int] = [:]
+
+        // Pass 1: separate live and cleared rows; bucket indices count only live rows.
+        for row in rows {
+            let trimmed = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            var host = ""
+            var pathPrefix: String? = nil
+            if !trimmed.isEmpty {
+                (host, pathPrefix) = row.matchType.encode(value: trimmed)
+            }
+            if host.isEmpty {
+                if let storeId = row.storeId { deletedIds.insert(storeId) }
+                continue
+            }
+            let index = bucketCounts[row.targetSpaceId, default: 0]
+            bucketCounts[row.targetSpaceId] = index + 1
+            live.append(Live(row: row, host: host, pathPrefix: pathPrefix, bucketIndex: index))
+        }
+        for row in removed {
+            if let storeId = row.storeId { deletedIds.insert(storeId) }
+        }
+
+        // Pass 2 (M5): complete upserts for new rows; dirty-filter existing rows into recovery or per-unit
+        // drafts.
+        for entry in live {
+            let row = entry.row
+            guard let storeId = row.storeId else {
+                // Ruling 11: new sheet rows bypass dirty filtering and carry all units, satisfying insert's
+                // content/spaceId requirements. Mint syncId at insertion.
+                upserts.append(LocalStore.URLRuleDraft(
+                    id: row.id.uuidString,
+                    host: entry.host,
+                    pathPrefix: entry.pathPrefix,
+                    askBeforeRouting: row.askBeforeRouting,
+                    spaceId: row.targetSpaceId,
+                    sortOrder: entry.bucketIndex,
+                    createdDate: row.createdDate))
+                continue
+            }
+            let bits = dirty[row.id] ?? []
+            // Skip clean rows, including those now absent from stored (ruling 11). Do not resurrect remotely
+            // deleted untouched rows; refresh removes them from the sheet.
+            guard !bits.isEmpty else { continue }
+            guard let current = storedByStoreId[storeId] else {
+                // Recovery (R-M3-4a-101 / 104): complete draft, original ID, nil syncId. Hard tombstones and
+                // M2/(β) soft deletion are indistinguishable in the filtered stored domain; transaction step
+                // 2b distinguishes them.
+                upserts.append(LocalStore.URLRuleDraft(
+                    id: row.id.uuidString,
+                    syncId: nil,
+                    content: LocalStore.URLRuleDraft.ContentUnit(
+                        host: entry.host,
+                        pathPrefix: entry.pathPrefix,
+                        askBeforeRouting: row.askBeforeRouting),
+                    spaceId: row.targetSpaceId,
+                    sortOrder: entry.bucketIndex,
+                    createdDate: row.createdDate,
+                    contentUpdatedDate: nil))
+                continue
+            }
+            // Supply a unit only when touched AND still different from the current store value (ruling 12
+            // mapping table).
+            var content: LocalStore.URLRuleDraft.ContentUnit? = nil
+            if !bits.intersection(.content).isEmpty {
+                let normalized = LocalStore.normalizedRule(host: entry.host,
+                                                           pathPrefix: entry.pathPrefix)
+                if current.host != normalized.host
+                    || current.pathPrefix != normalized.pathPrefix
+                    || current.askBeforeRouting != row.askBeforeRouting {
+                    content = LocalStore.URLRuleDraft.ContentUnit(
+                        host: entry.host,
+                        pathPrefix: entry.pathPrefix,
+                        askBeforeRouting: row.askBeforeRouting)
+                }
+            }
+            var spaceId: String? = nil
+            if bits.contains(.target), current.spaceId != row.targetSpaceId {
+                spaceId = row.targetSpaceId
+            }
+            var sortOrder: Int? = nil
+            if bits.contains(.order), current.sortOrder != entry.bucketIndex {
+                sortOrder = entry.bucketIndex
+            }
+            // All three nil means no upsert, write, stamp or pending-edit flag.
+            guard content != nil || spaceId != nil || sortOrder != nil else { continue }
+            upserts.append(LocalStore.URLRuleDraft(
+                id: row.id.uuidString,
+                syncId: row.syncId,
+                content: content,
+                spaceId: spaceId,
+                sortOrder: sortOrder,
+                createdDate: nil,
+                contentUpdatedDate: nil))
+        }
+
+        return EditSet(upserts: upserts, deletedIds: deletedIds)
     }
 
     // MARK: - Row model
@@ -300,8 +597,16 @@ struct URLRulesEditor: View {
         }
     }
 
-    struct Row: Identifiable {
+    struct Row: Identifiable, Equatable {
         let id: UUID
+        /// The store row this came from (`SpaceURLRule.id`, verbatim). `nil` means the
+        /// user added it in this sheet — the two halves of "clearing a rule deletes it"
+        /// split on exactly this, and the delete set addresses rows by it: `id` has
+        /// already been recast for any non-UUID legacy id (`init(from:)`).
+        let storeId: String?
+        /// Account-level identity (`SpaceURLRule.syncId`), passed straight into the
+        /// draft so a row whose `id` got recast still lands on the same entity.
+        var syncId: String?
         var targetSpaceId: String
         var matchType: MatchType
         var value: String
@@ -312,6 +617,8 @@ struct URLRulesEditor: View {
 
         init(defaultSpaceId: String) {
             self.id = UUID()
+            self.storeId = nil
+            self.syncId = nil
             self.targetSpaceId = defaultSpaceId
             self.matchType = .domainSuffix
             self.value = ""
@@ -321,6 +628,8 @@ struct URLRulesEditor: View {
 
         init(from rule: SpaceRoutingRule) {
             self.id = UUID(uuidString: rule.id) ?? UUID()
+            self.storeId = rule.id
+            self.syncId = rule.syncId
             self.targetSpaceId = rule.spaceId
             let (matchType, value) = MatchType.decode(
                 host: rule.host, pathPrefix: rule.pathPrefix)
@@ -343,6 +652,13 @@ struct URLRulesEditor: View {
 /// focus resigns. The SwiftUI shell (header / footer / save) is unchanged.
 private struct RuleTableView: NSViewRepresentable {
     @Binding var rows: [URLRulesEditor.Row]
+    @Binding var removedRows: [URLRulesEditor.Row]
+    /// M5 / R-M3-4a-72: five interaction sites write this; computeEditSet reads it.
+    @Binding var dirty: [UUID: URLRulesEditor.RowDirty]
+    /// Only field refresh increments this token (spec §5.8 item 3); see updateNSView.
+    let refreshToken: Int
+    /// Rows with actual value changes in the last refresh; updateNSView reconfigures only these.
+    let refreshedIds: Set<UUID>
     let spaces: [Space]
 
     /// Captures every Space field shown in the target popup, so a rename / icon
@@ -447,12 +763,22 @@ private struct RuleTableView: NSViewRepresentable {
             if coordinator.spacesFingerprint != newFingerprint {
                 coordinator.spacesFingerprint = newFingerprint
                 tableView.reloadData()
+                coordinator.refreshToken = refreshToken
+                return
+            }
+            // The sole unchanged-ID exception (spec §5.8 item 3): field refresh changed row content. Configure
+            // only materialized affected cells; never reloadData, which loses field-editor focus. Offscreen
+            // cells read fresh values via viewFor when scrolled into view.
+            if coordinator.refreshToken != refreshToken {
+                coordinator.refreshToken = refreshToken
+                coordinator.reconfigureMaterializedRows(refreshedIds)
             }
             return
         }
 
         coordinator.displayedIDs = newIDs
         coordinator.spacesFingerprint = newFingerprint
+        coordinator.refreshToken = refreshToken
 
         // A single blank row appended at the end is the "Add Rule" path: insert
         // incrementally, scroll it into view, and focus its value field. A saved
@@ -489,8 +815,46 @@ private struct RuleTableView: NSViewRepresentable {
         weak var emptyOverlay: NSView?
         var displayedIDs: [UUID] = []
         var spacesFingerprint: String = ""
+        /// Latest field-refresh generation reflected in the UI (spec §5.8 item 3).
+        var refreshToken: Int = 0
 
         init(_ parent: RuleTableView) { self.parent = parent }
+
+        /// Reconfigure changed values in already materialized cells only. Both filters are required: skip
+        /// unchanged rows because configure rewrites text and rebuilds popup menus; skip the cell currently
+        /// hosting the field editor to preserve caret/selection even if another unit marked it changed. Its
+        /// text group is already dirty and refreshRows preserves it; later refresh after focus loss catches
+        /// up. Require makeIfNecessary=false: materializing offscreen rows adds pointless table-size work;
+        /// viewFor refreshes them when visible.
+        func reconfigureMaterializedRows(_ changed: Set<UUID>) {
+            guard !changed.isEmpty, let tableView else { return }
+            // This path requires identical ID sequences and thus equal row counts. min is defensive:
+            // out-of-bounds view(atColumn:row:) throws NSException.
+            let count = min(parent.rows.count, tableView.numberOfRows)
+            for index in 0..<count {
+                let row = parent.rows[index]
+                guard changed.contains(row.id) else { continue }
+                guard let cell = tableView.view(atColumn: 0, row: index,
+                                                makeIfNecessary: false) as? RuleCellView
+                else { continue }
+                guard !Self.holdsFieldEditor(cell, in: tableView) else { continue }
+                cell.configure(row: row, spaces: parent.spaces,
+                               askSpaceTag: URLRulesEditor.askSpaceTag)
+            }
+        }
+
+        /// Whether this cell hosts first responder. An editing NSTextField is not itself first responder: the
+        /// window's shared NSTextView field editor is, and its delegate points to the field. Recognize both
+        /// shapes.
+        private static func holdsFieldEditor(_ cell: NSView, in tableView: NSTableView) -> Bool {
+            guard let responder = tableView.window?.firstResponder else { return false }
+            if let textView = responder as? NSTextView, textView.isFieldEditor {
+                guard let field = textView.delegate as? NSView else { return false }
+                return field.isDescendant(of: cell)
+            }
+            guard let view = responder as? NSView else { return false }
+            return view.isDescendant(of: cell)
+        }
 
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rows.count }
 
@@ -501,13 +865,22 @@ private struct RuleTableView: NSViewRepresentable {
             let id = parent.rows[row].id
             cell.configure(row: parent.rows[row], spaces: parent.spaces,
                            askSpaceTag: URLRulesEditor.askSpaceTag)
+            // M5 / ruling 12: record touches, compare current stored values in save. value, matchType and ask
+            // belong to one content merge unit.
             cell.onValueChange = { [weak self] newValue in
+                self?.markDirty(id: id, .value)
                 self?.mutate(id: id) { $0.value = newValue }
             }
             cell.onMatchTypeChange = { [weak self] newType in
+                self?.markDirty(id: id, .matchType)
                 self?.mutate(id: id) { $0.matchType = newType }
             }
             cell.onTargetChange = { [weak self] selection in
+                // One picker spans two units: the askSpaceTag sentinel dirties only ask because targetSpaceId
+                // stays unchanged; a real Space selection dirties ask and target.
+                let bits: URLRulesEditor.RowDirty =
+                    selection == URLRulesEditor.askSpaceTag ? [.ask] : [.ask, .target]
+                self?.markDirty(id: id, bits)
                 self?.mutate(id: id) { row in
                     if selection == URLRulesEditor.askSpaceTag {
                         row.askBeforeRouting = true
@@ -530,9 +903,19 @@ private struct RuleTableView: NSViewRepresentable {
             parent.rows = updated
         }
 
+        /// M5: union touched bits, never subtract. Only load clears the whole map; refresh never clears dirty
+        /// bits (ruling 10).
+        private func markDirty(id: UUID, _ bits: URLRulesEditor.RowDirty) {
+            parent.dirty[id, default: []].formUnion(bits)
+        }
+
         private func deleteRow(id: UUID) {
             guard let index = parent.rows.firstIndex(where: { $0.id == id }) else { return }
             var updated = parent.rows
+            // Record the removed row so computeEditSet can use its storeId for deletedIds. Set no dirty bits
+            // (ruling 12 / R-M3-4a-69): deletion precedes dirty filtering, and flagging it would make an
+            // intentionally deleted rule yield to inbound tombstones.
+            parent.removedRows.append(updated[index])
             updated.remove(at: index)
             parent.rows = updated
             displayedIDs = updated.map(\.id)
@@ -578,6 +961,10 @@ private struct RuleTableView: NSViewRepresentable {
             var updated = parent.rows
             let moved = updated.remove(at: sourceRow)
             updated.insert(moved, at: destination)
+            // M5 / ruling 12: dirty only the dragged row's order. Dirtying the whole bucket prevents
+            // quiescence and makes all rules yield to remote deletion. applyURLRuleEditsBody step 8 normalizes
+            // siblings without flags (CASE U-21).
+            markDirty(id: moved.id, .order)
             parent.rows = updated
             displayedIDs = updated.map(\.id)
             tableView.beginUpdates()
@@ -710,9 +1097,10 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         } else if row.askBeforeRouting {
             targetPopup.select(askItem)
         } else {
-            // Auto-route rule whose target Space was deleted. Show an explicit
-            // disabled "unavailable" item (NOT a false "Ask every time") so the
-            // user must re-target it; if left as-is, save() drops it as before.
+            /// Auto-route rule whose target Space is not currently resolvable. Show an
+            /// explicit disabled "unavailable" item (NOT a false "Ask every time"); the
+            /// row is saved back with its target untouched and simply stays out of the
+            /// routing payload until that Space comes back.
             let missing = NSMenuItem(
                 title: NSLocalizedString("sidebar.urlRulesEditor.target.unavailablePlaceholder", value: "Target Space unavailable",
                     comment: "URL rule target whose Space no longer exists"),

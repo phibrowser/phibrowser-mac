@@ -6,6 +6,17 @@
 import Foundation
 
 /// Account-scoped preferences persisted to a plist under `account.userDataStorage/defaults`.
+///
+/// Memory must never lead disk (R-M3-4a-83). All six write APIs snapshot `storage` and restore it on
+/// persistence failure within the same `queue.sync` block. A failed write must not leave an in-memory value
+/// that causes the next read-modify-write to skip persistence (§2.7, second round after plist write failure).
+///
+/// Only four APIs own a `queue.sync` block: both `set(_:forKey:)` overloads, CAS, and `removeAll()`.
+/// `removeObject(forKey:)` and `set(_:forCodableKey:)` delegate snapshot and rollback to those blocks. A
+/// separate block could interleave with another writer and roll back its changes.
+///
+/// The first five APIs return whether persistence succeeded and use `@discardableResult` for existing callers.
+/// CAS (`ifCurrentDataEquals:`) returns whether the value changed AND persisted.
 final class AccountUserDefaults {
     private let account: Account
     private let storeURL: URL
@@ -35,32 +46,50 @@ final class AccountUserDefaults {
         }
     }
     
-    func set(_ value: Any?, forKey key: String) {
+    /// Returns true after persistence; restores the previous `storage` on failure (R-M3-4a-83).
+    @discardableResult
+    func set(_ value: Any?, forKey key: String) -> Bool {
         queue.sync {
+            let previous = storage
             if let value = value {
                 storage[key] = value
             } else {
                 storage.removeValue(forKey: key)
             }
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
-    
-    func set(_ value: Any?, forKey key: DefaultsKey) {
+
+    /// The `DefaultsKey` overload owns its `queue.sync` block and must implement rollback too; updating only
+    /// one overload produces no type error.
+    @discardableResult
+    func set(_ value: Any?, forKey key: DefaultsKey) -> Bool {
         queue.sync {
+            let previous = storage
             if let value = value {
                 storage[key.rawValue] = value
             } else {
                 storage.removeValue(forKey: key.rawValue)
             }
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
-    
-    func removeObject(forKey key: String) {
+
+    /// Delegates snapshot and rollback to `set(_:forKey:)` within its `queue.sync` block and forwards the
+    /// result.
+    @discardableResult
+    func removeObject(forKey key: String) -> Bool {
         set(nil, forKey: key)
     }
-    
+
     func bool(forKey key: String) -> Bool {
         object(forKey: key) as? Bool ?? false
     }
@@ -85,21 +114,27 @@ final class AccountUserDefaults {
         object(forKey: key) as? Date
     }
     
-    func set<T: Encodable>(_ value: T?, forCodableKey key: String) {
+    /// After encoding, delegates persistence and rollback to `set(_:forKey:)`. Encoding failure writes nothing
+    /// and returns false.
+    @discardableResult
+    func set<T: Encodable>(_ value: T?, forCodableKey key: String) -> Bool {
         guard let value = value else {
-            removeObject(forKey: key)
-            return
+            return removeObject(forKey: key)
         }
         do {
             let data = try JSONEncoder().encode(value)
-            set(data, forKey: key)
+            return set(data, forKey: key)
         } catch {
             AppLogError("Failed to encode value for key \(key): \(error.localizedDescription)")
+            return false
         }
     }
 
-    /// Atomically writes an encoded value only when the stored data has not
-    /// changed since the caller captured `expectedData`.
+    /// Atomically writes an encoded value only when the stored data has not changed since the caller captured
+    /// `expectedData`.
+    ///
+    /// Here true means changed AND persisted (R-M3-4a-83). A mismatch returns false without writing;
+    /// persistence failure also returns false and restores `storage`, avoiding an in-memory-only success.
     @discardableResult
     func set<T: Encodable>(
         _ value: T,
@@ -115,9 +150,13 @@ final class AccountUserDefaults {
         }
 
         return queue.sync {
+            let previous = storage
             guard (storage[key] as? Data) == expectedData else { return false }
             storage[key] = data
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
             return true
         }
     }
@@ -132,10 +171,18 @@ final class AccountUserDefaults {
         }
     }
     
-    func removeAll() {
+    /// Restore the entire dictionary on failure; otherwise all account preferences would disappear from
+    /// memory.
+    @discardableResult
+    func removeAll() -> Bool {
         queue.sync {
+            let previous = storage
             storage.removeAll()
-            persistLocked()
+            guard persistLocked() else {
+                storage = previous
+                return false
+            }
+            return true
         }
     }
     
@@ -167,12 +214,15 @@ final class AccountUserDefaults {
         }
     }
     
-    private func persistLocked() {
+    /// The caller must hold `queue` and handle false: all six write APIs use it to trigger rollback.
+    private func persistLocked() -> Bool {
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: storage, format: .xml, options: 0)
             try data.write(to: storeURL, options: .atomic)
+            return true
         } catch {
             AppLogError("Failed to write account defaults: \(error.localizedDescription)")
+            return false
         }
     }
 

@@ -372,11 +372,77 @@ extension AgentSpaceRouter {
 
     // MARK: - URL rules
 
-    private static func draft(from rule: SpaceRoutingRule) -> LocalStore.URLRuleDraft {
-        LocalStore.URLRuleDraft(host: rule.host,
+    /// One existing row as a draft that names itself: `id` / `syncId` keep the
+    /// row's identity across the write (R-M3-4a-13), `spaceId` is its current
+    /// bucket and `sortOrder` the caller's per-bucket index.
+    private static func draft(from rule: SpaceRoutingRule, sortOrder: Int) -> LocalStore.URLRuleDraft {
+        LocalStore.URLRuleDraft(id: rule.id,
+                                host: rule.host,
                                 pathPrefix: rule.pathPrefix,
                                 askBeforeRouting: rule.askBeforeRouting,
-                                createdDate: rule.createdDate)
+                                spaceId: rule.spaceId,
+                                sortOrder: sortOrder,
+                                createdDate: rule.createdDate,
+                                syncId: rule.syncId)
+    }
+
+    /// `spaceId`'s rows in bucket order (`sortOrder`, then `id` — the same
+    /// order the store's dense renumbering would produce).
+    private static func bucket(_ spaceId: String, in all: [SpaceRoutingRule]) -> [SpaceRoutingRule] {
+        all.filter { $0.spaceId == spaceId }
+            .sorted { lhs, rhs in
+                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+                return lhs.id < rhs.id
+            }
+    }
+
+    /// Pure: the edit set for `urlRules.add`. The target bucket is re-sent in
+    /// full with its own ids (so nothing there misses the index) plus one new
+    /// draft at the tail — no `id` / `syncId` on the new row, the store mints
+    /// them at the insertion point (R-M3-4a-23). Buckets not touched send nothing.
+    static func urlRuleAddEdits(all: [SpaceRoutingRule], spaceId: String, host: String,
+                                pathPrefix: String?, ask: Bool) -> URLRulesEditor.EditSet {
+        let existing = bucket(spaceId, in: all)
+        var upserts = existing.enumerated().map { index, rule in draft(from: rule, sortOrder: index) }
+        upserts.append(LocalStore.URLRuleDraft(host: host,
+                                               pathPrefix: pathPrefix,
+                                               askBeforeRouting: ask,
+                                               spaceId: spaceId,
+                                               sortOrder: existing.count))
+        return URLRulesEditor.EditSet(upserts: upserts, deletedIds: [])
+    }
+
+    /// Pure: the edit set for `urlRules.update`. Same Space ⇒ the bucket is
+    /// re-sent in place with the edited row swapped in at its own index. A
+    /// different Space ⇒ the source bucket is re-sent without the row and the
+    /// target bucket with it appended; each bucket is indexed on its own.
+    static func urlRuleUpdateEdits(all: [SpaceRoutingRule], existing: SpaceRoutingRule, host: String,
+                                   pathPrefix: String?, ask: Bool,
+                                   spaceId: String) -> URLRulesEditor.EditSet {
+        func edited(sortOrder: Int) -> LocalStore.URLRuleDraft {
+            LocalStore.URLRuleDraft(id: existing.id,
+                                    host: host,
+                                    pathPrefix: pathPrefix,
+                                    askBeforeRouting: ask,
+                                    spaceId: spaceId,
+                                    sortOrder: sortOrder,
+                                    createdDate: existing.createdDate,
+                                    syncId: existing.syncId)
+        }
+        var upserts: [LocalStore.URLRuleDraft] = []
+        if spaceId == existing.spaceId {
+            for (index, rule) in bucket(spaceId, in: all).enumerated() {
+                upserts.append(rule.id == existing.id ? edited(sortOrder: index)
+                                                      : draft(from: rule, sortOrder: index))
+            }
+        } else {
+            let source = bucket(existing.spaceId, in: all).filter { $0.id != existing.id }
+            upserts += source.enumerated().map { index, rule in draft(from: rule, sortOrder: index) }
+            let target = bucket(spaceId, in: all)
+            upserts += target.enumerated().map { index, rule in draft(from: rule, sortOrder: index) }
+            upserts.append(edited(sortOrder: target.count))
+        }
+        return URLRulesEditor.EditSet(upserts: upserts, deletedIds: [])
     }
 
     /// Committed rule rows, straight from the store. The manager's
@@ -400,7 +466,7 @@ extension AgentSpaceRouter {
     }
 
     /// `agentSpace.urlRules.list` — every Space's rules. Row ids are stable
-    /// until the next rule write (the store regenerates ids on save), so
+    /// across writes (rows are upserted in place, R-M3-4a-13), so
     /// list-then-mutate within one round is the intended use.
     static func handleUrlRulesList(context: ExtensionMessageContext) -> String? {
         let rules = MainActor.assumeIsolated {
@@ -420,45 +486,77 @@ extension AgentSpaceRouter {
 
     /// `agentSpace.urlRules.add` — append one rule to `spaceId`'s rule set.
     /// `host` accepts the three matcher forms ("github.com", "*.figma.com",
-    /// "*git*"); `pathPrefix` is canonicalized by the draft.
-    static func handleUrlRulesAdd(context: ExtensionMessageContext) -> String? {
+    /// "*git*"); `pathPrefix` is canonicalized by the draft. Async: the
+    /// reply follows the committed write.
+    static func handleUrlRulesAdd(context: ExtensionMessageContext) {
+        let requestId = context.requestId
         guard let obj = json(context.payload),
               let spaceId = obj["spaceId"] as? String,
-              let rawHost = obj["host"] as? String else { return invalid() }
-        let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !host.isEmpty else { return invalid() }
-        return MainActor.assumeIsolated {
-            guard isValidRuleTarget(spaceId) else { return failure("unknown_space") }
-            let manager = SpaceManager.shared
-            var drafts = storedRules()
-                .filter { $0.spaceId == spaceId }
-                .map(draft(from:))
-            drafts.append(LocalStore.URLRuleDraft(
-                host: host,
-                pathPrefix: obj["pathPrefix"] as? String,
-                askBeforeRouting: obj["ask"] as? Bool ?? false))
-            manager.setRules(drafts, forSpaceId: spaceId)
-            return ok()
+              let rawHost = obj["host"] as? String,
+              case let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !host.isEmpty else {
+            MainActor.assumeIsolated {
+                ExtensionMessaging.shared.sendResponse(invalid(), requestId: requestId)
+            }
+            return
+        }
+        MainActor.assumeIsolated {
+            guard isValidRuleTarget(spaceId) else {
+                ExtensionMessaging.shared.sendResponse(failure("unknown_space"), requestId: requestId)
+                return
+            }
+            let edits = urlRuleAddEdits(all: storedRules(),
+                                        spaceId: spaceId,
+                                        host: host,
+                                        pathPrefix: obj["pathPrefix"] as? String,
+                                        ask: obj["ask"] as? Bool ?? false)
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
+            }
+            Task { @MainActor in
+                do {
+                    try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
+                    ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
+                } catch {
+                    AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")
+                    ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                }
+            }
         }
     }
 
     /// `agentSpace.urlRules.update` — modify one rule by id (from a fresh
     /// `urlRules.list`). Optional `host` / `pathPrefix` / `ask` / `spaceId`
     /// (the latter moves the rule to another Space's set). Position is
-    /// preserved when the Space is unchanged.
-    static func handleUrlRulesUpdate(context: ExtensionMessageContext) -> String? {
+    /// preserved when the Space is unchanged. Async: the reply follows the
+    /// committed write.
+    static func handleUrlRulesUpdate(context: ExtensionMessageContext) {
+        let requestId = context.requestId
         guard let obj = json(context.payload),
-              let id = obj["id"] as? String else { return invalid() }
-        return MainActor.assumeIsolated {
-            let manager = SpaceManager.shared
+              let id = obj["id"] as? String else {
+            MainActor.assumeIsolated {
+                ExtensionMessaging.shared.sendResponse(invalid(), requestId: requestId)
+            }
+            return
+        }
+        MainActor.assumeIsolated {
             let all = storedRules()
             guard let existing = all.first(where: { $0.id == id }) else {
-                return failure("unknown_rule")
+                ExtensionMessaging.shared.sendResponse(failure("unknown_rule"), requestId: requestId)
+                return
             }
             let newHost = ((obj["host"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased()) ?? existing.host
-            guard !newHost.isEmpty else { return invalid() }
+            guard !newHost.isEmpty else {
+                ExtensionMessaging.shared.sendResponse(invalid(), requestId: requestId)
+                return
+            }
             // Distinguish "pathPrefix absent" (keep) from "pathPrefix: null
             // or empty" (clear) — the draft's normalizer maps empty to nil.
             let newPath: String?
@@ -470,46 +568,72 @@ extension AgentSpaceRouter {
             let newAsk = obj["ask"] as? Bool ?? existing.askBeforeRouting
             let newSpace = obj["spaceId"] as? String ?? existing.spaceId
             if newSpace != existing.spaceId {
-                guard isValidRuleTarget(newSpace) else { return failure("unknown_space") }
-            }
-            var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
-            for rule in all {
-                if rule.id == id {
-                    byTarget[newSpace, default: []].append(LocalStore.URLRuleDraft(
-                        host: newHost,
-                        pathPrefix: newPath,
-                        askBeforeRouting: newAsk,
-                        createdDate: rule.createdDate))
-                } else {
-                    byTarget[rule.spaceId, default: []].append(draft(from: rule))
+                guard isValidRuleTarget(newSpace) else {
+                    ExtensionMessaging.shared.sendResponse(failure("unknown_space"), requestId: requestId)
+                    return
                 }
             }
-            manager.setAllRules(byTarget)
-            return ok()
+            let edits = urlRuleUpdateEdits(all: all,
+                                           existing: existing,
+                                           host: newHost,
+                                           pathPrefix: newPath,
+                                           ask: newAsk,
+                                           spaceId: newSpace)
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
+            }
+            Task { @MainActor in
+                do {
+                    try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
+                    ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
+                } catch {
+                    AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")
+                    ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                }
+            }
         }
     }
 
-    /// `agentSpace.urlRules.delete` — remove one rule by id.
-    static func handleUrlRulesDelete(context: ExtensionMessageContext) -> String? {
+    /// `agentSpace.urlRules.delete` — remove one rule by id. One soft delete,
+    /// no bucket rebuild: the store keeps the bucket dense (R-M3-4a-41 /
+    /// R-M3-4a-56). Async: the reply follows the committed write.
+    static func handleUrlRulesDelete(context: ExtensionMessageContext) {
+        let requestId = context.requestId
         guard let obj = json(context.payload),
-              let id = obj["id"] as? String else { return invalid() }
-        return MainActor.assumeIsolated {
-            let manager = SpaceManager.shared
-            let all = storedRules()
-            guard all.contains(where: { $0.id == id }) else {
-                return failure("unknown_rule")
+              let id = obj["id"] as? String else {
+            MainActor.assumeIsolated {
+                ExtensionMessaging.shared.sendResponse(invalid(), requestId: requestId)
             }
-            var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
-            for rule in all where rule.id != id {
-                byTarget[rule.spaceId, default: []].append(draft(from: rule))
+            return
+        }
+        MainActor.assumeIsolated {
+            guard storedRules().contains(where: { $0.id == id }) else {
+                ExtensionMessaging.shared.sendResponse(failure("unknown_rule"), requestId: requestId)
+                return
             }
-            // Buckets that just lost their only rule must still be present so
-            // setAllRules clears them — seed every Space that had rules.
-            for rule in all where byTarget[rule.spaceId] == nil {
-                byTarget[rule.spaceId] = []
+            let edits = URLRulesEditor.EditSet(upserts: [], deletedIds: [id])
+            // Delay the reply: ok means committed; failures return write_failed, distinct from an unapplied
+            // write (R-M3-3-14).
+            guard let expectedStoreIdentifier = SpaceManager.shared.storeIdentifier else {
+                ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                return
             }
-            manager.setAllRules(byTarget)
-            return ok()
+            Task { @MainActor in
+                do {
+                    try await SpaceManager.shared.applyRuleEdits(upserts: edits.upserts,
+                                                                 deletedIds: edits.deletedIds,
+                                                                 expectedStoreIdentifier: expectedStoreIdentifier)
+                    ExtensionMessaging.shared.sendResponse(ok(), requestId: requestId)
+                } catch {
+                    AppLogError("[AgentSpaceRouter] urlRules write failed: \(PhiSyncLog.describe(error))")
+                    ExtensionMessaging.shared.sendResponse(failure("write_failed"), requestId: requestId)
+                }
+            }
         }
     }
 

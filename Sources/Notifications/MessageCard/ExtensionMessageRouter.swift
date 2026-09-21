@@ -414,13 +414,16 @@ final class ExtensionMessageRouter {
             return AgentSpaceRouter.handleUrlRulesList(context: context)
         }
         registerUserSpaceManaged(type: "agentSpace.urlRules.add") { context in
-            return AgentSpaceRouter.handleUrlRulesAdd(context: context)
+            AgentSpaceRouter.handleUrlRulesAdd(context: context)
+            return nil  // async reply via ExtensionMessaging
         }
         registerUserSpaceManaged(type: "agentSpace.urlRules.update") { context in
-            return AgentSpaceRouter.handleUrlRulesUpdate(context: context)
+            AgentSpaceRouter.handleUrlRulesUpdate(context: context)
+            return nil  // async reply via ExtensionMessaging
         }
         registerUserSpaceManaged(type: "agentSpace.urlRules.delete") { context in
-            return AgentSpaceRouter.handleUrlRulesDelete(context: context)
+            AgentSpaceRouter.handleUrlRulesDelete(context: context)
+            return nil  // async reply via ExtensionMessaging
         }
         register(type: "agentSpace.tabGroups.list") { context in
             return AgentSpaceRouter.handleTabGroupsList(context: context)

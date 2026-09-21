@@ -6,6 +6,7 @@
 import SwiftUI
 import AppKit
 import PostHog
+import Combine
 import UniformTypeIdentifiers
 
 /// Settings pane content for managing Spaces, laid out master-detail (mirroring
@@ -97,6 +98,23 @@ struct SpacesSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
             syncThemeControls()
+        }
+        // The pin-scope picker owns State that remote changes otherwise leave stale, letting a later selection
+        // roll every device back. Read the newly landed mirror key, not store.pinnedTabScope(): the
+        // coordinator's observer starts asynchronous migration, so the row may still lag. The mirror is
+        // authoritative now and must not be republished as local intent. On migration failure the old row
+        // remains; onAppear corrects the next panel opening from it. Receive on main because
+        // SyncableSettings.apply runs on the engine thread and State requires main-thread writes.
+        .onReceive(
+            NotificationCenter.default
+                .publisher(for: .phiSyncedSettingsDidApply)
+                .receive(on: DispatchQueue.main)
+        ) { note in
+            let applied = note.userInfo?[SyncableSettings.appliedKeysUserInfoKey] as? [String] ?? []
+            guard applied.contains(PinnedTabScopeMirror.key),
+                  let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
+                  let scope = PinnedTabScope(rawValue: raw) else { return }
+            pinnedTabScope = scope
         }
     }
 

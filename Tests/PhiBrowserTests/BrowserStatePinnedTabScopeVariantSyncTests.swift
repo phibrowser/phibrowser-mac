@@ -13,6 +13,9 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {
+        // This class runs real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
+        clearPinnedTabScopeMirrorDefaults()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -281,6 +284,72 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         let wrapper: PinnedScopeVariantWebContentWrapperSpy
     }
 
+    /// Reproduces Mac B, 2026-09-15 01:20, build 825: switch Profile scope to Space, then unpin;
+    /// the sidebar crashed on the second step.
+    ///
+    /// The pinnedTabs invariant is one runtime Tab per physical row, with no repeated object.
+    /// Migration rebinds existing Tab objects in place to preserve live WebContents. Any duplicate
+    /// reaches the sidebar's diffable snapshot, where duplicate identifiers cause a crash.
+    func testAScopeMigrationThenAnUnpinKeepsOneRuntimeTabPerRow() async throws {
+        let store = try makeStore()
+        let profile = try seedProfileAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "profile-one", lineageId: "lineage-one",
+                            profile: profile, title: "One", url: "https://one.example",
+                            index: 0)
+        try insertPinnedTab(in: store, guid: "profile-two", lineageId: "lineage-two",
+                            profile: profile, title: "Two", url: "https://two.example",
+                            index: 1)
+
+        let state = BrowserState(windowId: 1, localStore: store,
+                                 profileId: "Default", spaceId: "space-a")
+        XCTAssertEqual(state.pinnedTabs.count, 2)
+        let runtimeOne = try runtimeTab(in: state, lineageId: "lineage-one")
+        let oldGuid = try XCTUnwrap(runtimeOne.guidInLocalDB)
+        let binding = bindLiveTab(runtimeOne, to: state, chromiumGuid: 101)
+
+        try await store.changePinnedTabScope(to: .space, preferredProfileId: "Default",
+                                             preferredSpaceId: "space-a")
+        try waitUntil(describing: "the migrated Space rows reach the window") {
+            state.pinnedTabs.count == 2 && runtimeOne.guidInLocalDB != oldGuid
+        }
+        assertUniquePinnedRuntimeTabs(state, expectedCount: 2)
+        XCTAssertTrue(state.pinnedTabs.contains { $0 === runtimeOne },
+                      "① Migration preserves the live runtime tab object")
+        XCTAssertEqual(binding.liveTab.guidInLocalDB, runtimeOne.guidInLocalDB,
+                       "② The live tab follows the migration to the same new row")
+
+        // Step 2: unpin the other tab; the original crash occurred here.
+        let victim = try XCTUnwrap(
+            state.pinnedTabs.first(where: { $0.pinnedLineageId == "lineage-two" })?.guidInLocalDB
+        )
+        store.removeActivePinnedTab(guid: victim)
+        await store.performBackgroundWriteAndWait { _ in }
+        try waitUntil(describing: "the unpin reaches the window") {
+            state.pinnedTabs.count == 1
+        }
+
+        assertUniquePinnedRuntimeTabs(state, expectedCount: 1)
+        XCTAssertTrue(state.pinnedTabs.first === runtimeOne,
+                      "③ The same runtime tab survives")
+    }
+
+    private func assertUniquePinnedRuntimeTabs(
+        _ state: BrowserState,
+        expectedCount: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(state.pinnedTabs.count, expectedCount, file: file, line: line)
+        let guids = state.pinnedTabs.compactMap(\.guidInLocalDB)
+        XCTAssertEqual(guids.count, state.pinnedTabs.count,
+                       "Every pin is bound to a physical row", file: file, line: line)
+        XCTAssertEqual(Set(guids).count, guids.count,
+                       "No two runtime tabs point to the same row", file: file, line: line)
+        let objects = state.pinnedTabs.map { ObjectIdentifier($0) }
+        XCTAssertEqual(Set(objects).count, objects.count,
+                       "No object appears twice", file: file, line: line)
+    }
+
     private func makeStore() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -338,11 +407,11 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
             updatedDate: Date()
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profile.profileId
         model.pinLineageId = lineageId
         model.splitPartnerGuid = splitPartnerGuid
         context.insert(model)
+        model.profile = profile
         try context.save()
     }
 

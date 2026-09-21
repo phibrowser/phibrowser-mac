@@ -16,6 +16,10 @@ actor LocalStoreActor {
             try modelContext.save()
         } catch {
             AppLogError("[LocalStore] save error: \(error)")
+            // Roll back as performThrowing does. All background writes share this ModelActor's modelContext;
+            // failed saves otherwise retain invalid pending models and poison every subsequent write,
+            // including sync landing, until some throwing operation happens to roll back.
+            modelContext.rollback()
         }
     }
 
@@ -38,8 +42,8 @@ class LocalStore {
     static let willCloseNotification = Notification.Name("LocalStore.willClose")
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 10,
-        readableStoreFormatVersions: 1...10,
+        currentStoreFormatVersion: 12,
+        readableStoreFormatVersions: 1...12,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -155,6 +159,10 @@ class LocalStore {
             } catch {
                 AppLogError("[LocalStore] Failed to record opened local store format: \(error)")
             }
+            // Queue one-time duplicate-pin repair first: GUID-indexed readers can trap on existing duplicate
+            // rows. Since repair is fire-and-forget, readers must also tolerate duplicate keys; both
+            // protections are necessary (see healDuplicatePinnedTabRows).
+            healDuplicatePinnedTabRows()
         } catch {
             AppLogError("Failed to create ModelContainer: \(error)")
             container = nil
@@ -365,19 +373,7 @@ extension LocalStore {
     func updateTabSplitPartner(_ guid: String, partnerGuid: String?) {
         performBackgroundWrite { context in
             do {
-                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
-                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
-                if let tab = try context.fetch(descriptor).first {
-                    let layoutAlreadyCleared = partnerGuid != nil || tab.layout == nil
-                    if tab.splitPartnerGuid == partnerGuid, layoutAlreadyCleared {
-                        return
-                    }
-                    tab.splitPartnerGuid = partnerGuid
-                    if partnerGuid == nil {
-                        tab.layout = nil
-                    }
-                    tab.updatedDate = Date()
-                }
+                try self.updateTabSplitPartnerBody(guid, partnerGuid: partnerGuid, in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to update split partner: \(error)")
             }
@@ -553,6 +549,24 @@ extension LocalStore {
         }
     }
     
+    /// Coalesce one favicon-backfill round into one throwing background transaction (Phi sync M3-3 §8.2 / Task
+    /// 10). Unlike updateTabFavicon, this avoids N transactions and reports success/failure to the queue. Skip
+    /// identical bytes, including updatedDate, so repeated backfill does not falsely mark rows newly updated.
+    func updateTabFaviconsThrowing(_ writes: [(guid: String, favicon: Data)]) async throws {
+        guard !writes.isEmpty else { return }
+        try await performBackgroundWriteAndWaitThrowing { context in
+            for write in writes {
+                let guid = write.guid
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                guard let tab = try context.fetch(descriptor).first else { continue }
+                if tab.favicon == write.favicon { continue }
+                tab.favicon = write.favicon
+                tab.updatedDate = Date()
+            }
+        }
+    }
+
     func deleteTab(_ tab: TabDataModel) {
         let guid = tab.guid
         performBackgroundWrite { context in
@@ -776,6 +790,346 @@ extension LocalStore {
             })
             .eraseToAnyPublisher()
     }
+
+    // MARK: - Account-wide change signals (M3-3 §5.7)
+    //
+    // These are separate from per-window pinnedTabsPublisher/bookmarksPublisher(profileId:spaceId:). UI
+    // publishers carry current model arrays per profile/Space and emit initially. These account-wide signals
+    // carry Void for engine snapshot reads and emit only changes; initial emission would enqueue a needless
+    // push. Preserve existing UI publisher behavior.
+    //
+    // Deduplicate value snapshot arrays, never model objects: SwiftData refreshes the same instances in place,
+    // so object comparisons can swallow real field edits. spacesPublisher and PinnedTabSnapshot document the
+    // same trap.
+    //
+    // Snapshots intentionally form a superset of sync's domain: no canonical-root filter for bookmarks, no
+    // scope filter for pins. Extra signals yield empty pushes, while narrower or divergent predicates miss
+    // real edits (§4.8). Sort by GUID to avoid false changes from unstable fetch order.
+    //
+    // Order stages as type filter → 2 s debounce → one projection → deduplication (§5.7 item 1). Debouncing
+    // after projection reduces emissions but still performs a main-actor full fetch/map/sort for every save
+    // during imports or multi-row drags. Keep deduplication too: favicon backfill may start the timer but
+    // leave an equal snapshot after the quiet period.
+
+    /// Default debounce window, equal to PhiChromiumCoordinator.phiSyncPushDebounce but intentionally stored
+    /// here to avoid a LocalStorage-to-coordinator dependency. The coordinator must not debounce these signals
+    /// again, which would double latency to 4 s.
+    ///
+    /// Both publishers accept debounceWindow for tests: use the default when measuring the window itself;
+    /// shorten it for unrelated filtering/deduplication/scope assertions. Production always uses the default.
+    static let changeSignalDebounce: TimeInterval = 2
+
+    /// Account-wide bookmark/folder change signal (§5.7), with no initial emission. Debounce here before any
+    /// projection, not in the coordinator.
+    ///
+    /// Subscribe on the main thread (enforced in Deferred), since the initial baseline reads mainContext.
+    /// Off-main concurrent reads may silently return partial data; coordinator and tests subscribe on the main
+    /// actor.
+    ///
+    /// Exclude favicon, lastSeen and updatedDate: their writes can start the timer but yield identical
+    /// snapshots and no signal, preventing Task 10 backfill from triggering redundant pushes.
+    ///
+    /// Deferred gives each subscription its own baseline captured at subscription time. Shared baselines would
+    /// starve later subscribers, including coordinator resubscription after stopPhiSync().
+    @MainActor
+    func bookmarkChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            // Capture the baseline at subscription without emitting: it is the previous state, not a change.
+            var lastSnapshot = self.bookmarkChangeSnapshot()
+
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: {
+                            guard $0.entity.name == TabDataModel.entityName,
+                                  let type = LocalStore.tabType(from: $0) else { return false }
+                            return type == TabDataType.bookmark.rawValue ||
+                                type == TabDataType.bookmarkFolder.rawValue
+                        }
+                    )
+                }
+                // Move to the main queue before stateful debounce. Save notifications originate on background
+                // context threads; concurrent delivery could race debounce's last value/timer. The preceding
+                // filter is safe because its two helpers are pure static functions.
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    // On read failure emit no signal, never interpret it as empty: downstream diff would
+                    // tombstone every cursor (§4.7).
+                    guard let self else { return nil }
+                    guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
+    }
+
+    /// Account-wide pin change signal (§5.7). No initial emission; each subscription has its own baseline and
+    /// must start on the main thread, as above. Include BrowserDataSettingsModel in the filter, matching
+    /// pinnedTabsPublisher: scope changes alter claimed rows without touching TabDataModel. Include scope in
+    /// the snapshot too, since a pure scope change leaves physical rows unchanged.
+    @MainActor
+    func pinnedTabChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            var lastSnapshot = self.pinnedTabChangeSnapshot()
+
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: {
+                            if $0.entity.name == BrowserDataSettingsModel.entityName {
+                                return true
+                            }
+                            return $0.entity.name == TabDataModel.entityName &&
+                                LocalStore.tabType(from: $0) == TabDataType.pinnedTab.rawValue
+                        }
+                    )
+                }
+                // Move to the main queue before debounce, as for bookmarks.
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    guard let self else { return nil }
+                    guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
+    }
+
+    /// Account-wide URL Rule change signal (§6.5). No initial emission; Deferred supplies a per-subscription
+    /// baseline, and subscription must start on the main thread, as for bookmarks.
+    ///
+    /// Do not derive from UI urlRulesPublisher(), which passes mutable SwiftData models and deduplicates by
+    /// IDs; SpaceManager already consumes it. Snapshot the domain including soft-deleted rows (R-M3-4a-51),
+    /// matching diff: soft deletion carries local deletion intent and must emit.
+    ///
+    /// Keep debounce here. §6.5 describes the overall throttle/snapshot-deduplication/2 s debounce pipeline;
+    /// adding another coordinator debounce doubles latency to 4 s.
+    @MainActor
+    func urlRuleChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            // Capture the baseline at subscription without emitting: it is the previous state, not a change.
+            var lastSnapshot = self.urlRuleChangeSnapshot()
+
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: { $0.entity.name == SpaceURLRule.entityName }
+                    )
+                }
+                // Move to the main queue before debounce, as for bookmarks.
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    // On read failure emit no signal; never interpret it as all rows deleted.
+                    guard let self else { return nil }
+                    guard let snapshot = self.urlRuleChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
+    }
+
+    /// nil means unreadable now. Include soft-deleted rows (R-M3-4a-51): soft deletion is a change.
+    @MainActor
+    private func urlRuleChangeSnapshot() -> [URLRuleChangeSnapshot]? {
+        guard let context = mainContext else { return nil }
+        do {
+            return try allURLRuleModelsIncludingDeleted(in: context)
+                .map(URLRuleChangeSnapshot.init)
+                .sorted { $0.id < $1.id }
+        } catch {
+            // R12: log only type and domain/code, never row content.
+            AppLogError("[phi-sync] url rule change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+
+    /// nil means unreadable now: unknown, not an empty collection.
+    @MainActor
+    private func bookmarkChangeSnapshot() -> [BookmarkChangeSnapshot]? {
+        guard let context = mainContext else { return nil }
+        do {
+            return try allBookmarkModels(in: context)
+                .map(BookmarkChangeSnapshot.init)
+                .sorted { $0.guid < $1.guid }
+        } catch {
+            // R12: log only type and domain/code, never row content.
+            AppLogError("[phi-sync] bookmark change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+
+    /// Likewise, failed scope reads mean unknown; defaulting to profile would fabricate a scope change on a
+    /// Space-scoped device. Avoid pinSyncFetch(in:), which rereads scope and sorts active rows by
+    /// owner/index/GUID with repeated owner derivation. This snapshot needs the unfiltered domain only: read
+    /// scope once and use shared nonDormantPinModels(in:) so both predicates stay identical.
+    @MainActor
+    private func pinnedTabChangeSnapshot() -> PinnedTabChangeSnapshot? {
+        guard let context = mainContext else { return nil }
+        do {
+            let scope = try pinnedTabScope(in: context)
+            let rows = try nonDormantPinModels(in: context)
+                .map(PinnedTabRowChangeSnapshot.init)
+                .sorted { $0.guid < $1.guid }
+            return PinnedTabChangeSnapshot(scope: scope, rows: rows)
+        } catch {
+            AppLogError("[phi-sync] pin change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+}
+
+/// Sync-visible bookmark/folder value snapshot (§5.7), matching PhiLocalBookmark fields: would the engine's
+/// next outbound bytes change? Deliberately exclude favicon/lastSeen (not content edits) and updatedDate (also
+/// advanced by those non-edit writes).
+private struct BookmarkChangeSnapshot: Equatable {
+    let syncId: String?
+    let guid: String
+    let spaceId: String?
+    let profileId: String?
+    let parentGuid: String?
+    let index: Int
+    let type: Int
+    let title: String
+    let url: URL
+    let secondaryUrl: URL?
+    let secondaryTitle: String?
+    let source: Int
+    let createdDate: Date
+    let contentUpdatedDate: Date?
+
+    init(_ model: TabDataModel) {
+        syncId = model.syncId
+        guid = model.guid
+        spaceId = model.spaceId
+        profileId = model.profileId ?? model.profile?.profileId
+        parentGuid = model.parent?.guid
+        index = model.index
+        type = model.type
+        title = model.title
+        url = model.url
+        secondaryUrl = model.secondaryUrl
+        secondaryTitle = model.secondaryTitle
+        source = model.source
+        createdDate = model.createdDate
+        contentUpdatedDate = model.contentUpdatedDate
+    }
+}
+
+/// Pin value snapshot matching PhiLocalPin. Keep splitPartnerGuid rather than resolving partner lineage
+/// through another index: the partner row is also in this array, so its lineage change already changes the
+/// snapshot. This superset misses no changes.
+private struct PinnedTabRowChangeSnapshot: Equatable {
+    let lineageId: String?
+    let guid: String
+    let spaceId: String?
+    let profileId: String?
+    let index: Int
+    let title: String
+    let url: URL
+    let splitPartnerGuid: String?
+    let source: Int
+    let createdDate: Date
+    let contentUpdatedDate: Date?
+    let isDormant: Bool
+
+    init(_ model: TabDataModel) {
+        lineageId = model.pinLineageId
+        guid = model.guid
+        spaceId = model.spaceId
+        profileId = model.profileId ?? model.profile?.profileId
+        index = model.index
+        title = model.title
+        url = model.url
+        splitPartnerGuid = model.splitPartnerGuid
+        source = model.source
+        createdDate = model.createdDate
+        contentUpdatedDate = model.contentUpdatedDate
+        isDormant = model.isPinnedTabDormant
+    }
+}
+
+/// Pin snapshots compare scope plus rows. A scope change can alter every claimed row without changing any
+/// physical row, so scope belongs in the snapshot.
+private struct PinnedTabChangeSnapshot: Equatable {
+    let scope: PinnedTabScope
+    let rows: [PinnedTabRowChangeSnapshot]
+}
+
+/// Ten-column sync-visible rule snapshot (§6.5). Exclude local-only pendingLocalEdit and mergePartnerSyncId,
+/// which never affect entity bytes (R-M3-4a-71). Include deletedDate: soft deletion carries local deletion
+/// intent for next round's tombstone diff.
+private struct URLRuleChangeSnapshot: Equatable {
+    let id: String
+    let syncId: String?
+    let spaceId: String
+    let host: String
+    let pathPrefix: String?
+    let askBeforeRouting: Bool
+    let sortOrder: Int
+    let contentUpdatedDate: Date?
+    let targetUpdatedDate: Date?
+    let deletedDate: Date?
+
+    init(_ model: SpaceURLRule) {
+        id = model.id
+        syncId = model.syncId
+        spaceId = model.spaceId
+        host = model.host
+        pathPrefix = model.pathPrefix
+        askBeforeRouting = model.askBeforeRouting
+        sortOrder = model.sortOrder
+        contentUpdatedDate = model.contentUpdatedDate
+        targetUpdatedDate = model.targetUpdatedDate
+        deletedDate = model.deletedDate
+    }
 }
 
 /// Value snapshot of a pinned-tab row used by `pinnedTabsPublisher` for
@@ -906,39 +1260,18 @@ extension LocalStore {
         }
         performBackgroundWrite { context in
             do {
-                let scope = try self.pinnedTabScope(in: context)
-                var pinnedTabs = try self.pinnedTabs(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    scope: scope,
-                    in: context
-                )
-                let now = Date()
-                let model = TabDataModel(
-                    title: title,
-                    guid: guid,
-                    index: 0,
-                    url: parsedURL,
-                    favicon: nil,
-                    createdDate: now,
-                    updatedDate: now
-                )
-                model.dataType = .pinnedTab
-                model.isCreatedByChromium = false
-                model.pinLineageId = lineageId ?? guid
-                try self.applyCurrentPinnedTabOwner(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    to: model,
-                    in: context
-                )
-                context.insert(model)
-                let insertIndex = min(max(index ?? pinnedTabs.count, 0), pinnedTabs.count)
-                pinnedTabs.insert(model, at: insertIndex)
-                for (position, tabModel) in pinnedTabs.enumerated() {
-                    tabModel.index = position
-                    tabModel.updatedDate = now
-                }
+                try self.createPinnedTabBody(guid: guid,
+                                             url: parsedURL,
+                                             title: title,
+                                             profileId: profileId,
+                                             spaceId: spaceId,
+                                             index: index,
+                                             lineageId: lineageId,
+                                             createdDate: nil,
+                                             // Preserve existing behavior: TabDataModel.source defaults to 0
+                                             // and this path never sets it.
+                                             source: 0,
+                                             in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to create pinned tab: \(error)")
             }
@@ -954,98 +1287,20 @@ extension LocalStore {
         let tabGuid = tab.guidInLocalDB ?? UUID().uuidString
         let tabLineageId = tab.pinnedLineageId
         let tabTitle = tab.title
-        let tabURL = tab.url
+        // Keep URL validation on the shared body's create branch: moving an existing row must still succeed
+        // with an invalid URL. This conversion has no side effects.
+        let tabURL = tab.url.flatMap { URL(string: $0) }
         performBackgroundWrite { context in
             do {
-                let scope = try self.pinnedTabScope(in: context)
-                var pinnedTabs = try self.pinnedTabs(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    scope: scope,
-                    in: context
-                )
-                let resolvedTabGuid = try self.activePinnedTab(
-                    resolving: tabGuid,
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    in: context
-                )?.guid
-                let resolvedAfterGuid: String?
-                if let afterGuid {
-                    guard let activeAfterTab = try self.activePinnedTab(
-                        resolving: afterGuid,
-                        profileId: profileId,
-                        spaceId: spaceId,
-                        in: context
-                    ) else {
-                        AppLogWarn("[LocalStore] Active after tab not found: \(afterGuid)")
-                        return
-                    }
-                    resolvedAfterGuid = activeAfterTab.guid
-                } else {
-                    resolvedAfterGuid = nil
-                }
-                
-                var tabToMove: TabDataModel
-                let now = Date()
-                if let resolvedTabGuid,
-                   let tabToMoveIndex = pinnedTabs.firstIndex(where: { $0.guid == resolvedTabGuid }) {
-                    tabToMove = pinnedTabs.remove(at: tabToMoveIndex)
-                } else {
-                    guard tabLineageId == nil else {
-                        AppLogWarn("[LocalStore] Active pinned tab not found for move: \(tabGuid)")
-                        return
-                    }
-                    guard let urlStr = tabURL, let url = URL(string: urlStr) else {
-                        AppLogWarn("[LocalStore] Invalid URL for new tab: \(tabURL ?? "nil")")
-                        return
-                    }
-                    
-                    tabToMove = TabDataModel(
-                        title: tabTitle,
-                        guid: newGuid ?? UUID().uuidString,
-                        index: 0,
-                        url: url,
-                        favicon: nil,
-                        createdDate: now,
-                        updatedDate: now
-                    )
-                    tabToMove.dataType = .pinnedTab
-                    tabToMove.isCreatedByChromium = false
-                    tabToMove.pinLineageId = tabLineageId ?? tabToMove.guid
-                    context.insert(tabToMove)
-                    AppLogInfo("[LocalStore] Created new pinned tab with guid: \(tabGuid)")
-                }
-
-                if tabToMove.pinLineageId == nil {
-                    tabToMove.pinLineageId = tabToMove.guid
-                }
-                try self.applyCurrentPinnedTabOwner(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    to: tabToMove,
-                    in: context
-                )
-                
-                let insertIndex: Int
-                if let resolvedAfterGuid {
-                    if let afterIndex = pinnedTabs.firstIndex(where: { $0.guid == resolvedAfterGuid }) {
-                        insertIndex = afterIndex + 1
-                    } else {
-                        AppLogWarn("[LocalStore] After tab not found: \(resolvedAfterGuid)")
-                        return
-                    }
-                } else {
-                    insertIndex = 0
-                }
-                
-                pinnedTabs.insert(tabToMove, at: insertIndex)
-                
-                for (index, tabModel) in pinnedTabs.enumerated() {
-                    tabModel.index = index
-                    tabModel.updatedDate = now
-                }
-                
+                try self.moveOrCreatePinnedTabBody(guid: tabGuid,
+                                                   lineageId: tabLineageId,
+                                                   title: tabTitle,
+                                                   url: tabURL,
+                                                   after: afterGuid,
+                                                   profileId: profileId,
+                                                   spaceId: spaceId,
+                                                   newGuid: newGuid,
+                                                   in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to move tab: \(error)")
             }

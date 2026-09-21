@@ -344,6 +344,125 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         )
     }
 
+    // CASE 2a.24 / C-3: schema V12 upgrade follows Compatibility/README.md rule 3,
+    // using beforeSchemaUpgrade to write one manifest and backup, with no new backup on reopening.
+    func testUpgradeToStoreFormatTwelveCreatesManifestAndBackupExactlyOnce() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v10")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 10, backups: []),
+            to: directory
+        )
+        let controller = makeController(
+            currentStoreFormatVersion: 12,
+            readableStoreFormatVersions: 1...12,
+            backupPolicy: .beforeSchemaUpgrade
+        )
+
+        let result = try controller.prepareStore(at: directory)
+
+        guard case .ready(let plan) = result else {
+            return XCTFail("Expected the version ten store to prepare for a version twelve app.")
+        }
+        let createdBackup = try XCTUnwrap(plan.createdBackup)
+        XCTAssertEqual(createdBackup.storeFormatVersion, 10)
+        XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 12)
+        XCTAssertNil(plan.restoredBackup)
+        XCTAssertEqual(
+            try readText(directory.appendingPathComponent(createdBackup.directoryName).appendingPathComponent("LocalStore.sqlite")),
+            "v10-main"
+        )
+
+        try controller.markStoreOpenedSuccessfully(plan, at: directory)
+
+        let manifestAfterOpen = try readManifest(from: directory)
+        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 12)
+        XCTAssertEqual(manifestAfterOpen.backups.map(\.storeFormatVersion), [10])
+
+        let secondResult = try controller.prepareStore(at: directory)
+
+        guard case .ready(let secondPlan) = secondResult else {
+            return XCTFail("Expected the already-upgraded store to prepare without a backup.")
+        }
+        XCTAssertNil(secondPlan.createdBackup)
+        XCTAssertEqual(try readManifest(from: directory).backups.map(\.storeFormatVersion), [10])
+    }
+
+    // CASE 2a.25: readableStoreFormatVersions lower and upper bounds.
+    func testShippingReadableStoreFormatVersionBounds() throws {
+        // Keep literal assertions for the production configuration; they anchor the entire chain.
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 12)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...12)
+
+        let controller = makeController(
+            currentStoreFormatVersion: 12,
+            readableStoreFormatVersions: 1...12
+        )
+
+        // Derive the too-new case from current + 1 so future version bumps need no test change.
+        let tooNewVersion = LocalStore.compatibilityConfiguration.currentStoreFormatVersion + 1
+        let tooNewDirectory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: tooNewDirectory, contents: "v\(tooNewVersion)")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: tooNewVersion, backups: []),
+            to: tooNewDirectory
+        )
+
+        guard case .requiresNewerApp(let issue) = try controller.prepareStore(at: tooNewDirectory) else {
+            return XCTFail("Expected a store format above the readable range to require a newer app.")
+        }
+        XCTAssertEqual(issue.activeStoreFormatVersion, tooNewVersion)
+        XCTAssertEqual(issue.currentStoreFormatVersion, 12)
+
+        let oldestDirectory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: oldestDirectory, contents: "v1")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 1, backups: []),
+            to: oldestDirectory
+        )
+
+        guard case .ready(let plan) = try controller.prepareStore(at: oldestDirectory) else {
+            return XCTFail("Expected the lower bound of the readable range to open.")
+        }
+        XCTAssertEqual(plan.activeStoreFormatVersion, 1)
+    }
+
+    // CASE 2a.25b / C-4: a build supporting only V10 opens a V12 store. An in-place downgrade
+    // would drop V12's six columns, erasing account identity, soft-deletion intent, and merge
+    // partners for every rule. Returning to the new build would then classify all urlrules-cursors.json
+    // entries as locally deleted and tombstone every account rule in one round. Follow README
+    // rule 4: refuse to open and preserve the store, without downgrading or deleting it.
+    func testStoreFormatTwelveIsPreservedWhenOpenedByAnAppThatOnlyReadsEleven() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v12")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 12, backups: []),
+            to: directory
+        )
+        // Derive the downgrade build from the production configuration, current - 1.
+        let olderBuildVersion = LocalStore.compatibilityConfiguration.currentStoreFormatVersion - 1
+        let olderBuildController = makeController(
+            currentStoreFormatVersion: olderBuildVersion,
+            readableStoreFormatVersions: 1...olderBuildVersion,
+            backupPolicy: .beforeSchemaUpgrade
+        )
+
+        let result = try olderBuildController.prepareStore(at: directory)
+
+        guard case .requiresNewerApp(let issue) = result else {
+            return XCTFail("Expected a version twelve store to be refused by a version eleven app.")
+        }
+        XCTAssertEqual(issue.activeStoreFormatVersion, 12)
+        XCTAssertEqual(issue.currentStoreFormatVersion, olderBuildVersion)
+
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite")), "v12-main")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-wal")), "v12-wal")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-shm")), "v12-shm")
+        let manifest = try readManifest(from: directory)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, 12)
+        XCTAssertTrue(manifest.backups.isEmpty)
+    }
+
     private func makeController(
         currentStoreFormatVersion: Int,
         readableStoreFormatVersions: ClosedRange<Int>? = nil,

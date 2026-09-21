@@ -183,9 +183,13 @@ class PinnedTabViewController: NSViewController {
         }
     }
 
-    private enum Item: Hashable {
+    enum Item: Hashable {
         case extensionItem(PinnedTabItemModel)
         case tabItem(PinnedTabSnapshotItem)
+
+        static func tab(_ tab: Tab) -> Item {
+            .tabItem(PinnedTabSnapshotItem(tab: tab))
+        }
         case splitItem(PinnedSplitGroupItem)
 
         func hash(into hasher: inout Hasher) {
@@ -649,8 +653,18 @@ class PinnedTabViewController: NSViewController {
         // `splits`, and `pinnedTabs`. Snapshot rebuilds fire on every
         // `$pinnedTabs` / `$splits` / `$focusingTab` emission, so the
         // savings compound during normal interaction.
-        let pinnedByDB: [String: Tab] = Dictionary(uniqueKeysWithValues:
-            sourcePinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } }
+        // `uniquingKeysWith:` rather than `uniqueKeysWithValues:`. `guidInLocalDB` comes
+        // from a store column with no uniqueness constraint, so two pinned rows can end
+        // up sharing one guid after a bad write; `uniqueKeysWithValues:` traps on the
+        // duplicate key and takes the whole app down while the sidebar is merely
+        // redrawing (Mac B, 2026-09-14 23:49). Keep the first: iteration follows
+        // `pinnedTabs` order, the same "first row wins" rule every guid-addressed
+        // reader in the store already uses. The store repairs such rows on its own
+        // (`LocalStore.healDuplicatePinnedTabRows()`); this keeps the window up until
+        // it does.
+        let pinnedByDB: [String: Tab] = Dictionary(
+            sourcePinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },
+            uniquingKeysWith: { first, _ in first }
         )
         let liveByDB: [String: Tab] = Dictionary(
             state.tabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },
@@ -783,15 +797,46 @@ class PinnedTabViewController: NSViewController {
         state.pinnedSplitDBPair(forPinnedTab: tab) == nil ? 1 : 2
     }
 
+    /// Drops repeated item identifiers, keeping the first.
+    ///
+    /// `NSDiffableDataSourceSnapshot` requires identifiers to be unique across the
+    /// **whole** snapshot, not per section, and it does not fail politely: a repeat
+    /// throws out of Foundation's ordered-set diffing with an uncaught
+    /// `NSInvalidArgumentException`, which is a hard crash. Every producer above is
+    /// supposed to guarantee uniqueness already, so a non-zero `dropped` here means
+    /// one of them is wrong — log it and render the sidebar anyway. R12: counts only.
+    /// `static` and not `private` so `PinnedTabSnapshotIdentityTests` can drive it
+    /// without standing up a collection view; it reads nothing off `self`.
+    static func deduplicatedItems(_ items: [Item], seen: inout Set<Item>, dropped: inout Int) -> [Item] {
+        var unique: [Item] = []
+        unique.reserveCapacity(items.count)
+        for item in items {
+            guard seen.insert(item).inserted else { dropped += 1; continue }
+            unique.append(item)
+        }
+        return unique
+    }
+
     private func applySnapshot(animatingDifferences: Bool = true, completion: (() -> Void)? = nil) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections(Section.allCases)
-        if !pinnedExtensionItems.isEmpty {
-            snapshot.appendItems(pinnedExtensionItems.map { .extensionItem($0) }, toSection: .extensions)
+        // One `seen` set across both sections: the uniqueness requirement spans the
+        // whole snapshot, not each section.
+        var seen = Set<Item>()
+        var dropped = 0
+        let extensionItems = Self.deduplicatedItems(pinnedExtensionItems.map { .extensionItem($0) },
+                                                   seen: &seen, dropped: &dropped)
+        if !extensionItems.isEmpty {
+            snapshot.appendItems(extensionItems, toSection: .extensions)
         }
-        let tabSectionItems = buildTabSectionItems()
+        let tabSectionItems = Self.deduplicatedItems(buildTabSectionItems(),
+                                                    seen: &seen, dropped: &dropped)
         if !tabSectionItems.isEmpty {
             snapshot.appendItems(tabSectionItems, toSection: .tabs)
+        }
+        if dropped > 0 {
+            AppLogWarn("[PinnedTab] dropped \(dropped) duplicate item identifier(s) "
+                       + "before applying the sidebar snapshot")
         }
 
         var newSplitPairs: [String: String] = [:]

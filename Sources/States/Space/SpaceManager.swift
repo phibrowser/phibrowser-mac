@@ -580,6 +580,40 @@ final class SpaceManager: ObservableObject {
     /// memory). Updated only on the main thread via the publisher sink.
     private var cachedURLRules: [SpaceRoutingRule] = []
 
+    /// Signals replacement of cachedURLRules (spec §5.8 item 3, 8b-4 fix round 1). A counter is required
+    /// because SwiftData mutates existing model instances: publishing the array can notify objectWillChange
+    /// while value-based consumers still compare it equal. Incrementing covers both field edits and
+    /// whole-table replacement.
+    ///
+    /// Write only at the three cache replacement sites: publisher sink, reloadURLRulesFromStore(), and
+    /// unbind(). applyRuleEdits and all §6.6 writes finish with reload and inherit the increment. The editor
+    /// consumes this signal and reads allRules for field refresh. Views must not directly subscribe to
+    /// LocalStore.urlRulesPublisher(), crossing the store boundary and encountering model deduplication.
+    @Published private(set) var urlRulesRevision: Int = 0
+
+    /// Resolves a local `spaceId` to its account-level Space sync uuid, nil
+    /// when that Space has no account identity yet. The reserved Incognito
+    /// target answers with the account-level constant, so this file needs no
+    /// knowledge of it (design §7.2). Injected by
+    /// `PhiChromiumCoordinator` (R-M3-4a-35) so the state layer keeps its zero
+    /// dependency on `Sources/Sync/Keys`. Re-resolves on EVERY payload build —
+    /// never cache it (R-M3-4a-46): mappings are minted lazily inside a sync
+    /// round (`SpaceSyncMappingManager.ensureMapped`, `:93-97`), and a snapshot
+    /// taken at assembly time would keep rules falling back to the local
+    /// spaceId long after their Space got an account identity.
+    var ruleTieBreakKeyResolver: (String) -> String? = { _ in nil }
+
+    /// R-M3-4a-22's key. Never empty, and a total order at any instant on any
+    /// device. Two of the three branches are the resolver's ("incognito-space"
+    /// for the reserved Incognito target, the target Space's account sync uuid
+    /// otherwise — "default-space" arriving via the constant branch in
+    /// `SpaceSyncMappingManager.syncUuid(forSpaceId:)`); the third is the
+    /// fallback here: the LOCAL spaceId, which is also what an unassembled
+    /// resolver yields before the coordinator injects one.
+    func ruleTieBreakKey(forTargetSpaceId spaceId: String) -> String {
+        ruleTieBreakKeyResolver(spaceId) ?? spaceId
+    }
+
     /// True once the initial URL-rule snapshot from `urlRulesPublisher` has
     /// arrived (even if empty). External URL opens are held on this in
     /// `AppController.scheduleForwardOpenURLsToChromium`: forwarding earlier
@@ -938,6 +972,13 @@ final class SpaceManager: ObservableObject {
             object: nil
         )
         NotificationCenter.default.addObserver(
+            forName: .phiSpaceHiddenSetDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Replay the UNFILTERED store snapshot so unhiding needs no
+            // SwiftData write at all (§6.6 / §8.3).
+            MainActor.assumeIsolated { self?.refreshIncognitoSpacePresence() }
+        }
+        NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleBrowserAccessStateDidChange),
             name: .browserAccessStateDidChange,
@@ -953,6 +994,12 @@ final class SpaceManager: ObservableObject {
         // uses the stable default account; signed-in access uses the published
         // identity. The login-required state must not expose either store.
         refreshAccountBindingForBrowserAccess()
+    }
+
+    // Initializer solely for makeForTesting(boundTo:): assign boundAccount without registering or binding
+    // anything.
+    private init(testAccount: Account?) {
+        boundAccount = testAccount
     }
 
     // MARK: - Public — read
@@ -5838,16 +5885,31 @@ final class SpaceManager: ObservableObject {
             AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
         }
+        // Delete origin (§9.1). Every user-visible delete already funnels here:
+        // the strip, Settings > Spaces, the app menu, the CDP
+        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
+        // helper marks ONLY a uuid with an entityId, which is what makes the
+        // orphan sweep silent: agent Spaces never get one.
+        MainActor.assumeIsolated { PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId) }
         closeSpaceWindows(spaceId: spaceId)
-        // Cascade-delete the Space row, its tagged tabs/bookmarks, and its
-        // URL rules in a SINGLE write (LocalStore.deleteSpace intentionally
-        // leaves the cascade decision to the caller). Doing this as one
-        // transaction avoids a crash mid-delete leaving a content-less ghost
-        // Space or orphaned rows, and avoids publishing an inconsistent
-        // strip/bookmark state between separate saves. Without the rule
-        // cleanup they would linger as inert rows that keep being pushed to
-        // Chromium and dangle in the rules editor.
-        boundAccount?.localStorage.deleteSpaceCascade(spaceId: spaceId)
+        // Cascade-delete the Space, tagged tabs/bookmarks and rules in one transaction to prevent ghost
+        // Spaces/orphan rows after a crash and inconsistent intermediate UI publications.
+        // LocalStore.deleteSpace leaves the cascade decision to callers. Rules must be removed too, or remain
+        // inert entries pushed to Chromium and shown in the editor.
+        //
+        // After cascade commit, reread routing (§6.6 row 5 / ruling 6): it soft-deletes this Space's rules,
+        // but urlRulesPublisher deduplication can swallow the change (R-M3-4a-34).
+        if let account = boundAccount {
+            Task { @MainActor [weak self] in
+                do {
+                    try await account.localStorage.deleteSpaceCascadeThrowing(
+                        spaceId: spaceId, origin: .userIntent)
+                    self?.reloadURLRulesFromStore()
+                } catch {
+                    AppLogError("[SpaceManager] deleteSpaceCascade failed: \(PhiSyncLog.describe(error))")
+                }
+            }
+        }
         // The per-Space theme records live in userDefaults, outside the
         // cascade; prune them here or they linger forever.
         clearThemeRecords(forSpaceId: spaceId)
@@ -5961,9 +6023,66 @@ final class SpaceManager: ObservableObject {
     /// the Space. Tagged rows and URL rules stay with the Space.
     func changeProfile(spaceId: String, toProfileId newProfileId: String, expectedStoreIdentifier: UUID? = nil) {
         guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
+        guard let respawnSlot = prepareProfileChange(spaceId: spaceId, toProfileId: newProfileId,
+                                                     showAlerts: true) else { return }
+        boundAccount?.localStorage.changeSpaceProfile(
+            spaceId: spaceId,
+            toProfileId: newProfileId
+        )
+        finishProfileChange(spaceId: spaceId, respawnSlot: respawnSlot)
+    }
+
+    /// The sync layer's rebind entry point (§6.3). Same preparation and same
+    /// window rebuild as the local path — the two differences are the throwing
+    /// store write (apply may not write a baseline until the row landed) and
+    /// `showAlerts: false`. The refused case is not an error: a guard (default
+    /// Space, agent Space, import in flight) legitimately declines, and the
+    /// round moves on.
+    ///
+    /// `@MainActor` is LOAD-BEARING, not decoration. `SpaceManager` is a plain
+    /// `final class SpaceManager: ObservableObject` with no actor isolation, so
+    /// a nonisolated `async` member does NOT inherit its caller's actor
+    /// (SE-0338): awaiting it from `@MainActor AccountPhiSpaceAccess.rebind`
+    /// would hop onto the generic executor, and the body reaches
+    /// `prepareProfileChange`, whose agent guard is
+    /// `MainActor.assumeIsolated { AgentSpaceManager.shared.isAgentSpace(...) }`
+    /// — that traps at runtime with "Incorrect actor executor assumption".
+    /// `finishProfileChange` closes and evicts `NSWindow`s, which must be on
+    /// the main thread too. It compiles cleanly either way, so the
+    /// compile-only gate cannot catch it.
+    ///
+    /// **Rule for this file, for the rest of the milestone**: any NEW `async`
+    /// member added to `SpaceManager` carries `@MainActor`, because the class is
+    /// nonisolated and its bodies rely on `MainActor.assumeIsolated`.
+    @MainActor
+    func applyRemoteRebind(spaceId: String, toProfileId newProfileId: String) async throws {
+        guard let respawnSlot = prepareProfileChange(spaceId: spaceId, toProfileId: newProfileId,
+                                                     showAlerts: false) else { return }
+        try await boundAccount?.localStorage.changeSpaceProfileThrowing(
+            spaceId: spaceId, toProfileId: newProfileId)
+        finishProfileChange(spaceId: spaceId, respawnSlot: respawnSlot)
+    }
+
+    /// Everything `changeProfile` does BEFORE the store write. Shared verbatim
+    /// with `applyRemoteRebind` so a remote rebind cannot drift from the local
+    /// one. Returns nil when a guard refused the change; the inner optional is
+    /// the respawn slot, which is legitimately nil when the Space was not
+    /// active in any slot.
+    ///
+    /// `showAlerts` is the ONE difference between the two callers. The
+    /// import-lock guard raises a user-facing `NSAlert(...).runModal()` —
+    /// correct for a rebind the user just asked for, wrong for one that arrived
+    /// over the wire: it would pop a modal for an action the user never took,
+    /// and `runModal` blocks the main thread INSIDE the engine's `@MainActor`
+    /// hop until it is dismissed, stalling the shared round queue and settings
+    /// sync with it. The remote path refuses silently instead and the entity is
+    /// retried next round, exactly like §9.2's import-lock tombstone path.
+    private func prepareProfileChange(spaceId: String,
+                                      toProfileId newProfileId: String,
+                                      showAlerts: Bool) -> SpaceWindowSlot?? {
         guard spaceId != LocalStore.defaultSpaceId else {
             AppLogWarn("[SpaceManager] refusing to change the default space's profile")
-            return
+            return nil
         }
         // An agent Space is bound to the profile its task runs against;
         // re-profiling replaces its windows and would break the running agent.
@@ -5978,7 +6097,7 @@ final class SpaceManager: ObservableObject {
         if hostsLiveAgentTask
             || spaces.first(where: { $0.spaceId == spaceId })?.isAgentSpace == true {
             AppLogWarn("[SpaceManager] refusing to change profile of agent Space \(spaceId)")
-            return
+            return nil
         }
         // An import currently writing into this Space must finish first:
         // re-profiling re-stamps the Space's bookmark rows, so the deferred
@@ -5986,28 +6105,30 @@ final class SpaceManager: ObservableObject {
         // and silently dropped by the persist backstop. Refuse and tell the user.
         guard !ImportTargetLock.shared.isImporting(into: spaceId) else {
             AppLogWarn("[SpaceManager] refusing to change profile of space \(spaceId): import in progress")
-            let alert = NSAlert()
-            alert.messageText = NSLocalizedString("spaces.importProgress.changeProfileBlocked.title", value: "Can’t change this Space’s profile yet",
-                comment: "Title shown when changing a Space's profile is blocked by an in-progress import"
-            )
-            alert.informativeText = NSLocalizedString("spaces.importProgress.changeProfileBlocked.message", value: "An import is still adding bookmarks to this Space. Wait for it to finish, then try again.",
-                comment: "Body shown when a Space action is blocked by an in-progress import"
-            )
-            alert.addButton(withTitle: NSLocalizedString("spaces.importProgress.changeProfileBlocked.dismissButton", value: "OK", comment: "Dismiss button"))
-            alert.runModal()
-            return
+            if showAlerts {
+                let alert = NSAlert()
+                alert.messageText = NSLocalizedString("spaces.importProgress.changeProfileBlocked.title", value: "Can’t change this Space’s profile yet",
+                    comment: "Title shown when changing a Space's profile is blocked by an in-progress import"
+                )
+                alert.informativeText = NSLocalizedString("spaces.importProgress.changeProfileBlocked.message", value: "An import is still adding bookmarks to this Space. Wait for it to finish, then try again.",
+                    comment: "Body shown when a Space action is blocked by an in-progress import"
+                )
+                alert.addButton(withTitle: NSLocalizedString("spaces.importProgress.changeProfileBlocked.dismissButton", value: "OK", comment: "Dismiss button"))
+                alert.runModal()
+            }
+            return nil
         }
         guard let space = spaces.first(where: { $0.spaceId == spaceId }) else {
             AppLogWarn("[SpaceManager] changeProfile: unknown space \(spaceId)")
-            return
+            return nil
         }
         guard space.profileId != newProfileId else {
             AppLogInfo("[SpaceManager] changeProfile: \(spaceId) already on \(newProfileId); nothing to do")
-            return
+            return nil
         }
         guard ProfileManager.shared.profile(for: newProfileId) != nil else {
             AppLogWarn("[SpaceManager] changeProfile: unknown profile \(newProfileId)")
-            return
+            return nil
         }
         // A parked ghost re-binds by materializing FIRST: its tabs exist only
         // in the OLD profile's session file, and the capture below can read
@@ -6035,8 +6156,10 @@ final class SpaceManager: ObservableObject {
                     self.reclaimMintedSlot(slot, mintedForThisAttempt: hostSlot == nil)
                     return
                 }
-                self.changeProfile(spaceId: spaceId, toProfileId: newProfileId,
-                                   expectedStoreIdentifier: originatingStoreIdentifier)
+                if showAlerts {
+                    self.changeProfile(spaceId: spaceId, toProfileId: newProfileId,
+                                       expectedStoreIdentifier: originatingStoreIdentifier)
+                }
                 // The window arrived alpha-concealed (staged for a reveal it
                 // owes nobody on this path). The re-entry above retires it as
                 // a background window on the common path — a window never
@@ -6046,7 +6169,7 @@ final class SpaceManager: ObservableObject {
                 // already gone or was never concealed (fullscreen slots).
                 slot.revealMaterializedWindow(forSpaceId: spaceId)
             }
-            return
+            return nil
         }
         AppLogInfo("[SpaceManager] changeProfile: \(spaceId) \(space.profileId) → \(newProfileId)")
         PostHogSDK.shared.capture("space_profile_changed", properties: [
@@ -6079,10 +6202,11 @@ final class SpaceManager: ObservableObject {
                 respawnSlot: respawnSlot
             )
         }
-        boundAccount?.localStorage.changeSpaceProfile(
-            spaceId: spaceId,
-            toProfileId: newProfileId
-        )
+        return .some(respawnSlot)
+    }
+
+    /// Everything `changeProfile` does AFTER the store write.
+    private func finishProfileChange(spaceId: String, respawnSlot: SpaceWindowSlot?) {
         // The respawn slot is deliberately untouched here: it keeps showing
         // the old window until the write lands, and `respawnWindow` then
         // swaps it for the new-profile window in place. Retreating it to
@@ -6181,6 +6305,37 @@ final class SpaceManager: ObservableObject {
         publishResolvedDefaultSpaceThemeIfNeeded(spaceId: spaceId)
         reapplyResolvedTheme(forSpaceId: spaceId)
         postSpaceThemeDidChange(spaceId: spaceId)
+    }
+
+    /// Lands a remote Space's theme state. Deliberately NOT `setTheme`: that one
+    /// also calls `syncColorHexWithTheme` (which would overwrite the `color_hex`
+    /// this very round is applying, and raise a fresh local edit) and
+    /// `ThemeManager.switchTheme` (the default Space's theme is the GLOBAL
+    /// theme, synced by M3-1's PhiCurrentThemeId and owned by one writer).
+    func applyRemoteThemeState(spaceId: String, themeId: String?,
+                               opacityLight: Double?, opacityDark: Double?) {
+        guard let account = boundAccount else { return }
+        var pins = account.userDefaults.spaceThemeIds()
+        if let themeId, !themeId.isEmpty { pins[spaceId] = themeId } else { pins.removeValue(forKey: spaceId) }
+        account.userDefaults.setSpaceThemeIds(pins)
+
+        var opacities = account.userDefaults.spaceOverlayOpacities()
+        var entry = opacities[spaceId] ?? [:]
+        if let opacityLight { entry["light"] = opacityLight } else { entry.removeValue(forKey: "light") }
+        if let opacityDark { entry["dark"] = opacityDark } else { entry.removeValue(forKey: "dark") }
+        if entry.isEmpty { opacities.removeValue(forKey: spaceId) } else { opacities[spaceId] = entry }
+        account.userDefaults.setSpaceOverlayOpacities(opacities)
+
+        reapplyResolvedTheme(forSpaceId: spaceId)
+        postSpaceThemeDidChange(spaceId: spaceId)
+    }
+
+    /// Window half of hide / unhide. The hidden BIT lives in the sync table, not
+    /// here; this only retreats the windows parked on the Space so it does not
+    /// vanish under the user's hands (§6.6). The strip refresh rides
+    /// `.phiSpaceHiddenSetDidChange`.
+    func applyRemoteHidden(spaceId: String, hidden: Bool) {
+        if hidden { closeSpaceWindows(spaceId: spaceId) }
     }
 
     /// The Space's custom overlay saturation for `appearance`, or nil when
@@ -6368,24 +6523,27 @@ final class SpaceManager: ObservableObject {
     /// Removes all per-Space theme maps' entries for a Space id that is
     /// going away for good; nothing else prunes them and the id never
     /// comes back.
-    fileprivate func clearThemeRecords(forSpaceId spaceId: String) {
+    func clearThemeRecords(forSpaceId spaceId: String) {
         guard let account = boundAccount else { return }
         var pins = account.userDefaults.spaceThemeIds()
-        if pins.removeValue(forKey: spaceId) != nil {
-            account.userDefaults.setSpaceThemeIds(pins)
-        }
+        var changed = pins.removeValue(forKey: spaceId) != nil
+        if changed { account.userDefaults.setSpaceThemeIds(pins) }
         var opacities = account.userDefaults.spaceOverlayOpacities()
         if opacities.removeValue(forKey: spaceId) != nil {
             account.userDefaults.setSpaceOverlayOpacities(opacities)
+            changed = true
         }
         var saturations = account.userDefaults.spaceThemeSaturations()
         if saturations.removeValue(forKey: spaceId) != nil {
             account.userDefaults.setSpaceThemeSaturations(saturations)
+            changed = true
         }
         var pureSliderValues = account.userDefaults.spacePureThemeSliderValues()
         if pureSliderValues.removeValue(forKey: spaceId) != nil {
             account.userDefaults.setSpacePureThemeSliderValues(pureSliderValues)
+            changed = true
         }
+        if changed { postSpaceThemeDidChange(spaceId: spaceId) }
     }
 
     /// Re-derives the Space's persisted `colorHex` (the sidebar tint
@@ -6421,129 +6579,53 @@ final class SpaceManager: ObservableObject {
         cachedURLRules
     }
 
-    /// Replaces every Space's rule set at once. `byTargetSpaceId` keys are
-    /// `spaceId`s; absent spaceIds end up cleared. Pushes the recompiled
-    /// routing table optimistically so the change is live before SwiftData's
-    /// save notification fires. The publisher re-emission then pushes the
-    /// same table a second time — `replaceAllURLRules` regenerates row ids
-    /// on every save, so `removeDuplicates` never suppresses it — which is
-    /// harmless: Chromium replaces the table atomically.
-    func setAllRules(_ byTargetSpaceId: [String: [LocalStore.URLRuleDraft]], expectedStoreIdentifier: UUID? = nil) {
-        guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
-        guard let account = boundAccount else { return }
-        account.localStorage.replaceAllURLRules(byTargetSpaceId)
-        pushOptimisticAllRoutingTable(byTargetSpaceId)
+    /// The ONE write face for URL rules (R-M3-4a-45 / R-M3-4a-49). Touches only the
+    /// rows it names: `upserts` are matched by `id`, `deletedIds` are soft-deleted.
+    /// Awaits the commit, then refreshes the routing table through the single path
+    /// R-M3-4a-34 leaves standing — there is no optimistic push any more.
+    @MainActor
+    func applyRuleEdits(upserts: [LocalStore.URLRuleDraft],
+                        deletedIds: Set<String>,
+                        expectedStoreIdentifier: UUID? = nil) async throws {
+        guard acceptsStoreAction(from: expectedStoreIdentifier) else { throw LocalStoreWriteError.storeUnavailable }
+        guard let account = boundAccount else { throw LocalStoreWriteError.storeUnavailable }
+        try await account.localStorage.applyURLRuleEditsThrowing(
+            upserts: upserts, deletedIds: deletedIds)
+        reloadURLRulesFromStore()
     }
 
-    /// Universal-editor counterpart of `pushOptimisticRoutingTable`. Builds
-    /// the routing-table payload entirely from the supplied drafts (i.e. the
-    /// caller has already chosen the new complete state) and ships it to
-    /// Chromium without round-tripping through SwiftData.
-    private func pushOptimisticAllRoutingTable(
-        _ byTargetSpaceId: [String: [LocalStore.URLRuleDraft]]
-    ) {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
-        let mapping = currentSpaceWindowMap()
+    /// Read-only test surface: how many times `reloadURLRulesFromStore()` ran.
+    private(set) var urlRuleReloadCountForTesting = 0
 
-        var rulesPayload: [[String: Any]] = []
-        for (spaceId, drafts) in byTargetSpaceId where Self.isRoutableRuleTarget(spaceId) {
-            for (index, draft) in drafts.enumerated() {
-                let host = draft.host.lowercased()
-                guard !host.isEmpty else { continue }
-                var entry: [String: Any] = [
-                    "targetSpaceId": spaceId,
-                    "host": host,
-                    "ask": NSNumber(value: draft.askBeforeRouting),
-                    "sortOrder": NSNumber(value: index),
-                ]
-                if let prefix = draft.pathPrefix?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !prefix.isEmpty {
-                    entry["pathPrefix"] = prefix
-                }
-                rulesPayload.append(entry)
-            }
-        }
-        Self.canonicalizeRulesPayloadOrder(&rulesPayload)
-        let windowMapPayload = mapping.mapValues { NSNumber(value: $0) }
-        bridge.setSpaceRoutingTable(rulesPayload, spaceWindowMap: windowMapPayload)
+    // Test-only factory (CASE U-24c (a)): set boundAccount via init(testAccount:), without observers,
+    // bind(to:), publishers, ensureDefaultSpace, shared or AccountController. Production must never call this;
+    // Sources contains no references besides the definition.
+    @MainActor
+    static func makeForTesting(boundTo account: Account?) -> SpaceManager {
+        SpaceManager(testAccount: account)
     }
 
-    /// Orders a routing-table payload by (targetSpaceId, sortOrder) — the
-    /// same order the persisted-path push sees from the publisher. Payload
-    /// order is load-bearing: `sortOrder` values are per-Space indices, so
-    /// rules from different Spaces can tie on full specificity, and the C++
-    /// matcher keeps the FIRST best rule it encounters. Without one
-    /// canonical order, an optimistic push could resolve such a tie
-    /// differently than the steady-state push that follows the SwiftData
-    /// save.
+
+    /// Orders a routing-table payload by (tieBreakKey, sortOrder, ruleId) —
+    /// the three keys the C++ matcher reads on a full specificity tie.
+    /// Payload order is no longer load-bearing: the C++ matcher decides ties
+    /// with `IsMoreSpecific` over the same three keys (a strict total order),
+    /// so this only keeps the payload byte-comparable between pushes
+    /// (R-M3-4a-22 / R-M3-4a-43). A missing key reads as "" / 0.
     private static func canonicalizeRulesPayloadOrder(_ payload: inout [[String: Any]]) {
         payload.sort { lhs, rhs in
-            let lhsSpace = (lhs["targetSpaceId"] as? String) ?? ""
-            let rhsSpace = (rhs["targetSpaceId"] as? String) ?? ""
-            if lhsSpace != rhsSpace { return lhsSpace < rhsSpace }
+            let lhsKey = (lhs["tieBreakKey"] as? String) ?? ""
+            let rhsKey = (rhs["tieBreakKey"] as? String) ?? ""
+            if lhsKey != rhsKey { return lhsKey < rhsKey }
             let lhsOrder = ((lhs["sortOrder"] as? NSNumber)?.intValue) ?? 0
             let rhsOrder = ((rhs["sortOrder"] as? NSNumber)?.intValue) ?? 0
-            return lhsOrder < rhsOrder
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            let lhsId = (lhs["ruleId"] as? String) ?? ""
+            let rhsId = (rhs["ruleId"] as? String) ?? ""
+            return lhsId < rhsId
         }
     }
 
-    /// Replaces the rule list for `spaceId` with `drafts` (full set, in the
-    /// order the user authored). Existing rows for the Space are deleted
-    /// and re-created with `sortOrder = index`. Pushes optimistically so the
-    /// new table is live in Chromium before the SwiftData write + notification
-    /// round-trip completes; the publisher re-emission then pushes the same
-    /// table a second time (fresh row ids defeat `removeDuplicates`), which
-    /// is harmless — Chromium replaces the table atomically.
-    func setRules(_ drafts: [LocalStore.URLRuleDraft], forSpaceId spaceId: String, expectedStoreIdentifier: UUID? = nil) {
-        guard acceptsStoreAction(from: expectedStoreIdentifier) else { return }
-        guard let account = boundAccount else { return }
-        account.localStorage.replaceURLRules(forSpaceId: spaceId, with: drafts)
-        pushOptimisticRoutingTable(drafts: drafts, forSpaceId: spaceId)
-    }
-
-    /// Builds the routing-table payload using `drafts` for `spaceId` and the
-    /// in-memory `cachedURLRules` for every other Space, then pushes it to
-    /// Chromium without waiting for SwiftData's save notification to fire.
-    private func pushOptimisticRoutingTable(
-        drafts: [LocalStore.URLRuleDraft],
-        forSpaceId spaceId: String
-    ) {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
-        let mapping = currentSpaceWindowMap()
-
-        var rulesPayload: [[String: Any]] = cachedURLRules.compactMap { rule in
-            guard rule.spaceId != spaceId,
-                  Self.isRoutableRuleTarget(rule.spaceId) else { return nil }
-            var entry: [String: Any] = [
-                "targetSpaceId": rule.spaceId,
-                "host": rule.host,
-                "ask": NSNumber(value: rule.askBeforeRouting),
-                "sortOrder": NSNumber(value: rule.sortOrder),
-            ]
-            if let prefix = rule.pathPrefix, !prefix.isEmpty {
-                entry["pathPrefix"] = prefix
-            }
-            return entry
-        }
-        for (index, draft) in drafts.enumerated() {
-            let host = draft.host.lowercased()
-            guard !host.isEmpty else { continue }
-            var entry: [String: Any] = [
-                "targetSpaceId": spaceId,
-                "host": host,
-                "ask": NSNumber(value: draft.askBeforeRouting),
-                "sortOrder": NSNumber(value: index),
-            ]
-            if let prefix = draft.pathPrefix?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !prefix.isEmpty {
-                entry["pathPrefix"] = prefix
-            }
-            rulesPayload.append(entry)
-        }
-        Self.canonicalizeRulesPayloadOrder(&rulesPayload)
-        let windowMapPayload = mapping.mapValues { NSNumber(value: $0) }
-        bridge.setSpaceRoutingTable(rulesPayload, spaceWindowMap: windowMapPayload)
-    }
 
     /// Flattens the rules and the live spaceId→windowId
     /// map and hands both to the Chromium bridge via the new
@@ -6560,17 +6642,33 @@ final class SpaceManager: ObservableObject {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         let mapping = currentSpaceWindowMap()
 
-        // User-Space rules, the generic Incognito target, and the Kiosk action
-        // target route; any other id under the incognito prefix would be a
-        // stale runtime Space id — keep such a row inert instead of routing
-        // into a Space that no longer exists.
-        let effectiveRules = cachedURLRules.filter { Self.isRoutableRuleTarget($0.spaceId) }
+        // User-Space rules and the generic Incognito target route; any other
+        // id under the incognito prefix would be a stale runtime Space id —
+        // keep such a row inert instead of routing into a Space that no
+        // longer exists.
+        // R-M3-4a-31: a rule whose target Space is gone or hidden must not
+        // reach Chromium — it would compile into a kRouteToSpace carrying a
+        // dead route_target_space_id (`phi_url_router.cc:249-252`) and ask
+        // Swift to cold-spawn a Space that no longer exists. Hidden Spaces are
+        // already absent from `spaces` (`handleSpacesUpdate`), so membership
+        // is the whole predicate; do NOT consult any sync mapping state here
+        // (RR-R9). Excluded rules stay in the store and in the editor: the
+        // target coming back re-arms them.
+        let liveTargets = Set(spaces.map(\.spaceId))
+        let effectiveRules = cachedURLRules.filter {
+            Self.isRoutableRuleTarget($0.spaceId)
+                && ($0.spaceId == Self.incognitoRuleTargetId
+                    || $0.spaceId == Self.kioskRuleTargetId
+                    || liveTargets.contains($0.spaceId))
+        }
         var rulesPayload: [[String: Any]] = effectiveRules.map { rule in
             var entry: [String: Any] = [
                 "targetSpaceId": rule.spaceId,
                 "host": rule.host,
                 "ask": NSNumber(value: rule.askBeforeRouting),
                 "sortOrder": NSNumber(value: rule.sortOrder),
+                "tieBreakKey": ruleTieBreakKey(forTargetSpaceId: rule.spaceId),
+                "ruleId": rule.syncId ?? rule.id,
             ]
             if let prefix = rule.pathPrefix, !prefix.isEmpty {
                 entry["pathPrefix"] = prefix
@@ -7454,6 +7552,7 @@ final class SpaceManager: ObservableObject {
         // gone would otherwise replay destroyed models into
         // `handleSpacesUpdate` (same trap as the `spaces` didSet documents).
         lastStoreSpaces = []
+        urlRulesRevision &+= 1
         spaces = []
         // Tear down each slot's NotificationCenter registrations before
         // dropping the registry — controllers may keep the slots alive past
@@ -7501,6 +7600,31 @@ final class SpaceManager: ObservableObject {
     private func handleURLRulesUpdate(_ rules: [SpaceRoutingRule]) {
         cachedURLRules = rules
         hasLoadedURLRules = true
+        // §5.8 item 3: replacing the cache requires field refresh in any open editor sheet.
+        urlRulesRevision &+= 1
+        pushRoutingTableToChromium()
+    }
+
+    /// Refetch LocalStore rules (getAllURLRules filters soft-deleted rows, R-M3-4a-51), replace
+    /// cachedURLRules, then pushRoutingTableToChromium. Non-private because every §6.6 write path calls it;
+    /// sync landing goes through the coordinator on the main actor.
+    ///
+    /// Do not call private handleURLRulesUpdate with model objects forbidden to sync by §5.6, merely push
+    /// stale cached rules, or rely on publisher deduplication over mutable SwiftData instances (R-M3-4a-34 /
+    /// RR-R3).
+    ///
+    /// Do not cache the resolver (R-M3-4a-46): pushRoutingTableToChromium resolves tie-break keys anew per
+    /// payload. Main-actor isolation is required because getAllURLRules reads mainContext, as for
+    /// applyRemoteRebind.
+    @MainActor
+    func reloadURLRulesFromStore() {
+        guard let account = boundAccount else { return }
+        cachedURLRules = account.localStorage.getAllURLRules()
+        hasLoadedURLRules = true
+        urlRuleReloadCountForTesting += 1
+        // §5.8 item 3: applyRuleEdits and every §6.6 write end here, ensuring every cache replacement emits a
+        // revision.
+        urlRulesRevision &+= 1
         pushRoutingTableToChromium()
     }
 
@@ -7524,6 +7648,13 @@ final class SpaceManager: ObservableObject {
         // store toward this arrangement rather than fighting it.
         updated = updated.filter { !$0.isAnyAgentSpace } + updated.filter(\.isAnyAgentSpace)
         migrateLegacyFollowGlobalPinsIfNeeded(storeSpaces: updated)
+        lastStoreSpaces = Space.reconcile(updated, with: lastStoreSpaces)
+        // AFTER `lastStoreSpaces` (the unfiltered snapshot replayed on unhide)
+        // and the legacy migration: one filter here takes the Space out of the
+        // strip, the switcher, `userSpaces`, the settings list, the URL-rule
+        // targets and the ^1..^9 shortcuts at once (§6.6).
+        let hidden = MainActor.assumeIsolated { PhiSpaceSyncState.shared.hiddenSpaceIds }
+        if !hidden.isEmpty { updated.removeAll { hidden.contains($0.spaceId) } }
         // Every live Incognito Space joins the list at its runtime position —
         // after all user Spaces (in ordinal order) until it's dragged,
         // clamped in case Spaces were deleted since. Because they flow
@@ -7543,7 +7674,8 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         updated = Space.reconcile(updated, with: spaces)
-        lastStoreSpaces = updated.filter { !Self.isIncognitoSpaceId($0.spaceId) }
+        // Capture prior IDs before replacing spaces; refresh routing only if the set changes.
+        let previousSpaceIds = Set(spaces.map(\.spaceId))
         spaces = updated
         let defaultSpaceId = currentDefaultSpaceId
         if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
@@ -7638,8 +7770,15 @@ final class SpaceManager: ObservableObject {
             slot.respawnWindow(forSpaceId: spaceId)
         }
 
-        // Space set / names / icons / order may have changed (routing rules
-        // didn't, so only the submenu list needs refreshing).
+        // R-M3-4a-50 row 6: appearing, disappearing or hidden Spaces affect routing through spaces/hidden
+        // filtering (R-M3-4a-31). Refresh only when the set changes; name/icon/order changes are explicitly
+        // excluded by §6.6.
+        if validIds != previousSpaceIds {
+            MainActor.assumeIsolated { reloadURLRulesFromStore() }
+        }
+
+        // Routing already refreshed above if the Space set changed. Here only refresh the submenu for
+        // name/icon/order changes.
         pushOpenLinkSpaceMenuToChromium()
 
         // A cold-start repair adjudication deferred on an unresolved

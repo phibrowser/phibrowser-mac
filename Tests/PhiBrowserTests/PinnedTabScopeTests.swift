@@ -14,6 +14,9 @@ final class PinnedTabScopeTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
 
     override func tearDownWithError() throws {
+        // This class runs real scope migrations, whose success path writes UserDefaults.standard.
+        // In hosted tests, that is Phi's own preferences domain.
+        clearPinnedTabScopeMirrorDefaults()
         cancellables.removeAll()
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -114,6 +117,83 @@ final class PinnedTabScopeTests: XCTestCase {
             store.getAllPinnedTabs(for: "Default", spaceId: "space-b").first?.url.absoluteString,
             "https://left.example"
         )
+    }
+
+    /// After migration, a second write on the same background context must commit, and
+    /// no TabDataModel may have empty required columns.
+    ///
+    /// insertPinnedTabs formerly called applyPinnedTabOwner (setting model.profile) before
+    /// context.insert(model). The ProfileModel.tabs inverse caused SwiftData to register
+    /// a placeholder with six empty required columns for each pin. Migration could still
+    /// save successfully (Mac B, 2026-09-14), but later saves materialized the placeholders
+    /// and failed validation (NSCocoaErrorDomain 1560) until rollback. The second write
+    /// is therefore the key assertion. Three lineages across space-a/space-b under Default
+    /// produce six rows, matching the incident's six placeholders.
+    ///
+    /// This characterizes continued writability; it does not guarantee a pre-fix failure.
+    /// The incident started about 100 seconds after migration saved, and investigation §6
+    /// did not locate the materialization trigger. Reading profile.tabs in the second write
+    /// is a best-effort attempt to materialize the inverse, not proof of that trigger.
+    func testASecondWriteStillCommitsAfterAProfileToSpaceMigration() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        for (index, name) in ["one", "two", "three"].enumerated() {
+            try insertPinnedTab(
+                in: store,
+                guid: "pin-\(name)",
+                lineageId: "lineage-\(name)",
+                profile: fixture.defaultProfile,
+                title: name,
+                url: "https://\(name).example",
+                index: index
+            )
+        }
+
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        XCTAssertEqual(store.pinnedTabScope(), .space)
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-a").count, 3
+        )
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-b").count, 3
+        )
+
+        // Key assertion ①: a second write on the same context commits. Use the throwing
+        // entry point so save failures surface instead of merely being logged.
+        let target = try XCTUnwrap(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first
+        )
+        let targetGuid = target.guid
+        try await store.performBackgroundWriteAndWaitThrowing { context in
+            // Read ProfileModel.tabs to materialize the inverse set by model.profile, the only
+            // place placeholders could be hiding. After the fix, none are found and save succeeds.
+            let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+            for profile in profiles {
+                XCTAssertTrue(profile.tabs.allSatisfy { !$0.guid.isEmpty },
+                              "The inverse contains no placeholders with empty required columns")
+            }
+            let descriptor = FetchDescriptor<TabDataModel>(
+                predicate: #Predicate<TabDataModel> { $0.guid == targetGuid }
+            )
+            let row = try XCTUnwrap(try context.fetch(descriptor).first)
+            row.title = "After migration"
+        }
+        try drainMainQueue()
+
+        XCTAssertEqual(store.getTab(by: targetGuid)?.title, "After migration",
+                       "The second write must persist")
+
+        // ② is a fallback, not the key assertion: investigation found placeholders cannot
+        // persist in either outcome. Failed saves write nothing; successful saves imply none
+        // were present. Keep this check to detect any persisted empty guid; ① carries the test.
+        XCTAssertTrue(store.getAllTabs().allSatisfy { !$0.guid.isEmpty },
+                      "No TabDataModel placeholders have empty required columns")
     }
 
     func testProfilePinsWithoutDestinationSpaceSurviveScopeRoundTrip() async throws {
@@ -268,7 +348,7 @@ final class PinnedTabScopeTests: XCTestCase {
         )
 
         try await store.changePinnedTabScope(to: .space)
-        store.deleteSpaceCascade(spaceId: "space-c")
+        store.deleteSpaceCascade(spaceId: "space-c", origin: .userIntent)
         await flushWrites(store)
 
         try await store.changePinnedTabScope(to: .profile)
@@ -651,7 +731,7 @@ final class PinnedTabScopeTests: XCTestCase {
         )
         await flushWrites(store)
 
-        store.deleteSpaceCascade(spaceId: "space-a")
+        store.deleteSpaceCascade(spaceId: "space-a", origin: .userIntent)
         await flushWrites(store)
         try drainMainQueue()
 
@@ -736,6 +816,198 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").isEmpty)
     }
 
+    /// CASE 8.5d: creating an existing guid is rejected instead of silently adding a row.
+    /// guid is not schema-unique, so duplicate writes previously succeeded. move/update/delete
+    /// address only the first matching row, leaving duplicates unmanageable; the sidebar's
+    /// guidInLocalDB dictionary traps (Mac B, 2026-09-14 23:49). rowAlreadyMapped tells
+    /// sync application to reject the miscomputed batch atomically, without persistence.
+    func testASecondPinnedCreateOnAnExistingGuidIsRefused() async throws {
+        let store = try makeStore()
+        try seedProfilesAndSpaces(in: store)
+        let url = try XCTUnwrap(URL(string: "https://dup.example"))
+
+        try await store.createPinnedTabThrowing(guid: "shared-guid", url: url,
+                                                title: "First", profileId: "Default")
+        do {
+            try await store.createPinnedTabThrowing(guid: "shared-guid", url: url,
+                                                    title: "Second", profileId: "Default")
+            XCTFail("The second create must throw instead of silently adding a row")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
+        }
+        try drainMainQueue()
+
+        let rows = store.getAllPinnedTabs(for: "Default")
+        XCTAssertEqual(rows.filter { $0.guid == "shared-guid" }.count, 1,
+                       "The store always contains exactly one row for this guid")
+        XCTAssertEqual(rows.first?.title, "First", "No fields from the rejected create were written")
+    }
+
+    /// CASE B2-2b (M3-4a Task 2b): a sync batch creating an existing guid throws
+    /// rowAlreadyMapped and rolls back every write.
+    /// Use AccountPhiPinnedTabAccess.apply → applyPinSyncBatchThrowing, one write block
+    /// and transaction, rather than 8.5d's single-row API. B2-2's no-throw replay assertion
+    /// could pass with no guard at all; here createPinnedTabBody in LocalStore+PinnedTabScope.swift
+    /// must enforce pin idempotence on the batch path and roll back the companion create.
+    /// Bypassing that guard leaves duplicate guids unmanageable. Replay that mistakes an
+    /// update for a create relies on this rejection to roll back the entire batch.
+    func testASyncLandingBatchWithAnExistingGuidIsRefusedAsAWhole() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "G", lineageId: "lineage-g",
+                            profile: fixture.defaultProfile, title: "First",
+                            url: "https://first.example")
+        let suite = "PinnedTabScopeTests.B2-2b.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let access = AccountPhiPinnedTabAccess(store: store, defaults: defaults)
+
+        let batch = PinApplyBatch(unordered: [
+            .create(.fixture(lineageId: "lineage-g", guid: "G", spaceId: nil,
+                             profileId: "Default", title: "Second",
+                             url: try XCTUnwrap(URL(string: "https://second.example")))),
+            .create(.fixture(lineageId: "lineage-h", guid: "H", spaceId: nil,
+                             profileId: "Default", title: "Other",
+                             url: try XCTUnwrap(URL(string: "https://other.example")))),
+        ])
+        do {
+            try await access.apply(batch)
+            XCTFail("Creating an existing guid must make the entire batch throw")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .rowAlreadyMapped)
+        }
+        try drainMainQueue()
+
+        let rows = store.getAllPinnedTabs(for: "Default")
+        let sharedGuidRows = rows.filter { $0.guid == "G" }
+        XCTAssertEqual(sharedGuidRows.count, 1, "The store always contains exactly one row for this guid")
+        XCTAssertEqual(sharedGuidRows.first?.title, "First", "No fields from the rejected create were written")
+        XCTAssertFalse(rows.contains { $0.guid == "H" }, "Other operations in the batch roll back with the transaction")
+    }
+
+    /// CASE 8.5e: startup repair cleans an already-corrupt store.
+    /// Keep the lowest-index row among shared guids and one exact same-identity duplicate.
+    /// Preserve content-divergent variants: A11 mints separate lineages for them, and deleting
+    /// them would destroy user data.
+    func testStartupSelfHealCollapsesDuplicatePinnedRows() async throws {
+        let store = try makeStore()
+        // LocalStore.init queues a repair itself. Drain it with a no-op write so the direct
+        // call below starts from a deterministic, untouched fixture.
+        await store.performBackgroundWriteAndWait { _ in }
+        let fixture = try seedProfilesAndSpaces(in: store)
+        // Two rows share a guid, matching Mac B's incident: same lineage/content, different indexes.
+        try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 1)
+        try insertPinnedTab(in: store, guid: "dup-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 3)
+        // A third same-identity row has a different guid but identical content: an exact duplicate.
+        try insertPinnedTab(in: store, guid: "third-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube",
+                            url: "https://youtube.example", index: 4)
+        // A content-divergent variant belongs to A11; repair must preserve it.
+        try insertPinnedTab(in: store, guid: "variant-guid", lineageId: "yt-lineage",
+                            profile: fixture.defaultProfile, title: "YouTube Renamed",
+                            url: "https://youtube.example", index: 5)
+        let context = try XCTUnwrap(store.getMainContext())
+
+        let counts = try store.healDuplicatePinnedTabRowsBody(in: context)
+        try context.save()
+
+        XCTAssertEqual(counts.sharedGuid, 1, "① The shared-guid pair collapses to one row")
+        XCTAssertEqual(counts.sharedIdentity, 1, "② The exact same-identity duplicate also collapses")
+        let rows = store.getAllPinnedTabs(for: "Default")
+        XCTAssertEqual(rows.filter { $0.guid == "dup-guid" }.count, 1,
+                       "③ Only one row retains this guid")
+        XCTAssertEqual(rows.first { $0.guid == "dup-guid" }?.index, 1,
+                       "④ The lowest-index row survives")
+        XCTAssertNil(rows.first { $0.guid == "third-guid" },
+                     "⑤ The third exact duplicate is removed")
+        XCTAssertNotNil(rows.first { $0.guid == "variant-guid" },
+                        "⑥ The content-divergent variant remains unchanged")
+        XCTAssertEqual(Set(rows.map(\.guid)).count, rows.count,
+                       "⑦ No two rows share a guid after repair")
+    }
+
+    /// CASE 8.6: scope migration preserves contentUpdatedDate.
+    /// Previously only createdDate was copied. Each pin's comparison stamp then fell back
+    /// from its last real edit to creation time, losing to any old remote edit next round.
+    /// A scope change could thus roll back content across the account.
+    func testScopeMigrationCarriesTheContentEditTimestampToTheMigratedRow() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let edited = Date(timeIntervalSince1970: 2_000_000)
+        let source = try insertPinnedTab(
+            in: store,
+            guid: "edited-pin",
+            lineageId: "edited-lineage",
+            profile: fixture.defaultProfile,
+            title: "Edited",
+            url: "https://edited.example"
+        )
+        source.createdDate = created
+        source.contentUpdatedDate = edited
+        try XCTUnwrap(store.getMainContext()).save()
+
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let migrated = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        XCTAssertEqual(migrated.map(\.pinLineageId), ["edited-lineage"])
+        let row = try XCTUnwrap(migrated.first)
+        XCTAssertEqual(row.contentUpdatedDate, edited)
+        XCTAssertEqual(row.createdDate, created)
+    }
+
+    /// CASE 8.9: merging copies retains the later content edit stamp, independent of order.
+    /// Only equal content signatures merge, so either copy supplies the same content, but
+    /// stamps can differ. Taking the first set's stamp lets devices publish different stamps
+    /// for identical content and overwrite one another. Taking the maximum is order-independent,
+    /// as already done for lastSeen.
+    func testMergingCopiesKeepsTheLatestContentEditTimestamp() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "shared-pin",
+            lineageId: "shared-lineage",
+            profile: fixture.defaultProfile,
+            title: "Shared",
+            url: "https://shared.example"
+        )
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let early = Date(timeIntervalSince1970: 1_000_000)
+        let late = Date(timeIntervalSince1970: 3_000_000)
+        let inSpaceA = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first)
+        let inSpaceB = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-b").first)
+        inSpaceA.contentUpdatedDate = early
+        inSpaceB.contentUpdatedDate = late
+        try XCTUnwrap(store.getMainContext()).save()
+
+        try await store.changePinnedTabScope(
+            to: .profile,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let merged = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        XCTAssertEqual(merged.map(\.pinLineageId), ["shared-lineage"])
+        XCTAssertEqual(try XCTUnwrap(merged.first).contentUpdatedDate, late)
+    }
+
     // MARK: - Fixtures
 
     private struct Fixture {
@@ -784,9 +1056,9 @@ final class PinnedTabScopeTests: XCTestCase {
             updatedDate: Date()
         )
         pinned.type = TabDataType.pinnedTab.rawValue
-        pinned.profile = profile
         pinned.profileId = "Default"
         context.insert(pinned)
+        pinned.profile = profile
         try context.save()
     }
 
@@ -846,11 +1118,11 @@ final class PinnedTabScopeTests: XCTestCase {
             updatedDate: Date()
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profile.profileId
         model.pinLineageId = lineageId
         model.splitPartnerGuid = splitPartnerGuid
         context.insert(model)
+        model.profile = profile
         try context.save()
         return model
     }

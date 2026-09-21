@@ -1,0 +1,497 @@
+# M3-4a lane R — implementer deviation ledger
+
+## Task 1
+
+- **Plan ruling 3 (`testUnknownKindSurvivesRoundTrip` field-slot fix, PR19-style):** the
+  brief's task-1-brief.md flags that `PhiEntityProtoTests.testUnknownKindSurvivesRoundTrip`
+  (written in M3-2, `c96c8158`) probed `Data([0x1A, 0x00])` as "a future client's field 3",
+  but M3-3 gave field 3 to `bookmark` (`phi_entity.proto:21`, pinned by
+  `PhiEntityGoldenBytesTests.testKindOneofUsesFieldThreeForBookmarkAndFourForPinTab`). This
+  test was already red on `c549c4c5`, as the brief states ("already failing"): SwiftProtobuf's
+  `BinaryDecoder.decodeSingularMessageField` materializes an empty message for a zero-length
+  body, so `Data([0x1A, 0x00])` decodes to `.bookmark(Phi_PhiBookmarkEntity())`, not to an
+  unrecognized field, and `XCTAssertNil(decoded.kind)` fails.
+  This task is the one that finally occupies slot 5 (`url_rule`), so it is the last natural
+  place to also retire the stale slot-3 probe before a THIRD person mistakes 3 for still being
+  free. Fixed by moving the probe to field 13 (`(13 << 3) | 2 == 0x6A`), which remains unowned
+  across the whole `kind` oneof as of this commit (5 = `url_rule`, 6 = reserved-by-comment for
+  M3-4b's `profile`). This is a fix to a pre-existing test-comment/field-choice staleness, not
+  a change introduced by this milestone's own schema work.
+
+- **Plan ruling 4 (`Proto/README.md:27` generated-type-name line, completed rather than
+  appended):** the "Generated Swift type names" line under package `phi` had never been
+  updated past M3-1's three types (`Phi_PhiEntity`, `Phi_PhiSettingEntity`,
+  `Phi_PhiSettingValue`), even though `Phi_PhiSpaceEntity` (M3-2), `Phi_PhiBookmarkEntity` and
+  `Phi_PhiPinTabEntity` (M3-3) had shipped since. Rather than appending only
+  `Phi_PhiURLRuleEntity` onto an already-incomplete list, this task rewrote the line to name
+  every generated `phi`-package message type that exists in `Generated/phi_entity.pb.swift` as
+  of this commit (verified via `grep -n "^nonisolated struct Phi_" phi_entity.pb.swift`): all
+  seven — `Phi_PhiEntity`, `Phi_PhiSettingEntity`, `Phi_PhiSettingValue`, `Phi_PhiSpaceEntity`,
+  `Phi_PhiBookmarkEntity`, `Phi_PhiPinTabEntity`, `Phi_PhiURLRuleEntity`. The brief's own prose
+  says "six" for this line while also saying "including Phi_PhiURLRuleEntity"; read as "six
+  types besides the anchor `Phi_PhiEntity` the sentence already names" this is exactly the
+  seven-type list produced here, so no value was chosen against the brief — this note exists
+  only because the literal count in the brief's prose does not match the literal type count
+  without that reading, and a future reader diffing against the brief text alone might wonder
+  why the line lists seven names.
+
+- **`Proto/README.md`'s closing "Keeping this in sync" paragraph (not one of the brief's four
+  listed README spots, fixed anyway):** the brief's Step 6 names four exact locations to edit
+  (`:27`, the field table, the reserved-range sentence, the client-tags table). The file's final
+  paragraph ("`PhiEntity.kind` is an open oneof...") still said "5 / 6 are spoken for by M3-4's
+  URL rules and profiles" in the future tense, which was accurate before this commit and wrong
+  after it (5 is now a real, shipped field, not a reservation). Left uncorrected it would sit
+  right below the field-number table this task just updated and contradict it. Reworded to "M3-4a
+  took 5 for URL rules; 6 is spoken for by M3-4b's profiles" -- same sentence, updated tense, no
+  other content changed.
+
+## Task 4
+
+Controller ruling (not a deviation): the brief names the ledger as
+`docs/superpowers/sdd/m3-4a-progress.md`; in lane R the file is this one
+(`m3-4a-progress-r.md`).
+
+- **Plan ruling 1 (CASE numbering C-10 / C-11):** spec §12.1's compatibility block stops at
+  C-9; the `deletedDate` default-read filter (R-M3-4a-51) and the `syncId` backfill's
+  distinctness / lowercase / idempotence (R-M3-4a-23) had prose only, no CASE number. The
+  plan numbered them C-10 / C-11; both live in the new
+  `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` next to C-1 / C-2 (Task 5
+  appends C-6 ~ C-9 to the same file). Task 12 folds this into spec §15.
+
+- **Plan ruling 2 (`Compatibility/README.md` V11 line):** that README has no version-history
+  section (Background / Design / Opening Flow / Development Rules only), so no new section or
+  table was opened. One English sentence appended at the end of the file, wording set by the
+  plan: "The current store format is 11 (`TabDataModelSchemaV11`), which adds the six
+  `SpaceURLRule` account-sync columns and the two `ProfileModel` columns."
+
+- **Plan ruling 3 (derived version expressions in `LocalStoreCompatibilityTests`):** the two
+  assertions on the shipping configuration (`:393` / `:394`) keep the literals `11` /
+  `1...11` — they are the anchor of the whole chain. The "too new" group
+  (`testShippingReadableStoreFormatVersionBounds`) and the "older build" group
+  (`testStoreFormatElevenIsPreservedWhenOpenedByAnAppThatOnlyReadsTen`) now derive from
+  `LocalStore.compatibilityConfiguration.currentStoreFormatVersion` (`+ 1` → `tooNewVersion`,
+  `- 1` → `olderBuildVersion`). After the sweep the only remaining `\b10\b` literals in that
+  file are the backup-version group (`:353` / `:368` / `:380` / `:388`), which name the V10
+  store being upgraded and are correct as literals.
+
+- **Two further rulings the brief carried, applied as written:** (a) C-1 / C-2 go in the new
+  file, not in `LocalStoreCompatibilityTests` (that file runs on text placeholder files and
+  two throwaway schemas; it never reaches `migrateV10toV11`); (b) `ProfileModel.init` gains
+  no parameters — `syncId` / `createdDate` are declared-but-dead in M3-4a and default to nil
+  on the `@Model` (precedent `TabDataModelSchemaV10.TabDataModel.syncId`).
+
+- **spec line-number errata (measured on `c549c4c5`, unchanged at `32889806`):**
+  `LocalStore.compatibilityConfiguration` is at `LocalStore.swift:44-48` (spec §4.2 says
+  `:37-42`); the production `ModelContainer(for:…)` is at `:129-137` (spec says `:131-137`;
+  `migrationPlan:` at `:135` matches); the `migrateV8toV9` backfill precedent is at
+  `TabDataModel.swift:146-163` (spec says `:145-161`). spec §12.1 CASE C-3 says "11 occurrences of `10`";
+  the measured count is 12 (`:357 :358 :369 :379 :393 :394 :397 :398 :412 :435 :449 :456`) and
+  all 12 were changed; the one the "11" count misses is `:412`.
+
+- **Implementer deviations (comment / message level, no assertion changed):**
+  1. `LocalStoreCompatibilityTests`: the CASE 2a.24 header comment now reads "schema V11"
+     and is tagged "/ C-3"; the CASE 2a.25b header is rewritten to describe V11's six columns
+     (account identity, soft-delete intent, merge partner) and tagged "/ C-4"; the two
+     `XCTFail` messages moved one version up ("version ten store … version eleven app",
+     "version eleven store … refused by a version ten app"). The brief's table lists only the
+     literals, neighbours and function names; leaving the comments on V10/V9 would have made
+     them contradict the code directly below.
+  2. C-2 carries three structural assertions beyond the brief's two: `schemas.count == 11`,
+     `TabDataModelSchemaV11.versionIdentifier == Schema.Version(11, 0, 0)` and
+     `TabDataModelSchemaV11.models.count == 5`. Additive; the brief's two
+     (`stages.count == schemas.count - 1`, `schemas.last` is V11 by `ObjectIdentifier`) are
+     present verbatim.
+  3. C-10 subscribes to `urlRulesPublisher()` **before** inserting the four rows (the brief
+     fixes "subscribe and take the first value, then `save()`" but not the order of insert vs
+     subscribe). `ModelContext.fetch` includes pending inserts, so subscribing after the
+     inserts could make the initial emission already equal the post-save projection, and the
+     publisher's `removeDuplicates` would then swallow the post-save emission — step ③ would
+     time out. Subscribing first pins the first value to `[]` and makes the post-save emission
+     structurally distinct.
+  4. `getAllURLRules()` gained a two-line `///` doc comment naming the R-M3-4a-51 filter and
+     that `urlRulesPublisher()` follows it; `TabDataModelSchemaV11.SpaceURLRule.init` carries
+     a two-line `//` comment on why all six new parameters default. The V11 file header is in
+     English (V10 precedent) and carries the brief's required substance (one migration instead
+     of two; `beforeSchemaUpgrade` copies the whole store + sidecars each bump; favicon PNG
+     bytes are inlined on bookmark rows; README forbids folding backup deletion into a schema
+     change).
+
+## Task 5
+
+Commit scope: `LocalStore+SpaceURLRule.swift` (rewrite), `LocalStore+Space.swift`,
+`PhiSpaceLocalAccess.swift`, `SpaceManager.swift` (`:1410` + the two wrapper bodies),
+`LocalStoreURLRuleThrowingTests.swift` (+25 cases), `URLRouterTests.swift` (two assertions),
+`PinnedTabScopeTests.swift` (two call sites), this ledger. Verification is compile-only
+(`build-for-testing`, exit 0, no warnings in the touched files); the new cases were confirmed
+present in the built `PhiBrowserTests` bundle via `nm`, not executed.
+
+- **Plan ruling 1 (per-row bodies are `internal`):** `upsertURLRuleBody(…in:)` /
+  `hardDeleteURLRuleBody(syncId:in:)` are internal, not private, so Task 8's
+  `applyURLRuleSyncBatchBody` can compose them inside one write block (nesting a second
+  `performBackgroundWriteAndWaitThrowing` deadlocks the serial write actor). spec §4.3 item 6
+  only names the throwing halves.
+
+- **Plan ruling 2 (`URLRuleDraft` carries "which units were sent" as `Optional`):** `content:
+  ContentUnit?` (host / pathPrefix / askBeforeRouting share one stamp, so they travel as one
+  unit), `spaceId: String?`, `sortOrder: Int?`, `createdDate: Date?`; `nil` = "not sent" ⇒ the
+  body writes nothing, stamps nothing, and does not count it towards `pendingLocalEdit`. Sent
+  but equal ⇒ also a zero write. This extends spec §4.3 item 1 / Task 11 rulings 1-2.
+  Two additions ruled by the controller when the brief's literal signature could not compile
+  against pre-Task-11 code:
+  1. the flat convenience init takes `spaceId: String? = nil` (the brief wrote `spaceId:
+     String`): the four leaf construction sites (`AgentSpaceRouter+Management.swift:248/:308/:350`,
+     `SpaceURLRulesEditor.swift:143`) and `URLRouterTests.swift:383` do not pass a target;
+     `SpaceManager.setAllRules` / `setRules` overwrite `draft.spaceId` from the dictionary key /
+     `forSpaceId` anyway. Task 11 passes `spaceId:` explicitly at those sites.
+  2. three read-only forwarding accessors on `URLRuleDraft` (`host` → `content?.host ?? ""`,
+     `pathPrefix` → `content?.pathPrefix`, `askBeforeRouting` → `content?.askBeforeRouting ??
+     false`), each documented as a compatibility read for pre-Task-11 callers (the two optimistic
+     pushes at `SpaceManager.swift` read `draft.host` / `draft.pathPrefix` /
+     `draft.askBeforeRouting`; so does `URLRouterTests:383`). Task 11 / 8b-4 use `content`
+     directly; the accessors can be retired with the pushes.
+  The flat init lives in `extension LocalStore.URLRuleDraft` so the synthesized memberwise
+  initializer (`init(id:syncId:content:spaceId:sortOrder:createdDate:contentUpdatedDate:)`, every
+  parameter defaulted) stays available — that is the "memberwise construction" path the brief names for
+  8b-4, and what the flag-setting matrix cases use to send genuinely `nil` units.
+
+- **Plan ruling 3 (`id` miss falls back to `syncId` and rewrites `row.id`):** the editor's
+  `Row.init(from:)` turns a non-UUID historical id into a fresh UUID on every round trip; the body
+  therefore locates by `syncId` when `byId` misses and adopts `draft.id` on the row (CASE
+  U-14-legacy). spec §4.3 item 3 only says "insert".
+
+- **Plan ruling 4 (densify domain includes the buckets of `deletedIds`):** a soft delete leaves a
+  hole exactly like a retarget; `touchedBuckets` = every upsert's new bucket + every retargeted
+  row's old bucket + every soft-deleted row's bucket. Same ruling as Task 11's ruling 4.
+
+- **Plan ruling 5 (new rows mint no content stamp):** insert writes `contentUpdatedDate =
+  draft.contentUpdatedDate` (nil for a genuinely new row) and `targetUpdatedDate = nil`; the
+  no-baseline projection falls back to `createdDate`, which is the same instant.
+  `pendingLocalEdit = true` still.
+
+- **Plan ruling 6 (both `replace*` functions deleted now; `SpaceManager` wrapper bodies rerouted):**
+  `replaceURLRules` / `replaceAllURLRules` and their contract comments are gone;
+  `setAllRules` / `setRules` keep signature, stale doc comments (`:1910-1916` / `:1978-1981`) and
+  the two optimistic pushes verbatim, and their bodies now compute `deletedIds` = affected cached
+  rows not named in the payload, then `Task { try await applyURLRuleEditsThrowing(…) }` with an
+  `AppLogError` + `PhiSyncLog.describe` catch. `SpaceManager.swift:1410` passes
+  `origin: .userIntent` (no default ⇒ compile-forced), so Task 11 Step 2's line for it is a no-op.
+  Post-check: `git grep 'replaceURLRules\|replaceAllURLRules' -- Sources` leaves only the stale
+  `SpaceManager.swift:1914` comment (Task 11 deletes it). The brief expected two further hits in
+  `TabDataModelSchemaV7.swift:135` / `V8.swift:137`; those lines mention
+  `SpaceManager.setRules(_:forSpaceId:)`, not the replace functions — nothing to do there.
+  **Pre-Task-11 consequence worth knowing:** the agent router's `draft(from:)` does not pass
+  `id:`, so until Task 11 lands, each agent `urlRules.*` mutation soft-deletes the bucket's
+  existing rows and re-inserts them under fresh ids / syncIds (user-visible behaviour equals
+  today's delete-then-insert; the difference is soft-deleted rows accumulate locally). Rule sync
+  is not live before Tasks 8/9, so nothing reaches the account; Task 11 must land before it does.
+
+- **Plan ruling 7 (no `urlRuleChangesPublisher()` here):** spec §12.3 item 5 lists it under this
+  task, §11's file table and the plan skeleton put it in `LocalStore.swift` under Task 8. Followed
+  the latter; `LocalStore.swift` untouched.
+
+- **Plan ruling 8 (R-M3-4a-104, a `syncId == nil` draft hitting a soft-deleted row):** step 2b in
+  the body: the soft-deleted row is left byte-for-byte alone, the draft goes through the insert
+  branch with a freshly minted `id` **and** `syncId` (`draft.id` is still held by the soft-deleted
+  row under `@Attribute(.unique)`), `pendingLocalEdit = true`; a `syncId != nil` draft hitting a
+  soft-deleted row throws `.rowAlreadyMapped` (that path belongs to the per-row primitives, whose
+  soft-delete semantics are the opposite — CASE C-9 ①). CASE C-12 has all three legs. spec §4.3
+  needs this cell; appendix C-39.
+
+- **Further deviations / notes (implementer):**
+  1. `Tests/PhiBrowserTests/PinnedTabScopeTests.swift:327` / `:710` call
+     `deleteSpaceCascade(spaceId:)`; with `origin` mandatory they now pass `.userIntent`
+     (controller ruling; both origins are identical for `TabDataModel`, which is all those tests
+     assert on). File added to the commit.
+  2. `URLRouterTests.swift`: the plan skeleton lists this file under Task 10 only; this task
+     changed exactly the two "bare `/` ⇒ nil" assertions to `"/"` (§8.1) and renamed them
+     `testNormalizeBareSlashBecomesRootOnly` / `testNormalizeMultipleSlashesCollapseToRootOnly`;
+     the other four normalizer cases are untouched and still hold under the new function.
+  3. `SpaceCascadeOrigin` is file-scope as specified; to keep it "adjacent to the three cascade functions" the single
+     `extension LocalStore` in `LocalStore+Space.swift` is closed before the enum and reopened
+     after it. `deleteSpaceCascadeBody` takes its one `now` at the top of the body.
+  4. **CASE C-9 ③ as written in the brief is unreachable** with the specified signature:
+     `upsertURLRuleBody(syncId:…)` addresses strictly by `syncId` over the full table and the
+     brief's own semantics say "a lookup miss creates a row and never throws `.rowNotFound`". After `B.syncId → R3`,
+     an upsert for `R2` finds no row, so it cannot throw `.rowAlreadyMapped`. The test writes the
+     outcome those semantics produce — a new row is created, `B` is untouched, count +1 (probe:
+     addressing never clobbers by anything but `syncId`). The `:2196-2199`-shaped guard is in
+     both bodies but is vacuous under `syncId` addressing (commented as such). If a throwing ③ was
+     intended it needs an `id:` parameter on the primitive — an API change Task 8 consumes —
+     so it is left for a controller ruling.
+  5. CASE C-8b orders the legitimate upsert (`B`) before the colliding one (`A`) so the
+     `performThrowing` rollback is actually exercised; the brief listed `A` first, where the
+     throw would happen before anything was written.
+  6. The 2b-minted `id` is `UUID().uuidString.lowercased()` as the brief says (the draft default
+     `id` is uppercase). The editor's `Row.init(from:)` re-uppercases via
+     `UUID(uuidString:).uuidString`, so such a row misses `byId` on its next Save; harmless once
+     Task 11 makes editor drafts carry `syncId` (ruling 3 adopts the new id), noted for Task 11.
+  7. C-6's "structural assertion" is executable: the test reads
+     `Sources/LocalStorage/LocalStore+SpaceURLRule.swift` via `#filePath` and asserts that
+     `func applyURLRuleEdits(`, `func replaceURLRules(` and `func replaceAllURLRules(` are absent
+     and `func applyURLRuleEditsThrowing(` is present.
+  8. Test header comment now lists every case group Task 5 appended (the Task 4 wording said
+     "C-6 ~ C-9" only).
+
+## Task 7
+
+Commit scope: `Sources/Sync/Phi/URLRuleKind.swift` (new), `Sources/Sync/Phi/PhiURLRuleLocalAccess.swift`
+(new, `PhiLocalURLRule` only), `SyncableOwnedItems.swift` (three refusal cases,
+`OwnedItemApplyStep.newOwnerUuid`, `OwnedItemKind.targetOwnerUuid(of:)` + default extension, the
+`.move` production site), `SyncableSpaces.swift` (`incognitoSpaceUuid`), `PhiSyncEngine.swift`
+(`OwnedOwnerMaps.resolver` only), `SpaceSyncMappingManager.swift` (two error cases, two guards),
+`project.pbxproj` (both new files, four entries each), `URLRuleKindTests.swift` (new),
+`OwnedItemsTestSupport.swift` (rule fixture builders), `SpaceSyncMappingManagerTests.swift`
+(U-R2 / U-R3), this ledger. Verification is compile-only (`build-for-testing`).
+
+- **Plan ruling 1 (`PhiURLRuleLocalAccess.swift` is created here, not in Task 8):** the plan's file
+  table put the whole file under Task 8; `URLRuleKind.Local` must compile in this task and
+  `PhiLocalURLRule` is its only candidate. The file holds exactly the 13-member value type; Task 8
+  appends the protocol and `AccountPhiURLRuleAccess` to the same file and registers nothing (both
+  new `Sources/` files were registered here with one gem script; 4 pbxproj hits each).
+
+- **Plan ruling 2 (`OwnedItemKind.targetOwnerUuid(of:)`, a protocol member spec §11 does not name):**
+  `plan` is generic and R-M3-4a-26 / RR-B5 forbid `ownerUuids(of:).first`, so the `.move` channel
+  is a new requirement with a default `nil` implementation in `extension OwnedItemKind`.
+  `BookmarkKind` / `PinKind` are untouched; their `.move` steps still carry `newOwnerUuid == nil`
+  (pinned by `testBookmarkMoveStepsStillCarryNoOwner`, which also proves the pre-existing
+  five-argument `OwnedItemApplyStep` construction still compiles). `.claim` / `.create` /
+  `.update` / `.delete` do not fill it.
+
+- **Controller ruling (guard placement):** the brief puts the two reserved-id guards after the
+  `defaultSpaceIsImplicit` guard; lane E is concurrently changing the tail of
+  `map(spaceId:toSyncUuid:)`, so both guards sit at the TOP of `map`, before all three existing
+  guards, for a textual merge on rebase. Order among the two: `reservedSpaceId` first, then
+  `reservedSyncUuid`. Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
+  Task 4).
+
+- **Controller ruling, fix round 1 (spec §8.2 / D33 over the plan's `:2474` ruling and the
+  `BookmarkKind` precedent, for THIS kind only):** in `stamp`'s with-baseline branch a changed
+  content group carries `milliseconds(local.contentUpdatedDate ?? local.createdDate)` and a
+  changed target carries `milliseconds(local.targetUpdatedDate ?? local.createdDate)`; unchanged
+  units keep the baseline's stamps; only the rank stamp takes `now` (when rank or target changed).
+  The first commit (`04041b6a`) minted `now` for both per the brief; the fix-up commit corrects
+  the two lines and the doc comment, and `testEditsAgainstABaselineCarryTheRowStampsNotNow` pins
+  it (a snapshot-time `now` would let a stale local edit beat the peer's real, later one). Task 12
+  writes the §15 wording (spec over plan). The no-baseline branch was already the three-item
+  R-M3-4a-12 form (CASE U-19).
+
+- **§5.4 "six criteria":** five are refusals (`invalidUuid`, `illegalRank`, `emptyHost`,
+  `degenerateHost`, `malformedHost`, evaluated in table order); the table's last two rows
+  (non-fixed-point `path_prefix`, unresolvable target) are explicitly non-refusals and live in
+  `normalizeArrivals` and `ownerUuids` respectively.
+
+- **Implementer deviations / additions (all additive):**
+  1. CASE U-3 as written in the brief (X and Y share `host`, all three member stamps equal per
+     side) is also satisfied by a per-field LWW. The test additionally raises X's `ask.updatedAtMs`
+     to 900 so that a per-field implementation would produce `(Y.path, X.ask)` and go red; the
+     brief's assertions are all present verbatim.
+  2. `normalizeArrivals` does not insert an empty identity into `normalized` (an empty
+     `rule_uuid` is refused by `plan` anyway); everything else is per the brief.
+  3. Extra probes beyond the brief's case list: `testEmptyTargetIsParkedNotLanded` (`ownerUuids`
+     returns `[""]`, the brief's third ruling), `testMoveStepCarriesTheMergedTargetAsNewOwner`
+     (retarget and pure reorder both carry the current target; degrade-to-reorder is Task 8's),
+     `testRankToSortOrderExcludesSoftDeletedRowsAndOrdersByRankThenIdentity` (§8.3, R-M3-4a-51),
+     `testEligibilityOwnerFollowsTheThreeCriteriaInOrder` (§5.3 incl. "hidden is not judged here").
+  4. U-R3 adds one assertion: `localSpaceId(forSyncUuid: incognitoSpaceUuid) == nil` (the
+     constant is not a Space identity; only the default-space constant branch exists).
+  5. `merge` is symmetric but, like the spec's rank rule itself, not associative in general when
+     three inputs disagree on target with interleaved stamps; U-5's three-way assertion is the
+     brief's `(A,B)+C == (B,A)+C` only.
+
+## Task 10
+
+Swift commit scope: `URLRouter.swift` (rewrite), `SpaceManager.swift` (resolver + key, two stale
+doc comments, canonical order, five entry construction points, tightened filter),
+`PhiChromiumCoordinator.swift` (inject + tear down), `URLRouterTests.swift` (+8 cases, header,
+helper, two CASE R-1 call sites), this ledger. Verification is compile-only (`build-for-testing`,
+red first with exactly the expected errors, then exit 0; the 8 new cases confirmed present in the
+built `PhiBrowserTests` bundle via `nm`, not executed). Chromium side (`phi_url_router.h` / `.cc`,
+`PhiChromiumBridge.mm`, new `phi_url_router_unittest.cc`, `chrome/test/BUILD.gn`) is edited but
+NOT built and NOT committed here: the controller runs the single
+`autoninja -C out/PhiRelease chrome unit_tests` + `--gtest_filter='PhiURLRouter*'` and the Chromium
+commit follows a green result (global constraints).
+
+- **Plan ruling 1 (`"incognito-space"` in exactly one place):** applied as ruled.
+  `SpaceManager.ruleTieBreakKey(forTargetSpaceId:)` is `ruleTieBreakKeyResolver(spaceId) ?? spaceId`
+  with no Incognito branch; the injected closure in `PhiChromiumCoordinator` maps
+  `SpaceManager.isIncognitoSpaceId(_:)` to `SyncableSpaces.incognitoSpaceUuid`. CASE 10.1 pins both
+  the assembled and the unassembled (`"space.incognito"`) answer.
+
+- **Plan ruling (CASE R-1 is two call sites, not 52):** confirmed on `4f40c8ca`: the file has 51
+  `func test` and exactly two `URLRouter.resolve` calls (the private `resolve(_:_:)` helper and the
+  direct call in `testURLWithoutHostReturnsNil`); both got `tieBreakKey: { $0.spaceId }` and
+  `ruleId: { $0.id }`, no existing assertion changed. Now 59 `func test`.
+
+- **Plan ruling (keys on all three push paths; filter tightened on one):** applied as ruled. The two
+  optimistic pushes' three entry points and `pushRoutingTableToChromium`'s one all carry
+  `"tieBreakKey"` / `"ruleId"`; only `pushRoutingTableToChromium` got the R-M3-4a-31 membership
+  filter (`spaces` membership, or the reserved Incognito target; no sync-mapping state read).
+
+- **Implementer deviation — draft `ruleId` is `draft.syncId ?? draft.id`, not the brief's literal
+  `draft.id`:** the brief cites `LocalStore+SpaceURLRule.swift:23`, i.e. the pre-Task-5 draft that had
+  no `syncId`; since Task 5 `URLRuleDraft.syncId` exists, and `syncId ?? id` is exactly the
+  steady-state path's expression (`rule.syncId ?? rule.id`), so the optimistic and the steady-state
+  table carry the same `ruleId` for a row that has one. Decision-neutral either way: `ruleId` is the
+  last clause and only separates two rules with equal `tieBreakKey` AND equal `sortOrder`, which a
+  dense per-bucket `sortOrder` never produces for a well-formed table. All three lines are deleted
+  with the optimistic pushes in Task 11.
+
+- **Implementer deviation — C++ `IsMoreSpecific` comment says "rule_id clause", spec §9.2 item 2's
+  comment text says "target_space_id clause":** the spec's own prose in the same item (and RR-R4)
+  requires the last comparison to be `rule_id`, and the code is `rule_id`; a comment naming
+  `target_space_id` would describe the exact degenerate order the item forbids. One word changed;
+  the body is verbatim. The signature is `(const PhiURLRouter::Rule&, const PhiURLRouter::Rule&)`
+  (the brief's Produces line) because bare `Rule` is not in scope in the anonymous namespace. Also
+  added a two-line "mirror of `URLRouter.isMoreSpecific`" cross-reference above the comment.
+
+- **Implementer deviation — `phi_url_router.h:51` trailing comment:** `// ascending wins as final
+  tiebreak` on `sort_order` became `// ascending wins (third specificity component)`; the two new
+  fields directly below it now own the final tiebreak, and the old wording contradicted them.
+
+- **Implementer note — `hostMatches` keeps `.count` at the wildcard-suffix dot check:** the brief
+  names three `.count` sites (contains-form length gates in `hostMatches` / `specificity`, path
+  length) plus `pathMatches`; the `*.suffix` boundary arithmetic (`urlHost.count > bare.count + 1`)
+  was left as is — hosts are lowercased ASCII on both sides and non-ASCII hosts are the recorded
+  divergence (R-M3-4a-1), so grapheme and byte counts agree there.
+
+- **Implementer note — test helper additions:** `rule(...)` gained three defaulted parameters
+  (`id`, `ask`, `deletedDate`; the 51 existing call sites are untouched) and a `resolveTable`
+  helper materializes each fixture table in a scratch `ModelContext` (the two array-order runs of one
+  CASE insert the same rule ids and `id` is `@Attribute(.unique)`). CASE 10.1's resolver is reset in
+  `tearDownWithError`. The C++ fixture tables carry `ask = false` like the Swift ones; R-6(b) / R-7
+  flip `is_ask` in code (`WithAskOn`) so the tables stay byte-identical across the two files.
+
+- **Implementer note — `pushRoutingTableToChromium` keeps the old four-line incognito-prefix
+  comment** above the new R-M3-4a-31 block; it still explains the `isRoutableRuleTarget` conjunct.
+
+- **Not done here, by ruling:** no `handleSpacesUpdate` refresh (Task 8); `setAllRules` / `setRules`
+  and the two optimistic pushes keep their structure (Task 11); no Chromium build, no Chromium
+  commit (controller). Ledger file is this lane's `m3-4a-progress-r.md` (controller ruling, as in
+  Tasks 4 / 5 / 7).
+
+## Task 8
+
+- **Plan ruling (protocol base only; seven D30 members deferred):** applied as ruled. `PhiURLRuleLocalAccess`
+  carries the six base members (`allURLRules()` / `allURLRulesIncludingDeleted()` / `siblings(inSpaceId:)` /
+  `isKnownLocalURLRule(_:)` / `liveOwners(_:)` / `apply(_:)`); the protocol's doc comment lists the deferred
+  members by owning task (Task 6, Task 9, 8b-1 x6, 8b-3, 8b-4 x2). `apply(_:)` returns `Void` here; 8b-2
+  changes it to `-> URLRuleBatchOutcome` (appendix C-5), not pre-empted.
+
+- **Plan ruling (`AccountPhiURLRuleAccess(store:)`, not `(account:)`):** applied as ruled. The real-store
+  cases U-10 / U-10f / U-16 / U-26 and the access-level case all run on a temp-directory `LocalStore`.
+
+- **Plan ruling (rank -> `sortOrder` projection lives above the protocol; the batch entry only re-densifies
+  the touched buckets):** applied as ruled. Touched-bucket bookkeeping is exactly the brief's table
+  (`.create` => target; `.move` => source read BEFORE the upsert + target; `.reorder` => the row's own
+  bucket; `.delete` => the bucket read before the delete; `.update` => none) with two additions:
+  `.update` DOES record the target bucket when it had to create the row (R-M3-4a-42(a); U-10f's expected
+  dense target bucket needs it), and, defensively, both buckets when the row's current `spaceId` differs
+  from the payload's (should never happen — the engine emits `.move` for a target change — but a hole in
+  a bucket is worse than one extra densify). Densification is `(sortOrder, id)` ascending over the live
+  rows, writing only rows whose value changes.
+
+- **Plan ruling (`.move` -> `.reorder` demotion in `URLRuleApplyBatch.init`):** applied as ruled. Per-identity
+  merge, first-seen order: a `.move` whose target differs from `currentSpaceIds[syncId]` (or whose identity
+  is absent from the page snapshot) stays `.move`; an unchanged target keeps `.update` if present, else
+  `.create` if present, else demotes to `.reorder(syncId:spaceId:sortOrder:)`; with no `.move` the priority
+  is `.create` > `.update` > `.reorder`. Deletes form phase 2. An identity carrying both an upgrade and a
+  `.delete` trips an `assert` (DEBUG) and keeps both in release with the delete last, so the terminal
+  state is deterministic; 8b-3's `.transfer` + `.delete` relaxes it.
+
+- **Plan ruling (Consumes gap: `…Body` halves):** confirmed on `b2d48194` — Task 5 already shipped both
+  primitives as throwing sibling + internal `…Body(…, in:)`. The Task 5 review minor (each body fetched
+  the whole table per call) is fixed here: both bodies now take `index: inout URLRuleTableIndex`, built
+  once per write block by `LocalStore.urlRuleTableIndex(in:)` (rows incl. soft-deleted, `bySyncId` for
+  rows with an identity); the throwing siblings build their own index. `upsertURLRuleBody` returns the
+  row and `hardDeleteURLRuleBody` returns the pre-delete bucket (both `@discardableResult`). No pbxproj
+  change; no new API surface beyond the index type and the batch entry.
+
+- **Plan ruling (landing writes both remote stamps; addresses in the soft-deleted-inclusive domain; clears
+  `deletedDate` / `mergePartnerSyncId` on a hit):** applied; Task 5's body text already did all three and is
+  otherwise unchanged. The (β) transfer / park branches do not exist here; the unconditional clearing
+  becomes conditional in 8b-3 (RR9-1).
+
+- **Plan ruling (`liveOwners` fills only `claimed`):** applied as ruled. `AccountPhiURLRuleAccess.liveOwners`
+  does its own fetch (does not read or replace the page cache), returns
+  `OwnedLiveRows(claimed: candidates ∩ live syncIds, owners: [:])`, throws on read failure. The §5.6
+  single-parameter signature cannot fill `owners` (no resolver on the protocol) — Task 6's `.urlRules`
+  closure fills it from `OwnedOwnerMaps`. Recorded as the §5.6 internal inconsistency the brief names.
+
+- **Plan ruling (the `SpaceManager` half is not XCTest-drivable):** applied as ruled. The "called exactly
+  once" halves of U-24 / U-24c / U-24d and the bridge payload belong to Tasks 6 / 11 (and Task 10's
+  `routingTablePayload()` seam if the review wants a payload assertion). The executable halves are pinned
+  on a real `LocalStore`: U-24 / U-24b / U-24c / U-24d read via `getAllURLRules()` immediately after the
+  awaited write.
+
+- **Implementer deviation — ledger file:** the brief's Step 7 `git add` names
+  `docs/superpowers/sdd/m3-4a-progress.md`; this lane's ledger is `m3-4a-progress-r.md` (controller ruling,
+  as in Tasks 4 / 5 / 7 / 10).
+
+- **Implementer deviation — the store-level second read port is spelled
+  `LocalStore.allURLRuleModelsIncludingDeleted(in:) throws -> [SpaceURLRule]`** (context-taking, throwing,
+  sorted `(spaceId, sortOrder, id)`), on the `allBookmarkModels(in:)` precedent that
+  `AccountPhiBookmarkAccess.rebuildCache()` uses. It is the single fetch behind
+  `AccountPhiURLRuleAccess.rebuildCache()`, `liveOwners(_:)` and `urlRuleChangeSnapshot()`. No
+  `[]`-returning store read was added (R-exec-3); the value-typed `allURLRulesIncludingDeleted()` lives on
+  the protocol.
+
+- **Implementer note — `URLRuleChangeSnapshot` is the brief's ten columns.** `pendingLocalEdit` and
+  `mergePartnerSyncId` are outside the snapshot by design (local state, not on the wire, R-M3-4a-71), so a
+  write that changes ONLY `mergePartnerSyncId` does not signal. The brief's rationale sentence about a
+  "already soft-deleted, with only `mergePartnerSyncId` changing this time" write is therefore not literally satisfied by its own column
+  list; in practice M2 (8b-2) writes the partner in the same row write as the soft delete, and
+  `deletedDate` carries the signal. Flagged for 8b-2 to decide whether the column joins the snapshot.
+
+- **Implementer note — `handleSpacesUpdate` is nonisolated;** the tail refresh is wrapped in
+  `MainActor.assumeIsolated { reloadURLRulesFromStore() }` like the existing `hidden` read in the same
+  function, because `reloadURLRulesFromStore()` is `@MainActor` (file rule above `applyRemoteRebind`;
+  `getAllURLRules()` reads the SwiftData main context). The refresh predicate is `validIds !=
+  previousSpaceIds` with `previousSpaceIds` captured before `spaces = updated`; the old "routing rules
+  didn't (change)" comment is rewritten as the brief asks. On the first `handleSpacesUpdate` after `bind`
+  the set goes from empty to the full list, so the refresh fires once there too (harmless: it is the
+  bind-time table push).
+
+- **Implementer note — `.reorder` on an identity with no row is skipped** (no payload to create from);
+  a same-value `.reorder` still marks its bucket touched — U-16 uses exactly this to trigger the trailing
+  densification without changing any value first. `.reorder` writes `sortOrder` only when it differs
+  (a same-value assignment would dirty the object and fire a phantom save).
+
+- **Implementer note — runtime-unverified assumption in the U-24 family:** the tests first read
+  `getAllURLRules()` (registering the rows in the main context, as `SpaceManager.cachedURLRules` does in
+  production), then await the write, then read again with no run-loop spin. This pins that the main
+  context's merge of the background save is enqueued on the main queue ahead of the awaiting
+  continuation. The gate is compile-only; if this is red at runtime, the finding is about
+  `reloadURLRulesFromStore()` reading stale registered objects (a Task 6 / production concern), not about
+  the batch entry's commit semantics.
+
+- **Implementer note — `FakeURLRuleAccess`:** `apply` lands ops on `rows` with the same addressing and
+  bucket rules as the store body (mints `UUID().uuidString` ids for created rows); `liveOwners` does not
+  consult `snapshotIsLoaded` (production does its own fetch); `siblings` / `isKnownLocalURLRule` read live
+  rows only. `URLRuleLandingValues.fixture(...)` added next to `PhiLocalURLRule.fixture`. Existing fakes
+  untouched. `URLRuleSyncOp.syncId` (pure accessor) added for the batch init and the tests.
+
+- **Tests:** 22 new — 7 in `URLRuleKindTests` (U-10b pure, changed/unknown-target move, U-10e ① + ③,
+  phase order, U-8r, fake read domains) and 15 in `LocalStoreURLRuleThrowingTests` (U-10, U-10b store,
+  U-10c, U-10d, U-10e ②, U-10f x2, U-16, U-26, U-24, U-24b, U-24c, U-24d, access-level reads + apply
+  rebuild, U-8p). U-8r's production side (`getMainContext()` nil => `.storeUnavailable`) is not pinned: a
+  temp-directory `LocalStore` cannot be made to have a nil main context without faking a compatibility
+  failure; the shape is the literal `AccountPhiBookmarkAccess.rebuildCache()` one.
+
+- **Not done here, by ruling:** no `PhiSyncEngine.swift` / `PhiChromiumCoordinator.swift` change (Task 6);
+  no `setAllRules` / `setRules` / optimistic-push change (Task 11); no `tieBreakKey` / filter change
+  (Task 10); no Chromium.
+
+- **Fix round 1 (review Important — `.update` revive never densified the target bucket):** in
+  `applyURLRuleSyncBatchBody`'s `.update` case the row's `deletedDate` was not consulted, so a soft-deleted
+  row revived by an `.update` (R-M3-4a-56 / §5.5 "row exists") entered the live domain at the payload's
+  `sortOrder` while `siblings(inSpaceId:)` (soft-deleted rows excluded) had never counted it ⇒ duplicate
+  index or hole (R-M3-4a-3 / RR-B9). Fixed by reading `existing = index.bySyncId[syncId]` BEFORE the upsert
+  (the upsert clears `deletedDate` in place) and treating `existing == nil || existing.deletedDate != nil`
+  as "entered the bucket" ⇒ record the target bucket; the spaceId-differs defensive branch stays for the
+  live-hit case. No extra publisher signal: the revive already writes `deletedDate` in the same
+  transaction. `FakeURLRuleAccess.land` mirrors the rule (`entersBucket` read before the write).
+  Tests: `testUpdateHittingASoftDeletedRowRevivesItInPlaceWithoutASecondRow` now revives at the
+  occupied index 1 of a `[0,1,2]` bucket and asserts the full permutation `[0,1,2,3]` with
+  `s1-0 / s1-1 / s1-9 / s1-2 → 0 / 1 / 2 / 3` (pre-landing `(sortOrder, id)` order) and the other bucket
+  byte-identical; new `testFakeAccessReviveViaUpdateDensifiesTheBucket` pins the fake mirror
+  (`i0 / i1 / i9 / i2 → 0..3`). Batch-body doc comment item 3 names the revive case.

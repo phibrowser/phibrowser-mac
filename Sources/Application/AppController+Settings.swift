@@ -40,6 +40,7 @@ extension AppController {
          SpacesSettingViewController(),
          NavigationsSettingViewController(),
          AISettingsViewController(),
+         DevicesSettingViewController(),
          ShortcutsSettingViewController(),
          AdvancedSettingViewController(),
         ]

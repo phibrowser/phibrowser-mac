@@ -139,17 +139,28 @@ final class ProfileManager: ObservableObject {
     ///
     /// Limitation: this is a check-then-act guard, not an authoritative
     /// cross-flight uniqueness constraint — the pending name isn't reserved
-    /// during the async bridge create, so two *concurrent* same-name creates (or
-    /// a create racing a rename) could both pass it and leave indistinguishable
-    /// profiles. Today every create/rename goes through an app-modal prompt,
-    /// which serializes user operations and makes that unreachable; a future
-    /// non-modal path would need a pending-name reservation here or uniqueness
-    /// enforced Chromium-side.
+    /// during the async bridge create. Several non-modal callers exist today (the
+    /// agent fallback profile, the `agentSpace.profiles.create` extension message,
+    /// user-data import repair, and the sync layer's per-round account profile
+    /// auto-create), so two same-name creates CAN interleave through this window.
+    /// The consequence is a DUPLICATE DISPLAY NAME: a Profile's identity is its
+    /// account-global uuid, not its name, so an EXISTING mapping is never
+    /// corrupted. It is not free, though: `SyncKeyController`'s same-named twin
+    /// search (SyncKeyController.swift:604-609) adopts an account uuid onto the
+    /// first unmapped local whose display name matches, so two same-named
+    /// unmapped locals make that choice arbitrary. What the suffixing callers do
+    /// (`uniqueDisplayName`) is best-effort disambiguation, not a uniqueness
+    /// guarantee; guaranteeing it would need a pending-name reservation here or
+    /// Chromium-side enforcement.
     func createProfile(displayName: String,
                        completion: @escaping (String?) -> Void) {
         refresh()
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !displayNameExists(trimmed) else {
+        // `excluding:` spelled out, not defaulted: the one-argument
+        // `LocalProfileCreating` witness below is `@MainActor` (it witnesses a
+        // `@MainActor` requirement), so a bare `displayNameExists(trimmed)` binds
+        // to that overload instead and this nonisolated method stops compiling.
+        guard !trimmed.isEmpty, !displayNameExists(trimmed, excluding: nil) else {
             completion(nil)
             return
         }
@@ -485,5 +496,35 @@ final class ProfileManager: ObservableObject {
         // reuse its decoder (pre-baked reps up to 32 pt cover this row's 20 pt).
         let icon = (dict["icon"] as? String).flatMap(Extension.imageFromBase64(_:))
         return ProfileExtensionInfo(id: id, name: name, enabled: enabled, icon: icon)
+    }
+}
+
+/// §3.6's injection point into the key layer: `SyncKeyController` creates local
+/// Chromium profiles for account profiles that have no counterpart on this Mac,
+/// and reaches the bridge only through these three members.
+extension ProfileManager: LocalProfileCreating {
+    /// Never the whole `profiles` list: the agent fallback profile is in that one
+    /// and must never be handed to the account. Refreshed on every read for the
+    /// same reason as the key layer's `localProfilesProvider`: the cache fills
+    /// only through `refresh()`, and the twin search in §3.6 must not run against
+    /// a list that no UI has populated yet, or it creates a duplicate of a profile
+    /// this Mac already has.
+    var userAssignableProfileIds: [(profileId: String, displayName: String)] {
+        refresh()
+        return userAssignableProfiles.map { ($0.profileId, $0.displayName) }
+    }
+
+    /// The key layer only ever asks the unqualified question; `excluding:` is the
+    /// rename prompt's parameter and has no meaning here.
+    func displayNameExists(_ name: String) -> Bool {
+        displayNameExists(name, excluding: nil)
+    }
+
+    /// `createProfile`'s completion, as an `await`. The completion fires on the
+    /// main queue after `refresh()`, so the published list is already current.
+    func createProfile(displayName: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            createProfile(displayName: displayName) { continuation.resume(returning: $0) }
+        }
     }
 }

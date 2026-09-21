@@ -9,13 +9,16 @@ import SwiftUI
 struct AllDownloadsListView: View {
     @ObservedObject var downloadsManager: DownloadsManager
     @ObservedObject private var profileManager = ProfileManager.shared
-    @State private var selectedProfileIds: Set<String>?
+    @State private var selectedProfileId: String?
+    @State private var searchText = ""
 
     var body: some View {
+        let groups = downloadGroups
+
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                searchBar
                 profileFilter
-                Spacer()
                 if downloadsManager.isLoading {
                     ProgressView()
                         .controlSize(.small)
@@ -34,20 +37,18 @@ struct AllDownloadsListView: View {
                 .background(Color.orange.opacity(0.12))
             }
 
-            if downloadsManager.downloads.isEmpty {
+            if groups.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "arrow.down.circle")
+                    Image(systemName: searchQuery.isEmpty ? "arrow.down.circle" : "magnifyingglass")
                         .font(.system(size: 36))
-                    Text(downloadsManager.isLoading
-                         ? NSLocalizedString("downloads.all.loading", value: "Loading Downloads…", comment: "All downloads window - Loading profile download histories")
-                         : NSLocalizedString("downloads.all.empty", value: "No Downloads in Selected Profiles", comment: "All downloads window - No downloads match the selected profiles"))
+                    Text(emptyStateMessage)
                 }
                 .themedForeground(.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(downloadGroups, id: \.date) { group in
+                        ForEach(groups, id: \.date) { group in
                             Section {
                                 ForEach(group.items, id: \.profileScopedId) { item in
                                     DownloadItemRow(
@@ -86,18 +87,47 @@ struct AllDownloadsListView: View {
                 }
             }
         }
+        .frame(maxWidth: 800)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: refresh)
         .onChange(of: profileManager.profiles) { _, _ in
+            if let selectedProfileId,
+               !profileManager.profiles.contains(where: { $0.profileId == selectedProfileId }) {
+                self.selectedProfileId = nil
+            }
             if downloadsManager.profileIds != filteredProfileIds {
                 applyFilter()
             }
         }
     }
 
+    private var searchBar: some View {
+        DownloadsSearchField(text: $searchText)
+            .frame(maxWidth: .infinity)
+            .frame(height: 32)
+    }
+
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var emptyStateMessage: String {
+        if downloadsManager.isLoading {
+            return NSLocalizedString("downloads.all.loading", value: "Loading Downloads…", comment: "All downloads window - Loading profile download histories")
+        }
+        if !searchQuery.isEmpty {
+            return NSLocalizedString("downloads.all.noSearchResults", value: "No Matching Downloads", comment: "All downloads window - No downloads in the selected profiles match the search")
+        }
+        return NSLocalizedString("downloads.all.empty", value: "No Downloads", comment: "All downloads window - No downloads in the selected profile scope")
+    }
+
     private var downloadGroups: [(date: Date?, items: [DownloadItem])] {
+        let query = searchQuery
+        let items = query.isEmpty ? downloadsManager.downloads : downloadsManager.downloads.filter {
+            $0.fileName.localizedStandardContains(query) || $0.url.localizedStandardContains(query)
+        }
         let calendar = Calendar.current
-        return Dictionary(grouping: downloadsManager.downloads) { item in
+        return Dictionary(grouping: items) { item in
             item.startTime.map { calendar.startOfDay(for: $0) }
         }
         .map { (date: $0.key, items: $0.value) }
@@ -106,45 +136,37 @@ struct AllDownloadsListView: View {
 
     private var profileFilter: some View {
         Menu {
-            Button {
-                selectedProfileIds = nil
-                applyFilter()
-            } label: {
-                if selectedProfileIds == nil {
-                    Label(allProfilesTitle, systemImage: "checkmark")
-                } else {
-                    Text(allProfilesTitle)
+            Picker(selection: Binding(
+                get: { selectedProfileId },
+                set: { profileId in
+                    selectedProfileId = profileId
+                    applyFilter()
                 }
-            }
-            Divider()
-            ForEach(profileManager.profiles) { profile in
-                Toggle(isOn: Binding(
-                    get: { selectedProfileIds?.contains(profile.profileId) ?? true },
-                    set: { selected in
-                        var ids = selectedProfileIds ?? Set(profileManager.profiles.map(\.profileId))
-                        if selected {
-                            ids.insert(profile.profileId)
-                        } else {
-                            ids.remove(profile.profileId)
-                        }
-                        selectedProfileIds = ids
-                        applyFilter()
-                    }
-                )) {
+            )) {
+                Text(allProfilesTitle)
+                    .tag(nil as String?)
+                Divider()
+                ForEach(profileManager.profiles) { profile in
                     Text(verbatim: profile.displayName)
+                        .tag(Optional(profile.profileId))
                 }
+            } label: {
+                Text(allProfilesTitle)
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
         } label: {
-            Label(selectedProfileIds == nil
-                  ? allProfilesTitle
-                  : NSLocalizedString("downloads.all.selectedProfiles", value: "Selected Profiles", comment: "All downloads window - Profile filter menu with a custom selection"),
-                  systemImage: "person.crop.circle")
+            Label {
+                Text(verbatim: selectedProfileId.map(profileName) ?? allProfilesTitle)
+            } icon: {
+                Image(systemName: "person.crop.circle")
+            }
         }
         .fixedSize()
     }
 
     private var allProfilesTitle: String {
-        NSLocalizedString("downloads.all.allProfiles", value: "All Profiles", comment: "All downloads window - Filter including all regular profiles")
+        NSLocalizedString("downloads.all.allProfiles", value: "All", comment: "All downloads window - Filter including all regular profiles")
     }
 
     private func profileName(_ id: String) -> String {
@@ -153,7 +175,7 @@ struct AllDownloadsListView: View {
 
     private var filteredProfileIds: [String] {
         profileManager.profiles.map(\.profileId)
-            .filter { selectedProfileIds?.contains($0) ?? true }
+            .filter { selectedProfileId == nil || selectedProfileId == $0 }
     }
 
     private func applyFilter() {
@@ -163,6 +185,47 @@ struct AllDownloadsListView: View {
     private func refresh() {
         profileManager.refresh()
         applyFilter()
+    }
+}
+
+private struct DownloadsSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.controlSize = .large
+        field.placeholderString = NSLocalizedString("downloads.all.search", value: "Search Downloads", comment: "All downloads window - Placeholder for searching by file name or source URL")
+        field.setAccessibilityLabel(field.placeholderString)
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
     }
 }
 

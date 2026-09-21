@@ -135,6 +135,53 @@ final class LibraryOverlayControllerTests: XCTestCase {
         XCTAssertFalse(controller.isVisible, "The scrim outside the Library card must dismiss it")
     }
 
+    func testDismissEndsSearchEditingBeforeAnimationAndPreservesFocusOwnership() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        self.directory = directory
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        self.store = store
+        let state = BrowserState(windowId: UUID().hashValue, localStore: store, profileId: "Default")
+        let parent = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 650),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        defer { parent.close() }
+        let content = try XCTUnwrap(parent.contentView)
+        let source = NSButton(frame: NSRect(x: 20, y: 20, width: 24, height: 24))
+        let otherControl = NSTextField(frame: NSRect(x: 60, y: 20, width: 200, height: 24))
+        content.addSubview(source)
+        content.addSubview(otherControl)
+        parent.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(parent.makeFirstResponder(source))
+        let controller = LibraryOverlayController(parent: parent, browserState: state)
+        controller.show(from: source, animated: false)
+        let overlay = try XCTUnwrap(content.subviews.last)
+        let search = NSSearchField(frame: NSRect(x: 50, y: 50, width: 240, height: 32))
+        overlay.addSubview(search)
+        search.stringValue = "report"
+        XCTAssertTrue(parent.makeFirstResponder(search))
+        XCTAssertNotNil(search.currentEditor())
+
+        controller.dismiss()
+
+        XCTAssertTrue(controller.isVisible, "The card stays mounted during its exit animation")
+        XCTAssertNil(search.currentEditor(), "Search editing must end before the exit animation")
+        XCTAssertEqual(search.stringValue, "report")
+        XCTAssertTrue(parent.firstResponder === overlay)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(controller.isVisible)
+        XCTAssertTrue(parent.firstResponder === source)
+
+        controller.show(from: source, animated: false)
+        XCTAssertTrue(parent.makeFirstResponder(search))
+        controller.dismiss()
+        XCTAssertTrue(parent.makeFirstResponder(otherControl))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(controller.isVisible)
+        XCTAssertNotNil(otherControl.currentEditor(), "Dismissal must not steal newly assigned focus")
+        XCTAssertTrue(parent.firstResponder === otherControl.currentEditor())
+    }
+
     func testReopeningDuringDismissalKeepsOverlayMounted() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

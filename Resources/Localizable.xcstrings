@@ -37969,19 +37969,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All Profiles"
+            "value" : "All"
           }
         }
       }
     },
     "downloads.all.empty" : {
-      "comment" : "All downloads window - No downloads match the selected profiles",
+      "comment" : "All downloads window - No downloads in the selected profile scope",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Downloads in Selected Profiles"
+            "value" : "No Downloads"
           }
         }
       }
@@ -38010,14 +38010,26 @@
         }
       }
     },
-    "downloads.all.selectedProfiles" : {
-      "comment" : "All downloads window - Profile filter menu with a custom selection",
+    "downloads.all.noSearchResults" : {
+      "comment" : "All downloads window - No downloads in the selected profiles match the search",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selected Profiles"
+            "value" : "No Matching Downloads"
+          }
+        }
+      }
+    },
+    "downloads.all.search" : {
+      "comment" : "All downloads window - Placeholder for searching by file name or source URL",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Downloads"
           }
         }
       }

@@ -15,10 +15,14 @@ final class LibraryOverlayController {
         override var acceptsFirstResponder: Bool { true }
         override func mouseDown(with event: NSEvent) {
             // Unhandled clicks in SwiftUI content bubble up the responder chain.
-            // Only the area outside the Library card is a dismiss target.
             let point = convert(event.locationInWindow, from: nil)
-            guard let cardView, !cardView.frame.contains(point) else { return }
-            dismiss?()
+            guard let cardView else { return }
+            if cardView.frame.contains(point) {
+                // End field editing while keeping focus owned by the overlay.
+                window?.makeFirstResponder(self)
+            } else {
+                dismiss?()
+            }
         }
         override func rightMouseDown(with event: NSEvent) {}
         override func scrollWheel(with event: NSEvent) {}
@@ -112,6 +116,10 @@ final class LibraryOverlayController {
         generation += 1
         let closingGeneration = generation
         isClosing = true
+        if let parent, (parent.firstResponder as? NSView)?.isDescendant(of: overlay) == true {
+            // End field editing before the card animates so its focus ring cannot linger.
+            parent.makeFirstResponder(overlay)
+        }
         let finish = { [weak self] in
             guard let self, self.generation == closingGeneration else { return }
             let ownsFocus = (self.parent?.firstResponder as? NSView)?.isDescendant(of: self.overlay) == true

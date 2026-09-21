@@ -6,9 +6,11 @@ From the repository root:
 bash build-scripts/test-sync-convergence.sh
 ```
 
-Exit status 0 means every asserted property held. A non-zero status prints each
-violated property with a shrunk counterexample and the command that reproduces
-it.
+Exit status 0 means nothing unexpected happened **in either direction**: no
+property failed that is not registered in `ExpectedFailures.swift`, and no
+registered failure quietly started passing. A non-zero status prints each
+offending property with a shrunk counterexample and the command that reproduces
+it. See "Using this as a gate".
 
 ```sh
 SYNC_CONV_SEED=0xDEADBEEF bash build-scripts/test-sync-convergence.sh   # replay a seed
@@ -69,6 +71,43 @@ tested without a host at all.
   a local path dependency. Nothing is fetched, vendored or committed, and a
   revision mismatch is a warning naming the pinned revision.
 
+## Using this as a gate
+
+Any change to a `merge`, a `stamp`, a tombstone decision or a landing decision
+must run this and see **0**.
+
+| Status | Meaning |
+| --- | --- |
+| `0` | No unexpected failure and no unexpected pass. |
+| `1` | A property failed that is **not** on the expected-failure list. |
+| `2` | Every asserted property held, but a **registered** failure no longer reproduces: the list is stale and must be pruned. |
+
+The expected-failure list lives in
+`Sources/SyncConvergence/ExpectedFailures.swift`. It exists because a gate that
+is always red gates nothing, and deleting a failing property would gate less
+than the harness claims. So a registered property still runs over the same
+generators, and its counterexample is still printed in full on every run, green
+or red, in its own `EXPECTED FAILURES` section. Each entry names one property,
+its root cause, and the ruling or decision it waits on.
+
+Each entry also carries a **witness**: the minimal counterexample, hard-coded
+and re-evaluated on every run whatever the seed. The randomized search may or
+may not hit a given defect on a given seed, so the witness — not the search — is
+what keeps the list from rotting. The day the rule is repaired, the witness
+stops reproducing and the run fails with status 2 until the entry is deleted.
+
+What the list cannot do is tell a known violation apart from a **new** one in
+the same property. That is why the counterexample is printed rather than
+summarised: compare it with the entry's witness before dismissing it.
+
+Registered today:
+
+| Property | Root cause | Waits on |
+| --- | --- | --- |
+| `bookmarks.associativity` | RC3, the position/rank coherence rule | the pending product decision on rank coherence (ruling C5 area) |
+| `urlrules.associativity` | RC3, same rule over target/rank | the same decision |
+| `urlrules.absent-always-emitted-field.is-side-independent` | `URLRuleKind.contentBallot` is built from the group's READOUTS, so an absent `path_prefix` and a present empty one tie byte for byte; the merge then copies the whole group from whichever side came first. Not reachable from a Phi publisher — the schema declares the field always emitted | a decision on whether §8.2's content group should resolve a tied ballot through the shared winner over the members' own bytes, the way §4.3's location group now does |
+
 ## Layer 1 — algebraic properties of each merge
 
 Randomized, with a seeded SplitMix64 (`SYNC_CONV_SEED`, default
@@ -76,11 +115,18 @@ Randomized, with a seeded SplitMix64 (`SYNC_CONV_SEED`, default
 so equal timestamps, equal bytes and equal locations are the common case rather
 than the exception. Generators cover stamp 0, negative stamps, `Int64.max`,
 empty strings, embedded NULs, illegal ranks, wrong oneof cases, unknown fields
-in each message's reserved range, incoherent merge-unit member stamps,
-root-vs-descendant bookmark locations and all three pin owner shapes.
-Counterexamples are shrunk on the protobuf wire (drop a top-level field from
-every entity, re-parse, keep the reduction if the property still fails), and
-both the minimal and the original case are printed.
+in each message's reserved range, root-vs-descendant bookmark locations and all
+three pin owner shapes. Counterexamples are shrunk on the protobuf wire (drop a
+top-level field from every entity, re-parse, keep the reduction if the property
+still fails), and both the minimal and the original case are printed.
+
+**The algebraic laws run over WELL-FORMED payloads.** `merge(a, a) == a` is a
+statement about a value a publisher can actually emit, so a payload the schema
+forbids belongs to a different question — what the merge NORMALISES it to —
+which has its own properties below. The generators are constrained to the legal
+domain on exactly two points, both tied to a documented contract, and the
+adversarial generators are kept, not deleted: they are what feeds the
+normalisation properties.
 
 For settings, Spaces, bookmarks, pins and URL rules:
 
@@ -111,6 +157,123 @@ leaves the owner oneof at remote's (the owner is half the pin's identity). A
 same-identity trio therefore always shares `is_folder` and the owner. The same
 reasoning fixes `bookmark_uuid` / `pin_uuid` / `rule_uuid` across a trio: merge
 is a per-identity operation.
+
+### `created_at_ms`: the legal domain is non-negative
+
+`[left, right].filter { $0 > 0 }.min() ?? 0` rewrites a non-positive
+`created_at_ms` to 0, so `merge(a, a) != a` for a negative one. That is the
+contract, not a defect, and the generators are constrained to the legal domain
+accordingly. `phi_entity.proto` declares the field a plain proto3 `int64`
+"merged with `min()`, not LWW", and a proto3 scalar with implicit presence
+serializes nothing at 0: **0 is indistinguishable from an absent field on the
+wire**, so 0 already *is* the encoding of "unset", and `?? 0` is the only value
+a merge of two unset sides can produce. Admitting negatives to the `min()` would
+be worse than losing them — the field's only consumer is determinism (it is
+`getAllSpaces`'s and `bookmarksPublisher`'s last tiebreak), and a peer claiming
+`Int64.min` would win the `min()` forever and pin an account's ordering to
+garbage, which is the mirror of the "a peer claiming the year 2099 must not drag
+the account's logical time" rule in docs/sync.md. The filter is a sanitiser, and
+a sanitiser is pinned by its own property, not by weakening idempotence: see
+`non-positive-created_at_ms-sanitises-to-unset` below, which asserts that a
+non-positive value becomes 0, that the fold is side-independent over the whole
+domain legal and not, and that a sanitised value neither wins nor drags a real
+instant down. The same helper is shared with the outbound projection on purpose
+(R4 / R-exec-16), so this is a rule about the wire, not only about `merge`.
+
+### Merge units and always-emitted fields: well-formed by default
+
+Two more shapes made `merge(a, a) != a`, and both are payloads
+`phi_entity.proto` forbids. A merge unit whose members carry DIFFERENT stamps —
+§4.3's bookmark location pair, §8.2 rule 1's host/path_prefix/ask content group —
+is rewritten onto the unit's designated carrier; an always-emitted
+`PhiSettingValue` field that is ABSENT is materialised as an empty submessage.
+Both change the bytes with no change of meaning, and
+`merge-settles-after-one-pass` already proved the rewrite happens once. The
+schema is explicit on both counts ("always emitted, never omitted-when-empty";
+one carrier per unit, never `max`, because two clients reading different
+carriers would republish over each other forever), and every Phi publisher
+assigns every member of a unit one stamp — `BookmarkKind.stamp` writes
+`locationStamp` to both location members, `URLRuleKind.setContentStamp` writes
+the host's to all three.
+
+So the generators produce coherent units by default, and the adversarial
+generators live on behind `malformed:` — they are exactly what the normalisation
+properties consume. Nothing was deleted, and the malformed domain is asserted
+harder than before: it used to be two `report.note` lines.
+
+## Layer 1b — normalisation of payloads the schema forbids
+
+Four laws, asserted for each malformed shape, on the principle that a merge that
+is not idempotent on a forbidden payload must at least be a *normaliser*:
+
+| Property | Statement |
+| --- | --- |
+| `settles-after-one-pass` | `m = merge(a,a)` implies `merge(m,m) == m` — one extra commit, not a republish loop |
+| `is-deterministic` | the same payload normalises the same way after a wire round trip: the result depends on the bytes and on nothing else |
+| `is-side-independent` | `merge(a,b) ~ merge(b,a)` against a well-formed peer of the same identity |
+| `never-changes-a-value` | the entity's values are untouched; a normalisation may rewrite a stamp or materialise an empty submessage, never a value |
+
+applied to `bookmarks.incoherent-location-unit`,
+`urlrules.incoherent-content-group` and, for all four kinds,
+`absent-always-emitted-field`. Two extra properties pin the carrier rule
+verbatim — both location members and all three content members leave the merge
+on the carrier's stamp, whatever the other member claimed — and non-vacuity
+checks fail the run if a seed never actually produced the malformed shape.
+`urlrules.absent-always-emitted-field.is-side-independent` is where this gate
+found a new instance of the tied-ballot hazard; it is registered, see "Using
+this as a gate".
+
+## RC3 — a non-associative rule that cannot split an account
+
+`bookmarks.associativity` and `urlrules.associativity` fail, and the cause is
+one designed rule (A14 / R-M3-3-25, and R-M3-4a-40 for a rule's target): if two
+entities agree on their position, rank is merged by LWW; if they disagree, rank
+comes from the position winner, because a rank only means anything inside the
+position it was minted in. Whether a given pair "agrees" therefore depends on
+which pair is folded first, and three replicas can produce two different ranks.
+The minimal shape: `a` and `c` name the same location, and `b` names a different
+one whose stamp beats `a`'s and loses to `c`'s — folding `b` in between destroys
+`a`'s rank before `a`'s location is ever recognised as `c`'s. (It needs a
+stamp/value disagreement, which is why the `[equal stamps]` variants pass: with
+one stamp everywhere the position order is a fixed total order on values, so
+"beats `a` and loses to `c` while `a` and `c` are equal" is impossible.)
+
+**Non-associativity here is not divergence, and the reason is the protocol, not
+the merge.** Every merge in the account is sequenced through one shared value:
+the server keeps exactly one *current* value per identity and no history, a
+commit carries `baseVersion` and a mismatch is a CONFLICT that writes **nothing**
+(never a partial apply), and a replica may only commit after a completed pull.
+So no replica ever folds an independent tree and compares it with another's:
+every value a replica computes is `merge(its own value, an ancestor of that one
+chain)`, and the chain only extends. A replica at rest holds the newest server
+value; a replica whose merge of that value differs from it is by definition not
+at rest, and commits. Hence *at rest ⟹ all equal*, and the only way this rule
+could break an account is a **livelock** — replicas rewriting each other
+forever — not a split brain.
+
+The livelock cannot happen either, and for a reason worth writing down: the
+position unit is a *join*. `lwwWinner` is a max over a total order, merge never
+invents a position that was not already in the system, and the set of positions
+is finite, so along any chain the position ballot increases finitely often. The
+"positions differ" branch — the only non-monotone step, since it can replace a
+rank with one carrying a lower stamp — fires only when the position strictly
+increases, so it fires finitely often. Once the position has stabilised, rank is
+a plain LWW join, non-decreasing and bounded, and the chain reaches a fixed
+point. Every other field is a join (`lwwWinner`) or a meet over a finite set
+(`min` for `created_at_ms`, `min` of the nonzero for `source`).
+
+That argument is asserted, not just written down.
+`simulation.bookmarks.rank-coherence-cannot-diverge-replicas` and its URL-rule
+twin start the three witness values on three replicas and drive **all 90
+interleavings** in which each replica takes two (pull, commit) turns — enough to
+exercise the CONFLICT path, the loser's re-pull, and every order of the three
+values — against the same `SimServer` Layer 2 uses. Both assert convergence and
+quiescence under every schedule, and both report the number of DISTINCT
+converged values: **2**. That number is the whole user-visible cost of the rule.
+A race decides which of two legal outcomes the single chain lands on, and every
+replica then agrees on it. It is a product question (which rank should a user
+see after a cross-Space move?), which is why the properties are registered
+rather than repaired here.
 
 Also asserted: `SyncableSettings.lwwWinner` (the one shared winner, R4) obeys
 the same three laws, and the fractional rank channel —
@@ -166,6 +329,11 @@ After a bounded quiescing loop the harness asserts:
 * every replica holds the same identities with the same values;
 * the loop actually reached quiescence — hitting the bound is a republish
   livelock even when the final states agree, so it is its own property;
+* the **rank-coherence replay**: the registered RC3 counterexample started on
+  three replicas and driven through all 90 interleavings the protocol permits,
+  asserting convergence and quiescence under every one. See "RC3" above — this
+  is the evidence that the registered failure is survivable, and it is asserted
+  like any other property rather than argued in prose;
 * **edit beats delete (C4)**, in both directions and in one property: an
   identity whose delete no edit contradicted is gone from every replica and
   never resurrects, and an identity whose delete an edit beat is present on

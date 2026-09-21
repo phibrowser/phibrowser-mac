@@ -28,7 +28,15 @@ enum Pool {
     static let spaceUuids = ["space-a", "space-b", "default-space"]
     static let urls = ["https://a.example/", "https://b.example/", "https://a.example/x"]
     static let opacities: [Int64] = [-1, 0, 500, 1_000]
-    static let createdAt: [Int64] = [0, 0, -5, 1, 1_699_999_999_000, 1_700_000_000_000]
+    /// The LEGAL `created_at_ms` domain. `phi_entity.proto` declares the field a
+    /// plain proto3 `int64` merged with `min()`, so 0 is indistinguishable from
+    /// an absent field on the wire and is the encoding of "unset"; a real
+    /// creation instant is a positive epoch millisecond. Non-positive values are
+    /// the SANITISED domain, generated only by
+    /// `checkCreatedAtSanitisation` — see the README, "created_at_ms".
+    static let createdAt: [Int64] = [0, 0, 1, 1_699_999_999_000, 1_700_000_000_000]
+    /// Values the merge is contracted to rewrite to "unset".
+    static let illegalCreatedAt: [Int64] = [-1, -5, -1_700_000_000_000, Int64.min + 1]
     static let sources: [Int32] = [0, 0, 1, 2, -1]
 }
 
@@ -118,9 +126,12 @@ struct Generators {
 
     /// Location is one merge unit: `space_uuid` + `parent_uuid` share a stamp
     /// carried by whichever member is authoritative for the shape (space for a
-    /// root, parent for a descendant). Coherent trios stamp both members
-    /// equally; the incoherent case models a malformed or older peer.
-    mutating func bookmarkEntity(uuid: String, isFolder: Bool) -> Phi_PhiBookmarkEntity {
+    /// root, parent for a descendant). A WELL-FORMED bookmark stamps both
+    /// members equally, which is the only shape a Phi publisher emits
+    /// (`BookmarkKind.stamp` writes one stamp to both). `malformed: true` breaks
+    /// that on purpose, for the normalisation properties.
+    mutating func bookmarkEntity(uuid: String, isFolder: Bool,
+                                 malformed: Bool = false) -> Phi_PhiBookmarkEntity {
         var entity = Phi_PhiBookmarkEntity()
         entity.bookmarkUuid = uuid
         let parent = rng.chance(2) ? "" : rng.pick(Pool.uuids)
@@ -128,7 +139,7 @@ struct Generators {
         let locationStamp = stamp()
         entity.spaceUuid = settingValue(space, locationStamp)
         entity.parentUuid = settingValue(parent, locationStamp)
-        if rng.chance(6) {
+        if malformed, rng.chance(2) {
             // Unequal member stamps: the carrier rule must still be used verbatim.
             entity.parentUuid.updatedAtMs = stamp()
         }
@@ -162,15 +173,18 @@ struct Generators {
     // MARK: - URL rules
 
     /// The three units: the content group (host/path/ask under host's stamp),
-    /// the target, and the rank.
-    mutating func ruleEntity(uuid: String) -> Phi_PhiURLRuleEntity {
+    /// the target, and the rank. A well-formed rule stamps all three content
+    /// members from the host carrier (§8.2 rule 1), which is what
+    /// `URLRuleKind.stamp` emits; `malformed: true` breaks that on purpose, for
+    /// the normalisation properties.
+    mutating func ruleEntity(uuid: String, malformed: Bool = false) -> Phi_PhiURLRuleEntity {
         var entity = Phi_PhiURLRuleEntity()
         entity.ruleUuid = uuid
         let contentStamp = stamp()
         entity.host = settingValue(rng.pick(Pool.hosts), contentStamp)
         entity.pathPrefix = settingValue(rng.pick(Pool.paths), contentStamp)
         entity.ask = settingValue(bool: rng.bool(), contentStamp)
-        if rng.chance(6) {
+        if malformed, rng.chance(2) {
             // Malformed peer: group members disagree about the stamp. Only the
             // host carrier may be read.
             entity.pathPrefix.updatedAtMs = stamp()

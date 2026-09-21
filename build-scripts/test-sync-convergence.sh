@@ -1,4 +1,12 @@
 #!/bin/bash
+# Hostless sync convergence harness. This is a regression GATE: every change to
+# a merge, a stamp, a tombstone or a landing-decision function must run it.
+#
+#   0  no unexpected failure and no unexpected pass
+#   1  a property failed that is not on the harness's expected-failure list
+#   2  a registered expected failure no longer reproduces -- the list is stale
+#
+# See Tests/SyncConvergence/README.md, "Using this as a gate".
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 task_package="$task_root/Tests/SyncConvergence"
@@ -71,8 +79,8 @@ python3 "$task_package/extract_production_slices.py" "$task_root" \
 # No xcodebuild, no app host, no Chromium framework, no user profile: swiftpm
 # compiles the production merge sources straight into one executable.
 swift build --package-path "$task_package" --scratch-path "$task_scratch" >/dev/null
-# Not `exec`: the cleanup trap has to run, so the harness's exit code is
-# forwarded by hand.
+# Not `exec`: the cleanup trap has to run, so the harness's exit code -- which
+# is the gate's answer, see the header -- is forwarded by hand.
 task_status=0
 "$task_scratch/debug/SyncConvergence" || task_status=$?
 exit "$task_status"

@@ -84,9 +84,10 @@ struct AlgebraSuite<E: SwiftProtobuf.Message & Equatable> {
                 }
 
                 // A merge that is not idempotent may still be a NORMALISER: it
-                // rewrites an incoherent payload once and then holds still. That
-                // distinction is the difference between "one extra commit" and
-                // "republishes forever", so it gets its own property.
+                // rewrites the payload once and then holds still. That distinction
+                // is the difference between "one extra commit" and "republishes
+                // forever", so it gets its own property here as well as over the
+                // malformed domain in NormalisationProperties.swift.
                 let notAFixedPoint: ([E]) -> Bool = { items in
                     let once = merge(items[0], items[0])
                     return merge(once, once) != once
@@ -184,71 +185,14 @@ enum AlwaysEmitted {
     static let rule: Set<Int> = [2, 3, 4, 5, 6]
 }
 
-/// What happens when an always-emitted field IS absent -- a hand-written or
-/// truncated payload. Reported once per kind, never asserted: the schema
-/// forbids the shape, and every code path that builds one of these messages
-/// assigns all of them.
-private func noteAbsentFieldMaterialisation(report: Report) {
-    func probe<E: SwiftProtobuf.Message & Equatable>(_ name: String, _ empty: E,
-                                                     _ merge: (E, E) -> E) {
-        let merged = merge(empty, empty)
-        guard merged != empty else { return }
-        report.note("""
-            \(name): merge(a, a) != a when the entity omits an always-emitted PhiSettingValue \
-            field -- the merge materialises it as an empty submessage, so the payload's bytes \
-            change with no semantic change. Minimal case: an entirely empty entity merges to \
-            '\(merged.oneLine)'. phi_entity.proto forbids that shape ("always emitted, never \
-            omitted-when-empty"), so this is unreachable from any Phi publisher; it is recorded \
-            because it is the one way a truncated or foreign payload could make a device \
-            republish an entity it did not change.
-            """)
-    }
-    probe("spaces", Phi_PhiSpaceEntity(), { SyncableSpaces.merge(local: $0, remote: $1) })
-    probe("bookmarks", Phi_PhiBookmarkEntity(), { BookmarkKind.merge(local: $0, remote: $1) })
-    probe("pins", Phi_PhiPinTabEntity(), { PinKind.merge(local: $0, remote: $1) })
-    probe("urlrules", Phi_PhiURLRuleEntity(), { URLRuleKind.merge(local: $0, remote: $1) })
-}
-
-/// The second cause behind the idempotence counterexamples, isolated so the
-/// report does not have to infer it: a merge unit whose member stamps disagree
-/// is NORMALISED onto its carrier's stamp. `merge-settles-after-one-pass`
-/// proves the rewrite happens once, so the cost is one extra commit, not a loop.
-private func noteMergeUnitNormalisation(report: Report) {
-    var bookmark = Phi_PhiBookmarkEntity()
-    bookmark.bookmarkUuid = "b"
-    bookmark.spaceUuid = settingValue("space-a", 100)     // the carrier for a root
-    bookmark.parentUuid = settingValue("", 900)           // a peer that stamped it differently
-    let mergedBookmark = BookmarkKind.merge(local: bookmark, remote: bookmark)
-    if mergedBookmark != bookmark {
-        report.note("""
-            bookmarks: merge(a, a) != a when the location unit's two members carry DIFFERENT \
-            stamps. §4.3 designates one carrier (space_uuid for a root, parent_uuid for a \
-            descendant) and merge writes that stamp to both members, so a malformed or older \
-            peer's payload is rewritten. Minimal case: space_uuid@100 + parent_uuid@900 (a root) \
-            merges with itself to parent_uuid@100. It settles after that one rewrite \
-            (merge-settles-after-one-pass holds), so the cost is one extra commit per such entity.
-            """)
-    }
-    var rule = Phi_PhiURLRuleEntity()
-    rule.ruleUuid = "r"
-    rule.host = settingValue("example.com", 100)          // the content group's carrier
-    rule.pathPrefix = settingValue("/a", 900)
-    rule.ask = settingValue(bool: true, 50)
-    let mergedRule = URLRuleKind.merge(local: rule, remote: rule)
-    if mergedRule != rule {
-        report.note("""
-            urlrules: merge(a, a) != a when the content group's three members carry different \
-            stamps. §8.2 rule 1 makes host the carrier and merge writes its stamp to \
-            path_prefix and ask as well. Minimal case: host@100 + path_prefix@900 + ask@50 merges \
-            with itself to all three @100. Settles after one rewrite, as above.
-            """)
-    }
-}
+// The two malformed shapes that used to be REPORTED here -- a merge unit whose
+// members carry different stamps, and an absent always-emitted field -- are now
+// asserted properties of their own in NormalisationProperties.swift. The
+// generators below produce well-formed payloads, which is the domain the
+// algebraic laws are statements about; the adversarial generators live on,
+// behind `malformed:`, and feed the normalisation properties.
 
 func runLayer1(iterations: Int, generators: inout Generators, report: Report) {
-    noteAbsentFieldMaterialisation(report: report)
-    noteMergeUnitNormalisation(report: report)
-
     // Settings -----------------------------------------------------------------
     // The registry keys plus one key this build does not know: the settings
     // entity's forward compatibility is unknown MAP KEYS, not reserved fields.
@@ -398,9 +342,13 @@ func runLayer1(iterations: Int, generators: inout Generators, report: Report) {
     // implemented as `[left, right].filter { $0 > 0 }.min() ?? 0`. It decides
     // the final ordering tie-break, so losing it silently reorders an account.
     // Isolated from the idempotence law so the cause is named, not inferred.
+    //
+    // The LEGAL domain only: 0 is the wire encoding of "unset" and a real
+    // instant is positive. What the merge does to a non-positive value is the
+    // sanitisation contract, asserted in NormalisationProperties.swift.
     func checkCreatedAt<E: SwiftProtobuf.Message & Equatable>(
         _ name: String, _ merge: (E, E) -> E, _ set: (Int64) -> E, _ get: (E) -> Int64) {
-        for value in Pool.createdAt + [-1, Int64.min + 1, -1_700_000_000_000] {
+        for value in Pool.createdAt {
             let entity = set(value)
             report.check("\(name).created_at_ms-survives-a-merge-with-itself",
                          get(merge(entity, entity)) == value,

@@ -705,6 +705,16 @@ C4 in both directions, using the production decision functions: an item whose
 delete an edit beat exists on every replica, and a delete no edit contradicted
 stays gone everywhere. See `Tests/SyncConvergence/README.md`.
 
+It is a **regression gate**, not a report: any change to a `merge`, a `stamp`, a
+tombstone or a landing-decision function must run it and see exit status 0.
+Status 0 means no property failed that was not already registered in
+`Tests/SyncConvergence/Sources/SyncConvergence/ExpectedFailures.swift`, and no
+registered failure silently started passing; status 1 is an unexpected
+violation, status 2 a registered entry that no longer reproduces and must be
+removed. The registered entries — the non-associative rank-coherence rule, whose
+repair is a pending product decision — are printed in full on every run,
+green or red.
+
 The Chromium half of the routing tie-break is covered by
 `phi_url_router_unittest.cc` in the fork, which is built and run separately
 (`autoninja -C out/PhiRelease chrome unit_tests`, then

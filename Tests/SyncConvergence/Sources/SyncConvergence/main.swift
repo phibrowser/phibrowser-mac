@@ -46,13 +46,14 @@ let report = Report()
 // ---------------------------------------------------------------- Layer 1 ----
 var generators = Generators(rng: SplitMix64(seed: seed))
 runLayer1(iterations: iterations, generators: &generators, report: report)
+runNormalisationProperties(iterations: iterations, generators: &generators, report: report)
 runRankProperties(iterations: iterations, generators: &generators, report: report)
 runClockProperties(iterations: iterations, generators: &generators, report: report)
 checkPlannerRefusesAnInjectedCycle(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
 checkAnEditedChildSurvivesItsFoldersDeletion(report: report)
-print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner "
-      + "and the rank primitives")
+print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner, "
+      + "the rank primitives and the normalisation of payloads the schema forbids")
 
 // ---------------------------------------------------------------- Layer 2 ----
 struct ScenarioSummary {
@@ -106,6 +107,11 @@ func describe(_ name: String, _ outcome: SimOutcome, report: Report, assertInten
 }
 
 var simRng = SplitMix64(seed: seed &* 0x9E37_79B9)
+
+// Why the non-associative rank-coherence rule (RC3, see ExpectedFailures.swift)
+// cannot split an account: the minimal counterexample replayed to three replicas
+// through every schedule the protocol permits.
+checkRankCoherenceCannotDivergeReplicas(report: report)
 
 do {
     let outcome = Simulation(kind: settingsSimKind(), identities: ["phi-settings"],
@@ -236,23 +242,82 @@ if !report.notes.isEmpty {
     print("")
 }
 
-if report.failed {
-    print("FAILURES")
-    for finding in report.violations {
+// The expected-failure allowlist, printed on EVERY run whether it is green or
+// not: a registered failure that nobody reads is a deleted property with extra
+// steps. See ExpectedFailures.swift for what each entry means.
+let registered = Set(expectedFailures.map(\.property))
+let violated = Set(report.violations.map(\.property))
+var stale: [ExpectedFailure] = []
+
+func printCounterexample(_ finding: Report.Finding, indent: String) {
+    for line in finding.counterexample.split(separator: "\n", omittingEmptySubsequences: false) {
+        print(indent + line)
+    }
+}
+
+print("EXPECTED FAILURES (\(expectedFailures.count) registered in "
+      + "Tests/SyncConvergence/Sources/SyncConvergence/ExpectedFailures.swift)")
+for entry in expectedFailures {
+    let reproduces = entry.witness()
+    if !reproduces { stale.append(entry) }
+    print("  \(reproduces ? "!" : "✗ UNEXPECTED PASS:") \(entry.property)")
+    print("      witness      "
+          + (reproduces
+             ? "still reproduces -- the rule is unchanged"
+             : "NO LONGER REPRODUCES. The rule was repaired or moved; delete this entry."))
+    print("      this seed    "
+          + (violated.contains(entry.property)
+             ? "hit it in the randomized search"
+             : "did not hit it; the witness is what pins the entry"))
+    print("      root cause   " + entry.rootCause.replacingOccurrences(of: "\n",
+                                                                      with: "\n                   "))
+    print("      waits on     " + entry.waitsOn.replacingOccurrences(of: "\n",
+                                                                    with: "\n                   "))
+    if let finding = report.violations.first(where: { $0.property == entry.property }) {
+        print("      counterexample (\(finding.hits) failing cases):")
+        printCounterexample(finding, indent: "        ")
+    }
+    print("")
+}
+
+// A stale entry stops covering its property: its witness is gone, so a failure
+// the search still finds is a DIFFERENT one and must be reported as unexpected
+// rather than absorbed by an entry that no longer describes it.
+let staleProperties = Set(stale.map(\.property))
+let unexpected = report.violations.filter {
+    !registered.contains($0.property) || staleProperties.contains($0.property)
+}
+if !unexpected.isEmpty {
+    print("FAILURES (not covered by the expected-failure list)")
+    for finding in unexpected {
         print("  ✗ \(finding.property)  (\(finding.hits) failing cases)")
-        for line in finding.counterexample.split(separator: "\n", omittingEmptySubsequences: false) {
-            print("      " + line)
-        }
+        printCounterexample(finding, indent: "      ")
         print("")
     }
-    print(String(format: "Reproduce with: SYNC_CONV_SEED=0x%016llX "
-                 + "SYNC_CONV_ITERATIONS=\(iterations) SYNC_CONV_STEPS=\(simSteps) "
-                 + "bash build-scripts/test-sync-convergence.sh", seed))
-    print("FAIL: \(report.violations.count) properties violated out of "
-          + "\(report.violations.count + report.passed.count) checked "
-          + "(\(report.checks) total cases)")
+}
+
+let reproduceLine = String(format: "Reproduce with: SYNC_CONV_SEED=0x%016llX "
+                           + "SYNC_CONV_ITERATIONS=\(iterations) SYNC_CONV_STEPS=\(simSteps) "
+                           + "bash build-scripts/test-sync-convergence.sh", seed)
+let asserted = report.violations.count + report.passed.count
+
+// Exit status, documented in Tests/SyncConvergence/README.md, "Using this as a
+// gate": 0 only when nothing unexpected happened in EITHER direction.
+if !unexpected.isEmpty {
+    print(reproduceLine)
+    print("FAIL: \(unexpected.count) unexpected property violations out of \(asserted) asserted "
+          + "(\(report.checks) cases, \(report.violations.count - unexpected.count) of "
+          + "\(expectedFailures.count) registered failures also seen)")
     exit(1)
+}
+if !stale.isEmpty {
+    print(reproduceLine)
+    print("FAIL: the expected-failure list is stale -- \(stale.count) entry/entries no longer "
+          + "reproduce: \(stale.map(\.property).joined(separator: ", ")). Every asserted property "
+          + "held; remove the repaired entry from ExpectedFailures.swift to re-arm the gate.")
+    exit(2)
 }
 
 print("PASS: \(report.passed.count) properties, \(report.checks) cases, "
+      + "\(expectedFailures.count) registered failures still reproducing, "
       + String(format: "seed 0x%016llX", seed))

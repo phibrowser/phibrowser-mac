@@ -5317,6 +5317,82 @@ final class SpaceManager: ObservableObject {
         )
     }
 
+    /// Opens a window for a user Space and answers with its windowId — the
+    /// programmatic "give this Space a window" behind
+    /// `agentSpace.spaces.openTab` on a windowless Space, and the one
+    /// Space-opening path that works when the app has NO user window at
+    /// all, the state `activateInFocusedWindow` has nothing to do in.
+    /// Idempotent: a Space that already has a window answers with it (the
+    /// key slot's when several show it) and is only surfaced when
+    /// `activate` is set. Otherwise the window is spawned into the key slot,
+    /// or into a freshly minted one when no slot exists.
+    ///
+    /// `activate: false` — a background task's open — never moves the
+    /// user's focus: in a live slot the window is spawned hidden beside the
+    /// visible one, exactly the state a restored sibling waits in, and a
+    /// minted slot's window is ordered in behind the user's other windows
+    /// rather than made key (`SpaceWindowSlot.orderBackSpawnedWindow`).
+    /// `activate: true` is `activateInFocusedWindow` with a slot minted when
+    /// there is none — the same path the AppleScript "new window" verb takes.
+    ///
+    /// `completion` fires once with the windowId, or with an error code:
+    /// `unknown_space` for a Space this side does not know, `create_failed`
+    /// for a spawn the slot refused or that never registered (a spawn for
+    /// the Space already in flight, a profile that failed to load, an
+    /// activation the slot dropped).
+    func openWindow(forSpaceId spaceId: String,
+                    activate: Bool,
+                    completion: @escaping (_ windowId: Int?, _ error: String?) -> Void) {
+        guard spaces.contains(where: { $0.spaceId == spaceId }) else {
+            completion(nil, "unknown_space")
+            return
+        }
+        let hosting = slots.filter { $0.windowsBySpaceId[spaceId] != nil }
+        if let slot = hosting.first(where: { $0 === keySlot }) ?? hosting.first,
+           let live = slot.windowsBySpaceId[spaceId] {
+            if activate {
+                slot.activate(spaceId: spaceId)
+            }
+            completion(live.windowId, nil)
+            return
+        }
+        let existing = keySlot ?? slots.first
+        let slot = existing ?? createSlot(initialSpaceId: spaceId)
+        let minted = existing == nil
+        AppLogInfo("[SpaceManager] openWindow(\(spaceId)) activate=\(activate) minted=\(minted)")
+        let finish: (MainBrowserWindowController?) -> Void = { [weak self, weak slot] registered in
+            guard let registered else {
+                if minted, let self, let slot {
+                    _ = self.reclaimMintedSlot(slot, mintedForThisAttempt: true)
+                }
+                completion(nil, "create_failed")
+                return
+            }
+            completion(registered.windowId, nil)
+        }
+        if activate {
+            slot.activate(
+                spaceId: spaceId,
+                onActivationFailed: { finish(nil) },
+                onSwapSettled: { [weak slot] in finish(slot?.windowsBySpaceId[spaceId]) }
+            )
+            return
+        }
+        slot.spawnHiddenWindow(forSpaceId: spaceId, browserType: .normal) { [weak slot] _ in
+            guard let slot, let registered = slot.windowsBySpaceId[spaceId] else {
+                finish(nil)
+                return
+            }
+            // A minted slot has nothing on screen yet: without a reveal the
+            // window would exist only in the switcher. A live slot keeps it
+            // hidden beside the visible Space, as a restored sibling waits.
+            if minted {
+                slot.orderBackSpawnedWindow(registered)
+            }
+            finish(registered)
+        }
+    }
+
     /// A Kiosk's `spaceId` is a placeholder, not membership in a real Space.
     /// Keeping that distinction as a pure decision makes the default-Space
     /// transfer regression testable without materializing Chromium windows.
@@ -9449,16 +9525,20 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
-    /// Spawns an agent Space's Chromium window WITHOUT surfacing or activating
-    /// it. Reuses the same spawn primitives as `activate` (the pendingSpawn
+    /// Spawns a Space's Chromium window WITHOUT surfacing or activating it.
+    /// Reuses the same spawn primitives as `activate` (the pendingSpawn
     /// gate, `ensureProfileLoaded`, the `currentSpawn` attribution the
     /// coordinator claims, and the immediate quick-lookup-tab seed), but skips the
-    /// activeSpaceId flip, persistActiveSpaceId, swap animation, frame
-    /// inheritance, and orderOut — the window is created in agent mode
-    /// (`createAgentBrowser`), which Chromium never Show()s, so it stays ordered
-    /// out until the user switches to its Space. `completion` receives the new
-    /// windowId (or nil on failure).
+    /// activeSpaceId flip, persistActiveSpaceId, swap animation, and orderOut —
+    /// the window is created hidden, which Chromium never Show()s, so it stays
+    /// ordered out until the user switches to its Space. `browserType` picks
+    /// the window: `.agentSpace` (the default — an agent Space's window,
+    /// through `createAgentBrowser`) or `.normal` (a user Space's ordinary
+    /// window, the background half of `SpaceManager.openWindow`; it inherits
+    /// the slot's frame so it lands where the slot sits when it is later
+    /// surfaced). `completion` receives the new windowId (or nil on failure).
     func spawnHiddenWindow(forSpaceId spaceId: String,
+                           browserType: ChromiumBrowserType = .agentSpace,
                            completion: @escaping (Int?) -> Void) {
         guard let manager else { completion(nil); return }
         if pendingSpawnSpaceIds.contains(spaceId) {
@@ -9472,26 +9552,32 @@ final class SpaceWindowSlot: ObservableObject {
             return
         }
         let targetProfileId = manager.spaces.first(where: { $0.spaceId == spaceId })?.profileId
+        let inheritedFrame = browserType == .normal
+            ? resolveInheritedFrame(from: visibleController) : nil
 
         let spawn: () -> Void = { [weak self, weak manager] in
             guard let self = self else { completion(nil); return }
             manager?.currentSpawn = SpaceManager.SpawnContext(
                 slot: self,
                 spaceId: spaceId,
-                inheritedFrame: nil,
+                inheritedFrame: inheritedFrame,
                 inheritedSidebarWidth: 0,
                 inheritedSidebarCollapsed: nil
             )
-            let dict = bridge.createAgentBrowser(withProfileId: targetProfileId)
+            let dict = browserType == .agentSpace
+                ? bridge.createAgentBrowser(withProfileId: targetProfileId)
+                : bridge.createBrowser(withWindowType: browserType,
+                                       profileId: targetProfileId,
+                                       hidden: true)
             manager?.currentSpawn = nil
             guard let dict else {
-                AppLogWarn("[SpaceWindowSlot] createAgentBrowser returned nil")
+                AppLogWarn("[SpaceWindowSlot] spawnHiddenWindow(\(spaceId)): createBrowser(\(browserType.rawValue)) returned nil")
                 self.pendingSpawnSpaceIds.remove(spaceId)
                 completion(nil)
                 return
             }
             guard let windowIdNumber = dict["windowId"] as? NSNumber else {
-                AppLogWarn("[SpaceWindowSlot] createAgentBrowser returned no windowId")
+                AppLogWarn("[SpaceWindowSlot] spawnHiddenWindow(\(spaceId)): createBrowser(\(browserType.rawValue)) returned no windowId")
                 self.pendingSpawnSpaceIds.remove(spaceId)
                 completion(nil)
                 return
@@ -9500,6 +9586,12 @@ final class SpaceWindowSlot: ObservableObject {
             if !self.contains(windowId: id),
                self.pendingSpawnSpaceIdByWindowId[id] == nil {
                 self.pendingSpawnSpaceIdByWindowId[id] = spaceId
+            }
+            // Same re-assert as `activate`'s spawn: Chromium's WindowSizer
+            // can snap the fresh window back to its creation bounds after
+            // `registerWindow` applied the inherited frame in the ctor.
+            if let inheritedFrame {
+                self.windowsBySpaceId[spaceId]?.window?.setFrame(inheritedFrame, display: false)
             }
             // The agent drives navigation itself, but seed a quick-lookup tab
             // so the window has a live tab for the runtime to bind to —
@@ -10840,6 +10932,27 @@ final class SpaceWindowSlot: ObservableObject {
                   !activeWindow.styleMask.contains(.fullScreen) else { return }
             activeWindow.toggleFullScreen(nil)
         }
+    }
+
+    /// Orders a spawned window in WITHOUT making it key: the reveal for a
+    /// window the user did not ask to see — a background
+    /// `SpaceManager.openWindow` into a slot minted because no user window
+    /// was open. The window goes behind whatever the user is looking at and
+    /// the app is never activated; the pre-front half of
+    /// `makeKeyAndOrderFrontHidingSlotTabBar` (cold-reveal cover, slot tab
+    /// bars) applies unchanged, and a later switch to the Space fronts it
+    /// through the normal same-space path.
+    func orderBackSpawnedWindow(_ controller: MainBrowserWindowController) {
+        guard let window = controller.window else { return }
+        MainActor.assumeIsolated {
+            controller.mainSplitViewController
+                .webContentContainerViewController
+                .maskPageAreaForColdReveal()
+        }
+        hideSlotTabBars()
+        removeNativeTabBarAccessories(from: window)
+        window.orderBack(nil)
+        AppLogInfo("[SpaceWindowSlot] ordered spawned window \(controller.windowId) in behind the user's windows")
     }
 
     private func makeKeyAndOrderFrontHidingSlotTabBar(_ window: NSWindow?) {

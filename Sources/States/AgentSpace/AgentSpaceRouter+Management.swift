@@ -70,7 +70,7 @@ extension AgentSpaceRouter {
                         "isDefault": space.spaceId == SpaceManager.shared.currentDefaultSpaceId,
                         "isActive": space.spaceId == activeId,
                         "windowIds": controllers
-                            .filter { $0.spaceId == space.spaceId }
+                            .filter { $0.spaceId == space.spaceId && $0.browserType == .normal }
                             .map(\.windowId),
                     ]
                 }
@@ -221,49 +221,93 @@ extension AgentSpaceRouter {
     }
 
     /// `agentSpace.spaces.openTab` — open a URL as a new tab in a user
-    /// Space's open window: the direct user-Space counterpart of the
-    /// task-scoped `agentSpace.openTab`. `activate` (default true) selects
-    /// the new tab — the common caller is opening a page *for* the user to
-    /// see. Fails when the Space has no open window, like `spaces.listTabs`;
-    /// an optional `windowId` targets one specific window instead of the
-    /// key-window default.
+    /// Space's window: the direct user-Space counterpart of the task-scoped
+    /// `agentSpace.openTab`. `activate` (default true) selects the new tab —
+    /// the common caller is opening a page *for* the user to see. A Space
+    /// with no open window gets one first (a closed window is not a closed
+    /// Space; this is the one way to reach a Space when the user has no
+    /// browser window at all), surfaced when `activate` is set and opened
+    /// behind the user's windows otherwise, and the reply then carries
+    /// `windowOpened: true`; that path answers asynchronously, once the
+    /// window exists. A fresh window always seeds one New Tab, so asking a
+    /// windowless Space for a New Tab is satisfied by that seed rather than
+    /// doubled — "open a New Tab there" and "open the Space" are the same
+    /// ask. An optional `windowId` targets one specific window
+    /// instead of the key-window default and never opens one
+    /// (`window_not_open` when it does not show the Space). Returns nil
+    /// when the reply is sent asynchronously.
     static func handleSpacesOpenTab(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let spaceId = obj["spaceId"] as? String,
               let url = obj["url"] as? String, !url.isEmpty else { return invalid() }
         let activate = obj["activate"] as? Bool ?? true
         let windowId = obj["windowId"] as? Int
-        return MainActor.assumeIsolated {
-            guard let target = spaceWindow(spaceId: spaceId, windowId: windowId) else {
-                return failure(windowId == nil ? "space_not_open" : "window_not_open")
+        let requestId = context.requestId
+        return MainActor.assumeIsolated { () -> String? in
+            if let target = spaceWindow(spaceId: spaceId, windowId: windowId) {
+                createUserSpaceTab(url: url, spaceId: spaceId, windowId: target.windowId,
+                                   activate: activate, context: context)
+                return encode(["ok": true, "windowId": target.windowId])
             }
-            // Opening a tab here IS the agent operating the user's Space, but
-            // the app performs it itself — no CDP command is sent, so the
-            // browser's drive reports never see it. Arm the operating mask
-            // from this side instead, matched to the tab Chromium is about to
-            // create. Agent Spaces keep deriving their own mask from the task.
-            let isAgentSpace = SpaceManager.shared.spaces
-                .first { $0.spaceId == spaceId }?.isAgentSpace ?? false
-            if !isAgentSpace {
-                AgentUserSpaceDriveRegistry.shared.agentWillOpenTab(
-                    inWindow: target.windowId,
-                    principalId: context.driverPrincipalId,
-                    driverName: context.agentName)
+            guard windowId == nil else { return failure("window_not_open") }
+            let manager = SpaceManager.shared
+            guard let space = manager.spaces.first(where: { $0.spaceId == spaceId }),
+                  !space.isAgentSpace, !SpaceManager.isIncognitoSpaceId(spaceId) else {
+                return failure("unknown_space")
             }
-            ChromiumLauncher.sharedInstance().bridge?
-                .createNewTab(withUrl: url,
-                              windowId: Int64(target.windowId),
-                              customGuid: nil,
-                              focusAfterCreate: activate)
-            return encode(["ok": true, "windowId": target.windowId])
+            manager.openWindow(forSpaceId: spaceId, activate: activate) { openedWindowId, error in
+                MainActor.assumeIsolated {
+                    guard let openedWindowId else {
+                        ExtensionMessaging.shared.sendResponse(
+                            failure(error ?? "create_failed"), requestId: requestId)
+                        return
+                    }
+                    if !url.isNTP {
+                        createUserSpaceTab(url: url, spaceId: spaceId, windowId: openedWindowId,
+                                           activate: activate, context: context)
+                    }
+                    ExtensionMessaging.shared.sendResponse(
+                        encode(["ok": true, "windowId": openedWindowId, "windowOpened": true]),
+                        requestId: requestId)
+                }
+            }
+            return nil
         }
     }
 
+    /// The tab creation both `spaces.openTab` paths share. Opening a tab
+    /// here IS the agent operating the user's Space, but the app performs
+    /// it itself — no CDP command is sent, so the browser's drive reports
+    /// never see it. Arm the operating mask from this side instead, matched
+    /// to the tab Chromium is about to create. Agent Spaces keep deriving
+    /// their own mask from the task.
+    @MainActor
+    private static func createUserSpaceTab(url: String, spaceId: String, windowId: Int,
+                                           activate: Bool, context: ExtensionMessageContext) {
+        let isAgentSpace = SpaceManager.shared.spaces
+            .first { $0.spaceId == spaceId }?.isAgentSpace ?? false
+        if !isAgentSpace {
+            AgentUserSpaceDriveRegistry.shared.agentWillOpenTab(
+                inWindow: windowId,
+                principalId: context.driverPrincipalId,
+                driverName: context.agentName)
+        }
+        ChromiumLauncher.sharedInstance().bridge?
+            .createNewTab(withUrl: url,
+                          windowId: Int64(windowId),
+                          customGuid: nil,
+                          focusAfterCreate: activate)
+    }
+
     /// `agentSpace.spaces.activate` — surface a user Space in the focused
-    /// window, opening its window when it has none: the programmatic
+    /// window, opening its window there when it has none: the programmatic
     /// counterpart of clicking the Space in the switcher. On-screen change,
     /// so callers invoke it only on the user's ask (or when a Space they
-    /// were asked to work in has no window to drive).
+    /// were asked to work in has no window to drive). With no user window
+    /// open at all there is nothing to switch, and that is reported as
+    /// `no_focused_window` rather than as a switch that happened — a caller
+    /// that needs the Space reachable regardless opens a tab in it
+    /// (`spaces.openTab` opens the window).
     static func handleSpacesActivate(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let spaceId = obj["spaceId"] as? String else { return invalid() }
@@ -273,6 +317,9 @@ extension AgentSpaceRouter {
                 return failure("unknown_space")
             }
             guard !space.isAgentSpace else { return failure("agent_space") }
+            guard manager.keySlot != nil || !manager.slots.isEmpty else {
+                return failure("no_focused_window")
+            }
             manager.activateInFocusedWindow(spaceId: spaceId)
             return ok()
         }
@@ -655,13 +702,16 @@ extension AgentSpaceRouter {
     /// window (nil when it does not show the Space); otherwise the key window
     /// wins when several show the Space. Agent Spaces are refused here: their
     /// windows are ownership-guarded and must be addressed through the taskId
-    /// path.
+    /// path. Only the Space's own user-facing windows count: a shadow window
+    /// carries the active Space's id as its placeholder, and resolving it
+    /// here would list it under that Space — or land the user's tab in an
+    /// invisible window.
     @MainActor
     private static func spaceWindow(spaceId: String, windowId: Int? = nil)
         -> (windowId: Int, state: BrowserState?)? {
         guard !AgentSpaceManager.shared.isAgentSpace(spaceId) else { return nil }
         let controllers = MainBrowserWindowControllersManager.shared.getAllWindows()
-            .filter { $0.spaceId == spaceId }
+            .filter { $0.spaceId == spaceId && $0.browserType == .normal }
         if let windowId {
             guard let chosen = controllers.first(where: { $0.windowId == windowId })
             else { return nil }
@@ -680,6 +730,7 @@ extension AgentSpaceRouter {
         -> (windowId: Int, state: BrowserState?, spaceId: String)? {
         guard let chosen = MainBrowserWindowControllersManager.shared.getAllWindows()
             .first(where: { $0.windowId == windowId }),
+            chosen.browserType == .normal,
             !AgentSpaceManager.shared.isAgentSpace(chosen.spaceId) else { return nil }
         return (chosen.windowId, chosen.browserState, chosen.spaceId)
     }

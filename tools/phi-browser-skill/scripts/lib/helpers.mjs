@@ -7181,15 +7181,19 @@ export async function listSpaceTabs(space, { window: windowId = null } = {}) {
   return tabs.map((t) => ({ ...t, targetId: byTabId.get(t.tabId) ?? null }))
 }
 
-/** Opens `url` as a new tab in a USER Space's open window — the user-Space
+/** Opens `url` as a new tab in a USER Space's window — the user-Space
  *  counterpart of the agent-window openTab. App-level like the rest of
  *  browser management: no agent Space, no control ownership. `activate`
  *  (default true) selects the new tab in the user's window; `{window}` (a
  *  windowId) targets one specific window when several show the Space
- *  (failing `window_not_open` on a mismatch). Returns the new tab as
- *  {tabId, targetId, url, title, active, windowId}, settled by diffing the
- *  Space's tab strip. Fails with `space_not_open` when the Space has no
- *  open window. */
+ *  (failing `window_not_open` on a mismatch). A Space with no open window
+ *  gets one first — a closed window is not a closed Space, and this is the
+ *  one way to reach a Space when the user has no browser window at all:
+ *  surfaced when `activate` is true, opened BEHIND the user's windows when
+ *  false, so a background open never moves their focus. Returns the new
+ *  tab as {tabId, targetId, url, title, active, windowId, windowOpened},
+ *  settled by diffing the Space's tab strip (a freshly opened window also
+ *  carries its seed New Tab — the requested URL's tab is the one returned). */
 // Tabs already claimed by an openSpaceTab call this round. Concurrent opens
 // (Promise.all over URLs) each diff the same tab strip, so every call must
 // claim its tab synchronously inside the settle check — mirroring openTab's
@@ -7202,10 +7206,18 @@ export async function openSpaceTab(space, url, { activate = true,
     throw new Error('openSpaceTab(space, url): url is required')
   }
   const spaceId = await resolveSpaceId(space)
+  // A windowless Space has no strip to diff against: every tab of the window
+  // the open creates is new, and the URL match below picks ours out.
   const before = new Set(
-    (await listSpaceTabs(spaceId, { window: windowId })).map((t) => t.tabId))
+    (await listSpaceTabs(spaceId, { window: windowId }).catch((err) => {
+      if (windowId == null && /space_not_open/.test(String(err?.message))) return []
+      throw err
+    })).map((t) => t.tabId))
   const opened = await phiSend('agentSpace.spaces.openTab',
     { spaceId, url, activate, ...(windowId != null ? { windowId } : {}) })
+  const wanted = (u) => {
+    try { return new URL(u).href === new URL(url).href } catch { return u === url }
+  }
   let tab = null
   await settle(async () => {
     // Require a live targetId: the tab row can appear in the strip a poll
@@ -7213,14 +7225,18 @@ export async function openSpaceTab(space, url, { activate = true,
     // find-then-add is synchronous — that's what makes the claim race-free.
     // Diff the strip of the window the open actually landed in — the
     // key-window default could resolve differently across the two listings.
+    // Several new tabs (a fresh window's seed New Tab beside ours): the one
+    // at the requested URL wins; a lone newcomer is ours whatever it shows,
+    // since the page may have redirected already.
     const fresh = (await listSpaceTabs(spaceId, { window: opened.windowId }))
-      .find((t) =>
+      .filter((t) =>
         !before.has(t.tabId) && !claimedSpaceTabs.has(t.tabId) && t.targetId)
-    if (fresh) { claimedSpaceTabs.add(fresh.tabId); tab = fresh }
+    const pick = fresh.length > 1 ? fresh.find((t) => wanted(t.url)) : fresh[0]
+    if (pick) { claimedSpaceTabs.add(pick.tabId); tab = pick }
     return !!tab
   }, { timeout: 10 })
   if (!tab) throw new Error(`openSpaceTab: no new tab appeared for ${url}`)
-  return { ...tab, windowId: opened.windowId }
+  return { ...tab, windowId: opened.windowId, windowOpened: !!opened.windowOpened }
 }
 
 /** Where the user currently is: {spaceId, spaceName, isAgentSpace,
@@ -7243,8 +7259,10 @@ export async function userFocus() {
 }
 
 /** Surfaces a user Space in the user's focused window, opening its window
- *  when it has none — the programmatic Space-switcher click. On-screen
- *  change the user sees immediately: only on their ask. */
+ *  there when it has none — the programmatic Space-switcher click. On-screen
+ *  change the user sees immediately: only on their ask. With no user window
+ *  open at all there is nothing to switch: fails `no_focused_window`
+ *  (`openSpaceTab` opens a window regardless). */
 export async function activateSpace(space) {
   const spaceId = await resolveSpaceId(space)
   await phiSend('agentSpace.spaces.activate', { spaceId })
@@ -7264,9 +7282,12 @@ export async function activateSpace(space) {
  * real).
  *
  * Resolution: an unknown name is created as a new Space when `create` is
- * true (then activated — a window must exist to drive); an existing Space
- * with no open window is opened via activation; `{activate: true}` also
- * surfaces an already-open Space in the user's focused window. `{window}`
+ * true (then opened — a window must exist to drive); an existing Space
+ * with no open window is opened by opening a New Tab in it
+ * (`spaces.openTab` opens the window: BEHIND the user's windows by
+ * default, surfaced when `activate` is true — and it works when the user
+ * has no browser window at all); `{activate: true}` also surfaces an
+ * already-open Space in the user's focused window. `{window}`
  * (a windowId) pins the binding to that exact window when the Space is open
  * in several — and stands alone: with `window` given, `space` may be
  * omitted entirely and is derived from the window. The pinned window must
@@ -7306,7 +7327,7 @@ async function enterUserContext(space, { profile = '', create = true,
       created = true
     }
   }
-  // A window must exist to drive: activation is the only way to open one.
+  // A window must exist to drive: opening a New Tab in the Space opens one.
   let reply = null
   if (!created && !activate) {
     // window_not_ready is a window mid-attach (it exists, its state does
@@ -7342,7 +7363,24 @@ async function enterUserContext(space, { profile = '', create = true,
       (space != null ? ` of space '${space}'` : '') + ' has no usable tabs')
   }
   if (!reply) {
-    await phiSend('agentSpace.spaces.activate', { spaceId })
+    if (activate && (await listSpaces()).find((s) => s.spaceId === spaceId)
+                                         ?.windowIds.length) {
+      // Already open: surfacing it is the whole ask.
+      await phiSend('agentSpace.spaces.activate', { spaceId })
+    } else {
+      // Windowless: a New Tab open gives the Space a window — its seed tab
+      // is that New Tab, so nothing is doubled — behind the user's windows
+      // unless `activate` asked for it in front. An app build from before
+      // openTab learned to open windows answers `space_not_open`; there the
+      // old activation is the only way, focus steal and all.
+      try {
+        await phiSend('agentSpace.spaces.openTab',
+          { spaceId, url: 'chrome://newtab/', activate })
+      } catch (err) {
+        if (!/space_not_open/.test(String(err?.message))) throw err
+        await phiSend('agentSpace.spaces.activate', { spaceId })
+      }
+    }
     // A freshly opened window fills progressively (restore delivers tabs in
     // batches from Chromium), so "has a tab" is not "has its tabs" — settle
     // on the count holding still for a beat, not on the first arrival.

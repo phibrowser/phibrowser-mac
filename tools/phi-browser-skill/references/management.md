@@ -51,14 +51,25 @@ Space.
   the operation was SENT but unconfirmed, not failed; re-list to check
   before assuming either way.
 - `openSpaceTab(space, url, {activate, window})` — open a URL as a new tab
-  in a user Space's open window ("open X in my space"), returning the new
-  tab row `{tabId, targetId, url, title, active, windowId}`. `activate`
-  defaults true (the tab is selected — the user asked to see it); pass
-  `{activate: false}` for background bulk opens; `{window}` (a windowId)
-  targets one specific window when several show the Space. Fails with
-  `space_not_open` when the Space has no open window (`window_not_open` for
-  a `{window}` mismatch). This changes the user's visible window — do it on
-  their ask, not as a side effect.
+  in a user Space's window ("open X in my space"), returning the new tab
+  row `{tabId, targetId, url, title, active, windowId, windowOpened}`.
+  `activate` defaults true (the tab is selected — the user asked to see
+  it); pass `{activate: false}` for background bulk opens; `{window}` (a
+  windowId) targets one specific window when several show the Space
+  (`window_not_open` on a mismatch). A Space with NO open window gets one
+  first — a closed window is not a closed Space, and this is the one way
+  to reach a Space when the user has no browser window at all: surfaced
+  when `activate` is true, opened BEHIND the user's windows when false, so
+  a background open never moves their focus; the row then says
+  `windowOpened: true`, and the fresh window also carries its seed New Tab
+  beside yours. This changes what the user sees — do it on their ask, not
+  as a side effect.
+- `activateSpace(space)` — surface a Space in the user's focused window,
+  opening its window there when it has none: the programmatic switcher
+  click, so only on the user's ask. With no user window open at all there
+  is nothing to switch and it fails `no_focused_window` — reach the Space
+  with `openSpaceTab` (or `enterContext({kind:'user'})`) instead, which
+  open a window regardless.
 - `userFocus()` — where the user is right now: `{spaceId, spaceName,
   isAgentSpace, isIncognito, windowId?, tab?}`, `tab` being the selected tab
   `{tabId, targetId, url, title}` of the active Space's window. Use it to
@@ -100,10 +111,12 @@ Semantics and differences from a task Space:
 
 - Resolution: `space` is a Space name or spaceId. An unknown name is
   created as a new Space when `create` is true (default); a Space with no
-  open window is opened by activating it in the user's focused window;
-  `{activate: true}` also surfaces an already-open Space. It attaches to
-  the Space's currently selected tab and returns `{spaceId, name, windowId,
-  created, tabs}`.
+  open window is opened by opening a New Tab in it (its seed tab), BEHIND
+  the user's windows so their focus stays put — and with no user window
+  open at all it still opens; `{activate: true}` surfaces the Space in
+  front instead (opening or switching to it). It attaches to the Space's
+  currently selected tab and returns `{spaceId, name, windowId, created,
+  tabs}`.
 - Window pinning: with the Space open in several windows the binding
   defaults to the key window; `{window}` (a windowId — see the References
   bullet above for where ids come from) binds that exact window instead,

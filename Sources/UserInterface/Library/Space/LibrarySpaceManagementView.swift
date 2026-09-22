@@ -587,8 +587,7 @@ final class LibrarySpaceManagementController: NSViewController,
     }
 
     private var liveState: BrowserState? {
-        guard let window = view.window,
-              let host = SpaceSessionControllersManager.shared.findControllerWith(window: window),
+        guard let host = browserOwner,
               let state = host.slot?
                 .windowController(for: contents.scope.spaceId)?.browserState,
               state.localStore.identifier == contents.storeIdentifier,
@@ -915,10 +914,15 @@ final class LibrarySpaceManagementController: NSViewController,
               !bookmark.isFolder else { return }
         open(itemID: bookmark.guid, isPin: false)
     }
+    private var browserOwner: SpaceSessionController? {
+        guard let window = view.window else { return nil }
+        return (window.windowController as? LibraryWindowController)?.browserOwner
+            ?? SpaceSessionControllersManager.shared.findControllerWith(window: window)
+    }
+
     private func open(itemID: String, isPin: Bool) {
         guard validStore() != nil,
-              let window = view.window,
-              let host = SpaceSessionControllersManager.shared.findControllerWith(window: window),
+              let host = browserOwner,
               let slot = host.slot else { return }
         let scope = contents.scope
         host.dismissLibraryIfVisible()

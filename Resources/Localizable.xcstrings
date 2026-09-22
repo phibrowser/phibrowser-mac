@@ -289,6 +289,18 @@
         }
       }
     },
+    "library.navigation.openInNewWindow" : {
+      "comment" : "Profile menu - Opens Library in a separate window",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Library in New Window"
+          }
+        }
+      }
+    },
     "library.navigation.showSidebar" : {
       "comment" : "Library - Tooltip and accessibility label for expanding the navigation sidebar",
       "extractionState" : "manual",

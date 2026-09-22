@@ -188,7 +188,7 @@ struct AllDownloadsListView: View {
     }
 }
 
-private struct DownloadsSearchField: NSViewRepresentable {
+struct DownloadsSearchField: NSViewRepresentable {
     @Binding var text: String
 
     func makeNSView(context: Context) -> NSSearchField {
@@ -199,6 +199,7 @@ private struct DownloadsSearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.delegate = context.coordinator
+        context.coordinator.monitorClicksOutside(field)
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
@@ -215,11 +216,34 @@ private struct DownloadsSearchField: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
+    static func dismantleNSView(_ field: NSSearchField, coordinator: Coordinator) {
+        coordinator.stopMonitoringClicks()
+    }
+
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
+        private var clickMonitor: Any?
 
         init(text: Binding<String>) {
             self.text = text
+        }
+
+        func monitorClicksOutside(_ field: NSSearchField) {
+            stopMonitoringClicks()
+            // Plain SwiftUI buttons can handle clicks without taking first responder.
+            // End search editing before dispatch, then let the clicked control act normally.
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak field] event in
+                guard let field, let window = field.window,
+                      event.window === window, field.currentEditor() != nil,
+                      !field.bounds.contains(field.convert(event.locationInWindow, from: nil)) else { return event }
+                window.makeFirstResponder(nil)
+                return event
+            }
+        }
+
+        func stopMonitoringClicks() {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
         }
 
         func controlTextDidChange(_ notification: Notification) {

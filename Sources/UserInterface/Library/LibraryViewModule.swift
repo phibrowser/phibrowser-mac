@@ -8,8 +8,12 @@ import SwiftUI
 
 /// Owns Library navigation and content independently of its window presentation.
 final class LibraryViewModule: NSViewController {
+    enum Presentation {
+        case embedded, standalone
+    }
+
     enum Section: Int, CaseIterable {
-        case downloads, spaces, folio
+        case folio, spaces, downloads
 
         var title: String {
             switch self {
@@ -35,21 +39,45 @@ final class LibraryViewModule: NSViewController {
         NSLocalizedString("library.navigation.title", value: "Library", comment: "Library - Title and entry button label")
     }
 
+    @Observable
+    final class NavigationState {
+        var selection: Section = .downloads
+    }
+
+    let navigationState = NavigationState()
     private let browserState: BrowserState
+    private let presentation: Presentation
     private let downloadsManager = DownloadsManager(profileIds: [])
     private let folioModel: FolioLibraryModel
     var onDismiss: (() -> Void)?
 
-    init(browserState: BrowserState) {
+    init(browserState: BrowserState, presentation: Presentation = .embedded) {
         self.browserState = browserState
+        self.presentation = presentation
         folioModel = FolioLibraryModel(profileId: browserState.profileId)
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    override var acceptsFirstResponder: Bool { presentation == .standalone }
+
+    override func mouseDown(with event: NSEvent) {
+        guard presentation == .standalone else {
+            super.mouseDown(with: event)
+            return
+        }
+        // Unhandled blank-area clicks must end editing without closing Library.
+        view.window?.makeFirstResponder(self)
+    }
+
     override func loadView() {
-        let content = LibraryContentView(browserState: browserState, downloadsManager: downloadsManager, folioModel: folioModel) { [weak self] in
+        let content = LibraryContentView(navigationState: navigationState, openInNewWindow: { [weak self] in
+            guard let self else { return }
+            let owner = SpaceSessionControllersManager.shared.controller(for: browserState.windowId)
+            owner?.openLibraryInNewWindow(section: self.navigationState.selection)
+        }, browserState: browserState, presentation: presentation,
+                                         downloadsManager: downloadsManager, folioModel: folioModel) { [weak self] in
             self?.onDismiss?()
         }
         let host = ThemedHostingController(rootView: content, themeSource: browserState.themeContext)
@@ -59,54 +87,85 @@ final class LibraryViewModule: NSViewController {
 }
 
 private struct LibraryContentView: View {
+    let navigationState: LibraryViewModule.NavigationState
+    let openInNewWindow: () -> Void
     let browserState: BrowserState
+    let presentation: LibraryViewModule.Presentation
     let downloadsManager: DownloadsManager
     let folioModel: FolioLibraryModel
     let dismiss: () -> Void
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var selection: LibraryViewModule.Section = .downloads
+    private var selection: LibraryViewModule.Section {
+        get { navigationState.selection }
+        nonmutating set { navigationState.selection = newValue }
+    }
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
     @State private var folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarWidth: CGFloat = 200
+    private var compactSidebar: Bool { sidebarWidth < Self.compactSidebarThreshold }
+    @State private var floatingSidebarVisible = false
+    @State private var hoveringFloatingSidebar = false
+
+    private static let minimumSidebarWidth: CGFloat = 64
+    private static let maximumSidebarWidth: CGFloat = 240
+    private static let compactSidebarThreshold: CGFloat = 108
 
     private func color(_ value: ThemedColor) -> Color {
         value.swiftUIColor(theme: theme, appearance: appearance)
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            navigation
-            Rectangle()
-                .fill(color(.separator))
-                .frame(width: 1)
-            VStack(spacing: 0) {
-                if selection == .downloads {
-                    AllDownloadsListView(downloadsManager: downloadsManager)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if selection == .spaces {
-                    LibrarySpacesView(browserState: browserState)
-                } else {
-                    FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
-                        .onDisappear { folioModel.clear() }
+        Group {
+            if presentation == .standalone {
+                NavigationSplitView(columnVisibility: $sidebarVisibility) {
+                    navigation(compact: compactSidebar)
+                        .ignoresSafeArea(.container, edges: .top)
+                        .navigationSplitViewColumnWidth(min: Self.minimumSidebarWidth, ideal: 200, max: Self.maximumSidebarWidth)
+                        .background(LibrarySidebarSizing(minimumWidth: Self.minimumSidebarWidth, maximumWidth: Self.maximumSidebarWidth))
+                        .onGeometryChange(for: CGFloat.self) { geometry in
+                            geometry.size.width
+                        } action: { width in
+                            // Preserve the last expanded width while the native column collapses.
+                            guard sidebarVisibility != .detailOnly, width >= Self.minimumSidebarWidth else { return }
+                            sidebarWidth = min(width, Self.maximumSidebarWidth)
+                        }
+                        .toolbar(removing: .sidebarToggle)
+                } detail: {
+                    content
+                        .ignoresSafeArea(.container, edges: .top)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                color(.contentOverlayBackground)
-                    .overlay(color(.themeColor).opacity(0.025))
+                .navigationSplitViewStyle(.balanced)
+                .toolbar(.hidden, for: .windowToolbar)
+                .overlay(alignment: .leading) {
+                    if sidebarVisibility == .detailOnly {
+                        floatingSidebar
+                    }
+                }
+                .background(color(.windowBackground.withAlphaComponent(1)))
+            } else {
+                HStack(spacing: 0) {
+                    navigation(compact: false)
+                        .frame(width: 136)
+                    Rectangle()
+                        .fill(color(.separator))
+                        .frame(width: 1)
+                    content
+                }
+                .background(color(.windowBackground.withAlphaComponent(1)))
+                .clipShape(.rect(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(color(.border), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .themedForeground(.textPrimary)
         .tint(color(.themeColor))
-        .background(color(.windowBackground.withAlphaComponent(1)))
-        .clipShape(.rect(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(color(.border), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
         .task(id: selection) {
             while !Task.isCancelled {
                 folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
@@ -124,7 +183,69 @@ private struct LibraryContentView: View {
         .onDisappear { folioModel.clear() }
     }
 
-    private var navigation: some View {
+    private var content: some View {
+        VStack(spacing: 0) {
+            if selection == .downloads {
+                AllDownloadsListView(downloadsManager: downloadsManager)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selection == .spaces {
+                LibrarySpacesView(browserState: browserState)
+            } else {
+                FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
+                    .onDisappear { folioModel.clear() }
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            color(.contentOverlayBackground)
+                .overlay(color(.themeColor).opacity(0.025))
+        }
+        .clipped()
+    }
+
+    private var floatingSidebar: some View {
+        Color.clear
+            .frame(width: floatingSidebarVisible ? sidebarWidth + 10 : 15)
+            .contentShape(.rect)
+            .overlay(alignment: .leading) {
+                if floatingSidebarVisible {
+                    navigation(compact: compactSidebar, floating: true)
+                        .frame(width: sidebarWidth)
+                        .clipShape(.rect(cornerRadius: 14))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(color(.border), lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
+                        .shadow(color: .black.opacity(0.18), radius: 8, x: 2, y: 2)
+                        .padding(.leading, 5)
+                        .padding(.top, 32)
+                        .padding(.bottom, 5)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .onHover { hovering in
+                hoveringFloatingSidebar = hovering
+                if hovering {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                        floatingSidebarVisible = true
+                    }
+                }
+            }
+            .task(id: hoveringFloatingSidebar) {
+                guard !hoveringFloatingSidebar else { return }
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                withAnimation(reduceMotion ? nil : .easeIn(duration: 0.15)) {
+                    floatingSidebarVisible = false
+                }
+            }
+            .onDisappear {
+                hoveringFloatingSidebar = false
+                floatingSidebarVisible = false
+            }
+    }
+
+    private func navigation(compact: Bool, floating: Bool = false) -> some View {
         VStack(spacing: 12) {
             ForEach(LibraryViewModule.Section.allCases.filter { $0 != .folio || folioAvailable }, id: \.self) { section in
                 Button {
@@ -133,19 +254,21 @@ private struct LibraryContentView: View {
                 } label: {
                     VStack(spacing: 9) {
                         Image(systemName: section.symbol)
-                            .font(.system(size: 25, weight: .regular))
+                            .font(.system(size: compact ? 22 : 25, weight: .regular))
                             .frame(width: 30, height: 30)
                             .foregroundStyle(color(.themeColor))
                             .symbolEffect(.bounce, options: .speed(1.6),
                                           value: reduceMotion ? 0 : selectionAnimationTriggers[section, default: 0])
-                        Text(section.title)
-                            .foregroundStyle(color(.textPrimary))
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
+                        if !compact {
+                            Text(section.title)
+                                .foregroundStyle(color(.textPrimary))
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                        }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, compact ? 0 : 10)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 88)
+                    .frame(height: compact ? 48 : 88)
                     .background {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(selection == section
@@ -161,6 +284,8 @@ private struct LibraryContentView: View {
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredSection == section)
                 }
                 .buttonStyle(.plain)
+                .help(section.title)
+                .accessibilityLabel(section.title)
                 .onHover { hovering in
                     if hovering {
                         hoveredSection = section
@@ -173,11 +298,41 @@ private struct LibraryContentView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 24)
-        .frame(width: 136)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .frame(minWidth: Self.minimumSidebarWidth, maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .overlay(alignment: .bottom) {
+            sidebarButton(floating: floating)
+                .padding(.bottom, 16)
+        }
         .background(color(.windowBackground.withAlphaComponent(1)))
         .onHover { if !$0 { hoveredSection = nil } }
         .onDisappear { hoveredSection = nil }
+    }
+
+    private func sidebarButton(floating: Bool) -> some View {
+        let title = presentation == .embedded
+            ? NSLocalizedString("library.navigation.openInNewWindow", value: "Open Library in New Window", comment: "Profile menu - Opens Library in a separate window")
+            : floating
+                ? NSLocalizedString("library.navigation.showSidebar", value: "Show Sidebar", comment: "Library - Tooltip and accessibility label for expanding the navigation sidebar")
+                : NSLocalizedString("library.navigation.hideSidebar", value: "Hide Sidebar", comment: "Library - Tooltip and accessibility label for collapsing the navigation sidebar")
+        return Button {
+            if presentation == .embedded {
+                openInNewWindow()
+            } else {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    sidebarVisibility = floating ? .all : .detailOnly
+                }
+            }
+        } label: {
+            Image(systemName: presentation == .embedded ? "arrow.up.forward.square" : "sidebar.left")
+                .font(.system(size: 17))
+                .foregroundStyle(color(.themeColor))
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(presentation == .embedded ? "library.openInNewWindow" : floating ? "library.showSidebar" : "library.hideSidebar")
     }
 
     private func openOriginal(_ url: URL) {
@@ -207,5 +362,78 @@ private struct LibraryContentView: View {
                 NSWorkspace.shared.open(folioModel.folder)
             }
         } catch { folioModel.error = error.localizedDescription }
+    }
+}
+
+/// Applies the compact rail's bounds to the native sidebar item. SwiftUI's column
+/// width preference can leave AppKit's standard sidebar minimum in place.
+private struct LibrarySidebarSizing: NSViewRepresentable {
+    let minimumWidth: CGFloat
+    let maximumWidth: CGFloat
+
+    func makeNSView(context: Context) -> Anchor { Anchor() }
+
+    func updateNSView(_ view: Anchor, context: Context) {
+        view.minimumWidth = minimumWidth
+        view.maximumWidth = maximumWidth
+        view.scheduleUpdate()
+    }
+
+    final class Anchor: NSView {
+        var minimumWidth: CGFloat = 64
+        var maximumWidth: CGFloat = 240
+        private weak var sidebar: NSSplitViewItem?
+        private var observations: [NSKeyValueObservation] = []
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                observations.removeAll()
+                sidebar = nil
+            } else {
+                scheduleUpdate()
+            }
+        }
+
+        func scheduleUpdate() {
+            // Wait until SwiftUI has attached and configured its native columns.
+            DispatchQueue.main.async { [weak self] in self?.updateSidebar() }
+        }
+
+        private func updateSidebar() {
+            guard window != nil else { return }
+            var ancestor = superview
+            while let view = ancestor {
+                if let split = view as? NSSplitView {
+                    guard let controller = split.delegate as? NSSplitViewController,
+                          let sidebar = controller.splitViewItems.first,
+                          isDescendant(of: sidebar.viewController.view) else { return }
+                    if self.sidebar !== sidebar {
+                        self.sidebar = sidebar
+                        // SwiftUI reapplies the standard bounds during column updates.
+                        // Keep this one sidebar's native item in sync with our bounds.
+                        observations = [
+                            sidebar.observe(\.minimumThickness) { [weak self] _, _ in
+                                MainActor.assumeIsolated { self?.applyBounds() }
+                            },
+                            sidebar.observe(\.maximumThickness) { [weak self] _, _ in
+                                MainActor.assumeIsolated { self?.applyBounds() }
+                            }
+                        ]
+                    }
+                    applyBounds()
+                    return
+                }
+                ancestor = view.superview
+            }
+        }
+
+        private func applyBounds() {
+            guard let sidebar else { return }
+            if sidebar.minimumThickness != minimumWidth { sidebar.minimumThickness = minimumWidth }
+            if sidebar.maximumThickness != maximumWidth { sidebar.maximumThickness = maximumWidth }
+        }
     }
 }

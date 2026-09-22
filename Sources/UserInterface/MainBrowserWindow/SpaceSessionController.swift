@@ -74,6 +74,16 @@ class SpaceSessionController: NSWindowController {
 
     /// Window-scoped Library view, created on first use.
     private var libraryOverlayController: LibraryOverlayController?
+    private var libraryWindowController: LibraryWindowController?
+
+    func openLibraryInNewWindow(section: LibraryViewModule.Section? = nil) {
+        guard let window else { return }
+        libraryOverlayController?.dismiss(animated: false)
+        if libraryWindowController == nil {
+            libraryWindowController = LibraryWindowController(parent: window, browserState: browserState)
+        }
+        libraryWindowController?.present(section: section)
+    }
 
     func showLibrary(from source: NSView) {
         guard let window, source.window === window else { return }
@@ -1381,6 +1391,8 @@ class SpaceSessionController: NSWindowController {
     @objc private func myWindowWillClose(_ notification: Notification) {
         folioLibraryWindowController?.close()
         folioLibraryWindowController = nil
+        libraryWindowController?.close()
+        libraryWindowController = nil
         // Defensive teardown for placeholder mode. In practice Chromium's
         // Browser::~Browser → HidePlaceholder fires first and clears state,
         // making this a no-op; kept as a backstop in case the destruction

@@ -65,10 +65,16 @@ completion cannot wake its replacement after teardown.
 ## Pull before commit
 
 Invalidation schedules refreshes but does not bypass preflight. Every round that may
-publish local settings, Spaces, bookmarks, or pinned tabs must first complete
-GetUpdates and process the received updates. Local change notifications use the
-same prerequisite as explicit pushes. A completed pull can authorize multiple
+publish local settings, Spaces, bookmarks, pinned tabs or URL rules must first
+complete GetUpdates and process the received updates. Local change notifications use
+the same prerequisite as explicit pushes. A completed pull can authorize multiple
 commit batches in that round; each batch does not need a separate GetUpdates.
+
+The gate is on **publication**, not on stamping. The settings stamping pass (AM-1)
+and the Spaces one (C2-a) deliberately run from the debounced local-change path
+*ahead* of this gate, so an offline edit carries its own edit time; they write local
+sidecar and cursor state and commit nothing. See "Stamps and the hybrid logical
+clock".
 
 - A network/key failure or an unfinished paginated pull prevents publishing for
   the whole round, including the entity kinds after the failing section.
@@ -86,11 +92,19 @@ commit batches in that round; each batch does not need a separate GetUpdates.
   resolved after merging. Pending local deletions learn the incoming version
   without recreating the deleted row; a remote tombstone can finalize them.
 - Commit versions and conflict detection remain necessary: another device can
-  write after GetUpdates and before Commit. For the Phi data type the account
-  also answers a create whose client tag already names a live row holding
-  different content with CONFLICT carrying that row's entity id and version,
-  instead of overwriting it. The engine harvests both before its one scoped
-  retry, so the retry is an update at that version rather than a second create.
+  write after GetUpdates and before Commit. For the Phi data type (2000) the
+  account also answers a create whose client tag already names a **live** row
+  holding **different** content with CONFLICT carrying that row's entity id and
+  version, instead of overwriting it (sync-service `d49cf41`). Three cases are
+  not conflicts: a create whose content is byte-identical to the live row is
+  idempotent, a create against a tombstoned row undeletes that row, and the
+  Chromium data types still upsert by client tag as before. The engine harvests
+  the id and version through `harvestTriple` before its one scoped retry, so the
+  retry is an update at that version rather than a second create. `harvestTriple`
+  writes the id only when it is nonempty and never moves the version backwards,
+  and the conflict branch never leaves a cursor versioned but unidentified — that
+  combination would be sent as a create with a nonzero `base_version`, which the
+  server answers INVALID_MESSAGE.
 
 Any future optimization that skips this prerequisite requires both a
 healthy notification channel and successful catch-up, with no pending refresh,
@@ -258,9 +272,11 @@ those stamps with a hybrid logical clock, stamped at **edit** time rather than
 at publish time. The wire format did not change: stamps are simply integers
 that can now run ahead of wall clock.
 
-`Sources/Sync/Phi/PhiHybridClock.swift` holds the formula and nothing else. It
-is a value type of its own so the engine and the hostless convergence harness
-run the *same* code rather than two copies that could drift.
+`Sources/Sync/Phi/PhiHybridClock.swift` holds the formula below and AM-2's
+correction helpers (`wallClockCorrectionThresholdMs`, `wallClockCorrection`,
+`corrected`), and nothing else. It is a value type of its own so the engine and
+the hostless convergence harness run the *same* code rather than two copies that
+could drift.
 
 ```
 stamp()  = max(wallMs, maxSeen + 1)          // also advances maxSeen
@@ -763,9 +779,8 @@ written" restart window falls on them.
   (`adopted`), a collapse pass soft-deletes all but one member of a settled
   group (`collapsed`), and a yield pass keeps an unpublished local edit alive
   when a remote delete arrives for the same rule (`transferred` /
-  `yield_no_partner`). The user-visible consequence of the last one is that an
-  edit beats a concurrent delete: the rule reappears on the deleting device, and
-  deleting it again after the edit has published removes it everywhere.
+  `yield_no_partner`). The last pass is this kind's half of ruling C4; its
+  user-visible consequence is stated once, under "Edit beats delete".
 - The cursor table lives in `users/<sub>/sync/urlrules-cursors.json`. Its field
   set is exactly the one the bookmark and pinned-tab tables use; the merge
   partner of a rule is a column on the local row, not a cursor field.
@@ -885,14 +900,21 @@ yield, and the unlinked split partner — in `PhiSyncEngineOwnedItemsTests.swift
 One suite is **not** compile-only. The hostless convergence harness runs:
 
 ```sh
-bash build-scripts/test-sync-convergence.sh          # ~20 s, seeded
+bash build-scripts/test-sync-convergence.sh          # ~20 s, fixed default seed
 ```
 
-It compiles the production merge files (symlinked, at their real `internal`
-visibility) plus `PhiHybridClock` into one SwiftPM executable — no `xcodebuild`,
-no Phi host, no Chromium framework, no network. Layer 1 asserts the algebraic
-properties of each `merge` and of the clock; Layer 2 runs 3+ simulated replicas
-against a model of the real server, with each replica stamping through the
+It symlinks the production merge files — `SyncableSettings`, `SyncableSpaces`,
+`BookmarkKind`, `PinKind`, `URLRuleKind`, `SyncableOwnedItems`,
+`PinnedTabScopeMirror`, `PhiDefaultSpaceMirror`, `PhiHybridClock` and the
+generated protos — at their real `internal` visibility, slices out of `Sources/`
+at build time the handful of value types and constants they name, and builds one
+SwiftPM executable: no `xcodebuild`, no Phi host, no Chromium framework, no
+network, and nothing written under `Sources/`. It does need Python 3 and a
+resolved `swift-protobuf` checkout, which it takes from the one Xcode resolved
+into DerivedData at the revision `Package.resolved` pins, or from
+`SWIFT_PROTOBUF_PATH`. Layer 1 asserts the algebraic properties of each `merge`
+and of the clock; Layer 2 runs 3+ simulated replicas against a model of the real
+server, with each replica stamping through the
 production `PhiHybridClock` (`SYNC_CONV_HLC=0` replays the pre-C2 wall-clock
 behaviour for comparison, and the skew scenarios always run both). Under clock
 skew the harness asserts that a **causally later** edit always wins — an edit
@@ -908,16 +930,35 @@ Status 0 means no property failed that was not already registered in
 `Tests/SyncConvergence/Sources/SyncConvergence/ExpectedFailures.swift`, and no
 registered failure silently started passing; status 1 is an unexpected
 violation, status 2 a registered entry that no longer reproduces and must be
-removed. The registered entries — the non-associative rank-coherence rule, whose
-repair is a pending product decision — are printed in full on every run,
-green or red.
+removed. Every registered entry carries a hard-coded witness that is re-evaluated
+on every run, and each is printed in full — root cause, what it waits on and its
+counterexample — green or red.
+
+There are two entries today, `bookmarks.associativity` and
+`urlrules.associativity`, and they are the same rule twice: "the position winner
+supplies rank" (A14 / R-M3-3-25, and R-M3-4a-40 for a rule's target) is not
+associative, because whether two positions agree — so rank merges by LWW — or
+differ — so rank comes from the position winner — depends on which pair is folded
+first. This is a **designed rule retained by ruling C5-b, not a defect**: replicas
+cannot diverge from it, because every value a replica computes is a merge against
+the single server chain, so fold order decides only which legal outcome a race
+lands on. The harness asserts exactly that separately
+(`simulation.*.rank-coherence-cannot-diverge-replicas`) and reports how many
+distinct converged values the witness can produce. Repairing the rule would
+change which rank a user sees after a cross-Space move, so it is a product call
+rather than a merge-layer fix; neither entry may be deleted until the rule itself
+changes.
 
 The Chromium half of the routing tie-break is covered by
 `phi_url_router_unittest.cc` in the fork, which is built and run separately
 (`autoninja -C out/PhiRelease chrome unit_tests`, then
 `unit_tests --gtest_filter='PhiURLRouter*'`).
 
-Verification for all of the above is **compile-only**
-(`xcodebuild build-for-testing`). `xcodebuild test` is never run: a hosted
-XCTest bundle launches a Phi host process that collides with the developer's
-running Phi through `ProcessSingleton`.
+Every XCTest suite named above is **compile-only**
+(`xcodebuild build-for-testing`); the convergence harness is the one exception.
+`xcodebuild test` is never run: a hosted XCTest bundle launches a Phi host
+process that collides with the developer's running Phi through
+`ProcessSingleton`. Nothing here is a substitute for two real Macs — the
+cross-device acceptance cases, including the known limitations this document
+records, live in [Sync E2E test cases](sync-e2e-test-cases.md), which is a
+manual QA reference and not an execution report.

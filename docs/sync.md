@@ -86,7 +86,11 @@ commit batches in that round; each batch does not need a separate GetUpdates.
   resolved after merging. Pending local deletions learn the incoming version
   without recreating the deleted row; a remote tombstone can finalize them.
 - Commit versions and conflict detection remain necessary: another device can
-  write after GetUpdates and before Commit.
+  write after GetUpdates and before Commit. For the Phi data type the account
+  also answers a create whose client tag already names a live row holding
+  different content with CONFLICT carrying that row's entity id and version,
+  instead of overwriting it. The engine harvests both before its one scoped
+  retry, so the retry is an update at that version rather than a second create.
 
 Any future optimization that skips this prerequisite requires both a
 healthy notification channel and successful catch-up, with no pending refresh,

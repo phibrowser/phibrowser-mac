@@ -183,6 +183,22 @@ final class PhiSyncEngineTests: XCTestCase {
         /// is answered CONFLICT, the hash is removed and the store is left
         /// untouched, so the scoped retry that follows it succeeds.
         var conflictOnceForTagHashes: Set<String> = []
+        /// The phi type's server refuses a CREATE whose client tag already names a LIVE row
+        /// holding different content: it answers CONFLICT with that row's id and version instead
+        /// of overwriting it. Identical content is still SUCCESS at the existing version, and a
+        /// tombstoned row still undeletes. Off by default, so every test written against the
+        /// blind client-tag upsert keeps its behaviour.
+        var conflictsOnLiveCreate = false
+        /// Tag hashes whose create counts as content the live row already holds, so the store
+        /// answers SUCCESS at the EXISTING version without writing. Ciphertext equality cannot
+        /// express this from a test: sealing is nondeterministic, so two seals of one payload
+        /// differ. Only read while `conflictsOnLiveCreate` is on.
+        var identicalCreateTagHashes: Set<String> = []
+        /// Answer this many further commits for a tag with a BARE conflict — one that names no
+        /// row — then behave normally. `conflictOnceForTagHashes` cannot express a scoped retry
+        /// conflicting a second time, and `forcedConflicts` is not tag-scoped, so a Space commit
+        /// riding the same round would spend it.
+        var bareConflictRoundsForTagHashes: [String: Int] = [:]
         /// M3-2: the commit-side twin of `arrivedInGetUpdates` / `getUpdatesGate`,
         /// narrowed to one tag so the settings entity riding the same batch list
         /// cannot trip it. A batch containing this hash opens `arrivedInCommit`
@@ -341,13 +357,46 @@ final class PhiSyncEngineTests: XCTestCase {
                     outcomes.append(.invalidMessage)
                     continue
                 }
+                // These knobs model a bare CONFLICT that names no row, the shape every case
+                // written before the create conflict existed was built against.
                 if conflictOnceForTagHashes.remove(clientTagHash) != nil {
-                    outcomes.append(.conflict(serverVersion: stored[clientTagHash]?.version))
+                    outcomes.append(.conflict(entityId: nil,
+                                              serverVersion: stored[clientTagHash]?.version))
                     continue
                 }
                 if forcedConflicts > 0 {
                     forcedConflicts -= 1
-                    outcomes.append(.conflict(serverVersion: stored[clientTagHash]?.version))
+                    outcomes.append(.conflict(entityId: nil,
+                                              serverVersion: stored[clientTagHash]?.version))
+                    continue
+                }
+                if let remaining = bareConflictRoundsForTagHashes[clientTagHash], remaining > 0 {
+                    bareConflictRoundsForTagHashes[clientTagHash] = remaining - 1
+                    outcomes.append(.conflict(entityId: nil,
+                                              serverVersion: stored[clientTagHash]?.version))
+                    continue
+                }
+                // A create carries no base version. An entry that names no entity but a nonzero
+                // one is illegal, and the server answers INVALID_MESSAGE — which is what makes a
+                // cursor holding a version without an identity fatal rather than merely wasteful.
+                if entry.entityId == nil, baseVersion != 0 {
+                    outcomes.append(.invalidMessage)
+                    continue
+                }
+                // A create over a live row the client tag already names: refuse it and hand back
+                // the row's identity and version, so the retry can be an update. Identical
+                // content is not a disagreement and answers SUCCESS at the existing version; a
+                // tombstoned row still undeletes through the create path below. Checked before
+                // the version sequence advances, so an unchanged store leaves no gap in it.
+                if conflictsOnLiveCreate, entry.entityId == nil, !entry.deleted,
+                   let row = stored[clientTagHash], !row.deleted {
+                    if row.ciphertext == ciphertext || identicalCreateTagHashes.contains(clientTagHash) {
+                        outcomes.append(.applied(entityId: row.entityId, version: row.version,
+                                                 storeBirthday: self.storeBirthday))
+                    } else {
+                        outcomes.append(.conflict(entityId: row.entityId,
+                                                  serverVersion: row.version))
+                    }
                     continue
                 }
                 nextVersion += 1
@@ -357,7 +406,8 @@ final class PhiSyncEngineTests: XCTestCase {
                         throw PhiSyncProtocolError.commitRejected(.invalidMessage)
                     }
                     guard row.version == baseVersion else {
-                        outcomes.append(.conflict(serverVersion: row.version))
+                        outcomes.append(.conflict(entityId: row.entityId,
+                                                  serverVersion: row.version))
                         continue
                     }
                     row.version = nextVersion
@@ -1177,6 +1227,40 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.pushLocalSettings()
 
         XCTAssertEqual(client.commits.count, 2)
+    }
+
+    /// After INVALID_MESSAGE drops the cursor the next push is a create, and the account now
+    /// refuses a create over the live row it still holds, naming that row. The settings path
+    /// needs no id from the conflict — its recovery pull adopts the row and the retry is an
+    /// update at the adopted version — but it must not loop, and it must keep the local edit.
+    func testACreateRefusedByTheLiveRowAdoptsItThroughTheRecoveryPull() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key),
+                    version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+
+        // The rejection that wipes entity id, version and marker.
+        defaults.set(true, forKey: settingKey)
+        client.commitErrorOnce = PhiSyncProtocolError.commitRejected(.invalidMessage)
+        await engine.pushLocalSettings()
+
+        // One empty page for the next push's preflight pull, so the commit really goes out as a
+        // create; the conflict recovery pull that follows it reads the seeded store again.
+        client.conflictsOnLiveCreate = true
+        client.scriptedPages = [FakePhiSyncClient.Page(entities: [], newMarker: Data("0".utf8),
+                                                       changesRemaining: false)]
+        await engine.pushLocalSettings()
+
+        XCTAssertEqual(client.commits.count, 3,
+                       "the rejected update, the refused create and one retry — no loop")
+        XCTAssertNil(client.commits[1].entityId, "the second commit is a create")
+        XCTAssertEqual(client.commits[1].baseVersion, 0, "and a create carries no base version")
+        XCTAssertEqual(client.commits[2].entityId, "srv-seed", "the retry names the adopted row")
+        XCTAssertEqual(client.commits[2].baseVersion, 5, "at the version the pull adopted")
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
+        XCTAssertTrue(defaults.bool(forKey: settingKey), "the local edit survives the refusal")
     }
 
     /// INVALID_MESSAGE means the server has no row for the id this commit names (pgx.ErrNoRows

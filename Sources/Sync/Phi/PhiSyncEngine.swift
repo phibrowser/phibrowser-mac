@@ -2974,7 +2974,7 @@ actor PhiSyncEngine {
                 // those are exactly what a later merge compares against.
                 hasAdopted = true
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
-            case .conflict(let serverVersion):
+            case .conflict(_, let serverVersion):
                 guard retryOnConflict else {
                     AppLogWarn("[phi-sync] commit still conflicting server_version=\(serverVersion.map(String.init) ?? "unknown"); abandoning this round")
                     return
@@ -4585,14 +4585,23 @@ actor PhiSyncEngine {
                 cursor.rekeyRejectRounds = nil
                 counters.pushed += 1
             }
-        case .conflict(let serverVersion):
+        case .conflict(let conflictingId, let serverVersion):
             // Conflicts do not acknowledge baselines; doing so would silently lose local edits.
-            // However, accept a newer returned server_version for an existing cursor (R-exec-17).
-            // The intervening pull may return no update, so ignoring this version makes the scoped
-            // retry repeat the same stale base_version and amplify commit storms. Never create an
-            // empty cursor for an unaccepted identity, and never move version backwards.
-            if let serverVersion, existing != nil, serverVersion > cursor.version {
-                cursor.version = serverVersion
+            // However, harvest the server triple a conflict does return for an existing cursor
+            // (R-exec-17), through the same single write point incoming entities use: a refused
+            // create names the live row it collided with, and the intervening pull may return no
+            // update, so ignoring it makes the scoped retry repeat the same identity-less create
+            // or stale base_version and amplify commit storms. `harvestTriple` writes the id only
+            // when it is nonempty and never moves the version backwards.
+            // Never create an empty cursor for an unaccepted identity, and never leave a cursor
+            // versioned but unidentified: the retry would send that as a create with a nonzero
+            // base_version, which the server answers INVALID_MESSAGE — zeroing the triple and
+            // burning a rekey-repair round (R-exec-13). Harvesting the id too is safe for a
+            // tombstone entry's cursor, which already carries one: it moves no baseline and
+            // cannot resurrect anything.
+            if existing != nil, conflictingId != nil || !cursor.entityId.isEmpty {
+                harvestTriple(into: &cursor, entityId: conflictingId ?? "",
+                              version: serverVersion ?? 0)
                 table.cursors[item.identity] = cursor
             }
             conflicted.insert(item.identity)

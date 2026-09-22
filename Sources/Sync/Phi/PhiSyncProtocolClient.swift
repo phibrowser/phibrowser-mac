@@ -118,7 +118,11 @@ struct PhiCommitEntry {
 /// pull-and-retry loop.
 enum PhiCommitOutcome {
     case applied(entityId: String, version: Int64, storeBirthday: String)
-    case conflict(serverVersion: Int64?)
+    /// `entityId` is the live row the server refused to write over, when it named one: a create
+    /// whose client tag already matches a live row holding different content is answered with
+    /// that row's identity and version, so the engine can retry as an update instead of a
+    /// second create. Both stay nil when the response carried neither.
+    case conflict(entityId: String?, serverVersion: Int64?)
     /// Per-entry now, not a thrown error: one bad entry must not abandon the
     /// other twenty-four in the batch (§5.1).
     case invalidMessage
@@ -263,7 +267,10 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
                                 version: entryResponse.version,
                                 storeBirthday: response.storeBirthday)
             case .conflict:
-                return .conflict(serverVersion: entryResponse.hasVersion ? entryResponse.version : nil)
+                // An empty id_string carries no identity — read it exactly as `.applied` does,
+                // so it can never overwrite a cursor's own id with nothing.
+                return .conflict(entityId: entryResponse.idString.isEmpty ? nil : entryResponse.idString,
+                                 serverVersion: entryResponse.hasVersion ? entryResponse.version : nil)
             case .invalidMessage:
                 return .invalidMessage
             default:

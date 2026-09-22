@@ -4563,6 +4563,184 @@ extension PhiSyncEngineOwnedItemsTests {
                              "④ The server accepts the retry without another conflict")
     }
 
+    /// The invariant a refused create protects: an entry that names no entity carries no base
+    /// version. The server answers anything else with INVALID_MESSAGE, which zeroes the cursor
+    /// triple and burns one of the three rekey-repair rounds (R-exec-13).
+    private func assertEveryCreateCarriesNoBaseVersion(
+        _ calls: [FakePhiSyncClient.CommitCall],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        for call in calls where call.entityId == nil {
+            XCTAssertEqual(call.baseVersion, 0,
+                           "a commit naming no entity must carry base version 0",
+                           file: file, line: line)
+        }
+    }
+
+    /// CASE 17.3 / R-exec-17 / R-exec-1: the account refuses a create whose client tag already
+    /// names a live row holding other content, and answers with that row's id and version. A
+    /// cursor with a baseline but no entityId (the build-822 repair class) must harvest both, so
+    /// its scoped retry is an update. Discarding the id while keeping the version is the one
+    /// forbidden outcome: the retry would then name no entity at a nonzero base.
+    func testARefusedCreateHarvestsTheIdentityTheAccountNamed() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "local-new",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let store = MemoryOwnedItemStore()
+        // Baseline present, server identity missing: publication is the only repair route.
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "account-old"),
+                                                    entityId: "", version: 0)
+        let client = FakePhiSyncClient()
+        client.conflictsOnLiveCreate = true
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(alignedPayload(uuid: "b1", title: "account-old")), key: key),
+                    version: 9, entityId: "srv-b1")
+        // Every pull is empty because the marker exceeds all server versions, so only the
+        // conflict response itself can key the cursor.
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 2, "① One refused create and one scoped retry")
+        XCTAssertNil(commits.first?.entityId, "② The first attempt is a create")
+        XCTAssertEqual(commits.first?.baseVersion, 0, "②")
+        XCTAssertEqual(commits.last?.entityId, "srv-b1",
+                       "③ The retry names the row the conflict named")
+        XCTAssertEqual(commits.last?.baseVersion, 9, "③ At the version it came with")
+        assertEveryCreateCarriesNoBaseVersion(commits)
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1", "④ The cursor is keyed for good")
+        XCTAssertGreaterThan(table.cursors["b1"]?.version ?? 0, 9,
+                             "④ The account accepted the retry without another conflict")
+        XCTAssertNil(table.cursors["b1"]?.rekeyRejectRounds,
+                     "⑤ Repair succeeded, so no rejection streak survives it")
+    }
+
+    /// CASE 17.4 / R-exec-17: the same refusal with the row still reachable by pull. Both routes
+    /// agree on the base version, and the round still converges after exactly one retry.
+    func testARefusedCreateConvergesWhenTheScopedPullAlsoDeliversTheRow() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "local-new",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "account-old"),
+                                                    entityId: "", version: 0)
+        let client = FakePhiSyncClient()
+        client.conflictsOnLiveCreate = true
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(alignedPayload(uuid: "b1", title: "account-old")), key: key),
+                    version: 9, entityId: "srv-b1")
+        // One empty page for the round's own pull; the scoped conflict pull that follows it falls
+        // back to the seeded store and delivers the row.
+        client.scriptedPages = [page([])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 2, "① One refused create and one scoped retry")
+        XCTAssertNil(commits.first?.entityId, "②")
+        XCTAssertEqual(commits.last?.entityId, "srv-b1", "③ The retry is an update")
+        XCTAssertEqual(commits.last?.baseVersion, 9, "③ Harvest and pull agree on the base")
+        assertEveryCreateCarriesNoBaseVersion(commits)
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1", "④")
+        XCTAssertEqual(table.cursors["b1"]?.version,
+                       client.stored[bookmarkHash("b1")]?.version,
+                       "④ The cursor converges on the account's version")
+    }
+
+    /// CASE 17.5 / R-exec-17 / R-exec-13: a conflict that names no row, with an empty scoped
+    /// pull, leaves the un-keyed cursor exactly as it was. Writing the version alone would make
+    /// the retry a create at a nonzero base — INVALID_MESSAGE, a zeroed triple and one spent
+    /// repair round — until the identity gave up entirely.
+    func testAConflictWithoutAnIdNeverVersionsAnUnkeyedCursor() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "local-new",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "account-old"),
+                                                    entityId: "", version: 0)
+        let client = FakePhiSyncClient()
+        // The first attempt and its scoped retry are both answered CONFLICT with a version and
+        // no id; the round after them finds the account willing again.
+        client.bareConflictRoundsForTagHashes = [bookmarkHash("b1"): 2]
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(alignedPayload(uuid: "b1", title: "account-old")), key: key),
+                    version: 9, entityId: "srv-b1")
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(bookmarkCommits(client).count, 2, "① One create and one scoped retry")
+        assertEveryCreateCarriesNoBaseVersion(bookmarkCommits(client))
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "", "② The cursor is still un-keyed")
+        XCTAssertEqual(table.cursors["b1"]?.version, 0,
+                       "② An identity-less cursor must never carry a version")
+        XCTAssertNil(table.cursors["b1"]?.rekeyRejectRounds,
+                     "③ A conflict is not a rejection: no repair round was spent")
+
+        await engine.pullOnce()
+
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(bookmarkCommits(client).count, 3, "④ The identity is retried, not given up")
+        assertEveryCreateCarriesNoBaseVersion(bookmarkCommits(client))
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1", "⑤ And it converges")
+    }
+
+    /// CASE 17.6 / R-exec-17: content the live row already holds is not a disagreement. The
+    /// account answers the create SUCCESS at the EXISTING version without writing, so the cursor
+    /// adopts that version and the next round publishes nothing.
+    func testACreateMatchingTheLiveRowIsAcceptedWithoutANewVersion() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.conflictsOnLiveCreate = true
+        client.identicalCreateTagHashes = [bookmarkHash("b1")]
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(alignedPayload(uuid: "b1")), key: key),
+                    version: 9, entityId: "srv-b1")
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 1, "① One create, and no republication afterwards")
+        assertEveryCreateCarriesNoBaseVersion(commits)
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors["b1"]?.entityId, "srv-b1", "②")
+        XCTAssertEqual(table.cursors["b1"]?.version, 9, "② The existing version, not a new one")
+        XCTAssertEqual(client.stored[bookmarkHash("b1")]?.version, 9,
+                       "③ The account row was never written")
+    }
+
     // MARK: - CASE 2a.10(b)（R-M3-4a-16）
 
     /// CASE 2a.10(b): writeOwnedTable's retired early return is not failure. R-M3-4a-16 requires an actual

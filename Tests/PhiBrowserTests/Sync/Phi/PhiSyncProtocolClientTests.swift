@@ -238,7 +238,9 @@ final class PhiSyncProtocolClientTests: XCTestCase {
         XCTAssertEqual(entry.version, 77)
     }
 
-    func testCommitConflictCarriesTheServerVersion() async throws {
+    /// A CONFLICT names the live row it collided with. The engine harvests both halves before
+    /// its scoped retry, so an id dropped here would turn that retry back into a create.
+    func testCommitConflictCarriesTheServerIdentityAndVersion() async throws {
         StubURLProtocol.handler = { [self] _ in
             (200, response { response in
                 var entry = SyncPb_CommitResponse.EntryResponse()
@@ -255,10 +257,28 @@ final class PhiSyncProtocolClientTests: XCTestCase {
                            deleted: false, baseVersion: 77),
         ], storeBirthday: "b")
 
-        guard case .conflict(let serverVersion) = outcomes[0] else {
+        guard case .conflict(let entityId, let serverVersion) = outcomes[0] else {
             return XCTFail("expected .conflict, got \(outcomes[0])")
         }
+        XCTAssertEqual(entityId, "srv-9")
         XCTAssertEqual(serverVersion, 80)
+    }
+
+    /// The other half of the mapping: a CONFLICT that names no row carries no identity, so it
+    /// can never overwrite the cursor's own id with an empty string.
+    func testCommitConflictWithoutAnIdCarriesNoEntityId() async throws {
+        let (client, stub) = makeCommitClient()
+        stub.responses = [CommitStub.conflict(version: 12)]
+        let outcomes = try await client.commit(entries: [
+            PhiCommitEntry(entityId: nil, clientTagHash: "h1", name: "phi-space",
+                           ciphertext: Data([0x01]), deleted: false, baseVersion: 0),
+        ], storeBirthday: "b")
+
+        guard case .conflict(let entityId, let serverVersion) = outcomes[0] else {
+            return XCTFail("expected .conflict, got \(outcomes[0])")
+        }
+        XCTAssertNil(entityId)
+        XCTAssertEqual(serverVersion, 12)
     }
 
     /// INVALID_MESSAGE is a per-entry outcome now, not a thrown error for the whole round:
@@ -393,7 +413,8 @@ final class PhiSyncProtocolClientTests: XCTestCase {
         guard case .applied(let id, let version, _) = outcomes[0] else { return XCTFail() }
         XCTAssertEqual(id, "srv-1")
         XCTAssertEqual(version, 11)
-        guard case .conflict(let serverVersion) = outcomes[1] else { return XCTFail() }
+        guard case .conflict(let conflictingId, let serverVersion) = outcomes[1] else { return XCTFail() }
+        XCTAssertNil(conflictingId)
         XCTAssertEqual(serverVersion, 12)
         guard case .invalidMessage = outcomes[2] else { return XCTFail() }
     }

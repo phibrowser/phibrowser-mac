@@ -135,6 +135,10 @@ private final class CircularHoverButton: NSView {
 }
 
 final class ImagePreviewViewController: NSViewController {
+    private final class PreviewRootView: NSVisualEffectView {
+        override var acceptsFirstResponder: Bool { true }
+    }
+
     private static let fallbackControlInset: CGFloat = 1
     private static let fallbackNavigationContainerSize: CGFloat = 30
     private static let fallbackBottomToolbarHeight: CGFloat = 26
@@ -142,13 +146,24 @@ final class ImagePreviewViewController: NSViewController {
     private static let fallbackBottomToolbarCornerRadius: CGFloat = fallbackBottomToolbarHeight / 2
 
     private let state: BrowserImagePreviewState
+    private let showsPanelFrame: Bool
     private var cancellables = Set<AnyCancellable>()
+    var onOpenInWindow: (() -> Void)?
+    var onClose: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let previousButton: CircularHoverButton
     private let nextButton: CircularHoverButton
     private let zoomOutButton: CircularHoverButton
     private let zoomInButton: CircularHoverButton
+    private let openInWindowButton = CircularHoverButton(
+        symbolName: "arrow.up.forward.square",
+        accessibilityDescription: NSLocalizedString(
+            "imagePreview.openInWindowButtonAccessibilityLabel",
+            value: "Open in New Window",
+            comment: "Image preview - Button that opens the current image list in a separate window"
+        )
+    )
     private let zoomPercentLabel = NSTextField(labelWithString: "100%")
     private let retryButton = NSButton(title: "Retry", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "")
@@ -163,7 +178,8 @@ final class ImagePreviewViewController: NSViewController {
     private let rightNavigation: NSView
     private let bottomToolbar: NSView
 
-    init(state: BrowserImagePreviewState) {
+    init(state: BrowserImagePreviewState, showsPanelFrame: Bool = true) {
+        self.showsPanelFrame = showsPanelFrame
         self.previousButton = CircularHoverButton(
             symbolName: "chevron.left",
             accessibilityDescription: NSLocalizedString("imagePreview.previousButtonAccessibilityLabel", value: "Previous image",
@@ -215,6 +231,8 @@ final class ImagePreviewViewController: NSViewController {
         zoomOutButton.action = #selector(zoomOutFromToolbar)
         zoomInButton.target = self
         zoomInButton.action = #selector(zoomInFromToolbar)
+        openInWindowButton.target = self
+        openInWindowButton.action = #selector(openInWindow)
     }
 
     required init?(coder: NSCoder) {
@@ -222,14 +240,16 @@ final class ImagePreviewViewController: NSViewController {
     }
 
     override func loadView() {
-        let visualEffectView = NSVisualEffectView()
+        let visualEffectView = PreviewRootView()
         visualEffectView.material = .hudWindow
         visualEffectView.blendingMode = .withinWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.cornerRadius = 18
-        visualEffectView.layer?.borderWidth = 1
-        visualEffectView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        if showsPanelFrame {
+            visualEffectView.layer?.cornerRadius = 18
+            visualEffectView.layer?.borderWidth = 1
+            visualEffectView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        }
         self.view = visualEffectView
     }
 
@@ -258,6 +278,35 @@ final class ImagePreviewViewController: NSViewController {
 
     func resetZoom() {
         scrollView.resetToFit()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if !handleKeyDown(event) {
+            super.keyDown(with: event)
+        }
+    }
+
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else {
+            return false
+        }
+        switch Int(event.keyCode) {
+        case 53: // esc
+            if let onClose { onClose() } else { state.close() }
+        case 123: // left
+            state.showPrevious()
+        case 124: // right
+            state.showNext()
+        case 24, 69: // = / keypad +
+            zoomIn()
+        case 27, 78: // - / keypad -
+            zoomOut()
+        case 18, 29: // 1 / 0
+            resetZoom()
+        default:
+            return false
+        }
+        return true
     }
 
     private static func configureNavStack(_ stack: NSStackView) {
@@ -329,11 +378,18 @@ final class ImagePreviewViewController: NSViewController {
         view.addSubview(leftNavigation)
         view.addSubview(rightNavigation)
         view.addSubview(bottomToolbar)
+        openInWindowButton.isHidden = onOpenInWindow == nil
+        view.addSubview(openInWindowButton)
+
+        openInWindowButton.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(8)
+            make.trailing.equalToSuperview().offset(-10)
+        }
 
         titleLabel.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(12)
             make.leading.equalToSuperview().offset(14)
-            make.trailing.lessThanOrEqualToSuperview().offset(-16)
+            make.trailing.lessThanOrEqualTo(openInWindowButton.snp.leading).offset(-8)
         }
 
         scrollView.snp.makeConstraints { make in
@@ -456,6 +512,10 @@ final class ImagePreviewViewController: NSViewController {
 
     @objc private func retryCurrentItem() {
         state.retryCurrentItem()
+    }
+
+    @objc private func openInWindow() {
+        onOpenInWindow?()
     }
 
 #if DEBUG

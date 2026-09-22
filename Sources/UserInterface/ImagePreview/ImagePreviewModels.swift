@@ -263,7 +263,7 @@ enum ImagePreviewMessageHandler {
     static func handle(
         _ context: ExtensionMessageContext,
         messenger: ExtensionMessagingProtocol,
-        openPreview: (Int, [ImagePreviewItem], Int) -> Bool
+        openInBrowser: (Int, [ImagePreviewItem], Int) -> Bool
     ) {
         let request: ImagePreviewBridgeRequest
         do {
@@ -282,9 +282,9 @@ enum ImagePreviewMessageHandler {
             messenger.sendError("No image preview items provided", requestId: context.requestId)
             return
         }
-        guard openPreview(request.windowId, items, request.currentIndex) else {
-            messenger.sendError("Image preview window unavailable", requestId: context.requestId)
-            return
+        if !openInBrowser(request.windowId, items, request.currentIndex) {
+            let controller = ImagePreviewWindowController(items: items, currentIndex: request.currentIndex)
+            controller.showWindow(nil)
         }
         messenger.sendResponse("{}", requestId: context.requestId)
     }

@@ -169,8 +169,8 @@ Packet-capture verification must identify the Stable and Canary phi-agent ports 
 As of 2026-09-07, `imagePreview` settles each request through
 `ExtensionMessaging` after main-actor presentation: `{}` confirms that the
 preview state was opened, not that image loading finished or the user dismissed
-it. Invalid payloads, empty image lists, and unavailable windows reject the
-request explicitly. Error replies do not echo image URLs, inline bytes, or raw
+it. Invalid payloads and empty image lists reject the request explicitly.
+Error replies do not echo image URLs, inline bytes, or raw
 payloads. No reply is broadcast.
 
 This fixes the missing acknowledgement behind Sidecar's image-preview
@@ -179,17 +179,22 @@ asynchronous reply, but the handler never sent one, even when presentation
 succeeded. The extension must not swallow all native timeouts or retry opening
 the preview, since a timeout does not prove that presentation failed.
 
-The wire payload, legacy object-form items, requested-window/active-window
-selection, preview-state index clamping, file authorization, and image loading
-remain unchanged. No Sidecar or Sentinel update is required for the reply fix;
+Presentation first uses the requested browser window, then the active browser
+window. As of 2026-09-22, if neither is available, the handler opens a standalone
+image preview window and acknowledges that presentation through the same reply
+channel. The wire payload, legacy object-form items, preview-state index
+clamping, file authorization, and image loading remain unchanged.
+No Sidecar or Sentinel update is required for the reply fix;
 old browser builds still exhibit the missing acknowledgement until updated.
 The separate SIDECAR-E conversation-load timeout and SIDECAR-C Runner discovery
 failures are not resolved by this change.
 
 `ImagePreviewMessageHandlerTests` injects the existing messaging boundary and a
 presentation closure, so success/error routing can be tested without opening a
-browser window or touching authentication. Cover exactly one request-scoped
-reply after presentation, explicit failures, legacy items, and no broadcasts.
+browser window. The fallback test opens a native preview window and verifies
+index clamping and the authorized sender carried by broker-backed image items.
+Tests cover exactly one request-scoped reply after presentation, explicit
+failures, legacy items, and no broadcasts.
 Validation on 2026-09-07: Xcode 26.6 `build-for-testing` with
 `PhiBrowser-canary` and `CODE_SIGNING_ALLOWED=NO` passed, including the new
 XCTest file. All six tests also executed successfully in an isolated SwiftPM

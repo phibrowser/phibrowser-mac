@@ -42,6 +42,12 @@ final class ImagePreviewOverlayViewController: NSViewController {
         self.state = state
         self.previewViewController = ImagePreviewViewController(state: state)
         super.init(nibName: nil, bundle: nil)
+        previewViewController.onOpenInWindow = { [weak self] in
+            guard let self, self.state.isVisible else { return }
+            let controller = ImagePreviewWindowController(items: self.state.items, currentIndex: self.state.currentIndex)
+            self.state.close()
+            controller.showWindow(nil)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -106,28 +112,7 @@ final class ImagePreviewOverlayViewController: NSViewController {
     }
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        switch Int(event.keyCode) {
-        case 53: // esc
-            state.close()
-            return true
-        case 123: // left
-            state.showPrevious()
-            return true
-        case 124: // right
-            state.showNext()
-            return true
-        case 24, 69: // = / keypad +
-            previewViewController.zoomIn()
-            return true
-        case 27, 78: // - / keypad -
-            previewViewController.zoomOut()
-            return true
-        case 18, 29: // 1 / 0 — reset zoom to fit
-            previewViewController.resetZoom()
-            return true
-        default:
-            return false
-        }
+        previewViewController.handleKeyDown(event)
     }
 
     private func bindState() {

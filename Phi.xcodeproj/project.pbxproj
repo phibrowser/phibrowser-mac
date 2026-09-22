@@ -595,6 +595,7 @@
 		D10000000000000000000005 /* ZoomableImageScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000015 /* ZoomableImageScrollView.swift */; };
 		D10000000000000000000006 /* ImagePreviewViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000016 /* ImagePreviewViewController.swift */; };
 		D10000000000000000000007 /* ImagePreviewOverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000017 /* ImagePreviewOverlayViewController.swift */; };
+		D19A00CF18BC4A52BEE01601 /* ImagePreviewWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19A00CF18BC4A52BEE01602 /* ImagePreviewWindowController.swift */; };
 		D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000031 /* ExtensionDialogManager.swift */; };
 		D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000032 /* ExtensionDialogViewController.swift */; };
 		D12800000000000000000001 /* PhiSegmentedPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12800000000000000000002 /* PhiSegmentedPicker.swift */; };
@@ -1368,6 +1369,7 @@
 		D10000000000000000000015 /* ZoomableImageScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageScrollView.swift; sourceTree = "<group>"; };
 		D10000000000000000000016 /* ImagePreviewViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewViewController.swift; sourceTree = "<group>"; };
 		D10000000000000000000017 /* ImagePreviewOverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewOverlayViewController.swift; sourceTree = "<group>"; };
+		D19A00CF18BC4A52BEE01602 /* ImagePreviewWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewWindowController.swift; sourceTree = "<group>"; };
 		D10000000000000000000031 /* ExtensionDialogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDialogManager.swift; sourceTree = "<group>"; };
 		D10000000000000000000032 /* ExtensionDialogViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDialogViewController.swift; sourceTree = "<group>"; };
 		D12800000000000000000002 /* PhiSegmentedPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiSegmentedPicker.swift; sourceTree = "<group>"; };
@@ -3028,6 +3030,7 @@
 				D10000000000000000000015 /* ZoomableImageScrollView.swift */,
 				D10000000000000000000016 /* ImagePreviewViewController.swift */,
 				D10000000000000000000017 /* ImagePreviewOverlayViewController.swift */,
+				D19A00CF18BC4A52BEE01602 /* ImagePreviewWindowController.swift */,
 			);
 			path = ImagePreview;
 			sourceTree = "<group>";
@@ -3829,6 +3832,7 @@
 				D10000000000000000000005 /* ZoomableImageScrollView.swift in Sources */,
 				D10000000000000000000006 /* ImagePreviewViewController.swift in Sources */,
 				D10000000000000000000007 /* ImagePreviewOverlayViewController.swift in Sources */,
+				D19A00CF18BC4A52BEE01601 /* ImagePreviewWindowController.swift in Sources */,
 				D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */,
 				EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */,
 				EE7E00000000000000000002 /* PeekPanelController.swift in Sources */,

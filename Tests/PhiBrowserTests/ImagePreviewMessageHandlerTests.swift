@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import XCTest
 @testable import Phi
 
@@ -26,9 +27,13 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         }
     }
 
-    private func context(_ payload: String, requestID: String = "preview-request") -> ExtensionMessageContext {
+    private func context(
+        _ payload: String,
+        requestID: String = "preview-request",
+        senderID: String = "test-extension"
+    ) -> ExtensionMessageContext {
         ExtensionMessageContext(type: "imagePreview", payload: payload,
-                                requestId: requestID, senderId: "test-extension")
+                                requestId: requestID, senderId: senderID)
     }
 
     func testRepliesOnceAfterOpeningWithoutWaitingForImageLoading() {
@@ -55,22 +60,39 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         XCTAssertTrue(messenger.broadcasts.isEmpty)
     }
 
-    func testUnavailableWindowRejectsOnceInsteadOfTimingOut() {
+    func testUnavailableBrowserWindowOpensStandalonePreviewAndRepliesOnce() throws {
         let messenger = TestMessenger()
+        let senderID = "fenmfiepnpdlhplemgijlimpbebebljo"
         var opens = 0
         ImagePreviewMessageHandler.handle(
-            context(#"{"windowId":42,"items":["https://example.com/image.png"],"currentIndex":0}"#),
+            context(
+                #"{"windowId":42,"items":["/tmp/preview-first.png","/api/v1/files/preview-second.png"],"currentIndex":99}"#,
+                senderID: senderID
+            ),
             messenger: messenger
-        ) { _, _, _ in
+        ) { windowID, _, index in
             opens += 1
+            XCTAssertEqual(windowID, 42)
+            XCTAssertEqual(index, 99)
+            XCTAssertTrue(messenger.responses.isEmpty)
             return false
         }
 
+        let controller = try XCTUnwrap(NSApp.windows.compactMap {
+            $0.windowController as? ImagePreviewWindowController
+        }.first)
+        defer { controller.close() }
+        XCTAssertTrue(try XCTUnwrap(controller.window).isVisible)
+        XCTAssertEqual(controller.state.items.count, 2)
+        XCTAssertEqual(controller.state.currentIndex, 1)
+        XCTAssertEqual(controller.state.activeItem?.source, .phiAgentFile(
+            path: "/api/v1/files/preview-second.png", senderID: senderID
+        ))
         XCTAssertEqual(opens, 1)
-        XCTAssertTrue(messenger.responses.isEmpty)
-        XCTAssertEqual(messenger.errors.count, 1)
-        XCTAssertEqual(messenger.errors.first?.error, "Image preview window unavailable")
-        XCTAssertEqual(messenger.errors.first?.requestId, "preview-request")
+        XCTAssertEqual(messenger.responses.count, 1)
+        XCTAssertEqual(messenger.responses.first?.response, "{}")
+        XCTAssertEqual(messenger.responses.first?.requestId, "preview-request")
+        XCTAssertTrue(messenger.errors.isEmpty)
         XCTAssertTrue(messenger.broadcasts.isEmpty)
     }
 
@@ -132,7 +154,10 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         let messenger = TestMessenger()
         let payload = #"{"windowId":42,"items":["https://example.com/image.png"],"currentIndex":0}"#
         ImagePreviewMessageHandler.handle(context(payload, requestID: "first"), messenger: messenger) { _, _, _ in true }
-        ImagePreviewMessageHandler.handle(context(payload, requestID: "second"), messenger: messenger) { _, _, _ in false }
+        ImagePreviewMessageHandler.handle(context("not JSON", requestID: "second"), messenger: messenger) { _, _, _ in
+            XCTFail("Malformed payload must not open a preview")
+            return false
+        }
 
         XCTAssertEqual(messenger.responses.map(\.requestId), ["first"])
         XCTAssertEqual(messenger.errors.map(\.requestId), ["second"])

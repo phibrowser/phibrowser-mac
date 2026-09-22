@@ -318,6 +318,56 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertTrue(plan.mustRepublish.contains("b"))
     }
 
+    /// The two tests above only work because the projection DOMAIN reaches `a`. `a` is on no
+    /// page — not an arrival, not parked, not tombstoned — so a domain built from the page alone
+    /// gives the walk nothing to reach, `b` lands under `a` with `cycles_broken = 0`, and this
+    /// device keeps a cycle no peer can repair. `SyncableOwnedItems.projectionDomain` is what
+    /// closes that, and the engine and the convergence harness both call it.
+    func testTheProjectionDomainReachesALiveLocalFolderNoPageMentions() {
+        let arrivals = [arrival(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                locationStamp: 300))]
+        // This device's tree: the unpublished move of `a` under `b`, everything else at rest.
+        let localParent = ["a": "b", "b": "h-b"]
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            localParent: { localParent[$0] })
+
+        XCTAssertTrue(domain.contains("a"),
+                      "the arrival's landing parent is a live local row the page never names")
+
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        let available = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 200)),
+            "b": baselineBytes(bookmarkPayload(uuid: "b", parentUuid: "h-b", isFolder: true,
+                                               locationStamp: 100)),
+        ]
+        // Exactly what the engine hands the planner: projections for the domain, nothing else.
+        context.localProjections = available.filter { domain.contains($0.key) }
+
+        let plan = planned(arrivals, table: cycleTable(), context: context)
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(plan.refused, 0)
+        XCTAssertEqual(landedParent(plan, "a"), "h-a", "the older local move goes back")
+        XCTAssertEqual(landedParent(plan, "b"), "a", "the newer remote move stands, acyclically")
+    }
+
+    /// The domain follows the local parent chain, not just the arrival's own reference: the
+    /// folder that closes the cycle can sit two moves above the page. Here the page carries only
+    /// `b` under `a`, `a` sits locally under `m`, and `m` under `b`.
+    func testTheProjectionDomainFollowsTheLocalParentChain() {
+        let arrivals = [arrival(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                locationStamp: 300))]
+        let localParent = ["a": "m", "m": "b"]
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            localParent: { localParent[$0] })
+
+        XCTAssertEqual(domain, ["b", "a", "m"],
+                       "the walk stops at the page's own identities and adds nothing wider")
+    }
+
     /// This device PUBLISHED the losing move, so the commit wrote that location into its own
     /// baseline and it no longer knows where the folder came from. It authors nothing — reverting
     /// the other member instead would undo the newer move — and leaves the revert to any peer

@@ -464,4 +464,39 @@ final class PhiHybridClockTests: XCTestCase {
         XCTAssertEqual(try stamp(offset: -hour).url.updatedAtMs, 1_000,
                        "an unchanged field still keeps its baseline stamp")
     }
+
+    /// The correction reaches every stamp, INBOUND as well as outbound. The local projection the
+    /// planner merges an arrival against is stamped from the same broken edit column, so with the
+    /// offset defaulted an EARLIER local edit beats a LATER remote one and the broken clock's
+    /// stamp lands in `reconciled`, which the corrected outbound path can no longer undo.
+    func testABrokenClockDoesNotWinAnInboundMerge() throws {
+        let hour: Int64 = 3_600_000
+        let localEdit: Int64 = 1_700_000_000_000              // T1, true time
+        let remoteEdit: Int64 = localEdit + 30 * 60_000       // T2: after T1, inside the hour
+        let baseline = bookmarkPayload(uuid: "b1", title: "old", contentStamp: 1_000)
+        let remote = bookmarkPayload(uuid: "b1", title: "remote", contentStamp: remoteEdit)
+        // The row's column as the fast clock wrote it: an hour ahead of the real edit.
+        let edited = PhiLocalBookmark.fixture(
+            guid: "g-b1", syncId: "b1", spaceId: "space-a", title: "local",
+            createdDate: Date(timeIntervalSince1970: 1),
+            contentUpdatedDate: Date(timeIntervalSince1970: TimeInterval(localEdit + hour) / 1_000))
+
+        /// What `bookmarkLocalProjections` builds and `SyncableOwnedItems.plan` step 5 merges.
+        func merged(offset: Int64) throws -> Phi_PhiBookmarkEntity {
+            let projected = BookmarkKind.stamp(
+                try XCTUnwrap(BookmarkKind.project(edited, resolve: OwnerResolver.fixture(),
+                                                   scope: nil, parentIdentity: nil)),
+                baseline: baseline, local: edited, rank: BookmarkKind.rank(of: baseline),
+                now: localEdit, hlcMax: 1_000, wallOffsetMs: offset)
+            return BookmarkKind.merge(local: projected, remote: remote)
+        }
+
+        XCTAssertEqual(try merged(offset: 0).title.stringValue, "local",
+                       "uncorrected, the older local edit wins on a clock an hour fast")
+        let corrected = try merged(offset: -hour)
+        XCTAssertEqual(corrected.title.stringValue, "remote",
+                       "corrected, the genuinely later remote edit wins the merge")
+        XCTAssertEqual(corrected.title.updatedAtMs, remoteEdit,
+                       "and reconciled carries the remote stamp, not the broken clock's")
+    }
 }

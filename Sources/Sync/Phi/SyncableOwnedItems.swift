@@ -805,6 +805,50 @@ enum SyncableOwnedItems {
         return out
     }
 
+    // MARK: - Projection domain (ruling C5-a, step 4a)
+
+    /// The identities `OwnedItemPlanContext.localProjections` must cover for one page.
+    ///
+    /// The page's own identities — arrivals, parked payloads, this round's tombstones — are what
+    /// α and step 5 need, and they are NOT enough for cycle detection. A cycle closed by a live
+    /// local row runs through a folder the page never mentions: this device moved X under Y, the
+    /// page carries only Y under X, and with no projection for X the walk stops there, Y lands
+    /// under X and the local cycle is never broken.
+    ///
+    /// Step 4a walks one parent edge at a time, so the identities it can reach are exactly the
+    /// page's own plus the LOCAL parent chain above each landing parent — the smallest domain
+    /// that closes the hole. It adds one entry per ancestor per page rather than projecting the
+    /// whole table, and an account whose folders are shallow adds nothing at all.
+    ///
+    /// `localParent` answers "the identity of the folder this device's live row for `identity`
+    /// currently sits under", nil at a Space root or for an identity no live row claims. Kinds
+    /// with no parent reference (pins, URL rules) pass a `localParent` that is always nil and get
+    /// the page's own identities back unchanged.
+    static func projectionDomain<K: OwnedItemKind>(_ kind: K.Type,
+                                                   arrivals: [K.Entity],
+                                                   parked: Set<String>,
+                                                   tombstoned: Set<String>,
+                                                   localParent: (String) -> String?) -> Set<String> {
+        var domain = parked.union(tombstoned)
+        var frontier: [String] = []
+        for entity in arrivals {
+            let identity = K.identity(of: entity)
+            guard !identity.isEmpty else { continue }
+            domain.insert(identity)
+            // Either side of the merge can supply the location that lands, so seed the arrival's
+            // owner reference as well as the row's own parent below.
+            frontier.append(contentsOf: K.ownerUuids(of: entity))
+        }
+        frontier.append(contentsOf: domain.compactMap(localParent))
+        // Bounded by `domain`: every identity is walked at most once, so a local parent pointer
+        // that somehow closes a loop terminates here instead of spinning.
+        while let identity = frontier.popLast() {
+            guard !identity.isEmpty, domain.insert(identity).inserted else { continue }
+            if let parent = localParent(identity) { frontier.append(parent) }
+        }
+        return domain
+    }
+
     // MARK: - Inbound plan (§4.4)
 
     /// Current arrivals plus parked items produce a plan ordered in four phases
@@ -1377,7 +1421,8 @@ enum SyncableOwnedItems {
     /// bookmarks or title for folders, then pair local index order with remote
     /// rank order. Grouping by only Space/path could pair different URLs.
     static func adopt(arrivals: [Phi_PhiBookmarkEntity], locals: [PhiLocalBookmark],
-                      resolve: OwnerResolver) -> OwnedItemAdoptionResult {
+                      resolve: OwnerResolver,
+                      wallOffsetMs: Int64 = 0) -> OwnedItemAdoptionResult {
         var pairs: [String: String] = [:]
         var unmatchedFolders = 0
         var merges: [String: Data] = [:]
@@ -1430,12 +1475,16 @@ enum SyncableOwnedItems {
             // device's move time would hand an unchanged location a higher stamp than the account
             // holds and republish every adopted row.
             //
-            // AM-2's `wallOffsetMs` stays 0 for the same reason: correcting an edit time is only
-            // meaningful for a value this device is about to PUBLISH.
+            // AM-2's `wallOffsetMs`, unlike the two above, IS applied: the content stamp below is
+            // a real edit time read off this device's clock, and it is about to be compared
+            // against the arrival's. Leaving it raw is what lets an hour-fast device win a
+            // claiming merge with an edit that is genuinely older. The correction reaches every
+            // stamp, inbound and outbound.
             var atRest = row
             atRest.locationUpdatedDate = nil
             projected = BookmarkKind.stamp(projected, baseline: nil, local: atRest,
-                                           rank: "", now: 0, hlcMax: 0)
+                                           rank: "", now: 0, hlcMax: 0,
+                                           wallOffsetMs: wallOffsetMs)
             // The unidentified local projection has an empty UUID; the merge adopts the remote UUID.
             let merged = BookmarkKind.merge(local: projected, remote: entity)
             guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else {

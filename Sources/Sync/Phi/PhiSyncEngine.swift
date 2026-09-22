@@ -181,6 +181,13 @@ struct OwnedPlanInput {
     /// floor for a merge unit with no baseline; 0 means "no floor", which is what every caller
     /// outside the engine wants.
     var hlcMax: Int64 = 0
+    /// AM-2's wall-clock correction, the same value the round's `snapshot` receives. The local
+    /// projections built during planning read this device's raw edit columns, so without it an
+    /// EARLIER local edit on a fast clock would beat a LATER remote edit at merge time and the
+    /// uncorrected stamp would land in `reconciled`, where the corrected outbound path can no
+    /// longer undo it. The correction reaches every stamp, inbound and outbound. Default 0 —
+    /// "no correction" — for callers outside the engine.
+    var wallOffsetMs: Int64 = 0
 }
 
 /// Plan output plus counters that only the adapter can compute.
@@ -442,7 +449,10 @@ struct OwnedKindRegistration {
     /// Retry parked owned-item claims at every round start (section 3 / R-exec-10), immediately
     /// writing matched identities back. Pure push rounds must also do this before publication,
     /// minting and deletion diff can decide whether a row already has an account identity.
-    let retryParkedClaims: @MainActor ([String: ParkedOwnedItem], OwnedOwnerMaps) async
+    /// AM-2's wall-clock correction is the third argument: the adoption projection reads this
+    /// device's raw edit columns, and an uncorrected edit time on a fast clock beats an arrival
+    /// it is older than.
+    let retryParkedClaims: @MainActor ([String: ParkedOwnedItem], OwnedOwnerMaps, Int64) async
         -> OwnedParkedClaimResult
     let plan: @MainActor (OwnedPlanInput) -> OwnedPlanOutput
     let land: @MainActor (OwnedLandingInput) async -> OwnedLandingOutcome
@@ -3695,7 +3705,7 @@ actor PhiSyncEngine {
                                                pendingOwnerUuid: cursor.pendingOwnerUuid)
         }
         guard !parked.isEmpty else { return }
-        let result = await registration.retryParkedClaims(parked, maps)
+        let result = await registration.retryParkedClaims(parked, maps, wallClockOffsetMs)
         guard !result.persisted.isEmpty else { return }
         var changed = false
         for identity in result.persisted {
@@ -3829,12 +3839,15 @@ actor PhiSyncEngine {
         let planHlcMax = hlcClock.maxSeen
         let planNow = hlcNow()
 
+        // AM-2: `planNow` is already corrected (it came from `hlcNow()`); the row edit columns the
+        // local projections read are not, so the correction is handed to the plan as well.
         let output = await registration.plan(
             OwnedPlanInput(arrivals: arrivals.map {
                                (payload: $0.payload, entityId: $0.entityId, version: $0.version)
                            },
                            parked: parked, table: table, maps: maps, tombstoned: tombstoned,
-                           now: planNow, hlcMax: planHlcMax))
+                           now: planNow, hlcMax: planHlcMax,
+                           wallOffsetMs: wallClockOffsetMs))
         counters.adopted += output.adopted
         counters.unmatchedFolders += output.unmatchedFolders
         counters.unmergeablePairs += output.unmergeablePairs
@@ -5450,8 +5463,9 @@ extension OwnedKindRegistration {
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
                     pendingClaims: Set(state.pairs.keys))
             },
-            retryParkedClaims: { parked, maps in
-                await retryParkedBookmarkClaims(parked, maps: maps, access: access, state: state)
+            retryParkedClaims: { parked, maps, wallOffsetMs in
+                await retryParkedBookmarkClaims(parked, maps: maps, wallOffsetMs: wallOffsetMs,
+                                                access: access, state: state)
             },
             plan: { input in bookmarkPlan(input, state: state) },
             land: { input in await landBookmarks(input, access: access, state: state) },
@@ -5561,20 +5575,26 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
         candidates.append(entity)
     }
     let adoption = SyncableOwnedItems.adopt(arrivals: candidates,
-                                            locals: state.locals, resolve: resolve)
+                                            locals: state.locals, resolve: resolve,
+                                            wallOffsetMs: input.wallOffsetMs)
     var context = OwnedItemPlanContext()
     context.pairs = adoption.pairs
     context.adoptedMerges = adoption.merges
     context.adoptedFieldWrites = adoption.fieldWrites
     context.tombstonedIdentities = input.tombstoned
-    // Include this round's tombstoned identities in the projection domain (C4): α needs the
-    // current local projection of the very rows a tombstone is about, which arrivals and parked
-    // payloads alone never cover. The URL-rule closure has always done this.
+    // The domain is the page's own identities — arrivals, parked payloads, this round's
+    // tombstones, which α needs because a tombstone is about a row the page carries no entity for
+    // — plus the live local ancestors step 4a's cycle walk can reach. See
+    // `SyncableOwnedItems.projectionDomain`; the engine and the convergence harness call the same
+    // function so the two cannot drift apart again.
     context.localProjections = bookmarkLocalProjections(
-        for: Set(arrivals.map { BookmarkKind.identity(of: $0.entity) })
-            .union(input.parked.keys)
-            .union(input.tombstoned),
-        table: input.table, resolve: resolve, now: input.now, state: state)
+        for: SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: arrivals.map(\.entity),
+            parked: Set(input.parked.keys), tombstoned: input.tombstoned,
+            localParent: { state.rowByGuid[state.identityToGuid[$0] ?? ""]?.parentGuid
+                               .flatMap { state.rowByGuid[$0]?.syncId } }),
+        table: input.table, resolve: resolve, now: input.now,
+        wallOffsetMs: input.wallOffsetMs, state: state)
     // The derived α predicate (C4 / R4.2). Both inputs are restricted to the projection domain,
     // which is what carries the "a live local row currently claims this identity" conjunct.
     context.pendingLocalEdits = SyncableOwnedItems.unpublishedEdits(
@@ -5618,6 +5638,7 @@ private func bookmarkLocalProjections(for identities: Set<String>,
                                       table: PhiOwnedItemTable,
                                       resolve: OwnerResolver,
                                       now: Int64,
+                                      wallOffsetMs: Int64,
                                       state: BookmarkSyncRoundState) -> [String: Data] {
     var out: [String: Data] = [:]
     for identity in identities {
@@ -5637,7 +5658,8 @@ private func bookmarkLocalProjections(for identities: Set<String>,
         // local change on the next snapshot, without running account ordering inside incoming
         // merge.
         let stamped = BookmarkKind.stamp(projected, baseline: baseline, local: row,
-                                         rank: BookmarkKind.rank(of: baseline), now: now)
+                                         rank: BookmarkKind.rank(of: baseline), now: now,
+                                         wallOffsetMs: wallOffsetMs)
         guard let bytes = try? BookmarkKind.envelope(stamped).serializedData() else { continue }
         out[identity] = bytes
     }
@@ -5677,6 +5699,7 @@ private func claimBookmarkIdentities(_ pairs: [String: String],
 @MainActor
 private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
                                        maps: OwnedOwnerMaps,
+                                       wallOffsetMs: Int64,
                                        access: any PhiBookmarkLocalAccess,
                                        state: BookmarkSyncRoundState) async
     -> OwnedParkedClaimResult {
@@ -5690,7 +5713,7 @@ private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
     }
     guard !entities.isEmpty else { return out }
     let adoption = SyncableOwnedItems.adopt(arrivals: entities, locals: state.locals,
-                                            resolve: maps.resolver)
+                                            resolve: maps.resolver, wallOffsetMs: wallOffsetMs)
     guard !adoption.pairs.isEmpty else { return out }
     out.paired = Set(adoption.pairs.keys)
     state.mergePairs(adoption.pairs)
@@ -6325,7 +6348,7 @@ extension OwnedKindRegistration {
             },
             // Pins have no claim matching or identity write-back (section 6.7). Keep a no-op
             // callback so generic engine retry code needs no kind-specific branch (R-exec-10).
-            retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
+            retryParkedClaims: { _, _, _ in OwnedParkedClaimResult() },
             plan: { input in pinPlan(input, access: access, state: state) },
             land: { input in await landPins(input, access: access, state: state) },
             // No minting means no identity write-back; pin snapshots always have an empty minted
@@ -6495,7 +6518,8 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     context.localProjections = pinLocalProjections(
         for: Set(arrivals.map { PinKind.identity(of: $0.entity) }).union(input.parked.keys)
             .union(input.tombstoned),
-        table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
+        table: input.table, resolve: input.maps.resolver, now: input.now,
+        wallOffsetMs: input.wallOffsetMs, state: state)
     // Same derived α predicate as bookmarks (C4 / R4.2). `pinLocalProjections` keys on
     // PinKind.identity(of: row,...), so an entry exists only while a live, non-dormant row still
     // claims that (lineage, owner) pair — the conjunct that keeps a scope migration's tombstones
@@ -6539,6 +6563,7 @@ private func pinLocalProjections(for identities: Set<String>,
                                  table: PhiOwnedItemTable,
                                  resolve: OwnerResolver,
                                  now: Int64,
+                                 wallOffsetMs: Int64,
                                  state: PinSyncRoundState) -> [String: Data] {
     guard !identities.isEmpty else { return [:] }
     var rowOf: [String: PhiLocalPin] = [:]
@@ -6555,7 +6580,8 @@ private func pinLocalProjections(for identities: Set<String>,
               let projected = PinKind.project(row, resolve: resolve, scope: state.localScope,
                                               parentIdentity: nil) else { continue }
         let stamped = PinKind.stamp(projected, baseline: baseline, local: row,
-                                    rank: PinKind.rank(of: baseline), now: now)
+                                    rank: PinKind.rank(of: baseline), now: now,
+                                    wallOffsetMs: wallOffsetMs)
         guard let bytes = try? PinKind.envelope(stamped).serializedData() else { continue }
         out[identity] = bytes
     }
@@ -7112,7 +7138,7 @@ extension OwnedKindRegistration {
             // Rule claims rekey inside the landing transaction, so no matched-but-unpersisted state
             // exists (section 6.1 / R-M3-4a-53). Keep an explicit no-op callback for generic retry
             // wiring (R-exec-10).
-            retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
+            retryParkedClaims: { _, _, _ in OwnedParkedClaimResult() },
             plan: { input in urlRulePlan(input, access: access, state: state) },
             land: { input in await landURLRules(input, access: access, state: state) },
             // Rule identities are minted at LocalStore insertion; publication has no identity
@@ -7272,6 +7298,7 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     // members introduced in M3-3.
     let claims = urlRuleClaims(arrivals: arrivals, parked: input.parked, table: input.table,
                                resolve: input.maps.resolver, now: input.now,
+                               wallOffsetMs: input.wallOffsetMs,
                                access: access, state: state)
     context.pairs = claims.pairs
     context.adoptedMerges = claims.merges
@@ -7285,7 +7312,8 @@ private func urlRulePlan(_ input: OwnedPlanInput, access: any PhiURLRuleLocalAcc
     context.localProjections = urlRuleLocalProjections(
         for: Set(arrivals.map { URLRuleKind.identity(of: $0.entity) })
             .union(input.parked.keys).union(input.tombstoned),
-        table: input.table, resolve: input.maps.resolver, now: input.now, state: state)
+        table: input.table, resolve: input.maps.resolver, now: input.now,
+        wallOffsetMs: input.wallOffsetMs, state: state)
     // The four named §8.4.4 inputs (R-M3-4a-73, 8b-3) share the signature index's pre-pass, cursor
     // table, and rows (`state.rows` from this page's `allURLRulesIncludingDeleted()`). Keep the
     // predicates in the kind: signatures and soft deletion are rule-specific, and
@@ -7406,6 +7434,7 @@ private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
                            table: PhiOwnedItemTable,
                            resolve: OwnerResolver,
                            now: Int64,
+                           wallOffsetMs: Int64,
                            access: any PhiURLRuleLocalAccess,
                            state: URLRuleSyncRoundState) -> URLRuleClaimPlan {
     var out = URLRuleClaimPlan()
@@ -7452,10 +7481,12 @@ private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
             // hlcMax stays 0: this is the local side of a claiming merge, not a publication, and
             // AM-1's logical floor would let an old untouched local rule beat the arrival it is
             // claiming (the same reason the bookmark adoption projection passes 0). AM-2's
-            // `wallOffsetMs` stays at its 0 default for the same reason: correcting an edit time
-            // is only meaningful for a value this device is about to publish.
+            // `wallOffsetMs`, in contrast, IS applied: the content and target stamps below are
+            // real edit times read off this device's clock and are about to be compared against
+            // the arrival's, so leaving them raw lets an hour-fast device win with an edit that
+            // is genuinely older. The correction reaches every stamp, inbound and outbound.
             var local = URLRuleKind.stamp(projected, baseline: nil, local: row, rank: rank,
-                                          now: now, hlcMax: 0)
+                                          now: now, hlcMax: 0, wallOffsetMs: wallOffsetMs)
             local.ruleUuid = remote.identity
             let merged = URLRuleKind.merge(local: local, remote: remote.entity)
             guard let mergedBytes = try? URLRuleKind.envelope(merged).serializedData() else { continue }
@@ -7482,6 +7513,7 @@ private func urlRuleLocalProjections(for identities: Set<String>,
                                      table: PhiOwnedItemTable,
                                      resolve: OwnerResolver,
                                      now: Int64,
+                                     wallOffsetMs: Int64,
                                      state: URLRuleSyncRoundState) -> [String: Data] {
     guard !identities.isEmpty else { return [:] }
     var out: [String: Data] = [:]
@@ -7495,7 +7527,8 @@ private func urlRuleLocalProjections(for identities: Set<String>,
         // Use the baseline rank, as for bookmarks: inbound merging must not trigger account-wide
         // ordering.
         let stamped = URLRuleKind.stamp(projected, baseline: baseline, local: row,
-                                        rank: URLRuleKind.rank(of: baseline), now: now)
+                                        rank: URLRuleKind.rank(of: baseline), now: now,
+                                        wallOffsetMs: wallOffsetMs)
         guard let bytes = try? URLRuleKind.envelope(stamped).serializedData() else { continue }
         out[identity] = bytes
     }

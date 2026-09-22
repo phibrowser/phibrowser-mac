@@ -643,7 +643,17 @@ private func runCrossMoveTrial(cycleLength: Int, localRowCycle: Bool, rng: inout
         }
         var context = OwnedItemPlanContext()
         context.liveLocalParents = Set(replica.store.keys)
-        for (identity, entity) in replica.store where replica.baseline[identity] != nil {
+        // Build the projection domain the ENGINE builds, not every local row: handing the planner
+        // the whole store made a cycle closed by an off-page local row look reachable here while
+        // the engine could not see it at all. Both callers now share
+        // `SyncableOwnedItems.projectionDomain`, so the two cannot drift apart again.
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            localParent: { replica.store[$0]?.parentUuid.stringValue })
+        for identity in domain {
+            guard let entity = replica.store[identity], replica.baseline[identity] != nil else {
+                continue
+            }
             context.localProjections[identity] = bytes(entity)
         }
         let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals, parked: [:],

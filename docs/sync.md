@@ -450,6 +450,19 @@ only those:
   overwrites. The columns themselves are never rewritten — they are local
   wall-clock quantities that other readers compare against wall clock.
 
+The correction reaches **every stamp, inbound as well as outbound**. Publication
+is not the only place an edit column becomes a stamp: the local projections
+planning builds — `OwnedPlanInput.wallOffsetMs` → the bookmark/pin/URL-rule
+`*LocalProjections` helpers, and the adoption and claiming projections in
+`SyncableOwnedItems.adopt` and `urlRuleClaims` — read the same columns to form
+the *local side of an incoming merge*. Leaving those raw is not a cosmetic gap:
+on a device an hour fast, an **earlier** local edit beats a **later** remote one
+at merge time and the uncorrected stamp lands in `reconciled`, where the
+corrected outbound path can no longer undo it. What the claiming projections
+keep at 0 is `hlcMax` and `now`, which is a separate ruling: AM-1's logical floor
+would let an untouched local row beat the arrival it is claiming. An edit time is
+corrected wherever one is read.
+
 **What is not corrected** is everything in the `now()` row of the table above:
 retention sweeps, `deletedAtMs`, `purgedAtMs`, `refusedAtMs`, the round
 deadlines, `lastProfileRefreshAtMs`. Each is compared against this device's own
@@ -659,6 +672,21 @@ the group is empty and keeping the edited rule is the coherent outcome.
     learns where the folder went back to. Each arrival is compared through the
     location that will actually land — the arrival merged with this device's
     projection — so a stale arrival the local row already beats is not a cycle.
+  - **The projection domain is what makes that half real.**
+    `OwnedItemPlanContext.localProjections` used to cover the page and nothing
+    else — arrivals, parked payloads, this round's tombstones — and a folder the
+    page never mentions had no projection, so the walk reached it, found nothing,
+    and stopped: `b` landed under `a`, the local row kept `a` under `b`, and
+    `cycles_broken` was 0 on a device that now holds a cycle. The domain is
+    therefore the page's own identities **plus the live local parent chain above
+    each arrival's landing parent**, computed by
+    `SyncableOwnedItems.projectionDomain`. That is the smallest domain the walk
+    can reach — it follows one parent edge at a time — so it adds one entry per
+    ancestor per page rather than projecting the whole table. The extra entries
+    are inert everywhere else: α and the step-5 merge are keyed on identities the
+    page carries. The **hostless convergence harness calls the same function**
+    rather than handing the planner every local row, which is why the gap it used
+    to hide is now a gate failure.
   - One case authors nothing: the losing move was **published from this device**,
     so the commit wrote that location into its own `reconciled` and it no longer
     knows where the folder came from. Reverting the other member instead would

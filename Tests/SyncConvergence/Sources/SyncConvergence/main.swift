@@ -235,6 +235,12 @@ if includeSkew {
 // device with a broken clock no longer POISONS the account: `maxSeen` is never clamped on
 // receive, so an hour-ahead stamp drags every peer's logical time an hour ahead and the hybrid
 // clock stops reading as a wall-clock time at all. Corrected at the source, it cannot.
+//
+// The INBOUND direction -- a fast replica's older edit must not beat a correct replica's newer
+// one at merge time -- is covered by `assertIntent` below rather than by a check of its own: this
+// simulation stamps every value at the moment it is edited, so a replica's local side of a merge
+// carries the same corrected stamp its publication would, and there is no uncorrected projection
+// step left for it to express. The engine's is pinned by PhiHybridClockTests.
 if includeSkew {
     let skew: [Int64] = [3_600_000, 0, 0]
     var uncorrected = SimOutcome()

@@ -684,7 +684,11 @@ the group is empty and keeping the edited rule is the coherent outcome.
     can reach — it follows one parent edge at a time — so it adds one entry per
     ancestor per page rather than projecting the whole table. The extra entries
     are inert everywhere else: α and the step-5 merge are keyed on identities the
-    page carries. The **hostless convergence harness calls the same function**
+    page carries. **Parked payloads seed that walk exactly as arrivals do** —
+    `projectionDomain` takes the whole parking map and decodes it, because a
+    parked move retried on its own is a page with no arrivals at all and the
+    folder this device moved under it is reachable only from the parked payload's
+    own parent reference. The **hostless convergence harness calls the same function**
     rather than handing the planner every local row, which is why the gap it used
     to hide is now a gate failure.
   - One case authors nothing: the losing move was **published from this device**,

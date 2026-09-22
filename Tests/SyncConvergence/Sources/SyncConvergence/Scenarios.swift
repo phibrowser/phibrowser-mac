@@ -511,6 +511,82 @@ func checkPlannerBreaksAnInjectedCycle(report: Report) {
     report.markPassed("planner.stamps-a-cycle-revert-above-the-cycle")
 }
 
+/// The same break, with the remote move arriving as a PARKED payload rather than an arrival.
+///
+/// The Layer 2 scheduler never parks anything, so nothing else here exercises the page shape the
+/// engine sees when `retryParkedClaims` retries a payload on its own: `arrivals` is empty and the
+/// only remote move is `parked`. The user meanwhile moved that payload's parent under it, so the
+/// cycle is closed by a live local row the page never names -- and the projection domain is what
+/// has to reach it. Seeded from the arrivals alone, as both callers used to do by hand, the walk
+/// starts nowhere, `move` lands under `hold` and this device keeps a cycle no peer can repair.
+///
+/// The local move is the OLDER one, so C5-a puts `hold` back where the account last agreed it was
+/// and the newer parked move stands.
+func checkPlannerBreaksACycleClosedByAParkedMove(report: Report) {
+    func folder(_ uuid: String, parent: String, stamp: Int64) -> Phi_PhiBookmarkEntity {
+        var out = Phi_PhiBookmarkEntity()
+        out.bookmarkUuid = uuid
+        out.spaceUuid = settingValue(simSpaceUuid, stamp)
+        out.parentUuid = settingValue(parent, stamp)
+        out.rank = settingValue("V", stamp)
+        out.isFolder = true
+        out.url = settingValue("https://bookmark.phi/folder", stamp)
+        return out
+    }
+    func bytes(_ entity: Phi_PhiBookmarkEntity) -> Data {
+        (try? BookmarkKind.envelope(entity).serializedData()) ?? Data()
+    }
+
+    // The account everybody agreed on: both folders at the Space root.
+    let baseHold = folder("park-hold", parent: "", stamp: 100)
+    let baseMove = folder("park-move", parent: "", stamp: 100)
+    var table = PhiOwnedItemTable()
+    for entity in [baseHold, baseMove] {
+        var cursor = PhiOwnedItemCursor()
+        cursor.reconciled = bytes(entity)
+        cursor.server = cursor.reconciled
+        table.cursors[BookmarkKind.identity(of: entity)] = cursor
+    }
+    // The peer's move of `park-move` under `park-hold`, parked by an import lock in an earlier
+    // round and retried on its own now: this page carries no arrival at all.
+    let parkedMove = folder("park-move", parent: "park-hold", stamp: 300)
+    let parked = ["park-move": ParkedOwnedItem(payload: bytes(parkedMove),
+                                               pendingOwnerUuid: simSpaceUuid)]
+    // This device's rows: the user moved `park-hold` under `park-move` afterwards and has not
+    // published it, which closes the cycle.
+    let localHold = folder("park-hold", parent: "park-move", stamp: 200)
+    let store = ["park-hold": localHold, "park-move": baseMove]
+
+    // Exactly what the engine hands the planner: projections for the domain, nothing else.
+    let domain = SyncableOwnedItems.projectionDomain(
+        BookmarkKind.self, arrivals: [], parked: parked, tombstoned: [],
+        localParent: { store[$0].map { $0.parentUuid.stringValue } })
+    report.check("planner.a-parked-payload-seeds-the-projection-domain",
+                 domain.contains("park-hold"),
+                 "domain=\(domain.sorted()); the parked move's parent is a live local row that "
+                 + "no arrival names, so nothing else can put it in the domain")
+    var context = OwnedItemPlanContext()
+    context.liveLocalParents = Set(store.keys)
+    for identity in domain {
+        guard let entity = store[identity], table.cursors[identity] != nil else { continue }
+        context.localProjections[identity] = bytes(entity)
+    }
+
+    let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: [], parked: parked,
+                                       table: table, resolve: simResolver(), context: context)
+    let landed = landedParents(["park-hold": localHold, "park-move": parkedMove], plan: plan)
+    report.check("planner.breaks-a-cycle-closed-by-a-parked-move",
+                 plan.cyclesBroken == 1 && plan.refused == 0 && plan.parked.isEmpty
+                     && landed["park-hold"] == "" && landed["park-move"] == "park-hold"
+                     && plan.mustRepublish.contains("park-hold")
+                     && cyclicParents(landed).isEmpty,
+                 "steps=\(plan.steps.map(\.identity)) cycles_broken=\(plan.cyclesBroken) "
+                 + "refused=\(plan.refused) landed=\(landed) parked=\(plan.parked.keys.sorted()) "
+                 + "republish=\(plan.mustRepublish.sorted())")
+    report.markPassed("planner.a-parked-payload-seeds-the-projection-domain")
+    report.markPassed("planner.breaks-a-cycle-closed-by-a-parked-move")
+}
+
 // MARK: - C5-a: concurrent folder-move cycles
 
 /// One replica of the cross-move scenario. Unlike `SimReplica` this one LANDS through the
@@ -632,8 +708,9 @@ private func runCrossMoveTrial(cycleLength: Int, localRowCycle: Bool, rng: inout
     /// the context its local rows, and the result is written back exactly where the engine writes
     /// it -- `cursor.reconciled` and the row itself. This scenario deletes nothing, so no step
     /// ever names a parent other than the one in the bytes it carries.
-    func land(_ replica: MoveReplica, arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>]) {
-        guard !arrivals.isEmpty else { return }
+    func land(_ replica: MoveReplica, arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>],
+              parked: [String: ParkedOwnedItem] = [:]) {
+        guard !arrivals.isEmpty || !parked.isEmpty else { return }
         var table = PhiOwnedItemTable()
         for (identity, entity) in replica.baseline {
             var cursor = PhiOwnedItemCursor()
@@ -646,9 +723,11 @@ private func runCrossMoveTrial(cycleLength: Int, localRowCycle: Bool, rng: inout
         // Build the projection domain the ENGINE builds, not every local row: handing the planner
         // the whole store made a cycle closed by an off-page local row look reachable here while
         // the engine could not see it at all. Both callers now share
-        // `SyncableOwnedItems.projectionDomain`, so the two cannot drift apart again.
+        // `SyncableOwnedItems.projectionDomain`, so the two cannot drift apart again -- including
+        // how it seeds the cycle walk from parked payloads, which this scheduler never produces
+        // but `checkPlannerBreaksACycleClosedByAParkedMove` does.
         let domain = SyncableOwnedItems.projectionDomain(
-            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: parked, tombstoned: [],
             localParent: { replica.store[$0]?.parentUuid.stringValue })
         for identity in domain {
             guard let entity = replica.store[identity], replica.baseline[identity] != nil else {
@@ -656,7 +735,7 @@ private func runCrossMoveTrial(cycleLength: Int, localRowCycle: Bool, rng: inout
             }
             context.localProjections[identity] = bytes(entity)
         }
-        let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals, parked: [:],
+        let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals, parked: parked,
                                            table: table, resolve: simResolver(), context: context)
         // The engine folds the module's own cycle stamp into logical time; so does this replica.
         replica.clock.observe(plan.cycleStampMs)

@@ -824,19 +824,35 @@ enum SyncableOwnedItems {
     /// currently sits under", nil at a Space root or for an identity no live row claims. Kinds
     /// with no parent reference (pins, URL rules) pass a `localParent` that is always nil and get
     /// the page's own identities back unchanged.
+    ///
+    /// `parked` is the caller's whole parking map, not a set of identities: a parked payload
+    /// retried on its own — no arrivals at all — carries a remote parent too, and a local move of
+    /// that parent under the parked item closes exactly the same cycle. Seeding the walk is this
+    /// function's own job so that no caller can seed it from arrivals alone. An undecodable
+    /// parked payload still contributes its identity, as it always did.
     static func projectionDomain<K: OwnedItemKind>(_ kind: K.Type,
                                                    arrivals: [K.Entity],
-                                                   parked: Set<String>,
+                                                   parked: [String: ParkedOwnedItem],
                                                    tombstoned: Set<String>,
                                                    localParent: (String) -> String?) -> Set<String> {
-        var domain = parked.union(tombstoned)
+        var domain = Set(parked.keys).union(tombstoned)
         var frontier: [String] = []
+        var seeded: Set<String> = []
         for entity in arrivals {
             let identity = K.identity(of: entity)
             guard !identity.isEmpty else { continue }
             domain.insert(identity)
+            seeded.insert(identity)
             // Either side of the merge can supply the location that lands, so seed the arrival's
             // owner reference as well as the row's own parent below.
+            frontier.append(contentsOf: K.ownerUuids(of: entity))
+        }
+        // A parked copy of an identity that also arrived is superseded by the arrival in `plan`'s
+        // working set, so only the arrival's owner reference is seeded for it.
+        for identity in parked.keys.sorted() where !seeded.contains(identity) {
+            guard let payload = parked[identity]?.payload,
+                  let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+                  let entity = K.entity(from: envelope) else { continue }
             frontier.append(contentsOf: K.ownerUuids(of: entity))
         }
         frontier.append(contentsOf: domain.compactMap(localParent))

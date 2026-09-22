@@ -5586,11 +5586,14 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     // tombstones, which α needs because a tombstone is about a row the page carries no entity for
     // — plus the live local ancestors step 4a's cycle walk can reach. See
     // `SyncableOwnedItems.projectionDomain`; the engine and the convergence harness call the same
-    // function so the two cannot drift apart again.
+    // function so the two cannot drift apart again. The parking map goes in whole, not as its
+    // keys: seeding the cycle walk from the parked payloads as well as the arrivals is that
+    // function's own job, because a parked move retried on its own is a page with no arrivals at
+    // all and its remote parent can be a folder this device moved under it.
     context.localProjections = bookmarkLocalProjections(
         for: SyncableOwnedItems.projectionDomain(
             BookmarkKind.self, arrivals: arrivals.map(\.entity),
-            parked: Set(input.parked.keys), tombstoned: input.tombstoned,
+            parked: input.parked, tombstoned: input.tombstoned,
             localParent: { state.rowByGuid[state.identityToGuid[$0] ?? ""]?.parentGuid
                                .flatMap { state.rowByGuid[$0]?.syncId } }),
         table: input.table, resolve: resolve, now: input.now,

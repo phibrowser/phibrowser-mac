@@ -329,7 +329,7 @@ final class SyncableOwnedItemsTests: XCTestCase {
         // This device's tree: the unpublished move of `a` under `b`, everything else at rest.
         let localParent = ["a": "b", "b": "h-b"]
         let domain = SyncableOwnedItems.projectionDomain(
-            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [:], tombstoned: [],
             localParent: { localParent[$0] })
 
         XCTAssertTrue(domain.contains("a"),
@@ -361,11 +361,131 @@ final class SyncableOwnedItemsTests: XCTestCase {
                                                 locationStamp: 300))]
         let localParent = ["a": "m", "m": "b"]
         let domain = SyncableOwnedItems.projectionDomain(
-            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [], tombstoned: [],
+            BookmarkKind.self, arrivals: arrivals.map(\.entity), parked: [:], tombstoned: [],
             localParent: { localParent[$0] })
 
         XCTAssertEqual(domain, ["b", "a", "m"],
                        "the walk stops at the page's own identities and adds nothing wider")
+    }
+
+    // MARK: - Ruling C5-a with the remote move PARKED
+
+    /// A payload parked by an earlier round — an import lock, an unresolved owner — and retried
+    /// on its own. `pendingOwnerUuid` is the Space it waited for, as the engine records it.
+    private func parkedMove(_ payload: Phi_PhiBookmarkEntity) -> [String: ParkedOwnedItem] {
+        [payload.bookmarkUuid: ParkedOwnedItem(payload: baselineBytes(payload),
+                                               pendingOwnerUuid: "su-1")]
+    }
+
+    /// The projection domain half of the same hole, with no arrival at all: a parked payload
+    /// carries an owner reference too, so it must seed the walk exactly as an arrival does.
+    /// Seeded from arrivals alone, a round that only retries parked items starts the walk
+    /// nowhere and cannot reach the live local ancestor that closes the cycle.
+    func testTheProjectionDomainReachesALocalAncestorThroughAParkedPayload() {
+        let parked = parkedMove(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                locationStamp: 300))
+        let localParent = ["a": "b", "b": "h-b"]
+
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: [], parked: parked, tombstoned: [],
+            localParent: { localParent[$0] })
+
+        XCTAssertEqual(domain, ["b", "a", "h-b"],
+                       "the parked move's landing parent, and the chain above the parked row")
+    }
+
+    /// The hole itself: the remote move of `b` under `a` is PARKED, the user then moved `a` under
+    /// `b` here, and the next round retries the parked item with no arrivals. The page names
+    /// neither the cycle nor `a`, so only the parked payload can seed the walk that reaches it.
+    /// The local move is the older one, so it goes back and the parked move lands.
+    func testAParkedMoveRetriedAloneStillBreaksACycleClosedByALocalMove() {
+        let parked = parkedMove(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                locationStamp: 300))
+        let localParent = ["a": "b", "b": "h-b"]
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: [], parked: parked, tombstoned: [],
+            localParent: { localParent[$0] })
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        let available = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 200)),
+            "b": baselineBytes(bookmarkPayload(uuid: "b", parentUuid: "h-b", isFolder: true,
+                                               locationStamp: 100)),
+        ]
+        // Exactly what the engine hands the planner: projections for the domain, nothing else.
+        context.localProjections = available.filter { domain.contains($0.key) }
+
+        let plan = planned([], parked: parked, table: cycleTable(), context: context)
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(plan.refused, 0)
+        XCTAssertNil(plan.parked["b"], "the retry landed; it must not stay parked")
+        XCTAssertEqual(landedParent(plan, "a"), "h-a",
+                       "the older local move goes back although nothing on the page names it")
+        XCTAssertEqual(stepEntity(plan, "a").map(BookmarkKind.locationStamp(of:)), 301)
+        XCTAssertEqual(landedParent(plan, "b"), "a", "the newer parked move stands, acyclically")
+        XCTAssertTrue(plan.mustRepublish.contains("a"),
+                      "the account still holds the move this device just undid")
+    }
+
+    /// The same shape with the stamps the other way round: the local move is the newer one, so
+    /// the PARKED move is the one put back and republished, and the user's own move stays.
+    func testWhenTheLocalMoveIsNewerTheParkedMoveIsTheOneReverted() {
+        let parked = parkedMove(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                locationStamp: 300))
+        let localParent = ["a": "b", "b": "h-b"]
+        let domain = SyncableOwnedItems.projectionDomain(
+            BookmarkKind.self, arrivals: [], parked: parked, tombstoned: [],
+            localParent: { localParent[$0] })
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        context.localProjections = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 400)),
+        ].filter { domain.contains($0.key) }
+
+        let plan = planned([], parked: parked, table: cycleTable(), context: context)
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(landedParent(plan, "b"), "h-b", "the older move is the parked one")
+        XCTAssertEqual(stepEntity(plan, "b").map(BookmarkKind.locationStamp(of:)), 401)
+        XCTAssertNil(landedParent(plan, "a"), "the local row keeps the move the user made")
+        XCTAssertTrue(plan.mustRepublish.contains("b"))
+    }
+
+    /// Parity: where a payload came from is not part of the decision. The same bytes delivered as
+    /// a fresh arrival and retried out of parking produce the same steps, the same cycle count and
+    /// the same republish set, so nothing about C5-a depends on the round that first carried it.
+    func testAParkedRetryAndAFreshArrivalOfTheSamePayloadPlanIdentically() {
+        let payload = bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                      locationStamp: 300)
+        let parked = parkedMove(payload)
+        let localParent = ["a": "b", "b": "h-b"]
+        let available = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 200)),
+            "b": baselineBytes(bookmarkPayload(uuid: "b", parentUuid: "h-b", isFolder: true,
+                                               locationStamp: 100)),
+        ]
+        func context(_ parked: [String: ParkedOwnedItem],
+                     _ arrivals: [Phi_PhiBookmarkEntity]) -> OwnedItemPlanContext {
+            let domain = SyncableOwnedItems.projectionDomain(
+                BookmarkKind.self, arrivals: arrivals, parked: parked, tombstoned: [],
+                localParent: { localParent[$0] })
+            var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+            context.localProjections = available.filter { domain.contains($0.key) }
+            return context
+        }
+
+        let fromParking = planned([], parked: parked, table: cycleTable(),
+                                  context: context(parked, []))
+        let fromArrival = planned([arrival(payload)], table: cycleTable(),
+                                  context: context([:], [payload]))
+
+        XCTAssertEqual(fromParking.steps, fromArrival.steps)
+        XCTAssertEqual(fromParking.cyclesBroken, fromArrival.cyclesBroken)
+        XCTAssertEqual(fromParking.cycleStampMs, fromArrival.cycleStampMs)
+        XCTAssertEqual(fromParking.mustRepublish, fromArrival.mustRepublish)
+        XCTAssertEqual(fromParking.cyclesBroken, 1, "and the shared result is the broken cycle")
     }
 
     /// This device PUBLISHED the losing move, so the commit wrote that location into its own

@@ -50,6 +50,7 @@ runNormalisationProperties(iterations: iterations, generators: &generators, repo
 runRankProperties(iterations: iterations, generators: &generators, report: report)
 runClockProperties(iterations: iterations, generators: &generators, report: report)
 checkPlannerBreaksAnInjectedCycle(report: report)
+checkPlannerBreaksACycleClosedByAParkedMove(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
 checkAnOfflineRenameLosesToALaterOnlineRename(report: report)
 checkAnEditedChildSurvivesItsFoldersDeletion(report: report)

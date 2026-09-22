@@ -205,19 +205,26 @@ enum URLRuleKind: OwnedItemKind {
     /// clock runs behind edits a rule it merged from a peer, its edit column is below the stamp it
     /// overwrites, and the causally later edit loses. Both units are therefore raised one above the value
     /// they replace (the baseline's stamp, or `hlcMax` with no baseline).
+    /// AM-2: both edit columns were written from this device's raw `Date()`, so they are corrected
+    /// by the same offset `hlcNow()` applies before they become wire stamps; see
+    /// `BookmarkKind.stamp`.
     static func stamp(_ projected: Phi_PhiURLRuleEntity, baseline: Phi_PhiURLRuleEntity?,
                       local: PhiLocalURLRule, rank: String, now: Int64,
-                      hlcMax: Int64 = 0) -> Phi_PhiURLRuleEntity {
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiURLRuleEntity {
         var out = projected
         out.rank = string(rank)
+        let contentEdit = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
+        let targetEdit = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
 
         guard let baseline else {
-            setContentStamp(&out, PhiHybridClock.editStamp(
-                editWallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
-                overwrittenStampMs: hlcMax))
-            out.targetSpaceUuid.updatedAtMs = PhiHybridClock.editStamp(
-                editWallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
-                overwrittenStampMs: hlcMax)
+            setContentStamp(&out, PhiHybridClock.editStamp(editWallMs: contentEdit,
+                                                           overwrittenStampMs: hlcMax))
+            out.targetSpaceUuid.updatedAtMs =
+                PhiHybridClock.editStamp(editWallMs: targetEdit, overwrittenStampMs: hlcMax)
             out.rank.updatedAtMs = 0
             return out
         }
@@ -232,7 +239,7 @@ enum URLRuleKind: OwnedItemKind {
         // overwrites is the host's, never the maximum of the three members.
         setContentStamp(&out, contentChanged
                             ? PhiHybridClock.editStamp(
-                                editWallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+                                editWallMs: contentEdit,
                                 overwrittenStampMs: baseline.host.updatedAtMs)
                             : baseline.host.updatedAtMs)
 
@@ -240,7 +247,7 @@ enum URLRuleKind: OwnedItemKind {
             != SyncableSettings.signature(of: baseline.targetSpaceUuid)
         if targetChanged {
             out.targetSpaceUuid.updatedAtMs = PhiHybridClock.editStamp(
-                editWallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
+                editWallMs: targetEdit,
                 overwrittenStampMs: baseline.targetSpaceUuid.updatedAtMs)
             out.rank.updatedAtMs = now
         } else {
@@ -269,9 +276,28 @@ enum URLRuleKind: OwnedItemKind {
         let remoteBallot = contentBallot(remote)
         let contentWinner = SyncableSettings.lwwWinner(localBallot, remoteBallot) == localBallot
             ? local : remote
-        merged.host = contentWinner.host
-        merged.pathPrefix = contentWinner.pathPrefix
-        merged.ask = contentWinner.ask
+        if localBallot == remoteBallot {
+            // Exact ballot tie: the ballot is built from the group's READOUTS
+            // (`host.stringValue`, `pathPrefix.stringValue`, `ask.boolValue`) plus the host
+            // carrier's stamp, so both sides already agree on everything it covers and
+            // `contentWinner` is only "whichever argument came first". What it does NOT cover is
+            // the members' own shape: an ABSENT `path_prefix` reads back identically to one that
+            // is present and empty, and a member holding a different oneof case reads back as its
+            // type's default. Copying the whole group from that arbitrary side would leave two
+            // devices holding different BYTES for one identity. Resolve the members through the
+            // shared winner on their own values instead, which is symmetric by construction —
+            // exactly what `BookmarkKind.merge` does for its tied location ballot. Which content
+            // group wins does not change (the tie already proved both sides agree on it), the
+            // fixed host carrier stays the only stamp compared (R-M3-4a-40), and the carrier stamp
+            // below still overwrites all three members.
+            merged.host = SyncableSettings.lwwWinner(local.host, remote.host)
+            merged.pathPrefix = SyncableSettings.lwwWinner(local.pathPrefix, remote.pathPrefix)
+            merged.ask = SyncableSettings.lwwWinner(local.ask, remote.ask)
+        } else {
+            merged.host = contentWinner.host
+            merged.pathPrefix = contentWinner.pathPrefix
+            merged.ask = contentWinner.ask
+        }
         // §8.2 rule 1: send all three content stamps equal to the winning carrier stamp.
         setContentStamp(&merged, contentWinner.host.updatedAtMs)
 

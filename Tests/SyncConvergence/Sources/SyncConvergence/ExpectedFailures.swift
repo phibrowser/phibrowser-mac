@@ -84,33 +84,6 @@ func ruleRankCoherenceWitness() -> (Phi_PhiURLRuleEntity, Phi_PhiURLRuleEntity,
             make("space-a", 300, "V", 50))
 }
 
-/// The second registered shape, found by this gate's own normalisation
-/// properties: two rules whose content group reads back IDENTICALLY, one of
-/// which omits `path_prefix` altogether. `contentBallot` is built from the
-/// READOUTS (`host.stringValue`, `pathPrefix.stringValue`, `ask.boolValue`) plus
-/// the host carrier's stamp, so it cannot tell "absent" from "present and
-/// empty": the two ballots are byte-identical, `lwwWinner` returns its left
-/// argument, and the merge copies the whole group from whichever side came
-/// first. `merge(a, b)` and `merge(b, a)` then differ in bytes.
-///
-/// This is the same structural hole `BookmarkKind.merge` closes for its location
-/// ballot -- a ballot that does not cover everything the merge copies -- and the
-/// difference is only in the oneof's presence, never in a value. It is
-/// registered rather than fixed because the shape is NOT reachable from a Phi
-/// publisher: phi_entity.proto declares `path_prefix` always emitted.
-func ruleAbsentContentMemberWitness() -> (Phi_PhiURLRuleEntity, Phi_PhiURLRuleEntity) {
-    var present = Phi_PhiURLRuleEntity()
-    present.ruleUuid = "11111111-1111-4111-8111-111111111111"
-    present.host = settingValue("example.com", 7)
-    present.pathPrefix = settingValue("", 7)
-    present.ask = settingValue(bool: false, 7)
-    present.targetSpaceUuid = settingValue("space-a", 7)
-    present.rank = settingValue("V", 7)
-    present.createdAtMs = 1
-    let absent = withoutField(present, number: 3) ?? present
-    return (absent, present)
-}
-
 /// True while the two fold orders of the witness still disagree.
 func foldOrdersDisagree<E: SwiftProtobuf.Message & Equatable>(
     _ trio: (E, E, E), _ merge: (E, E) -> E) -> Bool {
@@ -149,26 +122,6 @@ let expectedFailures: [ExpectedFailure] = [
             foldOrdersDisagree(ruleRankCoherenceWitness()) {
                 URLRuleKind.merge(local: $0, remote: $1)
             }
-        }),
-    ExpectedFailure(
-        property: "urlrules.absent-always-emitted-field.is-side-independent",
-        rootCause: """
-            `URLRuleKind.contentBallot` is built from the content group's READOUTS, so it cannot \
-            tell an ABSENT `path_prefix` from one that is present and empty. The two ballots tie \
-            byte for byte, `lwwWinner` returns its left argument, and the merge copies the whole \
-            group from whichever side came first: merge(a,b) and merge(b,a) differ in the oneof's \
-            presence, never in a value. It is the same structural hole BookmarkKind.merge closes \
-            for its location ballot, and unlike that one it is NOT reachable from a Phi \
-            publisher -- phi_entity.proto declares path_prefix always emitted, so only a \
-            truncated, hand-written or foreign payload produces it.
-            """,
-        waitsOn: "a decision on whether §8.2's content group should resolve a tied ballot through "
-            + "the shared winner over the members' own bytes, the way §4.3's location group now "
-            + "does. Found by this harness; out of scope for the change that added the gate.",
-        witness: {
-            let pair = ruleAbsentContentMemberWitness()
-            return strippingUnknown(URLRuleKind.merge(local: pair.0, remote: pair.1))
-                != strippingUnknown(URLRuleKind.merge(local: pair.1, remote: pair.0))
         }),
 ]
 

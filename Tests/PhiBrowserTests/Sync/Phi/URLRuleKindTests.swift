@@ -174,6 +174,37 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertEqual(c.targetSpaceUuid.updatedAtMs, 9_000, "The target channel uses its own stamp")
     }
 
+    // MARK: - CASE U-4b (a tied content ballot resolves member by member)
+
+    /// A tied ballot must not leave the members the ballot does not cover ordered by ARGUMENT.
+    /// `contentBallot` is built from the group's readouts plus the host carrier's stamp, so an
+    /// ABSENT `path_prefix` reads back exactly like one that is present and empty: the two ballots
+    /// tie byte for byte, `lwwWinner` returns its left argument, and copying the whole group from
+    /// that side would leave `merge(a, b)` and `merge(b, a)` holding different bytes for one
+    /// identity — the same structural hole `BookmarkKind.merge` closes for its location ballot.
+    /// Resolving the members through the shared winner on their own values is symmetric by
+    /// construction. Which group wins is untouched, and §8.2 rule 1's carrier stamp still lands on
+    /// all three members.
+    func testATiedContentBallotResolvesAnAbsentMemberSymmetrically() {
+        let present = urlRulePayload(uuid: "r4b", host: "example.com", pathPrefix: "", ask: false,
+                                     contentStamp: 7, targetStamp: 7, rankStamp: 7)
+        var absent = present
+        absent.clearPathPrefix()
+        XCTAssertFalse(absent.hasPathPrefix)
+
+        let forward = URLRuleKind.merge(local: absent, remote: present)
+        let backward = URLRuleKind.merge(local: present, remote: absent)
+
+        XCTAssertEqual(forward, backward)
+        XCTAssertEqual(try forward.serializedData(), try backward.serializedData())
+        XCTAssertEqual(forward.host.stringValue, "example.com")
+        XCTAssertEqual(forward.pathPrefix.stringValue, "")
+        XCTAssertFalse(forward.ask.boolValue)
+        XCTAssertEqual(forward.host.updatedAtMs, 7)
+        XCTAssertEqual(forward.pathPrefix.updatedAtMs, 7)
+        XCTAssertEqual(forward.ask.updatedAtMs, 7)
+    }
+
     // MARK: - CASE U-5 (rank follows the winning target)
 
     func testRankFollowsTheWinningTargetEvenWhenTheOtherRankStampIsNewer() {

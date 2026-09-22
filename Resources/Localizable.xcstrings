@@ -81719,6 +81719,18 @@
         }
       }
     },
+    "settings.spaces.manageInLibrary" : {
+      "comment" : "Spaces settings - Opens Library with Spaces selected and closes Settings",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Spaces in Library"
+          }
+        }
+      }
+    },
     "settings.spaces.newButtonTooltip" : {
       "comment" : "Spaces settings - new Space tooltip",
       "extractionState" : "extracted_with_value",

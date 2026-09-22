@@ -40,6 +40,7 @@ struct ProfileButton: NSViewRepresentable {
         }
 
         private var cancellables = Set<AnyCancellable>()
+        private var requestedDownloads = false
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -82,15 +83,33 @@ struct ProfileButton: NSViewRepresentable {
             }
         }
 
+        @objc private func selectDownloads() {
+            requestedDownloads = true
+        }
+
         @objc private func showProfileMenu() {
             // Existing menu actions resolve the active browser window. Activate
             // the clicked surface first, including when it was a background window.
             window?.makeKeyAndOrderFront(nil)
             let menu = NSMenu()
             AppController.shared.populateProfileMenu(menu)
+            if let downloads = menu.item(withTag: CommandWrapper.IDC_SHOW_DOWNLOADS.rawValue) {
+                downloads.target = self
+                downloads.action = #selector(selectDownloads)
+            }
+            requestedDownloads = false
             // NSButton uses flipped coordinates: Y increases downward.
             let y = surface == .sidebar ? bounds.minY - 5 : bounds.maxY + 5
             menu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: y), in: self)
+            // Start after native menu tracking ends, so it cannot cover the flight.
+            if requestedDownloads {
+                requestedDownloads = false
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          let owner = self.window?.windowController as? MainBrowserWindowController else { return }
+                    owner.showLibrary(from: self, section: .downloads)
+                }
+            }
         }
     }
 }

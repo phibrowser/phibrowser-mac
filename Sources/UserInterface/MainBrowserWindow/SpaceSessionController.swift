@@ -85,12 +85,12 @@ class SpaceSessionController: NSWindowController {
         libraryWindowController?.present(section: section)
     }
 
-    func showLibrary(from source: NSView) {
+    func showLibrary(from source: NSView, section: LibraryViewModule.Section? = nil) {
         guard let window, source.window === window else { return }
         if libraryOverlayController == nil {
             libraryOverlayController = LibraryOverlayController(parent: window, browserState: browserState)
         }
-        libraryOverlayController?.show(from: source)
+        libraryOverlayController?.show(from: source, section: section)
     }
 
     @discardableResult

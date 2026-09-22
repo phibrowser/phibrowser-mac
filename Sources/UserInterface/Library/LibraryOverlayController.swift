@@ -77,8 +77,9 @@ final class LibraryOverlayController {
         overlay.removeFromSuperview()
     }
 
-    func show(from source: NSView, animated: Bool = true) {
+    func show(from source: NSView, section: LibraryViewModule.Section? = nil, animated: Bool = true) {
         guard let parent, let content = parent.contentView, source.window === parent else { return }
+        if let section { module.navigationState.selection = section }
         guard !isVisible || isClosing else { return }
         generation += 1
         isClosing = false

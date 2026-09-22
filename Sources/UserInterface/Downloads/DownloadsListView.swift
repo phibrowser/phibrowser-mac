@@ -6,6 +6,7 @@
 import SwiftUI
 struct DownloadsListView: View {
     @ObservedObject var downloadsManager: DownloadsManager
+    var onShowAllDownloads: () -> Void = {}
     @State private var contentSize: CGSize = .zero
     
     private let maxVisibleItems = 5
@@ -21,7 +22,7 @@ struct DownloadsListView: View {
                 downloadsList
             }
             
-            DownloadsBottomBar(onShowAllDownloads: { AppController.shared.showAllDownloads() })
+            DownloadsBottomBar(onShowAllDownloads: onShowAllDownloads)
         }
         .frame(width: 340)
         .background(.clear)

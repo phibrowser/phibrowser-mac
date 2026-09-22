@@ -59,6 +59,18 @@ struct SpacesSettingsView: View {
                 SettingsDetailCard {
                     pinnedTabScopeRow
                 }
+                SettingsDetailCard {
+                    Button(action: manageSpacesInLibrary) {
+                        SettingsDetailRow(NSLocalizedString("settings.spaces.manageInLibrary", value: "Manage Spaces in Library", comment: "Spaces settings - Opens Library with Spaces selected and closes Settings")) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .themedForeground(.textSecondary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.vertical, 36)
@@ -116,6 +128,15 @@ struct SpacesSettingsView: View {
                   let scope = PinnedTabScope(rawValue: raw) else { return }
             pinnedTabScope = scope
         }
+    }
+
+    private func manageSpacesInLibrary() {
+        guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController,
+              let window = owner.window,
+              let source = window.contentView else { return }
+        AppController.shared?.settingsWindowController?.close()
+        window.makeKeyAndOrderFront(nil)
+        owner.showLibrary(from: source, section: .spaces)
     }
 
     /// Every Space the list manages, in the manager's published order.

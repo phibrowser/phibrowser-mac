@@ -260,7 +260,13 @@ private struct SidebarDownloadsPopoverPresenter: NSViewRepresentable {
             popover.contentSize = Self.contentSize
             popover.appearance = anchorView.themeStateProvider.currentAppearance.nsAppearance
             popover.contentViewController = ThemedHostingController(
-                rootView: DownloadsListView(downloadsManager: downloadsManager)
+                rootView: DownloadsListView(downloadsManager: downloadsManager) { [weak self, weak anchorView] in
+                    self?.dismiss()
+                    self?.onDismiss?()
+                    guard let anchorView,
+                          let owner = anchorView.window?.windowController as? MainBrowserWindowController else { return }
+                    owner.showLibrary(from: anchorView, section: .downloads)
+                }
                     .frame(width: Self.contentSize.width, height: Self.contentSize.height),
                 themeSource: anchorView.themeStateProvider
             )

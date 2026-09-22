@@ -29,6 +29,25 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// A decrypted entity parked while its `profile_uuid` still resolves to no
     /// local profile (§3.5 fallback B).
     var pendingApply: Data?
+    /// Serialized `Phi_PhiSpaceEntity`: this device's own OUTBOUND projection of the Space, with
+    /// every changed field already stamped at the time the user changed it (C2-a, design option
+    /// S2). The outbound mirror of `pendingApply`.
+    ///
+    /// `SpaceModel` has no edit-date column, and `theme_id`, the overlay opacities and the Profile
+    /// binding are not even on the row -- they are joined in from `AccountUserDefaults` at the sync
+    /// boundary -- so there is nowhere to read a per-field edit time back from. The engine's
+    /// stamping pass therefore records one here, before the pull gate, and `SyncableSpaces.snapshot`
+    /// reads it back as the effective baseline: a field whose bytes still match this projection
+    /// keeps the stamp it was given, so a second offline edit of another field leaves the first
+    /// field's edit time alone. Written only for a cursor that already has a `reconciled` baseline,
+    /// and cleared whenever that baseline moves (a landing, an accepted commit, a tombstone).
+    ///
+    /// Optional, like `pendingApply`: synthesized decoding reads an optional with
+    /// `decodeIfPresent`, so a table written by a build without this field still decodes -- the
+    /// compatibility rule `PhiOwnedItemCursor.rekeyRejectRounds` states for its own addition. An
+    /// older build simply ignores the key and stamps at publish time as it always did; no
+    /// `formatVersion` change, no migration and nothing on the wire.
+    var pendingProjection: Data?
     /// Remote binding on an ALREADY-LANDED Space that resolves to no local
     /// profile (§3.5 fallback A). Echoed back with `reconciled`'s own
     /// timestamp, never stamped `now`.

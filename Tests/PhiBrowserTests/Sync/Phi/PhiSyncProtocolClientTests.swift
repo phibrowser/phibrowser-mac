@@ -238,7 +238,9 @@ final class PhiSyncProtocolClientTests: XCTestCase {
         XCTAssertEqual(entry.version, 77)
     }
 
-    func testCommitConflictCarriesTheServerVersion() async throws {
+    /// A CONFLICT names the live row it collided with. The engine harvests both halves before
+    /// its scoped retry, so an id dropped here would turn that retry back into a create.
+    func testCommitConflictCarriesTheServerIdentityAndVersion() async throws {
         StubURLProtocol.handler = { [self] _ in
             (200, response { response in
                 var entry = SyncPb_CommitResponse.EntryResponse()
@@ -255,10 +257,28 @@ final class PhiSyncProtocolClientTests: XCTestCase {
                            deleted: false, baseVersion: 77),
         ], storeBirthday: "b")
 
-        guard case .conflict(let serverVersion) = outcomes[0] else {
+        guard case .conflict(let entityId, let serverVersion) = outcomes[0] else {
             return XCTFail("expected .conflict, got \(outcomes[0])")
         }
+        XCTAssertEqual(entityId, "srv-9")
         XCTAssertEqual(serverVersion, 80)
+    }
+
+    /// The other half of the mapping: a CONFLICT that names no row carries no identity, so it
+    /// can never overwrite the cursor's own id with an empty string.
+    func testCommitConflictWithoutAnIdCarriesNoEntityId() async throws {
+        let (client, stub) = makeCommitClient()
+        stub.responses = [CommitStub.conflict(version: 12)]
+        let outcomes = try await client.commit(entries: [
+            PhiCommitEntry(entityId: nil, clientTagHash: "h1", name: "phi-space",
+                           ciphertext: Data([0x01]), deleted: false, baseVersion: 0),
+        ], storeBirthday: "b")
+
+        guard case .conflict(let entityId, let serverVersion) = outcomes[0] else {
+            return XCTFail("expected .conflict, got \(outcomes[0])")
+        }
+        XCTAssertNil(entityId)
+        XCTAssertEqual(serverVersion, 12)
     }
 
     /// INVALID_MESSAGE is a per-entry outcome now, not a thrown error for the whole round:
@@ -393,7 +413,8 @@ final class PhiSyncProtocolClientTests: XCTestCase {
         guard case .applied(let id, let version, _) = outcomes[0] else { return XCTFail() }
         XCTAssertEqual(id, "srv-1")
         XCTAssertEqual(version, 11)
-        guard case .conflict(let serverVersion) = outcomes[1] else { return XCTFail() }
+        guard case .conflict(let conflictingId, let serverVersion) = outcomes[1] else { return XCTFail() }
+        XCTAssertNil(conflictingId)
         XCTAssertEqual(serverVersion, 12)
         guard case .invalidMessage = outcomes[2] else { return XCTFail() }
     }
@@ -425,5 +446,40 @@ final class PhiSyncProtocolClientTests: XCTestCase {
             ], storeBirthday: "bday")
             XCTFail("expected malformedResponse")
         } catch PhiSyncProtocolError.malformedResponse {}
+    }
+
+    // MARK: - AM-2: the server's `Date` header
+
+    /// RFC 7231 §7.1.1.1 requires a recipient to accept all three HTTP-date forms. The three
+    /// spellings here are the RFC's own example instant, 1994-11-06T08:49:37Z.
+    func testTheServerDateHeaderParsesAllThreeHTTPDateFormats() {
+        let expected: Int64 = 784_111_777_000
+
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sun, 06 Nov 1994 08:49:37 GMT"),
+                       expected, "IMF-fixdate, the preferred form")
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sunday, 06-Nov-94 08:49:37 GMT"),
+                       expected, "obsolete RFC 850")
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sun Nov  6 08:49:37 1994"),
+                       expected, "obsolete asctime, whose day is space-padded")
+    }
+
+    /// An absent or unusable header is nil, never 0 or a fabricated instant: the engine reads it
+    /// as "no measurement this round" and keeps the estimate it already had. A wrong answer here
+    /// would be worse than none, because it would feed a correction into every later stamp.
+    func testAnUnusableServerDateHeaderIsNil() {
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: nil))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: ""))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: "not a date"))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: "1994-11-06T08:49:37Z"),
+                     "ISO 8601 is not an HTTP-date; guessing at it would be guessing")
+    }
+
+    /// The header is read in the C locale, never the device's. A Mac set to a non-Gregorian
+    /// calendar or a non-English locale would otherwise fail to parse the header (or, worse,
+    /// parse it into a different year) on exactly the devices AM-2 exists to correct.
+    func testTheServerDateHeaderIsParsedIndependentlyOfTheDeviceLocale() {
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Thu, 01 Jan 1970 00:00:00 GMT"), 0)
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Wed, 31 Dec 1969 23:59:59 GMT"),
+                       -1_000, "an instant before the epoch stays negative rather than wrapping")
     }
 }

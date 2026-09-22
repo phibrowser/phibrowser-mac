@@ -104,12 +104,16 @@ struct OwnedItemPlanContext {
     }
 
     // MARK: §8.4.4's four named inputs (R-M3-4a-73, 8b-3)
-    // Bookmark/pin contexts leave these empty, making the new branches unreachable.
     // Keep criteria in the kind: signatures and soft deletion are rule-specific
     // and this generic context cannot inspect row flags.
+    // Under C4 the bookmark and pin adapters fill the first two from the derived
+    // predicate (SyncableOwnedItems.unpublishedEdits/unpublishedMerges) and still
+    // leave mergePartners/partnerNotAtRest empty: those two kinds have no merge
+    // partner, so α and β always take the yield outcome rather than transfer or park.
 
     /// Identities meeting α's first three conditions (row exists, not soft-deleted,
-    /// with signature) and pendingLocalEdit=true.
+    /// with signature) and pendingLocalEdit=true; for bookmarks and pins, a live local
+    /// row whose projection differs from its baseline in content or location.
     var pendingLocalEdits: Set<String> = []
     /// Identities meeting α's first three conditions and nonnil, unequal server
     /// and reconciled values, matching publication's pending set.
@@ -199,6 +203,14 @@ struct OwnedItemPlan {
     var parked: [String: ParkedOwnedItem]
     var refused: Int
     var lifted: Int
+    /// Ruling C5-a: move cycles this plan broke by reverting their oldest move. They are no
+    /// longer counted in refused, which said "neither move was applied"; the page lands now,
+    /// minus the one move that lost.
+    var cyclesBroken: Int = 0
+    /// The highest location stamp this module authored while breaking them, for the caller to
+    /// fold into its hybrid clock: maxSeen must cover every stamp this device issues (C2 / R2.1).
+    /// Zero when no cycle was broken.
+    var cycleStampMs: Int64 = 0
     var supersededByDelete: Int
     var cancelledDeletes: Set<String>
     /// Identity to harvested protocol entityId/version, even for discarded entities.
@@ -376,8 +388,14 @@ protocol OwnedItemKind {
     static func localEdge(of local: Local) -> (id: String, parentId: String?)
     static func rank(of entity: Entity) -> String
     static func locationStamp(of entity: Entity) -> Int64
+    /// `now` is the round's hybrid-logical stamp; `hlcMax` is the logical time the round started from,
+    /// AM-1's floor for a merge unit with no baseline. A changed unit WITH a baseline takes its own
+    /// edit-date column, raised one above the baseline's stamp.
+    /// `wallOffsetMs` is AM-2's source-side clock correction, added to every EDIT COLUMN this
+    /// function reads off the local row before it becomes a wire stamp. It is 0 whenever this
+    /// device's clock is within `PhiHybridClock.wallClockCorrectionThresholdMs` of the server's.
     static func stamp(_ projected: Entity, baseline: Entity?, local: Local,
-                      rank: String, now: Int64) -> Entity
+                      rank: String, now: Int64, hlcMax: Int64, wallOffsetMs: Int64) -> Entity
     /// Content-value bytes with timestamps zeroed, like SyncableSettings.signature.
     /// Use these to decide field patches; whole-entity comparison would turn
     /// remote restamps into empty updates. Exclude location/rank, carried by move.
@@ -391,10 +409,30 @@ protocol OwnedItemKind {
     static func targetOwnerUuid(of entity: Entity) -> String?
 
     /// §8.4.4: inbound deletion yields to unpublished user intent for this kind.
-    /// True for rules; false for bookmarks/pins in this milestone (§6.1 / §14.1).
-    /// Bookmark volume and deletion frequency differ; making every deletion
-    /// resurrect across all kinds would create a different data-loss problem.
+    /// Ruling C4 makes this true for every kind — bookmarks, folders, pins and rules.
+    /// Its rationale, which also settles any later delete-vs-edit question: a delete is
+    /// easy to redo, an edit is not, and a wrongly kept deletion costs the user more than
+    /// a wrongly kept item. It supersedes M3-3's "bookmark volume and deletion frequency
+    /// differ" reason for keeping bookmarks and pins out; the blast radius is instead kept
+    /// narrow by the predicate below, which fires only for an item the user demonstrably
+    /// edited and has not published yet.
     static var tombstoneYieldsToLocalEdits: Bool { get }
+
+    /// A9's content half (C4-a): the newest stamp among the entity's CONTENT merge units.
+    /// `plan` compares `max(locationStamp, contentStamp)` against `deleteDecidedAtMs`, so a
+    /// remote rename cancels a local pending deletion exactly as a remote move already did.
+    /// The default is `locationStamp`, which keeps A9 as M3-3 shipped it for any kind that
+    /// declares no content unit of its own.
+    static func contentStamp(of entity: Entity) -> Int64
+
+    /// Ruling C5-a's loser: this entity put back at the location `baseline` names — the account's
+    /// last agreed position for it, which is the same value on every device — carrying `stamp` on
+    /// the location merge unit and the baseline's rank, which is the only rank that means anything
+    /// under that parent. A nil baseline means this device never landed one, so the kind answers
+    /// with its Space root instead; nothing else is device-independent.
+    /// nil means the kind has no mutable location to put back, which keeps it out of cycle
+    /// breaking altogether — pins and rules have no parent reference to build a cycle with.
+    static func reverted(_ entity: Entity, to baseline: Entity?, stamp: Int64) -> Entity?
 
     /// §8.4.4 transfer source: derive RuleProjection from an entity. α uses X's
     /// local projection; β uses this round's merged entity. Keep extraction in
@@ -407,8 +445,14 @@ protocol OwnedItemKind {
 extension OwnedItemKind {
     /// Default nil preserves BookmarkKind/PinKind implementations and behavior.
     static func targetOwnerUuid(of entity: Entity) -> String? { nil }
-    /// Default off makes both new branches unreachable for bookmarks/pins (ruling 10).
+    /// All three shipped kinds override this to true under C4. The default stays off so a
+    /// kind added later opts in deliberately rather than by inheritance.
     static var tombstoneYieldsToLocalEdits: Bool { false }
+    /// Default keeps A9's first conjunct on location alone (C4-a).
+    static func contentStamp(of entity: Entity) -> Int64 { locationStamp(of: entity) }
+    /// Default nil: only a kind whose entities reference each other can form a cycle, and only
+    /// that kind knows which of its fields carry the location (C5-a).
+    static func reverted(_ entity: Entity, to baseline: Entity?, stamp: Int64) -> Entity? { nil }
     /// Default nil for the same compatibility guarantee.
     static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection? { nil }
 }
@@ -449,9 +493,14 @@ enum SyncableOwnedItems {
     /// Precondition: locals are in sibling order, for bookmarks spaceId/parentGuid/index/guid
     /// per allBookmarks. assignRanks takes this as current local order; another
     /// ordering would needlessly change ranks every round.
+    /// `hlcMax` is AM-1's floor for a row with no baseline; 0 means "no floor", which is what a
+    /// caller with no engine clock wants. `wallOffsetMs` is AM-2's clock correction, applied to
+    /// the edit columns `K.stamp` reads; 0 means "this device's clock is trusted", which is both
+    /// the healthy case and what a caller with no engine clock wants.
     static func snapshot<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                            table: PhiOwnedItemTable, resolve: OwnerResolver,
-                                           scope: PinnedTabScope?, now: Int64)
+                                           scope: PinnedTabScope?, now: Int64, hlcMax: Int64 = 0,
+                                           wallOffsetMs: Int64 = 0)
         -> OwnedItemSnapshotResult<K.Entity> {
         var skippedUnmappedOwner = 0
         var skippedIneligibleOwner = 0
@@ -581,7 +630,8 @@ enum SyncableOwnedItems {
             let rank = assigned[candidate.identity] ?? baselineRank(candidate.identity) ?? "V"
             entities[candidate.identity] = K.stamp(candidate.entity,
                                                    baseline: baselines[candidate.identity],
-                                                   local: candidate.local, rank: rank, now: now)
+                                                   local: candidate.local, rank: rank, now: now,
+                                                   hlcMax: hlcMax, wallOffsetMs: wallOffsetMs)
         }
         return OwnedItemSnapshotResult(entities: entities,
                                        skippedUnmappedOwner: skippedUnmappedOwner,
@@ -675,6 +725,14 @@ enum SyncableOwnedItems {
             // a blocked pending arrival, since planning parks before reaching deletion
             // handling. Restamping would continually advance A9's comparison boundary
             // and prevent concurrent moves from cancelling deletion.
+            //
+            // C2 / R2.1: `nowMs` here is the HYBRID LOGICAL clock, not wall clock. A9 below
+            // compares this field against `K.locationStamp(of: merged)`, an LWW wire stamp. If
+            // the two clocks diverge -- this one on wall time while stamps run on logical time
+            // that has pulled ahead of it -- every inbound entity looks newer than the deletion
+            // and A9 cancels every local delete. The engine's `tombstones(...)` call site
+            // passes `hlcNow()` for exactly this reason. `deletedAtMs` is the opposite: it
+            // drives the 30-day retention expiry and stays wall clock.
             if !cursor.pendingDelete { updated.deleteDecidedAtMs = nowMs }
             if updated != cursor { cursorUpdates[identity] = updated }
         }
@@ -697,6 +755,114 @@ enum SyncableOwnedItems {
         }
         return OwnedItemTombstoneResult(identities: identities, cursorUpdates: cursorUpdates,
                                         deferred: deferredDeletions)
+    }
+
+    // MARK: - Derived yield predicate (C4 direction i)
+
+    /// Identities whose live local row holds an edit this device has not published yet: α's
+    /// first input for the two kinds that have no `pendingLocalEdit` column. Bookmarks and pins
+    /// derive it rather than migrate a column in, because the round's projection already knows.
+    ///
+    /// `projections` is `OwnedItemPlanContext.localProjections`, so membership already carries
+    /// two conjuncts: the adapter builds an entry only when a LIVE local row currently claims
+    /// that identity and its cursor has a baseline. The live-row conjunct is load-bearing for
+    /// pins — after a scope migration the old (lineage, owner) identity is claimed by no live
+    /// row, so its tombstone hard-deletes instead of being beaten by an edit (T5).
+    ///
+    /// An edit is a changed content signature or a changed owner reference. Rank is excluded:
+    /// a reorder is not intent to keep a deleted item, dense re-indexing would otherwise look
+    /// like one, and the projection carries the baseline's rank anyway. `is_folder` is an
+    /// invariant, refused rather than merged.
+    static func unpublishedEdits<K: OwnedItemKind>(_ kind: K.Type,
+                                                   projections: [String: Data],
+                                                   table: PhiOwnedItemTable) -> Set<String> {
+        var out: Set<String> = []
+        for (identity, bytes) in projections {
+            guard let baselineBytes = table.cursors[identity]?.reconciled,
+                  let projectedEnvelope = try? Phi_PhiEntity(serializedBytes: bytes),
+                  let projected = K.entity(from: projectedEnvelope),
+                  let baselineEnvelope = try? Phi_PhiEntity(serializedBytes: baselineBytes),
+                  let baseline = K.entity(from: baselineEnvelope) else { continue }
+            guard K.contentSignature(of: projected) != K.contentSignature(of: baseline)
+                    || K.ownerUuids(of: projected) != K.ownerUuids(of: baseline) else { continue }
+            out.insert(identity)
+        }
+        return out
+    }
+
+    /// α's second input: the value-based "we won a merge and owe the account a republish"
+    /// (`server != reconciled`), which is a different claim from "the user edited this row".
+    /// Rules OR the two; bookmarks and pins now do the same. Keep the same projection domain so
+    /// both disjuncts carry the live-row conjunct.
+    static func unpublishedMerges(projections: [String: Data],
+                                  table: PhiOwnedItemTable) -> Set<String> {
+        var out: Set<String> = []
+        for identity in projections.keys {
+            guard let cursor = table.cursors[identity], let server = cursor.server,
+                  let reconciled = cursor.reconciled, server != reconciled else { continue }
+            out.insert(identity)
+        }
+        return out
+    }
+
+    // MARK: - Projection domain (ruling C5-a, step 4a)
+
+    /// The identities `OwnedItemPlanContext.localProjections` must cover for one page.
+    ///
+    /// The page's own identities — arrivals, parked payloads, this round's tombstones — are what
+    /// α and step 5 need, and they are NOT enough for cycle detection. A cycle closed by a live
+    /// local row runs through a folder the page never mentions: this device moved X under Y, the
+    /// page carries only Y under X, and with no projection for X the walk stops there, Y lands
+    /// under X and the local cycle is never broken.
+    ///
+    /// Step 4a walks one parent edge at a time, so the identities it can reach are exactly the
+    /// page's own plus the LOCAL parent chain above each landing parent — the smallest domain
+    /// that closes the hole. It adds one entry per ancestor per page rather than projecting the
+    /// whole table, and an account whose folders are shallow adds nothing at all.
+    ///
+    /// `localParent` answers "the identity of the folder this device's live row for `identity`
+    /// currently sits under", nil at a Space root or for an identity no live row claims. Kinds
+    /// with no parent reference (pins, URL rules) pass a `localParent` that is always nil and get
+    /// the page's own identities back unchanged.
+    ///
+    /// `parked` is the caller's whole parking map, not a set of identities: a parked payload
+    /// retried on its own — no arrivals at all — carries a remote parent too, and a local move of
+    /// that parent under the parked item closes exactly the same cycle. Seeding the walk is this
+    /// function's own job so that no caller can seed it from arrivals alone. An undecodable
+    /// parked payload still contributes its identity, as it always did.
+    static func projectionDomain<K: OwnedItemKind>(_ kind: K.Type,
+                                                   arrivals: [K.Entity],
+                                                   parked: [String: ParkedOwnedItem],
+                                                   tombstoned: Set<String>,
+                                                   localParent: (String) -> String?) -> Set<String> {
+        var domain = Set(parked.keys).union(tombstoned)
+        var frontier: [String] = []
+        var seeded: Set<String> = []
+        for entity in arrivals {
+            let identity = K.identity(of: entity)
+            guard !identity.isEmpty else { continue }
+            domain.insert(identity)
+            seeded.insert(identity)
+            // Either side of the merge can supply the location that lands, so seed the arrival's
+            // owner reference as well as the row's own parent below.
+            frontier.append(contentsOf: K.ownerUuids(of: entity))
+        }
+        // A parked copy of an identity that also arrived is superseded by the arrival in `plan`'s
+        // working set, so only the arrival's owner reference is seeded for it.
+        for identity in parked.keys.sorted() where !seeded.contains(identity) {
+            guard let payload = parked[identity]?.payload,
+                  let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+                  let entity = K.entity(from: envelope) else { continue }
+            frontier.append(contentsOf: K.ownerUuids(of: entity))
+        }
+        frontier.append(contentsOf: domain.compactMap(localParent))
+        // Bounded by `domain`: every identity is walked at most once, so a local parent pointer
+        // that somehow closes a loop terminates here instead of spinning.
+        while let identity = frontier.popLast() {
+            guard !identity.isEmpty, domain.insert(identity).inserted else { continue }
+            if let parent = localParent(identity) { frontier.append(parent) }
+        }
+        return domain
     }
 
     // MARK: - Inbound plan (§4.4)
@@ -801,16 +967,133 @@ enum SyncableOwnedItems {
         // one invalid ciphertext could irreversibly flatten a whole account subtree.
         func classify(_ uuid: String) -> OwnerState {
             if survivorIdentities.contains(uuid) { return .item(uuid) }
+            // A local pending deletion counts as a dead parent (C4 direction ii inside a tree):
+            // the folder's row is already gone here, so a child whose deletion an inbound edit
+            // cancels has nothing to attach to and must lift to the Space root rather than park
+            // until the tombstone is accepted. The survivor test above still wins, so a folder
+            // whose own arrival cancels ITS deletion this round keeps its children.
             if context.tombstonedIdentities.contains(uuid)
-                || table.cursors[uuid]?.deletedAtMs != nil { return .lift }
+                || table.cursors[uuid]?.deletedAtMs != nil
+                || table.cursors[uuid]?.pendingDelete == true { return .lift }
             if context.liveLocalParents.contains(uuid) { return .external }
             if resolve.localSpaceId(uuid) != nil { return resolve.isEligibleSpace(uuid) ? .external : .unresolved }
             if resolve.localProfileId(uuid) != nil { return .external }
             return .unresolved
         }
 
-        // 4. Kahn topological sort. Refuse remaining cyclic dependencies as remote
-        // bugs or forged payloads; parking waits forever for impossible parents.
+        // 4a. Ruling C5-a: break move cycles before ordering anything.
+        var entityOf: [String: K.Entity] = [:]
+        for item in survivors { entityOf[item.identity] = item.entity }
+
+        /// The entity whose location decides where this identity ends up once the page lands: an
+        /// arrival merged with this device's projection, exactly as step 5 merges it, or — for an
+        /// identity with no arrival — a live local row's own projection.
+        ///
+        /// Both halves are needed. A cycle is just as often closed by a LOCAL row (this device
+        /// moved X under Y and the page carries Y under X, with X nowhere in it) as by two
+        /// arrivals, and a graph built from the page alone cannot see the first kind at all: Y
+        /// would land under X, the local row would keep X under Y, and nothing would ever repair
+        /// it because neither device sees both moves in one page. Merging rather than reading the
+        /// arrival also keeps a stale arrival, whose location the local row already beats, from
+        /// looking like a cycle. Adoption merges are left out: a claimed row has no baseline, so
+        /// its arrival has no earlier location to lose to.
+        /// nil means the identity cannot be part of a cycle.
+        var cycleNodes: [String: K.Entity?] = [:]
+        func cycleNode(_ identity: String) -> K.Entity? {
+            if let cached = cycleNodes[identity] { return cached }
+            let projection: K.Entity? = context.localProjections[identity].flatMap {
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
+                return K.entity(from: envelope)
+            }
+            var node: K.Entity?
+            if let arrival = entityOf[identity] {
+                node = projection.map { K.merge(local: $0, remote: arrival) } ?? arrival
+            } else if case .external = classify(identity) {
+                // A live local row: `liveLocalParents` is what says the row exists here, and the
+                // projection is where it currently sits — carrying, under AM-1, the stamp of the
+                // move that put it there, published or not.
+                node = projection
+            }
+            cycleNodes[identity] = node
+            return node
+        }
+        func cycleEdge(from identity: String) -> String? {
+            guard let entity = cycleNode(identity) else { return nil }
+            return K.ownerUuids(of: entity).filter { $0 != identity && cycleNode($0) != nil }.min()
+        }
+        /// One cycle through the arrivals, or nil. Walking the smallest edge from the smallest
+        /// arrival makes the cycle this breaks first device-independent; the only kinds with a
+        /// location at all give an entity one parent, so no cycle can hide behind a second edge.
+        func firstCycle() -> [String]? {
+            var settled: Set<String> = []
+            for start in survivors.map(\.identity).sorted() where !settled.contains(start) {
+                var walk: [String] = []
+                var visitedAt: [String: Int] = [:]
+                var cursor: String? = start
+                while let identity = cursor, visitedAt[identity] == nil,
+                      !settled.contains(identity) {
+                    visitedAt[identity] = walk.count
+                    walk.append(identity)
+                    cursor = cycleEdge(from: identity)
+                }
+                if let closing = cursor, let index = visitedAt[closing] {
+                    return Array(walk[index...])
+                }
+                settled.formUnion(walk)
+            }
+            return nil
+        }
+
+        var cyclesBroken = 0
+        var cycleStampMs: Int64 = 0
+        var revertedByCycle: Set<String> = []
+        // Last operation wins: the member whose location carries the OLDEST stamp goes back to
+        // the location its baseline names, and the newer moves stand. Refusing the page, as this
+        // used to, applied NEITHER move and left every device on whichever tree it already had.
+        // One member per pass is what breaks one cycle, so a longer cycle keeps every move except
+        // its oldest. Each pass either stops or reverts an identity it has not reverted before,
+        // so the loop is bounded by the identities in play.
+        while let cycle = firstCycle() {
+            let stamps = cycle.compactMap { cycleNode($0).map(K.locationStamp(of:)) }
+            // The revert's own stamp: one above every stamp in the cycle, computed from the
+            // cycle's values and never from this device's clock, so two devices holding the same
+            // two moves author the same bytes and landing them twice changes nothing.
+            let cycleStamp = PhiHybridClock.editStamp(editWallMs: 0,
+                                                      overwrittenStampMs: stamps.max() ?? 0)
+            // The oldest location stamp loses, and an exact tie goes to the lexicographically
+            // greater UUID, which no device can disagree about.
+            let loser = cycle.min {
+                let left = cycleNode($0).map(K.locationStamp(of:)) ?? 0
+                let right = cycleNode($1).map(K.locationStamp(of:)) ?? 0
+                return left == right ? $0 < $1 : left < right
+            }
+            // A revert that changes nothing means this device has already agreed with the losing
+            // move — it published it, so its own baseline is that move and it no longer knows
+            // where the folder came from. Leave the cycle to the peers that still hold the
+            // pre-move baseline: they compute the same loser and publish the revert this device
+            // then lands. Reverting the other member instead would undo the newer move too.
+            guard let loser, let landing = cycleNode(loser),
+                  let restored = K.reverted(entityOf[loser] ?? landing, to: baselineOf(loser),
+                                            stamp: cycleStamp),
+                  K.ownerUuids(of: restored) != K.ownerUuids(of: landing),
+                  revertedByCycle.insert(loser).inserted else { break }
+            if let slot = survivors.firstIndex(where: { $0.identity == loser }) {
+                survivors[slot].entity = restored
+            } else {
+                // The loser is a live local row with no arrival this round: land its revert as if
+                // it had arrived, so the same move step and the same republication follow and the
+                // user's own losing move is undone here too.
+                survivors.append((loser, restored))
+            }
+            entityOf[loser] = restored
+            cycleNodes.removeAll()
+            cycleStampMs = max(cycleStampMs, cycleStamp)
+            cyclesBroken += 1
+        }
+
+        // 4b. Kahn topological sort. Refuse any remaining cyclic dependency — a kind that cannot
+        // revert a location, or a shape the break above could not resolve; parking would wait
+        // forever for an impossible parent.
         var dependencies: [String: [String]] = [:]
         for item in survivors {
             dependencies[item.identity] = K.ownerUuids(of: item.entity).compactMap {
@@ -837,7 +1120,7 @@ enum SyncableOwnedItems {
             remaining = stillRemaining
             if remaining.isEmpty || !progressed { break }
         }
-        refused += remaining.count      // Cycles
+        refused += remaining.count      // Cycles no kind could break
 
         // 5. Apply in topological order.
         var steps: [OwnedItemApplyStep] = []
@@ -950,8 +1233,17 @@ enum SyncableOwnedItems {
                         continue
                     }
                 }
+                // Both sides are hybrid-logical values (C2 / R2.1): the left is a wire LWW
+                // stamp, the right was written from `hlcNow()` in `tombstones(...)` above.
+                // They must stay on the same clock or this comparison loses its meaning.
                 let decidedAt = cursor?.deleteDecidedAtMs ?? 0
-                let newerThanDeletion = K.locationStamp(of: merged) > decidedAt
+                // C4-a extends A9 from a newer LOCATION stamp to a newer stamp on ANY merge
+                // unit: an edit beats a delete in this direction too, whichever side reached
+                // the server first. M3-3 deliberately left content out (CASE U-23), which made
+                // "edit beats delete" hold only for an edit that arrived before this device
+                // decided to delete; the owner's ruling removes that asymmetry.
+                let newerThanDeletion = max(K.locationStamp(of: merged),
+                                            K.contentStamp(of: merged)) > decidedAt
                 let parentIsLive = landingParent.map {
                     $0.isEmpty || landedIdentities.contains($0) || context.liveLocalParents.contains($0)
                 } ?? true
@@ -977,6 +1269,10 @@ enum SyncableOwnedItems {
             if adopted == nil, localProjection != nil, payload != payloadBytes(item.entity) {
                 mustRepublish.insert(identity)
             }
+            // C5-a: the revert is this device's own decision and the account still holds the move
+            // it undid, so say so explicitly. After landing the local row equals the reconciled
+            // bytes and the ordinary diff would find nothing to send.
+            if revertedByCycle.contains(identity) { mustRepublish.insert(identity) }
 
             if context.pairs[identity] != nil {
                 // §6.3: claim account identity first, then write fields in phase order.
@@ -997,7 +1293,11 @@ enum SyncableOwnedItems {
                                                 payload: payload))
                 continue
             }
-            let moved = wasLifted || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
+            // A reverted loser lands back ON its baseline location, so nothing here differs from
+            // the baseline and the ordinary test would emit no step (C5-a). The local row is
+            // exactly what must move: this device's user may be the one who made the losing move.
+            let moved = wasLifted || revertedByCycle.contains(identity)
+                || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
                 || K.rank(of: merged) != K.rank(of: baseline)
             if moved {
                 // Populate newOwnerUuid from merged ownership only for move (R-M3-4a-26).
@@ -1109,6 +1409,7 @@ enum SyncableOwnedItems {
         }.map(\.element)
 
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
+                             cyclesBroken: cyclesBroken, cycleStampMs: cycleStampMs,
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
                              mustRepublish: mustRepublish,
@@ -1136,7 +1437,8 @@ enum SyncableOwnedItems {
     /// bookmarks or title for folders, then pair local index order with remote
     /// rank order. Grouping by only Space/path could pair different URLs.
     static func adopt(arrivals: [Phi_PhiBookmarkEntity], locals: [PhiLocalBookmark],
-                      resolve: OwnerResolver) -> OwnedItemAdoptionResult {
+                      resolve: OwnerResolver,
+                      wallOffsetMs: Int64 = 0) -> OwnedItemAdoptionResult {
         var pairs: [String: String] = [:]
         var unmatchedFolders = 0
         var merges: [String: Data] = [:]
@@ -1178,8 +1480,27 @@ enum SyncableOwnedItems {
                                                            ? nil : parentIdentity) else {
                 return false
             }
-            projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
-                                           rank: "", now: 0)
+            // now/hlcMax are both 0 on purpose: this projection is the LOCAL SIDE of an adoption
+            // merge, not a publication. Location and rank must stay at stamp 0 so a derived local
+            // position cannot beat the arrival, and content keeps its bare edit time so an old
+            // untouched local row cannot claim the account's logical time during claiming.
+            //
+            // `locationUpdatedDate` is cleared for the same reason, and clearing it is what keeps
+            // location at 0 now that the column exists: the location projected here is the ARRIVAL's
+            // (`parentIdentity` above comes from the remote entity), so stamping it with this
+            // device's move time would hand an unchanged location a higher stamp than the account
+            // holds and republish every adopted row.
+            //
+            // AM-2's `wallOffsetMs`, unlike the two above, IS applied: the content stamp below is
+            // a real edit time read off this device's clock, and it is about to be compared
+            // against the arrival's. Leaving it raw is what lets an hour-fast device win a
+            // claiming merge with an edit that is genuinely older. The correction reaches every
+            // stamp, inbound and outbound.
+            var atRest = row
+            atRest.locationUpdatedDate = nil
+            projected = BookmarkKind.stamp(projected, baseline: nil, local: atRest,
+                                           rank: "", now: 0, hlcMax: 0,
+                                           wallOffsetMs: wallOffsetMs)
             // The unidentified local projection has an empty UUID; the merge adopts the remote UUID.
             let merged = BookmarkKind.merge(local: projected, remote: entity)
             guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else {

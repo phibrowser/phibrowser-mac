@@ -203,6 +203,15 @@ import SwiftUI
         let keys = PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys
         let hadCursor = keys.contains { defaults.object(forKey: $0) != nil }
         for key in keys { defaults.removeObject(forKey: key) }
+        // The default-Space role register names one of the PREVIOUS account's Spaces. Unlike the
+        // other mirrored settings its value is an account identity, so it must not survive into
+        // the next account: that account's first push would publish a foreign uuid. The mount-time
+        // reseed writes this account's own answer back at stamp 0.
+        for key in [PhiDefaultSpaceMirror.key,
+                    SyncableSettings.timestampKey(for: PhiDefaultSpaceMirror.key),
+                    SyncableSettings.valueKey(for: PhiDefaultSpaceMirror.key)] {
+            defaults.removeObject(forKey: key)
+        }
         markerStore?.deleteFile()
         return hadCursor
     }
@@ -419,6 +428,28 @@ import SwiftUI
             applyAccountPinnedTabScope(scope, store: localStore)
         }
 
+        // C1 step 3: the same mount-time reseed for the default-Space role register, beside the pin-scope one
+        // and for the same reason. Seed from the local pointer's ACCOUNT identity so a device that has already
+        // handed the role over publishes that answer, and from the well-known default identity when the
+        // pointer has none (never a local id -- D6 §2.4). Seeding is stamped 0, so it loses to any real
+        // hand-off.
+        // Read the MOUNTING account's own pointer rather than `SpaceManager.currentDefaultSpaceId`: the
+        // singleton may not be bound to this account yet at mount, exactly as the pin-scope reseed above
+        // passes the account store under construction instead of the singleton.
+        let roleHolderSpaceId = account.userDefaults
+            .string(forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue)
+            ?? LocalStore.defaultSpaceId
+        switch PhiDefaultSpaceMirror.reseed(
+            localUuid: syncKeyController?.syncUuid(forSpaceId: roleHolderSpaceId), into: defaults) {
+        case .noop, .seeded:
+            break
+        case .applyRegister(let uuid):
+            // The register is authoritative: it landed for this account (or for another one -- the key is
+            // device-wide) and the local pointer has not followed it yet. Applying it writes nothing when the
+            // uuid does not resolve to a live user Space here.
+            SpaceManager.shared.applyAccountDefaultSpace(syncUuid: uuid)
+        }
+
         let domainKeys = PhiDomainKeyManager(api: stack.api, keyManager: stack.manager)
         let client = PhiSyncHTTPClient(
             tokenProvider: { AuthManager.shared.getAccessTokenSyncly() },
@@ -547,7 +578,14 @@ import SwiftUI
         phiSpaceGateObserver = NotificationCenter.default.addObserver(
             forName: .phiProfileMappingsDidResolve, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
+            MainActor.assumeIsolated {
+                self?.refreshSpaceSyncGate()
+                // C1 step 3, the second half of the re-evaluation: a register naming a Space this device had
+                // not paired becomes resolvable the moment the mapping exists, and pairing changes no local
+                // Space row, so `handleSpacesUpdate`'s hook would not see it. Every refresh round announces
+                // here; the call is a defaults read and an equality check when nothing changed.
+                SpaceManager.shared.applyAccountDefaultSpaceIfPublished()
+            }
         }
 
         // The gate's fourth driver, and the only one that can see the hysteresis safety net:
@@ -581,6 +619,15 @@ import SwiftUI
         ) { [weak self] notification in
             let applied = notification.userInfo?[SyncableSettings.appliedKeysUserInfoKey]
                 as? [String] ?? []
+            // C1 step 4, the same shape for the default-Space role: the register landed, so point the local
+            // pointer at it. `applyAccountDefaultSpace` writes nothing when the uuid does not resolve here.
+            if applied.contains(PhiDefaultSpaceMirror.key),
+               let uuid = UserDefaults.standard.string(forKey: PhiDefaultSpaceMirror.key),
+               !uuid.isEmpty {
+                MainActor.assumeIsolated {
+                    SpaceManager.shared.applyAccountDefaultSpace(syncUuid: uuid)
+                }
+            }
             // Read `UserDefaults.standard` in place: capturing the equivalent local value in this `@Sendable`
             // closure would capture a non-Sendable object.
             guard applied.contains(PinnedTabScopeMirror.key),

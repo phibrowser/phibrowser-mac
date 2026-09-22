@@ -108,8 +108,13 @@ enum SyncableSettings {
     /// which is not a preference at all locally but a SwiftData row. It rides here as a
     /// mirror preference; `PinnedTabScopeMirror` owns the key, both closures and the
     /// mount-time reseed that keeps the mirror and the row together.
+    ///
+    /// C1 adds a second member of the same shape: the default-Space ROLE, which is an
+    /// account-scoped `UserDefaults` pointer locally. `PhiDefaultSpaceMirror` owns its key,
+    /// both closures and its mount-time reseed.
     static let all: [SyncableSetting] = generalBools
-        + [layoutMode, autoPictureInPictureMode, PinnedTabScopeMirror.pinnedTabScope]
+        + [layoutMode, autoPictureInPictureMode, PinnedTabScopeMirror.pinnedTabScope,
+           PhiDefaultSpaceMirror.defaultSpace]
         + themeSettings
 
     // MARK: General (Bool)
@@ -254,9 +259,16 @@ enum SyncableSettings {
     ///
     /// For each registered key: if the current value differs from
     /// `<key>.phiSyncVal` (or no sidecar exists yet) the key is treated as
-    /// locally changed — `<key>.phiSyncTs` becomes `now` and `<key>.phiSyncVal`
+    /// locally changed — `<key>.phiSyncTs` is restamped and `<key>.phiSyncVal`
     /// is refreshed. Otherwise the stored timestamp is reused, so an untouched
     /// key does not keep winning last-writer-wins against a remote edit.
+    ///
+    /// A changed key is stamped `max(now, previousStamp + 1)` (AM-1). The
+    /// engine passes its hybrid-logical clock as `now`, which already exceeds
+    /// every settings stamp it has landed; the explicit bump is what makes this
+    /// function correct on its own, including in the one window where the two
+    /// disagree — the sidecars are not account-scoped and outlive an account
+    /// switch, while `phi.sync.hlcMax` is wiped by it.
     ///
     /// - Parameters:
     ///   - defaults: the preference domain to read (and stamp sidecars in).
@@ -271,13 +283,14 @@ enum SyncableSettings {
         for setting in settings {
             guard var value = setting.read(defaults) else { continue }
             let current = signature(of: value)
+            let stored = storedTimestamp(defaults, setting.key)
             let timestamp: Int64
-            if defaults.data(forKey: valueKey(for: setting.key)) == current,
-               let stored = storedTimestamp(defaults, setting.key) {
+            if defaults.data(forKey: valueKey(for: setting.key)) == current, let stored {
                 timestamp = stored
             } else {
-                timestamp = now
-                defaults.set(NSNumber(value: now), forKey: timestampKey(for: setting.key))
+                timestamp = PhiHybridClock.editStamp(editWallMs: now,
+                                                     overwrittenStampMs: stored ?? 0)
+                defaults.set(NSNumber(value: timestamp), forKey: timestampKey(for: setting.key))
                 defaults.set(current, forKey: valueKey(for: setting.key))
             }
             value.updatedAtMs = timestamp

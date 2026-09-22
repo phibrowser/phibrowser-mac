@@ -36,6 +36,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         cursor.reconciled = Data([0x01])
         cursor.server = Data([0x02])
         cursor.pendingApply = Data([0x03])
+        cursor.pendingProjection = Data([0x04])
         cursor.heldProfileUuid = "held-uuid"
         cursor.heldForLocalProfileId = "Profile 1"
         cursor.pendingDelete = true
@@ -61,9 +62,47 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         let back = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: bytes)
         XCTAssertEqual(back, table)
         XCTAssertEqual(back.formatVersion, PhiSpaceSyncTable.currentFormatVersion)
-        // Assign nondefault values to all fourteen cursor fields. Synthesized Equatable
+        // Assign nondefault values to all fifteen cursor fields. Synthesized Equatable
         // then makes back == table a field-by-field assertion; omitted fields could otherwise escape detection.
         XCTAssertEqual(back.cursors["sync-u1"], cursor)
+    }
+
+    /// C2-a / S2's `pendingProjection` is OPTIONAL for the compatibility reason
+    /// `PhiOwnedItemCursor.rekeyRejectRounds` documents: synthesized decoding reads an optional
+    /// with `decodeIfPresent`, so a cursor file written by a build without the field decodes
+    /// with it nil instead of throwing -- which `codableValue` would turn into an empty table
+    /// and `loaded` into a lost baseline and a reopened pairing. The reverse direction needs no
+    /// test: an older build simply ignores the extra key and stamps at publish time as before.
+    func testACursorFileFromTheBuildBeforeThePendingProjectionStillDecodes() throws {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"
+        cursor.version = 7
+        cursor.reconciled = Data([0x01])
+        cursor.pendingProjection = Data([0x04])
+        var table = PhiSpaceSyncTable()
+        table.cursors["sync-u1"] = cursor
+        let encoded = try JSONEncoder().encode(table)
+
+        // Positive case first, or stripping a key that was never written proves nothing.
+        XCTAssertEqual(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded)
+                        .cursors["sync-u1"]?.pendingProjection, Data([0x04]))
+
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var cursors = try XCTUnwrap(object["cursors"] as? [String: Any])
+        var stored = try XCTUnwrap(cursors["sync-u1"] as? [String: Any])
+        XCTAssertNotNil(stored.removeValue(forKey: "pendingProjection"),
+                        "the key must be present in the encoding")
+        cursors["sync-u1"] = stored
+        object["cursors"] = cursors
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+        XCTAssertNil(decoded.cursors["sync-u1"]?.pendingProjection)
+        XCTAssertEqual(decoded.cursors["sync-u1"]?.reconciled, Data([0x01]),
+                       "the rest of the cursor is untouched")
+        XCTAssertEqual(decoded.formatVersion, PhiSpaceSyncTable.currentFormatVersion)
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy),
+                       "a table missing only this key is not a stale format")
     }
 
     /// Previous formatVersion=2 tables lack M3-3's four per-kind flags plus M3-4a's

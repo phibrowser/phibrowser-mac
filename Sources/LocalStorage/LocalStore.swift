@@ -42,8 +42,8 @@ class LocalStore {
     static let willCloseNotification = Notification.Name("LocalStore.willClose")
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 12,
-        readableStoreFormatVersions: 1...12,
+        currentStoreFormatVersion: 13,
+        readableStoreFormatVersions: 1...13,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -1044,6 +1044,7 @@ private struct BookmarkChangeSnapshot: Equatable {
     let source: Int
     let createdDate: Date
     let contentUpdatedDate: Date?
+    let locationUpdatedDate: Date?
 
     init(_ model: TabDataModel) {
         syncId = model.syncId
@@ -1060,6 +1061,7 @@ private struct BookmarkChangeSnapshot: Equatable {
         source = model.source
         createdDate = model.createdDate
         contentUpdatedDate = model.contentUpdatedDate
+        locationUpdatedDate = model.locationUpdatedDate
     }
 }
 

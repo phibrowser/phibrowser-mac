@@ -7,7 +7,7 @@ import Foundation
 
 // Owned-item sync state: one table/file per kind (§3.5), under account.userDataStorage/sync as
 // bookmarks-cursors.json, pins-cursors.json and urlrules-cursors.json (M3-4a). All three share
-// PhiOwnedItemTable/PhiOwnedItemCursor unchanged; rule merge partners belong in V11 mergePartnerSyncId, never
+// PhiOwnedItemTable/PhiOwnedItemCursor unchanged; rule merge partners belong in V12 mergePartnerSyncId, never
 // cursor fields (RR8-4 / §4.4).
 //
 // The directory is App Support/Phi/users/<userID>, beside localDB/defaults, so account switches/resets need no

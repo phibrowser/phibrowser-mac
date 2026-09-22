@@ -24,6 +24,12 @@ enum PinKind: OwnedItemKind {
     static var tagPrefix: String { PhiSyncEntity.pinTagPrefix }
     static var entityName: String { PhiSyncEntity.pinEntityName }
 
+    /// Ruling C4: a pin yields to an unpublished local edit, like a bookmark or a URL rule.
+    /// Scope migration is not a delete an edit may beat: it tombstones the old (lineage, owner)
+    /// identity and creates a new one, and no live row claims the old identity afterwards, so
+    /// the predicate in `SyncableOwnedItems.unpublishedEdits` is false for it (T5).
+    static var tombstoneYieldsToLocalEdits: Bool { true }
+
     // MARK: - Lineage normalization
 
     /// Convert local pinLineageId (uppercase UUID().uuidString) to wire pin_uuid.
@@ -157,6 +163,14 @@ enum PinKind: OwnedItemKind {
         entity.rank.updatedAtMs
     }
 
+    /// A9's content half (C4-a): the newest of the three content stamps, matching
+    /// `contentSignature`'s field set. A remote rename or retitle now cancels a local pending
+    /// deletion exactly as a remote reorder out of a deleted scope already did.
+    static func contentStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
+        max(entity.title.updatedAtMs, entity.url.updatedAtMs,
+            entity.splitPartnerUuid.updatedAtMs)
+    }
+
     /// Value bytes of the three content fields with timestamps zeroed, like SyncableSettings.signature(of:).
     /// Exclude rank because move carries it through PinApplyOp.move(guid:index:); including it would add an
     /// empty field patch for every reorder. Include split_partner_uuid, carried by
@@ -173,20 +187,32 @@ enum PinKind: OwnedItemKind {
 
     /// Stamp per §4.2 items 4/5: rank has its own timestamp; content fields form the other group.
     /// Without a baseline (§4.2 item 5), stamp rank with 0 so derived local order cannot beat a real remote
-    /// action. Stamp title/url with contentUpdatedDate ?? createdDate, and every other field with now (A13).
-    /// Stamping old untouched content with now could overwrite last week's remote rename.
+    /// action. Stamp title/url with contentUpdatedDate ?? createdDate raised to `hlcMax + 1` (AM-1), and
+    /// every other field with now (A13).
     /// split_partner_uuid belongs to the other fields and gets now: §4.2 item 5 names only
     /// title/url/secondary_* as content. A split operation does not change contentUpdatedDate, and an old
     /// timestamp could lose a newly created link to a newer-stamped empty value. It remains in
     /// contentSignature because deciding whether a patch is needed is independent of timestamp choice.
+    /// Ruling Q-R2-3 would fold it into the content stamp, but only once the split/unsplit write path sets
+    /// contentUpdatedDate; `updateTabSplitPartnerBody` is shared with sync landing, so that is not a local
+    /// change and the field stays on `now`.
     /// Preserve partially landed split links (§7.4): if the local partner has not landed and its link is nil
     /// while the baseline has a lineage, copy the baseline. Sending an empty string would break an intact
     /// remote pair merely because this device received it.
+    ///
+    /// C2: `now` is the round's hybrid-logical stamp; content carries its own EDIT time instead.
+    ///
+    /// AM-2: `contentUpdatedDate` was written from this device's raw `Date()`, so it is corrected
+    /// by the same offset `hlcNow()` applies; see `BookmarkKind.stamp`. `now` arrives already
+    /// corrected, so the fields that take it need nothing here.
     static func stamp(_ projected: Phi_PhiPinTabEntity, baseline: Phi_PhiPinTabEntity?,
-                      local: PhiLocalPin, rank: String, now: Int64) -> Phi_PhiPinTabEntity {
+                      local: PhiLocalPin, rank: String, now: Int64,
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiPinTabEntity {
         var out = projected
         out.rank = string(rank)
-        let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
+        let contentStamp = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
 
         if out.splitPartnerUuid.stringValue.isEmpty,
            let baseline, !baseline.splitPartnerUuid.stringValue.isEmpty {
@@ -194,9 +220,11 @@ enum PinKind: OwnedItemKind {
         }
 
         guard let baseline else {
+            let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
+                                                   overwrittenStampMs: hlcMax)
             out.rank.updatedAtMs = 0
-            out.title.updatedAtMs = contentStamp
-            out.url.updatedAtMs = contentStamp
+            out.title.updatedAtMs = created
+            out.url.updatedAtMs = created
             out.splitPartnerUuid.updatedAtMs = now
             return out
         }
@@ -208,8 +236,8 @@ enum PinKind: OwnedItemKind {
         // local row.
         if baseline.source != 0 { out.source = baseline.source }
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
-        out.title.updatedAtMs = restamped(out.title, baseline.title, now)
-        out.url.updatedAtMs = restamped(out.url, baseline.url, now)
+        out.title.updatedAtMs = restamped(out.title, baseline.title, contentStamp)
+        out.url.updatedAtMs = restamped(out.url, baseline.url, contentStamp)
         out.splitPartnerUuid.updatedAtMs = restamped(out.splitPartnerUuid,
                                                      baseline.splitPartnerUuid, now)
         return out
@@ -431,12 +459,15 @@ enum PinKind: OwnedItemKind {
             && !lineage.unicodeScalars.contains("\u{0}")
     }
 
-    /// Reuse the baseline timestamp when the field signatures match; otherwise stamp now.
+    /// Reuse the baseline timestamp when the field signatures match; otherwise stamp the edit, raised one
+    /// above the stamp it overwrites (AM-1); see BookmarkKind's same-named function.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
-                                  _ now: Int64) -> Int64 {
+                                  _ editWallMs: Int64) -> Int64 {
         SyncableSettings.signature(of: value) == SyncableSettings.signature(of: baseline)
-            ? baseline.updatedAtMs : now
+            ? baseline.updatedAtMs
+            : PhiHybridClock.editStamp(editWallMs: editWallMs,
+                                       overwrittenStampMs: baseline.updatedAtMs)
     }
 
     private static func mergedSource(_ left: Int32, _ right: Int32) -> Int32 {

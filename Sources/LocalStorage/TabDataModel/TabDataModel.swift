@@ -6,11 +6,11 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV12.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV12.ProfileModel
-typealias SpaceModel = TabDataModelSchemaV12.SpaceModel
-typealias SpaceURLRule = TabDataModelSchemaV12.SpaceURLRule
-typealias BrowserDataSettingsModel = TabDataModelSchemaV12.BrowserDataSettingsModel
+typealias TabDataModel = TabDataModelSchemaV13.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV13.ProfileModel
+typealias SpaceModel = TabDataModelSchemaV13.SpaceModel
+typealias SpaceURLRule = TabDataModelSchemaV13.SpaceURLRule
+typealias BrowserDataSettingsModel = TabDataModelSchemaV13.BrowserDataSettingsModel
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -33,11 +33,12 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             TabDataModelSchemaV10.self,
             TabDataModelSchemaV11.self,
             TabDataModelSchemaV12.self,
+            TabDataModelSchemaV13.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12, migrateV12toV13]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -194,6 +195,16 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             }
             try context.save()
         }
+    )
+
+    /// Additive: the optional `TabDataModel.locationUpdatedDate` column that edit-time
+    /// stamping reads for the bookmark location merge unit (C2 / R2.2). Deliberately not
+    /// backfilled: nil means "no recorded move", which `BookmarkKind.stamp` treats exactly
+    /// as it treated every row before V13. Inventing a date here would instead publish a
+    /// fabricated move time for every existing bookmark on the next round.
+    static let migrateV12toV13 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV12.self,
+        toVersion: TabDataModelSchemaV13.self
     )
 
     static let migrateV2toV3 = MigrationStage.custom(

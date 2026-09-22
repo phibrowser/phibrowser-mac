@@ -164,10 +164,24 @@ enum URLRuleKind: OwnedItemKind {
     }
 
     /// Read only the target field's own stamp (R-M3-4a-25), as bookmark location stamping does.
-    /// `stamp` writes it; this accessor reads it. Using content time for A9's first condition would
-    /// let a newer remote content edit cancel a local deletion (CASE U-23).
+    /// `stamp` writes it; this accessor reads it. CASE U-23 originally kept content time out of
+    /// A9's first condition; ruling C4-a reinstates it through `contentStamp` instead, so the
+    /// carrier rule here is unchanged and the two units stay separate.
     static func locationStamp(of entity: Phi_PhiURLRuleEntity) -> Int64 {
         entity.targetSpaceUuid.updatedAtMs
+    }
+
+    /// A9's content half (C4-a): the content group's carrier stamp. The three members always
+    /// share one stamp (§8.2 rule 1), so `host` is the whole group.
+    ///
+    /// U-23's residue is handled by branch order, not by a second predicate: an inbound entity
+    /// for a rule this device soft-deleted reaches A9 only after the transfer and park branches
+    /// above have found no merge partner at all. A collapse loser always points at its winner
+    /// while that winner exists, so an engine-authored collapse deletion is never the one an
+    /// edit cancels; when the winner is gone too, the group is empty and keeping the edited rule
+    /// is the coherent outcome.
+    static func contentStamp(of entity: Phi_PhiURLRuleEntity) -> Int64 {
+        entity.host.updatedAtMs
     }
 
     /// §8.2 stamping (D33): engine writes mint no edit stamps; only derived rank uses `now`.
@@ -186,14 +200,31 @@ enum URLRuleKind: OwnedItemKind {
     /// With a baseline, first fold in creation time and source (R-exec-16 / R-19), following
     /// bookmarks. Values that cannot be represented locally must not cause perpetual byte
     /// differences and alternating commits.
+    /// C2 / AM-1: the edit columns were already the source here, which is why this kind is the pattern the
+    /// others now copy — but they were used bare, so this kind had the same slow-clock hole: a device whose
+    /// clock runs behind edits a rule it merged from a peer, its edit column is below the stamp it
+    /// overwrites, and the causally later edit loses. Both units are therefore raised one above the value
+    /// they replace (the baseline's stamp, or `hlcMax` with no baseline).
+    /// AM-2: both edit columns were written from this device's raw `Date()`, so they are corrected
+    /// by the same offset `hlcNow()` applies before they become wire stamps; see
+    /// `BookmarkKind.stamp`.
     static func stamp(_ projected: Phi_PhiURLRuleEntity, baseline: Phi_PhiURLRuleEntity?,
-                      local: PhiLocalURLRule, rank: String, now: Int64) -> Phi_PhiURLRuleEntity {
+                      local: PhiLocalURLRule, rank: String, now: Int64,
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiURLRuleEntity {
         var out = projected
         out.rank = string(rank)
+        let contentEdit = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
+        let targetEdit = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.targetUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
 
         guard let baseline else {
-            setContentStamp(&out, milliseconds(local.contentUpdatedDate ?? local.createdDate))
-            out.targetSpaceUuid.updatedAtMs = milliseconds(local.targetUpdatedDate ?? local.createdDate)
+            setContentStamp(&out, PhiHybridClock.editStamp(editWallMs: contentEdit,
+                                                           overwrittenStampMs: hlcMax))
+            out.targetSpaceUuid.updatedAtMs =
+                PhiHybridClock.editStamp(editWallMs: targetEdit, overwrittenStampMs: hlcMax)
             out.rank.updatedAtMs = 0
             return out
         }
@@ -204,14 +235,20 @@ enum URLRuleKind: OwnedItemKind {
         if baseline.source != 0 { out.source = baseline.source }
 
         let contentChanged = contentSignature(of: out) != contentSignature(of: baseline)
+        // The host is the fixed carrier of the group's stamp (R-M3-4a-40), so the baseline value this edit
+        // overwrites is the host's, never the maximum of the three members.
         setContentStamp(&out, contentChanged
-                            ? milliseconds(local.contentUpdatedDate ?? local.createdDate)
+                            ? PhiHybridClock.editStamp(
+                                editWallMs: contentEdit,
+                                overwrittenStampMs: baseline.host.updatedAtMs)
                             : baseline.host.updatedAtMs)
 
         let targetChanged = SyncableSettings.signature(of: out.targetSpaceUuid)
             != SyncableSettings.signature(of: baseline.targetSpaceUuid)
         if targetChanged {
-            out.targetSpaceUuid.updatedAtMs = milliseconds(local.targetUpdatedDate ?? local.createdDate)
+            out.targetSpaceUuid.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: targetEdit,
+                overwrittenStampMs: baseline.targetSpaceUuid.updatedAtMs)
             out.rank.updatedAtMs = now
         } else {
             out.targetSpaceUuid.updatedAtMs = baseline.targetSpaceUuid.updatedAtMs
@@ -239,9 +276,28 @@ enum URLRuleKind: OwnedItemKind {
         let remoteBallot = contentBallot(remote)
         let contentWinner = SyncableSettings.lwwWinner(localBallot, remoteBallot) == localBallot
             ? local : remote
-        merged.host = contentWinner.host
-        merged.pathPrefix = contentWinner.pathPrefix
-        merged.ask = contentWinner.ask
+        if localBallot == remoteBallot {
+            // Exact ballot tie: the ballot is built from the group's READOUTS
+            // (`host.stringValue`, `pathPrefix.stringValue`, `ask.boolValue`) plus the host
+            // carrier's stamp, so both sides already agree on everything it covers and
+            // `contentWinner` is only "whichever argument came first". What it does NOT cover is
+            // the members' own shape: an ABSENT `path_prefix` reads back identically to one that
+            // is present and empty, and a member holding a different oneof case reads back as its
+            // type's default. Copying the whole group from that arbitrary side would leave two
+            // devices holding different BYTES for one identity. Resolve the members through the
+            // shared winner on their own values instead, which is symmetric by construction —
+            // exactly what `BookmarkKind.merge` does for its tied location ballot. Which content
+            // group wins does not change (the tie already proved both sides agree on it), the
+            // fixed host carrier stays the only stamp compared (R-M3-4a-40), and the carrier stamp
+            // below still overwrites all three members.
+            merged.host = SyncableSettings.lwwWinner(local.host, remote.host)
+            merged.pathPrefix = SyncableSettings.lwwWinner(local.pathPrefix, remote.pathPrefix)
+            merged.ask = SyncableSettings.lwwWinner(local.ask, remote.ask)
+        } else {
+            merged.host = contentWinner.host
+            merged.pathPrefix = contentWinner.pathPrefix
+            merged.ask = contentWinner.ask
+        }
         // §8.2 rule 1: send all three content stamps equal to the winning carrier stamp.
         setContentStamp(&merged, contentWinner.host.updatedAtMs)
 
@@ -360,12 +416,16 @@ enum URLRuleKind: OwnedItemKind {
         entity.ask.updatedAtMs = stamp
     }
 
-    /// Preserve the baseline stamp when value signatures match; otherwise use `now`.
+    /// Preserve the baseline stamp when value signatures match; otherwise stamp the edit, raised one above
+    /// the stamp it overwrites (AM-1); see BookmarkKind's same-named function. Only `rank` uses this here,
+    /// and its `editWallMs` is already the round's hybrid stamp, so the bump is a no-op.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
-                                  _ now: Int64) -> Int64 {
+                                  _ editWallMs: Int64) -> Int64 {
         SyncableSettings.signature(of: value) == SyncableSettings.signature(of: baseline)
-            ? baseline.updatedAtMs : now
+            ? baseline.updatedAtMs
+            : PhiHybridClock.editStamp(editWallMs: editWallMs,
+                                       overwrittenStampMs: baseline.updatedAtMs)
     }
 
     private static func mergedSource(_ left: Int32, _ right: Int32) -> Int32 {
@@ -442,7 +502,7 @@ extension URLRuleKind {
     /// Failure makes the row inert: exclude it from groups, M1/M2/M3, and snapshots. Never
     /// substitute a fallback owner such as nil, empty string, or local id: different targets could
     /// collapse into one group, soft-deleting an unpublished row that cannot even emit a tombstone.
-    /// Inject normalization rather than reaching into storage. Normalize the row here too: V11
+    /// Inject normalization rather than reaching into storage. Normalize the row here too: V12
     /// backfilled rows may be noncanonical (M-8's `GitHub.com.`), while idempotence preserves
     /// already normalized values.
     static func signature(of row: PhiLocalURLRule, resolve: OwnerResolver,
@@ -483,7 +543,7 @@ extension URLRuleKind {
     /// §8.4.1 rule 3: at rest means all ten predicates, evaluated in spec order. M2 grouping,
     /// winner selection, and §8.4.4 partner eligibility share this implementation.
     /// Only rows with `syncId` can qualify: it addresses predicate 1 and orders winners. Exclude
-    /// missed V11 backfills without force-unwrapping. Predicates 1/2/3/4/5/9 read cursors; 6/7 read
+    /// missed V12 backfills without force-unwrapping. Predicates 1/2/3/4/5/9 read cursors; 6/7 read
     /// rows; 8 uses the resolver; 10 uses this page's arrivals. Compute once per page during
     /// pre-pass, using that page's inclusive read and current table. Later writes on the same page
     /// do not alter that captured decision (R-62).
@@ -976,7 +1036,7 @@ extension URLRuleKind {
                              accountStamps: [String: Date]) -> URLRuleConvergence {
         let normalize = mergeNormalize
         var out = URLRuleConvergence()
-        /// Comparable content group: normalize all three member values; legacy V11-backfilled rows
+        /// Comparable content group: normalize all three member values; legacy V12-backfilled rows
         /// were not normalized.
         func content(_ row: PhiLocalURLRule) -> (String, String?, Bool) {
             let normalized = normalize(row.host, row.pathPrefix)

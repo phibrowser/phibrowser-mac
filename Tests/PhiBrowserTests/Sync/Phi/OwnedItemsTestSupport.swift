@@ -185,7 +185,7 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     private func spaceId(of op: BookmarkApplyOp) -> String? {
         switch op {
         case .create(let row): return row.spaceId
-        case .move(_, _, let spaceId, _): return spaceId
+        case .move(_, _, let spaceId, _, _): return spaceId
         case .claim(let guid, _), .update(let guid, _), .delete(let guid):
             return rows.first { $0.guid == guid }?.spaceId
         }
@@ -200,11 +200,15 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             rows[index].syncId = syncId
         case .create(let row):
             rows.append(row)
-        case .move(let guid, let parentGuid, let spaceId, let position):
+        case .move(let guid, let parentGuid, let spaceId, let position,
+                   let recordsLocationEdit):
             guard let index = rows.firstIndex(where: { $0.guid == guid }) else { return }
             rows[index].parentGuid = parentGuid
             rows[index].spaceId = spaceId
             rows[index].index = position
+            // Mirror LocalStore: only a move the caller marks as an edit stamps the column
+            // (C4's lift of a yielded child out of a remotely deleted folder).
+            if recordsLocationEdit { rows[index].locationUpdatedDate = Date() }
         case .update(let guid, let fields):
             guard let index = rows.firstIndex(where: { $0.guid == guid }) else { return }
             // Outer some means modify the field. Local title/URL are nonoptional, so inner
@@ -926,12 +930,14 @@ extension PhiLocalBookmark {
                         secondaryTitle: String? = nil,
                         source: Int = 0,
                         createdDate: Date = Date(timeIntervalSince1970: 1_000),
-                        contentUpdatedDate: Date? = nil) -> PhiLocalBookmark {
+                        contentUpdatedDate: Date? = nil,
+                        locationUpdatedDate: Date? = nil) -> PhiLocalBookmark {
         PhiLocalBookmark(syncId: syncId, guid: guid, spaceId: spaceId, profileId: profileId,
                          parentGuid: parentGuid, index: index, isFolder: isFolder,
                          title: title, url: url, secondaryUrl: secondaryUrl,
                          secondaryTitle: secondaryTitle, source: source,
-                         createdDate: createdDate, contentUpdatedDate: contentUpdatedDate)
+                         createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
+                         locationUpdatedDate: locationUpdatedDate)
     }
 }
 

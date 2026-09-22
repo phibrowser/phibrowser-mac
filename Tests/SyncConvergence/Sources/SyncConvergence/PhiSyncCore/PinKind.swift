@@ -1,0 +1,1 @@
+../../../../../Sources/Sync/Phi/PinKind.swift

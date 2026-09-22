@@ -227,6 +227,203 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(renamed.rank.updatedAtMs, base.rank.updatedAtMs)
     }
 
+    // MARK: - Edit-time stamping (C2-a / design option S2)
+
+    /// The cursor's `pendingProjection` is this device's own outbound bytes, so a field whose
+    /// value still matches it keeps the stamp it was given. That is what carries an offline
+    /// rename's own time all the way to the publish pass, which may run hours later.
+    func testAPendingProjectionKeepsAnOfflineEditsOwnTime() throws {
+        let base = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Work")], table: PhiSpaceSyncTable(),
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.reconciled = try base.serializedData()
+        table.cursors["u1"] = cursor
+
+        // The stamping pass, run while the machine is offline.
+        let stamped = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 20_000)["u1"]!
+        XCTAssertEqual(stamped.name.updatedAtMs, 20_000)
+
+        // The publish pass, an hour after the reconnect.
+        table.cursors["u1"]?.pendingProjection = try stamped.serializedData()
+        let published = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 3_600_000)["u1"]!
+        XCTAssertEqual(published.name.updatedAtMs, 20_000,
+                       "the rename must carry its own time, not the reconnect's")
+        XCTAssertEqual(published, stamped)
+    }
+
+    /// Two offline edits of DIFFERENT fields, which is why the pending projection has to be the
+    /// effective baseline: stamping the second pass against `reconciled` alone would find the
+    /// first field changed as well and restamp it at the second edit's time.
+    func testTwoSuccessiveOfflineEditsKeepTheirOwnPerFieldTimes() throws {
+        let base = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Work")], table: PhiSpaceSyncTable(),
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.reconciled = try base.serializedData()
+        table.cursors["u1"] = cursor
+
+        let renamed = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 20_000)["u1"]!
+        table.cursors["u1"]?.pendingProjection = try renamed.serializedData()
+
+        // The theme is one of the two fields that are not on `SpaceModel` at all, which is what
+        // ruled out a per-row edit-date column for Spaces.
+        let rethemed = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel", theme: "coral")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 30_000)["u1"]!
+        XCTAssertEqual(rethemed.name.updatedAtMs, 20_000)
+        XCTAssertEqual(rethemed.themeID.updatedAtMs, 30_000)
+        XCTAssertEqual(rethemed.iconName.updatedAtMs, base.iconName.updatedAtMs)
+    }
+
+    /// AM-1. A device whose wall clock runs behind the account still has to stamp above the
+    /// value it overwrites, or a genuinely later edit would lose to the value it was made on
+    /// top of -- the exact failure the hybrid clock exists to remove.
+    func testASlowClockEditStillExceedsTheStampItOverwrites() throws {
+        var baseline = Phi_PhiSpaceEntity()
+        baseline.spaceUuid = "u1"
+        var name = Phi_PhiSettingValue()
+        name.stringValue = "Work"
+        name.updatedAtMs = 5_000_000        // a peer on a healthy clock wrote this
+        baseline.name = name
+
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.reconciled = try baseline.serializedData()
+        table.cursors["u1"] = cursor
+
+        // This device's wall clock says 1_000.
+        let stamped = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 1_000)["u1"]!
+        XCTAssertEqual(stamped.name.updatedAtMs, 5_000_001)
+    }
+
+    /// A field edited and then put back before it was ever published must publish nothing: the
+    /// baseline branch is tested FIRST, so the value takes the account's own stamp again and the
+    /// whole projection collapses back onto `reconciled`, which is the commit batch's own
+    /// "nothing to publish" test.
+    func testAFieldRevertedBeforePublishingLeavesNothingToPublish() throws {
+        let base = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Work")], table: PhiSpaceSyncTable(),
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.reconciled = try base.serializedData()
+        table.cursors["u1"] = cursor
+
+        let renamed = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Travel")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 20_000)["u1"]!
+        table.cursors["u1"]?.pendingProjection = try renamed.serializedData()
+
+        let reverted = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Work")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 30_000)["u1"]!
+        XCTAssertEqual(reverted.name.updatedAtMs, base.name.updatedAtMs)
+        XCTAssertEqual(reverted, base, "a revert must leave the baseline bytes exactly")
+    }
+
+    /// A cursor that has never published has no per-field history to preserve, so a stray
+    /// `pendingProjection` on it changes nothing: first publication stays wholesale (A1).
+    func testAPendingProjectionWithoutABaselineIsIgnored() throws {
+        var stale = Phi_PhiSpaceEntity()
+        stale.spaceUuid = "u1"
+        var name = Phi_PhiSettingValue()
+        name.stringValue = "Work"
+        name.updatedAtMs = 7
+        stale.name = name
+
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.pendingProjection = try stale.serializedData()   // reconciled deliberately nil
+        table.cursors["u1"] = cursor
+
+        let out = SyncableSpaces.snapshot(
+            spaces: [local("u1", name: "Work")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
+        XCTAssertEqual(out.name.updatedAtMs, 9_000)
+        XCTAssertEqual(out.rank.updatedAtMs, 0, "no baseline still means a derived rank")
+    }
+
+    /// §7 through the stamping pass: one drag rewrites one entity, and running the pass again
+    /// for an unrelated local change must not re-issue that Space's rank stamp -- nor invent one
+    /// for the Spaces that did not move.
+    func testADragRestampsOnlyTheMovedSpaceAndKeepsThatStampOnTheNextPass() throws {
+        let order = ["u1", "u2", "u3"]
+        let seeded = SyncableSpaces.snapshot(
+            spaces: order.enumerated().map { local($0.element, order: $0.offset) },
+            table: PhiSpaceSyncTable(),
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 1_000)
+        var table = PhiSpaceSyncTable()
+        for uuid in order {
+            var cursor = PhiSpaceCursor()
+            cursor.reconciled = try seeded[uuid]!.serializedData()
+            table.cursors[uuid] = cursor
+        }
+
+        // The user drags u3 into the middle. Only u3 leaves the kept set.
+        let dragged = ["u1", "u3", "u2"].enumerated().map { local($0.element, order: $0.offset) }
+        let first = SyncableSpaces.snapshot(
+            spaces: dragged, table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 20_000)
+        XCTAssertEqual(first["u3"]!.rank.updatedAtMs, 20_000)
+        XCTAssertEqual(first["u1"]!.rank.updatedAtMs, seeded["u1"]!.rank.updatedAtMs)
+        XCTAssertEqual(first["u2"]!.rank.updatedAtMs, seeded["u2"]!.rank.updatedAtMs)
+
+        // An unrelated local change runs the pass again; the drag is already recorded.
+        for uuid in order { table.cursors[uuid]?.pendingProjection = try first[uuid]!.serializedData() }
+        let second = SyncableSpaces.snapshot(
+            spaces: dragged, table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 40_000)
+        XCTAssertEqual(second["u3"]!.rank.stringValue, first["u3"]!.rank.stringValue)
+        XCTAssertEqual(second["u3"]!.rank.updatedAtMs, 20_000,
+                       "a Space that has not moved since must not be restamped")
+        XCTAssertEqual(second["u1"]!.rank.updatedAtMs, seeded["u1"]!.rank.updatedAtMs)
+        XCTAssertEqual(second["u2"]!.rank.updatedAtMs, seeded["u2"]!.rank.updatedAtMs)
+    }
+
+    /// D1 is a property of the identity, not of the stamping path: the default Space publishes
+    /// neither field however it was stamped.
+    func testTheDefaultIdentityStillSuppressesProfileAndThemeWithAPendingProjection() throws {
+        func def(_ name: String) -> PhiLocalSpace {
+            PhiLocalSpace(spaceId: LocalStore.defaultSpaceId, profileId: "Default", name: name,
+                          colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
+                          createdDate: Date(timeIntervalSince1970: 1),
+                          themeId: "coral", opacityLight: nil, opacityDark: nil)
+        }
+        let base = SyncableSpaces.snapshot(
+            spaces: [def("Default")], table: PhiSpaceSyncTable(), globalUuid: { _ in "uuid-a" },
+            syncUuid: { _ in SyncableSpaces.defaultSpaceUuid },
+            now: 100)[SyncableSpaces.defaultSpaceUuid]!
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.reconciled = try base.serializedData()
+        table.cursors[SyncableSpaces.defaultSpaceUuid] = cursor
+
+        let stamped = SyncableSpaces.snapshot(
+            spaces: [def("Renamed")], table: table, globalUuid: { _ in "uuid-a" },
+            syncUuid: { _ in SyncableSpaces.defaultSpaceUuid },
+            now: 20_000)[SyncableSpaces.defaultSpaceUuid]!
+        table.cursors[SyncableSpaces.defaultSpaceUuid]?.pendingProjection =
+            try stamped.serializedData()
+        let published = SyncableSpaces.snapshot(
+            spaces: [def("Renamed")], table: table, globalUuid: { _ in "uuid-a" },
+            syncUuid: { _ in SyncableSpaces.defaultSpaceUuid },
+            now: 90_000)[SyncableSpaces.defaultSpaceUuid]!
+        XCTAssertFalse(published.hasProfileUuid)
+        XCTAssertFalse(published.hasThemeID)
+        XCTAssertEqual(published.name.updatedAtMs, 20_000)
+    }
+
     /// `rank` is an OPTIONAL message field, so a baseline that never carried one
     /// decodes to `""` -- and `""` is not merely a bad rank, it is an ILLEGAL
     /// upper bound: `rankBetween`'s precondition traps on it (`SyncableSpaces
@@ -734,7 +931,8 @@ final class SyncableSpacesTests: XCTestCase {
         let order = SyncableSpaces.plannedOrder(
             localOrder: [local("hidden", order: 0), local("s2", order: 1),
                          local("s1", order: 2), local("agent", order: 3)],
-            syncedRanks: ["s1": "A", "s2": "B"])
+            syncedRanks: ["s1": (rank: "A", uuid: "sync-1"),
+                          "s2": (rank: "B", uuid: "sync-2")])
         XCTAssertEqual(order, ["hidden", "s1", "s2", "agent"])
     }
 
@@ -748,7 +946,8 @@ final class SyncableSpacesTests: XCTestCase {
         let order = SyncableSpaces.plannedOrder(
             localOrder: [local("s2", order: 0), local("agent", order: 1),
                          local("s1", order: 2), local("unmapped", order: 3)],
-            syncedRanks: ["s1": "A", "s2": "B"])
+            syncedRanks: ["s1": (rank: "A", uuid: "sync-1"),
+                          "s2": (rank: "B", uuid: "sync-2")])
         XCTAssertEqual(order, ["s1", "agent", "s2", "unmapped"])
         XCTAssertEqual(order.count, 4, "every local Space must be renumbered in one write")
     }
@@ -764,13 +963,39 @@ final class SyncableSpacesTests: XCTestCase {
                           createdDate: Date(timeIntervalSince1970: 1),
                           themeId: nil, opacityLight: nil, opacityDark: nil)
         }
-        let byLocalId = ["LOCAL-1": "V", "LOCAL-2": "F", "LOCAL-3": "k"]
+        let byLocalId = ["LOCAL-1": (rank: "V", uuid: "sync-1"),
+                         "LOCAL-2": (rank: "F", uuid: "sync-2"),
+                         "LOCAL-3": (rank: "k", uuid: "sync-3")]
         XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: byLocalId),
                        ["LOCAL-2", "LOCAL-1", "LOCAL-3"])
-        let bySyncUuid = ["sync-1": "V", "sync-2": "F", "sync-3": "k"]
+        let bySyncUuid = ["sync-1": (rank: "V", uuid: "sync-1"),
+                          "sync-2": (rank: "F", uuid: "sync-2"),
+                          "sync-3": (rank: "k", uuid: "sync-3")]
         XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: bySyncUuid),
                        ["LOCAL-1", "LOCAL-2", "LOCAL-3"],
                        "Partial translation silently does nothing; keep translation in the engine")
+    }
+
+    /// Two devices that inserted at the same slot hold the SAME fractional rank for two
+    /// different Spaces. The tie must break on the account sync uuid, the way
+    /// `longestIncreasingKeptSet` and the wire contract do: local ids differ per device, so a
+    /// local-id tie-break leaves the two strips in different orders for good.
+    func testPlannedOrderBreaksTiedRanksOnTheSyncUuidSoBothDevicesAgree() {
+        // Device A calls them A-1/A-2 and lists them in one order; device B calls the same two
+        // account Spaces B-9/B-8 and lists them in the other.
+        let deviceA = [local("A-1", order: 0), local("A-2", order: 1)]
+        let deviceB = [local("B-9", order: 0), local("B-8", order: 1)]
+        let ranksA = ["A-1": (rank: "V", uuid: "sync-beta"),
+                      "A-2": (rank: "V", uuid: "sync-alpha")]
+        let ranksB = ["B-9": (rank: "V", uuid: "sync-alpha"),
+                      "B-8": (rank: "V", uuid: "sync-beta")]
+
+        let orderA = SyncableSpaces.plannedOrder(localOrder: deviceA, syncedRanks: ranksA)
+        let orderB = SyncableSpaces.plannedOrder(localOrder: deviceB, syncedRanks: ranksB)
+
+        XCTAssertEqual(orderA.map { ranksA[$0]?.uuid }, ["sync-alpha", "sync-beta"])
+        XCTAssertEqual(orderB.map { ranksB[$0]?.uuid }, ["sync-alpha", "sync-beta"],
+                       "tied ranks must resolve to the same account order on every device")
     }
 
     // MARK: - One thousandths-unit encoder (§5.7)

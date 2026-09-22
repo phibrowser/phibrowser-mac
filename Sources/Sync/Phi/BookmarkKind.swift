@@ -17,6 +17,11 @@ enum BookmarkKind: OwnedItemKind {
     static var tagPrefix: String { PhiSyncEntity.bookmarkTagPrefix }
     static var entityName: String { PhiSyncEntity.bookmarkEntityName }
 
+    /// Ruling C4: a bookmark or folder yields to an unpublished local edit, like a URL rule.
+    /// See the protocol declaration for the rationale and `SyncableOwnedItems.unpublishedEdits`
+    /// for the predicate that keeps the blast radius to rows the user demonstrably edited.
+    static var tombstoneYieldsToLocalEdits: Bool { true }
+
     // MARK: - Identity and envelope
 
     static func identity(of entity: Phi_PhiBookmarkEntity) -> String { entity.bookmarkUuid }
@@ -113,29 +118,81 @@ enum BookmarkKind: OwnedItemKind {
             : entity.parentUuid.updatedAtMs
     }
 
-    /// Stamping (§4.2 items 4/5): location members share now if location changes, never for reorder alone;
-    /// rank has its own independent stamp; content fields compare signatures and stamp changed values
+    /// A9's content half (C4-a): the newest of the four content stamps. Unlike location this is
+    /// a max rather than a designated carrier, because content fields are four independent
+    /// merge units and any one of them being newer than the deletion is a user edit.
+    static func contentStamp(of entity: Phi_PhiBookmarkEntity) -> Int64 {
+        max(entity.title.updatedAtMs, entity.url.updatedAtMs,
+            entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs)
+    }
+
+    /// Ruling C5-a: the folder that lost a move cycle, put back where the account last agreed it was.
+    /// The baseline's own location members are that agreement — every device holds the same bytes for it —
+    /// and its rank comes back with them, because a rank only orders siblings under one parent. A baseline
+    /// rank that is not legal is left behind for the arrival's, which `refuses` has already validated.
+    /// Without a baseline this device never saw the folder anywhere else, so the Space root is all it can
+    /// name; the Space is the one the arrival claims, diagnostic though that field is for a descendant.
+    /// §4.3: the new location is one merge unit and both members take `stamp`.
+    static func reverted(_ entity: Phi_PhiBookmarkEntity, to baseline: Phi_PhiBookmarkEntity?,
+                         stamp: Int64) -> Phi_PhiBookmarkEntity? {
+        var out = entity
+        // Take the members whole, as merge does, so nothing a newer client wrote inside them is lost.
+        out.spaceUuid = baseline?.spaceUuid ?? entity.spaceUuid
+        out.parentUuid = baseline?.parentUuid ?? string("")
+        out.spaceUuid.updatedAtMs = stamp
+        out.parentUuid.updatedAtMs = stamp
+        if let rank = baseline?.rank, SyncableSpaces.isLegalRank(rank.stringValue) { out.rank = rank }
+        return out
+    }
+
+    /// Stamping (§4.2 items 4/5): location members share one stamp when location changes, never for reorder
+    /// alone; rank has its own independent stamp; content fields compare signatures and stamp changed values
     /// individually.
     ///
-    /// Without a baseline, stamp location/rank as 0 so derived local positions cannot outrank real remote
-    /// actions. Content uses contentUpdatedDate ?? createdDate: publishing an old untouched local bookmark
-    /// with now could overwrite a recent rename during path/URL claiming.
+    /// Without a baseline, stamp rank as 0 so derived local positions cannot outrank real remote actions, and
+    /// stamp location 0 too unless the row records a real move. Content uses contentUpdatedDate ?? createdDate
+    /// raised to `hlcMax + 1` (AM-1): the edit time is what the user meant, but a create or a post-yield
+    /// republish has overwritten nothing, so the account's logical time is the floor. A recorded move takes
+    /// the same floor, which is what makes a deliberate lift survive a republish over a tombstone (R4.6);
+    /// without one there is no move to defend and 0 is still correct.
     ///
     /// With a baseline, first merge created_at_ms and source too (R-exec-16); see below.
+    ///
+    /// C2: content fields carry their EDIT time (`contentUpdatedDate`) and location its own
+    /// (`locationUpdatedDate`, schema V13), not the publish time. `now` is the round's hybrid-logical stamp
+    /// and remains the source for rank (ruling Q-R2-5) and for a location with no recorded move — a pre-V13
+    /// row, or one whose location only ever arrived from a peer.
+    ///
+    /// AM-2: the two edit columns below were written by `LocalStore` from this device's raw
+    /// `Date()`, so on a device whose clock is wrong they are wrong by the same amount. They are
+    /// therefore corrected here, at stamp time, by the same offset `hlcNow()` applies — the one
+    /// place where an edit time becomes a wire stamp. The columns themselves are never rewritten:
+    /// they are local wall-clock quantities and other readers compare them against wall clock.
     static func stamp(_ projected: Phi_PhiBookmarkEntity, baseline: Phi_PhiBookmarkEntity?,
-                      local: PhiLocalBookmark, rank: String, now: Int64) -> Phi_PhiBookmarkEntity {
+                      local: PhiLocalBookmark, rank: String, now: Int64,
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiBookmarkEntity {
         var out = projected
         out.rank = string(rank)
-        let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
+        let contentStamp = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
+        let locationEdit = local.locationUpdatedDate
+            .map { PhiHybridClock.corrected(wallMs: milliseconds($0), offsetMs: wallOffsetMs) }
 
         guard let baseline else {
-            out.spaceUuid.updatedAtMs = 0
-            out.parentUuid.updatedAtMs = 0
+            let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
+                                                   overwrittenStampMs: hlcMax)
+            // §4.3: one stamp, written to both members; `locationStamp(of:)` picks the carrier on the way out.
+            let located = locationEdit.map {
+                PhiHybridClock.editStamp(editWallMs: $0, overwrittenStampMs: hlcMax)
+            } ?? 0
+            out.spaceUuid.updatedAtMs = located
+            out.parentUuid.updatedAtMs = located
             out.rank.updatedAtMs = 0
-            out.title.updatedAtMs = contentStamp
-            out.url.updatedAtMs = contentStamp
-            out.secondaryURL.updatedAtMs = contentStamp
-            out.secondaryTitle.updatedAtMs = contentStamp
+            out.title.updatedAtMs = created
+            out.url.updatedAtMs = created
+            out.secondaryURL.updatedAtMs = created
+            out.secondaryTitle.updatedAtMs = created
             return out
         }
 
@@ -155,15 +212,28 @@ enum BookmarkKind: OwnedItemKind {
         // overwrite concurrent remote sorting.
         if !out.parentUuid.stringValue.isEmpty { out.spaceUuid = baseline.spaceUuid }
 
-        let locationStamp = locationValue(out) == locationValue(baseline)
-            ? Self.locationStamp(of: baseline) : now
+        // §4.3 location is one merge unit, so one stamp goes to both members. A changed location takes the
+        // move's own time raised above the stamp it overwrites (AM-1); `now` remains the fallback for a row
+        // with no recorded move, which is what every row carried before V13.
+        let baselineLocation = Self.locationStamp(of: baseline)
+        let locationStamp: Int64
+        if locationValue(out) == locationValue(baseline) {
+            locationStamp = baselineLocation
+        } else if let locationEdit {
+            locationStamp = PhiHybridClock.editStamp(editWallMs: locationEdit,
+                                                     overwrittenStampMs: baselineLocation)
+        } else {
+            locationStamp = now
+        }
         out.spaceUuid.updatedAtMs = locationStamp
         out.parentUuid.updatedAtMs = locationStamp
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
-        out.title.updatedAtMs = restamped(out.title, baseline.title, now)
-        out.url.updatedAtMs = restamped(out.url, baseline.url, now)
-        out.secondaryURL.updatedAtMs = restamped(out.secondaryURL, baseline.secondaryURL, now)
-        out.secondaryTitle.updatedAtMs = restamped(out.secondaryTitle, baseline.secondaryTitle, now)
+        out.title.updatedAtMs = restamped(out.title, baseline.title, contentStamp)
+        out.url.updatedAtMs = restamped(out.url, baseline.url, contentStamp)
+        out.secondaryURL.updatedAtMs = restamped(out.secondaryURL, baseline.secondaryURL,
+                                                 contentStamp)
+        out.secondaryTitle.updatedAtMs = restamped(out.secondaryTitle, baseline.secondaryTitle,
+                                                   contentStamp)
         return out
     }
 
@@ -184,8 +254,23 @@ enum BookmarkKind: OwnedItemKind {
         let remoteBallot = locationBallot(remote)
         let localWins = SyncableSettings.lwwWinner(localBallot, remoteBallot) == localBallot
         let winner = localWins ? local : remote
-        merged.spaceUuid = winner.spaceUuid
-        merged.parentUuid = winner.parentUuid
+        if localBallot == remoteBallot {
+            // Exact ballot tie: both sides already name the same location, so `winner` is only
+            // "whichever argument came first". Taking the location members from that arbitrary
+            // side makes the merge asymmetric in the member the ballot does not cover — for a
+            // descendant that is the diagnostic space_uuid, which is copied from the baseline and
+            // never republished (R-M3-3-18), so it still names the pre-move Space and the two sides
+            // legitimately disagree about it. Two devices would then hold different BYTES for one
+            // identity and resolve a lifted orphan's landing Space differently. Resolve the members
+            // through the shared winner (R4) on their own values instead, which is symmetric by
+            // construction. Which LOCATION wins does not change — the tie already proved both sides
+            // agree on it — and the carrier stamp below still overwrites both members.
+            merged.spaceUuid = SyncableSettings.lwwWinner(local.spaceUuid, remote.spaceUuid)
+            merged.parentUuid = SyncableSettings.lwwWinner(local.parentUuid, remote.parentUuid)
+        } else {
+            merged.spaceUuid = winner.spaceUuid
+            merged.parentUuid = winner.parentUuid
+        }
         // §4.3: stamp both members equally when sending the entity.
         let stamp = locationStamp(of: winner)
         merged.spaceUuid.updatedAtMs = stamp
@@ -266,13 +351,20 @@ enum BookmarkKind: OwnedItemKind {
         return ballot
     }
 
-    /// Keep the baseline timestamp when field signatures match; otherwise stamp now. Signature means bytes
-    /// with updatedAtMs zeroed (R4 single implementation).
+    /// Keep the baseline timestamp when field signatures match; otherwise stamp the edit. Signature means
+    /// bytes with updatedAtMs zeroed (R4 single implementation).
+    ///
+    /// AM-1: a changed field's stamp is `max(editWallMs, baselineStamp + 1)`, never the bare edit column. A
+    /// device whose clock runs behind would otherwise overwrite a value it merged from a peer with a SMALLER
+    /// stamp, and the causally later edit would lose — the failure C2 exists to remove. For rank, whose
+    /// `editWallMs` is already the round's hybrid stamp, the bump is a no-op.
     private static func restamped(_ value: Phi_PhiSettingValue,
                                   _ baseline: Phi_PhiSettingValue,
-                                  _ now: Int64) -> Int64 {
+                                  _ editWallMs: Int64) -> Int64 {
         SyncableSettings.signature(of: value) == SyncableSettings.signature(of: baseline)
-            ? baseline.updatedAtMs : now
+            ? baseline.updatedAtMs
+            : PhiHybridClock.editStamp(editWallMs: editWallMs,
+                                       overwrittenStampMs: baseline.updatedAtMs)
     }
 
     private static func mergedSource(_ left: Int32, _ right: Int32) -> Int32 {

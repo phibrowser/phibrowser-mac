@@ -666,7 +666,7 @@ extension LocalStore {
         guard row.syncId == nil || row.syncId == syncId else {
             throw LocalStoreWriteError.rowAlreadyMapped
         }
-        // §8.1's fourth normalization site is idempotent; V11-backfilled source rows may still be
+        // §8.1's fourth normalization site is idempotent; V12-backfilled source rows may still be
         // unnormalized.
         let normalized = LocalStore.normalizedRule(host: host, pathPrefix: pathPrefix)
         if row.host != normalized.host { row.host = normalized.host }

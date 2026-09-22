@@ -371,8 +371,8 @@ message PhiURLRuleEntity {
   // NOT last-writer-wins: written once by the FIRST publisher and merged
   // DETERMINISTICALLY on disagreement -- a non-zero baseline is copied
   // verbatim, never overwritten from the local row. There is no `source`
-  // column on SpaceURLRule (V11 adds only syncId + contentUpdatedDate), so
-  // EVERY publisher this build ships emits 0; the field exists so a later
+  // column on SpaceURLRule (V12 adds the six sync columns, none a source),
+  // so EVERY publisher this build ships emits 0; the field exists so a later
   // build that does distinguish authoring surfaces has a stable slot, and the
   // baseline fold keeps such a value stable across devices meanwhile.
   // Diagnostics only; no matching behaviour depends on it.

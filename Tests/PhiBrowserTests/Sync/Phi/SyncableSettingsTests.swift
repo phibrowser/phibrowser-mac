@@ -261,9 +261,10 @@ final class SyncableSettingsTests: XCTestCase {
     /// synced.
     ///
     /// M3-3 adds exactly one member, `PhiPinnedTabScope` — the mirror of a SwiftData row
-    /// rather than a preference of its own. It is the only member whose `read` answers nil on
-    /// an unset key, because "the account has never published a scope" is not the same
-    /// statement as "the scope is `.profile`".
+    /// rather than a preference of its own. C1 adds `PhiDefaultSpaceUuid`, the mirror of the
+    /// account-scoped default-Space pointer. Those two are the only members whose `read`
+    /// answers nil on an unset key, because "the account has never published a scope / a
+    /// role" is not the same statement as any particular value.
     func testStarterRegistryContents() {
         let keys = SyncableSettings.all.map(\.key)
 
@@ -281,6 +282,7 @@ final class SyncableSettingsTests: XCTestCase {
                 "PhiCurrentThemeId",
                 "PhiSelectionTintEnabled",
                 "PhiPinnedTabScope",
+                "PhiDefaultSpaceUuid",
             ]
         )
         XCTAssertEqual(Set(keys).count, keys.count, "no duplicate keys")
@@ -561,6 +563,155 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: key), "profile")
         XCTAssertEqual(sidecarTimestamp(key), 7)
         XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: key)), markerValue)
+    }
+
+    // MARK: - default-Space role register (C1)
+
+    private var roleKey: String { PhiDefaultSpaceMirror.key }
+
+    /// The register is an ordinary synced setting and round-trips, exactly like the pin-scope
+    /// mirror above: the value is an ACCOUNT sync uuid, never a local spaceId (D6 §2.4).
+    func testDefaultSpaceRegisterRoundTripsAndIsRegistered() {
+        let setting = PhiDefaultSpaceMirror.defaultSpace
+
+        setting.write(stringValue("sync-1", at: 42), defaults)
+
+        XCTAssertEqual(setting.read(defaults)?.stringValue, "sync-1")
+        XCTAssertEqual(setting.key, "PhiDefaultSpaceUuid")
+        XCTAssertTrue(SyncableSettings.all.contains { $0.key == "PhiDefaultSpaceUuid" },
+                      "the register has to be in the registry the engine walks")
+    }
+
+    /// An absent or empty register reads as nil, so `snapshot` skips the key entirely and a
+    /// device that has never published a role cannot overwrite the account's with "".
+    func testDefaultSpaceRegisterReadsNilWhenAbsentOrEmptySoSnapshotSkipsIt() {
+        let setting = PhiDefaultSpaceMirror.defaultSpace
+        XCTAssertNil(setting.read(defaults))
+        XCTAssertNil(SyncableSettings.snapshot(defaults, now: 500,
+                                               settings: [setting]).values[roleKey])
+
+        defaults.set("", forKey: roleKey)
+
+        XCTAssertNil(setting.read(defaults))
+        setting.write(stringValue("", at: 9), defaults)
+        XCTAssertEqual(defaults.string(forKey: roleKey), "",
+                       "an empty inbound value is dropped, never written over a real uuid")
+    }
+
+    /// `write` deliberately does NOT check that the uuid resolves: a joining device has to be
+    /// able to store the account's answer before its own Spaces are paired. Resolution is a
+    /// read-time question (R1.4), and an unresolvable register falls back without a write back.
+    func testDefaultSpaceRegisterStoresAUuidThisDeviceCannotResolveYet() {
+        let setting = PhiDefaultSpaceMirror.defaultSpace
+        let registry = [setting]
+
+        SyncableSettings.apply(fromMap([roleKey: stringValue("sync-not-paired-here", at: 10)]),
+                               to: defaults, settings: registry)
+
+        XCTAssertEqual(defaults.string(forKey: roleKey), "sync-not-paired-here")
+        XCTAssertEqual(sidecarTimestamp(roleKey), 10)
+        let next = SyncableSettings.snapshot(defaults, now: 900, settings: registry)
+        XCTAssertEqual(next.values[roleKey]?.updatedAtMs, 10,
+                       "a landed register must not be read back as a local edit and restamped")
+    }
+
+    /// Reseed, case one: no register yet, so it is seeded from the local pointer's account
+    /// identity at stamp 0 — and stamp 0 is what makes a real hand-off win the merge.
+    func testDefaultSpaceReseedSeedsAtStampZeroAndLosesToARealHandOff() {
+        let outcome = PhiDefaultSpaceMirror.reseed(localUuid: "sync-local", into: defaults)
+
+        XCTAssertEqual(outcome, .seeded)
+        XCTAssertEqual(defaults.string(forKey: roleKey), "sync-local")
+        XCTAssertEqual(sidecarTimestamp(roleKey), 0)
+        let seeded = SyncableSettings.snapshot(defaults, now: 777,
+                                               settings: [PhiDefaultSpaceMirror.defaultSpace])
+        XCTAssertEqual(seeded.values[roleKey]?.updatedAtMs, 0,
+                       "a seed must not be read back as a local edit stamped with now")
+
+        let handOff = fromMap([roleKey: stringValue("sync-handed-to", at: 1)])
+        XCTAssertEqual(SyncableSettings.merge(local: seeded, remote: handOff)
+                        .values[roleKey]?.stringValue, "sync-handed-to")
+    }
+
+    /// Reseed, case two: the local pointer has no account identity (unmapped, or no mapping
+    /// layer), so the well-known default identity is seeded — never a local spaceId.
+    func testDefaultSpaceReseedSeedsTheWellKnownIdentityWhenThePointerIsUnmapped() {
+        XCTAssertEqual(PhiDefaultSpaceMirror.reseed(localUuid: nil, into: defaults), .seeded)
+        XCTAssertEqual(defaults.string(forKey: roleKey), SyncableSpaces.defaultSpaceUuid)
+    }
+
+    /// Reseed, case three and four: a register that already agrees with the local pointer
+    /// writes nothing, and one that disagrees is kept (it is the account's answer) and handed
+    /// back for local application.
+    func testDefaultSpaceReseedKeepsTheRegisterAndAsksForItToBeApplied() {
+        defaults.set("sync-account", forKey: roleKey)
+        defaults.set(NSNumber(value: Int64(42)), forKey: SyncableSettings.timestampKey(for: roleKey))
+
+        XCTAssertEqual(PhiDefaultSpaceMirror.reseed(localUuid: "sync-account", into: defaults),
+                       .noop)
+        XCTAssertEqual(PhiDefaultSpaceMirror.reseed(localUuid: "sync-local", into: defaults),
+                       .applyRegister(uuid: "sync-account"))
+        XCTAssertEqual(defaults.string(forKey: roleKey), "sync-account")
+        XCTAssertEqual(sidecarTimestamp(roleKey), 42, "reseed never restamps an existing register")
+    }
+
+    /// Two devices delete their default Space at the same moment and each hands the role to a
+    /// different successor. One register cannot hold two values: LWW picks one, and both
+    /// devices pick the SAME one whichever way round they merge.
+    func testTwoConcurrentHandOffsConvergeOnOneHolder() {
+        let a = fromMap([roleKey: stringValue("sync-a", at: 500)])
+        let b = fromMap([roleKey: stringValue("sync-b", at: 500)])
+
+        let ab = SyncableSettings.merge(local: a, remote: b)
+        let ba = SyncableSettings.merge(local: b, remote: a)
+
+        XCTAssertEqual(ab, ba)
+        let later = fromMap([roleKey: stringValue("sync-c", at: 501)])
+        XCTAssertEqual(SyncableSettings.merge(local: ab, remote: later).values[roleKey]?.stringValue,
+                       "sync-c", "a later hand-off still wins on timestamp")
+    }
+
+    /// An old build does not know the key. `merge` carries it through untouched and `apply`
+    /// refuses to write an unregistered key locally, so a round trip through that client
+    /// preserves the account's role instead of stripping it.
+    func testAnOldClientRoundTripPreservesTheRegister() {
+        let oldRegistry = [PinnedTabScopeMirror.pinnedTabScope]   // no C1 key in it
+        let account = fromMap([roleKey: stringValue("sync-a", at: 300),
+                               PinnedTabScopeMirror.key: stringValue("space", at: 100)])
+
+        let merged = SyncableSettings.merge(local: Phi_PhiSettingEntity(), remote: account)
+        SyncableSettings.apply(merged, to: defaults, settings: oldRegistry)
+        let republished = SyncableSettings.merge(
+            local: SyncableSettings.snapshot(defaults, now: 900, settings: oldRegistry),
+            remote: merged)
+
+        XCTAssertEqual(republished.values[roleKey], account.values[roleKey])
+        XCTAssertNil(defaults.string(forKey: roleKey),
+                     "an unregistered key is never blind-written into the local domain")
+    }
+
+    /// FALL BACK AND NEVER WRITE BACK (R1.4): a register this device cannot honour — the named
+    /// Space has not arrived, is not paired, is hidden or was purged — leaves both the local
+    /// pointer and the register exactly as they are. Clearing it would be a device-local
+    /// decision that wins account-wide.
+    @MainActor
+    func testADanglingRegisterIsNeitherClearedNorRewritten() {
+        let previousLookup = PhiSpaceSyncState.shared.localSpaceIdLookup
+        let previousValue = UserDefaults.standard.string(forKey: roleKey)
+        defer {
+            PhiSpaceSyncState.shared.localSpaceIdLookup = previousLookup
+            if let previousValue {
+                UserDefaults.standard.set(previousValue, forKey: roleKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: roleKey)
+            }
+        }
+        PhiSpaceSyncState.shared.localSpaceIdLookup = { _ in nil }   // not arrived / not paired
+        UserDefaults.standard.set("sync-dangling", forKey: roleKey)
+
+        SpaceManager.shared.applyAccountDefaultSpaceIfPublished()
+
+        XCTAssertEqual(UserDefaults.standard.string(forKey: roleKey), "sync-dangling")
     }
 }
 

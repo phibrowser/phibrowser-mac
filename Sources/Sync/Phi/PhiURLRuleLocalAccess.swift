@@ -13,7 +13,7 @@ struct PhiLocalURLRule: Equatable {
     /// Physical local row ID (SpaceURLRule.id), used to address landing operations.
     var id: String
     /// Lowercase account UUID (SpaceURLRule.syncId), minted at insertion (R-M3-4a-23) and effectively nonnil
-    /// for live rows. Optional supports legacy pre-V11 rows before backfill.
+    /// for live rows. Optional supports legacy pre-V12 rows before backfill.
     var syncId: String?
     /// Local target Space ID; Incognito uses the bare SpaceManager.incognitoRuleTargetId prefix.
     var spaceId: String

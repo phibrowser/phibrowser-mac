@@ -2197,14 +2197,16 @@ final class URLRuleMergeTests: XCTestCase {
         }
     }
 
-    // MARK: - CASE 8b-3.1 (disabled feature preserves bookmark/pin plans byte for byte)
+    // MARK: - CASE 8b-3.1, as amended by ruling C4 (every kind yields)
 
-    /// Applying yielding to every kind would turn bookmark remote deletions into resurrections; bookmark
-    /// volume and deletion frequency differ greatly from rules (§14.1).
-    func test8b31_theYieldSwitchIsOffForBookmarksAndPins() throws {
-        XCTAssertFalse(BookmarkKind.tombstoneYieldsToLocalEdits, "Bookmarks use the protocol default")
-        XCTAssertFalse(PinKind.tombstoneYieldsToLocalEdits, "Pins use the protocol default")
-        XCTAssertTrue(URLRuleKind.tombstoneYieldsToLocalEdits, "Only rules enable this feature")
+    /// M3-3 kept the yield switch off for bookmarks and pins on grounds of volume; ruling C4
+    /// reverses that, so all three kinds yield now. What stays kind-specific is the TRANSFER
+    /// half: bookmarks and pins have no merge partner, so even a populated `mergePartners` can
+    /// only produce a yield for them, because their transfer source is always nil.
+    func test8b31_everyKindYieldsButOnlyRulesCanTransfer() throws {
+        XCTAssertTrue(BookmarkKind.tombstoneYieldsToLocalEdits, "C4: bookmarks yield")
+        XCTAssertTrue(PinKind.tombstoneYieldsToLocalEdits, "C4: pins yield")
+        XCTAssertTrue(URLRuleKind.tombstoneYieldsToLocalEdits)
         XCTAssertNil(BookmarkKind.transferSource(of: bookmarkPayload(uuid: "bk"), resolve: resolve),
                      "Bookmark transfer source is always nil")
         XCTAssertNil(PinKind.transferSource(of: pinPayload(lineage: "LX"), resolve: resolve),
@@ -2216,24 +2218,73 @@ final class URLRuleMergeTests: XCTestCase {
             reconciled: baselineBytes(bookmarkPayload(uuid: "bk", title: "local")),
             server: baselineBytes(bookmarkPayload(uuid: "bk", title: "remote")),
             entityId: "srv-bk", version: 1, ownerUuid: "su-1")
-        // Populate all four new inputs; the bookmark path must structurally ignore them.
+        // Populate all four inputs, including the two the bookmark adapter never fills: a
+        // partner it cannot describe must still end in a yield, never in a transfer step.
         var context = OwnedItemPlanContext()
         context.tombstonedIdentities = ["bk"]
         context.pendingLocalEdits = ["bk"]
         context.unpublished = ["bk"]
         context.mergePartners = ["bk": "other"]
-        context.partnerNotAtRest = ["bk"]
         let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: [], parked: [:],
                                            table: table, resolve: resolve, context: context)
-        XCTAssertEqual(stepSummary(plan.steps), ["delete:bk"], "Delete is produced normally")
+        XCTAssertTrue(plan.steps.isEmpty, "No delete and no transfer")
+        XCTAssertEqual(plan.yieldedTombstones, ["bk"])
         XCTAssertTrue(plan.parkedTombstones.isEmpty)
-        XCTAssertTrue(plan.yieldedTombstones.isEmpty)
 
-        // Diff uses default deferredDeletions, so deferred remains empty and bookkeeping unchanged.
-        let diff = SyncableOwnedItems.tombstones(BookmarkKind.self, locals: [], table: table,
+        // A yielded cursor is excluded from the deletion diff by reconciled == nil and
+        // deletedAtMs != nil, so a yield can never tombstone the row it just saved.
+        var yielded = PhiOwnedItemTable()
+        var cursor = table.cursors["bk"] ?? PhiOwnedItemCursor()
+        cursor.reconciled = nil
+        cursor.server = nil
+        cursor.deletedAtMs = 5_000
+        yielded.cursors["bk"] = cursor
+        let diff = SyncableOwnedItems.tombstones(BookmarkKind.self, locals: [], table: yielded,
                                                  resolve: resolve, scope: nil, nowMs: 100)
-        XCTAssertTrue(diff.deferred.isEmpty)
-        XCTAssertEqual(diff.identities, ["bk"], "All three existing predicates remain unchanged")
+        XCTAssertTrue(diff.identities.isEmpty, "The yield is not echoed back as a local deletion")
+    }
+
+    // MARK: - CASE M-22b (C4-a: direction (ii) for rules, and the collapse boundary)
+
+    /// Ruling C4-a extends A9's first conjunct from the target stamp to any merge unit, for rules
+    /// too. The collapse loser is kept out of it by BRANCH ORDER rather than by a second
+    /// predicate: while its winner exists the transfer or park branch runs first, so an
+    /// engine-authored collapse deletion is never the one a content edit cancels.
+    func testM22b_aContentEditCancelsARuleDeleteButNotACollapseLosersSoftDelete() throws {
+        let baseline = urlRulePayload(uuid: "b", host: "github.com", contentStamp: 100,
+                                      targetStamp: 100)
+        var table = PhiOwnedItemTable()
+        var cursor = publishedRuleCursor(baseline, entityId: "srv-b")
+        cursor.pendingDelete = true
+        cursor.deleteDecidedAtMs = 200
+        table.cursors["b"] = cursor
+        // The target is unchanged; only the content group moved, which A9 used to ignore.
+        let edited = urlRulePayload(uuid: "b", host: "gitlab.com", contentStamp: 900,
+                                    targetStamp: 100)
+        let arrival = OwnedItemArrival(entity: edited, entityId: "srv-b", version: 9)
+
+        func planFor(_ mutate: (inout OwnedItemPlanContext) -> Void) -> OwnedItemPlan {
+            var context = OwnedItemPlanContext()
+            mutate(&context)
+            return SyncableOwnedItems.plan(URLRuleKind.self, arrivals: [arrival], parked: [:],
+                                           table: table, resolve: resolve, context: context)
+        }
+
+        let userDelete = planFor { _ in }
+        XCTAssertEqual(userDelete.cancelledDeletes, ["b"],
+                       "A content edit newer than the decision now cancels the deletion")
+        XCTAssertEqual(userDelete.supersededByDelete, 0)
+
+        // A collapse loser still points at its winner, so the transfer branch runs before A9 and
+        // the engine-authored soft delete stands.
+        let collapseLoser = planFor { $0.mergePartners = ["b": "a"] }
+        XCTAssertEqual(stepSummary(collapseLoser.steps), ["transfer:b->a"])
+        XCTAssertTrue(collapseLoser.cancelledDeletes.isEmpty,
+                      "A collapse loser's soft delete is not a user delete an edit may beat")
+
+        let busyWinner = planFor { $0.partnerNotAtRest = ["b"] }
+        XCTAssertTrue(busyWinner.cancelledDeletes.isEmpty, "Parking still precedes A9")
+        XCTAssertNotNil(busyWinner.parked["b"])
     }
 
     // MARK: - CASE 8b-3.2 (parkedTombstones on normal return)

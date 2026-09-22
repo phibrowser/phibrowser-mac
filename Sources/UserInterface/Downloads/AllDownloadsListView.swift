@@ -88,6 +88,7 @@ struct AllDownloadsListView: View {
             }
         }
         .frame(maxWidth: 800)
+        .padding(.horizontal, 80)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: refresh)
         .onChange(of: profileManager.profiles) { _, _ in

@@ -42,6 +42,7 @@ final class LibraryViewModule: NSViewController {
     @Observable
     final class NavigationState {
         var selection: Section = .downloads
+        var sidebarCollapsed = false
     }
 
     let navigationState = NavigationState()
@@ -104,15 +105,15 @@ private struct LibraryContentView: View {
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
     @State private var folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
-    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
-    @State private var sidebarWidth: CGFloat = 200
+    @State private var sidebarWidth: CGFloat = Self.minimumSidebarWidth
     private var compactSidebar: Bool { sidebarWidth < Self.compactSidebarThreshold }
     @State private var floatingSidebarVisible = false
     @State private var hoveringFloatingSidebar = false
 
-    private static let minimumSidebarWidth: CGFloat = 64
+    private static let minimumSidebarWidth: CGFloat = 80
     private static let maximumSidebarWidth: CGFloat = 240
     private static let compactSidebarThreshold: CGFloat = 108
+    private static let titlebarClearance: CGFloat = 32
 
     private func color(_ value: ThemedColor) -> Color {
         value.swiftUIColor(theme: theme, appearance: appearance)
@@ -121,27 +122,28 @@ private struct LibraryContentView: View {
     var body: some View {
         Group {
             if presentation == .standalone {
-                NavigationSplitView(columnVisibility: $sidebarVisibility) {
-                    navigation(compact: compactSidebar)
-                        .ignoresSafeArea(.container, edges: .top)
-                        .navigationSplitViewColumnWidth(min: Self.minimumSidebarWidth, ideal: 200, max: Self.maximumSidebarWidth)
-                        .background(LibrarySidebarSizing(minimumWidth: Self.minimumSidebarWidth, maximumWidth: Self.maximumSidebarWidth))
-                        .onGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.size.width
-                        } action: { width in
-                            // Preserve the last expanded width while the native column collapses.
-                            guard sidebarVisibility != .detailOnly, width >= Self.minimumSidebarWidth else { return }
-                            sidebarWidth = min(width, Self.maximumSidebarWidth)
-                        }
-                        .toolbar(removing: .sidebarToggle)
-                } detail: {
+                HSplitView {
+                    if !navigationState.sidebarCollapsed {
+                        navigation(compact: compactSidebar)
+                            .ignoresSafeArea(.container, edges: .top)
+                            .frame(minWidth: Self.minimumSidebarWidth, idealWidth: sidebarWidth, maxWidth: Self.maximumSidebarWidth)
+                            .background(LibrarySidebarPosition(width: sidebarWidth))
+                            .onGeometryChange(for: CGFloat.self) { geometry in
+                                geometry.size.width
+                            } action: { width in
+                                guard !navigationState.sidebarCollapsed, width >= Self.minimumSidebarWidth else { return }
+                                sidebarWidth = min(width, Self.maximumSidebarWidth)
+                            }
+                    }
+                    // Keep the detail in place when the sidebar is removed so its
+                    // search, reader, and internal split state survive collapsing.
                     content
                         .ignoresSafeArea(.container, edges: .top)
+                        .layoutPriority(1)
                 }
-                .navigationSplitViewStyle(.balanced)
-                .toolbar(.hidden, for: .windowToolbar)
+                .ignoresSafeArea(.container, edges: .top)
                 .overlay(alignment: .leading) {
-                    if sidebarVisibility == .detailOnly {
+                    if navigationState.sidebarCollapsed {
                         floatingSidebar
                     }
                 }
@@ -190,6 +192,8 @@ private struct LibraryContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if selection == .spaces {
                 LibrarySpacesView(browserState: browserState)
+                    // Keep standalone cards below the window controls in both sidebar states.
+                    .padding(.top, presentation == .standalone ? Self.titlebarClearance : 0)
             } else {
                 FolioLibraryView(model: folioModel, openURL: openOriginal, openArchive: openArchive, reveal: reveal)
                     .onDisappear { folioModel.clear() }
@@ -219,11 +223,13 @@ private struct LibraryContentView: View {
                         }
                         .shadow(color: .black.opacity(0.18), radius: 8, x: 2, y: 2)
                         .padding(.leading, 5)
-                        .padding(.top, 32)
+                        .padding(.top, Self.titlebarClearance)
                         .padding(.bottom, 5)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("library.sidebarReveal")
             .onHover { hovering in
                 hoveringFloatingSidebar = hovering
                 if hovering {
@@ -319,7 +325,7 @@ private struct LibraryContentView: View {
                 openInNewWindow()
             } else {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                    sidebarVisibility = floating ? .all : .detailOnly
+                    navigationState.sidebarCollapsed = !floating
                 }
             }
         } label: {
@@ -365,75 +371,40 @@ private struct LibraryContentView: View {
     }
 }
 
-/// Applies the compact rail's bounds to the native sidebar item. SwiftUI's column
-/// width preference can leave AppKit's standard sidebar minimum in place.
-private struct LibrarySidebarSizing: NSViewRepresentable {
-    let minimumWidth: CGFloat
-    let maximumWidth: CGFloat
+/// HSplitView has no divider-position binding. Restore the saved width once when
+/// the sidebar is inserted, then leave subsequent divider dragging to SwiftUI.
+private struct LibrarySidebarPosition: NSViewRepresentable {
+    let width: CGFloat
 
-    func makeNSView(context: Context) -> Anchor { Anchor() }
-
-    func updateNSView(_ view: Anchor, context: Context) {
-        view.minimumWidth = minimumWidth
-        view.maximumWidth = maximumWidth
-        view.scheduleUpdate()
-    }
+    func makeNSView(context: Context) -> Anchor { Anchor(width: width) }
+    func updateNSView(_ view: Anchor, context: Context) {}
 
     final class Anchor: NSView {
-        var minimumWidth: CGFloat = 64
-        var maximumWidth: CGFloat = 240
-        private weak var sidebar: NSSplitViewItem?
-        private var observations: [NSKeyValueObservation] = []
+        private let width: CGFloat
 
+        init(width: CGFloat) {
+            self.width = width
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window == nil {
-                observations.removeAll()
-                sidebar = nil
-            } else {
-                scheduleUpdate()
-            }
-        }
-
-        func scheduleUpdate() {
-            // Wait until SwiftUI has attached and configured its native columns.
-            DispatchQueue.main.async { [weak self] in self?.updateSidebar() }
-        }
-
-        private func updateSidebar() {
             guard window != nil else { return }
-            var ancestor = superview
-            while let view = ancestor {
-                if let split = view as? NSSplitView {
-                    guard let controller = split.delegate as? NSSplitViewController,
-                          let sidebar = controller.splitViewItems.first,
-                          isDescendant(of: sidebar.viewController.view) else { return }
-                    if self.sidebar !== sidebar {
-                        self.sidebar = sidebar
-                        // SwiftUI reapplies the standard bounds during column updates.
-                        // Keep this one sidebar's native item in sync with our bounds.
-                        observations = [
-                            sidebar.observe(\.minimumThickness) { [weak self] _, _ in
-                                MainActor.assumeIsolated { self?.applyBounds() }
-                            },
-                            sidebar.observe(\.maximumThickness) { [weak self] _, _ in
-                                MainActor.assumeIsolated { self?.applyBounds() }
-                            }
-                        ]
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil else { return }
+                var ancestor = self.superview
+                while let view = ancestor {
+                    if let split = view as? NSSplitView {
+                        guard split.arrangedSubviews.count == 2 else { return }
+                        split.setPosition(self.width, ofDividerAt: 0)
+                        return
                     }
-                    applyBounds()
-                    return
+                    ancestor = view.superview
                 }
-                ancestor = view.superview
             }
-        }
-
-        private func applyBounds() {
-            guard let sidebar else { return }
-            if sidebar.minimumThickness != minimumWidth { sidebar.minimumThickness = minimumWidth }
-            if sidebar.maximumThickness != maximumWidth { sidebar.maximumThickness = maximumWidth }
         }
     }
 }

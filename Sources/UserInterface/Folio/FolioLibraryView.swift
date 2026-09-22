@@ -29,9 +29,6 @@ struct FolioLibraryView: View {
             sidebar.frame(minWidth: 260, idealWidth: 310, maxWidth: 360)
             reader.frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
         }
-        // Keep the native split view inside the detail's safe area. When flush
-        // with its edges, it can extend underneath NavigationSplitView's sidebar.
-        .padding(.horizontal, 1)
         .background(paper)
         .tint(accent)
         .environment(\.openURL, OpenURLAction { url in

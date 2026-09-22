@@ -117,21 +117,16 @@ final class LibraryOverlayControllerTests: XCTestCase {
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         parent.isReleasedWhenClosed = false
         defer { parent.close() }
-        let host = NSHostingController(rootView:
-            NavigationSplitView {
-                Text("Sidebar").navigationSplitViewColumnWidth(min: 64, ideal: 200, max: 240)
-            } detail: {
-                FolioLibraryView(model: FolioLibraryModel(profileId: UUID().uuidString),
-                                 openURL: { _ in }, openArchive: { _ in }, reveal: { _ in })
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            }
-            .navigationSplitViewStyle(.balanced)
-        )
-        let content = try XCTUnwrap(parent.contentView)
-        host.view.frame = content.bounds
-        host.view.autoresizingMask = [.width, .height]
-        content.addSubview(host.view)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        self.directory = directory
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        self.store = store
+        let state = BrowserState(windowId: UUID().hashValue, localStore: store, profileId: "Default")
+        let module = LibraryViewModule(browserState: state, presentation: .standalone)
+        module.navigationState.selection = .folio
+        parent.contentViewController = module
+        parent.setContentSize(NSSize(width: 1200, height: 650))
         parent.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
 
@@ -139,24 +134,32 @@ final class LibraryOverlayControllerTests: XCTestCase {
             let current = (view as? NSSplitView).map { [$0] } ?? []
             return current + view.subviews.flatMap { splits(in: $0) }
         }
-        let nativeSplits = splits(in: host.view)
+        let nativeSplits = splits(in: module.view)
         XCTAssertEqual(nativeSplits.count, 2)
         let outer = try XCTUnwrap(nativeSplits.first)
         let folio = try XCTUnwrap(nativeSplits.last)
-        let controller = try XCTUnwrap(outer.delegate as? NSSplitViewController)
-        let sidebar = try XCTUnwrap(controller.splitViewItems.first)
-
-        for width: CGFloat in [200, 240, 140] {
+        for width: CGFloat in [200, 240, 140, 80] {
             outer.setPosition(width, ofDividerAt: 0)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            XCTAssertEqual(outer.arrangedSubviews.first?.frame.width ?? -1, width, accuracy: 0.5)
             for collapsed in [false, true, false] {
-                sidebar.isCollapsed = collapsed
+                module.navigationState.sidebarCollapsed = collapsed
                 RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+                XCTAssertEqual(outer.arrangedSubviews.count, collapsed ? 1 : 2)
+                XCTAssertTrue(splits(in: module.view).last === folio, "Collapsing must preserve the reader and its split state")
                 let frame = folio.convert(folio.bounds, to: outer)
-                let sidebarFrame = sidebar.viewController.view.convert(sidebar.viewController.view.bounds, to: outer)
-                let leading = collapsed ? outer.bounds.minX : sidebarFrame.maxX
-                XCTAssertGreaterThanOrEqual(frame.minX, leading - 0.5, "Folio must not extend under the Library sidebar")
-                XCTAssertLessThanOrEqual(frame.minX, leading + 2, "Folio must follow the sidebar without a stale inset")
-                XCTAssertEqual(frame.maxX, outer.bounds.maxX, accuracy: 2)
+                let detail = try XCTUnwrap(outer.arrangedSubviews.last)
+                let detailFrame = detail.convert(detail.bounds, to: outer)
+                XCTAssertEqual(frame.minX, detailFrame.minX, accuracy: 0.01, "Folio must have no extra leading padding")
+                XCTAssertEqual(frame.maxX, outer.bounds.maxX, accuracy: 0.01)
+                if collapsed {
+                    XCTAssertEqual(frame.minX, outer.bounds.minX, accuracy: 0.01)
+                } else {
+                    XCTAssertEqual(outer.arrangedSubviews.first?.frame.width ?? -1, width, accuracy: 0.5)
+                }
+                folio.setPosition(280, ofDividerAt: 0)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                XCTAssertEqual(folio.arrangedSubviews.first?.frame.width ?? -1, 280, accuracy: 1)
             }
         }
     }
@@ -189,28 +192,27 @@ final class LibraryOverlayControllerTests: XCTestCase {
         XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
 
         let split = try XCTUnwrap(nativeSplit(in: content))
-        let splitController = try XCTUnwrap(split.delegate as? NSSplitViewController)
-        let sidebar = try XCTUnwrap(splitController.splitViewItems.first)
+        XCTAssertEqual(split.arrangedSubviews.first?.frame.width ?? -1, 80, accuracy: 1,
+                       "Standalone Library must open at the minimum sidebar width")
         func searchField(in view: NSView) -> NSSearchField? {
             if let field = view as? NSSearchField { return field }
             return view.subviews.lazy.compactMap { searchField(in: $0) }.first
         }
         let search = try XCTUnwrap(searchField(in: content))
-        for width: CGFloat in [200, 100, 80, 64, 200, 64] {
-            split.setPosition(width, ofDividerAt: 0)
+        for (requestedWidth, width): (CGFloat, CGFloat) in [(200, 200), (100, 100), (80, 80), (64, 80), (200, 200), (64, 80)] {
+            split.setPosition(requestedWidth, ofDividerAt: 0)
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-            XCTAssertFalse(sidebar.isCollapsed)
-            XCTAssertEqual(sidebar.viewController.view.frame.width, width, accuracy: 1)
-            XCTAssertEqual(sidebar.minimumThickness, 64)
-            XCTAssertEqual(sidebar.maximumThickness, 240)
+            XCTAssertEqual(split.arrangedSubviews.count, 2)
+            XCTAssertEqual(split.arrangedSubviews.first?.frame.width ?? -1, width, accuracy: 1)
         }
-        splitController.toggleSidebar(nil)
+        module.navigationState.sidebarCollapsed.toggle()
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
-        XCTAssertTrue(sidebar.isCollapsed)
-        splitController.toggleSidebar(nil)
+        XCTAssertEqual(split.arrangedSubviews.count, 1)
+        module.navigationState.sidebarCollapsed.toggle()
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
-        XCTAssertFalse(sidebar.isCollapsed)
-        XCTAssertEqual(sidebar.viewController.view.frame.width, 64, accuracy: 1)
+        XCTAssertEqual(split.arrangedSubviews.count, 2)
+        XCTAssertEqual(split.arrangedSubviews.first?.frame.width ?? -1, 80, accuracy: 1)
+        XCTAssertTrue(searchField(in: content) === search, "Collapsing must preserve the search field")
 
         for size in [NSSize(width: 1120, height: 780), NSSize(width: 900, height: 650)] {
             window.setContentSize(size)
@@ -238,10 +240,10 @@ final class LibraryOverlayControllerTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         XCTAssertTrue(controller.window === window)
         XCTAssertFalse(window.toolbar?.isVisible ?? false, "Reopening Library must not restore a toolbar")
-        XCTAssertNotNil(nativeSplit(in: try XCTUnwrap(window.contentView)))
-        splitController.toggleSidebar(nil)
+        let reopenedSplit = try XCTUnwrap(nativeSplit(in: try XCTUnwrap(window.contentView)))
+        module.navigationState.sidebarCollapsed.toggle()
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
-        XCTAssertTrue(sidebar.isCollapsed)
+        XCTAssertEqual(reopenedSplit.arrangedSubviews.count, 1)
     }
 
     private func nativeSplit(in view: NSView) -> NSSplitView? {

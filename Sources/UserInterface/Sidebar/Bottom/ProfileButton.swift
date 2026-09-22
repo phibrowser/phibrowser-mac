@@ -40,7 +40,6 @@ struct ProfileButton: NSViewRepresentable {
         }
 
         private var cancellables = Set<AnyCancellable>()
-        private var requestedLibraryPresentation: LibraryViewModule.Presentation?
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -83,46 +82,15 @@ struct ProfileButton: NSViewRepresentable {
             }
         }
 
-        @objc private func selectLibrary() {
-            requestedLibraryPresentation = .embedded
-        }
-
-        @objc private func selectLibraryWindow() {
-            requestedLibraryPresentation = .standalone
-        }
-
         @objc private func showProfileMenu() {
             // Existing menu actions resolve the active browser window. Activate
             // the clicked surface first, including when it was a background window.
             window?.makeKeyAndOrderFront(nil)
             let menu = NSMenu()
             AppController.shared.populateProfileMenu(menu)
-            let library = NSMenuItem(title: LibraryViewModule.title, action: #selector(selectLibrary), keyEquivalent: "")
-            library.target = self
-            library.image = NSImage(systemSymbolName: "books.vertical", accessibilityDescription: nil)
-            menu.insertItem(library, at: 0)
-            let libraryWindow = NSMenuItem(
-                title: NSLocalizedString("library.navigation.openInNewWindow", value: "Open Library in New Window", comment: "Profile menu - Opens Library in a separate window"),
-                action: #selector(selectLibraryWindow), keyEquivalent: "")
-            libraryWindow.target = self
-            libraryWindow.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
-            menu.insertItem(libraryWindow, at: 1)
-            menu.insertItem(.separator(), at: 2)
-            requestedLibraryPresentation = nil
             // NSButton uses flipped coordinates: Y increases downward.
             let y = surface == .sidebar ? bounds.minY - 5 : bounds.maxY + 5
             menu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: y), in: self)
-            // Start after native menu tracking ends, so it cannot cover the flight.
-            if let presentation = requestedLibraryPresentation {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, let owner = self.window?.windowController as? MainBrowserWindowController else { return }
-                    if presentation == .standalone {
-                        owner.openLibraryInNewWindow()
-                    } else {
-                        owner.showLibrary(from: self)
-                    }
-                }
-            }
         }
     }
 }

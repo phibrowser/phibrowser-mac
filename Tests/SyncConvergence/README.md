@@ -355,11 +355,27 @@ After a bounded quiescing loop the harness asserts:
 Bookmark tree invariants are checked against the **production planner** rather
 than a re-implementation: the converged set is fed to
 `SyncableOwnedItems.plan(BookmarkKind.self, …)` with an `OwnerResolver` that
-resolves the simulated Spaces, and the harness asserts that no identity on a
-parent cycle is ever planned, that every planned node reaches a Space root
-through planned ancestors, and that an acyclic set lands completely with
-`refused == 0`. A hand-built two-cycle is the positive control, so the check
-cannot pass vacuously.
+resolves the simulated Spaces, and the harness asserts that the tree the plan
+**lands** holds no cycle, that every planned node reaches a Space root through
+planned ancestors, that an acyclic set lands completely with `refused == 0`, and
+that a cyclic one is broken rather than refused (ruling C5-a). A hand-built
+two-cycle is the positive control, so the check cannot pass vacuously: it must
+resolve, with the tie on the UUID sending `cycle-left` back and the revert
+stamped one above the cycle.
+
+`bookmarks.crossmove2` / `crossmove3` drive that ruling end to end. Two or three
+replicas each move a folder under the next one while offline, publish, and then
+land every page through the production planner over the same in-memory server,
+with duplicate deliveries, dropped pages and offline spells. The assertions are
+convergence, quiescence, and that the newest move stands while the oldest folder
+is back inside the holder it started in — not at the Space root, which is what
+makes "the account's last agreed location" a distinguishable outcome.
+
+The `…local` variants of both run the other shape: the first replica keeps its
+move **unpublished** and pulls before committing, so the page it receives is
+acyclic on its own and only its local row closes the cycle. A dedicated check
+asserts that the planner saw one there, and every trial asserts that some cycle
+was broken, so neither scenario can pass vacuously.
 
 ## The clock (C2)
 

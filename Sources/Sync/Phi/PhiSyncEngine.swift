@@ -343,6 +343,9 @@ struct OwnedRoundCounters {
     var resurrected = 0
     var pendingPublish = 0
     var refused = 0
+    /// Ruling C5-a: move cycles broken by reverting their oldest move. These used to be counted
+    /// in refused, where they read as "the page was dropped"; they are landings now.
+    var cyclesBroken = 0
     var supersededByDelete = 0
     var rehomedCursors = 0
     var unreadable = 0
@@ -3838,6 +3841,11 @@ actor PhiSyncEngine {
         // Only URL-rule planning reports normalized (section 13.2); other kinds remain zero.
         counters.normalized += output.normalized
         counters.refused += output.plan.refused
+        counters.cyclesBroken += output.plan.cyclesBroken
+        // C5-a's revert is an LWW stamp this device issued, so logical time has to cover it like
+        // any other (C2 / R2.1). The module computes it from the cycle's own stamps rather than
+        // from this clock, which is what makes two devices author the same bytes.
+        hlcClock.observe(output.plan.cycleStampMs)
         counters.supersededByDelete += output.plan.supersededByDelete
         counters.scopeMismatch = counters.scopeMismatch || output.scopeMismatch
         ownedMustRepublish[registration.label] = output.mustRepublish
@@ -4849,6 +4857,7 @@ actor PhiSyncEngine {
         line += "resurrected=\(counters.resurrected) "
             + "pending_publish=\(counters.pendingPublish) refused=\(counters.refused) "
             + "superseded_by_delete=\(counters.supersededByDelete) "
+            + "cycles_broken=\(counters.cyclesBroken) "
             + "rehomed_cursors=\(counters.rehomedCursors) unreadable=\(unreadable) "
             + "excluded_unmapped_owner=\(counters.excludedUnmappedOwner) "
             + "local_read_failed=\(counters.localReadFailed)"

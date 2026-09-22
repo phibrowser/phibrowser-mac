@@ -347,23 +347,47 @@ func simResolver() -> OwnerResolver {
         localProfileId: { _ in nil })
 }
 
-/// Identities that sit on a parent cycle in `entities`.
-func cyclicIdentities(_ entities: [String: Phi_PhiBookmarkEntity]) -> Set<String> {
+/// Identities that sit on a parent cycle in `parentOf`.
+func cyclicParents(_ parentOf: [String: String]) -> Set<String> {
     var cyclic: Set<String> = []
-    for identity in entities.keys {
+    for identity in parentOf.keys {
         var seen: Set<String> = [identity]
-        var cursor = entities[identity]?.parentUuid.stringValue ?? ""
+        var cursor = parentOf[identity] ?? ""
         var hops = 0
-        while !cursor.isEmpty, hops <= entities.count {
+        while !cursor.isEmpty, hops <= parentOf.count {
             if !seen.insert(cursor).inserted {
                 cyclic.insert(identity)
                 break
             }
-            cursor = entities[cursor]?.parentUuid.stringValue ?? ""
+            cursor = parentOf[cursor] ?? ""
             hops += 1
         }
     }
     return cyclic
+}
+
+/// Identities that sit on a parent cycle in `entities`.
+func cyclicIdentities(_ entities: [String: Phi_PhiBookmarkEntity]) -> Set<String> {
+    cyclicParents(entities.mapValues { $0.parentUuid.stringValue })
+}
+
+/// Where each identity actually LANDS: the parent the step names when it names one — a lift, or
+/// C5-a's revert to the baseline parent — otherwise the parent in the bytes the step carries, and
+/// otherwise the location the arrival already had.
+func landedParents(_ entities: [String: Phi_PhiBookmarkEntity],
+                   plan: OwnedItemPlan) -> [String: String] {
+    var out = entities.mapValues { $0.parentUuid.stringValue }
+    for step in plan.steps {
+        if let parent = step.newParentUuid {
+            out[step.identity] = parent
+            continue
+        }
+        guard let payload = step.payload,
+              let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+              let entity = BookmarkKind.entity(from: envelope) else { continue }
+        out[step.identity] = entity.parentUuid.stringValue
+    }
+    return out
 }
 
 /// Assert the tree invariants on a converged bookmark set, cross-checked
@@ -381,10 +405,15 @@ func checkBookmarkTree(_ entities: [String: Phi_PhiBookmarkEntity], report: Repo
                                        context: OwnedItemPlanContext())
     let planned = Set(plan.steps.map(\.identity))
     let cyclic = cyclicIdentities(entities)
+    // The invariant is about the tree the plan LANDS, not the one it was handed: under ruling
+    // C5-a an arriving cycle lands, with its oldest move put back where the account last agreed
+    // it was, and the result must be acyclic.
+    let landed = landedParents(entities, plan: plan)
 
     report.check("\(label).plan-never-lands-a-cycle",
-                 planned.isDisjoint(with: cyclic),
-                 "cyclic=\(cyclic.sorted()) planned=\(planned.sorted())")
+                 planned.isDisjoint(with: cyclicParents(landed)),
+                 "cyclic=\(cyclic.sorted()) landed-cyclic=\(cyclicParents(landed).sorted()) "
+                 + "planned=\(planned.sorted())")
 
     // Every landed identity reaches a Space root through landed ancestors.
     for identity in planned.sorted() {
@@ -393,7 +422,7 @@ func checkBookmarkTree(_ entities: [String: Phi_PhiBookmarkEntity], report: Repo
         var reached = false
         while hops <= entities.count + 1 {
             guard let entity = entities[cursor] else { break }
-            let parent = entity.parentUuid.stringValue
+            let parent = landed[cursor] ?? ""
             if parent.isEmpty {
                 reached = resolve.localSpaceId(entity.spaceUuid.stringValue) != nil
                 break
@@ -419,18 +448,28 @@ func checkBookmarkTree(_ entities: [String: Phi_PhiBookmarkEntity], report: Repo
                          + "refused=\(plan.refused) parked=\(plan.parked.keys.sorted())")
         }
     } else {
-        report.check("\(label).cyclic-set-is-refused", plan.refused >= cyclic.count,
-                     "cyclic=\(cyclic.sorted()) refused=\(plan.refused)")
+        // C5-a: a cycle is broken, not refused. Every member lands, and the one whose move lost
+        // is the only one that moved somewhere other than where it asked to go.
+        report.check("\(label).cyclic-set-is-broken-not-refused",
+                     plan.cyclesBroken >= 1 && plan.refused == 0
+                         && cyclic.isSubset(of: planned),
+                     "cyclic=\(cyclic.sorted()) planned=\(planned.sorted()) "
+                     + "cycles_broken=\(plan.cyclesBroken) refused=\(plan.refused)")
     }
     report.markPassed("\(label).plan-never-lands-a-cycle")
     report.markPassed("\(label).every-landed-node-reaches-a-space-root")
     report.markPassed("\(label).acyclic-set-lands-completely")
-    report.markPassed("\(label).cyclic-set-is-refused")
+    report.markPassed("\(label).cyclic-set-is-broken-not-refused")
 }
 
-/// Positive control: a hand-built two-cycle must be refused by the planner, or
+/// Positive control: a hand-built two-cycle must be resolved by the planner, or
 /// the check above would pass vacuously.
-func checkPlannerRefusesAnInjectedCycle(report: Report) {
+///
+/// Both moves here carry the same stamp, so the tie is broken on the UUID: `cycle-right` is the
+/// greater one, so its move stands and `cycle-left` is the loser. Neither side has a baseline on
+/// this device, so the loser goes back to the Space root -- the only location every device can
+/// name for a folder it has never seen anywhere else.
+func checkPlannerBreaksAnInjectedCycle(report: Report) {
     var left = Phi_PhiBookmarkEntity()
     left.bookmarkUuid = "cycle-left"
     left.spaceUuid = settingValue(simSpaceUuid, 1)
@@ -448,10 +487,324 @@ func checkPlannerRefusesAnInjectedCycle(report: Report) {
                    OwnedItemArrival(entity: right, entityId: "b", version: 1)],
         parked: [:], table: PhiOwnedItemTable(), resolve: simResolver(),
         context: OwnedItemPlanContext())
-    report.check("planner.refuses-an-injected-cycle",
-                 plan.steps.isEmpty && plan.refused == 2,
-                 "steps=\(plan.steps.map(\.identity)) refused=\(plan.refused)")
-    report.markPassed("planner.refuses-an-injected-cycle")
+    let landed = landedParents(["cycle-left": left, "cycle-right": right], plan: plan)
+    report.check("planner.breaks-an-injected-cycle",
+                 plan.cyclesBroken == 1 && plan.refused == 0
+                     && Set(plan.steps.map(\.identity)) == ["cycle-left", "cycle-right"]
+                     && landed["cycle-left"] == "" && landed["cycle-right"] == "cycle-left"
+                     && plan.mustRepublish == ["cycle-left"],
+                 "steps=\(plan.steps.map(\.identity)) cycles_broken=\(plan.cyclesBroken) "
+                 + "refused=\(plan.refused) landed=\(landed) "
+                 + "republish=\(plan.mustRepublish.sorted())")
+    // The revert is stamped one above every stamp in the cycle, from the cycle's own values, so
+    // the same page landed on another device -- or on this one twice -- produces the same bytes.
+    report.check("planner.stamps-a-cycle-revert-above-the-cycle",
+                 plan.cycleStampMs == 2
+                     && plan.steps.compactMap { step -> Int64? in
+                         guard step.identity == "cycle-left", let payload = step.payload,
+                               let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+                               let entity = BookmarkKind.entity(from: envelope) else { return nil }
+                         return BookmarkKind.locationStamp(of: entity)
+                     }.allSatisfy { $0 == 2 },
+                 "cycle stamp \(plan.cycleStampMs), expected 2 = max(1, 1) + 1")
+    report.markPassed("planner.breaks-an-injected-cycle")
+    report.markPassed("planner.stamps-a-cycle-revert-above-the-cycle")
+}
+
+// MARK: - C5-a: concurrent folder-move cycles
+
+/// One replica of the cross-move scenario. Unlike `SimReplica` this one LANDS through the
+/// production planner, so it keeps the engine's two baselines apart: `baseline` is
+/// `cursor.reconciled`, the bytes landing last wrote and the location C5-a reverts a losing
+/// folder to, while `server` is `cursor.server`, the account value the round's diff publishes
+/// over when the local value no longer matches it.
+private final class MoveReplica {
+    let id: Int
+    /// The local rows, as the entities a projection would publish for them.
+    var store: [String: Phi_PhiBookmarkEntity] = [:]
+    var baseline: [String: Phi_PhiBookmarkEntity] = [:]
+    var server: [String: Phi_PhiBookmarkEntity] = [:]
+    var baseVersion: [String: Int64] = [:]
+    var watermark: Int64 = 0
+    var drained = false
+    var offlineUntil = 0
+    var clock = PhiHybridClock()
+
+    init(id: Int) { self.id = id }
+
+    var hasPendingWork: Bool { store.contains { server[$0.key] != $0.value } }
+}
+
+/// Ruling C5-a end to end: N replicas that each move a folder under the next one, closing a
+/// cycle, and then land the whole page through `SyncableOwnedItems.plan`. What is under test is
+/// the production cycle break driven by the same server, the same duplicate deliveries, dropped
+/// pages and offline spells as the other Layer 2 scenarios -- not a hand-built page.
+///
+/// Every mover starts INSIDE a holder folder, never at the Space root, so "back to the location
+/// the account last agreed on" is distinguishable from "lifted to the root".
+///
+/// The moves are made offline and published before anybody pulls, which is both the case the
+/// ruling describes and the only one the planner can see: a device that receives a cycle one
+/// entity per page has no arrival to pair its local row with, its dependency graph -- built from
+/// the page alone -- holds no cycle, and it lands one locally until the revert some other device
+/// published reaches it. See docs/sync.md.
+func checkConcurrentCrossMovesResolveByLastOperation(rng: inout SplitMix64, report: Report) {
+    for (cycleLength, localRowCycle) in [(2, false), (3, false), (2, true), (3, true)] {
+        let label = "bookmarks.crossmove\(cycleLength)\(localRowCycle ? "local" : "")"
+        var converged: [String: Phi_PhiBookmarkEntity] = [:]
+        for _ in 0..<6 {
+            converged = runCrossMoveTrial(cycleLength: cycleLength, localRowCycle: localRowCycle,
+                                          rng: &rng, report: report)
+        }
+        // Single parent is structural -- one parent field per entity -- so what is left to check
+        // is that the converged tree is acyclic and every node reaches a Space root. The
+        // production planner answers both. Once per shape: the trials differ only in schedule.
+        checkBookmarkTree(converged, report: report, label: label)
+        report.markPassed("\(label).all-replicas-converge")
+        report.markPassed("\(label).reaches-quiescence")
+        report.markPassed("\(label).the-newest-moves-stand-and-the-oldest-goes-back")
+        report.markPassed("\(label).breaks-at-least-one-cycle")
+        if localRowCycle { report.markPassed("\(label).a-cycle-closed-by-a-local-row-is-seen") }
+    }
+}
+
+/// Returns the converged bookmark set, for the tree invariants above. With `localRowCycle` the
+/// first replica keeps its move UNPUBLISHED and pulls before committing, so it meets the other
+/// moves against its own local row and the page it receives holds no cycle of its own.
+private func runCrossMoveTrial(cycleLength: Int, localRowCycle: Bool, rng: inout SplitMix64,
+                               report: Report) -> [String: Phi_PhiBookmarkEntity] {
+    let label = "bookmarks.crossmove\(cycleLength)\(localRowCycle ? "local" : "")"
+    let base: Int64 = 1_700_000_000_000
+    let server = SimServer()
+
+    func bytes(_ entity: Phi_PhiBookmarkEntity) -> Data {
+        (try? BookmarkKind.envelope(entity).serializedData()) ?? Data()
+    }
+    func decode(_ payload: Data) -> Phi_PhiBookmarkEntity? {
+        guard let envelope = try? Phi_PhiEntity(serializedBytes: payload) else { return nil }
+        return BookmarkKind.entity(from: envelope)
+    }
+    /// What the local ROW holds, with every stamp cleared. Two entities that agree here are the
+    /// same row seen at two different moments of the account's logical time.
+    func rowValues(_ entity: Phi_PhiBookmarkEntity) -> Phi_PhiBookmarkEntity {
+        var out = entity
+        out.spaceUuid.updatedAtMs = 0
+        out.parentUuid.updatedAtMs = 0
+        out.rank.updatedAtMs = 0
+        out.title.updatedAtMs = 0
+        out.url.updatedAtMs = 0
+        out.secondaryURL.updatedAtMs = 0
+        out.secondaryTitle.updatedAtMs = 0
+        return out
+    }
+    func folder(_ uuid: String, parent: String, stamp: Int64) -> Phi_PhiBookmarkEntity {
+        var out = Phi_PhiBookmarkEntity()
+        out.bookmarkUuid = uuid
+        out.spaceUuid = settingValue(simSpaceUuid, stamp)
+        out.parentUuid = settingValue(parent, stamp)
+        out.rank = settingValue("V", stamp)
+        out.isFolder = true
+        out.title = settingValue(uuid, stamp)
+        out.url = settingValue("https://bookmark.phi/folder", stamp)
+        out.secondaryURL = settingValue("", stamp)
+        out.secondaryTitle = settingValue("", stamp)
+        out.createdAtMs = 1_690_000_000_000
+        return out
+    }
+
+    let holders = (1...cycleLength).map { "hold-000\($0)" }
+    let movers = (1...cycleLength).map { "move-000\($0)" }
+    // The account everybody agrees on before the moves.
+    var account: [String: Phi_PhiBookmarkEntity] = [:]
+    for (index, holder) in holders.enumerated() {
+        account[holder] = folder(holder, parent: "", stamp: base)
+        account[movers[index]] = folder(movers[index], parent: holder, stamp: base)
+    }
+    for (identity, entity) in account.sorted(by: { $0.key < $1.key }) {
+        _ = server.commit(tag: identity, baseVersion: 0, payload: bytes(entity), deleted: false)
+    }
+
+    /// Cycles the production planner broke over this whole trial. A scenario that never made one
+    /// would assert its outcome vacuously.
+    var cyclesBroken = 0
+
+    /// One landing pass through the production planner: the table is this replica's baselines,
+    /// the context its local rows, and the result is written back exactly where the engine writes
+    /// it -- `cursor.reconciled` and the row itself. This scenario deletes nothing, so no step
+    /// ever names a parent other than the one in the bytes it carries.
+    func land(_ replica: MoveReplica, arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>]) {
+        guard !arrivals.isEmpty else { return }
+        var table = PhiOwnedItemTable()
+        for (identity, entity) in replica.baseline {
+            var cursor = PhiOwnedItemCursor()
+            cursor.reconciled = bytes(entity)
+            cursor.server = replica.server[identity].map(bytes)
+            table.cursors[identity] = cursor
+        }
+        var context = OwnedItemPlanContext()
+        context.liveLocalParents = Set(replica.store.keys)
+        for (identity, entity) in replica.store where replica.baseline[identity] != nil {
+            context.localProjections[identity] = bytes(entity)
+        }
+        let plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals, parked: [:],
+                                           table: table, resolve: simResolver(), context: context)
+        // The engine folds the module's own cycle stamp into logical time; so does this replica.
+        replica.clock.observe(plan.cycleStampMs)
+        cyclesBroken += plan.cyclesBroken
+        for step in plan.steps {
+            guard let payload = step.payload, let entity = decode(payload) else { continue }
+            replica.store[step.identity] = entity
+            replica.baseline[step.identity] = entity
+        }
+        for (identity, payload) in plan.rebaselined {
+            guard let entity = decode(payload) else { continue }
+            replica.baseline[identity] = entity
+        }
+        // A local row carries no stamps: the projection takes them from the baseline for every
+        // merge unit the row did not change (`BookmarkKind.stamp`). Model that, or a row that
+        // landed no step would keep the stamp it had before and publish it over the account's
+        // newer one every round -- an artefact of storing rows as entities, not a merge result.
+        for (identity, entity) in replica.store {
+            guard let baseline = replica.baseline[identity], entity != baseline,
+                  rowValues(entity) == rowValues(baseline) else { continue }
+            replica.store[identity] = baseline
+        }
+    }
+
+    func pull(_ replica: MoveReplica, duplicate: Bool) {
+        let page = server.getUpdates(since: replica.watermark)
+        for _ in 0..<(duplicate ? 2 : 1) {
+            var arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>] = []
+            for item in page {
+                replica.baseVersion[item.tag] = item.row.version
+                guard let payload = item.row.payload, let entity = decode(payload) else { continue }
+                replica.server[item.tag] = entity
+                for value in [entity.spaceUuid, entity.parentUuid, entity.rank, entity.title] {
+                    replica.clock.observe(value.updatedAtMs)
+                }
+                arrivals.append(OwnedItemArrival(entity: entity, entityId: "srv-" + item.tag,
+                                                 version: item.row.version))
+            }
+            land(replica, arrivals: arrivals)
+        }
+        replica.watermark = page.last?.row.version ?? replica.watermark
+        replica.drained = true
+    }
+
+    func commit(_ replica: MoveReplica) {
+        guard replica.drained else { return }
+        for identity in replica.store.keys.sorted() {
+            guard let entity = replica.store[identity],
+                  replica.server[identity] != entity else { continue }
+            switch server.commit(tag: identity, baseVersion: replica.baseVersion[identity] ?? 0,
+                                 payload: bytes(entity), deleted: false) {
+            case .applied(let version):
+                replica.baseVersion[identity] = version
+                replica.server[identity] = entity
+            case .conflict:
+                // Pull before commit: the one scoped retry needs another drained pull.
+                replica.drained = false
+                return
+            }
+        }
+    }
+
+    let replicas = (0..<cycleLength).map { MoveReplica(id: $0) }
+    for replica in replicas { pull(replica, duplicate: false) }
+
+    // Each replica moves its own folder under the next one while offline, at its own moment.
+    // Distinct stamps, so this trial asserts the stamp rule; the UUID tie-break is pinned by the
+    // injected-cycle control and by the unit tests.
+    let offsets = Array(rng.shuffled(Array(1...(cycleLength * 4))).prefix(cycleLength))
+    var moveStamp: [String: Int64] = [:]
+    for (index, replica) in replicas.enumerated() {
+        let mover = movers[index]
+        guard var moved = replica.store[mover] else { continue }
+        let stamp = replica.clock.stamp(wallMs: base + 60_000 + Int64(offsets[index]) * 1_000)
+        // §4.3: location is one merge unit, so both members take the move's stamp.
+        moved.parentUuid = settingValue(movers[(index + 1) % cycleLength], stamp)
+        moved.spaceUuid = settingValue(simSpaceUuid, stamp)
+        replica.store[mover] = moved
+        moveStamp[mover] = stamp
+    }
+    // Publish them before anybody pulls. Each move is a different tag, so none of these commits
+    // conflicts with another and none of them needs a pull in between. In the `localRowCycle`
+    // variant replica 0 stays offline with its move unpublished and pulls first, so the cycle it
+    // has to break is closed by its own local row rather than by two entities on the page.
+    for replica in replicas where !(localRowCycle && replica.id == 0) { commit(replica) }
+    if localRowCycle {
+        // That first pull is the whole point of this variant: the page it delivers is acyclic on
+        // its own, and only the local row's unpublished move closes the cycle.
+        pull(replicas[0], duplicate: false)
+        report.check("\(label).a-cycle-closed-by-a-local-row-is-seen", cyclesBroken > 0,
+                     "replica 0 met the other moves against its own unpublished move and broke "
+                     + "nothing: the planner is building its graph from the page alone again")
+    }
+
+    // The schedule: pulls (sometimes delivered twice), commits, dropped pages and offline spells.
+    for step in 0..<(24 * cycleLength) {
+        let replica = replicas[rng.below(replicas.count)]
+        if replica.offlineUntil > step { continue }
+        switch rng.below(6) {
+        case 0, 1, 2:
+            if rng.chance(8) { replica.drained = false; break }      // dropped response
+            pull(replica, duplicate: rng.chance(3))
+        case 3, 4:
+            commit(replica)
+        default:
+            if rng.chance(2) { replica.offlineUntil = step + rng.int(2...8) }
+        }
+    }
+
+    for replica in replicas { replica.offlineUntil = 0 }
+    var rounds = 0
+    var quiesced = false
+    while rounds < 50 {
+        rounds += 1
+        let before = server.version
+        for replica in replicas {
+            pull(replica, duplicate: false)
+            commit(replica)
+            pull(replica, duplicate: false)
+        }
+        if server.version == before, !replicas.contains(where: { $0.hasPendingWork }) {
+            quiesced = true
+            break
+        }
+    }
+
+    // Last operation wins: the oldest move is the only one put back, at the parent the account
+    // last agreed on -- its holder, not the Space root.
+    let loser = movers.min {
+        let left = moveStamp[$0] ?? 0, right = moveStamp[$1] ?? 0
+        return left == right ? $0 < $1 : left < right
+    }
+    let reference = replicas[0]
+    for replica in replicas.dropFirst() {
+        let same = reference.store.count == replica.store.count
+            && reference.store.allSatisfy { strippingUnknown($1) == replica.store[$0].map(strippingUnknown) }
+        report.check("\(label).all-replicas-converge", same,
+                     "replica 0 = \(reference.store.sorted { $0.key < $1.key }.map(\.value.oneLine)) "
+                     + "replica \(replica.id) = "
+                     + "\(replica.store.sorted { $0.key < $1.key }.map(\.value.oneLine))")
+    }
+    report.check("\(label).reaches-quiescence", quiesced,
+                 "still committing after \(rounds) idle rounds: the replicas keep reverting each "
+                 + "other's moves")
+    report.check("\(label).breaks-at-least-one-cycle", cyclesBroken > 0,
+                 "no replica ever saw a cycle in this trial, so its outcome proves nothing")
+    for replica in replicas {
+        for (index, mover) in movers.enumerated() {
+            let expected = mover == loser ? holders[index] : movers[(index + 1) % cycleLength]
+            report.check("\(label).the-newest-moves-stand-and-the-oldest-goes-back",
+                         replica.store[mover]?.parentUuid.stringValue == expected,
+                         "replica \(replica.id) holds \(mover) under "
+                         + "\(replica.store[mover]?.parentUuid.stringValue ?? "nothing"), expected "
+                         + "\(expected); stamps \(moveStamp.sorted { $0.key < $1.key }), "
+                         + "loser \(loser ?? "none")")
+        }
+    }
+    return reference.store
 }
 
 // MARK: - Bookmark location intent

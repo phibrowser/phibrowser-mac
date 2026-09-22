@@ -114,22 +114,271 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertTrue(parkedKeys.isEmpty)
     }
 
-    // MARK: - CASE 4a.4
+    // MARK: - CASE 4a.4 / ruling C5-a: folder-move cycles
 
-    /// CASE 4a.4: refuse both cycle members without trapping. Remote bytes are
-    /// untrusted, not a local bug; parking waits forever for an impossible parent.
-    func testACycleRefusesBothEntitiesInsteadOfParkingOrTrapping() {
+    /// The bytes a step carries.
+    private func stepEntity(_ plan: OwnedItemPlan, _ identity: String) -> Phi_PhiBookmarkEntity? {
+        guard let bytes = plan.steps.first(where: { $0.identity == identity })?.payload,
+              let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
+        return BookmarkKind.entity(from: envelope)
+    }
+
+    /// Where a step lands its identity: the parent it names when it names one, otherwise the
+    /// parent in the bytes it carries. nil means no step at all.
+    private func landedParent(_ plan: OwnedItemPlan, _ identity: String) -> String? {
+        guard let step = plan.steps.first(where: { $0.identity == identity }) else { return nil }
+        return step.newParentUuid ?? stepEntity(plan, identity)?.parentUuid.stringValue
+    }
+
+    /// Two folders inside their own holders: the locations the account last agreed on, which is
+    /// what C5-a puts a losing folder back at. Holders are live local rows, not arrivals.
+    private func cycleTable() -> PhiOwnedItemTable {
+        var table = PhiOwnedItemTable()
+        for uuid in ["a", "b"] {
+            table.cursors["h-" + uuid] = landedCursor(
+                bookmarkPayload(uuid: "h-" + uuid, isFolder: true), entityId: "srv-h" + uuid)
+            table.cursors[uuid] = landedCursor(
+                bookmarkPayload(uuid: uuid, parentUuid: "h-" + uuid, isFolder: true),
+                entityId: "srv-" + uuid)
+        }
+        return table
+    }
+
+    private func cycleContext(liveParents: Set<String> = ["h-a", "h-b"]) -> OwnedItemPlanContext {
+        var context = OwnedItemPlanContext()
+        context.liveLocalParents = liveParents
+        return context
+    }
+
+    private func cycleArrivals(older: String, newer: String,
+                               olderStamp: Int64 = 200,
+                               newerStamp: Int64 = 300)
+        -> [OwnedItemArrival<Phi_PhiBookmarkEntity>] {
+        [arrival(bookmarkPayload(uuid: older, parentUuid: newer, isFolder: true,
+                                 locationStamp: olderStamp)),
+         arrival(bookmarkPayload(uuid: newer, parentUuid: older, isFolder: true,
+                                 locationStamp: newerStamp))]
+    }
+
+    /// CASE 4a.4, as ruling C5-a settles it: one device moved A into B while another moved B into
+    /// A. Last operation wins — the newer move stands, the older folder goes back to the parent
+    /// the account last agreed on, and nothing is refused. Refusing both, as this case used to,
+    /// applied neither move and left every device on the tree it already had. Kinds with no
+    /// mutable location (pins, URL rules) cannot form a cycle and still refuse one.
+    func testAMoveCycleKeepsTheNewerMoveAndPutsTheOlderOneBack() {
+        for (older, newer) in [("a", "b"), ("b", "a")] {
+            let plan = planned(cycleArrivals(older: older, newer: newer),
+                               table: cycleTable(), context: cycleContext())
+
+            XCTAssertEqual(plan.cyclesBroken, 1, older)
+            XCTAssertEqual(plan.refused, 0, older)
+            XCTAssertTrue(plan.parked.isEmpty, older)
+            XCTAssertEqual(landedParent(plan, older), "h-" + older, older)
+            XCTAssertEqual(landedParent(plan, newer), older,
+                           "the winner lands exactly where it asked to go")
+            // One above every stamp in the cycle, so no peer's copy of either move can win, and
+            // computed from the cycle's own values, so every device authors the same bytes.
+            XCTAssertEqual(stepEntity(plan, older).map(BookmarkKind.locationStamp(of:)), 301, older)
+            XCTAssertEqual(plan.cycleStampMs, 301, older)
+            XCTAssertEqual(stepEntity(plan, newer).map(BookmarkKind.locationStamp(of:)), 300,
+                           "the winner's location is left exactly as received")
+            XCTAssertTrue(plan.mustRepublish.contains(older),
+                          "the account still holds the move this device just undid")
+        }
+    }
+
+    /// C5-a over a longer cycle: putting back the single oldest move is what breaks it, so the
+    /// other two stand.
+    func testAThreeFolderCycleOnlyPutsBackItsOldestMove() {
+        var table = PhiOwnedItemTable()
+        for uuid in ["a", "b", "c"] {
+            table.cursors["h-" + uuid] = landedCursor(
+                bookmarkPayload(uuid: "h-" + uuid, isFolder: true), entityId: "srv-h" + uuid)
+            table.cursors[uuid] = landedCursor(
+                bookmarkPayload(uuid: uuid, parentUuid: "h-" + uuid, isFolder: true),
+                entityId: "srv-" + uuid)
+        }
+
         let plan = planned([
-            arrival(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true)),
-            arrival(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true)),
-        ])
+            arrival(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                    locationStamp: 200)),
+            arrival(bookmarkPayload(uuid: "b", parentUuid: "c", isFolder: true,
+                                    locationStamp: 400)),
+            arrival(bookmarkPayload(uuid: "c", parentUuid: "a", isFolder: true,
+                                    locationStamp: 300)),
+        ], table: table, context: cycleContext(liveParents: ["h-a", "h-b", "h-c"]))
 
-        let steps = plan.steps
-        let refused = plan.refused
-        let parkedKeys = Array(plan.parked.keys)
-        XCTAssertTrue(steps.isEmpty)
-        XCTAssertEqual(refused, 2)
-        XCTAssertTrue(parkedKeys.isEmpty)
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(plan.refused, 0)
+        XCTAssertEqual(landedParent(plan, "a"), "h-a")
+        XCTAssertEqual(landedParent(plan, "b"), "c")
+        XCTAssertEqual(landedParent(plan, "c"), "a")
+        XCTAssertEqual(plan.cycleStampMs, 401)
+    }
+
+    /// C5-a's tie-break: equal stamps are settled on the UUID and the greater one wins, so two
+    /// devices holding the same page cannot disagree about which folder moves back.
+    func testATiedMoveCycleIsDecidedByTheGreaterUuid() {
+        let plan = planned(cycleArrivals(older: "a", newer: "b", olderStamp: 200,
+                                         newerStamp: 200),
+                           table: cycleTable(), context: cycleContext())
+
+        XCTAssertEqual(landedParent(plan, "a"), "h-a", "a is the smaller uuid, so a loses the tie")
+        XCTAssertEqual(landedParent(plan, "b"), "a")
+        XCTAssertEqual(plan.cycleStampMs, 201)
+    }
+
+    /// C5-a with nothing to go back to: neither folder has ever landed here, so the Space root is
+    /// the only location every device can name for the loser.
+    func testACycleMemberWithNoBaselineGoesBackToTheSpaceRoot() {
+        let plan = planned(cycleArrivals(older: "a", newer: "b"))
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(landedParent(plan, "a"), "")
+        XCTAssertEqual(landedParent(plan, "b"), "a")
+        XCTAssertEqual(stepEntity(plan, "a")?.spaceUuid.stringValue, "su-1")
+    }
+
+    /// The reverted folder's old parent is gone: hand it to B8's shipped "parent proven dead →
+    /// lift" path rather than add a second lifting mechanism.
+    func testACycleLoserWhoseOldParentIsDeadIsLiftedByTheExistingRule() {
+        var table = cycleTable()
+        table.cursors["h-a"]?.deletedAtMs = 9_000
+        table.cursors["h-a"]?.reconciled = nil
+
+        let plan = planned(cycleArrivals(older: "a", newer: "b"), table: table,
+                           context: cycleContext(liveParents: ["h-b"]))
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(plan.lifted, 1)
+        XCTAssertEqual(landedParent(plan, "a"), "")
+        XCTAssertEqual(landedParent(plan, "b"), "a")
+    }
+
+    /// C5-a when the losing move is THIS device's: the local row is moved back too. The user
+    /// moved A into B, another device moved B into A afterwards, and A returns to where it was.
+    func testWhenTheLocalDeviceMadeTheLosingMoveItsOwnRowIsPutBackAndRepublished() {
+        var context = cycleContext()
+        context.localProjections = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 200)),
+        ]
+
+        let plan = planned(cycleArrivals(older: "a", newer: "b"), table: cycleTable(),
+                           context: context)
+
+        let step = plan.steps.first { $0.identity == "a" }
+        XCTAssertEqual(step?.kind, .move,
+                       "the local row must move back, not stay where the user put it")
+        XCTAssertEqual(landedParent(plan, "a"), "h-a")
+        XCTAssertTrue(plan.mustRepublish.contains("a"))
+    }
+
+    /// A cycle can be closed by a LOCAL row: this device moved `a` into `b` and has not published
+    /// it, while the page carries `b` into `a` and says nothing about `a`. The page graph alone
+    /// holds no cycle, so without the local edge `b` would land under `a`, the row would keep `a`
+    /// under `b`, and no device would ever see both moves in one page to repair it.
+    func testACycleClosedByAnUnpublishedLocalMoveIsBrokenToo() {
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        context.localProjections = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 200)),
+        ]
+
+        let plan = planned([arrival(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                    locationStamp: 300))],
+                           table: cycleTable(), context: context)
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(landedParent(plan, "a"), "h-a",
+                       "the local row goes back although no arrival named it")
+        XCTAssertEqual(stepEntity(plan, "a").map(BookmarkKind.locationStamp(of:)), 301)
+        XCTAssertEqual(landedParent(plan, "b"), "a", "the newer move still lands")
+        XCTAssertTrue(plan.mustRepublish.contains("a"),
+                      "the peer has to learn where this folder went back to")
+    }
+
+    /// The same shape with the stamps the other way round: the local row holds the NEWER move, so
+    /// the arrival is the one put back and republished, and the user's own move stays.
+    func testWhenTheLocalRowHoldsTheNewerMoveTheArrivalIsTheOneReverted() {
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        context.localProjections = [
+            "a": baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                               locationStamp: 400)),
+        ]
+
+        let plan = planned([arrival(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                                    locationStamp: 300))],
+                           table: cycleTable(), context: context)
+
+        XCTAssertEqual(plan.cyclesBroken, 1)
+        XCTAssertEqual(landedParent(plan, "b"), "h-b", "the older move is the arrival's")
+        XCTAssertEqual(stepEntity(plan, "b").map(BookmarkKind.locationStamp(of:)), 401)
+        XCTAssertNil(landedParent(plan, "a"), "the local row keeps the move the user made")
+        XCTAssertTrue(plan.mustRepublish.contains("b"))
+    }
+
+    /// This device PUBLISHED the losing move, so the commit wrote that location into its own
+    /// baseline and it no longer knows where the folder came from. It authors nothing — reverting
+    /// the other member instead would undo the newer move — and leaves the revert to any peer
+    /// that still holds the pre-move baseline. The second half of this test is that peer.
+    func testADeviceThatAlreadyPublishedTheLosingMoveLeavesTheRevertToItsPeer() {
+        let published = baselineBytes(bookmarkPayload(uuid: "a", parentUuid: "b", isFolder: true,
+                                                      locationStamp: 200))
+        var table = cycleTable()
+        table.cursors["a"]?.reconciled = published
+        table.cursors["a"]?.server = published
+        var context = cycleContext(liveParents: ["h-a", "h-b", "a"])
+        context.localProjections = ["a": published]
+
+        let publisher = planned([arrival(bookmarkPayload(uuid: "b", parentUuid: "a",
+                                                         isFolder: true, locationStamp: 300))],
+                                table: table, context: context)
+
+        XCTAssertEqual(publisher.cyclesBroken, 0)
+        XCTAssertTrue(publisher.mustRepublish.isEmpty,
+                      "authoring a location from a baseline that IS the losing move would fight "
+                      + "the peer's revert")
+        XCTAssertEqual(landedParent(publisher, "b"), "a",
+                       "the tree holds the cycle here until the peer's revert arrives")
+
+        // The peer holds both moves with `a`'s pre-move baseline intact, and reverts `a`.
+        var peerContext = cycleContext()
+        peerContext.localProjections = [
+            "b": baselineBytes(bookmarkPayload(uuid: "b", parentUuid: "a", isFolder: true,
+                                               locationStamp: 300)),
+        ]
+        let peer = planned(cycleArrivals(older: "a", newer: "b"), table: cycleTable(),
+                           context: peerContext)
+
+        XCTAssertEqual(peer.cyclesBroken, 1)
+        XCTAssertEqual(landedParent(peer, "a"), "h-a")
+        XCTAssertEqual(stepEntity(peer, "a").map(BookmarkKind.locationStamp(of:)), 301)
+        XCTAssertTrue(peer.mustRepublish.contains("a"))
+    }
+
+    /// C5-a is idempotent: the same page landed again over the baseline the first landing wrote
+    /// produces the same location and the same stamp, so a duplicate delivery or a replayed
+    /// marker page changes nothing.
+    func testLandingTheSameCyclePageTwiceProducesTheSameLocation() {
+        let arrivals = cycleArrivals(older: "a", newer: "b")
+        var context = cycleContext()
+        let first = planned(arrivals, table: cycleTable(), context: context)
+
+        var table = cycleTable()
+        for identity in ["a", "b"] {
+            guard let bytes = first.steps.first(where: { $0.identity == identity })?.payload
+            else { continue }
+            table.cursors[identity]?.reconciled = bytes
+            context.localProjections[identity] = bytes
+        }
+        let second = planned(arrivals, table: table, context: context)
+
+        XCTAssertEqual(second.cycleStampMs, first.cycleStampMs)
+        XCTAssertEqual(landedParent(second, "a"), "h-a")
+        XCTAssertEqual(stepEntity(second, "a")?.parentUuid.updatedAtMs, 301)
+        XCTAssertNil(landedParent(second, "b"),
+                     "the winner already sits where the first landing put it")
     }
 
     // MARK: - CASE 4a.5 / 4a.6 / 4a.7

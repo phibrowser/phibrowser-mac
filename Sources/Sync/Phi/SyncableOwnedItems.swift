@@ -203,6 +203,14 @@ struct OwnedItemPlan {
     var parked: [String: ParkedOwnedItem]
     var refused: Int
     var lifted: Int
+    /// Ruling C5-a: move cycles this plan broke by reverting their oldest move. They are no
+    /// longer counted in refused, which said "neither move was applied"; the page lands now,
+    /// minus the one move that lost.
+    var cyclesBroken: Int = 0
+    /// The highest location stamp this module authored while breaking them, for the caller to
+    /// fold into its hybrid clock: maxSeen must cover every stamp this device issues (C2 / R2.1).
+    /// Zero when no cycle was broken.
+    var cycleStampMs: Int64 = 0
     var supersededByDelete: Int
     var cancelledDeletes: Set<String>
     /// Identity to harvested protocol entityId/version, even for discarded entities.
@@ -417,6 +425,15 @@ protocol OwnedItemKind {
     /// declares no content unit of its own.
     static func contentStamp(of entity: Entity) -> Int64
 
+    /// Ruling C5-a's loser: this entity put back at the location `baseline` names — the account's
+    /// last agreed position for it, which is the same value on every device — carrying `stamp` on
+    /// the location merge unit and the baseline's rank, which is the only rank that means anything
+    /// under that parent. A nil baseline means this device never landed one, so the kind answers
+    /// with its Space root instead; nothing else is device-independent.
+    /// nil means the kind has no mutable location to put back, which keeps it out of cycle
+    /// breaking altogether — pins and rules have no parent reference to build a cycle with.
+    static func reverted(_ entity: Entity, to baseline: Entity?, stamp: Int64) -> Entity?
+
     /// §8.4.4 transfer source: derive RuleProjection from an entity. α uses X's
     /// local projection; β uses this round's merged entity. Keep extraction in
     /// the kind and pass values (RR8-2); resolver only translates the target
@@ -433,6 +450,9 @@ extension OwnedItemKind {
     static var tombstoneYieldsToLocalEdits: Bool { false }
     /// Default keeps A9's first conjunct on location alone (C4-a).
     static func contentStamp(of entity: Entity) -> Int64 { locationStamp(of: entity) }
+    /// Default nil: only a kind whose entities reference each other can form a cycle, and only
+    /// that kind knows which of its fields carry the location (C5-a).
+    static func reverted(_ entity: Entity, to baseline: Entity?, stamp: Int64) -> Entity? { nil }
     /// Default nil for the same compatibility guarantee.
     static func transferSource(of entity: Entity, resolve: OwnerResolver) -> RuleProjection? { nil }
 }
@@ -901,8 +921,119 @@ enum SyncableOwnedItems {
             return .unresolved
         }
 
-        // 4. Kahn topological sort. Refuse remaining cyclic dependencies as remote
-        // bugs or forged payloads; parking waits forever for impossible parents.
+        // 4a. Ruling C5-a: break move cycles before ordering anything.
+        var entityOf: [String: K.Entity] = [:]
+        for item in survivors { entityOf[item.identity] = item.entity }
+
+        /// The entity whose location decides where this identity ends up once the page lands: an
+        /// arrival merged with this device's projection, exactly as step 5 merges it, or — for an
+        /// identity with no arrival — a live local row's own projection.
+        ///
+        /// Both halves are needed. A cycle is just as often closed by a LOCAL row (this device
+        /// moved X under Y and the page carries Y under X, with X nowhere in it) as by two
+        /// arrivals, and a graph built from the page alone cannot see the first kind at all: Y
+        /// would land under X, the local row would keep X under Y, and nothing would ever repair
+        /// it because neither device sees both moves in one page. Merging rather than reading the
+        /// arrival also keeps a stale arrival, whose location the local row already beats, from
+        /// looking like a cycle. Adoption merges are left out: a claimed row has no baseline, so
+        /// its arrival has no earlier location to lose to.
+        /// nil means the identity cannot be part of a cycle.
+        var cycleNodes: [String: K.Entity?] = [:]
+        func cycleNode(_ identity: String) -> K.Entity? {
+            if let cached = cycleNodes[identity] { return cached }
+            let projection: K.Entity? = context.localProjections[identity].flatMap {
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
+                return K.entity(from: envelope)
+            }
+            var node: K.Entity?
+            if let arrival = entityOf[identity] {
+                node = projection.map { K.merge(local: $0, remote: arrival) } ?? arrival
+            } else if case .external = classify(identity) {
+                // A live local row: `liveLocalParents` is what says the row exists here, and the
+                // projection is where it currently sits — carrying, under AM-1, the stamp of the
+                // move that put it there, published or not.
+                node = projection
+            }
+            cycleNodes[identity] = node
+            return node
+        }
+        func cycleEdge(from identity: String) -> String? {
+            guard let entity = cycleNode(identity) else { return nil }
+            return K.ownerUuids(of: entity).filter { $0 != identity && cycleNode($0) != nil }.min()
+        }
+        /// One cycle through the arrivals, or nil. Walking the smallest edge from the smallest
+        /// arrival makes the cycle this breaks first device-independent; the only kinds with a
+        /// location at all give an entity one parent, so no cycle can hide behind a second edge.
+        func firstCycle() -> [String]? {
+            var settled: Set<String> = []
+            for start in survivors.map(\.identity).sorted() where !settled.contains(start) {
+                var walk: [String] = []
+                var visitedAt: [String: Int] = [:]
+                var cursor: String? = start
+                while let identity = cursor, visitedAt[identity] == nil,
+                      !settled.contains(identity) {
+                    visitedAt[identity] = walk.count
+                    walk.append(identity)
+                    cursor = cycleEdge(from: identity)
+                }
+                if let closing = cursor, let index = visitedAt[closing] {
+                    return Array(walk[index...])
+                }
+                settled.formUnion(walk)
+            }
+            return nil
+        }
+
+        var cyclesBroken = 0
+        var cycleStampMs: Int64 = 0
+        var revertedByCycle: Set<String> = []
+        // Last operation wins: the member whose location carries the OLDEST stamp goes back to
+        // the location its baseline names, and the newer moves stand. Refusing the page, as this
+        // used to, applied NEITHER move and left every device on whichever tree it already had.
+        // One member per pass is what breaks one cycle, so a longer cycle keeps every move except
+        // its oldest. Each pass either stops or reverts an identity it has not reverted before,
+        // so the loop is bounded by the identities in play.
+        while let cycle = firstCycle() {
+            let stamps = cycle.compactMap { cycleNode($0).map(K.locationStamp(of:)) }
+            // The revert's own stamp: one above every stamp in the cycle, computed from the
+            // cycle's values and never from this device's clock, so two devices holding the same
+            // two moves author the same bytes and landing them twice changes nothing.
+            let cycleStamp = PhiHybridClock.editStamp(editWallMs: 0,
+                                                      overwrittenStampMs: stamps.max() ?? 0)
+            // The oldest location stamp loses, and an exact tie goes to the lexicographically
+            // greater UUID, which no device can disagree about.
+            let loser = cycle.min {
+                let left = cycleNode($0).map(K.locationStamp(of:)) ?? 0
+                let right = cycleNode($1).map(K.locationStamp(of:)) ?? 0
+                return left == right ? $0 < $1 : left < right
+            }
+            // A revert that changes nothing means this device has already agreed with the losing
+            // move — it published it, so its own baseline is that move and it no longer knows
+            // where the folder came from. Leave the cycle to the peers that still hold the
+            // pre-move baseline: they compute the same loser and publish the revert this device
+            // then lands. Reverting the other member instead would undo the newer move too.
+            guard let loser, let landing = cycleNode(loser),
+                  let restored = K.reverted(entityOf[loser] ?? landing, to: baselineOf(loser),
+                                            stamp: cycleStamp),
+                  K.ownerUuids(of: restored) != K.ownerUuids(of: landing),
+                  revertedByCycle.insert(loser).inserted else { break }
+            if let slot = survivors.firstIndex(where: { $0.identity == loser }) {
+                survivors[slot].entity = restored
+            } else {
+                // The loser is a live local row with no arrival this round: land its revert as if
+                // it had arrived, so the same move step and the same republication follow and the
+                // user's own losing move is undone here too.
+                survivors.append((loser, restored))
+            }
+            entityOf[loser] = restored
+            cycleNodes.removeAll()
+            cycleStampMs = max(cycleStampMs, cycleStamp)
+            cyclesBroken += 1
+        }
+
+        // 4b. Kahn topological sort. Refuse any remaining cyclic dependency — a kind that cannot
+        // revert a location, or a shape the break above could not resolve; parking would wait
+        // forever for an impossible parent.
         var dependencies: [String: [String]] = [:]
         for item in survivors {
             dependencies[item.identity] = K.ownerUuids(of: item.entity).compactMap {
@@ -929,7 +1060,7 @@ enum SyncableOwnedItems {
             remaining = stillRemaining
             if remaining.isEmpty || !progressed { break }
         }
-        refused += remaining.count      // Cycles
+        refused += remaining.count      // Cycles no kind could break
 
         // 5. Apply in topological order.
         var steps: [OwnedItemApplyStep] = []
@@ -1078,6 +1209,10 @@ enum SyncableOwnedItems {
             if adopted == nil, localProjection != nil, payload != payloadBytes(item.entity) {
                 mustRepublish.insert(identity)
             }
+            // C5-a: the revert is this device's own decision and the account still holds the move
+            // it undid, so say so explicitly. After landing the local row equals the reconciled
+            // bytes and the ordinary diff would find nothing to send.
+            if revertedByCycle.contains(identity) { mustRepublish.insert(identity) }
 
             if context.pairs[identity] != nil {
                 // §6.3: claim account identity first, then write fields in phase order.
@@ -1098,7 +1233,11 @@ enum SyncableOwnedItems {
                                                 payload: payload))
                 continue
             }
-            let moved = wasLifted || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
+            // A reverted loser lands back ON its baseline location, so nothing here differs from
+            // the baseline and the ordinary test would emit no step (C5-a). The local row is
+            // exactly what must move: this device's user may be the one who made the losing move.
+            let moved = wasLifted || revertedByCycle.contains(identity)
+                || K.ownerUuids(of: merged) != K.ownerUuids(of: baseline)
                 || K.rank(of: merged) != K.rank(of: baseline)
             if moved {
                 // Populate newOwnerUuid from merged ownership only for move (R-M3-4a-26).
@@ -1210,6 +1349,7 @@ enum SyncableOwnedItems {
         }.map(\.element)
 
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
+                             cyclesBroken: cyclesBroken, cycleStampMs: cycleStampMs,
                              supersededByDelete: supersededByDelete,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
                              mustRepublish: mustRepublish,

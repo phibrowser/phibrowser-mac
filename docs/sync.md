@@ -592,6 +592,63 @@ the group is empty and keeping the edited rule is the coherent outcome.
   one exception to "only a local user move writes that column". Its republish has
   no baseline, and without a recorded move the no-baseline path would stamp the
   location 0, which any peer could overwrite at will.
+- **A folder-move cycle resolves by last operation wins** (ruling C5-a). Two
+  devices moving F1 into F2 and F2 into F1 produce a page whose parent graph has
+  a cycle. `SyncableOwnedItems.plan` step 4 is a Kahn topological sort; what it
+  cannot order is a cycle, and instead of dropping it into `refused` — which
+  applied **neither** move and left every device on the tree it already had —
+  the planner breaks it:
+  - The member whose **location stamp is oldest** loses. An exact tie is settled
+    on the UUID, where the lexicographically **greater** one wins, so no device
+    can disagree about which folder moves.
+  - The loser goes back to **the location its own `reconciled` baseline names** —
+    the account's last agreed position for it, the same bytes on every device —
+    and takes that baseline's rank back with it, because a rank only orders
+    siblings under one parent. It is **not** lifted to the Space root.
+  - That revert is republished with an **engine-authored** location stamp of
+    `max(every stamp in the cycle) + 1`, computed from the cycle's own values and
+    never from the device's clock (`PhiHybridClock.editStamp`, folded into
+    `hlcMax` like any stamp this device issues). Two devices landing the same
+    page therefore author the same bytes, landing it twice changes nothing, and
+    no peer's copy of either move can win afterwards.
+  - The winner's location is left exactly as received. In a longer cycle only the
+    **oldest** move is put back, which is all it takes to break the cycle; every
+    other move stands.
+  - If the loser has **no baseline here** — both folders are new to this device
+    and arrived in one page already forming a cycle — there is nothing to go back
+    to, and the Space root is the only location every device can name. That is
+    the one case where a cycle does lift.
+  - If the loser's baseline parent is itself **dead**, the shipped B8 rule takes
+    over: `classify` already reports a tombstoned or deleted parent as `.lift`,
+    and the folder lands at the Space root through that one path. No second
+    lifting mechanism exists.
+  - The losing move may be **this device's own**, and then its local row moves
+    back too: *you moved A into B while another device moved B into A afterwards,
+    so A goes back to where it was.* The planner forces the `move` step for a
+    reverted folder even though the merged location now equals the baseline, and
+    marks it for republication, because the account still holds the move this
+    device just undid.
+  - Broken cycles are counted in `cycles_broken` on the round's counter line and
+    are **no longer** part of `refused`; `refused` keeps its old meaning, "the
+    page was dropped", for a cycle no kind can break (pins and URL rules have no
+    parent reference, so they never form one).
+  - The graph is built over the page's arrivals **plus the live local rows they
+    point at**, so a cycle closed by a **local row** is found too: this device's
+    own move of F1 into F2 — published or not — meeting F2's arrival under F1,
+    with F1 nowhere in the page. Neither device ever sees both moves in one page
+    in that race, so a page-only graph would land the cycle on both of them and
+    nothing would repair it. A local row's side of the comparison is its
+    projection's location stamp, which under AM-1 is its move's own time; its
+    revert is the same one an arrival gets, and it is republished, so the peer
+    learns where the folder went back to. Each arrival is compared through the
+    location that will actually land — the arrival merged with this device's
+    projection — so a stale arrival the local row already beats is not a cycle.
+  - One case authors nothing: the losing move was **published from this device**,
+    so the commit wrote that location into its own `reconciled` and it no longer
+    knows where the folder came from. Reverting the other member instead would
+    undo the newer move, so it lands the arrival and waits. Every peer still
+    holds the pre-move baseline, computes the same loser, and publishes the
+    revert that repairs this device. Its tree holds the cycle until then.
 
 ### Pinned tabs
 

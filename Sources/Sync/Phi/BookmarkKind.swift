@@ -126,6 +126,25 @@ enum BookmarkKind: OwnedItemKind {
             entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs)
     }
 
+    /// Ruling C5-a: the folder that lost a move cycle, put back where the account last agreed it was.
+    /// The baseline's own location members are that agreement — every device holds the same bytes for it —
+    /// and its rank comes back with them, because a rank only orders siblings under one parent. A baseline
+    /// rank that is not legal is left behind for the arrival's, which `refuses` has already validated.
+    /// Without a baseline this device never saw the folder anywhere else, so the Space root is all it can
+    /// name; the Space is the one the arrival claims, diagnostic though that field is for a descendant.
+    /// §4.3: the new location is one merge unit and both members take `stamp`.
+    static func reverted(_ entity: Phi_PhiBookmarkEntity, to baseline: Phi_PhiBookmarkEntity?,
+                         stamp: Int64) -> Phi_PhiBookmarkEntity? {
+        var out = entity
+        // Take the members whole, as merge does, so nothing a newer client wrote inside them is lost.
+        out.spaceUuid = baseline?.spaceUuid ?? entity.spaceUuid
+        out.parentUuid = baseline?.parentUuid ?? string("")
+        out.spaceUuid.updatedAtMs = stamp
+        out.parentUuid.updatedAtMs = stamp
+        if let rank = baseline?.rank, SyncableSpaces.isLegalRank(rank.stringValue) { out.rank = rank }
+        return out
+    }
+
     /// Stamping (§4.2 items 4/5): location members share one stamp when location changes, never for reorder
     /// alone; rank has its own independent stamp; content fields compare signatures and stamp changed values
     /// individually.

@@ -49,7 +49,7 @@ runLayer1(iterations: iterations, generators: &generators, report: report)
 runNormalisationProperties(iterations: iterations, generators: &generators, report: report)
 runRankProperties(iterations: iterations, generators: &generators, report: report)
 runClockProperties(iterations: iterations, generators: &generators, report: report)
-checkPlannerRefusesAnInjectedCycle(report: report)
+checkPlannerBreaksAnInjectedCycle(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
 checkAnOfflineRenameLosesToALaterOnlineRename(report: report)
 checkAnEditedChildSurvivesItsFoldersDeletion(report: report)
@@ -172,6 +172,13 @@ do {
         entities[identity] = entity
     }
     checkBookmarkTree(entities, report: report, label: "bookmarks.tree")
+}
+
+// Ruling C5-a, over replicas that land through the production planner: folders moved into each
+// other by different devices, resolved by last operation wins.
+do {
+    var crossMoveRng = SplitMix64(seed: seed &+ 0x0C5A_0C5A)
+    checkConcurrentCrossMovesResolveByLastOperation(rng: &crossMoveRng, report: report)
 }
 
 // Clock skew: the same scenarios with replicas whose clocks disagree by hours.

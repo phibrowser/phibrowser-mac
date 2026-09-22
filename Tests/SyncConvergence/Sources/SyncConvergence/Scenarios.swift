@@ -535,6 +535,110 @@ func checkAnOfflineMoveLosesToALaterOnlineMove(report: Report) {
     report.markPassed("bookmarks.a-merged-location-keeps-one-stamp-on-both-members")
 }
 
+// MARK: - Space edit intent (C2-a / design option S2)
+
+/// The Space analogue of the bookmark move above, run through the production
+/// `SyncableSpaces.snapshot`: replica A renames a Space at T1 while offline and recolours it at
+/// T1b, replica B renames the same Space at T2 > T1 while online, and A only reconnects and
+/// publishes at T3 > T2. B's rename is the later one by true wall clock, so B must win.
+///
+/// Before C2-a the Space projection was stamped inside the publish pass, which runs only after a
+/// successful pull, so A's rename left carrying T3 and beat B every time. `SpaceModel` has no
+/// edit-date column to read T1 back from -- and `theme_id`, the opacities and the Profile binding
+/// are not even on the row -- so the edit time is carried in the cursor's `pendingProjection`
+/// instead, written by the engine's gate-free stamping pass. Each call below is one run of that
+/// pass over one Space; the last one is the publish pass, which re-projects and finds the same
+/// bytes, so it keeps the stamps rather than issuing new ones.
+func checkAnOfflineRenameLosesToALaterOnlineRename(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let t1 = t0 + 60_000            // A renames the Space, offline
+    let t1b = t0 + 90_000           // A recolours it, still offline
+    let t2 = t0 + 120_000           // B renames it, online
+    let t3 = t0 + 3_600_000         // A reconnects and publishes
+
+    let profileUuid = Pool.uuids[0]
+    let created = Date(timeIntervalSince1970: 1_690_000_000)
+
+    // The account value both replicas start from.
+    var baseline = Phi_PhiSpaceEntity()
+    baseline.spaceUuid = simSpaceUuid
+    baseline.name = settingValue("Work", t0)
+    baseline.iconName = settingValue("icon", t0)
+    baseline.colorHex = settingValue("#101010", t0)
+    baseline.rank = settingValue("V", t0)
+    baseline.profileUuid = settingValue(profileUuid, t0)
+    baseline.themeID = settingValue("", t0)
+    baseline.overlayOpacityLight = settingValue(int: -1, t0)
+    baseline.overlayOpacityDark = settingValue(int: -1, t0)
+    baseline.createdAtMs = Int64(created.timeIntervalSince1970 * 1_000)
+
+    func row(name: String, colorHex: String) -> PhiLocalSpace {
+        PhiLocalSpace(spaceId: "local-a", profileId: "p", name: name, colorHex: colorHex,
+                      iconName: "icon", sortOrder: 0, createdDate: created,
+                      themeId: nil, opacityLight: nil, opacityDark: nil)
+    }
+    func project(_ space: PhiLocalSpace, pending: Phi_PhiSpaceEntity?,
+                 now: Int64) -> Phi_PhiSpaceEntity? {
+        var table = PhiSpaceSyncTable()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-a"
+        cursor.version = 3
+        cursor.reconciled = try? baseline.serializedData()
+        cursor.pendingProjection = pending.flatMap { try? $0.serializedData() }
+        table.cursors[simSpaceUuid] = cursor
+        return SyncableSpaces.snapshot(spaces: [space], table: table,
+                                       globalUuid: { $0 == "p" ? profileUuid : nil },
+                                       syncUuid: { $0 == "local-a" ? simSpaceUuid : nil },
+                                       now: now)[simSpaceUuid]
+    }
+
+    guard let renamed = project(row(name: "Travel", colorHex: "#101010"), pending: nil, now: t1),
+          let recoloured = project(row(name: "Travel", colorHex: "#FF00FF"),
+                                   pending: renamed, now: t1b),
+          let published = project(row(name: "Travel", colorHex: "#FF00FF"),
+                                  pending: recoloured, now: t3),
+          let reverted = project(row(name: "Work", colorHex: "#101010"),
+                                 pending: recoloured, now: t3) else {
+        report.check("spaces.an-offline-rename-loses-to-a-later-online-rename", false,
+                     "projection failed: the Space is no longer eligible for snapshot")
+        return
+    }
+
+    // B's rename, made online at t2.
+    var fromB = baseline
+    fromB.name = settingValue("Studio", t2)
+    let merged = SyncableSpaces.merge(local: published, remote: fromB)
+
+    report.check("spaces.an-offline-rename-carries-its-rename-time",
+                 published.name.updatedAtMs == t1,
+                 "published name stamp \(published.name.updatedAtMs), expected the rename time "
+                 + "\(t1) and not the publish time \(t3)")
+    report.check("spaces.a-second-offline-edit-leaves-the-first-field-alone",
+                 published.name.updatedAtMs == t1 && published.colorHex.updatedAtMs == t1b,
+                 "name@\(published.name.updatedAtMs) colour@\(published.colorHex.updatedAtMs), "
+                 + "expected \(t1) and \(t1b): each field keeps its own edit time")
+    report.check("spaces.an-offline-rename-loses-to-a-later-online-rename",
+                 merged.name.stringValue == "Studio",
+                 "converged name \(merged.name.stringValue) at stamp \(merged.name.updatedAtMs); "
+                 + "the later true-time rename was B's")
+    // A field put back to the account's own value before publishing leaves nothing to publish:
+    // the projection merges into the baseline unchanged, which is the commit batch's own test.
+    report.check("spaces.a-reverted-edit-publishes-nothing",
+                 SyncableSpaces.merge(local: reverted, remote: baseline) == baseline,
+                 "the reverted projection still differs from the baseline: \(reverted.oneLine)")
+    // An untouched Space keeps the account's rank stamp; the stamping pass never manufactures a
+    // drag out of a projection that did not move (§7's kept set).
+    report.check("spaces.an-untouched-rank-is-not-restamped",
+                 published.rank.updatedAtMs == t0 && published.rank.stringValue == "V",
+                 "rank \(published.rank.stringValue)@\(published.rank.updatedAtMs), expected the "
+                 + "baseline's V@\(t0)")
+    report.markPassed("spaces.an-offline-rename-carries-its-rename-time")
+    report.markPassed("spaces.a-second-offline-edit-leaves-the-first-field-alone")
+    report.markPassed("spaces.an-offline-rename-loses-to-a-later-online-rename")
+    report.markPassed("spaces.a-reverted-edit-publishes-nothing")
+    report.markPassed("spaces.an-untouched-rank-is-not-restamped")
+}
+
 // MARK: - C4 tree case: a folder deleted while one of its children was edited
 
 /// T1, through the production planner. Another device deleted folder F and its child C, publishing

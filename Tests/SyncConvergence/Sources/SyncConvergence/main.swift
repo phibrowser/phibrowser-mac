@@ -51,6 +51,7 @@ runRankProperties(iterations: iterations, generators: &generators, report: repor
 runClockProperties(iterations: iterations, generators: &generators, report: report)
 checkPlannerRefusesAnInjectedCycle(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
+checkAnOfflineRenameLosesToALaterOnlineRename(report: report)
 checkAnEditedChildSurvivesItsFoldersDeletion(report: report)
 print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner, "
       + "the rank primitives and the normalisation of payloads the schema forbids")
@@ -204,6 +205,16 @@ if includeSkew {
                                      hybridClock: hybrid)
                 .run(rng: &modeRng, report: report)
             describe("settings" + suffix, outcome, report: report, assertIntent: hybrid)
+        }
+        // Spaces stamp at edit time too as of C2-a, so "a causally later edit wins" is asserted
+        // for them under skew like every other kind. Last in the block on purpose: appending
+        // leaves the three scenarios above on the RNG stream they already had.
+        do {
+            let outcome = Simulation(kind: spacesSimKind(), identities: Pool.spaceUuids,
+                                     replicaCount: 3, steps: simSteps, clockSkew: skew,
+                                     hybridClock: hybrid)
+                .run(rng: &modeRng, report: report)
+            describe("spaces" + suffix, outcome, report: report, assertIntent: hybrid)
         }
     }
 }

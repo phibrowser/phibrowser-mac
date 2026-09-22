@@ -125,6 +125,31 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   replays the page and performs that adoption a second time. It is recorded in
   the milestone's design errata and is not fixed here.
 
+### `pendingApply` and `pendingProjection`
+
+A Space cursor carries one payload in each direction, and they are symmetric:
+
+| field | direction | written by | cleared by |
+| --- | --- | --- | --- |
+| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect) | the apply pass | a successful landing |
+| `pendingProjection` | outbound — this device's own projection of the Space, with each changed field already stamped at the time the user changed it (ruling C2-a, design option S2) | the stamping pass, from the debounced local-Spaces-change round, ahead of the pull gate | a landing, an accepted commit, a tombstone, or a revert that leaves nothing to publish |
+
+Both are serialized `PhiSpaceEntity` bytes in `sync.phiSpaces`, both are
+optional, and neither is on the wire. Adding `pendingProjection` needed no
+`formatVersion` bump and no SwiftData migration: synthesized `Codable` decoding
+reads an optional with `decodeIfPresent`, so a table written by a build without
+the field decodes with it nil (the rule
+`PhiOwnedItemCursor.rekeyRejectRounds` states for its own addition). A build
+**older** than this one ignores the key and stamps Space edits at publish time
+again, which is the pre-C2-a behaviour — correct, just coarser.
+
+`pendingProjection` is written only for a cursor that already has a
+`reconciled` baseline. A Space this device has never published has no per-field
+history to preserve, so its first publication stays wholesale (A1) and is
+stamped at publish time as before. `SyncableSpaces.snapshot` reads the field
+back as the effective baseline for *stamps only*; `reconciled` remains what
+decides whether a field changed at all.
+
 ## Default Space role
 
 Two things that used to be one, and are now separate by name (ruling C1):
@@ -283,6 +308,37 @@ stamp of the value it overwrites:
   into the content stamp, but `updateTabSplitPartnerBody` is shared with sync
   landing, so setting `contentUpdatedDate` there would restamp landed remote
   links as local edits.
+- Spaces — there is no edit-date column to take, so the edit time is *recorded*
+  instead, in the cursor's `pendingProjection` (see "Marker persistence
+  boundary"). `SpaceModel` has no such column and `theme_id`, the overlay
+  opacities and the Profile binding are not on the row at all — they are joined
+  in from `AccountUserDefaults` at the sync boundary — so a row-level column
+  could not have covered them, and would have been coarser than the per-field
+  LWW the wire uses. A debounced local-Spaces change runs a stamping pass ahead
+  of the pull gate: it projects the current Spaces through
+  `SyncableSpaces.snapshot`, stamps each changed field at that moment, and
+  persists the result. The publish pass re-projects, finds the same bytes, and
+  keeps the stamps rather than issuing new ones.
+
+  Three consequences worth naming. A field whose bytes match the **baseline**
+  again — edited and put back before publishing — takes the account's own stamp
+  back, so a revert publishes nothing. A field whose bytes match the **pending
+  projection** keeps the stamp it was given, so a second offline edit of another
+  field leaves the first field's edit time alone. And `rank` is unchanged: only
+  a Space outside §7's kept set is rewritten, and the pass records that stamp
+  once instead of re-issuing it on every later local change.
+
+  The stamping pass honours `isStopped`, the Space gate and `spaceStore` /
+  `spaceAccess`, and it inherits `snapshot`'s exclusions (parked, refused,
+  hidden, soft-deleted and unmapped Spaces are never projected, so a parked
+  Space keeps stamping at publish time). It deliberately does **not** honour the
+  pull gate — that is the point — or guard 1's `hasDrainedFullReplay`, because
+  guard 1 protects the account from a device that has not seen its Spaces yet
+  and this pass commits nothing; the "no baseline, no pending projection" rule
+  above covers that case structurally. Identities are resolved read-only, never
+  minted. A failed table write costs nothing irrecoverable: the edit is still on
+  the row and the next pass re-projects it at that pass's stamp, while the
+  failure itself closes `canPublishThisRound` for the round.
 
 The bare edit column is never enough on its own: a device whose clock runs
 behind would replace a value it merged from a peer with a *smaller* stamp and
@@ -292,9 +348,9 @@ Everything else is still stamped at publish time, on `hlcNow()`:
 
 | quantity | why it has no edit time |
 | --- | --- |
-| every **rank**, on every kind | a drag has no edit-date column on any kind, and ruling Q-R2-5 leaves it that way; M3-4a §14.3 item 11 already registers the cost |
+| every **rank**, on every kind | a drag has no edit-date column on any kind, and ruling Q-R2-5 leaves it that way; M3-4a §14.3 item 11 already registers the cost. A Space rank is the one that comes closest: the stamping pass runs from the drag's own debounced round, so its `hlcNow()` is taken within the debounce of the drag rather than at the next successful pull. That is a consequence of where the pass sits, not a promise — the stamp is still an `hlcNow()`, not a recorded drag time, and it is the pass's clock that a peer compares against |
 | pin `split_partner_uuid` | the only column it could borrow is shared with sync landing (above) |
-| every **Space** field | `SpaceModel` has no edit-date column, and `theme_id` / opacity / the profile binding are not on the row at all; R2.2's option S2 would cover them and is not shipped |
+| a Space with no `reconciled` baseline | first publication is wholesale (A1), so there is no per-field history to preserve; the same applies to a parked Space, which `snapshot` excludes |
 
 ### Where `maxSeen` lives, and why it is not beside the marker
 
@@ -371,6 +427,13 @@ healthy account (`maxSeen` ≈ wall) the two are indistinguishable. The one real
 cost, stated plainly: on an account whose logical time has run ahead of wall
 clock, an **old** client's edits can lose to the values it is trying to
 overwrite, with no user-visible explanation, bounded by the skew.
+
+Downgrading one device is the same story locally. A build older than C2-a
+ignores the `pendingProjection` key in `sync.phiSpaces` — it does not know the
+field, so `Codable` drops it — and stamps its Space edits at publish time
+again. It publishes correct, merely coarser, stamps, and re-upgrading picks the
+field up from wherever the stamping pass next writes it. Nothing is lost in
+either direction and no table is invalidated.
 
 ## Edit beats delete
 
@@ -676,6 +739,18 @@ edit date, and A9's boundary on an account whose logical time has run a year
 ahead of wall clock, for the location stamp and for C4-a's content stamp. The
 write side — which gestures record `locationUpdatedDate` and which deliberately
 do not — lives in `Tests/PhiBrowserTests/LocalStoreBookmarkThrowingTests.swift`.
+
+Space edit-time stamping (C2-a) is covered on both sides of the pull gate:
+`SyncableSpacesTests.swift` for the projection rules themselves — an offline
+rename keeping its own time, two successive offline edits keeping their own
+per-field times, a slow clock still clearing the stamp it overwrites, a revert
+collapsing back onto the baseline, a drag restamping only the Space that moved
+and not restamping it again, and D1's suppressions surviving all of it — and
+`PhiSyncEngineSpaceTests.swift` for the round: the stamping pass running behind
+a shut pull gate, a landing merging against the pending projection and then
+spending it, a shut Space gate holding the pass, and a failed cursor write that
+neither loses the edit nor publishes. `PhiSpaceSyncStateTests.swift` pins the
+cursor round trip with and without the new key.
 
 "Edit beats delete" is covered in three places: the derived predicate, the tree
 outcomes and both A9 halves in `SyncableOwnedItemsTests.swift`; the rules

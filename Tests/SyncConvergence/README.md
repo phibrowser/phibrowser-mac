@@ -292,6 +292,18 @@ Untrusted ranks are never fed to `rankBetween` directly: it has release-build
 preconditions, so the harness respects the same decoding boundary the
 production code does.
 
+Two edit-time intent cases are checked here rather than in Layer 2, because
+they need a *fixed* true-time order rather than a random one: a bookmark moved
+offline at T1 against a peer's online move at T2 > T1 (through
+`BookmarkKind.stamp` and the V13 `locationUpdatedDate`), and a Space renamed and
+then recoloured offline against a peer's later online rename (through
+`SyncableSpaces.snapshot` and the cursor's `pendingProjection`, C2-a / option
+S2). Both assert that the offline edit leaves carrying its own edit time rather
+than the reconnect time, and therefore loses. The Space case also pins the three
+rules that come with per-field stamping: a second offline edit leaves the first
+field's stamp alone, an edit put back before publishing merges into the baseline
+unchanged, and an untouched Space's rank is never restamped.
+
 ## Layer 2 — merge-level multi-replica simulation
 
 N ≥ 3 in-memory replicas, one in-memory server, one seeded scheduler. Run for
@@ -387,9 +399,9 @@ The intent probe is split by what a clock can actually promise:
   by definition; no logical clock restores it, so these stay reported.
 
 Typical default-seed run: `[skew,wall]` loses 4 of 7 bookmarks (4 causal), 3 of
-6 rules (2 causal) and the settings entity; `[skew]` loses 1 of 7 bookmarks,
-0 of 6 rules and the settings entity — **0 causal everywhere**. The residue is
-concurrent by construction.
+6 rules (2 causal), all 3 Spaces and the settings entity; `[skew]` loses 1 of 7
+bookmarks, 0 of 6 rules, 2 of 3 Spaces and the settings entity — **0 causal
+everywhere**. The residue is concurrent by construction.
 
 ## What Layer 2 does not cover
 

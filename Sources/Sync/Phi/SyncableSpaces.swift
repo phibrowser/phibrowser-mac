@@ -223,6 +223,12 @@ extension SyncableSpaces {
     /// PURE: unlike M3-1's `SyncableSettings.snapshot`, this writes nothing at
     /// all. Baselines move only at the five write points in §6.2.
     ///
+    /// It is nonetheless the Space-side change-detection point, so it is also where C2-a's
+    /// edit-time stamping happens: `now` is the moment this projection is taken, and the engine
+    /// takes it from the gate-free stamping pass (`stampLocalSpaceEdits`) as well as from the
+    /// publish pass. Each cursor's `pendingProjection` carries the earlier pass's stamps forward --
+    /// see `stamped(_:_:_:_:)`.
+    ///
     /// D6: syncUuid resolves local spaceId to account sync uuid. Skip unmapped
     /// Spaces entirely, just as an unmapped profile triggers continue below:
     /// local ids never reach the wire. Results use only syncUuid, leaving
@@ -277,6 +283,18 @@ extension SyncableSpaces {
                   let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { return }
             out[item.uuid] = entity
         }
+        // C2-a / option S2: this device's own outbound projection, stamped when the user made the
+        // edit rather than when this round ran (`PhiSpaceCursor.pendingProjection`). It is the
+        // effective baseline for STAMPS only -- `baselines` stays the account's value, which is
+        // what decides whether a field changed at all. Never consulted without a `reconciled`
+        // baseline: a cursor that has never published has no per-field history to preserve and
+        // keeps the wholesale first-publication behaviour.
+        let pendings = eligible.reduce(into: [String: Phi_PhiSpaceEntity]()) { out, item in
+            guard baselines[item.uuid] != nil,
+                  let bytes = table.cursors[item.uuid]?.pendingProjection,
+                  let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { return }
+            out[item.uuid] = entity
+        }
         // The single decode boundary for the rank channel. A baseline is peer
         // bytes: `rank` is an optional message field, so one that never carried
         // a rank decodes to `""`, and a peer may publish any string at all --
@@ -298,13 +316,16 @@ extension SyncableSpaces {
         var out: [String: Phi_PhiSpaceEntity] = [:]
         for (space, uuid) in eligible {
             let baseline = baselines[uuid]
+            let pending = pendings[uuid]
             let isDefault = uuid == defaultSpaceUuid
 
             var entity = Phi_PhiSpaceEntity()
             entity.spaceUuid = uuid
-            entity.name = stamped(string(space.name), baseline?.name, now)
-            entity.iconName = stamped(string(space.iconName), baseline?.iconName, now)
-            entity.colorHex = stamped(string(space.colorHex), baseline?.colorHex, now)
+            entity.name = stamped(string(space.name), baseline?.name, pending?.name, now)
+            entity.iconName =
+                stamped(string(space.iconName), baseline?.iconName, pending?.iconName, now)
+            entity.colorHex =
+                stamped(string(space.colorHex), baseline?.colorHex, pending?.colorHex, now)
 
             // §6.2 S3's rank exception: with no baseline the rank is DERIVED
             // from this device's local order, and derived order must never beat
@@ -314,8 +335,19 @@ extension SyncableSpaces {
             if baseline == nil {
                 rank.updatedAtMs = 0
             } else if newRanks[uuid] != nil {
-                rank.updatedAtMs = now
+                // A rewrite the stamping pass has already recorded keeps the stamp it was given.
+                // `assignRanks` is a pure function of the local order and the BASELINE ranks, so a
+                // Space that has not moved since produces the same string again; without this the
+                // stamp would creep forward on every unrelated local change and the account would
+                // see a drag that never happened. A different string is a real move: AM-1 stamps
+                // it at least one above the rank it replaces.
+                let overwritten = (pending ?? baseline)?.rank.updatedAtMs ?? 0
+                rank.updatedAtMs = pending?.rank.stringValue == rankValue
+                    ? (pending?.rank.updatedAtMs ?? now)
+                    : PhiHybridClock.editStamp(editWallMs: now, overwrittenStampMs: overwritten)
             } else {
+                // Not in the complement, so the baseline rank still describes this Space's slot --
+                // including the case where the user dragged it away and back before publishing.
                 rank.updatedAtMs = baseline?.rank.updatedAtMs ?? 0
             }
             entity.rank = rank
@@ -342,19 +374,23 @@ extension SyncableSpaces {
                     binding.updatedAtMs = baseline.profileUuid.updatedAtMs
                     entity.profileUuid = binding
                 } else if let profileUuid = globalUuid(space.profileId) {
-                    entity.profileUuid = stamped(string(profileUuid), baseline?.profileUuid, now)
+                    entity.profileUuid =
+                        stamped(string(profileUuid), baseline?.profileUuid, pending?.profileUuid, now)
                 } else {
                     // No mapping: skip the whole Space this round rather than
                     // put a device-local Chromium basename on the wire.
                     continue
                 }
-                entity.themeID = stamped(string(space.themeId ?? ""), baseline?.themeID, now)
+                entity.themeID =
+                    stamped(string(space.themeId ?? ""), baseline?.themeID, pending?.themeID, now)
             }
 
             entity.overlayOpacityLight =
-                stamped(milli(space.opacityLight), baseline?.overlayOpacityLight, now)
+                stamped(milli(space.opacityLight), baseline?.overlayOpacityLight,
+                        pending?.overlayOpacityLight, now)
             entity.overlayOpacityDark =
-                stamped(milli(space.opacityDark), baseline?.overlayOpacityDark, now)
+                stamped(milli(space.opacityDark), baseline?.overlayOpacityDark,
+                        pending?.overlayOpacityDark, now)
             entity.createdAtMs = Int64(space.createdDate.timeIntervalSince1970 * 1000)
             out[uuid] = entity
         }
@@ -409,16 +445,33 @@ extension SyncableSpaces {
     }
 
     /// §6.2 S2/S3: same bytes as the baseline (timestamp zeroed) -> keep the
-    /// baseline's timestamp; different -> stamp `now`.
+    /// baseline's timestamp; different -> stamp `now`. C2-a / option S2 inserts one clause
+    /// between the two, for the projection this device has already stamped.
+    ///
+    /// The order of the three branches is the behaviour:
+    ///
+    /// 1. **Baseline first.** A field put back to the account's own value before it was ever
+    ///    published takes the account's stamp again, so the projection matches `reconciled`, the
+    ///    commit batch's "nothing to publish" test fires, and the revert publishes no phantom edit.
+    /// 2. **Pending second.** A field whose bytes are the ones this device already stamped keeps
+    ///    that stamp. This is what makes two successive offline edits of DIFFERENT fields carry
+    ///    their own edit times instead of the second edit restamping the first.
+    /// 3. **Otherwise a new edit**, stamped at `now` but never below the value it overwrites
+    ///    (AM-1) -- which is this device's own pending value when it has one, because that is what
+    ///    the account will see replaced.
     private static func stamped(_ value: Phi_PhiSettingValue,
                                 _ baseline: Phi_PhiSettingValue?,
+                                _ pending: Phi_PhiSettingValue?,
                                 _ now: Int64) -> Phi_PhiSettingValue {
         var out = value
-        if let baseline,
-           SyncableSettings.signature(of: baseline) == SyncableSettings.signature(of: value) {
+        let signature = SyncableSettings.signature(of: value)
+        if let baseline, SyncableSettings.signature(of: baseline) == signature {
             out.updatedAtMs = baseline.updatedAtMs
+        } else if let pending, SyncableSettings.signature(of: pending) == signature {
+            out.updatedAtMs = pending.updatedAtMs
         } else {
-            out.updatedAtMs = now
+            out.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: now, overwrittenStampMs: (pending ?? baseline)?.updatedAtMs ?? 0)
         }
         return out
     }

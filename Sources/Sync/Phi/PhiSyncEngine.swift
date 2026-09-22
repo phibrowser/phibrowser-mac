@@ -1363,6 +1363,11 @@ actor PhiSyncEngine {
             await push(retryOnConflict: true)
         case .localSpaceChange:
             guard !isApplyingRemote else { return }
+            // C2-a / design option S2, the Space analogue of `.localChange`'s settings pass
+            // above: record this device's Space edits with the time the user made them, BEFORE
+            // `push`'s pull gate. A Space renamed, recoloured, re-themed or dragged on a plane
+            // otherwise carries the reconnect time and beats a peer's genuinely later edit.
+            await stampLocalSpaceEdits()
             await push(retryOnConflict: true)
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
@@ -2570,6 +2575,14 @@ actor PhiSyncEngine {
             }
 
             cursor.reconciled = try? merged.serializedData()
+            // C2-a / S2: the pending projection has nothing left to say. `merged` was built with
+            // it as the local side, so it already carries this device's own edit stamp for every
+            // field the local side won and the remote's stamp for every field it lost, and `land`
+            // has just written those values onto the row -- so the next projection reproduces
+            // exactly those stamps from `reconciled` alone. Keeping the pending copy would
+            // instead re-offer the values the remote just won. It is cleared inside the same
+            // `table` the failed-reorder path rolls back, so a page that does not land keeps it.
+            cursor.pendingProjection = nil
             // `remote`, NOT `merged`: this is "what the server holds", the
             // comparison that decides whether anything still needs publishing.
             // And only for an entity that actually CAME from the server: the
@@ -2730,6 +2743,10 @@ actor PhiSyncEngine {
             cursor.pendingDelete = false
             cursor.deleteRejectRounds = 0
             cursor.pendingApply = nil
+            // C2-a / S2: the outbound half goes the same way. A soft-deleted cursor is excluded
+            // from `snapshot` anyway; leaving the bytes would just keep a dead edit in the plist
+            // for the whole retention window.
+            cursor.pendingProjection = nil
             cursor.heldProfileUuid = nil
             cursor.heldForLocalProfileId = nil
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
@@ -2974,6 +2991,91 @@ actor PhiSyncEngine {
 
     // MARK: - Space push (§5.1 / §5.5 guard 3 / §9.1)
 
+    /// C2-a / design option S2: the gate-free stamping pass.
+    ///
+    /// Projects the current local Spaces and stores the result in each cursor's
+    /// `pendingProjection`, so every field that changed carries the time the USER changed it
+    /// rather than the time this device managed to publish. `SyncableSpaces.snapshot` does the
+    /// stamping -- it is the Space-side change-detection point, as `SyncableSettings.snapshot` is
+    /// the settings one -- and reads `pendingProjection` back as the effective baseline, so a
+    /// second offline edit of another field leaves the first field's edit time alone. Nothing is
+    /// published here and nothing outside `sync.phiSpaces` is written.
+    ///
+    /// Which of `pushSpaces`' guards this pass honours, and why:
+    ///
+    /// - `isStopped`, `spaceStore`, `spaceAccess`: **yes**. It reads the local Spaces and writes
+    ///   the cursor table, and a retired engine's defaults may already belong to another account.
+    /// - `spaceSectionEnabled`: **yes**. A shut Space gate means this device is not taking part in
+    ///   Space sync at all, and `previewAccountSpaces` is the one Space-shaped thing allowed
+    ///   behind it precisely because it writes nothing. Edits made while the section was off must
+    ///   not come back stamped with the moment they were made and beat the account when it is
+    ///   switched on; opening the gate replays the whole type and re-establishes the baselines,
+    ///   which is where that decision belongs.
+    /// - `canPublishThisRound` (the pull gate): **no** -- removing it is the entire point.
+    /// - `hasDrainedFullReplay` (guard 1): **no**. Guard 1 protects the ACCOUNT from a device that
+    ///   has not seen its Spaces yet, and nothing here commits. The half of it that matters is
+    ///   structural instead: a cursor with no `reconciled` never gets a `pendingProjection`, so a
+    ///   device with no timestamp history still adopts wholesale and still stamps its first
+    ///   publication at publish time, exactly as today.
+    /// - parked, refused, hidden and soft-deleted Spaces, and Spaces on an unmapped Profile:
+    ///   **yes, for free** -- `SyncableSpaces.snapshot`'s own eligibility rules leave every one of
+    ///   them out of the projection, so no `pendingProjection` is written for them. A parked Space
+    ///   keeps today's behaviour: its local edit is stamped when it finally publishes.
+    ///
+    /// Identities are resolved read-only, never minted (`syncUuid`, not `ensureMapped`): a Space
+    /// with no mapping has never been published, so it has no baseline to stamp against anyway.
+    ///
+    /// A failed table write costs nothing that is not derivable -- the edit is still on the local
+    /// row and the next pass re-projects it, at that pass's stamp -- and it must not publish
+    /// either: `writeSpaceTable` counts the failure, and `pull` clears `canPublishThisRound` for
+    /// any round with a cursor save failure.
+    private func stampLocalSpaceEdits() async {
+        guard !isStopped, spaceSectionEnabled, let spaceAccess, spaceStore != nil else { return }
+        // Nothing to stamp against, so nothing to do -- and no main-actor hops on a device that
+        // has never published a Space.
+        guard loadSpaceTable().cursors.values.contains(where: { $0.reconciled != nil }) else { return }
+
+        let spaces = await spaceAccess.currentSpaces()
+        guard !isStopped else { return }
+        var uuidBySpace: [String: String] = [:]
+        var uuidByProfile: [String: String] = [:]
+        for space in spaces {
+            uuidBySpace[space.spaceId] = await spaceAccess.syncUuid(forSpaceId: space.spaceId)
+            if uuidByProfile[space.profileId] == nil {
+                uuidByProfile[space.profileId] =
+                    await spaceAccess.globalUuid(forProfileId: space.profileId)
+            }
+        }
+        guard !isStopped else { return }
+        // Load the table only now, after the last suspension point: the actor is reentrant, and
+        // the read-stamp-write below must not straddle an `await` that could let the baselines
+        // move underneath it.
+        var table = loadSpaceTable()
+        let projections = SyncableSpaces.snapshot(spaces: spaces, table: table,
+                                                  globalUuid: { uuidByProfile[$0] ?? nil },
+                                                  syncUuid: { uuidBySpace[$0] ?? nil },
+                                                  now: hlcNow())
+
+        var changed = false
+        for (uuid, projection) in projections {
+            guard let bytes = table.cursors[uuid]?.reconciled,
+                  let baseline = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
+            // Keep the projection only while it still says something the account does not
+            // already hold; a field edited and then put back before publishing leaves nothing
+            // behind. The test is `spaceCommitEntries`' own "nothing to publish" one, taken
+            // against `reconciled`: merging keeps a newer client's reserved fields 11-14 on both
+            // sides, which a bare `==` against freshly built bytes would report as a difference
+            // every round.
+            let pending = SyncableSpaces.merge(local: projection, remote: baseline) == baseline
+                ? nil : try? projection.serializedData()
+            guard table.cursors[uuid]?.pendingProjection != pending else { continue }
+            table.cursors[uuid]?.pendingProjection = pending
+            changed = true
+        }
+        guard changed else { return }
+        writeSpaceTable(table)
+    }
+
     /// Assembles this round's Space commit batch. Returns the uuid alongside each
     /// entry so per-entry outcomes can be applied without re-deriving anything.
     private func spaceCommitEntries(
@@ -3081,6 +3183,7 @@ actor PhiSyncEngine {
             cursor.pendingDelete = false
             cursor.reconciled = nil
             cursor.server = nil
+            cursor.pendingProjection = nil
             cursor.deletedAtMs = now()
             table.cursors[uuid] = cursor
         }
@@ -3183,6 +3286,7 @@ actor PhiSyncEngine {
                 cursor.deleteRejectRounds = 0
                 cursor.reconciled = nil
                 cursor.server = nil
+                cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
                 spaceCounters.tombstones += 1
@@ -3193,6 +3297,11 @@ actor PhiSyncEngine {
                 // stamp `now` again, and win the account's LWW every round.
                 cursor.reconciled = try? outgoing.serializedData()
                 cursor.server = cursor.reconciled
+                // C2-a / S2: the edit these stamps belong to is now the account's own value, so
+                // the pending projection is spent. A CONFLICT or an INVALID_MESSAGE deliberately
+                // keeps it: neither moved `reconciled`, so the retry must re-offer the same
+                // edit times rather than restamp them at the retry's clock.
+                cursor.pendingProjection = nil
                 cursor.deleteRejectRounds = 0
                 spaceCounters.pushed += 1
             }
@@ -3220,6 +3329,7 @@ actor PhiSyncEngine {
                 cursor.pendingDelete = false
                 cursor.reconciled = nil
                 cursor.server = nil
+                cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
             }

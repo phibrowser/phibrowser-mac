@@ -1181,6 +1181,180 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                        "the settings half correctly published nothing this round")
     }
 
+    // MARK: - Edit-time stamping (C2-a / design option S2)
+
+    /// One local Space, already published, with the account's own values on both sides: the
+    /// cursor's baselines and the server row the commit path has to match on id and version.
+    private func offlineEditFixture() throws
+        -> (FakePhiSpaceAccess, MemorySpaceStore, FakePhiSyncClient) {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let published = try spaceEntity("sync-1", name: "Work")
+        var seeded = PhiSpaceCursor()
+        seeded.entityId = "srv-1"
+        seeded.version = 3
+        seeded.reconciled = try published.serializedData()
+        seeded.server = seeded.reconciled
+        store.table.cursors["sync-1"] = seeded
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(published),
+                    version: 3, entityId: "srv-1")
+        return (access, store, client)
+    }
+
+    private func sentSpaceEntity(_ commit: FakePhiSyncClient.CommitCall) throws
+        -> Phi_PhiSpaceEntity {
+        try Phi_PhiSpaceEntity(serializedBytes:
+            try PhiEntityCodec.decrypt(XCTUnwrap(commit.ciphertext), key: key).space.serializedData())
+    }
+
+    /// The headline regression C2-a exists for. The publish pass runs only after a successful
+    /// pull, so a Space renamed on a plane used to leave carrying the RECONNECT time and beat a
+    /// peer's genuinely later edit. The stamping pass runs ahead of that gate, so the rename
+    /// leaves with its own time however long the machine stays offline.
+    func testASpaceRenamedOfflineIsPublishedWithItsRenameTime() async throws {
+        let (access, store, client) = try offlineEditFixture()
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+
+        // Offline: the pull throws, so `canPublishThisRound` never opens.
+        let renameMs = clock.nowMs
+        access.spaces[0].name = "Travel"
+        client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        await engine.handleLocalSpacesChange()
+        XCTAssertTrue(spaceCommits(client).isEmpty, "an offline round publishes nothing")
+        let pendingBytes = try XCTUnwrap(store.table.cursors["sync-1"]?.pendingProjection,
+                                         "the stamping pass runs behind a shut pull gate")
+        let pending = try Phi_PhiSpaceEntity(serializedBytes: pendingBytes)
+        XCTAssertEqual(pending.name.stringValue, "Travel")
+        XCTAssertEqual(pending.name.updatedAtMs, renameMs)
+
+        // An hour later the machine reconnects and the round finally publishes.
+        clock.nowMs = renameMs + 3_600_000
+        await engine.pullOnce()
+        let commits = spaceCommits(client)
+        XCTAssertEqual(commits.count, 1)
+        let sent = try sentSpaceEntity(XCTUnwrap(commits.first))
+        XCTAssertEqual(sent.name.stringValue, "Travel")
+        XCTAssertEqual(sent.name.updatedAtMs, renameMs,
+                       "the rename must carry its own time, not the reconnect's")
+        XCTAssertNil(store.table.cursors["sync-1"]?.pendingProjection,
+                     "an accepted commit spends the pending projection")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.reconciled, try sent.serializedData())
+    }
+
+    /// R-exec-14 under S2: the merge's local side is this round's local projection, and that
+    /// projection now carries the edit-time stamps. Stamping it at the landing round's clock
+    /// instead would make the offline rename win a field it should lose, and re-stamping it
+    /// after the merge would publish an edit that never happened.
+    func testALandingMergesAgainstThePendingProjectionAndThenSpendsIt() async throws {
+        let (access, store, client) = try offlineEditFixture()
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+
+        let renameMs = clock.nowMs
+        access.spaces[0].name = "Travel"
+        client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        await engine.handleLocalSpacesChange()
+        XCTAssertNotNil(store.table.cursors["sync-1"]?.pendingProjection)
+
+        // A peer recoloured the same Space while this one was away, and left the name alone.
+        // `reseed`, so the row keeps the id the cursor already points at.
+        var fromPeer = spaceEntity("sync-1", name: "Work")
+        fromPeer.colorHex.stringValue = "#FF00FF"
+        fromPeer.colorHex.updatedAtMs = renameMs + 1_000
+        client.reseed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(fromPeer), version: 9)
+
+        clock.nowMs = renameMs + 3_600_000
+        await engine.pullOnce()
+
+        // The peer's colour landed on the row; the local rename survived the merge.
+        XCTAssertTrue(access.calls.contains(.update("LOCAL-1")))
+        let reconciled = try Phi_PhiSpaceEntity(
+            serializedBytes: XCTUnwrap(store.table.cursors["sync-1"]?.reconciled))
+        XCTAssertEqual(reconciled.name.stringValue, "Travel")
+        XCTAssertEqual(reconciled.name.updatedAtMs, renameMs)
+        XCTAssertEqual(reconciled.colorHex.stringValue, "#FF00FF")
+        XCTAssertNil(store.table.cursors["sync-1"]?.pendingProjection,
+                     "the merged baseline already carries both sides' stamps")
+
+        let sent = try sentSpaceEntity(XCTUnwrap(spaceCommits(client).first))
+        XCTAssertEqual(sent.name.updatedAtMs, renameMs,
+                       "the republish must not restamp the rename at the landing round's clock")
+        XCTAssertEqual(sent.colorHex.updatedAtMs, fromPeer.colorHex.updatedAtMs,
+                       "the field the remote won is no longer a local edit")
+    }
+
+    /// A field put back before it was ever published is not an edit at all: the projection
+    /// collapses onto `reconciled`, the pending copy is dropped and nothing goes on the wire.
+    func testAnEditRevertedBeforePublishingDropsThePendingProjectionAndCommitsNothing() async throws {
+        let (access, store, client) = try offlineEditFixture()
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+
+        access.spaces[0].name = "Travel"
+        client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        await engine.handleLocalSpacesChange()
+        XCTAssertNotNil(store.table.cursors["sync-1"]?.pendingProjection)
+
+        access.spaces[0].name = "Work"
+        clock.nowMs += 60_000
+        client.getUpdatesErrorOnce = URLError(.notConnectedToInternet)
+        await engine.handleLocalSpacesChange()
+        XCTAssertNil(store.table.cursors["sync-1"]?.pendingProjection)
+
+        clock.nowMs += 60_000
+        await engine.pullOnce()
+        XCTAssertTrue(spaceCommits(client).isEmpty, "a revert publishes no phantom edit")
+    }
+
+    /// The gate the stamping pass DOES honour. A shut Space section means this device is not
+    /// taking part in Space sync, and `previewAccountSpaces` is the only Space-shaped work
+    /// allowed behind it precisely because it writes nothing.
+    func testTheStampingPassIsHeldByAShutSpaceGate() async throws {
+        let (access, store, client) = try offlineEditFixture()
+        let engine = makeEngine(access: access, store: store, client: client)
+        // Deliberately no `setSpaceSyncEnabled(true)`.
+        access.spaces[0].name = "Travel"
+        await engine.handleLocalSpacesChange()
+        XCTAssertNil(store.table.cursors["sync-1"]?.pendingProjection)
+    }
+
+    /// A stamping pass whose table write fails must lose nothing that is not derivable -- the
+    /// edit is still on the row and the next pass re-projects it -- and it must not publish:
+    /// `pull` refuses `canPublishThisRound` for any round that counted a cursor save failure.
+    func testAFailedStampingWriteNeitherLosesTheEditNorPublishes() async throws {
+        let (access, store, client) = try offlineEditFixture()
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+
+        access.spaces[0].name = "Travel"
+        store.failNextSave = true
+        await engine.handleLocalSpacesChange()
+        XCTAssertNil(store.table.cursors["sync-1"]?.pendingProjection)
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "a round with a cursor save failure publishes nothing")
+
+        store.failNextSave = false
+        let retryMs = clock.nowMs + 60_000
+        clock.nowMs = retryMs
+        await engine.handleLocalSpacesChange()
+        let sent = try sentSpaceEntity(XCTUnwrap(spaceCommits(client).first))
+        XCTAssertEqual(sent.name.stringValue, "Travel")
+        XCTAssertEqual(sent.name.updatedAtMs, retryMs, "re-derived from the row, at the retry's time")
+    }
+
     // MARK: - Guard 3 (§5.5)
 
     func testNothingIsCommittedForATagThisDeviceCannotRead() async throws {

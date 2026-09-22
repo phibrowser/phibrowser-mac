@@ -143,13 +143,22 @@ enum BookmarkKind: OwnedItemKind {
     /// (`locationUpdatedDate`, schema V13), not the publish time. `now` is the round's hybrid-logical stamp
     /// and remains the source for rank (ruling Q-R2-5) and for a location with no recorded move — a pre-V13
     /// row, or one whose location only ever arrived from a peer.
+    ///
+    /// AM-2: the two edit columns below were written by `LocalStore` from this device's raw
+    /// `Date()`, so on a device whose clock is wrong they are wrong by the same amount. They are
+    /// therefore corrected here, at stamp time, by the same offset `hlcNow()` applies — the one
+    /// place where an edit time becomes a wire stamp. The columns themselves are never rewritten:
+    /// they are local wall-clock quantities and other readers compare them against wall clock.
     static func stamp(_ projected: Phi_PhiBookmarkEntity, baseline: Phi_PhiBookmarkEntity?,
                       local: PhiLocalBookmark, rank: String, now: Int64,
-                      hlcMax: Int64 = 0) -> Phi_PhiBookmarkEntity {
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiBookmarkEntity {
         var out = projected
         out.rank = string(rank)
-        let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
-        let locationEdit = local.locationUpdatedDate.map(milliseconds)
+        let contentStamp = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
+        let locationEdit = local.locationUpdatedDate
+            .map { PhiHybridClock.corrected(wallMs: milliseconds($0), offsetMs: wallOffsetMs) }
 
         guard let baseline else {
             let created = PhiHybridClock.editStamp(editWallMs: contentStamp,

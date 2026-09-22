@@ -150,6 +150,22 @@ protocol PhiSyncProtocolClient {
     /// An entry's `entityId` is nil (and `baseVersion` 0) for the first commit of that entity,
     /// which creates it under `clientTagHash`; afterwards both come from the server.
     func commit(entries: [PhiCommitEntry], storeBirthday: String) async throws -> [PhiCommitOutcome]
+
+    /// AM-2: the `Date` response header of the most recent SUCCESSFUL GetUpdates or Commit, as
+    /// epoch milliseconds, or nil when the header was absent or unparseable.
+    ///
+    /// A property rather than a third return value on both calls: the engine reads it
+    /// immediately after each round, the transport is the only thing that can know it, and
+    /// widening two tuples would change every call site for a value only the clock uses.
+    /// Pull-before-commit guarantees the engine has seen a fresh one before any commit is sent.
+    ///
+    /// The default is nil, so a client that models only the protocol (the engine tests' fake)
+    /// leaves the correction off and behaves exactly as it did before AM-2.
+    var lastServerDateMs: Int64? { get }
+}
+
+extension PhiSyncProtocolClient {
+    var lastServerDateMs: Int64? { nil }
 }
 
 /// The real transport. Mirrors `KeyEnvelopeAPIClient`'s shape (injected session, injected
@@ -160,6 +176,10 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
     private let baseURL: String
     private let tokenProvider: () async -> String?
     private let deviceKeyId: String
+
+    /// AM-2. Written by `send` on every 200 that parsed, so a failed round leaves the previous
+    /// estimate in place rather than erasing it.
+    private(set) var lastServerDateMs: Int64?
 
     init(session: URLSession = .shared,
          baseURL: String = KeyEnvelopeAPIClient.syncBaseURL,
@@ -263,6 +283,42 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
                                                     receive: receive)
     }
 
+    /// The three HTTP-date formats RFC 7231 §7.1.1.1 requires a recipient to accept: the
+    /// preferred IMF-fixdate, and the two obsolete forms (RFC 850 and asctime) a proxy or an
+    /// older intermediary may still emit. All three are fixed-width C-locale formats, so they are
+    /// parsed with `en_US_POSIX` and GMT and never with the device's locale or time zone —
+    /// reading a server clock through the user's calendar is how this would silently start
+    /// returning dates that are out by hours on exactly the devices AM-2 exists for.
+    private static let httpDateFormats = [
+        "EEE, dd MMM yyyy HH:mm:ss zzz",     // Sun, 06 Nov 1994 08:49:37 GMT
+        "EEEE, dd-MMM-yy HH:mm:ss zzz",      // Sunday, 06-Nov-94 08:49:37 GMT
+        "EEE MMM d HH:mm:ss yyyy",           // Sun Nov  6 08:49:37 1994
+    ]
+
+    private static let httpDateParsers: [DateFormatter] = httpDateFormats.map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = format
+        return formatter
+    }
+
+    /// AM-2: an HTTP-date header as epoch milliseconds; nil when it is absent or unparseable.
+    /// Internal rather than private so the header contract is pinned by its own test.
+    static func serverDateMs(from header: String?) -> Int64? {
+        guard let header, !header.isEmpty else { return nil }
+        // asctime pads a single-digit day with a second space ("Sun Nov  6 ..."), which the
+        // fixed literal space in the pattern does not match. Collapsing runs of spaces is safe
+        // for the other two forms, which contain no double space.
+        let normalized = header.split(separator: " ", omittingEmptySubsequences: true)
+            .joined(separator: " ")
+        for parser in httpDateParsers {
+            guard let date = parser.date(from: normalized) else { continue }
+            return Int64((date.timeIntervalSince1970 * 1000).rounded())
+        }
+        return nil
+    }
+
     /// `share` and `message_contents` are proto2 `required`: leaving either unset makes
     /// `serializedData()` throw before a request is ever made.
     private static func newMessage(storeBirthday: String) -> SyncPb_ClientToServerMessage {
@@ -296,6 +352,11 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
         }
 
         let response = try SyncPb_ClientToServerResponse(serializedBytes: data)
+        // AM-2: record the server's clock before the error branches. A NOT_MY_BIRTHDAY or a
+        // typed server error is still a well-formed 200 whose `Date` header is as good an
+        // estimate as any other; only a transport failure leaves the previous one standing.
+        lastServerDateMs = Self.serverDateMs(
+            from: (urlResponse as? HTTPURLResponse)?.value(forHTTPHeaderField: "Date"))
         if response.hasErrorCode, response.errorCode != .success {
             if response.errorCode == .notMyBirthday {
                 AppLogWarn("[phi-sync] server reported NOT_MY_BIRTHDAY; dropping the local sync cursor")

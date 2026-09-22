@@ -355,4 +355,113 @@ final class PhiHybridClockTests: XCTestCase {
         XCTAssertEqual(fresh.cancelledDeletes, ["b1"])
         XCTAssertEqual(fresh.supersededByDelete, 0)
     }
+
+
+    // MARK: - AM-2: source-side clock correction
+
+    private let threshold = PhiHybridClock.wallClockCorrectionThresholdMs
+
+    /// The threshold is a real threshold: nothing at or below it is corrected. Ordinary skew is
+    /// harmless -- LWW never promised true-time ordering of concurrent writes at that resolution
+    /// -- and a correction re-measured every round would only jitter this device's stamps.
+    func testAnOffsetWithinTheThresholdIsNotCorrected() {
+        let local: Int64 = 1_700_000_000_000
+
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local, localMs: local), 0)
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local + threshold,
+                                                          localMs: local), 0,
+                       "exactly at the threshold is still trusted")
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local - threshold,
+                                                          localMs: local), 0)
+    }
+
+    /// Past the threshold the whole measured offset is applied, in both directions. The stored
+    /// value is the CORRECTION, not the raw measurement, so no reader has to re-apply the rule.
+    func testAnOffsetBeyondTheThresholdIsCorrectedInBothDirections() {
+        let local: Int64 = 1_700_000_000_000
+        let hour: Int64 = 3_600_000
+
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local + hour, localMs: local),
+                       hour, "a device running an hour SLOW is pushed forward")
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local - hour, localMs: local),
+                       -hour, "a device running an hour FAST is pulled back")
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: local + threshold + 1,
+                                                          localMs: local), threshold + 1,
+                       "one millisecond past the threshold is corrected by the full offset")
+    }
+
+    /// A nonsense header must not trap. `abs(Int64.min)` does, and so does a bare subtraction of
+    /// two extremes, so both are computed with the overflow-reporting forms.
+    func testAnAbsurdServerClockSaturatesInsteadOfTrapping() {
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: .max, localMs: .min), .max)
+        XCTAssertEqual(PhiHybridClock.wallClockCorrection(serverMs: .min, localMs: .max), .min)
+        XCTAssertEqual(PhiHybridClock.corrected(wallMs: .max, offsetMs: 1), .max)
+        XCTAssertEqual(PhiHybridClock.corrected(wallMs: .min, offsetMs: -1), .min)
+        XCTAssertEqual(PhiHybridClock.corrected(wallMs: 5, offsetMs: 0), 5)
+    }
+
+    /// The correction reaches a STAMP, which is the point of all of it: a device an hour fast
+    /// stamps at the account's time, not its own, so `maxSeen` never runs an hour ahead. R2.4 is
+    /// untouched -- nothing here rewrites an inbound stamp or clamps `maxSeen`.
+    func testACorrectedClockStampsAtTheAccountsTimeRatherThanItsOwn() {
+        let trueNow: Int64 = 1_700_000_000_000
+        let hour: Int64 = 3_600_000
+        let broken = trueNow + hour
+        let correction = PhiHybridClock.wallClockCorrection(serverMs: trueNow, localMs: broken)
+
+        var uncorrected = PhiHybridClock()
+        var corrected = PhiHybridClock()
+
+        XCTAssertEqual(uncorrected.stamp(wallMs: broken), broken)
+        XCTAssertEqual(corrected.stamp(wallMs: PhiHybridClock.corrected(wallMs: broken,
+                                                                       offsetMs: correction)),
+                       trueNow)
+        XCTAssertEqual(corrected.maxSeen, trueNow)
+    }
+
+    /// AM-1 and AM-2 compose in the order the kinds apply them: the edit column is corrected
+    /// FIRST, then raised above the stamp it overwrites. Correcting afterwards would let a
+    /// broken clock's raw edit time reach the wire whenever it happened to exceed the baseline.
+    func testAnEditTimeIsCorrectedBeforeAM1RaisesIt() {
+        let trueNow: Int64 = 1_700_000_000_000
+        let hour: Int64 = 3_600_000
+        let editOnABrokenClock = trueNow + hour
+
+        let stamp = PhiHybridClock.editStamp(
+            editWallMs: PhiHybridClock.corrected(wallMs: editOnABrokenClock, offsetMs: -hour),
+            overwrittenStampMs: trueNow - 10_000)
+
+        XCTAssertEqual(stamp, trueNow, "the edit keeps its own (corrected) time")
+        XCTAssertGreaterThan(stamp, trueNow - 10_000, "and still beats the value it overwrote")
+    }
+
+    /// The whole chain, on the kind that owns the most edit columns: a row edited on a clock an
+    /// hour fast publishes the account's time. `contentUpdatedDate` was written by `LocalStore`
+    /// from that same broken `Date()`, so correcting only `hlcNow()` would leave the content
+    /// group an hour ahead -- which is why `wallOffsetMs` reaches `stamp` and not just the clock.
+    func testAnEditOnABrokenClockPublishesACorrectedStamp() throws {
+        let hour: Int64 = 3_600_000
+        let trueEdit: Int64 = 1_700_000_000_000
+        let baseline = bookmarkPayload(uuid: "b1", title: "old", contentStamp: 1_000)
+        // The row's column, as the broken clock wrote it: an hour ahead of the real edit.
+        let renamed = PhiLocalBookmark.fixture(
+            guid: "g-b1", syncId: "b1", spaceId: "space-a", title: "new",
+            createdDate: Date(timeIntervalSince1970: 1),
+            contentUpdatedDate: Date(timeIntervalSince1970: TimeInterval(trueEdit + hour) / 1_000))
+
+        func stamp(offset: Int64) throws -> Phi_PhiBookmarkEntity {
+            BookmarkKind.stamp(
+                try XCTUnwrap(BookmarkKind.project(renamed, resolve: OwnerResolver.fixture(),
+                                                   scope: nil, parentIdentity: nil)),
+                baseline: baseline, local: renamed, rank: BookmarkKind.rank(of: baseline),
+                now: trueEdit, hlcMax: 1_000, wallOffsetMs: offset)
+        }
+
+        XCTAssertEqual(try stamp(offset: 0).title.updatedAtMs, trueEdit + hour,
+                       "uncorrected, the broken clock reaches the wire")
+        XCTAssertEqual(try stamp(offset: -hour).title.updatedAtMs, trueEdit,
+                       "corrected, the account sees the real edit time")
+        XCTAssertEqual(try stamp(offset: -hour).url.updatedAtMs, 1_000,
+                       "an unchanged field still keeps its baseline stamp")
+    }
 }

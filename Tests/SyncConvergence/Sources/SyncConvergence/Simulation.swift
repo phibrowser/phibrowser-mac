@@ -122,9 +122,20 @@ struct SimKind<E: SwiftProtobuf.Message & Equatable> {
 
 // MARK: - Replica
 
+/// The one true wall clock the replicas' skewed clocks are measured against. It is also the
+/// clock the SERVER runs on, which is what makes AM-2 modellable here: a `Date` response header
+/// is `trueNow`, so a replica's offset estimate is `trueNow - (trueNow + skew) = -skew`.
+enum SimClock {
+    static func trueNow(step: Int) -> Int64 { 1_700_000_000_000 + Int64(step) * 1_000 }
+}
+
 final class SimReplica<E: SwiftProtobuf.Message & Equatable> {
     let id: Int
     var clockSkewMs: Int64 = 0
+    /// AM-2's source-side correction: what this replica has learned, from the `Date` header of a
+    /// sync response, that its own wall clock is wrong by. Added to every instant that becomes a
+    /// STAMP, and to nothing else -- exactly `PhiSyncEngine.correctedNow()`.
+    var wallOffsetMs: Int64 = 0
     var offlineUntil = 0
     /// The PRODUCTION hybrid logical clock, one per replica, observed on every
     /// pull and advanced by every local stamp -- the same object `PhiSyncEngine`
@@ -153,7 +164,11 @@ final class SimReplica<E: SwiftProtobuf.Message & Equatable> {
 
     init(id: Int) { self.id = id }
 
-    func now(step: Int) -> Int64 { 1_700_000_000_000 + Int64(step) * 1_000 + clockSkewMs }
+    /// True time is `SimClock.trueNow(step:)`; this replica reads it as that plus its skew, and
+    /// stamps with that plus AM-2's correction.
+    func now(step: Int) -> Int64 {
+        SimClock.trueNow(step: step) + clockSkewMs + wallOffsetMs
+    }
 
     /// The stamper for an edit made at `step`. Edits are stamped when they
     /// HAPPEN, including while this replica is offline; nothing here waits for
@@ -212,6 +227,13 @@ struct SimOutcome {
     var concurrentIntentLosses: [String] = []
     var intentChecked = 0
     var intentLosses: [String] { causalIntentLosses + concurrentIntentLosses }
+
+    /// AM-2's property: how far the account's logical time ran ahead of TRUE wall clock, over
+    /// every replica, at the end of the run. `maxSeen` is never clamped on receive (R2.4), so one
+    /// replica stamping an hour ahead drags every other replica an hour ahead with it and the
+    /// account's clock degrades into a bare Lamport counter. Correcting the broken clock at the
+    /// SOURCE is what keeps this number small; it is the whole thing AM-2 buys.
+    var logicalTimeAheadOfTrueMs: Int64 = 0
 }
 
 struct Simulation<E: SwiftProtobuf.Message & Equatable> {
@@ -223,6 +245,9 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
     /// Stamp through the production `PhiHybridClock`. False replays the plain
     /// wall-clock LWW that shipped before C2, for a same-seed comparison.
     var hybridClock = true
+    /// AM-2: every replica has seen a server `Date` header and corrected its own clock by the
+    /// production rule. False replays the same skew uncorrected, for a same-seed comparison.
+    var correctedClocks = false
 
     func run(rng: inout SplitMix64, report: Report) -> SimOutcome {
         var outcome = SimOutcome()
@@ -230,6 +255,16 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
         var replicas: [SimReplica<E>] = (0..<replicaCount).map { SimReplica<E>(id: $0) }
         for (index, replica) in replicas.enumerated() where index < clockSkew.count {
             replica.clockSkewMs = clockSkew[index]
+            guard correctedClocks else { continue }
+            // The estimate a replica would hold after one successful round, computed by the
+            // PRODUCTION rule over the same two numbers the engine gives it: the server's `Date`
+            // (true time) and this replica's own wall clock at receipt. A skew inside the
+            // threshold yields 0, so the sub-threshold "no correction" branch is exercised here
+            // too whenever the skew list contains one.
+            let atReceipt = 0
+            replica.wallOffsetMs = PhiHybridClock.wallClockCorrection(
+                serverMs: SimClock.trueNow(step: atReceipt),
+                localMs: SimClock.trueNow(step: atReceipt) + replica.clockSkewMs)
         }
 
         /// Identities a delete has already been issued for; see the scheduler's delete case.
@@ -482,6 +517,12 @@ struct Simulation<E: SwiftProtobuf.Message & Equatable> {
         outcome.quiesceCommits = server.commits - quiesceStartCommits
         outcome.commits = server.commits
         outcome.conflicts = server.conflicts
+
+        // AM-2: how far the account's logical time ran ahead of true wall clock. The last edit
+        // any replica could have made was at `steps - 1`, so that is the reference instant.
+        let trueEnd = SimClock.trueNow(step: max(steps - 1, 0))
+        outcome.logicalTimeAheadOfTrueMs =
+            replicas.map { $0.clock.maxSeen - trueEnd }.max() ?? 0
 
         // --- Convergence --------------------------------------------------------
         let reference = replicas[0]

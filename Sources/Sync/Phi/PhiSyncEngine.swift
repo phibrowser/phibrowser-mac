@@ -427,9 +427,10 @@ struct OwnedKindRegistration {
     let beginRound: @MainActor () throws -> Void
     /// Identities read this round, used to seed the tag index (section 5.1).
     let localIdentities: @MainActor () -> Set<String>
-    /// The last two arguments are the round's HLC stamp (`now`) and the logical time it started
-    /// from (`hlcMax`), AM-1's floor for a merge unit with no baseline.
-    let snapshot: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64, Int64)
+    /// The last three arguments are the round's HLC stamp (`now`), the logical time it started
+    /// from (`hlcMax`, AM-1's floor for a merge unit with no baseline) and AM-2's wall-clock
+    /// correction, which the kind adds to the row edit columns it turns into wire stamps.
+    let snapshot: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64, Int64, Int64)
         -> OwnedSnapshotBytes
     /// Section 4.7 deletion diff uses allSyncIds()/allPinRows(), not the snapshot, as its domain
     /// (R-exec-4). Throws if this round's local read failed.
@@ -560,10 +561,28 @@ actor PhiSyncEngine {
     /// restore can lose to a value it is trying to overwrite. Still account-scoped, because
     /// logical time is per account, and `stateKeys` is what makes it so.
     static let hlcMaxStateKey = statePrefix + "hlcMax"
+    /// AM-2: the correction this device applies to its own wall clock before stamping, learned
+    /// from the `Date` header of sync responses. 0, or absent, means "this clock is trusted".
+    ///
+    /// Persisted, and persisted HERE, for one reason: an OFFLINE edit is stamped at edit time
+    /// (AM-1), so a plane edit made by a Mac whose clock is a year out would otherwise be
+    /// stamped a year ahead and poison the account the moment it publishes. The last estimate
+    /// is the best available answer until the next pull, and a broken clock is broken by a
+    /// roughly constant amount.
+    ///
+    /// The offset is a property of the DEVICE, not of the account, so `stateKeys` is
+    /// strictly speaking coarser than it needs to be: an account switch wipes it. That is
+    /// deliberate and costs nothing measurable. Keeping one key family for everything the
+    /// engine persists is what makes "wipe the account's state" a single, auditable list, and
+    /// the value is re-learned from the first response of the first round — before any commit,
+    /// because `push` is pull-before-commit. The only window a wipe opens is an offline edit
+    /// made between an account switch and the next successful pull, which is the same window a
+    /// wiped `hlcMax` already has.
+    static let wallClockOffsetStateKey = statePrefix + "wallClockOffsetMs"
 
     static let stateKeys = [entityIdStateKey, versionStateKey, lastEntityStateKey,
                             tombstoneRoundsStateKey, hasAdoptedStateKey, unreadableSettingsStateKey,
-                            hlcMaxStateKey]
+                            hlcMaxStateKey, wallClockOffsetStateKey]
 
     /// The two keys the marker and the birthday lived under before M3-4a. Not in `stateKeys`,
     /// but still on every *account-scope* wipe (`resetPhiSyncCursorIfAccountChanged`, the
@@ -633,6 +652,10 @@ actor PhiSyncEngine {
     /// writes through `writeState`, which carries the retirement guard, so a stopped engine
     /// cannot push the next account's logical time forward.
     private var hlcClock: PhiHybridClock
+    /// AM-2's source-side clock correction, mirroring `wallClockOffsetStateKey`. Added to every
+    /// wall-clock instant that becomes an LWW STAMP — `hlcNow()`'s argument and the row edit
+    /// columns `OwnedItemKind.stamp` reads — and to nothing else. It is 0 on a healthy device.
+    private var wallClockOffsetMs: Int64
 
     /// The Space section (M3-2). Both are `nil` on a build or an account that has no Space
     /// sync at all, and every Space branch below is gated on them being present, so the M3-1
@@ -896,6 +919,11 @@ actor PhiSyncEngine {
         // commit, because `push` is pull-before-commit.
         self.hlcClock = PhiHybridClock(
             maxSeen: (defaults.object(forKey: Self.hlcMaxStateKey) as? NSNumber)?.int64Value ?? 0)
+        // AM-2: an absent key is "no correction", which is both a clean install and every
+        // healthy device. A stale one is still the best estimate available for an offline edit
+        // made before this launch's first pull.
+        self.wallClockOffsetMs =
+            (defaults.object(forKey: Self.wallClockOffsetStateKey) as? NSNumber)?.int64Value ?? 0
         // Nil selects the two legacy-key fallback, not an in-memory store or a second engine
         // branch. Initialize the mirror before any round runs.
         let resolvedMarkerStore: any PhiSyncMarkerStore =
@@ -1288,6 +1316,9 @@ actor PhiSyncEngine {
         // `hlcMaxStateKey` is one of them, so drop the in-memory mirror too. Logical time is
         // per account, and the first pull of the next account re-learns it before any commit.
         hlcClock = PhiHybridClock()
+        // `wallClockOffsetStateKey` likewise. See its declaration for why a per-device value
+        // lives in the per-account key family: the first response of the next round re-learns it.
+        wallClockOffsetMs = 0
         // Marker/birthday live in the account's marker.json, outside stateKeys (section 2.10).
         // Resetting all account cursors must delete that file and reset its mirror, not save an
         // empty table (section 4.4).
@@ -1485,6 +1516,7 @@ actor PhiSyncEngine {
                     return
                 }
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                observeServerDate()      // AM-2
                 guard !isStopped else {
                     lastPreviewStats = (pages, entities)
                     box.result = .failure(.retired)
@@ -1912,6 +1944,9 @@ actor PhiSyncEngine {
         do {
             pageLoop: while more, pages < Self.maxPullPages {
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                // AM-2: every pull re-measures the offset, so pull-before-commit guarantees a
+                // fresh one before anything this round stamps.
+                observeServerDate()
                 guard !isStopped else { return false }
                 // Persist birthday changes page by page; a changed birthday invalidates the marker
                 // in the same file (section 2.4 note 1). persistMarkerState counts failures. This
@@ -2920,6 +2955,7 @@ actor PhiSyncEngine {
                                deleted: false,
                                baseVersion: storedVersion ?? 0),
             ], storeBirthday: storedBirthday)
+            observeServerDate()      // AM-2
             guard !isStopped else { return }
             guard let outcome = outcomes.first else {
                 throw PhiSyncProtocolError.malformedResponse
@@ -3236,6 +3272,7 @@ actor PhiSyncEngine {
                 AppLogError("[phi-sync] space commit failed (\(PhiSyncLog.describe(error)))")
                 break    // keep the outcomes earlier slices already produced
             }
+            observeServerDate()      // AM-2
             guard !isStopped else { return }
             for (item, outcome) in zip(payloads, outcomes) {
                 applySpaceCommitOutcome(outcome, for: item, table: &table,
@@ -4100,7 +4137,10 @@ actor PhiSyncEngine {
         let roundHlcMax = hlcClock.maxSeen
         let roundNow = hlcNow()
         let doctored = await doctoredOwnedTable(registration, table, maps: maps, now: roundNow)
-        let snapshot = await registration.snapshot(doctored, maps, roundNow, roundHlcMax)
+        // AM-2: `roundNow` is already corrected (it came from `hlcNow()`); the row edit columns
+        // the kind reads are not, so the correction is handed to the snapshot as well.
+        let snapshot = await registration.snapshot(doctored, maps, roundNow, roundHlcMax,
+                                                   wallClockOffsetMs)
         counters.excludedUnmappedOwner +=
             snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
         // Scope mismatch suppresses publication in every round type (sections 7.3/11.2), including
@@ -4422,6 +4462,7 @@ actor PhiSyncEngine {
                             + "(\(PhiSyncLog.describe(error)))")
                 break    // Preserve outcomes from earlier slices.
             }
+            observeServerDate()      // AM-2
             guard !isStopped else { return }
             for (item, outcome) in zip(sent, outcomes) {
                 applyOwnedCommitOutcome(outcome, for: item, registration: registration,
@@ -4906,9 +4947,44 @@ actor PhiSyncEngine {
     /// snapshot/stamp call, for `clearedPinSplitPartner`, and for `deleteDecidedAtMs` — see
     /// `SyncableOwnedItems.tombstones`, where A9 compares that field against a wire stamp.
     private func hlcNow() -> Int64 {
-        let stamp = hlcClock.stamp(wallMs: now())
+        let stamp = hlcClock.stamp(wallMs: correctedNow())
         persistHlcMax()
         return stamp
+    }
+
+    /// AM-2: this device's wall clock as the account should read it.
+    ///
+    /// The ONLY callers are `hlcNow()` and the `wallOffsetMs` threaded into
+    /// `SyncableOwnedItems.snapshot`. Everything that is compared against this device's own wall
+    /// clock — retention, `deletedAtMs`, `purgedAtMs`, `refusedAtMs`, the round deadlines,
+    /// `lastProfileRefreshAtMs` — keeps using `now()` directly, because correcting one side of a
+    /// comparison against the raw clock is exactly how a correction turns into a bug.
+    private func correctedNow() -> Int64 {
+        PhiHybridClock.corrected(wallMs: now(), offsetMs: wallClockOffsetMs)
+    }
+
+    /// AM-2: fold the `Date` header of a successful round into the offset estimate.
+    ///
+    /// Called after every GetUpdates and every Commit. Pull-before-commit therefore guarantees a
+    /// fresh measurement before any commit this device sends, and the persisted value covers the
+    /// offline case, where there is no response to measure against and an edit is still stamped
+    /// at edit time.
+    ///
+    /// R12: the log line carries the two offsets and nothing else — never a header, a URL, an
+    /// account or anything a user typed — and it is emitted only when the applied correction
+    /// CHANGES, so a device sitting at a steady offset logs once rather than every round.
+    private func observeServerDate() {
+        guard !isStopped, let serverMs = client.lastServerDateMs else { return }
+        let localMs = now()
+        let correction = PhiHybridClock.wallClockCorrection(serverMs: serverMs, localMs: localMs)
+        guard correction != wallClockOffsetMs else { return }
+        let previous = wallClockOffsetMs
+        wallClockOffsetMs = correction
+        writeState(correction == 0 ? nil : NSNumber(value: correction),
+                   forKey: Self.wallClockOffsetStateKey)
+        AppLogInfo("[phi-sync] wall_clock_correction_ms \(previous) -> \(correction) "
+                   + "(measured=\(serverMs &- localMs), "
+                   + "threshold=\(PhiHybridClock.wallClockCorrectionThresholdMs))")
     }
 
     /// Fold landed LWW stamps into logical time. Called at landing, before anything in the same
@@ -5338,9 +5414,9 @@ extension OwnedKindRegistration {
             localIdentities: {
                 (try? access.allSyncIds()) ?? Set(state.locals.compactMap(\.syncId))
             },
-            snapshot: { table, maps, now, hlcMax in
+            snapshot: { table, maps, now, hlcMax, wallOffsetMs in
                 bookmarkSnapshot(table: table, maps: maps, now: now, hlcMax: hlcMax,
-                                 state: state)
+                                 wallOffsetMs: wallOffsetMs, state: state)
             },
             tombstones: { table, maps, now in
                 // Use allSyncIds as the deletion domain (R-exec-4). Snapshot excludes
@@ -5393,7 +5469,7 @@ extension OwnedKindRegistration {
 /// Outbound snapshot and provisional identity minting in memory only (sections 4.2/6.4).
 @MainActor
 private func bookmarkSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
-                              hlcMax: Int64,
+                              hlcMax: Int64, wallOffsetMs: Int64,
                               state: BookmarkSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
     let resolve = maps.resolver
@@ -5412,7 +5488,7 @@ private func bookmarkSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, no
     }
     let result = SyncableOwnedItems.snapshot(BookmarkKind.self, locals: locals, table: table,
                                              resolve: resolve, scope: nil, now: now,
-                                             hlcMax: hlcMax)
+                                             hlcMax: hlcMax, wallOffsetMs: wallOffsetMs)
     out.skippedUnmappedOwner = result.skippedUnmappedOwner
     out.skippedIneligibleOwner = result.skippedIneligibleOwner
     for (identity, entity) in result.entities {
@@ -6221,9 +6297,9 @@ extension OwnedKindRegistration {
             // account tags. An empty local seed is conservative: unknown tombstones for lost
             // cursors rely on the existing full-type replay recovery (R-M3-3-13).
             localIdentities: { [] },
-            snapshot: { table, maps, now, hlcMax in
-                pinSnapshot(table: table, maps: maps, now: now, hlcMax: hlcMax, access: access,
-                            state: state)
+            snapshot: { table, maps, now, hlcMax, wallOffsetMs in
+                pinSnapshot(table: table, maps: maps, now: now, hlcMax: hlcMax,
+                            wallOffsetMs: wallOffsetMs, access: access, state: state)
             },
             tombstones: { table, maps, now in
                 try pinTombstones(table: table, maps: maps, now: now,
@@ -6308,7 +6384,7 @@ extension OwnedKindRegistration {
 /// minting or later identity write-back is needed; section 6.4 is a no-op for pins.
 @MainActor
 private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
-                         hlcMax: Int64,
+                         hlcMax: Int64, wallOffsetMs: Int64,
                          access: any PhiPinnedTabLocalAccess,
                          state: PinSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
@@ -6326,7 +6402,7 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
     let scope = state.localScope
     let result = SyncableOwnedItems.snapshot(PinKind.self, locals: state.locals, table: table,
                                              resolve: resolve, scope: scope, now: now,
-                                             hlcMax: hlcMax)
+                                             hlcMax: hlcMax, wallOffsetMs: wallOffsetMs)
     out.skippedUnmappedOwner = result.skippedUnmappedOwner
     out.skippedIneligibleOwner = result.skippedIneligibleOwner
     for (identity, entity) in result.entities {
@@ -6971,8 +7047,9 @@ extension OwnedKindRegistration {
             // tombstones must route (section 5.1 / R-M3-4a-23). Reuse rows just loaded by
             // beginRound without a second fetch; this callback is not called when that read throws.
             localIdentities: { Set(state.rows.compactMap(\.syncId)) },
-            snapshot: { table, maps, now, hlcMax in
-                urlRuleSnapshot(table: table, maps: maps, now: now, hlcMax: hlcMax, state: state)
+            snapshot: { table, maps, now, hlcMax, wallOffsetMs in
+                urlRuleSnapshot(table: table, maps: maps, now: now, hlcMax: hlcMax,
+                                wallOffsetMs: wallOffsetMs, state: state)
             },
             tombstones: { table, maps, now in
                 // Use the single round-end read including soft-deleted rows (R-M3-4a-51). Let
@@ -7104,7 +7181,7 @@ extension OwnedKindRegistration {
 /// identity (R-M3-4a-23); scopeMismatch stays false because rules have no scope.
 @MainActor
 private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
-                             hlcMax: Int64,
+                             hlcMax: Int64, wallOffsetMs: Int64,
                              state: URLRuleSyncRoundState) -> OwnedSnapshotBytes {
     var out = OwnedSnapshotBytes()
     let resolve = maps.resolver
@@ -7118,7 +7195,7 @@ private func urlRuleSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now
     }
     let result = SyncableOwnedItems.snapshot(URLRuleKind.self, locals: state.live, table: table,
                                              resolve: resolve, scope: nil, now: now,
-                                             hlcMax: hlcMax)
+                                             hlcMax: hlcMax, wallOffsetMs: wallOffsetMs)
     out.skippedUnmappedOwner = result.skippedUnmappedOwner
     out.skippedIneligibleOwner = result.skippedIneligibleOwner
     for (identity, entity) in result.entities {
@@ -7356,7 +7433,9 @@ private func urlRuleClaims(arrivals: [OwnedItemArrival<Phi_PhiURLRuleEntity>],
             // differ.
             // hlcMax stays 0: this is the local side of a claiming merge, not a publication, and
             // AM-1's logical floor would let an old untouched local rule beat the arrival it is
-            // claiming (the same reason the bookmark adoption projection passes 0).
+            // claiming (the same reason the bookmark adoption projection passes 0). AM-2's
+            // `wallOffsetMs` stays at its 0 default for the same reason: correcting an edit time
+            // is only meaningful for a value this device is about to publish.
             var local = URLRuleKind.stamp(projected, baseline: nil, local: row, rank: rank,
                                           now: now, hlcMax: 0)
             local.ruleUuid = remote.identity

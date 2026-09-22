@@ -149,6 +149,10 @@ final class PhiSyncEngineTests: XCTestCase {
         var forcedConflicts = 0
         /// When non-empty, `getUpdates` returns these pages in order instead of reading `stored`.
         var scriptedPages: [Page] = []
+        /// AM-2: the `Date` response header this fake reports, as epoch ms. nil is the default
+        /// (and the protocol extension's default), which leaves the correction off entirely, so
+        /// every test that does not set it behaves exactly as it did before AM-2.
+        var lastServerDateMs: Int64?
         /// Opened as soon as `getUpdates` is entered, so a test can wait for a round to be
         /// parked inside the network call.
         var arrivedInGetUpdates: Gate?
@@ -1496,5 +1500,81 @@ extension PhiSyncEngineTests {
 
         let stored = (defaults.object(forKey: PhiSyncEngine.hlcMaxStateKey) as? NSNumber)?.int64Value
         XCTAssertGreaterThanOrEqual(try XCTUnwrap(stored), 9_000_000)
+    }
+}
+
+// MARK: - AM-2: the wall-clock offset learned from the server's `Date` header
+
+extension PhiSyncEngineTests {
+
+    private func storedOffset() -> Int64? {
+        (defaults.object(forKey: PhiSyncEngine.wallClockOffsetStateKey) as? NSNumber)?.int64Value
+    }
+
+    /// A pull measures the offset and persists it, so an OFFLINE edit made before the next pull
+    /// is still stamped through a corrected clock. Without persistence AM-2 would cover only the
+    /// device that is online at the moment it edits, which is the case that needs it least.
+    func testAPullPersistsAnOffsetBeyondTheThreshold() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key),
+                    version: 5)
+        // The device believes it is 1_000; the server says it is six hours later.
+        client.lastServerDateMs = 1_000 + 6 * 3_600_000
+
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        XCTAssertEqual(storedOffset(), 6 * 3_600_000)
+    }
+
+    /// Ordinary skew persists nothing, so the key stays absent on every healthy device and a
+    /// correction that later drops back under the threshold removes it rather than freezing a
+    /// stale value in place.
+    func testAnOffsetWithinTheThresholdPersistsNothing() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key),
+                    version: 5)
+        client.lastServerDateMs = 1_000 + 30_000      // half a minute
+
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        XCTAssertNil(storedOffset())
+    }
+
+    /// The offset is in `stateKeys`, so an account switch wipes it with everything else. It is a
+    /// per-DEVICE quantity, so that is coarser than strictly necessary; it is also free, because
+    /// the first response of the next round re-learns it before any commit can be sent.
+    func testResettingAccountStateWipesTheOffset() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key),
+                    version: 5)
+        client.lastServerDateMs = 1_000 + 6 * 3_600_000
+        let engine = makeEngine(client, key: key, now: 1_000)
+        await engine.pullOnce()
+        XCTAssertNotNil(storedOffset(), "precondition: the offset was learned")
+
+        await engine.resetSyncState()
+
+        XCTAssertNil(storedOffset())
+        XCTAssertTrue(PhiSyncEngine.stateKeys.contains(PhiSyncEngine.wallClockOffsetStateKey),
+                      "the key must be in stateKeys, which is what the coordinator wipes")
+    }
+
+    /// A retired engine measures nothing: it still holds the signed-out account's `UserDefaults`,
+    /// and `observeServerDate` goes through `writeState` for exactly the reason `hlcMax` does.
+    func testARetiredEngineDoesNotRecordAnOffset() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key),
+                    version: 5)
+        client.lastServerDateMs = 1_000 + 6 * 3_600_000
+        let engine = makeEngine(client, key: key, now: 1_000)
+
+        engine.shutdown()
+        await engine.pullOnce()
+
+        XCTAssertNil(storedOffset())
     }
 }

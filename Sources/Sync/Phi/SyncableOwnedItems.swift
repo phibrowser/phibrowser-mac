@@ -383,8 +383,11 @@ protocol OwnedItemKind {
     /// `now` is the round's hybrid-logical stamp; `hlcMax` is the logical time the round started from,
     /// AM-1's floor for a merge unit with no baseline. A changed unit WITH a baseline takes its own
     /// edit-date column, raised one above the baseline's stamp.
+    /// `wallOffsetMs` is AM-2's source-side clock correction, added to every EDIT COLUMN this
+    /// function reads off the local row before it becomes a wire stamp. It is 0 whenever this
+    /// device's clock is within `PhiHybridClock.wallClockCorrectionThresholdMs` of the server's.
     static func stamp(_ projected: Entity, baseline: Entity?, local: Local,
-                      rank: String, now: Int64, hlcMax: Int64) -> Entity
+                      rank: String, now: Int64, hlcMax: Int64, wallOffsetMs: Int64) -> Entity
     /// Content-value bytes with timestamps zeroed, like SyncableSettings.signature.
     /// Use these to decide field patches; whole-entity comparison would turn
     /// remote restamps into empty updates. Exclude location/rank, carried by move.
@@ -471,10 +474,13 @@ enum SyncableOwnedItems {
     /// per allBookmarks. assignRanks takes this as current local order; another
     /// ordering would needlessly change ranks every round.
     /// `hlcMax` is AM-1's floor for a row with no baseline; 0 means "no floor", which is what a
-    /// caller with no engine clock wants.
+    /// caller with no engine clock wants. `wallOffsetMs` is AM-2's clock correction, applied to
+    /// the edit columns `K.stamp` reads; 0 means "this device's clock is trusted", which is both
+    /// the healthy case and what a caller with no engine clock wants.
     static func snapshot<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                            table: PhiOwnedItemTable, resolve: OwnerResolver,
-                                           scope: PinnedTabScope?, now: Int64, hlcMax: Int64 = 0)
+                                           scope: PinnedTabScope?, now: Int64, hlcMax: Int64 = 0,
+                                           wallOffsetMs: Int64 = 0)
         -> OwnedItemSnapshotResult<K.Entity> {
         var skippedUnmappedOwner = 0
         var skippedIneligibleOwner = 0
@@ -605,7 +611,7 @@ enum SyncableOwnedItems {
             entities[candidate.identity] = K.stamp(candidate.entity,
                                                    baseline: baselines[candidate.identity],
                                                    local: candidate.local, rank: rank, now: now,
-                                                   hlcMax: hlcMax)
+                                                   hlcMax: hlcMax, wallOffsetMs: wallOffsetMs)
         }
         return OwnedItemSnapshotResult(entities: entities,
                                        skippedUnmappedOwner: skippedUnmappedOwner,
@@ -1283,6 +1289,9 @@ enum SyncableOwnedItems {
             // (`parentIdentity` above comes from the remote entity), so stamping it with this
             // device's move time would hand an unchanged location a higher stamp than the account
             // holds and republish every adopted row.
+            //
+            // AM-2's `wallOffsetMs` stays 0 for the same reason: correcting an edit time is only
+            // meaningful for a value this device is about to PUBLISH.
             var atRest = row
             atRest.locationUpdatedDate = nil
             projected = BookmarkKind.stamp(projected, baseline: nil, local: atRest,

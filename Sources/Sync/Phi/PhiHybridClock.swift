@@ -65,4 +65,51 @@ struct PhiHybridClock {
     private static func bumped(_ stamp: Int64) -> Int64 {
         stamp == Int64.max ? Int64.max : stamp + 1
     }
+
+    // MARK: - AM-2: correcting a broken clock at the SOURCE
+
+    /// How far this device's wall clock may be off before its own stamps are corrected.
+    ///
+    /// R2.4's no-clamp rule stands: an inbound stamp is never rewritten and `maxSeen` is never
+    /// clamped, because two devices with different clocks would clamp differently and
+    /// `SyncableSettings.lwwWinner` would then pick different winners on different devices. A
+    /// SOURCE-side correction is a different thing entirely — it changes only what this device
+    /// stamps NEXT, so every device still merges the same inputs — and it is what keeps a Mac
+    /// whose clock is set to 2031 from dragging the whole account's logical time with it.
+    ///
+    /// Five minutes is deliberately far above ordinary skew. Below it a correction would buy
+    /// nothing (LWW does not promise true-time ordering of concurrent writes at that resolution)
+    /// and would cost something real: the estimate is re-measured on every response, so a small
+    /// correction would jitter this device's stamps round to round for no gain.
+    static let wallClockCorrectionThresholdMs: Int64 = 5 * 60 * 1000
+
+    /// The correction to apply to this device's wall clock, from one server response.
+    ///
+    /// `serverMs` is the `Date` header of a successful round and `localMs` this device's wall
+    /// clock when that response landed. No RTT compensation: the quantity that matters here is
+    /// measured in minutes, and half a round trip is milliseconds.
+    ///
+    /// Returns 0 below the threshold, so the stored value is the correction itself rather than a
+    /// raw measurement a second reader would have to re-apply the threshold to.
+    static func wallClockCorrection(serverMs: Int64, localMs: Int64) -> Int64 {
+        let (offset, overflow) = serverMs.subtractingReportingOverflow(localMs)
+        guard !overflow else { return serverMs > 0 ? Int64.max : Int64.min }
+        // Not `abs`: `abs(Int64.min)` traps, and a nonsense header must not crash the engine.
+        guard offset > wallClockCorrectionThresholdMs
+            || offset < -wallClockCorrectionThresholdMs else { return 0 }
+        return offset
+    }
+
+    /// A wall-clock instant seen through AM-2's correction, saturating like `bumped`.
+    ///
+    /// Every quantity that becomes an LWW STAMP passes through this: `stamp(wallMs:)`'s argument
+    /// and, at the other end, the row edit columns `OwnedItemKind.stamp` reads. Wall-clock
+    /// quantities — retention, `deletedAtMs`, `purgedAtMs`, `refusedAtMs`, round deadlines — do
+    /// NOT, because they are compared against this device's own wall clock and correcting one
+    /// side of that comparison is what would actually break them.
+    static func corrected(wallMs: Int64, offsetMs: Int64) -> Int64 {
+        let (sum, overflow) = wallMs.addingReportingOverflow(offsetMs)
+        guard !overflow else { return offsetMs > 0 ? Int64.max : Int64.min }
+        return sum
+    }
 }

@@ -106,7 +106,6 @@ Registered today:
 | --- | --- | --- |
 | `bookmarks.associativity` | RC3, the position/rank coherence rule | the pending product decision on rank coherence (ruling C5 area) |
 | `urlrules.associativity` | RC3, same rule over target/rank | the same decision |
-| `urlrules.absent-always-emitted-field.is-side-independent` | `URLRuleKind.contentBallot` is built from the group's READOUTS, so an absent `path_prefix` and a present empty one tie byte for byte; the merge then copies the whole group from whichever side came first. Not reachable from a Phi publisher — the schema declares the field always emitted | a decision on whether §8.2's content group should resolve a tied ballot through the shared winner over the members' own bytes, the way §4.3's location group now does |
 
 ## Layer 1 — algebraic properties of each merge
 
@@ -402,6 +401,26 @@ Typical default-seed run: `[skew,wall]` loses 4 of 7 bookmarks (4 causal), 3 of
 6 rules (2 causal), all 3 Spaces and the settings entity; `[skew]` loses 1 of 7
 bookmarks, 0 of 6 rules, 2 of 3 Spaces and the settings entity — **0 causal
 everywhere**. The residue is concurrent by construction.
+
+### AM-2 — correcting a broken clock at the source
+
+`bookmarks[am2]` runs one replica an hour fast while it "sees" the server's
+`Date` header, so it corrects its own clock through the production
+`PhiHybridClock.wallClockCorrection`. The replicas' offsets are computed from
+`SimClock.trueNow`, which is the clock the model's server runs on too: a
+replica's estimate is therefore `trueNow − (trueNow + skew)`, exactly what the
+engine computes from a response header.
+
+The property is **not** convergence — a wrong clock never broke that — and not
+"the fast replica loses". It is that a broken clock no longer *poisons* the
+account: `maxSeen` is never clamped on receive (R2.4), so one hour-ahead stamp
+drags every peer's logical time an hour ahead, and the hybrid clock stops
+reading as a wall-clock time at all. The scenario runs the same seed twice, with
+the correction off and on, and asserts that `maxSeen` ends within the correction
+threshold of true wall clock
+(`simulation.bookmarks[am2].a-broken-clock-does-not-poison-logical-time`). On
+the default seed the uncorrected run ends ~3 596 000 ms ahead of true time and
+the corrected one −4 000 ms, and both converge with 0 causal losses.
 
 ## What Layer 2 does not cover
 

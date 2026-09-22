@@ -426,4 +426,39 @@ final class PhiSyncProtocolClientTests: XCTestCase {
             XCTFail("expected malformedResponse")
         } catch PhiSyncProtocolError.malformedResponse {}
     }
+
+    // MARK: - AM-2: the server's `Date` header
+
+    /// RFC 7231 §7.1.1.1 requires a recipient to accept all three HTTP-date forms. The three
+    /// spellings here are the RFC's own example instant, 1994-11-06T08:49:37Z.
+    func testTheServerDateHeaderParsesAllThreeHTTPDateFormats() {
+        let expected: Int64 = 784_111_777_000
+
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sun, 06 Nov 1994 08:49:37 GMT"),
+                       expected, "IMF-fixdate, the preferred form")
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sunday, 06-Nov-94 08:49:37 GMT"),
+                       expected, "obsolete RFC 850")
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Sun Nov  6 08:49:37 1994"),
+                       expected, "obsolete asctime, whose day is space-padded")
+    }
+
+    /// An absent or unusable header is nil, never 0 or a fabricated instant: the engine reads it
+    /// as "no measurement this round" and keeps the estimate it already had. A wrong answer here
+    /// would be worse than none, because it would feed a correction into every later stamp.
+    func testAnUnusableServerDateHeaderIsNil() {
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: nil))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: ""))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: "not a date"))
+        XCTAssertNil(PhiSyncHTTPClient.serverDateMs(from: "1994-11-06T08:49:37Z"),
+                     "ISO 8601 is not an HTTP-date; guessing at it would be guessing")
+    }
+
+    /// The header is read in the C locale, never the device's. A Mac set to a non-Gregorian
+    /// calendar or a non-English locale would otherwise fail to parse the header (or, worse,
+    /// parse it into a different year) on exactly the devices AM-2 exists to correct.
+    func testTheServerDateHeaderIsParsedIndependentlyOfTheDeviceLocale() {
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Thu, 01 Jan 1970 00:00:00 GMT"), 0)
+        XCTAssertEqual(PhiSyncHTTPClient.serverDateMs(from: "Wed, 31 Dec 1969 23:59:59 GMT"),
+                       -1_000, "an instant before the epoch stays negative rather than wrapping")
+    }
 }

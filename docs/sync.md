@@ -1,5 +1,7 @@
 # Phi sync publishing
 
+For manual cross-device acceptance, see the [Sync E2E test cases](sync-e2e-test-cases.md).
+
 ## Chromium sync endpoint
 
 `ChromiumLauncher` supplies a default `--sync-url` when starting the embedded
@@ -277,7 +279,9 @@ this area, so the split is explicit:
 
 The rule of thumb: a value that is *compared against another wire stamp* is
 logical; a value that is *compared against wall clock* (a 30-day window, a
-timeout) stays wall clock.
+timeout) stays wall clock. That split is also what AM-2's clock correction
+follows exactly — see "Correcting a broken clock at the source" below: the
+`hlcNow()` row is corrected, the `now()` row is not.
 
 ### Edit-time stamping (AM-1)
 
@@ -387,6 +391,63 @@ the broken clock would then win every field permanently. A device a year ahead
 therefore drags the account's logical time with it, and the clock degrades
 gracefully into a Lamport counter, which still orders causally related edits
 correctly.
+
+### Correcting a broken clock at the source (AM-2)
+
+The no-clamp rule above is about *receiving*. It says nothing about what this
+device puts on the wire next, and that is where a wildly wrong clock can be
+repaired without touching anybody's merge input. `PhiSyncHTTPClient` exposes the
+`Date` response header of every successful GetUpdates and Commit as epoch
+milliseconds (`lastServerDateMs`; nil when the header is absent or is not one of
+RFC 7231's three HTTP-date forms). The engine turns it into an offset estimate,
+`serverMs − now()` at receipt, and keeps it in
+`phi.sync.wallClockOffsetMs`. There is no RTT compensation: the quantity that
+matters here is measured in minutes.
+
+| | |
+| --- | --- |
+| threshold | `PhiHybridClock.wallClockCorrectionThresholdMs`, **5 minutes** |
+| below it | **no correction at all.** Ordinary skew is harmless — LWW never promised true-time ordering of concurrent writes at that resolution — and a re-measured correction would only jitter this device's stamps round to round |
+| beyond it | the whole measured offset is applied, in either direction |
+
+The stored value is the *correction*, not the raw measurement, so no second
+reader has to re-apply the threshold. It changes only what this device stamps
+next, so every device still merges byte-identical inputs and R2.4 stands
+untouched. A change is logged once, at metadata level (the two offsets and the
+threshold, never a header or anything a user typed).
+
+**What is corrected** is every wall-clock instant that becomes an LWW stamp, and
+only those:
+
+* `hlcNow()`'s argument — so every `now:` above, every rank, `deleteDecidedAtMs`
+  and the whole settings/Spaces stamping path inherit it for free;
+* the row **edit columns** `OwnedItemKind.stamp` reads, as `editWallMs + offset`.
+  This half is not optional: `contentUpdatedDate`, `locationUpdatedDate` and
+  `targetUpdatedDate` are written by `LocalStore` from the same broken `Date()`,
+  so correcting only `hlcNow()` would leave every edit-time stamp uncorrected.
+  The engine hands the offset to `SyncableOwnedItems.snapshot` beside `hlcMax`,
+  and the kinds apply it *before* AM-1 raises the result above the stamp it
+  overwrites. The columns themselves are never rewritten — they are local
+  wall-clock quantities that other readers compare against wall clock.
+
+**What is not corrected** is everything in the `now()` row of the table above:
+retention sweeps, `deletedAtMs`, `purgedAtMs`, `refusedAtMs`, the round
+deadlines, `lastProfileRefreshAtMs`. Each is compared against this device's own
+wall clock, and correcting one side of that comparison is how a correction turns
+into a bug.
+
+Why the offset is **persisted**, and persisted in `stateKeys`: an offline edit is
+stamped at edit time (AM-1), so a plane edit on a Mac whose clock is a year out
+would otherwise be stamped a year ahead the moment it publishes. The last
+estimate is the best answer available until the next pull, and a broken clock is
+broken by a roughly constant amount. The offset is a property of the *device*,
+not the account, so `stateKeys` is coarser than strictly necessary — an account
+switch wipes it. That is deliberate: one auditable list of "everything the
+engine persists for an account" is worth more than the saving, and
+pull-before-commit re-learns the value from the first response of the first
+round, before any commit can be sent. The only window a wipe opens is an offline
+edit between an account switch and the next successful pull, which is the window
+a wiped `maxSeen` already has.
 
 Stamp 0 is untouched by all of this. It still means "derived, must never beat a
 real action" — no-baseline ranks, a no-baseline bookmark location with no

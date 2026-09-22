@@ -219,6 +219,55 @@ if includeSkew {
     }
 }
 
+// AM-2: one replica's clock is an hour fast, and it has SEEN that from a server `Date` header.
+// Run the same seed twice -- once with the correction off, once on -- so the report shows what
+// the correction buys rather than only asserting it.
+//
+// The property is not convergence (a wrong clock never broke that; R2.4's no-clamp rule is what
+// keeps every device merging the same inputs) and not "the fast replica loses". It is that a
+// device with a broken clock no longer POISONS the account: `maxSeen` is never clamped on
+// receive, so an hour-ahead stamp drags every peer's logical time an hour ahead and the hybrid
+// clock stops reading as a wall-clock time at all. Corrected at the source, it cannot.
+if includeSkew {
+    let skew: [Int64] = [3_600_000, 0, 0]
+    var uncorrected = SimOutcome()
+    do {
+        var rng = SplitMix64(seed: seed &* 0xA11C_E5EE &+ 0x0D)
+        uncorrected = Simulation(kind: bookmarksSimKind(), identities: simBookmarkIdentities,
+                                 replicaCount: 3, steps: simSteps, clockSkew: skew,
+                                 correctedClocks: false)
+            .run(rng: &rng, report: report)
+    }
+    var rng = SplitMix64(seed: seed &* 0xA11C_E5EE &+ 0x0D)
+    let outcome = Simulation(kind: bookmarksSimKind(), identities: simBookmarkIdentities,
+                             replicaCount: 3, steps: simSteps, clockSkew: skew,
+                             correctedClocks: true)
+        .run(rng: &rng, report: report)
+    // Convergence, C4 and "a causally later edit wins" all still hold with the correction on:
+    // it changes what this device stamps next, never how anything merges.
+    describe("bookmarks[am2]", outcome, report: report, assertIntent: true)
+    // The bound is the correction threshold itself. A corrected replica stamps at true time, so
+    // the only thing left above it is AM-1's `+ 1` bumps -- microseconds of logical time, not
+    // minutes -- and anything approaching five minutes means the correction stopped reaching a
+    // stamping path.
+    let bound = PhiHybridClock.wallClockCorrectionThresholdMs
+    report.check("simulation.bookmarks[am2].a-broken-clock-does-not-poison-logical-time",
+                 outcome.logicalTimeAheadOfTrueMs <= bound, """
+                   logical time ran \(outcome.logicalTimeAheadOfTrueMs)ms ahead of true wall \
+                   clock with the correction ON (bound \(bound)ms). Uncorrected, the same seed \
+                   runs \(uncorrected.logicalTimeAheadOfTrueMs)ms ahead. A replica skewed by \
+                   \(skew[0])ms is stamping uncorrected somewhere.
+                 """)
+    report.markPassed("simulation.bookmarks[am2].a-broken-clock-does-not-poison-logical-time")
+    report.note("""
+        simulation.bookmarks[am2]: with one replica's clock \(skew[0] / 60_000) minutes fast, the \
+        account's logical time ends \(uncorrected.logicalTimeAheadOfTrueMs)ms ahead of true wall \
+        clock UNCORRECTED and \(outcome.logicalTimeAheadOfTrueMs)ms ahead with AM-2's source-side \
+        correction. Both runs converge and both keep every causal edit; the difference is only \
+        whether the broken clock became the account's clock.
+        """)
+}
+
 // The C4 property above is only as good as the number of delete-versus-edit races the scheduler
 // actually produced. Sum them over every scenario and fail if the run produced none at all, so a
 // green report can never mean "no delete ever met an edit".

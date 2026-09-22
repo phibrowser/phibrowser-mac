@@ -201,12 +201,18 @@ enum PinKind: OwnedItemKind {
     /// remote pair merely because this device received it.
     ///
     /// C2: `now` is the round's hybrid-logical stamp; content carries its own EDIT time instead.
+    ///
+    /// AM-2: `contentUpdatedDate` was written from this device's raw `Date()`, so it is corrected
+    /// by the same offset `hlcNow()` applies; see `BookmarkKind.stamp`. `now` arrives already
+    /// corrected, so the fields that take it need nothing here.
     static func stamp(_ projected: Phi_PhiPinTabEntity, baseline: Phi_PhiPinTabEntity?,
                       local: PhiLocalPin, rank: String, now: Int64,
-                      hlcMax: Int64 = 0) -> Phi_PhiPinTabEntity {
+                      hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiPinTabEntity {
         var out = projected
         out.rank = string(rank)
-        let contentStamp = milliseconds(local.contentUpdatedDate ?? local.createdDate)
+        let contentStamp = PhiHybridClock.corrected(
+            wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
+            offsetMs: wallOffsetMs)
 
         if out.splitPartnerUuid.stringValue.isEmpty,
            let baseline, !baseline.splitPartnerUuid.stringValue.isEmpty {

@@ -328,6 +328,15 @@ struct HeaderExtensionContainer: View {
             // leaked an aborted drag's `.dragging` state. The overlay claims
             // left-mouse on reorderable icons only; hover, right-clicks, and
             // accessibility stay on the SwiftUI buttons underneath.
+            // On macOS 27 SwiftUI consumes mouse-downs on its interactive
+            // content before AppKit's drag path can see them, so the veto below
+            // is redundant there; it still owns the reorder drag because
+            // `.onDrag` declines it. Note that AppKit's background drag in this
+            // window is a server-side region computed only for a strip under
+            // the titlebar (measured 55pt in Balanced, 44pt in Comfortable),
+            // which is the only reason this header ever dragged; the Content
+            // Address Bar therefore takes its window drag explicitly
+            // (`WebContentAddressBarDragView`).
             .overlay(
                 HeaderExtensionReorderSurface(
                     pinnedExtensions: pinnedExtensions,

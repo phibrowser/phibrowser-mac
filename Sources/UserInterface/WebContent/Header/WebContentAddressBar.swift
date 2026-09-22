@@ -185,6 +185,7 @@ struct WebContentAddressBarView: View {
     private let isLoading: Bool
     private let isProgressVisible: Bool
     private let backgroundColor: Color?
+    private let allowsWindowDrag: Bool
     private let onOpenLocationBar: (NSView?) -> Void
 
     @StateObject private var viewModel: WebContentAddressBarViewModel
@@ -210,6 +211,7 @@ struct WebContentAddressBarView: View {
         isLoading: Bool,
         isProgressVisible: Bool = false,
         backgroundColor: Color? = nil,
+        allowsWindowDrag: Bool = false,
         onOpenLocationBar: @escaping (NSView?) -> Void,
         onAnchorResolved: ((NSView?) -> Void)? = nil
     ) {
@@ -220,6 +222,7 @@ struct WebContentAddressBarView: View {
         self.isLoading = isLoading
         self.isProgressVisible = isProgressVisible
         self.backgroundColor = backgroundColor
+        self.allowsWindowDrag = allowsWindowDrag
         self.onOpenLocationBar = onOpenLocationBar
         self.onAnchorResolved = onAnchorResolved
         _viewModel = StateObject(wrappedValue: WebContentAddressBarViewModel(
@@ -229,40 +232,36 @@ struct WebContentAddressBarView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onOpenLocationBar(anchorView)
-                }
-
+        HStack(spacing: 0) {
             HStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Text(displayText)
-                        .font(.system(size: 13))
-                        .foregroundColor(displayTextColor)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                Text(displayText)
+                    .font(.system(size: 13))
+                    .foregroundColor(displayTextColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(maxHeight: .infinity)
-                .allowsHitTesting(false)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxHeight: .infinity)
+            .allowsHitTesting(false)
+            // The leading padding and the gap before the trailing controls
+            // belong to the text region, so the click surface covers every
+            // point left of those controls and none of them.
+            .padding(.leading, 12)
+            .padding(.trailing, viewModel.isInPlaceholderMode ? 0 : 8)
+            .background(WebContentAddressBarDragSurface(allowsWindowDrag: allowsWindowDrag) {
+                onOpenLocationBar(anchorView)
+            })
 
-                if !viewModel.isInPlaceholderMode {
-                    HStack(spacing: 2) {
-                        readerButton
-                        memoryMenuButton
-                        copyURLButton
-                        menuButton
-                    }
+            if !viewModel.isInPlaceholderMode {
+                HStack(spacing: 2) {
+                    readerButton
+                    memoryMenuButton
+                    copyURLButton
+                    menuButton
                 }
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 0)
-
         }
         .frame(height: 26)
         .background(progressBackgroundInline)
@@ -503,6 +502,103 @@ struct WebContentAddressBarView: View {
         }
     }
 
+}
+
+/// Installs `WebContentAddressBarDragView` behind the Content Address Bar's
+/// leading text region (same shape as the pinned-extension reorder surface).
+private struct WebContentAddressBarDragSurface: NSViewRepresentable {
+    let allowsWindowDrag: Bool
+    let onClick: () -> Void
+
+    func makeNSView(context: Context) -> WebContentAddressBarDragView {
+        WebContentAddressBarDragView()
+    }
+
+    func updateNSView(_ nsView: WebContentAddressBarDragView, context: Context) {
+        nsView.allowsWindowDrag = allowsWindowDrag
+        nsView.onClick = onClick
+    }
+}
+
+/// AppKit owner of the Content Address Bar's left-button click and window
+/// drag. A press released within `dragThreshold` points of where it started,
+/// measured in screen space, opens the omnibox. A press that travels further
+/// is a drag and never opens it: from that point the window follows the
+/// pointer when `allowsWindowDrag` is set (Balanced), and nothing happens
+/// otherwise. Hover, right-clicks and scrolls fall through to the SwiftUI bar
+/// beneath, which keeps its hover highlight and hover-gated controls.
+final class WebContentAddressBarDragView: NSView {
+    var allowsWindowDrag = false
+    var onClick: (() -> Void)?
+
+    /// Matches the click-vs-drag threshold of the sidebar's empty area and
+    /// the pinned-extension reorder surface.
+    private static let dragThreshold: CGFloat = 5
+
+    private var mouseDownScreenLocation: NSPoint?
+    private var hasCrossedDragThreshold = false
+
+    static func claimsEvent(ofType type: NSEvent.EventType?) -> Bool {
+        switch type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func isClick(from mouseDownLocation: NSPoint, to mouseUpLocation: NSPoint) -> Bool {
+        abs(mouseUpLocation.x - mouseDownLocation.x) <= dragThreshold
+            && abs(mouseUpLocation.y - mouseDownLocation.y) <= dragThreshold
+    }
+
+    /// Keeps the window's background drag off the bar: the press belongs to
+    /// this surface, which moves the window only explicitly.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil,
+              Self.claimsEvent(ofType: NSApp.currentEvent?.type) else {
+            return nil
+        }
+        return self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownScreenLocation = window?.convertPoint(toScreen: event.locationInWindow)
+        hasCrossedDragThreshold = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !hasCrossedDragThreshold,
+              let window,
+              let mouseDownScreenLocation,
+              !Self.isClick(
+                from: mouseDownScreenLocation,
+                to: window.convertPoint(toScreen: event.locationInWindow)
+              ) else {
+            return
+        }
+        // Crossing the threshold consumes the gesture (the pinned-extension
+        // reorder surface's rule). The window drag starts only now because on
+        // macOS 27 performDrag(with:) can return before the release, so a
+        // click cannot be decided after it; a full-screen window cannot move.
+        hasCrossedDragThreshold = true
+        if allowsWindowDrag, !window.styleMask.contains(.fullScreen) {
+            window.performDrag(with: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { mouseDownScreenLocation = nil }
+        guard !hasCrossedDragThreshold,
+              let mouseDownScreenLocation,
+              let mouseUpScreenLocation = window?.convertPoint(toScreen: event.locationInWindow),
+              Self.isClick(from: mouseDownScreenLocation, to: mouseUpScreenLocation) else {
+            return
+        }
+        onClick?()
+    }
 }
 
 /// Address-bar affordance for Reader View.

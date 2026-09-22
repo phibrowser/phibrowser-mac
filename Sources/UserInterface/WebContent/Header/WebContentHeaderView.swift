@@ -88,6 +88,7 @@ struct WebContentHeaderView: View {
                         isLoading: state.isLoading,
                         isProgressVisible: state.isProgressVisible,
                         backgroundColor: state.pageBackgroundColor.map { Color(nsColor: $0) },
+                        allowsWindowDrag: state.allowsWindowDrag,
                         onOpenLocationBar: onOpenLocationBar,
                         onAnchorResolved: onAnchorResolved
                     )

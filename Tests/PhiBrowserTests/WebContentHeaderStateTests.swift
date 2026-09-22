@@ -52,6 +52,23 @@ final class WebContentHeaderStateTests: XCTestCase {
         }
     }
 
+    func testBalancedLayoutAllowsWindowDrag() {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
+
+        XCTAssertTrue(WebContentHeaderState().allowsWindowDrag)
+    }
+
+    func testOtherLayoutsDoNotAllowWindowDrag() {
+        for layoutMode in [LayoutMode.performance, .comfortable] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(layoutMode)
+
+            XCTAssertFalse(
+                WebContentHeaderState().allowsWindowDrag,
+                "Expected no window drag in \(layoutMode.rawValue) layout"
+            )
+        }
+    }
+
     func testNonSplitHeaderShowsBottomSeparatorWithoutBookmarkBar() {
         XCTAssertTrue(
             WebContentHeader.shouldShowBottomSeparator(

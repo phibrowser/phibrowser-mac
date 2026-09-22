@@ -35,6 +35,8 @@ class WebContentHeaderState: ObservableObject {
     @Published var isDownloadPopoverShown: Bool = false
     @Published var isIncognito: Bool = false
     @Published var isInPlaceholderMode: Bool = false
+    /// Balanced only: dragging its Content Address Bar moves the window.
+    @Published var allowsWindowDrag: Bool = false
     @Published var pageColorPresentation = WebContentHeaderPageColorPresentation.inherited
 
     var pageBackgroundColor: NSColor? { pageColorPresentation.backgroundColor }
@@ -52,6 +54,7 @@ class WebContentHeaderState: ObservableObject {
         self.showFeedbackButton = traditionalLayout
             && !ApplicationState.shared.isGuest
         self.isFeedbackIconOnly = traditionalLayout
+        self.allowsWindowDrag = layoutMode == .balanced
         self.showChatButton = false
     }
 
@@ -425,6 +428,7 @@ class WebContentHeader: NSView {
                 && !isInPlaceholder
                 && !isGuest
             self.state.isFeedbackIconOnly = traditionalLayout
+            self.state.allowsWindowDrag = layoutMode == .balanced
             self.state.showDownloadButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && !isInPlaceholder
             self.state.showMemoryButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && phiAIEnabled && !isIncognito && !isInPlaceholder
             self.state.showSidebarButton = !traditionalLayout && navigationAtTop && isCollapsed

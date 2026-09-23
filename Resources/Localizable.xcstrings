@@ -1,308 +1,11 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "sync.pairing.spacesToAdd" : {
-      "comment" : "Space pairing - heading for account Spaces that will be created on this Mac",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spaces to add from your account"
-          }
-        }
-      }
-    },
-    "sync.pairing.spacesToAddExplanation" : {
-      "comment" : "Space pairing - explanation for account Spaces not matched to a local Space",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These Spaces will be added automatically when you finish pairing."
-          }
-        }
-      }
-    },
-    "Phi is counting the Spaces in your account. This can take up to two minutes." : {
-      "comment" : "Pairing wizard - loading page progress detail"
+    "" : {
+
     },
     "—" : {
       "comment" : "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)"
-    },
-    "%1$.1f%%" : {
-      "comment" : "Overwrite confirmation - an overlay opacity as a percentage with one decimal"
-    },
-    "%1$@ (%2$@)" : {
-      "comment" : "Pairing wizard - an account Space named %1$@ in profile %2$@"
-    },
-    "%1$@ changes from %2$@ to %3$@" : {
-      "comment" : "Overwrite confirmation - accessibility label for one changed field"
-    },
-    "%1$d%%" : {
-      "comment" : "Overwrite confirmation - an overlay opacity as a whole percentage"
-    },
-    "Account" : {
-      "comment" : "Pairing wizard - account column header"
-    },
-    "Account Space for “%@”" : {
-      "comment" : "Pairing wizard - accessibility label for the assignment picker"
-    },
-    "Add all as new" : {
-      "comment" : "Pairing wizard - assign every undecided Space to \"Add as new\""
-    },
-    "Add as new" : {
-      "comment" : "Pairing wizard - add this Space to the account as a new one"
-    },
-    "Add this device to your account" : {
-      "comment" : "Join choice - title"
-    },
-    "Already in your account" : {
-      "comment" : "Pairing wizard - default Space row, account side"
-    },
-    "Apply" : {
-      "comment" : "Overwrite confirmation - apply every decision and start syncing"
-    },
-    "Applying your choices…" : {
-      "comment" : "Pairing wizard - submitting page"
-    },
-    "Approve" : {
-      "comment" : "Devices - approve"
-    },
-    "Assign to %@" : {
-      "comment" : "Profile pairing - assign to a local profile"
-    },
-    "Can’t be read right now — Phi keeps retrying in the background" : {
-      "comment" : "Profile pairing - undecryptable remote row"
-    },
-    "Changes to Space “%@”" : {
-      "comment" : "Overwrite confirmation - accessibility label for one Space's section"
-    },
-    "Choose how to set up sync on this device." : {
-      "comment" : "Join choice - explanation"
-    },
-    "Continue" : {
-      "comment" : "Pairing wizard - finish step 1"
-    },
-    "Copied" : {
-      "comment" : "Recovery code display - copy button, just copied"
-    },
-    "Copy" : {
-      "comment" : "Recovery code display - copy button"
-    },
-    "Couldn’t apply one of your profile choices. Check your connection and retry." : {
-      "comment" : "Pairing wizard - a profile decision failed"
-    },
-    "Couldn’t create a profile named “%@” on this Mac." : {
-      "comment" : "Pairing - local profile creation failed"
-    },
-    "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry." : {
-      "comment" : "Pairing wizard - applying the decisions failed"
-    },
-    "Couldn’t load all of your account’s Spaces. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview truncated"
-    },
-    "Couldn’t load the account’s profiles in time. Check your connection and retry." : {
-      "comment" : "Pairing - load timeout"
-    },
-    "Couldn’t load your account’s profiles. Check your connection and retry." : {
-      "comment" : "Pairing wizard - profile load failed"
-    },
-    "Couldn’t load your account’s Spaces in time. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview timed out"
-    },
-    "Couldn’t load your account’s Spaces. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview failed"
-    },
-    "Create on this Mac" : {
-      "comment" : "Profile pairing - create locally option"
-    },
-    "Dark overlay opacity" : {
-      "comment" : "Overwrite confirmation - the dark-appearance overlay opacity field"
-    },
-    "Devices" : {
-      "comment" : "Devices settings - header\nSettings - Tab title for device management"
-    },
-    "Enter a recovery code" : {
-      "comment" : "Join choice - use recovery code"
-    },
-    "Enter the recovery code you saved when you set up sync on another device." : {
-      "comment" : "Recovery code entry - explanation"
-    },
-    "Enter your recovery code" : {
-      "comment" : "Recovery code entry - title"
-    },
-    "Finish setting up sync" : {
-      "comment" : "Pairing wizard - window title"
-    },
-    "I've saved it" : {
-      "comment" : "Recovery code display - confirm button"
-    },
-    "Invalid recovery code. Please check it and try again." : {
-      "comment" : "Key layer recovery code entry - error shown when the entered code is rejected"
-    },
-    "Light overlay opacity" : {
-      "comment" : "Overwrite confirmation - the light-appearance overlay opacity field"
-    },
-    "Loading your account…" : {
-      "comment" : "Pairing wizard - loading page"
-    },
-    "Match your profiles" : {
-      "comment" : "Profile pairing - title"
-    },
-    "Match your Spaces" : {
-      "comment" : "Pairing wizard - step 2 title"
-    },
-    "No custom value" : {
-      "comment" : "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead"
-    },
-    "No devices are waiting for approval." : {
-      "comment" : "Devices - empty"
-    },
-    "Not assigned yet" : {
-      "comment" : "Pairing wizard - account column placeholder for an undecided row"
-    },
-    "On a device that’s already signed in, open Settings → Devices and approve this request. Make sure this code matches:" : {
-      "comment" : "Waiting - explanation"
-    },
-    "Pairing isn’t available right now." : {
-      "comment" : "Key layer - pairing phase reached with no controller to apply it"
-    },
-    "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done." : {
-      "comment" : "Pairing wizard - step 1 explanation"
-    },
-    "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted." : {
-      "comment" : "Pairing wizard - step 2 explanation"
-    },
-    "Profiles need pairing" : {
-      "comment" : "Devices - pairing banner title"
-    },
-    "Recovery code" : {
-      "comment" : "Recovery code entry - text field placeholder"
-    },
-    "Register as new" : {
-      "comment" : "Profile pairing - register as new option"
-    },
-    "Remove This Device" : {
-      "comment" : "Self-revoke confirmation - confirm"
-    },
-    "Remove this device from sync…" : {
-      "comment" : "Devices - remove this device from sync\nPairing wizard - self-revoke exit"
-    },
-    "Remove this Mac from account sync?" : {
-      "comment" : "Self-revoke confirmation - title"
-    },
-    "Request approval from another device" : {
-      "comment" : "Join choice - request approval"
-    },
-    "Request denied" : {
-      "comment" : "Join denied - title"
-    },
-    "Request expired" : {
-      "comment" : "Join expired - title"
-    },
-    "Resolve" : {
-      "comment" : "Devices - pairing banner button"
-    },
-    "Review what changes" : {
-      "comment" : "Overwrite confirmation - title"
-    },
-    "Save your recovery code" : {
-      "comment" : "Recovery code display - title"
-    },
-    "Set up sync" : {
-      "comment" : "Key layer window title"
-    },
-    "Set up sync on this device" : {
-      "comment" : "Devices - set up"
-    },
-    "Sign in to manage devices." : {
-      "comment" : "Devices - signed out"
-    },
-    "Something went wrong" : {
-      "comment" : "Key layer error - title"
-    },
-    "Space “%@” is the default Space and is already in your account" : {
-      "comment" : "Pairing wizard - accessibility label for the default Space row"
-    },
-    "Space “%1$@” on this Mac, in profile %2$@" : {
-      "comment" : "Pairing wizard - accessibility label for a local Space row"
-    },
-    "Step %1$d of %2$d: %3$@" : {
-      "comment" : "Pairing wizard - step bar position, for VoiceOver"
-    },
-    "Store this code somewhere safe. You will need it to add another device to your account." : {
-      "comment" : "Recovery code display - explanation"
-    },
-    "Submit" : {
-      "comment" : "Recovery code entry - submit button"
-    },
-    "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again." : {
-      "comment" : "Self-revoke - no sync controller"
-    },
-    "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded." : {
-      "comment" : "Pairing wizard - no engine for the Space preview"
-    },
-    "That request already expired." : {
-      "comment" : "Devices - approve stale request"
-    },
-    "The other device denied this request." : {
-      "comment" : "Join denied - body"
-    },
-    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one." : {
-      "comment" : "Overwrite confirmation - explanation"
-    },
-    "This device isn’t set up for sync yet." : {
-      "comment" : "Devices - needs join"
-    },
-    "This device isn’t unlocked yet." : {
-      "comment" : "Devices - approve blocked when locked"
-    },
-    "This is the last device on the account, so it can’t be removed. Finish pairing on this device (profiles that can’t be read don’t block it), or set up sync on another device first, then try again." : {
-      "comment" : "Self-revoke - last active device"
-    },
-    "This Mac" : {
-      "comment" : "Pairing wizard - local column header"
-    },
-    "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open." : {
-      "comment" : "Extra warning shown when the account's Spaces have not been synced yet"
-    },
-    "This request expires at " : {
-      "comment" : "Waiting - expiry prefix"
-    },
-    "This request timed out. You can try again." : {
-      "comment" : "Join expired - body"
-    },
-    "Too many pending requests. Try again later or use a recovery code." : {
-      "comment" : "Key layer - too many pending join requests"
-    },
-    "Try another way" : {
-      "comment" : "Key layer - retry"
-    },
-    "Unclaimed account profiles" : {
-      "comment" : "Profile pairing - unclaimed remotes header"
-    },
-    "Unmute" : {
-      "comment" : "Tab mute button tooltip - unmute"
-    },
-    "Unnamed profile (%@)" : {
-      "comment" : "Profile pairing - remote profile whose name couldn’t be decrypted"
-    },
-    "Verify this code matches the other device: " : {
-      "comment" : "Devices - verify prefix"
-    },
-    "Waiting for approval" : {
-      "comment" : "Waiting - title"
-    },
-    "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to." : {
-      "comment" : "Profile pairing - explanation"
-    },
-    "You’re not signed in." : {
-      "comment" : "Key layer - not signed in"
-    },
-    "" : {
-
     },
     "・" : {
       "shouldTranslate" : false
@@ -321,6 +24,31 @@
     },
     "*" : {
       "shouldTranslate" : false
+    },
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%1$.1f%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a percentage with one decimal"
+    },
+    "%1$@ (%2$@)" : {
+      "comment" : "Pairing wizard - an account Space named %1$@ in profile %2$@"
+    },
+    "%1$@ changes from %2$@ to %3$@" : {
+      "comment" : "Overwrite confirmation - accessibility label for one changed field"
+    },
+    "%1$d%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a whole percentage"
+    },
+    "%lld" : {
+
     },
     "%lld/%lld" : {
       "localizations" : {
@@ -755,6 +483,12 @@
           }
         }
       }
+    },
+    "Account" : {
+      "comment" : "Pairing wizard - account column header"
+    },
+    "Account Space for “%@”" : {
+      "comment" : "Pairing wizard - accessibility label for the assignment picker"
     },
     "accountDataExport.cancelButton" : {
       "comment" : "Account data export - Button abandoning verification without cancelling a server task",
@@ -4055,6 +3789,15 @@
           }
         }
       }
+    },
+    "Add all as new" : {
+      "comment" : "Pairing wizard - assign every undecided Space to \"Add as new\""
+    },
+    "Add as new" : {
+      "comment" : "Pairing wizard - add this Space to the account as a new one"
+    },
+    "Add this device to your account" : {
+      "comment" : "Join choice - title"
     },
     "addressBar.configuration.defaultPlaceholder" : {
       "comment" : "Address bar - Default placeholder supplied by its configuration",
@@ -7908,6 +7651,9 @@
           }
         }
       }
+    },
+    "Already in your account" : {
+      "comment" : "Pairing wizard - default Space row, account side"
     },
     "app.activeSpaceContextMenu.deleteSpaceAction" : {
       "comment" : "Active Space context menu - Delete the active Space",
@@ -13426,22 +13172,28 @@
       "comment" : "Spaces menu - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cookies, Verlauf, Erweiterungen und andere Browserdaten in diesem Profil werden dauerhaft entfernt. Unterhaltungen bleiben in Phi Chat unter „Ohne Kategorie“ erhalten. Wenn KI deaktiviert oder nicht verfügbar ist, werden die Unterhaltungen verschoben, sobald KI wieder aktiviert und verfügbar ist."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此个人资料中的 Cookie、历史记录、扩展程序和其他浏览器数据将被永久移除。对话将保留在 Phi Chat 的“未分类”中。如果 AI 已停用或不可用，对话将在 AI 重新启用并恢复可用后再移入其中。"
+            "value" : "Las cookies, el historial, las extensiones y otros datos de navegación de este perfil se eliminarán de forma permanente. Las conversaciones se conservarán en Phi Chat, dentro de Sin categoría. Si la IA está desactivada o no disponible, las conversaciones se moverán cuando la IA vuelva a estar activada y disponible."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此設定檔中的 Cookie、歷史記錄、擴充功能與其他瀏覽器資料都將永久移除。對話會保留在 Phi Chat 的「未分類」中。若 AI 已停用或無法使用，對話會在 AI 重新啟用且可用時移入。"
+            "value" : "Les cookies, l'historique, les extensions et les autres données de navigation de ce profil seront définitivement supprimés. Les conversations seront conservées dans Phi Chat, sous « Sans catégorie ». Si l'IA est désactivée ou indisponible, les conversations seront déplacées lorsque l'IA sera de nouveau activée et disponible."
           }
         },
         "ja" : {
@@ -13456,28 +13208,22 @@
             "value" : "이 프로필의 쿠키, 방문 기록, 확장 프로그램 및 기타 브라우저 데이터가 영구적으로 제거돼요. 대화는 Phi Chat의 '미분류'에 보관돼요. AI가 비활성화되어 있거나 사용할 수 없는 경우, 대화는 AI가 다시 활성화되고 사용 가능해질 때 이동돼요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les cookies, l'historique, les extensions et les autres données de navigation de ce profil seront définitivement supprimés. Les conversations seront conservées dans Phi Chat, sous « Sans catégorie ». Si l'IA est désactivée ou indisponible, les conversations seront déplacées lorsque l'IA sera de nouveau activée et disponible."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cookies, Verlauf, Erweiterungen und andere Browserdaten in diesem Profil werden dauerhaft entfernt. Unterhaltungen bleiben in Phi Chat unter „Ohne Kategorie“ erhalten. Wenn KI deaktiviert oder nicht verfügbar ist, werden die Unterhaltungen verschoben, sobald KI wieder aktiviert und verfügbar ist."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cookies, geschiedenis, extensies en andere browsergegevens in dit profiel worden definitief verwijderd. Gesprekken blijven bewaard in Phi Chat onder Zonder categorie. Als AI is uitgeschakeld of niet beschikbaar is, worden gesprekken verplaatst zodra AI weer is ingeschakeld en beschikbaar is."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las cookies, el historial, las extensiones y otros datos de navegación de este perfil se eliminarán de forma permanente. Las conversaciones se conservarán en Phi Chat, dentro de Sin categoría. Si la IA está desactivada o no disponible, las conversaciones se moverán cuando la IA vuelva a estar activada y disponible."
+            "value" : "此个人资料中的 Cookie、历史记录、扩展程序和其他浏览器数据将被永久移除。对话将保留在 Phi Chat 的“未分类”中。如果 AI 已停用或不可用，对话将在 AI 重新启用并恢复可用后再移入其中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此設定檔中的 Cookie、歷史記錄、擴充功能與其他瀏覽器資料都將永久移除。對話會保留在 Phi Chat 的「未分類」中。若 AI 已停用或無法使用，對話會在 AI 重新啟用且可用時移入。"
           }
         }
       }
@@ -23202,6 +22948,21 @@
         }
       }
     },
+    "Apply" : {
+      "comment" : "Overwrite confirmation - apply every decision and start syncing"
+    },
+    "Applying your choices…" : {
+      "comment" : "Pairing wizard - submitting page"
+    },
+    "Approve" : {
+      "comment" : "Devices - approve"
+    },
+    "Assign to %@" : {
+      "comment" : "Profile pairing - assign to a local profile"
+    },
+    "Back" : {
+      "comment" : "Web content header - Accessibility description for back navigation button"
+    },
     "Bitwarden" : {
       "comment" : "Onboarding password manager - Bitwarden option",
       "localizations" : {
@@ -24399,22 +24160,28 @@
       "comment" : "Address bar menu - Checkmark item that turns ad, tracker and cookie banner blocking off or on for the current website",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inhaltsblockierung auf dieser Website"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Content blocking on this site"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此网站上拦截内容"
+            "value" : "Bloqueo de contenido en este sitio"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此網站封鎖內容"
+            "value" : "Blocage de contenu sur ce site"
           }
         },
         "ja" : {
@@ -24429,28 +24196,22 @@
             "value" : "이 사이트에서 콘텐츠 차단"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blocage de contenu sur ce site"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inhaltsblockierung auf dieser Website"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Contentblokkering op deze site"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloqueo de contenido en este sitio"
+            "value" : "在此网站上拦截内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此網站封鎖內容"
           }
         }
       }
@@ -29494,6 +29255,24 @@
           }
         }
       }
+    },
+    "Can’t be read right now — Phi keeps retrying in the background" : {
+      "comment" : "Profile pairing - undecryptable remote row"
+    },
+    "Cancel" : {
+      "comment" : "Self-revoke confirmation - cancel\nWaiting - cancel"
+    },
+    "Changes to Space “%@”" : {
+      "comment" : "Overwrite confirmation - accessibility label for one Space's section"
+    },
+    "Choose how to set up sync on this device." : {
+      "comment" : "Join choice - explanation"
+    },
+    "Choose…" : {
+      "comment" : "Profiles settings - download location not set"
+    },
+    "Color" : {
+      "comment" : "General settings - Theme color row title"
     },
     "common.bookmarkDeletion.bookmarksMessage" : {
       "comment" : "Bookmark multi-selection delete confirmation body for bookmarks",
@@ -36455,6 +36234,54 @@
         }
       }
     },
+    "Confirm" : {
+      "comment" : "Profile pairing - confirm button"
+    },
+    "Continue" : {
+      "comment" : "Pairing wizard - finish step 1"
+    },
+    "Copied" : {
+      "comment" : "Recovery code display - copy button, just copied"
+    },
+    "Copy" : {
+      "comment" : "Recovery code display - copy button"
+    },
+    "Couldn’t apply one of your profile choices. Check your connection and retry." : {
+      "comment" : "Pairing wizard - a profile decision failed"
+    },
+    "Couldn’t create a profile named “%@” on this Mac." : {
+      "comment" : "Pairing - local profile creation failed"
+    },
+    "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry." : {
+      "comment" : "Pairing wizard - applying the decisions failed"
+    },
+    "Couldn’t load all of your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview truncated"
+    },
+    "Couldn’t load the account’s profiles in time. Check your connection and retry." : {
+      "comment" : "Pairing - load timeout"
+    },
+    "Couldn’t load your account’s profiles. Check your connection and retry." : {
+      "comment" : "Pairing wizard - profile load failed"
+    },
+    "Couldn’t load your account’s Spaces in time. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview timed out"
+    },
+    "Couldn’t load your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview failed"
+    },
+    "Create on this Mac" : {
+      "comment" : "Profile pairing - create locally option"
+    },
+    "Dark overlay opacity" : {
+      "comment" : "Overwrite confirmation - the dark-appearance overlay opacity field"
+    },
+    "Deny" : {
+      "comment" : "Devices - deny"
+    },
+    "Devices" : {
+      "comment" : "Devices settings - header\nSettings - Tab title for device management"
+    },
     "download.safety.accountCompromise" : {
       "comment" : "Download safety - Warning for account-stealing malware (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_COOKIE_THEFT)",
       "extractionState" : "manual",
@@ -40527,6 +40354,15 @@
         }
       }
     },
+    "Enter a recovery code" : {
+      "comment" : "Join choice - use recovery code"
+    },
+    "Enter the recovery code you saved when you set up sync on another device." : {
+      "comment" : "Recovery code entry - explanation"
+    },
+    "Enter your recovery code" : {
+      "comment" : "Recovery code entry - title"
+    },
     "extensions.list.manageExtensionsButton" : {
       "comment" : "Extension list - Button to open extensions management page",
       "extractionState" : "extracted_with_value",
@@ -42683,6 +42519,12 @@
         }
       }
     },
+    "Finish" : {
+      "comment" : "Onboarding password manager - Finish button"
+    },
+    "Finish setting up sync" : {
+      "comment" : "Pairing wizard - window title"
+    },
     "From %@" : {
       "localizations" : {
         "de" : {
@@ -42786,6 +42628,12 @@
           }
         }
       }
+    },
+    "I've saved it" : {
+      "comment" : "Recovery code display - confirm button"
+    },
+    "Icon" : {
+      "comment" : "Spaces settings - icon section header"
     },
     "imagePreview.error.failedToDecodeImage" : {
       "comment" : "Image preview error",
@@ -43207,6 +43055,18 @@
         }
       }
     },
+    "imagePreview.openInWindowButtonAccessibilityLabel" : {
+      "comment" : "Image preview - Button that opens the current image list in a separate window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open in New Window"
+          }
+        }
+      }
+    },
     "imagePreview.previousButtonAccessibilityLabel" : {
       "comment" : "Image preview: accessibility label for previous image control",
       "extractionState" : "extracted_with_value",
@@ -43263,6 +43123,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上一張圖片"
+          }
+        }
+      }
+    },
+    "imagePreview.windowTitle" : {
+      "comment" : "Image preview - Title of the separate image viewer window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Image Preview"
           }
         }
       }
@@ -43386,6 +43258,9 @@
           }
         }
       }
+    },
+    "Invalid recovery code. Please check it and try again." : {
+      "comment" : "Key layer recovery code entry - error shown when the entered code is rejected"
     },
     "kiosk.toolbar.openInSpace" : {
       "comment" : "Kiosk toolbar - Prefix before the active Space name in the primary open action",
@@ -43566,6 +43441,12 @@
           }
         }
       }
+    },
+    "Light overlay opacity" : {
+      "comment" : "Overwrite confirmation - the light-appearance overlay opacity field"
+    },
+    "Loading your account…" : {
+      "comment" : "Pairing wizard - loading page"
     },
     "localData.bookmarks.importedFromArcFolderTitle" : {
       "comment" : "Arc bookmarks import folder title",
@@ -44107,6 +43988,24 @@
         }
       }
     },
+    "Match your profiles" : {
+      "comment" : "Profile pairing - title"
+    },
+    "Match your Spaces" : {
+      "comment" : "Pairing wizard - step 2 title"
+    },
+    "Name" : {
+      "comment" : "Editor - Label for the title/name input field"
+    },
+    "No custom value" : {
+      "comment" : "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead"
+    },
+    "No devices are waiting for approval." : {
+      "comment" : "Devices - empty"
+    },
+    "Not assigned yet" : {
+      "comment" : "Pairing wizard - account column placeholder for an undecided row"
+    },
     "notifications.card.runButton" : {
       "comment" : "Notification card run button - Executes the suggested action",
       "extractionState" : "extracted_with_value",
@@ -44286,6 +44185,12 @@
           }
         }
       }
+    },
+    "OK" : {
+      "comment" : "Key layer - dismiss the save-your-recovery-code alert"
+    },
+    "On a device that’s already signed in, open Settings → Devices and approve this request. Make sure this code matches:" : {
+      "comment" : "Waiting - explanation"
     },
     "oobe.guestMigration.cleanupDeferred.dismissButton" : {
       "comment" : "Guest migration - Button that dismisses the deferred cleanup alert",
@@ -49387,6 +49292,9 @@
         }
       }
     },
+    "Pairing isn’t available right now." : {
+      "comment" : "Key layer - pairing phase reached with no controller to apply it"
+    },
     "peek.bookmarkCell.closePeekTooltip" : {
       "comment" : "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark",
       "extractionState" : "extracted_with_value",
@@ -49687,26 +49595,50 @@
         }
       }
     },
+    "Phi is counting the Spaces in your account. This can take up to two minutes." : {
+      "comment" : "Pairing wizard - loading page progress detail"
+    },
+    "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done." : {
+      "comment" : "Pairing wizard - step 1 explanation"
+    },
+    "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted." : {
+      "comment" : "Pairing wizard - step 2 explanation"
+    },
+    "Profile" : {
+      "comment" : "Fallback name for an account profile registered with no name"
+    },
+    "Profiles" : {
+      "comment" : "Settings - Tab title for profiles management"
+    },
+    "Profiles need pairing" : {
+      "comment" : "Devices - pairing banner title"
+    },
     "profiles.archive.prepareFailed" : {
       "comment" : "Profile deletion - Error when the local recovery record could not be saved before deleting a profile",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Wiederherstellungsdatensatz für die Unterhaltungen konnte nicht gespeichert werden. Bitte versuche es erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Could not save the conversation recovery record. Please try again."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法保存对话恢复记录。请重试。"
+            "value" : "No se pudo guardar el registro de recuperación de conversaciones. Inténtalo de nuevo."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法儲存對話復原記錄，請再試一次。"
+            "value" : "Impossible de sauvegarder l'enregistrement de récupération des conversations. Veuillez réessayer."
           }
         },
         "ja" : {
@@ -49721,31 +49653,64 @@
             "value" : "대화 복구 기록을 저장하지 못했어요. 다시 시도해 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossible de sauvegarder l'enregistrement de récupération des conversations. Veuillez réessayer."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Wiederherstellungsdatensatz für die Unterhaltungen konnte nicht gespeichert werden. Bitte versuche es erneut."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan het herstelrecord voor gesprekken niet opslaan. Probeer het opnieuw."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo guardar el registro de recuperación de conversaciones. Inténtalo de nuevo."
+            "value" : "无法保存对话恢复记录。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存對話復原記錄，請再試一次。"
           }
         }
       }
+    },
+    "Recovery code" : {
+      "comment" : "Recovery code entry - text field placeholder"
+    },
+    "Register as new" : {
+      "comment" : "Profile pairing - register as new option"
+    },
+    "Remove This Device" : {
+      "comment" : "Self-revoke confirmation - confirm"
+    },
+    "Remove this device from sync…" : {
+      "comment" : "Devices - remove this device from sync\nPairing wizard - self-revoke exit"
+    },
+    "Remove this Mac from account sync?" : {
+      "comment" : "Self-revoke confirmation - title"
+    },
+    "Request approval from another device" : {
+      "comment" : "Join choice - request approval"
+    },
+    "Request denied" : {
+      "comment" : "Join denied - title"
+    },
+    "Request expired" : {
+      "comment" : "Join expired - title"
+    },
+    "Resolve" : {
+      "comment" : "Devices - pairing banner button"
+    },
+    "Retry" : {
+      "comment" : "Phi Link - Retry loading official bot"
+    },
+    "Review what changes" : {
+      "comment" : "Overwrite confirmation - title"
+    },
+    "Save your recovery code" : {
+      "comment" : "Recovery code display - title"
+    },
+    "Save your recovery code first" : {
+      "comment" : "Key layer - title of the alert shown when closing the window before confirming the recovery code was saved"
     },
     "searchTabs.bookmarkMenu.emptyFolderPlaceholder" : {
       "comment" : "Search Tabs - Empty bookmark folder placeholder",
@@ -50346,6 +50311,12 @@
           }
         }
       }
+    },
+    "Set up sync" : {
+      "comment" : "Key layer window title"
+    },
+    "Set up sync on this device" : {
+      "comment" : "Devices - set up"
     },
     "settings.account.defaultBrowser.defaultStatus" : {
       "comment" : "Account settings - Status text when Phi is the default browser",
@@ -69609,22 +69580,28 @@
       "comment" : "Choose rule sets sheet - Button opening the sheet that adds a custom filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter hinzufügen…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Add Filter…"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加过滤器…"
+            "value" : "Agregar filtro…"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入過濾器…"
+            "value" : "Ajouter un filtre…"
           }
         },
         "ja" : {
@@ -69639,28 +69616,22 @@
             "value" : "필터 추가…"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un filtre…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filter hinzufügen…"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voeg filter toe…"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar filtro…"
+            "value" : "添加过滤器…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入過濾器…"
           }
         }
       }
@@ -69669,22 +69640,28 @@
       "comment" : "Profile settings - Toggle title for blocking ads",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung blockieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Block ads"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拦截广告"
+            "value" : "Bloquear anuncios"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖廣告"
+            "value" : "Bloquer les publicités"
           }
         },
         "ja" : {
@@ -69699,28 +69676,22 @@
             "value" : "광고 차단"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bloquer les publicités"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung blockieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blokkeer advertenties"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquear anuncios"
+            "value" : "拦截广告"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖廣告"
           }
         }
       }
@@ -69729,22 +69700,28 @@
       "comment" : "Profile settings - Toggle title for hiding cookie consent banners",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cookie-Banner blockieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Block cookie banners"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拦截 Cookie 横幅"
+            "value" : "Bloquear avisos de cookies"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖 Cookie 橫幅"
+            "value" : "Bloquer les bannières de cookies"
           }
         },
         "ja" : {
@@ -69759,28 +69736,22 @@
             "value" : "쿠키 배너 차단"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bloquer les bannières de cookies"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cookie-Banner blockieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blokkeer cookiebanners"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquear avisos de cookies"
+            "value" : "拦截 Cookie 横幅"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖 Cookie 橫幅"
           }
         }
       }
@@ -69789,22 +69760,28 @@
       "comment" : "Profile settings - Toggle title for blocking trackers",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tracker blockieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Block trackers"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拦截跟踪器"
+            "value" : "Bloquear rastreadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖追蹤器"
+            "value" : "Bloquer les traqueurs"
           }
         },
         "ja" : {
@@ -69819,28 +69796,22 @@
             "value" : "추적기 차단"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bloquer les traqueurs"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tracker blockieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blokkeer trackers"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquear rastreadores"
+            "value" : "拦截跟踪器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖追蹤器"
           }
         }
       }
@@ -69849,22 +69820,28 @@
       "comment" : "Custom filter sheet - Button that adds the filter",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Add"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加"
+            "value" : "Agregar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入"
+            "value" : "Ajouter"
           }
         },
         "ja" : {
@@ -69879,28 +69856,22 @@
             "value" : "추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hinzufügen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voeg toe"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar"
+            "value" : "添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入"
           }
         }
       }
@@ -69909,22 +69880,28 @@
       "comment" : "Custom filter sheet - Cancel button",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Cancel"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消"
+            "value" : "Cancelar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消"
+            "value" : "Annuler"
           }
         },
         "ja" : {
@@ -69939,28 +69916,22 @@
             "value" : "취소"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuler"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abbrechen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Annuleer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancelar"
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
           }
         }
       }
@@ -69969,22 +69940,28 @@
       "comment" : "Custom filter sheet - Validation message when the name is empty",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib dem Filter einen Namen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Give the filter a name."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请为过滤器命名。"
+            "value" : "Ponle un nombre al filtro."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請為過濾器命名。"
+            "value" : "Donnez un nom au filtre."
           }
         },
         "ja" : {
@@ -69999,28 +69976,22 @@
             "value" : "필터 이름을 입력해 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Donnez un nom au filtre."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gib dem Filter einen Namen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geef het filter een naam."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ponle un nombre al filtro."
+            "value" : "请为过滤器命名。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請為過濾器命名。"
           }
         }
       }
@@ -70029,22 +70000,28 @@
       "comment" : "Custom filter sheet - Validation message when the rules text is empty",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib mindestens eine Filterregel ein."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Enter at least one filter rule."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请至少输入一条过滤规则。"
+            "value" : "Ingresa al menos una regla de filtrado."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請輸入至少一條過濾規則。"
+            "value" : "Saisissez au moins une règle de filtrage."
           }
         },
         "ja" : {
@@ -70059,28 +70036,22 @@
             "value" : "필터 규칙을 하나 이상 입력해 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saisissez au moins une règle de filtrage."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gib mindestens eine Filterregel ein."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voer minstens één filterregel in."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ingresa al menos una regla de filtrado."
+            "value" : "请至少输入一条过滤规则。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請輸入至少一條過濾規則。"
           }
         }
       }
@@ -70089,22 +70060,28 @@
       "comment" : "Custom filter sheet - Validation message when the URL is missing or not http(s)",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib eine vollständige http(s)-URL ein."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Enter a full http(s) URL."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请输入完整的 http(s) URL。"
+            "value" : "Ingresa una URL http(s) completa."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請輸入完整的 http(s) URL。"
+            "value" : "Saisissez une URL http(s) complète."
           }
         },
         "ja" : {
@@ -70119,28 +70096,22 @@
             "value" : "완전한 http(s) URL을 입력해 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saisissez une URL http(s) complète."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gib eine vollständige http(s)-URL ein."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voer een volledige http(s)-URL in."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ingresa una URL http(s) completa."
+            "value" : "请输入完整的 http(s) URL。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請輸入完整的 http(s) URL。"
           }
         }
       }
@@ -70149,22 +70120,28 @@
       "comment" : "Custom filter sheet - Segment for pasted filter rules",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzerdefiniert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Custom"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自定义"
+            "value" : "Personalizado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自訂"
+            "value" : "Personnalisé"
           }
         },
         "ja" : {
@@ -70179,28 +70156,22 @@
             "value" : "사용자 지정"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Personnalisé"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Benutzerdefiniert"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aangepast"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personalizado"
+            "value" : "自定义"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂"
           }
         }
       }
@@ -70209,19 +70180,25 @@
       "comment" : "Custom filter sheet - Segment for a filter list downloaded from a URL",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
@@ -70239,25 +70216,19 @@
             "value" : "URL"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
@@ -70269,22 +70240,28 @@
       "comment" : "Custom filter sheet - Label of the name field",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Name"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "名称"
+            "value" : "Nombre"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "名稱"
+            "value" : "Nom"
           }
         },
         "ja" : {
@@ -70299,28 +70276,22 @@
             "value" : "이름"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nom"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Naam"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nombre"
+            "value" : "名称"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名稱"
           }
         }
       }
@@ -70329,22 +70300,28 @@
       "comment" : "Custom filter sheet - Placeholder of the name field",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "z. B. Mein Filter"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "e.g. My filter"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例如：我的过滤器"
+            "value" : "p. ej., Mi filtro"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例如：我的過濾器"
+            "value" : "p. ex. Mon filtre"
           }
         },
         "ja" : {
@@ -70359,28 +70336,22 @@
             "value" : "예: 내 필터"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "p. ex. Mon filtre"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "z. B. Mein Filter"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "bijv. Mijn filter"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "p. ej., Mi filtro"
+            "value" : "例如：我的过滤器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：我的過濾器"
           }
         }
       }
@@ -70389,22 +70360,28 @@
       "comment" : "Custom filter sheet - Label of the rules text area",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filterregeln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Filter rules"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "过滤规则"
+            "value" : "Reglas de filtrado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "過濾規則"
+            "value" : "Règles de filtrage"
           }
         },
         "ja" : {
@@ -70419,28 +70396,22 @@
             "value" : "필터 규칙"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Règles de filtrage"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filterregeln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filterregels"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reglas de filtrado"
+            "value" : "过滤规则"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過濾規則"
           }
         }
       }
@@ -70449,22 +70420,28 @@
       "comment" : "Custom filter sheet - Title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzerdefinierter Filter"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Custom filter"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自定义过滤器"
+            "value" : "Filtro personalizado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自訂過濾器"
+            "value" : "Filtre personnalisé"
           }
         },
         "ja" : {
@@ -70479,28 +70456,22 @@
             "value" : "사용자 지정 필터"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filtre personnalisé"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Benutzerdefinierter Filter"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aangepast filter"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Filtro personalizado"
+            "value" : "自定义过滤器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂過濾器"
           }
         }
       }
@@ -70509,19 +70480,25 @@
       "comment" : "Custom filter sheet - Label of the URL field",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
@@ -70539,25 +70516,19 @@
             "value" : "URL"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
@@ -70569,22 +70540,28 @@
       "comment" : "Privacy settings - Description of the AdGuard Chinese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf chinesischen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on Chinese websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中文网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web chinos."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web chinois."
           }
         },
         "ja" : {
@@ -70599,28 +70576,22 @@
             "value" : "중국어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web chinois."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf chinesischen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Chinese websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web chinos."
+            "value" : "中文网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -70629,19 +70600,25 @@
       "comment" : "Privacy settings - Name of the AdGuard Chinese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Chinese (中文)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard Chinese (中文)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Chinese (中文)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Chinese (中文)"
@@ -70659,25 +70636,19 @@
             "value" : "AdGuard Chinese (中文)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Chinese (中文)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Chinese (中文)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Chinese (中文)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Chinese (中文)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Chinese (中文)"
@@ -70689,22 +70660,28 @@
       "comment" : "Privacy settings - Description of the AdGuard Dutch regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf niederländischen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on Dutch websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "荷兰语网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web neerlandeses."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "荷蘭文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web néerlandais."
           }
         },
         "ja" : {
@@ -70719,28 +70696,22 @@
             "value" : "네덜란드어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web néerlandais."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf niederländischen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Nederlandse websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web neerlandeses."
+            "value" : "荷兰语网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "荷蘭文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -70749,19 +70720,25 @@
       "comment" : "Privacy settings - Name of the AdGuard Dutch regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Dutch (Nederlands)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard Dutch (Nederlands)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Dutch (Nederlands)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Dutch (Nederlands)"
@@ -70779,25 +70756,19 @@
             "value" : "AdGuard Dutch (Nederlands)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Dutch (Nederlands)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Dutch (Nederlands)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Dutch (Nederlands)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Dutch (Nederlands)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Dutch (Nederlands)"
@@ -70809,22 +70780,28 @@
       "comment" : "Privacy settings - Description of the AdGuard French regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf französischen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on French websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "法语网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web franceses."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "法文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web français."
           }
         },
         "ja" : {
@@ -70839,28 +70816,22 @@
             "value" : "프랑스어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web français."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf französischen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Franse websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web franceses."
+            "value" : "法语网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "法文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -70869,19 +70840,25 @@
       "comment" : "Privacy settings - Name of the AdGuard French regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard French (Français)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard French (Français)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard French (Français)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard French (Français)"
@@ -70899,25 +70876,19 @@
             "value" : "AdGuard French (Français)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard French (Français)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard French (Français)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard French (Français)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard French (Français)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard French (Français)"
@@ -70929,22 +70900,28 @@
       "comment" : "Privacy settings - Description of the AdGuard German regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf deutschen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on German websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "德语网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web alemanes."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "德文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web allemands."
           }
         },
         "ja" : {
@@ -70959,28 +70936,22 @@
             "value" : "독일어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web allemands."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf deutschen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Duitse websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web alemanes."
+            "value" : "德语网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "德文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -70989,19 +70960,25 @@
       "comment" : "Privacy settings - Name of the AdGuard German regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard German (Deutsch)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard German (Deutsch)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard German (Deutsch)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard German (Deutsch)"
@@ -71019,25 +70996,19 @@
             "value" : "AdGuard German (Deutsch)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard German (Deutsch)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard German (Deutsch)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard German (Deutsch)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard German (Deutsch)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard German (Deutsch)"
@@ -71049,22 +71020,28 @@
       "comment" : "Privacy settings - Description of the AdGuard Japanese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf japanischen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on Japanese websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "日语网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web japoneses."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "日文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web japonais."
           }
         },
         "ja" : {
@@ -71079,28 +71056,22 @@
             "value" : "일본어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web japonais."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf japanischen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Japanse websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web japoneses."
+            "value" : "日语网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -71109,19 +71080,25 @@
       "comment" : "Privacy settings - Name of the AdGuard Japanese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Japanese (日本語)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard Japanese (日本語)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Japanese (日本語)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Japanese (日本語)"
@@ -71139,25 +71116,19 @@
             "value" : "AdGuard Japanese (日本語)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Japanese (日本語)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Japanese (日本語)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Japanese (日本語)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Japanese (日本語)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Japanese (日本語)"
@@ -71169,22 +71140,28 @@
       "comment" : "Privacy settings - Description of the AdGuard Spanish and Portuguese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werbung und Tracker auf spanischen und portugiesischen Websites."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Ads and trackers on Spanish and Portuguese websites."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "西班牙语和葡萄牙语网站上的广告和跟踪器。"
+            "value" : "Anuncios y rastreadores en sitios web españoles y portugueses."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "西班牙文與葡萄牙文網站上的廣告與追蹤器。"
+            "value" : "Publicités et traqueurs sur les sites web espagnols et portugais."
           }
         },
         "ja" : {
@@ -71199,28 +71176,22 @@
             "value" : "스페인어 및 포르투갈어 웹사이트의 광고와 추적기를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publicités et traqueurs sur les sites web espagnols et portugais."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werbung und Tracker auf spanischen und portugiesischen Websites."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advertenties en trackers op Spaanse en Portugese websites."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anuncios y rastreadores en sitios web españoles y portugueses."
+            "value" : "西班牙语和葡萄牙语网站上的广告和跟踪器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "西班牙文與葡萄牙文網站上的廣告與追蹤器。"
           }
         }
       }
@@ -71229,19 +71200,25 @@
       "comment" : "Privacy settings - Name of the AdGuard Spanish and Portuguese regional filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Spanish/Portuguese (Español/Português)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
@@ -71259,25 +71236,19 @@
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Spanish/Portuguese (Español/Português)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AdGuard Spanish/Portuguese (Español/Português)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AdGuard Spanish/Portuguese (Español/Português)"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AdGuard Spanish/Portuguese (Español/Português)"
@@ -71289,22 +71260,28 @@
       "comment" : "Advanced ad block settings - Tooltip of the button downloading a filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Liste herunterladen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Download this list"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下载此列表"
+            "value" : "Descargar esta lista"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載此清單"
+            "value" : "Télécharger cette liste"
           }
         },
         "ja" : {
@@ -71319,28 +71296,22 @@
             "value" : "이 목록 다운로드"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Télécharger cette liste"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Liste herunterladen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download deze lijst"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargar esta lista"
+            "value" : "下载此列表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載此清單"
           }
         }
       }
@@ -71349,22 +71320,28 @@
       "comment" : "Advanced ad block settings - Line under a filter list whose download failed; %@ is the error",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht heruntergeladen: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Not downloaded: %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未下载：%@"
+            "value" : "No descargada: %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未下載：%@"
+            "value" : "Non téléchargée : %@"
           }
         },
         "ja" : {
@@ -71379,28 +71356,22 @@
             "value" : "다운로드되지 않음: %@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non téléchargée : %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht heruntergeladen: %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niet gedownload: %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No descargada: %@"
+            "value" : "未下载：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未下載：%@"
           }
         }
       }
@@ -71409,22 +71380,28 @@
       "comment" : "Advanced ad block settings - Line under a filter list whose download is in progress",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird heruntergeladen…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Downloading…"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下载…"
+            "value" : "Descargando…"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載中…"
+            "value" : "Téléchargement…"
           }
         },
         "ja" : {
@@ -71439,28 +71416,22 @@
             "value" : "다운로드 중…"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Téléchargement…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird heruntergeladen…"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezig met downloaden…"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando…"
+            "value" : "正在下载…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載中…"
           }
         }
       }
@@ -71469,22 +71440,28 @@
       "comment" : "Advanced ad block settings - Line under a filter list being downloaded when the total size is unknown; the value is bytes received",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird heruntergeladen… %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Downloading… %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下载… %@"
+            "value" : "Descargando… %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載中… %@"
+            "value" : "Téléchargement… %@"
           }
         },
         "ja" : {
@@ -71499,28 +71476,22 @@
             "value" : "다운로드 중… %@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Téléchargement… %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird heruntergeladen… %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezig met downloaden… %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando… %@"
+            "value" : "正在下载… %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載中… %@"
           }
         }
       }
@@ -71529,22 +71500,28 @@
       "comment" : "Advanced ad block settings - Line under a filter list being downloaded; the two values are bytes received and the total size",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird heruntergeladen… %1$@ von %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Downloading… %1$@ of %2$@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下载… %1$@（共 %2$@）"
+            "value" : "Descargando… %1$@ de %2$@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載中… %1$@（共 %2$@）"
+            "value" : "Téléchargement… %1$@ sur %2$@"
           }
         },
         "ja" : {
@@ -71559,28 +71536,22 @@
             "value" : "다운로드 중… %2$@ 중 %1$@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Téléchargement… %1$@ sur %2$@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird heruntergeladen… %1$@ von %2$@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezig met downloaden… %1$@ van %2$@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando… %1$@ de %2$@"
+            "value" : "正在下载… %1$@（共 %2$@）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載中… %1$@（共 %2$@）"
           }
         }
       }
@@ -71589,22 +71560,28 @@
       "comment" : "Privacy settings - Description of the EasyList ad filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die am weitesten verbreitete Liste von Werbeservern und Werbeelementen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "The most widely used list of ad servers and ad elements."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用最广泛的广告服务器和广告元素列表。"
+            "value" : "La lista más utilizada de servidores de anuncios y elementos publicitarios."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最廣泛使用的廣告伺服器與廣告元素清單。"
+            "value" : "La liste la plus utilisée de serveurs et d'éléments publicitaires."
           }
         },
         "ja" : {
@@ -71619,28 +71596,22 @@
             "value" : "가장 널리 사용되는 광고 서버 및 광고 요소 목록이에요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La liste la plus utilisée de serveurs et d'éléments publicitaires."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die am weitesten verbreitete Liste von Werbeservern und Werbeelementen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "De meest gebruikte lijst van advertentieservers en advertentie-elementen."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La lista más utilizada de servidores de anuncios y elementos publicitarios."
+            "value" : "使用最广泛的广告服务器和广告元素列表。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最廣泛使用的廣告伺服器與廣告元素清單。"
           }
         }
       }
@@ -71649,19 +71620,25 @@
       "comment" : "Privacy settings - Name of the EasyList ad filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyList"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "EasyList"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList"
@@ -71679,25 +71656,19 @@
             "value" : "EasyList"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyList"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyList"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyList"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList"
@@ -71709,22 +71680,28 @@
       "comment" : "Privacy settings - Description of the EasyList cookie notice filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blendet Cookie-Einwilligungsbanner aus und hebt die Scrollsperre dahinter auf."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Hides cookie consent banners and unlocks scrolling behind them."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隐藏 Cookie 同意横幅，并恢复被其锁定的页面滚动。"
+            "value" : "Oculta los avisos de consentimiento de cookies y desbloquea el desplazamiento detrás de ellos."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隱藏 Cookie 同意橫幅，並解除橫幅造成的捲動鎖定。"
+            "value" : "Masque les bannières de consentement aux cookies et débloque le défilement derrière elles."
           }
         },
         "ja" : {
@@ -71739,28 +71716,22 @@
             "value" : "쿠키 동의 배너를 숨기고 배너로 인해 막힌 스크롤을 풀어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Masque les bannières de consentement aux cookies et débloque le défilement derrière elles."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blendet Cookie-Einwilligungsbanner aus und hebt die Scrollsperre dahinter auf."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verbergt cookiebanners en maakt scrollen erachter weer mogelijk."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oculta los avisos de consentimiento de cookies y desbloquea el desplazamiento detrás de ellos."
+            "value" : "隐藏 Cookie 同意横幅，并恢复被其锁定的页面滚动。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏 Cookie 同意橫幅，並解除橫幅造成的捲動鎖定。"
           }
         }
       }
@@ -71769,19 +71740,25 @@
       "comment" : "Privacy settings - Name of the EasyList cookie notice filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyList - Cookie Notices"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "EasyList - Cookie Notices"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList - Cookie Notices"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList - Cookie Notices"
@@ -71799,25 +71776,19 @@
             "value" : "EasyList - Cookie Notices"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyList - Cookie Notices"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyList - Cookie Notices"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList - Cookie Notices"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyList - Cookie Notices"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyList - Cookie Notices"
@@ -71829,22 +71800,28 @@
       "comment" : "Privacy settings - Description of the EasyPrivacy tracker filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blockiert Tracking-Skripte, Zählpixel und Analysedienste."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Blocks tracking scripts, beacons and analytics."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拦截跟踪脚本、信标和分析服务。"
+            "value" : "Bloquea scripts de rastreo, balizas web y herramientas de analítica."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖追蹤指令碼、信標與分析工具。"
+            "value" : "Bloque les scripts de pistage, les balises web et les outils d'analyse."
           }
         },
         "ja" : {
@@ -71859,28 +71836,22 @@
             "value" : "추적 스크립트, 비컨, 분석 도구를 차단해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bloque les scripts de pistage, les balises web et les outils d'analyse."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blockiert Tracking-Skripte, Zählpixel und Analysedienste."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blokkeert trackingscripts, beacons en analytics."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquea scripts de rastreo, balizas web y herramientas de analítica."
+            "value" : "拦截跟踪脚本、信标和分析服务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖追蹤指令碼、信標與分析工具。"
           }
         }
       }
@@ -71889,19 +71860,25 @@
       "comment" : "Privacy settings - Name of the EasyPrivacy tracker filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyPrivacy"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "EasyPrivacy"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyPrivacy"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyPrivacy"
@@ -71919,25 +71896,19 @@
             "value" : "EasyPrivacy"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyPrivacy"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyPrivacy"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyPrivacy"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EasyPrivacy"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "EasyPrivacy"
@@ -71949,22 +71920,28 @@
       "comment" : "Privacy settings - Description of Phi's own first-party filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Phi gepflegte Korrekturen und Regeln. Lass diese Liste aktiviert, es sei denn, eine Website macht Probleme."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Fixes and rules maintained by Phi. Keep this on unless a site misbehaves."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "由 Phi 维护的修复和规则。除非网站出现异常，否则请保持开启。"
+            "value" : "Correcciones y reglas mantenidas por Phi. Mantenla activada a menos que un sitio funcione mal."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "由 Phi 維護的修正與規則。除非網站出現異常，否則請保持開啟。"
+            "value" : "Correctifs et règles maintenus par Phi. Laissez cette liste activée, sauf si un site fonctionne mal."
           }
         },
         "ja" : {
@@ -71979,28 +71956,22 @@
             "value" : "Phi가 관리하는 수정 사항과 규칙이에요. 사이트가 오작동하는 경우가 아니라면 켜 두세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Correctifs et règles maintenus par Phi. Laissez cette liste activée, sauf si un site fonctionne mal."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Von Phi gepflegte Korrekturen und Regeln. Lass diese Liste aktiviert, es sei denn, eine Website macht Probleme."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Correcties en regels die door Phi worden onderhouden. Laat dit aan staan, tenzij een site niet goed werkt."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Correcciones y reglas mantenidas por Phi. Mantenla activada a menos que un sitio funcione mal."
+            "value" : "由 Phi 维护的修复和规则。除非网站出现异常，否则请保持开启。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 Phi 維護的修正與規則。除非網站出現異常，否則請保持開啟。"
           }
         }
       }
@@ -72009,19 +71980,25 @@
       "comment" : "Privacy settings - Name of Phi's own first-party filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Blocklists"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi Blocklists"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi Blocklists"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi Blocklists"
@@ -72039,25 +72016,19 @@
             "value" : "Phi Blocklists"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi Blocklists"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi Blocklists"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi Blocklists"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Blocklists"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi Blocklists"
@@ -72069,22 +72040,28 @@
       "comment" : "Advanced ad block settings - Tooltip of the button removing a custom filter list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diesen Filter entfernen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Remove this filter"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除此过滤器"
+            "value" : "Eliminar este filtro"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除此過濾器"
+            "value" : "Supprimer ce filtre"
           }
         },
         "ja" : {
@@ -72099,28 +72076,22 @@
             "value" : "이 필터 제거"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer ce filtre"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diesen Filter entfernen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijder dit filter"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar este filtro"
+            "value" : "移除此过滤器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除此過濾器"
           }
         }
       }
@@ -72129,22 +72100,28 @@
       "comment" : "Advanced ad block settings - Details line for a filter list shipped with the browser",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Phi integriert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Built into Phi"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 内置"
+            "value" : "Integrada en Phi"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 內建"
+            "value" : "Intégrée à Phi"
           }
         },
         "ja" : {
@@ -72159,28 +72136,22 @@
             "value" : "Phi에 기본 내장됨"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Intégrée à Phi"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In Phi integriert"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ingebouwd in Phi"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Integrada en Phi"
+            "value" : "Phi 内置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 內建"
           }
         }
       }
@@ -72189,22 +72160,28 @@
       "comment" : "Advanced ad block settings - License line in a filter list's details; %@ is the license name",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lizenz: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "License: %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "许可证：%@"
+            "value" : "Licencia: %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授權：%@"
+            "value" : "Licence : %@"
           }
         },
         "ja" : {
@@ -72219,28 +72196,22 @@
             "value" : "라이선스: %@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Licence : %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lizenz: %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Licentie: %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Licencia: %@"
+            "value" : "许可证：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授權：%@"
           }
         }
       }
@@ -72249,22 +72220,28 @@
       "comment" : "Advanced ad block settings - Details line for a filter list that has not been downloaded",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht heruntergeladen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Not downloaded yet"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未下载"
+            "value" : "Aún no descargada"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未下載"
+            "value" : "Pas encore téléchargée"
           }
         },
         "ja" : {
@@ -72279,28 +72256,22 @@
             "value" : "아직 다운로드되지 않음"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pas encore téléchargée"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch nicht heruntergeladen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet gedownload"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún no descargada"
+            "value" : "尚未下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未下載"
           }
         }
       }
@@ -72309,22 +72280,28 @@
       "comment" : "Advanced ad block settings - Link label pointing at a filter list's home page",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quelle"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Source"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来源"
+            "value" : "Fuente"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "來源"
+            "value" : "Source"
           }
         },
         "ja" : {
@@ -72339,28 +72316,22 @@
             "value" : "출처"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Source"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quelle"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bron"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fuente"
+            "value" : "来源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來源"
           }
         }
       }
@@ -72369,22 +72340,28 @@
       "comment" : "Advanced ad block settings - Details line with when a filter list was last downloaded; %@ is a relative time like '3 hours ago'",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiert %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Updated %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已于 %@ 更新"
+            "value" : "Actualizada %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次更新：%@"
+            "value" : "Mise à jour %@"
           }
         },
         "ja" : {
@@ -72399,28 +72376,22 @@
             "value" : "%@ 업데이트됨"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mise à jour %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktualisiert %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bijgewerkt %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actualizada %@"
+            "value" : "已于 %@ 更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次更新：%@"
           }
         }
       }
@@ -72429,22 +72400,28 @@
       "comment" : "Choose rule sets sheet - Section title above the user's custom lists",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine benutzerdefinierten Listen (gelten für alle Schalter)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Your custom lists (apply to every switch)"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你的自定义列表（对每个开关生效）"
+            "value" : "Tus listas personalizadas (se aplican a todos los interruptores)"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你的自訂清單（套用於所有開關）"
+            "value" : "Vos listes personnalisées (s'appliquent à tous les interrupteurs)"
           }
         },
         "ja" : {
@@ -72459,28 +72436,22 @@
             "value" : "내 사용자 지정 목록(모든 스위치에 적용)"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vos listes personnalisées (s'appliquent à tous les interrupteurs)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine benutzerdefinierten Listen (gelten für alle Schalter)"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Je aangepaste lijsten (gelden voor elke schakelaar)"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus listas personalizadas (se aplican a todos los interruptores)"
+            "value" : "你的自定义列表（对每个开关生效）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的自訂清單（套用於所有開關）"
           }
         }
       }
@@ -72489,22 +72460,28 @@
       "comment" : "Choose rule sets sheet - Button that downloads the chosen lists still missing and closes the sheet",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Done"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成"
+            "value" : "Listo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成"
+            "value" : "Terminé"
           }
         },
         "ja" : {
@@ -72519,28 +72496,22 @@
             "value" : "완료"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminé"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fertig"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gereed"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Listo"
+            "value" : "完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
           }
         }
       }
@@ -72549,22 +72520,28 @@
       "comment" : "Choose rule sets sheet - Done button label while the chosen lists are being downloaded",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird heruntergeladen…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Downloading…"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下载…"
+            "value" : "Descargando…"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載中…"
+            "value" : "Téléchargement…"
           }
         },
         "ja" : {
@@ -72579,28 +72556,22 @@
             "value" : "다운로드 중…"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Téléchargement…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird heruntergeladen…"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezig met downloaden…"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando…"
+            "value" : "正在下载…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載中…"
           }
         }
       }
@@ -72609,22 +72580,28 @@
       "comment" : "Choose rule sets sheet - Introductory sentence",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hake die Regelsätze an, die verwendet werden sollen. „Fertig“ lädt alle noch fehlenden von ihren Anbietern herunter; ohne dein Zutun wird nichts heruntergeladen. Benutzerdefinierte Listen gelten für alle drei Schalter."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Check the rule sets to use. Done downloads any that are missing from their publishers; nothing is downloaded until you ask. Custom lists apply to all three switches."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "勾选要使用的规则集。点按“完成”会从发布方下载缺失的规则集；未经你确认，不会下载任何内容。自定义列表对全部三个开关生效。"
+            "value" : "Marca los conjuntos de reglas que quieras usar. Listo descarga los que falten desde sus editores; no se descarga nada hasta que lo pidas. Las listas personalizadas se aplican a los tres interruptores."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "勾選要使用的規則集。按「完成」會從發佈者下載尚未下載的規則集；未經你要求，不會下載任何內容。自訂清單會套用於全部三個開關。"
+            "value" : "Cochez les jeux de règles à utiliser. « Terminé » télécharge auprès de leurs éditeurs ceux qui manquent ; rien n'est téléchargé tant que vous ne le demandez pas. Les listes personnalisées s'appliquent aux trois interrupteurs."
           }
         },
         "ja" : {
@@ -72639,28 +72616,22 @@
             "value" : "사용할 규칙 세트를 선택하세요. '완료'를 누르면 아직 다운로드되지 않은 목록을 게시자로부터 다운로드하며, 직접 요청하기 전에는 아무것도 다운로드되지 않아요. 사용자 지정 목록은 세 가지 스위치 모두에 적용돼요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cochez les jeux de règles à utiliser. « Terminé » télécharge auprès de leurs éditeurs ceux qui manquent ; rien n'est téléchargé tant que vous ne le demandez pas. Les listes personnalisées s'appliquent aux trois interrupteurs."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hake die Regelsätze an, die verwendet werden sollen. „Fertig“ lädt alle noch fehlenden von ihren Anbietern herunter; ohne dein Zutun wird nichts heruntergeladen. Benutzerdefinierte Listen gelten für alle drei Schalter."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vink de regelsets aan die je wilt gebruiken. Gereed downloadt de regelsets die nog ontbreken van hun uitgevers; er wordt niets gedownload totdat je erom vraagt. Aangepaste lijsten gelden voor alle drie de schakelaars."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Marca los conjuntos de reglas que quieras usar. Listo descarga los que falten desde sus editores; no se descarga nada hasta que lo pidas. Las listas personalizadas se aplican a los tres interruptores."
+            "value" : "勾选要使用的规则集。点按“完成”会从发布方下载缺失的规则集；未经你确认，不会下载任何内容。自定义列表对全部三个开关生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勾選要使用的規則集。按「完成」會從發佈者下載尚未下載的規則集；未經你要求，不會下載任何內容。自訂清單會套用於全部三個開關。"
           }
         }
       }
@@ -72669,22 +72640,28 @@
       "comment" : "Choose rule sets sheet - Title for the ads toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regelsätze zum Blockieren von Werbung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Rule sets for blocking ads"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用于拦截广告的规则集"
+            "value" : "Conjuntos de reglas para bloquear anuncios"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖廣告的規則集"
+            "value" : "Jeux de règles pour bloquer les publicités"
           }
         },
         "ja" : {
@@ -72699,28 +72676,22 @@
             "value" : "광고 차단용 규칙 세트"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jeux de règles pour bloquer les publicités"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Regelsätze zum Blockieren von Werbung"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regelsets voor het blokkeren van advertenties"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conjuntos de reglas para bloquear anuncios"
+            "value" : "用于拦截广告的规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖廣告的規則集"
           }
         }
       }
@@ -72729,22 +72700,28 @@
       "comment" : "Choose rule sets sheet - Title for the cookie banners toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regelsätze zum Blockieren von Cookie-Bannern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Rule sets for blocking cookie banners"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用于拦截 Cookie 横幅的规则集"
+            "value" : "Conjuntos de reglas para bloquear avisos de cookies"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖 Cookie 橫幅的規則集"
+            "value" : "Jeux de règles pour bloquer les bannières de cookies"
           }
         },
         "ja" : {
@@ -72759,28 +72736,22 @@
             "value" : "쿠키 배너 차단용 규칙 세트"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jeux de règles pour bloquer les bannières de cookies"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Regelsätze zum Blockieren von Cookie-Bannern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regelsets voor het blokkeren van cookiebanners"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conjuntos de reglas para bloquear avisos de cookies"
+            "value" : "用于拦截 Cookie 横幅的规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖 Cookie 橫幅的規則集"
           }
         }
       }
@@ -72789,22 +72760,28 @@
       "comment" : "Choose rule sets sheet - Title for the trackers toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regelsätze zum Blockieren von Trackern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Rule sets for blocking trackers"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用于拦截跟踪器的规则集"
+            "value" : "Conjuntos de reglas para bloquear rastreadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "封鎖追蹤器的規則集"
+            "value" : "Jeux de règles pour bloquer les traqueurs"
           }
         },
         "ja" : {
@@ -72819,28 +72796,22 @@
             "value" : "추적기 차단용 규칙 세트"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jeux de règles pour bloquer les traqueurs"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Regelsätze zum Blockieren von Trackern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regelsets voor het blokkeren van trackers"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conjuntos de reglas para bloquear rastreadores"
+            "value" : "用于拦截跟踪器的规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封鎖追蹤器的規則集"
           }
         }
       }
@@ -72849,22 +72820,28 @@
       "comment" : "Choose rule sets sheet - Button at the bottom left that downloads the sheet's already-downloaded lists again to pick up new rules",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heruntergeladene Listen aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Update Downloaded"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新已下载的列表"
+            "value" : "Actualizar listas descargadas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新已下載的清單"
+            "value" : "Mettre à jour les listes téléchargées"
           }
         },
         "ja" : {
@@ -72879,28 +72856,22 @@
             "value" : "다운로드된 목록 업데이트"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mettre à jour les listes téléchargées"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Heruntergeladene Listen aktualisieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update gedownloade lijsten"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actualizar listas descargadas"
+            "value" : "更新已下载的列表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新已下載的清單"
           }
         }
       }
@@ -72909,22 +72880,28 @@
       "comment" : "Choose rule sets sheet - Tooltip of the Update Downloaded button",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die neuesten Regeln für die hier heruntergeladenen Listen abrufen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Fetch the latest rules for the lists downloaded here"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "获取此处已下载列表的最新规则"
+            "value" : "Obtener las reglas más recientes de las listas descargadas aquí"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為此處已下載的清單取得最新規則"
+            "value" : "Récupérer les dernières règles des listes téléchargées ici"
           }
         },
         "ja" : {
@@ -72939,28 +72916,22 @@
             "value" : "여기서 다운로드한 목록의 최신 규칙 가져오기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Récupérer les dernières règles des listes téléchargées ici"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die neuesten Regeln für die hier heruntergeladenen Listen abrufen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haal de nieuwste regels op voor de lijsten die hier zijn gedownload"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Obtener las reglas más recientes de las listas descargadas aquí"
+            "value" : "获取此处已下载列表的最新规则"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為此處已下載的清單取得最新規則"
           }
         }
       }
@@ -72969,22 +72940,28 @@
       "comment" : "Profile settings - Status line shown when the latest rule build failed and the previous rules stay in use",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Filterung läuft mit den letzten funktionierenden Regeln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Filtering is running with the last good rules"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "过滤正在使用上次有效的规则运行"
+            "value" : "El filtrado sigue activo con las últimas reglas válidas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "過濾功能正以最近一次有效的規則執行"
+            "value" : "Le filtrage fonctionne avec les dernières règles valides"
           }
         },
         "ja" : {
@@ -72999,28 +72976,22 @@
             "value" : "마지막으로 정상 작동한 규칙으로 필터링 실행 중"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le filtrage fonctionne avec les dernières règles valides"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Filterung läuft mit den letzten funktionierenden Regeln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filtering gebruikt de laatst werkende regels"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El filtrado sigue activo con las últimas reglas válidas"
+            "value" : "过滤正在使用上次有效的规则运行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過濾功能正以最近一次有效的規則執行"
           }
         }
       }
@@ -73029,22 +73000,28 @@
       "comment" : "Profile settings - Status line shown when a toggle is on but none of its filter lists has been downloaded",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wird nichts blockiert, bis ein Regelsatz heruntergeladen wurde."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Nothing is blocked until a rule set is downloaded."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在下载规则集之前，不会拦截任何内容。"
+            "value" : "No se bloquea nada hasta que se descargue un conjunto de reglas."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在下載規則集之前，不會封鎖任何內容。"
+            "value" : "Rien n'est bloqué tant qu'aucun jeu de règles n'est téléchargé."
           }
         },
         "ja" : {
@@ -73059,28 +73036,22 @@
             "value" : "규칙 세트를 다운로드하기 전에는 아무것도 차단되지 않아요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rien n'est bloqué tant qu'aucun jeu de règles n'est téléchargé."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Es wird nichts blockiert, bis ein Regelsatz heruntergeladen wurde."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Er wordt niets geblokkeerd totdat een regelset is gedownload."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se bloquea nada hasta que se descargue un conjunto de reglas."
+            "value" : "在下载规则集之前，不会拦截任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在下載規則集之前，不會封鎖任何內容。"
           }
         }
       }
@@ -73089,22 +73060,28 @@
       "comment" : "Profile settings - Line under a content blocking toggle when two or more filter lists are chosen for it; %d is the count",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d Regelsätze"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%d rule sets"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 个规则集"
+            "value" : "%d conjuntos de reglas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 個規則集"
+            "value" : "%d jeux de règles"
           }
         },
         "ja" : {
@@ -73119,28 +73096,22 @@
             "value" : "규칙 세트 %d개"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d jeux de règles"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d Regelsätze"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d regelsets"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d conjuntos de reglas"
+            "value" : "%d 个规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個規則集"
           }
         }
       }
@@ -73149,22 +73120,28 @@
       "comment" : "Profile settings - Part of the line under a content blocking toggle counting the user's custom lists, which apply to every toggle; %d is the count",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d benutzerdefinierte Listen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%d custom lists"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 个自定义列表"
+            "value" : "%d listas personalizadas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 個自訂清單"
+            "value" : "%d listes personnalisées"
           }
         },
         "ja" : {
@@ -73179,28 +73156,22 @@
             "value" : "사용자 지정 목록 %d개"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d listes personnalisées"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d benutzerdefinierte Listen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d aangepaste lijsten"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d listas personalizadas"
+            "value" : "%d 个自定义列表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個自訂清單"
           }
         }
       }
@@ -73209,22 +73180,28 @@
       "comment" : "Profile settings - Part of the line under a content blocking toggle when the user has one custom list, which applies to every toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 benutzerdefinierte Liste"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "1 custom list"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 个自定义列表"
+            "value" : "1 lista personalizada"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 個自訂清單"
+            "value" : "1 liste personnalisée"
           }
         },
         "ja" : {
@@ -73239,28 +73216,22 @@
             "value" : "사용자 지정 목록 1개"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 liste personnalisée"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 benutzerdefinierte Liste"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 aangepaste lijst"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 lista personalizada"
+            "value" : "1 个自定义列表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 個自訂清單"
           }
         }
       }
@@ -73269,22 +73240,28 @@
       "comment" : "Profile settings - Tooltip of the options button next to a content blocking toggle that opens the rule set chooser",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regelsätze auswählen und herunterladen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Choose and download rule sets"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择并下载规则集"
+            "value" : "Elegir y descargar conjuntos de reglas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇並下載規則集"
+            "value" : "Choisir et télécharger les jeux de règles"
           }
         },
         "ja" : {
@@ -73299,28 +73276,22 @@
             "value" : "규칙 세트 선택 및 다운로드"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choisir et télécharger les jeux de règles"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Regelsätze auswählen und herunterladen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kies en download regelsets"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elegir y descargar conjuntos de reglas"
+            "value" : "选择并下载规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇並下載規則集"
           }
         }
       }
@@ -73329,22 +73300,28 @@
       "comment" : "Profile settings - Line under a content blocking toggle when no filter list is checked for it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Regelsätze ausgewählt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "No rule sets selected"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未选择任何规则集"
+            "value" : "Ningún conjunto de reglas seleccionado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未勾選任何規則集"
+            "value" : "Aucun jeu de règles sélectionné"
           }
         },
         "ja" : {
@@ -73359,28 +73336,22 @@
             "value" : "선택된 규칙 세트 없음"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun jeu de règles sélectionné"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Regelsätze ausgewählt"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geen regelsets geselecteerd"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ningún conjunto de reglas seleccionado"
+            "value" : "未选择任何规则集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未勾選任何規則集"
           }
         }
       }
@@ -73389,22 +73360,28 @@
       "comment" : "Profile settings - Suffix under a content blocking toggle; %d is how many of its checked lists are not downloaded",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d nicht heruntergeladen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%d not downloaded"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 个未下载"
+            "value" : "%d sin descargar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 個未下載"
+            "value" : "%d non téléchargé(s)"
           }
         },
         "ja" : {
@@ -73419,28 +73396,22 @@
             "value" : "%d개 다운로드되지 않음"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d non téléchargé(s)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d nicht heruntergeladen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d niet gedownload"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d sin descargar"
+            "value" : "%d 个未下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個未下載"
           }
         }
       }
@@ -73449,22 +73420,28 @@
       "comment" : "Profile settings - Section title above the ad, cookie banner and tracker toggles",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inhaltsblockierung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Content blocking"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "内容拦截"
+            "value" : "Bloqueo de contenido"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "內容封鎖"
+            "value" : "Blocage de contenu"
           }
         },
         "ja" : {
@@ -73479,28 +73456,22 @@
             "value" : "콘텐츠 차단"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blocage de contenu"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inhaltsblockierung"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Contentblokkering"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloqueo de contenido"
+            "value" : "内容拦截"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "內容封鎖"
           }
         }
       }
@@ -74168,22 +74139,28 @@
       "comment" : "Profiles settings - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cookies, Verlauf, Erweiterungen und andere Browserdaten in diesem Profil werden dauerhaft entfernt. Unterhaltungen bleiben in Phi Chat unter „Ohne Kategorie“ erhalten. Wenn KI deaktiviert oder nicht verfügbar ist, werden die Unterhaltungen verschoben, sobald KI wieder aktiviert und verfügbar ist."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此个人资料中的 Cookie、历史记录、扩展程序和其他浏览器数据将被永久移除。对话将保留在 Phi Chat 的“未分类”中。如果 AI 已停用或不可用，对话将在 AI 重新启用并恢复可用后再移入其中。"
+            "value" : "Las cookies, el historial, las extensiones y otros datos de navegación de este perfil se eliminarán de forma permanente. Las conversaciones se conservarán en Phi Chat, dentro de Sin categoría. Si la IA está desactivada o no disponible, las conversaciones se moverán cuando la IA vuelva a estar activada y disponible."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此設定檔中的 Cookie、歷史記錄、擴充功能與其他瀏覽器資料都將永久移除。對話會保留在 Phi Chat 的「未分類」中。若 AI 已停用或無法使用，對話會在 AI 重新啟用且可用時移入。"
+            "value" : "Les cookies, l'historique, les extensions et les autres données de navigation de ce profil seront définitivement supprimés. Les conversations seront conservées dans Phi Chat, sous « Sans catégorie ». Si l'IA est désactivée ou indisponible, les conversations seront déplacées lorsque l'IA sera de nouveau activée et disponible."
           }
         },
         "ja" : {
@@ -74198,28 +74175,22 @@
             "value" : "이 프로필의 쿠키, 방문 기록, 확장 프로그램 및 기타 브라우저 데이터가 영구적으로 제거돼요. 대화는 Phi Chat의 '미분류'에 보관돼요. AI가 비활성화되어 있거나 사용할 수 없는 경우, 대화는 AI가 다시 활성화되고 사용 가능해질 때 이동돼요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les cookies, l'historique, les extensions et les autres données de navigation de ce profil seront définitivement supprimés. Les conversations seront conservées dans Phi Chat, sous « Sans catégorie ». Si l'IA est désactivée ou indisponible, les conversations seront déplacées lorsque l'IA sera de nouveau activée et disponible."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cookies, Verlauf, Erweiterungen und andere Browserdaten in diesem Profil werden dauerhaft entfernt. Unterhaltungen bleiben in Phi Chat unter „Ohne Kategorie“ erhalten. Wenn KI deaktiviert oder nicht verfügbar ist, werden die Unterhaltungen verschoben, sobald KI wieder aktiviert und verfügbar ist."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cookies, geschiedenis, extensies en andere browsergegevens in dit profiel worden definitief verwijderd. Gesprekken blijven bewaard in Phi Chat onder Zonder categorie. Als AI is uitgeschakeld of niet beschikbaar is, worden gesprekken verplaatst zodra AI weer is ingeschakeld en beschikbaar is."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las cookies, el historial, las extensiones y otros datos de navegación de este perfil se eliminarán de forma permanente. Las conversaciones se conservarán en Phi Chat, dentro de Sin categoría. Si la IA está desactivada o no disponible, las conversaciones se moverán cuando la IA vuelva a estar activada y disponible."
+            "value" : "此个人资料中的 Cookie、历史记录、扩展程序和其他浏览器数据将被永久移除。对话将保留在 Phi Chat 的“未分类”中。如果 AI 已停用或不可用，对话将在 AI 重新启用并恢复可用后再移入其中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此設定檔中的 Cookie、歷史記錄、擴充功能與其他瀏覽器資料都將永久移除。對話會保留在 Phi Chat 的「未分類」中。若 AI 已停用或無法使用，對話會在 AI 重新啟用且可用時移入。"
           }
         }
       }
@@ -90664,6 +90635,21 @@
         }
       }
     },
+    "Sign in to manage devices." : {
+      "comment" : "Devices - signed out"
+    },
+    "Something went wrong" : {
+      "comment" : "Key layer error - title"
+    },
+    "Space “%@” is the default Space and is already in your account" : {
+      "comment" : "Pairing wizard - accessibility label for the default Space row"
+    },
+    "Space “%1$@” on this Mac, in profile %2$@" : {
+      "comment" : "Pairing wizard - accessibility label for a local Space row"
+    },
+    "Spaces" : {
+      "comment" : "Settings - Tab title for profiles and spaces management"
+    },
     "spaces.builtIn.incognito.numberedName" : {
       "comment" : "Incognito Space name when several are open; %d is its number",
       "extractionState" : "extracted_with_value",
@@ -91444,6 +91430,45 @@
         }
       }
     },
+    "Step %1$d of %2$d: %3$@" : {
+      "comment" : "Pairing wizard - step bar position, for VoiceOver"
+    },
+    "Store this code somewhere safe. You will need it to add another device to your account." : {
+      "comment" : "Recovery code display - explanation"
+    },
+    "Submit" : {
+      "comment" : "Recovery code entry - submit button"
+    },
+    "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again." : {
+      "comment" : "Self-revoke - no sync controller"
+    },
+    "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded." : {
+      "comment" : "Pairing wizard - no engine for the Space preview"
+    },
+    "sync.pairing.spacesToAdd" : {
+      "comment" : "Space pairing - heading for account Spaces that will be created on this Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces to add from your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.spacesToAddExplanation" : {
+      "comment" : "Space pairing - explanation for account Spaces not matched to a local Space",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These Spaces will be added automatically when you finish pairing."
+          }
+        }
+      }
+    },
     "tabs.tabGroup.colorName.blue" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker",
       "extractionState" : "extracted_with_value",
@@ -92043,6 +92068,15 @@
           }
         }
       }
+    },
+    "That request already expired." : {
+      "comment" : "Devices - approve stale request"
+    },
+    "The other device denied this request." : {
+      "comment" : "Join denied - body"
+    },
+    "Theme" : {
+      "comment" : "General settings - Theme section title"
     },
     "themes.appearance.darkOption" : {
       "comment" : "Appearance choice: always dark mode",
@@ -92704,6 +92738,36 @@
         }
       }
     },
+    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one." : {
+      "comment" : "Overwrite confirmation - explanation"
+    },
+    "This code is shown only once. Without it, no other device can join your account if this Mac is lost. Confirm you have saved it to continue." : {
+      "comment" : "Key layer - body of the alert shown when closing the window before confirming the recovery code was saved"
+    },
+    "This device isn’t set up for sync yet." : {
+      "comment" : "Devices - needs join"
+    },
+    "This device isn’t unlocked yet." : {
+      "comment" : "Devices - approve blocked when locked"
+    },
+    "This is the last device on the account, so it can’t be removed. Finish pairing on this device (profiles that can’t be read don’t block it), or set up sync on another device first, then try again." : {
+      "comment" : "Self-revoke - last active device"
+    },
+    "This Mac" : {
+      "comment" : "Pairing wizard - local column header"
+    },
+    "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open." : {
+      "comment" : "Extra warning shown when the account's Spaces have not been synced yet"
+    },
+    "This Mac leaves the account's sync. The server revokes this device, its device key is rotated, and the cached account key, profile mappings and sync cursors are cleared.\n\nBrowsing data on this Mac — Spaces, bookmarks, history and pinned tabs — is kept in full; it simply stops syncing with your other devices. Joining again needs approval from another device or your recovery code." : {
+      "comment" : "Self-revoke confirmation - body"
+    },
+    "This request expires at " : {
+      "comment" : "Waiting - expiry prefix"
+    },
+    "This request timed out. You can try again." : {
+      "comment" : "Join expired - body"
+    },
     "timeMachine.helpMenu.emptyPlaceholder" : {
       "comment" : "Help menu - Time Machine submenu placeholder when no completed backups exist",
       "extractionState" : "extracted_with_value",
@@ -92763,6 +92827,9 @@
           }
         }
       }
+    },
+    "Too many pending requests. Try again later or use a recovery code." : {
+      "comment" : "Key layer - too many pending join requests"
     },
     "toolbar.bookmarkBar.newFolderAction" : {
       "comment" : "Bookmark New Folder menu item",
@@ -93123,6 +93190,15 @@
           }
         }
       }
+    },
+    "Try another way" : {
+      "comment" : "Key layer - retry"
+    },
+    "Unclaimed account profiles" : {
+      "comment" : "Profile pairing - unclaimed remotes header"
+    },
+    "Unnamed profile (%@)" : {
+      "comment" : "Profile pairing - remote profile whose name couldn’t be decrypted"
     },
     "updates.menu.availableStatus" : {
       "comment" : "Phi menu - Menu item text when new version is available",
@@ -94075,6 +94151,18 @@
           }
         }
       }
+    },
+    "Verify this code matches the other device: " : {
+      "comment" : "Devices - verify prefix"
+    },
+    "Waiting for approval" : {
+      "comment" : "Waiting - title"
+    },
+    "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to." : {
+      "comment" : "Profile pairing - explanation"
+    },
+    "You’re not signed in." : {
+      "comment" : "Key layer - not signed in"
     }
   },
   "version" : "1.0"

@@ -43,6 +43,8 @@ final class ImagePreviewWindowController: NSWindowController, NSWindowDelegate {
     override func showWindow(_ sender: Any?) {
         retainedWhileOpen = self
         super.showWindow(sender)
+        // External callers may open a preview while another application is active.
+        NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(sender)
         window?.makeFirstResponder(contentViewController?.view)
     }

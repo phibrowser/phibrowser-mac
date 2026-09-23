@@ -24,6 +24,10 @@ protocol ReorderingCollectionViewDelegate: AnyObject {
 class ReorderingCollectionView: NSCollectionView {
     weak var reorderDelegate: ReorderingCollectionViewDelegate?
     var capturesContextMenuClicks = false
+    /// A scoped management surface can own drops, including empty-grid destinations.
+    var managedDragOperation: ((NSDraggingInfo) -> NSDragOperation)?
+    var managedDrop: ((NSDraggingInfo) -> Bool)?
+    var managedDragExited: (() -> Void)?
     private var lastDragTargetIndexPath: IndexPath?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -59,6 +63,7 @@ class ReorderingCollectionView: NSCollectionView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if let managedDragOperation { return managedDragOperation(sender) }
         guard !isExtensionReorder(sender) else {
             return reorderDelegate?.collectionView(self, extensionReorderOperationFor: sender) ?? []
         }
@@ -66,11 +71,13 @@ class ReorderingCollectionView: NSCollectionView {
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let managedDragOperation { return !managedDragOperation(sender).isEmpty }
         guard !isExtensionReorder(sender) else { return true }
         return super.prepareForDragOperation(sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let managedDrop { return managedDrop(sender) }
         guard !isExtensionReorder(sender) else {
             return reorderDelegate?.collectionView(self, acceptExtensionReorderDrop: sender) ?? false
         }
@@ -78,6 +85,7 @@ class ReorderingCollectionView: NSCollectionView {
     }
 
     override func draggingUpdated(_ session: NSDraggingInfo) -> NSDragOperation {
+        if let managedDragOperation { return managedDragOperation(session) }
         guard !isExtensionReorder(session) else {
             return reorderDelegate?.collectionView(self, extensionReorderOperationFor: session) ?? []
         }
@@ -117,7 +125,7 @@ class ReorderingCollectionView: NSCollectionView {
         // Source-side tracking for pinned tabs: drive drag-image updates using
         // cursor position. Pinned-extension reorders are surface-local and
         // never engage the tab dragging session.
-        if session.draggingPasteboard.string(forType: .phiPinnedExtensionReorder) == nil {
+        if managedDragOperation == nil, session.draggingPasteboard.string(forType: .phiPinnedExtensionReorder) == nil {
             unsafeBrowserState?.tabDraggingSession.attachNativeSession(session)
             unsafeBrowserState?.tabDraggingSession.update(
                 screenLocation: CGPoint(x: screenPoint.x, y: screenPoint.y)
@@ -127,12 +135,14 @@ class ReorderingCollectionView: NSCollectionView {
     }
     
     override func draggingEnded(_ session: NSDraggingInfo) {
+        managedDragExited?()
         self.lastDragTargetIndexPath = nil
         super.draggingEnded(session)
     }
     
     override func draggingExited(_ session: NSDraggingInfo?) {
         super.draggingExited(session)
+        managedDragExited?()
         self.lastDragTargetIndexPath = nil
         reorderDelegate?.collectionView(self, draggingExited: session)
     }

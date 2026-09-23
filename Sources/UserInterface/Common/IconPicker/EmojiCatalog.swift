@@ -38,6 +38,28 @@ struct EmojiCatalog: Decodable {
         return nil
     }
 
+    /// The id of the emoji whose glyph is `text`, skin variants included.
+    /// Variation selectors are ignored so "❤" and "❤️" both match.
+    func id(forText text: String) -> String? {
+        let key = Self.strippingVariationSelectors(text)
+        guard !key.isEmpty else { return nil }
+        for item in allItems {
+            if Self.strippingVariationSelectors(item.text) == key {
+                return item.id
+            }
+            if let variant = item.skinVariants.first(where: {
+                Self.strippingVariationSelectors($0.text) == key
+            }) {
+                return variant.id
+            }
+        }
+        return nil
+    }
+
+    private static func strippingVariationSelectors(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.value != 0xFE0F && $0.value != 0xFE0E }))
+    }
+
     private static func loadFromBundle() -> EmojiCatalog {
         let url = Bundle.main.url(
             forResource: "emoji-catalog",

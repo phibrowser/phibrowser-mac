@@ -11,6 +11,9 @@ import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
 
+    /// App-scoped download events for aggregate views spanning browser windows.
+    let downloadEvents = PassthroughSubject<ChromiumDownloadEvent, Never>()
+
     /// Live ask-Space overlays keyed by the source windowId, so a second
     /// match for the same window replaces (rather than stacks) the prompt and
     /// dismissal can tear the right one down.
@@ -21,6 +24,9 @@ import SwiftUI
     /// overlay is `isReleasedWhenClosed = false` and AppKit only detaches it
     /// from the parent, it doesn't drop our dictionary reference).
     private var chooserCloseObservers: [Int64: NSObjectProtocol] = [:]
+    /// How each active chooser resolves as declined ("keep it here"), keyed
+    /// the same way; used when its Space leaves the shell unanswered.
+    private var chooserDeclines: [Int64: () -> Void] = [:]
     /// Crash payloads that arrived before their (cross-window-dragged) tab was
     /// created on the Mac side, keyed by Chromium tab guid. Drained by
     /// `BrowserState.handleNewTabFromChromium` when the tab appears.
@@ -1268,7 +1274,16 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func toggleChatSidebar(_ show: NSNumber?) {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
+        toggleChatSidebar(show, windowId: -1)
+    }
+
+    /// `windowId` is the calling tab's Browser window (-1 without a tab). In
+    /// hosted mode the active controller is the Space on screen, which a tab
+    /// in a background Space calling this is not.
+    func toggleChatSidebar(_ show: NSNumber?, windowId: Int64) {
+        let manager = SpaceSessionControllersManager.shared
+        let owner = windowId >= 0 ? manager.getBrowserState(for: Int(windowId)) : nil
+        guard let state = owner ?? manager.activeWindowController?.browserState else {
             return
         }
         if let show {
@@ -1282,7 +1297,9 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         SpaceSessionControllersManager.shared.activeWindowController?.showFeedbackWindow()
     }
 
-    func downloadEventOccurred(_ eventType: DownloadEventType, guid: String, downloadItem: (any DownloadItemWrapper)?) {
+    func downloadEventOccurred(_ eventType: DownloadEventType, guid: String,
+                               downloadItem: (any DownloadItemWrapper)?, profileId: String,
+                               isOffTheRecord: Bool) {
         let eventName: String
         switch eventType {
         case .created: eventName = "CREATED"
@@ -1303,13 +1320,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         } else {
             AppLogDebug("📥 [Download] Event: \(eventName), GUID: \(guid), Item: nil")
         }
+
+        downloadEvents.send(.init(eventType: eventType, guid: guid, wrapper: downloadItem,
+                                  profileId: profileId, isOffTheRecord: isOffTheRecord))
         
         // Downloads are profile-scoped, so every open window needs the update.
         for controller in SpaceSessionControllersManager.shared.getAllWindows() {
+            guard controller.browserState.profileId == profileId,
+                  controller.browserState.isIncognito == isOffTheRecord else { continue }
             controller.browserState.downloadsManager.handleDownloadEvent(
                 eventType: eventType,
                 guid: guid,
-                wrapper: downloadItem
+                wrapper: downloadItem,
+                profileId: profileId
             )
         }
     }
@@ -1361,6 +1384,18 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 // back to the rule's default Space rather than dropping the URL.
                 manager.routeAskedURL(urlString,
                                       toSpaceId: spaces.isEmpty ? nil : defaultSpaceId,
+                                      sourceWindowId: sourceWindowId,
+                                      sourceIsNewTab: sourceIsNewTab)
+                return
+            }
+            // Hosted mode: `window` is the shell, which shows another Space
+            // while this one is in the background (an agent Space navigating,
+            // a redirect after a switch). Nobody can answer for it, so the
+            // navigation stays where it started, as a decline would keep it.
+            guard controller.isPresentedOrLegacy else {
+                AppLogInfo("[SpaceChooser] source window \(sourceWindowId) is not on screen; keeping the URL in its Space")
+                manager.routeAskedURL(urlString,
+                                      toSpaceId: nil,
                                       sourceWindowId: sourceWindowId,
                                       sourceIsNewTab: sourceIsNewTab)
                 return
@@ -1461,12 +1496,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             sourceWindow.addChildWindow(overlay, ordered: .above)
             overlay.makeKeyAndOrderFront(nil)
             self.activeChoosers[sourceWindowId] = overlay
+            self.chooserDeclines[sourceWindowId] = {
+                SpaceManager.shared.routeAskedURL(urlString,
+                                                  toSpaceId: nil,
+                                                  sourceWindowId: sourceWindowId,
+                                                  sourceIsNewTab: sourceIsNewTab)
+            }
             // Tear the prompt down if the source window closes underneath it,
             // so a stranded entry can't accumulate for the session. The token
-            // is removed in `dismissChooser`.
+            // is removed in `dismissChooser`. Hosted mode watches the source
+            // Space's own Browser window: the shell outlives it.
             self.chooserCloseObservers[sourceWindowId] = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
-                object: sourceWindow,
+                object: controller.lifecycleWindow ?? sourceWindow,
                 queue: .main) { [weak self] _ in
                     self?.dismissChooser(windowId: sourceWindowId)
                 }
@@ -1521,7 +1563,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     /// Tears down the ask-Space overlay for `windowId`, if any, and returns
     /// key focus to the parent window. Always called on the main thread (the
     /// presenting Task and the SwiftUI button actions both run there).
+    /// Hosted mode: the chooser's Space is leaving the shell with the prompt
+    /// unanswered. The overlay belongs to the shell, so it would stay over the
+    /// next Space; resolve it the way a decline does.
+    func declineChooser(windowId: Int64) {
+        guard let decline = chooserDeclines[windowId] else { return }
+        dismissChooser(windowId: windowId)
+        decline()
+    }
+
     private func dismissChooser(windowId: Int64) {
+        chooserDeclines.removeValue(forKey: windowId)
         if let token = chooserCloseObservers.removeValue(forKey: windowId) {
             NotificationCenter.default.removeObserver(token)
         }

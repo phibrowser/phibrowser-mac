@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-09-08
+Last updated: 2026-09-23
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -124,7 +124,7 @@ are out of scope.
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `browser_migration_finished` | A Migration run (the one-click wizard) reaches its end, however much of the plan landed; includes `source_browser` (`arc` / `zen`), `profiles_created` and `spaces_created` — counts only, never Profile or Space names or source paths | `States/BrowserMigrationRunner.swift` |
 | `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
-| `space_created` | A user-created Space succeeds; includes `total_spaces` and whether it uses a non-default profile | `Sidebar/Spaces/CreateSpacePanel.swift` |
+| `space_created` | A user-created Space succeeds; includes `total_spaces`, whether it uses a non-default profile, and `surface` (`sidebar`, `standalone_window`, or `library`) | `Sidebar/Spaces/CreateSpacePanel.swift` |
 | `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `States/ProfileManager.swift` |
 | `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `States/Space/SpaceManager.swift` |
 | `space_switched` | A user-initiated switch activates a different Space; includes `total_spaces` | `States/Space/SpaceManager.swift` |

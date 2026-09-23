@@ -63,11 +63,27 @@ final class ExtensionDialogManager {
     private var activeVCs: [String: ExtensionDialogViewController] = [:]
     private var parentWindows: [String: NSWindow] = [:]
     private var autoSizeSessions: Set<String> = []
+    /// The Browser window each dialog belongs to.
+    private var sessionWindowIds: [String: Int] = [:]
+    /// Dialogs built but not attached, because their Space is not the one
+    /// its shell presents (hosted mode). A sheet on the shell would block the
+    /// Space on screen for a dialog that belongs to another.
+    private var deferredSessions: Set<String> = []
+    private var visibleWindowObserver: NSObjectProtocol?
 
     init(messenger: ExtensionMessagingProtocol = ExtensionMessaging.shared,
          windowLookup: MainBrowserWindowLookup = SpaceSessionControllersManager.shared) {
         self.messenger = messenger
         self.windowLookup = windowLookup
+        visibleWindowObserver = NotificationCenter.default.addObserver(
+            forName: .spaceSlotVisibleWindowDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.reconcileSheetsWithPresentedSpaces()
+            }
+        }
     }
 
     func handleRequest(context: ExtensionMessageContext) {
@@ -92,7 +108,7 @@ final class ExtensionDialogManager {
         dismissDialog(sessionId: request.sessionId)
 
         guard let windowController = windowLookup.controller(for: request.windowId),
-              let parentWindow = windowController.window else {
+              windowController.window != nil else {
             AppLogWarn("[ExtDialog] Window not found for id: \(request.windowId)")
             return
         }
@@ -110,7 +126,7 @@ final class ExtensionDialogManager {
         )
         vc.delegate = self
         activeVCs[request.sessionId] = vc
-        parentWindows[request.sessionId] = parentWindow
+        sessionWindowIds[request.sessionId] = request.windowId
 
         if needsAutoSize {
             autoSizeSessions.insert(request.sessionId)
@@ -119,18 +135,55 @@ final class ExtensionDialogManager {
             let window = makeDialogWindow(contentSize: contentSize, vc: vc)
             activeWindows[request.sessionId] = window
             vc.loadContent()
-            parentWindow.beginSheet(window)
+            attachSheet(sessionId: request.sessionId)
         }
     }
 
     @MainActor
     private func showSheet(sessionId: String, contentSize: NSSize) {
         guard let vc = activeVCs[sessionId],
-              let parentWindow = parentWindows[sessionId] else { return }
+              sessionWindowIds[sessionId] != nil else { return }
 
         let window = makeDialogWindow(contentSize: contentSize, vc: vc)
         activeWindows[sessionId] = window
+        attachSheet(sessionId: sessionId)
+    }
+
+    /// Attaches the dialog as a sheet of its Browser's window — the shell, in
+    /// hosted mode — or defers it while that Space is not the one on screen.
+    @MainActor
+    private func attachSheet(sessionId: String) {
+        guard let window = activeWindows[sessionId],
+              let windowId = sessionWindowIds[sessionId],
+              let controller = windowLookup.controller(for: windowId),
+              let parentWindow = controller.window else { return }
+        guard controller.isPresentedOrLegacy else {
+            deferredSessions.insert(sessionId)
+            return
+        }
+        deferredSessions.remove(sessionId)
+        parentWindows[sessionId] = parentWindow
         parentWindow.beginSheet(window)
+    }
+
+    /// Hosted mode: a dialog follows its Space in and out of the shell —
+    /// detached while another Space is on screen, re-attached when its own
+    /// is presented again.
+    @MainActor
+    private func reconcileSheetsWithPresentedSpaces() {
+        for (sessionId, window) in activeWindows {
+            guard let windowId = sessionWindowIds[sessionId],
+                  let controller = windowLookup.controller(for: windowId) else { continue }
+            if deferredSessions.contains(sessionId) {
+                if controller.isPresentedOrLegacy {
+                    attachSheet(sessionId: sessionId)
+                }
+            } else if !controller.isPresentedOrLegacy,
+                      let parent = parentWindows.removeValue(forKey: sessionId) {
+                parent.endSheet(window)
+                deferredSessions.insert(sessionId)
+            }
+        }
     }
 
     private func makeDialogWindow(contentSize: NSSize, vc: ExtensionDialogViewController) -> NSWindow {
@@ -153,6 +206,8 @@ final class ExtensionDialogManager {
     private func dismissDialog(sessionId: String) {
         autoSizeSessions.remove(sessionId)
         activeVCs.removeValue(forKey: sessionId)
+        sessionWindowIds.removeValue(forKey: sessionId)
+        deferredSessions.remove(sessionId)
         guard let window = activeWindows.removeValue(forKey: sessionId) else {
             parentWindows.removeValue(forKey: sessionId)
             return

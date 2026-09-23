@@ -6423,8 +6423,8 @@ async function resolveSpaceId(ref) {
   throw new Error(`unknown space '${ref}' — see listSpaces()`)
 }
 
-/** The user's normal Spaces, as [{spaceId, name, colorHex, iconName,
- *  profileId, sortOrder, isDefault, isActive, windowIds}]. `windowIds`
+/** The user's normal Spaces, as [{spaceId, name, colorHex, themeId,
+ *  iconName, profileId, sortOrder, isDefault, isActive, windowIds}]. `windowIds`
  *  lists the Space's open windows (empty when none) — the ids that
  *  enterContext({kind:'user', window}), openSpaceTab({window}), and
  *  listSpaceTabs({window}) accept. Agent and Incognito Spaces are not
@@ -6435,11 +6435,11 @@ export async function listSpaces() {
 }
 
 /** Creates a normal user Space. Options: {profile} (profileId or display
- *  name; defaults to the active Space's profile), {colorHex}, {iconName}
- *  ("phi:phi-icon-N" or "emoji:<hex codepoint>"), {activate: true} to also
+ *  name; defaults to the active Space's profile), {themeId} or {colorHex}
+ *  (see updateSpace), {iconName} (see updateSpace), {activate: true} to also
  *  surface it in the user's focused window (default false — don't yank the
- *  user's window). Returns {spaceId, profileId}. */
-export async function createSpace(name, { profile = '', colorHex, iconName,
+ *  user's window). Returns {spaceId, profileId, themeId, iconName}. */
+export async function createSpace(name, { profile = '', themeId, colorHex, iconName,
                                           activate = false } = {}) {
   if (!name || typeof name !== 'string') {
     throw new Error('createSpace(name): name is required')
@@ -6447,30 +6447,41 @@ export async function createSpace(name, { profile = '', colorHex, iconName,
   const created = await phiSend('agentSpace.spaces.create', {
     name,
     ...(profile ? { profileId: profile } : {}),
+    ...(themeId ? { themeId } : {}),
     ...(colorHex ? { colorHex } : {}),
     ...(iconName ? { iconName } : {}),
     ...(activate ? { activate: true } : {}),
   })
-  return { spaceId: created.spaceId, profileId: created.profileId }
+  return { spaceId: created.spaceId, profileId: created.profileId,
+           themeId: created.themeId, iconName: created.iconName }
 }
 
-/** Renames / recolors / re-icons a Space. `space` is a spaceId or name;
- *  fields in the options object are each optional. */
-export async function updateSpace(space, { name, colorHex, iconName } = {}) {
+/** Renames / rethemes / re-icons a Space. `space` is a spaceId or name;
+ *  fields in the options object are each optional. A Space's color is one
+ *  of the built-in themes (pure, mist, mint, aqua, iris, petal, coral,
+ *  amber): pass {themeId}, or {colorHex: "#RRGGBB"} to snap to the nearest
+ *  theme by hue. {iconName} is "phi:phi-icon-<name>" (e.g. "phi:phi-icon-mail"),
+ *  a bare catalog name ("mail"), "emoji:<hex codepoints>" (e.g.
+ *  "emoji:1F977"), or the emoji itself ("🥷"). Unknown values fail with
+ *  unknown_theme / invalid_color / invalid_icon. Returns
+ *  {spaceId, themeId, iconName, settled} — themeId/iconName are what landed. */
+export async function updateSpace(space, { name, themeId, colorHex, iconName } = {}) {
   const spaceId = await resolveSpaceId(space)
-  await phiSend('agentSpace.spaces.update', {
+  const reply = await phiSend('agentSpace.spaces.update', {
     spaceId,
     ...(name ? { name } : {}),
+    ...(themeId ? { themeId } : {}),
     ...(colorHex ? { colorHex } : {}),
     ...(iconName ? { iconName } : {}),
   })
+  const retheme = !!(themeId || colorHex)
   const settled = !!(await settle(async () => {
     const s = (await listSpaces()).find((x) => x.spaceId === spaceId)
     return s && (!name || s.name === name) &&
-           (!colorHex || s.colorHex === colorHex) &&
-           (!iconName || s.iconName === iconName)
+           (!retheme || s.themeId === reply.themeId) &&
+           (!iconName || s.iconName === reply.iconName)
   }))
-  return { spaceId, settled }
+  return { spaceId, themeId: reply.themeId, iconName: reply.iconName, settled }
 }
 
 /** Deletes a Space: closes its windows and cascade-deletes its bookmarks and

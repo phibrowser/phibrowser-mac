@@ -185,7 +185,13 @@ final class SpacesStripHostingView: ThemedHostingView {
     }
 }
 
-class SidebarViewController: NSViewController {
+class SidebarViewController: NSViewController, BrowserThemeContextProviding {
+    /// Hosted mode moves this view into the shell's sidebar column, whose
+    /// host answers with the presented session's theme. Every Space's sidebar
+    /// is resident there, so answer with this Space's own context — as the
+    /// floating sidebar does — or rows built while it is hidden take the
+    /// theme of the Space on screen.
+    var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
     private static let defaultFavoriteHeight: CGFloat = 0
     private static let pinnedHeightPersistenceThreshold: CGFloat = 20
     private static let pinnedHeightCacheKey = "Sidebar.pinnedTabsContainerHeight.v1"
@@ -307,7 +313,24 @@ class SidebarViewController: NSViewController {
     private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
     private var spacesStripHostingView: SpacesStripHostingView?
 
+    /// Follows the active Space of the slot this sidebar belongs to. Mirrors
+    /// the SpacesStripView fallback chain so the gradient still resolves
+    /// before SpaceSessionController has wired up its slot — a prewarmed
+    /// spare is built before it has one — and re-binds once it has, since the
+    /// key window's slot it fell back to may be another window's.
+    private func bindSpaceTintToSlot() {
+        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
+        guard slot !== spaceTintSlot || spaceTintCancellable == nil else { return }
+        spaceTintSlot = slot
+        spaceTintCancellable = slot?.$activeSpaceId
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
+    }
+    private weak var spaceTintSlot: SpaceWindowSlot?
+    private var spaceTintCancellable: AnyCancellable?
+
     func bindSpaceStripToSession() {
+        bindSpaceTintToSlot()
         guard state.participatesInSpaces, spacesStripHostingView == nil,
               let slot = spacesStripSlot else { return }
         let wheelTracker = SpacesStripWheelTracker()
@@ -473,7 +496,9 @@ class SidebarViewController: NSViewController {
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        setHoverControlsVisible(false)
+        // A concealed Space's sidebar keeps its hover state for its next reveal.
+        guard view.window == nil else { return }
+        setHoverControlsVisible(false, animated: false)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -489,21 +514,30 @@ class SidebarViewController: NSViewController {
             super.mouseExited(with: event)
             return
         }
+        // A Space switch swapping sessions under a still pointer sends the
+        // leaving sidebar an exit; keep its controls for its next reveal.
+        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside else { return }
         setHoverControlsVisible(false)
     }
 
-    private func setHoverControlsVisible(_ visible: Bool) {
-        headerView.setAddressBarButtonsVisible(visible)
+    private func setHoverControlsVisible(_ visible: Bool, animated: Bool = true) {
+        headerView.setAddressBarButtonsVisible(visible, animated: animated)
         tabList.setCleanupButtonsVisible(visible)
     }
 
+    /// Snaps rather than fades: a sidebar coming on screen (a Space switch
+    /// reveals the entering session's sidebar under the pointer) must show
+    /// its controls as they already were, not fade them in from nothing.
     private func updateHoverControlsForCurrentMouseLocation() {
-        guard let window = view.window, !view.isHiddenOrHasHiddenAncestor else {
-            setHoverControlsVisible(false)
-            return
-        }
+        // A concealed session's sidebar keeps its state until it shows again.
+        guard !view.isHiddenOrHasHiddenAncestor else { return }
+        setHoverControlsVisible(isPointerInside, animated: false)
+    }
+
+    private var isPointerInside: Bool {
+        guard let window = view.window else { return false }
         let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setHoverControlsVisible(view.visibleRect.contains(point))
+        return view.visibleRect.contains(point)
     }
 
     /// Binds the bottom bar's download button to the downloads manager exactly
@@ -825,13 +859,7 @@ class SidebarViewController: NSViewController {
             }
             .store(in: &cancellables)
 
-        // Mirror the SpacesStripView fallback chain so the gradient still
-        // resolves before SpaceSessionController has wired up its slot.
-        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
-        slot?.$activeSpaceId
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
-            .store(in: &cancellables)
+        bindSpaceTintToSlot()
 
         SpaceManager.shared.$spaces
             .receive(on: DispatchQueue.main)
@@ -1579,6 +1607,7 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     // The Spaces switch lives in the header (with its own scroll animation),
     // so the push-in band is just the pinned strip and the tab list.
     var spaceSwitchBandViews: [NSView] { [pinnedTabContainerView, tabList.view] }
+    var spaceSwitchPinnedStrip: NSView { pinnedTabContainerView }
     var spaceSwitchBandContainer: NSView { mainStackView }
 
     func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {

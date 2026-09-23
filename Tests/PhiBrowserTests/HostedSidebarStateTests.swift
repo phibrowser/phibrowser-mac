@@ -647,6 +647,108 @@ final class HostedSidebarStateTests: XCTestCase {
         }
     }
 
+    func testEnteringSideIsHeldAtItsStartUntilMotionBegins() throws {
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: UUID().uuidString)
+        let next = makeSession(in: slot, spaceId: UUID().uuidString)
+        for (index, session) in [first, next].enumerated() {
+            session.browserState.tabs = [Tab(guid: 9100 + index, url: "https://example.test",
+                isActive: true, index: 0, title: "Space \(index)")]
+            session.browserState.updateNormalTabs()
+        }
+        let split = try XCTUnwrap(slot.shell?.split)
+        first.hostSidebarViewInShell()
+        next.hostSidebarViewInShell()
+        first.presentInShell(completing: false, deferringChromium: true)
+        split.setSidebarGeometry(width: 240, collapsed: false)
+        split.view.layoutSubtreeIfNeeded()
+        let source = first.mainSplitViewController.sidebarViewController
+        source.view.layoutSubtreeIfNeeded()
+        let slide = SpaceWindowSlot.HostedBandSlide(slot: slot, leaving: first, enteringSpaceId: next.spaceId,
+            root: split.sidebarHost.view,
+            bandFrame: source.spaceSwitchBandFrame,
+            leavingBandViews: source.spaceSwitchBandViews,
+            leavingBandContainer: source.spaceSwitchBandContainer,
+            direction: .forward, duration: 0.25, restoreLeavingTheme: {})
+        slide.start()
+        next.presentInShell(installingView: false, completing: false, deferringChromium: true)
+        slide.attachEntering(next)
+        // The attach commits a frame one turn before the motion is added:
+        // that frame must not show the entering band at rest over the
+        // leaving one, nor the entering page at full opacity.
+        let travel = source.spaceSwitchBandFrame.width - 8
+        let bandViews = next.mainSplitViewController.sidebarViewController.spaceSwitchBandViews
+        for view in bandViews {
+            let layer = try XCTUnwrap(view.layer)
+            XCTAssertNil(layer.animation(forKey: "phi.hostedBandSlide"))
+            XCTAssertEqual(layer.transform.m41, travel, accuracy: 0.5)
+            // AppKit can put the transform back when it syncs layer
+            // geometry; the band is also kept transparent until then.
+            XCTAssertEqual(view.alphaValue, 0)
+        }
+        let page = try XCTUnwrap(next.mainSplitViewController.view.layer)
+        XCTAssertEqual(page.opacity, 0)
+        // Settled before the motion started: nothing may stay held.
+        slide.settle()
+        for view in bandViews {
+            XCTAssertTrue(CATransform3DIsIdentity(try XCTUnwrap(view.layer).transform))
+            XCTAssertEqual(view.alphaValue, 1)
+        }
+        XCTAssertEqual(page.opacity, 1)
+    }
+
+    func testSharedPinnedStripStaysPutWhileTheListSlides() async throws {
+        for shared in [true, false] {
+            let slot = makeSlot()
+            let first = makeSession(in: slot, spaceId: UUID().uuidString)
+            let next = makeSession(in: slot, spaceId: UUID().uuidString)
+            for (index, session) in [first, next].enumerated() {
+                session.browserState.tabs = [Tab(guid: 9200 + index, url: "https://example.test",
+                    isActive: true, index: 0, title: "Space \(index)")]
+                session.browserState.updateNormalTabs()
+                // Same physical row in both Spaces = one shared collection.
+                let row = shared ? "pinned-row" : "pinned-row-\(index)"
+                session.browserState.pinnedTabs = [Tab(guid: 9300 + index, url: "https://pinned.test",
+                    isActive: false, index: 0, title: "Pinned", customGuid: row)]
+            }
+            let split = try XCTUnwrap(slot.shell?.split)
+            first.hostSidebarViewInShell()
+            next.hostSidebarViewInShell()
+            first.presentInShell(completing: false, deferringChromium: true)
+            split.setSidebarGeometry(width: 240, collapsed: false)
+            split.view.layoutSubtreeIfNeeded()
+            let source = first.mainSplitViewController.sidebarViewController
+            let target = next.mainSplitViewController.sidebarViewController
+            source.view.layoutSubtreeIfNeeded()
+            target.view.layoutSubtreeIfNeeded()
+            let slide = SpaceWindowSlot.HostedBandSlide(slot: slot, leaving: first, enteringSpaceId: next.spaceId,
+                root: split.sidebarHost.view,
+                bandFrame: source.spaceSwitchBandFrame,
+                leavingBandViews: source.spaceSwitchBandViews,
+                leavingBandContainer: source.spaceSwitchBandContainer,
+                leavingPinnedStrip: source.spaceSwitchPinnedStrip,
+                direction: .forward, duration: 0.25, restoreLeavingTheme: {})
+            slide.start()
+            next.presentInShell(installingView: false, completing: false, deferringChromium: true)
+            slide.attachEntering(next)
+            await drainPresentationUpdates()
+            let key = "phi.hostedBandSlide"
+            let leavingPinned = try XCTUnwrap(source.spaceSwitchPinnedStrip.layer)
+            let enteringPinned = target.spaceSwitchPinnedStrip
+            XCTAssertNotNil(source.spaceSwitchBandViews.last?.layer?.animation(forKey: key),
+                            "The tab list slides either way (shared=\(shared))")
+            XCTAssertEqual(leavingPinned.animation(forKey: key) == nil, shared,
+                           "Only a pinned strip of its own slides out (shared=\(shared))")
+            XCTAssertEqual(enteringPinned.layer?.animation(forKey: key) == nil, shared,
+                           "Only a pinned strip of its own slides in (shared=\(shared))")
+            if shared {
+                XCTAssertEqual(enteringPinned.alphaValue, 0, "The entering copy waits for the landing")
+            }
+            slide.settle()
+            XCTAssertEqual(enteringPinned.alphaValue, 1)
+        }
+    }
+
     func testPageResidencyPreservesAttachmentAndHidesBeforeEviction() throws {
         final class VisibilityProbe: NSView {
             var windowMoves = 0

@@ -30,6 +30,11 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// band) are skipped by the band-frame union.
     var spaceSwitchBandViews: [NSView] { get }
 
+    /// The pinned-tab strip among `spaceSwitchBandViews`. It stays put
+    /// through a switch between two Spaces that show the same pinned
+    /// collection (`SpaceWindowSlot.HostedBandSlide`).
+    var spaceSwitchPinnedStrip: NSView { get }
+
     /// The stack hosting the band. Snapshots render from it — so the themed
     /// backdrop painted behind it is NOT captured and shows through the
     /// slide — and the edge bounce clips to it.

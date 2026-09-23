@@ -99,20 +99,31 @@ async function main() {
   await sweepLeftovers()
 
   // --- Spaces: create / list / update -----------------------------------------
-  const created = await H.createSpace(SPACE_NAME, { colorHex: '#FF5733' })
+  const created = await H.createSpace(SPACE_NAME, { themeId: 'coral' })
   const spaceId = created.spaceId
   let listed = (await H.listSpaces()).find((s) => s.spaceId === spaceId)
   check('createSpace appears in listSpaces', !!listed, spaceId)
-  check('createSpace applies name and color',
-        listed?.name === SPACE_NAME && listed?.colorHex === '#FF5733',
-        `${listed?.name} ${listed?.colorHex}`)
+  check('createSpace applies name and theme',
+        listed?.name === SPACE_NAME && listed?.themeId === 'coral',
+        `${listed?.name} ${listed?.themeId}`)
   check('createSpace binds a profile', !!created.profileId, created.profileId)
 
-  await H.updateSpace(spaceId, { name: `${SPACE_NAME} 2`, colorHex: '#3A6FF8' })
+  // A hex snaps to the nearest built-in theme — the pinned theme is what the
+  // window shows, so that is what must change.
+  const respaced = await H.updateSpace(spaceId, { name: `${SPACE_NAME} 2`, colorHex: '#3A6FF8',
+                                                  iconName: 'mail' })
   listed = (await H.listSpaces()).find((s) => s.spaceId === spaceId)
-  check('updateSpace renames and recolors',
-        listed?.name === `${SPACE_NAME} 2` && listed?.colorHex === '#3A6FF8',
-        `${listed?.name} ${listed?.colorHex}`)
+  check('updateSpace renames, rethemes and re-icons',
+        listed?.name === `${SPACE_NAME} 2` && listed?.themeId === respaced.themeId &&
+        respaced.themeId !== 'coral' && listed?.iconName === 'phi:phi-icon-mail',
+        `${listed?.name} ${listed?.themeId} ${listed?.iconName}`)
+
+  let err0 = await threw(() => H.updateSpace(spaceId, { iconName: 'not-an-icon' }))
+  check('updateSpace rejects an unknown icon', /invalid_icon/.test(String(err0?.message)),
+        String(err0?.message).slice(0, 60))
+  err0 = await threw(() => H.updateSpace(spaceId, { themeId: 'no-such-theme' }))
+  check('updateSpace rejects an unknown theme', /unknown_theme/.test(String(err0?.message)),
+        String(err0?.message).slice(0, 60))
 
   // --- Profiles: refusal paths only (creation would be permanent residue) -----
   const profiles = await H.listProfiles()

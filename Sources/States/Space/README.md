@@ -72,7 +72,9 @@ presented Space's floating tree stays mounted and is realized off screen when
 the column collapses, before the hover trigger enables. Each hosted session keeps its floating content mounted, hidden
 while another Space is presented, just like its docked content. Content is
 evicted only when the session leaves the shell. The same `HostedBandSlide` animates the
-pinned/tab band in the docked and floating surfaces; it retains outgoing floating
+pinned/tab band in the docked and floating surfaces (when both Spaces show one shared
+pinned collection — the same pinned rows, per the Pinned Tab Scope — only the tab list
+slides: the leaving pinned strip stays put and the entering one takes over at landing); it retains outgoing floating
 content until landing and holds pointer-driven dismissal during the transition.
 Both modes retain their band backing layers between switches. Live targets
 reconcile pending native row changes before motion. A dormant target with a

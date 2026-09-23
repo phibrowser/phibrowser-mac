@@ -309,12 +309,12 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
         XCTAssertFalse(try zipEntryExists("PhiLogs/old.log", in: primaryZipURL))
 
         let sentinelZipURL = jobRoot.appendingPathComponent(attachments[1].relativePath)
-        XCTAssertEqual(try zipEntryText("SentinelLogs/boot.log.1", in: sentinelZipURL), "latest boot")
-        XCTAssertEqual(try zipEntryText("SentinelLogs/runner.log", in: sentinelZipURL), "latest runner")
-        XCTAssertEqual(try zipEntryText("SentinelLogs/ai-gateway.log", in: sentinelZipURL), "latest gateway")
-        XCTAssertFalse(try zipEntryExists("SentinelLogs/boot.log", in: sentinelZipURL))
-        XCTAssertFalse(try zipEntryExists("SentinelLogs/runner.log.1", in: sentinelZipURL))
-        XCTAssertFalse(try zipEntryExists("SentinelLogs/extra.log", in: sentinelZipURL))
+        XCTAssertEqual(try zipEntryText("main/boot.log", in: sentinelZipURL), "old boot")
+        XCTAssertEqual(try zipEntryText("main/runner.log", in: sentinelZipURL), "latest runner")
+        XCTAssertEqual(try zipEntryText("main/ai-gateway.log", in: sentinelZipURL), "latest gateway")
+        XCTAssertFalse(try zipEntryExists("main/boot.log.1", in: sentinelZipURL))
+        XCTAssertFalse(try zipEntryExists("main/runner.log.1", in: sentinelZipURL))
+        XCTAssertFalse(try zipEntryExists("main/extra.log", in: sentinelZipURL))
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: oldPhiURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: currentPhiURL.path))
@@ -326,7 +326,7 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: ignoredURL.path))
     }
 
-    func testPrepareLogZipAttachmentsSkipsZipOverActualSizeLimit() throws {
+    func testPrepareLogZipAttachmentsBoundsLargePrimaryLogInsteadOfDroppingIt() throws {
         let jobRoot = try makeJobDirectory()
         let preparedDir = try makePreparedDirectory(in: jobRoot)
         let phiLogsURL = root.appendingPathComponent("PhiLogs", isDirectory: true)
@@ -346,8 +346,8 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
             sentinelLogsURL: sentinelLogsURL
         )
 
-        XCTAssertEqual(attachments.map(\.filename), ["sentinel-logs.zip"])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: preparedDir.appendingPathComponent("logs.zip").path))
+        XCTAssertEqual(attachments.map(\.filename), ["logs.zip", "sentinel-logs.zip"])
+        XCTAssertTrue(attachments.allSatisfy { $0.size <= FeedbackOutbox.maxAttachmentBytes })
         XCTAssertTrue(FileManager.default.fileExists(atPath: jobRoot.appendingPathComponent(attachments[0].relativePath).path))
     }
 
@@ -544,30 +544,22 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
 
         XCTAssertEqual(attachments.map(\.filename), ["others.zip"])
         XCTAssertEqual(attachments[0].attachmentType, .other)
-        XCTAssertFalse(attachments[0].required)
+        XCTAssertTrue(attachments[0].required)
         XCTAssertFalse(FileManager.default.fileExists(atPath: preparedDir.appendingPathComponent("feedback-files-1.zip").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: preparedDir.appendingPathComponent("feedback-files-2.zip").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: jobRoot.appendingPathComponent(attachments[0].relativePath).path))
     }
 
-    func testAttachmentsWithinSubmitLimitTrimsOptionalAttachments() throws {
-        let required = (0..<4).map { index in
-            uploadAttachment(filename: "required-\(index).zip", required: true)
-        }
-        let optional = (0..<3).map { index in
-            uploadAttachment(filename: "optional-\(index).zip", required: false)
-        }
-
-        let attachments = try FeedbackOutbox.attachmentsWithinSubmitLimit(required: required, optional: optional)
-
-        XCTAssertEqual(attachments.count, FeedbackOutbox.maxSubmitAttachments)
-        XCTAssertEqual(attachments.map(\.filename), [
-            "required-0.zip",
-            "required-1.zip",
-            "required-2.zip",
-            "required-3.zip",
-            "optional-0.zip"
-        ])
+    func testAttachmentsWithinSubmitLimitKeepsTenAndDropsOverflow() throws {
+        let attachments = (0..<10).map { uploadAttachment(filename: "file-\($0).zip", required: true) }
+        XCTAssertEqual(try FeedbackOutbox.attachmentsWithinSubmitLimit(required: attachments, optional: []).count, 10)
+        let kept = try FeedbackOutbox.attachmentsWithinSubmitLimit(
+            required: attachments, optional: [uploadAttachment(filename: "extra.zip", required: false)]
+        )
+        XCTAssertEqual(kept.map(\.filename), attachments.map(\.filename))
+        XCTAssertEqual(try FeedbackOutbox.attachmentsWithinSubmitLimit(
+            required: attachments + [uploadAttachment(filename: "extra-required.zip", required: true)], optional: []
+        ).count, 10)
     }
 
     func testOptionalZipOverLimitIsSkippedAfterActualZipSizeCheck() throws {
@@ -594,7 +586,7 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: preparedDir.appendingPathComponent("feedback-files-1.zip").path))
     }
 
-    func testRequiredZipOverLimitIsSkippedAfterActualZipSizeCheck() throws {
+    func testRequiredZipOverLimitIsSkippedAfterActualSizeCheck() throws {
         let preparedDir = try makePreparedDirectory()
         let data = try randomData(byteCount: Int(FeedbackOutbox.maxAttachmentBytes + 1024 * 1024))
         let item = ArchiveItem(
@@ -613,9 +605,404 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
             attachmentType: .screenshot,
             required: true
         )
-
         XCTAssertTrue(attachments.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: preparedDir.appendingPathComponent("required-files-1.zip").path))
+    }
+
+    func testSentinelCollectorUsesServiceFoldersAndOnlyCurrentStreams() throws {
+        let main = root.appendingPathComponent("main")
+        let services = root.appendingPathComponent("account/state/logs")
+        try writeFixture("boot", at: main.appendingPathComponent("boot.log"))
+        try writeFixture("do not collect", at: main.appendingPathComponent("boot.log.1"))
+        try writeFixture("process", at: main.appendingPathComponent("ai-gateway-process.log"))
+        for component in ["custom.component", "system.service-broker", "system.ai-gateway", "privacy-guard"] {
+            try writeFixture("out-\(component)", at: services.appendingPathComponent("\(component)/stdout.log"))
+            try writeFixture("err-\(component)", at: services.appendingPathComponent("\(component)/stderr.log"))
+            try writeFixture("old", at: services.appendingPathComponent("\(component)/stderr.log.1"))
+        }
+        try writeFixture("audit", at: services.appendingPathComponent("runner/ipc-audit.log"))
+        try writeFixture("model", at: services.appendingPathComponent("llm/model-id.log"))
+        try writeFixture("old model", at: services.appendingPathComponent("llm/model-id.log.1"))
+        try writeFixture("secret", at: services.appendingPathComponent("custom.component/config.json"))
+        let job = try makeJobDirectory()
+        let files = try FeedbackSentinelLogCollector.collect(mainLogsURL: main, serviceLogsURL: services, jobRoot: job)
+        for component in ["custom.component", "system.service-broker", "system.ai-gateway", "privacy-guard"] {
+            XCTAssertEqual(try snapshotText("services/\(component)/stdout.log", files: files, job: job), "out-\(component)")
+            XCTAssertEqual(try snapshotText("services/\(component)/stderr.log", files: files, job: job), "err-\(component)")
+        }
+        XCTAssertEqual(try snapshotText("main/boot.log", files: files, job: job), "boot")
+        XCTAssertEqual(try snapshotText("main/ai-gateway-process.log", files: files, job: job), "process")
+        XCTAssertEqual(try snapshotText("audit/runner/ipc-audit.log", files: files, job: job), "audit")
+        XCTAssertEqual(try snapshotText("services/llm/model-id.log", files: files, job: job), "model")
+        XCTAssertFalse(files.contains { $0.archivePath.hasSuffix(".1") || $0.archivePath.hasSuffix(".json") })
+        XCTAssertNil(files.first { $0.archivePath == "main/runner.log" }?.relativePath)
+    }
+
+    func testSentinelMissingCurrentFileNeverFallsBackToRotation() throws {
+        let main = root.appendingPathComponent("main")
+        try writeFixture("old runner", at: main.appendingPathComponent("runner.log.1"))
+        let files = try FeedbackSentinelLogCollector.collect(mainLogsURL: main, serviceLogsURL: nil, jobRoot: makeJobDirectory())
+        let runner = try XCTUnwrap(files.first { $0.archivePath == "main/runner.log" })
+        XCTAssertNil(runner.relativePath)
+        XCTAssertTrue(runner.status.hasPrefix("unavailable"))
+    }
+
+    func testSentinelCollectorRejectsSymlinkFilesAndDirectories() throws {
+        let main = root.appendingPathComponent("main")
+        let services = root.appendingPathComponent("services")
+        let outside = root.appendingPathComponent("outside")
+        try writeFixture("must stay private", at: outside.appendingPathComponent("stdout.log"))
+        try FileManager.default.createDirectory(at: main, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: services, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: main.appendingPathComponent("boot.log"), withDestinationURL: outside.appendingPathComponent("stdout.log"))
+        try FileManager.default.createSymbolicLink(at: services.appendingPathComponent("linked-service"), withDestinationURL: outside)
+        let files = try FeedbackSentinelLogCollector.collect(mainLogsURL: main, serviceLogsURL: services, jobRoot: makeJobDirectory())
+        XCTAssertFalse(files.contains { $0.relativePath != nil })
+        XCTAssertFalse(files.contains { $0.archivePath.contains("linked-service") })
+        // Also reject a symlink in the root's parent hierarchy.
+        let linkedRoot = root.appendingPathComponent("linked-root")
+        try FileManager.default.createSymbolicLink(at: linkedRoot, withDestinationURL: root)
+        let linkedFiles = try FeedbackSentinelLogCollector.collect(
+            mainLogsURL: linkedRoot.appendingPathComponent("main"), serviceLogsURL: nil, jobRoot: makeJobDirectory()
+        )
+        XCTAssertFalse(linkedFiles.contains { $0.relativePath != nil })
+    }
+
+    func testSentinelCollectorBoundsHugeUnrotatedLogToFiveMiBTail() throws {
+        let services = root.appendingPathComponent("services")
+        let log = services.appendingPathComponent("llm/large-model.log")
+        try writeFixture("old", at: log)
+        let handle = try FileHandle(forWritingTo: log)
+        let hugeSize: UInt64 = 8 * 1024 * 1024 * 1024
+        try handle.truncate(atOffset: hugeSize)
+        let expected = Data(repeating: 0x78, count: Int(FeedbackSentinelLogCollector.perStreamBytes))
+        try handle.seek(toOffset: hugeSize - UInt64(expected.count))
+        try handle.write(contentsOf: expected)
+        try handle.close()
+        let job = try makeJobDirectory()
+        let files = try FeedbackSentinelLogCollector.collect(
+            mainLogsURL: root.appendingPathComponent("missing"), serviceLogsURL: services, jobRoot: job
+        )
+        let record = try XCTUnwrap(files.first { $0.archivePath == "services/llm/large-model.log" })
+        XCTAssertEqual(record.originalBytes, Int64(hugeSize))
+        XCTAssertEqual(record.collectedBytes, 5 * 1024 * 1024)
+        XCTAssertEqual(record.offset, Int64(hugeSize) - record.collectedBytes)
+        XCTAssertTrue(record.truncated)
+        XCTAssertEqual(try Data(contentsOf: job.appendingPathComponent(XCTUnwrap(record.relativePath))), expected)
+    }
+
+    func testSentinelTailAlignsToNewlineWithoutReadingHistory() throws {
+        let main = root.appendingPathComponent("main")
+        try writeFixture("discarded\nkeep\n", at: main.appendingPathComponent("boot.log"))
+        let job = try makeJobDirectory()
+        let files = try FeedbackSentinelLogCollector.collect(
+            mainLogsURL: main, serviceLogsURL: nil, jobRoot: job, perStreamLimit: 8, totalLimit: 8
+        )
+        XCTAssertEqual(try snapshotText("main/boot.log", files: files, job: job), "keep\n")
+        let boot = try XCTUnwrap(files.first { $0.archivePath == "main/boot.log" })
+        XCTAssertEqual(boot.offset, 10)
+        XCTAssertTrue(boot.truncated)
+    }
+
+    func testFairBudgetRedistributesShortStreamsAndDoesNotStarveLaterServices() {
+        XCTAssertEqual(FeedbackSentinelLogCollector.fairBudgets(sizes: [0, 1, 8, 8], total: 10), [0, 1, 4, 5])
+        XCTAssertEqual(FeedbackSentinelLogCollector.fairBudgets(sizes: [8, 1, 0, 8], total: 10), [4, 1, 0, 5])
+        XCTAssertEqual(FeedbackSentinelLogCollector.fairBudgets(sizes: [2, 3], total: 10), [2, 3])
+        XCTAssertEqual(FeedbackSentinelLogCollector.fairBudgets(sizes: [2, 3], total: 0), [0, 0])
+        XCTAssertEqual(FeedbackSentinelLogCollector.fairBudgets(sizes: [], total: 10), [])
+    }
+
+    func testIncompressibleLogsReserveFiveUserSlotsAndDropExcessFiles() throws {
+        let services = root.appendingPathComponent("services")
+        let random = try randomData(byteCount: 5 * 1024 * 1024)
+        for index in 0..<7 {
+            for stream in ["stdout.log", "stderr.log"] {
+                let url = services.appendingPathComponent("component-\(index)/\(stream)")
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try random.write(to: url)
+            }
+        }
+        let job = try makeJobDirectory()
+        let snapshot = try FeedbackOutbox.captureLogSnapshot(
+            jobRoot: job, chromiumSystemLogs: nil,
+            phiLogsURL: root.appendingPathComponent("missing-phi"),
+            sentinelLogsURL: root.appendingPathComponent("missing-main"), sentinelServiceLogsURL: services
+        )
+        let streams = snapshot.sentinel.filter { $0.relativePath != nil }
+        XCTAssertEqual(streams.count, 14)
+        let total = streams.reduce(Int64(0)) { $0 + $1.collectedBytes }
+        XCTAssertLessThanOrEqual(total, 64 * 1024 * 1024)
+        XCTAssertGreaterThan(total, 63 * 1024 * 1024)
+        XCTAssertTrue(streams.allSatisfy { $0.collectedBytes > 4 * 1024 * 1024 && $0.truncated })
+        var manifest = testManifest(snapshot: snapshot)
+        manifest.sourceImages = try (0..<5).map { index in
+            try writeFixture("image-\(index)", at: job.appendingPathComponent("images/\(index).png"))
+            return .init(relativePath: "images/\(index).png", filename: "\(index).png", mimeType: "image/png", size: 7)
+        }
+        let attachments = try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest)
+        XCTAssertEqual(attachments.count, 10)
+        XCTAssertEqual(attachments.filter { $0.attachmentType == .log }.count, 5)
+        XCTAssertEqual(attachments.filter { $0.attachmentType == .screenshot }.count, 5)
+        XCTAssertTrue(attachments.allSatisfy { $0.size <= 20 * 1024 * 1024 && $0.required })
+        let sentinelZIPs = attachments.filter { $0.filename.hasPrefix("sentinel-") }
+        var archivedPaths = Set<String>()
+        for attachment in sentinelZIPs {
+            let zip = job.appendingPathComponent(attachment.relativePath)
+            archivedPaths.formUnion(try zipEntries(in: zip))
+            let report = try zipEntryText("collection-manifest.json", in: zip)
+            XCTAssertFalse(report.contains(services.path))
+            XCTAssertTrue(report.contains("truncated"))
+        }
+        for record in streams { XCTAssertTrue(archivedPaths.contains(record.archivePath)) }
+        // Keep the file archives that fit the five remaining slots, dropping
+        // excess archives without rejecting the feedback.
+        let source = try XCTUnwrap(streams.first)
+        manifest.sourceImages = []
+        manifest.sourceFiles = (0..<21).map { index in
+            .init(relativePath: source.relativePath!, filename: "selected-\(index).bin", mimeType: "application/octet-stream", size: source.collectedBytes)
+        }
+        let trimmed = try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest)
+        XCTAssertEqual(trimmed.count, 10)
+        XCTAssertEqual(trimmed.filter { $0.attachmentType == .log }.count, 5)
+        XCTAssertEqual(trimmed.filter { $0.attachmentType == .other }.count, 5)
+        XCTAssertTrue(trimmed.allSatisfy { $0.size <= FeedbackOutbox.maxAttachmentBytes })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: job.appendingPathComponent("prepared/others-6.zip").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: job.appendingPathComponent(source.relativePath!).path))
+    }
+
+    func testPreparedSnapshotSurvivesRotationDeletionAndManifestRoundTrip() throws {
+        let main = root.appendingPathComponent("main")
+        let services = root.appendingPathComponent("services")
+        try writeFixture("submission boot", at: main.appendingPathComponent("boot.log"))
+        try writeFixture("submission error", at: services.appendingPathComponent("component/stderr.log"))
+        let job = try makeJobDirectory()
+        let snapshot = try FeedbackOutbox.captureLogSnapshot(
+            jobRoot: job, chromiumSystemLogs: nil, phiLogsURL: root.appendingPathComponent("missing"),
+            sentinelLogsURL: main, sentinelServiceLogsURL: services
+        )
+        try FileManager.default.removeItem(at: services)
+        try FileManager.default.moveItem(at: main.appendingPathComponent("boot.log"), to: main.appendingPathComponent("boot.log.1"))
+        try writeFixture("later session", at: main.appendingPathComponent("boot.log"))
+        let manifest = try JSONDecoder().decode(FeedbackOutboxManifest.self, from: JSONEncoder().encode(testManifest(snapshot: snapshot)))
+        for _ in 0..<2 {
+            let attachments = try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest)
+            let sentinel = try XCTUnwrap(attachments.first { $0.filename == "sentinel-logs.zip" })
+            let zip = job.appendingPathComponent(sentinel.relativePath)
+            XCTAssertEqual(try zipEntryText("main/boot.log", in: zip), "submission boot")
+            XCTAssertEqual(try zipEntryText("services/component/stderr.log", in: zip), "submission error")
+            try FileManager.default.removeItem(at: job.appendingPathComponent("prepared"))
+        }
+        let saved = try XCTUnwrap(snapshot.sentinel.first { $0.archivePath == "main/boot.log" }?.relativePath)
+        try FileManager.default.removeItem(at: job.appendingPathComponent(saved))
+        XCTAssertThrowsError(try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest))
+    }
+
+    func testUnusedLogSlotsReturnToUsersAndOrdinaryFilesAreRequired() throws {
+        let job = try makeJobDirectory()
+        let snapshot = try FeedbackOutbox.captureLogSnapshot(
+            jobRoot: job, chromiumSystemLogs: nil, phiLogsURL: root.appendingPathComponent("missing"),
+            sentinelLogsURL: root.appendingPathComponent("missing"), sentinelServiceLogsURL: nil
+        )
+        var manifest = testManifest(snapshot: snapshot)
+        manifest.sourceImages = try (0..<7).map { index in
+            try writeFixture("image", at: job.appendingPathComponent("images/\(index).png"))
+            return .init(relativePath: "images/\(index).png", filename: "\(index).png", mimeType: "image/png", size: 5)
+        }
+        try writeFixture("file", at: job.appendingPathComponent("files/selected.txt"))
+        manifest.sourceFiles = [.init(relativePath: "files/selected.txt", filename: "selected.txt", mimeType: "text/plain", size: 4)]
+        let attachments = try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest)
+        XCTAssertEqual(attachments.count, 10)
+        XCTAssertEqual(attachments.filter { $0.attachmentType == .screenshot }.count, 7)
+        XCTAssertTrue(attachments.allSatisfy(\.required))
+        let files = try XCTUnwrap(attachments.first { $0.filename == "others.zip" })
+        XCTAssertEqual(try zipEntryText("selected.txt", in: job.appendingPathComponent(files.relativePath)), "file")
+    }
+
+    func testLegacyManifestDoesNotCollectLiveLogsWhenReprepared() throws {
+        let job = try makeJobDirectory()
+        let original = testManifest(snapshot: nil)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        object.removeValue(forKey: "logSnapshot")
+        let manifest = try JSONDecoder().decode(FeedbackOutboxManifest.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(manifest.logSnapshot)
+        XCTAssertTrue(try FeedbackOutbox.prepareAttachments(jobRoot: job, manifest: manifest).isEmpty)
+    }
+
+    func testPrepareJobValidatesBeforePublishingAndCleansUpRejectedJob() throws {
+        let attachment = root.appendingPathComponent("too-large.bin")
+        FileManager.default.createFile(atPath: attachment.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: attachment)
+        try handle.truncate(atOffset: UInt64(FeedbackOutbox.maxSelectedAttachmentBytes + 1))
+        try handle.close()
+        let draft = FeedbackDraft(
+            description: "Keep this draft", pageURL: "", pageTitle: nil, contactEmail: nil, components: [],
+            chromiumSystemLogsText: nil,
+            attachments: [.init(filename: "too-large.bin", size: FeedbackOutbox.maxSelectedAttachmentBytes + 1, kind: .file, source: .file(attachment))]
+        )
+        let job = root.appendingPathComponent("rejected-job")
+        XCTAssertThrowsError(try FeedbackOutbox.prepareJob(
+            draft, jobRoot: job, metadata: testManifest(snapshot: nil).metadata,
+            phiLogsURL: root.appendingPathComponent("missing"), sentinelLogsURL: root.appendingPathComponent("missing"), sentinelServiceLogsURL: nil
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: job.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: attachment.path))
+        XCTAssertEqual(draft.description, "Keep this draft")
+    }
+
+    func testSentinelServiceLogPathSeparatesChannelsAndSanitizesAccount() throws {
+        for (browser, sentinel) in [
+            ("com.phibrowser.Mac", "com.phibrowser.Sentinel"),
+            ("com.phibrowser.canary.Mac", "com.phibrowser.canary.Sentinel"),
+            ("com.phibrowser.dev.Mac", "com.phibrowser.dev.Sentinel")
+        ] {
+            let url = try XCTUnwrap(SentinelHelper.sentinelServiceLogsDirectoryURL(
+                auth0Subject: "auth0|abc", browserBundleIdentifier: browser, applicationSupportURL: root
+            ))
+            XCTAssertEqual(url.path, root.appendingPathComponent("\(sentinel)/auth0_abc/state/logs").path)
+        }
+        XCTAssertNil(SentinelHelper.sentinelServiceLogsDirectoryURL(auth0Subject: ""))
+        XCTAssertTrue(try XCTUnwrap(SentinelHelper.sentinelServiceLogsDirectoryURL(auth0Subject: "..")).path.hasSuffix("/_/state/logs"))
+    }
+
+    @MainActor
+    func testSubmittingDraftRejectsLateAttachmentEvents() throws {
+        let file = root.appendingPathComponent("selected.txt")
+        try writeFixture("selected", at: file)
+        let model = FeedbackViewModel()
+        model.addFileURLs([file])
+        let id = try XCTUnwrap(model.attachments.first?.id)
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        image.lockFocus()
+        NSColor.red.setFill()
+        NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+        image.unlockFocus()
+        model.isSubmitting = true
+        model.addFileURLs([file])
+        model.addPastedImage(image)
+        model.removeAttachment(id: id)
+        XCTAssertEqual(model.attachments.count, 1)
+        XCTAssertEqual(model.attachments.first?.id, id)
+        model.isSubmitting = false
+        model.addPastedImage(image)
+        XCTAssertEqual(model.attachments.count, 2)
+    }
+
+    func testPreparedJobContainsValidatedArchivesButIsNotPublishedEarly() throws {
+        let main = root.appendingPathComponent("main")
+        let services = root.appendingPathComponent("services")
+        try writeFixture("out", at: services.appendingPathComponent("component/stdout.log"))
+        try writeFixture("", at: services.appendingPathComponent("component/stderr.log"))
+        let selected = root.appendingPathComponent("selected.txt")
+        try writeFixture("user file", at: selected)
+        let draft = FeedbackDraft(
+            description: "Report", pageURL: "", pageTitle: nil, contactEmail: nil, components: [],
+            chromiumSystemLogsText: "system logs", attachments: [
+                .init(filename: "selected.txt", size: 9, kind: .file, source: .file(selected))
+            ]
+        )
+        let job = root.appendingPathComponent("prepared-job")
+        let manifest = try FeedbackOutbox.prepareJob(
+            draft, jobRoot: job, metadata: testManifest(snapshot: nil).metadata,
+            phiLogsURL: root.appendingPathComponent("missing"), sentinelLogsURL: main, sentinelServiceLogsURL: services
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: job.appendingPathComponent("manifest.json").path))
+        XCTAssertEqual(manifest.preparedAttachments.count, 3)
+        XCTAssertTrue(manifest.preparedAttachments.allSatisfy { $0.required && $0.size <= FeedbackOutbox.maxAttachmentBytes })
+        let empty = try XCTUnwrap(manifest.logSnapshot?.sentinel.first { $0.archivePath == "services/component/stderr.log" })
+        XCTAssertEqual(empty.status, "empty")
+        XCTAssertEqual(empty.collectedBytes, 0)
+        let sentinel = try XCTUnwrap(manifest.preparedAttachments.first { $0.filename == "sentinel-logs.zip" })
+        XCTAssertTrue(try zipEntries(in: job.appendingPathComponent(sentinel.relativePath)).contains("services/component/stderr.log"))
+        let user = try XCTUnwrap(manifest.preparedAttachments.first { $0.filename == "others.zip" })
+        XCTAssertEqual(try zipEntryText("selected.txt", in: job.appendingPathComponent(user.relativePath)), "user file")
+    }
+
+    func testNoRemainingSlotsSkipsImagesAndFilesWithoutReadingSources() throws {
+        let job = try makeJobDirectory()
+        let prepared = try makePreparedDirectory(in: job)
+        let missing = FeedbackOutboxSourceAttachment(
+            relativePath: "missing", filename: "missing", mimeType: "application/octet-stream", size: 1
+        )
+        XCTAssertTrue(try FeedbackOutbox.prepareImageAttachments(
+            jobRoot: job, preparedDir: prepared, sources: [missing], preferredSlots: 0, maxSlots: 0
+        ).isEmpty)
+        XCTAssertTrue(try FeedbackOutbox.prepareUserFileAttachments(
+            jobRoot: job, preparedDir: prepared, sources: [missing], availableSlots: 0
+        ).isEmpty)
+    }
+
+    func testImageOverflowKeepsFirstArchiveAndRemovesExcessArchive() throws {
+        let job = try makeJobDirectory()
+        let prepared = try makePreparedDirectory(in: job)
+        let sources = try (1...2).map { index -> FeedbackOutboxSourceAttachment in
+            let filename = "image-\(index).png"
+            let data = try randomData(byteCount: 11 * 1024 * 1024)
+            try data.write(to: job.appendingPathComponent(filename))
+            return .init(relativePath: filename, filename: filename, mimeType: "image/png", size: Int64(data.count))
+        }
+        let attachments = try FeedbackOutbox.prepareImageAttachments(
+            jobRoot: job, preparedDir: prepared, sources: sources, preferredSlots: 1, maxSlots: 1
+        )
+        XCTAssertEqual(attachments.map(\.filename), ["images-1.zip"])
+        XCTAssertLessThanOrEqual(attachments[0].size, FeedbackOutbox.maxAttachmentBytes)
+        let entries = try zipEntries(in: job.appendingPathComponent(attachments[0].relativePath))
+        XCTAssertTrue(entries.contains("images/image-1.png"))
+        XCTAssertFalse(entries.contains("images/image-2.png"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: prepared.appendingPathComponent("images-2.zip").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: job.appendingPathComponent("image-2.png").path))
+    }
+
+    func testOversizedFileSourceIsSkippedWhileOtherFilesAreKept() throws {
+        let job = try makeJobDirectory()
+        let prepared = try makePreparedDirectory(in: job)
+        try writeFixture("keep", at: job.appendingPathComponent("small.txt"))
+        let attachments = try FeedbackOutbox.prepareUserFileAttachments(
+            jobRoot: job, preparedDir: prepared, sources: [
+                .init(relativePath: "oversized.bin", filename: "oversized.bin", mimeType: "application/octet-stream", size: FeedbackOutbox.maxAttachmentBytes + 1),
+                .init(relativePath: "small.txt", filename: "small.txt", mimeType: "text/plain", size: 4)
+            ], availableSlots: 1
+        )
+        XCTAssertEqual(attachments.count, 1)
+        let zip = job.appendingPathComponent(attachments[0].relativePath)
+        XCTAssertEqual(try zipEntryText("small.txt", in: zip), "keep")
+        XCTAssertFalse(try zipEntries(in: zip).contains("oversized.bin"))
+    }
+
+    private func writeFixture(_ text: String, at url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+
+    private func snapshotText(_ path: String, files: [FeedbackLogSnapshot.File], job: URL) throws -> String {
+        let file = try XCTUnwrap(files.first { $0.archivePath == path })
+        return try String(contentsOf: job.appendingPathComponent(XCTUnwrap(file.relativePath)), encoding: .utf8)
+    }
+
+    private func testManifest(snapshot: FeedbackLogSnapshot?) -> FeedbackOutboxManifest {
+        let metadata = FeedbackV2Metadata(
+            browser: .init(name: "Phi", version: "test", channel: nil, revision: nil, aiEnabled: nil, useNTP: nil),
+            page: nil, clientContext: .init(category: nil, userAgent: nil, locale: nil, traceID: nil), components: [], extra: [:]
+        )
+        return FeedbackOutboxManifest(
+            id: "test", createdAt: Date(), description: "Test report", contactEmail: nil, metadata: metadata,
+            sourceImages: [], sourceFiles: [], chromiumSystemLogs: nil, preparedAttachments: [],
+            archiveStrategyVersion: FeedbackOutbox.archiveStrategyVersion, status: .queued, retryCount: 0,
+            nextAttemptAt: nil, lastError: nil, logSnapshot: snapshot
+        )
+    }
+
+    private func zipEntries(in zipURL: URL) throws -> [String] {
+        let output = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-Z1", zipURL.path]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        return String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
     }
 
     private func makeJobDirectory() throws -> URL {
@@ -675,6 +1062,7 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
         process.standardOutput = output
         process.standardError = errorOutput
         try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
@@ -686,7 +1074,6 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
             )
         }
 
-        let data = output.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
     }
 
@@ -694,8 +1081,8 @@ final class FeedbackOutboxArchiveTests: XCTestCase {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         process.arguments = ["-p", zipURL.path, entry]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
         return process.terminationStatus == 0

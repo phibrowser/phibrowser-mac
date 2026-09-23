@@ -86,6 +86,11 @@ final class TabDraggingSession {
         let dropScreenLocation: CGPoint
         let sourceWindowNumber: Int?
         let requestedAt: Date
+        /// Windows that existed when the tear-off was requested. Hosted mode
+        /// posts `.mainBrowserWindowCreated` with an existing shell whenever
+        /// a background or dormant session of it registers, so only a window
+        /// not in this set is the torn-off tab's new one.
+        let preexistingWindows: Set<ObjectIdentifier>
     }
     private static let tearOffPlacementTimeout: TimeInterval = 4.0
     private var pendingTearOffWindowPlacement: PendingTearOffWindowPlacement?
@@ -543,7 +548,8 @@ final class TabDraggingSession {
         pendingTearOffWindowPlacement = PendingTearOffWindowPlacement(
             dropScreenLocation: screenLocation,
             sourceWindowNumber: sourceWindow?.windowNumber,
-            requestedAt: Date()
+            requestedAt: Date(),
+            preexistingWindows: Set(NSApp.windows.map(ObjectIdentifier.init))
         )
     }
 
@@ -567,7 +573,8 @@ final class TabDraggingSession {
         pendingTearOffWindowPlacement = PendingTearOffWindowPlacement(
             dropScreenLocation: screenLocation,
             sourceWindowNumber: sourceWindow?.windowNumber,
-            requestedAt: Date()
+            requestedAt: Date(),
+            preexistingWindows: Set(NSApp.windows.map(ObjectIdentifier.init))
         )
     }
     
@@ -582,6 +589,9 @@ final class TabDraggingSession {
         }
         if let sourceWindowNumber = request.sourceWindowNumber,
            createdWindow.windowNumber == sourceWindowNumber {
+            return
+        }
+        guard !request.preexistingWindows.contains(ObjectIdentifier(createdWindow)) else {
             return
         }
         guard let targetFrame = resolvedTearOffWindowFrame(

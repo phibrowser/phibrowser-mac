@@ -84,6 +84,9 @@ struct SidebarBottomBarSwiftUI: View {
     
     private var regularLayout: some View {
         HStack(spacing: 4) {
+            ProfileButton(surface: .sidebar)
+                .frame(width: 24, height: 24)
+
             downloadButton
 
             memoryButton
@@ -257,7 +260,13 @@ private struct SidebarDownloadsPopoverPresenter: NSViewRepresentable {
             popover.contentSize = Self.contentSize
             popover.appearance = anchorView.themeStateProvider.currentAppearance.nsAppearance
             popover.contentViewController = ThemedHostingController(
-                rootView: DownloadsListView(downloadsManager: downloadsManager)
+                rootView: DownloadsListView(downloadsManager: downloadsManager) { [weak self, weak anchorView] in
+                    self?.dismiss()
+                    self?.onDismiss?()
+                    guard let anchorView, let window = anchorView.window,
+                          let owner = SpaceSessionControllersManager.shared.findControllerWith(window: window) else { return }
+                    owner.showLibrary(from: anchorView, section: .downloads)
+                }
                     .frame(width: Self.contentSize.width, height: Self.contentSize.height),
                 themeSource: anchorView.themeStateProvider
             )

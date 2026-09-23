@@ -22,6 +22,16 @@ struct CreateSpacePanel: View {
         case window
         /// Fills the sidebar in vertical (Performance / Balanced) layouts.
         case sidebar
+        /// Embedded Library card; creation keeps the management surface visible.
+        case library
+
+        var analyticsSurface: String {
+            switch self {
+            case .window: return "standalone_window"
+            case .sidebar: return "sidebar"
+            case .library: return "library"
+            }
+        }
     }
 
     var style: Style = .window
@@ -51,6 +61,8 @@ struct CreateSpacePanel: View {
     /// placeholder pip previews the new Space's icon. Nil for the standalone
     /// window, which shows no strip.
     var onIconSelectionChange: ((IconPickerSelection) -> Void)? = nil
+
+    var onCreated: ((String) -> Void)? = nil
 
     @State private var name: String = ""
     /// Icon/emoji pinned to the new Space, chosen from the same picker the
@@ -110,7 +122,7 @@ struct CreateSpacePanel: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
                 .frame(width: formMaxWidth + 40)
-        case .sidebar:
+        case .sidebar, .library:
             // Transparent so the themed visual-effect backdrop installed by
             // `SidebarViewController.showCreateSpaceOverlay` shows through —
             // the form then sits on the active Space's overlay color and
@@ -492,6 +504,7 @@ struct CreateSpacePanel: View {
             PostHogSDK.shared.capture("space_created", properties: [
                 "total_spaces": manager.spaces.count,
                 "non_default_profile": profileId != LocalStore.defaultProfileId,
+                "surface": style.analyticsSurface,
             ])
             FirstTimeActionTracker.capture(.spaceCreated)
         }
@@ -523,6 +536,8 @@ struct CreateSpacePanel: View {
         // the new Space activates. Failure follows the ordinary close path and
         // restores the theme from before the panel opened.
         onClose(newSpaceId == nil)
+        if let newSpaceId { onCreated?(newSpaceId) }
+        guard style != .library else { return }
         // Bring the freshly created Space to the front of the active window.
         // `createSpace` only records it as the persisted default, so without
         // this the current window would stay on the Space we created from — in

@@ -381,12 +381,9 @@ enum SaveForLaterService {
 
     // MARK: - Library
 
-    /// Opens the Save for Later library — a Mirage extension page that lists
-    /// the saved items and renders their markdown with the reader's own
-    /// stylesheet. The page cannot touch the folder itself; the
-    /// `saveForLater.list/read/delete/reveal/openWebpage` handlers below are
-    /// its only access, and this service stays the authority on paths.
+    /// Opens Mirage's Folio library page in the active browser Profile.
     static func openLibrary() {
+        guard featureEnabled, !ApplicationState.shared.isGuest else { return }
         openExtensionPage("library.html")
     }
 

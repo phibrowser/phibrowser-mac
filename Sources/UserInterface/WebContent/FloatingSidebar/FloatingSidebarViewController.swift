@@ -800,6 +800,7 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
     // (with its own scroll animation), so the push-in band is just the pinned
     // strip and the tab list.
     var spaceSwitchBandViews: [NSView] { [pinnedTabsContainerView, tabList.view] }
+    var spaceSwitchPinnedStrip: NSView { pinnedTabsContainerView }
     var spaceSwitchBandContainer: NSView { mainStackView }
 
     func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {

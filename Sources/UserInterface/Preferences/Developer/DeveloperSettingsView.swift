@@ -83,6 +83,8 @@ private struct AgentControlSectionView: View {
         AgentCDPListener.shared.allAgentsGranted
     @State private var userSpaceOperationsEnabled: Bool =
         PhiPreferences.AgentSpaces.userSpaceOperationsEnabled
+    @State private var unstyledOperatingPageEnabled: Bool =
+        PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled
     @ObservedObject private var profileManager = ProfileManager.shared
     // Profiles the agent may NOT create Spaces in (blocklist mirror; empty =
     // all allowed). Kept in @State for toggle reactivity, written through to
@@ -104,6 +106,7 @@ private struct AgentControlSectionView: View {
                 }
                 if agentAccessEnabled {
                     permissionsCard
+                    pageViewCard
                 }
             }
         }
@@ -475,6 +478,39 @@ private struct AgentControlSectionView: View {
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Page view card — how an operated page is presented.
+
+    private var pageViewCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            SettingsIconChip(systemName: "eye.fill", color: .teal)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(NSLocalizedString("settings.developer.agentPageView.unstyledToggle", value: "Show operated pages exactly as rendered", comment: "Developer settings - Toggle title for showing a page an agent is operating without the agent styling"))
+                    .font(.system(size: 13))
+                    .themedForeground(.textPrimary)
+                Text(NSLocalizedString("settings.developer.agentPageView.unstyledDescription", value: "For web development. While an agent operates a page, Phi stops recoloring it, makes the operating mask transparent, and minimises the Take control bar. The page still ignores your input until you take control. Applies immediately.", comment: "Developer settings - Explanation for the toggle that shows agent-operated pages without the agent styling"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Toggle("", isOn: Binding(
+                get: { unstyledOperatingPageEnabled },
+                set: { newValue in
+                    unstyledOperatingPageEnabled = newValue
+                    PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled = newValue
+                }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .themedTint(.themeColor)
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .settingsCardChrome()
     }
 
     private var profilesRows: some View {

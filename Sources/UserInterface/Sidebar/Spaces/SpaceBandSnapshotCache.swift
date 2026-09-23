@@ -190,13 +190,14 @@ final class SpaceBandSnapshotCache {
 
 /// A layer-hosted image with no AppKit image drawing pass on the click path.
 /// Preserve the cached point size and top-left alignment when the panel resizes.
+/// `topInset` points of the image are clipped off above the view's top.
 final class SpaceBandSnapshotView: NSView {
-    init(snapshot: SpaceBandSnapshotCache.Snapshot, frame: NSRect) {
+    init(snapshot: SpaceBandSnapshotCache.Snapshot, frame: NSRect, topInset: CGFloat = 0) {
         super.init(frame: frame)
         let root = CALayer()
         let image = CALayer()
         image.contents = snapshot.pixels
-        image.frame = CGRect(origin: CGPoint(x: 0, y: frame.height - snapshot.size.height),
+        image.frame = CGRect(origin: CGPoint(x: 0, y: frame.height - snapshot.size.height + topInset),
                              size: snapshot.size)
         image.contentsGravity = .resize
         image.contentsScale = CGFloat(snapshot.pixels.width) / snapshot.size.width

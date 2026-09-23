@@ -179,11 +179,14 @@ asynchronous reply, but the handler never sent one, even when presentation
 succeeded. The extension must not swallow all native timeouts or retry opening
 the preview, since a timeout does not prove that presentation failed.
 
-Presentation first uses the requested browser window, then the active browser
-window. As of 2026-09-22, if neither is available, the handler opens a standalone
-image preview window and acknowledges that presentation through the same reply
-channel. The wire payload, legacy object-form items, preview-state index
-clamping, file authorization, and image loading remain unchanged.
+Image previews always open in a standalone window and activate the app, including
+requests from another process while no browser window is open. The handler no
+longer selects a browser window or displays an overlay. `windowId` remains a
+required integer in the wire payload for compatibility, but does not affect
+presentation. Legacy object-form items, preview-state index clamping, file
+authorization, and image loading remain unchanged.
+The overlay implementation is retained, but plugin requests and the debug
+preview entry no longer trigger it.
 No Sidecar or Sentinel update is required for the reply fix;
 old browser builds still exhibit the missing acknowledgement until updated.
 The separate SIDECAR-E conversation-load timeout and SIDECAR-C Runner discovery
@@ -191,8 +194,9 @@ failures are not resolved by this change.
 
 `ImagePreviewMessageHandlerTests` injects the existing messaging boundary and a
 presentation closure, so success/error routing can be tested without opening a
-browser window. The fallback test opens a native preview window and verifies
-index clamping and the authorized sender carried by broker-backed image items.
+browser window. Presentation tests open native preview windows for different
+window IDs and verify index clamping and the authorized sender carried by
+broker-backed image items.
 Tests cover exactly one request-scoped reply after presentation, explicit
 failures, legacy items, and no broadcasts.
 Validation on 2026-09-07: Xcode 26.6 `build-for-testing` with

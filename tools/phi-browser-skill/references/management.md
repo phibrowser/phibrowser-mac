@@ -26,10 +26,17 @@ Space.
   (empty when the Space has no open window), `userFocus()`, or an earlier
   binding's return. A windowId that doesn't show the Space fails
   `window_not_open` — re-list rather than retrying.
-- `createSpace(name, {profile, colorHex, iconName, activate})` — `iconName`
-  is `"phi:phi-icon-N"` or `"emoji:<hex codepoint>"` (e.g. `"emoji:1F977"`),
-  `colorHex` is `"#RRGGBB"`. `{activate: true}` also surfaces the new Space
-  in the user's focused window — leave it off unless the user asked to switch.
+- `createSpace(name, {profile, themeId, colorHex, iconName, activate})` /
+  `updateSpace(space, {name, themeId, colorHex, iconName})` — a Space's color
+  is one of the built-in themes (`pure`, `mist`, `mint`, `aqua`, `iris`,
+  `petal`, `coral`, `amber`); pass `themeId`, or `colorHex` (`"#RRGGBB"`) to
+  snap to the nearest theme by hue — report the returned `themeId`, not the
+  hex you asked for. `iconName` is `"phi:phi-icon-<name>"` (e.g.
+  `"phi:phi-icon-mail"`), a bare catalog name (`"mail"`),
+  `"emoji:<hex codepoints>"` (e.g. `"emoji:1F977"`), or the emoji itself;
+  anything else fails `invalid_icon`. `{activate: true}` also surfaces the new
+  Space in the user's focused window — leave it off unless the user asked to
+  switch.
 - `deleteSpace` closes the Space's windows and cascade-deletes its bookmarks
   and URL rules. It is refused for the default Space. DESTRUCTIVE — call it
   only on the user's explicit ask, never as cleanup. `removeBookmark` on a

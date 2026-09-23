@@ -5,6 +5,11 @@
 
 import Foundation
 
+enum FeedbackV2Limits {
+    static let attachmentCount = 10
+    static let attachmentBytes: Int64 = 20 * 1024 * 1024
+}
+
 enum FeedbackV2AttachmentType: String, Codable {
     case screenshot
     case log

@@ -44,6 +44,9 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     var itemClicked: ((Tab?) -> Void)?
     var itemDoubleClicked: ((Tab?, NSEvent.ModifierFlags) -> Void)?
 
+    /// An embedding surface supplies actions with its own explicit owner.
+    var populateContextMenu: ((NSMenu) -> Void)?
+
     private lazy var contextMenu: NSMenu = {
         let menu = NSMenu()
         menu.delegate = self
@@ -57,6 +60,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        populateContextMenu = nil
         cancellables.removeAll()
         leftFaviconHandle?.cancel()
         leftFaviconHandle = nil
@@ -292,7 +296,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         // Drive the context menu off the left pane so the user gets the
         // split-aware items (Unpin Split, Remove from Split, etc.).
         if let menu = view.menu {
-            leftTab.makeContextMenu(on: menu)
+            if let populateContextMenu { populateContextMenu(menu) }
+            else { leftTab.makeContextMenu(on: menu) }
         }
 
         subscribeFaviconUpdates(for: leftTab)
@@ -458,6 +463,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         splitTabPreviewRegistration.cancelForInteraction()
-        leftTab?.makeContextMenu(on: menu)
+        if let populateContextMenu { populateContextMenu(menu) }
+        else { leftTab?.makeContextMenu(on: menu) }
     }
 }

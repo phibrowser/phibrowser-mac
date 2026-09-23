@@ -53,6 +53,7 @@ class SpaceSessionController: NSWindowController {
     var isPresentedOrLegacy: Bool { !isHosted || isPresented }
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
+    
     var searchTabsContainerViewController: SearchTabsContainerViewController?
     
     private lazy var toastContainerViewController: OverlayToastViewController = {
@@ -62,6 +63,34 @@ class SpaceSessionController: NSWindowController {
     private lazy var imagePreviewOverlayViewController: ImagePreviewOverlayViewController = {
         ImagePreviewOverlayViewController(state: browserState.imagePreviewState)
     }()
+
+    /// Window-scoped Library view, created on first use.
+    private var libraryOverlayController: LibraryOverlayController?
+    private var libraryWindowController: LibraryWindowController?
+
+    func openLibraryInNewWindow(section: LibraryViewModule.Section? = nil) {
+        guard let window else { return }
+        libraryOverlayController?.dismiss(animated: false)
+        if libraryWindowController == nil {
+            libraryWindowController = LibraryWindowController(parent: window, browserState: browserState)
+        }
+        libraryWindowController?.present(section: section)
+    }
+
+    func showLibrary(from source: NSView, section: LibraryViewModule.Section? = nil) {
+        guard let window, source.window === window else { return }
+        if libraryOverlayController == nil {
+            libraryOverlayController = LibraryOverlayController(parent: window, browserState: browserState)
+        }
+        libraryOverlayController?.show(from: source, section: section)
+    }
+
+    @discardableResult
+    func dismissLibraryIfVisible() -> Bool {
+        guard libraryOverlayController?.isVisible == true else { return false }
+        libraryOverlayController?.dismiss()
+        return true
+    }
 
     /// Peek popup panel, created on first present. Exposed to the
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
@@ -758,9 +787,21 @@ class SpaceSessionController: NSWindowController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self,
-                      notification.object as? NSWindow === self.window,
-                      self.isPresentedOrLegacy,
                       let visible = notification.userInfo?["visible"] as? Bool else { return }
+                // Hosted mode: every session of the shell sees the shell's
+                // overlays, so they carry the posting session. Its own hide
+                // must still land after it left the shell — `concealFromShell`
+                // dismisses the overlays once `isPresented` is already false,
+                // and possibly after its tree (tab search included) left the
+                // window — or its peek/reader stay eclipsed or concealed on
+                // return.
+                if let owner = notification.userInfo?["windowId"] as? Int {
+                    guard owner == self.windowId,
+                          !visible || self.isPresentedOrLegacy else { return }
+                } else {
+                    guard notification.object as? NSWindow === self.window,
+                          self.isPresentedOrLegacy else { return }
+                }
                 if notification.userInfo?["surface"] as? String == "omnibox" {
                     if !visible {
                         // The empty host must neither eat clicks nor hold
@@ -988,6 +1029,7 @@ class SpaceSessionController: NSWindowController {
         mainSplitViewController.loadViewIfNeeded()
         split.contentHost.host(mainSplitViewController.view)
         mainSplitViewController.sidebarViewController.bindSpaceStripToSession()
+        mainSplitViewController.webContentContainerViewController.bindSpacesPickerToSession()
         let sidebar = mainSplitViewController.sidebarViewController.view
         split.sidebarHost.host(sidebar)
         sidebar.layoutSubtreeIfNeeded()
@@ -1017,7 +1059,7 @@ class SpaceSessionController: NSWindowController {
         applyWindowChrome()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPresented, self.window?.isKeyWindow == true else { return }
-            self.mainSplitViewController.webContentContainerViewController.focusCurrentWebContent()
+            self.mainSplitViewController.webContentContainerViewController.restoreFocusAfterPresentation()
             self.reshowOverlayPanelsAfterPresent()
         }
     }
@@ -1120,6 +1162,14 @@ class SpaceSessionController: NSWindowController {
         if searchTabsContainerViewController?.hasShown == true {
             searchTabsContainerViewController?.hideSearchTabs()
         }
+        // A Ctrl+Tab session is watched through the shell, which a switch
+        // (⌃1…⌃9 shares its modifier) keeps key; left running, releasing
+        // Ctrl would select a tab in this hidden Space.
+        browserState.tabSwitchManager.cancelSession()
+        // An unanswered ask-Space chooser is a child of the shell, not of
+        // this Space's tree; it resolves as declined instead of staying over
+        // the next Space.
+        PhiChromiumCoordinator.shared.declineChooser(windowId: Int64(windowId))
         if let panel = omniBoxHostPanel {
             panel.parent?.removeChildWindow(panel)
             panel.orderOut(nil)
@@ -1352,10 +1402,13 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
+        libraryWindowController?.close()
+        libraryWindowController = nil
         // Defensive teardown for placeholder mode. In practice Chromium's
         // Browser::~Browser → HidePlaceholder fires first and clears state,
         // making this a no-op; kept as a backstop in case the destruction
         // order ever shifts. See spec §9.1 / §9.4.
+        libraryOverlayController?.dismiss(animated: false, restoreFocus: false)
         browserState.exitPlaceholderMode()
         // Drop peek bookkeeping and the panel; the peek tab itself is torn
         // down by Chromium together with the window's tab strip.

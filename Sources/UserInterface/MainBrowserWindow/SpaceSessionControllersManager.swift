@@ -985,7 +985,13 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
     /// that the session standing for it changed; if the shell is key, the
     /// presented session is the active controller from now on.
     func notePresentedInShell(_ controller: SpaceSessionController) {
-        guard controller.window?.isKeyWindow == true else { return }
+        // The shell's window group: a switch made while one of its child
+        // panels holds key (peek, reader, find bar) is still the user's
+        // window, and the menu actions reading `activeWindowController`
+        // must follow it.
+        let ownsKey = (controller.window as? ShellWindow)?.groupOwnsKey
+            ?? controller.window?.isKeyWindow
+        guard ownsKey == true else { return }
         activeWindowController = controller
         AppLogDebug("presented session became active: \(controller.windowId)")
     }
@@ -1042,6 +1048,18 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
     /// every session of its slot, so it resolves to the PRESENTED one; a
     /// hosted session's hidden Chromium window resolves to that session
     /// (Chromium's command pipeline hands that window back).
+    /// The session a context click landed in: the one presented in the window
+    /// under the click. A right-click does not make its window key, so
+    /// `activeWindowController` can be another window's Space. Falls back to
+    /// it for menus not opened from a window (the menu bar).
+    func controllerUnderContextClick() -> SpaceSessionController? {
+        if let window = NSApp.currentEvent?.window,
+           let controller = findControllerWith(window: window) {
+            return controller
+        }
+        return activeWindowController
+    }
+
     func findControllerWith(window: NSWindow) -> SpaceSessionController? {
         if let presented = windowControllers.first(where: { $0.window === window && $0.isPresentedOrLegacy }) {
             return presented

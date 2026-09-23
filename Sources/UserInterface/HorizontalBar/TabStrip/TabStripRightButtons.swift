@@ -71,6 +71,9 @@ struct TabStripRightButtons: View {
             }
 
             TabStripSearchTabsButton(action: onSearchTabsTap)
+
+            ProfileButton(surface: .tabStrip)
+                .frame(width: 24, height: 24)
         }
         .onReceive(browserState.$normalTabs.receive(on: DispatchQueue.main)) { tabs in
             eligibleTabCount = FarringdonOrganizer.eligibleTabCount(in: tabs)
@@ -207,8 +210,10 @@ private struct TabStripFarringdonButton: View {
         .help(label)
         .accessibilityLabel(Text(label))
         .onReceive(NotificationCenter.default.publisher(for: .farringdonOrganizeDidStart)) { _ in
-            // Only the window that triggered the run (the key window) animates.
-            guard anchorView?.window?.isKeyWindow == true else { return }
+            // Only the window that triggered the run (the key window) animates,
+            // and in it only the strip of the Space on screen.
+            guard let anchorView, anchorView.window?.isKeyWindow == true,
+                  !anchorView.isHiddenOrHasHiddenAncestor else { return }
             startAnimation()
         }
         .onReceive(NotificationCenter.default.publisher(for: .farringdonOrganizeDidFinish)) { _ in

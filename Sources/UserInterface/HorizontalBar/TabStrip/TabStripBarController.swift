@@ -320,9 +320,8 @@ final class TabStripBarController: NSViewController {
 
         // Active-Space picker — a compact icon+name chip pinned to the leading
         // edge, just to the right of the macOS traffic lights, so the user can
-        // switch Space from the same row that hosts the tabs. Falls back to the
-        // manager's key slot during early window bringup before the controller
-        // wires up.
+        // switch Space from the same row that hosts the tabs. Built once the
+        // session has wired up its slot (`bindSpacesPickerToSession`).
         //
         // Windows that don't participate in Spaces (standalone incognito), and
         // windows that resolve no slot at all, skip the picker entirely instead
@@ -341,43 +340,7 @@ final class TabStripBarController: NSViewController {
         // sidebars, built from `viewDidLoad` and so needing no window on
         // screen, showed that leaving the mint to such an invariant is what
         // strands the registry.
-        if browserState.participatesInSpaces,
-           let slot = browserState.windowController?.slot ?? SpaceManager.shared.keySlot {
-            let spacesPicker = SpacesStripView(
-                manager: SpaceManager.shared,
-                slot: slot,
-                showsEllipsisAffordance: false,
-                resolveOwnerController: { [weak browserState] in browserState?.windowController },
-                chipTooltipController: chipHoverTooltipController
-            )
-            let spacesHostingView = SafeAreaIgnoringThemedHostingView(
-                rootView: spacesPicker,
-                themeSource: browserState.themeContext
-            )
-            spacesHostingView.setContentHuggingPriority(.required, for: .horizontal)
-            spacesHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
-            spacesPickerHostingView = spacesHostingView
-            view.addSubview(spacesHostingView)
-            // Right-clicking the active-Space chip shows the same strip context
-            // menu as the rest of the tab bar (the active-Space controls).
-            // Left-clicking it instead drops the Space-switcher menu, popped by
-            // SafeAreaIgnoringThemedHostingView (mouseDown); hovering shows the
-            // active Space's hover card (SpacesStripView.compactChip), matching
-            // the sidebar pips.
-            spacesHostingView.menu = stripContextMenu
-            spacesHostingView.primaryMenu = spaceSwitcherMenu
-            // Opening the switcher is a click, not a hover: drop the chip's card
-            // NOW (the menu's modal loop would defer anything queued) and arm the
-            // same click suppression the sidebar pips use, so the card doesn't
-            // reappear under the resting cursor after the menu closes or the
-            // selected Space's window swaps in.
-            spacesHostingView.onPrimaryMenuWillOpen = { [chipHoverTooltipController] in
-                if let activeId = slot.activeSpaceId {
-                    slot.suppressHoverCard(spaceId: activeId)
-                }
-                chipHoverTooltipController.dismissImmediately()
-            }
-        }
+        mountSpacesPicker()
 
         view.addSubview(tabStrip)
         view.menu = stripContextMenu
@@ -419,6 +382,60 @@ final class TabStripBarController: NSViewController {
             return
         }
         slot.activate(spaceId: spaces[targetIdx].spaceId, userInitiated: true)
+    }
+
+    /// Builds the active-Space picker against this Space's own slot. Hosted
+    /// mode can build the bar before its session has one — a prewarmed spare
+    /// is loaded before any session adopts it — and the key window's slot it
+    /// used to fall back to is another window's: the chip then showed and
+    /// switched that window's Space. So it waits for `bindSpacesPickerToSession`.
+    private func mountSpacesPicker() {
+        guard spacesPickerHostingView == nil, browserState.participatesInSpaces,
+              let slot = browserState.windowController?.slot else { return }
+        let spacesPicker = SpacesStripView(
+            manager: SpaceManager.shared,
+            slot: slot,
+            showsEllipsisAffordance: false,
+            resolveOwnerController: { [weak browserState] in browserState?.windowController },
+            chipTooltipController: chipHoverTooltipController
+        )
+        let spacesHostingView = SafeAreaIgnoringThemedHostingView(
+            rootView: spacesPicker,
+            themeSource: browserState.themeContext
+        )
+        spacesHostingView.setContentHuggingPriority(.required, for: .horizontal)
+        spacesHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        spacesPickerHostingView = spacesHostingView
+        view.addSubview(spacesHostingView)
+        // Right-clicking the active-Space chip shows the same strip context
+        // menu as the rest of the tab bar (the active-Space controls).
+        // Left-clicking it instead drops the Space-switcher menu, popped by
+        // SafeAreaIgnoringThemedHostingView (mouseDown); hovering shows the
+        // active Space's hover card (SpacesStripView.compactChip), matching
+        // the sidebar pips.
+        spacesHostingView.menu = stripContextMenu
+        spacesHostingView.primaryMenu = spaceSwitcherMenu
+        // Opening the switcher is a click, not a hover: drop the chip's card
+        // NOW (the menu's modal loop would defer anything queued) and arm the
+        // same click suppression the sidebar pips use, so the card doesn't
+        // reappear under the resting cursor after the menu closes or the
+        // selected Space's window swaps in.
+        spacesHostingView.onPrimaryMenuWillOpen = { [chipHoverTooltipController] in
+            if let activeId = slot.activeSpaceId {
+                slot.suppressHoverCard(spaceId: activeId)
+            }
+            chipHoverTooltipController.dismissImmediately()
+        }
+    }
+
+    /// The session wired this Space into its window: mount the picker if it
+    /// was deferred, and lay the strip out around it.
+    func bindSpacesPickerToSession() {
+        guard spacesPickerHostingView == nil, isViewLoaded else { return }
+        mountSpacesPicker()
+        guard spacesPickerHostingView != nil else { return }
+        lastSpacesPickerEnabled = nil
+        applySpacesPickerVisibility()
     }
 
     /// Shows or hides the active-Space picker to match the master Spaces

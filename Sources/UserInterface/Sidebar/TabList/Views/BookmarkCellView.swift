@@ -113,6 +113,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var usesSplitTabPreview = false
     private var isEditingActive = false
 
+    /// Standalone management surfaces must not resolve actions through another Space.
+    var usesActiveBrowserStateFallback = true
+    var onSelectFolderIcon: ((Bookmark, BookmarkFolderIcon) -> Void)?
     weak var browserState: BrowserState?
     weak var editDelegate: BookmarkCellViewDelegate?
 
@@ -538,6 +541,11 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.showsPeek = peekTab != nil
     }
 
+    /// Management outlines own selection independently from the window's tab selection.
+    func setManagementSelected(_ selected: Bool) {
+        viewState.isMultiSelected = selected
+    }
+
     func setDropTargetHighlighted(_ highlighted: Bool) {
         guard viewState.isDropTargetHighlighted != highlighted else { return }
         viewState.isDropTargetHighlighted = highlighted
@@ -588,7 +596,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private var resolvedBrowserState: BrowserState? {
-        browserState ?? SpaceSessionControllersManager.shared.activeWindowController?.browserState
+        browserState ?? (usesActiveBrowserStateFallback ? SpaceSessionControllersManager.shared.activeWindowController?.browserState : nil)
     }
 
     private func refreshLiveTabs(for bookmark: Bookmark) {
@@ -696,7 +704,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     private func selectFolderIcon(_ icon: BookmarkFolderIcon) {
         guard let bookmark = resolvedBookmark, bookmark.isFolder else { return }
-        resolvedBrowserState?.bookmarkManager.updateFolderIcon(guid: bookmark.guid, iconName: icon.rawValue)
+        if let onSelectFolderIcon { onSelectFolderIcon(bookmark, icon) }
+        else { resolvedBrowserState?.bookmarkManager.updateFolderIcon(guid: bookmark.guid, iconName: icon.rawValue) }
     }
 
     private func applyTitleAndSplitState(bookmark: Bookmark,

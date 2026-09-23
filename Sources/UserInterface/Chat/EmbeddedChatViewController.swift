@@ -90,7 +90,13 @@ class EmbeddedChatViewController: NSViewController {
     }
     
     // MARK: - Focus Management
-    
+
+    /// Same gate as `WebContentViewController.ownsWindowFocus`: only the
+    /// session the shell presents may move the window's first responder.
+    private var ownsWindowFocus: Bool {
+        browserState?.windowController?.isPresentedOrLegacy ?? true
+    }
+
     /// Moves focus into the embedded AI Chat content.
     func focusAIChat() {
         guard canLoadAIChat else {
@@ -99,6 +105,11 @@ class EmbeddedChatViewController: NSViewController {
         }
         guard let wrapper = currentAIChatTab?.webContentWrapper else { return }
         DispatchQueue.main.async { [weak self] in
+            // Hosted mode: the chat's Space may have left the shell since the
+            // request (a switch within the async hop or the web-content
+            // readiness poll). Its hidden page must not take the shell's first
+            // responder from the Space on screen; re-presenting restores it.
+            guard self?.ownsWindowFocus == true else { return }
             if let nativeView = self?.currentAIChatTab?.webContentView {
                 self?.view.window?.makeFirstResponder(nativeView)
             }

@@ -21,6 +21,7 @@ import PostHog
     @objc static private(set)var shared: AppController!
     
     var settingsWindowController: SettingsWindowController?
+    private var allDownloadsWindowController: AllDownloadsWindowController?
     /// The application the settings window took the foreground from, so
     /// closing the window can hand activation back to it.
     var settingsActivationSource: NSRunningApplication?
@@ -1176,5 +1177,17 @@ extension AppController: ASWebAuthenticationSessionWebBrowserSessionHandling {
     
     func cancel(_ request: ASWebAuthenticationSessionRequest!)  {
         ChromiumLauncher.sharedInstance().bridge?.cancel(request)
+    }
+}
+
+extension AppController {
+    func showAllDownloads() {
+        if allDownloadsWindowController == nil {
+            let controller = AllDownloadsWindowController()
+            controller.onClose = { [weak self] in self?.allDownloadsWindowController = nil }
+            allDownloadsWindowController = controller
+        }
+        allDownloadsWindowController?.showWindow(nil)
+        allDownloadsWindowController?.window?.makeKeyAndOrderFront(nil)
     }
 }

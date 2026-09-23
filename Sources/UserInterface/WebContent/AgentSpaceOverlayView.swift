@@ -46,8 +46,10 @@ final class AgentSpaceOverlayView: NSView {
     /// bottom-right corner, for a user who wants the page back.
     private let collapseButton = NSButton()
     /// Collapsed is a deliberate user choice, so it survives every `update`
-    /// and every ownership flip — nothing re-expands the pill but the user.
-    private var isCollapsed = false
+    /// and every ownership flip — nothing re-expands the pill but the user,
+    /// or the developer unstyled-page switch, which also sets the default.
+    private var isCollapsed = PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled
+    private var unstyledPageObserver: NSObjectProtocol?
     /// Bottom-centre when expanded, bottom-right corner when collapsed; one is
     /// always active and the other never is.
     private var pillCenterX: NSLayoutConstraint?
@@ -65,9 +67,29 @@ final class AgentSpaceOverlayView: NSView {
         wantsLayer = true
         setupCursor()
         setupPill()
+        applyCollapsedState(animated: false)
+        // A developer inspecting the page wants it clear of the pill: the
+        // switch minimises every pill on screen, and turning it off brings
+        // them back out.
+        unstyledPageObserver = NotificationCenter.default.addObserver(
+            forName: .agentUnstyledOperatingPageDidChange,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let collapsed = PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled
+            guard collapsed != isCollapsed else { return }
+            isCollapsed = collapsed
+            applyCollapsedState(animated: window != nil)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        if let unstyledPageObserver {
+            NotificationCenter.default.removeObserver(unstyledPageObserver)
+        }
+    }
 
     // MARK: - Setup
 

@@ -231,7 +231,8 @@ final class OmniBoxContainerViewController: NSViewController {
         observeFocusingTabChange()
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": true, "surface": "omnibox"])
+                                        userInfo: ["visible": true, "surface": "omnibox",
+                                                   "windowId": browserState?.windowId as Any])
     }
     
     func hideOmniBox(fromAddressBar: Bool = false) {
@@ -239,7 +240,8 @@ final class OmniBoxContainerViewController: NSViewController {
         // anything that deferred to it may take key back behind the fade.
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": false, "surface": "omnibox"])
+                                        userInfo: ["visible": false, "surface": "omnibox",
+                                                   "windowId": browserState?.windowId as Any])
         focusingTabObserver = nil
         guard animationOn else {
            hideOmniBoxWithoutAnimation()

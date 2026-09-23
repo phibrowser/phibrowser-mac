@@ -140,6 +140,59 @@ final class DownloadsManagerVisibilityTests: XCTestCase {
         XCTAssertEqual(manager.totalDownloadProgress, 0)
     }
 
+    func testSnapshotKeepsSameGuidFromDifferentProfilesSeparate() {
+        let manager = DownloadsManager(profileIds: ["Default", "Profile 2"])
+        let first = DownloadVisibilityTestWrapper()
+        first.url = "https://example.com/first.zip"
+        let second = DownloadVisibilityTestWrapper()
+        second.guid = first.guid
+        second.profileId = "Profile 2"
+        second.url = "https://example.com/second.zip"
+
+        manager.applyDownloadSnapshot([first, second])
+        manager.applyDownloadSnapshot([second, first])
+
+        XCTAssertEqual(manager.downloads.count, 2)
+        XCTAssertEqual(Set(manager.downloads.map(\.profileScopedId)).count, 2)
+        XCTAssertEqual(Set(manager.downloads.map(\.url)), [first.url, second.url])
+    }
+
+    func testRemovalOnlyAffectsSourceProfile() async {
+        let manager = DownloadsManager(profileIds: ["Default", "Profile 2"])
+        let first = DownloadVisibilityTestWrapper()
+        first.url = "https://example.com/file.zip"
+        let second = DownloadVisibilityTestWrapper()
+        second.guid = first.guid
+        second.profileId = "Profile 2"
+        second.url = first.url
+        manager.applyDownloadSnapshot([first, second])
+
+        manager.handleDownloadEvent(eventType: .removed, guid: first.guid,
+                                    wrapper: nil, profileId: first.profileId)
+        await drainMainQueue()
+
+        XCTAssertEqual(manager.downloads.map(\.profileId), ["Profile 2"])
+    }
+
+    func testAggregateSubscriptionIgnoresUnselectedAndPrivateProfiles() async {
+        let manager = DownloadsManager(profileIds: ["Default"])
+        let wrapper = DownloadVisibilityTestWrapper()
+        wrapper.url = "https://example.com/file.zip"
+        for (profileId, isPrivate) in [("Profile 2", false), ("Default", true)] {
+            PhiChromiumCoordinator.shared.downloadEvents.send(.init(
+                eventType: .created, guid: wrapper.guid, wrapper: wrapper,
+                profileId: profileId, isOffTheRecord: isPrivate))
+        }
+        await drainMainQueue()
+        XCTAssertTrue(manager.downloads.isEmpty)
+
+        PhiChromiumCoordinator.shared.downloadEvents.send(.init(
+            eventType: .created, guid: wrapper.guid, wrapper: wrapper,
+            profileId: "Default", isOffTheRecord: false))
+        await drainMainQueue()
+        XCTAssertEqual(manager.downloads.map(\.id), [wrapper.guid])
+    }
+
     private func send(_ event: DownloadEventType,
                       _ wrapper: DownloadVisibilityTestWrapper,
                       to manager: DownloadsManager) async {
@@ -157,6 +210,8 @@ final class DownloadsManagerVisibilityTests: XCTestCase {
 }
 
 private final class DownloadVisibilityTestWrapper: NSObject, DownloadItemWrapper {
+    var profileId = LocalStore.defaultProfileId
+    var isOffTheRecord = false
     var guid = UUID().uuidString
     var url = "file:///tmp/source.zip"
     var mimeType = "application/zip"

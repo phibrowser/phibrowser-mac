@@ -215,6 +215,35 @@ final class BookmarkManagerDropResolverTests: XCTestCase {
         )
     }
 
+    func testCrossSpaceDropResolvesAgainstDestinationTree() {
+        let source = makeTree()
+        let destination = folder(guid: "destination-root")
+        let target = folder(guid: "destination-folder")
+        target.addChild(bookmark(guid: "existing"))
+        destination.addChild(target)
+        let result = BookmarkManagerDropResolver.resolve(
+            orderedBookmarkGuids: ["folder-a", "nested-a"],
+            target: .onFolder(guid: target.guid), rootFolder: source,
+            isSearchActive: false, destinationRootFolder: destination)
+        XCTAssertEqual(result, .move(BookmarkManagerDropPlan(
+            orderedBookmarkGuids: ["folder-a", "nested-a"],
+            destinationParentGuid: target.guid, destinationIndex: 1)))
+        XCTAssertEqual(source.children.map(\.guid), ["leaf-a", "folder-a", "leaf-b", "folder-b"])
+    }
+
+    func testCrossSpaceDropRejectsMissingSourceAndForeignTarget() {
+        let source = makeTree()
+        let destination = folder(guid: "destination-root")
+        XCTAssertEqual(BookmarkManagerDropResolver.resolve(
+            orderedBookmarkGuids: ["missing"], target: .atRoot(index: 0),
+            rootFolder: source, isSearchActive: false, destinationRootFolder: destination),
+            .rejected(.missingBookmark(guid: "missing")))
+        XCTAssertEqual(BookmarkManagerDropResolver.resolve(
+            orderedBookmarkGuids: ["leaf-a"], target: .onFolder(guid: "folder-a"),
+            rootFolder: source, isSearchActive: false, destinationRootFolder: destination),
+            .rejected(.invalidTarget))
+    }
+
     private func resolve(
         _ orderedGuids: [String],
         target: BookmarkManagerDropTarget,

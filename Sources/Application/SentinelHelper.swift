@@ -646,6 +646,24 @@ enum SentinelHelper {
             .appendingPathComponent(sentinelLogDirName(), isDirectory: true)
     }
 
+    /// Account-scoped logs only; never use the account storage root as an archive source.
+    static func sentinelServiceLogsDirectoryURL(
+        auth0Subject: String,
+        browserBundleIdentifier: String = Bundle.main.bundleIdentifier ?? "",
+        applicationSupportURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+    ) -> URL? {
+        guard !auth0Subject.isEmpty else { return nil }
+        var safeSubject = ServiceBrokerSocketPath.sanitizePathComponent(auth0Subject)
+        if safeSubject == "." || safeSubject == ".." { safeSubject = "_" }
+        return applicationSupportURL
+            .appendingPathComponent(ServiceBrokerSocketPath.sentinelBundleIdentifier(
+                browserBundleIdentifier: browserBundleIdentifier
+            ), isDirectory: true)
+            .appendingPathComponent(safeSubject, isDirectory: true)
+            .appendingPathComponent("state/logs", isDirectory: true)
+    }
+
     private static func bootLogURL() -> URL {
         sentinelLogsDirectoryURL().appendingPathComponent("boot.log", isDirectory: false)
     }

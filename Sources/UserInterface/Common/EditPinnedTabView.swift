@@ -21,10 +21,22 @@ enum EditPinnedTabMode {
     case newFolder
     /// Bookmark mode: both title and URL can be edited.
     case bookmark
+    /// Create a bookmark with a destination folder.
+    case newBookmark
     /// Toggle-bookmark mode triggered by CMD+D: edits title/URL/folder, Cancel shows "Remove".
     case editOrMoveBookmark
-    /// Favorite mode: only URL can be edited.
+    /// Pinned tab mode: title and URL can be edited.
     case pin
+    /// Create a pinned tab without a bookmark folder.
+    case newPin
+
+    var showsFolderPicker: Bool {
+        self == .bookmark || self == .newBookmark || self == .editOrMoveBookmark
+    }
+
+    var editsURL: Bool {
+        showsFolderPicker || self == .pin || self == .newPin
+    }
 }
 
 /// The result returned when saving in `EditPinnedTab`.
@@ -418,7 +430,7 @@ struct EditPinnedTabView: View {
         switch mode {
         case .folder, .newFolder:
             FolderIconView(size: 48)
-        case .bookmark, .editOrMoveBookmark, .pin:
+        case .bookmark, .newBookmark, .editOrMoveBookmark, .pin, .newPin:
             if isSplitBookmark, let secondaryFaviconURLString {
                 SplitFaviconView(
                     primaryURLString: faviconURLString,
@@ -434,6 +446,14 @@ struct EditPinnedTabView: View {
 
     private var headerTitle: String {
         switch mode {
+        case .newBookmark:
+            return NSLocalizedString("common.bookmarkEditor.createTitle", value: "New Bookmark",
+                comment: "Bookmark creator - title of the sheet to create a bookmark"
+            )
+        case .newPin:
+            return NSLocalizedString("common.pinnedTabEditor.createTitle", value: "New Pinned Tab",
+                comment: "Pinned tab creator - title of the sheet to create a pinned tab"
+            )
         case .folder:
             return NSLocalizedString("common.folderEditor.editTitle", value: "Edit Folder",
                 comment: "Folder editor - Title of the sheet to edit a folder"
@@ -465,6 +485,14 @@ struct EditPinnedTabView: View {
 
     private var headerSubtitle: String {
         switch mode {
+        case .newBookmark:
+            return NSLocalizedString("common.bookmarkEditor.createSubtitle", value: "Choose a name, address, and folder for this bookmark.",
+                comment: "Bookmark creator - subtitle of the sheet to create a bookmark"
+            )
+        case .newPin:
+            return NSLocalizedString("common.pinnedTabEditor.createSubtitle", value: "Choose a name and address for this pinned tab.",
+                comment: "Pinned tab creator - subtitle of the sheet to create a pinned tab"
+            )
         case .folder:
             return NSLocalizedString("common.folderEditor.editSubtitle", value: "Give this folder a name to organize your bookmarks.",
                 comment: "Folder editor - Subtitle explaining folder naming"
@@ -499,7 +527,7 @@ struct EditPinnedTabView: View {
     @ViewBuilder
     private var inputFieldsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
+            if mode == .folder || mode == .newFolder || mode.editsURL {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(primaryNameFieldLabel)
                         .font(.subheadline)
@@ -515,7 +543,7 @@ struct EditPinnedTabView: View {
                 }
             }
 
-            if mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
+            if mode.editsURL {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(primaryUrlFieldLabel)
                         .font(.subheadline)
@@ -535,7 +563,7 @@ struct EditPinnedTabView: View {
                 }
             }
 
-            if isSplitBookmark, mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
+            if isSplitBookmark, mode.editsURL {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
                         NSLocalizedString("common.bookmarkEditor.secondaryNameField.label", value: "Right Name",
@@ -581,7 +609,7 @@ struct EditPinnedTabView: View {
                 }
             }
 
-            if mode == .bookmark || mode == .editOrMoveBookmark {
+            if mode.showsFolderPicker {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
                         NSLocalizedString("common.bookmarkEditor.folderPicker.label", value: "Folder",
@@ -633,11 +661,11 @@ struct EditPinnedTabView: View {
             return NSLocalizedString("common.folderEditor.nameField.placeholder", value: "Folder Name",
                 comment: "Folder editor - Placeholder for folder name input"
             )
-        case .bookmark, .editOrMoveBookmark:
+        case .bookmark, .newBookmark, .editOrMoveBookmark:
             return NSLocalizedString("common.bookmarkEditor.nameField.placeholder", value: "Bookmark Name",
                 comment: "Bookmark editor - Placeholder for bookmark name input"
             )
-        case .pin:
+        case .pin, .newPin:
             return NSLocalizedString("common.pinnedTabEditor.nameField.placeholder", value: "Tab Name",
                 comment: "Pinned tab editor - Placeholder for pinned tab name input"
             )
@@ -699,7 +727,7 @@ struct EditPinnedTabView: View {
         switch mode {
         case .folder, .newFolder:
             return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .bookmark, .editOrMoveBookmark:
+        case .bookmark, .newBookmark, .editOrMoveBookmark:
             let titleOK = !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if isSplitBookmark {
@@ -707,7 +735,7 @@ struct EditPinnedTabView: View {
                 return titleOK && primaryOK && secondaryOK
             }
             return titleOK && primaryOK
-        case .pin:
+        case .pin, .newPin:
             let titleOK = !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if isSplitBookmark {
@@ -720,19 +748,19 @@ struct EditPinnedTabView: View {
 
     private func editResult(parentFolderGuid: String?) -> EditPinnedTabResult {
         EditPinnedTabResult(
-            title: (mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin)
+            title: (mode == .folder || mode == .newFolder || mode.editsURL)
                 ? titleString.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil,
-            url: (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin)
+            url: mode.editsURL
                 ? urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil,
-            parentFolderGuid: (mode == .bookmark || mode == .editOrMoveBookmark)
+            parentFolderGuid: mode.showsFolderPicker
                 ? parentFolderGuid
                 : nil,
-            secondaryUrl: (isSplitBookmark && (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin))
+            secondaryUrl: (isSplitBookmark && mode.editsURL)
                 ? secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil,
-            secondaryTitle: (isSplitBookmark && (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin))
+            secondaryTitle: (isSplitBookmark && mode.editsURL)
                 ? secondaryTitleString.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil
         )
@@ -740,7 +768,7 @@ struct EditPinnedTabView: View {
 
     private func setInitialFocus() {
         switch mode {
-        case .folder, .newFolder, .bookmark, .editOrMoveBookmark, .pin:
+        case .folder, .newFolder, .bookmark, .newBookmark, .editOrMoveBookmark, .pin, .newPin:
             focusedField = .title
         }
     }
@@ -807,7 +835,7 @@ struct EditPinnedTabView: View {
                 guard !name.isEmpty else { return }
                 let draft = editResult(parentFolderGuid: selectedFolderGuid)
                 guard onValidate?(draft) != false else { return }
-                let folderGuid = onCreateFolder?(name)
+                guard let folderGuid = onCreateFolder?(name) else { return }
                 let result = editResult(parentFolderGuid: folderGuid)
                 onSave?(result)
                 if dismissesOnAction { dismiss() }
@@ -898,6 +926,7 @@ private struct FolderPopUpButton: NSViewRepresentable {
     }
 
     func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.parent = self
         let previousSelection = selectedGuid ?? rootGuid
         button.removeAllItems()
 

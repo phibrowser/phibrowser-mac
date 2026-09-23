@@ -142,13 +142,13 @@ class SideAddressBar: NSView {
         }
     }
 
-    func setAccessoryButtonsVisible(_ visible: Bool) {
+    func setAccessoryButtonsVisible(_ visible: Bool, animated: Bool = true) {
         // Keep each button's page-specific visibility and the text frame intact.
         guard areAccessoryButtonsVisible != visible else { return }
         areAccessoryButtonsVisible = visible
         accessoryVisibilityGeneration += 1
         let generation = accessoryVisibilityGeneration
-        let shouldAnimate = window != nil && !isHiddenOrHasHiddenAncestor
+        let shouldAnimate = animated && window != nil && !isHiddenOrHasHiddenAncestor
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         guard shouldAnimate else {

@@ -235,6 +235,14 @@ struct DownloadEvent {
     let downloadItem: DownloadItem?
 }
 
+struct ChromiumDownloadEvent {
+    let eventType: DownloadEventType
+    let guid: String
+    let wrapper: DownloadItemWrapper?
+    let profileId: String
+    let isOffTheRecord: Bool
+}
+
 class DownloadsManager: ObservableObject {
     weak var browserState: BrowserState?
     
@@ -266,6 +274,7 @@ class DownloadsManager: ObservableObject {
         self.init(browserState: nil)
         self.profileIds = profileIds
         eventSubscription = PhiChromiumCoordinator.shared.downloadEvents
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] event in
                 guard let self, !event.isOffTheRecord,
                       self.profileIds?.contains(event.profileId) == true else { return }

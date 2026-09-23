@@ -131,7 +131,7 @@ struct SpacesSettingsView: View {
     }
 
     private func manageSpacesInLibrary() {
-        guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController,
+        guard let owner = SpaceSessionControllersManager.shared.activeWindowController,
               let window = owner.window,
               let source = window.contentView else { return }
         AppController.shared?.settingsWindowController?.close()

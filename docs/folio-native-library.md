@@ -3,9 +3,9 @@
 File > Open Folio calls `SaveForLaterService.openLibrary()` to open Mirage's
 `library.html` extension page in the active browser Profile.
 
-`MainBrowserWindowController.openFolioLibrary()` opens a native window owned by the originating
-`MainBrowserWindowController`. Each browser window retains its own library
-controller; closing the browser window closes that library. Opening an original
+`SpaceSessionController.openFolioLibrary()` opens a native window owned by the originating
+`SpaceSessionController`. Each browser session retains its own library
+controller; closing the session closes that library. Opening an original
 page or a saved webpage creates a tab in the originating browser window, not the
 currently active Profile.
 

@@ -263,8 +263,8 @@ private struct SidebarDownloadsPopoverPresenter: NSViewRepresentable {
                 rootView: DownloadsListView(downloadsManager: downloadsManager) { [weak self, weak anchorView] in
                     self?.dismiss()
                     self?.onDismiss?()
-                    guard let anchorView,
-                          let owner = anchorView.window?.windowController as? MainBrowserWindowController else { return }
+                    guard let anchorView, let window = anchorView.window,
+                          let owner = SpaceSessionControllersManager.shared.findControllerWith(window: window) else { return }
                     owner.showLibrary(from: anchorView, section: .downloads)
                 }
                     .frame(width: Self.contentSize.width, height: Self.contentSize.height),

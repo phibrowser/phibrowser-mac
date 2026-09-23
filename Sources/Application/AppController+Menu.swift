@@ -1163,7 +1163,7 @@ extension AppController {
 
     @MainActor
     @objc func openLibrary(_ sender: Any?) {
-        guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController,
+        guard let owner = SpaceSessionControllersManager.shared.activeWindowController,
               !owner.browserState.isKioskWindow,
               let source = owner.window?.contentView else { return }
         owner.showLibrary(from: source)
@@ -3128,7 +3128,7 @@ extension AppController {
 
         if item.action == #selector(openLibrary(_:)) {
             let canOpen = MainActor.assumeIsolated {
-                guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController else {
+                guard let owner = SpaceSessionControllersManager.shared.activeWindowController else {
                     return false
                 }
                 return !owner.browserState.isKioskWindow && owner.window?.contentView != nil

@@ -107,8 +107,8 @@ struct ProfileButton: NSViewRepresentable {
             if requestedDownloads {
                 requestedDownloads = false
                 DispatchQueue.main.async { [weak self] in
-                    guard let self,
-                          let owner = self.window?.windowController as? MainBrowserWindowController else { return }
+                    guard let self, let window = self.window,
+                          let owner = SpaceSessionControllersManager.shared.findControllerWith(window: window) else { return }
                     owner.showLibrary(from: self, section: .downloads)
                 }
             }

@@ -53,16 +53,8 @@ class SpaceSessionController: NSWindowController {
     var isPresentedOrLegacy: Bool { !isHosted || isPresented }
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
+    
     var searchTabsContainerViewController: SearchTabsContainerViewController?
-
-    private var folioLibraryWindowController: FolioLibraryWindowController?
-
-    func openFolioLibrary() {
-        if folioLibraryWindowController == nil {
-            folioLibraryWindowController = FolioLibraryWindowController(owner: self)
-        }
-        folioLibraryWindowController?.present()
-    }
     
     private lazy var toastContainerViewController: OverlayToastViewController = {
         return OverlayToastViewController(state: browserState)
@@ -1389,8 +1381,6 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
-        folioLibraryWindowController?.close()
-        folioLibraryWindowController = nil
         libraryWindowController?.close()
         libraryWindowController = nil
         // Defensive teardown for placeholder mode. In practice Chromium's

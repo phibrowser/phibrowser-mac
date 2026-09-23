@@ -15,7 +15,8 @@ attention, and how to join or recover without losing access to local browsing.
 The owner accepted these product decisions:
 
 - Name the settings pane **Sync**, replacing the visible Devices title.
-- Organize it into status, sync contents, devices, and recovery/removal.
+- Organize it into status, devices, and recovery/removal. Omit the Sync contents
+  card in every setup state, per the owner's follow-up UI review.
 - Make device verification and Profile/Space pairing one continuous setup flow.
 - Show the consequences of matching existing data before applying changes.
 - Allow users to finish pairing later and continue using the browser.
@@ -73,19 +74,9 @@ Keep additional conditions visible in its details: for example, incomplete
 pairing and offline connectivity can both be true. An isolated Profile/domain
 failure must produce a partial-failure explanation rather than global success.
 
-### Sync contents
-
-Use a read-only list describing actual supported categories. Phi-owned content
-includes Spaces, bookmarks/folders, pinned tabs, URL rules, and explicitly
-registered settings. Chromium categories must reflect the tested framework's
-enabled controllers; native sign-in alone does not prove availability.
-
-Explain exclusions through a secondary scope disclosure. Current acceptance
-documentation excludes passwords, cookies, and autofill from this service;
-Phi Chat's reserved Profile is local-only and conversation storage is separate.
-Do not promise synchronization of every preference or automatic recreation of
-all ordinary open tabs. Profile mapping is not equivalent to full Profile
-metadata sync.
+Clicking either the Details label or its disclosure arrow toggles the status
+details. Both use the same expansion state and preserve the native disclosure
+control's keyboard and accessibility behavior.
 
 ### Devices
 

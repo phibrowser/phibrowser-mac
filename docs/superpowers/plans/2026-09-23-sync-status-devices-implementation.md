@@ -380,9 +380,11 @@ const bool clean_cycle = snapshot.is_initialized() &&
   pane is open, successful native context with failed Chromium context, older
   revision after a local edit, and an unpaired device carrying stale success.
   Use the pure reducer's truth table rather than duplicate status rules in View.
-- [ ] Render the four agreed sections using current settings cards/spacing:
-  account + status, read-only sync contents, devices with conditional requests,
-  recovery/removal. Keep status position stable; routine work updates a small
+- [ ] Render the agreed sections using current settings cards/spacing:
+  account + status, devices with conditional requests, and recovery/removal.
+  The owner's follow-up review removes the Sync contents card and makes the
+  Details label toggle the same disclosure state as its arrow.
+  Keep status position stable; routine work updates a small
   detail line instead of flashing the page. Show actionable errors next to the
   relevant context/request, plus a partial-status explanation at the top.
 - [ ] Refresh status only while the pane is visible, on relevant native events,

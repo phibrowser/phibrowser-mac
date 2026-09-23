@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Settings → Devices: shows this device's unlock state, a "set up sync" affordance when
-/// it isn't joined, and the list of pending device-join requests to approve or deny.
+/// Settings → Sync: setup and sync status, authorized devices, and recovery/removal.
 struct DevicesSettingView: View {
     @ObservedObject var viewModel: DevicesSettingViewModel
     /// The runtime "remove this device from sync" entry point. Separate from
@@ -18,6 +17,7 @@ struct DevicesSettingView: View {
     var needsPairingCheck: () -> Bool = { false }
 
     @State private var needsPairing = false
+    @State private var isStatusDetailsExpanded = false
 
     var body: some View {
         ScrollView(.vertical) {
@@ -55,7 +55,6 @@ struct DevicesSettingView: View {
                     if !needsPairing { statusSection }
                 }
 
-                contentsSection
                 if viewModel.isUnlocked {
                     devicesSection
                 }
@@ -103,7 +102,7 @@ struct DevicesSettingView: View {
                 Text(NSLocalizedString("sync.status.partialFailure", value: "Some content needs attention. Check the details and your connection.", comment: "One or more sync contexts failed"))
                     .font(.callout)
             }
-            DisclosureGroup(NSLocalizedString("sync.status.details", value: "Details", comment: "Expand individual sync context status")) {
+            DisclosureGroup(isExpanded: $isStatusDetailsExpanded) {
                 ForEach(viewModel.requiredIDs.sorted(), id: \.self) { id in
                     HStack {
                         Text(viewModel.contextTitle(id))
@@ -111,23 +110,12 @@ struct DevicesSettingView: View {
                         Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
                     }.font(.callout).padding(.vertical, 3)
                 }
-            }
-        }.padding(12).settingsCardChrome()
-    }
-
-    private var contentsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle(NSLocalizedString("sync.contents.title", value: "Sync contents", comment: "Read-only list of synchronized content"))
-            Text(NSLocalizedString("sync.contents.phi", value: "Spaces · Bookmarks and folders · Pinned tabs · URL rules · Supported settings", comment: "Supported native sync categories"))
-            if viewModel.chromiumCategories.contains("history") {
-                Text(NSLocalizedString("sync.contents.history", value: "Browsing history", comment: "Enabled Chromium history category"))
-            }
-            if viewModel.chromiumCategories.contains("preferences") {
-                Text(NSLocalizedString("sync.contents.preferences", value: "Supported profile preferences", comment: "Enabled Chromium preference category"))
-            }
-            DisclosureGroup(NSLocalizedString("sync.contents.scope", value: "What’s included", comment: "Expand sync scope and exclusions")) {
-                Text(NSLocalizedString("sync.contents.exclusions", value: "Passwords, cookies and autofill aren’t included. Ordinary open tabs aren’t automatically recreated. Phi Chat and conversations are separate. Profile data availability depends on this version of Phi.", comment: "Sync exclusions and compatibility explanation"))
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+            } label: {
+                Text(NSLocalizedString("sync.status.details", value: "Details", comment: "Expand individual sync context status"))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation { isStatusDetailsExpanded.toggle() }
+                    }
             }
         }.padding(12).settingsCardChrome()
     }

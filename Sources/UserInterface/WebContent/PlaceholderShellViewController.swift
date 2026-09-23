@@ -117,12 +117,13 @@ final class PlaceholderShellViewController: NSViewController {
         layoutObserverCancellable =
             NotificationCenter.default
                 .publisher(for: UserDefaults.didChangeNotification)
+                .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.updateHeaderVisibility()
                 }
 
         sidebarCollapsedObserverCancellable =
-            browserState?.$sidebarCollapsed
+            browserState?.sidebarCollapsedPublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.updateContentLeadingInset()

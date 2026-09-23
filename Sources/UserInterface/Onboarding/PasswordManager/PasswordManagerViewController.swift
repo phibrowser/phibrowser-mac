@@ -175,7 +175,7 @@ class PasswordManagerViewController: OnboardingBaseViewController {
 
     private func installExtension() {
         guard let extensionId = selectedManager.extensionId else { return }
-        guard let windowId = MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() else {
+        guard let windowId = SpaceSessionControllersManager.shared.getFirstAvailableWindowId() else {
             AppLogWarn("[PasswordManager] No available window ID for extension install")
             return
         }

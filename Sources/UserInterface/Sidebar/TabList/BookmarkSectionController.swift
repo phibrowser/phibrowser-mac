@@ -170,7 +170,7 @@ class BookmarkSectionController: NSObject {
     }
     
     func handleDrop(of item: Any, to target: Bookmark?, at index: Int?) -> Bool {
-        let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
+        let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
 
         if let tab = item as? Tab {
             // Split-pair tabs become one split-view bookmark; the original

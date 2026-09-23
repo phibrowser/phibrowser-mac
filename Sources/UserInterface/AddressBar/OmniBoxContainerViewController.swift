@@ -582,7 +582,7 @@ final class OmniBoxContainerViewController: NSViewController {
         let frameChangePublisher = NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: view)
             .map { _ in () }
         
-        let sidebarWidthPublisher = browserState?.$sidebarWidth
+        let sidebarWidthPublisher = browserState?.sidebarWidthPublisher
             .map { _ in () }
             .eraseToAnyPublisher() ?? Empty<Void, Never>().eraseToAnyPublisher()
         

@@ -230,7 +230,7 @@ struct AdvancedSettingsView: View {
     }
 
     private func handleAdditionalBrowserSettingsTap() {
-        MainBrowserWindowControllersManager
+        SpaceSessionControllersManager
             .shared
             .activeWindowController?
             .browserState

@@ -61,7 +61,6 @@ final class KioskBrowserState: BrowserState {
             isIncognitoSpace: false,
             isKioskWindow: true
         )
-        sidebarCollapsed = true
         aiChatCollapsed = true
     }
 

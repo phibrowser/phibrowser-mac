@@ -422,13 +422,7 @@ import PostHog
             if SpaceManager.shared.reopenOnPersistedSpaceIfWindowless() {
                 return true
             }
-            let handled = ChromiumLauncher.sharedInstance().bridge?.applicationShouldHandleReopen(sender, hasVisibleWindows: hasVisibleWindows) ?? false
-            // Chromium's reopen surfaces every browser window it owns, which
-            // un-hides the slots' hidden sibling Space windows. Re-assert the
-            // one-visible-window-per-slot invariant so only the active Space
-            // stays on screen.
-            SpaceManager.shared.reconcileSlotVisibilityAfterReopen()
-            return handled
+            return ChromiumLauncher.sharedInstance().bridge?.applicationShouldHandleReopen(sender, hasVisibleWindows: hasVisibleWindows) ?? false
         }
     }
     
@@ -582,13 +576,13 @@ import PostHog
         let spaceReady = !requiresSpaceReadiness
             || (SpaceManager.shared.hasLoadedURLRules
                 && (opensInKiosk
-                    || MainBrowserWindowControllersManager.shared
+                    || SpaceSessionControllersManager.shared
                         .getFirstAvailableWindowId() != nil))
         let regularWindowReady = !requiresVisibleRegularWindow
-            || MainBrowserWindowControllersManager.shared.hasVisibleRegularBrowserWindow
-        let restoreVisibilityReady = !requiresVisibleRegularWindow
-            || !SpaceManager.shared.isRestoreVisibilityReconcileInFlight
-        return spaceReady && regularWindowReady && restoreVisibilityReady
+            || SpaceSessionControllersManager.shared.hasVisibleRegularBrowserWindow
+        let restoreSettled = !requiresVisibleRegularWindow
+            || !SpaceManager.shared.isSessionRestoreInFlight
+        return spaceReady && regularWindowReady && restoreSettled
     }
 
     private func scheduleColdOpenForwardRetry(application: NSApplication) {
@@ -609,7 +603,7 @@ import PostHog
             )
             if !isReady,
                self.pendingColdOpenRequiresVisibleRegularWindow {
-                if !MainBrowserWindowControllersManager.shared
+                if !SpaceSessionControllersManager.shared
                         .hasVisibleRegularBrowserWindow,
                    !self.requestedRegularWindowForPendingKioskOpen,
                    self.coldOpenURLForwardAttempts
@@ -748,7 +742,7 @@ import PostHog
         let profileId = manager.profileId(
             forURLRuleTargetSpaceId: targetSpaceId
         )
-        let activeProfileId = MainBrowserWindowControllersManager.shared
+        let activeProfileId = SpaceSessionControllersManager.shared
             .activeWindowController?.profileId ?? "none"
         AppLogDebug(
             "[ExternalKioskRouting] resolved identity targetSpace=\(targetSpaceId) "
@@ -847,12 +841,14 @@ import PostHog
         defaultSpaceId: String
     ) {
         assert(Thread.isMainThread)
-        let controllers = MainBrowserWindowControllersManager.shared
+        let controllers = SpaceSessionControllersManager.shared
             .getAllWindows()
+        // A hosted shell is visible for every session of its slot; only the
+        // presented one can host the chooser.
         let sourceController = controllers.first(where: {
-            $0.browserType == .normal && $0.window?.isVisible == true
+            $0.browserType == .normal && $0.isPresentedOrLegacy && $0.window?.isVisible == true
         }) ?? controllers.first(where: {
-            $0.window?.isVisible == true
+            $0.isPresentedOrLegacy && $0.window?.isVisible == true
         }) ?? controllers.first
         guard let sourceController else {
             // There is no window to host the chooser. Preserve the rule's
@@ -969,7 +965,7 @@ import PostHog
             // window. Ask Chromium to create/reopen one only when neither a
             // live nor a dangling browser already exists.
             if !pendingKioskOwnsPostLoginPresentation,
-               MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() == nil {
+               SpaceSessionControllersManager.shared.getFirstAvailableWindowId() == nil {
                 ChromiumLauncher.sharedInstance().bridge?
                     .applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
             }
@@ -1051,7 +1047,7 @@ import PostHog
             self.pendingHotKioskPresentationInFlight = false
             self.pendingHotKioskPresentationWorkItem = nil
             guard ApplicationState.shared.canUseBrowser,
-                  MainBrowserWindowControllersManager.shared
+                  SpaceSessionControllersManager.shared
                     .getFirstAvailableWindowId() == nil else {
                 return
             }

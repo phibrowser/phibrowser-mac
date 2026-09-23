@@ -480,6 +480,11 @@ class SidebarBottomBarSwiftUIView: NSView {
             )
         )
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        // The wrapper is sized by the sidebar (both edges and its height are
+        // pinned there); the SwiftUI content must not pin its own minimum
+        // width on the column through the host's default sizing options —
+        // see ShellSidebarHostViewController.host.
+        hosting.sizingOptions = []
         addSubview(hosting)
         
         NSLayoutConstraint.activate([

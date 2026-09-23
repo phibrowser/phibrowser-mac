@@ -58,7 +58,7 @@
 - Modify `Sources/UserInterface/AddressBar/OmniBoxViewModel.swift`
   - Treat overview as an empty address-bar target and dispatch overview URL creation.
 
-- Modify `Sources/UserInterface/MainBrowserWindow/MainBrowserWindowController+Actions.swift`
+- Modify `Sources/UserInterface/MainBrowserWindow/SpaceSessionController+Actions.swift`
   - Open address bar with overview empty state when invoked from overview.
 
 - Add tests in `Tests/PhiBrowserTests/BrowserStateGroupOverviewTests.swift`
@@ -995,7 +995,7 @@ Expected: host-view presentation changes only.
 - Modify: `Sources/UserInterface/Sidebar/SidebarViewController.swift`
 - Modify: `Sources/UserInterface/WebContent/Header/WebContentHeader.swift`
 - Modify: `Sources/UserInterface/AddressBar/OmniBoxViewModel.swift`
-- Modify: `Sources/UserInterface/MainBrowserWindow/MainBrowserWindowController+Actions.swift`
+- Modify: `Sources/UserInterface/MainBrowserWindow/SpaceSessionController+Actions.swift`
 - Modify: `Sources/ChromiumBridge/PhiChromiumBridgeHeader.h`
 
 - [ ] **Step 1: Mirror the new bridge selector in the Mac worktree**
@@ -1147,7 +1147,7 @@ In `finishNavigationAction()`, before `delegate?.omniBoxDidClear()`, add:
 
 - [ ] **Step 6: Route address-bar opening to overview empty state**
 
-In `MainBrowserWindowController+Actions.swift`, inside `toggleOmniBox(fromAddressBar:addressView:)`, replace:
+In `SpaceSessionController+Actions.swift`, inside `toggleOmniBox(fromAddressBar:addressView:)`, replace:
 
 ```swift
             if fromAddressBar, let tab = browserState.focusingTab {
@@ -1237,7 +1237,7 @@ Expected: overview state tests pass and Swift/Objective-C bridge selector compil
 Run:
 
 ```bash
-git diff -- Sources/UserInterface/Sidebar/TabList/Views/TabGroupHeaderView.swift Sources/UserInterface/Sidebar/TabList/Views/TabGroupCellView.swift Sources/UserInterface/Sidebar/TabList/SidebarTabListViewController.swift Sources/UserInterface/Sidebar/SidebarViewController.swift Sources/UserInterface/WebContent/Header/WebContentHeader.swift Sources/UserInterface/AddressBar/OmniBoxViewModel.swift Sources/UserInterface/MainBrowserWindow/MainBrowserWindowController+Actions.swift Sources/ChromiumBridge/PhiChromiumBridgeHeader.h
+git diff -- Sources/UserInterface/Sidebar/TabList/Views/TabGroupHeaderView.swift Sources/UserInterface/Sidebar/TabList/Views/TabGroupCellView.swift Sources/UserInterface/Sidebar/TabList/SidebarTabListViewController.swift Sources/UserInterface/Sidebar/SidebarViewController.swift Sources/UserInterface/WebContent/Header/WebContentHeader.swift Sources/UserInterface/AddressBar/OmniBoxViewModel.swift Sources/UserInterface/MainBrowserWindow/SpaceSessionController+Actions.swift Sources/ChromiumBridge/PhiChromiumBridgeHeader.h
 ```
 
 Expected: only sidebar and address-bar routing changes.

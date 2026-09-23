@@ -111,7 +111,11 @@ class WebContentHeader: NSView {
     private var didSetupHostingView = false
     private var themeObserver = ThemeObserver.shared
 
-    private var owningBrowserState: BrowserState? { unsafeBrowserState ?? browserState }
+    /// The state the header was built with, or (for a header created without
+    /// one) the window's. In hosted mode the window is the shared shell,
+    /// whose lookup answers the presented Space, so a resident header of a
+    /// background Space must not let it win.
+    private var owningBrowserState: BrowserState? { browserState ?? unsafeBrowserState }
     private var headerThemeProvider: ThemeStateProvider {
         owningBrowserState?.themeContext ?? themeStateProvider
     }
@@ -223,7 +227,7 @@ class WebContentHeader: NSView {
                 self?.downloadButtonClicked()
             },
             onOpenLocationBar: { [weak self] anchorView in
-                self?.unsafeBrowserWindowController?.openLocationBar(anchorView)
+                self?.owningBrowserState?.windowController?.openLocationBar(anchorView)
             },
             onAnchorResolved: { [weak self] view in
                 self?.addressBarAnchorView = view
@@ -298,7 +302,7 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
-        owningBrowserState?.$sidebarCollapsed
+        owningBrowserState?.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutVisibility()
@@ -493,47 +497,47 @@ class WebContentHeader: NSView {
     // MARK: - Actions
 
     @objc private func sidebarButtonClicked() {
-        unsafeBrowserState?.toggleSidebar()
+        owningBrowserState?.toggleSidebar()
     }
 
     @objc private func backButtonClicked() {
-        if unsafeBrowserState?.closePeekForBackForwardNavigation() == true { return }
-        if unsafeBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
-        unsafeBrowserState?.focusingTab?.goBack()
+        if owningBrowserState?.closePeekForBackForwardNavigation() == true { return }
+        if owningBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
+        owningBrowserState?.focusingTab?.goBack()
     }
 
     @objc private func forwardButtonClicked() {
-        if unsafeBrowserState?.closePeekForBackForwardNavigation() == true { return }
-        if unsafeBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
-        unsafeBrowserState?.focusingTab?.goForward()
+        if owningBrowserState?.closePeekForBackForwardNavigation() == true { return }
+        if owningBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
+        owningBrowserState?.focusingTab?.goForward()
     }
 
     @objc private func refreshButtonClicked() {
-        unsafeBrowserState?.focusingTab?.reload()
+        owningBrowserState?.focusingTab?.reload()
     }
 
     @objc private func stopLoadingButtonClicked() {
-        unsafeBrowserState?.focusingTab?.stopLoading()
+        owningBrowserState?.focusingTab?.stopLoading()
     }
 
     @objc private func aiChatButtonClicked() {
         // Defense in depth: chat button should already be hidden in placeholder
         // mode (see updateLayoutVisibility). Belt-and-braces guard avoids
         // toggling chat if a stale tap somehow reaches this handler.
-        guard unsafeBrowserState?.isInPlaceholderMode != true else {
+        guard owningBrowserState?.isInPlaceholderMode != true else {
             NSSound.beep()
             return
         }
-        guard unsafeBrowserState?.groupOverviewState == nil else {
+        guard owningBrowserState?.groupOverviewState == nil else {
             NSSound.beep()
             return
         }
         FeatureEntryAnalytics.capture(.chat, surface: .webContentHeader)
-        unsafeBrowserState?.toggleAIChat()
+        owningBrowserState?.toggleAIChat()
     }
 
     @objc private func feedbackButtonClicked() {
-        unsafeBrowserState?.windowController?.showFeedbackWindow()
+        owningBrowserState?.windowController?.showFeedbackWindow()
     }
 
     @objc private func memoryButtonClicked() {

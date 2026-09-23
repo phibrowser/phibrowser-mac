@@ -475,7 +475,7 @@ final class TabGroupChipView: NSView {
     /// Prevent AppKit from treating chip-area mouseDown as a
     /// window-drag handle. The main window has
     /// `isMovableByWindowBackground = true`
-    /// (`MainBrowserWindowController.swift`), so without these two
+    /// (`SpaceSessionController.swift`), so without these two
     /// overrides drags on the chip would move the host window.
     /// `acceptsFirstResponder = true` matches `TabItemView` and is
     /// required for AppKit to treat this view as one that "responds

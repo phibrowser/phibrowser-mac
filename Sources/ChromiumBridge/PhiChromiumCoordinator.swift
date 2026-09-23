@@ -1134,7 +1134,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func toggleChatSidebar(_ show: NSNumber?) {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
             return
         }
         if let show {
@@ -1145,7 +1145,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func showFeedbackDialog() {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.showFeedbackWindow()
+        SpaceSessionControllersManager.shared.activeWindowController?.showFeedbackWindow()
     }
 
     func downloadEventOccurred(_ eventType: DownloadEventType, guid: String, downloadItem: (any DownloadItemWrapper)?) {
@@ -1171,7 +1171,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
         
         // Downloads are profile-scoped, so every open window needs the update.
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             controller.browserState.downloadsManager.handleDownloadEvent(
                 eventType: eventType,
                 guid: guid,
@@ -1220,7 +1220,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             let manager = SpaceManager.shared
             let spaces = manager.spaces
             guard !spaces.isEmpty,
-                  let controller = MainBrowserWindowControllersManager.shared
+                  let controller = SpaceSessionControllersManager.shared
                       .controller(for: Int(sourceWindowId)),
                   let sourceWindow = controller.window else {
                 // No Spaces to choose from, or the source window is gone — fall
@@ -1671,6 +1671,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
+        // This callback runs synchronously inside Browser::Create; hosted
+        // sessions defer their activation push to Chromium while it is set.
+        SpaceSessionControllersManager.shared.isInsideWindowCreatedCallback = true
+        defer { SpaceSessionControllersManager.shared.isInsideWindowCreatedCallback = false }
 
         guard browserType == .normal || browserType == .incognito
                 || browserType == .incognitoSpace || browserType == .shadow
@@ -1680,7 +1684,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // The framework keeps routing tab and extension events for this
             // window (e.g. the Phi Chat web-app window); let EventBus drop them
             // quietly instead of logging a missing window for each one.
-            MainBrowserWindowControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
+            SpaceSessionControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
             return
         }
 
@@ -1726,6 +1730,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // — the only path that surfaces several windows into one slot, and so
         // the only one that needs the post-restore visibility reconcile below.
         var isRestoredWindow = false
+        var waitsForChromiumShow = true
         // Incognito Space windows take the same slot-resolution path as
         // normal ones: they are spawned by a slot with a pending spawn
         // intent, and `spaceId(boundTo:preferring:)` passes through because
@@ -1737,6 +1742,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // (agent-mode browsers), so the window stays ordered out until surfaced.
         if browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace {
             if let claim = SpaceManager.shared.claimPendingSpawn(forWindowId: Int(windowId)) {
+                waitsForChromiumShow = false
                 resolvedSlot = claim.slot
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
                                                       preferring: claim.spaceId)
@@ -1809,8 +1815,26 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             spaceId = SpaceManager.shared.persistedActiveSpaceId ?? SpaceManager.shared.currentDefaultSpaceId
         }
 
+        let switchTiming = resolvedSlot?.timingForHostedSpawn(spaceId: spaceId)
+        switchTiming?.mark("window_callback.attributed")
+        defer { switchTiming?.mark("window_callback.return") }
         if canUseBrowser,
-           MainBrowserWindowControllersManager.shared.findControllerWith(window: window) == nil {
+           let resolvedSlot,
+           let dormant = resolvedSlot.dormantSession(forWindowId: Int(windowId)) {
+            // The Browser was spawned under a window id the slot reserved for
+            // a session it built ahead of time: that session takes the
+            // window instead of a new controller being made for it.
+            switchTiming?.mark("dormant.browser_attach.begin")
+            MainActor.assumeIsolated {
+                dormant.attachChromiumWindow(window)
+            }
+            switchTiming?.mark("dormant.browser_attach.end")
+            AppLogInfo("🌐 [Chromium] Hosted session attached to its dormant session — spaceId=\(spaceId), presented=\(dormant.isPresented)")
+            return
+        }
+
+        if canUseBrowser,
+           SpaceSessionControllersManager.shared.findControllerWith(window: window) == nil {
             // Restored sibling-Space windows must be concealed for the whole
             // restore burst — Chromium's post-construction Show()/re-orders
             // (and the startup activation of the last-used profile's browser)
@@ -1832,9 +1856,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             }
             // The NSWindow callback is synchronous on Chromium's UI thread;
             // register its state before the first tab event can be delivered.
+            // Hosted-window mode: a slot-bound window is never shown by
+            // Chromium. Its session presents into the slot's shell, and the
+            // Chromium NSWindow only carries the Browser's lifecycle.
+            let hosted = SpaceSessionControllersManager.isHostedSession(
+                browserType: browserType, slot: resolvedSlot)
+            switchTiming?.mark("native_session.create.begin")
             let mainWindowController = MainActor.assumeIsolated {
-                MainBrowserWindowControllersManager.shared.createWindowController(
-                    window: window,
+                SpaceSessionControllersManager.shared.createWindowController(
+                    window: hosted
+                        ? resolvedSlot!.prepareShellForChromiumWindow(
+                            windowId: Int(windowId), frame: window.frame,
+                            waitsForShow: waitsForChromiumShow && !isRestoredWindow).window
+                        : window,
                     windowId: Int(windowId),
                     browserType: browserType,
                     profileId: profileId,
@@ -1842,9 +1876,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     slot: resolvedSlot,
                     presentationRequest: KioskWindowPresentationRequest(
                         bridgeContext: presentationContext
-                    )
+                    ),
+                    chromiumWindow: hosted ? window : nil
                 )
             }
+            switchTiming?.mark("native_session.create.end")
             MainActor.assumeIsolated {
                 AppController.shared?.externalLinkPresentationWindowDidOpen()
             }
@@ -1854,47 +1890,22 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // intent; forcing makeKeyAndOrderFront here made
             // chrome.windows.create({focused:false}) come to the foreground (the
             // focused param was effectively ignored).
-            if browserType != .shadow {
-                // On cold-launch session restore a slot can own multiple
-                // Chromium windows (one per Space ever surfaced). Only the
-                // window matching `slot.activeSpaceId` belongs on screen;
-                // siblings stay hidden until the user pip-switches to them,
-                // matching the steady-state "one slot, one visible window"
-                // invariant. Cold-launch restored active windows are left to
-                // Chromium's Show() to surface (see note above); slot-SPAWNED
-                // windows are created `hidden: true` and revealed by the
-                // slot's own spawn path once seeded (see `activate`'s spawn
-                // branch); only siblings are explicitly hidden here.
-                let isActiveForSlot: Bool = {
-                    guard let resolvedSlot else { return true }
-                    return resolvedSlot.activeSpaceId == spaceId
-                }()
-                if !isActiveForSlot {
-                    if let resolvedSlot {
-                        resolvedSlot.orderOutIfNotManagedBySlotTabGroup(mainWindowController)
-                    } else {
-                        mainWindowController.window?.orderOut(nil)
-                    }
-                    AppLogInfo("🌐 [Chromium] Restored sibling Space window kept hidden — spaceId=\(spaceId), activeSpaceId=\(resolvedSlot?.activeSpaceId ?? "nil")")
-                }
-                // The eager hide above runs INSIDE Chromium's window-created
-                // callback — before Chromium's post-construction
-                // ShowInactive()/Show() re-orders this NSWindow on screen (see
-                // the note above). On session restore a slot owns several
-                // windows and Chromium surfaces every one, so that later
-                // re-order undoes the eager hide and the inactive Space windows
-                // linger. Re-assert the slot's one-visible-window invariant on
-                // the next runloop turn, after Chromium finishes showing them.
+            if mainWindowController.isHosted {
+                // Nothing to order out: the slot presented (or kept
+                // concealed) the session at registration, and no Chromium
+                // Show() will ever re-order a hosted window on screen.
+                AppLogInfo("🌐 [Chromium] Hosted session registered — spaceId=\(spaceId), presented=\(mainWindowController.isPresented)")
+            } else if browserType != .shadow {
+                // A standalone Incognito window: adopted as its own NSWindow,
+                // shown by Chromium. Restored windows are surfaced before the
+                // deferred autosave tick in MainSplitViewController can run
+                // (the main thread is busy replaying the session), so their
+                // first visible frame would show the default sidebar width
+                // and jump later. Adopt the persisted split position now,
+                // ahead of any Show().
                 if isRestoredWindow {
-                    // Restored windows are surfaced by Chromium before the
-                    // deferred autosave tick in MainSplitViewController can
-                    // run (the main thread is busy replaying the session), so
-                    // their first visible frame would show the default
-                    // sidebar width and jump later. Adopt the persisted split
-                    // position now, ahead of any Show().
                     mainWindowController.mainSplitViewController
                         .adoptAutosavedSplitPositionNow()
-                    resolvedSlot?.scheduleRestoreVisibilityReconcile()
                 }
             } else {
                 AppLogInfo("🌐 Shadow window controller initialized but hidden.")
@@ -1902,7 +1913,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             AppLogInfo("🌐 [Chromium] ✅ Window controller created with browser access")
         } else {
             AppLogInfo("🌐 [Chromium] Browser access unavailable, adding dangling window")
-            MainBrowserWindowControllersManager.shared.addDanglingWindow(
+            SpaceSessionControllersManager.shared.addDanglingWindow(
                 window,
                 windowId: Int(windowId),
                 browserType: browserType,
@@ -1937,6 +1948,37 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    /// Hosted-window mode: Chromium asked to show or activate a hosted
+    /// browser window. Present that window's Space in its slot instead.
+    @objc func windowRequestedPresentation(_ windowId: Int64) {
+        windowRequestedPresentation(windowId, activate: true)
+    }
+
+    @objc func windowRequestedPresentation(_ windowId: Int64, activate: Bool) {
+        MainActor.assumeIsolated {
+            SpaceManager.shared.presentHostedWindow(windowId: Int(windowId), activate: activate)
+        }
+    }
+
+    /// Hosted-window mode: Chromium changed a hosted browser's fullscreen
+    /// state; the shell presenting it follows.
+    @objc func windowRequestedFullscreen(_ fullscreen: Bool, forWindowId windowId: Int64) {
+        windowRequestedFullscreen(fullscreen, forWindowId: windowId, targetDisplayId: -1)
+    }
+
+    @objc func windowRequestedFullscreen(_ fullscreen: Bool, forWindowId windowId: Int64,
+                                        targetDisplayId: Int64) {
+        MainActor.assumeIsolated {
+            guard let controller = SpaceSessionControllersManager.shared.controller(for: Int(windowId)) else {
+                // No session follows this Browser (still dangling before
+                // login, or already gone): end Chromium's pending transition.
+                SpaceSessionController.completeHostedFullscreenTransition(windowId: Int(windowId))
+                return
+            }
+            controller.requestShellFullscreen(fullscreen, targetDisplayId: targetDisplayId)
+        }
+    }
+
     // Explicit @objc so the optional-protocol selectors are guaranteed visible
     // to the ObjC bridge's respondsToSelector: dispatch (matches the codebase's
     // tabRelationshipSnapshotChanged precedent).
@@ -1965,7 +2007,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             return
         }
         MainActor.assumeIsolated {
-            guard let windowController = MainBrowserWindowControllersManager.shared
+            guard let windowController = SpaceSessionControllersManager.shared
                     .getAllWindows()
                     .first(where: { $0.windowId == Int(windowId) }),
                   let tab = windowController.browserState.resolveTab(Int(tabId)) else {
@@ -1993,7 +2035,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             return
         }
         MainActor.assumeIsolated {
-            guard let windowController = MainBrowserWindowControllersManager.shared
+            guard let windowController = SpaceSessionControllersManager.shared
                     .getAllWindows()
                     .first(where: { $0.windowId == Int(windowId) }),
                   let tab = windowController.browserState.resolveTab(Int(tabId)) else {
@@ -2069,8 +2111,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     tabId: id, windowId: windowId.intValue)
             }
         }
-        if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
-            MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
+        if SpaceSessionControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
+            SpaceSessionControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
             AppLogInfo("🪟 [Chromium] Tab added to dangling window pending tabs - windowId: \(windowId), tabGuid: \(id)")
         } else {
             EventBus.shared
@@ -2096,12 +2138,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
         guard !items.isEmpty else { return }
 
-        if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
+        if SpaceSessionControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             // Pre-login dangling window: mirror the per-tab path's dangling
             // semantics (tabs buffered; split/active events were never
             // buffered for dangling windows).
             for item in items {
-                MainBrowserWindowControllersManager.shared
+                SpaceSessionControllersManager.shared
                     .addPendingTabToDanglingWindow(item.tab, windowId: windowId.intValue)
             }
             AppLogInfo("🪟 [Chromium] Restored snapshot buffered to dangling window - windowId: \(windowId), tabs: \(items.count)")
@@ -2131,7 +2173,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     @MainActor
     private func applyRestoredWindowSnapshot(_ payload: BrowserState.RestoredWindowSnapshot,
                                              windowId: Int64) {
-        guard let browserState = MainBrowserWindowControllersManager.shared
+        guard let browserState = SpaceSessionControllersManager.shared
             .getBrowserState(for: windowId.intValue) else {
             // Same drop semantics as a queued event whose window closed:
             // the payload (tabs + wrappers) is simply released.
@@ -2139,15 +2181,6 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             return
         }
         browserState.handleRestoredWindowSnapshot(payload)
-        // This window's restored content is fully formed now. If it is the
-        // restore's front target (the last-active Space's window), reveal it
-        // immediately instead of leaving it to the settle reconcile after
-        // every profile has replayed; the slot re-checks eligibility and the
-        // reconcile still runs unchanged afterwards.
-        if let controller = MainBrowserWindowControllersManager.shared
-            .controller(for: windowId.intValue) {
-            controller.slot?.frontRestoredWindowOnSnapshotApplied(controller)
-        }
     }
 
     /// Decodes the snapshot's buffered split events into the same actions
@@ -2247,7 +2280,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         if Thread.isMainThread {
             MainActor.assumeIsolated {
                 // nil window (already torn down) → skip silently; the mask is best-effort.
-                let controller = MainBrowserWindowControllersManager.shared
+                let controller = SpaceSessionControllersManager.shared
                     .controller(for: windowId.intValue)
                 if !(controller is KioskBrowserWindowController) {
                     controller?.mainSplitViewController.webContentContainerViewController
@@ -2337,7 +2370,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // key window (picture in picture, Task Manager, a tool panel) would
         // only squeeze it, so the alert then stands on its own instead.
         let keyWindow = NSApp.keyWindow
-        let hostWindow = keyWindow?.windowController is MainBrowserWindowController
+        let hostWindow = keyWindow?.windowController is SpaceSessionController
             ? keyWindow
             : nil
         return PhiAlert.runQuitAlert(relativeTo: hostWindow)
@@ -2363,7 +2396,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // framework predates it sending one). Routing a full-strip map to
             // the active window is a guess: it silently drops the correction
             // for whichever window actually moved, so make it visible.
-            targetWindowId = MainBrowserWindowControllersManager.shared.activeWindowController?.windowId
+            targetWindowId = SpaceSessionControllersManager.shared.activeWindowController?.windowId
             AppLogWarn(
                 "[NativeTab] tabIndices arrived without a windowId; " +
                 "falling back to the active window \(targetWindowId.map(String.init) ?? "nil")"
@@ -2383,7 +2416,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// Called by Chromium when DevTools has attached (docked) to a tab.
     func devToolsDidAttach(toTab tabId: Int64, windowId: Int64, devToolsView: NSView) {
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
             .getAllWindows()
             .first(where: { $0.windowId == Int(windowId) }) else { return }
         windowController.handleDevToolsDidAttach(tabId: Int(tabId), devToolsView: devToolsView)
@@ -2391,7 +2424,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// Called by Chromium when DevTools has detached from a tab (closed or undocked).
     func devToolsDidDetach(fromTab tabId: Int64, windowId: Int64) {
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
             .getAllWindows()
             .first(where: { $0.windowId == Int(windowId) }) else { return }
         windowController.handleDevToolsDidDetach(tabId: Int(tabId))
@@ -2399,7 +2432,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// Called by Chromium when the inspected page bounds change.
     func updateInspectedPageBounds(_ bounds: CGRect, forTabId tabId: Int64, windowId: Int64, hideInspectedContents hide: Bool) {
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
             .getAllWindows()
             .first(where: { $0.windowId == Int(windowId) }) else { return }
         windowController.handleUpdateInspectedPageBounds(tabId: Int(tabId), bounds: bounds, hide: hide)
@@ -2458,7 +2491,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func windowDidEnterPlaceholderMode(_ windowId: Int64,
                                        placeholderView wrapper: any WebContentWrapper) {
         AppLogInfo("🦖 [Coordinator] enterPlaceholderMode windowId=\(windowId)")
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
                 .getAllWindows()
                 .first(where: { $0.windowId == Int(windowId) }) else {
             AppLogWarn("🦖 [Coordinator] no controller for windowId=\(windowId)")
@@ -2484,7 +2517,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     func windowDidExitPlaceholderMode(_ windowId: Int64) {
         AppLogInfo("🦖 [Coordinator] exitPlaceholderMode windowId=\(windowId)")
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
                 .getAllWindows()
                 .first(where: { $0.windowId == Int(windowId) }) else {
             AppLogWarn("🦖 [Coordinator] no controller for windowId=\(windowId)")
@@ -2509,7 +2542,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func extensionSidePanelChanged(_ windowId: Int64,
                                    info: [String: Any]?,
                                    panelView wrapper: (any WebContentWrapper)?) {
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
                 .getAllWindows()
                 .first(where: { $0.windowId == Int(windowId) }) else {
             // Normal during window teardown: Chromium pushes the close from
@@ -2568,7 +2601,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     private func dispatchGroupAction(_ action: TabGroupEvent.TabGroupAction,
                                       windowId: Int64) {
         let id = windowId.intValue
-        let manager = MainBrowserWindowControllersManager.shared
+        let manager = SpaceSessionControllersManager.shared
         if manager.hasDanglingWindow(for: id) {
             manager.addPendingGroupActionToDanglingWindow(action, windowId: id)
             return
@@ -2626,7 +2659,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                    message: String, shareURL: String, duration: TimeInterval) -> Bool {
         // The synchronous result lets Chromium fall back when no native host exists.
         guard Thread.isMainThread, !message.isEmpty,
-              let controller = MainBrowserWindowControllersManager.shared
+              let controller = SpaceSessionControllersManager.shared
                 .controller(for: Int(windowId)) else { return false }
         let id: UUID
         if toastId.isEmpty {
@@ -2651,7 +2684,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func dismissToast(_ toastId: String, windowId: Int64) {
         guard Thread.isMainThread, let id = UUID(uuidString: toastId) else { return }
         OverlayToastCenter.shared.dismiss(id: id)
-        MainBrowserWindowControllersManager.shared.controller(for: Int(windowId))?
+        SpaceSessionControllersManager.shared.controller(for: Int(windowId))?
             .peekPanelControllerIfLoaded?.dismissToast(id: id)
     }
 
@@ -2659,7 +2692,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func link(toHighlightCopied tabId: Int64, windowId: Int64, url: String, isShortLink: Bool) {
         guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
         DispatchQueue.main.async {
-            guard let controller = MainBrowserWindowControllersManager.shared
+            guard let controller = SpaceSessionControllersManager.shared
                 .controller(for: Int(windowId)) else { return }
             // Chromium already wrote the clipboard, including long-link fallback.
             if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
@@ -2678,7 +2711,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {
-        guard let windowController = MainBrowserWindowControllersManager.shared
+        guard let windowController = SpaceSessionControllersManager.shared
             .getAllWindows()
             .first(where: { $0.windowId == Int(windowId) }) else {
             return

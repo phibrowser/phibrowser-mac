@@ -190,9 +190,9 @@ class EventBus {
     
     @MainActor
     private func handleWindowEvent<T: AppEvent>(_ event: T, windowId: Int) {
-        guard let browserState = MainBrowserWindowControllersManager.shared
+        guard let browserState = SpaceSessionControllersManager.shared
             .getBrowserState(for: windowId) else {
-            if MainBrowserWindowControllersManager.shared.isUnmanagedWindow(windowId) {
+            if SpaceSessionControllersManager.shared.isUnmanagedWindow(windowId) {
                 return
             }
             AppLogWarn("Window not found for id: \(windowId)")

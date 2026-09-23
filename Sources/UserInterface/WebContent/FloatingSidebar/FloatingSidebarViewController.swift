@@ -8,13 +8,17 @@ import AppKit
 import SnapKit
 /// Floating sidebar shown when the primary sidebar is collapsed in non-comfortable layouts.
 /// Lightweight mirror of SidebarViewController.
-class FloatingSidebarViewController: NSViewController {
+class FloatingSidebarViewController: NSViewController, BrowserThemeContextProviding {
+    var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
     private static let defaultFavoriteHeight: CGFloat = 0
     private let messageCardMaxHeight: CGFloat = 200
 
     /// Main vertical stack
     private lazy var mainStackView: NSStackView = {
         let stackView = NSStackView()
+        // Retain the backing tree across switches. Toggling the parent layer
+        // rebuilds and redraws every row even when resident content is unchanged.
+        stackView.wantsLayer = true
         stackView.orientation = .vertical
         stackView.alignment = .centerX
         stackView.spacing = 0
@@ -22,7 +26,7 @@ class FloatingSidebarViewController: NSViewController {
         return stackView
     }()
 
-    private var state: BrowserState
+    private(set) var state: BrowserState
     private lazy var headerView = SidebarHeaderView(state: state, isFloating: true)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state)
     private lazy var tabList = SidebarTabListViewController(state: state)
@@ -44,23 +48,17 @@ class FloatingSidebarViewController: NSViewController {
     /// the floating sidebar becomes interactive again.
     private var shouldShowMessageCard = false
 
-    /// The slot driving this floating strip, resolved the same way as the
-    /// docked sidebar's (see `SidebarViewController.spacesStripSlot`): the
-    /// window controller's slot, falling back to the manager's key slot for
-    /// the early-init case where the controller isn't wired up yet — and nil,
-    /// with no strip mounted, when neither resolves. Minting a slot to bind
-    /// to is what strands the registry and breaks windowless Dock reopen for
-    /// the rest of the run; the docked sidebar's property spells it out.
-    private lazy var spacesStripSlot: SpaceWindowSlot? = state.windowController?.slot
-        ?? SpaceManager.shared.keySlot
+    /// Prewarmed content has no owner yet. Bind once the real session is
+    /// attached; borrowing the key slot would route clicks to another shell.
+    private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
+    private var spacesStripHostingView: SpacesStripHostingView?
 
-    /// Hosting view for the Spaces strip, mounted into the header — below the
-    /// nav row, above the address bar — mirroring the docked sidebar so the
-    /// floating panel offers the same Space switching.
-    private lazy var spacesStripHostingView: SpacesStripHostingView? = {
-        guard let slot = spacesStripSlot else { return nil }
+    func bindSpaceStripToSession() {
+        guard state.participatesInSpaces, spacesStripHostingView == nil,
+              let slot = spacesStripSlot else { return }
         let wheelTracker = SpacesStripWheelTracker()
         let stripGeometry = SpacesStripGeometry()
+        let presence = SpacesStripPresence()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
@@ -68,18 +66,23 @@ class FloatingSidebarViewController: NSViewController {
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
                 wheelTracker: wheelTracker,
-                stripGeometry: stripGeometry
+                stripGeometry: stripGeometry,
+                presence: presence
             ),
             themeSource: state.themeContext
         )
+        presence.view = hostingView
         hostingView.wheelTracker = wheelTracker
         hostingView.stripGeometry = stripGeometry
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
-        return hostingView
-    }()
+        spacesStripHostingView = hostingView
+        headerView.mountSpaceSwitch(hostingView)
+        spacesStripRowView = hostingView
+        updateHeaderHeight()
+    }
 
     /// The floating strip row's AppKit view, consulted by the slot's
     /// pointer-vs-row test while the floating panel is the strip actually
@@ -264,10 +267,7 @@ class FloatingSidebarViewController: NSViewController {
         // SidebarViewController.setupStackView). Standalone incognito windows
         // have no Spaces, so skip mounting entirely — same gating as the docked
         // sidebar, including the window that resolves no slot to bind to.
-        if state.participatesInSpaces, let stripHostingView = spacesStripHostingView {
-            headerView.mountSpaceSwitch(stripHostingView)
-            spacesStripRowView = stripHostingView
-        }
+        bindSpaceStripToSession()
 
         // 2. Header spacer
         mainStackView.addArrangedSubview(createSpacer(height: 5))
@@ -549,6 +549,23 @@ class FloatingSidebarViewController: NSViewController {
         }
     }
 
+    /// Form rows and their geometry before the band slide starts. The
+    /// normal debounced height update may otherwise land during the slide.
+    func prepareForSpaceSwitch(timing: SpaceSwitchTiming? = nil) {
+        loadViewIfNeeded()
+        bindSpaceStripToSession()
+        setContentActive(true)
+        updateHeaderHeight()
+        timing?.mark("sidebar.content_activation.end")
+        if !state.isIncognito {
+            pinnedTabViewController.formRestoredContentNow()
+            updateFavoriteHeight(pinnedTabViewController.contentHeight, isDragging: state.isDraggingTab)
+        }
+        timing?.mark("sidebar.pinned_items.end")
+        view.layoutSubtreeIfNeeded()
+        timing?.mark("sidebar.initial_layout.end")
+    }
+
     func setContentActive(_ active: Bool) {
         guard active != isContentActive else { return }
         isContentActive = active
@@ -569,6 +586,10 @@ class FloatingSidebarViewController: NSViewController {
             .sink { [weak self] newHeight, dragging in
                 self?.updateFavoriteHeight(newHeight, isDragging: dragging)
             }
+            .store(in: &contentCancellables)
+
+        state.restoredWindowTransactionSignal
+            .sink { [weak self] in self?.prepareForSpaceSwitch() }
             .store(in: &contentCancellables)
 
         updateFavoriteHeight(pinnedTabViewController.contentHeight, isDragging: state.isDraggingTab)
@@ -598,7 +619,7 @@ class FloatingSidebarViewController: NSViewController {
     /// collapsed the panel IS the sidebar surface, so creation stays inline
     /// instead of detouring through the standalone window. The panel pins
     /// itself open while the form is up (see
-    /// `WebContentContainerViewController.scheduleFloatingSidebarHide`).
+    /// `FloatingSidebarHostViewController.scheduleFloatingSidebarHide`).
     private var createSpaceOverlay: ThemedHostingController<CreateSpacePanel>?
 
     /// `NSTrackingArea` callbacks ignore sibling hit testing, so the covered
@@ -713,7 +734,7 @@ class FloatingSidebarViewController: NSViewController {
         }
         // The form no longer pins the panel open; re-run the pointer-driven
         // hide so the panel retracts if the pointer has already left.
-        (parent as? WebContentContainerViewController)?.scheduleFloatingSidebarHide()
+        (parent as? FloatingSidebarHostViewController)?.scheduleFloatingSidebarHide()
     }
 
     /// Keeps every covered sidebar surface out of AppKit's hover/help tracking
@@ -781,9 +802,57 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
     var spaceSwitchBandViews: [NSView] { [pinnedTabsContainerView, tabList.view] }
     var spaceSwitchBandContainer: NSView { mainStackView }
 
+    func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {
+        timing?.mark("sidebar.content_activation.begin")
+        prepareForSpaceSwitch(timing: timing)
+        tabList.prepareSpaceSwitchBand(timing: timing)
+        view.layoutSubtreeIfNeeded()
+        timing?.mark("sidebar.layout.end")
+        view.displayIfNeeded()
+        timing?.mark("sidebar.display.end")
+    }
+
     func rampSpaceTint(fromHex: String?, toHex: String?, duration: TimeInterval) {
         // The floating panel paints no per-Space tint gradient; its themed
         // background follows the window theme ramp that the swap drives
         // (see SpaceWindowSlot.rampWindowTheme).
+    }
+
+    /// Uses the band slide's clock, just as the docked host's fill does, so
+    /// a cold Browser's main-thread work cannot stall the background ramp.
+    func animateSpaceSwitchBackdrop(to target: FloatingSidebarViewController,
+                                    duration: TimeInterval, startTime: CFTimeInterval) {
+        if let effect = view as? ColoredVisualEffectView {
+            let from = effect.presentedFillColor
+            effect.themedBackgroundColor = nil
+            effect.backgroundColor = ThemedColor.windowOverlayBackground.resolve(in: target.view)
+            if let from { effect.animateFill(from: from, duration: duration, startTime: startTime) }
+        } else if let layer = view.layer {
+            let from = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+            let to = ThemedColor.windowOverlayBackground.resolve(in: target.view).cgColor
+            view.phiLayer?.backgroundColor = nil
+            layer.backgroundColor = to
+            let ramp = CABasicAnimation(keyPath: "backgroundColor")
+            ramp.fromValue = from
+            ramp.toValue = to
+            ramp.duration = duration
+            ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ramp.beginTime = layer.convertTime(startTime, from: nil)
+            layer.add(ramp, forKey: "phi.fillRamp")
+        }
+    }
+
+    func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
+        if let effectView = view as? ColoredVisualEffectView {
+            effectView.suppressesBackdrop = hidden
+            if !hidden { effectView.themedBackgroundColor = .windowOverlayBackground }
+        } else if hidden {
+            // Clearing only the layer leaves its theme binding alive. The
+            // next ramp tick would paint over the outgoing sliding band.
+            view.phiLayer?.backgroundColor = nil
+            view.layer?.backgroundColor = nil
+        } else {
+            view.phiLayer?.setBackgroundColor(.windowOverlayBackground)
+        }
     }
 }

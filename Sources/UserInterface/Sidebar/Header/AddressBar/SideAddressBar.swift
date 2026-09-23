@@ -66,7 +66,7 @@ class SideAddressBar: NSView {
             guard let self else { return }
             self.window?.customTooltipController.dismissAll()
             WebContentAddressBarMenuPresenter.presentMemoryMenu(
-                browserState: self.unsafeBrowserState,
+                browserState: self.sessionBrowserState,
                 currentTab: self.currentTab,
                 anchorView: self.memoryMenuButton,
                 onPresentationChanged: { _ in }
@@ -172,7 +172,23 @@ class SideAddressBar: NSView {
         }
     }
     
-    init(isFloating: Bool = false) {
+    /// The session this bar belongs to. Every hosted session's sidebar is
+    /// resident in the shared shell, whose `windowController` is whichever
+    /// session is presented, so a window-derived lookup would bind a
+    /// background session's bar to the Space on screen: its extensions, its
+    /// placeholder state, its window id for extension actions. The owner
+    /// hands the state in instead.
+    private weak var boundBrowserState: BrowserState?
+
+    /// The bound state, or (for a bar created without one) the window's.
+    private var sessionBrowserState: BrowserState? {
+        boundBrowserState ?? unsafeBrowserState
+    }
+
+    var sessionBrowserStateForTesting: BrowserState? { sessionBrowserState }
+
+    init(browserState: BrowserState?, isFloating: Bool = false) {
+        self.boundBrowserState = browserState
         self.isFloating = isFloating
         super.init(frame: .zero)
         setupUI()
@@ -247,14 +263,14 @@ class SideAddressBar: NSView {
         super.viewDidMoveToWindow()
         setupObservers()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.unsafeBrowserState?.extensionManager.refreshExtensions()
+            self.sessionBrowserState?.extensionManager.refreshExtensions()
         }
     }
     
     private func setupObservers() {
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
-        guard let browserState = unsafeBrowserState else { return }
+        guard let browserState = sessionBrowserState else { return }
         extensionMenuHostingView.rootView = ExtensionPopoverButton(
             extensionManager: browserState.extensionManager,
             browserState: browserState
@@ -352,7 +368,7 @@ class SideAddressBar: NSView {
             .eraseToAnyPublisher()
         
         browserState.extensionManager.$pinedExtensions
-            .combineLatest(widthPublisher, browserState.$layoutMode, browserState.$sidebarCollapsed)
+            .combineLatest(widthPublisher, browserState.$layoutMode, browserState.sidebarCollapsedPublisher)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] exts, width, layoutMode, _ in
                 guard let self,
@@ -435,7 +451,7 @@ class SideAddressBar: NSView {
         // Hide page actions reporting visible == false on the current tab,
         // mirroring the header (spec §4.3). The badge pill self-updates via the
         // hosted overlay; whole-icon show/hide needs this rebuild.
-        let manager = unsafeBrowserState?.extensionManager
+        let manager = sessionBrowserState?.extensionManager
         let ordered = manager?.presentedPinnedOrder(of: pinnedExtensions) ?? pinnedExtensions
         let visibleExtensions = ordered.filter {
             manager?.badges[$0.id]?.visible != false
@@ -453,7 +469,7 @@ class SideAddressBar: NSView {
     }
 
     private func updateDisplayedURL(_ url: String?) {
-        guard unsafeBrowserState?.groupOverviewState == nil,
+        guard sessionBrowserState?.groupOverviewState == nil,
               let url,
               !url.isNTP else {
             textField.stringValue = ""
@@ -490,7 +506,7 @@ class SideAddressBar: NSView {
     
     private func createExtensionButton(for ext: Extension) -> HoverableButtonNSView {
         let iconSize = NSSize(width: 16, height: 16)
-        let manager = unsafeBrowserState?.extensionManager
+        let manager = sessionBrowserState?.extensionManager
         // Icon only (dynamic override + fallback); the badge is a hosted overlay.
         let image = manager?.iconImage(extensionId: ext.id, staticIcon: ext.icon)
             ?? ext.icon
@@ -506,7 +522,7 @@ class SideAddressBar: NSView {
         // The hosted SwiftUI action stays wired in both branches so
         // accessibility activation keeps working.
         let button: HoverableButtonNSView
-        if unsafeBrowserState?.isIncognito == false && !ext.isForcePinned {
+        if sessionBrowserState?.isIncognito == false && !ext.isForcePinned {
             let draggable = DraggableExtensionButton(
                 config: config, target: self, selector: #selector(extensionButtonClicked(_:)))
             draggable.onPrimaryClick = { [weak self, weak draggable] in
@@ -535,7 +551,7 @@ class SideAddressBar: NSView {
             ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
                 withId: extensionId,
                 pointInScreen: point,
-                windowId: self.unsafeBrowserState?.windowId.int64Value ?? 0
+                windowId: self.sessionBrowserState?.windowId.int64Value ?? 0
             )
         }
 
@@ -572,12 +588,12 @@ class SideAddressBar: NSView {
 
     private func toggleReaderView() {
         guard let tab = currentTab,
-              let browserState = unsafeBrowserState else { return }
+              let browserState = sessionBrowserState else { return }
         browserState.toggleReaderView(for: tab, from: .addressBar)
     }
 
     private func updateReaderButtonVisibility() {
-        let isPlaceholder = unsafeBrowserState?.isInPlaceholderMode ?? false
+        let isPlaceholder = sessionBrowserState?.isInPlaceholderMode ?? false
         // The tab's verdict comes from the extraction service (site rule or
         // readerability probe), not a local copy of the test, so the button
         // and the feature cannot disagree about a page. They did once: this
@@ -592,26 +608,26 @@ class SideAddressBar: NSView {
 
         // A disabled action doesn't run; fall back to the context menu like
         // Chrome (ExecuteUserAction).
-        if unsafeBrowserState?.extensionManager.badges[extensionId]?.enabled == false {
+        if sessionBrowserState?.extensionManager.badges[extensionId]?.enabled == false {
             let point = ExtensionPopupAnchor.pointBelowView(sender)
                 ?? ExtensionPopupAnchor.mouseFallback()
             ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
                 withId: extensionId,
                 pointInScreen: point,
-                windowId: unsafeBrowserState?.windowId.int64Value ?? 0
+                windowId: sessionBrowserState?.windowId.int64Value ?? 0
             )
             return
         }
         ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
             withId: extensionId,
             anchorRect: ExtensionPopupAnchor.rectOfView(sender),
-            windowId: unsafeBrowserState?.windowId.int64Value ?? 0
+            windowId: sessionBrowserState?.windowId.int64Value ?? 0
         )
     }
    
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
-        unsafeBrowserWindowController?.openLocationBar(containerView)
+        (sessionBrowserState?.windowController ?? unsafeBrowserWindowController)?.openLocationBar(containerView)
     }
     
     private func setupContainerView() {
@@ -681,7 +697,7 @@ class SideAddressBar: NSView {
             self?.updateExtensionReorderPreview(atX: x) ?? false
         }
         extensionIconsStackView.onReorderExited = { [weak self] in
-            self?.unsafeBrowserState?.extensionManager
+            self?.sessionBrowserState?.extensionManager
                 .leavePinnedExtensionReorder(surface: .sidebarAddressBar)
         }
         extensionIconsStackView.onReorderDrop = { [weak self] x in
@@ -861,7 +877,7 @@ extension SideAddressBar {
         from button: NSView,
         with event: NSEvent
     ) {
-        guard let manager = unsafeBrowserState?.extensionManager else { return }
+        guard let manager = sessionBrowserState?.extensionManager else { return }
         let visibleProjection = extensionIconsStackView.arrangedSubviews.compactMap {
             $0.identifier?.rawValue
         }
@@ -896,7 +912,7 @@ extension SideAddressBar {
     }
 
     private func updateExtensionReorderPreview(atX x: CGFloat) -> Bool {
-        guard let manager = unsafeBrowserState?.extensionManager else { return false }
+        guard let manager = sessionBrowserState?.extensionManager else { return false }
         // A preview rebuild may still be pending layout when the next drag
         // update arrives; settle frames before hit-testing them.
         extensionIconsStackView.layoutSubtreeIfNeeded()
@@ -915,10 +931,10 @@ extension SideAddressBar {
     }
 
     private func commitExtensionReorderDrop(atX x: CGFloat) -> Bool {
-        guard let manager = unsafeBrowserState?.extensionManager,
+        guard let manager = sessionBrowserState?.extensionManager,
               updateExtensionReorderPreview(atX: x),
               manager.commitPinnedExtensionReorder(surface: .sidebarAddressBar) else {
-            unsafeBrowserState?.extensionManager
+            sessionBrowserState?.extensionManager
                 .cancelPinnedExtensionReorder(surface: .sidebarAddressBar)
             return false
         }
@@ -930,7 +946,7 @@ extension SideAddressBar {
     /// marks the landing spot. Recomputed from the engine so drag end (or a
     /// reset) restores every icon.
     private func refreshReorderSourceVisibility() {
-        let draggedId = unsafeBrowserState?.extensionManager
+        let draggedId = sessionBrowserState?.extensionManager
             .pinnedExtensionOrdering.draggedExtensionId
         for view in extensionIconsStackView.arrangedSubviews {
             view.alphaValue = (draggedId != nil && view.identifier?.rawValue == draggedId)
@@ -956,7 +972,7 @@ extension SideAddressBar: NSDraggingSource {
         // A successful drop already advanced the engine to Pending Reorder
         // Confirmation, which makes this cancel a no-op; every other outcome
         // (Escape, drop outside the row, rejected drop) abandons the drag.
-        unsafeBrowserState?.extensionManager
+        sessionBrowserState?.extensionManager
             .cancelPinnedExtensionReorder(surface: .sidebarAddressBar)
         refreshReorderSourceVisibility()
     }

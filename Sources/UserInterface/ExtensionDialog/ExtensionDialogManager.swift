@@ -65,7 +65,7 @@ final class ExtensionDialogManager {
     private var autoSizeSessions: Set<String> = []
 
     init(messenger: ExtensionMessagingProtocol = ExtensionMessaging.shared,
-         windowLookup: MainBrowserWindowLookup = MainBrowserWindowControllersManager.shared) {
+         windowLookup: MainBrowserWindowLookup = SpaceSessionControllersManager.shared) {
         self.messenger = messenger
         self.windowLookup = windowLookup
     }

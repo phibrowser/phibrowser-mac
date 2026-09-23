@@ -623,7 +623,7 @@ class AccountViewModel: ObservableObject {
         
         // Step 6: close every browser window.
         AppLogDebug("🚪 [Logout] Step 6: Closing all browser windows")
-        MainBrowserWindowControllersManager.shared.closeAllWindows()
+        SpaceSessionControllersManager.shared.closeAllWindows()
         AppLogDebug("🚪 [Logout] All browser windows close requested")
         
         // Step 7: reopen the login window and return to onboarding.

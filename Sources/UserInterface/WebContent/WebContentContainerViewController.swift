@@ -28,6 +28,22 @@ class WebContentContainerViewController: NSViewController {
     private var currentTabIdentifier: String?
     
     /// Currently displayed WebContentViewController
+    /// Hands keyboard focus to the presented tab's page. Hosted-window mode
+    /// calls this after a Space switch installs the session's view tree: the
+    /// leaving session's first responder left the window with its views, and
+    /// the page would otherwise stay unfocused until the next click.
+    func focusCurrentWebContent() {
+        currentWebContentController?.focusWebContent()
+    }
+
+    /// Hosted mode: the session's tree is about to be hidden or removed.
+    /// See `WebContentViewController.collapseContentFullscreenForConcealment`.
+    func collapseContentFullscreenForConcealment() {
+        for controller in webContentControllers.values {
+            controller.collapseContentFullscreenForConcealment()
+        }
+    }
+
     private weak var currentWebContentController: WebContentViewController? {
         didSet {
             guard currentWebContentController !== oldValue else { return }
@@ -297,26 +313,9 @@ class WebContentContainerViewController: NSViewController {
     private var titleAwareArea = TitlebarAwareView()
     private var titleAwareAreaHeightConstraint: Constraint?
     
-    /// Left-edge hover trigger for showing floating sidebar when main sidebar is collapsed.
-    lazy var floatingSidebarTriggerView = MouseTrackingAreaView()
-
-    var floatingSidebarContainerView: NSView?
-    var floatingSidebarViewController: FloatingSidebarViewController?
-    var floatingSidebarLeadingConstraint: Constraint?
-    var floatingSidebarWidthConstraint: Constraint?
-    var floatingSidebarHideWorkItem: DispatchWorkItem?
-    var floatingSidebarEnableWorkItem: DispatchWorkItem?
-    var floatingSidebarLastShownAt: Date?
-    var floatingSidebarShownFromRightToLeft = false
-    /// Hides the panel when its window leaves the screen (a Space switch
-    /// orders the leaving window out with its panel still up) — without
-    /// this the stale panel would greet the user when that window next
-    /// surfaces. See `ensureFloatingSidebarOcclusionObserver`.
-    var floatingSidebarOcclusionObserver: NSObjectProtocol?
-    var isPointerInsideFloatingSidebar = false
-    var isPointerInsideFloatingSidebarTrigger = false
-    /// Tracks the last non-zero sidebar width so the floating panel can match it after collapse.
-    var lastKnownSidebarWidth: CGFloat = 0
+    /// Only standalone windows mount this host. Hosted sessions use the
+    /// shell's persistent floating sidebar through `floatingSidebarHost`.
+    lazy var standaloneFloatingSidebarHost = FloatingSidebarHostViewController()
 
     /// The docked agent console currently hosted by this window, if any.
     /// Owned by `AgentTranscriptPanelController`; see `attachTranscriptDock`.
@@ -331,8 +330,7 @@ class WebContentContainerViewController: NSViewController {
     private var extensionSidePanelView: ExtensionSidePanelView?
 
     /// Per-window width memory for the extension side panel, shared across
-    /// extensions (v1 semantics; mirrors `lastKnownSidebarWidth`'s role for
-    /// the left rail). Seeded with Chromium's default side panel content
+    /// extensions. Seeded with Chromium's default side panel content
     /// width; captured from the slot on detach so a close/reopen restores
     /// the last dragged width.
     private var extensionSidePanelPreferredWidth: CGFloat = 360
@@ -400,19 +398,31 @@ class WebContentContainerViewController: NSViewController {
         if let hostController = sharedBookmarkBarHostController {
             hostController.detachBookmarkBarIfAttached()
         }
-        if let observer = floatingSidebarOcclusionObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
     }
     
     // MARK: - Lifecycle
     
+    /// Whether this container paints the themed vibrancy backdrop around
+    /// the page itself. A hosted session's container does not: the shell's
+    /// page-area host paints one backdrop for every Space in the window
+    /// (`ShellContentHostViewController`), which is what lets a Space switch
+    /// ramp it as one surface.
+    var paintsOwnBackdrop = true {
+        didSet { applyBackdropPainting() }
+    }
+
+    private func applyBackdropPainting() {
+        guard isViewLoaded else { return }
+        (view as? ColoredVisualEffectView)?.suppressesBackdrop = !paintsOwnBackdrop
+    }
+
     override func loadView() {
         let view = ColoredVisualEffectView()
         view.themedBackgroundColor = .windowOverlayBackground
         view.material = .fullScreenUI
         view.wantsLayer = true
         self.view = view
+        applyBackdropPainting()
     }
     
     override func viewDidLoad() {
@@ -480,14 +490,8 @@ class WebContentContainerViewController: NSViewController {
             }
         }
         
-        // Add left-edge hover trigger for floating sidebar.
-        view.addSubview(floatingSidebarTriggerView)
-        floatingSidebarTriggerView.snp.makeConstraints { make in
-            make.leading.top.bottom.equalToSuperview()
-            make.width.equalTo(Self.floatingSidebarTriggerWidth)
-        }
-        setupFloatingSidebarTrigger()
-        
+        setupFloatingSidebar()
+
         // Add titlebar aware area
         view.addSubview(titleAwareArea)
         titleAwareArea.snp.makeConstraints { make in
@@ -828,7 +832,7 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
-        browserState?.$sidebarCollapsed
+        browserState?.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutForMode()
@@ -836,37 +840,6 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
-        if lastKnownSidebarWidth <= 0 {
-            let cached =
-                AccountController.shared.localDataAccount?.userDefaults.lastKnownSidebarWidth
-                ?? 0
-            if cached > 0 {
-                lastKnownSidebarWidth = cached
-            }
-        }
-
-        browserState?.$sidebarWidth
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] width in
-                guard let self else { return }
-                // Only cache widths >= the split-view minimum. This includes the user-chosen
-                // minimum width (185), but excludes 0 (collapsed) and the small transient
-                // frames produced during the collapse animation, which would otherwise
-                // shrink the floating sidebar below the real sidebar's minimum.
-                if width >= MainSplitViewController.leftItemMinWidth {
-                    self.lastKnownSidebarWidth = width
-                }
-                self.updateFloatingSidebarWidth()
-            }
-            .store(in: &cancellables)
-
-        browserState?.$layoutMode
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateFloatingSidebarAvailability()
-            }
-            .store(in: &cancellables)
-        
         // Listen to layout mode changes
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
@@ -1481,9 +1454,12 @@ class WebContentContainerViewController: NSViewController {
         // wrapper.focus() may silently fail if chrome://dino hasn't
         // committed navigation yet (URL=nil), but the page loads fast
         // enough that the first user keystroke arrives after commit.
-        nativeView.window?.makeFirstResponder(nativeView)
-        if wrapper.responds(to: #selector(WebContentWrapper.focus)) {
-            wrapper.focus()
+        // A background Space of the shared shell must not take focus.
+        if browserState?.windowController?.isPresentedOrLegacy ?? true {
+            nativeView.window?.makeFirstResponder(nativeView)
+            if wrapper.responds(to: #selector(WebContentWrapper.focus)) {
+                wrapper.focus()
+            }
         }
 
         AppLogInfo("🦖 [Container] attached placeholder shell + focused")
@@ -1557,6 +1533,8 @@ class WebContentContainerViewController: NSViewController {
 
         if isFreshOpen {
             slideInExtensionSidePanel(panelView)
+        }
+        if isFreshOpen, browserState?.windowController?.isPresentedOrLegacy ?? true {
             // Chrome focuses the panel when it opens; mirror the placeholder
             // shell's two-step focus so typing lands in the panel page
             // without a click. Content changes (tab-switch recomputation)
@@ -2220,7 +2198,6 @@ class WebContentContainerViewController: NSViewController {
             titleAwareArea.isHidden = false
         }
 
-        updateFloatingSidebarAvailability()
         updateContentOuterBorder()
         updatePageAreaBackdropLeadingInset()
     }

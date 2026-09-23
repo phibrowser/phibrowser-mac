@@ -269,7 +269,7 @@ class BrowserDataImporter {
         analytics.captureStarted(sources: sourceOptions)
 
         // Prefer the caller-provided window so Chromium import state follows the initiating window/profile.
-        guard let windowId = targetWindowId ?? MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() else {
+        guard let windowId = targetWindowId ?? SpaceSessionControllersManager.shared.getFirstAvailableWindowId() else {
             AppLogError("No available window for import")
             failedImports = sourceOptions
             updateCompletionStatus()

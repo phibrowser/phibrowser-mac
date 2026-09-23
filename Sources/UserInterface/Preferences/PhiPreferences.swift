@@ -186,16 +186,24 @@ extension PhiPreferences {
         /// cross-fade. The horizontal slide is the longer, more prominent
         /// motion; vertical's tint cross-fade is shorter.
         static func loadSwitchSpaceAnimationDuration() -> TimeInterval {
-            loadLayoutMode().isTraditional
+            // Debug override for inspecting the switch animation, in seconds:
+            // `defaults write <bundle id> PhiSwitchSpaceAnimationDurationOverride -float 2`.
+            let override = UserDefaults.standard.double(forKey: Self.switchSpaceAnimationDurationOverrideKey)
+            if override > 0 {
+                return override
+            }
+            return loadLayoutMode().isTraditional
                 ? Self.horizontalSwitchSpaceAnimationDuration
                 : Self.verticalSwitchSpaceAnimationDuration
         }
+
+        static let switchSpaceAnimationDurationOverrideKey = "PhiSwitchSpaceAnimationDurationOverride"
 
         /// Cross-Space animation duration in the horizontal (Comfortable) layout.
         static let horizontalSwitchSpaceAnimationDuration: TimeInterval = 0.2
         /// Cross-Space animation duration in the vertical (Performance /
         /// Balanced) layouts.
-        static let verticalSwitchSpaceAnimationDuration: TimeInterval = 0.15
+        static let verticalSwitchSpaceAnimationDuration: TimeInterval = 0.1
 
         /// Which window's traffic-light buttons the horizontal-layout
         /// cross-Space slide suppresses. `source` (the ship default) fades

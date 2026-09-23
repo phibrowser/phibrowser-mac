@@ -20,7 +20,7 @@ extension OmniBoxViewController: NSTextSuggestionsDelegate {
             return item
         }
         
-        guard string.count > 0, let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+        guard string.count > 0, let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
             responseHandler(NSSuggestionItemResponse())
             return
         }

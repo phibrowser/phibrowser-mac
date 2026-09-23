@@ -1181,7 +1181,7 @@ final class ReopenLoadingWindowContentTests: XCTestCase {
     func testFillsWithTheBackgroundTheBrowserWindowGivesItself() {
         // The other half of the two-tone split: the band covers the sidebar,
         // and everything to the right of it is this colour, which is the
-        // literal value `MainBrowserWindowController.setupWindow` assigns —
+        // literal value `SpaceSessionController.setupWindow` assigns —
         // shared so that the rect the loading window holds is already the
         // colour the restored window arrives in. Light and dark cannot diverge
         // between the two: both resolve it against one app-wide preference

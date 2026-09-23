@@ -23,7 +23,7 @@ import Cocoa
 /// refreshed so hover keeps working.
 ///
 /// Two lifetimes exist today: the Kiosk window starts one at window setup and
-/// never stops it, and `MainBrowserWindowController` runs one per layout — each
+/// never stops it, and `SpaceSessionController` runs one per layout — each
 /// layout runs a different chrome row beside the lights, so it rebuilds the
 /// positioner with a freshly measured offset whenever the layout changes,
 /// calling `stop(restoringPlacement:)` first so the next measurement reads

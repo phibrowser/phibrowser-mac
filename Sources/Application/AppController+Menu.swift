@@ -1039,7 +1039,7 @@ extension AppController {
     }
 
     private func rebuildBookmarksMenu(_ menu: NSMenu) {
-        let bookmarks = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.rootFolder.children ?? []
+        let bookmarks = SpaceSessionControllersManager.shared.activeWindowController?.browserState.bookmarkManager.rootFolder.children ?? []
 
         BookmarkMenuContentBuilder.populate(
             menu: menu,
@@ -1057,7 +1057,7 @@ extension AppController {
     }
 
     private func isActiveWindowIncognito() -> Bool {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.isIncognito == true
+        SpaceSessionControllersManager.shared.activeWindowController?.browserState.isIncognito == true
     }
 
     /// Re-evaluates the menu-bar "Bookmarks" top-level item's visibility
@@ -1074,7 +1074,7 @@ extension AppController {
 
     private func canBookmarkCurrentTab() -> Bool {
         guard !isActiveWindowIncognito() else { return false }
-        guard let state = MainBrowserWindowControllersManager.shared
+        guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isInPlaceholderMode,
               let tab = state.focusingTab,
@@ -1087,7 +1087,7 @@ extension AppController {
 
     private func canBookmarkAllTabs() -> Bool {
         guard !isActiveWindowIncognito() else { return false }
-        let bookmarkableTabsCount = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.normalTabs.filter { !$0.isLocalPage }.count ?? 0
+        let bookmarkableTabsCount = SpaceSessionControllersManager.shared.activeWindowController?.browserState.normalTabs.filter { !$0.isLocalPage }.count ?? 0
         return bookmarkableTabsCount > 1
     }
 
@@ -1097,7 +1097,7 @@ extension AppController {
     /// bookmark tree and keep `pinnedTabs` empty, so the predicate disables
     /// them too.
     private func canExportBookmarks() -> Bool {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
             return false
         }
         return BookmarkHTMLExporter.hasExportableContent(
@@ -1126,7 +1126,7 @@ extension AppController {
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared
+        guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isKioskWindow else {
             return
@@ -1135,7 +1135,7 @@ extension AppController {
     }
     
     @objc func toggleChatbar(_ sendar: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared
+        guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isKioskWindow else {
             return
@@ -1145,7 +1145,7 @@ extension AppController {
 
     @MainActor
     @objc func toggleReaderView(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
               let tab = state.focusingTab else {
             return
         }
@@ -1154,7 +1154,7 @@ extension AppController {
 
     @MainActor
     @objc func saveTabForLater(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
               let tab = state.focusingTab else {
             return
         }
@@ -1168,7 +1168,7 @@ extension AppController {
 
     @MainActor
     @objc func copySelectedTabURLs(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
             return
         }
         guard let copiedURLs = state.copySelectedTabURLs() else {
@@ -1179,7 +1179,7 @@ extension AppController {
 
     @MainActor
     @objc func sharePageFromMenu(_ sender: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.sharePage(sender)
+        SpaceSessionControllersManager.shared.activeWindowController?.sharePage(sender)
     }
 
     /// Starts a new AI conversation in the focused tab's sidebar.
@@ -1196,7 +1196,7 @@ extension AppController {
     /// when the sidebar is created) to let exactly that tab's Sidecar respond.
     @MainActor
     @objc func newConversation(_ sender: Any?) {
-        guard let windowController = MainBrowserWindowControllersManager.shared.activeWindowController,
+        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController,
               let tabId = windowController.browserState.focusingTab?.guid else {
             return
         }
@@ -1241,11 +1241,11 @@ extension AppController {
     }
 
     @objc func bookmarkThisTab(_ sender: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.toggleBookmark(sender)
+        SpaceSessionControllersManager.shared.activeWindowController?.toggleBookmark(sender)
     }
 
     @objc func bookmarkAllTabs(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
             return
         }
 
@@ -1263,7 +1263,7 @@ extension AppController {
     }
 
     @objc func openBookmarkManager(_ sender: Any?) {
-        guard let state = MainBrowserWindowControllersManager.shared
+        guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isIncognito else {
             return
@@ -1277,7 +1277,7 @@ extension AppController {
             return
         }
 
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.openBookmark(bookmark)
+        SpaceSessionControllersManager.shared.activeWindowController?.browserState.openBookmark(bookmark)
     }
 
     /// Bookmark-export writes still running on the background queue, and
@@ -1292,7 +1292,7 @@ extension AppController {
     /// handles the same-name replace confirmation; the write is atomic so a
     /// mid-write failure leaves any existing file intact.
     @objc func exportBookmarks(_ sender: Any?) {
-        guard let windowController = MainBrowserWindowControllersManager.shared.activeWindowController,
+        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController,
               let window = windowController.window else { return }
         let state = windowController.browserState
         guard BookmarkHTMLExporter.hasExportableContent(
@@ -1682,7 +1682,7 @@ extension AppController {
     }
 
     @objc func showExtensionInfo(_ sender: Any?) {
-        let versionsDict = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.extensionManager.phiExtensionVersions
+        let versionsDict = SpaceSessionControllersManager.shared.activeWindowController?.browserState.extensionManager.phiExtensionVersions
         
         let alert = NSAlert()
         alert.messageText = NSLocalizedString("app.extensionInfoAlert.title", value: "Extension Info", comment: "Extension info alert - Title of the alert showing extension version information")
@@ -1714,7 +1714,7 @@ extension AppController {
     /// showing the menu, as before.
     private var shouldShowSpacesMenu: Bool {
         PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
-            && MainBrowserWindowControllersManager.shared
+            && SpaceSessionControllersManager.shared
                 .activeWindowController?.browserState.participatesInSpaces != false
     }
 
@@ -2237,7 +2237,7 @@ extension AppController {
     /// (most-recently-key window) when no controller is active — covers the
     /// menu-bar-from-background-app case.
     fileprivate func currentSpacesSlot() -> SpaceWindowSlot? {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.slot
+        SpaceSessionControllersManager.shared.activeWindowController?.slot
             ?? SpaceManager.shared.keySlot
     }
 
@@ -2453,16 +2453,20 @@ extension AppController {
 
     @MainActor
     func openNewIncognitoSpace() {
+        let timing = SpaceSwitchTiming(operation: "new_incognito")
         let manager = SpaceManager.shared
-        let spaceId = manager.createIncognitoSpace()
+        let spaceId = manager.createIncognitoSpace(timing: timing)
+        timing.mark("incognito.slot_lookup.begin")
         if let slot = currentSpacesSlot() {
+            timing.mark("incognito.slot_lookup.end")
             slot.suppressHoverCard(spaceId: spaceId)
-            slot.activate(spaceId: spaceId)
+            slot.activate(spaceId: spaceId, timing: timing)
         } else {
             // No browser window open (menu-bar-only state): mint a slot
             // and spawn the Space's window into it, the same shape a
             // Chromium-initiated Cmd+N takes.
             let slot = manager.createSlot(initialSpaceId: spaceId)
+            timing.mark("incognito.slot_create.end")
             slot.activate(spaceId: spaceId, onActivationFailed: {
                 // Undo the whole menu action rather than half of it: with
                 // nothing on screen, a Space left in the strip behind a
@@ -2480,7 +2484,7 @@ extension AppController {
                 // a window into the very slot being reclaimed.
                 guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
                 manager.closeIncognitoSpace(spaceId: spaceId)
-            })
+            }, timing: timing)
         }
     }
 
@@ -2508,7 +2512,7 @@ extension AppController {
         profileId: String? = nil,
         preferredSpaceId: String? = nil
     ) -> Bool {
-        let manager = MainBrowserWindowControllersManager.shared
+        let manager = SpaceSessionControllersManager.shared
         let bridge = ChromiumLauncher.sharedInstance().bridge
         AppLogDebug(
             "[ExternalKioskRouting] openNewKioskWindow "
@@ -2601,9 +2605,9 @@ extension AppController {
     @MainActor
     private func openKioskWindow(
         url: String,
-        from source: MainBrowserWindowController,
+        from source: SpaceSessionController,
         bridge: PhiChromiumBridgeProtocol,
-        manager: MainBrowserWindowControllersManager
+        manager: SpaceSessionControllersManager
     ) -> KioskBrowserWindowController? {
         let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
         guard bridge.responds(to: selector) else { return nil }
@@ -2625,7 +2629,7 @@ extension AppController {
         url: String,
         profileId: String? = nil,
         bridge: PhiChromiumBridgeProtocol,
-        manager: MainBrowserWindowControllersManager
+        manager: SpaceSessionControllersManager
     ) -> KioskBrowserWindowController? {
         guard let result = bridge.createBrowser(
             withWindowType: .kiosk,
@@ -2816,7 +2820,7 @@ extension AppController {
     @MainActor
     @objc func showImportDataWindowFromMenu(_ sender: Any?) {
         guard let sender,
-              let window = MainBrowserWindowControllersManager.shared
+              let window = SpaceSessionControllersManager.shared
                 .activeWindowController?.window else { return }
         _ = CommandDispatcher.dispatchCommand(sender, window: window)
     }
@@ -2851,7 +2855,7 @@ extension AppController {
     // MARK: - Menu Validation
 
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             let lifecycleSafeActions: [Selector] = [
                 #selector(orderFrontStandardAboutPanel(_:)),
@@ -2871,7 +2875,7 @@ extension AppController {
         // most of these because the placeholder isn't in TabStripModel; this
         // is belt-and-suspenders for selector-based items (AI sidebar) and
         // defensive against any Chromium command that might still trip.
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .getActiveWindowState()?.isInPlaceholderMode == true {
             if item.action == #selector(toggleChatbar(_:)) { return false }
             if let menuItem = item as? NSMenuItem {
@@ -2913,7 +2917,7 @@ extension AppController {
 
         if item.action == #selector(toggleChatbar(_:)) {
             let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
-            let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
+            let state = SpaceSessionControllersManager.shared.getActiveWindowState()
             if !phiAIEnabled || state?.isKioskWindow == true
                 || state?.isIncognito ?? false || state?.groupOverviewState != nil
                 || state?.focusingTab?.aiChatEnabled == false {
@@ -2926,7 +2930,7 @@ extension AppController {
         // original behavior.
         if item.action == #selector(newConversation(_:)) {
             let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
-            let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
+            let state = SpaceSessionControllersManager.shared.getActiveWindowState()
             guard phiAIEnabled,
                   let state,
                   !state.isKioskWindow,
@@ -2940,7 +2944,7 @@ extension AppController {
 
         // Toggle Sidebar is unavailable in the traditional layout.
         if item.action == #selector(toggleSidebar(_:)) {
-            if MainBrowserWindowControllersManager.shared
+            if SpaceSessionControllersManager.shared
                 .getActiveWindowState()?.isKioskWindow == true
                 || PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
                 return false
@@ -2956,7 +2960,7 @@ extension AppController {
         // is in flight — window closed included. The import item additionally
         // needs a window, because that is where it reads its target Space from.
         if item.action == #selector(showImportDataWindowFromMenu(_:)) {
-            guard MainBrowserWindowControllersManager.shared
+            guard SpaceSessionControllersManager.shared
                 .activeWindowController != nil else { return false }
             // `validateUserInterfaceItem` is a nonisolated @objc entry point
             // but always arrives on the main thread, so assume isolation here
@@ -2973,7 +2977,7 @@ extension AppController {
 
         if item.action == #selector(openBookmarkManager(_:)) {
             return ApplicationState.shared.canUseBrowser &&
-                MainBrowserWindowControllersManager.shared.activeWindowController != nil &&
+                SpaceSessionControllersManager.shared.activeWindowController != nil &&
                 !isActiveWindowIncognito()
         }
         
@@ -3018,7 +3022,7 @@ extension AppController {
         if item.action == #selector(toggleReaderView(_:)) {
             if let menuItem = item as? NSMenuItem {
                 let tab = MainActor.assumeIsolated {
-                    MainBrowserWindowControllersManager.shared
+                    SpaceSessionControllersManager.shared
                         .activeWindowController?.browserState.focusingTab
                 }
                 menuItem.state = (tab?.extensionReaderActive ?? false) ? .on : .off
@@ -3032,7 +3036,7 @@ extension AppController {
         if item.action == #selector(saveTabForLater(_:)) {
             let canSave = MainActor.assumeIsolated {
                 SaveForLaterService.canSave(
-                    MainBrowserWindowControllersManager.shared
+                    SpaceSessionControllersManager.shared
                         .activeWindowController?.browserState.focusingTab)
             }
             return canSave && ApplicationState.shared.canUseBrowser
@@ -3099,7 +3103,7 @@ extension AppController {
                   ChromiumLauncher.sharedInstance().bridge != nil else {
                 return false
             }
-            return MainBrowserWindowControllersManager.shared
+            return SpaceSessionControllersManager.shared
                 .activeWindowController != nil
                 || !SpaceManager.shared.isSessionRestoreInFlight
         }
@@ -3194,7 +3198,7 @@ extension AppController {
             return true
         }
         if item.action == #selector(copySelectedTabURLs(_:)) {
-            guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState() else {
+            guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {
                 return false
             }
             if let menuItem = item as? NSMenuItem {
@@ -3205,7 +3209,7 @@ extension AppController {
             return state.hasCopyableSelectedTabURLs
         }
         if item.action == #selector(sharePageFromMenu(_:)) {
-            guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState() else {
+            guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {
                 return false
             }
             return MainActor.assumeIsolated {
@@ -3284,7 +3288,7 @@ extension AppController {
     ]
 
     @IBAction @objc func commandDispatch(_ sender: Any?) {
-        guard !MainBrowserWindowControllersManager.shared
+        guard !SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked else {
             return
         }

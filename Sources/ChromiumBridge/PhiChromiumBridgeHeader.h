@@ -8,6 +8,13 @@
 #ifndef PhiChromiumBridgeHeader_h
 #define PhiChromiumBridgeHeader_h
 NS_ASSUME_NONNULL_BEGIN
+/// Result of Chromium's first-pass handling before the shell's responder chain.
+typedef NS_ENUM(NSInteger, PhiKeyEquivalentHandling) {
+  PhiKeyEquivalentHandlingUnhandled,
+  PhiKeyEquivalentHandlingHandled,
+  PhiKeyEquivalentHandlingPassToMainMenu,
+};
+
 @protocol WebContentWrapper;
 @protocol BookmarkWrapper;
 @protocol DownloadItemWrapper;
@@ -535,6 +542,32 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)openReaderViewForTabId:(int64_t)tabId windowId:(int64_t)windowId;
 
 @optional
+
+/// Hosted-window mode: Chromium asked to show or activate a hosted browser
+/// window — a routed navigation landing in another Space's window, a page
+/// calling window.focus(), chrome.windows.update({focused: true}), a tab
+/// activated by an extension. The window itself never appears; the Mac client
+/// presents that window's Space in its slot instead, which is the outcome the
+/// ordered-in NSWindow used to produce through key-window adoption. Not sent
+/// for inactive shows (restored siblings), so a restore burst never switches
+/// Spaces.
+- (void)windowRequestedPresentation:(int64_t)windowId;
+/// Show the initial shell without taking focus when activate is NO.
+- (void)windowRequestedPresentation:(int64_t)windowId activate:(BOOL)activate;
+
+/// Hosted-window mode: Chromium changed the fullscreen state of a hosted
+/// browser's (never shown) window — a page's fullscreen request or exit,
+/// the fullscreen command, press-and-hold Esc leaving fullscreen — and
+/// the shell presenting it should follow. `fullscreen` is the state
+/// Chromium now holds; put the shell into it if it is not there or on its
+/// way there already. The transitions the client started itself
+/// (`setHostedFullscreen:forWindowId:`) come back through here too and are
+/// no-ops by that rule.
+- (void)windowRequestedFullscreen:(BOOL)fullscreen forWindowId:(int64_t)windowId;
+/// targetDisplayId is the macOS display ID, or -1 for the current display.
+- (void)windowRequestedFullscreen:(BOOL)fullscreen
+                     forWindowId:(int64_t)windowId
+                 targetDisplayId:(int64_t)targetDisplayId;
 
 /// Queried synchronously on the browser UI thread before each highlight copy.
 /// Read the current native preference without blocking. NO skips authentication
@@ -1246,6 +1279,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                                             profileId:(NSString * _Nullable)profileId
                                                                 hidden:(BOOL)hidden;
 
+/// Hosted-window mode: mints a window id from the Browser session-id
+/// generator without creating a Browser. The Mac client keys the Space's
+/// session on it up front — sidebar, pinned tabs and bookmarks are built
+/// before the Space is first visited — and hands it back through
+/// `createBrowserWithWindowType:profileId:hidden:reservedWindowId:` on the
+/// first switch, so the Browser that arrives carries the id the session
+/// already has. Ids are as unique as minted ones; an unused reservation is
+/// simply never seen again.
+- (int64_t)reserveWindowId;
+
+/// `createBrowserWithWindowType:profileId:hidden:` for a window id obtained
+/// from `reserveWindowId`. Pass 0 to mint one as usual.
+- (nullable NSDictionary<NSString *, id> *)createBrowserWithWindowType:(ChromiumBrowserType)browserType
+                                                            profileId:(NSString * _Nullable)profileId
+                                                               hidden:(BOOL)hidden
+                                                     reservedWindowId:(int64_t)reservedWindowId;
+
 /// Creates a hidden agent-Space browser window: TYPE_NORMAL, never Show()n by
 /// Chromium, omitted from session restore, and starting in agent mode (window
 /// activation, content fullscreen, and omnibox focus are suppressed; tab
@@ -1390,6 +1440,85 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// user switches to is never a blank page. Both directions are idempotent
 /// and a `windowId` that no longer resolves is a no-op.
 - (void)setRestoredSiblingConcealed:(BOOL)concealed windowId:(int64_t)windowId;
+
+// ==========================================================================
+// Hosted window mode (Mac → Chromium)
+// ==========================================================================
+
+/// Every TYPE_NORMAL, non-shadow browser (Space windows, Incognito Spaces,
+/// agent Spaces, and session-restored windows alike) is hosted: its own
+/// NSWindow is never shown by Chromium — Show()/Activate()/fullscreen on it
+/// are no-ops, and its visibility and activity are answered from the
+/// presentation state below. The Mac client presents a hosted browser by
+/// mounting its tabs' native views into a client-owned shell window bound
+/// with `setPresentationHost:forWindowId:`.
+
+/// Binds a hosted browser to the client-owned shell NSWindow that presents
+/// it. From then on Chromium attaches that browser's child windows —
+/// permission and other bubbles, the find bar, dialogs and sheets — to the
+/// shell instead of to the hidden browser window, and treats the browser as
+/// visible for child-ordering whenever the shell is. Pass nil to unbind (the
+/// binding also clears itself when the browser closes). A `windowId` that
+/// does not resolve to a hosted browser is a no-op.
+- (void)setPresentationHost:(nullable NSWindow *)shellWindow
+                forWindowId:(int64_t)windowId;
+
+/// Marks a hosted browser as the one currently presented in its shell (YES)
+/// or as a background Space of that shell (NO). Presenting into a key shell
+/// activates the browser's widget as a key change on a real window would,
+/// so the activation order Chromium uses for
+/// "the current window" (keyboard commands, chrome.windows.getLastFocused,
+/// new tabs from the Dock menu) follows Space switches; the previously
+/// presented browser of the same shell becomes inactive. Send YES after the
+/// entering Space's view tree is installed and NO for the leaving one; both
+/// directions are idempotent. YES requires a prior
+/// `setPresentationHost:forWindowId:` for the window and is ignored (logged)
+/// without one. Tab visibility is not driven here — mounting and detaching
+/// the tab's native view already does that.
+- (void)setPresented:(BOOL)presented forWindowId:(int64_t)windowId;
+
+/// Mirrors the shell's native fullscreen state onto the hosted browser it
+/// presents. Chromium never fullscreens the hidden browser window, so a
+/// transition the user starts on the shell (the green button, the
+/// fullscreen menu item) reaches it only through this call: send YES/NO
+/// from the shell's will-enter/will-exit fullscreen callbacks for the
+/// presented browser, and again when a browser is presented into a shell
+/// that is already fullscreen. Chromium then runs the same
+/// fullscreen-state change a real window's transition would — in
+/// particular a NO releases a tab's DOM fullscreen, which otherwise stays
+/// on inside the windowed shell. Idempotent, so the transitions Chromium
+/// itself started (content fullscreen, which the client answers by
+/// fullscreening the shell) are no-ops here.
+- (void)setHostedFullscreen:(BOOL)fullscreen forWindowId:(int64_t)windowId;
+/// Complete an explicit-display request after the native shell has settled.
+- (void)hostedFullscreenTransitionDidCompleteForWindowId:(int64_t)windowId;
+
+/// Run only the presented browser's pre-responder shortcut handlers. The
+/// original event must belong to its shell. Handled includes intentionally
+/// dropped key repeats; PassToMainMenu (Phi's placeholder-mode short circuit)
+/// must bypass the shell's web view so AppKit runs the menu action.
+- (PhiKeyEquivalentHandling)preHandleHostedKeyEquivalent:(NSEvent*)event
+                                             forWindowId:(int64_t)windowId;
+/// Run the presented browser's post-responder shortcut handlers after the
+/// shell's responder chain declined the event (a native text field was first
+/// responder). Executes non-menu browser commands; PassToMainMenu leaves
+/// menu-backed ones to AppKit.
+- (PhiKeyEquivalentHandling)postHandleHostedKeyEquivalent:(NSEvent*)event
+                                              forWindowId:(int64_t)windowId;
+
+/// Mirrors key status onto the hosted browser a shell presents, separately
+/// from presentation: a browser stays presented (on screen in its shell)
+/// while its shell is not the key window. YES activates the browser's widget
+/// (as its own window becoming key would) and makes it the only active
+/// hosted one; NO deactivates it. Send NO when the shell resigns key to a window
+/// outside it — another shell, a standalone Incognito or Kiosk window,
+/// another application — but not to one of its own child windows (a find
+/// bar, bubble or dialog Chromium parented to it), which keeps a real
+/// browser window active too. `setPresented:YES` already activates when the
+/// shell is key or owns the key window, so YES is only needed when key
+/// returns to a shell whose presented browser did not change. Both
+/// directions are idempotent.
+- (void)setHostedActive:(BOOL)active forWindowId:(int64_t)windowId;
 
 // ==========================================================================
 // Window-group close (Mac → Chromium)
@@ -1673,6 +1802,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// misreading its result. Main thread only.
 - (void)materializeGhostWindow:(int32_t)previousSessionWindowId
                      profileId:(NSString *)profileId
+             outcomeCompletion:(void (^)(PhiGhostMaterializeOutcome outcome))completion;
+
+/// `materializeGhostWindow:profileId:outcomeCompletion:` for a window id
+/// obtained from `reserveWindowId`: the rebuilt window adopts it as its
+/// window id (hosted-window mode, where the Mac side's session for the Space
+/// already exists under that id). Pass 0 to mint one as usual.
+- (void)materializeGhostWindow:(int32_t)previousSessionWindowId
+                     profileId:(NSString *)profileId
+              reservedWindowId:(int64_t)reservedWindowId
              outcomeCompletion:(void (^)(PhiGhostMaterializeOutcome outcome))completion;
 
 /// Drops the ghost window parked as `previousSessionWindowId` for `profileId`

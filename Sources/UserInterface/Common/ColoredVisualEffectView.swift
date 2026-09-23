@@ -40,6 +40,26 @@ class ColoredVisualEffectView: NSVisualEffectView {
         }
     }
 
+    /// While true the view paints nothing of its own — neither the vibrancy
+    /// material nor the color fill — and only its subviews show. Used while a
+    /// Space switch slides this view's content over another sidebar: the
+    /// material is masked out (a mask does not affect subviews) instead of
+    /// hidden, since hiding the view would hide the content too.
+    var suppressesBackdrop = false {
+        didSet {
+            guard suppressesBackdrop != oldValue else { return }
+            maskImage = suppressesBackdrop ? Self.clearMaskImage : nil
+            colorView.isHidden = suppressesBackdrop
+        }
+    }
+
+    private static let clearMaskImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 1, height: 1), flipped: false) { _ in true }
+        image.capInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        image.resizingMode = .stretch
+        return image
+    }()
+
     // MARK: - Overrides
 
     override init(frame frameRect: NSRect) {
@@ -81,6 +101,19 @@ class ColoredVisualEffectView: NSVisualEffectView {
         addSubview(colorView, positioned: .below, relativeTo: nil)
     }
     
+    /// Re-resolves the theme provider this view follows. The provider is
+    /// found through the responder chain, so a view whose provider changes
+    /// without the view moving — the shell's sidebar backdrop when the
+    /// presented session changes — asks for it again here.
+    func rebindThemeProvider() {
+        guard themedBackgroundColor != nil else { return }
+        themeSubscription?.cancel()
+        themeSubscription = nil
+        subscribedProvider = nil
+        subscribeToThemeChanges()
+        updateColor()
+    }
+
     private func subscribeToThemeChanges() {
         let provider = themeStateProvider
         if let subscribedProvider, subscribedProvider === provider, themeSubscription != nil {
@@ -98,6 +131,28 @@ class ColoredVisualEffectView: NSVisualEffectView {
 
     private func updateColor() {
         colorView.layer?.backgroundColor = makeBackgroundColor().cgColor
+    }
+
+    /// The fill as it shows right now: mid-animation, the presentation
+    /// value; otherwise the model.
+    var presentedFillColor: CGColor? {
+        guard let layer = colorView.layer else { return nil }
+        return layer.presentation()?.backgroundColor ?? layer.backgroundColor
+    }
+
+    /// Ramps the fill from `from` to the current color as a Core Animation
+    /// animation on the caller's clock (`startTime` in `CACurrentMediaTime`
+    /// terms), so it plays in step with other animations on that clock and
+    /// through main-thread stalls. The model already holds the destination.
+    func animateFill(from: CGColor, duration: TimeInterval, startTime: CFTimeInterval) {
+        guard let layer = colorView.layer, duration > 0 else { return }
+        let ramp = CABasicAnimation(keyPath: "backgroundColor")
+        ramp.fromValue = from
+        ramp.toValue = layer.backgroundColor
+        ramp.duration = duration
+        ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        ramp.beginTime = layer.convertTime(startTime, from: nil)
+        layer.add(ramp, forKey: "phi.fillRamp")
     }
     
     private func makeBackgroundColor() -> NSColor {

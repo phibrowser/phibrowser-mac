@@ -35,7 +35,7 @@ enum TravelBackMessageHandler {
                   let data = context.payload.data(using: .utf8),
                   let request = try? JSONDecoder().decode(Request.self, from: data),
                   !request.profileId.isEmpty else { throw TravelBackFailure.invalidSnapshot }
-            let manager = MainBrowserWindowControllersManager.shared
+            let manager = SpaceSessionControllersManager.shared
             let source: BrowserState?
             if request.sourceKind == "phi-chat" {
                 // Product isolation trusts the packaged UI's native Profile lookup.
@@ -174,7 +174,7 @@ enum TravelBackMessageHandler {
               space.profileId == profileId, !space.isAgentSpace,
               !SpaceManager.isIncognitoSpaceId(spaceId) else { throw TravelBackFailure.targetUnavailable }
         guard source?.travelBackRunning != true else { throw TravelBackFailure.busy }
-        let manager = MainBrowserWindowControllersManager.shared
+        let manager = SpaceSessionControllersManager.shared
         let candidates = manager.getAllWindows().compactMap(\.browserState).filter {
             $0.profileId == profileId && $0.spaceId == spaceId && $0.travelBackWindowAllowed
         }

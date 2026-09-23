@@ -272,7 +272,7 @@ enum SaveForLaterService {
     /// The extension speaks in Chromium tab ids (`Tab.guid`); the tab can be
     /// in any window.
     private static func findTab(_ tabId: Int) -> (tab: Tab, state: BrowserState)? {
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             let state = controller.browserState
             if let tab = state.tabs.first(where: { $0.guid == tabId }) {
                 return (tab, state)
@@ -345,7 +345,7 @@ enum SaveForLaterService {
             value: "Cancel",
             comment: "Folio - Cancel button of the add-note dialog"))
         alert.window.initialFirstResponder = field
-        let window = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let window = SpaceSessionControllersManager.shared.getAllWindows()
             .first(where: { $0.browserState.windowId == windowId })?.window
         let response: NSApplication.ModalResponse
         if let window {
@@ -367,7 +367,7 @@ enum SaveForLaterService {
         AppLogWarn("[SaveForLater] legacy saveForLater.highlight from a " +
                    "pre-3.7 Mirage; the extension now owns highlights")
         Task { @MainActor in
-            guard let windowId = MainBrowserWindowControllersManager.shared
+            guard let windowId = SpaceSessionControllersManager.shared
                 .getActiveWindowState()?.windowId else { return }
             showToast(
                 title: NSLocalizedString(
@@ -400,7 +400,7 @@ enum SaveForLaterService {
 
     private static func openExtensionPage(_ page: String) {
         guard featureEnabled,
-              let state = MainBrowserWindowControllersManager.shared
+              let state = SpaceSessionControllersManager.shared
                   .activeWindowController?.browserState else { return }
         state.createTab(
             "chrome-extension://\(ReaderExtensionBridge.extensionId)/\(page)",
@@ -444,7 +444,7 @@ enum SaveForLaterService {
         if let tabId, let found = findTab(tabId) {
             return folderURL(forProfile: found.state.profileId)
         }
-        return folderURL(forProfile: MainBrowserWindowControllersManager.shared
+        return folderURL(forProfile: SpaceSessionControllersManager.shared
             .getActiveWindowState()?.profileId ?? "")
     }
 
@@ -971,7 +971,7 @@ enum SaveForLaterService {
         }
         Task { @MainActor in
             let windowId = payload.tabId.flatMap { findTab($0)?.state.windowId }
-                ?? MainBrowserWindowControllersManager.shared
+                ?? SpaceSessionControllersManager.shared
                     .getActiveWindowState()?.windowId
             guard let windowId else { return }
             guard let title = toastTitle(forKey: payload.titleKey) else {
@@ -1029,7 +1029,7 @@ enum SaveForLaterService {
     private static func requestExtensionSave(tab: Tab, context: JobContext,
                                              timeout: TimeInterval = 12) async -> Bool {
         let requestId = UUID().uuidString
-        let windowId = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let windowId = SpaceSessionControllersManager.shared.getAllWindows()
             .first(where: { controller in
                 controller.browserState.tabs.contains(where: { $0.guid == tab.guid })
             })?.browserState.windowId

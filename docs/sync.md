@@ -30,7 +30,13 @@ acknowledgement cannot be dismissed. Background work never reopens setup.
 
 Every entry and submission preflight fetches new Profile and Space candidates;
 GET requests bypass response caches. A failed refresh has no cached-choice
-fallback. Account/session generations fence late responses. Preflight freezes
+fallback. Profile candidate filtering treats a persisted mapping as claimed only
+when its UUID still appears in that fresh account list. Missing old identities
+remain selectable locally after a server reset; merely loading candidates does
+not change mappings. Explicit adoption replaces the old mapping. Registering as
+new requires a definitive missing old key record, preserves the mapping on
+transport/auth failures, and writes its replacement only after a successful PUT.
+Account/session generations fence late responses. Preflight freezes
 choice/navigation edits while permitting Finish later. Confirmed partial mapping
 writes are real and reused on retry; only full completion opens eligibility.
 

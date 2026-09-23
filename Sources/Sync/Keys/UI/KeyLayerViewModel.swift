@@ -301,14 +301,11 @@ final class KeyLayerViewModel: ObservableObject {
     /// (account-registered) profiles and moves to `.pairingProfiles` so the
     /// user can resolve the ambiguous mapping by hand.
     ///
-    /// Both sides are filtered by the persisted mapping rather than shown
-    /// whole. An already-mapped local must not appear here: every row offers
-    /// "Register as new", which `ProfileKeyManager.registerLocalProfile` now
-    /// refuses with `alreadyMapped` for a mapped profile — and rightly so,
-    /// since minting a second UUID would orphan that profile's existing
-    /// envelope. Excluding the remotes those locals already claim likewise
-    /// keeps the "create on this Mac" toggle from duplicating a profile that
-    /// is in fact already present.
+    /// Existing mappings claim only UUIDs present in the freshly fetched account list.
+    /// After a server reset, old persisted mappings must not hide local profiles from
+    /// matching. Loading only classifies candidates; adoption/registration updates the
+    /// mapping after the user confirms. Valid mappings still exclude both sides to avoid
+    /// duplicate registration or local creation.
     ///
     /// Pressing "retry" while a load is still in flight CANCELS AND REPLACES it:
     /// the modal's retry button is pressable in every phase now (it used to be
@@ -349,22 +346,22 @@ final class KeyLayerViewModel: ObservableObject {
     /// land its (stale, or merely cancelled) result on top of its replacement's.
     private func runPairingLoad(controller: SyncKeyController) async {
         guard !Task.isCancelled else { return }
-        let allLocals = controller.localProfiles()
-        let claimedUuids = Set(allLocals.compactMap {
-            controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId)
-        })
-        let locals = allLocals
-            .filter { controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) == nil }
-            .map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
-        // Metadata only (R12): counts, never a uuid, a display name or an
-        // envelope.
-        AppLogInfo("[phi-sync] pairing load starting; \(locals.count) unmapped local profiles")
         let profileKeys = controller.profileKeys
         do {
-            let remotes = try await withDeadline(loadDeadline) {
+            let accountProfiles = try await withDeadline(loadDeadline) {
                 try await profileKeys.accountProfiles()
-            }.filter { !claimedUuids.contains($0.uuid) }
-            guard !Task.isCancelled else { return }
+            }
+            guard !Task.isCancelled, !controller.isRetired else { return }
+            let remoteUuids = Set(accountProfiles.map(\.uuid))
+            let allLocals = controller.localProfiles()
+            let claimedUuids = Set(allLocals.compactMap {
+                profileKeys.mappedGlobalUuid(forProfileId: $0.profileId)
+            }).intersection(remoteUuids)
+            let locals = allLocals.filter {
+                guard let uuid = profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) else { return true }
+                return !remoteUuids.contains(uuid)
+            }.map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
+            let remotes = accountProfiles.filter { !claimedUuids.contains($0.uuid) }
             // The modal is the second writer of the undecryptable set (§3.6's
             // per-round refresh is the first): a row whose envelope did not open
             // here is read-only and must not make the gate think there is
@@ -428,7 +425,7 @@ final class KeyLayerViewModel: ObservableObject {
     ///
     /// Idempotency (§5.1 / §10.6 item 4): ProfileKeyManagerError.alreadyMapped means done. Retry replays
     /// frozen profileDecisions after Space failure through backToSpaces → spaces → Finish.
-    /// registerLocalProfile always throws for mapped profiles, while initialSelections seeds unmatched locals
+    /// registerLocalProfile refuses still-valid mappings, while initialSelections seeds unmatched locals
     /// as registerNew, making this replay normal. Treating it as error would trap the wizard in step 1
     /// forever. SpaceSyncMappingError.alreadyMapped follows the same rule. adoptRemoteProfile already
     /// overwrites idempotently.

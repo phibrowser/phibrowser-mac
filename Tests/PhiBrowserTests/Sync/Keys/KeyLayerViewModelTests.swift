@@ -173,6 +173,41 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertEqual(remotes[0].name, "Work")
     }
 
+    func testPairingIncludesLocalsWhoseMappingsDisappearedAfterServerReset() async throws {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let manager = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await manager.bootstrap()
+        let store = ProfileKeyManagerTests.MemoryMappingStore()
+        let keys = ProfileKeyManager(api: api, keyManager: manager, mappingStore: store)
+        let remote = try await keys.registerLocalProfile(profileId: "Remote", displayName: "Your Phi")
+        let valid = try await keys.registerLocalProfile(profileId: "Valid", displayName: "Valid")
+        store.map = ["Default": "old-default", "Profile 1": "old-test", "Valid": valid.uuid]
+        let before = store.map
+        let controller = SyncKeyController(manager: manager,
+            approvals: DeviceApprovalService(api: api, keyManager: manager, deviceKeyProvider: provider),
+            profileKeys: keys,
+            localProfilesProvider: { [("Default", "Your Phi"), ("Profile 1", "Test Profile"), ("Valid", "Valid")] },
+            notifyChromium: {})
+        let vm = KeyLayerViewModel(manager: manager)
+        await vm.startPairing(controller: controller)
+        guard case .pairingProfiles(let locals, let remotes) = vm.phase else { return XCTFail("Expected candidates") }
+        XCTAssertEqual(locals.map(\.profileId), ["Default", "Profile 1"])
+        XCTAssertEqual(remotes.map(\.uuid), [remote.uuid])
+        XCTAssertEqual(store.map, before, "Loading cannot replace mappings before confirmation")
+        let selection = ProfilePairingModel.initialSelections(locals: locals, remotes: remotes)
+        XCTAssertEqual(selection["Default"], .remote(remote.uuid))
+        XCTAssertEqual(selection["Profile 1"], .registerNew)
+        let applied = await vm.applyPairingDecisions([
+            .adopt(localProfileId: "Default", remoteUuid: remote.uuid),
+            .registerNew(localProfileId: "Profile 1", displayName: "Test Profile")
+        ], controller: controller)
+        XCTAssertTrue(applied)
+        XCTAssertEqual(store.map["Default"], remote.uuid)
+        XCTAssertNotEqual(store.map["Profile 1"], "old-test")
+        XCTAssertEqual(store.map["Valid"], valid.uuid)
+    }
+
     func testSubmitPairingAdoptAndRegisterResolves() async throws {
         let api = AccountKeyManagerTests.FakeAPI()
         let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()

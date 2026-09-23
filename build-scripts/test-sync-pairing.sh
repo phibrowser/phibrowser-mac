@@ -28,8 +28,19 @@ a = engine.index('    private func runPreview(into box: PreviewBox)')
 b = engine.index('    // MARK: - §11 round counters', a)
 template = template.replace('    /* PRODUCTION_PREVIEW */', engine[a:b])
 Path(sys.argv[2]).with_name('PreviewFixture.swift').write_text(template)
+template = (root / 'Tests/SyncPairing/ProfileCandidatesFixture.swift').read_text()
+view = (root / 'Sources/Sync/Keys/UI/KeyLayerViewModel.swift').read_text()
+a = view.index('    private func runPairingLoad(')
+b = view.index('    /// Races `body`', a)
+template = template.replace('    /* PRODUCTION_PAIRING_LOAD */', view[a:b].replace('SyncKeyController', 'PairingLoadController'))
+a = view.index('    private func withDeadline<')
+b = view.index('    /// Apply pairing decisions;', a)
+template = template.replace('    /* PRODUCTION_DEADLINE */', view[a:b])
+Path(sys.argv[2]).with_name('ProfileCandidatesFixture.swift').write_text(template)
 PYEXTRACT
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
+  "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" "$task_root/Sources/Sync/Keys/PhiKeyCrypto.swift" \
+  "$task_build/ProfileCandidatesFixture.swift" \
   "$task_root/Sources/Sync/Keys/SyncPairingState.swift" \
   "$task_build/EngineStopSignal.swift" "$task_build/Gate.swift" "$task_root/Tests/SyncPairing/GateDependencies.swift" \
   "$task_build/PreviewFixture.swift" "$task_build/KeyReadinessFixture.swift" "$task_root/Tests/SyncPairing/main.swift" -o "$task_build/tests"

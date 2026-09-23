@@ -3,6 +3,8 @@ import Foundation
 @main
 struct PairingTests {
     @MainActor static func main() async throws {
+        try await testCandidatesAfterServerReset()
+        try await testRegistrationAfterServerReset()
         try await testPreviewAfterServerReset()
         let lifetime = EngineStopSignal(paired: true)
         let oldRound = lifetime.revision

@@ -228,6 +228,7 @@ import SwiftUI
     }
 
     private var nativeSyncCleanupInProgress = false
+    private var syncInitializationDeferred = false
     // Retained only until cleanup succeeds; covers failure to write the on-disk journal.
     private var pendingNativeCleanup: (accountID: String, removingDevice: Bool)?
 
@@ -342,8 +343,7 @@ import SwiftUI
             // `clearAllSyncIds`.
             clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() },
             finishLocalCleanup: { [weak self] completed in
-                self?.nativeSyncCleanupInProgress = false
-                if completed { self?.pendingNativeCleanup = nil }
+                self?.finishNativeSyncCleanup(completed: completed)
             },
             verifyCursorDeletion: {
                 for store in [bookmarkStore, pinStore, urlRuleStore] {
@@ -1001,6 +1001,13 @@ import SwiftUI
     /// fire-and-forget its silent unlock + mapping resolution.
     @MainActor
     func ensureSyncKeyControllerAndUnlock() {
+        // Cleanup can suspend while another account finishes signing in. Preserve that
+        // startup request, but do not build an engine until the old account's writes stop.
+        guard !nativeSyncCleanupInProgress else {
+            syncInitializationDeferred = true
+            return
+        }
+        syncInitializationDeferred = false
         let controller = syncKeyControllerCreatingIfNeeded()
         Task { @MainActor in
             await controller?.silentUnlockAndResolve()
@@ -1008,6 +1015,15 @@ import SwiftUI
             // once the unlock has run.
             self.startPhiSyncIfReady()
         }
+    }
+
+    @MainActor
+    private func finishNativeSyncCleanup(completed: Bool) {
+        nativeSyncCleanupInProgress = false
+        if completed { pendingNativeCleanup = nil }
+        // Resolve the account now: the deferred login may itself have been superseded
+        // or signed out. Ordinary removal without a startup request stays stopped.
+        if syncInitializationDeferred { ensureSyncKeyControllerAndUnlock() }
     }
 
     /// Drops the sync key layer on sign-out or account switch and tells

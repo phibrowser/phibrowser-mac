@@ -826,7 +826,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                           parentId: nil)
 
         var received = 0
-        let cancellable = store.bookmarkChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+        var pendingInvalidations = 0
+        let cancellable = store.bookmarkChangesPublisher(
+            debounceWindow: Self.shortDebounceWindow, onChangeDetected: { pendingInvalidations += 1 })
             .sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
@@ -839,6 +841,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
         let observed = received
         XCTAssertEqual(observed, 0, "Favicon and lastSeen are absent from the snapshot and must emit nothing")
+        XCTAssertEqual(pendingInvalidations, 0, "Local-only saves must not leave the status falsely syncing")
     }
 
     // Scope itself belongs to the snapshot (T6c-6 / ledger 4).
@@ -878,7 +881,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                 profileId: Self.profileId)
 
         var received = 0
-        let cancellable = store.pinnedTabChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+        var pendingInvalidations = 0
+        let cancellable = store.pinnedTabChangesPublisher(
+            debounceWindow: Self.shortDebounceWindow, onChangeDetected: { pendingInvalidations += 1 })
             .sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
@@ -889,6 +894,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
         let observed = received
         XCTAssertEqual(observed, 0, "Favicon and lastSeen are absent from the snapshot and must emit nothing")
+        XCTAssertEqual(pendingInvalidations, 0, "Local-only saves must not leave the status falsely syncing")
     }
 
     // MARK: - Fixtures

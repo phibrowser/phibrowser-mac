@@ -122,10 +122,18 @@ final class ProfilePairingGate {
     }
 
     func finishLater() {
+        guard isPresented else { return }
         isPresented = false
         modalHost?.dismiss()
+        // Verification may have registered this device even when pairing was deferred.
+        // Let the pane reload registration without announcing an enrollment change.
+        NotificationCenter.default.post(name: .phiSyncSetupDidDismiss, object: self)
     }
 
+}
+
+extension Notification.Name {
+    static let phiSyncSetupDidDismiss = Notification.Name("phiSyncSetupDidDismiss")
 }
 
 /// Production host: one closable setup window at modal-panel level. Closing or

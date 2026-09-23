@@ -50,6 +50,7 @@ final class DevicesSettingHostingViewController: NSViewController {
         installHostingController()
         NotificationCenter.default.addObserver(self, selector: #selector(syncContextDidChange), name: .mainAccountChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(syncContextDidChange), name: .phiSyncPairingStateDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncContextDidChange), name: .phiSyncSetupDidDismiss, object: nil)
     }
 
     @objc private func syncContextDidChange() {

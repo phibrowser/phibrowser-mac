@@ -245,12 +245,62 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
         await wizard.finish(controller: controller)
         XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(wizard.spaceSelections["LOCAL-2"], .existing(syncUuid: "acct-2"),
+                       "Our own completed Profile registration must not invalidate the unapplied Space choice")
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1")
         XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
         XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1,
                        "alreadyMapped with the expected value is complete and requires no rewrite")
         XCTAssertEqual(api.profileEnvelopes.count, 1,
                        "Profile alreadyMapped on retry is successful without minting another envelope")
+    }
+
+    func testRetryAfterProfileAdoptionPreservesSpaceChoices() async throws {
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "remote-profile"),
+                            account("acct-2", name: "Reading", profileUuid: "remote-profile")])
+        api.profileEnvelopes["remote-profile"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Remote name", ark: try XCTUnwrap(controller.manager.currentARK))
+        store.map["STALE"] = "acct-2"
+        await wizard.start(controller: controller)
+        wizard.profileSelections["Default"] = .remote("remote-profile")
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("Expected partial failure") }
+
+        store.map.removeValue(forKey: "STALE")
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
+    }
+
+    func testRetryAfterPartialApplyStillRequiresReviewOfChangedAccountSpaces() async throws {
+        var accountSpaces = [account("acct-1", name: "Work"), account("acct-2", name: "Reading")]
+        let (wizard, controller, store, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: accountSpaces, preview: { .success(accountSpaces) })
+        store.map["STALE"] = "acct-2"
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("Expected partial failure") }
+        store.map.removeValue(forKey: "STALE")
+        accountSpaces[1] = account("acct-2", name: "Changed on another device")
+
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("Changed server values require a fresh review") }
+        XCTAssertNil(store.map["LOCAL-2"], "No unapplied choice may bypass the fresh-server check")
+        XCTAssertFalse(ProfilePairingGate.shared.isPaired)
     }
 
     // MARK: - 4b. addAsNew idempotence criteria

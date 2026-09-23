@@ -27,6 +27,9 @@ matching, overwrite review and completion. Finish later, Escape and window close
 retain unpaired status and discard unsubmitted choices. They remain available
 while loading/reviewing/revalidating; confirmed writes and recovery-code
 acknowledgement cannot be dismissed. Background work never reopens setup.
+Closing an actual setup session refreshes the Sync pane's device authorization
+state without changing enrollment. A verified device that defers matching remains
+unpaired, with its device list and removal controls available.
 
 Every entry and submission preflight fetches new Profile and Space candidates;
 GET requests bypass response caches. A failed refresh has no cached-choice
@@ -39,6 +42,9 @@ transport/auth failures, and writes its replacement only after a successful PUT.
 Account/session generations fence late responses. Preflight freezes
 choice/navigation edits while permitting Finish later. Confirmed partial mapping
 writes are real and reused on retry; only full completion opens eligibility.
+Within the same session, completed Profile writes advance the expected review
+snapshot so a Space-write retry retains its remaining choices. Fresh preflight
+still rejects independent changes to the server candidates or reviewed Space data.
 
 All native data rounds and Chromium ready-key exposure require enrollment.
 Read-only pairing previews use the serialized engine queue without advancing
@@ -71,6 +77,9 @@ removal. If writing the journal itself fails, the coordinator retains the pendin
 intent for the current process and keeps the native engine paused. Account switches fence post-await global writes and preserve pending
 account journals. Setup re-fetches server state and all matching must complete
 before sync becomes eligible again.
+Login initialization requested during cleanup is deferred until cleanup exits,
+then resolves the current account again. Multiple requests coalesce; sign-out
+does not resurrect a previous account, and removal alone does not request startup.
 
 Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
@@ -86,7 +95,10 @@ among all required contexts.
 
 Native success requires a drained pull, accepted publication, successful cursor
 persistence, and no pending/quarantined input, output, or follow-up work. Local
-changes invalidate the current result before debounce. Chromium exposes the
+changes to sync-visible fields invalidate the current result before debounce.
+Local-only activity timestamps and favicon updates do not create pending sync
+work. Every invalidation must have a corresponding debounced round, including
+a content edit reverted before that round begins. Chromium exposes the
 optional versioned `getProfileSyncStatus:completion:` observation for already
 loaded user Profiles; it never creates Profiles or sync services. It combines
 transport/auth/crypto/controller state, initial downloads, cycle evidence,

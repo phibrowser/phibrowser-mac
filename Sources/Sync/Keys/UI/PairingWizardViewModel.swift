@@ -388,6 +388,20 @@ final class PairingWizardViewModel: ObservableObject {
 
         guard sessionIsCurrent(controller) else { return }
 
+        // Successful Profile decisions remove their rows from the next candidate load.
+        // Advance that expected snapshot now: a later Space persistence failure must
+        // not mistake our own confirmed progress for an external account change.
+        loadedLocals = []
+        loadedRemotes.removeAll { $0.name != nil }
+        let mappedProfiles = makeSpacesInput(accountSpaces: spacesInput.accountSpaces,
+                                             remotes: loadedRemotes, controller: controller)
+        // Name lookup changes after adoption/creation. Keep both reviewed Space
+        // snapshots unchanged so edits during Profile writes still require review.
+        spacesInput = SpacePairingModel.Input(locals: spacesInput.locals,
+            accountSpaces: spacesInput.accountSpaces,
+            localProfileNames: mappedProfiles.localProfileNames,
+            accountProfileNames: mappedProfiles.accountProfileNames)
+
         // 2. Space decisions write sync.spaceGlobalUuids mappings, not sync.phiSpaces state. The tables are
         // disjoint and the Space gate remains closed until step 3, so the engine cannot snapshot these
         // mappings concurrently. This permits direct main-actor writes without engine round scheduling (§5.6).

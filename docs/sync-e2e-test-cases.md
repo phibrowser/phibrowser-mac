@@ -337,9 +337,28 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 | UX-12 | Fail device list load, return empty list, use duplicate names, approve expired request | Errors differ from empty results; current Mac identified by key ID; no invented last-seen time | Not run |
 | UX-13 | Remove device, cancel removal, try last-device removal; then Later | Explicit local-data preservation; rejection actionable; Later still available | Not run |
 | UX-14 | Keyboard navigation, VoiceOver, narrow window, long translations | Actions discoverable; focus/order and recovery-code acknowledgement usable | Not run |
+| UX-15 | Approve B, then Finish later during matching without reopening settings | B remains unpaired; the existing Sync pane shows authorized devices and removal controls | Not run |
+| UX-16 | Complete Profile writes, fail the second Space write, then Retry and Finish in the same session | Completed mappings are reused; still-valid unwritten choices survive; independent server changes still require review | Not run |
+| UX-17 | Complete B's login while A's confirmed cleanup is waiting for its database write; keep Sync settings closed | B initializes automatically after cleanup exits; no A state crosses accounts | Not run |
+| UX-18 | Open synced bookmarks/pins or update only their favicons; then edit and revert content within debounce | Local-only changes retain success; real edits invalidate immediately and their round restores status even after a revert | Not run |
 
 Automated evidence is recorded separately from these manual cases: hostless
 pairing/device/status/invalidation regressions and convergence properties have
 executed; native `build-for-testing` compiles hosted tests but does not run them.
 Targeted Chromium object builds compile the changed implementation/tests; a new
 `components_unittests` binary has not been linked/executed in this task.
+
+The PR #153 follow-up regressions also run without launching a browser host:
+
+- `build-scripts/test-sync-cleanup-resume.sh`: deferred login, account replacement,
+  sign-out, request coalescing, and ordinary removal.
+- `build-scripts/test-sync-pairing-retry.sh`: registration/adoption/creation retries,
+  retained choices, changed server candidates, and local edits during submission.
+- `build-scripts/test-sync-setup-dismissal.sh`: pane refresh notification on defer,
+  unchanged enrollment, and duplicate/retired-session suppression.
+- `build-scripts/test-sync-local-changes.sh`: Core Data/Combine publishers and the
+  production SwiftData schema, local-only and failed saves, immediate content
+  invalidation, debounced bursts, and edit/revert settlement.
+
+These use production code with temporary or in-memory app/transport/storage
+boundaries. They do not mark the manual app UI or two-Mac cases above as passed.

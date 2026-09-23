@@ -283,6 +283,7 @@ extension PhiPreferences {
         private static let userSpaceOperationsKey = "PhiAgentUserSpaceOperationsEnabled"
         private static let disallowedAgentProfilesKey = "PhiAgentDisallowedProfileIds"
         private static let agentFallbackProfileKey = "PhiAgentFallbackProfileId"
+        private static let unstyledOperatingPageKey = "PhiAgentUnstyledOperatingPage"
 
         /// Master gate for the developer surfaces — the Developer settings tab
         /// and the features configured there. Driven by the "Developer mode"
@@ -391,6 +392,21 @@ extension PhiPreferences {
         static var autoViewEnabled: Bool {
             get { UserDefaults.standard.bool(forKey: autoViewKey) }
             set { UserDefaults.standard.set(newValue, forKey: autoViewKey) }
+        }
+
+        /// Settings ▸ Developer ▸ Agent control: shows a page the agent is
+        /// operating exactly as it renders, for web developers inspecting it.
+        /// While on, the operating mask stays the input barrier but draws
+        /// nothing, the in-page recolor (`AgentPageTheme`) is not injected,
+        /// and the control pill starts minimised. Read live; a change posts
+        /// `.agentUnstyledOperatingPageDidChange`. Default `false`.
+        static var unstyledOperatingPageEnabled: Bool {
+            get { UserDefaults.standard.bool(forKey: unstyledOperatingPageKey) }
+            set {
+                UserDefaults.standard.set(newValue, forKey: unstyledOperatingPageKey)
+                NotificationCenter.default.post(
+                    name: .agentUnstyledOperatingPageDidChange, object: nil)
+            }
         }
 
         /// Settings ▸ Developer ▸ Remote debugging: master switch for agent CDP
@@ -753,4 +769,11 @@ enum GuestModePreferences {
         defaults.set(false, forKey: aiEnabledKey)
         return didChange
     }
+}
+
+extension Notification.Name {
+    /// Posted when `PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled`
+    /// flips, so masks and pills already on screen follow it.
+    static let agentUnstyledOperatingPageDidChange =
+        Notification.Name("agentUnstyledOperatingPageDidChange")
 }

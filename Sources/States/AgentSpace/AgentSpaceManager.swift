@@ -408,8 +408,11 @@ final class AgentSpaceManager: ObservableObject {
         // The operating mask's in-page recolor differs between light and dark
         // appearance, so any theme source flipping must restyle masked pages.
         // All three notifications funnel into the same per-window re-resolve.
+        // The developer "unstyled page" switch adds or strips the recolor on
+        // pages already masked, through the same re-resolve.
         for name: Notification.Name in
-            [.themeDidChange, .appearanceDidChange, .spaceThemeDidChange] {
+            [.themeDidChange, .appearanceDidChange, .spaceThemeDidChange,
+             .agentUnstyledOperatingPageDidChange] {
             NotificationCenter.default.addObserver(
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
@@ -1481,7 +1484,9 @@ final class AgentSpaceManager: ObservableObject {
     /// window, and every page in an agent window belongs to the agent anyway.
     private func refreshOperatingPageTheme(for task: AgentTask) {
         guard task.windowId != 0 else { return }
-        guard task.maskedTabId != nil else {
+        // A developer inspecting the page wants it exactly as it renders.
+        guard task.maskedTabId != nil,
+              !PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled else {
             AgentPageTheme.shared.clear(windowId: task.windowId)
             return
         }
@@ -1496,8 +1501,9 @@ final class AgentSpaceManager: ObservableObject {
 
     /// Re-issues the in-page recolor for every task currently wearing the
     /// mask. The injected sheet carries a different palette per appearance, so
-    /// a theme or appearance flip must restyle live targets; the native wash
-    /// (layer 1) refreshes through each window's own theme pipeline.
+    /// a theme or appearance flip must restyle live targets, and the developer
+    /// unstyled-page switch applies or strips it; the native wash (layer 1)
+    /// refreshes through each window's own theme pipeline.
     private func refreshMaskedPageThemes() {
         for task in tasksBySpaceId.values where task.maskedTabId != nil {
             refreshOperatingPageTheme(for: task)

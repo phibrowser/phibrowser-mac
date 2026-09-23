@@ -58836,6 +58836,30 @@
         }
       }
     },
+    "settings.developer.agentPageView.unstyledDescription" : {
+      "comment" : "Developer settings - Explanation for the toggle that shows agent-operated pages without the agent styling",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "For web development. While an agent operates a page, Phi stops recoloring it, makes the operating mask transparent, and minimises the Take control bar. The page still ignores your input until you take control. Applies immediately."
+          }
+        }
+      }
+    },
+    "settings.developer.agentPageView.unstyledToggle" : {
+      "comment" : "Developer settings - Toggle title for showing a page an agent is operating without the agent styling",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show operated pages exactly as rendered"
+          }
+        }
+      }
+    },
     "settings.developer.agentProfileAccess.description" : {
       "comment" : "Developer settings - Explanation for the per-profile agent-Space allowlist",
       "extractionState" : "extracted_with_value",

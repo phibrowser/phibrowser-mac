@@ -82,6 +82,7 @@ final class EdgeFogOverlayView: NSView {
 
     private var cursorTrackingArea: NSTrackingArea?
     private var reduceMotionObserver: NSObjectProtocol?
+    private var unstyledPageObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -114,12 +115,42 @@ final class EdgeFogOverlayView: NSView {
         setupEdgeLights(in: rootLayer)
         applyEdgeColors(Self.fallbackTint)
         installReduceMotionObserver()
+        installUnstyledPageObserver()
+        applyUnstyledPagePreference()
     }
 
     deinit {
         if let reduceMotionObserver {
             NotificationCenter.default.removeObserver(reduceMotionObserver)
         }
+        if let unstyledPageObserver {
+            NotificationCenter.default.removeObserver(unstyledPageObserver)
+        }
+    }
+
+    // MARK: - Unstyled page (developer)
+
+    private func installUnstyledPageObserver() {
+        unstyledPageObserver = NotificationCenter.default.addObserver(
+            forName: .agentUnstyledOperatingPageDidChange,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.applyUnstyledPagePreference()
+        }
+    }
+
+    /// With the developer unstyled-page switch on, the wash and the edge
+    /// lights stop drawing so the page shows exactly as it renders. Only the
+    /// visuals go: the view is still the input barrier, and ownership still
+    /// moves only through the control pill.
+    private func applyUnstyledPagePreference() {
+        let transparent = PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        tintLayer.isHidden = transparent
+        edgeGlowLayer.isHidden = transparent
+        edgeRingLayer.isHidden = transparent
+        CATransaction.commit()
     }
 
     // MARK: - Edge lights

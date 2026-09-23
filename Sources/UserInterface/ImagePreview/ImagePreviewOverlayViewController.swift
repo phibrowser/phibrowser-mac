@@ -87,8 +87,11 @@ final class ImagePreviewOverlayViewController: NSViewController {
 
         panelContainer.snp.makeConstraints { make in
             make.center.equalToSuperview()
-            make.width.equalToSuperview().multipliedBy(0.84).priority(490)
-            make.height.equalToSuperview().multipliedBy(0.84).priority(490)
+            // Stay below the page split item's holding priority (240). Once the
+            // panel reaches its size cap, it must not shrink the page to keep
+            // this ratio, even while the overlay is hidden.
+            make.width.equalToSuperview().multipliedBy(0.84).priority(239)
+            make.height.equalToSuperview().multipliedBy(0.84).priority(239)
             make.width.lessThanOrEqualTo(1080)
             make.height.lessThanOrEqualTo(820)
             make.leading.greaterThanOrEqualToSuperview().offset(32)

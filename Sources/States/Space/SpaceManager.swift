@@ -10855,13 +10855,18 @@ final class SpaceWindowSlot: ObservableObject {
             firstTabCancellable = nil
             firstTabTimeout?.invalidate()
             firstTabTimeout = nil
-            // Order matters: installing the entering page tree moves
-            // Chromium's native view into the window, which can flush a
-            // frame mid-way. Every step leaves a correct frame behind: the
-            // entering chrome comes back first (under the leaving one, which
-            // still shows), the leaving band is hidden while still
+            // One transaction for the whole hand-over. The slide's completion
+            // block runs outside any transaction, so the first nested commit
+            // below (the entering header and pinned strip coming back) would
+            // otherwise reach the screen on its own, a frame before the
+            // leaving sidebar is concealed: hosted sidebars paint no
+            // backdrop, and the two headers showed through each other.
+            // Within it, order still matters for a mid-way flush of the
+            // implicit transaction: the leaving band is hidden while still
             // translated off screen, the column's backdrop is pointed at the
             // entering theme before the leaving theme is put back.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             restoreEnteringChrome()
             if let pageLayer = entering.mainSplitViewController.view.layer {
                 pageLayer.removeAnimation(forKey: Self.pageFadeAnimationKey)
@@ -10876,6 +10881,7 @@ final class SpaceWindowSlot: ObservableObject {
             restoreLeavingTheme()
             enteringSurface?.setSpaceSwitchBackdropHidden(false)
             entering.completePresentationInShell()
+            CATransaction.commit()
             timing?.mark("animation.cleanup.end")
             if enteringStandIn != nil {
                 // Rows still on their way; a Space with none to come gets

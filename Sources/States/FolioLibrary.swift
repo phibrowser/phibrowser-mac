@@ -2,6 +2,7 @@
 // Use of this source code is governed by an Apache license in the LICENSE file.
 
 import Foundation
+import Markdown
 import Observation
 
 struct FolioItem: Identifiable, Equatable, Sendable {
@@ -119,7 +120,7 @@ enum FolioLibrary {
         let limit = 16 * 1024 * 1024
         let data = try handle.read(upToCount: limit + 1) ?? Data()
         guard data.count <= limit else { throw CocoaError(.fileReadTooLarge) }
-        return try FolioDocument(markdown: String(decoding: data, as: UTF8.self), source: item.sourceURL)
+        return FolioDocument(markdown: String(decoding: data, as: UTF8.self), source: item.sourceURL)
     }
 
     static func trash(item: FolioItem, folder: URL) throws {
@@ -135,92 +136,51 @@ enum FolioLibrary {
     }
 }
 
-struct FolioBlock: Identifiable, Sendable {
-    let id: Int
-    var text: AttributedString
-    let heading: Int?
-    let isQuote: Bool
-    let isCode: Bool
-    let marker: String?
-    let isRule: Bool
-    var cells: [AttributedString]? = nil
-    var isTableHeader = false
+struct FolioDocument: Sendable {
+    let article: String
+    let highlights: String
+
+    init(markdown: String, source: URL?) {
+        let document = Document(parsing: FolioLibrary.frontmatter(markdown).body)
+        var children = Array(document.blockChildren)
+        if let heading = children.first as? Heading, heading.level == 1 {
+            children.removeFirst()
+        }
+        // Split semantic headings only; fenced samples and nested quotes are content.
+        let split = children.firstIndex {
+            guard let heading = $0 as? Heading else { return false }
+            return heading.level == 2 && heading.plainText == "Highlights"
+        }
+        var sanitizer = FolioMarkdownSanitizer(source: source)
+        func sanitizedMarkdown(_ blocks: ArraySlice<BlockMarkup>) -> String {
+            sanitizer.visit(Document(blocks))?.format()
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+        article = sanitizedMarkdown(children[..<(split ?? children.endIndex)])
+        highlights = split.map { sanitizedMarkdown(children[($0 + 1)...]) } ?? ""
+    }
 }
 
-struct FolioDocument: Sendable {
-    let blocks: [FolioBlock]
-    let highlights: [FolioBlock]
+/// Preserve the native reader's passive-content policy before passing content to
+/// MarkdownView, whose default HTML and image renderers can load web resources.
+private struct FolioMarkdownSanitizer: MarkupRewriter {
+    let source: URL?
 
-    init(markdown: String, source: URL?) throws {
-        var parsed = try Self.parse(FolioLibrary.frontmatter(markdown).body, source: source)
-        if parsed.first?.heading == 1 { parsed.removeFirst() }
-        // Find a semantic heading, not matching text inside a fenced code sample.
-        if let index = parsed.firstIndex(where: { $0.heading == 2 && String($0.text.characters) == "Highlights" }) {
-            blocks = Array(parsed[..<index])
-            highlights = Array(parsed.dropFirst(index + 1))
-        } else {
-            blocks = parsed
-            highlights = []
-        }
+    mutating func visitHTMLBlock(_ html: HTMLBlock) -> Markup? { nil }
+    mutating func visitInlineHTML(_ html: InlineHTML) -> Markup? { nil }
+    mutating func visitImage(_ image: Markdown.Image) -> Markup? {
+        Markdown.Text(image.plainText)
     }
 
-    private static func parse(_ text: String, source: URL?) throws -> [FolioBlock] {
-        var parsed = try AttributedString(markdown: text, options: .init(interpretedSyntax: .full), baseURL: source)
-        // Links in saved content are untrusted. Only web navigation is supported.
-        for run in parsed.runs {
-            if let link = run.link {
-                parsed[run.range].link = FolioLibrary.webURL(link.absoluteString)
-            }
-        }
-        var result: [FolioBlock] = []
-        for run in parsed.runs {
-            let components = run.presentationIntent?.components ?? []
-            let id = components.first?.identity ?? 0
-            var text = AttributedString(parsed[run.range])
-            text.presentationIntent = nil
-            if let row = components.first(where: {
-                switch $0.kind { case .tableRow, .tableHeaderRow: return true; default: return false }
-            }) {
-                if result.last?.id != row.identity {
-                    result.append(FolioBlock(id: row.identity, text: AttributedString(), heading: nil,
-                                             isQuote: false, isCode: false, marker: nil, isRule: false,
-                                             cells: [], isTableHeader: row.kind == .tableHeaderRow))
-                }
-                let column = components.compactMap { component -> Int? in
-                    if case .tableCell(let index) = component.kind { return index }
-                    return nil
-                }.first ?? 0
-                var cells = result[result.count - 1].cells ?? []
-                while cells.count <= column { cells.append(AttributedString()) }
-                cells[column].append(text)
-                result[result.count - 1].cells = cells
-                continue
-            }
-            if result.last?.id == id {
-                result[result.count - 1].text.append(text)
-                continue
-            }
-            var heading: Int?
-            var quote = false
-            var code = false
-            var rule = false
-            var ordinal: Int?
-            var ordered = false
-            for component in components {
-                switch component.kind {
-                case .header(let level): heading = level
-                case .blockQuote: quote = true
-                case .codeBlock: code = true
-                case .thematicBreak: rule = true
-                case .listItem(let number): if ordinal == nil { ordinal = number }
-                case .orderedList: ordered = true
-                default: break
-                }
-            }
-            result.append(FolioBlock(id: id, text: text, heading: heading, isQuote: quote,
-                                     isCode: code, marker: ordinal.map { ordered ? "\($0)." : "•" }, isRule: rule))
-        }
-        return result
+    mutating func visitLink(_ link: Markdown.Link) -> Markup? {
+        guard var rewritten = defaultVisit(link) as? Markdown.Link else { return nil }
+        let resolved = link.destination.flatMap { URL(string: $0, relativeTo: source)?.absoluteURL }
+        let allowed = resolved.flatMap { FolioLibrary.webURL($0.absoluteString) }
+        var components = allowed.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: true) }
+        let scheme = components?.scheme?.lowercased()
+        components?.scheme = scheme
+        rewritten.destination = components?.url?.absoluteString
+        return rewritten
     }
 }
 

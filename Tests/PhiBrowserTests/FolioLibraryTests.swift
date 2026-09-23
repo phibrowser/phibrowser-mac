@@ -2,6 +2,8 @@
 // Use of this source code is governed by an Apache license in the LICENSE file.
 
 import Foundation
+import Markdown
+import SwiftUI
 import XCTest
 @testable import Phi
 
@@ -82,7 +84,7 @@ final class FolioLibraryTests: XCTestCase {
     }
 
     func testDocumentSeparatesHighlightsAndPreservesMarkdownStructure() throws {
-        let document = try FolioDocument(markdown: """
+        let document = FolioDocument(markdown: """
         ---
         title: An article
         ---
@@ -108,38 +110,119 @@ final class FolioLibraryTests: XCTestCase {
 
         A personal note.
         """, source: nil)
-        XCTAssertEqual(document.blocks.first?.heading, 2)
-        XCTAssertTrue(document.blocks.contains { $0.isCode })
-        XCTAssertEqual(document.blocks.filter { $0.marker != nil }.count, 2)
-        XCTAssertTrue(document.highlights.contains { $0.isQuote })
-        XCTAssertFalse(document.blocks.contains { String($0.text.characters).contains("personal note") })
-        XCTAssertTrue(document.highlights.contains { String($0.text.characters).contains("personal note") })
-        XCTAssertTrue(document.blocks.flatMap { Array($0.text.runs) }.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+        let article = Document(parsing: document.article)
+        let nodes = descendants(article)
+        XCTAssertEqual((article.child(at: 0) as? Heading)?.level, 2)
+        XCTAssertTrue(nodes.contains { $0 is CodeBlock })
+        XCTAssertEqual(nodes.filter { $0 is ListItem }.count, 2)
+        XCTAssertTrue(descendants(Document(parsing: document.highlights)).contains { $0 is BlockQuote })
+        XCTAssertFalse(document.article.contains("personal note"))
+        XCTAssertTrue(document.highlights.contains("personal note"))
+        XCTAssertTrue(nodes.contains { $0 is Strong })
     }
 
-    func testUnsafeLinksAreNotActionable() throws {
+    func testUnsafeLinksAreNotActionable() {
         for url in ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,hello", "phi://settings", "https:relative"] {
             XCTAssertNil(FolioLibrary.webURL(url))
         }
-        let document = try FolioDocument(markdown: "[bad](file:///etc/passwd) and [good](/page)", source: URL(string: "https://example.com"))
-        let links = document.blocks.flatMap { $0.text.runs.compactMap(\.link) }
-        XCTAssertEqual(links, [URL(string: "https://example.com/page")!])
+        let document = FolioDocument(
+            markdown: "[bad](file:///etc/passwd) and [good](/page) and [script](javascript:alert) and [upper](HTTPS://example.com/upper)",
+            source: URL(string: "https://example.com"))
+        let links = descendants(Document(parsing: document.article)).compactMap { ($0 as? Markdown.Link)?.destination }
+        XCTAssertEqual(links, ["https://example.com/page", "https://example.com/upper"])
+        XCTAssertTrue(document.article.contains("bad"))
     }
 
-    func testHighlightHeadingInsideCodeDoesNotSplitTheArticle() throws {
-        let document = try FolioDocument(markdown: "# Title\n\n```markdown\n## Highlights\n```\n\nStill the article.", source: nil)
+    func testHighlightHeadingInsideCodeOrQuoteDoesNotSplitTheArticle() {
+        let document = FolioDocument(markdown: "# Title\n\n```markdown\n## Highlights\n```\n\n> ## Highlights\n\nStill the article.", source: nil)
         XCTAssertTrue(document.highlights.isEmpty)
-        XCTAssertTrue(document.blocks.contains { $0.isCode && String($0.text.characters).contains("Highlights") })
-        XCTAssertTrue(document.blocks.contains { String($0.text.characters) == "Still the article." })
-        XCTAssertTrue(try FolioDocument(markdown: "# Title", source: nil).blocks.isEmpty)
+        XCTAssertTrue(descendants(Document(parsing: document.article)).contains {
+            ($0 as? CodeBlock)?.code.contains("Highlights") == true
+        })
+        XCTAssertTrue(document.article.contains("Still the article."))
+        XCTAssertTrue(FolioDocument(markdown: "# Title", source: nil).article.isEmpty)
     }
 
     func testMarkdownTableRetainsRowsAndInlineFormatting() throws {
-        let document = try FolioDocument(markdown: "| Name | Value |\n| --- | --- |\n| **Alpha** | 42 |\n| Beta | 7 |", source: nil)
-        XCTAssertEqual(document.blocks.count, 3)
-        XCTAssertTrue(document.blocks[0].isTableHeader)
-        XCTAssertEqual(document.blocks[0].cells?.map { String($0.characters) }, ["Name", "Value"])
-        XCTAssertEqual(document.blocks[1].cells?.map { String($0.characters) }, ["Alpha", "42"])
+        let document = FolioDocument(markdown: "| Name | Value |\n| --- | --- |\n| **Alpha** | 42 |\n| Beta | 7 |", source: nil)
+        let table = try XCTUnwrap(Document(parsing: document.article).child(at: 0) as? Markdown.Table)
+        XCTAssertEqual(Array(table.body.rows).count, 2)
+        XCTAssertEqual(table.head.cells.map(\.plainText), ["Name", "Value"])
+        XCTAssertTrue(descendants(table).contains { $0 is Strong })
+    }
+
+    func testSanitizationRemovesActiveContentButPreservesTextAndNestedLists() {
+        let document = FolioDocument(markdown: """
+        # Title
+
+        <iframe src="https://example.com"></iframe>
+
+        Keep <b>this text</b> and ![picture](https://example.com/tracker.svg).
+        ![relative](../image.png) ![local](file:///tmp/image.png)
+
+        - Parent
+          - Nested **point**
+
+        ```html
+        <script>sample()</script>
+        ```
+        """, source: URL(string: "https://example.com/article"))
+        let nodes = descendants(Document(parsing: document.article))
+        XCTAssertFalse(nodes.contains { $0 is HTMLBlock || $0 is InlineHTML || $0 is Markdown.Image })
+        XCTAssertTrue(document.article.contains("this text"))
+        XCTAssertTrue(document.article.contains("picture"))
+        XCTAssertEqual(nodes.filter { $0 is UnorderedList }.count, 2)
+        XCTAssertTrue(nodes.contains { ($0 as? CodeBlock)?.code.contains("<script>") == true })
+    }
+
+    @MainActor
+    func testReaderSelectsAndCopiesAcrossWrappedLinesAndParagraphs() async throws {
+        let first = "First paragraph with enough words to wrap over several lines in a narrow reader."
+        let last = "Last paragraph remains in the same selection."
+        let view = FolioMarkdownView(markdown: first + "\n\n## A heading\n\nA [linked phrase](https://example.com).\n\n> Quoted passage.\n\n" + last,
+                                     fontSize: 17, accent: .brown)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        window.orderFront(nil)
+        for _ in 0..<10 {
+            host.layoutSubtreeIfNeeded()
+            if textViews(in: host).first?.string.contains(last) == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let readers = textViews(in: host)
+        XCTAssertEqual(readers.count, 1)
+        let reader = try XCTUnwrap(readers.first)
+        XCTAssertTrue(reader.isSelectable)
+        XCTAssertFalse(reader.isEditable)
+        let text = reader.string as NSString
+        let start = text.range(of: "paragraph").location
+        let end = NSMaxRange(text.range(of: "same selection"))
+        let range = NSRange(location: start, length: end - start)
+        reader.setSelectedRange(range)
+        XCTAssertEqual(reader.selectedRange(), range)
+        let copied = try XCTUnwrap(reader.attributedSubstring(forProposedRange: reader.selectedRange(), actualRange: nil))
+        XCTAssertTrue(copied.string.contains("A heading"))
+        XCTAssertTrue(copied.string.contains("Last paragraph"))
+        XCTAssertTrue(copied.string.contains("linked phrase"))
+        XCTAssertTrue(copied.string.contains("Quoted passage."))
+        XCTAssertTrue(copied.string.hasPrefix("paragraph"))
+        XCTAssertTrue(copied.string.hasSuffix("same selection"))
+        let firstRect = reader.firstRect(forCharacterRange: NSRange(location: start, length: 1), actualRange: nil)
+        let lastRect = reader.firstRect(forCharacterRange: NSRange(location: end - 1, length: 1), actualRange: nil)
+        XCTAssertNotEqual(firstRect.minY, lastRect.minY)
+    }
+
+    private func descendants(_ markup: Markup) -> [Markup] {
+        [markup] + markup.children.flatMap { descendants($0) }
+    }
+
+    @MainActor
+    private func textViews(in view: NSView) -> [NSTextView] {
+        (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
     }
 
     func testListingRefreshesMetadataWhenFileChanges() throws {
@@ -166,7 +249,7 @@ final class FolioLibraryTests: XCTestCase {
         model.reconcileSelection()
         XCTAssertEqual(model.selectedItem?.basename, "Video")
         await model.readSelection()
-        XCTAssertEqual(model.document?.blocks.first.map { String($0.text.characters) }, "A video summary.")
+        XCTAssertEqual(model.document?.article, "A video summary.")
         model.filter = .all
         model.search = "EXAMPLE.COM"
         model.reconcileSelection()

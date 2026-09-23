@@ -301,6 +301,7 @@ extension AppController {
     static let uninstallPhiItemTag = 500026
     static let browserMigrationItemTag = 500038
     static let fileSaveForLaterLibraryItemTag = 500039
+    static let viewLibraryItemTag = 500040
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -359,6 +360,7 @@ extension AppController {
                     item.tag == CommandWrapper.PHI_TOGGLE_CHATBAR.rawValue ||
                     item.tag == CommandWrapper.PHI_NEW_CONVERSATION.rawValue ||
                     item.tag == CommandWrapper.PHI_TOGGLE_READER.rawValue ||
+                    item.tag == AppController.viewLibraryItemTag ||
                     item.tag == AppController.viewMenuPhiSectionSeparatorTag ||
                     item.tag == AppController.toggleBookmarkBarItemTag ||
                     item.tag == AppController.toggleBookmarkBarOnNewTabItemTag ||
@@ -384,6 +386,13 @@ extension AppController {
                 Shortcuts.updateShortcut(for: toggleReaderItem)
                 toggleReaderItem.target = self
                 submenu.addItem(toggleReaderItem)
+
+                let libraryItem = NSMenuItem(title: LibraryViewModule.title,
+                                             action: #selector(openLibrary(_:)),
+                                             keyEquivalent: "")
+                libraryItem.tag = AppController.viewLibraryItemTag
+                libraryItem.target = self
+                submenu.addItem(libraryItem)
 
                 let readerSeparator = NSMenuItem.separator()
                 readerSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
@@ -1150,6 +1159,14 @@ extension AppController {
             return
         }
         state.toggleReaderView(for: tab, from: .viewMenu)
+    }
+
+    @MainActor
+    @objc func openLibrary(_ sender: Any?) {
+        guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController,
+              !owner.browserState.isKioskWindow,
+              let source = owner.window?.contentView else { return }
+        owner.showLibrary(from: source)
     }
 
     @MainActor
@@ -3107,6 +3124,16 @@ extension AppController {
                 guard let tab, !tab.isShowingNativeNTP else { return false }
                 return ApplicationState.shared.canUseBrowser
             }
+        }
+
+        if item.action == #selector(openLibrary(_:)) {
+            let canOpen = MainActor.assumeIsolated {
+                guard let owner = MainBrowserWindowControllersManager.shared.activeWindowController else {
+                    return false
+                }
+                return !owner.browserState.isKioskWindow && owner.window?.contentView != nil
+            }
+            return canOpen && ApplicationState.shared.canUseBrowser
         }
 
         if item.action == #selector(saveTabForLater(_:)) {

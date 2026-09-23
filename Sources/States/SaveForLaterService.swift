@@ -381,11 +381,10 @@ enum SaveForLaterService {
 
     // MARK: - Library
 
-    /// Opens the native library in the originating window's Profile.
-    /// Mirage still owns saving and can read the same files through the broker.
+    /// Opens Mirage's Folio library page in the active browser Profile.
     static func openLibrary() {
         guard featureEnabled, !ApplicationState.shared.isGuest else { return }
-        SpaceSessionControllersManager.shared.activeWindowController?.openFolioLibrary()
+        openExtensionPage("library.html")
     }
 
     /// The per-site auto-save list. The sites ARE the extension's trigger

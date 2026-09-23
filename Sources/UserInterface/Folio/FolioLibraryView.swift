@@ -2,6 +2,7 @@
 // Use of this source code is governed by an Apache license in the LICENSE file.
 
 import SwiftUI
+import MarkdownView
 
 struct FolioLibraryView: View {
     @Bindable var model: FolioLibraryModel
@@ -183,14 +184,12 @@ struct FolioLibraryView: View {
                         if model.isReading {
                             ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(40)
                         } else if let document = model.document {
-                            let blocks = showHighlights ? document.highlights : document.blocks
-                            if blocks.isEmpty {
+                            let markdown = showHighlights ? document.highlights : document.article
+                            if markdown.isEmpty {
                                 Text(showHighlights ? FolioStrings.noHighlights : FolioStrings.noArticle)
                                     .font(.system(size: 15, design: .serif)).foregroundStyle(.secondary)
                             } else {
-                                LazyVStack(alignment: .leading, spacing: 18) {
-                                    ForEach(blocks) { block in FolioBlockView(block: block, fontSize: fontSize, accent: accent) }
-                                }
+                                FolioMarkdownView(markdown: markdown, fontSize: fontSize, accent: accent)
                             }
                             HStack(spacing: 10) {
                                 Rectangle().frame(height: 1)
@@ -313,45 +312,55 @@ private struct FolioItemRow: View {
     }
 }
 
-private struct FolioBlockView: View {
-    let block: FolioBlock
+/// A single native text view keeps selection continuous across paragraphs.
+struct FolioMarkdownView: View {
+    let markdown: String
     let fontSize: CGFloat
     let accent: Color
 
     var body: some View {
-        if let cells = block.cells {
-            HStack(alignment: .top, spacing: 16) {
-                ForEach(cells.indices, id: \.self) { index in
-                    Text(cells[index]).textSelection(.enabled)
-                        .font(.system(size: fontSize - 2, weight: block.isTableHeader ? .semibold : .regular))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }.padding(12).background(accent.opacity(block.isTableHeader ? 0.09 : 0.035))
-        } else if block.isRule {
-            Divider().padding(.vertical, 12)
-        } else {
-            HStack(alignment: .top, spacing: 12) {
-                if block.isQuote { RoundedRectangle(cornerRadius: 2).fill(accent.opacity(0.4)).frame(width: 3) }
-                if let marker = block.marker { Text(verbatim: marker).foregroundStyle(accent).frame(minWidth: 16, alignment: .trailing) }
-                Text(block.text).textSelection(.enabled)
-                    .font(blockFont).lineSpacing(block.isCode ? 4 : 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .font(.system(size: fontSize, design: .serif))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(block.isCode || block.isQuote ? 16 : 0)
-            .background(block.isCode || block.isQuote ? accent.opacity(0.055) : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .padding(.top, block.heading == nil ? 0 : 12)
+        MarkdownReader(markdown) { parsed in
+            MarkdownText(parsed)
         }
+        .markdownFontGroup(FolioMarkdownFonts(size: fontSize))
+        .markdownComponentSpacing(fontSize * 0.9)
+        .markdownListIndent(fontSize * 1.3)
+        .markdownTableStyle(.github)
+        .tint(accent, for: .link)
+        .tint(accent, for: .blockQuote)
+        // RichText's AppKit link handling does not use SwiftUI's openURL action.
+        .markdownElementRenderer(.link(FolioMarkdownLink(), urlScheme: "https"))
+        .markdownElementRenderer(.link(FolioMarkdownLink(), urlScheme: "http"))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct FolioMarkdownLink: MarkdownLinkRenderer {
+    func makeBody(configuration: Configuration) -> some View {
+        SwiftUI.Link(destination: configuration.url) { configuration.label }
+    }
+}
+
+private struct FolioMarkdownFonts: MarkdownFontGroup {
+    let size: CGFloat
+
+    private func serif(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = font.fontDescriptor.withDesign(.serif) else { return font }
+        return NSFont(descriptor: descriptor, size: size) ?? font
     }
 
-    private var blockFont: Font {
-        if block.isCode { return .system(size: fontSize - 3, design: .monospaced) }
-        if let heading = block.heading {
-            return .system(size: fontSize + CGFloat(max(0, 5 - heading) * 2), weight: .medium, design: .serif)
-        }
-        return .system(size: fontSize, design: .serif)
-    }
+    var body: any CustomCTFontConvertible { serif(size) }
+    var h1: any CustomCTFontConvertible { serif(size + 8, weight: .medium) }
+    var h2: any CustomCTFontConvertible { serif(size + 6, weight: .medium) }
+    var h3: any CustomCTFontConvertible { serif(size + 4, weight: .medium) }
+    var h4: any CustomCTFontConvertible { serif(size + 2, weight: .medium) }
+    var h5: any CustomCTFontConvertible { serif(size, weight: .medium) }
+    var h6: any CustomCTFontConvertible { serif(size, weight: .medium) }
+    var blockQuote: any CustomCTFontConvertible { serif(size) }
+    var codeBlock: any CustomCTFontConvertible { NSFont.monospacedSystemFont(ofSize: size - 3, weight: .regular) }
+    var tableBody: any CustomCTFontConvertible { NSFont.systemFont(ofSize: size - 2) }
+    var tableHeader: any CustomCTFontConvertible { NSFont.systemFont(ofSize: size - 2, weight: .semibold) }
 }
 
 extension FolioLibraryModel.Filter {

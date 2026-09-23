@@ -473,7 +473,9 @@ class SidebarViewController: NSViewController {
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        setHoverControlsVisible(false)
+        // A concealed Space's sidebar keeps its hover state for its next reveal.
+        guard view.window == nil else { return }
+        setHoverControlsVisible(false, animated: false)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -489,21 +491,30 @@ class SidebarViewController: NSViewController {
             super.mouseExited(with: event)
             return
         }
+        // A Space switch swapping sessions under a still pointer sends the
+        // leaving sidebar an exit; keep its controls for its next reveal.
+        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside else { return }
         setHoverControlsVisible(false)
     }
 
-    private func setHoverControlsVisible(_ visible: Bool) {
-        headerView.setAddressBarButtonsVisible(visible)
+    private func setHoverControlsVisible(_ visible: Bool, animated: Bool = true) {
+        headerView.setAddressBarButtonsVisible(visible, animated: animated)
         tabList.setCleanupButtonsVisible(visible)
     }
 
+    /// Snaps rather than fades: a sidebar coming on screen (a Space switch
+    /// reveals the entering session's sidebar under the pointer) must show
+    /// its controls as they already were, not fade them in from nothing.
     private func updateHoverControlsForCurrentMouseLocation() {
-        guard let window = view.window, !view.isHiddenOrHasHiddenAncestor else {
-            setHoverControlsVisible(false)
-            return
-        }
+        // A concealed session's sidebar keeps its state until it shows again.
+        guard !view.isHiddenOrHasHiddenAncestor else { return }
+        setHoverControlsVisible(isPointerInside, animated: false)
+    }
+
+    private var isPointerInside: Bool {
+        guard let window = view.window else { return false }
         let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setHoverControlsVisible(view.visibleRect.contains(point))
+        return view.visibleRect.contains(point)
     }
 
     /// Binds the bottom bar's download button to the downloads manager exactly

@@ -225,8 +225,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         return addressView
     }()
 
-    func setAddressBarButtonsVisible(_ visible: Bool) {
-        addressView.setAccessoryButtonsVisible(isFloating || visible)
+    func setAddressBarButtonsVisible(_ visible: Bool, animated: Bool = true) {
+        addressView.setAccessoryButtonsVisible(isFloating || visible, animated: animated)
     }
     
     private weak var browserState: BrowserState?

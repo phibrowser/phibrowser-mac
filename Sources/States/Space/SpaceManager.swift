@@ -10325,8 +10325,11 @@ final class SpaceWindowSlot: ObservableObject {
         let enteringSpaceId: String
         private let root: NSView
         private let bandFrame: NSRect
-        private let leavingBandViews: [NSView]
+        private var leavingBandViews: [NSView]
         private let leavingBandContainer: NSView
+        /// The leaving surface's pinned strip, left out of the slide when
+        /// the entering Space shows the same pinned collection.
+        private let leavingPinnedStrip: NSView?
         private let leavingContainerMaskedToBounds: Bool
         /// The entering side mirrors the leaving one: its resident sidebar
         /// content is shown with everything but the band faded out, its band
@@ -10377,6 +10380,7 @@ final class SpaceWindowSlot: ObservableObject {
              bandFrame: NSRect,
              leavingBandViews: [NSView],
              leavingBandContainer: NSView,
+             leavingPinnedStrip: NSView? = nil,
              direction: SwapDirection,
              duration: TimeInterval,
              startLeavingChrome: @escaping () -> Void = {},
@@ -10391,6 +10395,7 @@ final class SpaceWindowSlot: ObservableObject {
             self.bandFrame = bandFrame
             self.leavingBandViews = leavingBandViews
             self.leavingBandContainer = leavingBandContainer
+            self.leavingPinnedStrip = leavingPinnedStrip
             viewsToUnback = ([leavingBandContainer] + leavingBandViews).filter { !$0.wantsLayer }
             leavingBandContainer.wantsLayer = true
             for view in leavingBandViews {
@@ -10414,6 +10419,13 @@ final class SpaceWindowSlot: ObservableObject {
         /// The horizontal inset a sidebar list keeps around its rows
         /// (`PinnedTabLayout`'s and the tab list's side margin).
         private static let bandContentInset: CGFloat = 8
+
+        /// Whether two Spaces list the same pinned rows, i.e. show one
+        /// shared pinned collection rather than two that merely look alike.
+        static func showSamePinnedTabs(_ a: BrowserState, _ b: BrowserState) -> Bool {
+            let rows = a.pinnedTabs.map(\.guidInLocalDB)
+            return !rows.isEmpty && !rows.contains(nil) && rows == b.pinnedTabs.map(\.guidInLocalDB)
+        }
 
         func start() {
             timing?.mark("animation.armed")
@@ -10537,6 +10549,17 @@ final class SpaceWindowSlot: ObservableObject {
             surface.setSpaceSwitchBackdropHidden(true)
             enteringSurface = surface
             enteringBandViews = surface.spaceSwitchBandViews.filter { $0.superview != nil }
+            // One pinned collection shown by both Spaces (the Pinned Tab
+            // Scope puts them at one owner): sliding the same tiles out and
+            // back in reads as the strip jumping in place. The leaving strip
+            // stays put instead and the entering one, faded out with the
+            // rest of the entering chrome below, takes over at the landing.
+            if let leaving, let leavingPinnedStrip,
+               leavingPinnedStrip.bounds.size == surface.spaceSwitchPinnedStrip.bounds.size,
+               Self.showSamePinnedTabs(leaving.browserState, controller.browserState) {
+                enteringBandViews.removeAll { $0 === surface.spaceSwitchPinnedStrip }
+                leavingBandViews.removeAll { $0 === leavingPinnedStrip }
+            }
             let container = surface.spaceSwitchBandContainer
             enteringBandContainer = container
             if let stack = container as? NSStackView {
@@ -10565,6 +10588,14 @@ final class SpaceWindowSlot: ObservableObject {
             timing?.mark("page.install.end")
             let pageTree = controller.mainSplitViewController.view
             pageTree.wantsLayer = true
+            // This transaction commits a turn before `startMotion` adds the
+            // animations. Hold the entering side where its motion starts,
+            // or that frame shows its band at rest over the leaving one and
+            // its page at full opacity.
+            for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
+                view.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
+            }
+            pageTree.layer?.opacity = 0
             // No part of the leaving band moves before the target is ready.
             timing?.mark("snapshot.prepare.end")
             CATransaction.commit()
@@ -10642,7 +10673,21 @@ final class SpaceWindowSlot: ObservableObject {
                                                                      appearanceOf: surface.view) else { return }
             let bandInContainer = container.convert(surface.spaceSwitchBandFrame, from: surface.view)
             guard bandInContainer.width > 0, bandInContainer.height > 0 else { return }
-            let standIn = SpaceBandSnapshotView(snapshot: snapshot, frame: bandInContainer)
+            // The snapshot holds the whole band; a pinned strip that stays
+            // put is cut off its top so only the moving rows slide in.
+            var frame = bandInContainer
+            var topInset: CGFloat = 0
+            let moving = enteringBandViews.map { container.convert($0.bounds, from: $0) }
+            if moving.count < surface.spaceSwitchBandViews.filter({ $0.superview != nil }).count,
+               let first = moving.first {
+                let movingRect = moving.dropFirst().reduce(first) { $0.union($1) }
+                topInset = container.isFlipped
+                    ? movingRect.minY - bandInContainer.minY
+                    : bandInContainer.maxY - movingRect.maxY
+                frame = NSRect(x: bandInContainer.minX, y: movingRect.minY,
+                               width: bandInContainer.width, height: movingRect.height)
+            }
+            let standIn = SpaceBandSnapshotView(snapshot: snapshot, frame: frame, topInset: topInset)
             container.addSubview(standIn, positioned: .above, relativeTo: nil)
             surface.setSwitchBandContentHidden(true)
             enteringStandIn = standIn
@@ -10667,7 +10712,8 @@ final class SpaceWindowSlot: ObservableObject {
             enteringStandIn = nil
             // The cached image remains visible until the replacement rows
             // are reconciled, realized and drawn, including the New Tab row.
-            enteringSurface?.setSwitchBandContentHidden(false)
+            // A pinned strip held still comes back with the entering chrome.
+            for view in enteringBandViews { view.alphaValue = 1 }
             enteringSurface?.prepareSpaceSwitchBand(timing: timing)
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.12
@@ -10794,7 +10840,12 @@ final class SpaceWindowSlot: ObservableObject {
             // translated off screen, the column's backdrop is pointed at the
             // entering theme before the leaving theme is put back.
             restoreEnteringChrome()
-            entering.mainSplitViewController.view.layer?.removeAnimation(forKey: Self.pageFadeAnimationKey)
+            if let pageLayer = entering.mainSplitViewController.view.layer {
+                pageLayer.removeAnimation(forKey: Self.pageFadeAnimationKey)
+                // Settled before `startMotion` ran: the page is still held
+                // transparent from `beginEntering`.
+                pageLayer.opacity = 1
+            }
             leaving?.concealSidebarViewInShell()
             entering.installSessionViewInShell()
             leaving?.removeSessionViewFromShell()
@@ -10878,6 +10929,7 @@ final class SpaceWindowSlot: ObservableObject {
             bandFrame: bandFrame,
             leavingBandViews: prevSurface.spaceSwitchBandViews,
             leavingBandContainer: prevSurface.spaceSwitchBandContainer,
+            leavingPinnedStrip: prevSurface.spaceSwitchPinnedStrip,
             direction: direction,
             duration: duration,
             startLeavingChrome: { [weak self, weak prevSurface] in

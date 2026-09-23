@@ -1579,6 +1579,7 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     // The Spaces switch lives in the header (with its own scroll animation),
     // so the push-in band is just the pinned strip and the tab list.
     var spaceSwitchBandViews: [NSView] { [pinnedTabContainerView, tabList.view] }
+    var spaceSwitchPinnedStrip: NSView { pinnedTabContainerView }
     var spaceSwitchBandContainer: NSView { mainStackView }
 
     func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {

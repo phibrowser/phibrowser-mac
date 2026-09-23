@@ -10339,6 +10339,11 @@ final class SpaceWindowSlot: ObservableObject {
         private weak var enteringBandContainer: NSView?
         private var enteringContainerMaskedToBounds = false
         private var enteringChromeAlphas: [(view: NSView, alpha: CGFloat)] = []
+        /// The entering band (or its stand-in) kept transparent until
+        /// `startMotion`: AppKit can put a view's layer transform back
+        /// when it syncs layer geometry, so the start offset alone does not
+        /// keep it off the frames that go out before the motion.
+        private var enteringHeldViews: [NSView] = []
         /// A cold Space's band stand-in: the cached snapshot of its band
         /// (`SpaceBandSnapshotCache`), shown in place of the live rows —
         /// which a dormant session does not have until its Browser
@@ -10574,6 +10579,15 @@ final class SpaceWindowSlot: ObservableObject {
             for view in enteringBandViews { view.wantsLayer = true }
             enteringContainerMaskedToBounds = container.layer?.masksToBounds ?? false
             container.layer?.masksToBounds = true
+            // Frames go out before `startMotion` adds the animations: this
+            // transaction commits a turn earlier, and installing the page
+            // tree below moves Chromium's native view into the window, which
+            // flushes one mid-way. Hold the entering side (band, stand-in,
+            // page) where its motion starts from here on, or those frames
+            // show it at rest over the leaving one.
+            for view in enteringBandViews {
+                view.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
+            }
             // A dormant snapshot already contains the visible rows. Do not
             // build and draw another band underneath it on the click path.
             timing?.mark("sidebar.prepare.begin")
@@ -10584,18 +10598,13 @@ final class SpaceWindowSlot: ObservableObject {
                 timing?.mark("sidebar.cached_pixels.ready")
             }
             timing?.mark("sidebar.prepare.end")
-            controller.installPageTreeInShell()
-            timing?.mark("page.install.end")
+            enteringHeldViews = enteringStandIn.map { [$0] } ?? enteringBandViews
+            for view in enteringHeldViews { view.alphaValue = 0 }
             let pageTree = controller.mainSplitViewController.view
             pageTree.wantsLayer = true
-            // This transaction commits a turn before `startMotion` adds the
-            // animations. Hold the entering side where its motion starts,
-            // or that frame shows its band at rest over the leaving one and
-            // its page at full opacity.
-            for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
-                view.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
-            }
             pageTree.layer?.opacity = 0
+            controller.installPageTreeInShell()
+            timing?.mark("page.install.end")
             // No part of the leaving band moves before the target is ready.
             timing?.mark("snapshot.prepare.end")
             CATransaction.commit()
@@ -10642,6 +10651,7 @@ final class SpaceWindowSlot: ObservableObject {
             for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
                 animate(view, from: enteringStartDx, to: 0)
             }
+            releaseEnteringHeldViews()
             // The entering page tree comes in now, above the leaving one,
             // and fades in on the slide's clock: its toolbar row, page frame
             // and margins are already in the entering theme, so the page
@@ -10658,6 +10668,12 @@ final class SpaceWindowSlot: ObservableObject {
                 layer.add(fade, forKey: Self.pageFadeAnimationKey)
             }
             CATransaction.commit()
+            // Nested in the run loop's implicit transaction, the commit
+            // above only reaches the render server when this turn ends, and
+            // a dormant switch's Browser spawn runs later in the same main
+            // queue drain, blocking ~100 ms: the slide would arrive with its
+            // clock already run out and land in one jump. Send it now.
+            CATransaction.flush()
             timing?.mark("animation.transaction_submitted")
             finishIfReady()
         }
@@ -10688,6 +10704,7 @@ final class SpaceWindowSlot: ObservableObject {
                                width: bandInContainer.width, height: movingRect.height)
             }
             let standIn = SpaceBandSnapshotView(snapshot: snapshot, frame: frame, topInset: topInset)
+            standIn.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
             container.addSubview(standIn, positioned: .above, relativeTo: nil)
             surface.setSwitchBandContentHidden(true)
             enteringStandIn = standIn
@@ -10747,12 +10764,18 @@ final class SpaceWindowSlot: ObservableObject {
             timing?.flush()
         }
 
+        private func releaseEnteringHeldViews() {
+            for view in enteringHeldViews { view.alphaValue = 1 }
+            enteringHeldViews = []
+        }
+
         /// Puts the entering content back to normal once it is the column's:
         /// band at rest, container clipping as it was, header and bottom bar
         /// visible again.
         private func restoreEnteringChrome() {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            releaseEnteringHeldViews()
             for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
                 view.layer?.removeAnimation(forKey: Self.slideAnimationKey)
                 view.layer?.transform = CATransform3DIdentity

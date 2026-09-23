@@ -682,6 +682,9 @@ final class HostedSidebarStateTests: XCTestCase {
             let layer = try XCTUnwrap(view.layer)
             XCTAssertNil(layer.animation(forKey: "phi.hostedBandSlide"))
             XCTAssertEqual(layer.transform.m41, travel, accuracy: 0.5)
+            // AppKit can put the transform back when it syncs layer
+            // geometry; the band is also kept transparent until then.
+            XCTAssertEqual(view.alphaValue, 0)
         }
         let page = try XCTUnwrap(next.mainSplitViewController.view.layer)
         XCTAssertEqual(page.opacity, 0)
@@ -689,6 +692,7 @@ final class HostedSidebarStateTests: XCTestCase {
         slide.settle()
         for view in bandViews {
             XCTAssertTrue(CATransform3DIsIdentity(try XCTUnwrap(view.layer).transform))
+            XCTAssertEqual(view.alphaValue, 1)
         }
         XCTAssertEqual(page.opacity, 1)
     }

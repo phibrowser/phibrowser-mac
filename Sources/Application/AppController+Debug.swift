@@ -375,19 +375,11 @@ extension AppController {
 #if DEBUG
     @MainActor
     @objc func openImagePreviewDemo(_ sender: Any?) {
-        guard let controller = SpaceSessionControllersManager.shared.activeWindowController else {
-            let alert = NSAlert()
-            alert.messageText = "No Active Browser Window"
-            alert.informativeText = "Open a browser window first, then try the image preview demo again."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        controller.browserState.imagePreviewState.open(
+        let controller = ImagePreviewWindowController(
             items: ImagePreviewDebugSamples.demoItems(),
             currentIndex: 0
         )
+        controller.showWindow(sender)
     }
 #endif
     

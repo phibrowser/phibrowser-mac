@@ -42,14 +42,12 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         ImagePreviewMessageHandler.handle(
             context(#"{"windowId":42,"items":["https://example.com/image.png"],"currentIndex":0}"#),
             messenger: messenger
-        ) { windowID, items, index in
+        ) { items, index in
             opens += 1
-            XCTAssertEqual(windowID, 42)
             XCTAssertEqual(items.count, 1)
             XCTAssertEqual(items.first?.source, .remoteURL(URL(string: "https://example.com/image.png")!))
             XCTAssertEqual(index, 0)
             XCTAssertTrue(messenger.responses.isEmpty, "Do not acknowledge before opening the preview")
-            return true
         }
 
         XCTAssertEqual(opens, 1)
@@ -60,40 +58,39 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         XCTAssertTrue(messenger.broadcasts.isEmpty)
     }
 
-    func testUnavailableBrowserWindowOpensStandalonePreviewAndRepliesOnce() throws {
-        let messenger = TestMessenger()
+    func testRequestsAlwaysOpenStandalonePreviewAndPreserveAuthorizedItems() throws {
         let senderID = "fenmfiepnpdlhplemgijlimpbebebljo"
-        var opens = 0
-        ImagePreviewMessageHandler.handle(
-            context(
-                #"{"windowId":42,"items":["/tmp/preview-first.png","/api/v1/files/preview-second.png"],"currentIndex":99}"#,
-                senderID: senderID
-            ),
-            messenger: messenger
-        ) { windowID, _, index in
-            opens += 1
-            XCTAssertEqual(windowID, 42)
-            XCTAssertEqual(index, 99)
-            XCTAssertTrue(messenger.responses.isEmpty)
-            return false
-        }
+        for windowID in [42, -1] {
+            let messenger = TestMessenger()
+            let existingWindows = Set(NSApp.windows.map { ObjectIdentifier($0) })
+            ImagePreviewMessageHandler.handle(
+                context(
+                    #"{"windowId":\#(windowID),"items":["/tmp/preview-first.png","/api/v1/files/preview-second.png"],"currentIndex":99}"#,
+                    senderID: senderID
+                ),
+                messenger: messenger
+            )
 
-        let controller = try XCTUnwrap(NSApp.windows.compactMap {
-            $0.windowController as? ImagePreviewWindowController
-        }.first)
-        defer { controller.close() }
-        XCTAssertTrue(try XCTUnwrap(controller.window).isVisible)
-        XCTAssertEqual(controller.state.items.count, 2)
-        XCTAssertEqual(controller.state.currentIndex, 1)
-        XCTAssertEqual(controller.state.activeItem?.source, .phiAgentFile(
-            path: "/api/v1/files/preview-second.png", senderID: senderID
-        ))
-        XCTAssertEqual(opens, 1)
-        XCTAssertEqual(messenger.responses.count, 1)
-        XCTAssertEqual(messenger.responses.first?.response, "{}")
-        XCTAssertEqual(messenger.responses.first?.requestId, "preview-request")
-        XCTAssertTrue(messenger.errors.isEmpty)
-        XCTAssertTrue(messenger.broadcasts.isEmpty)
+            let previews = NSApp.windows.filter {
+                !existingWindows.contains(ObjectIdentifier($0))
+            }.compactMap {
+                $0.windowController as? ImagePreviewWindowController
+            }
+            XCTAssertEqual(previews.count, 1)
+            let controller = try XCTUnwrap(previews.first)
+            defer { controller.close() }
+            XCTAssertTrue(try XCTUnwrap(controller.window).isVisible)
+            XCTAssertEqual(controller.state.items.count, 2)
+            XCTAssertEqual(controller.state.currentIndex, 1)
+            XCTAssertEqual(controller.state.activeItem?.source, .phiAgentFile(
+                path: "/api/v1/files/preview-second.png", senderID: senderID
+            ))
+            XCTAssertEqual(messenger.responses.count, 1)
+            XCTAssertEqual(messenger.responses.first?.response, "{}")
+            XCTAssertEqual(messenger.responses.first?.requestId, "preview-request")
+            XCTAssertTrue(messenger.errors.isEmpty)
+            XCTAssertTrue(messenger.broadcasts.isEmpty)
+        }
     }
 
     func testMalformedPayloadsRejectWithoutOpeningOrEchoingPrivateData() {
@@ -104,9 +101,8 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
             #"{"windowId":42,"items":["https://example.com/image.png"]}"#,
         ] {
             let messenger = TestMessenger()
-            ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { _, _, _ in
+            ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { _, _ in
                 XCTFail("Malformed payload must not open a preview")
-                return true
             }
 
             XCTAssertTrue(messenger.responses.isEmpty)
@@ -121,9 +117,8 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         for items in [#"[]"#, #"["", "  "]"#] {
             let messenger = TestMessenger()
             let payload = #"{"windowId":42,"items":\#(items),"currentIndex":0}"#
-            ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { _, _, _ in
+            ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { _, _ in
                 XCTFail("Empty previews must not be acknowledged as opened")
-                return true
             }
 
             XCTAssertTrue(messenger.responses.isEmpty)
@@ -137,12 +132,11 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
     func testLegacyItemsRemainSupportedAndIndexIsPassedToPreviewState() {
         let messenger = TestMessenger()
         let payload = #"{"windowId":42,"items":[{"source":{"type":"url","url":"https://example.com/one.png"}},{"type":"file","path":"/tmp/preview-fixture.png"}],"currentIndex":99}"#
-        ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { _, items, index in
+        ImagePreviewMessageHandler.handle(context(payload), messenger: messenger) { items, index in
             XCTAssertEqual(items.count, 2)
             XCTAssertEqual(items[0].source, .remoteURL(URL(string: "https://example.com/one.png")!))
             XCTAssertEqual(items[1].source, .localFile(URL(fileURLWithPath: "/tmp/preview-fixture.png")))
             XCTAssertEqual(index, 99, "BrowserImagePreviewState still owns index clamping")
-            return true
         }
 
         XCTAssertEqual(messenger.responses.count, 1)
@@ -153,10 +147,9 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
     func testRepliesStayScopedToEachRequest() {
         let messenger = TestMessenger()
         let payload = #"{"windowId":42,"items":["https://example.com/image.png"],"currentIndex":0}"#
-        ImagePreviewMessageHandler.handle(context(payload, requestID: "first"), messenger: messenger) { _, _, _ in true }
-        ImagePreviewMessageHandler.handle(context("not JSON", requestID: "second"), messenger: messenger) { _, _, _ in
+        ImagePreviewMessageHandler.handle(context(payload, requestID: "first"), messenger: messenger) { _, _ in }
+        ImagePreviewMessageHandler.handle(context("not JSON", requestID: "second"), messenger: messenger) { _, _ in
             XCTFail("Malformed payload must not open a preview")
-            return false
         }
 
         XCTAssertEqual(messenger.responses.map(\.requestId), ["first"])

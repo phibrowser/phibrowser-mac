@@ -51,6 +51,8 @@ struct ProfileButton: NSViewRepresentable {
             wantsLayer = true
             layer?.cornerRadius = 12
             layer?.masksToBounds = true
+            layer?.borderWidth = 1
+            layer?.borderColor = NSColor(resource: .commonBorder).cgColor
             toolTip = NSLocalizedString("profile.button.accessibilityLabel", value: "Profile menu", comment: "Profile button - Opens the account and browser actions menu")
             setAccessibilityLabel(toolTip)
             setAccessibilityIdentifier("profile.menuButton")
@@ -98,8 +100,8 @@ struct ProfileButton: NSViewRepresentable {
                 downloads.action = #selector(selectDownloads)
             }
             requestedDownloads = false
-            // NSButton uses flipped coordinates: Y increases downward.
-            let y = surface == .sidebar ? bounds.minY - 5 : bounds.maxY + 5
+            // NSButton uses flipped coordinates, and NSMenu anchors its top edge.
+            let y = surface == .sidebar ? bounds.minY - menu.size.height - 5 : bounds.maxY + 5
             menu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: y), in: self)
             // Start after native menu tracking ends, so it cannot cover the flight.
             if requestedDownloads {

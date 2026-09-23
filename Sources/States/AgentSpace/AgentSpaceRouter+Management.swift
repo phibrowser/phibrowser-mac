@@ -64,6 +64,7 @@ extension AgentSpaceRouter {
                         "spaceId": space.spaceId,
                         "name": space.name,
                         "colorHex": space.colorHex,
+                        "themeId": manager.resolvedThemeId(forSpaceId: space.spaceId),
                         "iconName": space.iconName,
                         "profileId": space.profileId,
                         "sortOrder": space.sortOrder,
@@ -88,8 +89,17 @@ extension AgentSpaceRouter {
               let rawName = obj["name"] as? String else { return invalid() }
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return invalid() }
-        let colorHex = (obj["colorHex"] as? String) ?? "#3A6FF8"
-        let iconName = (obj["iconName"] as? String) ?? "phi:phi-icon-view-grid-add"
+        let requestedTheme: String?
+        let iconName: String
+        do {
+            requestedTheme = try requestedThemeId(in: obj)
+            iconName = try requestedIconName(in: obj)
+                ?? IconPickerSelection.defaultSelection.storageValue
+        } catch let error as SpacePayloadError {
+            return failure(error.code)
+        } catch {
+            return invalid()
+        }
         let activate = obj["activate"] as? Bool ?? false
         let requestedProfile = (obj["profileId"] as? String) ?? ""
 
@@ -110,22 +120,31 @@ extension AgentSpaceRouter {
             } else {
                 profileId = profiles.first?.profileId ?? LocalStore.defaultProfileId
             }
+            // Every Space owns a pinned theme, as the create panel does; with
+            // none requested the new Space keeps the look it would render
+            // with today (the global theme). `setTheme` re-derives the
+            // stored `colorHex` from it.
+            let themeId = requestedTheme ?? ThemeManager.shared.currentTheme.id
             guard let spaceId = manager.createSpace(name: name,
-                                                    colorHex: colorHex,
+                                                    colorHex: BrowserMigrationSpaceTheme.overlayHex(ofThemeID: themeId),
                                                     iconName: iconName,
                                                     profileId: profileId,
                                                     makeDefaultActive: false) else {
                 return failure("no_account")
             }
+            manager.setTheme(forSpaceId: spaceId, themeId: themeId)
             if activate {
                 manager.activateInFocusedWindow(spaceId: spaceId)
             }
-            return encode(["ok": true, "spaceId": spaceId, "profileId": profileId])
+            return encode(["ok": true, "spaceId": spaceId, "profileId": profileId,
+                           "themeId": themeId, "iconName": iconName])
         }
     }
 
-    /// `agentSpace.spaces.update` — rename / recolor / change icon. All
-    /// fields optional and independent.
+    /// `agentSpace.spaces.update` — rename / retheme / change icon. All
+    /// fields optional and independent. `themeId` or `colorHex` pins a
+    /// theme (see `requestedThemeId`); the reply echoes the pinned `themeId`
+    /// and the normalized `iconName` so the caller can see what landed.
     static func handleSpacesUpdate(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let spaceId = obj["spaceId"] as? String else { return invalid() }
@@ -135,18 +154,110 @@ extension AgentSpaceRouter {
                 return failure("unknown_space")
             }
             guard !space.isAgentSpace else { return failure("agent_space") }
+            // Validate everything before writing anything, so a bad field
+            // never leaves a half-applied update behind.
+            let themeId: String?
+            let iconName: String?
+            do {
+                themeId = try requestedThemeId(in: obj)
+                iconName = try requestedIconName(in: obj)
+            } catch let error as SpacePayloadError {
+                return failure(error.code)
+            } catch {
+                return invalid()
+            }
             if let name = (obj["name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
                 manager.renameSpace(spaceId: spaceId, to: name)
             }
-            if let colorHex = obj["colorHex"] as? String, !colorHex.isEmpty {
-                manager.recolorSpace(spaceId: spaceId, colorHex: colorHex)
+            if let themeId {
+                manager.setTheme(forSpaceId: spaceId, themeId: themeId)
             }
-            if let iconName = obj["iconName"] as? String, !iconName.isEmpty {
+            if let iconName {
                 manager.changeIcon(spaceId: spaceId, iconName: iconName)
             }
-            return ok()
+            var reply: [String: Any] = ["ok": true,
+                                        "themeId": manager.resolvedThemeId(forSpaceId: spaceId)]
+            if let iconName { reply["iconName"] = iconName }
+            return encode(reply)
         }
+    }
+
+    struct SpacePayloadError: Error {
+        let code: String
+    }
+
+    /// The theme a `spaces.create` / `spaces.update` payload asks to pin, or
+    /// nil when it names none. A Space's color IS its pinned theme — the
+    /// stored `colorHex` is a cache `setTheme` re-derives and nothing on
+    /// screen reads it — so writing the hex alone reported success while the
+    /// window kept its old color (PHI-1648). `themeId` names a built-in theme
+    /// by id or display name; a bare `colorHex` snaps to the nearest built-in
+    /// by hue, exactly as browser import does. `themeId` wins when both are
+    /// given.
+    static func requestedThemeId(in obj: [String: Any]) throws -> String? {
+        if let raw = (obj["themeId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard let theme = Theme.builtInThemes.first(where: {
+                $0.id.caseInsensitiveCompare(raw) == .orderedSame
+                    || $0.name.caseInsensitiveCompare(raw) == .orderedSame
+            }) else { throw SpacePayloadError(code: "unknown_theme") }
+            return theme.id
+        }
+        if let raw = (obj["colorHex"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard raw.range(of: "^#?[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else {
+                throw SpacePayloadError(code: "invalid_color")
+            }
+            let hex = raw.hasPrefix("#") ? raw : "#" + raw
+            return BrowserMigrationSpaceTheme.resolved(forSourceColorHex: hex).themeID
+        }
+        return nil
+    }
+
+    /// The payload's `iconName` normalized to a storage value the strip can
+    /// draw, or nil when it names none. Throws `invalid_icon` for anything
+    /// the catalogs don't know: such a value used to be stored verbatim and
+    /// rendered as a blank icon (PHI-1649).
+    static func requestedIconName(in obj: [String: Any]) throws -> String? {
+        guard let raw = obj["iconName"] as? String,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard let value = normalizedIconStorageValue(raw) else {
+            throw SpacePayloadError(code: "invalid_icon")
+        }
+        return value
+    }
+
+    /// Maps the icon spellings an agent plausibly sends to an
+    /// `IconPickerSelection` storage value: the storage forms themselves
+    /// ("phi:phi-icon-mail", "emoji:1F680"), a Phi icon by catalog name,
+    /// asset name, or legacy number with or without the "phi:" prefix
+    /// ("mail", "phi-icon-mail", "phi:22"), and an emoji by lowercase
+    /// codepoints or by the character itself ("🚀", "emoji:🚀"). nil when
+    /// nothing matches.
+    static func normalizedIconStorageValue(_ raw: String) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        if let selection = IconPickerSelection.fromStorageValue(value) {
+            return selection.storageValue
+        }
+        var body = value
+        for prefix in ["phi:", "emoji:"] where body.hasPrefix(prefix) {
+            body = String(body.dropFirst(prefix.count))
+        }
+        if let id = PhiIconCatalog.canonicalId(for: body)
+            ?? PhiIconCatalog.icon(named: body)?.assetName
+            ?? PhiIconCatalog.canonicalId(for: "phi-icon-" + body) {
+            return IconPickerSelection.phiIcon(id: id).storageValue
+        }
+        let catalog = EmojiCatalog.shared
+        if catalog.text(for: body.uppercased()) != nil {
+            return "emoji:" + body.uppercased()
+        }
+        if let id = catalog.id(forText: body) {
+            return "emoji:" + id
+        }
+        return nil
     }
 
     /// `agentSpace.spaces.delete` — delete a normal user Space (closes its

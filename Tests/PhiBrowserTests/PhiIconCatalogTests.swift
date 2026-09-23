@@ -43,4 +43,25 @@ final class PhiIconCatalogTests: XCTestCase {
         )
         XCTAssertNil(IconPickerSelection.fromStorageValue("phi:phi-icon-unknown"))
     }
+
+    func testAgentIconInputNormalizesToRenderableStorageValues() {
+        let normalize = AgentSpaceRouter.normalizedIconStorageValue
+        XCTAssertEqual(normalize("phi:phi-icon-mail"), "phi:phi-icon-mail")
+        XCTAssertEqual(normalize("mail"), "phi:phi-icon-mail")
+        XCTAssertEqual(normalize("phi-icon-mail"), "phi:phi-icon-mail")
+        XCTAssertEqual(normalize("phi:mail"), "phi:phi-icon-mail")
+        XCTAssertEqual(normalize("A"), "phi:phi-icon-letter-a")
+        XCTAssertEqual(normalize("phi:phi-icon-22"), "phi:phi-icon-view-grid-add")
+        XCTAssertEqual(normalize("emoji:1F600"), "emoji:1F600")
+        XCTAssertEqual(normalize("emoji:1f600"), "emoji:1F600")
+        XCTAssertEqual(normalize("😀"), "emoji:1F600")
+        XCTAssertEqual(normalize("emoji:😀"), "emoji:1F600")
+
+        for value in ["", "  ", "rocket-ship", "phi:phi-icon-unknown", "emoji:ZZZZ", "star.fill"] {
+            XCTAssertNil(normalize(value), value)
+        }
+        for value in ["mail", "A", "😀", "emoji:1f600"] {
+            XCTAssertNotNil(normalize(value).flatMap { IconPickerSelection.fromStorageValue($0) }, value)
+        }
+    }
 }

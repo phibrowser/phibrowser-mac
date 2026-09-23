@@ -2406,8 +2406,13 @@ struct SpaceIconView: View {
 /// Space.iconName may be either an IconPicker storage value or the legacy
 /// SF Symbol id (e.g. "rectangle.stack"). Legacy symbols are resolved at view
 /// time so old rows keep rendering without a data migration.
+/// `stored` when it names a real SF Symbol, else nil so the caller draws the
+/// placeholder — an unknown name (e.g. a stray value written by agent
+/// tooling or a newer synced catalog) would otherwise render blank.
 private func systemSymbolName(for stored: String) -> String? {
-    stored.isEmpty ? nil : stored
+    guard !stored.isEmpty,
+          NSImage(systemSymbolName: stored, accessibilityDescription: nil) != nil else { return nil }
+    return stored
 }
 
 /// A pip's hover card: the Space (icon + name) as a tinted pill on the left, the

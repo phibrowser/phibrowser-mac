@@ -109,6 +109,46 @@ final class BookmarkManagerScopeTests: XCTestCase {
         XCTAssertEqual(tab.title, "Example")
     }
 
+    func testSidebarReordersLastBookmarkInsideFolderWithoutChangingDropRules() throws {
+        let state = try makeState()
+        let manager = state.bookmarkManager
+        manager.addFolder(title: "Drag Test", guid: "drag-folder")
+        XCTAssertTrue(waitUntil { manager.bookmark(withGuid: "drag-folder") != nil })
+        let folder = try XCTUnwrap(manager.bookmark(withGuid: "drag-folder"))
+        for title in ["A", "B", "C"] {
+            manager.addBookmark(title: title, url: "https://\(title.lowercased()).example", to: folder)
+        }
+        XCTAssertTrue(waitUntil { folder.children.map(\.title) == ["A", "B", "C"] })
+        let section = BookmarkSectionController(browserState: state)
+        let last = try XCTUnwrap(folder.children.last)
+
+        // Validation has no insertion index: a last child can still move upward.
+        XCTAssertTrue(section.canAcceptDrop(of: last, to: folder))
+        XCTAssertTrue(section.handleDrop(of: last, to: folder, at: 1))
+        XCTAssertTrue(waitUntil { folder.children.map(\.title) == ["A", "C", "B"] })
+
+        // AppKit's pre-removal index must still be adjusted for downward moves.
+        XCTAssertTrue(section.canAcceptDrop(of: last, to: folder))
+        XCTAssertTrue(section.handleDrop(of: last, to: folder, at: 3))
+        XCTAssertTrue(waitUntil { folder.children.map(\.title) == ["A", "B", "C"] })
+        XCTAssertTrue(section.canAcceptDrop(of: last, to: folder))
+        XCTAssertFalse(section.handleDrop(of: last, to: folder, at: 3))
+    }
+
+    func testSidebarStillRejectsFolderSelfAndDescendantDrops() throws {
+        let state = try makeState()
+        let section = BookmarkSectionController(browserState: state)
+        let parent = Bookmark(folderTitle: "Parent")
+        let child = Bookmark(folderTitle: "Child")
+        parent.addChild(child)
+
+        XCTAssertFalse(section.canAcceptDrop(of: parent, to: parent))
+        XCTAssertFalse(section.handleDrop(of: parent, to: parent, at: nil))
+        XCTAssertFalse(section.canAcceptDrop(of: parent, to: child))
+        XCTAssertFalse(section.handleDrop(of: parent, to: child, at: nil))
+        XCTAssertTrue(section.canAcceptDrop(of: child, to: nil))
+    }
+
     func testExplicitBatchSpaceMoveDetachesLiveBookmarkBindings() throws {
         let state = try makeState()
         let targetModel = SpaceModel(

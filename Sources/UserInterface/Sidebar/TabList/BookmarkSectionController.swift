@@ -127,36 +127,36 @@ class BookmarkSectionController: NSObject {
     }
     
     // MARK: - Drag and Drop Support
-    
+
     func canAcceptDrop(of item: Any, to target: Bookmark?) -> Bool {
         if let _ = item as? Tab {
             return true // Tabs can always be dropped to create bookmarks
         }
-        
+
         if let bookmark = item as? Bookmark {
             if target == nil {
                 return true
             }
-            
+
             guard let target = target, target.isFolder else {
                 return false
             }
-            
+
             if bookmark == target {
                 return false
             }
-            
+
             // Only folders need cycle detection.
             if bookmark.isFolder && isDescendant(target, of: bookmark) {
                 return false
             }
-            
+
             return true
         }
-        
+
         return false
     }
-    
+
     /// Return whether `potentialDescendant` is a descendant of `ancestor`.
     private func isDescendant(_ potentialDescendant: Bookmark, of ancestor: Bookmark) -> Bool {
         var current = potentialDescendant.parent
@@ -168,7 +168,7 @@ class BookmarkSectionController: NSObject {
         }
         return false
     }
-    
+
     func handleDrop(of item: Any, to target: Bookmark?, at index: Int?) -> Bool {
         let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
 
@@ -183,19 +183,19 @@ class BookmarkSectionController: NSObject {
             state?.moveNormalTab(tabId: tab.guid, toBookmark: target?.guid, index: index ?? 0)
             return true
         }
-        
+
         if let bookmark = item as? Bookmark {
             let targetFolder = target ?? bookmarkManager.rootFolder
             let sourceFolder = bookmark.parent ?? bookmarkManager.rootFolder
-            
+
             guard targetFolder.isFolder, bookmark != targetFolder else {
                 return false
             }
-            
+
             if bookmark.isFolder && isDescendant(targetFolder, of: bookmark) {
                 return false
             }
-            
+
             var normalizedIndex = index
             if var destinationIndex = normalizedIndex,
                sourceFolder.guid == targetFolder.guid,
@@ -210,11 +210,11 @@ class BookmarkSectionController: NSObject {
                 }
                 normalizedIndex = destinationIndex
             }
-            
+
             moveBookmark(bookmark, to: targetFolder, at: normalizedIndex)
             return true
         }
-        
+
         return false
     }
 }

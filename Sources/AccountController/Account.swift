@@ -364,6 +364,8 @@ class AccountController {
 
     // MARK: Avatar bytes for the Chromium settings bridge
 
+    static let avatarDidChange = Notification.Name("accountAvatarDidChange")
+
     /// The processor the account settings pane renders avatars with. Owned here
     /// rather than at the view: Kingfisher folds the processor identifier into
     /// the cache key, so `clearCachedAccount()` can only evict the rounded
@@ -401,6 +403,7 @@ class AccountController {
         avatarPNG = png
         avatarPNGOwnerID = account.userID
         avatarGeneration += 1
+        NotificationCenter.default.post(name: Self.avatarDidChange, object: self)
     }
 
     /// Stores fetched bytes unless a newer locally saved avatar landed
@@ -413,6 +416,7 @@ class AccountController {
               let png = image.pngData() else { return }
         avatarPNG = png
         avatarPNGOwnerID = account.userID
+        NotificationCenter.default.post(name: Self.avatarDidChange, object: self)
     }
 
     /// Fills the avatar store from Kingfisher's disk cache (no network).

@@ -60,6 +60,26 @@ enum SidebarBookmarkFolderDropResolver {
         return isUpperHalf ? .insertBeforeFolder : .insertAfterFolder
     }
 
+    /// Shared AppKit adapter for Sidebar and bookmark-only management outlines.
+    static func remappedTarget(folder: Bookmark, outlineView: NSOutlineView,
+                               locationInWindow: NSPoint, proposedChildIndex: Int,
+                               siblings: [SidebarItem]) -> (item: Any?, childIndex: Int)? {
+        let row = outlineView.row(forItem: folder)
+        guard folder.isFolder, row >= 0 else { return nil }
+        let location = outlineView.convert(locationInWindow, from: nil)
+        let rect = outlineView.rect(ofRow: row)
+        let target = resolve(isExpanded: outlineView.isItemExpanded(folder),
+                             isUpperHalf: outlineView.isFlipped ? location.y < rect.midY : location.y > rect.midY,
+                             isDropOnItem: proposedChildIndex == NSOutlineViewDropOnItemIndex)
+        switch target {
+        case .keepOriginal, .dropOnFolder: return nil
+        case .insertAsFirstChild: return (folder, 0)
+        case .insertBeforeFolder, .insertAfterFolder:
+            guard let index = siblings.firstIndex(where: { $0.id == folder.id }) else { return nil }
+            return (folder.parent, index + (target == .insertAfterFolder ? 1 : 0))
+        }
+    }
+
     static func shouldHighlightFolder(isExpanded: Bool, isDropOnItem: Bool) -> Bool {
         !isExpanded && isDropOnItem
     }
@@ -3593,40 +3613,12 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return nil
         }
         
-        let row = outlineView.row(forItem: folder)
-        guard row >= 0 else { return nil }
-        let isExpanded = outlineView.isItemExpanded(folder)
-        
-        let locationInOutline = outlineView.convert(info.draggingLocation, from: nil)
-        let rowRect = outlineView.rect(ofRow: row)
-
-        let target = SidebarBookmarkFolderDropResolver.resolve(
-            isExpanded: isExpanded,
-            isUpperHalf: outlineView.isFlipped
-                ? locationInOutline.y < rowRect.midY
-                : locationInOutline.y > rowRect.midY,
-            isDropOnItem: proposedChildIndex == NSOutlineViewDropOnItemIndex
-        )
-
-        switch target {
-        case .keepOriginal, .dropOnFolder:
-            return nil
-        case .insertAsFirstChild:
-            return (item: folder, childIndex: 0)
-        case .insertBeforeFolder, .insertAfterFolder:
-            let parentItem = folder.parent
-            let siblings = dataSourceChildren(of: parentItem)
-            guard let folderIndex = siblings.firstIndex(where: { $0.id == folder.id }) else {
-                return nil
-            }
-
-            let targetIndex = target == .insertBeforeFolder
-                ? folderIndex
-                : folderIndex + 1
-            return (item: parentItem, childIndex: targetIndex)
-        }
+        return SidebarBookmarkFolderDropResolver.remappedTarget(
+            folder: folder, outlineView: outlineView, locationInWindow: info.draggingLocation,
+            proposedChildIndex: proposedChildIndex, siblings: dataSourceChildren(of: folder.parent))
     }
     
+
     private func dataSourceChildren(of parent: SidebarItem?) -> [SidebarItem] {
         if let parent {
             guard parent.isExpandable else { return [] }

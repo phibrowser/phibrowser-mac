@@ -332,7 +332,12 @@ struct HeaderTrailingArea: View {
     @ViewBuilder
     private var downloadPopoverContent: some View {
         if let manager = downloadViewModel.downloadsManager {
-            DownloadsListView(downloadsManager: manager)
+            DownloadsListView(downloadsManager: manager) {
+                isDownloadPopoverShown = false
+                guard let owner = browserState?.windowController,
+                      let source = owner.window?.contentView else { return }
+                owner.showLibrary(from: source, section: .downloads)
+            }
                 .frame(width: 340, height: 317)
                 .preferredColorScheme(colorScheme)
         }

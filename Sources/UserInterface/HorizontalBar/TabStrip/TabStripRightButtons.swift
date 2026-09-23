@@ -71,6 +71,9 @@ struct TabStripRightButtons: View {
             }
 
             TabStripSearchTabsButton(action: onSearchTabsTap)
+
+            ProfileButton(surface: .tabStrip)
+                .frame(width: 24, height: 24)
         }
         .onReceive(browserState.$normalTabs.receive(on: DispatchQueue.main)) { tabs in
             eligibleTabCount = FarringdonOrganizer.eligibleTabCount(in: tabs)

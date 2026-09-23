@@ -11,6 +11,9 @@ import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
 
+    /// App-scoped download events for aggregate views spanning browser windows.
+    let downloadEvents = PassthroughSubject<ChromiumDownloadEvent, Never>()
+
     /// Live ask-Space overlays keyed by the source windowId, so a second
     /// match for the same window replaces (rather than stacks) the prompt and
     /// dismissal can tear the right one down.
@@ -1148,7 +1151,9 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         SpaceSessionControllersManager.shared.activeWindowController?.showFeedbackWindow()
     }
 
-    func downloadEventOccurred(_ eventType: DownloadEventType, guid: String, downloadItem: (any DownloadItemWrapper)?) {
+    func downloadEventOccurred(_ eventType: DownloadEventType, guid: String,
+                               downloadItem: (any DownloadItemWrapper)?, profileId: String,
+                               isOffTheRecord: Bool) {
         let eventName: String
         switch eventType {
         case .created: eventName = "CREATED"
@@ -1169,13 +1174,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         } else {
             AppLogDebug("📥 [Download] Event: \(eventName), GUID: \(guid), Item: nil")
         }
+
+        downloadEvents.send(.init(eventType: eventType, guid: guid, wrapper: downloadItem,
+                                  profileId: profileId, isOffTheRecord: isOffTheRecord))
         
         // Downloads are profile-scoped, so every open window needs the update.
         for controller in SpaceSessionControllersManager.shared.getAllWindows() {
+            guard controller.browserState.profileId == profileId,
+                  controller.browserState.isIncognito == isOffTheRecord else { continue }
             controller.browserState.downloadsManager.handleDownloadEvent(
                 eventType: eventType,
                 guid: guid,
-                wrapper: downloadItem
+                wrapper: downloadItem,
+                profileId: profileId
             )
         }
     }

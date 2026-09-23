@@ -10,6 +10,7 @@ struct DownloadItemRow: View {
     @State private var isHovered = false
     @State private var openAnimationTrigger = 0
     var isLast: Bool
+    var usesHoverAppearance = false
     var onCopyLink: (DownloadItem) -> Void
     var onOpen: (DownloadItem) -> Void
     var onShowInFinder: (DownloadItem) -> Void
@@ -22,6 +23,10 @@ struct DownloadItemRow: View {
 
     private let iconSize: CGFloat = 30
     private let buttonSize: CGFloat = 24
+
+    private var showsActions: Bool {
+        !usesHoverAppearance || isHovered
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -46,8 +51,17 @@ struct DownloadItemRow: View {
                 
                 // Action buttons
                 actionButtons
+                    .opacity(showsActions ? 1 : 0)
+                    .disabled(!showsActions)
+                    .accessibilityHidden(!showsActions)
             }
             .padding(.vertical, 12)
+            .padding(.horizontal, usesHoverAppearance ? 10 : 0)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .themedFill(.textPrimary.withAlphaComponent(0.05))
+                    .opacity(usesHoverAppearance && isHovered ? 1 : 0)
+            }
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering

@@ -53,6 +53,7 @@ class SpaceSessionController: NSWindowController {
     var isPresentedOrLegacy: Bool { !isHosted || isPresented }
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
+    
     var searchTabsContainerViewController: SearchTabsContainerViewController?
     
     private lazy var toastContainerViewController: OverlayToastViewController = {
@@ -62,6 +63,34 @@ class SpaceSessionController: NSWindowController {
     private lazy var imagePreviewOverlayViewController: ImagePreviewOverlayViewController = {
         ImagePreviewOverlayViewController(state: browserState.imagePreviewState)
     }()
+
+    /// Window-scoped Library view, created on first use.
+    private var libraryOverlayController: LibraryOverlayController?
+    private var libraryWindowController: LibraryWindowController?
+
+    func openLibraryInNewWindow(section: LibraryViewModule.Section? = nil) {
+        guard let window else { return }
+        libraryOverlayController?.dismiss(animated: false)
+        if libraryWindowController == nil {
+            libraryWindowController = LibraryWindowController(parent: window, browserState: browserState)
+        }
+        libraryWindowController?.present(section: section)
+    }
+
+    func showLibrary(from source: NSView, section: LibraryViewModule.Section? = nil) {
+        guard let window, source.window === window else { return }
+        if libraryOverlayController == nil {
+            libraryOverlayController = LibraryOverlayController(parent: window, browserState: browserState)
+        }
+        libraryOverlayController?.show(from: source, section: section)
+    }
+
+    @discardableResult
+    func dismissLibraryIfVisible() -> Bool {
+        guard libraryOverlayController?.isVisible == true else { return false }
+        libraryOverlayController?.dismiss()
+        return true
+    }
 
     /// Peek popup panel, created on first present. Exposed to the
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
@@ -1352,10 +1381,13 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
+        libraryWindowController?.close()
+        libraryWindowController = nil
         // Defensive teardown for placeholder mode. In practice Chromium's
         // Browser::~Browser → HidePlaceholder fires first and clears state,
         // making this a no-op; kept as a backstop in case the destruction
         // order ever shifts. See spec §9.1 / §9.4.
+        libraryOverlayController?.dismiss(animated: false, restoreFocus: false)
         browserState.exitPlaceholderMode()
         // Drop peek bookkeeping and the panel; the peek tab itself is torn
         // down by Chromium together with the window's tab strip.

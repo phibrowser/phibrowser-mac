@@ -301,6 +301,7 @@ extension AppController {
     static let uninstallPhiItemTag = 500026
     static let browserMigrationItemTag = 500038
     static let fileSaveForLaterLibraryItemTag = 500039
+    static let viewLibraryItemTag = 500040
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -359,6 +360,7 @@ extension AppController {
                     item.tag == CommandWrapper.PHI_TOGGLE_CHATBAR.rawValue ||
                     item.tag == CommandWrapper.PHI_NEW_CONVERSATION.rawValue ||
                     item.tag == CommandWrapper.PHI_TOGGLE_READER.rawValue ||
+                    item.tag == AppController.viewLibraryItemTag ||
                     item.tag == AppController.viewMenuPhiSectionSeparatorTag ||
                     item.tag == AppController.toggleBookmarkBarItemTag ||
                     item.tag == AppController.toggleBookmarkBarOnNewTabItemTag ||
@@ -384,6 +386,13 @@ extension AppController {
                 Shortcuts.updateShortcut(for: toggleReaderItem)
                 toggleReaderItem.target = self
                 submenu.addItem(toggleReaderItem)
+
+                let libraryItem = NSMenuItem(title: LibraryViewModule.title,
+                                             action: #selector(openLibrary(_:)),
+                                             keyEquivalent: "")
+                libraryItem.tag = AppController.viewLibraryItemTag
+                libraryItem.target = self
+                submenu.addItem(libraryItem)
 
                 let readerSeparator = NSMenuItem.separator()
                 readerSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
@@ -1150,6 +1159,14 @@ extension AppController {
             return
         }
         state.toggleReaderView(for: tab, from: .viewMenu)
+    }
+
+    @MainActor
+    @objc func openLibrary(_ sender: Any?) {
+        guard let owner = SpaceSessionControllersManager.shared.activeWindowController,
+              !owner.browserState.isKioskWindow,
+              let source = owner.window?.contentView else { return }
+        owner.showLibrary(from: source)
     }
 
     @MainActor
@@ -1950,7 +1967,7 @@ extension AppController {
     /// affordance, so both layouts share one switcher UI. Items target the
     /// controller and reuse the Spaces menu's activate / create actions, so
     /// switching here behaves exactly like the menu-bar Spaces menu.
-    func populateSpaceSwitcherMenu(_ menu: NSMenu) {
+    func populateSpaceSwitcherMenu(_ menu: NSMenu, includesNewSpaceAction: Bool = true) {
         menu.removeAllItems()
         let activeSpaceId = currentActiveSpace()?.spaceId
 
@@ -1967,10 +1984,16 @@ extension AppController {
             item.representedObject = space.spaceId
             item.state = (space.spaceId == activeSpaceId) ? .on : .off
             item.image = spaceMenuIcon(for: space)
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                item.preferredImageVisibility = .visible
+            }
+            #endif
             item.attributedTitle = spaceMenuTitle(name: space.name, profileId: space.profileId)
             menu.addItem(item)
         }
 
+        guard includesNewSpaceAction else { return }
         if menu.numberOfItems > 0 {
             menu.addItem(.separator())
         }
@@ -1982,6 +2005,61 @@ extension AppController {
         newSpaceItem.target = self
         newSpaceItem.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         menu.addItem(newSpaceItem)
+    }
+
+    /// Builds the shared account-button menu using the same window and command
+    /// routing as the main menu and the Space switcher.
+    func populateProfileMenu(_ menu: NSMenu) {
+        populateSpaceSwitcherMenu(menu, includesNewSpaceAction: false)
+
+        func add(_ title: String, action: Selector, command: CommandWrapper? = nil, target: AnyObject? = nil) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = target
+            if let command {
+                item.tag = command.rawValue
+                applyEffectiveShortcut(command, to: item)
+                #if compiler(>=6.4)
+                if #available(macOS 27.0, *), command == .IDC_OPTIONS {
+                    item.preferredImageVisibility = .hidden
+                }
+                #endif
+            }
+            menu.addItem(item)
+        }
+
+        add(NSLocalizedString("profile.menu.newIncognitoSpace", value: "New Incognito Space", comment: "Profile menu - New Incognito Space action"),
+            action: #selector(newIncognitoSpaceFromMenu(_:)), command: .PHI_NEW_INCOGNITO_SPACE, target: self)
+        menu.addItem(.separator())
+        if let space = currentActiveSpace() {
+            let themeItem = NSMenuItem()
+            let editor = SpaceThemeEditorView(spaceId: space.spaceId, isEmbeddedInMenu: true) { [weak menu] in
+                menu?.cancelTracking()
+            }
+            .disabled(focusedSpaceIsAgentControlled())
+            let themeSource = currentSpacesSlot()?.visibleController?.browserState.themeContext
+            let hostingView = ThemedHostingView(rootView: editor, themeSource: themeSource)
+            // Menu windows have no browser controller; retain the owning Space's theme.
+            hostingView.subtreeThemeSource = themeSource
+            hostingView.sizingOptions = []
+            hostingView.autoresizingMask = [.width]
+            hostingView.frame = NSRect(origin: .zero, size: SpaceThemeEditorView.menuContentSize)
+            themeItem.view = hostingView
+            menu.addItem(themeItem)
+            menu.addItem(.separator())
+        }
+        add(NSLocalizedString("profile.menu.downloads", value: "Download List", comment: "Profile menu - Download List action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_SHOW_DOWNLOADS, target: nil)
+        add(NSLocalizedString("profile.menu.bookmarks", value: "Manage Bookmarks", comment: "Profile menu - Manage Bookmarks action"),
+            action: #selector(openBookmarkManager(_:)), target: self)
+        add(NSLocalizedString("profile.menu.extensions", value: "Manage Extensions", comment: "Profile menu - Manage Extensions action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_MANAGE_EXTENSIONS, target: nil)
+        add(NSLocalizedString("profile.menu.settings", value: "Settings", comment: "Profile menu - Settings action"),
+            action: #selector(showPreferences(_:)), command: .IDC_OPTIONS, target: self)
+        menu.addItem(.separator())
+        add(NSLocalizedString("profile.menu.newTab", value: "New Tab", comment: "Profile menu - New Tab action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_NEW_TAB, target: nil)
+        add(NSLocalizedString("profile.menu.newIncognitoWindow", value: "New Incognito Window", comment: "Profile menu - New Incognito Window action"),
+            action: #selector(commandDispatch(_:)), command: .IDC_NEW_INCOGNITO_WINDOW, target: nil)
     }
 
     /// Inline title for a switcher row: the Space name in the label color followed
@@ -2169,6 +2247,11 @@ extension AppController {
                 item.representedObject = space.spaceId
                 item.state = (space.spaceId == activeSpaceId) ? .on : .off
                 item.image = spaceMenuIcon(for: space)
+                #if compiler(>=6.4)
+                if #available(macOS 27.0, *) {
+                    item.preferredImageVisibility = .visible
+                }
+                #endif
                 menu.addItem(item)
             }
         }
@@ -2362,7 +2445,12 @@ extension AppController {
     @objc func selectSpaceProfile(_ sender: Any?) {
         guard let menuItem = sender as? NSMenuItem,
               let profileId = menuItem.representedObject as? String,
-              let space = currentActiveSpace(),
+              let space = currentActiveSpace() else { return }
+        confirmSpaceProfileChange(space, to: profileId)
+    }
+
+    func confirmSpaceProfileChange(_ space: Space, to profileId: String) {
+        guard SpaceManager.shared.acceptsStoreAction(from: space.storeIdentifier),
               space.spaceId != LocalStore.defaultSpaceId,
               space.profileId != profileId,
               let profile = ProfileManager.shared.profile(for: profileId) else { return }
@@ -2399,7 +2487,12 @@ extension AppController {
     }
 
     @objc func deleteActiveSpace(_ sender: Any?) {
-        guard let space = currentActiveSpace(),
+        guard let space = currentActiveSpace() else { return }
+        confirmSpaceDeletion(space)
+    }
+
+    func confirmSpaceDeletion(_ space: Space) {
+        guard SpaceManager.shared.acceptsStoreAction(from: space.storeIdentifier),
               SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId) else { return }
         let alert = NSAlert()
         alert.messageText = String(
@@ -3031,6 +3124,16 @@ extension AppController {
                 guard let tab, !tab.isShowingNativeNTP else { return false }
                 return ApplicationState.shared.canUseBrowser
             }
+        }
+
+        if item.action == #selector(openLibrary(_:)) {
+            let canOpen = MainActor.assumeIsolated {
+                guard let owner = SpaceSessionControllersManager.shared.activeWindowController else {
+                    return false
+                }
+                return !owner.browserState.isKioskWindow && owner.window?.contentView != nil
+            }
+            return canOpen && ApplicationState.shared.canUseBrowser
         }
 
         if item.action == #selector(saveTabForLater(_:)) {

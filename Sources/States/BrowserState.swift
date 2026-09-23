@@ -1972,13 +1972,14 @@ class BrowserState {
     /// cleanup and the existing cross-Space persistence semantics.
     @discardableResult
     @MainActor
-    func moveBookmarks(bookmarkGuids: [String], to targetSpace: Space) -> Bool {
+    func moveBookmarks(bookmarkGuids: [String], to targetSpace: Space,
+                       targetParentId: String? = nil, destinationIndex: Int? = nil) -> Bool {
         guard let plan = spaceTransferPlan(tabs: [], bookmarkGuids: Set(bookmarkGuids)),
               canMoveSpaceTransfer(plan, to: targetSpace, sourceHasSpaceSlot: false) else {
             return false
         }
 
-        commitBookmarkSpaceMove(plan, to: targetSpace)
+        commitBookmarkSpaceMove(plan, to: targetSpace, targetParentId: targetParentId, destinationIndex: destinationIndex)
         return true
     }
 
@@ -2119,7 +2120,8 @@ class BrowserState {
 
     @MainActor
     private func commitBookmarkSpaceMove(_ plan: MultiSelectionSpaceTransferPlan,
-                                         to targetSpace: Space) {
+                                         to targetSpace: Space, targetParentId: String? = nil,
+                                         destinationIndex: Int? = nil) {
         if !plan.detachedBookmarkGuids.isEmpty {
             detachBookmarkTabsForComfortableLayout(bookmarkGuids: plan.detachedBookmarkGuids)
         }
@@ -2127,7 +2129,8 @@ class BrowserState {
             localStore.moveBookmarks(plan.bookmarkGuids,
                                      sourceProfileId: profileId,
                                      toSpaceId: targetSpace.spaceId,
-                                     targetProfileId: targetSpace.profileId)
+                                     targetProfileId: targetSpace.profileId, sourceSpaceId: spaceId,
+                                     targetParentId: targetParentId, destinationIndex: destinationIndex)
         }
     }
 
@@ -7332,6 +7335,27 @@ class BrowserState {
         }
     }
     
+    /// A storage-only management operation removed these records. Keep any live
+    /// pages accessible as normal tabs without reopening closed pins or moving windows.
+    @MainActor
+    func detachLiveTabsFromRemovedPins(_ guids: Set<String>) {
+        let affected = tabs.filter { $0.guidInLocalDB.map(guids.contains) == true }
+        guard !affected.isEmpty else { return }
+        let tabIDs = Set(affected.map(\.guid))
+        for tab in affected {
+            migrateAIChatTab(for: tab, toNewIdentifier: nil)
+            tab.guidInLocalDB = nil
+            tab.isPinned = false
+            tab.webContentWrapper?.updateTabCustomValue("")
+            insertIntoNormalTabOrder(tabGuid: tab.guid, at: normalTabOrder.count, syncChromiumOrder: false)
+        }
+        for index in splits.indices where tabIDs.contains(splits[index].primaryTabId)
+            || tabIDs.contains(splits[index].secondaryTabId) {
+            splits[index].isPinned = false
+        }
+        updateNormalTabs()
+    }
+
     func movePinnedTabOut(pinnedGuid: String, to normalIndex: Int, selectAfterMove: Bool = false) {
         guard let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }) else {
             return

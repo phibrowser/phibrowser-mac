@@ -6,6 +6,7 @@
 import SwiftUI
 struct DownloadsListView: View {
     @ObservedObject var downloadsManager: DownloadsManager
+    var onShowAllDownloads: () -> Void = {}
     @State private var contentSize: CGSize = .zero
     
     private let maxVisibleItems = 5
@@ -21,7 +22,7 @@ struct DownloadsListView: View {
                 downloadsList
             }
             
-            DownloadsBottomBar()
+            DownloadsBottomBar(onShowAllDownloads: onShowAllDownloads)
         }
         .frame(width: 340)
         .background(.clear)
@@ -89,6 +90,7 @@ struct DownloadsListView: View {
 }
 
 private struct DownloadsBottomBar: View {
+    let onShowAllDownloads: () -> Void
     @State private var isHovered: Bool = false
     
     var body: some View {
@@ -100,7 +102,7 @@ private struct DownloadsBottomBar: View {
                 Spacer()
                 
                 Button(action: {
-                    openAllDownloadsPage()
+                    onShowAllDownloads()
                 }) {
                     HStack(spacing: 4) {
                         Text(NSLocalizedString("downloads.list.openAllDownloadsButton", value: "All Downloads", comment: "Downloads list - Button to open full downloads page"))

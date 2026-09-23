@@ -9,9 +9,14 @@ import SwiftUI
 /// Root popover content that lets the visual-effect background extend into the arrow.
 struct DownloadsListContentView: View {
     @ObservedObject var downloadsManager: DownloadsManager
+    let onShowAllDownloads: () -> Void
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        DownloadsListView(downloadsManager: downloadsManager)
+        DownloadsListView(downloadsManager: downloadsManager) {
+            dismiss()
+            onShowAllDownloads()
+        }
             .background(
                 VisualEffectBackground(material: .hudWindow, blendingMode: .withinWindow)
                     .ignoresSafeArea()
@@ -52,7 +57,11 @@ class DownloadsListViewController: ThemedHostingController<DownloadsListContentV
         let manager = browserState.downloadsManager
         #endif
         
-        let contentView = DownloadsListContentView(downloadsManager: manager)
+        let contentView = DownloadsListContentView(downloadsManager: manager) { [weak browserState] in
+            guard let owner = browserState?.windowController,
+                  let source = owner.window?.contentView else { return }
+            owner.showLibrary(from: source, section: .downloads)
+        }
         super.init(rootView: contentView, themeSource: browserState.themeContext)
     }
     

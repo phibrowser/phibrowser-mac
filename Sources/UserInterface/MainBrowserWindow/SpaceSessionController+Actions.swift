@@ -36,6 +36,7 @@ extension SpaceSessionController {
     }
     
     func handleCloseTab() -> Bool {
+        if dismissLibraryIfVisible() { return true }
         if searchTabsContainerViewController?.hasShown ?? false {
             searchTabsContainerViewController?.hideSearchTabs()
             return true

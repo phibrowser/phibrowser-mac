@@ -30294,6 +30294,30 @@
         }
       }
     },
+    "common.bookmarkEditor.createSubtitle" : {
+      "comment" : "Bookmark creator - subtitle of the sheet to create a bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a name, address, and folder for this bookmark."
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.createTitle" : {
+      "comment" : "Bookmark creator - title of the sheet to create a bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Bookmark"
+          }
+        }
+      }
+    },
     "common.bookmarkEditor.editSplitSubtitle" : {
       "comment" : "Bookmark editor - Subtitle explaining split-view bookmark editing",
       "extractionState" : "extracted_with_value",
@@ -34254,6 +34278,30 @@
         }
       }
     },
+    "common.pinnedTabEditor.createSubtitle" : {
+      "comment" : "Pinned tab creator - subtitle of the sheet to create a pinned tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a name and address for this pinned tab."
+          }
+        }
+      }
+    },
+    "common.pinnedTabEditor.createTitle" : {
+      "comment" : "Pinned tab creator - title of the sheet to create a pinned tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Pinned Tab"
+          }
+        }
+      }
+    },
     "common.pinnedTabEditor.editSplitSubtitle" : {
       "comment" : "Pinned tab editor - Subtitle explaining pinned split editing",
       "extractionState" : "extracted_with_value",
@@ -37658,6 +37706,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這個檔案不常被下載，可能有危險性"
+          }
+        }
+      }
+    },
+    "downloads.all.allProfiles" : {
+      "comment" : "All downloads window - Filter including all regular profiles",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All"
+          }
+        }
+      }
+    },
+    "downloads.all.empty" : {
+      "comment" : "All downloads window - No downloads in the selected profile scope",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Downloads"
+          }
+        }
+      }
+    },
+    "downloads.all.loadFailure" : {
+      "comment" : "All downloads window - Partial failure while loading profile download histories",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some profiles could not be loaded."
+          }
+        }
+      }
+    },
+    "downloads.all.loading" : {
+      "comment" : "All downloads window - Loading profile download histories",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading Downloads…"
+          }
+        }
+      }
+    },
+    "downloads.all.noSearchResults" : {
+      "comment" : "All downloads window - No downloads in the selected profiles match the search",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Downloads"
+          }
+        }
+      }
+    },
+    "downloads.all.search" : {
+      "comment" : "All downloads window - Placeholder for searching by file name or source URL",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Downloads"
+          }
+        }
+      }
+    },
+    "downloads.all.unknownDate" : {
+      "comment" : "All downloads window - Section heading for downloads without a start date",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown Date"
+          }
+        }
+      }
+    },
+    "downloads.all.windowTitle" : {
+      "comment" : "All downloads window - Window title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Downloads"
           }
         }
       }
@@ -42525,6 +42669,486 @@
     "Finish setting up sync" : {
       "comment" : "Pairing wizard - window title"
     },
+    "folio.library.allItems" : {
+      "comment" : "Folio library - Filter showing every saved item",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All Items"
+          }
+        }
+      }
+    },
+    "folio.library.article" : {
+      "comment" : "Folio library - Reading mode showing the saved article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Article"
+          }
+        }
+      }
+    },
+    "folio.library.articles" : {
+      "comment" : "Folio library - Filter showing saved articles",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Articles"
+          }
+        }
+      }
+    },
+    "folio.library.cancel" : {
+      "comment" : "Folio library - Cancels moving an item to Trash",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "folio.library.clearSearch" : {
+      "comment" : "Folio library - Accessible label for clearing the search field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Clear Search"
+          }
+        }
+      }
+    },
+    "folio.library.collection" : {
+      "comment" : "Folio library - Small heading above the saved item list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "COLLECTION"
+          }
+        }
+      }
+    },
+    "folio.library.highlights" : {
+      "comment" : "Folio library - Saved highlights and their notes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Highlights"
+          }
+        }
+      }
+    },
+    "folio.library.largerText" : {
+      "comment" : "Folio library - Increases reading text size",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Larger Text"
+          }
+        }
+      }
+    },
+    "folio.library.loadError" : {
+      "comment" : "Folio library - Heading for a file or folder access error",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't read your Folio"
+          }
+        }
+      }
+    },
+    "folio.library.more" : {
+      "comment" : "Folio library - Accessible label for the article options menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reading Options and Actions"
+          }
+        }
+      }
+    },
+    "folio.library.newestFirst" : {
+      "comment" : "Folio library - Sorts by most recently modified file, matching the web library",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recently Updated First"
+          }
+        }
+      }
+    },
+    "folio.library.noArticle" : {
+      "comment" : "Folio library - Shown when the saved item has no readable article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This item has no article text. You can open the original or its saved webpage copy."
+          }
+        }
+      }
+    },
+    "folio.library.noHighlights" : {
+      "comment" : "Folio library - Empty highlights reading pane",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No highlights yet. Highlight a passage on the original page to keep it here."
+          }
+        }
+      }
+    },
+    "folio.library.noItems" : {
+      "comment" : "Folio library - Empty collection list placeholder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your collection starts here."
+          }
+        }
+      }
+    },
+    "folio.library.noMatches" : {
+      "comment" : "Folio library - Shown when search or filters have no matches",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No items match this view."
+          }
+        }
+      }
+    },
+    "folio.library.oldestFirst" : {
+      "comment" : "Folio library - Sorts by oldest modification date",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Least Recently Updated First"
+          }
+        }
+      }
+    },
+    "folio.library.onYourMac" : {
+      "comment" : "Folio library - Opens the local storage folder in Finder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Stored on your Mac"
+          }
+        }
+      }
+    },
+    "folio.library.openOriginal" : {
+      "comment" : "Folio library - Opens the original website in the owning browser window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Original"
+          }
+        }
+      }
+    },
+    "folio.library.readingMode" : {
+      "comment" : "Folio library - Switches between the article and its highlights",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reading Mode"
+          }
+        }
+      }
+    },
+    "folio.library.refresh" : {
+      "comment" : "Folio library - Reloads saved files from disk",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh Library"
+          }
+        }
+      }
+    },
+    "folio.library.resetFilters" : {
+      "comment" : "Folio library - Clears search and filters",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show All Items"
+          }
+        }
+      }
+    },
+    "folio.library.retry" : {
+      "comment" : "Folio library - Retries reading the library after an error",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "folio.library.reveal" : {
+      "comment" : "Folio library - Reveals the saved Markdown file",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show in Finder"
+          }
+        }
+      }
+    },
+    "folio.library.saved" : {
+      "comment" : "Folio library - Prefix before the date an item was saved",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved"
+          }
+        }
+      }
+    },
+    "folio.library.saveHint" : {
+      "comment" : "Folio library - Explains how to save the first item",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On any webpage, choose File → Save to Folio"
+          }
+        }
+      }
+    },
+    "folio.library.search" : {
+      "comment" : "Folio library - Search field placeholder for titles and sources",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search your library"
+          }
+        }
+      }
+    },
+    "folio.library.selectDetail" : {
+      "comment" : "Folio library - Prompt to select a saved article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose an item from your collection and make a little room to read."
+          }
+        }
+      }
+    },
+    "folio.library.selectItem" : {
+      "comment" : "Folio library - Heading when no article is selected",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Something worth returning to."
+          }
+        }
+      }
+    },
+    "folio.library.smallerText" : {
+      "comment" : "Folio library - Decreases reading text size",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Smaller Text"
+          }
+        }
+      }
+    },
+    "folio.library.sort" : {
+      "comment" : "Folio library - Accessible label for the sorting menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sort Collection"
+          }
+        }
+      }
+    },
+    "folio.library.tagline" : {
+      "comment" : "Folio library - Subtitle beneath the library name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A little library of things worth keeping."
+          }
+        }
+      }
+    },
+    "folio.library.title" : {
+      "comment" : "Folio library - Window title and wordmark; keep the product name Folio",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Folio"
+          }
+        }
+      }
+    },
+    "folio.library.trash" : {
+      "comment" : "Folio library - Moves a saved item and its webpage copy to Trash",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move to Trash"
+          }
+        }
+      }
+    },
+    "folio.library.trashMessage" : {
+      "comment" : "Folio library - Explains what removing an item does",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The article and its saved webpage copy will be moved to Trash. You can restore them in Finder."
+          }
+        }
+      }
+    },
+    "folio.library.trashTitle" : {
+      "comment" : "Folio library - Confirmation before removing a saved item",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move this item to Trash?"
+          }
+        }
+      }
+    },
+    "folio.library.video" : {
+      "comment" : "Folio library - Content type for a saved video summary",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Video"
+          }
+        }
+      }
+    },
+    "folio.library.videos" : {
+      "comment" : "Folio library - Filter showing saved video summaries",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Videos"
+          }
+        }
+      }
+    },
+    "folio.library.webpageCopy" : {
+      "comment" : "Folio library - Opens the saved webpage copy in a browser tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Saved Webpage"
+          }
+        }
+      }
+    },
+    "folio.library.welcome" : {
+      "comment" : "Folio library - Main heading of the empty library",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Keep what stays with you."
+          }
+        }
+      }
+    },
+    "folio.library.welcomeDetail" : {
+      "comment" : "Folio library - Explanation on the empty library welcome screen",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Articles to return to, ideas to sit with, and passages you don't want to lose. Give them a place of their own."
+          }
+        }
+      }
+    },
     "From %@" : {
       "localizations" : {
         "de" : {
@@ -43438,6 +44062,342 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇空間"
+          }
+        }
+      }
+    },
+    "library.content.comingSoon" : {
+      "comment" : "Library - Placeholder for a category not yet available",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming soon"
+          }
+        }
+      }
+    },
+    "library.navigation.close" : {
+      "comment" : "Library - Close button label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to browsing"
+          }
+        }
+      }
+    },
+    "library.navigation.downloads" : {
+      "comment" : "Library - Downloads category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloads"
+          }
+        }
+      }
+    },
+    "library.navigation.folio" : {
+      "comment" : "Library - Saved content category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folio"
+          }
+        }
+      }
+    },
+    "library.navigation.hideSidebar" : {
+      "comment" : "Library - Tooltip and accessibility label for collapsing the navigation sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Sidebar"
+          }
+        }
+      }
+    },
+    "library.navigation.openInNewWindow" : {
+      "comment" : "Profile menu - Opens Library in a separate window",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Library in New Window"
+          }
+        }
+      }
+    },
+    "library.navigation.showSidebar" : {
+      "comment" : "Library - Tooltip and accessibility label for expanding the navigation sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Sidebar"
+          }
+        }
+      }
+    },
+    "library.navigation.spaces" : {
+      "comment" : "Library - Spaces category",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces"
+          }
+        }
+      }
+    },
+    "library.navigation.title" : {
+      "comment" : "Library - Title and entry button label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        }
+      }
+    },
+    "library.spaces.addItem" : {
+      "comment" : "Library Space card - add item button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add pinned tab, bookmark or folder"
+          }
+        }
+      }
+    },
+    "library.spaces.bookmarks" : {
+      "comment" : "Library Space card - bookmarks section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmarks"
+          }
+        }
+      }
+    },
+    "library.spaces.create" : {
+      "comment" : "Library Spaces - add card button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Space"
+          }
+        }
+      }
+    },
+    "library.spaces.deleteItem" : {
+      "comment" : "Library Space menu - delete item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        }
+      }
+    },
+    "library.spaces.deleteSpace" : {
+      "comment" : "Library Space menu - delete this Space after confirmation",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Space…"
+          }
+        }
+      }
+    },
+    "library.spaces.editIcon" : {
+      "comment" : "Library Space card - icon picker button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Space icon"
+          }
+        }
+      }
+    },
+    "library.spaces.editItem" : {
+      "comment" : "Library Space menu - edit item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit…"
+          }
+        }
+      }
+    },
+    "library.spaces.editTheme" : {
+      "comment" : "Library Space card - theme editor button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Theme"
+          }
+        }
+      }
+    },
+    "library.spaces.empty" : {
+      "comment" : "Library Space card - empty contents message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your pinned tabs and bookmarks will appear here."
+          }
+        }
+      }
+    },
+    "library.spaces.moreActions" : {
+      "comment" : "Library Space card - more actions button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More Actions"
+          }
+        }
+      }
+    },
+    "library.spaces.moveToSpace" : {
+      "comment" : "Library Space menu - move items to another Space",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to Space"
+          }
+        }
+      }
+    },
+    "library.spaces.name" : {
+      "comment" : "Library Space card - inline name editor",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space name"
+          }
+        }
+      }
+    },
+    "library.spaces.newBookmark" : {
+      "comment" : "Library Space menu - create bookmark",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Bookmark…"
+          }
+        }
+      }
+    },
+    "library.spaces.newFolder" : {
+      "comment" : "Library Space menu - create folder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Folder…"
+          }
+        }
+      }
+    },
+    "library.spaces.newPin" : {
+      "comment" : "Library Space menu - create pinned tab",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Pinned Tab…"
+          }
+        }
+      }
+    },
+    "library.spaces.openItem" : {
+      "comment" : "Library Space menu - open item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        }
+      }
+    },
+    "library.spaces.pins" : {
+      "comment" : "Library Space card - pinned tabs section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned Tabs"
+          }
+        }
+      }
+    },
+    "library.spaces.reorder" : {
+      "comment" : "Library Spaces - card drag handle tooltip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to reorder Space"
+          }
+        }
+      }
+    },
+    "library.spaces.setProfile" : {
+      "comment" : "Library Space menu - choose the Space profile",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Profile"
           }
         }
       }
@@ -49606,6 +50566,102 @@
     },
     "Profile" : {
       "comment" : "Fallback name for an account profile registered with no name"
+    },
+    "profile.button.accessibilityLabel" : {
+      "comment" : "Profile button - Opens the account and browser actions menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Profile menu"
+          }
+        }
+      }
+    },
+    "profile.menu.bookmarks" : {
+      "comment" : "Profile menu - Manage Bookmarks action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Bookmarks"
+          }
+        }
+      }
+    },
+    "profile.menu.downloads" : {
+      "comment" : "Profile menu - Download List action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Download List"
+          }
+        }
+      }
+    },
+    "profile.menu.extensions" : {
+      "comment" : "Profile menu - Manage Extensions action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Extensions"
+          }
+        }
+      }
+    },
+    "profile.menu.newIncognitoSpace" : {
+      "comment" : "Profile menu - New Incognito Space action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Incognito Space"
+          }
+        }
+      }
+    },
+    "profile.menu.newIncognitoWindow" : {
+      "comment" : "Profile menu - New Incognito Window action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Incognito Window"
+          }
+        }
+      }
+    },
+    "profile.menu.newTab" : {
+      "comment" : "Profile menu - New Tab action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Tab"
+          }
+        }
+      }
+    },
+    "profile.menu.settings" : {
+      "comment" : "Profile menu - Settings action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Settings"
+          }
+        }
+      }
     },
     "Profiles" : {
       "comment" : "Settings - Tab title for profiles management"
@@ -81235,6 +82291,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的空間"
+          }
+        }
+      }
+    },
+    "settings.spaces.manageInLibrary" : {
+      "comment" : "Spaces settings - Opens Library with Spaces selected and closes Settings",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Spaces in Library"
           }
         }
       }

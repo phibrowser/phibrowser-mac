@@ -248,7 +248,15 @@ public protocol BrowserThemeContextProviding: AnyObject {
     var providedBrowserThemeContext: BrowserThemeContext? { get }
 }
 
+private var subtreeThemeSourceKey: UInt8 = 0
+
 public extension NSView {
+    /// A scoped surface can share the existing theme pipeline without changing its window.
+    var subtreeThemeSource: ThemeStateProvider? {
+        get { objc_getAssociatedObject(self, &subtreeThemeSourceKey) as? ThemeStateProvider }
+        set { objc_setAssociatedObject(self, &subtreeThemeSourceKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+
     /// The theme context of the browser tree this view belongs to.
     ///
     /// Resolved through the responder chain first: one shell window presents
@@ -272,7 +280,12 @@ public extension NSView {
     }
     
     var themeStateProvider: ThemeStateProvider {
-        browserThemeContext ?? ThemeManager.shared
+        var ancestor: NSView? = self
+        while let view = ancestor {
+            if let source = view.subtreeThemeSource { return source }
+            ancestor = view.superview
+        }
+        return browserThemeContext ?? ThemeManager.shared
     }
 }
 

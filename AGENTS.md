@@ -146,10 +146,10 @@ Clear separation between these layers is critical.
   blocks never drains it again and every main-actor continuation the modal is waiting
   for is starved until the modal returns. Schedule the session with
   `RunLoop.main.perform(inModes:)` instead — see `AppModalPairingHost` in
-  `Sources/Sync/Keys/UI/ProfilePairingGate.swift`. The window it presents is
-  `PairingWizardView` (`Sources/Sync/Keys/UI/PairingWizardView.swift`), the
-  two-step Profile/Space pairing wizard (plus the D7 overwrite confirmation
-  page); the host itself is unchanged. A synchronous `NSAlert.runModal()` that
+  `Sources/Sync/Keys/UI/ProfilePairingGate.swift`. The window presents `SyncSetupView` (`Sources/Sync/Keys/UI/KeyLayerView.swift`),
+  which retains one host through device verification and `PairingWizardView`
+  (Profile/Space matching and overwrite review). Closing or Escape defers setup
+  except during confirmed writes or recovery-code acknowledgement. A synchronous `NSAlert.runModal()` that
   awaits nothing while it is up is exempt.
 
 ## Chromium Integration Layer

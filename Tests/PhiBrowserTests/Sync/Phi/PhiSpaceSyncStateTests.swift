@@ -260,8 +260,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     /// first launch could be treated as discarded and permanently close Space sync.
     @MainActor
     func testAnAbsentKeyIsNotDiscardedAndWritesNothing() {
-        ProfilePairingGate.staticPendingOverride = false
-        defer { ProfilePairingGate.staticPendingOverride = nil }
+        let enrollmentBefore = ProfilePairingGate.shared.isPaired
         let (store, defaults) = makeAccountStateStore()
         XCTAssertNil(defaults.data(forKey: AccountPhiSpaceSyncStateStore.defaultsKey))
 
@@ -269,7 +268,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
 
         XCTAssertNil(defaults.data(forKey: AccountPhiSpaceSyncStateStore.defaultsKey),
                      "Guard before save: a missing key must cause zero writes")
-        XCTAssertFalse(ProfilePairingGate.joinPairingPending,
+        XCTAssertEqual(ProfilePairingGate.shared.isPaired, enrollmentBefore,
                        "The store never changes this flag; the coordinator sets it in step 5")
     }
 

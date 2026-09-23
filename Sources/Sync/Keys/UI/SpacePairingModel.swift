@@ -108,6 +108,28 @@ struct SpacePairingModel {
         return out
     }
 
+    /// Suggest only unambiguous same-name matches inside the Profile chosen in step 1.
+    /// Existing identities and explicit choices (including an empty picker) take priority.
+    func suggestingSameNames(profileMappings: [String: String], excluding explicit: Set<String>) -> [String: Assignment] {
+        var out = selections
+        var claimed = Set(decisions().compactMap { decision -> String? in
+            if case .existing(let uuid) = decision.assignment { return uuid }
+            return nil
+        })
+        for local in rows where !explicit.contains(local.spaceId) {
+            if case .existing = assignment(for: local) { continue }
+            guard let profileUuid = profileMappings[local.profileId],
+                  rows.filter({ $0.profileId == local.profileId && $0.name == local.name }).count == 1 else { continue }
+            let matches = input.accountSpaces.filter {
+                $0.profileUuid == profileUuid && $0.name == local.name && !claimed.contains($0.syncUuid)
+            }
+            guard matches.count == 1, let match = matches.first else { continue }
+            out[local.spaceId] = .existing(syncUuid: match.syncUuid)
+            claimed.insert(match.syncUuid)
+        }
+        return out
+    }
+
     func decisions() -> [(localSpaceId: String, assignment: Assignment)] {
         rows.compactMap { row in
             guard let assignment = assignment(for: row) else { return nil }

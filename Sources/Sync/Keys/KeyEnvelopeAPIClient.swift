@@ -39,6 +39,37 @@ struct AccountKeyStateDTO: Codable {
     func encode(to e: Encoder) throws {}  // decode-only
 }
 
+/// Account-scoped device metadata. Creation time is not a last-seen or sync-success time.
+struct AccountDeviceDTO: Decodable, Equatable, Identifiable {
+    let deviceKeyID: String
+    let name: String
+    let platform: String
+    let status: String
+    let createdAt: Date
+    let revokedAt: Date?
+    var id: String { deviceKeyID }
+    private enum CodingKeys: String, CodingKey {
+        case deviceKeyID = "device_key_id", name, platform, status
+        case createdAt = "created_at", revokedAt = "revoked_at"
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        deviceKeyID = try c.decode(String.self, forKey: .deviceKeyID)
+        name = try c.decode(String.self, forKey: .name)
+        platform = try c.decode(String.self, forKey: .platform)
+        status = try c.decode(String.self, forKey: .status)
+        guard !deviceKeyID.isEmpty,
+              let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)) else {
+            throw KeyAPIError.decode
+        }
+        createdAt = created
+        if let raw = try c.decodeIfPresent(String.self, forKey: .revokedAt) {
+            guard let date = KeyEnvelopeAPIClient.parseRFC3339(raw) else { throw KeyAPIError.decode }
+            revokedAt = date
+        } else { revokedAt = nil }
+    }
+}
+
 /// Request payload shape for `POST /keys/v1/devices`. Not currently encoded via `Codable`
 /// (the client builds the JSON body directly), kept here to document the wire contract.
 struct DeviceRegistrationDTO: Codable {
@@ -234,6 +265,11 @@ final class KeyEnvelopeAPIClient {
     private func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> (Int, Data) {
         guard let url = URL(string: baseURL + path) else { throw KeyAPIError.decode }
         var req = URLRequest(url: url)
+        if method == "GET" {
+            req.cachePolicy = .reloadIgnoringLocalCacheData
+            req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        }
+        req.timeoutInterval = 45
         req.httpMethod = method
         // No token, no request. A nil token means either "this stack's account is no longer
         // the signed-in one" (`SyncKeyStack.boundToken`) or "the token is being renewed";
@@ -251,6 +287,12 @@ final class KeyEnvelopeAPIClient {
             let (data, resp) = try await session.data(for: req)
             return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
         } catch { throw KeyAPIError.transport(error) }
+    }
+
+    func listDevices() async throws -> [AccountDeviceDTO] {
+        let (status, data) = try await request("GET", "/keys/v1/devices")
+        guard status == 200 else { throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "") }
+        return try JSONDecoder().decode([AccountDeviceDTO].self, from: data)
     }
 
     /// Returns `true` if the account key state was created, `false` if it already existed (409).

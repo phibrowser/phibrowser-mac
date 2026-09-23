@@ -37,8 +37,16 @@ struct KeyLayerView: View {
     var body: some View {
         Group {
             switch viewModel.phase {
-            case .idle, .working:
+            case .idle, .working, .readyToPair:
                 ProgressView().padding(48)
+            case .introduction:
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(NSLocalizedString("sync.setup.title", value: "Set up sync", comment: "Sync setup introduction title")).font(.title2.bold())
+                    Text(NSLocalizedString("sync.setup.introduction", value: "Bring your Spaces, bookmarks, pinned tabs and supported browsing data to your other devices. Save a recovery code, then choose how this Mac joins your account.", comment: "Sync setup introduction explanation"))
+                    Button(NSLocalizedString("sync.setup.continue", value: "Continue", comment: "Start sync setup")) {
+                        Task { await viewModel.continueSetup() }
+                    }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                }.padding(32)
             case .showingRecoveryCode:
                 RecoveryCodeDisplayView(viewModel: viewModel)
             case .enteringRecoveryCode:
@@ -56,7 +64,8 @@ struct KeyLayerView: View {
                         NSLocalizedString("This request timed out. You can try again.", comment: "Join expired - body"),
                         retry: true)
             case .error(let m):
-                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: false)
+                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m,
+                        retry: true, retryRoutesFromStart: true)
             case .pairingProfiles(let locals, let remotes):
                 if let controller {
                     ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes,
@@ -95,11 +104,21 @@ struct KeyLayerView: View {
     }
 
     @ViewBuilder
-    private func message(_ title: String, _ body: String, retry: Bool) -> some View {
+    private func message(_ title: String, _ body: String, retry: Bool,
+                         retryRoutesFromStart: Bool = false) -> some View {
         VStack(spacing: 24) {
             Text(title).font(.title2.bold()).themedForeground(.textPrimaryStrong)
             Text(body).font(.body).themedForeground(.textPrimary).multilineTextAlignment(.center)
-            if retry {
+            // A denied or expired request can only have come from the join flow, so
+            // "another way" is the join-method choice. A generic error may come from
+            // first-device setup, sign-in or reconfiguration; retry re-runs routing.
+            if retry, retryRoutesFromStart {
+                Button(NSLocalizedString("sync.setup.tryAgain", value: "Try again",
+                                         comment: "Sync setup error screen - button that retries setup from the start")) {
+                    Task { await viewModel.retrySetup() }
+                }
+                .buttonStyle(.borderedProminent)
+            } else if retry {
                 Button(NSLocalizedString("Try another way", comment: "Key layer - retry")) {
                     viewModel.chooseJoinAgain()
                 }
@@ -108,6 +127,33 @@ struct KeyLayerView: View {
         }
         .padding(32)
         .frame(minWidth: 360)
+    }
+}
+
+/// The existing pairing host owns verification and matching in the same window.
+struct SyncSetupView: View {
+    @ObservedObject var keyModel: KeyLayerViewModel
+    let wizard: PairingWizardViewModel
+    let controller: SyncKeyController
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Group {
+            if keyModel.phase == .readyToPair {
+                PairingWizardView(viewModel: wizard, controller: controller, onDismiss: onDismiss)
+                    .task {
+                        wizard.shouldCompleteNewAccount = keyModel.createdAccountInThisFlow
+                        await wizard.start(controller: controller)
+                    }
+            } else {
+                KeyLayerView(viewModel: keyModel, controller: controller, onFinish: onDismiss)
+                    .onExitCommand {
+                        guard !keyModel.workingOperation, !keyModel.phase.requiresAcknowledgement else { return }
+                        onDismiss()
+                    }
+            }
+        }
+        .frame(minWidth: 720, minHeight: 560)
     }
 }
 

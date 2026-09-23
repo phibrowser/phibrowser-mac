@@ -822,6 +822,28 @@ actor PhiSyncEngine {
     private final class StopSignal: @unchecked Sendable {
         private let lock = NSLock()
         private var stopped = false
+        private var reconfigurationRequired = false
+        private var paired: Bool
+        private var generation: UInt64 = 0
+
+        init(paired: Bool) { self.paired = paired }
+        var revision: UInt64 { lock.lock(); defer { lock.unlock() }; return generation }
+        func blocksData(revision: UInt64) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return stopped || reconfigurationRequired || !paired || generation != revision
+        }
+        func setPaired(_ value: Bool) {
+            lock.lock(); defer { lock.unlock() }
+            if paired != value { paired = value; generation &+= 1 }
+        }
+
+        var requiresReconfiguration: Bool {
+            lock.lock(); defer { lock.unlock() }; return reconfigurationRequired
+        }
+        func requireReconfiguration() {
+            lock.lock(); defer { lock.unlock() }
+            reconfigurationRequired = true
+        }
 
         var isStopped: Bool {
             lock.lock()
@@ -836,8 +858,9 @@ actor PhiSyncEngine {
         }
     }
 
-    private let stopSignal = StopSignal()
-    private var isStopped: Bool { stopSignal.isStopped }
+    private let stopSignal: StopSignal
+    private var activePairingRevision: UInt64 = 0
+    private var isStopped: Bool { stopSignal.blocksData(revision: activePairingRevision) }
 
     /// Retires the engine for good: rounds queued behind an in-flight one never run, and the
     /// round already in flight skips every write it has left — the account-scoped cursor
@@ -904,10 +927,27 @@ actor PhiSyncEngine {
         case preview(PreviewBox)
     }
 
+    nonisolated private let statusState = SyncStatusState()
+    nonisolated var statusSnapshot: SyncContextSnapshot { statusState.snapshot }
+    nonisolated var requiresReconfiguration: Bool { stopSignal.requiresReconfiguration }
+    nonisolated func pauseForReconfiguration() {
+        stopSignal.requireReconfiguration()
+        statusState.update(.needsAttention)
+    }
+    nonisolated func markLocalChangePending() {
+        if !requiresReconfiguration { statusState.update(.syncing) }
+    }
+    private var roundOutboundFailed = false
+    private var roundOffline = false
+    nonisolated func suspendForPairing() { stopSignal.setPaired(false) }
+
+    func enableAfterPairing() { stopSignal.setPaired(true) }
+
     init(domainKeys: any PhiDomainKeyProviding,
          client: PhiSyncProtocolClient,
          defaults: UserDefaults,
          deviceKeyId: String,
+         pairingComplete: Bool = false,
          settings: [SyncableSetting] = SyncableSettings.all,
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
@@ -916,6 +956,7 @@ actor PhiSyncEngine {
          faviconBackfill: PhiFaviconBackfillQueue? = nil,
          previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
+        self.stopSignal = StopSignal(paired: pairingComplete)
         self.domainKeys = domainKeys
         self.client = client
         self.defaults = defaults
@@ -943,6 +984,10 @@ actor PhiSyncEngine {
             markerStore ?? DefaultsBackedPhiSyncMarkerStore(defaults: defaults)
         self.markerStore = resolvedMarkerStore
         self.markerState = resolvedMarkerStore.load()
+        if markerState.requiresReconfiguration == true {
+            stopSignal.requireReconfiguration()
+            statusState.update(.needsAttention)
+        }
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
 
@@ -1318,7 +1363,7 @@ actor PhiSyncEngine {
     /// settings history is precisely what makes a field-level merge possible. The two
     /// same-account recoveries (a server row this device can no longer address, and a store
     /// birthday that no longer matches) go through `clearRemoteCursor()` and
-    /// `resetForNewStoreBirthday()` instead.
+    /// `requireReconfiguration()` instead.
     ///
     /// Deliberately synchronous and *not* queued: it runs to completion between the suspension
     /// points of any round, so it never tears a half-written cursor.
@@ -1344,11 +1389,23 @@ actor PhiSyncEngine {
     /// Runs `round` after every round enqueued before it. Actor reentrancy means a round that
     /// is parked in `getUpdates` or `commit` would otherwise let the next one in and both would
     /// interleave their writes to `storedVersion` / `storedMarker` / `storedLastEntity`.
+    private var queuedDataRounds = 0
+
     private func serialized(_ round: Round) async {
+        let reportsStatus: Bool
+        switch round {
+        case .pull, .push, .localChange, .localSpaceChange, .localOwnedChange: reportsStatus = true
+        default: reportsStatus = false
+        }
+        if reportsStatus {
+            queuedDataRounds += 1
+            if !requiresReconfiguration { statusState.update(.syncing) }
+        }
         let previous = roundQueue
         let task = Task { [previous] in
             await previous?.value
             await self.run(round)
+            if reportsStatus { self.queuedDataRounds -= 1 }
         }
         roundQueue = task
         await task.value
@@ -1357,10 +1414,26 @@ actor PhiSyncEngine {
     private func run(_ round: Round) async {
         // A round enqueued before sign-out but still waiting behind an in-flight one must not
         // start against the account that has since been mounted on the same defaults.
+        guard !stopSignal.isStopped else { return }
+        if case .preview(let box) = round {
+            await runPreview(into: box)
+            return
+        }
+        activePairingRevision = stopSignal.revision
         guard !isStopped else { return }
+
+        let reportsStatus: Bool
+        switch round {
+        case .pull, .push, .localChange, .localSpaceChange, .localOwnedChange: reportsStatus = true
+        default: reportsStatus = false
+        }
+        let statusRevision = reportsStatus
+            ? statusState.update(statusState.snapshot.lastSuccess == nil ? .initialSync : .syncing)
+            : statusState.snapshot.revision
+        roundOutboundFailed = false
+        roundOffline = false
         // §11's counters are per ROUND, not per pull: one round can contain a
-        // NOT_MY_BIRTHDAY retry, the push's preflight pull and a scoped conflict
-        // retry, and `pushSpaces` runs after the pull's tail has already finished.
+        // preflight pull and a scoped conflict retry. `pushSpaces` runs after the pull's tail.
         spaceCounters = SpaceRoundCounters()
         canPublishThisRound = false
         // Owned counters, local-read results and learned tag indices are per-round, not per-pull.
@@ -1383,13 +1456,12 @@ actor PhiSyncEngine {
         faviconCandidatesThisRound = []
         faviconPinCandidatesThisRound = []
         ownedDeferredOwners = [:]
-        // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
-        // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
+        // The push's initial pull and conflict retry are pulls inside one round,
         // and none of them re-lists the account's profiles.
         didRefreshProfilesThisRound = false
         switch round {
         case .pull:
-            _ = await pull(retryOnBirthday: true, thenPush: true)
+            _ = await pull(thenPush: true)
         case .push:
             await push(retryOnConflict: true)
         case .localChange:
@@ -1439,9 +1511,51 @@ actor PhiSyncEngine {
             return          // Preview is not a Space round: emit neither §11 counters nor an outcome.
         }
         logRoundOutcome()
+        if reportsStatus { finishStatusRound(revision: statusRevision) }
         await logSpaceRound()
         logOwnedRounds()
         await runFaviconBackfill()
+    }
+
+    private func finishStatusRound(revision: UInt64) {
+        guard !stopSignal.isStopped else { return }
+        guard !requiresReconfiguration else { statusState.update(.needsAttention); return }
+        guard !isStopped else { return }
+        let spaces = loadSpaceTable()
+        let pendingInbound = unreadableSettingsRecord != nil || spaces.cursors.values.contains { $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone }
+            || !spaces.unreadableTagHashes.isEmpty
+            || ownedTables.values.contains { table in
+                table.cursors.values.contains {
+                    $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
+                }
+            }
+        // `excludedUnmappedOwner` and `refused` are not pending work: rows in hidden, purged
+        // or unmapped Spaces are deliberately never published, and a refused arrival neither
+        // lands nor parks. Both recur every round, so counting them would pin the status at
+        // Syncing for anyone who owns such a row.
+        let pendingOutbound = spaces.cursors.values.contains { $0.pendingProjection != nil || $0.pendingDelete }
+            || ownedTables.values.contains { $0.cursors.values.contains { $0.pendingDelete } }
+            || ownedCounters.values.contains { $0.pendingPublish > 0 }
+        let completion = SyncRoundCompletion(pullDrained: canPublishThisRound && roundOutcome == .ok,
+            outboundAccepted: !roundOutboundFailed, persistenceSucceeded: cursorSaveFailures == 0,
+            pendingInbound: pendingInbound || !ownedReadFailed.isEmpty,
+            pendingOutbound: pendingOutbound,
+            followupQueued: queuedDataRounds > 1 || roundOutcome == .pageBudgetExhausted || spaces.drainInProgress)
+        let phase: SyncContextPhase
+        if roundOffline { phase = .offline }
+        else if roundOutboundFailed || cursorSaveFailures > 0 || pendingInbound || !ownedReadFailed.isEmpty
+            || (roundOutcome != .ok && roundOutcome != .pageBudgetExhausted) { phase = .needsAttention }
+        else if completion.succeeded { phase = .upToDate }
+        else { phase = statusState.snapshot.lastSuccess == nil ? .initialSync : .syncing }
+        statusState.update(phase, completing: revision)
+    }
+
+    private func noteStatusError(_ error: Error) {
+        roundOutboundFailed = true
+        let code = (error as NSError).code
+        if (error as NSError).domain == NSURLErrorDomain,
+           [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost,
+            NSURLErrorTimedOut, NSURLErrorDNSLookupFailed].contains(code) { roundOffline = true }
     }
 
     /// Emit the B-2 outcome here (sections 2.8/13.2), not in the queue-only serialized wrapper.
@@ -1487,12 +1601,15 @@ actor PhiSyncEngine {
 
     /// Section 4.3 round body, serialized on the engine's round queue. Never call directly.
     private func runPreview(into box: PreviewBox) async {
+        guard !requiresReconfiguration else {
+            box.result = .failure(.transport("not_my_birthday")); return
+        }
         let startedAt = now()
         // Reset latest-preview statistics before early failures. Every exit records this preview's
         // counts, including zero when startup fails, so diagnostics never reuse an earlier
         // preview's pagination totals.
         lastPreviewStats = (0, 0)
-        guard !isStopped else { box.result = .failure(.retired); return }
+        guard !stopSignal.isStopped else { box.result = .failure(.retired); return }
         let key: SymmetricKey
         do {
             key = try await domainKeys.domainKey()
@@ -1501,17 +1618,18 @@ actor PhiSyncEngine {
             box.result = .failure(.transport("domain_key"))
             return
         }
-        guard !isStopped else { box.result = .failure(.retired); return }
+        guard !stopSignal.isStopped else { box.result = .failure(.retired); return }
 
         var summaries: [String: (entity: Phi_PhiSpaceEntity, version: Int64)] = [:]
         var pages = 0
         var entities = 0
         var refused = 0
         var unreadable = 0
-        // Local marker only; never persist response marker or birthday. An empty storedBirthday is
-        // valid before initial settings sync completes; the server supplies one and the preview
-        // still does not write it back.
+        // Preview owns its marker and birthday. Enrollment blocks regular sync, so a stale
+        // persisted birthday cannot rely on a background pull to repair it. Start from the
+        // current server generation and pin later pages to it without persisting either value.
         var marker: Data?
+        var previewBirthday = ""
         var more = true
         do {
             // Use the independent preview budget. The normal 64 x 500 pull cap includes all entity
@@ -1528,14 +1646,20 @@ actor PhiSyncEngine {
                     box.result = .failure(.timedOut)
                     return
                 }
-                let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                let response = try await client.getUpdates(marker: marker, storeBirthday: previewBirthday)
+                if !storedBirthday.isEmpty, response.storeBirthday != storedBirthday {
+                    requireReconfiguration()
+                    box.result = .failure(.transport("not_my_birthday"))
+                    return
+                }
                 observeServerDate()      // AM-2
-                guard !isStopped else {
+                guard !stopSignal.isStopped else {
                     lastPreviewStats = (pages, entities)
                     box.result = .failure(.retired)
                     return
                 }
                 marker = response.newMarker
+                previewBirthday = response.storeBirthday
                 pages += 1
                 more = response.changesRemaining
                 for entity in response.entities {
@@ -1563,9 +1687,8 @@ actor PhiSyncEngine {
                 }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            // Preview does not repair cursors; regular pull owns that work. Its normal
-            // settings-sync birthday retry can repair storedBirthday so a later preview retry
-            // succeeds.
+            // A response is not permission to discard this device's sync history.
+            requireReconfiguration()
             lastPreviewStats = (pages, entities)
             AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                        + "error=not_my_birthday")
@@ -1785,7 +1908,7 @@ actor PhiSyncEngine {
     /// settings/Spaces/owned kinds, writes derived flags, then persists its marker last. Any
     /// cursor/table/mapping/marker failure blocks marker advancement and all publication this
     /// round. Next round idempotently replays from the last fully persisted page (section 2.7).
-    private func pull(retryOnBirthday: Bool, thenPush: Bool) async -> Bool {
+    private func pull(thenPush: Bool) async -> Bool {
         canPublishThisRound = false
         guard !isStopped else { return false }
         let key: SymmetricKey
@@ -1921,7 +2044,7 @@ actor PhiSyncEngine {
         // Persist the nil marker before consuming the latch (R-M3-4a-89 / ruling 3). JSON and plist
         // cannot commit atomically, so perform the retryable step first. Any failure yields
         // cursorSaveFailed with zero pages/publication. The unsafe old-marker/consumed-latch state
-        // must be unreachable: only resetForNewStoreBirthday resets that permanent latch.
+        // must be unreachable: only explicit cleanup resets that permanent latch.
         if spaceLive, spaceTableAtEntry.cursors.isEmpty, spaceTableAtEntry.hadRecords,
            !spaceTableAtEntry.didReplayForEmptyTable {
             // First persist a nil marker. On failure, stop with canPublishThisRound still false: no
@@ -2174,14 +2297,10 @@ actor PhiSyncEngine {
                 if !stamped { roundOutcome = .cursorSaveFailed }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            // Nothing to flush: the store those pages came from is gone, and
-            // `resetForNewStoreBirthday()` clears the Space table's server-side state and its
-            // unreadable-tag record wholesale.
-            roundOutcome = .notMyBirthday
-            resetForNewStoreBirthday()
-            guard retryOnBirthday else { return false }
-            return await pull(retryOnBirthday: false, thenPush: thenPush)
+            requireReconfiguration()
+            return false
         } catch {
+            noteStatusError(error)
             roundOutcome = .pullFailed
             AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
             // On getUpdates failure, honor suppression and perform no other page cleanup
@@ -2897,7 +3016,7 @@ actor PhiSyncEngine {
     /// prerequisite. A steady-state settings early return must not suppress a Space-only change;
     /// sibling publication avoids the coupling forbidden by section 5.2 change 3.
     private func push(retryOnConflict: Bool) async {
-        guard await pull(retryOnBirthday: true, thenPush: false) else { return }
+        guard await pull(thenPush: false) else { return }
         await pushSettings(retryOnConflict: retryOnConflict)
         await pushSpaces(retryOnConflict: retryOnConflict)
         await pushOwnedItems(retryOnConflict: retryOnConflict)
@@ -2989,27 +3108,31 @@ actor PhiSyncEngine {
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
             case .conflict(_, let serverVersion):
                 guard retryOnConflict else {
+                    roundOutboundFailed = true
                     AppLogWarn("[phi-sync] commit still conflicting server_version=\(serverVersion.map(String.init) ?? "unknown"); abandoning this round")
                     return
                 }
-                guard await pull(retryOnBirthday: true, thenPush: false) else { return }
+                guard await pull(thenPush: false) else { return }
                 // `pushSettings`, not `push`: this retry is the settings entity's
                 // own, and the Space half of this round has not run yet.
                 await pushSettings(retryOnConflict: false)
             case .invalidMessage:
+                roundOutboundFailed = true
                 // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
                 // reported per entry instead of thrown for the whole batch. Both paths exist:
                 // a peer that fails the round still throws.
                 dropTheEntityCursorAfterInvalidMessage()
             case .rejected(let responseType):
+                roundOutboundFailed = true
                 AppLogError("[phi-sync] commit rejected response_type=\(responseType); abandoning this round")
                 return
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            resetForNewStoreBirthday()
+            requireReconfiguration()
         } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
             dropTheEntityCursorAfterInvalidMessage()
         } catch {
+            noteStatusError(error)
             AppLogError("[phi-sync] push failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
         }
     }
@@ -3034,6 +3157,7 @@ actor PhiSyncEngine {
     /// remote timestamp into the key's sidecar, the edit would never be re-pushed
     /// either. That is the same distinction the `.absent` full-replay branch makes.
     private func dropTheEntityCursorAfterInvalidMessage() {
+        roundOutboundFailed = true
         AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the entity cursor and the marker so the next round rediscovers the entity")
         clearRemoteCursor()
     }
@@ -3271,6 +3395,7 @@ actor PhiSyncEngine {
                 payloads.append(item)
             }
             if encryptionFailed {
+                roundOutboundFailed = true
                 AppLogError("[phi-sync] space commit aborted: the domain key or the seal failed")
                 break
             }
@@ -3279,14 +3404,16 @@ actor PhiSyncEngine {
             do {
                 outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
             } catch PhiSyncProtocolError.notMyBirthday {
-                resetForNewStoreBirthday()
-                return   // the reset rewrote the table itself; do not write the stale copy back
+                requireReconfiguration()
+                return   // The round is paused; preserve the last persisted table.
             } catch {
+                noteStatusError(error)
                 AppLogError("[phi-sync] space commit failed (\(PhiSyncLog.describe(error)))")
                 break    // keep the outcomes earlier slices already produced
             }
             observeServerDate()      // AM-2
             guard !isStopped else { return }
+            if outcomes.count != entries.count { roundOutboundFailed = true }
             for (item, outcome) in zip(payloads, outcomes) {
                 applySpaceCommitOutcome(outcome, for: item, table: &table,
                                         conflicted: &conflicted,
@@ -3305,8 +3432,10 @@ actor PhiSyncEngine {
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
         // abandons only those entries; already applied entries remain valid (section 5.1).
+        // A recovered conflict is success; retain other failures recorded during this round.
+        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
         if retryOnConflict, !conflicted.isEmpty {
-            guard await pull(retryOnBirthday: true, thenPush: false) else { return }
+            guard await pull(thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
         }
     }
@@ -3359,6 +3488,7 @@ actor PhiSyncEngine {
             conflicted.insert(item.uuid)
             spaceCounters.conflicts += 1
         case .invalidMessage:
+            roundOutboundFailed = true
             guard isTombstone else {
                 // "The server has no such row": drop the server-side triple and
                 // let the next round re-create through the client_tag unique
@@ -3384,6 +3514,7 @@ actor PhiSyncEngine {
                 cursor.hidden = true
             }
         case .rejected(let type):
+            roundOutboundFailed = true
             AppLogError("[phi-sync] space commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
         }
         table.cursors[item.uuid] = cursor
@@ -4289,7 +4420,7 @@ actor PhiSyncEngine {
         // versions would never redeliver, suppressing local tombstones and permitting blind creates
         // on edits. Resubmit using the unchanged client tag so the server's unique-tag upsert
         // returns the real identity/version, as Space repair does.
-        // A store-birthday reset intentionally produces the same shape by clearing server
+        // Older builds also produced this shape during a store-birthday reset, clearing server
         // identity/version/baseline while retaining reconciled history (F-PK-1). Its full-replay
         // gate prevents repair until the new store has drained; incoming replay harvests existing
         // identities first, leaving only truly absent ones to recreate.
@@ -4465,6 +4596,7 @@ actor PhiSyncEngine {
                 sent.append(item)
             }
             if encryptionFailed {
+                roundOutboundFailed = true
                 AppLogError("[phi-sync] owned-item commit aborted kind=\(registration.label): "
                             + "the domain key or the seal failed")
                 break
@@ -4474,17 +4606,19 @@ actor PhiSyncEngine {
             do {
                 outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
             } catch PhiSyncProtocolError.notMyBirthday {
-                // Birthday reset rewrites every table; this local copy predates that reset.
-                resetForNewStoreBirthday()
+                // A rejected generation must not write this round's local copy back.
+                requireReconfiguration()
                 ownedCounters[registration.label] = counters
                 return
             } catch {
+                noteStatusError(error)
                 AppLogError("[phi-sync] owned-item commit failed kind=\(registration.label) "
                             + "(\(PhiSyncLog.describe(error)))")
                 break    // Preserve outcomes from earlier slices.
             }
             observeServerDate()      // AM-2
             guard !isStopped else { return }
+            if outcomes.count != entries.count { roundOutboundFailed = true }
             for (item, outcome) in zip(sent, outcomes) {
                 applyOwnedCommitOutcome(outcome, for: item, registration: registration,
                                         owner: snapshot.ownerUuids[item.identity],
@@ -4548,8 +4682,10 @@ actor PhiSyncEngine {
 
         // One pull and one retry restricted to conflicted identities; a second conflict abandons
         // only those entries for this round (section 5.3).
+        // Count only exhausted conflicts, without clearing another kind's publication failure.
+        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
         if retryOnConflict, !conflicted.isEmpty {
-            guard await pull(retryOnBirthday: true, thenPush: false) else { return }
+            guard await pull(thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
                                    onlyIdentities: conflicted)
         }
@@ -4628,6 +4764,7 @@ actor PhiSyncEngine {
             conflicted.insert(item.identity)
             return
         case .invalidMessage:
+            roundOutboundFailed = true
             // A rejection must not create a cursor where none existed.
             guard existing != nil else { return }
             guard isTombstone else {
@@ -4668,6 +4805,7 @@ actor PhiSyncEngine {
                 cursor.deletedAtMs = now()
             }
         case .rejected(let type):
+            roundOutboundFailed = true
             // Like conflict, this outcome provides no cursor-state evidence. Writing defaults would
             // create a ghost cursor.
             AppLogError("[phi-sync] owned-item commit rejected response_type=\(type) "
@@ -5158,66 +5296,19 @@ actor PhiSyncEngine {
         unreadableSettingsRecord = nil
     }
 
-    /// The store this device was tracking is gone (NOT_MY_BIRTHDAY): every cursor that
-    /// describes it is void, birthday included, and any tombstone streak counted against the
-    /// old store means nothing.
-    ///
-    /// `hasAdopted` survives, because the *account* did not change — only the server's store
-    /// identity did. The `<key>.phiSyncTs` sidecars this device has been keeping still describe
-    /// this account's settings, so the next readable entity must be merged against them, not
-    /// adopted over them. (Only an account-scope reset of `stateKeys` clears it — see
-    /// `hasAdopted`.) The Space table's *server-side* triples are cleared alongside for the
-    /// same reason and with the same exception: what describes the store goes, what describes
-    /// this account's own history stays.
-    private func resetForNewStoreBirthday() {
+    /// A mismatched server identity pauses this engine without discarding local metadata.
+    /// Only a user-confirmed reset through SyncKeyController may clear the persisted state.
+    private func requireReconfiguration() {
+        guard !stopSignal.isStopped else { return }
         canPublishThisRound = false
-        clearRemoteCursor()
-        storedBirthday = ""
-        tombstoneRounds = 0
-        guard spaceStore != nil else { return }
-        // The server holds a different data set now, so every server-side triple and every
-        // loss guard has to be re-armed. `reconciled` / `hidden` / `deletedAtMs` / `purgedAtMs`
-        // survive: the ACCOUNT did not change, and clearing them would re-arm the wholesale
-        // adopt and silently drop edits this device has just stamped.
-        mutateSpaceTable { table in
-            for (uuid, var cursor) in table.cursors {
-                cursor.entityId = nil
-                cursor.version = 0
-                cursor.server = nil
-                cursor.deleteRejectRounds = 0
-                table.cursors[uuid] = cursor
-            }
-            table.hasDrainedFullReplay = false
-            table.drainInProgress = false
-            table.markerMovedWhileGateShut = false
-            table.didReplayForEmptyTable = false
-            table.lastDrainedBirthday = nil
-            table.unreadableTagHashes = [:]
-            table.bookmarksReplayedForEmptyTable = false
-            table.pinsReplayedForEmptyTable = false
-            // Reset the URL-rule replay latch after changing stores, allowing future file-loss
-            // replay (section 10). Keep urlRulesHadRecords and reconciled: changing stores does not
-            // erase this device's publication history.
-            table.urlRulesReplayedForEmptyTable = false
-        }
-        // For owned cursors, clear only server identity/version/state while retaining local
-        // reconciled history. Clearing tables/files would destroy baselines and enable blind
-        // account overwrites (section 3.5).
-        for registration in ownedKinds {
-            var table = ownedTables[registration.label] ?? registration.store
-                .load(hadRecords: loadSpaceTable()[keyPath: registration.flags.hadRecords]).table
-            for (identity, var cursor) in table.cursors {
-                cursor.entityId = ""
-                cursor.version = 0
-                cursor.server = nil
-                cursor.deleteRejectRounds = 0
-                // Reset rekey failures on store change (R-exec-13): old rejections say nothing
-                // about the new store. Reset just cleared all entity IDs, so repair must remain
-                // available to recover them.
-                cursor.rekeyRejectRounds = nil
-                table.cursors[identity] = cursor
-            }
-            writeOwnedTable(registration, table)
+        roundOutcome = .notMyBirthday
+        stopSignal.requireReconfiguration()
+        statusState.update(.needsAttention)
+        // Preserve every cursor, baseline, identity and birthday. A durable flag blocks
+        // subsequent launches too; failed persistence still blocks this engine in memory.
+        markerState.requiresReconfiguration = true
+        if !markerStore.save(markerState) {
+            AppLogWarn("[phi-sync] could not persist the reconfiguration requirement")
         }
     }
 
@@ -7420,7 +7511,7 @@ private struct URLRuleClaimPlan {
 /// 3. Sort remote identities lexically, retain local index order, and pair 1:1 by position as in
 /// `pairWithinGroups`. Leave both sides' surplus unpaired (RR3-4 / RR3-16, CASE M-13).
 /// 4. Require each local candidate to be unpublished: no cursor, or `entityId.isEmpty && server ==
-/// nil && reconciled == nil`. Rows with baselines or cursors retained after birthday reset cannot
+/// nil && reconciled == nil`. Rows with baselines or retained cursors cannot
 /// be claimed (CASE M-2 / M-2b).
 /// 5. Populate `pairs` / `retired` for each match.
 /// 6. Merge through §8.2's no-baseline branch, stamping the local projection with `baseline: nil`

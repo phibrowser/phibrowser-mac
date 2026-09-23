@@ -59,6 +59,15 @@ import SwiftUI
     /// provider handed to the controller therefore refreshes before every read.
     private var profilesCancellable: AnyCancellable?
 
+    /// Upgrade-path legacy enrollment check (see `buildSyncKeyControllerIfNeeded()`).
+    /// A failure at launch (offline, token refresh) must not leave an already-paired
+    /// device stopped for the session, so the check retries with backoff until it
+    /// gets a definitive answer. `legacyEnrollmentAttempt` is nil once answered.
+    private enum LegacyEnrollmentAttempt { case verified, notLegacy, retry }
+    private var legacyEnrollmentAttempt: (@MainActor () async -> LegacyEnrollmentAttempt)?
+    private var legacyEnrollmentInFlight: Task<LegacyEnrollmentAttempt, Never>?
+    private var legacyEnrollmentRetries: Task<Void, Never>?
+
     // MARK: - Phi settings sync (M3-1)
     //
     // The phi settings engine rides the same lifetime as the key layer above: it is built
@@ -97,6 +106,23 @@ import SwiftUI
     /// Devices pane builds it with no unlock at all — so construction cannot start the
     /// schedule; this is what does, on whichever of the four unlock flows gets there first.
     private var phiSyncUnlockObserver: NSObjectProtocol?
+    private var phiPairingCompletionObserver: NSObjectProtocol?
+    private var pairingActivationTask: Task<Void, Never>?
+    private var phiSyncPairingEnabled = false
+    private var phiObservedSettingsSignature: Data?
+    /// Set when a real settings change marked the status pending; the next debounced
+    /// round must run even if the value was reverted before it.
+    private var phiSettingsInvalidationPending = false
+
+    @MainActor var nativeSyncRequiresReconfiguration: Bool {
+        phiSyncEngine?.requiresReconfiguration == true
+            || (pendingNativeCleanup != nil && pendingNativeCleanup?.accountID == AccountController.shared.account?.userID)
+    }
+    @MainActor var syncStatusSnapshot: SyncContextSnapshot? { phiSyncEngine?.statusSnapshot }
+    @MainActor var syncStatusProfileIDs: [String] {
+        ProfileManager.shared.userAssignableProfiles.map(\.profileId)
+    }
+
 
     // MARK: - Phi Space sync (M3-2)
     //
@@ -109,18 +135,8 @@ import SwiftUI
     /// beside `phiSyncUnlockObserver` and removed with it: a surviving observer would keep
     /// re-opening the gate after sign-out, and a rebuild would register a second copy.
     private var phiSpaceGateObserver: NSObjectProtocol?
-    /// `.phiProfileAutoCreateDidRun` token, the gate's fourth driver, registered and removed
-    /// with the one above.
-    ///
-    /// `ProfilePairingGate`'s hysteresis safety net is a fifth writer of
-    /// `sync.joinPairingPending` that the other three drivers cannot see: after three idle
-    /// auto-create rounds it sets `pending = true` and raises the blocking pairing modal by
-    /// calling `handleMappingsDidResolve` DIRECTLY, so no `.phiProfileMappingsDidResolve` is
-    /// posted (`ProfilePairingGate.handleAutoCreateDidRun`). Without this observer the Space
-    /// section would stay live for the whole of that modal — unbounded in time, since only the
-    /// user's pairing submission ends it — while `ensureLocalProfilesForAccount()` is skipping
-    /// and the profile mapping picture is exactly as ambiguous as during a join. That is the
-    /// state the gate exists to prevent.
+    /// Re-evaluates the Space section after Profile discovery without changing enrollment
+    /// or presenting setup. Removed with the account-bound observers.
     private var phiSpacePairingObserver: NSObjectProtocol?
     /// `.phiSyncedSettingsDidApply` token for the pinned-tab scope (M3-3 §7.1 step 4).
     /// Registered and removed with the observers above: a surviving observer would keep
@@ -218,17 +234,34 @@ import SwiftUI
                     SyncableSettings.valueKey(for: PhiDefaultSpaceMirror.key)] {
             defaults.removeObject(forKey: key)
         }
-        markerStore?.deleteFile()
+        // A pending explicit reset belongs to this account and survives switching away/back.
+        if markerStore?.load().requiresReconfiguration != true { markerStore?.deleteFile() }
         return hadCursor
     }
+
+    private var nativeSyncCleanupInProgress = false
+    private var syncInitializationDeferred = false
+    // Retained only until cleanup succeeds; covers failure to write the on-disk journal.
+    private var pendingNativeCleanup: (accountID: String, removingDevice: Bool)?
 
     /// Builds `syncKeyController` on first call if an account is signed in;
     /// no-op if it already exists. Does not kick the silent unlock — callers
     /// that also need that should go through `ensureSyncKeyControllerAndUnlock()`.
     @MainActor
     private func buildSyncKeyControllerIfNeeded() -> SyncKeyController? {
-        guard let account = AccountController.shared.account else { return nil }
+        guard !nativeSyncCleanupInProgress, let account = AccountController.shared.account else { return nil }
         let stack = SyncKeyStack.make(accountId: account.userID)
+        // Bind the fail-closed prerequisite before any unlock callback can start sync.
+        do {
+            let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
+            try ProfilePairingGate.shared.configureEnrollment(
+                deviceKeyID: deviceID,
+                recordData: account.userDefaults.object(forKey: ProfilePairingGate.enrollmentDefaultsKey).map { ($0 as? Data) ?? Data() },
+                saveRecord: { account.userDefaults.set($0, forKey: ProfilePairingGate.enrollmentDefaultsKey) })
+        } catch {
+            try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "", recordData: nil, saveRecord: { _ in false })
+            AppLogWarn("[phi-sync] pairing enrollment unavailable; sync remains stopped")
+        }
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
@@ -238,10 +271,10 @@ import SwiftUI
         // pairing on upgraded development machines. This is the documented main-actor store-access exception
         // (PhiSpaceSyncState.swift:256-262): the store was just created and no engine exists. Existing
         // recovery handles the empty table (`hasDrainedFullReplay == false` drops the marker at gate opening
-        // and replays the type). Access `joinPairingPending` only through `ProfilePairingGate` (P2).
+        // and replays the type). Enrollment is explicitly invalidated below.
         if spaceStateStore.discardIfStaleFormat() {
             AppLogWarn("[phi-sync] space sync table discarded (format < \(PhiSpaceSyncTable.currentFormatVersion)); re-running the pairing wizard")
-            ProfilePairingGate.joinPairingPending = true
+            try? ProfilePairingGate.shared.beginEnrollment()
         }
         // M3-3 §3.5: per-kind bookmark and pin cursor tables live in `<App Support>/Phi/users/<userID>/sync/`.
         // Account switches/resets need no cleanup or `PhiSyncEngine.stateKeys` entries;
@@ -291,8 +324,20 @@ import SwiftUI
             // `clearResolved()` is the second, idempotent one). That is deliberate — the
             // ordering §3.3 step 2.0 demands, `shutdown()` before anything is cleared, is what
             // this buys, and the duplicate `.cleared` announcement is a no-op at the gate.
-            retirePhiSync: { [weak self] in
-                MainActor.assumeIsolated { self?.invalidateSyncKeyController() }
+            retirePhiSync: { [weak self] removingDevice in
+                MainActor.assumeIsolated {
+                    self?.pendingNativeCleanup = (account.userID, removingDevice)
+                    self?.nativeSyncCleanupInProgress = true
+                    self?.invalidateSyncKeyController()
+                }
+            },
+            invalidateEnrollment: {
+                guard let deviceID = try? stack.manager.deviceKeyProviderForTesting.deviceKeyId(),
+                      let bytes = try? JSONEncoder().encode(SyncPairingRecord(version: 1, deviceKeyID: deviceID, paired: false)),
+                      account.userDefaults.set(bytes, forKey: ProfilePairingGate.enrollmentDefaultsKey) else {
+                    AppLogWarn("[phi-sync] removed enrollment could not be persisted")
+                    throw NativeSyncResetError.cleanupFailed
+                }
             },
             deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
             engineDefaults: UserDefaults.standard,
@@ -308,7 +353,23 @@ import SwiftUI
             // (R-M3-4a-53), so D30 cannot recover them. Keeping identities lets lost-state replay match each
             // local row to its own entity after cursor deletion. `PhiURLRuleLocalAccess` must not expose
             // `clearAllSyncIds`.
-            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
+            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() },
+            finishLocalCleanup: { [weak self] completed in
+                self?.finishNativeSyncCleanup(completed: completed)
+            },
+            verifyCursorDeletion: {
+                for store in [bookmarkStore, pinStore, urlRuleStore] {
+                    guard !FileManager.default.fileExists(atPath: store.fileURL.path) else {
+                        throw NativeSyncResetError.cleanupFailed
+                    }
+                }
+            },
+            isCurrentAccount: { AccountController.shared.account === account },
+            runtimeRequiresReconfiguration: { [weak self] in self?.nativeSyncRequiresReconfiguration == true },
+            runtimeRemovalPending: { [weak self] in
+                self?.pendingNativeCleanup?.accountID == account.userID
+                    && self?.pendingNativeCleanup?.removingDevice == true
+            })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
@@ -366,7 +427,98 @@ import SwiftUI
                            bookmarkAccess: bookmarkAccess, bookmarkStore: bookmarkStore,
                            pinStore: pinStore, urlRuleStore: urlRuleStore,
                            markerStore: markerStore)
+        // Legacy completion requires independent server evidence. The read-only preview is
+        // allowed before enrollment; no ordinary schedule runs while this check is in flight.
+        let gate = ProfilePairingGate.shared
+        let generation = gate.enrollmentGeneration
+        let legacy = spaceStateStore.load()
+        if account.userDefaults.object(forKey: ProfilePairingGate.enrollmentDefaultsKey) == nil,
+           !account.userDefaults.bool(forKey: "sync.joinPairingPending"),
+           legacy.spaceSectionEnabled, legacy.hasDrainedFullReplay,
+           let controller = syncKeyController, let engine = phiSyncEngine {
+            // One attempt. `.retry` covers every failure the next attempt may not repeat
+            // (offline, token refresh, preview failure); `.notLegacy` is a definitive answer
+            // or a superseded check (account switch, or setup began and bumped the generation).
+            legacyEnrollmentAttempt = { [weak self] in
+                do {
+                    let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
+                    guard try await stack.api.getDeviceEnvelope(deviceKeyId: deviceID) != nil else { return .notLegacy }
+                    switch try await stack.manager.unlockAtStartup() {
+                    case .unlocked: break
+                    case .needsJoin: return .notLegacy
+                    case .notSignedIn: return .retry
+                    }
+                    let profiles = try await profileKeys.accountProfiles()
+                    guard case .success(let spaces) = await engine.previewAccountSpaces() else { return .retry }
+                    guard let self, self.syncKeyController === controller, !controller.isRetired,
+                          gate.enrollmentGeneration == generation else { return .notLegacy }
+                    let profileMap = profileKeys.allMappings()
+                    let localProfiles = controller.localProfiles()
+                    let remoteProfiles = Set(profiles.filter { $0.name != nil }.map(\.uuid))
+                    let validProfiles = !localProfiles.isEmpty && localProfiles.allSatisfy {
+                        profileMap[$0.profileId].map { remoteProfiles.contains($0) } == true
+                    } && Set(profileMap.values).count == profileMap.count
+                    let spaceMap = controller.allSpaceMappings()
+                    let remoteSpaces = Set(spaces.map(\.syncUuid))
+                    let validSpaces = self.pairableLocalSpaces().allSatisfy {
+                        $0.spaceId == LocalStore.defaultSpaceId ||
+                        spaceMap[$0.spaceId].map { remoteSpaces.contains($0) } == true
+                    } && Set(spaceMap.values).count == spaceMap.count
+                    guard validProfiles, validSpaces else { return .notLegacy }
+                    try gate.configureEnrollment(deviceKeyID: deviceID, recordData: nil,
+                        saveRecord: { account.userDefaults.set($0, forKey: ProfilePairingGate.enrollmentDefaultsKey) },
+                        legacyEvidence: SyncPairingLegacyEvidence(authorizedDeviceVerified: true,
+                            freshAccountMappingsVerified: true, explicitlyPending: false,
+                            spaceSectionEnabled: true, hasDrainedFullReplay: true,
+                            profileMappingsValid: validProfiles, spaceMappingsValid: validSpaces))
+                    self.activatePairedSync()
+                    return .verified
+                } catch {
+                    AppLogWarn("[phi-sync] legacy enrollment could not be verified yet; will retry")
+                    return .retry
+                }
+            }
+            scheduleLegacyEnrollmentRetries()
+        }
         return syncKeyController
+    }
+
+    /// Runs one legacy enrollment attempt, sharing an attempt already in flight so the
+    /// retry loop and an explicit setup request never verify (and activate) twice.
+    @MainActor
+    private func runLegacyEnrollmentAttempt() async -> LegacyEnrollmentAttempt {
+        if let inFlight = legacyEnrollmentInFlight { return await inFlight.value }
+        guard let attempt = legacyEnrollmentAttempt else { return .notLegacy }
+        let task = Task { @MainActor in await attempt() }
+        legacyEnrollmentInFlight = task
+        let result = await task.value
+        // An account switch during the await installed another controller's check.
+        guard legacyEnrollmentInFlight == task else { return .notLegacy }
+        legacyEnrollmentInFlight = nil
+        if result != .retry { legacyEnrollmentAttempt = nil }
+        return result
+    }
+
+    @MainActor
+    private func scheduleLegacyEnrollmentRetries() {
+        legacyEnrollmentRetries?.cancel()
+        legacyEnrollmentRetries = Task { @MainActor [weak self] in
+            var delay: UInt64 = 5
+            while !Task.isCancelled {
+                guard let self, await self.runLegacyEnrollmentAttempt() == .retry else { return }
+                try? await Task.sleep(nanoseconds: delay * NSEC_PER_SEC)
+                delay = min(delay * 2, 300)
+            }
+        }
+    }
+
+    /// Called before an explicit setup opens. Starting setup begins a fresh enrollment,
+    /// which ends the legacy check for good, so a still-unanswered check gets one
+    /// immediate attempt first. True when it proved the device already paired.
+    @MainActor
+    func verifyPendingLegacyEnrollment() async -> Bool {
+        guard legacyEnrollmentAttempt != nil else { return false }
+        return await runLegacyEnrollmentAttempt() == .verified
     }
 
     /// Builds the settings sync engine alongside the key controller. Scheduling is NOT
@@ -458,8 +610,13 @@ import SwiftUI
 
         let domainKeys = PhiDomainKeyManager(api: stack.api, keyManager: stack.manager)
         let client = PhiSyncHTTPClient(
-            tokenProvider: { AuthManager.shared.getAccessTokenSyncly() },
-            deviceKeyId: deviceKeyId)
+            tokenProvider: { await MainActor.run {
+                SyncKeyStack.boundToken(stackAccountId: account.userID,
+                    currentAccountId: AccountController.shared.account?.userID,
+                    token: AuthManager.shared.getAccessTokenSyncly())
+            } },
+            deviceKeyId: deviceKeyId,
+            deviceKeyIDProvider: { try await MainActor.run { try stack.manager.deviceKeyProviderForTesting.deviceKeyId() } })
         phiDomainKeys = domainKeys
         // `UserDefaults.standard`, not `account.userDefaults`: the syncable settings are
         // `PhiPreferences` keys and every reader hardcodes the standard domain. The Space
@@ -502,12 +659,15 @@ import SwiftUI
                                                       access: bookmarkAccess,
                                                       pinAccess: pinAccess,
                                                       logSink: PhiFaviconAppLogSink())
+        phiSyncPairingEnabled = ProfilePairingGate.shared.isPaired
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
+                                      pairingComplete: ProfilePairingGate.shared.isPaired,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
                                       markerStore: markerStore,
                                       ownedKinds: ownedKinds,
                                       faviconBackfill: faviconBackfill)
+        if pendingNativeCleanup?.accountID == accountId { phiSyncEngine?.pauseForReconfiguration() }
         let builtEngine = phiSyncEngine
         phiInvalidationCoordinator = PhiSyncInvalidationCoordinator(
             stream: { receive in try await client.streamInvalidations(receive: receive) },
@@ -555,6 +715,11 @@ import SwiftUI
         // `AccountKeyManager` and `SyncKeyController`. Without this observer the freshly
         // joined device — the second device of the M3-1 acceptance — would build the engine
         // and never schedule a single round until the next app launch.
+        phiPairingCompletionObserver = NotificationCenter.default.addObserver(
+            forName: .phiSyncPairingStateDidChange, object: nil, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.activatePairedSync() }
+        }
         phiSyncUnlockObserver = NotificationCenter.default.addObserver(
             forName: .phiAccountKeyDidUnlock, object: nil, queue: .main
         ) { [weak self] _ in
@@ -594,22 +759,7 @@ import SwiftUI
             }
         }
 
-        // The gate's fourth driver, and the only one that can see the hysteresis safety net:
-        // that path raises `sync.joinPairingPending` and presents the pairing modal from
-        // inside `ProfilePairingGate.handleAutoCreateDidRun`, without announcing mappings at
-        // all, so the three drivers above never re-evaluate and the Space section would stay
-        // live for the modal's whole (user-bounded) lifetime.
-        //
-        // `queue: .main` for the same reason as the observer above. It matters most here:
-        // the poster is `SyncKeyController.finishRefresh`, which runs on an ENGINE ROUND's
-        // main-actor hop, and the gate observes this notification with `queue: nil` from
-        // within its own handler. Nothing on that stack may block, and nothing on it may
-        // enter a nested run loop — see `AppModalPairingHost.present` — and this hop keeps
-        // the coordinator off it either way. The flag is already `true` by the time the hop runs: the gate sets `pending`
-        // before it presents.
-        //
-        // This fires once per refresh round, idle or not; `refreshSpaceSyncGate()` memoizes
-        // so a round that changes nothing costs nothing.
+        // Profile discovery may change Space eligibility, but never enrollment or presentation.
         phiSpacePairingObserver = NotificationCenter.default.addObserver(
             forName: .phiProfileAutoCreateDidRun, object: nil, queue: .main
         ) { [weak self] _ in
@@ -684,10 +834,8 @@ import SwiftUI
         }
     }
 
-    /// The Space section's gate (§3.5). Hung on `sync.joinPairingPending`, NOT on
-    /// `needsPairing`: §3.6's auto-create flips the latter true for a moment every
-    /// time the account gains a profile, and each shut->open edge costs a dropped
-    /// marker and a full replay of data type 2000.
+    /// The Space section requires explicit enrollment and unlocked account keys.
+    /// Background Profile discovery never invalidates a completed enrollment.
     ///
     /// Driven from four places (the three observers above and the `$profiles` sink), never
     /// from `startPhiSyncIfReady()` — that one early-returns as soon as the invalidation schedule
@@ -702,7 +850,7 @@ import SwiftUI
         guard let engine = phiSyncEngine else { return }
         let enabled = syncKeyController?.manager.currentARK != nil
             && AccountController.shared.account != nil
-            && !ProfilePairingGate.joinPairingPending
+            && ProfilePairingGate.shared.isPaired
         // Real state changes only. The engine's own edge check sits BEHIND its round queue,
         // so a redundant call is not free: it queues a `.spaceGate` round behind whatever is
         // in flight. `.phiProfileAutoCreateDidRun` fires once per refresh round for the life
@@ -732,10 +880,38 @@ import SwiftUI
     /// the domain key: without it `PhiDomainKeyManager.domainKey()` throws `notUnlocked` and
     /// each tick would be a wasted no-op.
     @MainActor
+    private func activatePairedSync() {
+        guard ProfilePairingGate.shared.isPaired else {
+            pairingActivationTask?.cancel()
+            phiSyncPairingEnabled = false
+            phiSyncEngine?.suspendForPairing()
+            phiInvalidationCoordinator?.stop()
+            ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
+            return
+        }
+        guard let engine = phiSyncEngine, let controller = syncKeyController else { return }
+        pairingActivationTask?.cancel()
+        pairingActivationTask = Task { @MainActor [weak self] in
+            await engine.enableAfterPairing()
+            guard let self, !Task.isCancelled, self.phiSyncEngine === engine,
+                  self.syncKeyController === controller, !controller.isRetired,
+                  ProfilePairingGate.shared.isPaired else { return }
+            await engine.setSpaceSyncEnabled(true)
+            guard !Task.isCancelled, self.phiSyncEngine === engine,
+                  self.syncKeyController === controller, ProfilePairingGate.shared.isPaired else { return }
+            self.phiSyncPairingEnabled = true
+            self.lastSpaceGateEnabled = true
+            self.startPhiSyncIfReady()
+            ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
+        }
+    }
+
+    @MainActor
     private func startPhiSyncIfReady() {
         guard let engine = phiSyncEngine, let invalidation = phiInvalidationCoordinator,
               !invalidation.isRunning else { return }
-        guard syncKeyController?.manager.currentARK != nil else { return }
+        guard phiSyncPairingEnabled, ProfilePairingGate.shared.isPaired,
+              syncKeyController?.manager.currentARK != nil else { return }
 
         phiSyncForegroundObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -752,8 +928,19 @@ import SwiftUI
         // right now: the login pull below is what reconciles this device with the account, not
         // a synthetic "everything just changed" edge.
         phiSyncedSettingsSignature = SyncableSettings.valueSignature(UserDefaults.standard)
+        phiObservedSettingsSignature = phiSyncedSettingsSignature
         phiSyncPushCancellable = NotificationCenter.default
             .publisher(for: UserDefaults.didChangeNotification)
+            .handleEvents(receiveOutput: { [weak self, weak engine] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let signature = SyncableSettings.valueSignature(UserDefaults.standard)
+                    guard signature != self.phiObservedSettingsSignature else { return }
+                    self.phiObservedSettingsSignature = signature
+                    self.phiSettingsInvalidationPending = true
+                    engine?.markLocalChangePending()
+                }
+            })
             .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 // The notification does not say which key changed, and the engine writes this
@@ -774,7 +961,11 @@ import SwiftUI
                 Task { @MainActor in
                     guard let self else { return }
                     let signature = SyncableSettings.valueSignature(UserDefaults.standard)
-                    guard signature != self.phiSyncedSettingsSignature else { return }
+                    // An edit reverted inside the debounce still marked the status pending;
+                    // its round commits nothing but is what clears that mark.
+                    let invalidated = self.phiSettingsInvalidationPending
+                    self.phiSettingsInvalidationPending = false
+                    guard signature != self.phiSyncedSettingsSignature || invalidated else { return }
                     self.phiSyncedSettingsSignature = signature
                     await self.phiSyncEngine?.handleLocalDefaultsChange()
                 }
@@ -796,6 +987,7 @@ import SwiftUI
                 .map { _ in () }
                 .merge(with: NotificationCenter.default
                     .publisher(for: .spaceThemeDidChange).map { _ in () })
+                .handleEvents(receiveOutput: { [weak engine] _ in engine?.markLocalChangePending() })
                 .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
                 .sink { [weak self] _ in
                     Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
@@ -809,7 +1001,7 @@ import SwiftUI
             // Remote landing triggers the publisher but saves its baseline in the same round; the next push
             // has no field changes, commits or local writes, hence no second emission.
             if let label = phiBookmarkKindLabel {
-                phiBookmarksCancellable = account.localStorage.bookmarkChangesPublisher()
+                phiBookmarksCancellable = account.localStorage.bookmarkChangesPublisher(onChangeDetected: { [weak engine] in engine?.markLocalChangePending() })
                     .sink { [weak self] _ in
                         Task { @MainActor in
                             await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
@@ -817,7 +1009,7 @@ import SwiftUI
                     }
             }
             if let label = phiPinKindLabel {
-                phiPinnedTabsCancellable = account.localStorage.pinnedTabChangesPublisher()
+                phiPinnedTabsCancellable = account.localStorage.pinnedTabChangesPublisher(onChangeDetected: { [weak engine] in engine?.markLocalChangePending() })
                     .sink { [weak self] _ in
                         Task { @MainActor in
                             await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
@@ -829,7 +1021,7 @@ import SwiftUI
             // `SpaceManager` already consumes it. Store-side debounce and snapshot deduplication leave a plain
             // sink here.
             if let label = phiURLRuleKindLabel {
-                phiURLRulesCancellable = account.localStorage.urlRuleChangesPublisher()
+                phiURLRulesCancellable = account.localStorage.urlRuleChangesPublisher(onChangeDetected: { [weak engine] in engine?.markLocalChangePending() })
                     .sink { [weak self] _ in
                         Task { @MainActor in
                             await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
@@ -874,6 +1066,13 @@ import SwiftUI
     /// fire-and-forget its silent unlock + mapping resolution.
     @MainActor
     func ensureSyncKeyControllerAndUnlock() {
+        // Cleanup can suspend while another account finishes signing in. Preserve that
+        // startup request, but do not build an engine until the old account's writes stop.
+        guard !nativeSyncCleanupInProgress else {
+            syncInitializationDeferred = true
+            return
+        }
+        syncInitializationDeferred = false
         let controller = syncKeyControllerCreatingIfNeeded()
         Task { @MainActor in
             await controller?.silentUnlockAndResolve()
@@ -881,6 +1080,15 @@ import SwiftUI
             // once the unlock has run.
             self.startPhiSyncIfReady()
         }
+    }
+
+    @MainActor
+    private func finishNativeSyncCleanup(completed: Bool) {
+        nativeSyncCleanupInProgress = false
+        if completed { pendingNativeCleanup = nil }
+        // Resolve the account now: the deferred login may itself have been superseded
+        // or signed out. Ordinary removal without a startup request stays stopped.
+        if syncInitializationDeferred { ensureSyncKeyControllerAndUnlock() }
     }
 
     /// Drops the sync key layer on sign-out or account switch and tells
@@ -904,6 +1112,10 @@ import SwiftUI
     func invalidateSyncKeyController() {
         profilesCancellable?.cancel()
         profilesCancellable = nil
+        legacyEnrollmentRetries?.cancel()
+        legacyEnrollmentRetries = nil
+        legacyEnrollmentAttempt = nil
+        legacyEnrollmentInFlight = nil
         stopPhiSync()
         // `retire()`, not `clearResolved()` (review A11): a pass parked in a network call
         // survives this teardown and would otherwise resume on the next account's token.
@@ -958,12 +1170,20 @@ import SwiftUI
         }
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
+        phiSettingsInvalidationPending = false
         // Dropped with the subscription: the next account's preferences are a different
         // domain's worth of values, and a stale signature would swallow its first edit.
         phiSyncedSettingsSignature = nil
         if let observer = phiSyncForegroundObserver {
             NotificationCenter.default.removeObserver(observer)
             phiSyncForegroundObserver = nil
+        }
+        pairingActivationTask?.cancel()
+        pairingActivationTask = nil
+        phiSyncPairingEnabled = false
+        if let observer = phiPairingCompletionObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiPairingCompletionObserver = nil
         }
         if let observer = phiSyncUnlockObserver {
             NotificationCenter.default.removeObserver(observer)

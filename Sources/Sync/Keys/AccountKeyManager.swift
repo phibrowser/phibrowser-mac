@@ -3,6 +3,7 @@ import Foundation
 import Security
 
 protocol KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO]
     func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool
     func getAccount() async throws -> AccountKeyStateDTO?
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws
@@ -87,13 +88,14 @@ extension Notification.Name {
 /// (process lifetime only — it is never persisted to disk).
 ///
 /// Isolation: this type is **not** actor-isolated, and it is not main-actor-confined. Its own
-/// `async` methods are `nonisolated`, so under SE-0338 they resume on the cooperative pool and
+/// unlock/registration methods are `nonisolated`, so under SE-0338 they resume on the cooperative pool and
 /// assign `currentARK` from there, while `PhiDomainKeyManager`, `SyncKeyController`,
 /// `KeyLayerViewModel` and `DevicesSettingViewModel` read it on the main actor. The contract is
 /// therefore in the storage, not in the callers: the ARK lives behind `arkLock` and every read
 /// and write goes through it, so `currentARK` may be touched from any executor. Nothing else
-/// here needs synchronising — `api`, `deviceKeyProvider` and the two constants are immutable
-/// after `init`, and the flows themselves are driven from one UI at a time.
+/// here needs locking: dependencies are immutable after `init`. Join-request creation is
+/// serialized on the main actor so a cancelled flow's late POST completes before a new
+/// flow removes stale requests and creates its replacement.
 ///
 /// What the lock does *not* give callers is atomicity across statements: a
 /// "read, then act on it" sequence still has to tolerate the ARK arriving in between.
@@ -102,6 +104,8 @@ final class AccountKeyManager {
     private let deviceKeyProvider: DeviceKeyProviding
     private let kdfVersion = "hkdf-sha256-v1"
     private let platform = "macos"
+    @MainActor private var joinRequestTail: Task<JoinTicket, Error>?
+    @MainActor private var joinRequestGeneration = UUID()
 
     /// Guards `arkStorage`. An `NSLock` rather than an actor or `@MainActor`: the four unlock
     /// flows and their callers span the main actor, the cooperative pool and `PhiSyncEngine`'s
@@ -144,6 +148,13 @@ final class AccountKeyManager {
     /// Drops the cached ARK for good (self-revoke, §3.3). Not a lock: this device
     /// is leaving the account, and the whole key layer is dropped with it.
     func discardARK() { currentARK = nil }
+
+    /// Explicit local reconfiguration must not retry a parked envelope from the old setup.
+    /// Ordinary unlock failures and sign-out keep that recovery state intact.
+    func discardLocalRegistration() throws {
+        discardARK()
+        pendingRegistrations.clear(deviceKeyId: try deviceKeyProvider.deviceKeyId())
+    }
 
     var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
@@ -254,24 +265,53 @@ final class AccountKeyManager {
 
     /// New device asks an already-authorized device to admit it. Returns the request id
     /// plus the verification code the user compares against the approver's screen.
+    @MainActor
     func requestJoinApproval() async throws -> JoinTicket {
+        let previous = joinRequestTail
+        let generation = UUID()
+        joinRequestGeneration = generation
+        let task = Task {
+            _ = await previous?.result
+            return try await createJoinApproval()
+        }
+        joinRequestTail = task
+        defer { if generation == joinRequestGeneration { joinRequestTail = nil } }
+        return try await task.value
+    }
+
+    private func createJoinApproval() async throws -> JoinTicket {
         let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
         let pub = priv.publicKey.rawRepresentation
+        // Older clients and interrupted cancellations may leave pending tickets behind.
+        // Match the full public key, never the display name or its short verification code.
+        for request in try await api.listPendingJoinRequests() where request.requestingPublicKey == pub {
+            try await cancelJoinApproval(requestId: request.requestId)
+        }
         let id = try await api.postJoinRequest(publicKey: pub,
             name: Host.current().localizedName ?? "Mac", platform: platform)
         return JoinTicket(requestId: id, verificationCode: PhiKeyCrypto.verificationCode(forPublicKey: pub))
+    }
+
+    /// The account-authenticated deny endpoint also lets the requester withdraw its ticket.
+    /// Terminal or already-removed tickets need no further cleanup.
+    func cancelJoinApproval(requestId: String) async throws {
+        do { try await api.denyJoinRequest(id: requestId) }
+        catch JoinRequestError.notPending {}
+        catch JoinRequestError.notFound {}
     }
 
     /// Polls a pending join request. On approval, opens the sealed ARK with this device's
     /// private key, caches it, and registers this device so future startups unlock directly.
     func pollJoin(requestId: String) async throws -> JoinPollResult {
         let dto = try await api.getJoinRequest(id: requestId)
+        try Task.checkCancellation()
         switch dto.status {
         case "approved":
             let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
             let arkBytes = try PhiKeyCrypto.openWithPrivateKey(dto.grantedArkEnvelope, privateKey: priv)
             let ark = SymmetricKey(data: arkBytes)
             try await registerThisDevice(ark: ark)
+            try Task.checkCancellation()
             currentARK = ark
             return .approved
         case "denied":  return .denied

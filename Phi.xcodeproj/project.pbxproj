@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */; };
+		DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */; };
+		DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121101 /* SyncPairingState.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */; };
 		0604A0F7564970C47522F57E /* AccountProfileSyncMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED3785F123750CD029A126E /* AccountProfileSyncMappingStore.swift */; };
@@ -793,6 +796,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChromiumSyncStatus.swift; path = ../../ChromiumBridge/ChromiumSyncStatus.swift; sourceTree = "<group>"; };
+		DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncStatusSnapshot.swift; path = ../SyncStatusSnapshot.swift; sourceTree = "<group>"; };
+		DB90EAB144A61C14E0121101 /* SyncPairingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingState.swift; sourceTree = "<group>"; };
 		01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelfRevokeStrings.swift; path = UI/SelfRevokeStrings.swift; sourceTree = "<group>"; };
 		0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiURLRuleLocalAccess.swift; sourceTree = "<group>"; };
 		0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiFaviconBackfillQueue.swift; sourceTree = "<group>"; };
@@ -1541,6 +1547,9 @@
 				01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */,
 				D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */,
 				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
+				DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */,
+				DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */,
+				DB90EAB144A61C14E0121101 /* SyncPairingState.swift */,
 				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
 				6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */,
 				3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */,
@@ -4021,6 +4030,9 @@
 				994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */,
 				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
 				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
+				DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */,
+				DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */,
+				DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */,
 				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,
 				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,
 				2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */,

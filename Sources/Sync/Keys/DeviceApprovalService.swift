@@ -26,6 +26,8 @@ final class DeviceApprovalService {
         self.deviceKeyProvider = deviceKeyProvider
     }
 
+    func listDevices() async throws -> [AccountDeviceDTO] { try await api.listDevices() }
+
     func listPendingApprovals() async throws -> [PendingApproval] {
         try await api.listPendingJoinRequests().map { s in
             PendingApproval(id: s.requestId, name: s.name, platform: s.platform,

@@ -99,7 +99,7 @@ final class URLRuleMergeTests: XCTestCase {
                             spaceStore: any PhiSpaceSyncStateStore,
                             ownedKinds: [OwnedKindRegistration]) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: [],
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                       spaceAccess: makeSpaceAccess(), spaceStore: spaceStore,
                       markerStore: markerStore, ownedKinds: ownedKinds,
                       now: { Self.now })
@@ -1990,7 +1990,7 @@ final class URLRuleMergeTests: XCTestCase {
             let client = FakePhiSyncClient()
             client.pagesByMarker = [page([], marker: "7")]
             let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                       defaults: deviceDefaults, deviceKeyId: "dev-\(name)",
+                                       defaults: deviceDefaults, deviceKeyId: "dev-\(name)", pairingComplete: true,
                                        settings: [], spaceAccess: makeSpaceAccess(),
                                        spaceStore: spaceStore,
                                        markerStore: markerStore(marker: "0"),
@@ -2998,7 +2998,7 @@ final class URLRuleMergeTests: XCTestCase {
                                  spaceAccess: FakePhiSpaceAccess,
                                  spaceStore: MemorySpaceStore) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: [],
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                       spaceAccess: spaceAccess, spaceStore: spaceStore,
                       markerStore: markerStore(marker: "0"),
                       ownedKinds: [.urlRules(access: access, store: store)],

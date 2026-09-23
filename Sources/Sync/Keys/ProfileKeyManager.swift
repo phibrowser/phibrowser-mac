@@ -4,7 +4,7 @@ import Security
 
 /// `alreadyMapped` is a *refusal to mint*, not a failure: it means the caller
 /// asked to register a brand-new global UUID for a local profile that already
-/// carries a mapping. Minting there would orphan the account's real envelope
+/// carries a live mapping. Minting there would orphan the account's real envelope
 /// and permanently diverge the two devices, so it is rejected at the lowest
 /// layer regardless of what the caller believed about the mapping state.
 enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped }
@@ -89,14 +89,19 @@ final class ProfileKeyManager {
     /// key, seal, and PUT. A 409 (concurrent registration of the same uuid)
     /// adopts the winner's envelope instead.
     ///
-    /// Refuses with `alreadyMapped` when this local profile already has a
-    /// mapping. This is the last line of defence for C-1: a caller that
-    /// mistook a transient lookup failure for "no mapping" would otherwise
-    /// mint a fresh UUID here, silently abandoning the account's existing
-    /// envelope for this profile.
+    /// Refuses with `alreadyMapped` when this local profile still has a server
+    /// record. Only a definitive missing record permits replacement after a reset;
+    /// transport/auth failures preserve the old mapping and propagate. Keep that
+    /// mapping until the replacement PUT succeeds, and reject a concurrent remap.
     func registerLocalProfile(profileId: String, displayName: String) async throws -> ProfileKeyRecord {
-        guard mappingStore.globalUuid(forProfileId: profileId) == nil else {
-            throw ProfileKeyManagerError.alreadyMapped
+        if let priorUuid = mappingStore.globalUuid(forProfileId: profileId) {
+            guard try await api.getProfileKey(uuid: priorUuid) == nil else {
+                throw ProfileKeyManagerError.alreadyMapped
+            }
+            try Task.checkCancellation()
+            guard mappingStore.globalUuid(forProfileId: profileId) == priorUuid else {
+                throw ProfileKeyManagerError.alreadyMapped
+            }
         }
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         var key = Data(count: 32)

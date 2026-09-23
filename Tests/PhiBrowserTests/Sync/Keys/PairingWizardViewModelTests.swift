@@ -24,7 +24,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             // Nested types do not inherit MainActor, while joinPairingPending is main-actor state.
             // SpaceSyncMappingManager's write API already runs there, so assert isolation.
             // Scheduling a hop would record after the write and invalidate the ordering check.
-            let pending = MainActor.assumeIsolated { ProfilePairingGate.joinPairingPending }
+            let pending = MainActor.assumeIsolated { !ProfilePairingGate.shared.isPaired }
             writes.append((spaceId, uuid, pending))
             return true
         }
@@ -58,7 +58,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        ProfilePairingGate.staticPendingOverride = true
+        try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "test-device", recordData: nil, saveRecord: { _ in true })
         resolveCount = 0
         observer = NotificationCenter.default.addObserver(
             forName: .phiProfileMappingsDidResolve, object: nil, queue: nil
@@ -66,7 +66,6 @@ final class PairingWizardViewModelTests: XCTestCase {
     }
 
     override func tearDown() {
-        ProfilePairingGate.staticPendingOverride = nil
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         super.tearDown()
@@ -86,6 +85,50 @@ final class PairingWizardViewModelTests: XCTestCase {
     }
 
     /// A machine with a bootstrapped account and a programmable preview.
+    func testLeavingInvalidatesAParkedPreview() async throws {
+        let hold = PreviewHold()
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [], accountSpaces: [], preview: {
+                await hold.enter()
+                return .success([])
+            })
+        let load = Task { await wizard.start(controller: controller) }
+        while await hold.calls == 0 { await Task.yield() }
+        XCTAssertTrue(wizard.leaveWithoutApplying())
+        await hold.release()
+        await load.value
+        XCTAssertFalse(wizard.canSubmit)
+    }
+
+    func testPreparingReviewFreezesSelectionsAndNavigation() async throws {
+        let hold = PreviewHold()
+        var previews = 0
+        let remote = account("acct-1", name: "Remote")
+        let (wizard, controller, store, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Local")], accountSpaces: [remote], preview: {
+                previews += 1
+                if previews > 1 { await hold.enter() }
+                return .success([remote])
+            })
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        wizard.addAllAsNew()
+        let before = wizard.spaceSelections
+        let phase = wizard.phase
+        let submit = Task { await wizard.finish(controller: controller) }
+        while await hold.calls == 0 { await Task.yield() }
+        XCTAssertTrue(wizard.isPreparing)
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.backToProfiles()
+        wizard.backFromConfirmation()
+        XCTAssertEqual(wizard.spaceSelections, before)
+        XCTAssertEqual(wizard.phase, phase)
+        XCTAssertTrue(wizard.leaveWithoutApplying(), "Later remains available during refresh")
+        await hold.release()
+        await submit.value
+        XCTAssertTrue(store.map.isEmpty)
+    }
+
     private func makeWizard(
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
@@ -147,7 +190,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         wizard.continueToSpaces()
         XCTAssertTrue(store.map.isEmpty, "No mapping writes")
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "joinPairingPending remains unchanged")
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "joinPairingPending remains unchanged")
         XCTAssertEqual(resolveCount, 0, "resolveMappings() is not called")
     }
 
@@ -166,7 +209,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(api.profileEnvelopes.count, 1, "Step 1 applies Profile decisions first")
         XCTAssertEqual(store.writes.map(\.pendingWhenWritten), [true],
                        "Step 3 follows step 2: the gate stays closed until all mappings are written")
-        XCTAssertFalse(ProfilePairingGate.joinPairingPending)
+        XCTAssertFalse(!ProfilePairingGate.shared.isPaired)
         XCTAssertGreaterThan(resolveCount, 0, "Step 4 calls resolveMappings() last")
         XCTAssertEqual(wizard.phase, .done)
     }
@@ -194,7 +237,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         await wizard.finish(controller: controller)
         guard case .error(_, let resume) = wizard.phase else { return XCTFail("expected .error") }
         XCTAssertEqual(resume, .backToSpaces)
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "The gate stays closed on failure")
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate stays closed on failure")
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1", "The first mapping has already been written")
 
         store.map.removeValue(forKey: "STALE")
@@ -202,12 +245,62 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
         await wizard.finish(controller: controller)
         XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(wizard.spaceSelections["LOCAL-2"], .existing(syncUuid: "acct-2"),
+                       "Our own completed Profile registration must not invalidate the unapplied Space choice")
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1")
         XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
         XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1,
                        "alreadyMapped with the expected value is complete and requires no rewrite")
         XCTAssertEqual(api.profileEnvelopes.count, 1,
                        "Profile alreadyMapped on retry is successful without minting another envelope")
+    }
+
+    func testRetryAfterProfileAdoptionPreservesSpaceChoices() async throws {
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "remote-profile"),
+                            account("acct-2", name: "Reading", profileUuid: "remote-profile")])
+        api.profileEnvelopes["remote-profile"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Remote name", ark: try XCTUnwrap(controller.manager.currentARK))
+        store.map["STALE"] = "acct-2"
+        await wizard.start(controller: controller)
+        wizard.profileSelections["Default"] = .remote("remote-profile")
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("Expected partial failure") }
+
+        store.map.removeValue(forKey: "STALE")
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
+    }
+
+    func testRetryAfterPartialApplyStillRequiresReviewOfChangedAccountSpaces() async throws {
+        var accountSpaces = [account("acct-1", name: "Work"), account("acct-2", name: "Reading")]
+        let (wizard, controller, store, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: accountSpaces, preview: { .success(accountSpaces) })
+        store.map["STALE"] = "acct-2"
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("Expected partial failure") }
+        store.map.removeValue(forKey: "STALE")
+        accountSpaces[1] = account("acct-2", name: "Changed on another device")
+
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("Changed server values require a fresh review") }
+        XCTAssertNil(store.map["LOCAL-2"], "No unapplied choice may bypass the fresh-server check")
+        XCTAssertFalse(ProfilePairingGate.shared.isPaired)
     }
 
     // MARK: - 4b. addAsNew idempotence criteria
@@ -242,7 +335,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1", "Neither mint a new identity nor silently reuse the old mapping")
         XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1)
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "The gate must stay closed")
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate must stay closed")
     }
 
     /// Conversely, a mapping minted locally earlier has a UUID absent from the account list.
@@ -301,7 +394,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(reloaded.map(\.uuid), ["uuid-remote"], "Render the reloaded candidate table")
         XCTAssertEqual(wizard.step, .profiles)
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "The gate must stay closed")
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate must stay closed")
         XCTAssertTrue(store.map.isEmpty, "No Space mapping writes")
     }
 
@@ -320,7 +413,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .error(_, let resume) = wizard.phase else { return XCTFail("expected .error") }
         XCTAssertEqual(resume, .reload)
         XCTAssertTrue(store.map.isEmpty)
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending)
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired)
     }
 
     // MARK: - 5b. Step 2 selections survive Back and failures
@@ -550,7 +643,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(items.map(\.localSpaceId), ["LOCAL-1"])
         XCTAssertEqual(items.first?.changes.map(\.field), [.name])
         XCTAssertTrue(store.map.isEmpty, "No mapping writes")
-        XCTAssertTrue(ProfilePairingGate.joinPairingPending)
+        XCTAssertTrue(!ProfilePairingGate.shared.isPaired)
         XCTAssertEqual(resolveCount, 0)
         XCTAssertEqual(api.profileEnvelopes.count, 0, "applyPairingDecisions is not called")
         XCTAssertEqual(wizard.step, .spaces, "Confirmation is not a third step: step ② remains current")
@@ -592,7 +685,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         XCTAssertEqual(api.profileEnvelopes.count, 1)
         XCTAssertEqual(store.writes.map(\.pendingWhenWritten), [true])
-        XCTAssertFalse(ProfilePairingGate.joinPairingPending)
+        XCTAssertFalse(!ProfilePairingGate.shared.isPaired)
         XCTAssertGreaterThan(resolveCount, 0)
         XCTAssertEqual(wizard.phase, .done)
     }

@@ -86,7 +86,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                             markerStore: any PhiSyncMarkerStore,
                             spaceStore: MemorySpaceStore = MemorySpaceStore()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: [],
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                       spaceAccess: makeSpaceAccess(), spaceStore: spaceStore,
                       markerStore: markerStore,
                       now: { 1_700_000_000_000 })
@@ -216,7 +216,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         ], marker: "m1")]
 
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: spaceAccess, spaceStore: spaceStore,
                                    ownedKinds: [.bookmarks(access: access, store: ownedStore)],
                                    now: { 1_700_000_000_000 })
@@ -257,7 +257,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: makeSpaceAccess(), spaceStore: store,
                                    now: { 1_700_000_000_000 })
 
@@ -285,7 +285,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: makeSpaceAccess(), spaceStore: store,
                                    now: { 1_700_000_000_000 })
 
@@ -449,13 +449,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertNil(store.load().marker)
     }
 
-    // MARK: - CASE 3.3 (resetForNewStoreBirthday clears marker; birthday persists per page in the same file)
-
-    /// CASE 3.3: NOT_MY_BIRTHDAY makes the second request use an empty birthday and no marker. Both persist in
-    /// the file by round end, with neither legacy key written to UserDefaults. Keeping birthday in defaults
-    /// would split import rollback state. clearRemoteCursor must persist storedMarker = nil so restarting
-    /// cannot resurrect an old marker against a new store (§2.4 note 1).
-    func testANewStoreBirthdayClearsTheMarkerAndBothFieldsLandInTheSameFile() async throws {
+    func testANewStoreBirthdayPersistsPauseWithoutClearingMarker() async throws {
         let markerStore = MemoryMarkerStore(
             file: PhiSyncMarkerFile(marker: Data("4".utf8), storeBirthday: "stale-birthday"))
         let client = FakePhiSyncClient()
@@ -466,15 +460,12 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(client.getUpdatesCalls.count, 2)
+        XCTAssertEqual(client.getUpdatesCalls.count, 1)
         XCTAssertEqual(client.getUpdatesCalls[0].storeBirthday, "stale-birthday", "Reads the injected file")
         XCTAssertEqual(client.getUpdatesCalls[0].marker, Data("4".utf8))
-        XCTAssertEqual(client.getUpdatesCalls[1].storeBirthday, "")
-        XCTAssertNil(client.getUpdatesCalls[1].marker)
-        XCTAssertEqual(markerStore.file.storeBirthday, "birthday-1")
-        XCTAssertNotNil(markerStore.file.marker)
-        XCTAssertTrue(markerStore.saves.contains(PhiSyncMarkerFile()),
-                      "marker == nil must actually persist to the file")
+        XCTAssertEqual(markerStore.file.storeBirthday, "stale-birthday")
+        XCTAssertEqual(markerStore.file.marker, Data("4".utf8))
+        XCTAssertEqual(markerStore.file.requiresReconfiguration, true)
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.markerStateKey),
                      "An injected store prevents all defaults writes")
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.storeBirthdayStateKey))
@@ -699,7 +690,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                                  settings: [SyncableSetting] = [],
                                  ownedKinds: [OwnedKindRegistration] = []) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: settings,
                       spaceAccess: spaceAccess ?? makeSpaceAccess(), spaceStore: spaceStore,
                       markerStore: markerStore, ownedKinds: ownedKinds,
                       now: { 1_700_000_000_000 })
@@ -710,7 +701,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                                         markerStore: any PhiSyncMarkerStore,
                                         settings: [SyncableSetting]) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: settings,
                       markerStore: markerStore, now: { 1_700_000_000_000 })
     }
 

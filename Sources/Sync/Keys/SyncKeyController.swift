@@ -52,6 +52,8 @@ protocol LocalProfileCreating: AnyObject {
     func createProfile(displayName: String) async -> String?
 }
 
+enum NativeSyncResetError: Error { case cleanupFailed }
+
 /// App-scoped owner of the sync key layer: silently unlocks the ARK at
 /// startup/login, resolves local-profile -> global-profile mappings, caches
 /// per-profile sync info for the bridge's synchronous hot-path pull, and pings
@@ -75,7 +77,17 @@ final class SyncKeyController {
     /// Shuts the settings/Space engine down and unhooks it. Injected as a closure
     /// (never a direct singleton reference) so the self-revoke tests do not reach
     /// the real `PhiChromiumCoordinator.shared`.
-    private let retirePhiSync: () -> Void
+    private let retirePhiSync: (Bool) -> Void
+    private let invalidateEnrollment: () throws -> Void
+    private let finishLocalCleanup: (Bool) -> Void
+    private let verifyCursorDeletion: () throws -> Void
+    private let isCurrentAccount: () -> Bool
+    private var cleaningLocalState = false
+    private let runtimeRequiresReconfiguration: () -> Bool
+    private let runtimeRemovalPending: () -> Bool
+    var requiresReconfiguration: Bool { markerStore?.load().requiresReconfiguration == true || runtimeRequiresReconfiguration() }
+
+    private let isPairingComplete: @MainActor () -> Bool
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
@@ -155,13 +167,21 @@ final class SyncKeyController {
          localProfilesProvider: @escaping () -> [(profileId: String, displayName: String)],
          notifyChromium: @escaping () -> Void,
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
-         retirePhiSync: @escaping () -> Void = {},
+         isPairingComplete: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.isPaired },
+         retirePhiSync: @escaping (Bool) -> Void = { _ in },
+         invalidateEnrollment: @escaping () throws -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
          engineDefaults: UserDefaults = .standard,
          spaceStateStore: (any PhiSpaceSyncStateStore)? = nil,
          ownedItemStores: [any PhiOwnedItemStateStore] = [],
          markerStore: (any PhiSyncMarkerStore)? = nil,
-         clearAllSyncIds: (@Sendable () async throws -> Void)? = nil) {
+         clearAllSyncIds: (@Sendable () async throws -> Void)? = nil,
+         finishLocalCleanup: @escaping (Bool) -> Void = { _ in },
+         verifyCursorDeletion: @escaping () throws -> Void = {},
+         isCurrentAccount: @escaping () -> Bool = { true },
+         runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
+         runtimeRemovalPending: @escaping () -> Bool = { false }) {
+        self.isPairingComplete = isPairingComplete
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -170,6 +190,12 @@ final class SyncKeyController {
         self.notifyChromium = notifyChromium
         self.profileCreator = profileCreator
         self.retirePhiSync = retirePhiSync
+        self.invalidateEnrollment = invalidateEnrollment
+        self.finishLocalCleanup = finishLocalCleanup
+        self.verifyCursorDeletion = verifyCursorDeletion
+        self.isCurrentAccount = isCurrentAccount
+        self.runtimeRequiresReconfiguration = runtimeRequiresReconfiguration
+        self.runtimeRemovalPending = runtimeRemovalPending
         self.deviceKeyRotator = deviceKeyRotator
         self.engineDefaults = engineDefaults
         self.spaceStateStore = spaceStateStore
@@ -181,7 +207,8 @@ final class SyncKeyController {
     /// Hot path: the bridge delegate calls this on every Chromium pull.
     /// Dictionary read only — no I/O, no crypto.
     func profileSyncInfo(forProfileId profileId: String) -> (uuid: String, passphrase: String)? {
-        resolved[profileId]
+        guard isPairingComplete() else { return nil }
+        return resolved[profileId]
     }
 
     /// Local profiles as reported by `localProfilesProvider` — the same
@@ -238,105 +265,80 @@ final class SyncKeyController {
         spaceKeys?.allMappings() ?? [:]
     }
 
-    /// The pairing modal's only other exit. Order is a HARD requirement, not
-    /// prudence (§3.3 step 2.0): a round parked in `getUpdates` still holds the
-    /// domain key it fetched before the suspension, and the server does not check
-    /// whether the committing device has been revoked. If the cleanup ran first,
-    /// that round would resume, write the `phi.sync.*` cursor, the progress marker
-    /// (`marker.json`, M3-4a) and the whole `sync.phiSpaces` table back, adopt the
-    /// account's settings and every Space wholesale (both baselines were just
-    /// erased), and then commit this machine's snapshot -- the exact opposite of
-    /// what the confirmation promised.
+    /// User-confirmed removal revokes remotely before touching local sync metadata.
+    /// Last-device and transport errors leave local data and enrollment unchanged.
     func removeThisDeviceFromSync() async throws {
+        guard !isRetired, !cleaningLocalState else { throw CancellationError() }
+        cleaningLocalState = true
+        defer { cleaningLocalState = false }
         let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
-        try await profileKeys.revokeDevice(deviceKeyId: deviceKeyId)   // 409 -> lastActiveDevice, nothing below runs
+        try await profileKeys.revokeDevice(deviceKeyId: deviceKeyId)
+        guard !isRetired, isCurrentAccount() else { throw CancellationError() }
+        try await clearLocalSyncState(removingDevice: true)
+    }
 
-        // 1. Retire the engine FIRST. `shutdown()` is nonisolated and synchronous,
-        //    so it takes effect on return rather than being one more message to a
-        //    reentrant actor.
-        retirePhiSync()
-
-        // 2. Keys. The device private key is ROTATED, not deleted: this Mac may
-        //    hold other accounts' keys behind the same legacy item, and a revoked
-        //    fingerprint can never be reused.
-        do {
-            try deviceKeyRotator?.rotateForCurrentAccount()
-        } catch {
-            // Non-fatal: the server has already revoked this device, so leaving the
-            // account is done either way and there is nothing to roll back to. But
-            // the Keychain may now hold a fingerprint the server refuses, and the
-            // next join would 409 `device_revoked` -- so this never goes unlogged.
-            AppLogWarn("[phi-sync] device key rotation failed (\(PhiSyncLog.describe(error)))")
+    /// Called only after explicit reconfiguration confirmation. Ordinary setup/retry
+    /// never calls this method. A partial removal also resumes through this path.
+    func reconfigureSync() async throws {
+        guard !isRetired, !cleaningLocalState, isCurrentAccount(), requiresReconfiguration else {
+            throw CancellationError()
         }
-        manager.discardARK()
+        cleaningLocalState = true
+        defer { cleaningLocalState = false }
+        try await clearLocalSyncState(removingDevice: markerStore?.load().removalPending == true || runtimeRemovalPending())
+    }
 
-        // 3. Mappings, through the store -- never a direct AccountUserDefaults write.
+    private func clearLocalSyncState(removingDevice: Bool) async throws {
+        // Stop in-flight writers before touching even the journal. The coordinator
+        // retains the pending intent in memory if this first durable write fails.
+        retirePhiSync(removingDevice)
+        var completed = false
+        defer { finishLocalCleanup(completed) }
+        // Keep the account-scoped marker as a cleanup journal until every other
+        // step succeeds. Its original birthday and progress token remain intact.
+        if let markerStore {
+            var journal = markerStore.load()
+            journal.requiresReconfiguration = true
+            journal.removalPending = removingDevice
+            guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
+        }
+        try invalidateEnrollment()
+        try manager.discardLocalRegistration()
+        clearResolved()
+        if removingDevice { try deviceKeyRotator?.rotateForCurrentAccount() }
+
         profileKeys.removeAllMappings()
-        // D6 §2.3: the Space identity table goes with it. Order matters only in
-        // one direction -- both tables must be gone before step 5 wipes the
-        // cursor table, or a round that somehow survived would resolve a uuid
-        // whose cursor no longer exists.
         spaceKeys?.removeAllMappings()
-
-        // 4. Preserve self-revocation order (M3-3 §9.1 / E14): delete bookmark/pin/URL Rule cursor files
-        // first, then clear syncId. Files absent with identities retained is recoverable: full-type replay
-        // (R-M3-3-13) matches entities back to rows and rebuilds cursors. Clearing identities while retaining
-        // cursors makes §4.7 diff interpret the entire tree as locally deleted and tombstone it on rejoin.
-        // Delete files instead of saving valid empty tables, so load reports lost state and triggers replay
-        // (§3.5).
-        //
-        // URL Rules only undergo file deletion (M3-4a §4.4 final paragraphs). The closure clears bookmark IDs
-        // only. Rule IDs minted on insertion (R-M3-4a-23) must survive: reminting would orphan prior account
-        // entities, and claiming only covers never-published rows (R-M3-4a-53), so D30 cannot recover them.
-        // Retained IDs let lost-state replay reclaim the same entities.
-        for store in ownedItemStores { store.deleteFile() }
-        // M3-4a §4.4: delete marker.json before clearAllSyncIds too. Retained identities with absent files are
-        // recoverable. Keeping the old marker after cursor deletion would skip historical entities needed for
-        // replay/reclaim, allowing diff to interpret the tree as deleted and publish destructive tombstones.
-        // Delete the file; do not save an empty table.
-        markerStore?.deleteFile()
-        do {
-            // Preserve rows and clear only syncId: self-revocation does not delete user data. On rejoin,
-            // §6/D10 claiming aligns this now-unsynced tree with the account.
-            try await clearAllSyncIds?()
-        } catch {
-            // Warn without interrupting or restoring deleted files. Server revocation already took effect;
-            // identities retained with absent files is the recoverable state described above, matching step 2
-            // device-key rotation failure handling.
-            AppLogWarn("[phi-sync] clearing local sync ids failed; the rows keep their identities (\(PhiSyncLog.describe(error)))")
+        guard profileKeys.allMappings().isEmpty, spaceKeys?.allMappings().isEmpty != false else {
+            throw NativeSyncResetError.cleanupFailed
         }
-
-        // 5. Engine state. `phi.sync.cursorAccount` is deliberately kept: it is
-        //    not a cursor, and dropping it would make the next build report a
-        //    phantom account switch. Writing the Space table through the store
-        //    directly is legal here precisely BECAUSE step 1 already shut the
-        //    engine down -- `PhiSpaceSyncState`'s documented "there is no engine"
-        //    exception to the single-writer rule, not a bypass of it. The facade's
-        //    main-actor caches are refreshed by hand for the same reason: nothing
-        //    else will push them back, and stale ones keep the departed account's
-        //    hidden/soft-deleted Spaces hidden and keep refusing profile deletions
-        //    until the next launch.
-        //    The two legacy marker keys go too (M3-4a): they are what a failed one-time
-        //    migration leaves behind, and the file they would be migrated into was just
-        //    deleted in step 4.
-        for key in PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys {
+        // Delete cursor files before clearing bookmark sync IDs. Rule identity and
+        // pin lineage are business identities and survive; browsing rows stay intact.
+        for store in ownedItemStores { store.deleteFile() }
+        try verifyCursorDeletion()
+        try await clearAllSyncIds?()
+        // The async storage write belongs to the captured account. Never clear the
+        // next account's global engine defaults or facade after an account switch.
+        guard isCurrentAccount() else { throw CancellationError() }
+        for key in PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys + ["phi.sync.requiresReconfiguration"] {
             engineDefaults.removeObject(forKey: key)
         }
-        spaceStateStore?.save(PhiSpaceSyncTable())
+        for key in engineDefaults.dictionaryRepresentation().keys
+            where key.hasSuffix(SyncableSettings.timestampSuffix) || key.hasSuffix(SyncableSettings.valueSuffix) {
+            engineDefaults.removeObject(forKey: key)
+        }
+        // This mirrored value is a sync UUID, not the user's local default Space.
+        engineDefaults.removeObject(forKey: PhiDefaultSpaceMirror.key)
+        if let spaceStateStore, !spaceStateStore.save(PhiSpaceSyncTable()) {
+            throw NativeSyncResetError.cleanupFailed
+        }
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
-
-        // 6. Resolved cache + both predicates, and the join flag. The `.cleared`
-        //    announcement `clearResolved()` posts does take the gate's window down
-        //    (`ProfilePairingGate`'s `.cleared` branch), but `.cleared` may never
-        //    retire `sync.joinPairingPending` -- only a `.measured` pass may, and
-        //    no measured pass will ever run again on this device -- so the flag is
-        //    retired here by hand.
-        clearResolved()
-        ProfilePairingGate.joinPairingPending = false
-
-        // Browsing data is untouched on purpose: LocalStore.sqlite and both
-        // per-Space theme maps stay exactly as they are.
-        AppLogInfo("[phi-sync] this device left the account's sync")
+        markerStore?.deleteFile()
+        guard markerStore?.load().requiresReconfiguration != true else {
+            throw NativeSyncResetError.cleanupFailed
+        }
+        completed = true
+        AppLogInfo("[phi-sync] confirmed local sync cleanup completed")
     }
 
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.
@@ -531,7 +533,7 @@ final class SyncKeyController {
             return
         }
 
-        if !hasUnknownLocal {
+        if !hasUnknownLocal, isPairingComplete() {
             let claimed = Set(next.values.map { $0.uuid })
             let unclaimed = remoteUuids.subtracting(claimed)
             if unclaimed.isEmpty {
@@ -715,7 +717,7 @@ final class SyncKeyController {
         // separate events, and relaunch during pairing adds another gap. A gate-closed round is
         // profile_refresh=skipped, explicitly not failure (§11). Reporting failed would miscount and make the
         // engine retry an intentional no-op.
-        guard !ProfilePairingGate.joinPairingPending else {
+        guard isPairingComplete() else {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
         let accountUuids: Set<String>

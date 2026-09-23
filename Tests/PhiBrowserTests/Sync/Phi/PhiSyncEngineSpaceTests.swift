@@ -150,7 +150,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                             markerStore: (any PhiSyncMarkerStore)? = nil,
                             clock: Clock = Clock()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA",
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true,
                       settings: [],
                       spaceAccess: access, spaceStore: store,
                       markerStore: markerStore,
@@ -286,7 +286,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let clock = Clock()
         clock.nowMs = 2_000
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: access, spaceStore: store,
                                    ownedKinds: [.bookmarks(access: bookmarks, store: MemoryOwnedItemStore()),
                                                 .pins(access: pins, store: MemoryOwnedItemStore())],
@@ -642,7 +642,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - NOT_MY_BIRTHDAY (§5.1)
 
-    func testNotMyBirthdayClearsServerTriplesAndGuardsButKeepsReconciled() async throws {
+    func testNotMyBirthdayPreservesSpaceMetadata() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
@@ -657,20 +657,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         client.throwNotMyBirthdayOnce = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
+        let before = store.table
         await engine.pullOnce()
-
-        let after = try XCTUnwrap(store.table.cursors["sync-1"])
-        XCTAssertNil(after.entityId)
-        XCTAssertEqual(after.version, 0)
-        XCTAssertNil(after.server)
-        XCTAssertEqual(after.deleteRejectRounds, 0)
-        XCTAssertEqual(after.reconciled, Data([0x01]), "local timestamp history survives")
-        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty)
-        // The reset re-arms guard 1; the retry pull that immediately follows it
-        // replays the whole type from a nil marker and drains it again, which is
-        // exactly what "re-armed" is supposed to produce.
-        XCTAssertTrue(store.table.hasDrainedFullReplay)
-        XCTAssertFalse(store.table.drainInProgress)
+        XCTAssertEqual(store.table, before)
+        XCTAssertTrue(engine.requiresReconfiguration)
     }
 
     // MARK: - Second local-change trigger (§5.4)
@@ -1525,6 +1515,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors["sync-1"]?.server)
         XCTAssertNotNil(store.table.cursors["sync-3"]?.server)
         XCTAssertNotNil(store.table.cursors["sync-2"]?.server, "the conflicting one is retried, not dropped")
+        XCTAssertEqual(engine.statusSnapshot.phase, .upToDate,
+                       "A conflict recovered in this round is not a remaining failure")
+        XCTAssertNotNil(engine.statusSnapshot.lastSuccess)
         // The retry is SCOPED: only the conflicting uuid goes back through the
         // wire, not the whole batch recomputed from scratch.
         XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash("sync-2") }.count, 2)
@@ -2543,6 +2536,43 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - Preview (§4)
 
+    func testUnpairedPreviewAfterServerResetKeepsPersistentSyncStateUntouched() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let tableBefore = store.table
+        let oldMarker = PhiSyncMarkerFile(marker: Data([0xAB]), storeBirthday: "old-server")
+        let markerStore = MemoryMarkerStore(file: oldMarker)
+        let client = FakePhiSyncClient()
+        client.rejectStaleStoreBirthday = true
+        client.storeBirthday = "new-server"
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "Work")), version: 3)
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "device", pairingComplete: false,
+                                   settings: [], spaceAccess: access, spaceStore: store,
+                                   markerStore: markerStore)
+
+        await engine.pullOnce()
+        XCTAssertTrue(client.getUpdatesCalls.isEmpty, "Unpaired regular sync must remain stopped")
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(.transport("not_my_birthday")) = result else {
+            return XCTFail("Expected explicit reconfiguration: \(result)")
+        }
+        XCTAssertNil(client.getUpdatesCalls.first?.marker)
+        XCTAssertEqual(client.getUpdatesCalls.first?.storeBirthday, "")
+        var paused = oldMarker
+        paused.requiresReconfiguration = true
+        XCTAssertEqual(markerStore.file, paused)
+        XCTAssertEqual(store.table, tableBefore)
+        XCTAssertEqual(store.saveCalls, 0)
+        XCTAssertTrue(client.commits.isEmpty)
+        _ = await engine.previewAccountSpaces()
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.count, 1, "Retry cannot clear old state")
+        XCTAssertEqual(markerStore.file, paused)
+    }
+
     /// 11. Preview writes nothing.
     func testThePreviewPersistsNothingAtAll() async throws {
         let access = FakePhiSpaceAccess()
@@ -2772,7 +2802,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                                                            version: 10, key: key)],
                                      marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: nil, spaceStore: nil,
                                    now: { 1_700_000_000_000 })
 

@@ -179,7 +179,7 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
     private let session: URLSession
     private let baseURL: String
     private let tokenProvider: () async -> String?
-    private let deviceKeyId: String
+    private let deviceKeyIDProvider: () async throws -> String
 
     /// AM-2. Written by `send` on every 200 that parsed, so a failed round leaves the previous
     /// estimate in place rather than erasing it.
@@ -188,11 +188,12 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
     init(session: URLSession = .shared,
          baseURL: String = KeyEnvelopeAPIClient.syncBaseURL,
          tokenProvider: @escaping () async -> String?,
-         deviceKeyId: String) {
+         deviceKeyId: String,
+         deviceKeyIDProvider: (() async throws -> String)? = nil) {
         self.session = session
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
-        self.deviceKeyId = deviceKeyId
+        self.deviceKeyIDProvider = deviceKeyIDProvider ?? { deviceKeyId }
     }
 
     func getUpdates(marker: Data?, storeBirthday: String) async throws
@@ -248,7 +249,7 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
             }
             return wire
         }
-        commitMessage.cacheGuid = deviceKeyId
+        commitMessage.cacheGuid = try await deviceKeyIDProvider()
 
         var message = Self.newMessage(storeBirthday: storeBirthday)
         message.messageContents = .commit
@@ -286,7 +287,7 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
 
     func streamInvalidations(receive: @escaping @Sendable (Data) async throws -> Void) async throws {
         try await PhiSyncInvalidationHTTPStream.run(session: session, baseURL: baseURL,
-                                                    deviceID: deviceKeyId, tokenProvider: tokenProvider,
+                                                    deviceID: try await deviceKeyIDProvider(), tokenProvider: tokenProvider,
                                                     receive: receive)
     }
 
@@ -342,7 +343,7 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
         guard var components = URLComponents(string: baseURL + "/chromium-sync/phi/command/") else {
             throw PhiSyncProtocolError.badURL
         }
-        components.queryItems = [URLQueryItem(name: "client_id", value: deviceKeyId)]
+        components.queryItems = [URLQueryItem(name: "client_id", value: try await deviceKeyIDProvider())]
         guard let url = components.url else { throw PhiSyncProtocolError.badURL }
 
         var request = URLRequest(url: url)

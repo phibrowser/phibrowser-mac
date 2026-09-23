@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Settings → Devices: shows this device's unlock state, a "set up sync" affordance when
-/// it isn't joined, and the list of pending device-join requests to approve or deny.
+/// Settings → Sync: setup and sync status, authorized devices, and recovery/removal.
 struct DevicesSettingView: View {
     @ObservedObject var viewModel: DevicesSettingViewModel
     /// The runtime "remove this device from sync" entry point. Separate from
@@ -18,15 +17,30 @@ struct DevicesSettingView: View {
     var needsPairingCheck: () -> Bool = { false }
 
     @State private var needsPairing = false
+    @State private var isStatusDetailsExpanded = false
 
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 20) {
-                Text(NSLocalizedString("Devices", comment: "Devices settings - header"))
+                Text(NSLocalizedString("sync.settings.title", value: "Sync", comment: "Settings pane title for cross-device synchronization"))
                     .font(.title2.bold())
                     .themedForeground(.textPrimaryStrong)
 
-                if needsPairing {
+                if !viewModel.accountName.isEmpty {
+                    Text(viewModel.accountName).font(.callout).themedForeground(.textSecondary)
+                }
+                if viewModel.requiresReconfiguration {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(SyncReconfigurationStrings.explanation)
+                        Button(SyncReconfigurationStrings.title) { onResolvePairing() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(viewModel.isReconfiguring)
+                        if let error = viewModel.reconfigurationError {
+                            Text(error).foregroundColor(.red)
+                        }
+                    }.padding(12).settingsCardChrome()
+                }
+                if needsPairing, !viewModel.requiresReconfiguration, viewModel.unlockState == .unlocked {
                     pairingBanner
                 }
 
@@ -34,10 +48,11 @@ struct DevicesSettingView: View {
                 case .loading:
                     ProgressView()
                 case .notSignedIn:
-                    Text(NSLocalizedString("Sign in to manage devices.", comment: "Devices - signed out"))
-                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("sync.settings.signIn", value: "Sign in to sync across devices", comment: "Sync settings signed out explanation"))
+                    Button(NSLocalizedString("sync.settings.signInAction", value: "Sign in", comment: "Sync settings sign in action")) { LoginController.shared.showLoginWindow() }
                 case .failed(let m):
                     Text(m).foregroundColor(.red)
+                    Button(NSLocalizedString("sync.settings.retry", value: "Retry", comment: "Reload sync settings")) { Task { await viewModel.loadAll() } }
                 case .needsJoin:
                     VStack(alignment: .leading, spacing: 12) {
                         Text(NSLocalizedString("This device isn’t set up for sync yet.", comment: "Devices - needs join"))
@@ -48,7 +63,11 @@ struct DevicesSettingView: View {
                         .buttonStyle(.borderedProminent)
                     }
                 case .unlocked:
-                    pendingSection
+                    if !needsPairing { statusSection }
+                }
+
+                if viewModel.isUnlocked {
+                    devicesSection
                 }
 
                 if let err = viewModel.actionError {
@@ -79,6 +98,74 @@ struct DevicesSettingView: View {
         .onDisappear { Task { await viewModel.stopPolling() } }
     }
 
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title).font(.headline).themedForeground(.textPrimaryStrong)
+    }
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(statusTitle(viewModel.summary.phase)).font(.headline)
+            if let date = viewModel.summary.lastSuccess {
+                Text(NSLocalizedString("sync.status.lastSuccess", value: "Last successful sync on this Mac", comment: "Local completion timestamp label") + ": " + date.formatted())
+                    .font(.callout).themedForeground(.textSecondary)
+            }
+            if viewModel.summary.phase == .needsAttention {
+                Text(NSLocalizedString("sync.status.partialFailure", value: "Some content needs attention. Check the details and your connection.", comment: "One or more sync contexts failed"))
+                    .font(.callout)
+            }
+            DisclosureGroup(isExpanded: $isStatusDetailsExpanded) {
+                ForEach(viewModel.requiredIDs.sorted(), id: \.self) { id in
+                    HStack {
+                        Text(viewModel.contextTitle(id))
+                        Spacer()
+                        Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
+                    }.font(.callout).padding(.vertical, 3)
+                }
+            } label: {
+                Text(NSLocalizedString("sync.status.details", value: "Details", comment: "Expand individual sync context status"))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation { isStatusDetailsExpanded.toggle() }
+                    }
+            }
+        }.padding(12).settingsCardChrome()
+    }
+
+    private var devicesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle(NSLocalizedString("sync.devices.title", value: "Devices", comment: "Devices authorized for this account"))
+            if !viewModel.pending.isEmpty { pendingSection }
+            if let error = viewModel.devicesLoadError {
+                Text(error).font(.callout).foregroundColor(.red)
+                Text(NSLocalizedString("sync.devices.thisMacUnknown", value: "This Mac — registration could not be checked", comment: "Device list unavailable; local identity is not proof of registration"))
+            } else {
+                ForEach(viewModel.devices) { device in
+                    HStack {
+                        Image(systemName: "laptopcomputer")
+                        Text(device.name)
+                        Text(device.platform).font(.caption).themedForeground(.textSecondary)
+                        Spacer()
+                        if device.deviceKeyID == viewModel.currentDeviceID {
+                            Text(NSLocalizedString("sync.devices.thisMac", value: "This Mac", comment: "Current authorized device marker")).font(.caption)
+                        }
+                    }.padding(.vertical, 4)
+                }
+            }
+        }.padding(12).settingsCardChrome()
+    }
+
+    private func statusTitle(_ phase: SyncSummaryPhase) -> String {
+        switch phase {
+        case .notStarted: return NSLocalizedString("sync.setup.notStarted", value: "Sync has not started", comment: "All sync waits for pairing completion")
+        case .checking: return NSLocalizedString("sync.status.checking", value: "Checking sync status…", comment: "Sync status not yet known")
+        case .initialSync: return NSLocalizedString("sync.status.initial", value: "Initial sync in progress", comment: "First sync is receiving account data")
+        case .syncing: return NSLocalizedString("sync.status.syncing", value: "Syncing…", comment: "Sync has pending work")
+        case .upToDate: return NSLocalizedString("sync.status.upToDate", value: "Up to date", comment: "All required contexts completed sync")
+        case .offline: return NSLocalizedString("sync.status.offline", value: "Offline — changes will sync when connected", comment: "Eligible data waits for connectivity")
+        case .needsAttention: return NSLocalizedString("sync.status.needsAttention", value: "Needs attention", comment: "Sync has a failure requiring attention")
+        }
+    }
+
     /// The pane's only destructive action, at the bottom and in the secondary
     /// style the pane already uses for "Deny". The confirmation, its copy and the
     /// `last_device` note all come from `SelfRevokeStrings`, shared with the
@@ -86,13 +173,16 @@ struct DevicesSettingView: View {
     @ViewBuilder
     private var removeDeviceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(NSLocalizedString("sync.recovery.title", value: "Recovery and removal", comment: "Recovery guidance and device removal"))
+            Text(NSLocalizedString("sync.recovery.explanation", value: "To join on another device, approve its request here or use your saved recovery code. The code is shown only when sync is first set up.", comment: "Explain existing recovery options without offering retrieval"))
+                .font(.callout)
             HStack(spacing: 10) {
                 Button(NSLocalizedString("Remove this device from sync…",
                                          comment: "Devices - remove this device from sync")) {
                     Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
                 }
                 .buttonStyle(.bordered)
-                .disabled(!removeModel.canRequestRemoval)
+                .disabled(!removeModel.canRequestRemoval || viewModel.isReconfiguring)
                 if removeModel.isRemoving {
                     ProgressView().controlSize(.small)
                 }
@@ -112,11 +202,14 @@ struct DevicesSettingView: View {
     @ViewBuilder
     private var pairingBanner: some View {
         HStack(spacing: 16) {
-            Text(NSLocalizedString("Profiles need pairing", comment: "Devices - pairing banner title"))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(NSLocalizedString("sync.setup.notPaired", value: "Not paired", comment: "Sync status before matching completes"))
+                Text(NSLocalizedString("sync.setup.notStarted", value: "Sync has not started", comment: "All sync waits for pairing completion")).font(.callout)
+            }
                 .font(.body.bold())
                 .themedForeground(.textPrimaryStrong)
             Spacer()
-            Button(NSLocalizedString("Resolve", comment: "Devices - pairing banner button")) {
+            Button(NSLocalizedString("sync.setup.continueSetup", value: "Continue setup", comment: "Reopen sync setup with fresh account data")) {
                 onResolvePairing()
             }
             .buttonStyle(.borderedProminent)
@@ -143,6 +236,8 @@ struct DevicesSettingView: View {
                         // 3-second poll that refreshes `viewModel.pending` can
                         // remove this row while AppKit's mouse-tracking loop is
                         // live, orphaning the loop and hanging the main thread.
+                        Text(NSLocalizedString("sync.devices.expires", value: "Expires", comment: "Pending device request expiry label") + ": " + item.deadline.formatted(date: .omitted, time: .shortened))
+                            .font(.caption).themedForeground(.textSecondary)
                         Text(NSLocalizedString("Verify this code matches the other device: ", comment: "Devices - verify prefix") + item.verificationCode)
                             .font(.system(.callout, design: .monospaced))
                             .themedForeground(.textPrimary)
@@ -152,10 +247,13 @@ struct DevicesSettingView: View {
                         Task { await viewModel.approve(item) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.busyRequestIDs.contains(item.id))
                     Button(NSLocalizedString("Deny", comment: "Devices - deny")) {
                         Task { await viewModel.deny(item) }
                     }
                     .buttonStyle(.bordered)
+                    .disabled(viewModel.busyRequestIDs.contains(item.id))
+                    if viewModel.busyRequestIDs.contains(item.id) { ProgressView().controlSize(.small) }
                 }
                 .padding(12)
                 .background(Color(nsColor: .textBackgroundColor))

@@ -20,7 +20,7 @@ final class SyncKeyControllerTests: XCTestCase {
         let approvals = DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider)
         let c = SyncKeyController(manager: mgr, approvals: approvals, profileKeys: pkm,
                                   localProfilesProvider: localsProvider,
-                                  notifyChromium: pinged)
+                                  notifyChromium: pinged, isPairingComplete: { true })
         return (c, mgr)
     }
 

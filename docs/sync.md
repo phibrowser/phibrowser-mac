@@ -2,6 +2,140 @@
 
 For manual cross-device acceptance, see the [Sync E2E test cases](sync-e2e-test-cases.md).
 
+## Enrollment and setup
+
+Settings exposes **Sync**; the internal `devices` route remains stable. The pane
+shows account/status, active devices and approval requests,
+and recovery/removal. Device metadata comes from `GET /keys/v1/devices` through
+`KeyEnvelopeAPIClient`; `created_at` is never displayed as last activity.
+
+`ProfilePairingGate` owns `sync.pairingEnrollment` in account defaults. Version 1
+records the device key ID and explicit complete/unpaired result. Missing,
+malformed, future-version and mismatched-device records are unpaired. Completion
+persists the verified post-registration device identity before permitting data
+sync. Revoked-device registration can rotate that identity; the native HTTP
+client resolves it for each request instead of retaining the pre-join ID.
+Invalidation fails closed in memory even if its persistence fails.
+
+Legacy completion migrates only after fresh device authorization, unlocked keys,
+fresh remote Profile/Space evidence, complete injective mappings, and the legacy
+enabled/drained Space state have all been verified. An explicit pending flag
+prevents migration. Mapping resolution or ARK unlock alone never proves enrollment.
+A check that fails transiently (offline, token refresh) retries with backoff, and
+an explicit setup request runs one attempt before starting a new enrollment.
+
+Setup has one modal host through introduction, verification, Profile/Space
+matching, overwrite review and completion. Finish later appears only after
+verification, on the pairing pages; the join-method and approval-waiting pages
+have no Finish later button. Escape and window close, and Finish later in pairing,
+retain unpaired status and discard unsubmitted choices. They remain available
+while loading/reviewing/revalidating; confirmed writes and recovery-code
+acknowledgement cannot be dismissed. Background work never reopens setup.
+Mapping notifications affect only the setup session's current controller. A late
+`.cleared` from a retired previous controller cannot dismiss another account's
+verification or recovery-code window; retiring the current controller still does.
+Closing an actual setup session refreshes the Sync pane's device authorization
+state without changing enrollment. A verified device that defers matching remains
+unpaired, with its device list and removal controls available.
+
+Cancelling an approval request, switching to recovery, or closing verification
+withdraws that request using the existing account-authenticated join-request deny
+endpoint. Late POST responses are withdrawn by exact request ID. New requests
+wait for earlier creates on the same account manager and withdraw outstanding
+tickets for the exact device public key before posting; a failed withdrawal
+blocks replacement. Other devices' requests are untouched. Cancelled polling
+cannot consume a late approval response. Verification codes identify public keys,
+so retrying with the same device identity intentionally keeps the same code.
+
+Space matching preserves valid stored identities first, then suggests unique
+exact-name matches within the Profile selected in step 1 (or already mapped).
+Ambiguous names stay undecided. Changing Profile choices recomputes automatic
+suggestions; explicit Space choices, including clearing a picker, survive Back.
+Suggestions never persist mappings or bypass overwrite review and Finish.
+
+Every entry and submission preflight fetches new Profile and Space candidates;
+GET requests bypass response caches. A failed refresh has no cached-choice
+fallback. Profile candidate filtering treats a persisted mapping as claimed only
+when its UUID still appears in that fresh account list. Missing old identities
+remain selectable locally after a server reset; merely loading candidates does
+not change mappings. Explicit adoption replaces the old mapping. Registering as
+new requires a definitive missing old key record, preserves the mapping on
+transport/auth failures, and writes its replacement only after a successful PUT.
+Account/session generations fence late responses. Preflight freezes
+choice/navigation edits while permitting Finish later. Confirmed partial mapping
+writes are real and reused on retry; only full completion opens eligibility.
+Within the same session, completed Profile writes advance the expected review
+snapshot so a Space-write retry retains its remaining choices. Fresh preflight
+still rejects independent changes to the server candidates or reviewed Space data.
+
+All native data rounds and Chromium ready-key exposure require enrollment.
+Read-only pairing previews use the serialized engine queue without advancing
+cursors or landing/publishing data. Each preview starts with an empty marker and
+store birthday, then pins subsequent pages to the first response's server
+generation. A changed persisted birthday or `not_my_birthday` response discards
+preview choices and requires explicit reconfiguration. Ordinary previews never
+repair persisted sync metadata or depend on background sync to repair it while
+enrollment is incomplete.
+
+Native `not_my_birthday` handling preserves cursors, baselines, mappings, and
+local browsing data. It records `requiresReconfiguration` in the account's
+`sync/marker.json` and stops native data rounds, including after restart. Retry,
+reopening settings, and Finish later cannot reset this state. Settings → Sync
+shows **Set up sync again**, with confirmation before cleanup. Chromium's
+existing protocol-error recovery is unchanged.
+
+Explicit reconfiguration and successful **Remove this device from sync** share
+one native cleanup path in `SyncKeyController`. Remote self-revocation succeeds
+before removal touches local state; rejection leaves local state intact. Cleanup
+retires the engine, journals its intent, durably withdraws enrollment, discards
+resolved keys/ARK and parked device registration envelopes, clears Profile/Space mappings, owned-item cursor files,
+bookmark sync IDs, engine defaults and settings timestamp/value sidecars, the
+default-Space UUID mirror, and the Space sync table. Removal also rotates the
+device key. Browsing rows, local profiles/Spaces, preference values, login, URL
+Rule IDs and pin lineage remain. The marker journal is deleted last; failures
+retain the reset requirement and may be retried explicitly without revoking
+again. A `removalPending` flag retains the required key rotation after partial
+removal. If writing the journal itself fails, the coordinator retains the pending
+intent for the current process and keeps the native engine paused. Account switches fence post-await global writes and preserve pending
+account journals. Setup re-fetches server state and all matching must complete
+before sync becomes eligible again.
+Login initialization requested during cleanup is deferred until cleanup exits,
+then resolves the current account again. Multiple requests coalesce; sign-out
+does not resurrect a previous account, and removal alone does not request startup.
+
+Withdrawing eligibility synchronously blocks
+in-flight native writes, stops the invalidation schedule, and notifies Chromium.
+A generation fence also rejects old rounds after rapid re-enrollment.
+
+## Sync status contract
+
+The pane aggregates the native context and every eligible user Profile. Missing
+contexts, an empty Profile enumeration, unsupported bridge selectors and malformed
+payloads mean Checking. Unpaired always means Not started. A partial failure
+cannot become global Up to date; the summary time is the oldest successful time
+among all required contexts.
+
+Native success requires a drained pull, accepted publication, successful cursor
+persistence, and no pending/quarantined input, output, or follow-up work. A conflict
+resolved by the same round's scoped retry does not count as a failure. Exhausted
+conflicts and other failures remain failures even when another item recovers. Rows
+that are deliberately never published (hidden, purged or unmapped owner Spaces)
+and refused arrivals are exclusions, not pending work. Local
+changes to sync-visible fields invalidate the current result before debounce.
+Local-only activity timestamps and favicon updates do not create pending sync
+work. Every invalidation must have a corresponding debounced round, including
+a content edit reverted before that round begins. Chromium exposes the
+optional versioned `getProfileSyncStatus:completion:` observation for already
+loaded user Profiles; it never creates Profiles or sync services. It combines
+transport/auth/crypto/controller state, initial downloads, cycle evidence,
+active-delegate pending counts, and a final backend pending-work fence. The old
+transport-only local-data count API cannot be used for full-sync status.
+
+Old frameworks safely remain Checking. A matched framework build and manual
+cross-device acceptance are required before release; object compilation alone
+does not establish runtime correctness. See the UX acceptance record in
+[sync-e2e-test-cases.md](sync-e2e-test-cases.md).
+
 ## Chromium sync endpoint
 
 `ChromiumLauncher` supplies a default `--sync-url` when starting the embedded
@@ -819,8 +953,8 @@ written" restart window falls on them.
 - Two flags on the shared Space table, `urlRulesHadRecords` and
   `urlRulesReplayedForEmptyTable`, decide whether an empty table is a loss and
   gate the one-shot full replay that repairs it. They are independent of the
-  bookmark and pinned-tab flags. A new store birthday clears the replay latch
-  and keeps `urlRulesHadRecords`. The loss criterion is never "local rows still
+  bookmark and pinned-tab flags. A birthday mismatch preserves both flags until
+  explicit reconfiguration clears the native sync state. The loss criterion is never "local rows still
   carry a `syncId`": every live rule row carries one, so that test would replay
   the whole type on every round.
 - The local projection is not frozen at the start of a round. The first read

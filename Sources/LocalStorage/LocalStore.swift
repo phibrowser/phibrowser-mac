@@ -806,10 +806,11 @@ extension LocalStore {
     // scope filter for pins. Extra signals yield empty pushes, while narrower or divergent predicates miss
     // real edits (§4.8). Sort by GUID to avoid false changes from unstable fetch order.
     //
-    // Order stages as type filter → 2 s debounce → one projection → deduplication (§5.7 item 1). Debouncing
+    // Order stages as save-field evidence → 2 s debounce → one projection → deduplication (§5.7 item 1). Debouncing
     // after projection reduces emissions but still performs a main-actor full fetch/map/sort for every save
     // during imports or multi-row drags. Keep deduplication too: favicon backfill may start the timer but
-    // leave an equal snapshot after the quiet period.
+    // leave an equal snapshot after the quiet period. Only sync-visible successful saves invalidate status
+    // immediately; a later equal projection must still drain that invalidation after an edit-and-revert.
 
     /// Default debounce window, equal to PhiChromiumCoordinator.phiSyncPushDebounce but intentionally stored
     /// here to avoid a LocalStorage-to-coordinator dependency. The coordinator must not debounce these signals
@@ -833,7 +834,8 @@ extension LocalStore {
     /// starve later subscribers, including coordinator resubscription after stopPhiSync().
     @MainActor
     func bookmarkChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -846,31 +848,34 @@ extension LocalStore {
             }
             // Capture the baseline at subscription without emitting: it is the previous state, not a change.
             var lastSnapshot = self.bookmarkChangeSnapshot()
+            var pendingInvalidation = false
+            let saveEvidence = SyncSaveEvidence { object in
+                guard object.entity.name == TabDataModel.entityName,
+                      let type = LocalStore.tabType(from: object),
+                      type == TabDataType.bookmark.rawValue || type == TabDataType.bookmarkFolder.rawValue else { return nil }
+                return SyncSaveEvidence.bookmarkFields
+            }
 
             return NotificationCenter.default
                 .publisher(for: .NSManagedObjectContextDidSave)
-                .filter {
-                    LocalStore.notificationContainsChanges(
-                        $0,
-                        matching: {
-                            guard $0.entity.name == TabDataModel.entityName,
-                                  let type = LocalStore.tabType(from: $0) else { return false }
-                            return type == TabDataType.bookmark.rawValue ||
-                                type == TabDataType.bookmarkFolder.rawValue
-                        }
-                    )
-                }
-                // Move to the main queue before stateful debounce. Save notifications originate on background
-                // context threads; concurrent delivery could race debounce's last value/timer. The preceding
-                // filter is safe because its two helpers are pure static functions.
+                // Read save evidence on the saving context's queue, then deliver immutable flags.
+                .compactMap { saveEvidence.consume($0) }
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { syncVisible in
+                    guard syncVisible else { return }
+                    pendingInvalidation = true
+                    onChangeDetected()
+                })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     // On read failure emit no signal, never interpret it as empty: downstream diff would
                     // tombstone every cursor (§4.7).
                     guard let self else { return nil }
                     guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
-                    guard snapshot != lastSnapshot else { return nil }
+                    // A real edit followed by a revert still needs a round to settle its early
+                    // invalidation (and reconcile any round that saw the intermediate value).
+                    guard snapshot != lastSnapshot || pendingInvalidation else { return nil }
+                    pendingInvalidation = false
                     lastSnapshot = snapshot
                     return ()
                 }
@@ -885,7 +890,8 @@ extension LocalStore {
     /// the snapshot too, since a pure scope change leaves physical rows unchanged.
     @MainActor
     func pinnedTabChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -897,28 +903,34 @@ extension LocalStore {
                 return Empty(completeImmediately: true).eraseToAnyPublisher()
             }
             var lastSnapshot = self.pinnedTabChangeSnapshot()
+            var pendingInvalidation = false
+            let saveEvidence = SyncSaveEvidence { object in
+                if object.entity.name == BrowserDataSettingsModel.entityName {
+                    return ["id", "pinnedTabScopeRawValue"]
+                }
+                guard object.entity.name == TabDataModel.entityName,
+                      LocalStore.tabType(from: object) == TabDataType.pinnedTab.rawValue else { return nil }
+                return SyncSaveEvidence.pinFields
+            }
 
             return NotificationCenter.default
                 .publisher(for: .NSManagedObjectContextDidSave)
-                .filter {
-                    LocalStore.notificationContainsChanges(
-                        $0,
-                        matching: {
-                            if $0.entity.name == BrowserDataSettingsModel.entityName {
-                                return true
-                            }
-                            return $0.entity.name == TabDataModel.entityName &&
-                                LocalStore.tabType(from: $0) == TabDataType.pinnedTab.rawValue
-                        }
-                    )
-                }
-                // Move to the main queue before debounce, as for bookmarks.
+                // Read save evidence on the saving context's queue, then deliver immutable flags.
+                .compactMap { saveEvidence.consume($0) }
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { syncVisible in
+                    guard syncVisible else { return }
+                    pendingInvalidation = true
+                    onChangeDetected()
+                })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     guard let self else { return nil }
                     guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
-                    guard snapshot != lastSnapshot else { return nil }
+                    // A real edit followed by a revert still needs a round to settle its early
+                    // invalidation (and reconcile any round that saw the intermediate value).
+                    guard snapshot != lastSnapshot || pendingInvalidation else { return nil }
+                    pendingInvalidation = false
                     lastSnapshot = snapshot
                     return ()
                 }
@@ -938,7 +950,8 @@ extension LocalStore {
     /// adding another coordinator debounce doubles latency to 4 s.
     @MainActor
     func urlRuleChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -951,23 +964,31 @@ extension LocalStore {
             }
             // Capture the baseline at subscription without emitting: it is the previous state, not a change.
             var lastSnapshot = self.urlRuleChangeSnapshot()
+            var pendingInvalidation = false
+            let saveEvidence = SyncSaveEvidence { object in
+                guard object.entity.name == SpaceURLRule.entityName else { return nil }
+                return SyncSaveEvidence.ruleFields
+            }
 
             return NotificationCenter.default
                 .publisher(for: .NSManagedObjectContextDidSave)
-                .filter {
-                    LocalStore.notificationContainsChanges(
-                        $0,
-                        matching: { $0.entity.name == SpaceURLRule.entityName }
-                    )
-                }
-                // Move to the main queue before debounce, as for bookmarks.
+                // Read save evidence on the saving context's queue, then deliver immutable flags.
+                .compactMap { saveEvidence.consume($0) }
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { syncVisible in
+                    guard syncVisible else { return }
+                    pendingInvalidation = true
+                    onChangeDetected()
+                })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     // On read failure emit no signal; never interpret it as all rows deleted.
                     guard let self else { return nil }
                     guard let snapshot = self.urlRuleChangeSnapshot() else { return nil }
-                    guard snapshot != lastSnapshot else { return nil }
+                    // A real edit followed by a revert still needs a round to settle its early
+                    // invalidation (and reconcile any round that saw the intermediate value).
+                    guard snapshot != lastSnapshot || pendingInvalidation else { return nil }
+                    pendingInvalidation = false
                     lastSnapshot = snapshot
                     return ()
                 }
@@ -1323,5 +1344,64 @@ extension LocalStore {
         let profile = ProfileModel(profileId: profileId)
         context.insert(profile)
         return profile
+    }
+}
+
+/// Core Data clears changedValues before didSave. Capture only field-name evidence on
+/// the saving context's queue during willSave, and consume it after a successful save.
+/// No model crosses queues and no table projection runs before the publisher debounce.
+private final class SyncSaveEvidence {
+    // Keep these aligned with the value snapshots above, including relationship-derived owners.
+    static let bookmarkFields: Set<String> = [
+        "syncId", "guid", "spaceId", "profileId", "profile", "parent", "index", "type", "title", "url",
+        "secondaryUrl", "secondaryTitle", "source", "createdDate", "contentUpdatedDate", "locationUpdatedDate"
+    ]
+    static let pinFields: Set<String> = [
+        "pinLineageId", "guid", "spaceId", "profileId", "profile", "index", "type", "title", "url",
+        "splitPartnerGuid", "source", "createdDate", "contentUpdatedDate", "isPinnedTabDormant"
+    ]
+    static let ruleFields: Set<String> = [
+        "id", "syncId", "spaceId", "host", "pathPrefix", "askBeforeRouting", "sortOrder",
+        "contentUpdatedDate", "targetUpdatedDate", "deletedDate"
+    ]
+
+    private let fields: (NSManagedObject) -> Set<String>?
+    private let lock = NSLock()
+    private let evidence = NSMapTable<NSManagedObjectContext, NSNumber>(keyOptions: .weakMemory,
+                                                                      valueOptions: .strongMemory)
+    private var observer: NSObjectProtocol?
+
+    init(fields: @escaping (NSManagedObject) -> Set<String>?) {
+        self.fields = fields
+        observer = NotificationCenter.default.addObserver(
+            forName: .NSManagedObjectContextWillSave, object: nil, queue: nil
+        ) { [weak self] notification in
+            guard let self, let context = notification.object as? NSManagedObjectContext else { return }
+            let changed = context.insertedObjects.contains { fields($0) != nil }
+                || context.deletedObjects.contains { fields($0) != nil }
+                || context.updatedObjects.contains { object in
+                    guard let relevant = fields(object) else { return false }
+                    return !relevant.isDisjoint(with: object.changedValues().keys)
+                }
+            self.lock.lock()
+            self.evidence.setObject(NSNumber(value: changed), forKey: context)
+            self.lock.unlock()
+        }
+    }
+
+    /// nil means no row in this publisher's domain changed; false is a local-only save.
+    func consume(_ notification: Notification) -> Bool? {
+        guard let context = notification.object as? NSManagedObjectContext else { return nil }
+        lock.lock()
+        let captured = evidence.object(forKey: context)?.boolValue
+        evidence.removeObject(forKey: context)
+        lock.unlock()
+        guard LocalStore.notificationContainsChanges(notification, matching: { fields($0) != nil }) else { return nil }
+        // Missing willSave evidence must fail toward scheduling, never hide a real edit.
+        return captured ?? true
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }

@@ -16,8 +16,8 @@ struct WaitingForApprovalView: View {
                 .themedForeground(.textPrimaryStrong)
 
             Text(NSLocalizedString(
-                "On a device that’s already signed in, open Settings → Devices and approve this request. Make sure this code matches:",
-                comment: "Waiting - explanation"))
+                "sync.setup.approvalInstructions", value: "On an authorized device, open Settings → Sync and approve this request. Make sure this code matches:",
+                comment: "Instructions for approving another device"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
@@ -34,11 +34,17 @@ struct WaitingForApprovalView: View {
                 .background(Color(nsColor: .textBackgroundColor))
                 .cornerRadius(8)
 
-            Text(NSLocalizedString("This request expires at ", comment: "Waiting - expiry prefix")
-                 + deadline.formatted(date: .omitted, time: .shortened))
-                .font(.callout)
-                .themedForeground(.textPrimary)
+            HStack(spacing: 4) {
+                Text(NSLocalizedString("sync.setup.expiresIn", value: "Expires in", comment: "Approval request time remaining prefix"))
+                Text(deadline, style: .timer).monospacedDigit()
+            }
+            .font(.callout)
+            .themedForeground(.textPrimary)
 
+            if let error = viewModel.inputError {
+                Text(error).font(.callout).foregroundColor(.red)
+            }
+            Button(NSLocalizedString("sync.setup.useRecovery", value: "Use a recovery code", comment: "Switch from approval to recovery code")) { viewModel.showRecoveryEntry() }
             Button(NSLocalizedString("Cancel", comment: "Waiting - cancel")) { viewModel.cancelJoin() }
                 .buttonStyle(.bordered)
         }

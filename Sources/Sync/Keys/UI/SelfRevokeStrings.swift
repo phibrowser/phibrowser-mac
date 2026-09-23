@@ -27,15 +27,8 @@ enum SelfRevokeStrings {
     /// profile mappings and the sync cursors are cleared — while every byte of
     /// local browsing data stays.
     static let confirmBody = NSLocalizedString(
-        """
-        This Mac leaves the account's sync. The server revokes this device, its device key is \
-        rotated, and the cached account key, profile mappings and sync cursors are cleared.
-
-        Browsing data on this Mac — Spaces, bookmarks, history and pinned tabs — is kept in full; \
-        it simply stops syncing with your other devices. Joining again needs approval from another \
-        device or your recovery code.
-        """,
-        comment: "Self-revoke confirmation - body")
+        "sync.removal.explanation", value: "This Mac will stop syncing. Your local browsing data stays on this Mac. To join again, use approval from another device or your saved recovery code.",
+        comment: "Consequences of removing this device from sync")
 
     static let confirmAction = NSLocalizedString(
         "Remove This Device",
@@ -51,10 +44,8 @@ enum SelfRevokeStrings {
     /// not count towards the actionable pairing predicate, so "finish pairing"
     /// really is reachable in such an account.
     static let lastDeviceNote = NSLocalizedString(
-        "This is the last device on the account, so it can’t be removed. Finish pairing on this "
-            + "device (profiles that can’t be read don’t block it), or set up sync on another "
-            + "device first, then try again.",
-        comment: "Self-revoke - last active device")
+        "sync.removal.lastDevice", value: "This is the last authorized device and can’t be removed yet. Set up sync on another device first. You can still finish this setup later.",
+        comment: "Last device removal restriction does not prevent deferring setup")
 
     /// Shown in place of a removal that never reached the server: the shared
     /// `SyncKeyController` was gone by the time the button was clicked (a
@@ -83,6 +74,25 @@ enum SelfRevokeStrings {
         alert.addButton(withTitle: confirmAction)
         alert.addButton(withTitle: cancel)
         alert.buttons.first?.hasDestructiveAction = true
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+}
+
+/// Copy shared by the Sync pane and setup's blocked preview.
+enum SyncReconfigurationStrings {
+    static let title = NSLocalizedString("sync.reconfigure.title", value: "Set up sync again", comment: "Action to explicitly reset local sync state and configure it again")
+    static let explanation = NSLocalizedString("sync.reconfigure.explanation", value: "The account’s sync data has changed. Syncing Phi data is paused. Review your account and connection before setting up sync again.", comment: "Native sync paused after the server rejected its previous identity")
+    static let confirmation = NSLocalizedString("sync.reconfigure.confirmation", value: "This will clear this Mac’s sync setup and matching information, then let you set up sync again. Your local browsing data and account’s synced data will be kept.", comment: "Confirmation before clearing only local sync metadata")
+    static let failed = NSLocalizedString("sync.reconfigure.failed", value: "Couldn’t finish clearing this Mac’s sync setup. Sync remains paused. Try setting up sync again.", comment: "Local metadata cleanup failed and may be retried")
+    static let returnToSettings = NSLocalizedString("sync.reconfigure.returnToSettings", value: "Sync needs to be set up again. Finish later, then choose Set up sync again in Settings → Sync. Your local browsing data is kept.", comment: "Pairing cannot continue until an explicit local sync reset is confirmed in settings")
+
+    @MainActor static func confirm() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = confirmation
+        alert.addButton(withTitle: title)
+        alert.addButton(withTitle: SelfRevokeStrings.cancel)
         return alert.runModal() == .alertFirstButtonReturn
     }
 }

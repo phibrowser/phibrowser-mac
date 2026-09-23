@@ -139,6 +139,7 @@ final class PhiSyncEngineTests: XCTestCase {
         private(set) var commits: [CommitCall] = []   // name unchanged on purpose
 
         var storeBirthday = "birthday-1"
+        var rejectStaleStoreBirthday = false
         /// Global version sequence, like `nextval('entity_version_seq')`.
         var nextVersion: Int64 = 100
         var idCounter = 0
@@ -281,6 +282,9 @@ final class PhiSyncEngineTests: XCTestCase {
                 if let getUpdatesGate { await getUpdatesGate.wait() }
             }
             defer { callLog.append("getUpdates.end") }
+            if rejectStaleStoreBirthday, !storeBirthday.isEmpty, storeBirthday != self.storeBirthday {
+                throw PhiSyncProtocolError.notMyBirthday
+            }
             if let error = getUpdatesErrorOnce {
                 getUpdatesErrorOnce = nil
                 throw error
@@ -473,13 +477,46 @@ final class PhiSyncEngineTests: XCTestCase {
 
     private func makeEngine(_ client: FakePhiSyncClient,
                             key: SymmetricKey,
-                            now: Int64) -> PhiSyncEngine {
+                            now: Int64, paired: Bool = true) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key),
                       client: client,
                       defaults: defaults,
-                      deviceKeyId: "devA",
+                      deviceKeyId: "devA", pairingComplete: paired,
                       settings: registry(settingKey),
                       now: { now })
+    }
+
+    func testUnpairedEngineAllowsOnlyReadOnlyPreview() async throws {
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(client, key: SymmetricKey(size: .bits256), now: 100, paired: false)
+        let marker = Data([7, 8])
+        defaults.set(marker, forKey: PhiSyncEngine.markerStateKey)
+        await engine.pullOnce()
+        await engine.pushLocalSettings()
+        await engine.handleLocalDefaultsChange()
+        await engine.handleLocalSpacesChange()
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+        await engine.runRetentionSweep()
+        XCTAssertTrue(client.getUpdatesCalls.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), marker)
+        _ = await engine.previewAccountSpaces()
+        XCTAssertFalse(client.getUpdatesCalls.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertNil(engine.statusSnapshot.lastSuccess)
+        await engine.enableAfterPairing()
+        await engine.pullOnce()
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 1)
+    }
+
+    func testRejectedCommitNeverReportsSuccess() async throws {
+        let client = FakePhiSyncClient()
+        client.commitErrorOnce = PhiSyncProtocolError.malformedResponse
+        let engine = makeEngine(client, key: SymmetricKey(size: .bits256), now: 100)
+        defaults.set("local", forKey: settingKey)
+        await engine.pushLocalSettings()
+        XCTAssertNotEqual(engine.statusSnapshot.phase, .upToDate)
+        XCTAssertNil(engine.statusSnapshot.lastSuccess)
     }
 
     // MARK: - Pull
@@ -577,7 +614,11 @@ final class PhiSyncEngineTests: XCTestCase {
         client.seed(ciphertext: foreign, version: 5)
         defaults.set(false, forKey: settingKey)
 
-        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        let engine = makeEngine(client, key: key, now: 1_000)
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
 
         XCTAssertFalse(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
@@ -975,30 +1016,24 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: settingKey))
     }
 
-    /// NOT_MY_BIRTHDAY invalidates every persisted cursor; the engine drops them and re-pulls
-    /// once from scratch (empty birthday, no marker).
-    func testNotMyBirthdayClearsStateAndRePullsOnce() async throws {
+    /// A mismatch preserves the previous cursor and blocks ordinary retry and relaunch.
+    func testNotMyBirthdayPreservesStateUntilExplicitReset() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
-        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
         defaults.set("stale-birthday", forKey: PhiSyncEngine.storeBirthdayStateKey)
         defaults.set(Data("4".utf8), forKey: PhiSyncEngine.markerStateKey)
         client.getUpdatesErrorOnce = PhiSyncProtocolError.notMyBirthday
-
-        await makeEngine(client, key: key, now: 1_000).pullOnce()
-
-        XCTAssertEqual(client.getUpdatesCalls.count, 2)
-        XCTAssertEqual(client.getUpdatesCalls[0].storeBirthday, "stale-birthday")
-        XCTAssertEqual(client.getUpdatesCalls[1].storeBirthday, "")
-        XCTAssertNil(client.getUpdatesCalls[1].marker)
-        XCTAssertTrue(defaults.bool(forKey: settingKey))
-        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-1")
+        let engine = makeEngine(client, key: key, now: 1_000)
+        await engine.pullOnce()
+        await engine.pullOnce()
+        await makeEngine(client, key: key, now: 2_000).pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.count, 1)
+        XCTAssertTrue(engine.requiresReconfiguration)
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "stale-birthday")
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data("4".utf8))
+        XCTAssertTrue(client.commits.isEmpty)
     }
 
-    /// NOT_MY_BIRTHDAY voids what this device knew about the *store*, not what it knows about
-    /// the *account*. The `<key>.phiSyncTs` sidecars still describe this account's settings, so
-    /// `hasAdopted` has to survive: clearing it would re-arm the wholesale adopt and hand a
-    /// peer's older value the right to overwrite an edit made just before the reset.
     func testNotMyBirthdayKeepsThisDevicesSettingsHistory() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
@@ -1015,10 +1050,8 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertNotNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
                         "a new store birthday is not an account switch")
         XCTAssertTrue(defaults.bool(forKey: settingKey),
-                      "the replay after the reset must merge by timestamp, not adopt wholesale")
-        XCTAssertEqual(client.commits.count, 1, "and the surviving edit is published")
-        XCTAssertEqual(try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key)
-                        .values[settingKey]?.boolValue, true)
+                      "the mismatch must not overwrite local preferences")
+        XCTAssertTrue(client.commits.isEmpty, "Publication waits for explicit reconfiguration")
     }
 
     // MARK: - Push
@@ -1058,7 +1091,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let clock = PhiSyncEngineSpaceTests.Clock()
         clock.nowMs = 2_000
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: registry(settingKey),
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey),
                                    now: { clock.read() })
         await engine.pullOnce()
 
@@ -1335,7 +1368,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let keys = StubDomainKeys(key: SymmetricKey(size: .bits256))
         keys.error = ProfileKeyManagerError.notUnlocked
         let engine = PhiSyncEngine(domainKeys: keys, client: client, defaults: defaults,
-                                   deviceKeyId: "devA", settings: registry(settingKey), now: { 1_000 })
+                                   deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey), now: { 1_000 })
 
         await engine.pullOnce()
         await engine.pushLocalSettings()
@@ -1431,6 +1464,32 @@ final class PhiSyncEngineTests: XCTestCase {
             XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) was written after shutdown")
         }
         XCTAssertNil(defaults.object(forKey: settingKey), "remote settings were applied after shutdown")
+        XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    func testEnrollmentWithdrawalFencesAParkedRoundEvenAfterReenable() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client, key: key, now: 1_000)
+        let parked = Task { await engine.pullOnce() }
+        await arrived.wait()                     // the pull is now suspended inside getUpdates
+
+        engine.suspendForPairing()
+        await engine.enableAfterPairing()
+        await release.open()
+        await parked.value
+
+        for stateKey in PhiSyncEngine.stateKeys {
+            XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) was written after pairing eligibility changed")
+        }
+        XCTAssertNil(defaults.object(forKey: settingKey), "remote settings were applied after pairing eligibility changed")
         XCTAssertTrue(client.commits.isEmpty)
     }
 
@@ -1534,7 +1593,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key),
                                    client: client,
                                    defaults: defaults,
-                                   deviceKeyId: "devA",
+                                   deviceKeyId: "devA", pairingComplete: true,
                                    settings: registry(settingKey),
                                    now: { [holder] in holder.engine?.shutdown(); return 1_000 })
         holder.engine = engine

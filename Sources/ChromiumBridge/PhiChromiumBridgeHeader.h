@@ -2157,6 +2157,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// older framework paired with a newer Mac client degrades to poll-only.
 - (void)notifyPhiAuthStateChanged;
 
+/// Read-only status for an already loaded Profile. Missing capability means checking.
+- (void)getProfileSyncStatus:(NSString *)profileId
+                 completion:(void (^)(NSDictionary<NSString *, id> * _Nullable status,
+                                      NSString * _Nullable error))completion
+    NS_SWIFT_NAME(getProfileSyncStatus(_:completion:));
+
 // Payload-free ping: profile sync keys became available or changed on the
 // Mac side. Chromium re-pulls via getPhiProfileSyncInfo:.
 - (void)notifyPhiSyncKeysChanged;

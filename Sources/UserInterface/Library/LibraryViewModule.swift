@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import PostHog
 import SwiftUI
 
 /// Owns Library navigation and content independently of its window presentation.
@@ -14,6 +15,14 @@ final class LibraryViewModule: NSViewController {
 
     enum Section: Int, CaseIterable {
         case folio, spaces, downloads
+
+        var analyticsName: String {
+            switch self {
+            case .folio: return "folio"
+            case .spaces: return "spaces"
+            case .downloads: return "downloads"
+            }
+        }
 
         var title: String {
             switch self {
@@ -169,17 +178,20 @@ private struct LibraryContentView: View {
         .themedForeground(.textPrimary)
         .tint(color(.themeColor))
         .task(id: selection) {
-            while !Task.isCancelled {
-                folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
-                if selection == .folio {
-                    guard folioAvailable else {
-                        folioModel.clear()
-                        selection = .downloads
-                        return
-                    }
-                    await folioModel.refresh()
+            folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
+            if selection == .folio {
+                guard folioAvailable else {
+                    folioModel.clear()
+                    selection = .downloads
+                    return
                 }
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            }
+            PostHogSDK.shared.capture("library_section_viewed", properties: [
+                "section": selection.analyticsName,
+                "is_standalone_window": presentation == .standalone,
+            ])
+            if selection == .folio {
+                await folioModel.refresh()
             }
         }
         .onDisappear { folioModel.clear() }

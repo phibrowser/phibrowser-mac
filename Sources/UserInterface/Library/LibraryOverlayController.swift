@@ -156,7 +156,7 @@ final class LibraryOverlayController {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         scrim.frame = overlay.bounds
-        module.view.frame = overlay.bounds.insetBy(dx: 32, dy: 32)
+        module.view.frame = overlay.bounds.insetBy(dx: 36, dy: 36)
         CATransaction.commit()
     }
 

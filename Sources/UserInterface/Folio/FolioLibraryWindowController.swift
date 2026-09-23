@@ -60,17 +60,16 @@ final class FolioLibraryWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func startRefreshing() {
-        refreshTask?.cancel()
+        guard refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.window?.isVisible == true else { return }
-                guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else {
-                    self.close()
-                    return
-                }
-                await self.model.refresh()
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            guard let self else { return }
+            defer { self.refreshTask = nil }
+            guard self.window?.isVisible == true else { return }
+            guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else {
+                self.close()
+                return
             }
+            await self.model.refresh()
         }
     }
 

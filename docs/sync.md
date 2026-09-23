@@ -5,7 +5,7 @@ For manual cross-device acceptance, see the [Sync E2E test cases](sync-e2e-test-
 ## Enrollment and setup
 
 Settings exposes **Sync**; the internal `devices` route remains stable. The pane
-shows account/status, supported content, active devices and approval requests,
+shows account/status, active devices and approval requests,
 and recovery/removal. Device metadata comes from `GET /keys/v1/devices` through
 `KeyEnvelopeAPIClient`; `created_at` is never displayed as last activity.
 
@@ -36,7 +36,13 @@ writes are real and reused on retry; only full completion opens eligibility.
 
 All native data rounds and Chromium ready-key exposure require enrollment.
 Read-only pairing previews use the serialized engine queue without advancing
-cursors or landing/publishing data. Withdrawing eligibility synchronously blocks
+cursors or landing/publishing data. Each preview starts with an empty marker and
+store birthday, then pins subsequent pages to the first response's server
+generation. A reset during pagination discards all preview choices; Retry starts
+fresh. Preview never repairs persisted sync metadata or depends on background
+sync to repair it while enrollment is incomplete.
+
+Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
 A generation fence also rejects old rounds after rapid re-enrollment.
 

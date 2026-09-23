@@ -139,6 +139,7 @@ final class PhiSyncEngineTests: XCTestCase {
         private(set) var commits: [CommitCall] = []   // name unchanged on purpose
 
         var storeBirthday = "birthday-1"
+        var rejectStaleStoreBirthday = false
         /// Global version sequence, like `nextval('entity_version_seq')`.
         var nextVersion: Int64 = 100
         var idCounter = 0
@@ -281,6 +282,9 @@ final class PhiSyncEngineTests: XCTestCase {
                 if let getUpdatesGate { await getUpdatesGate.wait() }
             }
             defer { callLog.append("getUpdates.end") }
+            if rejectStaleStoreBirthday, !storeBirthday.isEmpty, storeBirthday != self.storeBirthday {
+                throw PhiSyncProtocolError.notMyBirthday
+            }
             if let error = getUpdatesErrorOnce {
                 getUpdatesErrorOnce = nil
                 throw error

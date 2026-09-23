@@ -2543,6 +2543,47 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - Preview (§4)
 
+    func testUnpairedPreviewAfterServerResetKeepsPersistentSyncStateUntouched() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let tableBefore = store.table
+        let oldMarker = PhiSyncMarkerFile(marker: Data([0xAB]), storeBirthday: "old-server")
+        let markerStore = MemoryMarkerStore(file: oldMarker)
+        let client = FakePhiSyncClient()
+        client.rejectStaleStoreBirthday = true
+        client.storeBirthday = "new-server"
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "Work")), version: 3)
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: defaults, deviceKeyId: "device", pairingComplete: false,
+                                   settings: [], spaceAccess: access, spaceStore: store,
+                                   markerStore: markerStore)
+
+        await engine.pullOnce()
+        XCTAssertTrue(client.getUpdatesCalls.isEmpty, "Unpaired regular sync must remain stopped")
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result else { return XCTFail("Expected fresh preview: \(result)") }
+        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-1"])
+        XCTAssertNil(client.getUpdatesCalls.first?.marker)
+        XCTAssertEqual(client.getUpdatesCalls.first?.storeBirthday, "")
+        XCTAssertEqual(markerStore.file, oldMarker)
+        XCTAssertEqual(store.table, tableBefore)
+        XCTAssertEqual(store.saveCalls, 0)
+        XCTAssertTrue(client.commits.isEmpty)
+
+        client.storeBirthday = "another-reset"
+        guard case .success = await engine.previewAccountSpaces() else {
+            return XCTFail("Re-entry must fetch the current generation again")
+        }
+        XCTAssertEqual(client.getUpdatesCalls.count, 2)
+        XCTAssertNil(client.getUpdatesCalls.last?.marker)
+        XCTAssertEqual(client.getUpdatesCalls.last?.storeBirthday, "")
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.count, 2, "Preview must not open the sync gate")
+        XCTAssertEqual(markerStore.file, oldMarker)
+    }
+
     /// 11. Preview writes nothing.
     func testThePreviewPersistsNothingAtAll() async throws {
         let access = FakePhiSpaceAccess()

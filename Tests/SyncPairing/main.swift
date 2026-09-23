@@ -2,7 +2,8 @@ import Foundation
 
 @main
 struct PairingTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
+        try await testPreviewAfterServerReset()
         let lifetime = EngineStopSignal(paired: true)
         let oldRound = lifetime.revision
         precondition(!lifetime.blocksData(revision: oldRound))

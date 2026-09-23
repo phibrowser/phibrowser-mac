@@ -1595,10 +1595,11 @@ actor PhiSyncEngine {
         var entities = 0
         var refused = 0
         var unreadable = 0
-        // Local marker only; never persist response marker or birthday. An empty storedBirthday is
-        // valid before initial settings sync completes; the server supplies one and the preview
-        // still does not write it back.
+        // Preview owns its marker and birthday. Enrollment blocks regular sync, so a stale
+        // persisted birthday cannot rely on a background pull to repair it. Start from the
+        // current server generation and pin later pages to it without persisting either value.
         var marker: Data?
+        var previewBirthday = ""
         var more = true
         do {
             // Use the independent preview budget. The normal 64 x 500 pull cap includes all entity
@@ -1615,7 +1616,7 @@ actor PhiSyncEngine {
                     box.result = .failure(.timedOut)
                     return
                 }
-                let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                let response = try await client.getUpdates(marker: marker, storeBirthday: previewBirthday)
                 observeServerDate()      // AM-2
                 guard !stopSignal.isStopped else {
                     lastPreviewStats = (pages, entities)
@@ -1623,6 +1624,7 @@ actor PhiSyncEngine {
                     return
                 }
                 marker = response.newMarker
+                previewBirthday = response.storeBirthday
                 pages += 1
                 more = response.changesRemaining
                 for entity in response.entities {
@@ -1650,9 +1652,8 @@ actor PhiSyncEngine {
                 }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            // Preview does not repair cursors; regular pull owns that work. Its normal
-            // settings-sync birthday retry can repair storedBirthday so a later preview retry
-            // succeeds.
+            // The server reset during pagination. Discard this preview; Retry starts from
+            // the new generation. Persisted cursor repair still belongs to regular sync.
             lastPreviewStats = (pages, entities)
             AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                        + "error=not_my_birthday")

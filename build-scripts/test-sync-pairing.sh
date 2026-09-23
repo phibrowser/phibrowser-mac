@@ -20,9 +20,17 @@ a = engine.index('    private final class StopSignal:')
 b = engine.index('\n    private let stopSignal:', a)
 signal = engine[a:b].replace('private final class StopSignal', 'final class EngineStopSignal')
 Path(sys.argv[2]).with_name('EngineStopSignal.swift').write_text('import Foundation\n' + signal)
+template = (root / 'Tests/SyncPairing/PreviewFixture.swift').read_text()
+a = engine.index('struct PhiAccountSpaceSummary:')
+b = engine.index('// MARK: - Owned-item engine integration', a)
+template = template.replace('/* PRODUCTION_PREVIEW_TYPES */', engine[a:b])
+a = engine.index('    private func runPreview(into box: PreviewBox)')
+b = engine.index('    // MARK: - §11 round counters', a)
+template = template.replace('    /* PRODUCTION_PREVIEW */', engine[a:b])
+Path(sys.argv[2]).with_name('PreviewFixture.swift').write_text(template)
 PYEXTRACT
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_root/Sources/Sync/Keys/SyncPairingState.swift" \
   "$task_build/EngineStopSignal.swift" "$task_build/Gate.swift" "$task_root/Tests/SyncPairing/GateDependencies.swift" \
-  "$task_build/KeyReadinessFixture.swift" "$task_root/Tests/SyncPairing/main.swift" -o "$task_build/tests"
+  "$task_build/PreviewFixture.swift" "$task_build/KeyReadinessFixture.swift" "$task_root/Tests/SyncPairing/main.swift" -o "$task_build/tests"
 "$task_build/tests"

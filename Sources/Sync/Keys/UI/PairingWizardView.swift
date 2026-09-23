@@ -38,6 +38,7 @@ struct PairingWizardView: View {
             PairingStepBar(step: viewModel.step)
             Divider()
             content
+                .disabled(viewModel.isPreparing || viewModel.isApplying)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             Divider()
             footer
@@ -65,8 +66,8 @@ struct PairingWizardView: View {
                         .font(.title2.bold())
                         .themedForeground(.textPrimaryStrong)
                     Text(NSLocalizedString(
-                        "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done.",
-                        comment: "Pairing wizard - step 1 explanation"))
+                        "sync.setup.profileExplanation", value: "Choose how profiles on this Mac connect to your account. Sync starts after you finish matching profiles and Spaces. You can finish later and keep browsing.",
+                        comment: "Sync setup profile matching explanation"))
                         .font(.body)
                         .themedForeground(.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -94,7 +95,11 @@ struct PairingWizardView: View {
                                                   comment: "Pairing wizard - submitting page"),
                        showsProgress: true)
         case .done:
-            statusPage(message: nil, showsProgress: true)
+            statusPage(message: nil, showsProgress: true).onAppear {
+                RunLoop.main.perform(inModes: KeyLayerView.finishDeliveryModes) {
+                    MainActor.assumeIsolated { onDismiss() }
+                }
+            }
         case .error(let message, _):
             statusPage(message: message, showsProgress: false)
         }
@@ -307,6 +312,11 @@ struct PairingWizardView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+                Button(NSLocalizedString("sync.setup.finishLater", value: "Finish later", comment: "Leave sync setup unfinished and continue browsing")) {
+                    if viewModel.leaveWithoutApplying() { onDismiss() }
+                }
+                .keyboardShortcut(.cancelAction)
+                .disabled(viewModel.isApplying)
                 Spacer(minLength: 0)
                 actions
             }
@@ -316,7 +326,7 @@ struct PairingWizardView: View {
                 confirmAndRemoveThisDevice()
             }
             .buttonStyle(.bordered)
-            .disabled(removeBlockedNote != nil)
+            .disabled(removeBlockedNote != nil || viewModel.isApplying || viewModel.isPreparing)
             if let note = removeBlockedNote ?? removeErrorNote {
                 Text(note).font(.callout).themedForeground(.textSecondary)
             }
@@ -355,8 +365,7 @@ struct PairingWizardView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
-            .disabled(!viewModel.spaceModel.allRowsDecided
-                      || viewModel.phase == .loading || viewModel.phase == .submitting)
+            .disabled(!viewModel.canSubmit)
         case .confirmOverwrite:
             // D7 deliberately reverses button roles here: Apply is destructive, so Back receives defaultAction
             // and Return. Apply has no key equivalent; full keyboard access reaches it first in declaration
@@ -367,6 +376,7 @@ struct PairingWizardView: View {
                 Task { await viewModel.applyConfirmedOverwrite(controller: controller) }
             }
             .buttonStyle(.bordered)
+            .disabled(!viewModel.canSubmit)
             Button(NSLocalizedString("Back",
                                      comment: "Web content header - Accessibility description for back navigation button")) {
                 viewModel.backFromConfirmation()

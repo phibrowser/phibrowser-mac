@@ -37,8 +37,16 @@ struct KeyLayerView: View {
     var body: some View {
         Group {
             switch viewModel.phase {
-            case .idle, .working:
+            case .idle, .working, .readyToPair:
                 ProgressView().padding(48)
+            case .introduction:
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(NSLocalizedString("sync.setup.title", value: "Set up sync", comment: "Sync setup introduction title")).font(.title2.bold())
+                    Text(NSLocalizedString("sync.setup.introduction", value: "Bring your Spaces, bookmarks, pinned tabs and supported browsing data to your other devices. Save a recovery code, then choose how this Mac joins your account.", comment: "Sync setup introduction explanation"))
+                    Button(NSLocalizedString("sync.setup.continue", value: "Continue", comment: "Start sync setup")) {
+                        Task { await viewModel.continueSetup() }
+                    }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                }.padding(32)
             case .showingRecoveryCode:
                 RecoveryCodeDisplayView(viewModel: viewModel)
             case .enteringRecoveryCode:
@@ -56,7 +64,7 @@ struct KeyLayerView: View {
                         NSLocalizedString("This request timed out. You can try again.", comment: "Join expired - body"),
                         retry: true)
             case .error(let m):
-                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: false)
+                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: true)
             case .pairingProfiles(let locals, let remotes):
                 if let controller {
                     ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes,
@@ -108,6 +116,37 @@ struct KeyLayerView: View {
         }
         .padding(32)
         .frame(minWidth: 360)
+    }
+}
+
+/// The existing pairing host owns verification and matching in the same window.
+struct SyncSetupView: View {
+    @ObservedObject var keyModel: KeyLayerViewModel
+    let wizard: PairingWizardViewModel
+    let controller: SyncKeyController
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Group {
+            if keyModel.phase == .readyToPair {
+                PairingWizardView(viewModel: wizard, controller: controller, onDismiss: onDismiss)
+                    .task {
+                        wizard.shouldCompleteNewAccount = keyModel.createdAccountInThisFlow
+                        await wizard.start(controller: controller)
+                    }
+            } else {
+                VStack {
+                    KeyLayerView(viewModel: keyModel, controller: controller, onFinish: onDismiss)
+                    Button(NSLocalizedString("sync.setup.finishLater", value: "Finish later", comment: "Leave sync setup unfinished and continue browsing")) {
+                        onDismiss()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(keyModel.workingOperation || keyModel.phase.requiresAcknowledgement)
+                    .padding(.bottom, 20)
+                }
+            }
+        }
+        .frame(minWidth: 720, minHeight: 560)
     }
 }
 

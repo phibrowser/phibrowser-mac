@@ -150,7 +150,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                             markerStore: (any PhiSyncMarkerStore)? = nil,
                             clock: Clock = Clock()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA",
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true,
                       settings: [],
                       spaceAccess: access, spaceStore: store,
                       markerStore: markerStore,
@@ -286,7 +286,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let clock = Clock()
         clock.nowMs = 2_000
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: access, spaceStore: store,
                                    ownedKinds: [.bookmarks(access: bookmarks, store: MemoryOwnedItemStore()),
                                                 .pins(access: pins, store: MemoryOwnedItemStore())],
@@ -2772,7 +2772,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                                                            version: 10, key: key)],
                                      marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: nil, spaceStore: nil,
                                    now: { 1_700_000_000_000 })
 

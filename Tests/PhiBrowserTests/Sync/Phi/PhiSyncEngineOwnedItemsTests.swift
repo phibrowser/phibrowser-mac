@@ -92,7 +92,7 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                             previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages)
         -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: domainKeys ?? StubDomainKeys(key: key),
-                      client: client, defaults: defaults, deviceKeyId: "devA",
+                      client: client, defaults: defaults, deviceKeyId: "devA", pairingComplete: true,
                       settings: [], spaceAccess: access ?? makeSpaceAccess(), spaceStore: store,
                       ownedKinds: ownedKinds, previewMaxPages: previewMaxPages,
                       now: { clock.read() })
@@ -2384,7 +2384,7 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                     ciphertext: try spaceCiphertext("su-1"), version: 3)
         let clock = Clock()                                // advancePerRead = 0 disables deadline progression
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: makeSpaceAccess(), spaceStore: makeSpaceStore(),
                                    ownedKinds: [], now: { clock.read() })
 
@@ -2894,8 +2894,6 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         let store = RecordingOwnedItemStore(ledger: ledger)
         store.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
                                                 ownerUuid: "su-1")
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(ownedStores: [store], bookmarkAccess: access,
                                                   ledger: ledger)
@@ -3073,8 +3071,6 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                                                        ownerUuid: "su-1")
         urlRuleStore.table.cursors["r2"] = ownedCursor(entityId: "srv-r2", version: 1,
                                                        ownerUuid: "su-1")
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(ownedStores: [bookmarkStore, urlRuleStore],
                                                   bookmarkAccess: bookmarkAccess)
@@ -4474,7 +4470,7 @@ extension PhiSyncEngineOwnedItemsTests {
         ])
         let store = MemoryOwnedItemStore()
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: deviceDefaults, deviceKeyId: "dev-\(name)",
+                                   defaults: deviceDefaults, deviceKeyId: "dev-\(name)", pairingComplete: true,
                                    settings: [], spaceAccess: makeSpaceAccess(),
                                    spaceStore: makeSpaceStore(),
                                    ownedKinds: [bookmarkKind(access, store)],

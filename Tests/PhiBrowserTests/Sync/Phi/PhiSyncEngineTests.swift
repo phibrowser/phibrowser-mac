@@ -473,13 +473,46 @@ final class PhiSyncEngineTests: XCTestCase {
 
     private func makeEngine(_ client: FakePhiSyncClient,
                             key: SymmetricKey,
-                            now: Int64) -> PhiSyncEngine {
+                            now: Int64, paired: Bool = true) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key),
                       client: client,
                       defaults: defaults,
-                      deviceKeyId: "devA",
+                      deviceKeyId: "devA", pairingComplete: paired,
                       settings: registry(settingKey),
                       now: { now })
+    }
+
+    func testUnpairedEngineAllowsOnlyReadOnlyPreview() async throws {
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(client, key: SymmetricKey(size: .bits256), now: 100, paired: false)
+        let marker = Data([7, 8])
+        defaults.set(marker, forKey: PhiSyncEngine.markerStateKey)
+        await engine.pullOnce()
+        await engine.pushLocalSettings()
+        await engine.handleLocalDefaultsChange()
+        await engine.handleLocalSpacesChange()
+        await engine.handleLocalOwnedChange(label: "bookmarks")
+        await engine.runRetentionSweep()
+        XCTAssertTrue(client.getUpdatesCalls.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), marker)
+        _ = await engine.previewAccountSpaces()
+        XCTAssertFalse(client.getUpdatesCalls.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertNil(engine.statusSnapshot.lastSuccess)
+        await engine.enableAfterPairing()
+        await engine.pullOnce()
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 1)
+    }
+
+    func testRejectedCommitNeverReportsSuccess() async throws {
+        let client = FakePhiSyncClient()
+        client.commitErrorOnce = PhiSyncProtocolError.malformedResponse
+        let engine = makeEngine(client, key: SymmetricKey(size: .bits256), now: 100)
+        defaults.set("local", forKey: settingKey)
+        await engine.pushLocalSettings()
+        XCTAssertNotEqual(engine.statusSnapshot.phase, .upToDate)
+        XCTAssertNil(engine.statusSnapshot.lastSuccess)
     }
 
     // MARK: - Pull
@@ -577,7 +610,11 @@ final class PhiSyncEngineTests: XCTestCase {
         client.seed(ciphertext: foreign, version: 5)
         defaults.set(false, forKey: settingKey)
 
-        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        let engine = makeEngine(client, key: key, now: 1_000)
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
 
         XCTAssertFalse(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
@@ -1058,7 +1095,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let clock = PhiSyncEngineSpaceTests.Clock()
         clock.nowMs = 2_000
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: registry(settingKey),
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey),
                                    now: { clock.read() })
         await engine.pullOnce()
 
@@ -1335,7 +1372,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let keys = StubDomainKeys(key: SymmetricKey(size: .bits256))
         keys.error = ProfileKeyManagerError.notUnlocked
         let engine = PhiSyncEngine(domainKeys: keys, client: client, defaults: defaults,
-                                   deviceKeyId: "devA", settings: registry(settingKey), now: { 1_000 })
+                                   deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey), now: { 1_000 })
 
         await engine.pullOnce()
         await engine.pushLocalSettings()
@@ -1431,6 +1468,32 @@ final class PhiSyncEngineTests: XCTestCase {
             XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) was written after shutdown")
         }
         XCTAssertNil(defaults.object(forKey: settingKey), "remote settings were applied after shutdown")
+        XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    func testEnrollmentWithdrawalFencesAParkedRoundEvenAfterReenable() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client, key: key, now: 1_000)
+        let parked = Task { await engine.pullOnce() }
+        await arrived.wait()                     // the pull is now suspended inside getUpdates
+
+        engine.suspendForPairing()
+        await engine.enableAfterPairing()
+        await release.open()
+        await parked.value
+
+        for stateKey in PhiSyncEngine.stateKeys {
+            XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) was written after pairing eligibility changed")
+        }
+        XCTAssertNil(defaults.object(forKey: settingKey), "remote settings were applied after pairing eligibility changed")
         XCTAssertTrue(client.commits.isEmpty)
     }
 
@@ -1534,7 +1597,7 @@ final class PhiSyncEngineTests: XCTestCase {
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key),
                                    client: client,
                                    defaults: defaults,
-                                   deviceKeyId: "devA",
+                                   deviceKeyId: "devA", pairingComplete: true,
                                    settings: registry(settingKey),
                                    now: { [holder] in holder.engine?.shutdown(); return 1_000 })
         holder.engine = engine

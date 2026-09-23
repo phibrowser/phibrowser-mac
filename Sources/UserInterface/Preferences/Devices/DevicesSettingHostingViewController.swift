@@ -1,7 +1,7 @@
 import Cocoa
 import SwiftUI
 
-final class DevicesSettingHostingViewController: NSViewController, NSWindowDelegate {
+final class DevicesSettingHostingViewController: NSViewController {
     /// The app-scoped shared controller (built via `PhiChromiumCoordinator`, same
     /// instance the bridge pulls sync info from); nil only in the signed-out empty
     /// state, since there is no account for the coordinator to build one against.
@@ -39,11 +39,6 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     /// to detect that the pane is showing a stack from a previous account.
     private weak var boundManager: AccountKeyManager?
     private var hostingController: ThemedHostingController<DevicesSettingView>?
-    private var keyLayerWindow: NSWindow?
-    /// The key-layer window's view model, kept so `windowShouldClose` can refuse to close
-    /// over an unacknowledged recovery code (review A9).
-    private var keyLayerViewModel: KeyLayerViewModel?
-
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
@@ -53,6 +48,16 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     override func viewDidLoad() {
         super.viewDidLoad()
         installHostingController()
+        NotificationCenter.default.addObserver(self, selector: #selector(syncContextDidChange), name: .mainAccountChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncContextDidChange), name: .phiSyncPairingStateDidChange, object: nil)
+    }
+
+    @objc private func syncContextDidChange() {
+        Task { @MainActor [weak self] in
+            guard let self, self.isViewLoaded, self.view.window != nil else { return }
+            self.viewWillAppear()
+            await self.viewModel.loadAll()
+        }
     }
 
     /// Rebinds the pane when the account changed underneath it. `viewModel`
@@ -71,7 +76,7 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
         removeModel = makeRemoveDeviceModel()
         installHostingController()
-        Task { @MainActor in await viewModel.loadAll() }
+
     }
 
     /// The runtime "remove this device from sync" entry point.
@@ -111,12 +116,19 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     }
 
     private func installHostingController() {
+        let accountID = AccountController.shared.account?.userID
+        viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
+        viewModel.accountName = AccountController.shared.account?.userInfo?.email ?? ""
+        viewModel.nativeStatus = { PhiChromiumCoordinator.shared.syncStatusSnapshot }
+        viewModel.profileIDs = { PhiChromiumCoordinator.shared.syncStatusProfileIDs }
+        viewModel.profileNames = { Dictionary(uniqueKeysWithValues:
+            ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }) }
         boundManager = syncStack.manager
         let host = ThemedHostingController(rootView: DevicesSettingView(viewModel: viewModel,
             removeModel: removeModel,
             onJoinThisDevice: { [weak self] in self?.presentKeyLayer() },
-            onResolvePairing: { [weak self] in self?.presentKeyLayer(startPairing: true) },
-            needsPairingCheck: { [weak self] in self?.syncKeyController?.needsPairing ?? false }))
+            onResolvePairing: { [weak self] in self?.presentKeyLayer() },
+            needsPairingCheck: { [weak self] in self?.syncKeyController != nil && !ProfilePairingGate.shared.isPaired }))
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
         view.addSubview(host.view)
@@ -129,58 +141,9 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         self.hostingController = host
     }
 
-    /// Opens the key-layer window. `startPairing` routes the entry reason: normal
-    /// (false) drives `beginSetup()` as before; pairing (true, from the Devices
-    /// pane's "needs pairing" banner) drives `startPairing(controller:)` instead,
-    /// landing directly on `.pairingProfiles`. The shared controller is always
-    /// handed to `KeyLayerView` (when one exists) so that phase can apply
-    /// decisions regardless of which entry point reached it.
-    private func presentKeyLayer(startPairing: Bool = false) {
-        if let existing = keyLayerWindow { existing.makeKeyAndOrderFront(nil); return }
-        let vm = KeyLayerViewModel(manager: syncStack.manager)
-        keyLayerViewModel = vm
-        let root = KeyLayerView(viewModel: vm, controller: syncKeyController, onFinish: { [weak self] in
-            self?.keyLayerViewModel = nil
-            self?.keyLayerWindow?.close()
-            self?.keyLayerWindow = nil
-            Task { @MainActor in await self?.viewModel.loadAll() }
-        })
-        let window = NSWindow(contentViewController: ThemedHostingController(rootView: root))
-        window.styleMask = [.titled, .closable]
-        window.title = NSLocalizedString("Set up sync", comment: "Key layer window title")
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        window.center()
-        keyLayerWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        Task { @MainActor in
-            if startPairing, let controller = syncKeyController {
-                await vm.startPairing(controller: controller)
-            } else {
-                await vm.beginSetup(controller: syncKeyController)
-            }
-        }
-    }
-
-    /// Review A9: the recovery code is shown once and the account is already initialized on
-    /// the server, so the window stays up until the user confirms they saved it. A synchronous
-    /// `NSAlert.runModal()` that awaits nothing is the documented exemption from the
-    /// nested-run-loop rule (AGENTS.md, UI Layer).
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard keyLayerViewModel?.phase.requiresAcknowledgement == true else { return true }
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("Save your recovery code first",
-                                              comment: "Key layer - title of the alert shown when closing the window before confirming the recovery code was saved")
-        alert.informativeText = NSLocalizedString("This code is shown only once. Without it, no other device can join your account if this Mac is lost. Confirm you have saved it to continue.",
-                                                  comment: "Key layer - body of the alert shown when closing the window before confirming the recovery code was saved")
-        alert.addButton(withTitle: NSLocalizedString("OK", comment: "Key layer - dismiss the save-your-recovery-code alert"))
-        alert.runModal()
-        return false
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        keyLayerWindow = nil
-        keyLayerViewModel = nil
+    /// All setup entry points share the coordinator-owned enrollment host.
+    private func presentKeyLayer() {
+        guard let controller = syncKeyController else { return }
+        ProfilePairingGate.shared.requestPresentation(controller: controller)
     }
 }

@@ -5,6 +5,7 @@ import CryptoKit
 final class AccountKeyManagerTests: XCTestCase {
     // In-memory fake: one account key state plus a set of per-device envelopes.
     final class FakeAPI: KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO] { [] }
         var account: AccountKeyStateDTO?
         var envelopes: [String: Data] = [:]
         var initialized = false

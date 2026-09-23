@@ -33,65 +33,41 @@ extension ProfilePairingModalHost {
     func reloadPresented() {}
 }
 
-/// The blocking, always-on-top pairing modal of the DEVICE JOIN flow, plus the
-/// hysteresis safety net for the rare run-time stall.
-///
-/// It is presented for exactly one situation: the profiles that existed on BOTH
-/// sides before this device joined, which no machine can match on its own. Every
-/// profile that appears in the account afterwards is created locally, silently,
-/// by §3.6 -- the modal never comes back for that.
+/// Owns durable account/device enrollment and explicit setup presentation.
+/// Background mapping observations may dismiss a retired session, never open or complete one.
 @MainActor
 final class ProfilePairingGate {
     static let shared = ProfilePairingGate()
 
-    /// Consecutive idle refresh rounds after which the safety net presents.
-    static let pairingStuckRounds = 3
+    static let enrollmentDefaultsKey = "sync.pairingEnrollment"
+    private var enrollment = SyncPairingEnrollment()
+    private(set) var enrollmentGeneration = UUID()
+    var isPaired: Bool { enrollment.isPaired }
 
-    /// THE single read/write port for `sync.joinPairingPending`. Three writers --
-    /// the four join terminal paths (`KeyLayerViewModel`), the pairing wrap-up,
-    /// and self-revoke (which may run when no gate instance exists) -- and none
-    /// of them touches `AccountUserDefaults` behind this property's back.
-    static var joinPairingPending: Bool {
-        get {
-            if let staticPendingOverride { return staticPendingOverride }
-            return AccountController.shared.account?.userDefaults.bool(forKey: defaultsKey) ?? false
-        }
-        set {
-            if staticPendingOverride != nil { staticPendingOverride = newValue; return }
-            AccountController.shared.account?.userDefaults.set(newValue, forKey: defaultsKey)
-        }
+    func configureEnrollment(deviceKeyID: String, recordData: Data?,
+                             saveRecord: @escaping (Data) -> Bool,
+                             legacyEvidence: SyncPairingLegacyEvidence? = nil) throws {
+        enrollmentGeneration = UUID()
+        try enrollment.configure(deviceKeyID: deviceKeyID, recordData: recordData,
+                                 saveRecord: saveRecord, legacyEvidence: legacyEvidence)
     }
-    private static let defaultsKey = "sync.joinPairingPending"
 
-    /// Test seam for the STATIC port. The per-instance override below covers a
-    /// gate instance; §3.6's per-round refresh reads this port with no gate in
-    /// hand, and its "gate shut => one network call is not sent" case
-    /// (§12.1 ⑧) has to be able to set it. Reset it in `tearDown`.
-    static var staticPendingOverride: Bool?
+    func beginEnrollment() throws {
+        enrollmentGeneration = UUID()
+        defer { NotificationCenter.default.post(name: .phiSyncPairingStateDidChange, object: self) }
+        try enrollment.setPaired(false)
+    }
 
-    /// Test seam; nil in production, where the static port above is used.
-    var joinPairingPendingOverride: Bool?
+    func completeEnrollment(verifiedDeviceKeyID: String? = nil) throws {
+        try enrollment.setPaired(true, verifiedDeviceKeyID: verifiedDeviceKeyID)
+        NotificationCenter.default.post(name: .phiSyncPairingStateDidChange, object: self)
+    }
+
     var modalHost: ProfilePairingModalHost?
 
     private weak var controller: SyncKeyController?
     private var isPresented = false
-    private var idleRounds = 0
     private var observers: [NSObjectProtocol] = []
-    /// The last `(needsPairing, needsPairingActionable)` pair this gate was told
-    /// about. The hysteresis safety net runs off THESE, not off
-    /// `controller.needsPairingActionable`: the controller is held weakly and a
-    /// gate with no controller (sign-out in flight, or a unit test) must still
-    /// behave, instead of silently returning early and never presenting.
-    private var lastPredicates: (needsPairing: Bool, actionable: Bool) = (false, false)
-
-    private var pending: Bool {
-        get { joinPairingPendingOverride ?? Self.joinPairingPending }
-        set {
-            if joinPairingPendingOverride != nil { joinPairingPendingOverride = newValue }
-            else { Self.joinPairingPending = newValue }
-        }
-    }
-
     func start(controller: SyncKeyController?) {
         self.controller = controller
         guard observers.isEmpty else { return }
@@ -122,129 +98,39 @@ final class ProfilePairingGate {
     }
 
     func stop() {
+        enrollmentGeneration = UUID()
+        enrollment = SyncPairingEnrollment()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         if isPresented { modalHost?.dismiss(); isPresented = false }
     }
 
-    /// Presentation predicate (§3.2): `joinPairingPending && needsPairingActionable`.
-    /// NOT "needsPairing is true" -- after the second revision that flips true for
-    /// a moment every time §3.6 creates a profile.
-    ///
-    /// `outcome` says what the two predicates are worth (see
-    /// `SyncKeyController.MappingsOutcome`). ONLY `.measured` may retire
-    /// `sync.joinPairingPending`. Retiring it on either of the others would end a
-    /// join that never happened: a device joins, quits, relaunches offline, and
-    /// the pre-existing profiles on both sides -- the one situation only this
-    /// modal can resolve -- would never be offered again. `.cleared` (locked ARK,
-    /// sign-out, teardown) takes the window down because the key layer behind it
-    /// is gone; `.held` (a pass whose network call flapped) leaves the window
-    /// alone, because nothing about the pairing picture changed.
+    /// Mapping updates never open or finish setup. Profile readiness alone says nothing
+    /// about pending Space choices, and a deferred session stays deferred across refreshes.
     func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool,
                                   outcome: SyncKeyController.MappingsOutcome = .measured) {
-        switch outcome {
-        case .cleared:
-            // Nothing is known about the pairing picture any more, so the
-            // hysteresis net is reset too rather than left holding a stale
-            // `actionable` that would present a modal against a controller that
-            // has already been dropped.
-            lastPredicates = (false, false)
-            idleRounds = 0
-            if isPresented {
-                isPresented = false
-                modalHost?.dismiss()
-            }
-            return
-        case .held:
-            // These predicates are the last MEASURED answer carried forward -- on
-            // a fresh controller, the initial `false, false`, which measured
-            // nothing at all. So: never retire `pending`, and never take a live
-            // window down. Presenting is still allowed, because `actionable ==
-            // true` can only have come from a real pass; that keeps a gate which
-            // started between two passes from waiting for the next one.
-            lastPredicates = (needsPairing, needsPairingActionable)
-            if pending, needsPairingActionable, !isPresented {
-                isPresented = true
-                idleRounds = 0
-                modalHost?.present(controller: controller)
-            }
-            return
-        case .measured:
-            break
-        }
-        lastPredicates = (needsPairing, needsPairingActionable)
-        if pending, needsPairingActionable {
-            if isPresented {
-                // One modal per session (`presentCount` stays 1), but not one
-                // LOAD per session: a window already up gets re-driven, so a
-                // load that hung has a second chance without the user having to
-                // find the retry button.
-                modalHost?.reloadPresented()
-                return
-            }
-            isPresented = true
-            idleRounds = 0
-            modalHost?.present(controller: controller)
-            return
-        }
-        // Past the branch above, `pending` implies `!needsPairingActionable`, so
-        // this covers both terminal shapes at once:
-        //
-        //  - nothing left to pair at all (`!needsPairing`): the join is finished;
-        //  - something is left, but nothing the user could decide -- an account
-        //    profile whose envelope will not open under this ARK. §3.2 is
-        //    explicit that this class never presents a modal, so a join left
-        //    pending on it can never be finished by one either.
-        //
-        // The second case is not hypothetical: `KeyLayerViewModel.submitPairing`
-        // sets the flag unconditionally, the Devices pane included, and an
-        // undecryptable remote keeps `needsPairing` true forever. Retiring only
-        // on `!needsPairing` (or only while a window happened to be up) wedged
-        // `sync.joinPairingPending` true for good, and with it §3.5's Space gate:
-        // no Space pull, no Space publish, `ensureLocalProfilesForAccount`
-        // skipped every round, and no UI anywhere to say why.
-        if pending, !needsPairingActionable {
-            pending = false
-        }
-        if isPresented, !needsPairingActionable {
-            isPresented = false
-            modalHost?.dismiss()
-        }
+        if outcome == .cleared { finishLater() }
     }
 
-    /// Hysteresis (§3.2). Counted on THIS notification only: a refresh round is
-    /// not the same thing as a `resolveMappings()` pass, and one round may drive
-    /// zero or several passes.
-    func handleAutoCreateDidRun(_ userInfo: [AnyHashable: Any]?) {
-        let outcome = userInfo?["outcome"] as? String ?? ""
-        let created = userInfo?["created"] as? Int ?? 0
-        let skipped = userInfo?["skippedUuids"] as? Int ?? 0
-        // ANY progress resets: a round that created its throttled maximum while
-        // the account still has more is converging, not stuck. A skipped uuid
-        // means work is still outstanding, so it does not count either.
-        guard outcome == "unchanged", created == 0, skipped == 0 else {
-            idleRounds = 0
-            return
-        }
-        idleRounds += 1
-        // Driven by the predicates the last `.phiProfileMappingsDidResolve`
-        // carried, NOT by `controller?.needsPairingActionable`: `guard let
-        // controller` here would make the whole safety net dead code whenever
-        // the controller has been released -- and dead in every unit test.
-        guard idleRounds >= Self.pairingStuckRounds,
-              lastPredicates.actionable, !isPresented else { return }
-        AppLogWarn("[phi-sync] profile pairing appears stuck after \(idleRounds) idle rounds; presenting the gate")
-        pending = true
-        handleMappingsDidResolve(needsPairing: lastPredicates.needsPairing,
-                                 needsPairingActionable: true)
+    func handleAutoCreateDidRun(_ userInfo: [AnyHashable: Any]?) {}
+
+    func requestPresentation(controller: SyncKeyController) {
+        guard !controller.isRetired, !isPresented else { return }
+        self.controller = controller
+        isPresented = true
+        modalHost?.present(controller: controller)
     }
+
+    func finishLater() {
+        isPresented = false
+        modalHost?.dismiss()
+    }
+
 }
 
-/// Production host: a titled window WITHOUT `.closable` (the Devices pane's
-/// key-layer window is `[.titled, .closable]`), at `.modalPanel` level, driven
-/// through `NSApp.runModal(for:)`. The modal session is what makes the browser
-/// unusable: it stops UI EVENT DELIVERY, not the main queue, so the engine's
-/// main-thread hops keep running and settings sync keeps converging.
+/// Production host: one closable setup window at modal-panel level. Closing or
+/// Escape defers setup unless a confirmed write or recovery-code acknowledgement
+/// is in progress. Unpaired data engines stay stopped while read-only previews run.
 ///
 /// THE INVARIANT THAT PROMISE RESTS ON: a nested modal run loop must be entered
 /// from a RUN-LOOP-NATIVE callout -- `RunLoop.main.perform(inModes:)`, i.e.
@@ -264,10 +150,9 @@ final class ProfilePairingGate {
 /// the next turn is another main-queue block.
 ///
 /// Entered from the run loop itself, the main queue is idle when the nested
-/// loop starts, so the loop drains it and §3.2's "the engine keeps running
-/// while the modal is up" (pinned by §12.2 step 1) is true again.
+/// loop starts, so read-only previews and main-actor continuations can complete.
 @MainActor
-final class AppModalPairingHost: ProfilePairingModalHost {
+final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDelegate {
     /// Run-loop modes the modal session may be ENTERED in.
     ///
     /// The same set, for the same reason, as `KeyLayerView.finishDeliveryModes`:
@@ -324,6 +209,7 @@ final class AppModalPairingHost: ProfilePairingModalHost {
     /// (§10.7 case 1 presses Continue for real).
     private(set) weak var viewModel: PairingWizardViewModel?
     private weak var presentedController: SyncKeyController?
+    private var setupModel: KeyLayerViewModel?
 
     /// Every seam has a production default, preserving AppModalPairingHost() as the application's sole
     /// construction call in PhiChromiumCoordinator.
@@ -351,6 +237,7 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         self.previewAccountSpaces = previewAccountSpaces
         self.pairableLocalSpaces = pairableLocalSpaces
         self.themeDisplayName = themeDisplayName
+        super.init()
     }
 
     func present(controller: SyncKeyController?) {
@@ -369,11 +256,14 @@ final class AppModalPairingHost: ProfilePairingModalHost {
             previewAccountSpaces: previewAccountSpaces,
             pairableLocalSpaces: pairableLocalSpaces,
             themeDisplayName: themeDisplayName)
-        let root = PairingWizardView(viewModel: viewModel, controller: controller,
-                                     onDismiss: { [weak self] in self?.dismiss() })
+        let setup = KeyLayerViewModel(manager: controller.manager)
+        self.setupModel = setup
+        let root = SyncSetupView(keyModel: setup, wizard: viewModel, controller: controller,
+                                 onDismiss: { [weak self] in self?.deferSetup() })
         let window = NSWindow(contentViewController: ThemedHostingController(rootView: root))
         // Keep the window nonclosable. Resizing may enlarge it, but cannot shrink below 720×560.
-        window.styleMask = [.titled, .resizable]
+        window.styleMask = [.titled, .closable, .resizable]
+        window.delegate = self
         window.title = NSLocalizedString("Finish setting up sync",
                                          comment: "Pairing wizard - window title")
         window.level = .modalPanel
@@ -386,7 +276,7 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         self.presentedController = controller
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        Task { @MainActor in await viewModel.start(controller: controller) }
+        Task { @MainActor in await setup.beginSetup(controller: controller) }
         // ONLY the modal session is deferred; everything above stays
         // synchronous. `dismiss()`, `reloadPresented()` and the `window == nil`
         // re-entrancy guard all read state this method just wrote, so deferring
@@ -426,8 +316,8 @@ final class AppModalPairingHost: ProfilePairingModalHost {
     }
 
     /// Re-drive rescues stuck loading, not refreshes user input (R-D6-11). Allow only loading and
-    /// error/reload; reject profiles, spaces, confirmOverwrite, submitting and done. The gate re-drives
-    /// presented modals roughly every minute. Confirmation is interactive and must retain
+    /// error/reload; reject profiles, spaces, confirmOverwrite, submitting and done.
+    /// Confirmation is interactive and must retain
     /// differences/selections; error/backToSpaces also holds completed step-2 choices. Reusing KeyLayerPhase's
     /// broad error rule would call start each minute and erase that state.
     static func reloadAllowed(for phase: PairingWizardPhase) -> Bool {
@@ -467,8 +357,23 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         Task { @MainActor in await viewModel.start(controller: presentedController) }
     }
 
+    private func deferSetup() {
+        guard setupModel?.workingOperation != true,
+              setupModel?.phase.requiresAcknowledgement != true,
+              viewModel?.leaveWithoutApplying() != false else { return }
+        ProfilePairingGate.shared.finishLater()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        deferSetup()
+        return false
+    }
+
     func dismiss() {
         guard let window else { return }
+        setupModel?.cancelFlow()
+        setupModel = nil
+        _ = viewModel?.leaveWithoutApplying()
         // `window` is cleared first, so a session that has been scheduled but
         // not yet entered bails on the identity check in `present`.
         self.window = nil

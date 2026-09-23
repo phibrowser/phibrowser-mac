@@ -833,7 +833,8 @@ extension LocalStore {
     /// starve later subscribers, including coordinator resubscription after stopPhiSync().
     @MainActor
     func bookmarkChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -864,6 +865,7 @@ extension LocalStore {
                 // context threads; concurrent delivery could race debounce's last value/timer. The preceding
                 // filter is safe because its two helpers are pure static functions.
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { _ in onChangeDetected() })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     // On read failure emit no signal, never interpret it as empty: downstream diff would
@@ -885,7 +887,8 @@ extension LocalStore {
     /// the snapshot too, since a pure scope change leaves physical rows unchanged.
     @MainActor
     func pinnedTabChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -914,6 +917,7 @@ extension LocalStore {
                 }
                 // Move to the main queue before debounce, as for bookmarks.
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { _ in onChangeDetected() })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     guard let self else { return nil }
@@ -938,7 +942,8 @@ extension LocalStore {
     /// adding another coordinator debounce doubles latency to 4 s.
     @MainActor
     func urlRuleChangesPublisher(
-        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce,
+        onChangeDetected: @escaping () -> Void = {}
     ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
@@ -962,6 +967,7 @@ extension LocalStore {
                 }
                 // Move to the main queue before debounce, as for bookmarks.
                 .receive(on: DispatchQueue.main)
+                .handleEvents(receiveOutput: { _ in onChangeDetected() })
                 .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     // On read failure emit no signal; never interpret it as all rows deleted.

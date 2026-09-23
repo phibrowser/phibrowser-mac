@@ -5,7 +5,6 @@ import SwiftUI
 /// `KeyLayerViewModel`.
 struct RecoveryCodeEntryView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
-    @State private var code: String = ""
 
     var body: some View {
         VStack(spacing: 24) {
@@ -22,23 +21,23 @@ struct RecoveryCodeEntryView: View {
 
             TextField(
                 NSLocalizedString("Recovery code", comment: "Recovery code entry - text field placeholder"),
-                text: $code
+                text: $viewModel.recoveryInput
             )
             .textFieldStyle(.roundedBorder)
             .font(.system(.body, design: .monospaced))
             .disableAutocorrection(true)
 
-            if case .error(let message) = viewModel.phase {
+            if let message = viewModel.inputError {
                 Text(message)
                     .font(.callout)
                     .foregroundColor(.red)
             }
 
             Button(NSLocalizedString("Submit", comment: "Recovery code entry - submit button")) {
-                Task { await viewModel.submitRecoveryCode(code) }
+                Task { await viewModel.submitRecoveryCode(viewModel.recoveryInput) }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(code.isEmpty || viewModel.phase == .working)
+            .disabled(viewModel.recoveryInput.isEmpty || viewModel.workingOperation)
         }
         .padding(32)
         .frame(minWidth: 360)

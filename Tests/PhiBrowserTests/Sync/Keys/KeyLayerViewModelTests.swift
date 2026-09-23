@@ -4,6 +4,11 @@ import CryptoKit
 
 @MainActor
 final class KeyLayerViewModelTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "test-device", recordData: nil, saveRecord: { _ in true })
+    }
+
     /// Review A9: only the recovery-code screen pins the window open. Every other phase can
     /// be closed, and the `.done` phase in particular is what `confirmSaved()` moves to.
     func testOnlyTheRecoveryCodeScreenRequiresAcknowledgementBeforeClosing() {
@@ -38,7 +43,7 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertFalse(code.isEmpty)
 
         await vm.confirmSaved()
-        guard case .done = vm.phase else { return XCTFail("expected done") }
+        guard case .readyToPair = vm.phase else { return XCTFail("expected done") }
     }
 
     /// Regression (registration-timing bug): a first-device bootstrap must
@@ -63,6 +68,8 @@ final class KeyLayerViewModelTests: XCTestCase {
         // Fresh account: beginSetup routes to first-device bootstrap and shows
         // the recovery code. Nothing is registered yet.
         await vm.beginSetup(controller: controller)
+        XCTAssertEqual(vm.phase, .introduction)
+        await vm.continueSetup()
         guard case .showingRecoveryCode = vm.phase else {
             return XCTFail("expected recovery code")
         }
@@ -71,8 +78,8 @@ final class KeyLayerViewModelTests: XCTestCase {
         // Confirming the saved code completes bootstrap — and must register the
         // local profile in-session, without waiting for a restart.
         await vm.confirmSaved()
-        guard case .done = vm.phase else { return XCTFail("expected done") }
-        XCTAssertEqual(api.profileEnvelopes.count, 1)
+        guard case .readyToPair = vm.phase else { return XCTFail("expected done") }
+        XCTAssertEqual(api.profileEnvelopes.count, 0, "Verification alone must not register profiles")
     }
 
     func testBadCodeShowsError() async {
@@ -83,7 +90,8 @@ final class KeyLayerViewModelTests: XCTestCase {
         let joinerProvider = AccountKeyManagerTests.FakeDeviceKeyProvider()
         let vm = KeyLayerViewModel(manager: AccountKeyManager(api: api, deviceKeyProvider: joinerProvider))
         await vm.submitRecoveryCode("00000-00000-00000-00000-00000-00")
-        guard case .error = vm.phase else { return XCTFail("expected error") }
+        XCTAssertEqual(vm.phase, .enteringRecoveryCode)
+        XCTAssertNotNil(vm.inputError)
     }
 
     func testBeginSetupFirstDeviceShowsRecoveryCode() async {
@@ -91,7 +99,8 @@ final class KeyLayerViewModelTests: XCTestCase {
         let vm = KeyLayerViewModel(manager: AccountKeyManager(api: api,
             deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider()))
         await vm.beginSetup()
-        guard case .showingRecoveryCode = vm.phase else { return XCTFail("expected showingRecoveryCode") }
+        XCTAssertEqual(vm.phase, .introduction)
+        XCTAssertNil(api.account)
     }
 
     func testBeginSetupExistingAccountShowsChoice() async {
@@ -110,7 +119,7 @@ final class KeyLayerViewModelTests: XCTestCase {
         _ = try? await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
         let vm = KeyLayerViewModel(manager: AccountKeyManager(api: api, deviceKeyProvider: provider))
         await vm.beginSetup()
-        XCTAssertEqual(vm.phase, .done)
+        XCTAssertEqual(vm.phase, .readyToPair)
     }
 
     func testStartJoinRequestThenApprovedPollBecomesDone() async throws {
@@ -129,7 +138,7 @@ final class KeyLayerViewModelTests: XCTestCase {
         try await api.approveJoinRequest(id: id, grantedArkEnvelope: sealed, resolvedByDeviceKeyId: "approver")
 
         await vm.pollOnce()
-        XCTAssertEqual(vm.phase, .done)
+        XCTAssertEqual(vm.phase, .readyToPair)
     }
 
     func testPollDeniedShowsDenied() async {
@@ -181,9 +190,9 @@ final class KeyLayerViewModelTests: XCTestCase {
         await vm.submitPairing([.adopt(localProfileId: "Default", remoteUuid: remote.uuid),
                                 .registerNew(localProfileId: "Profile 1", displayName: "Home")],
                                controller: controller)
-        XCTAssertEqual(vm.phase, .done)
-        XCTAssertEqual(controller.profileSyncInfo(forProfileId: "Default")?.uuid, remote.uuid)
-        XCTAssertNotNil(controller.profileSyncInfo(forProfileId: "Profile 1"))
+        XCTAssertEqual(vm.phase, .readyToPair)
+        XCTAssertEqual(controller.profileKeys.mappedGlobalUuid(forProfileId: "Default"), remote.uuid)
+        XCTAssertNil(controller.profileSyncInfo(forProfileId: "Profile 1"))
         XCTAssertFalse(controller.needsPairing)
     }
 
@@ -241,6 +250,7 @@ final class KeyLayerViewModelTests: XCTestCase {
     /// BEFORE any request, and a fake that failed that guard would land the load
     /// in `.error` instantly, passing the test without ever reaching the deadline.
     final class HangingListProfilesAPI: KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO] { [] }
         let inner = AccountKeyManagerTests.FakeAPI()
 
         // Touched from the load's task-group children, i.e. off the main actor.

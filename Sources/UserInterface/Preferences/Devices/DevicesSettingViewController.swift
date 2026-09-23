@@ -4,8 +4,8 @@ import SnapKit
 
 final class DevicesSettingViewController: NSViewController, SettingsPane {
     var paneIdentifier = Settings.PaneIdentifier.devices
-    var paneTitle = NSLocalizedString("Devices", comment: "Settings - Tab title for device management")
-    var toolbarItemIcon = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: nil) ?? NSImage()
+    var paneTitle = NSLocalizedString("sync.settings.title", value: "Sync", comment: "Settings pane title for cross-device synchronization")
+    var toolbarItemIcon = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil) ?? NSImage()
 
     let hostingController = DevicesSettingHostingViewController()
 

@@ -76,6 +76,8 @@ final class SyncKeyController {
     /// (never a direct singleton reference) so the self-revoke tests do not reach
     /// the real `PhiChromiumCoordinator.shared`.
     private let retirePhiSync: () -> Void
+    private let invalidateEnrollment: () -> Void
+    private let isPairingComplete: @MainActor () -> Bool
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
@@ -155,13 +157,16 @@ final class SyncKeyController {
          localProfilesProvider: @escaping () -> [(profileId: String, displayName: String)],
          notifyChromium: @escaping () -> Void,
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
+         isPairingComplete: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.isPaired },
          retirePhiSync: @escaping () -> Void = {},
+         invalidateEnrollment: @escaping () -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
          engineDefaults: UserDefaults = .standard,
          spaceStateStore: (any PhiSpaceSyncStateStore)? = nil,
          ownedItemStores: [any PhiOwnedItemStateStore] = [],
          markerStore: (any PhiSyncMarkerStore)? = nil,
          clearAllSyncIds: (@Sendable () async throws -> Void)? = nil) {
+        self.isPairingComplete = isPairingComplete
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -170,6 +175,7 @@ final class SyncKeyController {
         self.notifyChromium = notifyChromium
         self.profileCreator = profileCreator
         self.retirePhiSync = retirePhiSync
+        self.invalidateEnrollment = invalidateEnrollment
         self.deviceKeyRotator = deviceKeyRotator
         self.engineDefaults = engineDefaults
         self.spaceStateStore = spaceStateStore
@@ -181,7 +187,8 @@ final class SyncKeyController {
     /// Hot path: the bridge delegate calls this on every Chromium pull.
     /// Dictionary read only — no I/O, no crypto.
     func profileSyncInfo(forProfileId profileId: String) -> (uuid: String, passphrase: String)? {
-        resolved[profileId]
+        guard isPairingComplete() else { return nil }
+        return resolved[profileId]
     }
 
     /// Local profiles as reported by `localProfilesProvider` — the same
@@ -248,13 +255,17 @@ final class SyncKeyController {
     /// erased), and then commit this machine's snapshot -- the exact opposite of
     /// what the confirmation promised.
     func removeThisDeviceFromSync() async throws {
+        guard !isRetired else { throw CancellationError() }
         let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
         try await profileKeys.revokeDevice(deviceKeyId: deviceKeyId)   // 409 -> lastActiveDevice, nothing below runs
+
+        guard !isRetired else { return }
 
         // 1. Retire the engine FIRST. `shutdown()` is nonisolated and synchronous,
         //    so it takes effect on return rather than being one more message to a
         //    reentrant actor.
         retirePhiSync()
+        invalidateEnrollment()
 
         // 2. Keys. The device private key is ROTATED, not deleted: this Mac may
         //    hold other accounts' keys behind the same legacy item, and a revoked
@@ -325,14 +336,8 @@ final class SyncKeyController {
         spaceStateStore?.save(PhiSpaceSyncTable())
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
 
-        // 6. Resolved cache + both predicates, and the join flag. The `.cleared`
-        //    announcement `clearResolved()` posts does take the gate's window down
-        //    (`ProfilePairingGate`'s `.cleared` branch), but `.cleared` may never
-        //    retire `sync.joinPairingPending` -- only a `.measured` pass may, and
-        //    no measured pass will ever run again on this device -- so the flag is
-        //    retired here by hand.
+        // 6. Drop resolved keys; enrollment was invalidated before key rotation.
         clearResolved()
-        ProfilePairingGate.joinPairingPending = false
 
         // Browsing data is untouched on purpose: LocalStore.sqlite and both
         // per-Space theme maps stay exactly as they are.
@@ -531,7 +536,7 @@ final class SyncKeyController {
             return
         }
 
-        if !hasUnknownLocal {
+        if !hasUnknownLocal, isPairingComplete() {
             let claimed = Set(next.values.map { $0.uuid })
             let unclaimed = remoteUuids.subtracting(claimed)
             if unclaimed.isEmpty {
@@ -715,7 +720,7 @@ final class SyncKeyController {
         // separate events, and relaunch during pairing adds another gap. A gate-closed round is
         // profile_refresh=skipped, explicitly not failure (§11). Reporting failed would miscount and make the
         // engine retry an intentional no-op.
-        guard !ProfilePairingGate.joinPairingPending else {
+        guard isPairingComplete() else {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
         let accountUuids: Set<String>

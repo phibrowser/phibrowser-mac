@@ -43,6 +43,7 @@ final class SelfRevokeTests: XCTestCase {
             manager: mgr, approvals: approvals, profileKeys: pkm,
             localProfilesProvider: { [] }, notifyChromium: {},
             retirePhiSync: { ledger.steps.append("retire") },
+            invalidateEnrollment: { ledger.steps.append("unpair") },
             deviceKeyRotator: rotator,
             engineDefaults: defaults,
             spaceStateStore: spaceStore,
@@ -64,8 +65,6 @@ final class SelfRevokeTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
         defaults.set("acct", forKey: PhiChromiumCoordinator.phiSyncCursorOwnerKey)
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(api: api, ledger: ledger, store: store,
                                                   rotator: rotator, spaceStore: spaceStore,
@@ -82,7 +81,7 @@ final class SelfRevokeTests: XCTestCase {
                        "the cursor OWNER is not a cursor; dropping it would fake an account switch")
         XCTAssertEqual(spaceStore.table, PhiSpaceSyncTable())
         XCTAssertFalse(controller.needsPairing)
-        XCTAssertEqual(ProfilePairingGate.joinPairingPending, false)
+        XCTAssertTrue(ledger.steps.contains("unpair"))
     }
 
     func testALastDeviceRejectionChangesNothingLocally() async throws {
@@ -96,8 +95,6 @@ final class SelfRevokeTests: XCTestCase {
         let suite = "SelfRevokeTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(api: api, ledger: ledger, store: store,
                                                   rotator: rotator, spaceStore: spaceStore,
@@ -130,8 +127,6 @@ final class SelfRevokeTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(api: api, ledger: ledger, store: store,
                                                   rotator: rotator, spaceStore: spaceStore,
@@ -175,8 +170,6 @@ final class SelfRevokeTests: XCTestCase {
         for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
         // Simulate failed migration persistence, leaving both legacy keys for step 5 to erase (ruling 3).
         for key in PhiSyncEngine.legacyMarkerStateKeys { defaults.set("x", forKey: key) }
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
 
         let controller = try await makeController(api: api, ledger: ledger, store: store,
                                                   rotator: rotator, spaceStore: spaceStore,

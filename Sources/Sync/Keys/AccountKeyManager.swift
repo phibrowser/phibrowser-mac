@@ -3,6 +3,7 @@ import Foundation
 import Security
 
 protocol KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO]
     func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool
     func getAccount() async throws -> AccountKeyStateDTO?
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws

@@ -165,6 +165,7 @@ final class ProfileKeyManagerTests: XCTestCase {
     /// `FakeAPI`: they are only ever driven serially, by `bootstrap()`, before
     /// any of this concurrency starts.
     final class ConcurrentProfileAPI: KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO] { [] }
         let inner = FakeAPI()
 
         private let lock = NSLock()

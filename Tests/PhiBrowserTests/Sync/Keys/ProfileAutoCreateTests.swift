@@ -54,7 +54,7 @@ final class ProfileAutoCreateTests: XCTestCase {
         let controller = SyncKeyController(
             manager: mgr, approvals: approvals, profileKeys: pkm,
             localProfilesProvider: { creator.userAssignableProfileIds },
-            notifyChromium: {}, profileCreator: creator)
+            notifyChromium: {}, profileCreator: creator, isPairingComplete: { true })
         return (api, mgr, controller, store)
     }
 
@@ -256,17 +256,17 @@ final class ProfileAutoCreateTests: XCTestCase {
         let pkm = ProfileKeyManager(api: api, keyManager: locked, mappingStore: MemoryMappingStore())
         let approvals = DeviceApprovalService(api: api, keyManager: locked,
                                               deviceKeyProvider: FakeDeviceKeyProvider())
+        var paired = true
         let controller = SyncKeyController(manager: locked, approvals: approvals, profileKeys: pkm,
                                            localProfilesProvider: { [] }, notifyChromium: {},
-                                           profileCreator: creator)
+                                           profileCreator: creator, isPairingComplete: { paired })
         let lockedOutcome = await controller.ensureLocalProfilesForAccount()
         XCTAssertEqual(lockedOutcome, .failed)
         XCTAssertEqual(api.listProfilesCalls, 0)
 
         // The other half of §12.1 ⑧ and §11's reporting contract: a closed gate is skipped,
         // not failed. It arms no retry and reports profile_refresh=skipped.
-        ProfilePairingGate.staticPendingOverride = true
-        defer { ProfilePairingGate.staticPendingOverride = nil }
+        paired = false
         let payload = Box<[AnyHashable: Any]?>(nil)
         let token = NotificationCenter.default.addObserver(
             forName: .phiProfileAutoCreateDidRun, object: nil, queue: nil) { payload.value = $0.userInfo }

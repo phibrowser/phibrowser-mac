@@ -27,15 +27,8 @@ enum SelfRevokeStrings {
     /// profile mappings and the sync cursors are cleared — while every byte of
     /// local browsing data stays.
     static let confirmBody = NSLocalizedString(
-        """
-        This Mac leaves the account's sync. The server revokes this device, its device key is \
-        rotated, and the cached account key, profile mappings and sync cursors are cleared.
-
-        Browsing data on this Mac — Spaces, bookmarks, history and pinned tabs — is kept in full; \
-        it simply stops syncing with your other devices. Joining again needs approval from another \
-        device or your recovery code.
-        """,
-        comment: "Self-revoke confirmation - body")
+        "sync.removal.explanation", value: "This Mac will stop syncing. Your local browsing data stays on this Mac. To join again, use approval from another device or your saved recovery code.",
+        comment: "Consequences of removing this device from sync")
 
     static let confirmAction = NSLocalizedString(
         "Remove This Device",
@@ -51,10 +44,8 @@ enum SelfRevokeStrings {
     /// not count towards the actionable pairing predicate, so "finish pairing"
     /// really is reachable in such an account.
     static let lastDeviceNote = NSLocalizedString(
-        "This is the last device on the account, so it can’t be removed. Finish pairing on this "
-            + "device (profiles that can’t be read don’t block it), or set up sync on another "
-            + "device first, then try again.",
-        comment: "Self-revoke - last active device")
+        "sync.removal.lastDevice", value: "This is the last authorized device and can’t be removed yet. Set up sync on another device first. You can still finish this setup later.",
+        comment: "Last device removal restriction does not prevent deferring setup")
 
     /// Shown in place of a removal that never reached the server: the shared
     /// `SyncKeyController` was gone by the time the button was clicked (a

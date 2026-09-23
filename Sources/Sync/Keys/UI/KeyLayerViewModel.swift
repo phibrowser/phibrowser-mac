@@ -10,8 +10,16 @@ struct PairingLocal: Equatable, Identifiable {
 }
 
 /// State machine for the account key bootstrap / recovery-code join flow.
+enum KeyLayerStrings {
+    static let invalidRecoveryCode = NSLocalizedString("sync.setup.invalidRecoveryCode", value: "Check your recovery code and try again.", comment: "Sync recovery input rejected")
+    static let connectionFailed = NSLocalizedString("sync.setup.connectionFailed", value: "Couldn’t connect to sync. Check your connection and try again.", comment: "Sync setup request failed")
+    static let signInRequired = NSLocalizedString("sync.setup.signInRequired", value: "Sign in again to continue setting up sync.", comment: "Sync setup authentication expired")
+}
+
 enum KeyLayerPhase: Equatable {
     case idle
+    case introduction
+    case readyToPair
     case showingRecoveryCode(String)
     case enteringRecoveryCode
     case chooseJoinMethod
@@ -50,6 +58,32 @@ final class KeyLayerViewModel: ObservableObject {
     /// while `phase` stays `.pairingProfiles`); cleared at the start of the next
     /// `submitPairing` call.
     @Published private(set) var pairingError: String?
+    @Published private(set) var inputError: String?
+    @Published var recoveryInput = ""
+    @Published private(set) var workingOperation = false
+    private var operationGeneration = 0
+    private var pollingInFlight = false
+    private(set) var createdAccountInThisFlow = false
+    private let beginEnrollment: @MainActor () throws -> Void
+    var onVerified: (@MainActor () -> Void)?
+
+    private var flowIsCurrent: Bool { flowController?.isRetired != true }
+
+    private func verified() {
+        guard flowIsCurrent else { return }
+        stopPolling()
+        recoveryInput = ""
+        phase = .readyToPair
+        onVerified?()
+    }
+
+    func cancelFlow() {
+        operationGeneration += 1
+        currentRequestId = nil
+        stopPolling()
+        pairingLoad?.cancel()
+        recoveryInput = ""
+    }
 
     /// True for the whole of `submitPairing`, from the first decision to the last.
     ///
@@ -96,7 +130,9 @@ final class KeyLayerViewModel: ObservableObject {
     /// tests do not have to wait for it.
     private let loadDeadline: Duration
 
-    init(manager: AccountKeyManager, loadDeadline: Duration = .seconds(45)) {
+    init(manager: AccountKeyManager, loadDeadline: Duration = .seconds(45),
+         beginEnrollment: @escaping @MainActor () throws -> Void = { try ProfilePairingGate.shared.beginEnrollment() }) {
+        self.beginEnrollment = beginEnrollment
         self.manager = manager
         self.loadDeadline = loadDeadline
     }
@@ -105,56 +141,71 @@ final class KeyLayerViewModel: ObservableObject {
     /// first-device bootstrap or the join-method choice.
     func beginSetup(controller: SyncKeyController? = nil) async {
         flowController = controller
+        operationGeneration += 1
+        let generation = operationGeneration
         phase = .working
         do {
-            switch try await manager.unlockAtStartup() {
+            let result = try await manager.unlockAtStartup()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            switch result {
             case .unlocked:
-                await flowController?.resolveMappings()
-                phase = .done
+                if ProfilePairingGate.shared.isPaired { phase = .done }
+                else { try beginEnrollment(); verified() }
             case .notSignedIn:
-                phase = .error(NSLocalizedString("You’re not signed in.",
-                    comment: "Key layer - not signed in"))
+                phase = .error(KeyLayerStrings.signInRequired)
             case .needsJoin:
-                phase = try await manager.accountExists() ? .chooseJoinMethod : .working
-                if case .working = phase { await startBootstrap() }
+                let exists = try await manager.accountExists()
+                guard generation == operationGeneration, flowIsCurrent else { return }
+                phase = exists ? .chooseJoinMethod : .introduction
             }
         } catch {
-            phase = .error("\(error)")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .error(KeyLayerStrings.connectionFailed)
         }
     }
 
-    func showRecoveryEntry() { phase = .enteringRecoveryCode }
-    func chooseJoinAgain() { phase = .chooseJoinMethod }
+    func continueSetup() async { await startBootstrap() }
 
-    /// Requests approval from another device, then begins polling for the outcome.
+    func showRecoveryEntry() {
+        cancelJoin()
+        inputError = nil
+        phase = .enteringRecoveryCode
+    }
+    func chooseJoinAgain() { cancelJoin() }
+
     func startJoinRequest() async {
+        guard !workingOperation else { return }
+        operationGeneration += 1
+        let generation = operationGeneration
+        workingOperation = true
+        defer { if generation == operationGeneration { workingOperation = false } }
         phase = .working
         do {
+            try beginEnrollment()
             let ticket = try await manager.requestJoinApproval()
+            guard generation == operationGeneration, flowIsCurrent else { return }
             currentRequestId = ticket.requestId
             phase = .waitingForApproval(code: ticket.verificationCode, deadline: Date().addingTimeInterval(900))
             startPollTimer()
-        } catch let e as JoinRequestError where e == .tooManyPending {
-            phase = .error(NSLocalizedString("Too many pending requests. Try again later or use a recovery code.",
-                comment: "Key layer - too many pending join requests"))
         } catch {
-            phase = .error("\(error)")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .error(KeyLayerStrings.connectionFailed)
         }
     }
 
-    /// One poll iteration (also called directly by tests).
     func pollOnce() async {
-        guard let id = currentRequestId else { return }
+        guard let id = currentRequestId, !pollingInFlight else { return }
+        pollingInFlight = true
+        defer { pollingInFlight = false }
+        let generation = operationGeneration
         do {
-            switch try await manager.pollJoin(requestId: id) {
-            case .approved:
-                // The join is under way: from here until the pairing wraps up, the gate
-                // may present. Always through the port, never a direct defaults write.
-                ProfilePairingGate.joinPairingPending = true
-                await flowController?.resolveMappings()
-                stopPolling(); phase = .done
-            case .denied:   stopPolling(); phase = .joinDenied
-            case .expired:  stopPolling(); phase = .joinExpired
+            let result = try await manager.pollJoin(requestId: id)
+            guard generation == operationGeneration, currentRequestId == id, flowIsCurrent else { return }
+            inputError = nil
+            switch result {
+            case .approved: verified()
+            case .denied: stopPolling(); phase = .joinDenied
+            case .expired: stopPolling(); phase = .joinExpired
             case .pending(let deadline):
                 if Date() > deadline { stopPolling(); phase = .joinExpired }
                 else if case .waitingForApproval(let code, _) = phase {
@@ -162,11 +213,14 @@ final class KeyLayerViewModel: ObservableObject {
                 }
             }
         } catch {
-            // Transient poll failure: keep waiting; the next tick retries.
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            inputError = KeyLayerStrings.connectionFailed
         }
     }
 
     func cancelJoin() {
+        operationGeneration += 1
+        workingOperation = false
         stopPolling()
         currentRequestId = nil
         phase = .chooseJoinMethod
@@ -189,44 +243,55 @@ final class KeyLayerViewModel: ObservableObject {
     /// Starts account bootstrap, generating a new recovery code. If the account
     /// was already initialized by another device, routes to the join flow instead.
     func startBootstrap() async {
+        guard !workingOperation else { return }
+        operationGeneration += 1
+        let generation = operationGeneration
+        workingOperation = true
+        defer { if generation == operationGeneration { workingOperation = false } }
         phase = .working
         do {
-            phase = .showingRecoveryCode(try await manager.bootstrap())
+            try beginEnrollment()
+            let code = try await manager.bootstrap()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            createdAccountInThisFlow = true
+            phase = .showingRecoveryCode(code)
         } catch AccountKeyError.alreadyInitialized {
-            phase = .enteringRecoveryCode
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .chooseJoinMethod
         } catch {
-            phase = .error("\(error)")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .error(KeyLayerStrings.connectionFailed)
         }
     }
 
-    /// Confirms the user saved the displayed recovery code, completing bootstrap.
     func confirmSaved() async {
         guard case .showingRecoveryCode = phase else { return }
-        // Leave the recovery-code screen *before* the network round trip: it
-        // must not stay interactive while `resolveMappings()` is in flight, or
-        // the phase change can land on a view the user is still touching.
-        phase = .working
-        // The join is under way: from here until the pairing wraps up, the gate
-        // may present. Always through the port, never a direct defaults write.
-        ProfilePairingGate.joinPairingPending = true
-        await flowController?.resolveMappings()
-        phase = .done
+        verified()
     }
 
-    /// Joins the account using a recovery code entered by the user.
     func submitRecoveryCode(_ code: String) async {
-        phase = .working
+        guard !workingOperation else { return }
+        operationGeneration += 1
+        let generation = operationGeneration
+        recoveryInput = code
+        inputError = nil
+        workingOperation = true
+        phase = .enteringRecoveryCode
+        defer { if generation == operationGeneration { workingOperation = false } }
         do {
+            try beginEnrollment()
             try await manager.joinWithRecoveryCode(code)
-            // The join is under way: from here until the pairing wraps up, the gate
-            // may present. Always through the port, never a direct defaults write.
-            ProfilePairingGate.joinPairingPending = true
-            await flowController?.resolveMappings()
-            phase = .done
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            verified()
+        } catch AccountKeyError.badRecoveryCode {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            inputError = KeyLayerStrings.invalidRecoveryCode
+        } catch KeyAPIError.http(401, _) {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            inputError = KeyLayerStrings.signInRequired
         } catch {
-            phase = .error(NSLocalizedString(
-                "Invalid recovery code. Please check it and try again.",
-                comment: "Key layer recovery code entry - error shown when the entered code is rejected"))
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            inputError = KeyLayerStrings.connectionFailed
         }
     }
 
@@ -259,6 +324,8 @@ final class KeyLayerViewModel: ObservableObject {
     /// mapping table, so that one case is turned away instead (see
     /// `isSubmitting`). The submit's own reload is not affected: it clears the
     /// flag before reloading, because that reload is its continuation.
+    func cancelPairingLoad() { pairingLoad?.cancel(); pairingLoad = nil }
+
     func startPairing(controller: SyncKeyController) async {
         guard !isSubmitting else {
             // Metadata only (R12).
@@ -378,6 +445,7 @@ final class KeyLayerViewModel: ObservableObject {
         phase = .working
         pairingError = nil
         for decision in decisions {
+            guard !controller.isRetired else { return false }
             do {
                 switch decision {
                 case .adopt(let localProfileId, let remoteUuid):
@@ -439,8 +507,8 @@ final class KeyLayerViewModel: ObservableObject {
         return true
     }
 
-    /// Preserve the Devices-pane sequence: applyPairingDecisions → set joinPairingPending → resolveMappings →
-    /// done.
+    /// Legacy Profile-only entry applies decisions and returns to the unified pairing flow.
+    /// It cannot complete enrollment; the wizard owns the full Profile/Space obligation.
     ///
     /// The intentional failure-path change is idempotent success for repeated alreadyMapped submissions.
     /// Rendering, strings, button predicates and ProfilePairingModel inputs/decisions remain unchanged. Normal
@@ -448,19 +516,8 @@ final class KeyLayerViewModel: ObservableObject {
     /// state, so testAFailedSubmitStillReloadsTheCandidatesInsteadOfParkingInWorking now uses a one-time PUT
     /// failure.
     func submitPairing(_ decisions: [PairingDecision], controller: SyncKeyController) async {
-        guard await applyPairingDecisions(decisions, controller: controller) else { return }
-        // applyPairingDecisions has cleared its flag in defer, but this tail still writes phase and resolved
-        // cache. Preserve submitPairing's original exclusion window (:349-353).
-        isSubmitting = true
-        defer { isSubmitting = false }
-        // The join is under way: from here until the pairing wraps up, the gate
-        // may present. Always through the port, never a direct defaults write.
-        // Redundant when this submit came from the `.settings` context — the
-        // `resolveMappings()` below then reports `needsPairing == false` and the
-        // gate clears the flag again without ever presenting.
-        ProfilePairingGate.joinPairingPending = true
-        await controller.resolveMappings()
-        phase = .done
+        guard await applyPairingDecisions(decisions, controller: controller), !controller.isRetired else { return }
+        phase = .readyToPair
     }
 
     /// Whether every row the user CAN decide has been decided. Rows whose remote
@@ -490,6 +547,7 @@ final class KeyLayerViewModel: ObservableObject {
 /// No-op `KeyEnvelopeAPI` fake used only to drive SwiftUI previews for the two
 /// key-layer views without touching the network.
 struct PreviewKeyEnvelopeAPI: KeyEnvelopeAPI {
+    func listDevices() async throws -> [AccountDeviceDTO] { [] }
     func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool { true }
     func getAccount() async throws -> AccountKeyStateDTO? { nil }
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {}

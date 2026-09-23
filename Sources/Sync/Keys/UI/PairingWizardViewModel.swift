@@ -136,6 +136,35 @@ final class PairingWizardViewModel: ObservableObject {
     /// As with KeyLayerViewModel.runPairingLoad cancellation checks, every write after either await must first
     /// confirm this is the newest load.
     private var loadGeneration = 0
+    private var sessionActive = false
+    var shouldCompleteNewAccount = false
+    @Published private(set) var isPreparing = false
+    private let gate: ProfilePairingGate
+    private var enrollmentGeneration: UUID?
+
+    var canSubmit: Bool {
+        sessionActive && !isApplying && !isPreparing && profileRowsDecided && spaceModel.allRowsDecided
+    }
+
+    @discardableResult
+    func leaveWithoutApplying() -> Bool {
+        guard !isApplying else { return false }
+        sessionActive = false
+        loadGeneration += 1
+        keyLayer.cancelPairingLoad()
+        profileSelections = [:]
+        profileRemoteChoices = [:]
+        spaceSelections = [:]
+        loadedLocals = []
+        loadedRemotes = []
+        profileDecisions = []
+        spacesInput = SpacePairingModel.Input(locals: [], accountSpaces: [], localProfileNames: [:], accountProfileNames: [:])
+        return true
+    }
+
+    private func sessionIsCurrent(_ controller: SyncKeyController) -> Bool {
+        sessionActive && !controller.isRetired && enrollmentGeneration == gate.enrollmentGeneration
+    }
 
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
@@ -148,7 +177,9 @@ final class PairingWizardViewModel: ObservableObject {
          previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>,
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace],
          themeDisplayName: @escaping (String) -> String?,
-         loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline) {
+         loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline,
+         gate: ProfilePairingGate? = nil) {
+        self.gate = gate ?? .shared
         self.keyLayer = keyLayer
         self.previewAccountSpaces = previewAccountSpaces
         self.pairableLocalSpaces = pairableLocalSpaces
@@ -178,6 +209,13 @@ final class PairingWizardViewModel: ObservableObject {
     // MARK: - Sole host entry point
 
     func start(controller: SyncKeyController) async {
+        guard !isApplying, !controller.isRetired else { return }
+        sessionActive = true
+        enrollmentGeneration = gate.enrollmentGeneration
+        profileSelections = [:]
+        profileRemoteChoices = [:]
+        spaceSelections = [:]
+        profileDecisions = []
         loadGeneration += 1
         let generation = loadGeneration
         phase = .loading
@@ -189,7 +227,7 @@ final class PairingWizardViewModel: ObservableObject {
 
         // First action after each await: confirm the newest generation before writing anything (see
         // loadGeneration).
-        guard generation == loadGeneration else {
+        guard generation == loadGeneration, sessionIsCurrent(controller) else {
             AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
             return
         }
@@ -208,7 +246,7 @@ final class PairingWizardViewModel: ObservableObject {
         }
 
         let spaces = await spaceLoad
-        guard generation == loadGeneration else {
+        guard generation == loadGeneration, sessionIsCurrent(controller) else {
             AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
             return
         }
@@ -221,9 +259,16 @@ final class PairingWizardViewModel: ObservableObject {
             reseedProfileSelections(locals: locals, remotes: remotes)
             spacesInput = makeSpacesInput(accountSpaces: accountSpaces, remotes: remotes,
                                           controller: controller)
-            spaceSelections = [:]
+            seedSpaceSelections(controller: controller)
             step = .profiles
             phase = .profiles(locals: locals, remotes: remotes)
+            if shouldCompleteNewAccount, remotes.isEmpty, accountSpaces.isEmpty {
+                continueToSpaces()
+                addAllAsNew()
+                await finish(controller: controller)
+            } else if locals.isEmpty, remotes.allSatisfy({ $0.name == nil }) {
+                continueToSpaces()
+            }
             logStep()
         }
     }
@@ -231,9 +276,9 @@ final class PairingWizardViewModel: ObservableObject {
     // MARK: - Step 1
 
     /// Continue only validates, freezes decisions and moves to spaces. No network, mapping writes or
-    /// joinPairingPending changes.
+    /// enrollment changes.
     func continueToSpaces() {
-        guard profileRowsDecided else { return }
+        guard sessionActive, !isPreparing, !isApplying, profileRowsDecided else { return }
         profileDecisions = profileModel.decisions()
         step = .spaces
         phase = .spaces(spacesInput)
@@ -241,6 +286,7 @@ final class PairingWizardViewModel: ObservableObject {
     }
 
     func backToProfiles() {
+        guard !isPreparing, !isApplying else { return }
         step = .profiles
         phase = .profiles(locals: loadedLocals, remotes: loadedRemotes)
         logStep()
@@ -250,6 +296,7 @@ final class PairingWizardViewModel: ObservableObject {
 
     /// The only two mutators. D7 adds none: Back changes phase to spaces while selections remain intact.
     func assign(_ assignment: SpacePairingModel.Assignment?, to localSpaceId: String) {
+        guard !isPreparing, !isApplying else { return }
         var updated = spaceSelections
         if let assignment { updated[localSpaceId] = assignment }
         else { updated.removeValue(forKey: localSpaceId) }
@@ -257,6 +304,7 @@ final class PairingWizardViewModel: ObservableObject {
     }
 
     func addAllAsNew() {
+        guard !isPreparing, !isApplying else { return }
         spaceSelections = spaceModel.addAllAsNew()
     }
 
@@ -265,6 +313,7 @@ final class PairingWizardViewModel: ObservableObject {
     /// Step-2 Finish computes D7 differences locally before submitting. If any exist, show confirmation
     /// without writing anything.
     func finish(controller: SyncKeyController) async {
+        guard canSubmit, sessionIsCurrent(controller) else { return }
         let diffs = SpaceOverwriteDiff.diffs(decisions: spaceModel.decisions(),
                                              locals: spacesInput.locals,
                                              accountSpaces: spacesInput.accountSpaces,
@@ -278,7 +327,10 @@ final class PairingWizardViewModel: ObservableObject {
     }
 
     /// Confirmation exits. Back restores nothing because spaceSelections was never changed.
-    func backFromConfirmation() { phase = .spaces(spacesInput) }
+    func backFromConfirmation() {
+        guard !isPreparing, !isApplying else { return }
+        phase = .spaces(spacesInput)
+    }
 
     func applyConfirmedOverwrite(controller: SyncKeyController) async {
         await applyDecisions(controller: controller)
@@ -302,10 +354,14 @@ final class PairingWizardViewModel: ObservableObject {
     private func applyDecisions(controller: SyncKeyController) async {
         // Reject reentrant submission: both Task-based entry points can overlap on a double-click. Idempotency
         // requires sequential replay; concurrent createLocal/addAsNew could create a second profile/UUID.
-        guard !isApplying else {
+        guard canSubmit, sessionIsCurrent(controller) else {
             AppLogInfo("[phi-sync] pairing wizard: a submit is already applying; ignoring the second one")
             return
         }
+        isPreparing = true
+        let valid = await validateCurrentReview(controller: controller)
+        isPreparing = false
+        guard valid, sessionIsCurrent(controller) else { return }
         phase = .submitting
         isApplying = true
         defer { isApplying = false }
@@ -330,10 +386,15 @@ final class PairingWizardViewModel: ObservableObject {
             return
         }
 
+        guard sessionIsCurrent(controller) else { return }
+
         // 2. Space decisions write sync.spaceGlobalUuids mappings, not sync.phiSpaces state. The tables are
         // disjoint and the Space gate remains closed until step 3, so the engine cannot snapshot these
         // mappings concurrently. This permits direct main-actor writes without engine round scheduling (§5.6).
         do {
+            guard pairableLocalSpaces() == spacesInput.locals else {
+                throw SpaceSyncMappingError.alreadyMapped
+            }
             for decision in spaceModel.decisions() {
                 if try apply(decision, controller: controller) { spaceMints += 1 }
                 else { spaceMaps += 1 }
@@ -346,9 +407,18 @@ final class PairingWizardViewModel: ObservableObject {
         }
 
         // 3. Open the gate only after both Profile and Space mapping tables are fully written.
-        ProfilePairingGate.joinPairingPending = false
+        do {
+            guard sessionIsCurrent(controller), controller.localProfiles().allSatisfy({
+                controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) != nil
+            }) else { throw SyncPairingPersistenceError.writeFailed }
+            try gate.completeEnrollment(verifiedDeviceKeyID: controller.manager.deviceKeyProviderForTesting.deviceKeyId())
+        } catch {
+            phase = .error(message: PairingWizardStrings.applyFailed, resume: .backToSpaces)
+            return
+        }
         // 4.
         await controller.resolveMappings()
+        guard sessionIsCurrent(controller) else { return }
         phase = .done
         logApplied(spaceMaps: spaceMaps, spaceMints: spaceMints, ok: true)
     }
@@ -395,7 +465,46 @@ final class PairingWizardViewModel: ObservableObject {
         }
     }
 
+    /// A review authorizes only the values the user saw. Changed data returns to fresh
+    /// choices before any mapping write, including when the prior page had no differences.
+    func validateCurrentReview(controller: SyncKeyController) async -> Bool {
+        let generation = loadGeneration
+        let freshKeys = KeyLayerViewModel(manager: controller.manager)
+        async let profileLoad: Void = freshKeys.startPairing(controller: controller)
+        async let spaceLoad = loadAccountSpaces()
+        await profileLoad
+        let result = await spaceLoad
+        guard generation == loadGeneration, sessionIsCurrent(controller) else { return false }
+        guard case .pairingProfiles(let locals, let remotes) = freshKeys.phase,
+              case .success(let spaces) = result else {
+            phase = .error(message: PairingWizardStrings.previewFailed, resume: .reload)
+            return false
+        }
+        let fresh = makeSpacesInput(accountSpaces: spaces, remotes: remotes, controller: controller)
+        guard locals == loadedLocals, remotes == loadedRemotes, fresh == spacesInput else {
+            loadedLocals = locals
+            loadedRemotes = remotes
+            reseedProfileSelections(locals: locals, remotes: remotes)
+            spacesInput = fresh
+            seedSpaceSelections(controller: controller)
+            profileDecisions = []
+            step = .profiles
+            phase = .profiles(locals: locals, remotes: remotes)
+            return false
+        }
+        return true
+    }
+
     // MARK: - Loading helpers
+
+    private func seedSpaceSelections(controller: SyncKeyController) {
+        spaceSelections = [:]
+        for local in spacesInput.locals where local.spaceId != LocalStore.defaultSpaceId {
+            guard let uuid = controller.syncUuid(forSpaceId: local.spaceId) else { continue }
+            spaceSelections[local.spaceId] = spacesInput.accountSpaces.contains { $0.syncUuid == uuid }
+                ? .existing(syncUuid: uuid) : .addAsNew
+        }
+    }
 
     private func reseedProfileSelections(locals: [PairingLocal], remotes: [RemoteProfile]) {
         profileSelections = ProfilePairingModel.initialSelections(locals: locals, remotes: remotes)

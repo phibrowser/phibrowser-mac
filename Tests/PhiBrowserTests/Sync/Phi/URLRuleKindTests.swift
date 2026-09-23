@@ -859,7 +859,7 @@ final class URLRuleKindTests: XCTestCase {
                             ownedKinds: [OwnedKindRegistration]) -> PhiSyncEngine {
         let now: () -> Int64 = clock.map { clock in { clock.read() } } ?? { Self.now }
         return PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                             defaults: defaults ?? self.defaults, deviceKeyId: "devA", settings: [],
+                             defaults: defaults ?? self.defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                              spaceAccess: spaceAccess ?? makeSpaceAccess(), spaceStore: spaceStore,
                              markerStore: markerStore, ownedKinds: ownedKinds,
                              now: now)

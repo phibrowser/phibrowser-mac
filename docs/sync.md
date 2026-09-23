@@ -2,6 +2,66 @@
 
 For manual cross-device acceptance, see the [Sync E2E test cases](sync-e2e-test-cases.md).
 
+## Enrollment and setup
+
+Settings exposes **Sync**; the internal `devices` route remains stable. The pane
+shows account/status, supported content, active devices and approval requests,
+and recovery/removal. Device metadata comes from `GET /keys/v1/devices` through
+`KeyEnvelopeAPIClient`; `created_at` is never displayed as last activity.
+
+`ProfilePairingGate` owns `sync.pairingEnrollment` in account defaults. Version 1
+records the device key ID and explicit complete/unpaired result. Missing,
+malformed, future-version and mismatched-device records are unpaired. Completion
+persists the verified post-registration device identity before permitting data
+sync. Revoked-device registration can rotate that identity; the native HTTP
+client resolves it for each request instead of retaining the pre-join ID.
+Invalidation fails closed in memory even if its persistence fails.
+
+Legacy completion migrates only after fresh device authorization, unlocked keys,
+fresh remote Profile/Space evidence, complete injective mappings, and the legacy
+enabled/drained Space state have all been verified. An explicit pending flag
+prevents migration. Mapping resolution or ARK unlock alone never proves enrollment.
+
+Setup has one modal host through introduction, verification, Profile/Space
+matching, overwrite review and completion. Finish later, Escape and window close
+retain unpaired status and discard unsubmitted choices. They remain available
+while loading/reviewing/revalidating; confirmed writes and recovery-code
+acknowledgement cannot be dismissed. Background work never reopens setup.
+
+Every entry and submission preflight fetches new Profile and Space candidates;
+GET requests bypass response caches. A failed refresh has no cached-choice
+fallback. Account/session generations fence late responses. Preflight freezes
+choice/navigation edits while permitting Finish later. Confirmed partial mapping
+writes are real and reused on retry; only full completion opens eligibility.
+
+All native data rounds and Chromium ready-key exposure require enrollment.
+Read-only pairing previews use the serialized engine queue without advancing
+cursors or landing/publishing data. Withdrawing eligibility synchronously blocks
+in-flight native writes, stops the invalidation schedule, and notifies Chromium.
+A generation fence also rejects old rounds after rapid re-enrollment.
+
+## Sync status contract
+
+The pane aggregates the native context and every eligible user Profile. Missing
+contexts, an empty Profile enumeration, unsupported bridge selectors and malformed
+payloads mean Checking. Unpaired always means Not started. A partial failure
+cannot become global Up to date; the summary time is the oldest successful time
+among all required contexts.
+
+Native success requires a drained pull, accepted publication, successful cursor
+persistence, and no pending/quarantined input, output, or follow-up work. Local
+changes invalidate the current result before debounce. Chromium exposes the
+optional versioned `getProfileSyncStatus:completion:` observation for already
+loaded user Profiles; it never creates Profiles or sync services. It combines
+transport/auth/crypto/controller state, initial downloads, cycle evidence,
+active-delegate pending counts, and a final backend pending-work fence. The old
+transport-only local-data count API cannot be used for full-sync status.
+
+Old frameworks safely remain Checking. A matched framework build and manual
+cross-device acceptance are required before release; object compilation alone
+does not establish runtime correctness. See the UX acceptance record in
+[sync-e2e-test-cases.md](sync-e2e-test-cases.md).
+
 ## Chromium sync endpoint
 
 `ChromiumLauncher` supplies a default `--sync-url` when starting the embedded

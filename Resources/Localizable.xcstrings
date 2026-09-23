@@ -94163,6 +94163,504 @@
     },
     "You’re not signed in." : {
       "comment" : "Key layer - not signed in"
+    },
+    "sync.contents.exclusions" : {
+      "comment" : "Sync exclusions and compatibility explanation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passwords, cookies and autofill aren’t included. Ordinary open tabs aren’t automatically recreated. Phi Chat and conversations are separate. Profile data availability depends on this version of Phi."
+          }
+        }
+      }
+    },
+    "sync.contents.history" : {
+      "comment" : "Enabled Chromium history category",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browsing history"
+          }
+        }
+      }
+    },
+    "sync.contents.phi" : {
+      "comment" : "Supported native sync categories",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces · Bookmarks and folders · Pinned tabs · URL rules · Supported settings"
+          }
+        }
+      }
+    },
+    "sync.contents.preferences" : {
+      "comment" : "Enabled Chromium preference category",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supported profile preferences"
+          }
+        }
+      }
+    },
+    "sync.contents.scope" : {
+      "comment" : "Expand sync scope and exclusions",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What’s included"
+          }
+        }
+      }
+    },
+    "sync.contents.title" : {
+      "comment" : "Read-only list of synchronized content",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync contents"
+          }
+        }
+      }
+    },
+    "sync.devices.expires" : {
+      "comment" : "Pending device request expiry label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires"
+          }
+        }
+      }
+    },
+    "sync.devices.thisMac" : {
+      "comment" : "Current authorized device marker",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        }
+      }
+    },
+    "sync.devices.thisMacUnknown" : {
+      "comment" : "Device list unavailable; local identity is not proof of registration",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac — registration could not be checked"
+          }
+        }
+      }
+    },
+    "sync.devices.title" : {
+      "comment" : "Devices authorized for this account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devices"
+          }
+        }
+      }
+    },
+    "sync.recovery.explanation" : {
+      "comment" : "Explain existing recovery options without offering retrieval",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To join on another device, approve its request here or use your saved recovery code. The code is shown only when sync is first set up."
+          }
+        }
+      }
+    },
+    "sync.recovery.title" : {
+      "comment" : "Recovery guidance and device removal",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovery and removal"
+          }
+        }
+      }
+    },
+    "sync.removal.explanation" : {
+      "comment" : "Consequences of removing this device from sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac will stop syncing. Your local browsing data stays on this Mac. To join again, use approval from another device or your saved recovery code."
+          }
+        }
+      }
+    },
+    "sync.removal.lastDevice" : {
+      "comment" : "Last device removal restriction does not prevent deferring setup",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the last authorized device and can’t be removed yet. Set up sync on another device first. You can still finish this setup later."
+          }
+        }
+      }
+    },
+    "sync.settings.requestFailed" : {
+      "comment" : "Sync settings request failed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load sync information. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.settings.retry" : {
+      "comment" : "Reload sync settings",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        }
+      }
+    },
+    "sync.settings.signIn" : {
+      "comment" : "Sync settings signed out explanation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to sync across devices"
+          }
+        }
+      }
+    },
+    "sync.settings.signInAction" : {
+      "comment" : "Sync settings sign in action",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in"
+          }
+        }
+      }
+    },
+    "sync.settings.title" : {
+      "comment" : "Settings pane title for cross-device synchronization",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync"
+          }
+        }
+      }
+    },
+    "sync.setup.approvalInstructions" : {
+      "comment" : "Instructions for approving another device",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On an authorized device, open Settings → Sync and approve this request. Make sure this code matches:"
+          }
+        }
+      }
+    },
+    "sync.setup.connectionFailed" : {
+      "comment" : "Sync setup request failed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t connect to sync. Check your connection and try again."
+          }
+        }
+      }
+    },
+    "sync.setup.continue" : {
+      "comment" : "Start sync setup",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "sync.setup.continueSetup" : {
+      "comment" : "Reopen sync setup with fresh account data",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue setup"
+          }
+        }
+      }
+    },
+    "sync.setup.finishLater" : {
+      "comment" : "Leave sync setup unfinished and continue browsing",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish later"
+          }
+        }
+      }
+    },
+    "sync.setup.introduction" : {
+      "comment" : "Sync setup introduction explanation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring your Spaces, bookmarks, pinned tabs and supported browsing data to your other devices. Save a recovery code, then choose how this Mac joins your account."
+          }
+        }
+      }
+    },
+    "sync.setup.invalidRecoveryCode" : {
+      "comment" : "Sync recovery input rejected",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your recovery code and try again."
+          }
+        }
+      }
+    },
+    "sync.setup.notPaired" : {
+      "comment" : "Sync status before matching completes",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not paired"
+          }
+        }
+      }
+    },
+    "sync.setup.notStarted" : {
+      "comment" : "All sync waits for pairing completion",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync has not started"
+          }
+        }
+      }
+    },
+    "sync.setup.profileExplanation" : {
+      "comment" : "Sync setup profile matching explanation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose how profiles on this Mac connect to your account. Sync starts after you finish matching profiles and Spaces. You can finish later and keep browsing."
+          }
+        }
+      }
+    },
+    "sync.setup.signInRequired" : {
+      "comment" : "Sync setup authentication expired",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again to continue setting up sync."
+          }
+        }
+      }
+    },
+    "sync.setup.title" : {
+      "comment" : "Sync setup introduction title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up sync"
+          }
+        }
+      }
+    },
+    "sync.setup.useRecovery" : {
+      "comment" : "Switch from approval to recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use a recovery code"
+          }
+        }
+      }
+    },
+    "sync.status.checking" : {
+      "comment" : "Sync status not yet known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking sync status…"
+          }
+        }
+      }
+    },
+    "sync.status.details" : {
+      "comment" : "Expand individual sync context status",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        }
+      }
+    },
+    "sync.status.initial" : {
+      "comment" : "First sync is receiving account data",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial sync in progress"
+          }
+        }
+      }
+    },
+    "sync.status.lastSuccess" : {
+      "comment" : "Local completion timestamp label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last successful sync on this Mac"
+          }
+        }
+      }
+    },
+    "sync.status.needsAttention" : {
+      "comment" : "Sync has a failure requiring attention",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs attention"
+          }
+        }
+      }
+    },
+    "sync.status.offline" : {
+      "comment" : "Eligible data waits for connectivity",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline — changes will sync when connected"
+          }
+        }
+      }
+    },
+    "sync.status.partialFailure" : {
+      "comment" : "One or more sync contexts failed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some content needs attention. Check the details and your connection."
+          }
+        }
+      }
+    },
+    "sync.status.phiContent" : {
+      "comment" : "Native sync context label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces and Phi data"
+          }
+        }
+      }
+    },
+    "sync.status.syncing" : {
+      "comment" : "Sync has pending work",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Syncing…"
+          }
+        }
+      }
+    },
+    "sync.status.upToDate" : {
+      "comment" : "All required contexts completed sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to date"
+          }
+        }
+      }
+    },
+    "sync.setup.expiresIn" : {
+      "comment" : "Approval request time remaining prefix",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires in"
+          }
+        }
+      }
+    },
+    "sync.status.phiData" : {
+      "comment" : "Native sync context display name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi data"
+          }
+        }
+      }
+    },
+    "sync.status.profile" : {
+      "comment" : "Unknown profile display name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

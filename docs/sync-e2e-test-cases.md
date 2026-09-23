@@ -21,7 +21,7 @@ run: these sources do not establish which features a distributed build contains.
 | Exclusions | Chromium passwords, cookies and autofill are rejected by this service. Phi owns bookmark sync; Chromium BOOKMARKS is disabled. The reserved `PhiChat` Profile is local-only. Conversation storage is a separate feature. |
 
 Profile pairing is in scope; do not infer that all Profile names, avatars or
-settings synchronize. A full Sync status/settings UI is not assumed. Ordinary
+settings synchronize. The Sync UX cases below cover the new settings pane. Ordinary
 open tabs are not Phi pinned tabs: Chromium session data must not be interpreted
 as a requirement to recreate every tab automatically on the other Mac.
 
@@ -95,9 +95,9 @@ previous case's hidden Space or pending edit determine the next result.
 | SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, then select “I've saved it”. Restart A. | A presents a recovery code and requires acknowledgment before dismissing that step. Setup completes; restart unlocks the existing account without creating another account key or asking to bootstrap again. |
 | SYNC-A02 | P0 / Manual | U1 initialized on A; B is fresh. Sign in as U1 on B, choose “Enter a recovery code”, enter A's code and complete pairing. Create one bookmark on each Mac. | B joins the same account; existing data arrives and both new bookmarks propagate once. A's existing data remains intact. |
 | SYNC-A03 | P0 / Manual | Fresh B joining U1. Try an invalid code, then a valid code belonging to U2, then U1's correct code. | Incorrect codes cannot unlock U1 or expose its data. Failure remains recoverable; the correct code can complete joining without resetting A. |
-| SYNC-A04 | P0 / Manual | Fresh B requests approval. On A open Settings → Devices, compare the displayed verification code and approve the matching request. Finish pairing on B. | Request/device and code correspond on both Macs. B progresses without hanging; it receives U1 data only after approval and mapping. |
+| SYNC-A04 | P0 / Manual | Fresh B requests approval. On A open Settings → Sync, compare the displayed verification code and approve the matching request. Finish pairing on B. | Request/device and code correspond on both Macs. B progresses without hanging; it receives U1 data only after approval and mapping. |
 | SYNC-A05 | P1 / Manual | Repeat new requests independently: deny on A; cancel on B; let the displayed expiry pass before trying approval. Then create a fresh request and approve it. | Denied/cancelled/expired requests do not enroll B. B can retry or select recovery. A fresh valid request succeeds; the UI never remains indefinitely on a completed request. |
-| SYNC-A06 | P0 / Manual | A/B both joined. On B choose Settings → Devices → “Remove this device from sync…”. First cancel the confirmation; then repeat and confirm. Change data on A. Restart B and later rejoin it. | Cancel changes nothing. Confirm stops B's sync while retaining its local Spaces, bookmarks, history and pins. New changes from A do not land while removed. Rejoining requires approval or recovery; no automatic reuse of removed membership. |
+| SYNC-A06 | P0 / Manual | A/B both joined. On B choose Settings → Sync → “Remove this device from sync…”. First cancel the confirmation; then repeat and confirm. Change data on A. Restart B and later rejoin it. | Cancel changes nothing. Confirm stops B's sync while retaining its local Spaces, bookmarks, history and pins. New changes from A do not land while removed. Rejoining requires approval or recovery; no automatic reuse of removed membership. |
 | SYNC-A07 | P0 / Manual | Disposable account with A as its only active device. Attempt self-removal, including from a pairing gate if present. | Removal is refused with the last-device explanation. Existing data/keys remain usable. Pairing can still complete, or a second device can join before retrying removal. |
 | SYNC-A08 | P0 / Manual | Sign B out of U1; change A's data while B is signed out. Sign B back into U1 and complete any required unlock/pairing. | Signed-out B stops account sync. Reauthentication resumes sync and catches up, including when Profile UUID/key are unchanged. There is no permanent disabled engine or destructive overwrite of A. |
 
@@ -313,3 +313,33 @@ Their exact applicability must be reviewed against the tested build.
   and `design/2026-09-16-m3-4a-url-rules-marker-boundary-design.md` beneath that project.
   Historical design steps are context; current code and `sync.md` take precedence
   where later convergence changes supersede them.
+
+## Sync UX acceptance (2026-09-23)
+
+These cases supplement the data-convergence scenarios above. They remain **Not
+run** until exercised with recorded app/framework/server versions on two Macs.
+The implementation branch is `feat/sync-ux` based on native `1b4e7305`; framework
+source changes are in the canonical Chromium checkout. This is not a release signoff.
+
+| Case | Steps | Required result | Result |
+| --- | --- | --- | --- |
+| UX-01 | First device opens Sync, starts setup, saves recovery code | No account creation before Continue; one window through completion | Not run |
+| UX-02 | B uses a bad recovery code, then corrects it | Editable retained input and actionable inline error; proceeds to matching | Not run |
+| UX-03 | B requests approval; A approves in Sync | Matching codes/device, live expiry, recovery alternative; one continuous window | Not run |
+| UX-04 | Later/close/Escape during load, choice, overwrite review, refresh and error; restart B | Local browsing works; Sync says unpaired/not started; no automatic reopening or data sync | Not run |
+| UX-05 | Defer, change account Profiles/Spaces on A, enter B again; repeat offline | Fresh choices online; retry error offline without cached fallback | Not run |
+| UX-06 | Delay fresh review; try Back/change mappings, then Later | Edits/navigation frozen; Later cancels; no unreviewed overwrite or late mapping writes | Not run |
+| UX-07 | Interrupt/fail a confirmed partial mapping write; reopen and retry | Confirmed writes retained; unresolved choices reload; completion persists only after all mappings | Not run |
+| UX-08 | Switch accounts while loading, reviewing, approving or removing | No old response changes current account UI, mappings, credentials or engine | Not run |
+| UX-09 | Rejoin a revoked fingerprint that rotates during registration; restart | Enrollment persists the new device identity; no redundant pairing after restart | Not run |
+| UX-10 | Observe missing/old framework, offline, pending data, rejected commit and unreadable settings | Checking/offline/attention as appropriate; no global success from partial evidence | Not run |
+| UX-11 | Add local data while status counts or native debounce are pending | Prior success invalidated; returns to success only after actual work completes | Not run |
+| UX-12 | Fail device list load, return empty list, use duplicate names, approve expired request | Errors differ from empty results; current Mac identified by key ID; no invented last-seen time | Not run |
+| UX-13 | Remove device, cancel removal, try last-device removal; then Later | Explicit local-data preservation; rejection actionable; Later still available | Not run |
+| UX-14 | Keyboard navigation, VoiceOver, narrow window, long translations | Actions discoverable; focus/order and recovery-code acknowledgement usable | Not run |
+
+Automated evidence is recorded separately from these manual cases: hostless
+pairing/device/status/invalidation regressions and convergence properties have
+executed; native `build-for-testing` compiles hosted tests but does not run them.
+Targeted Chromium object builds compile the changed implementation/tests; a new
+`components_unittests` binary has not been linked/executed in this task.

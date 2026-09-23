@@ -86,7 +86,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                             markerStore: any PhiSyncMarkerStore,
                             spaceStore: MemorySpaceStore = MemorySpaceStore()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: [],
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                       spaceAccess: makeSpaceAccess(), spaceStore: spaceStore,
                       markerStore: markerStore,
                       now: { 1_700_000_000_000 })
@@ -216,7 +216,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         ], marker: "m1")]
 
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: spaceAccess, spaceStore: spaceStore,
                                    ownedKinds: [.bookmarks(access: access, store: ownedStore)],
                                    now: { 1_700_000_000_000 })
@@ -257,7 +257,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: makeSpaceAccess(), spaceStore: store,
                                    now: { 1_700_000_000_000 })
 
@@ -285,7 +285,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         let client = FakePhiSyncClient()
         client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
         let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                                   defaults: defaults, deviceKeyId: "devA", settings: [],
+                                   defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: [],
                                    spaceAccess: makeSpaceAccess(), spaceStore: store,
                                    now: { 1_700_000_000_000 })
 
@@ -699,7 +699,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                                  settings: [SyncableSetting] = [],
                                  ownedKinds: [OwnedKindRegistration] = []) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: settings,
                       spaceAccess: spaceAccess ?? makeSpaceAccess(), spaceStore: spaceStore,
                       markerStore: markerStore, ownedKinds: ownedKinds,
                       now: { 1_700_000_000_000 })
@@ -710,7 +710,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
                                         markerStore: any PhiSyncMarkerStore,
                                         settings: [SyncableSetting]) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
-                      defaults: defaults, deviceKeyId: "devA", settings: settings,
+                      defaults: defaults, deviceKeyId: "devA", pairingComplete: true, settings: settings,
                       markerStore: markerStore, now: { 1_700_000_000_000 })
     }
 

@@ -23,7 +23,9 @@ private final class AccountController {
 }
 
 @MainActor
-enum ProfilePairingGate {
+final class ProfilePairingGate {
+    static let shared = ProfilePairingGate()
+    var isPaired: Bool { !Self.joinPairingPending }
     static var joinPairingPending = true
 }
 

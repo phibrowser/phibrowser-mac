@@ -185,7 +185,13 @@ final class SpacesStripHostingView: ThemedHostingView {
     }
 }
 
-class SidebarViewController: NSViewController {
+class SidebarViewController: NSViewController, BrowserThemeContextProviding {
+    /// Hosted mode moves this view into the shell's sidebar column, whose
+    /// host answers with the presented session's theme. Every Space's sidebar
+    /// is resident there, so answer with this Space's own context — as the
+    /// floating sidebar does — or rows built while it is hidden take the
+    /// theme of the Space on screen.
+    var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
     private static let defaultFavoriteHeight: CGFloat = 0
     private static let pinnedHeightPersistenceThreshold: CGFloat = 20
     private static let pinnedHeightCacheKey = "Sidebar.pinnedTabsContainerHeight.v1"
@@ -307,7 +313,24 @@ class SidebarViewController: NSViewController {
     private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
     private var spacesStripHostingView: SpacesStripHostingView?
 
+    /// Follows the active Space of the slot this sidebar belongs to. Mirrors
+    /// the SpacesStripView fallback chain so the gradient still resolves
+    /// before SpaceSessionController has wired up its slot — a prewarmed
+    /// spare is built before it has one — and re-binds once it has, since the
+    /// key window's slot it fell back to may be another window's.
+    private func bindSpaceTintToSlot() {
+        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
+        guard slot !== spaceTintSlot || spaceTintCancellable == nil else { return }
+        spaceTintSlot = slot
+        spaceTintCancellable = slot?.$activeSpaceId
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
+    }
+    private weak var spaceTintSlot: SpaceWindowSlot?
+    private var spaceTintCancellable: AnyCancellable?
+
     func bindSpaceStripToSession() {
+        bindSpaceTintToSlot()
         guard state.participatesInSpaces, spacesStripHostingView == nil,
               let slot = spacesStripSlot else { return }
         let wheelTracker = SpacesStripWheelTracker()
@@ -836,13 +859,7 @@ class SidebarViewController: NSViewController {
             }
             .store(in: &cancellables)
 
-        // Mirror the SpacesStripView fallback chain so the gradient still
-        // resolves before SpaceSessionController has wired up its slot.
-        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
-        slot?.$activeSpaceId
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
-            .store(in: &cancellables)
+        bindSpaceTintToSlot()
 
         SpaceManager.shared.$spaces
             .receive(on: DispatchQueue.main)

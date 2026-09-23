@@ -445,6 +445,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isAutoPipParkEnabled;
 - (BOOL)handleDeeplinkWithUrlString:(NSString *)urlString windowId:(int64_t)windowId;
 - (void)toggleChatSidebar:(NSNumber * _Nullable)show;
+/// `toggleChatSidebar:` for the Browser window `windowId` (the calling
+/// tab's); -1 when the caller has no tab, which means the active window.
+- (void)toggleChatSidebar:(NSNumber * _Nullable)show windowId:(int64_t)windowId;
 - (void)showFeedbackDialog;
 
 /// A navigation matched a Space URL rule whose action is "ask first", so

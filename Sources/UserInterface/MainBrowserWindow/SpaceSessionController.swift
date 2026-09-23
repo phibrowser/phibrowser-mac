@@ -787,9 +787,21 @@ class SpaceSessionController: NSWindowController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self,
-                      notification.object as? NSWindow === self.window,
-                      self.isPresentedOrLegacy,
                       let visible = notification.userInfo?["visible"] as? Bool else { return }
+                // Hosted mode: every session of the shell sees the shell's
+                // overlays, so they carry the posting session. Its own hide
+                // must still land after it left the shell — `concealFromShell`
+                // dismisses the overlays once `isPresented` is already false,
+                // and possibly after its tree (tab search included) left the
+                // window — or its peek/reader stay eclipsed or concealed on
+                // return.
+                if let owner = notification.userInfo?["windowId"] as? Int {
+                    guard owner == self.windowId,
+                          !visible || self.isPresentedOrLegacy else { return }
+                } else {
+                    guard notification.object as? NSWindow === self.window,
+                          self.isPresentedOrLegacy else { return }
+                }
                 if notification.userInfo?["surface"] as? String == "omnibox" {
                     if !visible {
                         // The empty host must neither eat clicks nor hold
@@ -1017,6 +1029,7 @@ class SpaceSessionController: NSWindowController {
         mainSplitViewController.loadViewIfNeeded()
         split.contentHost.host(mainSplitViewController.view)
         mainSplitViewController.sidebarViewController.bindSpaceStripToSession()
+        mainSplitViewController.webContentContainerViewController.bindSpacesPickerToSession()
         let sidebar = mainSplitViewController.sidebarViewController.view
         split.sidebarHost.host(sidebar)
         sidebar.layoutSubtreeIfNeeded()
@@ -1149,6 +1162,14 @@ class SpaceSessionController: NSWindowController {
         if searchTabsContainerViewController?.hasShown == true {
             searchTabsContainerViewController?.hideSearchTabs()
         }
+        // A Ctrl+Tab session is watched through the shell, which a switch
+        // (⌃1…⌃9 shares its modifier) keeps key; left running, releasing
+        // Ctrl would select a tab in this hidden Space.
+        browserState.tabSwitchManager.cancelSession()
+        // An unanswered ask-Space chooser is a child of the shell, not of
+        // this Space's tree; it resolves as declined instead of staying over
+        // the next Space.
+        PhiChromiumCoordinator.shared.declineChooser(windowId: Int64(windowId))
         if let panel = omniBoxHostPanel {
             panel.parent?.removeChildWindow(panel)
             panel.orderOut(nil)

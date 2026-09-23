@@ -1499,8 +1499,10 @@ final class BroomButton: NSButton {
     }
 
     @objc private func handleOrganizeDidStart() {
-        // Only the window that triggered the run (the key window) animates.
-        guard !isHidden, window?.isKeyWindow == true else { return }
+        // Only the window that triggered the run (the key window) animates —
+        // and in it only the Space on screen: every Space's sidebar is
+        // resident, hidden, in the shared shell.
+        guard !isHiddenOrHasHiddenAncestor, window?.isKeyWindow == true else { return }
         startOrganizing()
     }
 

@@ -224,6 +224,10 @@ class WebContentContainerViewController: NSViewController {
     /// Contains TabStrip and right-side buttons (CardEntryButton, etc.)
     private var tabStripBarController: TabStripBarController?
     var tabStripView: TabStrip? { tabStripBarController?.tabStrip }
+    /// See `TabStripBarController.bindSpacesPickerToSession`.
+    func bindSpacesPickerToSession() {
+        tabStripBarController?.bindSpacesPickerToSession()
+    }
 
     private var topBarHeightConstraint: Constraint?
     private var topBarTopConstraint: Constraint?

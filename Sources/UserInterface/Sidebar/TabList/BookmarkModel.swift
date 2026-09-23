@@ -9,6 +9,9 @@ import Combine
 class Bookmark: WebContentRepresentable {
     let guid: String
     let profileId: String?
+    /// The Space the last context menu for this bookmark was opened from; its
+    /// actions run against that Space's bookmarks (see `BookmarkModel+Sidebar`).
+    weak var contextMenuOwnerState: BrowserState?
     @Published var title: String
     @Published var url: String?
     /// Second URL for a split-view bookmark. Non-nil means clicking the

@@ -2236,6 +2236,10 @@ class WebContentViewController: NSViewController {
     private func applyContentFullscreenState(_ isFullscreen: Bool) {
         if isFullscreen {
             guard savedHostViewSuperview == nil else { return }
+            // Hosted mode: a background Space's tree is resident in the shell,
+            // so the lift would cover the Space on screen. The slot releases
+            // that fullscreen (`sessionRequestedShellFullscreen`).
+            guard ownsWindowFocus else { return }
             guard let window = hostView.window,
                   let contentView = window.contentView else {
                 // The controller's view is not currently in a window (cached

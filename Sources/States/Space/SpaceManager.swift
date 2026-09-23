@@ -6434,21 +6434,30 @@ final class SpaceManager: ObservableObject {
         // animation whose completion and key-window churn raced the respawn
         // and could leave the slot on that other Space.
         for slot in slots where slot !== respawnSlot {
-            guard let controller = slot.windowController(for: spaceId) else { continue }
+            guard slot.windowController(for: spaceId) != nil else { continue }
+            let closeOldWindow = { [weak slot] in
+                guard let slot,
+                      let controller = slot.windowController(for: spaceId) else { return }
+                // Same guard as `deleteSpace`: if the retreat failed to spawn,
+                // closing the still-visible window would be classified as
+                // window-driven and cascade the whole slot shut.
+                guard slot.visibleController !== controller else {
+                    AppLogWarn("[SpaceManager] changeProfile: not closing \(spaceId)'s window — it is still visible (retreat to default did not complete)")
+                    return
+                }
+                // Evict before closing so the asynchronous teardown's late
+                // unregister can't run the visible-close side effects.
+                slot.evictWindow(for: spaceId)
+                controller.closeChromiumWindow()
+            }
             if slot.activeSpaceId == spaceId {
-                slot.activate(spaceId: currentDefaultSpaceId)
+                // As `closeSpaceWindows`: close once the retreat's slide has
+                // settled. Closing synchronously tore the leaving session out
+                // of the shell while the slide was still carrying its band.
+                slot.activate(spaceId: currentDefaultSpaceId, onSwapSettled: closeOldWindow)
+            } else {
+                closeOldWindow()
             }
-            // Same guard as `deleteSpace`: if the retreat above failed to
-            // spawn, closing the still-visible window would be classified
-            // as window-driven and cascade the whole slot shut.
-            guard slot.visibleController !== controller else {
-                AppLogWarn("[SpaceManager] changeProfile: not closing \(spaceId)'s window — it is still visible (retreat to default did not complete)")
-                continue
-            }
-            // Evict before closing so the asynchronous teardown's late
-            // unregister can't run the visible-close side effects.
-            slot.evictWindow(for: spaceId)
-            controller.closeChromiumWindow()
         }
     }
 
@@ -8358,6 +8367,13 @@ final class SpaceWindowSlot: ObservableObject {
     /// programmatic `close()`, stranding a background Space with live tabs.
     private var isCascadingSlotClose = false
 
+    /// Hosted mode: the presented session that closed mid-cascade. Its tree
+    /// stays in the shell until the shell closes with the last session, so it
+    /// is held here — `visibleController` is weak — for whoever replaces it on
+    /// screen (a background Space's `beforeunload` prompt, or a vetoed
+    /// cascade's survivor) to take that tree out.
+    private var cascadeClosedPresented: SpaceSessionController?
+
     /// True while a window-driven close is cascading this slot's windows
     /// shut. Read by `SpaceManager.handleSpacesUpdate`'s reconciliation so a
     /// Space removal landing mid-cascade (an Incognito Space reaped as its
@@ -9831,14 +9847,28 @@ final class SpaceWindowSlot: ObservableObject {
             presents($0) && windowsBySpaceId[$0.spaceId] == nil
         }
         let wantedIds = Set(wanted.map(\.spaceId))
+        var droppedPresented = false
         for (spaceId, session) in dormantSessionsBySpaceId
         where !wantedIds.contains(spaceId) || session.profileId != wanted.first(where: { $0.spaceId == spaceId })?.profileId {
             dormantSessionsBySpaceId.removeValue(forKey: spaceId)
             AppLogInfo("[SpaceWindowSlot] dropping dormant session \(session.windowId) for \(spaceId)")
             if visibleController === session {
                 visibleController = nil
+                droppedPresented = true
             }
             session.discardDormant()
+        }
+        defer {
+            // The shell was showing the dormant session just dropped (its Space
+            // changed profile before its Browser arrived). Nothing else would
+            // re-present — the guard above now refuses every later reconcile —
+            // so the shell stayed blank. Surface the active Space again through
+            // the ordinary switch, which spawns its Browser.
+            if droppedPresented, visibleController == nil,
+               let spaceId = activeSpaceId ?? windowsBySpaceId.keys.first {
+                AppLogInfo("[SpaceWindowSlot] presented dormant session dropped; re-presenting \(spaceId)")
+                activate(spaceId: spaceId, animated: false)
+            }
         }
         for space in wanted where dormantSessionsBySpaceId[space.spaceId] == nil
             && !pendingSpawnSpaceIds.contains(space.spaceId) {
@@ -9882,7 +9912,11 @@ final class SpaceWindowSlot: ObservableObject {
                                          wasVisible: Bool,
                                          isTabDriven: Bool) {
         if wasVisible {
-            controller.concealFromShell()
+            // No `setPresented:NO` for a Browser that is closing: this runs
+            // inside its own window's willClose, and Chromium's unpresent
+            // (tab fullscreen exit, toolbar popup teardown) would reach into a
+            // BrowserView mid-teardown for a presentation that dies with it.
+            controller.concealFromShell(deferringChromium: true)
             visibleController = nil
         } else {
             controller.leaveShell()
@@ -9897,10 +9931,19 @@ final class SpaceWindowSlot: ObservableObject {
             cascadeCloseRemainingWindows()
             scheduleCascadeVetoRecovery()
         }
-        if windowsBySpaceId.isEmpty {
+        if windowsBySpaceId.isEmpty, !presentsDormantSession {
             closeReopenLoadingWindow()
             manager?.removeSlot(self)
         }
+    }
+
+    /// The shell shows a dormant session whose Browser is still on its way
+    /// (a cold switch's spawn in flight). The live-session map says nothing
+    /// about it, so a background session closing or being evicted must not
+    /// read that map's emptiness as "the slot is done" and close the shell
+    /// under the Space the user is looking at.
+    private var presentsDormantSession: Bool {
+        visibleController?.isDormant == true
     }
 
     /// Chromium asked for `controller`'s window on screen. Switches to its
@@ -9915,7 +9958,13 @@ final class SpaceWindowSlot: ObservableObject {
         // Inactive shows may surface the initial session, never a background
         // Space. Restore emits inactive shows for every concealed sibling.
         guard shouldActivate || visibleController === controller else { return }
-        if visibleController != nil, visibleController !== controller {
+        if isCascadingSlotClose, visibleController !== controller {
+            // Mid-cascade the only Chromium show is a `beforeunload` prompt
+            // (Chromium activates its tab, then parents the dialog to the
+            // Browser the shell presents). Dropping it left the prompt with
+            // nowhere to appear and the cascade waiting on it forever.
+            adoptSessionForDisplayDuringCascade(controller)
+        } else if visibleController != nil, visibleController !== controller {
             let spaceId = controller.spaceId
             // An agent Space is only surfaced by the user (`activate`), which
             // makes it active first. Its Browser shows itself as the agent
@@ -9926,12 +9975,8 @@ final class SpaceWindowSlot: ObservableObject {
                 AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(spaceId)) dropped: agent Space not surfaced by the user")
                 return
             }
-            // A Space mid-deletion (its row already gone) or a slot tearing
-            // itself down is never a switch the user made.
-            if isCascadingSlotClose {
-                AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(spaceId)) dropped: slot is closing")
-                return
-            }
+            // A Space mid-deletion (its row already gone) is never a switch
+            // the user made.
             if let manager, !manager.spaces.isEmpty,
                !manager.spaces.contains(where: { $0.spaceId == spaceId }) {
                 AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(spaceId)) dropped: unknown Space")
@@ -10136,6 +10181,17 @@ final class SpaceWindowSlot: ObservableObject {
             // background session's shell never moves, so answer now rather
             // than leave the transition pending.
             controller.completeShellFullscreenTransition()
+            // A background Space's page entering fullscreen (an agent pressing
+            // "f", a request racing a switch away) has no shell of its own to
+            // fill; left on, it would be lifted over the Space on screen. Its
+            // leaving the shell would have exited it (`UnpresentHostedBrowser`),
+            // so release it the same way, after Chromium has committed it.
+            if fullscreen {
+                DispatchQueue.main.async { [weak controller] in
+                    guard let controller, !controller.isPresented else { return }
+                    controller.pushShellFullscreenToChromium(false)
+                }
+            }
             return
         }
         // Every request completes once the shell has settled (or right away
@@ -11519,6 +11575,10 @@ final class SpaceWindowSlot: ObservableObject {
         // change pending rather than dropping it.
         manager?.flushPendingSlotsSnapshotPersist()
         windowsBySpaceId.removeValue(forKey: spaceId)
+        // A restored sibling that closes before it was ever surfaced must not
+        // leave its marker behind: the Space's next session in this slot
+        // would have every presentation request dropped as "not yet surfaced".
+        restoredSiblingsAwaitingPresent.remove(spaceId)
         manager?.noteSlotWindowsDidChange()
         defer { manager?.pushSpaceStateToChromium() }
         // Drain the marker unconditionally so a stale entry can't poison
@@ -11572,9 +11632,12 @@ final class SpaceWindowSlot: ObservableObject {
             // session, or until `recoverFromVetoedCascade` replaces it.
             if controller.isHosted, visibleController !== controller {
                 controller.leaveShell()
+            } else if controller.isHosted {
+                cascadeClosedPresented = controller
             }
             if windowsBySpaceId.isEmpty {
                 isCascadingSlotClose = false
+                cascadeClosedPresented = nil
                 manager?.removeSlot(self)
             }
             return
@@ -11678,24 +11741,24 @@ final class SpaceWindowSlot: ObservableObject {
 
     private func recoverFromVetoedCascade() {
         isCascadingSlotClose = false
-        // Prefer the window the user is looking at (the one whose beforeunload
-        // prompt they answered is key), then any on-screen Space window, then
-        // any surviving Space at all.
-        guard let survivor = windowsBySpaceId.first(where: { $0.value.window?.isKeyWindow == true })
-                ?? windowsBySpaceId.first(where: { $0.value.window?.isVisible == true })
-                ?? windowsBySpaceId.first else { return }
+        // Prefer the Space the user is looking at — the one whose beforeunload
+        // prompt they answered was presented for it — then any surviving Space.
+        // Every hosted session's `window` is the shared shell, so key/visible
+        // state cannot tell the survivors apart.
+        let presentedSurvivor = visibleController.flatMap { presented in
+            windowsBySpaceId[presented.spaceId] === presented
+                ? (key: presented.spaceId, value: presented) : nil
+        }
+        guard let survivor = presentedSurvivor ?? windowsBySpaceId.first else { return }
         AppLogInfo("[SpaceWindowSlot] cascade close vetoed; recovering on surviving Space \(survivor.key)")
         activeSpaceId = survivor.key
-        // The session presented when the cascade began may already have
-        // closed; presenting the survivor only conceals it, so take its tree
-        // out of the shell as well.
-        let closedPresented = visibleController.flatMap { presented in
-            windowsBySpaceId[presented.spaceId] === presented ? nil : presented
-        }
         // `visibleController`'s didSet re-pushes the Space→window routing map,
         // undoing the drop-out the stuck flag caused.
         presentHostedSession(survivor.value)
-        closedPresented?.leaveShell()
+        // The session presented when the cascade began may already have
+        // closed; presenting the survivor only conceals it, so take its tree
+        // out of the shell as well.
+        takeClosedPresentedOutOfShell()
         // `unregisterWindow`'s deferred reconcile skipped itself while the
         // cascade was armed, so a fullscreen slot whose teardown was vetoed
         // still carries the closed window's flag. Re-derive it from the
@@ -11733,19 +11796,28 @@ final class SpaceWindowSlot: ObservableObject {
     /// Writes the display-facing pair only. Persistence must keep the closing
     /// group's own active Space (see the undo in `unregisterWindow`) so a "Leave"
     /// still reopens on it; `recoverFromVetoedCascade` persists the settled state.
-    private func adoptSpaceForDisplayDuringCascade(_ spaceId: String) {
-        // `isVisible` is not enough: `concealRestoredSiblingWindow` hides restore
-        // siblings by zeroing alpha only, and Chromium keys them as their tabs
-        // load — a cascade can arm inside that burst. Every other off-screen path
-        // orders the window out, which `isVisible` already catches.
+    ///
+    /// Hosted mode: the prompting Space has no window of its own to surface, so
+    /// it is presented in the shell — without a slide, so its Browser is the
+    /// presented one before Chromium parents the dialog to it.
+    private func adoptSessionForDisplayDuringCascade(_ controller: SpaceSessionController) {
         guard isCascadingSlotClose,
-              let controller = windowsBySpaceId[spaceId],
-              let window = controller.window,
-              window.isVisible, window.alphaValue > 0 else { return }
-        if activeSpaceId == spaceId, visibleController === controller { return }
-        AppLogInfo("[SpaceWindowSlot] cascade close in flight; following on-screen Space \(spaceId) for display")
-        activeSpaceId = spaceId
-        visibleController = controller
+              windowsBySpaceId[controller.spaceId] === controller,
+              visibleController !== controller else { return }
+        AppLogInfo("[SpaceWindowSlot] cascade close in flight; presenting prompting Space \(controller.spaceId) for display")
+        activeSpaceId = controller.spaceId
+        presentHostedSession(controller)
+        takeClosedPresentedOutOfShell()
+    }
+
+    /// The tree of the presented session that closed mid-cascade leaves the
+    /// shell once another session has taken its place there.
+    private func takeClosedPresentedOutOfShell() {
+        guard let closed = cascadeClosedPresented else { return }
+        cascadeClosedPresented = nil
+        if closed !== visibleController {
+            closed.leaveShell()
+        }
     }
 
     /// Removes the controller registered for `spaceId` from this slot
@@ -11760,10 +11832,11 @@ final class SpaceWindowSlot: ObservableObject {
     @discardableResult
     func evictWindow(for spaceId: String, removeSlotIfEmpty: Bool = true) -> SpaceSessionController? {
         guard let controller = windowsBySpaceId.removeValue(forKey: spaceId) else { return nil }
+        restoredSiblingsAwaitingPresent.remove(spaceId)
         manager?.noteSlotWindowsDidChange()
         manager?.pushSpaceStateToChromium()
         manager?.persistSlotsSnapshot()
-        if removeSlotIfEmpty, windowsBySpaceId.isEmpty {
+        if removeSlotIfEmpty, windowsBySpaceId.isEmpty, !presentsDormantSession {
             // A background slot whose only window was the evicted one is
             // done — mirror unregisterWindow's slot teardown, minus the
             // app-termination check (an eviction is never a user-driven

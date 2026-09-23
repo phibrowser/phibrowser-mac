@@ -46,6 +46,17 @@ enum BookmarkMenuSource {
 
 // menu
 extension Bookmark: ContextMenuRepresentable {
+    /// The Space this tab's (or bookmark's) context-menu actions run against:
+    /// the one the menu was opened from, else the active one.
+    private var contextMenuState: BrowserState? {
+        contextMenuOwnerState ?? SpaceSessionControllersManager.shared.activeWindowController?.browserState
+    }
+
+    @MainActor private var contextMenuWindowController: SpaceSessionController? {
+        contextMenuState?.windowController
+            ?? SpaceSessionControllersManager.shared.activeWindowController
+    }
+
     @MainActor
     func makeContextMenu(on menu: NSMenu) {
         self.makeContextMenu(on: menu, source: .sidebar)
@@ -54,6 +65,8 @@ extension Bookmark: ContextMenuRepresentable {
     @MainActor
     func makeContextMenu(on menu: NSMenu, source: BookmarkMenuSource) {
         menu.removeAllItems()
+        contextMenuOwnerState = SpaceSessionControllersManager.shared
+            .controllerUnderContextClick()?.browserState
         if !isFolder {
             // Split-view bookmarks expose each URL on its own item — copying
             // both at once isn't useful in practice and matches how the edit
@@ -170,7 +183,7 @@ extension Bookmark: ContextMenuRepresentable {
             }
         }
 
-        if let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        if let state = contextMenuState,
            appendSpaceTransferMenuItems(to: menu,
                                         browserState: state,
                                         spaces: SpaceManager.shared.spaces) {
@@ -241,7 +254,7 @@ extension Bookmark: ContextMenuRepresentable {
     
     @MainActor
     @objc private func myDelete(_ item: NSMenuItem) {
-        guard let controller = SpaceSessionControllersManager.shared.activeWindowController,
+        guard let controller = contextMenuWindowController,
               let bookmark = controller.browserState.bookmarkManager.bookmark(withGuid: guid) else { return }
         let manager = controller.browserState.bookmarkManager
 
@@ -278,21 +291,21 @@ extension Bookmark: ContextMenuRepresentable {
     @MainActor
     @objc private func moveToSpace(_ sender: NSMenuItem) {
         guard let targetSpaceId = sender.representedObject as? String else { return }
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState
+        contextMenuState?
             .moveBookmark(self, toSpaceId: targetSpaceId)
     }
 
     @MainActor
     @objc private func cloneToSpace(_ sender: NSMenuItem) {
         guard let targetSpaceId = sender.representedObject as? String else { return }
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState
+        contextMenuState?
             .cloneBookmark(self, toSpaceId: targetSpaceId)
     }
     
     @objc private func openInNewTab() {
         guard let _ = url else { return }
         // Open through the bookmark flow so the Chromium tab stays associated.
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState.createTab(url)
+        contextMenuState?.createTab(url)
     }
 
     /// Opens a fresh duplicate split for a split-view bookmark. Intentionally
@@ -303,7 +316,7 @@ extension Bookmark: ContextMenuRepresentable {
     @objc private func openSplitInNewTab() {
         guard let url, !url.isEmpty,
               let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
-              let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else { return }
+              let state = contextMenuState else { return }
         state.openTwoURLsAsSplit(primaryURL: url,
                                  secondaryURL: secondaryURL,
                                  layout: layout ?? .vertical)
@@ -312,7 +325,7 @@ extension Bookmark: ContextMenuRepresentable {
     @MainActor
     @objc private func convertSplitLayout() {
         guard secondaryUrl?.isEmpty == false,
-              let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
+              let state = contextMenuState else {
             return
         }
         state.updateBookmarkSplitLayout(bookmarkGuid: guid,
@@ -356,7 +369,7 @@ extension Bookmark: ContextMenuRepresentable {
     @MainActor
     @objc private func openInSplitView() {
         guard let url, !url.isEmpty,
-              let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else { return }
+              let state = contextMenuState else { return }
         // Pair the bookmark with the focused tab — same path as drag-to-split
         // from the sidebar. If the bookmark already has an attached opened
         // tab, `formSplitFromBookmark` detaches it into the normal list and
@@ -375,7 +388,7 @@ extension Bookmark: ContextMenuRepresentable {
     }
     
     @objc private func renameBookmark() {
-        let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+        let state = contextMenuState
         // Enter inline edit mode directly instead of showing a dialog.
         state?.bookmarkManager.triggerRename(for: self)
     }
@@ -402,7 +415,7 @@ extension Bookmark: ContextMenuRepresentable {
     
     @MainActor
     @objc private func newFolder() {
-        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController else {
+        guard let windowController = contextMenuWindowController else {
             return
         }
         let state = windowController.browserState
@@ -423,7 +436,7 @@ extension Bookmark: ContextMenuRepresentable {
     
     @MainActor
     @objc private func edit() {
-        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController else {
+        guard let windowController = contextMenuWindowController else {
             return
         }
         let state = windowController.browserState

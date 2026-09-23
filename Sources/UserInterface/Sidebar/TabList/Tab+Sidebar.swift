@@ -52,7 +52,9 @@ extension Tab: SidebarItem {
 extension Tab: ContextMenuRepresentable {
     @MainActor func makeContextMenu(on menu: NSMenu) {
         menu.removeAllItems()
-        
+        contextMenuOwnerState = SpaceSessionControllersManager.shared
+            .controllerUnderContextClick()?.browserState
+
         var items: [NSMenuItem] = []
        
         
@@ -61,7 +63,7 @@ extension Tab: ContextMenuRepresentable {
         // marks the SplitGroup as pinned; unpin reverses that. The same
         // `splitMembership` lookup covers all three cell shapes (live tab,
         // pinned record with live panes, closed pinned split).
-        let browserStateForMenu = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+        let browserStateForMenu = contextMenuState
         let splitMembership = browserStateForMenu?.splitMembership(forCellTab: self)
         let isPinnedSplitCell = splitMembership?.isPinned == true
 
@@ -184,7 +186,7 @@ extension Tab: ContextMenuRepresentable {
 
         // Split view: either dissolve the existing split this tab belongs to,
         // or open a fresh tab paired with this one as a new split. Mutually exclusive.
-        if let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState {
+        if let state = contextMenuState {
             if let existingSplit = splitMembership?.liveGroup ?? state.splitGroup(forTabId: guid) {
                 // Pinned splits don't expose "Reverse Panes" / "Remove from
                 // Split" — those are normal-split affordances. Unpinning a
@@ -266,7 +268,7 @@ extension Tab: ContextMenuRepresentable {
         // When this tab belongs to a split (normal or pinned, live or closed)
         // offer one-click actions that persist both panes together. The
         // `splitMembership` lookup above already covers all three shapes.
-        if let splitState = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        if let splitState = contextMenuState,
            !isIncognitoWindow,
            splitMembership != nil {
             let addSplitItem = NSMenuItem(
@@ -314,7 +316,7 @@ extension Tab: ContextMenuRepresentable {
         // "Add Split to Bookmark" above already covers the split case for
         // both pinned and non-pinned splits.
         if !isSplitCell && !isIncognitoWindow {
-            let isLegacy = SpaceSessionControllersManager.shared.activeWindowController?.browserState.layoutMode == .comfortable
+            let isLegacy = contextMenuState?.layoutMode == .comfortable
             let title = isLegacy ? NSLocalizedString("sidebar.tabContextMenu.addToBookmarkBar", value: "Add to Bookmark Bar", comment: "Tab context menu - Add current tab to root bookmark bar") :
                                    NSLocalizedString("sidebar.tabContextMenu.addToBookmarks", value: "Add to Bookmark", comment: "Tab context menu - Add current tab to root bookmark bar in sidebar")
             let addToRootItem = NSMenuItem(title: title, action: #selector(addTabToRootBookmarks), keyEquivalent: "")
@@ -325,7 +327,7 @@ extension Tab: ContextMenuRepresentable {
             let bookmarkSubmenu = NSMenu()
             addToBookmark.submenu = bookmarkSubmenu
 
-            let folders = SpaceSessionControllersManager.shared.activeWindowController?.browserState.bookmarkManager.getAllFolderWithHierarchy() ?? []
+            let folders = contextMenuState?.bookmarkManager.getAllFolderWithHierarchy() ?? []
 
             let addBookmarkItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.addTabToFolder.newFolderAction", value: "New Folder", comment: "Sidebar context menu title"), action: #selector(createFolderAndBookmarkTab), keyEquivalent: "")
             addBookmarkItem.target = self
@@ -386,6 +388,17 @@ extension Tab: ContextMenuRepresentable {
         }
     }
 
+    /// The Space this tab's (or bookmark's) context-menu actions run against:
+    /// the one the menu was opened from, else the active one.
+    private var contextMenuState: BrowserState? {
+        contextMenuOwnerState ?? SpaceSessionControllersManager.shared.activeWindowController?.browserState
+    }
+
+    @MainActor private var contextMenuWindowController: SpaceSessionController? {
+        contextMenuState?.windowController
+            ?? SpaceSessionControllersManager.shared.activeWindowController
+    }
+
     private func applyCopyURLShortcut(to item: NSMenuItem) {
         item.tag = CommandWrapper.PHI_COPY_URL.rawValue
         guard let key = Shortcuts.key(for: .PHI_COPY_URL) else { return }
@@ -398,14 +411,14 @@ extension Tab: ContextMenuRepresentable {
         guard let folder = menuItem.representedObject as? Bookmark else {
             return
         }
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState.bookmarkManager.addBookmark(title: title,
+        contextMenuState?.bookmarkManager.addBookmark(title: title,
                                                                                                                     url: URLProcessor.processUserInput(url ?? ""),
                                                                                                                     to: folder,
                                                                                                                     faviconData: liveFaviconData ?? cachedFaviconData)
     }
 
     @objc private func addTabToRootBookmarks() {
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState.bookmarkManager.addBookmark(title: title,
+        contextMenuState?.bookmarkManager.addBookmark(title: title,
                                                                                                                     url: URLProcessor.processUserInput(url ?? ""),
                                                                                                                     to: nil,
                                                                                                                     faviconData: liveFaviconData ?? cachedFaviconData)
@@ -413,7 +426,7 @@ extension Tab: ContextMenuRepresentable {
     
     @MainActor
     @objc private func createFolderAndBookmarkTab() {
-        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController else {
+        guard let windowController = contextMenuWindowController else {
             return
         }
         let state = windowController.browserState
@@ -474,7 +487,7 @@ extension Tab: ContextMenuRepresentable {
     @MainActor
     @objc private func addSplitToBookmarkFolder(_ menuItem: NSMenuItem) {
         guard let folder = menuItem.representedObject as? Bookmark,
-              let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {
+              let state = contextMenuState else {
             return
         }
         state.addSplitBookmarkFromTab(self, toFolder: folder, bindLiveSplit: false)
@@ -482,7 +495,7 @@ extension Tab: ContextMenuRepresentable {
 
     @MainActor
     @objc private func createFolderAndBookmarkSplit() {
-        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController else {
+        guard let windowController = contextMenuWindowController else {
             return
         }
         let state = windowController.browserState
@@ -508,7 +521,7 @@ extension Tab: ContextMenuRepresentable {
 
     @MainActor
     @objc private func editPinnedTab() {
-        guard let windowController = SpaceSessionControllersManager.shared.activeWindowController else {
+        guard let windowController = contextMenuWindowController else {
             return
         }
         guard let guid = guidInLocalDB, !guid.isEmpty else {
@@ -613,7 +626,7 @@ extension Tab: ContextMenuRepresentable {
     @MainActor
     @objc private func duplicateTab() {
         guard let tabURL = url, !tabURL.isEmpty else { return }
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState.createTab(tabURL, focusAfterCreate: true)
+        contextMenuState?.createTab(tabURL, focusAfterCreate: true)
     }
 
     /// Builds the tab-group block of the right-click menu. Branches on
@@ -937,7 +950,7 @@ extension Tab: ContextMenuRepresentable {
 
     @MainActor
     @objc private func duplicateSplitTab() {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let membership = state.splitMembership(forCellTab: self),
               let leftURL = membership.leftPane.url, !leftURL.isEmpty,
               let rightURL = membership.rightPane.url, !rightURL.isEmpty else {
@@ -966,13 +979,13 @@ extension Tab: ContextMenuRepresentable {
     @objc private func addSplitToBookmarks(_ sender: NSMenuItem) {
         // The menu item is only attached when this tab is in a split, so the
         // helper should always succeed here; the bool result is ignored.
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else { return }
+        guard let state = contextMenuState else { return }
         state.addSplitBookmarkFromTab(self, bindLiveSplit: false)
     }
 
     @MainActor
     @objc private func openAsSplit() {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else { return }
+        guard let state = contextMenuState else { return }
         // Unopened pinned cell: `guid` here is the synthetic id on the
         // pinned record, not a live Chromium tab. Route through the
         // pinned-URL materialization path so a real partner tab exists
@@ -996,7 +1009,7 @@ extension Tab: ContextMenuRepresentable {
     /// drag-onto-page flows in `SplitTabDropContainer`).
     @MainActor
     @objc private func splitWithCurrent() {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let focusedId = state.focusingTab?.guid,
               state.splitGroup(forTabId: focusedId) == nil else { return }
         // Unopened pinned cell: `guid` is synthetic, so there is no live tab
@@ -1019,21 +1032,21 @@ extension Tab: ContextMenuRepresentable {
 
     @MainActor
     @objc private func removeFromSplit(_ sender: NSMenuItem) {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let splitId = sender.representedObject as? String else { return }
         state.removeSplit(splitId)
     }
 
     @MainActor
     @objc private func reverseSplitPanes(_ sender: NSMenuItem) {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let splitId = sender.representedObject as? String else { return }
         state.reverseTabsInSplit(splitId)
     }
 
     @MainActor
     @objc private func convertSplitLayout(_ sender: NSMenuItem) {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let splitId = sender.representedObject as? String,
               let group = state.splitGroup(forId: splitId) else { return }
         state.updateSplitLayout(splitId, layout: group.layout.toggled)
@@ -1041,7 +1054,7 @@ extension Tab: ContextMenuRepresentable {
 
     @MainActor
     @objc private func convertClosedPinnedSplitLayout(_ sender: NSMenuItem) {
-        guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+        guard let state = contextMenuState,
               let pair = sender.representedObject as? [String], pair.count == 2 else { return }
         let layout = state.pinnedSplitLayout(leftDB: pair[0], rightDB: pair[1])
         state.updatePinnedSplitLayout(leftDB: pair[0], rightDB: pair[1], layout: layout.toggled)

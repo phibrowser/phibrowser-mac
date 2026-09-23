@@ -146,6 +146,13 @@ final class AccountKeyManager {
     /// is leaving the account, and the whole key layer is dropped with it.
     func discardARK() { currentARK = nil }
 
+    /// Explicit local reconfiguration must not retry a parked envelope from the old setup.
+    /// Ordinary unlock failures and sign-out keep that recovery state intact.
+    func discardLocalRegistration() throws {
+        discardARK()
+        pendingRegistrations.clear(deviceKeyId: try deviceKeyProvider.deviceKeyId())
+    }
+
     var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
     private let pendingRegistrations: PendingDeviceRegistrationStoring

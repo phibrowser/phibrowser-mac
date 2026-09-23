@@ -233,6 +233,24 @@ final class AccountKeyManagerTests: XCTestCase {
                        mgr.currentARK!.withUnsafeBytes { Data($0) })
     }
 
+    func testExplicitResetDiscardsParkedRegistrationButOrdinaryDiscardKeepsIt() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let pending = MemoryPendingRegistrations()
+        api.postDeviceErrorOnce = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let manager = AccountKeyManager(api: api, deviceKeyProvider: provider, pendingRegistrations: pending)
+        _ = try await manager.bootstrap()
+        let deviceID = try provider.deviceKeyId()
+        manager.discardARK()
+        XCTAssertNotNil(pending.load(deviceKeyId: deviceID))
+        try manager.discardLocalRegistration()
+        XCTAssertNil(pending.load(deviceKeyId: deviceID))
+        let fresh = AccountKeyManager(api: api, deviceKeyProvider: provider, pendingRegistrations: pending)
+        let state = try await fresh.unlockAtStartup()
+        XCTAssertEqual(state, .needsJoin)
+        XCTAssertTrue(api.envelopes.isEmpty)
+    }
+
     /// Review A10: the server refuses a revoked device fingerprint forever (409
     /// `device_revoked`). Re-registering the same key would loop; the manager mints a new
     /// identity and retries once, so a Mac whose key was revoked can rejoin.

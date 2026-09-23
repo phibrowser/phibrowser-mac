@@ -36,11 +36,18 @@ final class ResetMappings {
     func removeAllMappings() { mappings = [:] }
     func allMappings() -> [String: String] { mappings }
 }
+final class ResetPendingRegistration {
+    var devices = Set(["device"])
+    func clear(deviceKeyId: String) { devices.remove(deviceKeyId) }
+}
 final class ResetManager {
     var hasKey = true
     var deviceKeyProviderForTesting: ResetManager { self }
     func deviceKeyId() throws -> String { "device" }
+    var deviceKeyProvider: ResetManager { self }
+    let pendingRegistrations = ResetPendingRegistration()
     func discardARK() { hasKey = false }
+    /* PRODUCTION_DISCARD_REGISTRATION */
 }
 final class ResetRotator {
     var count = 0
@@ -109,6 +116,7 @@ final class ResetFixture {
         try await fixture.reconfigureSync()
         precondition(fixture.profileKeys.revocations == 1)
         precondition(!fixture.requiresReconfiguration)
+        precondition(fixture.manager.pendingRegistrations.devices.isEmpty)
         precondition(fixture.profileKeys.mappings.isEmpty && fixture.spaceKeys!.mappings.isEmpty)
         precondition(fixture.spaceStateStore!.table == PhiSpaceSyncTable())
         precondition(defaults.string(forKey: "browser.setting") == "retained")

@@ -303,7 +303,7 @@ final class SyncKeyController {
             guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
         }
         try invalidateEnrollment()
-        manager.discardARK()
+        try manager.discardLocalRegistration()
         clearResolved()
         if removingDevice { try deviceKeyRotator?.rotateForCurrentAccount() }
 

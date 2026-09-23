@@ -60,7 +60,7 @@ Explicit reconfiguration and successful **Remove this device from sync** share
 one native cleanup path in `SyncKeyController`. Remote self-revocation succeeds
 before removal touches local state; rejection leaves local state intact. Cleanup
 retires the engine, journals its intent, durably withdraws enrollment, discards
-resolved keys/ARK, clears Profile/Space mappings, owned-item cursor files,
+resolved keys/ARK and parked device registration envelopes, clears Profile/Space mappings, owned-item cursor files,
 bookmark sync IDs, engine defaults and settings timestamp/value sidecars, the
 default-Space UUID mirror, and the Space sync table. Removal also rotates the
 device key. Browsing rows, local profiles/Spaces, preference values, login, URL

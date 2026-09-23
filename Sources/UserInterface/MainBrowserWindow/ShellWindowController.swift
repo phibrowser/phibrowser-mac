@@ -49,6 +49,16 @@ final class ShellWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
+    /// Every session of the slot is built with this window, and
+    /// `NSWindowController.init(window:)` makes each one the window's
+    /// `nextResponder`; reassigning `windowController` later leaves that link
+    /// on the last session built. Nil-targeted actions implemented on the
+    /// session (the tab context menu's Pin/Unpin, Close Other Tabs) then run
+    /// against a background Space, so the chain follows the controller here.
+    override var windowController: NSWindowController? {
+        didSet { nextResponder = windowController }
+    }
+
     @objc func commandDispatch(_ sender: Any?) {
         forwardCommand(#selector(ShellWindow.commandDispatch(_:)), sender: sender)
     }

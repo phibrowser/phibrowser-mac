@@ -642,7 +642,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     // MARK: - NOT_MY_BIRTHDAY (§5.1)
 
-    func testNotMyBirthdayClearsServerTriplesAndGuardsButKeepsReconciled() async throws {
+    func testNotMyBirthdayPreservesSpaceMetadata() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(access: access)
@@ -657,20 +657,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         client.throwNotMyBirthdayOnce = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
+        let before = store.table
         await engine.pullOnce()
-
-        let after = try XCTUnwrap(store.table.cursors["sync-1"])
-        XCTAssertNil(after.entityId)
-        XCTAssertEqual(after.version, 0)
-        XCTAssertNil(after.server)
-        XCTAssertEqual(after.deleteRejectRounds, 0)
-        XCTAssertEqual(after.reconciled, Data([0x01]), "local timestamp history survives")
-        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty)
-        // The reset re-arms guard 1; the retry pull that immediately follows it
-        // replays the whole type from a nil marker and drains it again, which is
-        // exactly what "re-armed" is supposed to produce.
-        XCTAssertTrue(store.table.hasDrainedFullReplay)
-        XCTAssertFalse(store.table.drainInProgress)
+        XCTAssertEqual(store.table, before)
+        XCTAssertTrue(engine.requiresReconfiguration)
     }
 
     // MARK: - Second local-change trigger (§5.4)
@@ -2563,25 +2553,21 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
         XCTAssertTrue(client.getUpdatesCalls.isEmpty, "Unpaired regular sync must remain stopped")
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result else { return XCTFail("Expected fresh preview: \(result)") }
-        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-1"])
+        guard case .failure(.transport("not_my_birthday")) = result else {
+            return XCTFail("Expected explicit reconfiguration: \(result)")
+        }
         XCTAssertNil(client.getUpdatesCalls.first?.marker)
         XCTAssertEqual(client.getUpdatesCalls.first?.storeBirthday, "")
-        XCTAssertEqual(markerStore.file, oldMarker)
+        var paused = oldMarker
+        paused.requiresReconfiguration = true
+        XCTAssertEqual(markerStore.file, paused)
         XCTAssertEqual(store.table, tableBefore)
         XCTAssertEqual(store.saveCalls, 0)
         XCTAssertTrue(client.commits.isEmpty)
-
-        client.storeBirthday = "another-reset"
-        guard case .success = await engine.previewAccountSpaces() else {
-            return XCTFail("Re-entry must fetch the current generation again")
-        }
-        XCTAssertEqual(client.getUpdatesCalls.count, 2)
-        XCTAssertNil(client.getUpdatesCalls.last?.marker)
-        XCTAssertEqual(client.getUpdatesCalls.last?.storeBirthday, "")
+        _ = await engine.previewAccountSpaces()
         await engine.pullOnce()
-        XCTAssertEqual(client.getUpdatesCalls.count, 2, "Preview must not open the sync gate")
-        XCTAssertEqual(markerStore.file, oldMarker)
+        XCTAssertEqual(client.getUpdatesCalls.count, 1, "Retry cannot clear old state")
+        XCTAssertEqual(markerStore.file, paused)
     }
 
     /// 11. Preview writes nothing.

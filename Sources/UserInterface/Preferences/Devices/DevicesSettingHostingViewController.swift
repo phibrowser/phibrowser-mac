@@ -120,6 +120,10 @@ final class DevicesSettingHostingViewController: NSViewController {
         viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
         viewModel.accountName = AccountController.shared.account?.userInfo?.email ?? ""
         viewModel.nativeStatus = { PhiChromiumCoordinator.shared.syncStatusSnapshot }
+        viewModel.reconfigurationRequired = { [weak self] in
+            self?.syncKeyController?.requiresReconfiguration == true
+                || PhiChromiumCoordinator.shared.nativeSyncRequiresReconfiguration
+        }
         viewModel.profileIDs = { PhiChromiumCoordinator.shared.syncStatusProfileIDs }
         viewModel.profileNames = { Dictionary(uniqueKeysWithValues:
             ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }) }
@@ -144,6 +148,31 @@ final class DevicesSettingHostingViewController: NSViewController {
     /// All setup entry points share the coordinator-owned enrollment host.
     private func presentKeyLayer() {
         guard let controller = syncKeyController else { return }
+        guard !viewModel.isReconfiguring else { return }
+        if controller.requiresReconfiguration {
+            viewModel.isReconfiguring = true
+            guard SyncReconfigurationStrings.confirm() else { viewModel.isReconfiguring = false; return }
+            let accountID = AccountController.shared.account?.userID
+            let model = viewModel
+            Task { @MainActor [weak self] in
+                defer { model.isReconfiguring = false }
+                do {
+                    try await controller.reconfigureSync()
+                    guard let self, AccountController.shared.account?.userID == accountID else { return }
+                    self.viewWillAppear()
+                    await self.viewModel.loadAll()
+                    guard AccountController.shared.account?.userID == accountID,
+                          let fresh = self.syncKeyController else { return }
+                    ProfilePairingGate.shared.requestPresentation(controller: fresh)
+                } catch {
+                    guard let self, AccountController.shared.account?.userID == accountID else { return }
+                    self.viewWillAppear()
+                    self.viewModel.reconfigurationError = SyncReconfigurationStrings.failed
+                    await self.viewModel.loadAll()
+                }
+            }
+            return
+        }
         ProfilePairingGate.shared.requestPresentation(controller: controller)
     }
 }

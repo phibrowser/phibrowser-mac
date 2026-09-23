@@ -578,9 +578,9 @@ final class PairingWizardViewModel: ObservableObject {
             case .truncated:
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewTruncated))
             case .transport:
-                // A server reset during pagination is recoverable: Retry starts a fresh preview
-                // without relying on regular sync, which remains blocked until pairing completes.
-                return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewFailed))
+                return .failure(PairingWizardLoadFailure(message:
+                    error == .transport("not_my_birthday")
+                        ? SyncReconfigurationStrings.returnToSettings : PairingWizardStrings.previewFailed))
             }
         }
     }

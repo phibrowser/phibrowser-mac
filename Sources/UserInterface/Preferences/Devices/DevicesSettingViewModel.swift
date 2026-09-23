@@ -16,6 +16,10 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var requiredIDs: Set<String> = []
     @Published private(set) var chromiumCategories: Set<String> = []
     @Published private(set) var paired = false
+    @Published private(set) var requiresReconfiguration = false
+    @Published var reconfigurationError: String?
+    @Published var isReconfiguring = false
+    var reconfigurationRequired: () -> Bool = { false }
     private var loadGeneration: UInt64 = 0
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
@@ -46,6 +50,7 @@ final class DevicesSettingViewModel: ObservableObject {
     func refreshStatus() async {
         guard isCurrentAccount() else { return }
         let generation = loadGeneration
+        requiresReconfiguration = reconfigurationRequired()
         paired = pairingComplete()
         let profiles = profileIDs()
         requiredIDs = profiles.isEmpty ? [] : Set(["phi"] + profiles)
@@ -103,6 +108,7 @@ final class DevicesSettingViewModel: ObservableObject {
         loadGeneration &+= 1
         let generation = loadGeneration
         unlockState = .loading
+        requiresReconfiguration = reconfigurationRequired()
         do {
             let result = try await manager.unlockAtStartup()
             guard generation == loadGeneration, isCurrentAccount() else { return }

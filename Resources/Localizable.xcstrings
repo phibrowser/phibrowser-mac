@@ -1,6 +1,66 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "sync.reconfigure.title" : {
+      "comment" : "Action to explicitly reset local sync state and configure it again",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up sync again"
+          }
+        }
+      }
+    },
+    "sync.reconfigure.explanation" : {
+      "comment" : "Native sync paused after the server rejected its previous identity",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The account’s sync data has changed. Syncing Phi data is paused. Review your account and connection before setting up sync again."
+          }
+        }
+      }
+    },
+    "sync.reconfigure.confirmation" : {
+      "comment" : "Confirmation before clearing only local sync metadata",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will clear this Mac’s sync setup and matching information, then let you set up sync again. Your local browsing data and account’s synced data will be kept."
+          }
+        }
+      }
+    },
+    "sync.reconfigure.failed" : {
+      "comment" : "Local metadata cleanup failed and may be retried",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t finish clearing this Mac’s sync setup. Sync remains paused. Try setting up sync again."
+          }
+        }
+      }
+    },
+    "sync.reconfigure.returnToSettings" : {
+      "comment" : "Pairing cannot continue until an explicit local sync reset is confirmed in settings",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync needs to be set up again. Finish later, then choose Set up sync again in Settings → Sync. Your local browsing data is kept."
+          }
+        }
+      }
+    },
     "" : {
 
     },

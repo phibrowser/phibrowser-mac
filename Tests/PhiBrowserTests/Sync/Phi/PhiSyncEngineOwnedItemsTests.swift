@@ -985,10 +985,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                           "④ The accepted commit superseded the remote bytes recorded during landing")
     }
 
-    /// CASE 6.18 / 6.21: NOT_MY_BIRTHDAY resets server metadata, preserving reconciled because the account and
-    /// last agreed state remain valid. Clearing the table/file destroys baselines and permits account-wide
-    /// blind overwrites (§3.5).
-    func testNotMyBirthdayClearsOnlyTheServerSideTripleOfAnOwnedCursor() async throws {
+    /// A mismatch preserves owned-item metadata until explicit reconfiguration.
+    func testNotMyBirthdayPreservesOwnedCursor() async throws {
         let spaceAccess = makeSpaceAccess()
         let access = FakeBookmarkAccess()
         let store = MemoryOwnedItemStore()
@@ -1006,10 +1004,10 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         await engine.pullOnce()
 
         let landed = store.table.cursors["b1"]
-        XCTAssertEqual(landed?.entityId, "")
-        XCTAssertEqual(landed?.version, 0)
-        XCTAssertNil(landed?.server)
-        XCTAssertEqual(landed?.deleteRejectRounds, 0)
+        XCTAssertEqual(landed?.entityId, "srv-b1")
+        XCTAssertEqual(landed?.version, 9)
+        XCTAssertEqual(landed?.server, cursor.server)
+        XCTAssertEqual(landed?.deleteRejectRounds, 2)
         XCTAssertEqual(landed?.reconciled, reconciled, "reconciled remains unchanged")
         XCTAssertEqual(landed?.ownerUuid, "su-1", "ownerUuid remains unchanged")
         XCTAssertEqual(landed?.deletedAtMs, 1_234, "deletedAtMs remains unchanged")
@@ -2881,9 +2879,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// CASE 9a.1 / spec engine 12: self-revoke deletes both cursor files before clearing syncId. Failure after
     /// file deletion is recoverable through identity-based replay; clearing IDs while retaining cursors makes
     /// §4.7 treat the account tree as locally deleted after rejoin.
-    /// Final-state assertions cannot prove order (T9a-1), because clear-syncIds errors are deliberately
-    /// swallowed. Record both store and closure side effects. A clear failure warns without interrupting or
-    /// undoing file deletion, matching device-key rotation failure handling in the same method.
+    /// Record both store and closure side effects. A clear failure propagates and keeps
+    /// the cleanup pending without undoing prior cursor deletion.
     func testSelfRevokeDeletesTheCursorFilesBeforeItClearsTheSyncIds() async throws {
         let ledger = SelfRevokeLedger()
         let access = FakeBookmarkAccess(rows: [
@@ -2897,7 +2894,10 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
 
         let controller = try await makeController(ownedStores: [store], bookmarkAccess: access,
                                                   ledger: ledger)
-        try await controller.removeThisDeviceFromSync()
+        do {
+            try await controller.removeThisDeviceFromSync()
+            XCTFail("Expected the local storage failure")
+        } catch LocalStoreWriteError.storeUnavailable {}
 
         XCTAssertEqual(ledger.steps, ["deleteFile", "clearSyncIds"],
                        "① Verify ordering itself: delete files before clearing syncId")
@@ -3087,13 +3087,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertTrue(bookmarkAccess.calls.contains(.clearAllSyncIds), "④")
     }
 
-    /// CASE 9.3 confirms generic NOT_MY_BIRTHDAY reset covers rules. Two cursors have server
-    /// metadata/rejection counters and reconciled; one is deleted. A changed local r1 host causes the sole
-    /// owned commit to throw notMyBirthday. Reset clears
-    /// entityId/version/server/deleteRejectRounds/rekeyRejectRounds and urlRulesReplayedForEmptyTable,
-    /// preserving reconciled/deletedAtMs, file and row count. A rule-specific clear-table branch would enable
-    /// blind overwrites; failing to reset the latch prevents future arming.
-    func testANewStoreBirthdayResetsTheRuleCursorsAlongsideTheOtherKinds() async throws {
+    /// Commit rejection pauses without erasing the rule cursors.
+    func testANewStoreBirthdayPreservesRuleCursorsAfterCommitRejection() async throws {
         let ruleHash = { (uuid: String) in
             PhiSyncEntity.clientTagHash(for: PhiSyncEntity.urlRuleClientTag(uuid))
         }
@@ -3137,13 +3132,13 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(ruleCommits.first?.clientTagHash, ruleHash("r1"))
         let table = await engine.ownedTableForTesting("urlrules")
         XCTAssertEqual(table.cursors.count, 2, "Cursor count is unchanged")
-        for identity in ["r1", "r2"] {
+        for (identity, before) in [("r1", live), ("r2", gone)] {
             let cursor = try XCTUnwrap(table.cursors[identity])
-            XCTAssertEqual(cursor.entityId, "", identity)
-            XCTAssertEqual(cursor.version, 0, identity)
-            XCTAssertNil(cursor.server, identity)
-            XCTAssertEqual(cursor.deleteRejectRounds, 0, identity)
-            XCTAssertNil(cursor.rekeyRejectRounds, identity)
+            XCTAssertEqual(cursor.entityId, before.entityId)
+            XCTAssertEqual(cursor.version, before.version)
+            XCTAssertEqual(cursor.server, before.server)
+            XCTAssertEqual(cursor.deleteRejectRounds, before.deleteRejectRounds)
+            XCTAssertEqual(cursor.rekeyRejectRounds, before.rekeyRejectRounds)
         }
         XCTAssertEqual(table.cursors["r1"]?.reconciled, baselineLive, "reconciled remains unchanged")
         XCTAssertEqual(table.cursors["r2"]?.reconciled, baselineGone, "reconciled remains unchanged")
@@ -3151,8 +3146,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNil(table.cursors["r1"]?.deletedAtMs)
         XCTAssertFalse(store.deleted, "The file was not deleted")
         XCTAssertEqual(store.table.cursors.count, 2, "The persisted table also has two entries")
-        XCTAssertEqual(store.table.cursors["r1"]?.entityId, "")
-        XCTAssertFalse(spaceStore.table.urlRulesReplayedForEmptyTable, "The reset field added by Task 6")
+        XCTAssertEqual(store.table.cursors["r1"]?.entityId, "srv-r1")
+        XCTAssertTrue(spaceStore.table.urlRulesReplayedForEmptyTable)
         XCTAssertTrue(spaceStore.table.urlRulesHadRecords, "Records prior publication by this device; changing stores does not alter it")
     }
 

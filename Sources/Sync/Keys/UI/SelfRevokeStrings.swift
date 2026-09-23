@@ -77,3 +77,22 @@ enum SelfRevokeStrings {
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
+
+/// Copy shared by the Sync pane and setup's blocked preview.
+enum SyncReconfigurationStrings {
+    static let title = NSLocalizedString("sync.reconfigure.title", value: "Set up sync again", comment: "Action to explicitly reset local sync state and configure it again")
+    static let explanation = NSLocalizedString("sync.reconfigure.explanation", value: "The account’s sync data has changed. Syncing Phi data is paused. Review your account and connection before setting up sync again.", comment: "Native sync paused after the server rejected its previous identity")
+    static let confirmation = NSLocalizedString("sync.reconfigure.confirmation", value: "This will clear this Mac’s sync setup and matching information, then let you set up sync again. Your local browsing data and account’s synced data will be kept.", comment: "Confirmation before clearing only local sync metadata")
+    static let failed = NSLocalizedString("sync.reconfigure.failed", value: "Couldn’t finish clearing this Mac’s sync setup. Sync remains paused. Try setting up sync again.", comment: "Local metadata cleanup failed and may be retried")
+    static let returnToSettings = NSLocalizedString("sync.reconfigure.returnToSettings", value: "Sync needs to be set up again. Finish later, then choose Set up sync again in Settings → Sync. Your local browsing data is kept.", comment: "Pairing cannot continue until an explicit local sync reset is confirmed in settings")
+
+    @MainActor static func confirm() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = confirmation
+        alert.addButton(withTitle: title)
+        alert.addButton(withTitle: SelfRevokeStrings.cancel)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+}

@@ -72,6 +72,9 @@ final class KeyLayerViewModel: ObservableObject {
     private func verified() {
         guard flowIsCurrent else { return }
         stopPolling()
+        guard flowController?.requiresReconfiguration != true else {
+            phase = .error(SyncReconfigurationStrings.returnToSettings); return
+        }
         recoveryInput = ""
         phase = .readyToPair
         onVerified?()
@@ -141,6 +144,9 @@ final class KeyLayerViewModel: ObservableObject {
     /// first-device bootstrap or the join-method choice.
     func beginSetup(controller: SyncKeyController? = nil) async {
         flowController = controller
+        guard controller?.requiresReconfiguration != true else {
+            phase = .error(SyncReconfigurationStrings.returnToSettings); return
+        }
         operationGeneration += 1
         let generation = operationGeneration
         phase = .working

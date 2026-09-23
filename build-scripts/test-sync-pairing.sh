@@ -27,6 +27,13 @@ template = template.replace('/* PRODUCTION_PREVIEW_TYPES */', engine[a:b])
 a = engine.index('    private func runPreview(into box: PreviewBox)')
 b = engine.index('    // MARK: - §11 round counters', a)
 template = template.replace('    /* PRODUCTION_PREVIEW */', engine[a:b])
+a = engine.index('    private func requireReconfiguration()')
+b = engine.index('    private var storedEntityId:', a)
+template = template.replace('    /* PRODUCTION_REQUIRE_RESET */', engine[a:b])
+marker = (root / 'Sources/Sync/Phi/PhiSyncMarkerFile.swift').read_text()
+a = marker.index('struct PhiSyncMarkerFile:')
+b = marker.index('/// Class-bound', a)
+template = template.replace('/* PRODUCTION_MARKER_TYPE */', marker[a:b])
 Path(sys.argv[2]).with_name('PreviewFixture.swift').write_text(template)
 template = (root / 'Tests/SyncPairing/ProfileCandidatesFixture.swift').read_text()
 view = (root / 'Sources/Sync/Keys/UI/KeyLayerViewModel.swift').read_text()
@@ -41,7 +48,25 @@ PYEXTRACT
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" "$task_root/Sources/Sync/Keys/PhiKeyCrypto.swift" \
   "$task_build/ProfileCandidatesFixture.swift" \
+  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" \
   "$task_root/Sources/Sync/Keys/SyncPairingState.swift" \
   "$task_build/EngineStopSignal.swift" "$task_build/Gate.swift" "$task_root/Tests/SyncPairing/GateDependencies.swift" \
   "$task_build/PreviewFixture.swift" "$task_build/KeyReadinessFixture.swift" "$task_root/Tests/SyncPairing/main.swift" -o "$task_build/tests"
 "$task_build/tests"
+python3 - "$task_root" "$task_build/ResetFixture.swift" <<'PYRESET'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+s = (root / 'Sources/Sync/Keys/SyncKeyController.swift').read_text()
+a = s.index('    func removeThisDeviceFromSync()')
+b = s.index('    /// Startup/login entry:', a)
+fixture = (root / 'Tests/SyncPairing/ResetFixture.swift').read_text()
+fixture = fixture.replace('    /* PRODUCTION_CLEANUP */', s[a:b])
+marker = (root / 'Sources/Sync/Phi/PhiSyncMarkerFile.swift').read_text()
+a = marker.index('struct PhiSyncMarkerFile:')
+b = marker.index('/// Class-bound', a)
+Path(sys.argv[2]).write_text(fixture.replace('/* PRODUCTION_MARKER_TYPE */', marker[a:b]))
+PYRESET
+xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
+  "$task_build/ResetFixture.swift" -o "$task_build/reset-tests"
+"$task_build/reset-tests"

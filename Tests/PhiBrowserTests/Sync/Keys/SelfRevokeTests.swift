@@ -42,7 +42,7 @@ final class SelfRevokeTests: XCTestCase {
         let controller = SyncKeyController(
             manager: mgr, approvals: approvals, profileKeys: pkm,
             localProfilesProvider: { [] }, notifyChromium: {},
-            retirePhiSync: { ledger.steps.append("retire") },
+            retirePhiSync: { _ in ledger.steps.append("retire") },
             invalidateEnrollment: { ledger.steps.append("unpair") },
             deviceKeyRotator: rotator,
             engineDefaults: defaults,
@@ -109,12 +109,8 @@ final class SelfRevokeTests: XCTestCase {
         XCTAssertNotNil(controller.manager.currentARK)
     }
 
-    /// A Keychain that refuses the rotation (locked, or the item denied) must not
-    /// abort the teardown: the server side is already revoked, so stopping here
-    /// would strand the ARK, the mappings and the whole Space table on a machine
-    /// that has left the account. It is logged rather than thrown, never swallowed
-    /// by a `try?`.
-    func testAFailedKeyRotationDoesNotAbortTheRestOfTheCleanup() async throws {
+    /// Partial cleanup remains blocked and can be retried without revoking twice.
+    func testAFailedKeyRotationKeepsTheJournalForExplicitRetry() async throws {
         let api = FakeAPI()
         let ledger = Ledger()
         let store = MemoryMappingStore()
@@ -128,12 +124,20 @@ final class SelfRevokeTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
 
+        let marker = MemoryMarkerStore()
         let controller = try await makeController(api: api, ledger: ledger, store: store,
                                                   rotator: rotator, spaceStore: spaceStore,
-                                                  defaults: defaults)
-        try await controller.removeThisDeviceFromSync()
+                                                  defaults: defaults, markerStore: marker)
+        do {
+            try await controller.removeThisDeviceFromSync()
+            XCTFail("Expected the Keychain failure")
+        } catch DeviceKeyStoreError.keychainFailure {}
+        XCTAssertEqual(marker.file.requiresReconfiguration, true)
+        XCTAssertEqual(marker.file.removalPending, true)
+        rotator.rotateError = nil
+        try await controller.reconfigureSync()
 
-        XCTAssertEqual(rotator.rotations, 1)
+        XCTAssertEqual(rotator.rotations, 2)
         XCTAssertEqual(ledger.steps.first, "retire")
         XCTAssertNil(controller.manager.currentARK)
         XCTAssertTrue(store.map.isEmpty)
@@ -182,7 +186,7 @@ final class SelfRevokeTests: XCTestCase {
         XCTAssertTrue(bookmarkStore.deleted)
         XCTAssertTrue(pinStore.deleted)
         XCTAssertEqual(ledger.steps.first, "retire", "Step 1 precedes all cleanup")
-        XCTAssertTrue(markerStore.saves.isEmpty, "Delete the file instead of saving an empty table")
+        XCTAssertEqual(markerStore.saves.first?.requiresReconfiguration, true, "Journal precedes cleanup")
         XCTAssertTrue(PhiSyncEngine.stateKeys.allSatisfy { defaults.object(forKey: $0) == nil })
         XCTAssertTrue(PhiSyncEngine.legacyMarkerStateKeys.allSatisfy { defaults.object(forKey: $0) == nil },
                       "Step 5 also erases migration leftovers")

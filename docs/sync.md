@@ -44,9 +44,33 @@ All native data rounds and Chromium ready-key exposure require enrollment.
 Read-only pairing previews use the serialized engine queue without advancing
 cursors or landing/publishing data. Each preview starts with an empty marker and
 store birthday, then pins subsequent pages to the first response's server
-generation. A reset during pagination discards all preview choices; Retry starts
-fresh. Preview never repairs persisted sync metadata or depends on background
-sync to repair it while enrollment is incomplete.
+generation. A changed persisted birthday or `not_my_birthday` response discards
+preview choices and requires explicit reconfiguration. Ordinary previews never
+repair persisted sync metadata or depend on background sync to repair it while
+enrollment is incomplete.
+
+Native `not_my_birthday` handling preserves cursors, baselines, mappings, and
+local browsing data. It records `requiresReconfiguration` in the account's
+`sync/marker.json` and stops native data rounds, including after restart. Retry,
+reopening settings, and Finish later cannot reset this state. Settings → Sync
+shows **Set up sync again**, with confirmation before cleanup. Chromium's
+existing protocol-error recovery is unchanged.
+
+Explicit reconfiguration and successful **Remove this device from sync** share
+one native cleanup path in `SyncKeyController`. Remote self-revocation succeeds
+before removal touches local state; rejection leaves local state intact. Cleanup
+retires the engine, journals its intent, durably withdraws enrollment, discards
+resolved keys/ARK, clears Profile/Space mappings, owned-item cursor files,
+bookmark sync IDs, engine defaults and settings timestamp/value sidecars, the
+default-Space UUID mirror, and the Space sync table. Removal also rotates the
+device key. Browsing rows, local profiles/Spaces, preference values, login, URL
+Rule IDs and pin lineage remain. The marker journal is deleted last; failures
+retain the reset requirement and may be retried explicitly without revoking
+again. A `removalPending` flag retains the required key rotation after partial
+removal. If writing the journal itself fails, the coordinator retains the pending
+intent for the current process and keeps the native engine paused. Account switches fence post-await global writes and preserve pending
+account journals. Setup re-fetches server state and all matching must complete
+before sync becomes eligible again.
 
 Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
@@ -891,8 +915,8 @@ written" restart window falls on them.
 - Two flags on the shared Space table, `urlRulesHadRecords` and
   `urlRulesReplayedForEmptyTable`, decide whether an empty table is a loss and
   gate the one-shot full replay that repairs it. They are independent of the
-  bookmark and pinned-tab flags. A new store birthday clears the replay latch
-  and keeps `urlRulesHadRecords`. The loss criterion is never "local rows still
+  bookmark and pinned-tab flags. A birthday mismatch preserves both flags until
+  explicit reconfiguration clears the native sync state. The loss criterion is never "local rows still
   carry a `syncId`": every live rule row carries one, so that test would replay
   the whole type on every round.
 - The local projection is not frozen at the start of a round. The first read

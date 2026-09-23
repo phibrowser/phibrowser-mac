@@ -17,7 +17,7 @@ import Foundation
 // persistence; failure keeps them for next launch. legacyMarkerStateKeys remains declared for
 // account-switch/self-revocation cleanup.
 //
-// Only engine roundQueue Rounds write this file (M3-2 §5.3), always as a complete atomic Data.write. The
+// Engine rounds write this file atomically; confirmed cleanup uses it as a journal before deleting it. The
 // engine's in-memory mirror writes through with rollback on failure in persistMarkerState.
 
 /// Contents of users/<sub>/sync/marker.json (§2.10 / R-M3-4a-18), beside cursor tables so whole-directory
@@ -32,6 +32,11 @@ struct PhiSyncMarkerFile: Codable, Equatable {
     var marker: Data?
     /// Server store identity; empty means unknown, matching storedBirthday.
     var storeBirthday: String = ""
+    /// Optional for compatibility with existing format-1 files. Retains key rotation
+    /// intent if an explicit removal fails partway through local cleanup.
+    var removalPending: Bool?
+    /// Blocks data rounds without changing marker/birthday until confirmed cleanup.
+    var requiresReconfiguration: Bool?
 }
 
 /// Class-bound like PhiOwnedItemStateStore: the engine retains one instance across rounds and must observe
@@ -107,7 +112,8 @@ final class DefaultsBackedPhiSyncMarkerStore: PhiSyncMarkerStore {
 
     func load() -> PhiSyncMarkerFile {
         PhiSyncMarkerFile(marker: defaults.data(forKey: PhiSyncEngine.markerStateKey),
-                          storeBirthday: defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey) ?? "")
+                          storeBirthday: defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey) ?? "",
+                          requiresReconfiguration: defaults.object(forKey: "phi.sync.requiresReconfiguration") as? Bool)
     }
 
     @discardableResult
@@ -115,12 +121,13 @@ final class DefaultsBackedPhiSyncMarkerStore: PhiSyncMarkerStore {
         write(file.marker, forKey: PhiSyncEngine.markerStateKey)
         write(file.storeBirthday.isEmpty ? nil : file.storeBirthday,
               forKey: PhiSyncEngine.storeBirthdayStateKey)
+        write(file.requiresReconfiguration, forKey: "phi.sync.requiresReconfiguration")
         return true
     }
 
     /// Delete-file semantics here remove both legacy keys, matching their former stateKeys cleanup.
     func deleteFile() {
-        for key in PhiSyncEngine.legacyMarkerStateKeys { defaults.removeObject(forKey: key) }
+        for key in PhiSyncEngine.legacyMarkerStateKeys + ["phi.sync.requiresReconfiguration"] { defaults.removeObject(forKey: key) }
     }
 
     private func write(_ value: Any?, forKey key: String) {
@@ -136,8 +143,8 @@ enum PhiSyncMarkerMigration {
     ///
     /// Detect absence via empty store.load rather than fileExists, which the protocol lacks. Corrupt bytes are
     /// equivalent to nil marker (§10), so legacy values are the remaining source of truth. A bounded residual
-    /// case can restore an old marker after failed migration and subsequent empty engine save, causing one
-    /// NOT_MY_BIRTHDAY retry.
+    /// case can restore an old marker after failed migration and subsequent empty engine save, requiring explicit
+    /// reconfiguration if the server identity changed.
     ///
     /// Run after resetPhiSyncCursorIfAccountChanged, which also clears legacy keys. Otherwise failed migration
     /// followed by an account switch could import the prior account's opaque marker and permanently miss

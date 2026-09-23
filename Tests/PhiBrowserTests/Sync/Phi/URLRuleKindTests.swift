@@ -1499,14 +1499,7 @@ final class URLRuleKindTests: XCTestCase {
         XCTAssertNil(cancellable)
     }
 
-    // MARK: - CASE U-30 (NOT_MY_BIRTHDAY clears urlRulesReplayedForEmptyTable)
-
-    /// Changing stores clears the replay latch, server metadata, rekeyRejectRounds and marker while retaining
-    /// urlRulesHadRecords and reconciled. deletedAtMs matches bookmark CASE 6.18/6.21, preventing publication
-    /// from refreshing keys or emitting tombstones so assertions isolate reset. An uncleared latch blocks
-    /// future lost-file replay; clearing HadRecords loses detection, and clearing reconciled permits blind
-    /// account overwrites.
-    func testANewStoreBirthdayClearsTheRuleReplayLatchButKeepsHadRecordsAndTheBaseline() async throws {
+    func testANewStoreBirthdayPreservesRuleMetadata() async throws {
         let access = FakeURLRuleAccess()
         let store = MemoryOwnedItemStore()
         var cursor = publishedRuleCursor(urlRulePayload(uuid: "r1"), entityId: "srv-1", version: 3)
@@ -1525,15 +1518,15 @@ final class URLRuleKindTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertFalse(spaceStore.table.urlRulesReplayedForEmptyTable)
+        XCTAssertTrue(spaceStore.table.urlRulesReplayedForEmptyTable)
         XCTAssertTrue(spaceStore.table.urlRulesHadRecords, "Records prior publication by this device; changing stores does not alter it")
         let landed = try XCTUnwrap(store.table.cursors["r1"])
-        XCTAssertEqual(landed.entityId, "")
-        XCTAssertEqual(landed.version, 0)
-        XCTAssertNil(landed.server)
-        XCTAssertNil(landed.rekeyRejectRounds)
+        XCTAssertEqual(landed.entityId, "srv-1")
+        XCTAssertEqual(landed.version, 3)
+        XCTAssertEqual(landed.server, cursor.server)
+        XCTAssertEqual(landed.rekeyRejectRounds, 2)
         XCTAssertEqual(landed.reconciled, reconciled, "reconciled remains unchanged")
-        XCTAssertNil(markerStore.file.marker)
+        XCTAssertEqual(markerStore.file.marker, Data("9".utf8))
     }
 
     // MARK: - CASE U-31 (closed gate skips the entire rule section)

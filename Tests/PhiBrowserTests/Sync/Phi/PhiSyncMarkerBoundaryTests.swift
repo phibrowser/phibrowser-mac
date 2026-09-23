@@ -449,13 +449,7 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertNil(store.load().marker)
     }
 
-    // MARK: - CASE 3.3 (resetForNewStoreBirthday clears marker; birthday persists per page in the same file)
-
-    /// CASE 3.3: NOT_MY_BIRTHDAY makes the second request use an empty birthday and no marker. Both persist in
-    /// the file by round end, with neither legacy key written to UserDefaults. Keeping birthday in defaults
-    /// would split import rollback state. clearRemoteCursor must persist storedMarker = nil so restarting
-    /// cannot resurrect an old marker against a new store (§2.4 note 1).
-    func testANewStoreBirthdayClearsTheMarkerAndBothFieldsLandInTheSameFile() async throws {
+    func testANewStoreBirthdayPersistsPauseWithoutClearingMarker() async throws {
         let markerStore = MemoryMarkerStore(
             file: PhiSyncMarkerFile(marker: Data("4".utf8), storeBirthday: "stale-birthday"))
         let client = FakePhiSyncClient()
@@ -466,15 +460,12 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
 
         await engine.pullOnce()
 
-        XCTAssertEqual(client.getUpdatesCalls.count, 2)
+        XCTAssertEqual(client.getUpdatesCalls.count, 1)
         XCTAssertEqual(client.getUpdatesCalls[0].storeBirthday, "stale-birthday", "Reads the injected file")
         XCTAssertEqual(client.getUpdatesCalls[0].marker, Data("4".utf8))
-        XCTAssertEqual(client.getUpdatesCalls[1].storeBirthday, "")
-        XCTAssertNil(client.getUpdatesCalls[1].marker)
-        XCTAssertEqual(markerStore.file.storeBirthday, "birthday-1")
-        XCTAssertNotNil(markerStore.file.marker)
-        XCTAssertTrue(markerStore.saves.contains(PhiSyncMarkerFile()),
-                      "marker == nil must actually persist to the file")
+        XCTAssertEqual(markerStore.file.storeBirthday, "stale-birthday")
+        XCTAssertEqual(markerStore.file.marker, Data("4".utf8))
+        XCTAssertEqual(markerStore.file.requiresReconfiguration, true)
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.markerStateKey),
                      "An injected store prevents all defaults writes")
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.storeBirthdayStateKey))

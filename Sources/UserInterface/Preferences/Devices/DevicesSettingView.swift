@@ -29,7 +29,18 @@ struct DevicesSettingView: View {
                 if !viewModel.accountName.isEmpty {
                     Text(viewModel.accountName).font(.callout).themedForeground(.textSecondary)
                 }
-                if needsPairing, viewModel.unlockState == .unlocked {
+                if viewModel.requiresReconfiguration {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(SyncReconfigurationStrings.explanation)
+                        Button(SyncReconfigurationStrings.title) { onResolvePairing() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(viewModel.isReconfiguring)
+                        if let error = viewModel.reconfigurationError {
+                            Text(error).foregroundColor(.red)
+                        }
+                    }.padding(12).settingsCardChrome()
+                }
+                if needsPairing, !viewModel.requiresReconfiguration, viewModel.unlockState == .unlocked {
                     pairingBanner
                 }
 
@@ -171,7 +182,7 @@ struct DevicesSettingView: View {
                     Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
                 }
                 .buttonStyle(.bordered)
-                .disabled(!removeModel.canRequestRemoval)
+                .disabled(!removeModel.canRequestRemoval || viewModel.isReconfiguring)
                 if removeModel.isRemoving {
                     ProgressView().controlSize(.small)
                 }

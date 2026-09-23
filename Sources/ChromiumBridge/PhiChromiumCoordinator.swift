@@ -96,6 +96,10 @@ import SwiftUI
     private var phiSyncPairingEnabled = false
     private var phiObservedSettingsSignature: Data?
 
+    @MainActor var nativeSyncRequiresReconfiguration: Bool {
+        phiSyncEngine?.requiresReconfiguration == true
+            || (pendingNativeCleanup != nil && pendingNativeCleanup?.accountID == AccountController.shared.account?.userID)
+    }
     @MainActor var syncStatusSnapshot: SyncContextSnapshot? { phiSyncEngine?.statusSnapshot }
     @MainActor var syncStatusProfileIDs: [String] {
         ProfileManager.shared.userAssignableProfiles.map(\.profileId)
@@ -212,16 +216,21 @@ import SwiftUI
                     SyncableSettings.valueKey(for: PhiDefaultSpaceMirror.key)] {
             defaults.removeObject(forKey: key)
         }
-        markerStore?.deleteFile()
+        // A pending explicit reset belongs to this account and survives switching away/back.
+        if markerStore?.load().requiresReconfiguration != true { markerStore?.deleteFile() }
         return hadCursor
     }
+
+    private var nativeSyncCleanupInProgress = false
+    // Retained only until cleanup succeeds; covers failure to write the on-disk journal.
+    private var pendingNativeCleanup: (accountID: String, removingDevice: Bool)?
 
     /// Builds `syncKeyController` on first call if an account is signed in;
     /// no-op if it already exists. Does not kick the silent unlock — callers
     /// that also need that should go through `ensureSyncKeyControllerAndUnlock()`.
     @MainActor
     private func buildSyncKeyControllerIfNeeded() -> SyncKeyController? {
-        guard let account = AccountController.shared.account else { return nil }
+        guard !nativeSyncCleanupInProgress, let account = AccountController.shared.account else { return nil }
         let stack = SyncKeyStack.make(accountId: account.userID)
         // Bind the fail-closed prerequisite before any unlock callback can start sync.
         do {
@@ -296,15 +305,19 @@ import SwiftUI
             // `clearResolved()` is the second, idempotent one). That is deliberate — the
             // ordering §3.3 step 2.0 demands, `shutdown()` before anything is cleared, is what
             // this buys, and the duplicate `.cleared` announcement is a no-op at the gate.
-            retirePhiSync: { [weak self] in
-                MainActor.assumeIsolated { self?.invalidateSyncKeyController() }
+            retirePhiSync: { [weak self] removingDevice in
+                MainActor.assumeIsolated {
+                    self?.pendingNativeCleanup = (account.userID, removingDevice)
+                    self?.nativeSyncCleanupInProgress = true
+                    self?.invalidateSyncKeyController()
+                }
             },
             invalidateEnrollment: {
                 guard let deviceID = try? stack.manager.deviceKeyProviderForTesting.deviceKeyId(),
                       let bytes = try? JSONEncoder().encode(SyncPairingRecord(version: 1, deviceKeyID: deviceID, paired: false)),
                       account.userDefaults.set(bytes, forKey: ProfilePairingGate.enrollmentDefaultsKey) else {
                     AppLogWarn("[phi-sync] removed enrollment could not be persisted")
-                    return
+                    throw NativeSyncResetError.cleanupFailed
                 }
             },
             deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
@@ -321,7 +334,24 @@ import SwiftUI
             // (R-M3-4a-53), so D30 cannot recover them. Keeping identities lets lost-state replay match each
             // local row to its own entity after cursor deletion. `PhiURLRuleLocalAccess` must not expose
             // `clearAllSyncIds`.
-            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
+            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() },
+            finishLocalCleanup: { [weak self] completed in
+                self?.nativeSyncCleanupInProgress = false
+                if completed { self?.pendingNativeCleanup = nil }
+            },
+            verifyCursorDeletion: {
+                for store in [bookmarkStore, pinStore, urlRuleStore] {
+                    guard !FileManager.default.fileExists(atPath: store.fileURL.path) else {
+                        throw NativeSyncResetError.cleanupFailed
+                    }
+                }
+            },
+            isCurrentAccount: { AccountController.shared.account === account },
+            runtimeRequiresReconfiguration: { [weak self] in self?.nativeSyncRequiresReconfiguration == true },
+            runtimeRemovalPending: { [weak self] in
+                self?.pendingNativeCleanup?.accountID == account.userID
+                    && self?.pendingNativeCleanup?.removingDevice == true
+            })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
@@ -571,6 +601,7 @@ import SwiftUI
                                       markerStore: markerStore,
                                       ownedKinds: ownedKinds,
                                       faviconBackfill: faviconBackfill)
+        if pendingNativeCleanup?.accountID == accountId { phiSyncEngine?.pauseForReconfiguration() }
         let builtEngine = phiSyncEngine
         phiInvalidationCoordinator = PhiSyncInvalidationCoordinator(
             stream: { receive in try await client.streamInvalidations(receive: receive) },

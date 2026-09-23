@@ -4,6 +4,15 @@ import Foundation
 // The runner inserts the complete production runPreview method. These stand-ins isolate
 // pagination from the app host; encrypted entity decoding is covered by the hosted suite.
 /* PRODUCTION_PREVIEW_TYPES */
+/* PRODUCTION_MARKER_TYPE */
+
+final class PreviewMarkerStore {
+    var file = PhiSyncMarkerFile()
+    var failSave = false
+    func save(_ file: PhiSyncMarkerFile) -> Bool {
+        if failSave { return false }; self.file = file; return true
+    }
+}
 
 enum PhiSyncProtocolError: Error { case notMyBirthday }
 enum PhiSyncLog {
@@ -69,7 +78,15 @@ final class PreviewFixture {
     let stopSignal = EngineStopSignal(paired: false)
     let domainKeys = PreviewKeys()
     let client = PreviewClient()
-    let storedBirthday = "old-server"
+    var markerState = PhiSyncMarkerFile(marker: Data([9]), storeBirthday: "old-server")
+    var storedBirthday: String { markerState.storeBirthday }
+    let markerStore = PreviewMarkerStore()
+    let statusState = SyncStatusState()
+    var requiresReconfiguration: Bool { stopSignal.requiresReconfiguration }
+    var canPublishThisRound = false
+    enum Outcome { case notMyBirthday }
+    var roundOutcome = Outcome.notMyBirthday
+    /* PRODUCTION_REQUIRE_RESET */
     var lastPreviewStats = (0, 0)
     let previewMaxPages = 400
     static let previewDeadlineMs: Int64 = 120_000
@@ -86,34 +103,42 @@ final class PreviewFixture {
 
 func testPreviewAfterServerReset() async throws {
     let fixture = PreviewFixture()
-    let first = await fixture.preview()
-    guard case .success = first else {
-        throw NSError(domain: "PreviewRegression", code: 1, userInfo: [
-            NSLocalizedDescriptionKey: "An unpaired device with an old birthday must preview the current server: \(first)"])
-    }
-    precondition(fixture.client.calls.count == 2)
-    precondition(fixture.client.calls[0].marker == nil && fixture.client.calls[0].birthday == "")
-    precondition(fixture.client.calls[1].marker == Data([1]))
-    precondition(fixture.client.calls[1].birthday == "current-server", "Pin subsequent pages to the first response's generation")
-    precondition(fixture.storedBirthday == "old-server")
-    precondition(fixture.stopSignal.blocksData(revision: fixture.stopSignal.revision))
-
-    fixture.client.birthday = "another-reset"
-    guard case .success = await fixture.preview() else { preconditionFailure("Each entry must start fresh") }
-    precondition(fixture.client.calls[2].marker == nil && fixture.client.calls[2].birthday == "")
-    precondition(fixture.client.calls[3].birthday == "another-reset")
-
-    fixture.client.resetAfterFirstPage = true
     guard case .failure(.transport("not_my_birthday")) = await fixture.preview() else {
-        preconditionFailure("A reset during pagination must fail without partial choices")
+        throw NSError(domain: "ExplicitResetRegression", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "A changed server must require explicit reconfiguration, not silently accept a fresh preview"])
     }
-    guard case .success = await fixture.preview() else { preconditionFailure("Retry must use the new generation") }
-    precondition(fixture.client.calls[6].marker == nil && fixture.client.calls[6].birthday == "")
-    precondition(fixture.client.calls[7].birthday == "reset-during-preview")
-
-    fixture.client.failNextRequest = true
-    guard case .failure(.transport) = await fixture.preview() else {
-        preconditionFailure("Transport failure must not return cached choices")
+    let requests = fixture.client.calls.count
+    guard case .failure(.transport("not_my_birthday")) = await fixture.preview() else {
+        preconditionFailure("Ordinary Retry must not accept the changed server")
     }
-    print("PASS preview: stale birthday, fresh re-entry, pinned pagination, mid-preview reset, retry, transport failure")
+    precondition(fixture.client.calls.count == requests, "A paused preview must not issue more requests")
+    precondition(fixture.storedBirthday == "old-server")
+    precondition(fixture.markerState.marker == Data([9]))
+    precondition(fixture.markerStore.file.requiresReconfiguration == true)
+    precondition(fixture.statusState.snapshot.phase == .needsAttention)
+    let failedWrite = PreviewFixture()
+    failedWrite.markerStore.failSave = true
+    _ = await failedWrite.preview()
+    _ = await failedWrite.preview()
+    precondition(failedWrite.requiresReconfiguration && failedWrite.client.calls.count == 1)
+    precondition(failedWrite.markerStore.file.requiresReconfiguration == nil)
+    let normal = PreviewFixture()
+    normal.markerState = PhiSyncMarkerFile()
+    normal.client.failNextRequest = true
+    guard case .failure = await normal.preview() else { preconditionFailure("Expected offline") }
+    guard case .success = await normal.preview() else { preconditionFailure("Expected retry") }
+    guard case .success = await normal.preview() else { preconditionFailure("Expected fresh reentry") }
+    precondition(normal.client.calls.count == 5)
+    precondition(normal.client.calls[3].marker == nil && normal.client.calls[3].birthday.isEmpty)
+    precondition(normal.markerStore.file == PhiSyncMarkerFile())
+    let paginatedReset = PreviewFixture()
+    paginatedReset.markerState = PhiSyncMarkerFile()
+    paginatedReset.client.resetAfterFirstPage = true
+    guard case .failure(.transport("not_my_birthday")) = await paginatedReset.preview() else {
+        preconditionFailure("A reset between pages must pause")
+    }
+    let legacy = try JSONDecoder().decode(PhiSyncMarkerFile.self,
+        from: Data(#"{"formatVersion":1,"storeBirthday":"old"}"#.utf8))
+    precondition(legacy.requiresReconfiguration == nil && legacy.storeBirthday == "old")
+    print("PASS preview: mismatch and pagination reset pause, failed persistence pauses in memory, ordinary retry/reentry fetch fresh data")
 }

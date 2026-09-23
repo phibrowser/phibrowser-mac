@@ -174,7 +174,67 @@ struct PairingLoadTimedOut: Error {}
                     "Retry must reuse confirmed identities exactly once")
         try require(controller.profiles.count == (mode == .create ? 2 : 1), "Retry cannot duplicate created Profiles")
     }
+    @MainActor static func sameNameSuggestions() async throws {
+        let api = RetryAPI(), store = RetrySpaceStore()
+        let controller = SyncKeyController(api: api, spaceStore: store)
+        api.envelopes["remote-profile"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Personal", ark: controller.manager.currentARK!)
+        let locals = [local("LOCAL-1", "Work"), local("LOCAL-2", "Reading")]
+        let account = [remote("acct-1", "Work"), remote("acct-2", "Reading")]
+        let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
+            previewAccountSpaces: { .success(account) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil })
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
+                    "Same-name Spaces in the selected Profile must be preselected")
+        try require(store.map.isEmpty, "Suggestions must not persist before Finish")
+        wizard.backToProfiles()
+        wizard.profileSelections["Default"] = .registerNew
+        wizard.profileRemoteChoices["remote-profile"] = .createLocal
+        wizard.continueToSpaces()
+        try require(wizard.spaceSelections.isEmpty, "Changing the chosen Profile must invalidate automatic Space suggestions")
+        wizard.backToProfiles()
+        wizard.profileSelections["Default"] = .remote("remote-profile")
+        wizard.profileRemoteChoices = [:]
+        wizard.continueToSpaces()
+        wizard.assign(.addAsNew, to: "LOCAL-1")
+        wizard.assign(nil, to: "LOCAL-2")
+        wizard.backToProfiles()
+        wizard.continueToSpaces()
+        try require(wizard.spaceSelections == ["LOCAL-1": .addAsNew], "Returning to Spaces must preserve explicit choices, including Choose")
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default")
+        store.map = ["LOCAL-1": "old-account-space"]
+        await wizard.start(controller: controller)
+        try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
+                    "Fresh entry must also suggest Spaces for an already-mapped Profile and a stale Space identity")
+        try require(store.map == ["LOCAL-1": "old-account-space"], "A fresh suggestion must not replace a persisted identity yet")
+    }
+    static func ambiguousSpaceSuggestions() throws {
+        func suggested(_ locals: [PhiLocalSpace], _ account: [PhiAccountSpaceSummary],
+                       selections: [String: SpacePairingModel.Assignment] = [:]) -> [String: SpacePairingModel.Assignment] {
+            let input = SpacePairingModel.Input(locals: locals, accountSpaces: account, localProfileNames: [:], accountProfileNames: [:])
+            return SpacePairingModel(input: input, selections: selections)
+                .suggestingSameNames(profileMappings: ["Default": "remote-profile"], excluding: [])
+        }
+        let work = local("work", "Work")
+        try require(suggested([work], [remote("a", "Work"), remote("b", "Work")]).isEmpty,
+                    "Duplicate account names must remain undecided")
+        try require(suggested([work, local("other", "Work")], [remote("a", "Work")]).isEmpty,
+                    "Duplicate local names must remain undecided")
+        var otherProfile = work
+        otherProfile.profileId = "Other"
+        try require(suggested([otherProfile], [remote("a", "Work")]).isEmpty,
+                    "Same name in an unmatched Profile cannot authorize a suggestion")
+        try require(suggested([local(LocalStore.defaultSpaceId, "Work")], [remote("a", "Work")]).isEmpty,
+                    "The default Space must not claim a selectable account Space")
+        try require(suggested([work], [remote("a", "Renamed"), remote("b", "Work")], selections: ["work": .existing(syncUuid: "a")])
+                    == ["work": .existing(syncUuid: "a")], "Stable identities outrank names")
+        try require(suggested([work], [remote("a", "Work")], selections: ["work": .addAsNew])
+                    == ["work": .existing(syncUuid: "a")], "Stale identity fallback may receive a same-name suggestion")
+    }
     @MainActor static func main() async throws {
+        try ambiguousSpaceSuggestions()
+        try await sameNameSuggestions()
         try await run(.register)
         try await run(.adopt)
         try await run(.create)
@@ -182,6 +242,6 @@ struct PairingLoadTimedOut: Error {}
         try await run(change: .newProfile)
         try await run(change: .missingProfile)
         try await run(change: .localDuringApply)
-        print("PASS pairing retry: register/adopt/create progress, retained choices, idempotence, changed server Spaces/Profiles, local edits during apply")
+        print("PASS same-name Space suggestions, ambiguity, Profile changes, explicit choices; pairing retry: register/adopt/create progress, retained choices, idempotence, changed server Spaces/Profiles, local edits during apply")
     }
 }

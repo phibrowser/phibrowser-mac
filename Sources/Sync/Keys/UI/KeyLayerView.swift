@@ -135,15 +135,11 @@ struct SyncSetupView: View {
                         await wizard.start(controller: controller)
                     }
             } else {
-                VStack {
-                    KeyLayerView(viewModel: keyModel, controller: controller, onFinish: onDismiss)
-                    Button(NSLocalizedString("sync.setup.finishLater", value: "Finish later", comment: "Leave sync setup unfinished and continue browsing")) {
+                KeyLayerView(viewModel: keyModel, controller: controller, onFinish: onDismiss)
+                    .onExitCommand {
+                        guard !keyModel.workingOperation, !keyModel.phase.requiresAcknowledgement else { return }
                         onDismiss()
                     }
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(keyModel.workingOperation || keyModel.phase.requiresAcknowledgement)
-                    .padding(.bottom, 20)
-                }
             }
         }
         .frame(minWidth: 720, minHeight: 560)

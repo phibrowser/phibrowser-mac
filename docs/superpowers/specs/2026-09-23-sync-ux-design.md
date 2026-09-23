@@ -132,10 +132,13 @@ restriction without implying that postponing setup has the same restriction.
 
 1. Prefer Request approval from another device, with Use a recovery code as the
    alternative. Keep the distinction between signed-in and authorized devices.
+   Do not show Finish later before verification, including the approval-waiting page.
 2. Waiting shows Settings > Sync instructions, a comparison code, time remaining,
    and options to cancel or use recovery. Network failure is different from
    waiting for human approval. Leaving a waiting screen must not allow a late
-   completion to advance a different setup session or account.
+   completion to advance a different setup session or account. Cancel, window close,
+   and switching to recovery withdraw the pending server request; requesting again
+   replaces stale pending requests for the same device public key.
 3. Invalid recovery input stays editable on the input page. Network, service,
    and authentication failures are not all reported as an invalid code. Preserve
    input in the current flow, but do not persist recovery codes in setup storage.
@@ -153,7 +156,9 @@ restriction without implying that postponing setup has the same restriction.
 
 Keep the Profile then Space order. Present existing-account matching versus
 keeping a separate item in outcome-oriented language. Name-based suggestions
-remain suggestions, not identity proof or silent authorization.
+remain suggestions, not identity proof or silent authorization. Space defaults
+prefer existing identities, then unique same-name matches within the selected
+Profile. Ambiguous names remain undecided, and explicit choices survive Back.
 
 Use the existing two-column local/account Space presentation and list account
 Spaces that will be added automatically. Show meaningful result summaries such

@@ -23,13 +23,30 @@ enabled/drained Space state have all been verified. An explicit pending flag
 prevents migration. Mapping resolution or ARK unlock alone never proves enrollment.
 
 Setup has one modal host through introduction, verification, Profile/Space
-matching, overwrite review and completion. Finish later, Escape and window close
+matching, overwrite review and completion. Finish later appears only after
+verification, on the pairing pages; the join-method and approval-waiting pages
+have no Finish later button. Escape and window close, and Finish later in pairing,
 retain unpaired status and discard unsubmitted choices. They remain available
 while loading/reviewing/revalidating; confirmed writes and recovery-code
 acknowledgement cannot be dismissed. Background work never reopens setup.
 Closing an actual setup session refreshes the Sync pane's device authorization
 state without changing enrollment. A verified device that defers matching remains
 unpaired, with its device list and removal controls available.
+
+Cancelling an approval request, switching to recovery, or closing verification
+withdraws that request using the existing account-authenticated join-request deny
+endpoint. Late POST responses are withdrawn by exact request ID. New requests
+wait for earlier creates on the same account manager and withdraw outstanding
+tickets for the exact device public key before posting; a failed withdrawal
+blocks replacement. Other devices' requests are untouched. Cancelled polling
+cannot consume a late approval response. Verification codes identify public keys,
+so retrying with the same device identity intentionally keeps the same code.
+
+Space matching preserves valid stored identities first, then suggests unique
+exact-name matches within the Profile selected in step 1 (or already mapped).
+Ambiguous names stay undecided. Changing Profile choices recomputes automatic
+suggestions; explicit Space choices, including clearing a picker, survive Back.
+Suggestions never persist mappings or bypass overwrite review and Finish.
 
 Every entry and submission preflight fetches new Profile and Space candidates;
 GET requests bypass response caches. A failed refresh has no cached-choice

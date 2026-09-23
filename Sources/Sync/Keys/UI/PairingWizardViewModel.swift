@@ -155,6 +155,9 @@ final class PairingWizardViewModel: ObservableObject {
         profileSelections = [:]
         profileRemoteChoices = [:]
         spaceSelections = [:]
+        identitySpaceSelections = [:]
+        mappedProfileUuids = [:]
+        explicitSpaceChoices = []
         loadedLocals = []
         loadedRemotes = []
         profileDecisions = []
@@ -169,6 +172,9 @@ final class PairingWizardViewModel: ObservableObject {
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
     private var profileDecisions: [PairingDecision] = []
+    private var mappedProfileUuids: [String: String] = [:]
+    private var identitySpaceSelections: [String: SpacePairingModel.Assignment] = [:]
+    private var explicitSpaceChoices: Set<String> = []
     private var spacesInput = SpacePairingModel.Input(locals: [], accountSpaces: [],
                                                       localProfileNames: [:],
                                                       accountProfileNames: [:])
@@ -215,6 +221,9 @@ final class PairingWizardViewModel: ObservableObject {
         profileSelections = [:]
         profileRemoteChoices = [:]
         spaceSelections = [:]
+        identitySpaceSelections = [:]
+        mappedProfileUuids = [:]
+        explicitSpaceChoices = []
         profileDecisions = []
         loadGeneration += 1
         let generation = loadGeneration
@@ -280,6 +289,14 @@ final class PairingWizardViewModel: ObservableObject {
     func continueToSpaces() {
         guard sessionActive, !isPreparing, !isApplying, profileRowsDecided else { return }
         profileDecisions = profileModel.decisions()
+        var profileMappings = mappedProfileUuids
+        for decision in profileDecisions {
+            if case .adopt(let localId, let remoteUuid) = decision { profileMappings[localId] = remoteUuid }
+        }
+        var base = identitySpaceSelections
+        for id in explicitSpaceChoices { base[id] = spaceSelections[id] }
+        spaceSelections = SpacePairingModel(input: spacesInput, selections: base)
+            .suggestingSameNames(profileMappings: profileMappings, excluding: explicitSpaceChoices)
         step = .spaces
         phase = .spaces(spacesInput)
         logStep()
@@ -297,6 +314,7 @@ final class PairingWizardViewModel: ObservableObject {
     /// The only two mutators. D7 adds none: Back changes phase to spaces while selections remain intact.
     func assign(_ assignment: SpacePairingModel.Assignment?, to localSpaceId: String) {
         guard !isPreparing, !isApplying else { return }
+        explicitSpaceChoices.insert(localSpaceId)
         var updated = spaceSelections
         if let assignment { updated[localSpaceId] = assignment }
         else { updated.removeValue(forKey: localSpaceId) }
@@ -305,6 +323,7 @@ final class PairingWizardViewModel: ObservableObject {
 
     func addAllAsNew() {
         guard !isPreparing, !isApplying else { return }
+        explicitSpaceChoices.formUnion(spaceModel.rows.filter { spaceModel.assignment(for: $0) == nil }.map(\.spaceId))
         spaceSelections = spaceModel.addAllAsNew()
     }
 
@@ -513,11 +532,19 @@ final class PairingWizardViewModel: ObservableObject {
 
     private func seedSpaceSelections(controller: SyncKeyController) {
         spaceSelections = [:]
+        explicitSpaceChoices = []
+        mappedProfileUuids = [:]
+        for summary in spacesInput.accountSpaces {
+            if let localId = controller.localProfileId(forGlobalUuid: summary.profileUuid) {
+                mappedProfileUuids[localId] = summary.profileUuid
+            }
+        }
         for local in spacesInput.locals where local.spaceId != LocalStore.defaultSpaceId {
             guard let uuid = controller.syncUuid(forSpaceId: local.spaceId) else { continue }
             spaceSelections[local.spaceId] = spacesInput.accountSpaces.contains { $0.syncUuid == uuid }
                 ? .existing(syncUuid: uuid) : .addAsNew
         }
+        identitySpaceSelections = spaceSelections
     }
 
     private func reseedProfileSelections(locals: [PairingLocal], remotes: [RemoteProfile]) {

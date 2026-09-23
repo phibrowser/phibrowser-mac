@@ -341,6 +341,8 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 | UX-16 | Complete Profile writes, fail the second Space write, then Retry and Finish in the same session | Completed mappings are reused; still-valid unwritten choices survive; independent server changes still require review | Not run |
 | UX-17 | Complete B's login while A's confirmed cleanup is waiting for its database write; keep Sync settings closed | B initializes automatically after cleanup exits; no A state crosses accounts | Not run |
 | UX-18 | Open synced bookmarks/pins or update only their favicons; then edit and revert content within debounce | Local-only changes retain success; real edits invalidate immediately and their round restores status even after a revert | Not run |
+| UX-19 | On B open join-method selection, request approval, cancel and request again three times; repeat with window close and recovery entry | No Finish later before verification; A's refreshed list contains only B's current request; approving it advances B; other devices' requests survive | Not run |
+| UX-20 | Match Profiles with same-name local/account Spaces, revisit Profile choices, edit or clear a Space picker and go Back; repeat with ambiguous names and stale Space identities | Unique names within the selected Profile are preselected; stored valid identities win; explicit choices survive Back; ambiguity stays undecided; no writes before Finish | Not run |
 
 Automated evidence is recorded separately from these manual cases: hostless
 pairing/device/status/invalidation regressions and convergence properties have
@@ -353,7 +355,12 @@ The PR #153 follow-up regressions also run without launching a browser host:
 - `build-scripts/test-sync-cleanup-resume.sh`: deferred login, account replacement,
   sign-out, request coalescing, and ordinary removal.
 - `build-scripts/test-sync-pairing-retry.sh`: registration/adoption/creation retries,
-  retained choices, changed server candidates, and local edits during submission.
+  retained choices, changed server candidates, local edits during submission,
+  same-name Space suggestions, Profile changes, ambiguity and manual overrides.
+- `build-scripts/test-sync-join.sh`: production verification state machine and
+  account manager with in-memory keys/transport; cancel/recovery/close withdrawal,
+  stale same-key requests, failed withdrawal, delayed POST, cancelled approval
+  polling and successful current approval.
 - `build-scripts/test-sync-setup-dismissal.sh`: pane refresh notification on defer,
   unchanged enrollment, and duplicate/retired-session suppression.
 - `build-scripts/test-sync-local-changes.sh`: Core Data/Combine publishers and the

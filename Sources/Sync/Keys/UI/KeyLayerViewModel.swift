@@ -72,6 +72,7 @@ final class KeyLayerViewModel: ObservableObject {
     private func verified() {
         guard flowIsCurrent else { return }
         stopPolling()
+        currentRequestId = nil
         guard flowController?.requiresReconfiguration != true else {
             phase = .error(SyncReconfigurationStrings.returnToSettings); return
         }
@@ -81,9 +82,7 @@ final class KeyLayerViewModel: ObservableObject {
     }
 
     func cancelFlow() {
-        operationGeneration += 1
-        currentRequestId = nil
-        stopPolling()
+        cancelJoin()
         pairingLoad?.cancel()
         recoveryInput = ""
     }
@@ -112,6 +111,7 @@ final class KeyLayerViewModel: ObservableObject {
     private let manager: AccountKeyManager
     private var currentRequestId: String?
     private var pollTimer: Timer?
+    private var joinPollTask: Task<JoinPollResult, Error>?
     /// The shared controller for the duration of this setup flow, captured when
     /// the flow opens (`beginSetup(controller:)`). Every terminal transition to
     /// `.done` re-runs `resolveMappings()` on it so a profile established in
@@ -189,7 +189,10 @@ final class KeyLayerViewModel: ObservableObject {
         do {
             try beginEnrollment()
             let ticket = try await manager.requestJoinApproval()
-            guard generation == operationGeneration, flowIsCurrent else { return }
+            guard generation == operationGeneration, flowIsCurrent else {
+                withdrawJoinRequest(ticket.requestId)
+                return
+            }
             currentRequestId = ticket.requestId
             phase = .waitingForApproval(code: ticket.verificationCode, deadline: Date().addingTimeInterval(900))
             startPollTimer()
@@ -202,10 +205,12 @@ final class KeyLayerViewModel: ObservableObject {
     func pollOnce() async {
         guard let id = currentRequestId, !pollingInFlight else { return }
         pollingInFlight = true
-        defer { pollingInFlight = false }
+        defer { pollingInFlight = false; joinPollTask = nil }
         let generation = operationGeneration
+        let task = Task { try await manager.pollJoin(requestId: id) }
+        joinPollTask = task
         do {
-            let result = try await manager.pollJoin(requestId: id)
+            let result = try await task.value
             guard generation == operationGeneration, currentRequestId == id, flowIsCurrent else { return }
             inputError = nil
             switch result {
@@ -228,8 +233,20 @@ final class KeyLayerViewModel: ObservableObject {
         operationGeneration += 1
         workingOperation = false
         stopPolling()
+        joinPollTask?.cancel()
+        if let id = currentRequestId { withdrawJoinRequest(id) }
         currentRequestId = nil
+        inputError = nil
         phase = .chooseJoinMethod
+    }
+
+    private func withdrawJoinRequest(_ id: String) {
+        // Keep cleanup alive after the window/model closes. It can only withdraw this
+        // ticket; a later flow's replacement must not be affected by a delayed response.
+        Task { [manager] in
+            do { try await manager.cancelJoinApproval(requestId: id) }
+            catch { AppLogWarn("[phi-sync] join withdrawal failed: \(PhiSyncLog.describe(error))") }
+        }
     }
 
     func stopPolling() {

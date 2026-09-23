@@ -4552,6 +4552,9 @@ extension PhiSyncEngineOwnedItemsTests {
         let table = await engine.ownedTableForTesting("bookmarks")
         XCTAssertGreaterThan(table.cursors["b1"]?.version ?? 0, 9,
                              "④ The server accepts the retry without another conflict")
+        XCTAssertEqual(engine.statusSnapshot.phase, .upToDate,
+                       "A successful owned-item retry must complete this round's status")
+        XCTAssertNotNil(engine.statusSnapshot.lastSuccess)
     }
 
     /// The invariant a refused create protects: an entry that names no entity carries no base

@@ -1,6 +1,6 @@
 import Foundation
 @main struct StatusTests {
-    static func main() {
+    static func main() async {
         let state = SyncStatusState()
         let round = state.update(.syncing)
         state.update(.syncing)
@@ -30,5 +30,6 @@ import Foundation
             precondition(completion.succeeded == (failing == -1))
         }
         print("PASS status: unpaired, missing contexts, partial failure, revisions, timestamp, complete-round predicates")
+        await testConflictStatus()
     }
 }

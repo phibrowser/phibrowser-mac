@@ -66,7 +66,28 @@ struct SetupDismissalTests {
                                       outcome: .cleared, controllerRetired: true)
         precondition(host.dismisses == dismissesBefore + 1, "A retired controller's .cleared must close setup")
         precondition(dismissals == 3, "Closing for a retired controller still refreshes the pane")
+        // A previous account's unlock may fail after its controller has retired. Its
+        // .cleared must not dismiss the next account's verification/recovery-code UI.
+        gate.start(controller: nextController)
+        gate.requestPresentation(controller: nextController)
+        controller.isRetired = true
+        let beforeStaleNotification = host.dismisses
+        NotificationCenter.default.post(name: .phiProfileMappingsDidResolve, object: controller,
+            userInfo: [SyncKeyController.mappingsOutcomeKey: "cleared"])
+        precondition(host.dismisses == beforeStaleNotification,
+                     "A retired previous controller must not close the current setup")
+        nextController.isRetired = true
+        NotificationCenter.default.post(name: .phiProfileMappingsDidResolve, object: nil,
+            userInfo: [SyncKeyController.mappingsOutcomeKey: "cleared"])
+        precondition(host.dismisses == beforeStaleNotification,
+                     "An unattributed notification must not close the current setup")
+        NotificationCenter.default.post(name: .phiProfileMappingsDidResolve, object: nextController,
+            userInfo: [SyncKeyController.mappingsOutcomeKey: "cleared"])
+        precondition(host.dismisses == beforeStaleNotification + 1,
+                     "Retiring the current controller still closes its setup")
+        gate.stop()
         print("PASS setup dismissal: live .cleared keeps setup, retired .cleared closes it")
+        print("PASS setup dismissal: stale and unattributed notifications cannot close another session")
         print("PASS setup dismissal: refresh after defer, unchanged enrollment, duplicate and retired sessions")
     }
 }

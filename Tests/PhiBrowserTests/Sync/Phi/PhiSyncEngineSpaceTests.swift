@@ -1515,6 +1515,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors["sync-1"]?.server)
         XCTAssertNotNil(store.table.cursors["sync-3"]?.server)
         XCTAssertNotNil(store.table.cursors["sync-2"]?.server, "the conflicting one is retried, not dropped")
+        XCTAssertEqual(engine.statusSnapshot.phase, .upToDate,
+                       "A conflict recovered in this round is not a remaining failure")
+        XCTAssertNotNil(engine.statusSnapshot.lastSuccess)
         // The retry is SCOPED: only the conflicting uuid goes back through the
         // wire, not the whole batch recomputed from scratch.
         XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash("sync-2") }.count, 2)

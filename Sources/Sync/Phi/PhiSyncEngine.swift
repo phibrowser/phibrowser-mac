@@ -3432,6 +3432,8 @@ actor PhiSyncEngine {
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
         // abandons only those entries; already applied entries remain valid (section 5.1).
+        // A recovered conflict is success; retain other failures recorded during this round.
+        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
@@ -3483,7 +3485,6 @@ actor PhiSyncEngine {
                 spaceCounters.pushed += 1
             }
         case .conflict:
-            roundOutboundFailed = true
             conflicted.insert(item.uuid)
             spaceCounters.conflicts += 1
         case .invalidMessage:
@@ -4681,6 +4682,8 @@ actor PhiSyncEngine {
 
         // One pull and one retry restricted to conflicted identities; a second conflict abandons
         // only those entries for this round (section 5.3).
+        // Count only exhausted conflicts, without clearing another kind's publication failure.
+        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
@@ -4740,7 +4743,6 @@ actor PhiSyncEngine {
                 counters.pushed += 1
             }
         case .conflict(let conflictingId, let serverVersion):
-            roundOutboundFailed = true
             // Conflicts do not acknowledge baselines; doing so would silently lose local edits.
             // However, harvest the server triple a conflict does return for an existing cursor
             // (R-exec-17), through the same single write point incoming entities use: a refused

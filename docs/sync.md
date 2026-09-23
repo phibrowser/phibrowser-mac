@@ -31,6 +31,9 @@ have no Finish later button. Escape and window close, and Finish later in pairin
 retain unpaired status and discard unsubmitted choices. They remain available
 while loading/reviewing/revalidating; confirmed writes and recovery-code
 acknowledgement cannot be dismissed. Background work never reopens setup.
+Mapping notifications affect only the setup session's current controller. A late
+`.cleared` from a retired previous controller cannot dismiss another account's
+verification or recovery-code window; retiring the current controller still does.
 Closing an actual setup session refreshes the Sync pane's device authorization
 state without changing enrollment. A verified device that defers matching remains
 unpaired, with its device list and removal controls available.
@@ -113,7 +116,9 @@ cannot become global Up to date; the summary time is the oldest successful time
 among all required contexts.
 
 Native success requires a drained pull, accepted publication, successful cursor
-persistence, and no pending/quarantined input, output, or follow-up work. Rows
+persistence, and no pending/quarantined input, output, or follow-up work. A conflict
+resolved by the same round's scoped retry does not count as a failure. Exhausted
+conflicts and other failures remain failures even when another item recovers. Rows
 that are deliberately never published (hidden, purged or unmapped owner Spaces)
 and refused arrivals are exclusions, not pending work. Local
 changes to sync-visible fields invalidate the current result before debounce.

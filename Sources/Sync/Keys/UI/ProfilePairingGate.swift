@@ -80,7 +80,10 @@ final class ProfilePairingGate {
             forName: .phiProfileMappingsDidResolve, object: nil, queue: nil
         ) { [weak self] note in
             MainActor.assumeIsolated {
-                guard let self, let c = note.object as? SyncKeyController ?? self.controller else { return }
+                // A retired account's failed unlock can still announce .cleared.
+                // Only the controller owning this session may dismiss its setup UI.
+                guard let self, let c = note.object as? SyncKeyController,
+                      c === self.controller else { return }
                 // An announcement with no outcome reads as `.held`: the safe
                 // direction, since `.held` is the one value that changes nothing.
                 let outcome = (note.userInfo?[SyncKeyController.mappingsOutcomeKey] as? String)

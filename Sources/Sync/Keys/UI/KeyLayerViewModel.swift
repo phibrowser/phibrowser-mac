@@ -14,6 +14,7 @@ enum KeyLayerStrings {
     static let invalidRecoveryCode = NSLocalizedString("sync.setup.invalidRecoveryCode", value: "Check your recovery code and try again.", comment: "Sync recovery input rejected")
     static let connectionFailed = NSLocalizedString("sync.setup.connectionFailed", value: "Couldn’t connect to sync. Check your connection and try again.", comment: "Sync setup request failed")
     static let signInRequired = NSLocalizedString("sync.setup.signInRequired", value: "Sign in again to continue setting up sync.", comment: "Sync setup authentication expired")
+    static let tooManyJoinRequests = NSLocalizedString("sync.setup.tooManyJoinRequests", value: "Too many pending requests. Try again later or use a recovery code.", comment: "Sync setup error shown when the account already has too many pending requests to join from a new device")
 }
 
 enum KeyLayerPhase: Equatable {
@@ -179,6 +180,14 @@ final class KeyLayerViewModel: ObservableObject {
     }
     func chooseJoinAgain() { cancelJoin() }
 
+    /// Retry from `.error` re-derives the route instead of assuming a join: the failure
+    /// may have come from first-device bootstrap on an account no other device has
+    /// initialized, where the join-method choice offers nothing that can work.
+    func retrySetup() async {
+        cancelJoin()
+        await beginSetup(controller: flowController)
+    }
+
     func startJoinRequest() async {
         guard !workingOperation else { return }
         operationGeneration += 1
@@ -196,6 +205,9 @@ final class KeyLayerViewModel: ObservableObject {
             currentRequestId = ticket.requestId
             phase = .waitingForApproval(code: ticket.verificationCode, deadline: Date().addingTimeInterval(900))
             startPollTimer()
+        } catch JoinRequestError.tooManyPending {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .error(KeyLayerStrings.tooManyJoinRequests)
         } catch {
             guard generation == operationGeneration, flowIsCurrent else { return }
             phase = .error(KeyLayerStrings.connectionFailed)

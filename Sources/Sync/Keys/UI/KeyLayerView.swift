@@ -64,7 +64,8 @@ struct KeyLayerView: View {
                         NSLocalizedString("This request timed out. You can try again.", comment: "Join expired - body"),
                         retry: true)
             case .error(let m):
-                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: true)
+                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m,
+                        retry: true, retryRoutesFromStart: true)
             case .pairingProfiles(let locals, let remotes):
                 if let controller {
                     ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes,
@@ -103,11 +104,21 @@ struct KeyLayerView: View {
     }
 
     @ViewBuilder
-    private func message(_ title: String, _ body: String, retry: Bool) -> some View {
+    private func message(_ title: String, _ body: String, retry: Bool,
+                         retryRoutesFromStart: Bool = false) -> some View {
         VStack(spacing: 24) {
             Text(title).font(.title2.bold()).themedForeground(.textPrimaryStrong)
             Text(body).font(.body).themedForeground(.textPrimary).multilineTextAlignment(.center)
-            if retry {
+            // A denied or expired request can only have come from the join flow, so
+            // "another way" is the join-method choice. A generic error may come from
+            // first-device setup, sign-in or reconfiguration; retry re-runs routing.
+            if retry, retryRoutesFromStart {
+                Button(NSLocalizedString("sync.setup.tryAgain", value: "Try again",
+                                         comment: "Sync setup error screen - button that retries setup from the start")) {
+                    Task { await viewModel.retrySetup() }
+                }
+                .buttonStyle(.borderedProminent)
+            } else if retry {
                 Button(NSLocalizedString("Try another way", comment: "Key layer - retry")) {
                     viewModel.chooseJoinAgain()
                 }

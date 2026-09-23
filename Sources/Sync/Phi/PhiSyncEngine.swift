@@ -1529,9 +1529,13 @@ actor PhiSyncEngine {
                     $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
                 }
             }
+        // `excludedUnmappedOwner` and `refused` are not pending work: rows in hidden, purged
+        // or unmapped Spaces are deliberately never published, and a refused arrival neither
+        // lands nor parks. Both recur every round, so counting them would pin the status at
+        // Syncing for anyone who owns such a row.
         let pendingOutbound = spaces.cursors.values.contains { $0.pendingProjection != nil || $0.pendingDelete }
             || ownedTables.values.contains { $0.cursors.values.contains { $0.pendingDelete } }
-            || ownedCounters.values.contains { $0.pendingPublish > 0 || $0.refused > 0 || $0.excludedUnmappedOwner > 0 }
+            || ownedCounters.values.contains { $0.pendingPublish > 0 }
         let completion = SyncRoundCompletion(pullDrained: canPublishThisRound && roundOutcome == .ok,
             outboundAccepted: !roundOutboundFailed, persistenceSucceeded: cursorSaveFailures == 0,
             pendingInbound: pendingInbound || !ownedReadFailed.isEmpty,

@@ -34,12 +34,15 @@ actor JoinAPI: KeyEnvelopeAPI {
     var counter = 0
     var registrations = 0
     var failDeny = false
+    var tooManyPending = false
     var holdPost = false
     var postContinuation: CheckedContinuation<Void, Never>?
     var holdGet = false
     var getContinuation: CheckedContinuation<Void, Never>?
-    func configure(holdPost: Bool = false, holdGet: Bool = false, failDeny: Bool = false) {
+    func configure(holdPost: Bool = false, holdGet: Bool = false, failDeny: Bool = false,
+                   tooManyPending: Bool = false) {
         self.holdPost = holdPost; self.holdGet = holdGet; self.failDeny = failDeny
+        self.tooManyPending = tooManyPending
     }
     func releasePost() { holdPost = false; postContinuation?.resume(); postContinuation = nil }
     func releaseGet() { holdGet = false; getContinuation?.resume(); getContinuation = nil }
@@ -57,6 +60,7 @@ actor JoinAPI: KeyEnvelopeAPI {
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { nil }
     func revokeDevice(deviceKeyId: String) async throws {}
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
+        if tooManyPending { throw JoinRequestError.tooManyPending }
         counter += 1
         let id = "join-\(counter)"
         requests[id] = JoinRequestDTO(requestId: id, requestingPublicKey: publicKey, name: name, platform: platform,
@@ -163,6 +167,21 @@ actor JoinAPI: KeyEnvelopeAPI {
         await vm.pollOnce()
         try require(vm.phase == .readyToPair && manager.currentARK != nil, "Current approval must advance to matching")
         try require(await api.registrations == 1, "Only the current approval may register this device")
-        print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval")
+
+        // A full server-side request queue is not a connection failure: retrying the same
+        // request cannot help, so the user is pointed at the recovery code instead.
+        let freshAPI = JoinAPI()
+        let fresh = KeyLayerViewModel(manager: AccountKeyManager(api: freshAPI, deviceKeyProvider: DeviceKeyStore(),
+                                                                 pendingRegistrations: MemoryRegistration()),
+                                      beginEnrollment: {})
+        await freshAPI.configure(tooManyPending: true)
+        await fresh.startJoinRequest()
+        try require(fresh.phase == .error(KeyLayerStrings.tooManyJoinRequests), "Too many pending requests must keep its own message")
+        // Retry from an error re-derives the route. An account no device has initialized
+        // must return to first-device setup, not to a join choice where nothing can work.
+        await freshAPI.configure()
+        await fresh.retrySetup()
+        try require(fresh.phase == .introduction, "Retry on an uninitialized account must return to first-device setup")
+        print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval, too-many-pending, retry routing")
     }
 }

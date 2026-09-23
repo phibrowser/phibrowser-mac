@@ -95657,6 +95657,28 @@
         }
       }
     },
+    "sync.setup.tooManyJoinRequests" : {
+      "comment" : "Sync setup error shown when the account already has too many pending requests to join from a new device",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many pending requests. Try again later or use a recovery code."
+          }
+        }
+      }
+    },
+    "sync.setup.tryAgain" : {
+      "comment" : "Sync setup error screen - button that retries setup from the start",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        }
+      }
+    },
     "sync.setup.useRecovery" : {
       "comment" : "Switch from approval to recovery code",
       "localizations" : {

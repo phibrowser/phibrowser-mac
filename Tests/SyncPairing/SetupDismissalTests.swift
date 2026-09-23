@@ -55,6 +55,18 @@ struct SetupDismissalTests {
         gate.requestPresentation(controller: nextController)
         gate.finishLater()
         precondition(dismissals == 2, "The next account's actual dismissal must remain observable")
+        // A live controller announces `.cleared` whenever a background resolve finds this
+        // device still unjoined; the join steps run inside this window, so it must stay up.
+        gate.requestPresentation(controller: nextController)
+        let dismissesBefore = host.dismisses
+        gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false,
+                                      outcome: .cleared, controllerRetired: false)
+        precondition(host.dismisses == dismissesBefore, "A live controller's .cleared must not close setup mid-join")
+        gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false,
+                                      outcome: .cleared, controllerRetired: true)
+        precondition(host.dismisses == dismissesBefore + 1, "A retired controller's .cleared must close setup")
+        precondition(dismissals == 3, "Closing for a retired controller still refreshes the pane")
+        print("PASS setup dismissal: live .cleared keeps setup, retired .cleared closes it")
         print("PASS setup dismissal: refresh after defer, unchanged enrollment, duplicate and retired sessions")
     }
 }

@@ -59,6 +59,15 @@ import SwiftUI
     /// provider handed to the controller therefore refreshes before every read.
     private var profilesCancellable: AnyCancellable?
 
+    /// Upgrade-path legacy enrollment check (see `buildSyncKeyControllerIfNeeded()`).
+    /// A failure at launch (offline, token refresh) must not leave an already-paired
+    /// device stopped for the session, so the check retries with backoff until it
+    /// gets a definitive answer. `legacyEnrollmentAttempt` is nil once answered.
+    private enum LegacyEnrollmentAttempt { case verified, notLegacy, retry }
+    private var legacyEnrollmentAttempt: (@MainActor () async -> LegacyEnrollmentAttempt)?
+    private var legacyEnrollmentInFlight: Task<LegacyEnrollmentAttempt, Never>?
+    private var legacyEnrollmentRetries: Task<Void, Never>?
+
     // MARK: - Phi settings sync (M3-1)
     //
     // The phi settings engine rides the same lifetime as the key layer above: it is built
@@ -101,6 +110,9 @@ import SwiftUI
     private var pairingActivationTask: Task<Void, Never>?
     private var phiSyncPairingEnabled = false
     private var phiObservedSettingsSignature: Data?
+    /// Set when a real settings change marked the status pending; the next debounced
+    /// round must run even if the value was reverted before it.
+    private var phiSettingsInvalidationPending = false
 
     @MainActor var nativeSyncRequiresReconfiguration: Bool {
         phiSyncEngine?.requiresReconfiguration == true
@@ -424,15 +436,22 @@ import SwiftUI
            !account.userDefaults.bool(forKey: "sync.joinPairingPending"),
            legacy.spaceSectionEnabled, legacy.hasDrainedFullReplay,
            let controller = syncKeyController, let engine = phiSyncEngine {
-            Task { @MainActor [weak self] in
+            // One attempt. `.retry` covers every failure the next attempt may not repeat
+            // (offline, token refresh, preview failure); `.notLegacy` is a definitive answer
+            // or a superseded check (account switch, or setup began and bumped the generation).
+            legacyEnrollmentAttempt = { [weak self] in
                 do {
                     let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
-                    guard try await stack.api.getDeviceEnvelope(deviceKeyId: deviceID) != nil,
-                          try await stack.manager.unlockAtStartup() == .unlocked else { return }
+                    guard try await stack.api.getDeviceEnvelope(deviceKeyId: deviceID) != nil else { return .notLegacy }
+                    switch try await stack.manager.unlockAtStartup() {
+                    case .unlocked: break
+                    case .needsJoin: return .notLegacy
+                    case .notSignedIn: return .retry
+                    }
                     let profiles = try await profileKeys.accountProfiles()
-                    guard case .success(let spaces) = await engine.previewAccountSpaces(),
-                          let self, self.syncKeyController === controller, !controller.isRetired,
-                          gate.enrollmentGeneration == generation else { return }
+                    guard case .success(let spaces) = await engine.previewAccountSpaces() else { return .retry }
+                    guard let self, self.syncKeyController === controller, !controller.isRetired,
+                          gate.enrollmentGeneration == generation else { return .notLegacy }
                     let profileMap = profileKeys.allMappings()
                     let localProfiles = controller.localProfiles()
                     let remoteProfiles = Set(profiles.filter { $0.name != nil }.map(\.uuid))
@@ -445,7 +464,7 @@ import SwiftUI
                         $0.spaceId == LocalStore.defaultSpaceId ||
                         spaceMap[$0.spaceId].map { remoteSpaces.contains($0) } == true
                     } && Set(spaceMap.values).count == spaceMap.count
-                    guard validProfiles, validSpaces else { return }
+                    guard validProfiles, validSpaces else { return .notLegacy }
                     try gate.configureEnrollment(deviceKeyID: deviceID, recordData: nil,
                         saveRecord: { account.userDefaults.set($0, forKey: ProfilePairingGate.enrollmentDefaultsKey) },
                         legacyEvidence: SyncPairingLegacyEvidence(authorizedDeviceVerified: true,
@@ -453,12 +472,53 @@ import SwiftUI
                             spaceSectionEnabled: true, hasDrainedFullReplay: true,
                             profileMappingsValid: validProfiles, spaceMappingsValid: validSpaces))
                     self.activatePairedSync()
+                    return .verified
                 } catch {
-                    AppLogWarn("[phi-sync] legacy enrollment could not be verified; setup remains available")
+                    AppLogWarn("[phi-sync] legacy enrollment could not be verified yet; will retry")
+                    return .retry
                 }
             }
+            scheduleLegacyEnrollmentRetries()
         }
         return syncKeyController
+    }
+
+    /// Runs one legacy enrollment attempt, sharing an attempt already in flight so the
+    /// retry loop and an explicit setup request never verify (and activate) twice.
+    @MainActor
+    private func runLegacyEnrollmentAttempt() async -> LegacyEnrollmentAttempt {
+        if let inFlight = legacyEnrollmentInFlight { return await inFlight.value }
+        guard let attempt = legacyEnrollmentAttempt else { return .notLegacy }
+        let task = Task { @MainActor in await attempt() }
+        legacyEnrollmentInFlight = task
+        let result = await task.value
+        // An account switch during the await installed another controller's check.
+        guard legacyEnrollmentInFlight == task else { return .notLegacy }
+        legacyEnrollmentInFlight = nil
+        if result != .retry { legacyEnrollmentAttempt = nil }
+        return result
+    }
+
+    @MainActor
+    private func scheduleLegacyEnrollmentRetries() {
+        legacyEnrollmentRetries?.cancel()
+        legacyEnrollmentRetries = Task { @MainActor [weak self] in
+            var delay: UInt64 = 5
+            while !Task.isCancelled {
+                guard let self, await self.runLegacyEnrollmentAttempt() == .retry else { return }
+                try? await Task.sleep(nanoseconds: delay * NSEC_PER_SEC)
+                delay = min(delay * 2, 300)
+            }
+        }
+    }
+
+    /// Called before an explicit setup opens. Starting setup begins a fresh enrollment,
+    /// which ends the legacy check for good, so a still-unanswered check gets one
+    /// immediate attempt first. True when it proved the device already paired.
+    @MainActor
+    func verifyPendingLegacyEnrollment() async -> Bool {
+        guard legacyEnrollmentAttempt != nil else { return false }
+        return await runLegacyEnrollmentAttempt() == .verified
     }
 
     /// Builds the settings sync engine alongside the key controller. Scheduling is NOT
@@ -877,6 +937,7 @@ import SwiftUI
                     let signature = SyncableSettings.valueSignature(UserDefaults.standard)
                     guard signature != self.phiObservedSettingsSignature else { return }
                     self.phiObservedSettingsSignature = signature
+                    self.phiSettingsInvalidationPending = true
                     engine?.markLocalChangePending()
                 }
             })
@@ -900,7 +961,11 @@ import SwiftUI
                 Task { @MainActor in
                     guard let self else { return }
                     let signature = SyncableSettings.valueSignature(UserDefaults.standard)
-                    guard signature != self.phiSyncedSettingsSignature else { return }
+                    // An edit reverted inside the debounce still marked the status pending;
+                    // its round commits nothing but is what clears that mark.
+                    let invalidated = self.phiSettingsInvalidationPending
+                    self.phiSettingsInvalidationPending = false
+                    guard signature != self.phiSyncedSettingsSignature || invalidated else { return }
                     self.phiSyncedSettingsSignature = signature
                     await self.phiSyncEngine?.handleLocalDefaultsChange()
                 }
@@ -1047,6 +1112,10 @@ import SwiftUI
     func invalidateSyncKeyController() {
         profilesCancellable?.cancel()
         profilesCancellable = nil
+        legacyEnrollmentRetries?.cancel()
+        legacyEnrollmentRetries = nil
+        legacyEnrollmentAttempt = nil
+        legacyEnrollmentInFlight = nil
         stopPhiSync()
         // `retire()`, not `clearResolved()` (review A11): a pass parked in a network call
         // survives this teardown and would otherwise resume on the next account's token.
@@ -1101,6 +1170,7 @@ import SwiftUI
         }
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
+        phiSettingsInvalidationPending = false
         // Dropped with the subscription: the next account's preferences are a different
         // domain's worth of values, and a stale signature would swallow its first edit.
         phiSyncedSettingsSignature = nil

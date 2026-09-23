@@ -21,6 +21,8 @@ Legacy completion migrates only after fresh device authorization, unlocked keys,
 fresh remote Profile/Space evidence, complete injective mappings, and the legacy
 enabled/drained Space state have all been verified. An explicit pending flag
 prevents migration. Mapping resolution or ARK unlock alone never proves enrollment.
+A check that fails transiently (offline, token refresh) retries with backoff, and
+an explicit setup request runs one attempt before starting a new enrollment.
 
 Setup has one modal host through introduction, verification, Profile/Space
 matching, overwrite review and completion. Finish later appears only after
@@ -111,7 +113,9 @@ cannot become global Up to date; the summary time is the oldest successful time
 among all required contexts.
 
 Native success requires a drained pull, accepted publication, successful cursor
-persistence, and no pending/quarantined input, output, or follow-up work. Local
+persistence, and no pending/quarantined input, output, or follow-up work. Rows
+that are deliberately never published (hidden, purged or unmapped owner Spaces)
+and refused arrivals are exclusions, not pending work. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including

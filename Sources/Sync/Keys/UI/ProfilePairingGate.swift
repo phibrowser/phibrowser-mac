@@ -87,7 +87,7 @@ final class ProfilePairingGate {
                     .flatMap(SyncKeyController.MappingsOutcome.init(rawValue:)) ?? .held
                 self.handleMappingsDidResolve(needsPairing: c.needsPairing,
                                               needsPairingActionable: c.needsPairingActionable,
-                                              outcome: outcome)
+                                              outcome: outcome, controllerRetired: c.isRetired)
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -107,9 +107,17 @@ final class ProfilePairingGate {
 
     /// Mapping updates never open or finish setup. Profile readiness alone says nothing
     /// about pending Space choices, and a deferred session stays deferred across refreshes.
+    ///
+    /// Only a RETIRED controller's `.cleared` takes the window down (sign-out, account
+    /// switch, self-revoke). A live controller also announces `.cleared` whenever a
+    /// background `silentUnlockAndResolve()` finds this device still unjoined or hits a
+    /// network error -- exactly the state the join steps inside this window exist for.
+    /// Dismissing then would withdraw a pending join request mid-approval and could
+    /// drop a recovery code the user has not yet confirmed.
     func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool,
-                                  outcome: SyncKeyController.MappingsOutcome = .measured) {
-        if outcome == .cleared { finishLater() }
+                                  outcome: SyncKeyController.MappingsOutcome = .measured,
+                                  controllerRetired: Bool = false) {
+        if outcome == .cleared, controllerRetired { finishLater() }
     }
 
     func handleAutoCreateDidRun(_ userInfo: [AnyHashable: Any]?) {}

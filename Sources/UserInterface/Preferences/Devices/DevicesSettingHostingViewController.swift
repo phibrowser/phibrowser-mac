@@ -174,6 +174,11 @@ final class DevicesSettingHostingViewController: NSViewController {
             }
             return
         }
-        ProfilePairingGate.shared.requestPresentation(controller: controller)
+        Task { @MainActor in
+            // An upgraded device whose launch-time legacy check failed would otherwise
+            // be sent through matching again although its pairing is already complete.
+            guard !(await PhiChromiumCoordinator.shared.verifyPendingLegacyEnrollment()) else { return }
+            ProfilePairingGate.shared.requestPresentation(controller: controller)
+        }
     }
 }

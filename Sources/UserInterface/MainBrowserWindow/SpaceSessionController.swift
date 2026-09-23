@@ -1017,7 +1017,7 @@ class SpaceSessionController: NSWindowController {
         applyWindowChrome()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPresented, self.window?.isKeyWindow == true else { return }
-            self.mainSplitViewController.webContentContainerViewController.focusCurrentWebContent()
+            self.mainSplitViewController.webContentContainerViewController.restoreFocusAfterPresentation()
             self.reshowOverlayPanelsAfterPresent()
         }
     }

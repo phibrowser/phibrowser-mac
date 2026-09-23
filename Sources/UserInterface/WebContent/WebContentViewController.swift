@@ -458,8 +458,17 @@ class WebContentViewController: NSViewController {
         browserState?.windowController?.isPresentedOrLegacy ?? true
     }
 
+    /// Hosted mode: focus after a Space switch installs this session's tree
+    /// in the shell. Same targets as a tab switch — the agent overlay while
+    /// an agent drives the tab, the AI chat when it held focus — but with no
+    /// recorded target the page is focused: the leaving session's first
+    /// responder left the window with its views.
+    func restoreFocusAfterPresentation() {
+        restoreFocusForCurrentTab(focusingWebContentByDefault: true)
+    }
+
     /// Restores focus based on the associated tab's last focus target.
-    private func restoreFocusForCurrentTab() {
+    private func restoreFocusForCurrentTab(focusingWebContentByDefault: Bool = false) {
         guard ownsWindowFocus else { return }
         guard let tab = associatedTab else {
             AppLogDebug("🔍 [Focus] restoreFocusForCurrentTab - no associatedTab")
@@ -489,9 +498,13 @@ class WebContentViewController: NSViewController {
                 focusWebContent()
             }
         case nil:
-            // Leave focus unchanged when no prior target is recorded.
-            AppLogDebug("🔍 [Focus] lastFocusTarget is nil, not restoring focus")
-            break
+            if focusingWebContentByDefault {
+                AppLogDebug("🔍 [Focus] lastFocusTarget is nil, focusing webContent")
+                focusWebContent()
+            } else {
+                // Leave focus unchanged when no prior target is recorded.
+                AppLogDebug("🔍 [Focus] lastFocusTarget is nil, not restoring focus")
+            }
         }
     }
     

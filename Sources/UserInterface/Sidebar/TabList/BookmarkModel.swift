@@ -273,8 +273,9 @@ class BookmarkManager: ObservableObject {
     /// the post-absorption list rather than the one it replaces.
     @Published private(set) var didApplyFirstStoreDelivery = false
 
-    /// The immutable store/profile/Space tuple this manager was created for.
-    let scope: BookmarkManagementScope
+    /// Stable once the session is bound. An agent spare fills its profile
+    /// before any store subscription or user interaction can occur.
+    private(set) var scope: BookmarkManagementScope
     
     /// Lookup table for bookmark guid -> bookmark instance.
     private var bookmarkIndex: [String: Bookmark] = [:]
@@ -293,6 +294,20 @@ class BookmarkManager: ObservableObject {
         self.browserState = browseState
         self.scope = BookmarkManagementScope(browserState: browseState)
         self.rootFolder = Bookmark(folderTitle: "Bookmarks")
+        guard !browseState.isAgentSpace || !browseState.profileId.isEmpty else { return }
+        bindStore()
+    }
+
+    func bindPrewarmedAgentProfile() {
+        guard let browseState = browserState, browseState.isAgentSpace,
+              scope.profileId.isEmpty, !browseState.profileId.isEmpty,
+              browseState.windowController == nil else { return }
+        scope = BookmarkManagementScope(browserState: browseState)
+        bindStore()
+    }
+
+    private func bindStore() {
+        guard let browseState = browserState else { return }
         guard !browseState.isIncognito else {
             // Incognito never subscribes, so nothing would ever flip the
             // delivery signal. Report it satisfied instead of leaving every

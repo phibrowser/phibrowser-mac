@@ -258,7 +258,7 @@ final class AgentTranscriptPanelController: NSObject {
     @objc private nonisolated func handleWindowDidBecomeKey(_ notification: Notification) {
         MainActor.assumeIsolated {
             guard (notification.object as? NSWindow)?.windowController
-                    is MainBrowserWindowController else { return }
+                    is SpaceSessionController else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     AgentTranscriptPanelController.shared.reconcileFrontWindow()
@@ -626,7 +626,7 @@ private struct TranscriptTextFeed: NSViewRepresentable {
                 url = nil
             }
             guard let url else { return false }
-            MainBrowserWindowControllersManager.shared.activeWindowController?
+            SpaceSessionControllersManager.shared.activeWindowController?
                 .browserState.openTab(url.absoluteString)
             return true
         }

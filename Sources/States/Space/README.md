@@ -1,10 +1,169 @@
 # Space window close behavior
 
-Defines what happens when a Space's NSWindow closes, depending on how the close was triggered. Owner: `SpaceWindowSlot.unregisterWindow(for:)` in `SpaceManager.swift`. Every Chromium-side `[NSWindow close]` and AppKit-side `performClose:` funnels into `windowWillClose` → `unregisterWindow`, so this is the single decision point.
+Defines what happens when a Space's NSWindow closes, depending on how the close was triggered. Owner: `SpaceWindowSlot.unregisterWindow(for:)` in `SpaceManager.swift`. Every Chromium-side `[NSWindow close]` and AppKit-side `performClose:` funnels into `windowWillClose` → `unregisterWindow`, so this is the single decision point. In hosted-window mode (below) the window whose close is observed is the session's `lifecycleWindow` — its hidden Chromium window — never the shared shell.
+
+## The shell window
+
+Every Space session is hosted: a slot owns one visible `ShellWindow` (`ShellWindowController.swift`) and Chromium never shows a browser window. The shell owns the window's one split (`ShellSplitViewController.swift`: the sidebar column with its vibrancy backdrop, width and collapsed state | the page area), so the sidebar reads as one sidebar across Space switches; each Space's `SpaceSessionController` keeps its sidebar content (`SidebarViewController.view`, painting no backdrop) *resident* in the column — added once it has a shell, hidden unless presented, sized with the column — and keeps its page tree (`MainSplitViewController.view`, which builds no split of its own when hosted) resident and hidden in the page area. A switch reuses these attachments: the vertical-layout switch shows the entering session's resident content with only its band visible and slides that band in while the leaving band slides out (`HostedBandSlide`), the entering page cross-fades on the same animation clock, and the Chromium round trips (`setPresented:`, the Browser spawn of a dormant Space) run one turn after the first frame. The session's Chromium NSWindow only carries the Browser's lifecycle and mirrors the shell's frame. The close model maps onto the legacy one as follows; `unregisterWindow` still classifies, then hands off to `unregisterHostedSession`.
+
+- **Window-driven close of the shell** (red ✕, ⇧⌘W on the shell): `ShellWindowController.windowShouldClose` → `slot.shellRequestedClose()`, which starts the same cascade a window-driven close does — `IDC_CLOSE_WINDOW` for every session through Chromium — and refuses the AppKit close. The shell is closed by `removeSlot` → `closeShellIfPresent` once the last session has unregistered, or kept (with the survivor re-presented by the cascade-veto recovery) when a `beforeunload` prompt vetoes.
+- **A session's Chromium window closing** (⌘W on the last tab, `window.close()`, an Incognito Space reap, a Space deleted): `windowWillClose` on the hidden window → `unregisterWindow` → `unregisterHostedSession`. Presented + tab-driven with a sibling that has tabs → `activate(sibling)`. Presented otherwise → cascade the rest, as above. A background session → dropped from the map with no side effects (it was never on screen). When the map empties, `removeSlot` closes the shell.
+- **The shell closing with no live session left** (a vetoed cascade whose survivor then closed on its own, a presented dormant session whose spawn never landed): `shellDidClose` removes the slot itself, so a windowless slot never lingers in the registry.
+- **Dormant sessions** (`dormantSessionsBySpaceId`, built ahead of their Browser under a reserved window id) have no Chromium window and never reach `unregisterWindow`; `discardDormant` retires them when their Space leaves the slot or the slot closes.
+
+Retiring a Space's window from code must go through `SpaceSessionController.closeChromiumWindow()`, never `window?.close()`: in hosted mode `window` is the shell, and closing it would tear the whole slot down.
+
+## What leaves the shell with a Space
+
+A Space's page tree and sidebar content stay resident in the shell, hidden,
+between its turns. Three things belong to a Space but do not live in its
+tree, and each is handled at the moment the Space withdraws
+(`SpaceSessionController.removeSessionViewFromShell`):
+
+- A page in HTML fullscreen sits under the shell's content view, above
+  every Space. The withdrawing session puts it back under its tree first
+  (`WebContentContainerViewController.collapseContentFullscreenForConcealment`),
+  and Chromium's `UnpresentHostedBrowser` leaves tab fullscreen with the
+  Space, as a tab switch does in a real window. The shell keeps its own
+  fullscreen state for the Space replacing it; the leaving Space is a
+  background session for `sessionRequestedShellFullscreen` from the moment
+  `concealFromShell` runs, whether or not the slot has moved
+  `visibleController` on yet.
+- A crash page reloads and opens help through its own session
+  (`BrowserState.windowController`), never through the shell's window
+  controller, which is whichever Space is presented.
+- Anything that needs the window the user sees — the Dock's reopen, an
+  agent's whole-window capture — maps a hosted Browser to the shell
+  presenting it (`GetBrowserWindows` in the app controller) or composes the
+  Space's resident trees in the shell's layout
+  (`AgentSpaceRouter.renderWindow`), because the Browser's own NSWindow is
+  never shown and a hidden tree draws nothing into a bitmap.
+
+## Sidebar geometry ownership
+
+`ShellSplitViewController` owns the sidebar's width and collapsed state through
+its `NSSplitViewItem`. Space sessions have no stored copy of either value.
+`BrowserState.sidebarCollapsed` and `sidebarWidth` are read-only projections of
+the owning split; their publishers observe that split even while the session is
+dormant or concealed. Sidebar commands mutate the owning split directly.
+Creating, attaching, presenting, or switching sessions never applies sidebar
+geometry. Spawn contexts carry frame placement only. Standalone Incognito
+windows use their own `MainSplitViewController` split; Kiosk surfaces always
+report a collapsed, zero-width sidebar.
+
+Every Space's strip in the window reads its sliding viewport from the slot
+(`SpaceWindowSlot.stripViewportStart`), and only the strip on screen — the
+leaving Space's, during the band slide — animates a switch; the others snap
+(`SpacesStripPresence`), so the entering strip is at rest when the landing
+reveals it. The band's Core Animation clock starts one run-loop turn after the
+entering side is prepared, once the strip's pending SwiftUI update has
+committed, so both move on the same frames. A Space never shown in the window
+(no cached band, no tabs yet) holds the leaving band until its first tab lands,
+bounded by `HostedBandSlide.firstTabWait`, instead of sliding an empty band in.
+
+The shell also owns one `FloatingSidebarHostViewController`: its hover trigger,
+panel container, width and dismissal timers survive Space switches. While the
+panel is hidden, a switch only makes the presented Space's resident tree the
+panel's content; its activation, layout and row realization wait for the
+collapse-time activation or the first hover. The panel
+opens at the shell split's last expanded column width (seeded from the
+account's saved width), so docked and floating widths share one source; the
+presented Space's floating tree stays mounted and is realized off screen when
+the column collapses, before the hover trigger enables. Each hosted session keeps its floating content mounted, hidden
+while another Space is presented, just like its docked content. Content is
+evicted only when the session leaves the shell. The same `HostedBandSlide` animates the
+pinned/tab band in the docked and floating surfaces; it retains outgoing floating
+content until landing and holds pointer-driven dismissal during the transition.
+Both modes retain their band backing layers between switches. Live targets
+reconcile pending native row changes before motion. A dormant target with a
+cached band slides decoded pixels immediately, then reconciles and draws live
+rows before uncovering them. Without a usable cache, it forms the available
+native rows, including New Tab, before motion starts. Initial floating layout runs during session hosting; return visits do not
+remount or reactivate it. Both backgrounds use the band's Core Animation clock; the
+incoming floating surface removes its theme-fill binding while transparent so
+later theme updates cannot paint over the outgoing rows.
+Standalone windows mount a separate host in their own content controller.
+
+## Native startup preparation
+
+After launch restores settle, `SpaceManager` prepares one incognito tree and
+one agent tree, without an NSWindow, Chromium Browser, task registration or
+published Space. Both spares remain outside window/Space registries and
+persistence. The agent spare has no profile: its bookmark store binding is
+also deferred. An accepted agent request claims the spare's runtime id, then
+publishes the Space and records the task through the normal ownership checks.
+Adoption binds the requested profile once and installs the same native tree
+in the requested shell. Agent Browser creation passes the reserved window id
+so the existing dormant-session attachment path reuses that tree while keeping
+the window hidden. Adoption accepts both ephemeral and persistent agent
+Spaces (either agent signature). Failed creation discards the claimed native
+session.
+
+Incognito creation similarly claims and adopts its spare before the existing
+Browser spawn. One replacement of each consumed kind is prepared outside the
+request's animation. Profile permissions are checked when claiming/adopting
+an agent spare; store transitions and quit discard all unused content.
+Persistent agent reattachment keeps its existing Space identity and follows
+the existing reuse/spawn path. Chromium creation still happens only on demand.
+
+## Space switch timing
+
+Resident switches reuse the pinned collection snapshot when its identifiers
+and backing content are unchanged. Pending state changes still reconcile
+synchronously before presentation. The floating host lays out its outer panel
+only when its geometry changes or a hide must be reversed; showing resident
+content lays out that content alone. Snapshot capture stays on the UI thread,
+while PNG encoding and atomic persistence run on the cache's utility queue so
+they do not hold up subsequent input. Dormant prefetch decodes disk images
+into pixels; the slide uses a layer-hosted image with the cached point size and
+top-left clipping rather than asking NSImageView to draw it again.
+
+Page trees also remain resident while concealed. Hiding their ancestor invokes
+Chromium's `WebContentsViewCocoa.viewDidHide`, which reports `kHidden` just as
+removing the page from its window does. Switching back only unhides and sorts
+the tree; closing, rebinding and dropping a session still evict it. Hidden page
+trees follow shell resizing, avoiding stale geometry on the next switch.
+
+`[SpaceSwitchTiming]` info logs record each switch with a request ID, the
+presented sidebar (`pinned`, `floating`, `collapsed`, or `traditional`), target
+kind, and preparation path (`live`, `dormant`, `cold`, `spare_hit`, or
+`spare_miss`). `operation=new_incognito` starts before descriptor creation and
+continues through the same activation trace. No Space names, URLs, or profile
+identifiers are included.
+
+Each step has `t` (milliseconds from request creation) and `delta` (milliseconds
+since the previous recorded step). An input event, when available, precedes the
+request and has a negative `t`. The summary includes input/request-to-animation
+submission, sidebar preparation, profile loading, and Browser creation. Missing
+stages report `n/a`, including switches that do not animate. Async work can
+overlap other stages; nested durations must not be added together.
+
+The timeline covers state publication/persistence, incognito spare claim and
+binding, outgoing concealment, native presentation, pinned/floating mounting,
+row refresh/layout/realization/display, page installation, animation setup and
+submission, deferred Chromium visibility, profile loading, Browser creation or
+ghost reconstruction, native window attachment, initial-tab seeding, and
+animation completion/cleanup. A forced settle or failure has its own marker.
+The animation clock and transaction submission are CPU-side milestones, not a
+measurement of the first frame displayed by the render server. Initial-tab
+seeding does not measure page-load completion.
+
+Timestamps are buffered on the UI thread; formatting and logging happen on a
+later turn after settlement or spawn completion. Later asynchronous stages may
+append another line with the same ID. For Canary, inspect the app's `PhiLogs`
+directory under `~/Library/Application Support/com.phibrowser.canary.Mac/Phi/`:
+
+```sh
+rg '\[SpaceSwitchTiming\]' "$HOME/Library/Application Support/com.phibrowser.canary.Mac/Phi/PhiLogs"
+```
+
+Compare repeated switches in each sidebar mode and keep spare hits separate
+from misses. Native tests validate stage coverage and ordering; they do not
+replace measurements from actual clicks in a running Canary build.
 
 ## Why two paths exist
 
-A `SpaceWindowSlot` is the user-perceived window. It hosts one `MainBrowserWindowController` per Space ever surfaced from this slot; exactly one is visible at a time. Two close triggers map to different user intent:
+A `SpaceWindowSlot` is the user-perceived window. It hosts one `SpaceSessionController` per Space ever surfaced from this slot; exactly one is visible at a time. Two close triggers map to different user intent:
 
 - **Tab-driven close** — the user closed the last tab in the active Space through the tab UI. Chromium used to auto-close the Browser, which closed the NSWindow; today it enters placeholder mode instead and the window stays (see "The tag is cancelled…" below). The user is saying "I'm done with this Space," not "I'm done with this window."
 - **Window-driven close** — the user explicitly closed the window itself (red ✕, ⇧⌘W via the Close Window menu item's `performClose:` action, ⌘W on the last tab, Chromium's internal `BrowserWindowCocoa::Close`). The user is saying "I'm done with this whole window."

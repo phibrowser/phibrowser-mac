@@ -247,8 +247,8 @@ enum ImagePreviewMessageHandler {
     static func handle(_ context: ExtensionMessageContext) {
         Task { @MainActor in
             handle(context, messenger: ExtensionMessaging.shared) { windowID, items, currentIndex in
-                guard let controller = MainBrowserWindowControllersManager.shared.controller(for: windowID)
-                    ?? MainBrowserWindowControllersManager.shared.activeWindowController else {
+                guard let controller = SpaceSessionControllersManager.shared.controller(for: windowID)
+                    ?? SpaceSessionControllersManager.shared.activeWindowController else {
                     return false
                 }
                 controller.browserState.imagePreviewState.open(items: items, currentIndex: currentIndex)

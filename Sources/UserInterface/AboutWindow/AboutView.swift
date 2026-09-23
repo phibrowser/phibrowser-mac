@@ -277,7 +277,7 @@ private struct AboutAcknowledgementsTextView: NSViewRepresentable {
                 return false
             }
 //            NSWorkspace.shared.open(url)
-            MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.openTab(url.absoluteString)
+            SpaceSessionControllersManager.shared.activeWindowController?.browserState.openTab(url.absoluteString)
             return true
         }
     }

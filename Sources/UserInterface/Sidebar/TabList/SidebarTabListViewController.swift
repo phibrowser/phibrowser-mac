@@ -522,6 +522,30 @@ class SidebarTabListViewController: NSViewController {
         refreshAllItems()
     }
 
+    /// Materialize the native rows while the incoming sidebar is stationary.
+    /// Preserve the restore gate: it holds an existing projection until the
+    /// bookmark store arrives, while New Tab is already in that projection.
+    func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {
+        timing?.mark("rows.activate.begin")
+        loadViewIfNeeded()
+        if !isActive { setActive(true) }
+        timing?.mark("rows.activate.end")
+        _ = refreshAllItems(animated: false)
+        timing?.mark("rows.refresh.end")
+        view.layoutSubtreeIfNeeded()
+        outlineView.layoutSubtreeIfNeeded()
+        timing?.mark("rows.layout.end")
+        let visibleRows = outlineView.rows(in: outlineView.visibleRect)
+        if visibleRows.location != NSNotFound {
+            for row in visibleRows.location..<NSMaxRange(visibleRows) {
+                _ = outlineView.view(atColumn: 0, row: row, makeIfNecessary: true)
+            }
+        }
+        timing?.mark("rows.realize.end")
+        outlineView.displayIfNeeded()
+        timing?.mark("rows.display.end")
+    }
+
     private func deactivate() {
         guard isActive else { return }
         isActive = false
@@ -3445,7 +3469,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         else { return }
 
         let pt = CGPoint(x: screenPoint.x, y: screenPoint.y)
-        let overPhiTabChrome = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let overPhiTabChrome = SpaceSessionControllersManager.shared.getAllWindows()
             .contains { $0.containsTabDragBoundary(at: pt) }
         guard !overPhiTabChrome else { return }
 
@@ -3632,7 +3656,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     
     private func sourceBrowserState(for pasteboard: NSPasteboard) -> BrowserState? {
         guard let sourceId = dragSourceWindowId(from: pasteboard) else { return nil }
-        return MainBrowserWindowControllersManager.shared.getBrowserState(for: sourceId)
+        return SpaceSessionControllersManager.shared.getBrowserState(for: sourceId)
     }
     
     private func isCrossWindowDrag(_ pasteboard: NSPasteboard) -> Bool {
@@ -3681,7 +3705,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     private func tabIsInSplitInAnyWindow(_ tab: Tab) -> Bool {
-        MainBrowserWindowControllersManager.shared.getAllWindows().contains {
+        SpaceSessionControllersManager.shared.getAllWindows().contains {
             $0.browserState.splitGroup(forTabId: tab.guid) != nil
         }
     }

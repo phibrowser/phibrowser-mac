@@ -29,7 +29,7 @@ final class SpacesStripHostingView: ThemedHostingView {
 
     /// Keep AppKit's window-background drag off the strip row. The main window
     /// sets `isMovableByWindowBackground = true`
-    /// (`MainBrowserWindowController.swift`), which makes a mouse-drag over the
+    /// (`SpaceSessionController.swift`), which makes a mouse-drag over the
     /// row a window move unless the view AppKit hit-tests vetoes it.
     ///
     /// This veto works and is what AppKit consults — measured on macOS 15.6
@@ -193,6 +193,9 @@ class SidebarViewController: NSViewController {
     /// Main vertical stack view for the sidebar layout.
     private lazy var mainStackView: NSStackView = {
         let stackView = NSStackView()
+        // Retain the backing tree across switches. Toggling the parent layer
+        // rebuilds and redraws every row even when resident content is unchanged.
+        stackView.wantsLayer = true
         stackView.orientation = .vertical
         stackView.alignment = .centerX
         stackView.spacing = 0
@@ -299,42 +302,17 @@ class SidebarViewController: NSViewController {
     /// state, then reapplies it when the sidebar content becomes interactive.
     private var shouldShowMessageCard = false
 
-    /// Hosting controller for the Spaces strip — placed just above the bottom
-    /// toolbar so the row of Space pips is the last per-Space element before
-    /// the global actions. Reports its intrinsic height so the strip can grow
-    /// to multiple rows when pips wrap.
-    ///
-    /// The strip is bound to its hosting window's `SpaceWindowSlot` so that
-    /// clicks here only switch THIS window's active Space. The slot is
-    /// resolved via `state.windowController?.slot`; for the early-init case
-    /// where the window controller isn't wired up yet (BrowserState is
-    /// constructed before the controller assigns itself in
-    /// `MainBrowserWindowController.init`), fall back to the manager's
-    /// `keySlot` as a stand-in — at cold start that IS this window's own slot.
-    /// A stand-in only: `init` wires the controller before `setupWindow()`
-    /// loads this view tree, so the first resolution is the one that answers
-    /// in practice.
-    /// The slot driving this sidebar's Spaces strip, resolved once so the
-    /// create-Space overlay can flip the same instance's `isCreatingSpace`
-    /// flag that the strip observes (see `showCreateSpaceOverlay`).
-    ///
-    /// Nil when neither resolves, and then no strip is mounted at all: a
-    /// window with no slot must NOT mint one just to have something to bind
-    /// to. A slot minted here registers no window, so `slots` never empties
-    /// again and every later Dock reopen bypasses
-    /// `reopenOnPersistedSpaceIfWindowless` and falls back to Chromium's own
-    /// handler, landing on the wrong Space until the app restarts (see
-    /// `SpaceManager.reclaimsMintedSlot`). `participatesInSpaces` does not
-    /// keep that out on its own: a shadow window passes it (it is not
-    /// incognito) and builds this sidebar from `viewDidLoad`, which runs even
-    /// for a window that is never shown.
-    private lazy var spacesStripSlot: SpaceWindowSlot? = state.windowController?.slot
-        ?? SpaceManager.shared.keySlot
+    /// Prewarmed content has no owner yet. Bind once the real session is
+    /// attached; borrowing the key slot would route clicks to another shell.
+    private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
+    private var spacesStripHostingView: SpacesStripHostingView?
 
-    private lazy var spacesStripHostingView: SpacesStripHostingView? = {
-        guard let slot = spacesStripSlot else { return nil }
+    func bindSpaceStripToSession() {
+        guard state.participatesInSpaces, spacesStripHostingView == nil,
+              let slot = spacesStripSlot else { return }
         let wheelTracker = SpacesStripWheelTracker()
         let stripGeometry = SpacesStripGeometry()
+        let presence = SpacesStripPresence()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
@@ -342,18 +320,23 @@ class SidebarViewController: NSViewController {
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
                 wheelTracker: wheelTracker,
-                stripGeometry: stripGeometry
+                stripGeometry: stripGeometry,
+                presence: presence
             ),
             themeSource: state.themeContext
         )
+        presence.view = hostingView
         hostingView.wheelTracker = wheelTracker
         hostingView.stripGeometry = stripGeometry
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
-        return hostingView
-    }()
+        spacesStripHostingView = hostingView
+        headerView.mountSpaceSwitch(hostingView)
+        spacesStripRowView = hostingView
+        updateHeaderHeight()
+    }
 
     /// The Spaces strip row's AppKit view, resolved live by the slot's
     /// pointer-vs-row test (`SpaceWindowSlot.stripRowContainsPointer()`) so
@@ -411,6 +394,17 @@ class SidebarViewController: NSViewController {
         self.state = browserState
         super.init(nibName: nil, bundle: nil)
     }
+
+    /// Whether this sidebar paints its own vibrancy backdrop and tint. A
+    /// hosted session's sidebar sits on the shell column's backdrop
+    /// (`ShellSidebarHostViewController`) and paints none; a standalone
+    /// window's sidebar paints its own. Set once by `MainSplitViewController`.
+    var paintsOwnBackdrop = true {
+        didSet {
+            guard isViewLoaded else { return }
+            setSpaceSwitchBackdropHidden(false)
+        }
+    }
     
     
     @MainActor required init?(coder: NSCoder) {
@@ -444,6 +438,9 @@ class SidebarViewController: NSViewController {
         super.viewDidLoad()
         lastPersistedFavoriteHeight = loadCachedFavoriteHeight()
         setupStackView()
+        if !paintsOwnBackdrop {
+            setSpaceSwitchBackdropHidden(false)
+        }
         setupObserversIfNeeded()
         setupConfigObserverIfNeeded()
         updateHeaderHeight()
@@ -701,10 +698,7 @@ class SidebarViewController: NSViewController {
         // `spacesStripSlot`). Shadow windows are the reachable case — they
         // pass `participatesInSpaces` and build this sidebar even though they
         // never appear on screen.
-        if state.participatesInSpaces, let stripHostingView = spacesStripHostingView {
-            headerView.mountSpaceSwitch(stripHostingView)
-            spacesStripRowView = stripHostingView
-        }
+        bindSpaceStripToSession()
 
         tabList.enableContextMenuClickRouting()
         mainStackView.addArrangedSubview(tabList.view)
@@ -832,7 +826,7 @@ class SidebarViewController: NSViewController {
             .store(in: &cancellables)
 
         // Mirror the SpacesStripView fallback chain so the gradient still
-        // resolves before MainBrowserWindowController has wired up its slot.
+        // resolves before SpaceSessionController has wired up its slot.
         let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
         slot?.$activeSpaceId
             .receive(on: DispatchQueue.main)
@@ -1586,4 +1580,26 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     // so the push-in band is just the pinned strip and the tab list.
     var spaceSwitchBandViews: [NSView] { [pinnedTabContainerView, tabList.view] }
     var spaceSwitchBandContainer: NSView { mainStackView }
+
+    func prepareSpaceSwitchBand(timing: SpaceSwitchTiming? = nil) {
+        timing?.mark("sidebar.content_activation.begin")
+        loadViewIfNeeded()
+        updateSidebarContentActivation()
+        timing?.mark("sidebar.content_activation.end")
+        if !state.isIncognito {
+            pinnedTabViewController.formRestoredContentNow()
+            updateFavoriteHeight(pinnedTabViewController.contentHeight, isDragging: state.isDraggingTab)
+        }
+        timing?.mark("sidebar.pinned_items.end")
+        tabList.prepareSpaceSwitchBand(timing: timing)
+        view.layoutSubtreeIfNeeded()
+        timing?.mark("sidebar.layout.end")
+        view.displayIfNeeded()
+        timing?.mark("sidebar.display.end")
+    }
+
+    func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
+        (view as? ColoredVisualEffectView)?.suppressesBackdrop = hidden || !paintsOwnBackdrop
+        spaceTintBackgroundView.isHidden = hidden || !paintsOwnBackdrop
+    }
 }

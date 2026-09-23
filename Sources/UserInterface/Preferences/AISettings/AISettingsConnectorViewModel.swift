@@ -471,7 +471,7 @@ final class AISettingsConnectorViewModel {
             return false
         }
 
-        guard let browserState = MainBrowserWindowControllersManager.shared.getAllWindows()
+        guard let browserState = SpaceSessionControllersManager.shared.getAllWindows()
             .map(\.browserState)
             .first(where: { $0.profileId == attempt.profileId }) else {
             connectors.first { $0.template.provider == attempt.provider }?.errorMessage =
@@ -608,7 +608,7 @@ final class AISettingsConnectorViewModel {
     }
 
     private func capturePendingAuthorizationTabId(attempt: OAuthAuthorizationAttempt, tabGuid: String) {
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             guard controller.browserState.profileId == attempt.profileId else { continue }
             if let tab = controller.browserState.tabs.first(where: {
                 $0.guidInLocalDB == tabGuid || Self.isAuthorizationTab($0, provider: attempt.provider)
@@ -636,7 +636,7 @@ final class AISettingsConnectorViewModel {
 
         var tabsToClose: [(tab: Tab, reason: String)] = []
         var collectedTabIds = Set<Int>()
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             guard controller.browserState.profileId == attempt.profileId else { continue }
             let tabSnapshots = controller.browserState.tabs.map {
                 "id=\($0.guid) localGuid=\($0.guidInLocalDB ?? "nil") url=\($0.url ?? "nil")"

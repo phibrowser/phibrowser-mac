@@ -119,7 +119,7 @@ final class SidecarAIOutputStateStore {
             AppLogDebug("[AIOutputState] Dropped invalid payload: \(context.payload)")
             return
         }
-        guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(
+        guard let browserState = SpaceSessionControllersManager.shared.getBrowserState(
             for: payload.windowId
         ) else {
             AppLogDebug("[AIOutputState] No browser window for id=\(payload.windowId)")
@@ -151,7 +151,7 @@ final class SidecarAIOutputStateStore {
     }
 
     func removeConversation(boundTo tabId: Int, windowId: Int) {
-        guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(
+        guard let browserState = SpaceSessionControllersManager.shared.getBrowserState(
             for: windowId
         ) else {
             tracker.remove(tabId: tabId, windowId: windowId)
@@ -244,7 +244,7 @@ final class SidecarAIOutputStateStore {
 
     func removeAll() {
         tracker.removeAll()
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             let state = controller.browserState
             clear(tabs: representedTabs(forLiveTabs: state.tabs, in: state))
         }

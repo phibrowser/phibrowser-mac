@@ -1171,7 +1171,7 @@ extension NSApplication {
         sourceWindow
             ?? keyWindow
             ?? mainWindow
-            ?? MainBrowserWindowControllersManager.shared.activeWindowController?.window
+            ?? SpaceSessionControllersManager.shared.activeWindowController?.window
     }
 }
 

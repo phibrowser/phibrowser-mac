@@ -5,13 +5,63 @@
 
 import Cocoa
 import Combine
-class MainSplitViewController: NSViewController {
+class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     static let leftItemMinWidth: CGFloat = 193
     static let leftItemMaxWidth: CGFloat = 500
     
     private let splitViewController = NSSplitViewController()
 
+    /// Hosted: the session presents into a shell window whose
+    /// `ShellSplitViewController` owns the split. This controller then
+    /// builds no split of its own — its view is the page tree alone, the
+    /// sidebar view is handed to the shell's column separately, and the
+    /// sidebar geometry calls forward to the shell. Standalone Incognito
+    /// windows (adopted NSWindows) keep the split here.
+    let isHosted: Bool
+
+    /// Resolved through the session's owning window, including while dormant
+    /// or concealed. Presentation never changes sidebar ownership.
+    private var shellSplit: ShellSplitViewController? { state.windowController?.shellSplit }
+    private let sidebarGeometryChanges = PassthroughSubject<Void, Never>()
+
+    var isSidebarCollapsed: Bool {
+        if isHosted { return shellSplit?.isSidebarCollapsed ?? false }
+        return sideBarSplitViewItem?.isCollapsed
+            ?? PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    }
+
+    var sidebarWidth: CGFloat {
+        if isHosted { return shellSplit?.sidebarWidth ?? 0 }
+        guard let item = sideBarSplitViewItem, !item.isCollapsed else { return 0 }
+        return item.viewController.view.frame.width
+    }
+
+    var sidebarCollapsedPublisher: AnyPublisher<Bool, Never> {
+        if isHosted, let shellSplit { return shellSplit.sidebarCollapsedPublisher }
+        return sidebarGeometryChanges
+            .map { [weak self] _ in self?.isSidebarCollapsed ?? false }
+            .prepend(isSidebarCollapsed)
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
+    var sidebarWidthPublisher: AnyPublisher<CGFloat, Never> {
+        if isHosted, let shellSplit { return shellSplit.sidebarWidthPublisher }
+        return sidebarGeometryChanges
+            .map { [weak self] _ in self?.sidebarWidth ?? 0 }
+            .prepend(sidebarWidth)
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
+    var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
+
     private lazy var verticalTabListViewController: SidebarViewController = { SidebarViewController(browserState: state) }()
+
+    /// Per-Space content only; the panel and its visibility belong to the shell.
+    /// Retaining this tree makes a return switch as ready as the docked sidebar.
+    private(set) lazy var floatingSidebarContent = FloatingSidebarViewController(browserState: state)
+
 
     /// This window's sidebar controller. Exposed so `SpaceManager` can drive
     /// the vertical-layout Space-switch push-in (snapshot a window's content
@@ -27,8 +77,9 @@ class MainSplitViewController: NSViewController {
     private var lastUseHorizontalTabs: Bool?
 
     let state: BrowserState
-    init(state: BrowserState) {
+    init(state: BrowserState, hosted: Bool = false) {
         self.state = state
+        self.isHosted = hosted
         self.webContentContainerViewController = WebContentContainerViewController(state: state)
         super.init(nibName: nil, bundle: nil)
     }
@@ -46,13 +97,36 @@ class MainSplitViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        if isHosted {
+            setupHostedContent()
+            return
+        }
         setupChildSplitViewController()
         setupSplitViewItems()
         setupTitlebarAwareLayout()
+        updateSidebarWidth()
 
         DispatchQueue.main.async { [weak self] in
             self?.splitViewController.splitView.autosaveName = Self.splitViewAutosaveName
         }
+    }
+
+    /// Hosted: the page tree fills this view; the sidebar paints no backdrop
+    /// of its own since it sits on the shell column's.
+    private func setupHostedContent() {
+        webContentContainerViewController.paintsOwnBackdrop = false
+        addChild(webContentContainerViewController)
+        let content = webContentContainerViewController.view
+        content.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: view.topAnchor),
+            content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        verticalTabListViewController.paintsOwnBackdrop = false
+        addChild(verticalTabListViewController)
     }
 
     /// Applies the persisted split position now instead of waiting for the
@@ -63,28 +137,14 @@ class MainSplitViewController: NSViewController {
     /// AppKit restores the saved divider position when `autosaveName` is
     /// assigned; the deferred tick re-assigning the same name is a no-op.
     func adoptAutosavedSplitPositionNow() {
+        guard !isHosted else { return }
         splitViewController.splitView.autosaveName = Self.splitViewAutosaveName
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
         cancellables.removeAll()
-
-        state.$sidebarCollapsed
-            .sink { [weak self] collapsed in
-                guard let self else { return }
-                // Ignore sidebar expansion updates while traditional layout is active.
-                if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
-                    if !self.sideBarSplitViewItem.isCollapsed {
-                        self.sideBarSplitViewItem.animator().isCollapsed = true
-                    }
-                    return
-                }
-                if self.sideBarSplitViewItem.isCollapsed != collapsed {
-                    self.toggleSidebar(nil)
-                }
-            }
-            .store(in: &cancellables)
+        guard !isHosted else { return }
 
         sideBarSplitViewItem.publisher(for: \.isCollapsed)
             .sink { [weak self] isCollapsed in
@@ -96,10 +156,8 @@ class MainSplitViewController: NSViewController {
                     if !isCollapsed {
                         self.sideBarSplitViewItem.isCollapsed = true
                     }
-                    self.state.sidebarCollapsed = true
                     return
                 }
-                self.state.toggleSidebar(isCollapsed)
             }
             .store(in: &cancellables)
 
@@ -113,6 +171,7 @@ class MainSplitViewController: NSViewController {
 
         // Rebuild layout when the layout preference changes.
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutForHorizontalTabs()
             }
@@ -142,7 +201,11 @@ class MainSplitViewController: NSViewController {
     func toggleSidebar(_ sender: Any?) {
         // Sidebar is always collapsed in traditional layout.
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
-        sideBarSplitViewItem.animator().isCollapsed.toggle()
+        if isHosted {
+            shellSplit?.toggleSidebar()
+            return
+        }
+        setSidebarCollapsed(!isSidebarCollapsed, animated: true)
     }
 
     /// The per-Space chrome that should slide during a cross-Space swap.
@@ -157,22 +220,19 @@ class MainSplitViewController: NSViewController {
         PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional ? view : nil
     }
 
-    /// Programmatically aligns this window's sidebar to the supplied width and
-    /// collapsed state. Used by `SpaceManager` immediately before swapping the
-    /// visible window so the user perceives a single window whose sidebar
-    /// keeps the same shape across Spaces. The width is clamped to the
-    /// split-view item's allowed thickness range; a nil width leaves the
-    /// current divider position untouched (useful when only the collapsed
-    /// state needs to change).
-    func syncSidebar(width: CGFloat?, collapsed: Bool) {
+    /// Explicit window geometry changes (for example the UI-test width
+    /// override). Space creation and switching never call this.
+    func setSidebarGeometry(width: CGFloat?, collapsed: Bool) {
         if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
             // Traditional layout pins the sidebar collapsed regardless of the
             // source window's state; don't fight that here.
             return
         }
-        if sideBarSplitViewItem.isCollapsed != collapsed {
-            sideBarSplitViewItem.isCollapsed = collapsed
+        if isHosted {
+            shellSplit?.setSidebarGeometry(width: width, collapsed: collapsed)
+            return
         }
+        setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
         splitViewController.splitView.setPosition(clamped, ofDividerAt: 0)
@@ -183,6 +243,9 @@ class MainSplitViewController: NSViewController {
     }
 
     func containsSidebarTabDragBoundary(at screenLocation: CGPoint) -> Bool {
+        if isHosted {
+            return shellSplit?.containsSidebarTabDragBoundary(at: screenLocation) ?? false
+        }
         guard sideBarSplitViewItem.isCollapsed == false else {
             return false
         }
@@ -245,22 +308,27 @@ class MainSplitViewController: NSViewController {
             return
         }
 
+        let changingLayout = lastUseHorizontalTabs != nil
         lastUseHorizontalTabs = traditionalLayout
-
-        if traditionalLayout {
-            setSidebarCollapsed(true, animated: false)
-        } else {
-            setSidebarCollapsed(false, animated: false)
+        if traditionalLayout || changingLayout {
+            setSidebarCollapsed(traditionalLayout, animated: false)
         }
     }
 
-    private func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
-        if animated {
-            sideBarSplitViewItem.animator().isCollapsed = collapsed
-        } else {
-            sideBarSplitViewItem.isCollapsed = collapsed
+    func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
+        if isHosted {
+            shellSplit?.setSidebarCollapsed(collapsed, animated: animated)
+            return
         }
-        state.sidebarCollapsed = collapsed
+        loadViewIfNeeded()
+        let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
+        guard sideBarSplitViewItem.isCollapsed != target else { return }
+        if animated {
+            sideBarSplitViewItem.animator().isCollapsed = target
+        } else {
+            sideBarSplitViewItem.isCollapsed = target
+        }
+        updateSidebarWidth()
     }
 
     #if DEBUG
@@ -287,7 +355,7 @@ class MainSplitViewController: NSViewController {
             return
         }
 
-        syncSidebar(width: width, collapsed: false)
+        setSidebarGeometry(width: width, collapsed: false)
         view.layoutSubtreeIfNeeded()
         splitViewController.splitView.layoutSubtreeIfNeeded()
         updateSidebarWidth()
@@ -340,8 +408,9 @@ extension MainSplitViewController: NSSplitViewDelegate {
     }
 
     private func updateSidebarWidth() {
-        let width = sideBarSplitViewItem.isCollapsed ? 0 : sideBarSplitViewItem.viewController.view.frame.width
-        state.sidebarWidth = width
+        guard sideBarSplitViewItem != nil else { return }
+        let width = sidebarWidth
+        sidebarGeometryChanges.send(())
         guard width != Self.leftItemMinWidth else {
             return
         }

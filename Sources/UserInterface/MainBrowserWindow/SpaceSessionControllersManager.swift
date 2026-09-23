@@ -7,7 +7,7 @@ import Cocoa
 import Foundation
 
 protocol MainBrowserWindowLookup {
-    func controller(for windowId: Int) -> MainBrowserWindowController?
+    func controller(for windowId: Int) -> SpaceSessionController?
 }
 
 /// Represents a browser window created before browser access is available.
@@ -19,7 +19,7 @@ struct DanglingWindow {
     let profileId: String
     let spaceId: String
     /// Slot resolved at window-creation time (pre-login). Captured here so
-    /// `processDanglingWindow` hands it to the real `MainBrowserWindowController`
+    /// `processDanglingWindow` hands it to the real `SpaceSessionController`
     /// without re-resolving — the slot already holds any pending spawn
     /// intent / frame for this windowId.
     weak var slot: SpaceWindowSlot?
@@ -33,7 +33,7 @@ struct DanglingWindow {
     var pendingGroupActions: [TabGroupEvent.TabGroupAction] = []
 }
 
-class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
+class SpaceSessionControllersManager: MainBrowserWindowLookup {
     private struct RebindGroupSnapshot {
         let token: String
         let title: String
@@ -51,15 +51,15 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         let wasKey: Bool
     }
 
-    static let shared = MainBrowserWindowControllersManager()
+    static let shared = SpaceSessionControllersManager()
 
     /// Chromium windows the shell deliberately leaves unmanaged: browser types
-    /// that never get a `MainBrowserWindowController`, such as web-app windows
+    /// that never get a `SpaceSessionController`, such as web-app windows
     /// (Phi Chat, hosted by its macOS app shim). Bridge events scoped to these
     /// ids are expected and must not be reported as missing windows.
     private var unmanagedWindowIds: Set<Int> = []
     private var unmanagedWindowCloseObservers: [Int: NSObjectProtocol] = [:]
-    private(set) var activeWindowController: MainBrowserWindowController? {
+    private(set) var activeWindowController: SpaceSessionController? {
         didSet {
             guard oldValue !== activeWindowController else { return }
             NotificationCenter.default.post(
@@ -68,9 +68,9 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             )
         }
     }
-    private var windowControllers: Set<MainBrowserWindowController> = []
+    private var windowControllers: Set<SpaceSessionController> = []
     
-    /// Windows waiting to be converted to MainBrowserWindowController.
+    /// Windows waiting to be converted to SpaceSessionController.
     private var danglingWindows: [DanglingWindow] = []
 
     /// Original per-window interaction state captured while Guest-to-account
@@ -290,26 +290,34 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             customValueUpdates = []
         }
 
-        // Create the MainBrowserWindowController now that browser access is ready.
+        // Create the SpaceSessionController now that browser access is ready.
         // The slot was resolved at addDanglingWindow time; if it was dropped
         // by the manager in the meantime (unlikely pre-login but defensive),
-        // fall back to a fresh slot for `.normal` windows so the new
-        // controller still has somewhere to register.
+        // fall back to a fresh slot for slot-owned windows so the new
+        // controller still has somewhere to register. Incognito Space
+        // windows are slot-owned too: Chromium hosts them, so a standalone
+        // controller would leave the window with no shell to appear in.
         let slot: SpaceWindowSlot?
-        if danglingWindow.browserType == .normal || danglingWindow.browserType == .agentSpace {
+        if danglingWindow.browserType == .normal
+            || danglingWindow.browserType == .incognitoSpace
+            || danglingWindow.browserType == .agentSpace {
             slot = danglingWindow.slot
                 ?? SpaceManager.shared.createSlot(initialSpaceId: destinationSpaceId)
         } else {
             slot = nil
         }
+        let hosted = Self.isHostedSession(browserType: danglingWindow.browserType, slot: slot)
         let windowController = createWindowController(
-            window: danglingWindow.window,
+            window: hosted
+                ? slot!.ensureShell(initialFrame: slot!.initialShellFrame(forWindowId: danglingWindow.windowId)).window
+                : danglingWindow.window,
             windowId: danglingWindow.windowId,
             browserType: danglingWindow.browserType,
             profileId: destinationProfileId,
             spaceId: destinationSpaceId,
             account: account,
-            slot: slot
+            slot: slot,
+            chromiumWindow: hosted ? danglingWindow.window : nil
         )
         
         // Process pending tabs that were created before browser access.
@@ -369,9 +377,11 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         }
     }
     
-    func retainWindowControllerUntilWindowClosed(_ windowController: MainBrowserWindowController) {
+    func retainWindowControllerUntilWindowClosed(_ windowController: SpaceSessionController) {
         assert(Thread.isMainThread)
-        guard !windowControllers.contains(windowController), let window = windowController.window else {
+        guard !windowControllers.contains(windowController),
+              let window = windowController.window,
+              let lifecycleWindow = windowController.lifecycleWindow else {
             return
         }
         
@@ -382,14 +392,59 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         windowControllers.insert(windowController)
         applyGuestTransitionInteractionBlockIfNeeded(to: window)
         
+        // The close that ends a controller's life is its Chromium window's:
+        // in hosted mode that is not the (shared, longer-lived) shell.
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(windowWillClose(_:)),
                                                name: NSWindow.willCloseNotification,
-                                               object: window)
+                                               object: lifecycleWindow)
+        // A hosted shell reports key status through `ShellWindowController`
+        // (`noteWindowBecameKey`), resolving to the presented session.
+        if !windowController.isHosted {
+            NotificationCenter.default.addObserver(self,
+                                                   selector: #selector(windowDidBecomeKey(_:)),
+                                                   name: NSWindow.didBecomeKeyNotification,
+                                                   object: window)
+        }
+    }
+
+    /// Hosted-window mode: tracks a session built ahead of its Browser (see
+    /// `SpaceSessionController.isDormant`). No close observer — there is no
+    /// window to close yet; `noteChromiumWindowAttached` adds it when the
+    /// Browser arrives, `releaseDormantSession` drops a session that never
+    /// gets one.
+    func retainDormantSession(_ windowController: SpaceSessionController) {
+        assert(Thread.isMainThread)
+        guard !windowControllers.contains(windowController),
+              let window = windowController.window else { return }
+        windowControllers.insert(windowController)
+        applyGuestTransitionInteractionBlockIfNeeded(to: window)
+    }
+
+    func noteChromiumWindowAttached(_ windowController: SpaceSessionController) {
+        assert(Thread.isMainThread)
+        guard windowControllers.contains(windowController),
+              let lifecycleWindow = windowController.lifecycleWindow else { return }
         NotificationCenter.default.addObserver(self,
-                                               selector: #selector(windowDidBecomeKey(_:)),
-                                               name: NSWindow.didBecomeKeyNotification,
-                                               object: window)
+                                               selector: #selector(windowWillClose(_:)),
+                                               name: NSWindow.willCloseNotification,
+                                               object: lifecycleWindow)
+    }
+
+    func releaseDormantSession(_ windowController: SpaceSessionController) {
+        assert(Thread.isMainThread)
+        windowControllers.remove(windowController)
+        if activeWindowController === windowController {
+            activeWindowController = windowControllers.first(where: { $0.isPresentedOrLegacy })
+                ?? windowControllers.first
+        }
+    }
+
+    /// Hosted-window mode: whether a slot-bound Chromium window is presented
+    /// through the slot's shell rather than adopted as its own NSWindow.
+    static func isHostedSession(browserType: ChromiumBrowserType, slot: SpaceWindowSlot?) -> Bool {
+        guard slot != nil else { return false }
+        return browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace
     }
 
     /// Creates the native owner matching Chromium's semantic window type.
@@ -407,8 +462,10 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         account: Account = AccountController.shared.account
             ?? AccountController.defaultAccount,
         slot: SpaceWindowSlot? = nil,
-        presentationRequest: KioskWindowPresentationRequest? = nil
-    ) -> MainBrowserWindowController {
+        presentationRequest: KioskWindowPresentationRequest? = nil,
+        chromiumWindow: NSWindow? = nil,
+        dormant: Bool = false
+    ) -> SpaceSessionController {
         if browserType == .kiosk || browserType == .kioskIncognito {
             return KioskBrowserWindowController(
                 window: window,
@@ -419,14 +476,16 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
                 account: account
             )
         }
-        return MainBrowserWindowController(
+        return SpaceSessionController(
             window: window,
             windowId: windowId,
             browserType: browserType,
             profileId: profileId,
             spaceId: spaceId,
             account: account,
-            slot: slot
+            slot: slot,
+            chromiumWindow: chromiumWindow,
+            dormant: dormant
         )
     }
 
@@ -488,7 +547,29 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         migrationReceipt: GuestDataMigrationReceipt?
     ) {
         assert(Thread.isMainThread)
+        // Hosted: a dormant session has no Browser to carry over, and its
+        // Space belongs to the outgoing account. Rebuilt through the loop
+        // below it would come back as a live, non-hosted controller against
+        // the shared shell with its reserved id registered as a window. Drop
+        // them first; each slot rebuilds its set for the destination
+        // account's Spaces once the Space list has changed hands.
+        let dormantSlots = windowControllers
+            .filter(\.isDormant)
+            .compactMap(\.slot)
+        var reconcilingSlots: [SpaceWindowSlot] = []
+        for slot in dormantSlots where !reconcilingSlots.contains(where: { $0 === slot }) {
+            reconcilingSlots.append(slot)
+        }
+        for slot in reconcilingSlots {
+            slot.discardDormantSessions()
+        }
+        defer {
+            for slot in reconcilingSlots {
+                slot.scheduleDormantReconcile()
+            }
+        }
         let controllers = Array(windowControllers)
+            .filter { !$0.isDormant }
             .filter { migrationReceipt != nil || $0.account !== account }
             .sorted { $0.windowId < $1.windowId }
         let shouldMaterializeDanglingWindows =
@@ -535,7 +616,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
 
     @MainActor
     private func rebindWindowController(
-        _ oldController: MainBrowserWindowController,
+        _ oldController: SpaceSessionController,
         to account: Account,
         migrationReceipt: GuestDataMigrationReceipt?
     ) {
@@ -594,6 +675,12 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
                 to: destinationSpaceId
             )
         }
+        // Hosted: the old session's tree and panels leave the shared shell
+        // (and Chromium learns it is no longer presented) before the
+        // replacement presents its own tree; the shell itself stays as it is.
+        if oldController.isHosted {
+            oldController.leaveShell()
+        }
         detachWindowControllerForRebind(oldController, window: window)
 
         let customValueUpdates: [(tab: Tab, guid: String)]
@@ -618,7 +705,8 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             profileId: destinationProfileId,
             spaceId: destinationSpaceId,
             account: account,
-            slot: oldController.slot
+            slot: oldController.slot,
+            chromiumWindow: oldController.hostedChromiumWindow
         )
         let newState = replacement.browserState
 
@@ -681,19 +769,23 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             update.tab.webContentWrapper?.updateTabCustomValue(update.guid)
         }
 
-        window.setFrame(presentation.frame, display: true)
-        window.level = presentation.level
-        window.alphaValue = presentation.alphaValue
-        if presentation.wasMiniaturized {
-            window.miniaturize(nil)
-        } else if presentation.wasVisible {
-            if presentation.wasKey {
-                window.makeKeyAndOrderFront(nil)
+        // Hosted: `window` is the slot's shell, which was never touched by
+        // the rebind; the replacement's registration presented its tree.
+        if !replacement.isHosted {
+            window.setFrame(presentation.frame, display: true)
+            window.level = presentation.level
+            window.alphaValue = presentation.alphaValue
+            if presentation.wasMiniaturized {
+                window.miniaturize(nil)
+            } else if presentation.wasVisible {
+                if presentation.wasKey {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    window.orderFront(nil)
+                }
             } else {
-                window.orderFront(nil)
+                window.orderOut(nil)
             }
-        } else {
-            window.orderOut(nil)
         }
         if wasActiveController {
             activeWindowController = replacement
@@ -764,7 +856,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     }
 
     private func detachWindowControllerForRebind(
-        _ controller: MainBrowserWindowController,
+        _ controller: SpaceSessionController,
         window: NSWindow
     ) {
         NotificationCenter.default.removeObserver(
@@ -778,6 +870,16 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             object: window
         )
         NotificationCenter.default.removeObserver(controller, name: nil, object: window)
+        // Hosted sessions observe their close on the Chromium window, not on
+        // the shared shell.
+        if let lifecycleWindow = controller.lifecycleWindow, lifecycleWindow !== window {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.willCloseNotification,
+                object: lifecycleWindow
+            )
+            NotificationCenter.default.removeObserver(controller, name: nil, object: lifecycleWindow)
+        }
         controller.cancellables.removeAll()
         WindowThemeMessageRouter.shared.stopObservingWindow(windowId: controller.windowId)
         windowControllers.remove(controller)
@@ -815,13 +917,13 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     
     @objc private func windowWillClose(_ noti: NSNotification) {
         guard let window = noti.object as? NSWindow,
-              let windowController = window.windowController as? MainBrowserWindowController else {
+              let windowController = controller(forLifecycleWindow: window) else {
             return
         }
         WindowThemeMessageRouter.shared.stopObservingWindow(windowId: windowController.windowId)
         OverlayToastCenter.shared.clearWindow(windowId: windowController.windowId)
         // Normal, Incognito Space, and agent-Space windows live in slots
-        // (mirrors the registerWindow gate in MainBrowserWindowController.init).
+        // (mirrors the registerWindow gate in SpaceSessionController.init).
         // Skipping the Incognito Space's window here left its dead controller
         // registered: a window-driven cascade that included the Incognito Space
         // never drained its last entry, so the cascade-veto recovery "recovered"
@@ -831,7 +933,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             // Slot.unregisterWindow handles the per-slot "surface another
             // visible controller if this was the visible one" logic and
             // asks SpaceManager to drop the slot when it becomes empty. Agent
-            // Space windows register (see MainBrowserWindowController.init), so
+            // Space windows register (see SpaceSessionController.init), so
             // they must unregister here too or their slot/window leaks when the
             // Space is closed.
             windowController.slot?.unregisterWindow(windowController, for: windowController.spaceId)
@@ -849,9 +951,11 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         }
         windowControllers.remove(windowController)
         if activeWindowController === windowController {
+            // Hosted sessions share a visible shell; only the presented one
+            // stands for it.
             activeWindowController = windowControllers.first(where: {
-                $0.window?.isVisible == true
-            }) ?? windowControllers.first
+                $0.window?.isVisible == true && $0.isPresentedOrLegacy
+            }) ?? windowControllers.first(where: { !$0.isDormant })
         }
         // Chromium keeps every window close pending until it is told the gesture
         // is over; a cascade in flight makes this a no-op (see
@@ -861,11 +965,42 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     
     @objc private func windowDidBecomeKey(_ noti: NSNotification) {
         guard let window = noti.object as? NSWindow,
-              let windowController = window.windowController as? MainBrowserWindowController else {
+              let windowController = window.windowController as? SpaceSessionController else {
             return
         }
         activeWindowController = windowController
         AppLogDebug("window did become key window: \(windowController.windowId)")
+    }
+
+    /// Hosted-window mode: a shell became key — its presented session is now
+    /// the active controller. Called by `ShellWindowController`.
+    func noteWindowBecameKey(_ window: NSWindow) {
+        guard let windowController = findControllerWith(window: window) else { return }
+        activeWindowController = windowController
+        AppLogDebug("shell did become key window: \(windowController.windowId)")
+    }
+
+    /// Hosted-window mode: `controller` was just presented in its shell. The
+    /// shell stays key across a Space switch, so no key notification announces
+    /// that the session standing for it changed; if the shell is key, the
+    /// presented session is the active controller from now on.
+    func notePresentedInShell(_ controller: SpaceSessionController) {
+        guard controller.window?.isKeyWindow == true else { return }
+        activeWindowController = controller
+        AppLogDebug("presented session became active: \(controller.windowId)")
+    }
+
+    /// True while `PhiChromiumCoordinator` is inside Chromium's synchronous
+    /// window-created callback, where the Browser being reported is still
+    /// under construction. Hosted sessions defer their activation push to
+    /// Chromium while this is set.
+    var isInsideWindowCreatedCallback = false
+
+    /// The controller whose life the close of `window` ends: the adopted
+    /// window's controller, or in hosted mode the session backed by that
+    /// Chromium window.
+    private func controller(forLifecycleWindow window: NSWindow) -> SpaceSessionController? {
+        windowControllers.first { $0.lifecycleWindow === window }
     }
     
     func getBrowserState(for browserId: Int) -> BrowserState? {
@@ -899,19 +1034,34 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         }
     }
 
-    func controller(for windowId: Int) -> MainBrowserWindowController? {
+    func controller(for windowId: Int) -> SpaceSessionController? {
         windowControllers.first(where: { $0.windowId == windowId })
     }
     
-    func findControllerWith(window: NSWindow) -> MainBrowserWindowController? {
-        return windowControllers.first {  $0.window === window }
+    /// Resolves an NSWindow to its controller. A hosted shell is shared by
+    /// every session of its slot, so it resolves to the PRESENTED one; a
+    /// hosted session's hidden Chromium window resolves to that session
+    /// (Chromium's command pipeline hands that window back).
+    func findControllerWith(window: NSWindow) -> SpaceSessionController? {
+        if let presented = windowControllers.first(where: { $0.window === window && $0.isPresentedOrLegacy }) {
+            return presented
+        }
+        if let hosted = windowControllers.first(where: { $0.hostedChromiumWindow === window }) {
+            return hosted
+        }
+        // Between a conceal and the next present no session of a shell is
+        // presented; answer with a live session rather than a dormant one,
+        // whose reserved id no Browser answers to.
+        return windowControllers.first { $0.window === window && !$0.isDormant }
+            ?? windowControllers.first { $0.window === window }
     }
     
     func getActiveWindowState() -> BrowserState? { activeWindowController?.browserState }
     
-    /// Returns every tracked browser window controller.
-    func getAllWindows() -> [MainBrowserWindowController] {
-        return Array(windowControllers)
+    /// Returns every tracked browser window controller. Dormant sessions are
+    /// left out: they carry a reserved window id no Browser answers to yet.
+    func getAllWindows() -> [SpaceSessionController] {
+        return windowControllers.filter { !$0.isDormant }
     }
 
     /// True only after a user-facing regular browser window has completed its
@@ -921,19 +1071,22 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         windowControllers.contains { controller in
             switch controller.browserType {
             case .normal:
-                return controller.window?.isVisible == true
+                // A hosted shell is visible for every session of its slot;
+                // only the presented one is on screen.
+                return controller.isPresentedOrLegacy && controller.window?.isVisible == true
             default:
                 return false
             }
         }
     }
-    
+
     /// Get the first available window ID, checking both active windows and dangling windows
     /// This is useful before Guest entry or login has completed.
     /// - Returns: The first available window ID, or nil if no windows exist
     func getFirstAvailableWindowId() -> Int? {
-        // First try to get from active window controllers
-        if let windowId = windowControllers.first?.windowId {
+        // First try to get from active window controllers. A dormant session's
+        // reserved id has no Browser behind it yet, so it is never handed out.
+        if let windowId = windowControllers.first(where: { !$0.isDormant })?.windowId {
             return windowId
         }
         // Fall back to windows waiting for browser access.

@@ -239,13 +239,13 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         )
         let event = try makeKeyDownEvent(in: window, characters: "\u{1B}", keyCode: 53)
 
-        XCTAssertNil(MainBrowserWindowController.handleMultiSelectionEscape(
+        XCTAssertNil(SpaceSessionController.handleMultiSelectionEscape(
             event,
             in: window,
             browserState: state
         ))
         XCTAssertFalse(state.multiSelection.isActive)
-        let unhandledEvent = MainBrowserWindowController.handleMultiSelectionEscape(
+        let unhandledEvent = SpaceSessionController.handleMultiSelectionEscape(
             event,
             in: window,
             browserState: state
@@ -273,12 +273,12 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         let escape = try makeKeyDownEvent(in: eventWindow, characters: "\u{1B}", keyCode: 53)
         let regularKey = try makeKeyDownEvent(in: eventWindow, characters: "x", keyCode: 7)
 
-        let otherWindowEvent = MainBrowserWindowController.handleMultiSelectionEscape(
+        let otherWindowEvent = SpaceSessionController.handleMultiSelectionEscape(
             escape,
             in: otherWindow,
             browserState: state
         )
-        let regularKeyEvent = MainBrowserWindowController.handleMultiSelectionEscape(
+        let regularKeyEvent = SpaceSessionController.handleMultiSelectionEscape(
             regularKey,
             in: eventWindow,
             browserState: state

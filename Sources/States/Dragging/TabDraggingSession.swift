@@ -434,7 +434,7 @@ final class TabDraggingSession {
     /// same bookmark can only have one active binding at a time (the second
     /// open call re-activates the first), but it can live in any window.
     private func openedSplitWrapper(forBookmarkGuid bookmarkGuid: String) -> (WebContentWrapper & NSObject)? {
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             let bs = controller.browserState
             guard let splitId = bs.splitBookmarkBindings[bookmarkGuid],
                   let group = bs.splits.first(where: { $0.id == splitId }) else { continue }
@@ -503,7 +503,7 @@ final class TabDraggingSession {
 
     private func isInsideAnyBrowserWindow(_ screenLocation: CGPoint) -> Bool {
         let point = NSPoint(x: screenLocation.x, y: screenLocation.y)
-        let windows = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let windows = SpaceSessionControllersManager.shared.getAllWindows()
         if !windows.isEmpty {
             return windows.contains { $0.window?.frame.contains(point) == true }
         }
@@ -513,10 +513,12 @@ final class TabDraggingSession {
     private func isInsideAnyOtherBrowserTabDragBoundary(_ screenLocation: CGPoint) -> Bool {
         let point = NSPoint(x: screenLocation.x, y: screenLocation.y)
         let sourceWindowNumber = sourceWindow?.windowNumber
-        let windows = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let windows = SpaceSessionControllersManager.shared.getAllWindows()
         if !windows.isEmpty {
             return windows.contains { controller in
-                guard let window = controller.window else { return false }
+                // A background session of a hosted shell shares the shell's
+                // frame but has no drag boundary on screen.
+                guard let window = controller.window, controller.isPresentedOrLegacy else { return false }
                 if let sourceWindowNumber, window.windowNumber == sourceWindowNumber {
                     return false
                 }

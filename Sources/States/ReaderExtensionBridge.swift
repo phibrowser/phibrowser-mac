@@ -262,7 +262,7 @@ enum ReaderExtensionBridge {
         // one it goes to the ACTIVE window's profile, which for a tab in a
         // background or hidden window (agent Spaces) is the wrong profile —
         // whose Mirage cannot see the tab. Address the owning window.
-        let windowId = MainBrowserWindowControllersManager.shared.getAllWindows()
+        let windowId = SpaceSessionControllersManager.shared.getAllWindows()
             .first(where: { controller in
                 controller.browserState.tabs.contains(where: { $0.guid == tab.guid })
             })?.browserState.windowId
@@ -345,7 +345,7 @@ enum ReaderExtensionBridge {
     /// holds; the tab can be in any window.
     @MainActor
     private static func findTab(_ tabId: Int) -> (tab: Tab, state: BrowserState)? {
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             let state = controller.browserState
             if let tab = state.tabs.first(where: { $0.guid == tabId }) {
                 return (tab, state)

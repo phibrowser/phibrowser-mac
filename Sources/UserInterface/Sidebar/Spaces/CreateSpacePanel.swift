@@ -558,7 +558,7 @@ extension CreateSpacePanel {
     /// (Comfortable) — or any window without a usable sidebar surface —
     /// falls back to the standalone window.
     static func requestCreation(initialProfileId: String?) {
-        if let wc = MainBrowserWindowControllersManager.shared.activeWindowController,
+        if let wc = SpaceSessionControllersManager.shared.activeWindowController,
            !wc.browserState.layoutMode.isTraditional {
             if !wc.browserState.sidebarCollapsed {
                 let sidebar = wc.mainSplitViewController.sidebarViewController

@@ -155,7 +155,7 @@ final class FloatingTrafficLightsView: NSView {
         }
 
         hasSetupStateObservers = true
-        browserState.$sidebarCollapsed
+        browserState.sidebarCollapsedPublisher
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

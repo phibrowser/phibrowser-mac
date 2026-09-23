@@ -7,7 +7,7 @@ import Cocoa
 import SwiftUI
 import SwiftData
 
-extension MainBrowserWindowController {
+extension SpaceSessionController {
     @IBAction func newBrowserTab(_ sender: Any?) {
         // While the agent controls this Space, the watching user can't add tabs
         // to its workspace. This is the choke point for every New Tab affordance
@@ -186,7 +186,11 @@ extension MainBrowserWindowController {
             )
         }
 
-        guard let contentView = contentViewController?.view else {
+        // Hosted: the window's content view controller is the shell's split,
+        // shared by every Space; the overlay belongs to this session's own
+        // tree so it leaves with it on a Space switch.
+        let hostView = isHosted ? mainSplitViewController.view : contentViewController?.view
+        guard let contentView = hostView else {
             return
         }
 
@@ -431,9 +435,9 @@ extension BrowserState {
     }
 }
 
-extension MainBrowserWindowController: NSMenuItemValidation {
+extension SpaceSessionController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if MainBrowserWindowControllersManager.shared
+        if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             return false
         }
@@ -629,7 +633,7 @@ extension MainBrowserWindowController: NSMenuItemValidation {
         // in-flight import keeps its destination — rather than opening a second
         // window, which would let two imports race over shared bookmark staging.
         if let existingWindow = NSApp.windows.first(where: { $0.identifier == identifier }) {
-            if let vc = objc_getAssociatedObject(existingWindow, &MainBrowserWindowController.importVCAssociationKey) as? ImportFromOtherBrowserViewController {
+            if let vc = objc_getAssociatedObject(existingWindow, &SpaceSessionController.importVCAssociationKey) as? ImportFromOtherBrowserViewController {
                 // Reopening a CLOSED singleton reuses the same VC; clear the previous
                 // import's stale selection/status so it starts fresh. A MINIATURIZED
                 // window also reports isVisible == false but is a restore, not a reopen,
@@ -677,6 +681,6 @@ extension MainBrowserWindowController: NSMenuItemValidation {
 
         // Keep vc alive and discoverable for the window's lifetime: the singleton
         // re-invocation path looks it up via this associated object to rebindTarget.
-        objc_setAssociatedObject(window, &MainBrowserWindowController.importVCAssociationKey, vc, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        objc_setAssociatedObject(window, &SpaceSessionController.importVCAssociationKey, vc, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 }

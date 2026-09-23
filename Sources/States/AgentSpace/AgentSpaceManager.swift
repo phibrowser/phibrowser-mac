@@ -690,13 +690,18 @@ final class AgentSpaceManager: ObservableObject {
         // badge number are the same value. A persistent Space is named by its
         // taskId instead — the durable half of the re-bind mapping.
         let number = nextAgentNumber()
+        let preparedSpaceId = SpaceManager.shared.claimPrewarmedAgentContent(profileId: profile.profileId)
         guard let spaceId = SpaceManager.shared.createSpace(
             name: persistent ? taskId : Self.agentSpaceName(number),
             colorHex: persistent ? Self.persistentSpaceColorHex : Self.spaceColorHex,
             iconName: Self.spaceIconName,
             profileId: profile.profileId,
-            makeDefaultActive: false
+            makeDefaultActive: false,
+            spaceId: preparedSpaceId
         ) else {
+            if let preparedSpaceId {
+                SpaceManager.shared.discardClaimedSpaceContent(spaceId: preparedSpaceId)
+            }
             AppLogWarn("[AgentSpace] createAgentSpace: createSpace failed")
             completion(nil, nil)
             return
@@ -1480,7 +1485,7 @@ final class AgentSpaceManager: ObservableObject {
             AgentPageTheme.shared.clear(windowId: task.windowId)
             return
         }
-        guard let themeContext = MainBrowserWindowControllersManager.shared
+        guard let themeContext = SpaceSessionControllersManager.shared
                 .getBrowserState(for: task.windowId)?.themeContext else { return }
         let appearance = themeContext.currentAppearance
         let color = themeContext.currentTheme.color(
@@ -1502,7 +1507,7 @@ final class AgentSpaceManager: ObservableObject {
     /// The Phi tab id of the agent window's currently active (operating) tab.
     private func currentActiveTabId(forSpaceId spaceId: String) -> Int? {
         guard let task = tasksBySpaceId[spaceId], task.windowId != 0 else { return nil }
-        return MainBrowserWindowControllersManager.shared
+        return SpaceSessionControllersManager.shared
             .getBrowserState(for: task.windowId)?.focusingTab?.guid
     }
 

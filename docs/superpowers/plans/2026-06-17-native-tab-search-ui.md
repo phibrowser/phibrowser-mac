@@ -18,8 +18,8 @@
 ## Task 3: Window Integration
 
 - Add a dedicated Search Tabs overlay container.
-- Add `toggleSearchTabs` and close handling to `MainBrowserWindowController+Actions`.
-- Add controller/background ownership to `MainBrowserWindowController`.
+- Add `toggleSearchTabs` and close handling to `SpaceSessionController+Actions`.
+- Add controller/background ownership to `SpaceSessionController`.
 - Intercept `IDC_TAB_SEARCH` in `CommandDispatcher`.
 
 ## Task 4: Verification

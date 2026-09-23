@@ -250,7 +250,7 @@ class LoginController {
                     guard armGuestMigrationRecovery(
                         targetUserID: targetUserID
                     ) else { return }
-                    MainBrowserWindowControllersManager.shared
+                    SpaceSessionControllersManager.shared
                         .setGuestTransitionInteractionBlocked(true)
                     AppLogInfo(
                         "🔐 [GuestMigration] Matching staged credentials found " +
@@ -271,7 +271,7 @@ class LoginController {
             case .requiresTargetRecovery(let targetUserID):
                 guard armGuestMigrationRecovery(targetUserID: targetUserID)
                 else { return }
-                MainBrowserWindowControllersManager.shared
+                SpaceSessionControllersManager.shared
                     .setGuestTransitionInteractionBlocked(true)
                 AppLogInfo(
                     "🔐 [GuestMigration] Pending journal keeps Guest access " +
@@ -286,7 +286,7 @@ class LoginController {
             // Fail closed. The unreadable journal may describe a Guest
             // directory that has already crossed the atomic staging boundary.
             if armGuestMigrationRecovery(targetUserID: nil) {
-                MainBrowserWindowControllersManager.shared
+                SpaceSessionControllersManager.shared
                     .setGuestTransitionInteractionBlocked(true)
             }
         }
@@ -347,7 +347,7 @@ class LoginController {
                 showLoginWindow()
                 return .requiresAccountRecovery
             }
-            MainBrowserWindowControllersManager.shared
+            SpaceSessionControllersManager.shared
                 .setGuestTransitionInteractionBlocked(true)
             showLoginWindow()
             return .requiresAccountRecovery
@@ -818,7 +818,7 @@ class LoginController {
         }
 
         let sourceAccount = AccountController.defaultAccount
-        let windowManager = MainBrowserWindowControllersManager.shared
+        let windowManager = SpaceSessionControllersManager.shared
         windowManager.setGuestTransitionInteractionBlocked(true)
         AIChatSidebarStateStore.shared.beginGuestAccountTransition()
 
@@ -968,7 +968,7 @@ class LoginController {
                 .shouldSuppressPostLoginRegularWindowForPendingKioskOpen
                 ?? false
         if !pendingKioskOwnsPostLoginPresentation,
-           MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() == nil {
+           SpaceSessionControllersManager.shared.getFirstAvailableWindowId() == nil {
             ChromiumLauncher.sharedInstance().bridge?
                 .applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
         } else {

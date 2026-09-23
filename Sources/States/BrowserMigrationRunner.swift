@@ -446,6 +446,6 @@ enum BrowserDataActivity {
     /// An import is under way, or its window is on screen: the Migration menu
     /// item is greyed out.
     static var importBlocksMigration: Bool {
-        MainBrowserWindowController.importIsInFlight
+        SpaceSessionController.importIsInFlight
     }
 }

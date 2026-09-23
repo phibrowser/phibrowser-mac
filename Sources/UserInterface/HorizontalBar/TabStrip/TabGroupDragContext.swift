@@ -36,7 +36,7 @@ enum PendingGroupDropAction {
 /// (groups cannot land in the pinned region; pinned hits return nil
 /// upstream); `index` is in target's `normalTabs` coordinate space.
 struct ExternalGroupDropTarget {
-    let windowController: MainBrowserWindowController
+    let windowController: SpaceSessionController
     let zone: TabContainerType
     let index: Int
 }

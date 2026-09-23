@@ -231,7 +231,7 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
 public extension NSWindow {
     var browserThemeContext: BrowserThemeContext? {
         // Overlays such as the omnibox live in child panels without a browser controller.
-        (windowController as? MainBrowserWindowController)?.browserState.themeContext
+        (windowController as? SpaceSessionController)?.browserState.themeContext
             ?? parent?.browserThemeContext
     }
     
@@ -240,9 +240,35 @@ public extension NSWindow {
     }
 }
 
+/// A responder that answers the theme context for the views under it:
+/// `MainSplitViewController` for a session's own tree, and the shell's
+/// sidebar host, which follows whichever session it is presenting (or, mid
+/// switch, the one whose theme is ramping across the slide).
+public protocol BrowserThemeContextProviding: AnyObject {
+    var providedBrowserThemeContext: BrowserThemeContext? { get }
+}
+
 public extension NSView {
+    /// The theme context of the browser tree this view belongs to.
+    ///
+    /// Resolved through the responder chain first: one shell window presents
+    /// one Space session at a time, and during a Space switch the leaving
+    /// and entering trees are BOTH in the window while the window's
+    /// controller already names the entering one. A view must keep
+    /// following its own tree's context (the leaving sidebar ramps its
+    /// theme across the slide) rather than the window's, so the nearest
+    /// `BrowserThemeContextProviding` responder up the chain wins; the
+    /// window answers for views outside any tree (child panels, overlays).
     var browserThemeContext: BrowserThemeContext? {
-        window?.browserThemeContext
+        var responder: NSResponder? = nextResponder
+        while let current = responder {
+            if let providing = current as? BrowserThemeContextProviding {
+                return providing.providedBrowserThemeContext
+            }
+            if current is NSWindow { break }
+            responder = current.nextResponder
+        }
+        return window?.browserThemeContext
     }
     
     var themeStateProvider: ThemeStateProvider {

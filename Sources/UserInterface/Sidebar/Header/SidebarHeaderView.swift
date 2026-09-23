@@ -220,7 +220,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     
     
     private lazy var addressView: SideAddressBar = {
-        let addressView = SideAddressBar(isFloating: isFloating)
+        let addressView = SideAddressBar(browserState: browserState, isFloating: isFloating)
         addressView.setAccessoryButtonsVisible(isFloating)
         return addressView
     }()
@@ -648,7 +648,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     @objc private func sidebarButtonClicked() {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleSidebar(nil)
+        SpaceSessionControllersManager.shared.activeWindowController?.browserState.toggleSidebar(nil)
     }
 
     @objc private func searchTabsButtonClicked() {

@@ -148,7 +148,7 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
                 guard AccountController.shared.account?.userID == submittingAccountID else {
                     throw FeedbackOutboxError.missingAccount
                 }
-                try viewModel.enqueueFeedback(
+                try await viewModel.enqueueFeedback(
                     chromiumSystemLogsText: chromiumSystemLogsText,
                     inputSourceMetadata: inputSourceMetadata
                 )

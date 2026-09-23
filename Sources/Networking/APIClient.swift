@@ -818,8 +818,8 @@ class APIClient {
     func presignFeedbackV2Attachments(
         _ attachments: [FeedbackV2PresignAttachmentRequest]
     ) async throws -> [FeedbackV2PresignedAttachment] {
-        guard attachments.count <= 5 else {
-            throw APIError.invalidRequest(message: "Feedback V2 presign supports at most five attachments per request")
+        guard attachments.count <= FeedbackV2Limits.attachmentCount else {
+            throw APIError.invalidRequest(message: "Feedback V2 presign supports at most ten attachments per request")
         }
 
         let url = URL(string: "\(accountBaseURL)/api/auth/feedback/v2/attachments/presign")!
@@ -864,8 +864,8 @@ class APIClient {
     }
 
     func submitFeedbackV2(_ submitRequest: FeedbackV2SubmitRequest) async throws -> Response<FeedbackV2SubmitData> {
-        guard submitRequest.attachments.count <= 5 else {
-            throw APIError.invalidRequest(message: "Feedback V2 submit supports at most five attachments")
+        guard submitRequest.attachments.count <= FeedbackV2Limits.attachmentCount else {
+            throw APIError.invalidRequest(message: "Feedback V2 submit supports at most ten attachments")
         }
 
         let url = URL(string: "\(accountBaseURL)/api/auth/feedback/v2/submit")!

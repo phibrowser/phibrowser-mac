@@ -651,6 +651,7 @@
 		FDBA75FD3062F5A52D24B871 /* encryption.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BAF44C72CFEA80E580CDF7 /* encryption.pb.swift */; };
 		49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV11.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV11.swift */; };
 		3908371DDE11819BEE6F447A /* ContentBlockingAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFBF4E016A9AE2F4AD2AC8D /* ContentBlockingAnalytics.swift */; };
+		FB0923000000000000000001 /* FeedbackLogSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0923000000000000000002 /* FeedbackLogSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1438,6 +1439,7 @@
 		FED7DED52045A7D29820DB3B /* SyncableSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableSettings.swift; sourceTree = "<group>"; };
 		79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV11.swift; sourceTree = "<group>"; };
 		4AFBF4E016A9AE2F4AD2AC8D /* ContentBlockingAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingAnalytics.swift; sourceTree = "<group>"; };
+		FB0923000000000000000002 /* FeedbackLogSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackLogSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -1752,6 +1754,7 @@
 				37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */,
 				37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */,
 				FBD200012FD0000000000002 /* FeedbackOutbox.swift */,
+				FB0923000000000000000002 /* FeedbackLogSnapshot.swift */,
 			);
 			path = Feedback;
 			sourceTree = "<group>";
@@ -3445,6 +3448,7 @@
 				CCEB64CB2E98DD520036C763 /* InsetTableRowView.swift in Sources */,
 				37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */,
 				FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */,
+				FB0923000000000000000001 /* FeedbackLogSnapshot.swift in Sources */,
 				CCB53DCB2E6EC437004BF233 /* OmniBoxSuggestionView.swift in Sources */,
 				37FC8DAA2F39B2DE004675B8 /* LayoutModeSettingView.swift in Sources */,
 				CCB53DCC2E6EC437004BF233 /* OmniBoxViewModel.swift in Sources */,

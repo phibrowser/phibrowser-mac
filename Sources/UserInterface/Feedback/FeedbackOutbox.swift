@@ -50,6 +50,7 @@ final class FeedbackViewModel: ObservableObject {
     }
 
     func addFileURLs(_ urls: [URL]) {
+        guard !isSubmitting else { return }
         var errors: [String] = []
 
         for url in urls {
@@ -81,6 +82,7 @@ final class FeedbackViewModel: ObservableObject {
     }
 
     func addPastedImage(_ image: NSImage) {
+        guard !isSubmitting else { return }
         guard let data = FeedbackImageEncoder.pngData(from: image) else {
             AppLogError("Feedback paste image failed: could not encode image data")
             return
@@ -95,13 +97,14 @@ final class FeedbackViewModel: ObservableObject {
     }
 
     func removeAttachment(id: UUID) {
+        guard !isSubmitting else { return }
         attachments.removeAll { $0.id == id }
     }
 
     func enqueueFeedback(
         chromiumSystemLogsText: String? = nil,
         inputSourceMetadata: [String: String]
-    ) throws {
+    ) async throws {
         guard ApplicationState.shared.isAuthenticated,
               let account = AccountController.shared.account else {
             throw FeedbackOutboxError.missingAccount
@@ -124,7 +127,7 @@ final class FeedbackViewModel: ObservableObject {
             inputSourceMetadata: inputSourceMetadata
         )
 
-        try FeedbackOutbox.enqueue(draft, account: account)
+        try await FeedbackOutbox.enqueue(draft, account: account)
         FeedbackOutboxUploader.shared.scheduleCurrentAccountProcessing()
     }
 }
@@ -193,27 +196,25 @@ enum FeedbackOutboxError: LocalizedError {
             return "A required feedback attachment failed to upload: \(filename)."
         case .zipCreationFailed(let detail):
             return detail
+
         }
     }
 }
 
 enum FeedbackOutbox {
-    static let maxSubmitAttachments = 5
+    static let maxSubmitAttachments = FeedbackV2Limits.attachmentCount
+    static let maxLogAttachments = 5
+    static let maxSentinelAttachments = 4
     static let maxSelectedAttachmentBytes: Int64 = 10 * 1024 * 1024
-    static let maxAttachmentBytes: Int64 = 20 * 1024 * 1024
+    static let maxAttachmentBytes = FeedbackV2Limits.attachmentBytes
     static let zipPlanningBytes: Int64 = maxAttachmentBytes - 512 * 1024
     static let maxJobRetryCount = 5
-    static let archiveStrategyVersion = 6
+    static let archiveStrategyVersion = 7
     private static let directoryName = "feedbackOutbox"
     private static let manifestFilename = "manifest.json"
     private static let systemLogsFilename = "system_logs.txt"
     private static let primaryLogsZipFilename = "logs.zip"
     private static let sentinelLogsZipFilename = "sentinel-logs.zip"
-    private static let sentinelLogFilenamePrefixes = [
-        "boot.log",
-        "runner.log",
-        "ai-gateway.log"
-    ]
 
     static func outboxRoot(for account: Account) -> URL {
         account.userDataStorage.appendingPathComponent(directoryName, isDirectory: true)
@@ -294,11 +295,44 @@ enum FeedbackOutbox {
         )
     }
 
-    static func enqueue(_ draft: FeedbackDraft, account: Account) throws {
-        let fm = FileManager.default
+    @MainActor
+    static func enqueue(_ draft: FeedbackDraft, account: Account) async throws {
         let jobID = UUID().uuidString
-        let root = outboxRoot(for: account)
-        let jobRoot = root.appendingPathComponent(jobID, isDirectory: true)
+        let jobRoot = outboxRoot(for: account).appendingPathComponent(jobID, isDirectory: true)
+        let metadata = makeMetadata(jobID: jobID, draft: draft)
+        let serviceLogsURL = SentinelHelper.sentinelServiceLogsDirectoryURL(
+            auth0Subject: account.userInfo?.sub ?? account.userID
+        )
+        let manifest = try await Task.detached(priority: .utility) {
+            try prepareJob(draft, jobRoot: jobRoot, metadata: metadata, sentinelServiceLogsURL: serviceLogsURL)
+        }.value
+        do {
+            guard ApplicationState.shared.isAuthenticated,
+                  AccountController.shared.account?.userID == account.userID else {
+                throw FeedbackOutboxError.missingAccount
+            }
+            // The uploader only sees complete, validated jobs. Before this atomic
+            // write, a preparation error leaves the user's draft in the form.
+            try writeManifest(manifest, jobRoot: jobRoot)
+        } catch {
+            try? FileManager.default.removeItem(at: jobRoot)
+            throw error
+        }
+    }
+
+    static func prepareJob(
+        _ draft: FeedbackDraft,
+        jobRoot: URL,
+        metadata: FeedbackV2Metadata,
+        phiLogsURL: URL = URL(fileURLWithPath: FileSystemUtils.phiBrowserDataDirectory(), isDirectory: true)
+            .appendingPathComponent("PhiLogs", isDirectory: true),
+        sentinelLogsURL: URL = SentinelHelper.sentinelLogsDirectoryURL(),
+        sentinelServiceLogsURL: URL?
+    ) throws -> FeedbackOutboxManifest {
+        let fm = FileManager.default
+        let jobID = jobRoot.lastPathComponent
+        var prepared = false
+        defer { if !prepared { try? fm.removeItem(at: jobRoot) } }
         let imagesDir = jobRoot.appendingPathComponent("images", isDirectory: true)
         let filesDir = jobRoot.appendingPathComponent("files", isDirectory: true)
         let logsDir = jobRoot.appendingPathComponent("logs", isDirectory: true)
@@ -366,8 +400,7 @@ enum FeedbackOutbox {
             )
         }
 
-        let metadata = makeMetadata(jobID: jobID, draft: draft)
-        let manifest = FeedbackOutboxManifest(
+        var manifest = FeedbackOutboxManifest(
             id: jobID,
             createdAt: Date(),
             description: draft.description,
@@ -384,7 +417,13 @@ enum FeedbackOutbox {
             nextAttemptAt: nil,
             lastError: nil
         )
-        try writeManifest(manifest, jobRoot: jobRoot)
+        manifest.logSnapshot = try captureLogSnapshot(
+            jobRoot: jobRoot, chromiumSystemLogs: chromiumSystemLogs,
+            previousSessionCrashLog: previousSessionCrashLog,
+            phiLogsURL: phiLogsURL, sentinelLogsURL: sentinelLogsURL,
+            sentinelServiceLogsURL: sentinelServiceLogsURL
+        )
+        manifest.preparedAttachments = try prepareAttachments(jobRoot: jobRoot, manifest: manifest)
         logSourceAttachmentDiskLocations(
             jobID: jobID,
             jobRoot: jobRoot,
@@ -392,7 +431,8 @@ enum FeedbackOutbox {
             fileSources: fileSources,
             chromiumSystemLogs: chromiumSystemLogs
         )
-        AppLogInfo("Feedback V2 outbox job enqueued: \(jobID)")
+        prepared = true
+        return manifest
     }
 
     static func savePreviousSessionCrashLog(
@@ -427,40 +467,34 @@ enum FeedbackOutbox {
         try? FileManager.default.removeItem(at: preparedDir)
     }
 
-    fileprivate static func prepareAttachments(
+    static func prepareAttachments(
         jobRoot: URL,
         manifest: FeedbackOutboxManifest
     ) throws -> [FeedbackOutboxUploadAttachment] {
         let preparedDir = jobRoot.appendingPathComponent("prepared", isDirectory: true)
         try FileManager.default.createDirectory(at: preparedDir, withIntermediateDirectories: true)
 
-        let logAttachments = try prepareLogZipAttachments(
-            jobRoot: jobRoot,
-            preparedDir: preparedDir,
+        let snapshot = manifest.logSnapshot ?? legacyLogSnapshot(manifest)
+        let preparedLogs = try prepareLogZipAttachments(
+            jobRoot: jobRoot, preparedDir: preparedDir,
             chromiumSystemLogs: manifest.chromiumSystemLogs,
-            previousSessionCrashLog: manifest.previousSessionCrashLog
+            previousSessionCrashLog: manifest.previousSessionCrashLog,
+            snapshot: snapshot
         )
-        let slotsAfterLogs = max(maxSubmitAttachments - logAttachments.count, 0)
-        let reserveOtherSlot = !manifest.sourceFiles.isEmpty && slotsAfterLogs > 1
-        let preferredImageSlots = max(slotsAfterLogs - (reserveOtherSlot ? 1 : 0), 0)
-
+        let logAttachments = trimPreparedAttachments(preparedLogs, to: maxLogAttachments, jobRoot: jobRoot)
+        let userSlots = maxSubmitAttachments - logAttachments.count
+        let reserveFileSlot = !manifest.sourceFiles.isEmpty && userSlots > 1
         let imageAttachments = try prepareImageAttachments(
-            jobRoot: jobRoot,
-            preparedDir: preparedDir,
-            sources: manifest.sourceImages,
-            preferredSlots: preferredImageSlots,
-            maxSlots: slotsAfterLogs
+            jobRoot: jobRoot, preparedDir: preparedDir, sources: manifest.sourceImages,
+            preferredSlots: userSlots - (reserveFileSlot ? 1 : 0), maxSlots: userSlots
         )
-
         let fileAttachments = try prepareUserFileAttachments(
-            jobRoot: jobRoot,
-            preparedDir: preparedDir,
-            sources: manifest.sourceFiles,
-            availableSlots: maxSubmitAttachments - logAttachments.count - imageAttachments.count
+            jobRoot: jobRoot, preparedDir: preparedDir, sources: manifest.sourceFiles,
+            availableSlots: userSlots - imageAttachments.count
         )
-
-        let requiredAttachments = imageAttachments + logAttachments
-        let attachments = try attachmentsWithinSubmitLimit(required: requiredAttachments, optional: fileAttachments)
+        let attachments = try attachmentsWithinSubmitLimit(
+            required: logAttachments + imageAttachments + fileAttachments, optional: []
+        )
         logPreparedAttachmentDiskLocations(jobID: manifest.id, jobRoot: jobRoot, attachments: attachments)
         return attachments
     }
@@ -472,42 +506,35 @@ enum FeedbackOutbox {
         preferredSlots: Int,
         maxSlots: Int
     ) throws -> [FeedbackOutboxUploadAttachment] {
+        guard !sources.isEmpty else { return [] }
         guard maxSlots > 0 else {
-            if !sources.isEmpty {
-                AppLogWarn("Feedback V2 image attachments skipped because no submit slots are available")
-            }
+            AppLogWarn("Feedback V2 images skipped because no submit slots are available")
             return []
         }
-
         let preparedImages = try sources.map { source in
-            let sourceURL = jobRoot.appendingPathComponent(source.relativePath)
-            return try normalizedImageIfNeeded(sourceURL: sourceURL, source: source, preparedDir: preparedDir)
+            try normalizedImageIfNeeded(
+                sourceURL: jobRoot.appendingPathComponent(source.relativePath), source: source, preparedDir: preparedDir
+            )
         }
-
         let effectivePreferredSlots = min(max(preferredSlots, 0), maxSlots)
-        guard preparedImages.count > effectivePreferredSlots else {
+        if preparedImages.count <= effectivePreferredSlots {
             return preparedImages.map { directImageAttachment($0, jobRoot: jobRoot) }
         }
-
-        let directImageCount = effectivePreferredSlots > 1 ? min(effectivePreferredSlots - 1, preparedImages.count) : 0
-        var attachments = preparedImages.prefix(directImageCount).map {
-            directImageAttachment($0, jobRoot: jobRoot)
+        var directCount = effectivePreferredSlots > 1 ? min(effectivePreferredSlots - 1, preparedImages.count) : 0
+        while true {
+            let zipped = try makeImageZipAttachments(images: Array(preparedImages.dropFirst(directCount)), preparedDir: preparedDir)
+            if directCount + zipped.count <= maxSlots {
+                return preparedImages.prefix(directCount).map { directImageAttachment($0, jobRoot: jobRoot) } + zipped
+            }
+            // Try packing every image before dropping archives that exceed the budget.
+            if directCount == 0 {
+                return trimPreparedAttachments(zipped, to: maxSlots, jobRoot: jobRoot)
+            }
+            for attachment in zipped {
+                try? FileManager.default.removeItem(at: jobRoot.appendingPathComponent(attachment.relativePath))
+            }
+            directCount = 0
         }
-
-        let zippedImages = Array(preparedImages.dropFirst(directImageCount))
-        let zipAttachments = try makeImageZipAttachments(
-            images: zippedImages,
-            preparedDir: preparedDir
-        )
-        let remainingSlots = max(maxSlots - attachments.count, 0)
-        let keptZipAttachments = trimPreparedAttachments(
-            zipAttachments,
-            to: remainingSlots,
-            jobRoot: preparedDir.deletingLastPathComponent(),
-            context: "image zip"
-        )
-        attachments.append(contentsOf: keptZipAttachments)
-        return attachments
     }
 
     private static func directImageAttachment(_ prepared: PreparedFile, jobRoot: URL) -> FeedbackOutboxUploadAttachment {
@@ -570,6 +597,68 @@ enum FeedbackOutbox {
         return PreparedFile(url: destination, filename: filename, mimeType: "image/jpeg", size: Int64(data.count))
     }
 
+    static func captureLogSnapshot(
+        jobRoot: URL,
+        chromiumSystemLogs: FeedbackOutboxSourceAttachment?,
+        previousSessionCrashLog: FeedbackOutboxSourceAttachment? = nil,
+        phiLogsURL: URL,
+        sentinelLogsURL: URL,
+        sentinelServiceLogsURL: URL?
+    ) throws -> FeedbackLogSnapshot {
+        var primaryItems = try collectPrimaryLogArchiveItems(
+            jobRoot: jobRoot, chromiumSystemLogs: chromiumSystemLogs, phiLogsURL: phiLogsURL
+        )
+        if let previousSessionCrashLog {
+            let url = jobRoot.appendingPathComponent(previousSessionCrashLog.relativePath)
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            primaryItems.insert(ArchiveItem(
+                sourceURL: url, inlineData: nil, offset: 0, length: UInt64(size),
+                archivePath: "PreviousSessionCrash/logs.txt"
+            ), at: 0)
+        }
+        let primary = try primaryItems.map { item -> FeedbackLogSnapshot.File in
+            // The previous-session crash snapshot is already bounded and immutable.
+            let length = item.archivePath == "PreviousSessionCrash/logs.txt"
+                ? item.length : min(item.length, UInt64(FeedbackSentinelLogCollector.perStreamBytes))
+            let offset = item.offset + item.length - length
+            let relativePath = "logs/primary/\(item.archivePath)"
+            let destination = jobRoot.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try writeArchiveItem(ArchiveItem(
+                sourceURL: item.sourceURL, inlineData: item.inlineData.map { Data($0.suffix(Int(length))) },
+                offset: offset, length: length, archivePath: item.archivePath
+            ), to: destination)
+            let collectedBytes = fileSize(destination)
+            return .init(
+                archivePath: item.archivePath, relativePath: relativePath, originalBytes: Int64(item.length),
+                offset: Int64(offset), collectedBytes: collectedBytes,
+                truncated: collectedBytes < item.length, status: collectedBytes == 0 ? "empty" : "collected"
+            )
+        }
+        let sentinel = try FeedbackSentinelLogCollector.collect(
+            mainLogsURL: sentinelLogsURL, serviceLogsURL: sentinelServiceLogsURL, jobRoot: jobRoot
+        )
+        return FeedbackLogSnapshot(primary: primary, sentinel: sentinel)
+    }
+
+    /// Legacy jobs can use only their saved sources. They must not acquire logs
+    /// from the session in which an older queued report happens to be retried.
+    private static func legacyLogSnapshot(_ manifest: FeedbackOutboxManifest) -> FeedbackLogSnapshot {
+        var primary: [FeedbackLogSnapshot.File] = []
+        for (source, archivePath) in [
+            (manifest.chromiumSystemLogs, "system_logs.txt"),
+            (manifest.previousSessionCrashLog, "PreviousSessionCrash/logs.txt")
+        ] {
+            if let source {
+                primary.append(.init(
+                    archivePath: archivePath, relativePath: source.relativePath, originalBytes: source.size,
+                    collectedBytes: source.size, status: "legacy_saved_source"
+                ))
+            }
+        }
+        return FeedbackLogSnapshot(primary: primary, sentinel: [])
+    }
+
     static func prepareLogZipAttachments(
         jobRoot: URL,
         preparedDir: URL,
@@ -577,48 +666,105 @@ enum FeedbackOutbox {
         previousSessionCrashLog: FeedbackOutboxSourceAttachment? = nil,
         phiLogsURL: URL = URL(fileURLWithPath: FileSystemUtils.phiBrowserDataDirectory(), isDirectory: true)
             .appendingPathComponent("PhiLogs", isDirectory: true),
-        sentinelLogsURL: URL = SentinelHelper.sentinelLogsDirectoryURL()
+        sentinelLogsURL: URL = SentinelHelper.sentinelLogsDirectoryURL(),
+        sentinelServiceLogsURL: URL? = nil,
+        snapshot: FeedbackLogSnapshot? = nil
     ) throws -> [FeedbackOutboxUploadAttachment] {
-        var primaryItems = try collectPrimaryLogArchiveItems(
-            jobRoot: jobRoot,
-            chromiumSystemLogs: chromiumSystemLogs,
-            phiLogsURL: phiLogsURL
+        let snapshot = try snapshot ?? captureLogSnapshot(
+            jobRoot: jobRoot, chromiumSystemLogs: chromiumSystemLogs,
+            previousSessionCrashLog: previousSessionCrashLog, phiLogsURL: phiLogsURL,
+            sentinelLogsURL: sentinelLogsURL, sentinelServiceLogsURL: sentinelServiceLogsURL
         )
-        if let previousSessionCrashLog {
-            let url = jobRoot.appendingPathComponent(previousSessionCrashLog.relativePath)
-            // A queued crash snapshot must survive retries; never silently replace
-            // a missing snapshot with the next session's logs.
-            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            primaryItems.insert(ArchiveItem(
-                sourceURL: url,
-                inlineData: nil,
-                offset: 0,
-                length: UInt64(size),
-                archivePath: "PreviousSessionCrash/logs.txt"
-            ), at: 0)
-        }
-        let sentinelItems = try collectLatestLogArchiveItems(
-            root: sentinelLogsURL,
-            archiveRoot: "SentinelLogs",
-            matchingFilenamePrefixes: sentinelLogFilenamePrefixes
-        )
-
         var attachments: [FeedbackOutboxUploadAttachment] = []
-        if let primaryAttachment = try makeLogZipAttachment(
-            items: primaryItems,
-            preparedDir: preparedDir,
-            filename: primaryLogsZipFilename
-        ) {
-            attachments.append(primaryAttachment)
+        if !snapshot.primary.isEmpty {
+            var primary = try snapshotArchiveItems(snapshot.primary, jobRoot: jobRoot)
+            primary.append(try collectionManifestItem(snapshot.primary))
+            if let attachment = try makeLogZipAttachment(items: primary, preparedDir: preparedDir, filename: primaryLogsZipFilename) {
+                attachments.append(attachment)
+            }
         }
-        if let sentinelAttachment = try makeLogZipAttachment(
-            items: sentinelItems,
-            preparedDir: preparedDir,
-            filename: sentinelLogsZipFilename
-        ) {
-            attachments.append(sentinelAttachment)
+        if !snapshot.sentinel.isEmpty {
+            attachments += try prepareSentinelZipAttachments(snapshot.sentinel, jobRoot: jobRoot, preparedDir: preparedDir)
         }
         return attachments
+    }
+
+    private static func snapshotArchiveItems(
+        _ records: [FeedbackLogSnapshot.File], jobRoot: URL
+    ) throws -> [ArchiveItem] {
+        try records.compactMap { record in
+            guard let path = record.relativePath else { return nil }
+            let url = jobRoot.appendingPathComponent(path)
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size == record.collectedBytes else { throw FeedbackOutboxError.invalidManifest }
+            return ArchiveItem(
+                sourceURL: url, inlineData: nil, offset: 0, length: UInt64(size), archivePath: record.archivePath
+            )
+        }
+    }
+
+    private static func collectionManifestItem(_ records: [FeedbackLogSnapshot.File]) throws -> ArchiveItem {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(records)
+        return ArchiveItem(sourceURL: nil, inlineData: data, offset: 0, length: UInt64(data.count), archivePath: "collection-manifest.json")
+    }
+
+    private static func prepareSentinelZipAttachments(
+        _ records: [FeedbackLogSnapshot.File], jobRoot: URL, preparedDir: URL
+    ) throws -> [FeedbackOutboxUploadAttachment] {
+        let originalItems = try snapshotArchiveItems(records, jobRoot: jobRoot)
+        if let single = try makeLogZipAttachment(
+            items: originalItems + [collectionManifestItem(records)], preparedDir: preparedDir, filename: sentinelLogsZipFilename
+        ) {
+            return [single]
+        }
+        // Balance by bytes rather than service count. Keep each stream intact,
+        // including its service directory, in one independently readable ZIP.
+        for divisor in [1, 2, 4] {
+            var packagedRecords = records
+            let items = originalItems.map { item -> ArchiveItem in
+                let length = item.length / UInt64(divisor)
+                if let index = packagedRecords.firstIndex(where: { $0.archivePath == item.archivePath }) {
+                    packagedRecords[index].offset += Int64(item.length - length)
+                    packagedRecords[index].collectedBytes = Int64(length)
+                    packagedRecords[index].truncated = packagedRecords[index].truncated || length < item.length
+                }
+                return ArchiveItem(
+                    sourceURL: item.sourceURL, inlineData: item.inlineData,
+                    offset: item.length - length, length: length, archivePath: item.archivePath
+                )
+            }
+            let report = try collectionManifestItem(packagedRecords)
+            for bucketCount in 2...maxSentinelAttachments {
+                var buckets = [[ArchiveItem]](repeating: [], count: bucketCount)
+                var sizes = [UInt64](repeating: 0, count: bucketCount)
+                for item in items.sorted(by: { $0.length == $1.length ? $0.archivePath < $1.archivePath : $0.length > $1.length }) {
+                    let index = sizes.indices.min(by: { sizes[$0] == sizes[$1] ? $0 < $1 : sizes[$0] < sizes[$1] })!
+                    buckets[index].append(item)
+                    sizes[index] += item.length
+                }
+                var attachments: [FeedbackOutboxUploadAttachment] = []
+                var oversized = false
+                for (index, bucket) in buckets.enumerated() where !bucket.isEmpty {
+                    if let attachment = try makeLogZipAttachment(
+                        items: bucket + [report], preparedDir: preparedDir, filename: "sentinel-logs-\(index + 1).zip"
+                    ) {
+                        attachments.append(attachment)
+                    } else {
+                        oversized = true
+                    }
+                }
+                if !oversized || (divisor == 4 && bucketCount == maxSentinelAttachments) {
+                    return attachments
+                }
+                for attachment in attachments {
+                    try? FileManager.default.removeItem(at: jobRoot.appendingPathComponent(attachment.relativePath))
+                }
+            }
+        }
+        return []
     }
 
     private static func collectPrimaryLogArchiveItems(
@@ -653,7 +799,7 @@ enum FeedbackOutbox {
         let size = fileSize(destination)
         guard size <= maxAttachmentBytes else {
             try? FileManager.default.removeItem(at: destination)
-            AppLogWarn("Feedback V2 log zip skipped because it exceeds 20 MB: \(filename) size=\(size)")
+            AppLogDebug("Feedback V2 log zip needs repacking because it exceeds 20 MiB: \(filename) size=\(size)")
             return nil
         }
 
@@ -677,44 +823,29 @@ enum FeedbackOutbox {
         sources: [FeedbackOutboxSourceAttachment],
         availableSlots: Int
     ) throws -> [FeedbackOutboxUploadAttachment] {
+        guard !sources.isEmpty else { return [] }
         guard availableSlots > 0 else {
-            if !sources.isEmpty {
-                AppLogWarn("Feedback V2 optional file attachments skipped because no submit slots are available")
-            }
+            AppLogWarn("Feedback V2 files skipped because no submit slots are available")
             return []
         }
-
         let attachments = try prepareUserFileZipAttachments(
-            jobRoot: jobRoot,
-            preparedDir: preparedDir,
-            sources: sources,
-            forceSingleArchive: true
+            jobRoot: jobRoot, preparedDir: preparedDir, sources: sources, forceSingleArchive: true
         )
-        return trimPreparedAttachments(
-            attachments,
-            to: availableSlots,
-            jobRoot: jobRoot,
-            context: "optional file zip"
-        )
+        return trimPreparedAttachments(attachments, to: availableSlots, jobRoot: jobRoot)
     }
 
     private static func trimPreparedAttachments(
         _ attachments: [FeedbackOutboxUploadAttachment],
         to limit: Int,
-        jobRoot: URL,
-        context: String
+        jobRoot: URL
     ) -> [FeedbackOutboxUploadAttachment] {
-        guard attachments.count > limit else {
-            return attachments
-        }
-
-        let kept = Array(attachments.prefix(max(limit, 0)))
-        let skipped = Array(attachments.dropFirst(max(limit, 0)))
-        for attachment in skipped {
+        let limit = max(limit, 0)
+        guard attachments.count > limit else { return attachments }
+        for attachment in attachments.dropFirst(limit) {
             try? FileManager.default.removeItem(at: jobRoot.appendingPathComponent(attachment.relativePath))
         }
-        AppLogWarn("Feedback V2 \(context) attachments trimmed to satisfy submit limit: kept=\(kept.count) total=\(attachments.count)")
-        return kept
+        AppLogWarn("Feedback V2 attachments trimmed to satisfy submit budget: kept=\(limit) total=\(attachments.count)")
+        return Array(attachments.prefix(limit))
     }
 
     static func prepareUserFileZipAttachments(
@@ -725,7 +856,7 @@ enum FeedbackOutbox {
     ) throws -> [FeedbackOutboxUploadAttachment] {
         let items: [ArchiveItem] = sources.compactMap { source in
             guard source.size <= maxAttachmentBytes else {
-                AppLogWarn("Feedback V2 optional file skipped because it exceeds 20 MB: \(source.filename)")
+                AppLogWarn("Feedback V2 file skipped because it exceeds 20 MiB: \(source.filename)")
                 return nil
             }
             return ArchiveItem(
@@ -747,7 +878,7 @@ enum FeedbackOutbox {
             singleFilename: forceSingleArchive ? "others.zip" : nil,
             numberedPrefix: forceSingleArchive ? "others" : "feedback-files",
             attachmentType: .other,
-            required: false,
+            required: true,
             preferSingleArchiveWhenPossible: forceSingleArchive
         )
     }
@@ -756,15 +887,11 @@ enum FeedbackOutbox {
         required: [FeedbackOutboxUploadAttachment],
         optional: [FeedbackOutboxUploadAttachment]
     ) throws -> [FeedbackOutboxUploadAttachment] {
-        guard required.count <= maxSubmitAttachments else {
-            throw FeedbackOutboxError.zipCreationFailed("Required feedback attachments exceed the five attachment submit limit.")
+        let attachments = required + optional
+        if attachments.count > maxSubmitAttachments {
+            AppLogWarn("Feedback V2 attachments trimmed to satisfy submit limit: total=\(attachments.count)")
         }
-
-        let remainingSlots = maxSubmitAttachments - required.count
-        if optional.count > remainingSlots {
-            AppLogWarn("Feedback V2 optional attachments trimmed to satisfy submit limit: kept=\(remainingSlots) total=\(optional.count)")
-        }
-        return required + Array(optional.prefix(remainingSlots))
+        return Array(attachments.prefix(maxSubmitAttachments))
     }
 
     static func chromiumSystemLogsArchiveItem(sourceURL: URL) -> ArchiveItem {
@@ -779,8 +906,7 @@ enum FeedbackOutbox {
 
     private static func collectLatestLogArchiveItems(
         root: URL,
-        archiveRoot: String,
-        matchingFilenamePrefixes: [String]? = nil
+        archiveRoot: String
     ) throws -> [ArchiveItem] {
         let candidates = try collectLogArchiveCandidates(
             root: root,
@@ -791,29 +917,6 @@ enum FeedbackOutbox {
         case .missing(let item), .empty(let item):
             return [item]
         case .files(let files):
-            if let matchingFilenamePrefixes {
-                let latestFiles = matchingFilenamePrefixes.compactMap { prefix in
-                    latestLogArchiveCandidate(
-                        in: files.filter { logFilename($0.filename, matches: prefix) }
-                    )
-                }
-
-                guard !latestFiles.isEmpty else {
-                    let message = "\(archiveRoot) did not contain boot.log, runner.log, or ai-gateway.log at feedback submission time.\n"
-                    return [ArchiveItem(
-                        sourceURL: nil,
-                        inlineData: Data(message.utf8),
-                        offset: 0,
-                        length: UInt64(message.utf8.count),
-                        archivePath: "\(archiveRoot)/empty.txt"
-                    )]
-                }
-
-                return latestFiles
-                    .sorted { $0.archivePath.localizedStandardCompare($1.archivePath) == .orderedAscending }
-                    .map(\.archiveItem)
-            }
-
             guard let latest = latestLogArchiveCandidate(in: files) else {
                 let message = "\(archiveRoot) directory was empty at feedback submission time.\n"
                 return [ArchiveItem(
@@ -894,10 +997,6 @@ enum FeedbackOutbox {
             }
             return $0.archivePath.localizedStandardCompare($1.archivePath) == .orderedAscending
         }.first
-    }
-
-    private static func logFilename(_ filename: String, matches prefix: String) -> Bool {
-        filename == prefix || filename.hasPrefix("\(prefix).")
     }
 
     static func collectLogArchiveItems(root: URL, archiveRoot: String) throws -> [ArchiveItem] {
@@ -1110,11 +1209,6 @@ enum FeedbackOutbox {
         }
 
         guard let sourceURL = item.sourceURL else {
-            return
-        }
-
-        if item.offset == 0, item.length == UInt64(fileSize(sourceURL)) {
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
             return
         }
 
@@ -1433,7 +1527,7 @@ final class FeedbackOutboxUploader {
             }
 
             do {
-                if manifest.archiveStrategyVersion != FeedbackOutbox.archiveStrategyVersion {
+                if manifest.logSnapshot != nil, manifest.archiveStrategyVersion != FeedbackOutbox.archiveStrategyVersion {
                     AppLogInfo("Feedback V2 archive strategy changed; preparing job again: \(manifest.id)")
                     FeedbackOutbox.removePreparedDirectory(jobRoot: jobRoot)
                     manifest.preparedAttachments = []
@@ -1537,7 +1631,7 @@ final class FeedbackOutboxUploader {
         userID: String,
         requiredBatch: Bool
     ) async throws {
-        for batch in indices.chunked(into: 5) {
+        for batch in indices.chunked(into: FeedbackV2Limits.attachmentCount) {
             guard await isCurrentAccount(userID) else {
                 throw FeedbackOutboxError.requiredAttachmentUploadFailed("account changed")
             }
@@ -1689,6 +1783,7 @@ struct FeedbackOutboxManifest: Codable {
     var retryCount: Int
     var nextAttemptAt: Date?
     var lastError: String?
+    var logSnapshot: FeedbackLogSnapshot? = nil
 }
 
 struct FeedbackOutboxSourceAttachment: Codable {

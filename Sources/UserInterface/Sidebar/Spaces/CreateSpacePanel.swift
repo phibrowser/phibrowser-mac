@@ -24,6 +24,14 @@ struct CreateSpacePanel: View {
         case sidebar
         /// Embedded Library card; creation keeps the management surface visible.
         case library
+
+        var analyticsSurface: String {
+            switch self {
+            case .window: return "standalone_window"
+            case .sidebar: return "sidebar"
+            case .library: return "library"
+            }
+        }
     }
 
     var style: Style = .window
@@ -496,6 +504,7 @@ struct CreateSpacePanel: View {
             PostHogSDK.shared.capture("space_created", properties: [
                 "total_spaces": manager.spaces.count,
                 "non_default_profile": profileId != LocalStore.defaultProfileId,
+                "surface": style.analyticsSurface,
             ])
             FirstTimeActionTracker.capture(.spaceCreated)
         }

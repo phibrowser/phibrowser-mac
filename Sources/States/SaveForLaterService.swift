@@ -1076,6 +1076,26 @@ enum SaveForLaterService {
 
     private struct VideoGistPayload: Decodable { let url: String }
 
+    /// Whether a video save may ask for its article. The article is Phi AI,
+    /// so it needs a signed-in user with Phi AI turned on; without either,
+    /// Mirage keeps a video as its link and webpage copy and does not offer
+    /// the YouTube import.
+    static var videoArticlesAvailable: Bool {
+        PhiPreferences.AISettings.phiAIEnabled.loadValue()
+            && ApplicationState.shared.isAuthenticated
+    }
+
+    /// `saveForLater.videoArticles`: asked at the start of every video save
+    /// and when the import sheet opens, so a sign-out between saves is seen
+    /// by the next one.
+    nonisolated static func handleVideoArticles(
+        _ context: ExtensionMessageContext) -> String? {
+        guard libraryGate(context) else { return "{\"available\":false}" }
+        return MainActor.assumeIsolated {
+            "{\"available\":\(videoArticlesAvailable)}"
+        }
+    }
+
     /// `saveForLater.videoGist`: the app still owns the authenticated call
     /// to phi-agent, so Mirage asks for the article rather than carrying
     /// credentials. Moving this is a later phase.
@@ -1087,8 +1107,7 @@ enum SaveForLaterService {
             return
         }
         Task { @MainActor in
-            guard PhiPreferences.AISettings.phiAIEnabled.loadValue(),
-                  ApplicationState.shared.isAuthenticated else {
+            guard videoArticlesAvailable else {
                 libraryReply("{\"error\":\"unavailable\"}",
                              requestId: context.requestId)
                 return

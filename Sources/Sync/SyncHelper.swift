@@ -27,6 +27,8 @@ final class SyncHelper {
         let previousSuccesses: [String: Date]
     }
 
+    private enum CoordinationFailure { case timedOut, requestRejected, persistence }
+
     private let isEligible: () -> Bool
     private let participants: () -> [Participant]
     private let saveSuccess: (Date) -> Bool
@@ -38,7 +40,8 @@ final class SyncHelper {
     private var lastSuccess: Date?
     private var observedIDs: Set<String>?
     private var needsRound = true
-    private var coordinationFailed = false
+    private var explicitRefreshPending = false
+    private var coordinationFailure: CoordinationFailure?
     private var nextRequestAt: Date?
     private var round: Round?
     private var generation = UUID()
@@ -85,8 +88,10 @@ final class SyncHelper {
         round = nil
         observedIDs = nil
         needsRound = true
-        coordinationFailed = false
-        report = Report(summary: SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess))
+        explicitRefreshPending = false
+        updateTransientFailure(nil)
+        report = Report(summary: SyncStatusSummary(
+            phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess))
     }
 
     func start() {
@@ -104,7 +109,7 @@ final class SyncHelper {
     /// request a round, coalesced with in-flight work and the same minimum interval.
     func refresh(requestSync: Bool = false) async {
         guard !retired else { return }
-        if requestSync && round == nil { needsRound = true }
+        if requestSync && round == nil { explicitRefreshPending = true }
         if let refreshTask { await refreshTask.value; return }
         let expected = generation
         let pending = Task<Void, Never> { [weak self] in
@@ -128,8 +133,16 @@ final class SyncHelper {
         round = nil
         observedIDs = nil
         needsRound = true
-        coordinationFailed = false
+        explicitRefreshPending = false
+        coordinationFailure = nil
         report = Report()
+    }
+
+    private func updateTransientFailure(_ failure: CoordinationFailure?) {
+        // Neither new observations nor request acceptance prove a failed local
+        // write recovered. Keep it until a successful save or lifecycle reset.
+        guard coordinationFailure != .persistence else { return }
+        coordinationFailure = failure
     }
 
     private func observe(generation expected: UUID) async {
@@ -143,7 +156,7 @@ final class SyncHelper {
             observedIDs = ids
             round = nil
             needsRound = true
-            coordinationFailed = false
+            updateTransientFailure(nil)
         }
         var snapshots: [String: SyncContextSnapshot] = [:]
         for source in sources {
@@ -160,7 +173,8 @@ final class SyncHelper {
         report.requiredIDs = ids
         report.snapshots = snapshots
         guard !ids.isEmpty else {
-            report.summary = SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess)
+            report.summary = SyncStatusSummary(
+                phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess)
             return
         }
         let observed = SyncStatusSummary.reduce(paired: true, requiredIDs: ids, snapshots: Array(snapshots.values))
@@ -170,7 +184,10 @@ final class SyncHelper {
             if time.timeIntervalSince(round.startedAt) >= roundTimeout {
                 self.round = nil
                 needsRound = true
-                coordinationFailed = true
+                // Expiry invalidates the barrier, not an engine's healthy progress
+                // or a lazy Profile's lack of visibility. Only claimed success
+                // without fresh evidence is a coordination timeout error.
+                updateTransientFailure(observed.phase == .upToDate ? .timedOut : nil)
                 nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             } else if observed.phase == .upToDate, ids.allSatisfy({ id in
                 guard let success = successes[id], success >= round.startedAt else { return false }
@@ -179,38 +196,52 @@ final class SyncHelper {
                 if saveSuccess(time) {
                     lastSuccess = time
                     self.round = nil
-                    coordinationFailed = false
+                    coordinationFailure = nil
                 } else {
-                    coordinationFailed = true
+                    coordinationFailure = .persistence
                 }
             }
         }
         // Commit-only cycles, late replies and ordinary pending work are observations,
         // never demand. The engines' own schedulers handle local/remote changes.
         let failed = observed.phase == .offline || observed.phase == .needsAttention
-        let stale = ids.contains { id in
-            successes[id].map { time.timeIntervalSince($0) >= staleInterval } ?? true
+        let stale = snapshots.values.contains { snapshot in
+            snapshot.phase == .upToDate
+                && (snapshot.lastSuccess.map { time.timeIntervalSince($0) >= staleInterval } ?? false)
         }
-        if round == nil, needsRound || failed || stale,
+        // A missing/Checking Profile may be deliberately unloaded. Busy engines
+        // already own their work. Neither can benefit from an all-context forced
+        // round; retain demand until every participant is observable and settled.
+        let canRequest = ids.allSatisfy { id in
+            guard let snapshot = snapshots[id] else { return false }
+            switch snapshot.phase {
+            case .upToDate: return snapshot.lastSuccess != nil
+            case .offline, .needsAttention: return true
+            case .checking, .initialSync, .syncing: return false
+            }
+        }
+        if round == nil, canRequest, needsRound || explicitRefreshPending || failed || stale,
            nextRequestAt.map({ time >= $0 }) ?? true {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
+            explicitRefreshPending = false
             let accepted = sources.allSatisfy { $0.requestSync() }
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             if accepted {
                 round = Round(startedAt: time, previousSuccesses: successes)
                 needsRound = false
-                coordinationFailed = false
+                updateTransientFailure(nil)
             } else {
                 needsRound = true
-                coordinationFailed = true
+                updateTransientFailure(.requestRejected)
             }
         }
         let phase: SyncSummaryPhase
         if failed { phase = observed.phase }
-        else if coordinationFailed { phase = .needsAttention }
+        else if let failure = coordinationFailure,
+                failure != .timedOut || observed.phase == .upToDate { phase = .needsAttention }
         else if round != nil && observed.phase == .upToDate { phase = .syncing }
-        else if needsRound { phase = .checking }
+        else if needsRound && observed.phase == .upToDate { phase = .checking }
         else { phase = observed.phase }
         report.summary = SyncStatusSummary(phase: phase, lastSuccess: lastSuccess)
     }

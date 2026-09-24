@@ -50,6 +50,8 @@ import Foundation
 
 @main struct HelperTests {
     @MainActor static func main() async {
+        await waitingStatesRemainObservational()
+        await persistenceFailureSurvivesWaitingAndRetries()
         await completionBarrier()
         await lateSuccessAndBrowsingDoNotRequestRounds()
         await explicitRefreshIsRateLimited()
@@ -57,6 +59,136 @@ import Foundation
         await rejectedRequestsDoNotCreateRounds()
         await membershipAndUpstream()
         await delayedObservations()
+    }
+
+    @MainActor static func waitingStatesRemainObservational() async {
+        var failures: [String] = []
+        func expect(_ condition: Bool, _ message: String) {
+            if !condition { failures.append(message) }
+        }
+        // Nil reads and the adapter's nil-payload decoding both describe a
+        // Profile that can remain unloaded for an entire browsing session.
+        for decodedChecking in [false, true] {
+            let f = Fixture()
+            f.saved = Date(timeIntervalSince1970: 50)
+            f.status("phi", .upToDate, at: 90)
+            if decodedChecking { f.status("profile", .checking) }
+            let helper = f.helper()
+            for second in stride(from: 100, through: 1000, by: 60) {
+                f.tick(Double(second))
+                await helper.refresh()
+            }
+            expect(helper.report.summary.phase == .checking && f.requests.isEmpty && f.saves == 0,
+                   "Unobservable Profiles must remain Checking without catch-up traffic, even when other evidence ages")
+            expect(helper.report.summary.lastSuccess == Date(timeIntervalSince1970: 50),
+                   "An unloaded Profile must preserve the historical common time")
+            f.succeed(at: 1001)
+            await helper.refresh()
+            expect(f.requests["phi"] == 1 && f.saves == 0,
+                   "A newly observable Profile must establish a fresh barrier before advancing common time")
+            f.succeed(at: 1004)
+            await helper.refresh()
+            expect(f.saved == f.time && helper.report.summary.phase == .upToDate,
+                   "Loading the Profile must allow one complete coordinated round")
+            helper.stop()
+        }
+        // Losing a previously observable Profile during a requested round must
+        // not turn the timeout into an error/retry loop either.
+        let missing = Fixture(), missingHelper = await missing.completedHelper()
+        missing.tick(160)
+        await missingHelper.refresh(requestSync: true)
+        missing.status("profile", .checking)
+        for second in stride(from: 220, through: 1000, by: 60) {
+            missing.tick(Double(second))
+            await missingHelper.refresh()
+        }
+        expect(missingHelper.report.summary.phase == .checking && missing.requests["phi"] == 2,
+               "A round losing status visibility must expire to Checking without periodic forced retries")
+        expect(missing.saved == Date(timeIntervalSince1970: 103), "Incomplete visibility cannot advance common time")
+        missingHelper.stop()
+
+        for phase in [SyncContextPhase.initialSync, .syncing] {
+            let f = Fixture(), helper = await f.completedHelper()
+            f.tick(160)
+            await helper.refresh(requestSync: true)
+            f.status("profile", phase) // Healthy work, but no completed evidence yet.
+            for second in stride(from: 220, through: 1000, by: 60) {
+                f.tick(Double(second))
+                await helper.refresh()
+                expect(helper.report.summary.phase.rawValue == phase.rawValue,
+                       "A healthy \(phase.rawValue) must survive the deadline without synthetic Checking or Needs attention")
+            }
+            expect(f.requests["phi"] == 2 && f.saved == Date(timeIntervalSince1970: 103),
+                   "Long-running work must not cause forced rounds or a false common success")
+            f.succeed(at: 1001)
+            await helper.refresh()
+            expect(f.requests["phi"] == 3, "Once work settles, deferred coordination can run once")
+            f.succeed(at: 1004)
+            await helper.refresh()
+            expect(f.saved == f.time && helper.report.summary.phase == .upToDate,
+                   "A slow but healthy engine must converge after it settles")
+            helper.stop()
+        }
+        let reopened = Fixture(), reopenedHelper = await reopened.completedHelper()
+        for second in [110, 130, 159] {
+            reopened.tick(Double(second))
+            await reopenedHelper.refresh(requestSync: true)
+            expect(reopenedHelper.report.summary.phase == .upToDate
+                   && reopenedHelper.report.summary.lastSuccess == Date(timeIntervalSince1970: 103),
+                   "A throttled pane reload must preserve Up to date and its common time")
+        }
+        expect(reopened.requests["phi"] == 1, "Repeated pane opens must coalesce while throttled")
+        reopened.tick(160)
+        await reopenedHelper.refresh()
+        expect(reopened.requests["phi"] == 2 && reopenedHelper.report.summary.phase == .syncing,
+               "A queued explicit request may change status only when dispatched")
+        reopenedHelper.stop()
+        precondition(failures.isEmpty, failures.joined(separator: "\n"))
+        print("PASS helper: lazy Profiles, long-running healthy work and throttled pane reloads remain observational")
+    }
+
+    @MainActor static func persistenceFailureSurvivesWaitingAndRetries() async {
+        for phase in [SyncContextPhase.checking, .initialSync, .syncing] {
+            let f = Fixture()
+            f.saved = Date(timeIntervalSince1970: 50)
+            let helper = f.helper()
+            f.status("phi", .upToDate, at: 90); f.status("profile", .upToDate, at: 80)
+            await helper.refresh()
+            f.canSave = false; f.succeed(at: 103)
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .needsAttention)
+            f.tick(160); f.status("profile", phase)
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .needsAttention,
+                         "Round expiry must not erase a genuine persistence failure")
+            f.tick(170); f.ids.append("second"); f.status("second", .upToDate, at: 100)
+            helper.membershipDidChange()
+            precondition(helper.report.summary.phase == .needsAttention,
+                         "Membership invalidation must retain a same-account storage error")
+            await helper.refresh()
+            precondition(f.requests["phi"] == 1 && helper.report.summary.phase == .needsAttention)
+            f.tick(171); f.ids = []
+            helper.membershipDidChange()
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .needsAttention,
+                         "Empty membership cannot mask an unresolved local write failure")
+            f.ids = ["phi", "profile", "second"]
+            helper.membershipDidChange()
+            f.succeed(at: 220); f.acceptsRequests = false
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .needsAttention && f.requests["phi"] == 2)
+            f.tick(280); f.acceptsRequests = true
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .needsAttention && f.requests["phi"] == 3,
+                         "Rejecting then accepting a retry cannot prove the storage error recovered")
+            precondition(f.saved == Date(timeIntervalSince1970: 50))
+            f.canSave = true; f.succeed(at: 283)
+            await helper.refresh()
+            precondition(helper.report.summary.phase == .upToDate && f.saved == f.time,
+                         "Only a successful common-time write clears the storage error")
+            helper.stop()
+        }
+        print("PASS helper: persistence failures survive timeout, membership and retries until a successful write")
     }
 
     @MainActor static func completionBarrier() async {
@@ -140,7 +272,13 @@ import Foundation
         await helper.refresh()
         precondition(helper.report.summary.phase == .needsAttention && f.saved == Date(timeIntervalSince1970: 165),
                      "A missing completion must expire instead of leaving Syncing forever")
-        f.succeed(at: 527)
+        f.tick(527); f.status("profile", .checking)
+        await helper.refresh()
+        precondition(helper.report.summary.phase == .checking, "A previous timeout must not override unavailable status")
+        f.tick(528); f.status("profile", .syncing)
+        await helper.refresh()
+        precondition(helper.report.summary.phase == .syncing, "A previous timeout must not override later healthy work")
+        f.succeed(at: 529)
         await helper.refresh()
         precondition(f.requests["phi"] == 3 && f.saved == Date(timeIntervalSince1970: 165),
                      "Late evidence after a timeout cannot finish the expired round or bypass retry delay")
@@ -177,6 +315,7 @@ import Foundation
     @MainActor static func membershipAndUpstream() async {
         let f = Fixture(), helper = await f.completedHelper()
         f.tick(110); f.ids.append("second")
+        f.status("second", .upToDate, at: 100)
         helper.membershipDidChange()
         await helper.refresh()
         precondition(f.requests["phi"] == 1, "Membership changes must not bypass the request interval")
@@ -186,6 +325,7 @@ import Foundation
         f.succeed(at: 164)
         await helper.refresh()
         helper.registerUpstream(f.participant("sentinel"))
+        f.status("sentinel", .upToDate, at: 100)
         f.tick(220)
         await helper.refresh()
         precondition(helper.report.requiredIDs.contains("sentinel") && f.requests["sentinel"] == 1)

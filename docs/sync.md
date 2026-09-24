@@ -139,21 +139,34 @@ Observation reads the cached user Profile list once and never calls
 invalidates outstanding observations when membership changes.
 
 Only startup, membership changes, an explicit pane reload, failed status, or
-missing/stale success evidence (five minutes) may request a coordinated round.
+known stale success evidence (five minutes) may request a coordinated round.
 All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. Ordinary pending work, commit-only cycles, native remote
+with an active round. A queued explicit reload preserves the observed phase and
+last common time until dispatch; it does not invalidate a completed barrier.
+Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
 existing local-change and invalidation schedulers continue to own normal work.
 A requested round pulls native data and refreshes all Profile namespaces through
 the existing account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID
 and type list empty; a nonempty UUID with empty types is a no-op).
 
+All required participants remain in the barrier, including lazy Profiles that
+have not been loaded. Missing reads and Checking snapshots are unobservable, not
+stale evidence. While any participant is unobservable or reports Initial sync or
+Syncing, the helper only observes and defers new requests, including queued pane
+reloads. Even another context's aging success cannot force a round in that state.
+It never loads Profiles for status. Once every context is observable and settled,
+retained startup/membership/expired-round demand can establish a fresh barrier.
+
 The helper starts a round only after all adapters accept their requests locally;
 pairing, keys, account identity and bridge support gate dispatch. An accepted
 request may still be dropped inside Chromium. A round expires after 60 seconds
-at the next bounded observation, retains the previous common time, and reports
-Needs attention (or the engine's Offline/error state). Retry waits at least
-another 60 seconds. Rejected requests have the same rate limit and cannot be
+at the next bounded observation and retains the previous common time. Expiry
+reports Needs attention only when all engines claim Up to date without fresh
+completion evidence. Checking, Initial sync and Syncing remain their observed
+states, and real engine failures retain their existing error state. A previous
+timeout never overrides later missing status or healthy work. Retry waits at least
+another 60 seconds and until every context is observable and settled. Rejected requests have the same rate limit and cannot be
 completed by unrelated success samples. Rebuilding the stack stops the old helper.
 
 Only when every required context is Up to date with a success newer than its
@@ -166,9 +179,14 @@ Profile observations use Chromium's existing pending-work fence; they are separa
 observations, not an atomic multi-Profile transaction or request-ID acknowledgements.
 Late evidence cannot complete an expired round or itself create more demand. A partial
 failure or pending work retains the previous common time; failed persistence
-reports Needs attention and cannot advance it. Missing contexts, an empty Profile
+reports Needs attention and cannot advance it. A real persistence failure remains
+through timeout, membership changes and request retries until a successful write
+or a sync lifecycle reset; ordinary missing/busy observations cannot erase it.
+Missing contexts, an empty Profile
 enumeration, unsupported selectors and malformed payloads never prove completion.
-Their observed state is Checking; a rejected or expired request reports Needs attention.
+Their observed state remains Checking, including after round expiry; they never
+cause automatic catch-up retries. An actual dispatch or persistence failure
+remains distinct from an observation timeout.
 Unpaired means Not started. Account retirement fences late callbacks; explicit
 removal/reconfiguration clears the account's common timestamp.
 
@@ -178,7 +196,8 @@ participant id, a status reader and a sync request callback; it immediately
 invalidates prior completion evidence. Until registered Sentinel is not required.
 This hook introduces no Sentinel data type, IPC transport, key ownership or remote
 API access in UI code. The future adapter must use this Mac coordination path and
-supply bounded status reads plus genuine completed-round evidence.
+supply bounded status reads plus genuine completed-round evidence. Adapters own
+their initialization and ordinary progress independently of helper requests.
 
 Native success requires a drained pull, accepted publication, successful cursor
 persistence, and no pending/quarantined input, output, or follow-up work. A conflict

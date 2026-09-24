@@ -1008,6 +1008,13 @@ final class PeekPanelController {
                 // active is the bound opener while the peek is up, so letting
                 // it reach Chromium's IDC_CLOSE_TAB would close the opener.
                 if event.keyCode == 53 {
+                    // Unless another child window of the browser window holds
+                    // key — the find bar Cmd-F opens over the peek does — whose
+                    // own Esc (end the find session) must win.
+                    guard event.window == nil || event.window === self.panel
+                            || event.window === self.parentWindow else {
+                        return event
+                    }
                     self.closeHostedPeek()
                     return nil
                 }
@@ -1045,6 +1052,13 @@ final class PeekPanelController {
                 // the user can switch tabs — the peek then hides with its
                 // opener instead of closing.
                 let location = NSEvent.mouseLocation
+                // A press in another child window floating over the pane —
+                // the find bar Cmd-F opens for the peek — is aimed at that
+                // window, not at the page around the peek.
+                if let window = event.window, window !== self.panel,
+                   window !== self.parentWindow {
+                    return event
+                }
                 // A press in the resize corridor is grabbing the window's
                 // resize handle, not clicking the page: it still flows
                 // through `sendEvent`, and the pane runs flush against the

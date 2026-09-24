@@ -187,10 +187,9 @@ extension SpaceSessionController {
             )
         }
 
-        // Hosted: the window's content view controller is the shell's split,
-        // shared by every Space; the overlay belongs to this session's own
-        // tree so it leaves with it on a Space switch.
-        let hostView = isHosted ? mainSplitViewController.view : contentViewController?.view
+        // Include the shell's sidebar in anchor positioning and background clicks.
+        // The session still owns the overlay and dismisses it in concealFromShell.
+        let hostView = isHosted ? shellSplit?.view : contentViewController?.view
         guard let contentView = hostView else {
             return
         }

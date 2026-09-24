@@ -2064,8 +2064,9 @@ final class SpaceManager: ObservableObject {
     /// through the prediction and, failing that, the snapshot's own window
     /// maps. A window neither can place is a real parked window with no Space
     /// to reach it from; it is reported and left where it is, because it
-    /// still lives in the session file and the next unfiltered restore hands
-    /// it back as an ordinary window, while dropping it would destroy those
+    /// still lives in the session file and the next cold start rebuilds it as
+    /// an ordinary window (the cold-start plan confines parking to the
+    /// windows the record can place), while dropping it would destroy those
     /// tabs for good.
     ///
     /// Must run BEFORE `endSessionRestoreTransaction`: that is the write
@@ -2096,7 +2097,7 @@ final class SpaceManager: ObservableObject {
             AppLogWarn("[SpaceManager] ghost receipt: dropped \(reconciliation.unparked.count) predicted ghost(s) chromium never parked \(reconciliation.unparked)")
         }
         if !reconciliation.unmapped.isEmpty {
-            AppLogError("[SpaceManager] ghost receipt: chromium parked \(reconciliation.unmapped.count) window(s) no Space maps to \(reconciliation.unmapped) — unreachable until the next full restore brings them back")
+            AppLogError("[SpaceManager] ghost receipt: chromium parked \(reconciliation.unmapped.count) window(s) no Space maps to \(reconciliation.unmapped) — unreachable until the next cold start rebuilds them as windows")
         }
         if receipt.eagerFilterMatchedNothing {
             AppLogError("[SpaceManager] ghost receipt: the eager set matched no saved window — every window parked and none came back")
@@ -2795,12 +2796,14 @@ final class SpaceManager: ObservableObject {
         /// Previous-session window ids the reopen replays immediately.
         ///
         /// Exhaustive only over windows the snapshot names. Chromium's replay
-        /// filter parks exactly the NORMAL saved windows missing from this
-        /// set and restores every other kind eagerly on its own — so a
-        /// popup or app window (never in a snapshot) is safe, while a normal
-        /// saved window absent from the snapshot would have no protection
-        /// here. Keeping ghost entries in the persisted snapshot
-        /// (`persistedWindowMap`) is what keeps that absence from arising.
+        /// filter parks the NORMAL saved windows missing from this set and
+        /// restores every other kind eagerly on its own — so a popup or app
+        /// window (never in a snapshot) is safe, while a normal saved window
+        /// absent from the snapshot parks with no Space to reach it from.
+        /// Keeping ghost entries in the persisted snapshot
+        /// (`persistedWindowMap`) is what keeps that absence from arising; the
+        /// cold start's ghost set (`ArmedRestorePlan.ghostWindowIds`) is what
+        /// hands such a window back when it arises anyway.
         let eagerWindowIds: Set<Int>
         /// Previous-session windowId → spaceId for every window the reopen
         /// parks in the session file instead. The value is the Space a later
@@ -3029,13 +3032,29 @@ final class SpaceManager: ObservableObject {
     struct ArmedRestorePlan: Equatable {
         let eagerWindowIds: [NSNumber]
         let closedGroupWindowIds: [NSNumber]
+        /// The windows the replay may park — every one this side can map
+        /// back to a Space — or nil for the reverse whitelist, where every
+        /// normal saved window outside the other two sets parks. Sent only
+        /// by the cold start (`coldStartClassifiedAnswer`): there, a window
+        /// in none of the three sets is one whose Space mapping this side
+        /// lost, and Chromium rebuilds it instead of parking it where
+        /// nothing can reach it. A reopen leaves it nil on purpose — its
+        /// eager set is also what keeps it to one window (R1), and it must
+        /// not start handing back windows the record cannot place.
+        var ghostWindowIds: [NSNumber]? = nil
 
         /// The wire encoding both plan channels send — the reopen selector's
         /// `restorePlan:` argument and the cold-start pull's answer. One
         /// place, pinned by table, so the two channels cannot drift apart on
-        /// key names Chromium parses by string.
+        /// key names Chromium parses by string. "ghost" is left out rather
+        /// than sent empty when nil: Chromium reads an empty array as "park
+        /// nothing".
         var wireDictionary: [String: [NSNumber]] {
-            ["eager": eagerWindowIds, "closedGroup": closedGroupWindowIds]
+            var wire = ["eager": eagerWindowIds, "closedGroup": closedGroupWindowIds]
+            if let ghostWindowIds {
+                wire["ghost"] = ghostWindowIds
+            }
+            return wire
         }
     }
 
@@ -3431,6 +3450,13 @@ final class SpaceManager: ObservableObject {
             mode: .everyOnScreenEntry)
         let closedGroupWindowIds = classification.closedGroupWindowIds
             .sorted().map { NSNumber(value: $0) }
+        // Confines parking to what this record can place: a saved window the
+        // classification names nowhere is one whose Space mapping was lost,
+        // and parked it would stay out of reach for good — every replay is
+        // armed, and each one parks it again. Rebuilt, it lands as a window
+        // of its own and is back in the record from then on.
+        let ghostWindowIds = classification.ghostSpaceIdsByWindowId.keys
+            .sorted().map { NSNumber(value: $0) }
         if classification.eagerWindowIds.isEmpty {
             // Naming no eager window has two very different causes, and the
             // right answer differs by cause. Every entry already closed is
@@ -3447,13 +3473,15 @@ final class SpaceManager: ObservableObject {
             }
             AppLogInfo("[SpaceManager] cold start gate: every one of \(restoreEntries.count) entry(ies) was already closed — parking the whole session")
             return ArmedRestorePlan(eagerWindowIds: [],
-                                    closedGroupWindowIds: closedGroupWindowIds)
+                                    closedGroupWindowIds: closedGroupWindowIds,
+                                    ghostWindowIds: ghostWindowIds)
         }
         AppLogInfo("[SpaceManager] cold start gate: \(classification.eagerWindowIds.count) eager, \(classification.ghostSpaceIdsByWindowId.count) to park, \(classification.closedGroupWindowIds.count) closed-group across \(restoreEntries.count) entry(ies)")
         return ArmedRestorePlan(
             eagerWindowIds:
                 classification.eagerWindowIds.sorted().map { NSNumber(value: $0) },
-            closedGroupWindowIds: closedGroupWindowIds)
+            closedGroupWindowIds: closedGroupWindowIds,
+            ghostWindowIds: ghostWindowIds)
     }
 
     /// Applies one of the cold start's per-profile park receipts. The receipt
@@ -3804,8 +3832,9 @@ final class SpaceManager: ObservableObject {
     /// store (a deleted Space's row is gone by the time the async load
     /// completes). A drop the chromium side refuses (record already gone,
     /// profile never loaded this run) is logged and accepted: the Mac
-    /// records are gone either way, and the residue self-heals at the next
-    /// cold start's unfiltered replay.
+    /// records are gone either way, and the next cold start rebuilds the
+    /// residue as a loose window, since its plan no longer names it among the
+    /// windows that may park.
     fileprivate func dropParkedGhosts(_ ghosts: [Int: String], reason: String) {
         guard !ghosts.isEmpty else { return }
         // Absence from this map IS the "no profile resolves" case below.

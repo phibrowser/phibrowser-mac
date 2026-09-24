@@ -177,6 +177,40 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
                         "closedGroup": [NSNumber(value: 2)]])
     }
 
+    func testPlanWireDictionaryCarriesTheGhostSetOnlyWhenPresent() {
+        // Chromium reads a present "ghost" array — even an empty one — as
+        // "park only these", and a missing one as the reverse whitelist, so
+        // nil must leave the key out rather than send it empty.
+        let confined = SpaceManager.ArmedRestorePlan(
+            eagerWindowIds: [NSNumber(value: 1)],
+            closedGroupWindowIds: [],
+            ghostWindowIds: [])
+        XCTAssertEqual(confined.wireDictionary,
+                       ["eager": [NSNumber(value: 1)],
+                        "closedGroup": [],
+                        "ghost": []])
+        let reverseWhitelist = SpaceManager.ArmedRestorePlan(
+            eagerWindowIds: [NSNumber(value: 1)],
+            closedGroupWindowIds: [])
+        XCTAssertNil(reverseWhitelist.wireDictionary["ghost"])
+    }
+
+    func testTheReopenPlanNeverConfinesParking() throws {
+        // A reopen's eager set is also what keeps it to one window (R1):
+        // confining parking there would hand back every window the record
+        // cannot place. Only the cold start sends a ghost set.
+        let plan = try XCTUnwrap(
+            SpaceManager.armedRestorePlan(
+                featureEnabled: true,
+                bridgeSupportsLazyRestore: true,
+                hasSnapshotEntries: true,
+                classification: Self.classification(
+                    eager: [1], ghosts: [2: "space-b"])
+            ))
+        XCTAssertNil(plan.ghostWindowIds)
+        XCTAssertNil(plan.wireDictionary["ghost"])
+    }
+
     func testARecordOfOnlyClosedGroupsStillArms() {
         // Scenario 2's record after every group closed by hand: no eager
         // window, no ghost, closed groups only. The gate must still arm —

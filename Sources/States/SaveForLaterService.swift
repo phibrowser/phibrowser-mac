@@ -70,13 +70,12 @@ enum SaveForLaterService {
     private static var inFlightTabGuids: Set<Int> = []
 
     /// Whether the menu item / shortcut should be offered for this tab.
-    /// Guest Mode is refused outright: a guest session must not write into
-    /// the permanent library. Only web pages are saveable — chrome:// and
-    /// chrome-extension:// surfaces (reader pages, settings) are not items.
+    /// Guest Mode saves too, into the same folder as a signed-in session.
+    /// Only web pages are saveable — chrome:// and chrome-extension://
+    /// surfaces (reader pages, settings) are not items.
     static func canSave(_ tab: Tab?) -> Bool {
         guard featureEnabled,
               let tab, !tab.isShowingNativeNTP,
-              !ApplicationState.shared.isGuest,
               !inFlightTabGuids.contains(tab.guid),
               let url = tab.url, !url.isEmpty, !url.isLocalUrlString,
               url.lowercased().hasPrefix("http://")
@@ -185,12 +184,11 @@ enum SaveForLaterService {
         return PostHogSDK.shared.isFeatureEnabled("save-for-later-auto-trigger")
     }
 
-    /// Effective arming: Folio on && flag && user opt-in && not Guest Mode.
+    /// Effective arming: Folio on && flag && user opt-in.
     static var autoTriggerArmed: Bool {
         featureEnabled
             && autoTriggerFlagEnabled
             && PhiPreferences.SaveForLater.autoSaveOnSiteActions
-            && !ApplicationState.shared.isGuest
     }
 
     /// Pushes the armed state to Mirage's trigger relay. Called when the
@@ -383,7 +381,7 @@ enum SaveForLaterService {
 
     /// Opens Mirage's Folio library page in the active browser Profile.
     static func openLibrary() {
-        guard featureEnabled, !ApplicationState.shared.isGuest else { return }
+        guard featureEnabled else { return }
         openExtensionPage("library.html")
     }
 
@@ -535,11 +533,6 @@ enum SaveForLaterService {
         }
         let tabId = brokerTabId(context)
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest else {
-                libraryReply("{\"error\":\"unavailable\"}",
-                             requestId: context.requestId)
-                return
-            }
             let folder = libraryFolder(forTab: tabId)
             let json = await Task.detached(priority: .utility) { () -> String in
                 struct Reply: Encodable {
@@ -625,11 +618,6 @@ enum SaveForLaterService {
             return
         }
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest else {
-                libraryReply("{\"error\":\"unavailable\"}",
-                             requestId: context.requestId)
-                return
-            }
             let url = libraryFolder(forTab: payload.tabId)
                 .appendingPathComponent(name)
             let offset = max(0, payload.offset ?? 0)
@@ -698,8 +686,7 @@ enum SaveForLaterService {
         }
         Task { @MainActor in
             let folder = libraryFolder(forTab: payload.tabId)
-            guard !ApplicationState.shared.isGuest,
-                  libraryFileURL(basename: payload.basename, ext: "md",
+            guard libraryFileURL(basename: payload.basename, ext: "md",
                                  folder: folder) != nil else {
                 libraryReply("{\"error\":\"invalid\"}",
                              requestId: context.requestId)
@@ -724,8 +711,7 @@ enum SaveForLaterService {
         guard libraryGate(context) else { return }
         guard let payload = libraryItemPayload(context) else { return }
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest,
-                  let url = libraryFileURL(
+            guard let url = libraryFileURL(
                       basename: payload.basename, ext: "md",
                       folder: libraryFolder(forTab: payload.tabId)),
                   FileManager.default.fileExists(atPath: url.path) else {
@@ -875,11 +861,6 @@ enum SaveForLaterService {
             return
         }
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest else {
-                libraryReply("{\"error\":\"unavailable\"}",
-                             requestId: context.requestId)
-                return
-            }
             let folder = libraryFolder(forTab: payload.tabId)
             let text = payload.text
             let ok = await Task.detached(priority: .utility) { () -> Bool in
@@ -918,11 +899,6 @@ enum SaveForLaterService {
             return
         }
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest else {
-                libraryReply("{\"error\":\"unavailable\"}",
-                             requestId: context.requestId)
-                return
-            }
             let folder = libraryFolder(forTab: payload.tabId)
             let from = payload.from
             let to = payload.to
@@ -1195,11 +1171,6 @@ enum SaveForLaterService {
             return
         }
         Task { @MainActor in
-            guard !ApplicationState.shared.isGuest else {
-                libraryReply("{\"error\":\"unavailable\"}",
-                             requestId: context.requestId)
-                return
-            }
             let folder = libraryFolder(forTab: payload.tabId)
             let token = UUID().uuidString
             let partURL = folder.appendingPathComponent(".folio-part-" + token)

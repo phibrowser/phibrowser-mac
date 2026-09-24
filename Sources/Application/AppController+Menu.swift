@@ -3161,11 +3161,8 @@ extension AppController {
         }
 
         if item.action == #selector(openSaveForLaterLibrary(_:)) {
-            // The library is the permanent folder's face; Guest Mode gets
-            // neither its writes nor its reads.
             return SaveForLaterService.featureEnabled
                 && ApplicationState.shared.canUseBrowser
-                && !ApplicationState.shared.isGuest
         }
 
         if item.action == #selector(toggleAgentTranscript(_:)) {

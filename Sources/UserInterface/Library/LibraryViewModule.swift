@@ -113,7 +113,7 @@ private struct LibraryContentView: View {
     }
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
-    @State private var folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
+    @State private var folioAvailable = SaveForLaterService.featureEnabled
     @State private var sidebarWidth: CGFloat = Self.minimumSidebarWidth
     private var compactSidebar: Bool { sidebarWidth < Self.compactSidebarThreshold }
     @State private var floatingSidebarVisible = false
@@ -178,7 +178,7 @@ private struct LibraryContentView: View {
         .themedForeground(.textPrimary)
         .tint(color(.themeColor))
         .task(id: selection) {
-            folioAvailable = SaveForLaterService.featureEnabled && !ApplicationState.shared.isGuest
+            folioAvailable = SaveForLaterService.featureEnabled
             if selection == .folio {
                 guard folioAvailable else {
                     folioModel.clear()
@@ -355,13 +355,13 @@ private struct LibraryContentView: View {
 
     private func openOriginal(_ url: URL) {
         guard FolioLibrary.webURL(url.absoluteString) != nil,
-              SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+              SaveForLaterService.featureEnabled else { return }
         dismiss()
         browserState.createTab(url.absoluteString, customGuid: nil, focusAfterCreate: true)
     }
 
     private func openArchive(_ item: FolioItem) {
-        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        guard SaveForLaterService.featureEnabled else { return }
         do {
             let url = try FolioLibrary.fileURL(basename: item.basename, ext: "mhtml", folder: folioModel.folder)
             dismiss()
@@ -370,7 +370,7 @@ private struct LibraryContentView: View {
     }
 
     private func reveal(_ item: FolioItem?) {
-        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        guard SaveForLaterService.featureEnabled else { return }
         do {
             if let item {
                 let url = try FolioLibrary.fileURL(basename: item.basename, ext: "md", folder: folioModel.folder)

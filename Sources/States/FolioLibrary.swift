@@ -232,7 +232,7 @@ final class FolioLibraryModel {
 
     func refresh() async {
         guard !refreshing else { return }
-        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else {
+        guard SaveForLaterService.featureEnabled else {
             clear()
             return
         }
@@ -247,7 +247,7 @@ final class FolioLibraryModel {
         let previous = items
         do {
             let loaded = try await Task.detached(priority: .utility) { try FolioLibrary.list(folder: target, previous: previous) }.value
-            guard !Task.isCancelled, SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+            guard !Task.isCancelled, SaveForLaterService.featureEnabled else { return }
             items = loaded
             loadError = nil
             reconcileSelection()
@@ -262,7 +262,7 @@ final class FolioLibraryModel {
         document = nil
         error = nil
         defer { if generation == readGeneration { isReading = false } }
-        guard let item = selectedItem, SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else {
+        guard let item = selectedItem, SaveForLaterService.featureEnabled else {
             isReading = false
             return
         }
@@ -271,7 +271,7 @@ final class FolioLibraryModel {
         do {
             let loaded = try await Task.detached(priority: .userInitiated) { try FolioLibrary.read(item: item, folder: target) }.value
             guard generation == readGeneration, selection == item.id, target == folder, !Task.isCancelled,
-                  SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+                  SaveForLaterService.featureEnabled else { return }
             document = loaded
             error = nil
         } catch {
@@ -280,7 +280,7 @@ final class FolioLibraryModel {
     }
 
     func trash(_ item: FolioItem) async {
-        guard SaveForLaterService.featureEnabled, !ApplicationState.shared.isGuest else { return }
+        guard SaveForLaterService.featureEnabled else { return }
         let target = folder
         do {
             try await Task.detached(priority: .utility) { try FolioLibrary.trash(item: item, folder: target) }.value

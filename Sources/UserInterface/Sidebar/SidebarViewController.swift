@@ -47,6 +47,15 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// `NSThemeFrame` — returns true, and the window still stayed put.
     override var mouseDownCanMoveWindow: Bool { false }
 
+    /// The header hides the row while there is a single Space. Coming back,
+    /// its width is unchanged, so no geometry change re-anchors the viewport;
+    /// tell the strip instead.
+    override var isHidden: Bool {
+        didSet {
+            if oldValue, !isHidden { stripGeometry?.revealed.send() }
+        }
+    }
+
     override func scrollWheel(with event: NSEvent) {
         if wheelTracker?.handle(event) == true { return }
         super.scrollWheel(with: event)

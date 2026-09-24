@@ -175,6 +175,10 @@ final class SpacesStripGeometry: ObservableObject {
     var rowWidth: CGFloat = 0
     /// Hides the SwiftUI glass chip while the CA stand-in stands in for it.
     @Published var isChipConcealed = false
+    /// Fires when the hosting view is unhidden (the header hides the row
+    /// while there is a single Space), so the strip re-anchors its viewport
+    /// at the width it has on screen again.
+    let revealed = PassthroughSubject<Void, Never>()
 }
 
 /// Compact active-Space header that sits between the pinned-tab strip and
@@ -690,9 +694,6 @@ struct SpacesStripView: View {
             proxy.size.width
         } action: { newWidth in
             stripGeometry.rowWidth = newWidth
-            if newWidth > 0, animatesOnScreen {
-                slot.stripViewportWidth = newWidth
-            }
             let count = visiblePipCount(availableWidth: measuredRowWidth - placeholderReserve)
             if count != fittedPipCount {
                 fittedPipCount = count
@@ -704,6 +705,9 @@ struct SpacesStripView: View {
             // (e.g. removing a pip ahead of it). Re-anchor — but never
             // mid-drag, where the live rearrangement is transient.
             guard stripDraggingId == nil else { return }
+            reanchorViewport(animated: false)
+        }
+        .onReceive(stripGeometry.revealed) { _ in
             reanchorViewport(animated: false)
         }
         .onReceive(wheelStepPublisher) { step in
@@ -783,10 +787,19 @@ struct SpacesStripView: View {
     /// so all of them compute at the width last measured on screen
     /// (`SpaceWindowSlot.stripViewportWidth`): a hidden strip's own width
     /// can be anything (the hidden floating panel's strip lays out 28pt
-    /// wide), and the last strip to re-anchor wins.
+    /// wide), and the last strip to re-anchor wins. The strip on screen
+    /// computes at its own width and refreshes the shared one with it, so
+    /// a row that was hidden (a single Space) while the sidebar resized
+    /// corrects the shared width the first time it re-anchors.
     private func reanchorViewport(animated: Bool) {
         guard stripGeometry.rowWidth > 0 else { return }
-        let width = slot.stripViewportWidth > 0 ? slot.stripViewportWidth : stripGeometry.rowWidth
+        let width: CGFloat
+        if animatesOnScreen {
+            width = stripGeometry.rowWidth
+            slot.stripViewportWidth = width
+        } else {
+            width = slot.stripViewportWidth > 0 ? slot.stripViewportWidth : stripGeometry.rowWidth
+        }
         ensureActivePipVisible(availableWidth: width, animated: animated)
     }
 

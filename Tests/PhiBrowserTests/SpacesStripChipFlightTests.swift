@@ -213,6 +213,19 @@ final class SpacesStripChipFlightHostTests: XCTestCase {
         XCTAssertFalse(geometry.isChipConcealed)
     }
 
+    func testUnhidingTheRowAsksTheStripToReanchor() {
+        let (host, geometry) = makeHost()
+        var reveals = 0
+        let subscription = geometry.revealed.sink { reveals += 1 }
+        host.isHidden = false
+        XCTAssertEqual(reveals, 0)
+        host.isHidden = true
+        XCTAssertEqual(reveals, 0)
+        host.isHidden = false
+        XCTAssertEqual(reveals, 1)
+        subscription.cancel()
+    }
+
     func testTargetedCancelSweepsOnlyItsOwnFlight() {
         let (host, geometry) = makeHost()
         _ = host.beginSpacesChipFlight(fromSpaceId: "a", toSpaceId: "b", pipCount: 2, duration: 0.15)

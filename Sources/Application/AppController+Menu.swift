@@ -1989,7 +1989,6 @@ extension AppController {
                 item.preferredImageVisibility = .visible
             }
             #endif
-            item.attributedTitle = spaceMenuTitle(name: space.name, profileId: space.profileId)
             menu.addItem(item)
         }
 
@@ -2031,8 +2030,6 @@ extension AppController {
             menu.addItem(item)
         }
 
-        add(NSLocalizedString("profile.menu.newIncognitoSpace", value: "New Incognito Space", comment: "Profile menu - New Incognito Space action"),
-            action: #selector(newIncognitoSpaceFromMenu(_:)), command: .PHI_NEW_INCOGNITO_SPACE, target: self)
         menu.addItem(.separator())
         if let space = currentActiveSpace() {
             let themeItem = NSMenuItem()
@@ -2057,15 +2054,17 @@ extension AppController {
             action: #selector(openBookmarkManager(_:)), target: self)
         add(NSLocalizedString("profile.menu.extensions", value: "Manage Extensions", comment: "Profile menu - Manage Extensions action"),
             action: #selector(commandDispatch(_:)), command: .IDC_MANAGE_EXTENSIONS, target: nil)
-        add(NSLocalizedString("profile.menu.settings", value: "Settings", comment: "Profile menu - Settings action"),
-            action: #selector(showPreferences(_:)), command: .IDC_OPTIONS, target: self)
         menu.addItem(.separator())
         add(NSLocalizedString("profile.menu.newTab", value: "New Tab", comment: "Profile menu - New Tab action"),
             action: #selector(commandDispatch(_:)), command: .IDC_NEW_TAB, target: nil)
+        add(NSLocalizedString("profile.menu.newIncognitoSpace", value: "New Incognito Space", comment: "Profile menu - New Incognito Space action"),
+            action: #selector(newIncognitoSpaceFromMenu(_:)), command: .PHI_NEW_INCOGNITO_SPACE, target: self)
         add(NSLocalizedString("profile.menu.newIncognitoWindow", value: "New Incognito Window", comment: "Profile menu - New Incognito Window action"),
             action: #selector(commandDispatch(_:)), command: .IDC_NEW_INCOGNITO_WINDOW, target: nil)
+        menu.addItem(.separator())
+        add(NSLocalizedString("profile.menu.settings", value: "Settings", comment: "Profile menu - Settings action"),
+            action: #selector(showPreferences(_:)), command: .IDC_OPTIONS, target: self)
         if PhiBuildCapabilities.supportsAuthentication, !ApplicationState.shared.isAuthenticated {
-            menu.addItem(.separator())
             add(NSLocalizedString("profile.menu.signIn", value: "Sign in", comment: "Profile menu - Sign in action when not signed in"),
                 action: #selector(signInFromProfileMenu(_:)), target: self)
         }
@@ -2075,32 +2074,6 @@ extension AppController {
         Task { @MainActor in
             LoginController.shared.showLoginWindow()
         }
-    }
-
-    /// Inline title for a switcher row: the Space name in the label color followed
-    /// by its bound profile in a muted color (`name  ·  profile`), so the row shows
-    /// both on one line with the ⌃-number shortcut trailing. An attributed title
-    /// (rather than `NSMenuItem.subtitle`, which is macOS 14.4+ and stacks below)
-    /// keeps it on one line and renders on every supported OS.
-    private func spaceMenuTitle(name: String, profileId: String) -> NSAttributedString {
-        let title = NSMutableAttributedString(
-            string: name,
-            attributes: [
-                .font: NSFont.menuFont(ofSize: 0),
-                .foregroundColor: NSColor.labelColor
-            ]
-        )
-        if let profileName = ProfileManager.shared.profile(for: profileId)?.displayName,
-           !profileName.isEmpty {
-            title.append(NSAttributedString(
-                string: "  ·  \(profileName)",
-                attributes: [
-                    .font: NSFont.menuFont(ofSize: 0),
-                    .foregroundColor: NSColor.secondaryLabelColor
-                ]
-            ))
-        }
-        return title
     }
 
     /// A menu-ready icon for a Space row. A Space with a live agent task wears

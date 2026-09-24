@@ -141,7 +141,7 @@ private final class PinnedPeekBadgeView: NSView {
 /// corner and so hangs outside these bounds, where AppKit's hit testing
 /// stops — extend it to the overhanging subviews so the whole plate stays
 /// clickable.
-private final class PinnedItemRootView: NSView {
+private final class PinnedItemRootView: PinnedGridItemView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         if let hit = super.hitTest(point) { return hit }
         let local = convert(point, from: superview)

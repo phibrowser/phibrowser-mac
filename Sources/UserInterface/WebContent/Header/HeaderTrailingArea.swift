@@ -145,84 +145,102 @@ struct HeaderTrailingArea: View {
         )
     }
 
-    /// Collapse order (first to collapse → last):  Feedback → Pinned extensions (last→first) → Memory → Download
-    private func resolveLayout(for width: CGFloat) -> LayoutConfig {
-        let feedbackMenuItem = MoreMenuItem(
-            id: "feedback",
-            title: NSLocalizedString("browser.headerMoreMenu.feedbackAction", value: "Feedback", comment: "Header more menu - Feedback action"),
-            image: Image(.sidebarFeedback)
-        )
-        let downloadMenuItem = MoreMenuItem(
-            id: "download",
-            title: NSLocalizedString("browser.headerMoreMenu.downloadsAction", value: "Downloads", comment: "Header more menu - Downloads action"),
-            systemImage: "arrow.down.circle"
-        )
-        let memoryMenuItem = MoreMenuItem(
-            id: "memory",
-            title: NSLocalizedString("browser.headerMoreMenu.memoryAction", value: "Browser Memory", comment: "Header more menu - AI memory"),
-            image: Image(.memoryIcon).renderingMode(.original)
-        )
+    /// Which trailing items fit at a given width: everything about the
+    /// layout that the width decides. `WebContentHeaderView` compares it to
+    /// re-render only when a width change moves an item in or out.
+    struct WidthFit: Equatable {
+        var visiblePinnedCount: Int
+        var showDownload: Bool
+        var showMemory: Bool
+        var showFeedback: Bool
+    }
 
+    /// Collapse order (first to collapse → last):  Feedback → Pinned extensions (last→first) → Memory → Download
+    static func widthFit(
+        availableWidth width: CGFloat,
+        pinnedCount: Int,
+        showDownload: Bool,
+        showMemory: Bool,
+        showFeedback: Bool,
+        feedbackIconOnly: Bool,
+        showChat: Bool
+    ) -> WidthFit {
         var budget = width - Metrics.trailingPadding - Metrics.extensionMenuWidth
         if showChat { budget -= Metrics.chatSlot }
 
-        let allPinnedCost = CGFloat(pinnedExtensions.count) * Metrics.pinnedExtensionSlot
-        let dlCost = showDownload ? Metrics.downloadSlot : 0
-        let memoryCost = showMemory ? Metrics.memorySlot : 0
-        let fbCost = showFeedback ? Metrics.feedbackSlot(iconOnly: feedbackIconOnly) : 0
-
-        if allPinnedCost + dlCost + memoryCost + fbCost <= budget {
-            return LayoutConfig(
-                visiblePinnedCount: pinnedExtensions.count,
-                showDownload: showDownload,
-                showMemory: showMemory,
-                showFeedback: showFeedback,
-                moreItems: []
-            )
-        }
-
-        budget -= Metrics.moreButtonSlot
-        var moreItems: [MoreMenuItem] = []
-        var localShowFeedback = showFeedback
-        var localShowDownload = showDownload
-        var localShowMemory = showMemory
-        var visiblePinned = pinnedExtensions.count
-
+        var fit = WidthFit(
+            visiblePinnedCount: pinnedCount,
+            showDownload: showDownload,
+            showMemory: showMemory,
+            showFeedback: showFeedback
+        )
         func currentCost() -> CGFloat {
             var cost: CGFloat = 0
-            if localShowFeedback {
+            if fit.showFeedback {
                 cost += Metrics.feedbackSlot(iconOnly: feedbackIconOnly)
             }
-            if localShowDownload { cost += Metrics.downloadSlot }
-            if localShowMemory { cost += Metrics.memorySlot }
-            cost += CGFloat(visiblePinned) * Metrics.pinnedExtensionSlot
+            if fit.showDownload { cost += Metrics.downloadSlot }
+            if fit.showMemory { cost += Metrics.memorySlot }
+            cost += CGFloat(fit.visiblePinnedCount) * Metrics.pinnedExtensionSlot
             return cost
         }
 
-        if currentCost() > budget && localShowFeedback {
-            localShowFeedback = false
-            moreItems.append(feedbackMenuItem)
-        }
+        if currentCost() <= budget { return fit }
 
-        while currentCost() > budget && visiblePinned > 0 {
-            visiblePinned -= 1
+        budget -= Metrics.moreButtonSlot
+        if currentCost() > budget && fit.showFeedback {
+            fit.showFeedback = false
         }
-
-        if currentCost() > budget && localShowMemory {
-            localShowMemory = false
-            moreItems.append(memoryMenuItem)
+        while currentCost() > budget && fit.visiblePinnedCount > 0 {
+            fit.visiblePinnedCount -= 1
         }
-
-        if currentCost() > budget && localShowDownload {
-            localShowDownload = false
-            moreItems.append(downloadMenuItem)
+        if currentCost() > budget && fit.showMemory {
+            fit.showMemory = false
         }
+        if currentCost() > budget && fit.showDownload {
+            fit.showDownload = false
+        }
+        return fit
+    }
 
+    private func resolveLayout(for width: CGFloat) -> LayoutConfig {
+        let fit = Self.widthFit(
+            availableWidth: width,
+            pinnedCount: pinnedExtensions.count,
+            showDownload: showDownload,
+            showMemory: showMemory,
+            showFeedback: showFeedback,
+            feedbackIconOnly: feedbackIconOnly,
+            showChat: showChat
+        )
+        // Collapsed items go to the More menu in the order they collapsed.
+        var moreItems: [MoreMenuItem] = []
+        if showFeedback && !fit.showFeedback {
+            moreItems.append(MoreMenuItem(
+                id: "feedback",
+                title: NSLocalizedString("browser.headerMoreMenu.feedbackAction", value: "Feedback", comment: "Header more menu - Feedback action"),
+                image: Image(.sidebarFeedback)
+            ))
+        }
+        if showMemory && !fit.showMemory {
+            moreItems.append(MoreMenuItem(
+                id: "memory",
+                title: NSLocalizedString("browser.headerMoreMenu.memoryAction", value: "Browser Memory", comment: "Header more menu - AI memory"),
+                image: Image(.memoryIcon).renderingMode(.original)
+            ))
+        }
+        if showDownload && !fit.showDownload {
+            moreItems.append(MoreMenuItem(
+                id: "download",
+                title: NSLocalizedString("browser.headerMoreMenu.downloadsAction", value: "Downloads", comment: "Header more menu - Downloads action"),
+                systemImage: "arrow.down.circle"
+            ))
+        }
         return LayoutConfig(
-            visiblePinnedCount: visiblePinned,
-            showDownload: localShowDownload,
-            showMemory: localShowMemory,
-            showFeedback: localShowFeedback,
+            visiblePinnedCount: fit.visiblePinnedCount,
+            showDownload: fit.showDownload,
+            showMemory: fit.showMemory,
+            showFeedback: fit.showFeedback,
             moreItems: moreItems
         )
     }

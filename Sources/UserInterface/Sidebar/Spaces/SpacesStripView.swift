@@ -171,6 +171,8 @@ final class SpacesStripGeometry: ObservableObject {
     /// subject to SwiftUI's `.clipped()`, so a flight is only allowed
     /// between pips wholly inside this rect.
     var viewportFrame: CGRect = .zero
+    /// The pip row's measured width (see `SpacesStripView.iconStrip`).
+    var rowWidth: CGFloat = 0
     /// Hides the SwiftUI glass chip while the CA stand-in stands in for it.
     @Published var isChipConcealed = false
 }
@@ -238,6 +240,11 @@ struct SpacesStripView: View {
         nonmutating set { slot.stripReorderDraggingId = newValue }
     }
     @State private var stripOrderedIds: [String] = []
+    /// How many whole pips the row fits at its measured width. The width
+    /// itself lives in `stripGeometry.rowWidth`, outside SwiftUI state, and
+    /// only this count re-renders the row: a sidebar divider drag changes the
+    /// width every frame while the count changes a handful of times.
+    @State private var fittedPipCount = 0
 
     /// Index of the first pip inside the strip's sliding viewport. The row
     /// slides to keep the active Space's pip centered in the visible window,
@@ -629,66 +636,72 @@ struct SpacesStripView: View {
         // (pinned right via a Spacer) holds the add button — or, once any
         // pips are hidden, a "…" affordance in its place that opens the full
         // switcher menu.
-        GeometryReader { geo in
-            // While the create form is up, a dashed placeholder pip follows
-            // the row — reserve its slot so the viewport math never lets the
-            // real pips collide with it.
-            let placeholderReserve: CGFloat = slot.isCreatingSpace
-                ? Self.stripItemWidth + Self.stripSpacing
-                : 0
-            let visibleCount = visiblePipCount(availableWidth: geo.size.width - placeholderReserve)
-            let hasOverflow = visibleCount < stripOrderedSpaces.count
-            HStack(spacing: Self.stripSpacing) {
-                pipsViewport(visibleCount: visibleCount)
-                if slot.isCreatingSpace {
-                    creatingSpacePlaceholderPip
-                }
-                Spacer(minLength: 4)
-                if hasOverflow {
-                    moreButton
-                } else {
-                    addButton
-                }
+        // Measured with `onGeometryChange` rather than a `GeometryReader`: a
+        // reader rebuilds its content on every size change, which rebuilt
+        // every pip on every frame of a sidebar divider drag. The width lives
+        // outside SwiftUI state; `fittedPipCount` is what re-renders the row,
+        // and only when the number of pips that fit changes.
+        _ = fittedPipCount
+        let visibleCount = visiblePipCount(availableWidth: measuredRowWidth - placeholderReserve)
+        let hasOverflow = visibleCount < stripOrderedSpaces.count
+        return HStack(spacing: Self.stripSpacing) {
+            pipsViewport(visibleCount: visibleCount)
+            if slot.isCreatingSpace {
+                creatingSpacePlaceholderPip
             }
-            .frame(width: geo.size.width, height: rowHeight, alignment: .leading)
-            // The whole row is the add button's hover region, so the "+" is
-            // already visible by the time the cursor could reach its
-            // far-right slot.
-            .contentShape(Rectangle())
-            .onHover { stripRowHoverChanged($0) }
-            // Slide the glass chip (and cross-fade the pips' dim/brighten
-            // swap) to the new active pip on every switch source — click,
-            // ⌃-number, menu, swipe. Match the band push-in exactly (same
-            // curve + duration) so the chip lands with the slide. The
-            // viewport shift rides its own `withAnimation` with the same
-            // curve (see `ensureActivePipVisible`), so both slides move
-            // together.
-            .animation(switchAnimation, value: slot.activeSpaceId)
-            .onAppear {
-                ensureActivePipVisible(availableWidth: geo.size.width, animated: false)
+            Spacer(minLength: 4)
+            if hasOverflow {
+                moreButton
+            } else {
+                addButton
             }
-            .onChange(of: slot.activeSpaceId) { _ in
-                ensureActivePipVisible(availableWidth: geo.size.width, animated: animatesOnScreen)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The whole row is the add button's hover region, so the "+" is
+        // already visible by the time the cursor could reach its
+        // far-right slot.
+        .contentShape(Rectangle())
+        .onHover { stripRowHoverChanged($0) }
+        // Slide the glass chip (and cross-fade the pips' dim/brighten
+        // swap) to the new active pip on every switch source — click,
+        // ⌃-number, menu, swipe. Match the band push-in exactly (same
+        // curve + duration) so the chip lands with the slide. The
+        // viewport shift rides its own `withAnimation` with the same
+        // curve (see `ensureActivePipVisible`), so both slides move
+        // together.
+        .animation(switchAnimation, value: slot.activeSpaceId)
+        .onAppear {
+            reanchorViewport(animated: false)
+        }
+        .onChange(of: slot.activeSpaceId) { _ in
+            reanchorViewport(animated: animatesOnScreen)
+        }
+        .onChange(of: slot.isCreatingSpace) { _ in
+            // Opening the create form slides an overflowing row to its
+            // end, where the dashed placeholder stands; closing it slides
+            // back to the active pip's window.
+            reanchorViewport(animated: animatesOnScreen)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            stripGeometry.rowWidth = newWidth
+            let count = visiblePipCount(availableWidth: measuredRowWidth - placeholderReserve)
+            if count != fittedPipCount {
+                fittedPipCount = count
             }
-            .onChange(of: slot.isCreatingSpace) { _ in
-                // Opening the create form slides an overflowing row to its
-                // end, where the dashed placeholder stands; closing it slides
-                // back to the active pip's window.
-                ensureActivePipVisible(availableWidth: geo.size.width, animated: animatesOnScreen)
-            }
-            .onChange(of: geo.size.width) { newWidth in
-                ensureActivePipVisible(availableWidth: newWidth, animated: false)
-            }
-            .onChange(of: stripOrderedSpaces.map(\.spaceId)) { _ in
-                // A delete/reorder can push the active pip out of the window
-                // (e.g. removing a pip ahead of it). Re-anchor — but never
-                // mid-drag, where the live rearrangement is transient.
-                guard stripDraggingId == nil else { return }
-                ensureActivePipVisible(availableWidth: geo.size.width, animated: false)
-            }
-            .onReceive(wheelStepPublisher) { step in
-                stepViewport(by: step, availableWidth: geo.size.width)
-            }
+            reanchorViewport(animated: false)
+        }
+        .onChange(of: stripOrderedSpaces.map(\.spaceId)) { _ in
+            // A delete/reorder can push the active pip out of the window
+            // (e.g. removing a pip ahead of it). Re-anchor — but never
+            // mid-drag, where the live rearrangement is transient.
+            guard stripDraggingId == nil else { return }
+            reanchorViewport(animated: false)
+        }
+        .onReceive(wheelStepPublisher) { step in
+            guard stripGeometry.rowWidth > 0 else { return }
+            stepViewport(by: step, availableWidth: stripGeometry.rowWidth)
         }
         .frame(height: rowHeight)
         // Reset a drag that ends off every pip (Spacer / add button / "…" /
@@ -747,6 +760,29 @@ struct SpacesStripView: View {
                 stripOrderedIds = ids
             }
         }
+    }
+
+    /// The row's measured width, or unbounded before the first measurement
+    /// (every pip fits), so a freshly mounted row starts with its full set
+    /// rather than an overflow it corrects a pass later.
+    private var measuredRowWidth: CGFloat {
+        stripGeometry.rowWidth > 0 ? stripGeometry.rowWidth : .greatestFiniteMagnitude
+    }
+
+    /// `ensureActivePipVisible` at the row's measured width. A no-op before
+    /// the row's first layout, whose geometry action re-anchors it: the
+    /// viewport start is shared by every Space's strip in the window, so an
+    /// unmeasured strip must not move it.
+    private func reanchorViewport(animated: Bool) {
+        guard stripGeometry.rowWidth > 0 else { return }
+        ensureActivePipVisible(availableWidth: stripGeometry.rowWidth, animated: animated)
+    }
+
+    /// While the create form is up, a dashed placeholder pip follows the row;
+    /// its slot is reserved so the viewport math never lets the real pips
+    /// collide with it.
+    private var placeholderReserve: CGFloat {
+        slot.isCreatingSpace ? Self.stripItemWidth + Self.stripSpacing : 0
     }
 
     /// Clipped sliding window onto the FULL pip row. Every pip stays in the

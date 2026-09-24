@@ -13,9 +13,23 @@ and recovery/removal. Device metadata comes from `GET /keys/v1/devices` through
 records the device key ID and explicit complete/unpaired result. Missing,
 malformed, future-version and mismatched-device records are unpaired. Completion
 persists the verified post-registration device identity before permitting data
-sync. Revoked-device registration can rotate that identity; the native HTTP
+sync. The optional `recoveryConfirmationRequired` field defaults to false for
+older version-1 records. First-device setup durably sets it before bootstrap;
+`setPaired(true)` rejects completion while it remains true. Beginning enrollment
+preserves it. Explicit reconfiguration/removal clears the old enrollment. Revoked-device registration can rotate that identity; the native HTTP
 client resolves it for each request instead of retaining the pre-join ID.
 Invalidation fails closed in memory even if its persistence fails.
+
+First-device setup states that the recovery code is shown only once. **I've saved
+it** discards the display and opens an empty confirmation page. The existing
+recovery-code decoder and account-envelope decryption verify the supplied code;
+only successful verification and durable clearing of the pending flag permit
+Profile/Space matching. A valid checksum alone is insufficient. No recovery code
+or derived secret is persisted. Wrong input and transport/storage failures retain
+the confirmation page and keep sync off. Re-entry can be deferred by closing the
+window; reopening or restarting requires confirmation even when device-key unlock
+succeeds. The one-time display itself still cannot be dismissed. Full pairing
+remains a separate prerequisite for native writes and Chromium ready-key exposure.
 
 Legacy completion migrates only after fresh device authorization, unlocked keys,
 fresh remote Profile/Space evidence, complete injective mappings, and the legacy
@@ -109,11 +123,40 @@ A generation fence also rejects old rounds after rapid re-enrollment.
 
 ## Sync status contract
 
-The pane aggregates the native context and every eligible user Profile. Missing
-contexts, an empty Profile enumeration, unsupported bridge selectors and malformed
-payloads mean Checking. Unpaired always means Not started. A partial failure
-cannot become global Up to date; the summary time is the oldest successful time
-among all required contexts.
+`SyncHelper` is the account-scoped macOS owner of the common completion time.
+It runs while the sync stack lives, independently of the settings pane, which
+reads its report. It observes the native context and every eligible user Profile
+through the existing optional Chromium status callbacks, with a three-second
+delay between observations (slow or timed-out replies extend the interval).
+A new success, pending work, startup or participant-set change requests a fresh
+native round and refreshes all Profile namespaces through the existing
+account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID and type
+list empty; a nonempty UUID with empty types is a no-op). This is observation-based notification, not
+a new Chromium push/event protocol; missing hints are covered by observation
+and the existing invalidation scheduler's retry/catch-up behavior.
+
+Only when every required context is Up to date with a success newer than its
+round baseline and no earlier than the round request can the helper persist one
+`sync.lastCoordinatedSuccess` in account defaults. The common time records when
+the Mac verified the barrier; individual engine times remain diagnostic evidence.
+The native status is re-read synchronously after all bridge awaits, so a local
+edit or failure while querying Profiles cannot be hidden by an old native sample.
+Profile observations use Chromium's existing pending-work fence; they are separate
+observations, not an atomic multi-Profile transaction. Polling unchanged completion
+evidence does not request another round. A partial
+failure or pending work retains the previous common time; failed persistence
+reports Needs attention and cannot advance it. Missing contexts, an empty Profile
+enumeration, unsupported selectors and malformed payloads mean Checking.
+Unpaired means Not started. Account retirement fences late callbacks; explicit
+removal/reconfiguration clears the account's common timestamp.
+
+`registerUpstream` / `unregisterUpstream` reserve the same completion barrier for
+an eventual authenticated Sentinel adapter. Registration contributes a namespaced
+participant id, a status reader and a sync request callback; it immediately
+invalidates prior completion evidence. Until registered Sentinel is not required.
+This hook introduces no Sentinel data type, IPC transport, key ownership or remote
+API access in UI code. The future adapter must use this Mac coordination path and
+supply bounded status reads plus genuine completed-round evidence.
 
 Native success requires a drained pull, accepted publication, successful cursor
 persistence, and no pending/quarantined input, output, or follow-up work. A conflict

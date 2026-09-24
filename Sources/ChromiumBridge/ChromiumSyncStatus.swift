@@ -5,7 +5,7 @@ struct ChromiumProfileSyncSnapshot {
     let enabledCategories: [String]
 }
 
-/// Pane-owned adapter; querying status never creates a profile or starts a service.
+/// SyncHelper-owned adapter; querying status never creates a profile or starts a service.
 @MainActor
 final class ChromiumSyncStatus {
     private var revisions: [String: UInt64] = [:]

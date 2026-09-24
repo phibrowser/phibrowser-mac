@@ -23,6 +23,7 @@ enum KeyLayerPhase: Equatable {
     case readyToPair
     case showingRecoveryCode(String)
     case enteringRecoveryCode
+    case confirmingRecoveryCode
     case chooseJoinMethod
     case waitingForApproval(code: String, deadline: Date)
     case joinDenied
@@ -65,6 +66,8 @@ final class KeyLayerViewModel: ObservableObject {
     private var operationGeneration = 0
     private var pollingInFlight = false
     private(set) var createdAccountInThisFlow = false
+    private let recoveryConfirmationRequired: @MainActor () -> Bool
+    private let setRecoveryConfirmationRequired: @MainActor (Bool) throws -> Void
     private let beginEnrollment: @MainActor () throws -> Void
     var onVerified: (@MainActor () -> Void)?
 
@@ -77,6 +80,7 @@ final class KeyLayerViewModel: ObservableObject {
         guard flowController?.requiresReconfiguration != true else {
             phase = .error(SyncReconfigurationStrings.returnToSettings); return
         }
+        guard !recoveryConfirmationRequired() else { phase = .confirmingRecoveryCode; return }
         recoveryInput = ""
         phase = .readyToPair
         onVerified?()
@@ -135,7 +139,11 @@ final class KeyLayerViewModel: ObservableObject {
     private let loadDeadline: Duration
 
     init(manager: AccountKeyManager, loadDeadline: Duration = .seconds(45),
-         beginEnrollment: @escaping @MainActor () throws -> Void = { try ProfilePairingGate.shared.beginEnrollment() }) {
+         beginEnrollment: @escaping @MainActor () throws -> Void = { try ProfilePairingGate.shared.beginEnrollment() },
+         recoveryConfirmationRequired: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.requiresRecoveryConfirmation },
+         setRecoveryConfirmationRequired: @escaping @MainActor (Bool) throws -> Void = { try ProfilePairingGate.shared.setRecoveryConfirmationRequired($0) }) {
+        self.recoveryConfirmationRequired = recoveryConfirmationRequired
+        self.setRecoveryConfirmationRequired = setRecoveryConfirmationRequired
         self.beginEnrollment = beginEnrollment
         self.manager = manager
         self.loadDeadline = loadDeadline
@@ -144,6 +152,8 @@ final class KeyLayerViewModel: ObservableObject {
     /// Entry point when opening the key-layer window: unlock if possible, otherwise route to
     /// first-device bootstrap or the join-method choice.
     func beginSetup(controller: SyncKeyController? = nil) async {
+        // Reopening or retrying a live host must not erase its only display of the code.
+        guard !phase.requiresAcknowledgement else { return }
         flowController = controller
         guard controller?.requiresReconfiguration != true else {
             phase = .error(SyncReconfigurationStrings.returnToSettings); return
@@ -156,14 +166,15 @@ final class KeyLayerViewModel: ObservableObject {
             guard generation == operationGeneration, flowIsCurrent else { return }
             switch result {
             case .unlocked:
-                if ProfilePairingGate.shared.isPaired { phase = .done }
+                if recoveryConfirmationRequired() { phase = .confirmingRecoveryCode }
+                else if ProfilePairingGate.shared.isPaired { phase = .done }
                 else { try beginEnrollment(); verified() }
             case .notSignedIn:
                 phase = .error(KeyLayerStrings.signInRequired)
             case .needsJoin:
                 let exists = try await manager.accountExists()
                 guard generation == operationGeneration, flowIsCurrent else { return }
-                phase = exists ? .chooseJoinMethod : .introduction
+                phase = exists ? (recoveryConfirmationRequired() ? .confirmingRecoveryCode : .chooseJoinMethod) : .introduction
             }
         } catch {
             guard generation == operationGeneration, flowIsCurrent else { return }
@@ -278,7 +289,7 @@ final class KeyLayerViewModel: ObservableObject {
     /// Starts account bootstrap, generating a new recovery code. If the account
     /// was already initialized by another device, routes to the join flow instead.
     func startBootstrap() async {
-        guard !workingOperation else { return }
+        guard !workingOperation, !phase.requiresAcknowledgement else { return }
         operationGeneration += 1
         let generation = operationGeneration
         workingOperation = true
@@ -286,13 +297,15 @@ final class KeyLayerViewModel: ObservableObject {
         phase = .working
         do {
             try beginEnrollment()
+            try setRecoveryConfirmationRequired(true)
             let code = try await manager.bootstrap()
             guard generation == operationGeneration, flowIsCurrent else { return }
             createdAccountInThisFlow = true
             phase = .showingRecoveryCode(code)
         } catch AccountKeyError.alreadyInitialized {
             guard generation == operationGeneration, flowIsCurrent else { return }
-            phase = .chooseJoinMethod
+            do { try setRecoveryConfirmationRequired(false); phase = .chooseJoinMethod }
+            catch { phase = .error(KeyLayerStrings.connectionFailed) }
         } catch {
             guard generation == operationGeneration, flowIsCurrent else { return }
             phase = .error(KeyLayerStrings.connectionFailed)
@@ -301,22 +314,26 @@ final class KeyLayerViewModel: ObservableObject {
 
     func confirmSaved() async {
         guard case .showingRecoveryCode = phase else { return }
-        verified()
+        recoveryInput = ""
+        inputError = nil
+        phase = .confirmingRecoveryCode
     }
 
     func submitRecoveryCode(_ code: String) async {
-        guard !workingOperation else { return }
+        guard !workingOperation, !phase.requiresAcknowledgement else { return }
         operationGeneration += 1
         let generation = operationGeneration
+        let confirming = phase == .confirmingRecoveryCode || recoveryConfirmationRequired()
         recoveryInput = code
         inputError = nil
         workingOperation = true
-        phase = .enteringRecoveryCode
+        phase = confirming ? .confirmingRecoveryCode : .enteringRecoveryCode
         defer { if generation == operationGeneration { workingOperation = false } }
         do {
             try beginEnrollment()
             try await manager.joinWithRecoveryCode(code)
             guard generation == operationGeneration, flowIsCurrent else { return }
+            if confirming { try setRecoveryConfirmationRequired(false) }
             verified()
         } catch AccountKeyError.badRecoveryCode {
             guard generation == operationGeneration, flowIsCurrent else { return }

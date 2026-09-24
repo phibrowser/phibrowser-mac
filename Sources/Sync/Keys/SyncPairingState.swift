@@ -5,6 +5,7 @@ struct SyncPairingRecord: Codable, Equatable {
     let version: Int
     let deviceKeyID: String
     let paired: Bool
+    var recoveryConfirmationRequired: Bool? = nil
 }
 
 struct SyncPairingLegacyEvidence {
@@ -26,10 +27,11 @@ enum SyncPairingEligibility {
     static func isPaired(record: SyncPairingRecord?, deviceKeyID: String) -> Bool {
         guard let record, !deviceKeyID.isEmpty else { return false }
         return record.version == 1 && record.deviceKeyID == deviceKeyID && record.paired
+            && record.recoveryConfirmationRequired != true
     }
 }
 
-enum SyncPairingPersistenceError: Error { case writeFailed }
+enum SyncPairingPersistenceError: Error { case writeFailed, recoveryConfirmationRequired }
 
 /// A value owned by ProfilePairingGate. Writes target the account captured at configuration,
 /// never whichever account happens to be active when a delayed operation finishes.
@@ -39,6 +41,21 @@ struct SyncPairingEnrollment {
     private var saveRecord: ((Data) -> Bool)?
 
     var isPaired: Bool { SyncPairingEligibility.isPaired(record: record, deviceKeyID: deviceKeyID) }
+
+    var requiresRecoveryConfirmation: Bool {
+        record?.version == 1 && record?.deviceKeyID == deviceKeyID
+            && record?.recoveryConfirmationRequired == true
+    }
+
+    mutating func setRecoveryConfirmationRequired(_ required: Bool) throws {
+        guard !deviceKeyID.isEmpty, let saveRecord else { throw SyncPairingPersistenceError.writeFailed }
+        let candidate = SyncPairingRecord(version: 1, deviceKeyID: deviceKeyID, paired: false,
+                                         recoveryConfirmationRequired: required)
+        // A failed confirmation write must never release the gate.
+        if required { record = candidate }
+        guard saveRecord(try JSONEncoder().encode(candidate)) else { throw SyncPairingPersistenceError.writeFailed }
+        record = candidate
+    }
 
     mutating func configure(deviceKeyID: String, recordData: Data?,
                             saveRecord: @escaping (Data) -> Bool,
@@ -54,11 +71,17 @@ struct SyncPairingEnrollment {
     }
 
     mutating func setPaired(_ paired: Bool, verifiedDeviceKeyID: String? = nil) throws {
+        let pending = requiresRecoveryConfirmation
+        guard !paired || !pending else { throw SyncPairingPersistenceError.recoveryConfirmationRequired }
         if let verifiedDeviceKeyID { deviceKeyID = verifiedDeviceKeyID }
         // Revocation or invalid legacy state must stop this process even if disk writes fail.
-        if !paired { record = nil }
+        if !paired {
+            record = SyncPairingRecord(version: 1, deviceKeyID: deviceKeyID, paired: false,
+                                       recoveryConfirmationRequired: pending)
+        }
         guard !deviceKeyID.isEmpty, let saveRecord else { throw SyncPairingPersistenceError.writeFailed }
-        let candidate = SyncPairingRecord(version: 1, deviceKeyID: deviceKeyID, paired: paired)
+        let candidate = SyncPairingRecord(version: 1, deviceKeyID: deviceKeyID, paired: paired,
+                                         recoveryConfirmationRequired: pending)
         guard saveRecord(try JSONEncoder().encode(candidate)) else {
             throw SyncPairingPersistenceError.writeFailed
         }

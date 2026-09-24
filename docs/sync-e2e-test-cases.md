@@ -92,7 +92,7 @@ previous case's hidden Space or pending edit determine the next result.
 
 | ID | Priority / mode | Preconditions and steps | Expected result |
 | --- | --- | --- | --- |
-| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, then select “I've saved it”. Restart A. | A presents a recovery code and requires acknowledgment before dismissing that step. Setup completes; restart unlocks the existing account without creating another account key or asking to bootstrap again. |
+| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, select “I've saved it”, try an incorrect code and then re-enter the saved code. Complete matching and restart A. Also close/reopen or restart between saving and verification. | The code warns it is shown only once. The next screen has blank input and never re-displays the code. Incorrect input cannot start sync. Pending confirmation survives reopening/restart despite device unlock. Correct input allows matching; only full setup enables sync. |
 | SYNC-A02 | P0 / Manual | U1 initialized on A; B is fresh. Sign in as U1 on B, choose “Enter a recovery code”, enter A's code and complete pairing. Create one bookmark on each Mac. | B joins the same account; existing data arrives and both new bookmarks propagate once. A's existing data remains intact. |
 | SYNC-A03 | P0 / Manual | Fresh B joining U1. Try an invalid code, then a valid code belonging to U2, then U1's correct code. | Incorrect codes cannot unlock U1 or expose its data. Failure remains recoverable; the correct code can complete joining without resetting A. |
 | SYNC-A04 | P0 / Manual | Fresh B requests approval. On A open Settings → Sync, compare the displayed verification code and approve the matching request. Finish pairing on B. | Request/device and code correspond on both Macs. B progresses without hanging; it receives U1 data only after approval and mapping. |
@@ -323,7 +323,7 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 
 | Case | Steps | Required result | Result |
 | --- | --- | --- | --- |
-| UX-01 | First device opens Sync, starts setup, saves recovery code | No account creation before Continue; one window through completion | Not run |
+| UX-01 | First device opens Sync, starts setup, saves and re-enters recovery code | No account creation before Continue; one-time warning; incorrect input/restart cannot bypass confirmation; one window through completion | Not run |
 | UX-02 | B uses a bad recovery code, then corrects it | Editable retained input and actionable inline error; proceeds to matching | Not run |
 | UX-03 | B requests approval; A approves in Sync | Matching codes/device, live expiry, recovery alternative; one continuous window | Not run |
 | UX-04 | Later/close/Escape during load, choice, overwrite review, refresh and error; restart B | Local browsing works; Sync says unpaired/not started; no automatic reopening or data sync | Not run |
@@ -369,3 +369,21 @@ The PR #153 follow-up regressions also run without launching a browser host:
 
 These use production code with temporary or in-memory app/transport/storage
 boundaries. They do not mark the manual app UI or two-Mac cases above as passed.
+
+### Coordinated last-success acceptance (PHI-1251)
+
+- With at least two user Profiles, close Settings and change Chromium data. Open
+  Settings after catch-up: the common time advances only after native data and
+  both Profiles complete a fresh round. Merely opening/reopening Settings must
+  not synthesize or reset that time.
+- Hold one Profile offline or with pending/error state. Let native and the other
+  Profile finish: the previous common time remains. Restore the held Profile and
+  verify one completed barrier advances the time without repeated refresh loops.
+- Add/remove a Profile during an outstanding status callback; completion must
+  wait for the current participant set. Switch accounts during the callback and
+  verify neither the new account nor the retired account receives a late write.
+- A framework lacking status support remains Checking. Explicit reconfiguration
+  or removal clears the common time. Restart preserves the last recorded time
+  as history and requires fresh completion before claiming Up to date.
+- Sentinel is a hostless registration-hook test only; no Sentinel transport is
+  enabled by this change. Live two-Mac acceptance remains required before release.

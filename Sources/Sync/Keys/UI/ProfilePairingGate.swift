@@ -52,6 +52,12 @@ final class ProfilePairingGate {
                                  saveRecord: saveRecord, legacyEvidence: legacyEvidence)
     }
 
+    var requiresRecoveryConfirmation: Bool { enrollment.requiresRecoveryConfirmation }
+
+    func setRecoveryConfirmationRequired(_ required: Bool) throws {
+        try enrollment.setRecoveryConfirmationRequired(required)
+    }
+
     func beginEnrollment() throws {
         enrollmentGeneration = UUID()
         defer { NotificationCenter.default.post(name: .phiSyncPairingStateDidChange, object: self) }

@@ -95835,6 +95835,42 @@
           }
         }
       }
+    },
+    "sync.recoveryCode.oneTimeNotice" : {
+      "comment" : "Recovery code display - one-time visibility warning and required next-step verification",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This recovery code is shown only once. Save it somewhere safe. On the next screen, enter it to confirm you saved it before continuing sync setup."
+          }
+        }
+      }
+    },
+    "sync.recoveryCode.confirmTitle" : {
+      "comment" : "Sync setup - title requiring re-entry of the saved recovery code",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm your recovery code"
+          }
+        }
+      }
+    },
+    "sync.recoveryCode.confirmExplanation" : {
+      "comment" : "Sync setup - explanation of required recovery code verification",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the recovery code you just saved. Sync will stay off until you confirm the code and finish setup."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

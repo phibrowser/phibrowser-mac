@@ -14,7 +14,6 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var busyRequestIDs: Set<String> = []
     @Published private(set) var contextSnapshots: [String: SyncContextSnapshot] = [:]
     @Published private(set) var requiredIDs: Set<String> = []
-    @Published private(set) var chromiumCategories: Set<String> = []
     @Published private(set) var paired = false
     @Published private(set) var requiresReconfiguration = false
     @Published var reconfigurationError: String?
@@ -24,9 +23,8 @@ final class DevicesSettingViewModel: ObservableObject {
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
-    private let chromiumStatus = ChromiumSyncStatus()
-    var nativeStatus: () -> SyncContextSnapshot? = { nil }
-    var profileIDs: () -> [String] = { [] }
+    var syncReport: () async -> SyncHelper.Report? = { nil }
+    @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
     var accountName: String = ""
@@ -36,35 +34,29 @@ final class DevicesSettingViewModel: ObservableObject {
         return profileNames()[id] ?? NSLocalizedString("sync.status.profile", value: "Profile", comment: "Unknown profile display name")
     }
     var currentDeviceID: String? { try? manager.deviceKeyProviderForTesting.deviceKeyId() }
-    var summary: SyncStatusSummary {
-        SyncStatusSummary.reduce(paired: paired, requiredIDs: requiredIDs, snapshots: Array(contextSnapshots.values))
-    }
     static let requestFailed = NSLocalizedString("sync.settings.requestFailed", value: "Couldn’t load sync information. Check your connection and retry.", comment: "Sync settings request failed")
-
-    func acceptStatus(_ snapshot: SyncContextSnapshot, generation: UInt64) {
-        guard generation == loadGeneration, isCurrentAccount() else { return }
-        if let old = contextSnapshots[snapshot.id], old.revision > snapshot.revision { return }
-        contextSnapshots[snapshot.id] = snapshot
-    }
 
     func refreshStatus() async {
         guard isCurrentAccount() else { return }
         let generation = loadGeneration
         requiresReconfiguration = reconfigurationRequired()
         paired = pairingComplete()
-        let profiles = profileIDs()
-        requiredIDs = profiles.isEmpty ? [] : Set(["phi"] + profiles)
-        guard paired else { contextSnapshots = [:]; chromiumCategories = []; return }
-        if let native = nativeStatus() { acceptStatus(native, generation: generation) }
-        else { contextSnapshots.removeValue(forKey: "phi") }
-        var categories: Set<String> = []
-        for id in profiles {
-            let result = await chromiumStatus.read(profileID: id)
-            guard generation == loadGeneration, isCurrentAccount() else { return }
-            acceptStatus(result.status, generation: generation)
-            categories.formUnion(result.enabledCategories)
+        guard paired else {
+            contextSnapshots = [:]; requiredIDs = []
+            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+            return
         }
-        chromiumCategories = categories
+        let report = await syncReport()
+        guard generation == loadGeneration, isCurrentAccount() else { return }
+        paired = pairingComplete()
+        guard paired else {
+            contextSnapshots = [:]; requiredIDs = []
+            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+            return
+        }
+        contextSnapshots = report?.snapshots ?? [:]
+        requiredIDs = report?.requiredIDs ?? []
+        summary = report?.summary ?? SyncStatusSummary(phase: .checking, lastSuccess: nil)
     }
 
     func refreshDevices() async {

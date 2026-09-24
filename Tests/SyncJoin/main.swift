@@ -22,6 +22,8 @@ func AppLogError(_ value: String) {}
 @MainActor final class ProfilePairingGate {
     static let shared = ProfilePairingGate()
     var isPaired = false
+    var requiresRecoveryConfirmation = false
+    func setRecoveryConfirmationRequired(_ required: Bool) throws { requiresRecoveryConfirmation = required }
     func beginEnrollment() throws {}
 }
 @MainActor final class SyncKeyController {
@@ -33,6 +35,8 @@ actor JoinAPI: KeyEnvelopeAPI {
     var requests: [String: JoinRequestDTO] = [:]
     var counter = 0
     var registrations = 0
+    var account: AccountKeyStateDTO?
+    var envelopes: [String: Data] = [:]
     var failDeny = false
     var tooManyPending = false
     var holdPost = false
@@ -54,10 +58,13 @@ actor JoinAPI: KeyEnvelopeAPI {
             createdAt: old.createdAt, resolvedByDeviceKeyId: nil)
     }
     func listDevices() async throws -> [AccountDeviceDTO] { [] }
-    func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool { true }
-    func getAccount() async throws -> AccountKeyStateDTO? { nil }
-    func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws { registrations += 1 }
-    func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { nil }
+    func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
+        account = AccountKeyStateDTO(recoverySalt: salt, kdfVersion: kdfVersion, kdfParams: kdfParams, recoveryArkEnvelope: recoveryEnvelope, arkGeneration: 1)
+        return true
+    }
+    func getAccount() async throws -> AccountKeyStateDTO? { account }
+    func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws { registrations += 1; envelopes[deviceKeyId] = arkEnvelope }
+    func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { envelopes[deviceKeyId] }
     func revokeDevice(deviceKeyId: String) async throws {}
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
         if tooManyPending { throw JoinRequestError.tooManyPending }
@@ -182,6 +189,35 @@ actor JoinAPI: KeyEnvelopeAPI {
         await freshAPI.configure()
         await fresh.retrySetup()
         try require(fresh.phase == .introduction, "Retry on an uninitialized account must return to first-device setup")
+        let bootstrapAPI = JoinAPI()
+        let bootstrapManager = AccountKeyManager(api: bootstrapAPI,
+            deviceKeyProvider: DeviceKeyStore(), pendingRegistrations: MemoryRegistration())
+        let bootstrap = KeyLayerViewModel(manager: bootstrapManager, beginEnrollment: {})
+        var verified = 0
+        bootstrap.onVerified = { verified += 1 }
+        await bootstrap.startBootstrap()
+        guard case .showingRecoveryCode(let savedCode) = bootstrap.phase else { fatalError("Expected one-time code display") }
+        await bootstrap.confirmSaved()
+        try require(verified == 0 && bootstrap.phase != .readyToPair,
+                    "Acknowledging a saved code must require re-entry before verification")
+        try require(bootstrap.phase == .confirmingRecoveryCode && bootstrap.recoveryInput.isEmpty,
+                    "Next screen must hide the code and start with empty input")
+        await bootstrap.submitRecoveryCode("bad-code")
+        try require(bootstrap.phase == .confirmingRecoveryCode && bootstrap.inputError != nil && verified == 0,
+                    "Invalid input must stay in confirmation and keep sync gated")
+        let unrelatedCode = try RecoveryCode.generate().display
+        await bootstrap.submitRecoveryCode(unrelatedCode)
+        try require(bootstrap.phase == .confirmingRecoveryCode && bootstrap.inputError != nil,
+                    "A valid but different recovery code must be rejected")
+        let reopened = KeyLayerViewModel(manager: bootstrapManager, beginEnrollment: {})
+        await reopened.beginSetup()
+        try require(reopened.phase == .confirmingRecoveryCode, "Unlocked device must still verify after reopening setup")
+        await bootstrap.submitRecoveryCode(savedCode.lowercased().replacingOccurrences(of: "-", with: " "))
+        try require(verified == 1 && bootstrap.phase == .readyToPair && bootstrap.recoveryInput.isEmpty,
+                    "Only a matching code advances to pairing and clears input")
+        try require(!ProfilePairingGate.shared.requiresRecoveryConfirmation && !ProfilePairingGate.shared.isPaired,
+                    "Verification clears the pending flag but does not complete pairing")
+        print("PASS recovery confirmation: one-time display, wrong/checksummed codes, normalized input, reopen, gating")
         print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval, too-many-pending, retry routing")
     }
 }

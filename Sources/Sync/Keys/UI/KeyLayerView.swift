@@ -49,7 +49,7 @@ struct KeyLayerView: View {
                 }.padding(32)
             case .showingRecoveryCode:
                 RecoveryCodeDisplayView(viewModel: viewModel)
-            case .enteringRecoveryCode:
+            case .enteringRecoveryCode, .confirmingRecoveryCode:
                 RecoveryCodeEntryView(viewModel: viewModel)
             case .chooseJoinMethod:
                 JoinMethodChoiceView(viewModel: viewModel)

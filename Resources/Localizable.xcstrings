@@ -68060,6 +68060,54 @@
             "state" : "new",
             "value" : "Summon Phi Chat with Shift Shift Shift"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Shift Shift Shift 召唤 Phi Chat"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Shift Shift Shift 召喚 Phi Chat"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shift Shift ShiftでPhi Chatを呼び出す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shift Shift Shift로 Phi Chat 불러오기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invoquer Phi Chat avec Maj Maj Maj"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Chat mit Umschalt Umschalt Umschalt aufrufen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Chat oproepen met Shift Shift Shift"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invocar Phi Chat con Mayús Mayús Mayús"
+          }
         }
       }
     },

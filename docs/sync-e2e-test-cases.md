@@ -343,6 +343,9 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 | UX-18 | Open synced bookmarks/pins or update only their favicons; then edit and revert content within debounce | Local-only changes retain success; real edits invalidate immediately and their round restores status even after a revert | Not run |
 | UX-19 | On B open join-method selection, request approval, cancel and request again three times; repeat with window close and recovery entry | No Finish later before verification; A's refreshed list contains only B's current request; approving it advances B; other devices' requests survive | Not run |
 | UX-20 | Match Profiles with same-name local/account Spaces, revisit Profile choices, edit or clear a Space picker and go Back; repeat with ambiguous names and stale Space identities | Unique names within the selected Profile are preselected; stored valid identities win; explicit choices survive Back; ambiguity stays undecided; no writes before Finish | Not run |
+| UX-21 | With Sync settings closed, browse continuously and delay a previously requested catch-up until after another cycle completes | Ordinary pending/commit cycles and late successes cause no new helper pull/catch-up. Forced rounds are at least 60 seconds apart | Not run |
+| UX-22 | Reject dispatch before pairing/key readiness; then accept but drop a request, and deliver success after its deadline | Rejected dispatch never enters Syncing. Accepted work times out after 60 seconds at the next observation, keeps the prior common time, and waits another 60 seconds before retry | Not run |
+| UX-23 | Lose the first account-creation response before the recovery code is displayed; reopen setup. Separately fail local enrollment/confirmation writes | Reopen offers ordinary join/recovery, without claiming an unseen code was saved. Local save failures have a distinct error and cannot release confirmation | Not run |
 
 Automated evidence is recorded separately from these manual cases: hostless
 pairing/device/status/invalidation regressions and convergence properties have
@@ -382,8 +385,19 @@ boundaries. They do not mark the manual app UI or two-Mac cases above as passed.
 - Add/remove a Profile during an outstanding status callback; completion must
   wait for the current participant set. Switch accounts during the callback and
   verify neither the new account nor the retired account receives a late write.
-- A framework lacking status support remains Checking. Explicit reconfiguration
+- A framework lacking status support cannot report success; an accepted attempt
+  expires from Checking to Needs attention. Explicit reconfiguration
   or removal clears the common time. Restart preserves the last recorded time
   as history and requires fresh completion before claiming Up to date.
 - Sentinel is a hostless registration-hook test only; no Sentinel transport is
   enabled by this change. Live two-Mac acceptance remains required before release.
+
+`build-scripts/test-sync-helper.sh` exercises the production helper with a fake
+clock and controlled engine boundaries: continuous commit/pending cycles and late
+prior completions cause no new requests; explicit/membership/failure/stale demand
+shares a minimum interval; rejected and expired requests preserve the prior time;
+retired accounts and membership/native changes fence outstanding observations.
+`build-scripts/test-sync-join.sh` also covers a lost bootstrap response, local save
+failure before account creation, confirmation write failure/retry, and failed
+cleanup of an already-initialized account. These are hostless regression results,
+not evidence that the manual cases above passed.

@@ -42,6 +42,7 @@ actor JoinAPI: KeyEnvelopeAPI {
     var holdPost = false
     var postContinuation: CheckedContinuation<Void, Never>?
     var holdGet = false
+    var loseBootstrapResponse = false
     var getContinuation: CheckedContinuation<Void, Never>?
     func configure(holdPost: Bool = false, holdGet: Bool = false, failDeny: Bool = false,
                    tooManyPending: Bool = false) {
@@ -50,6 +51,7 @@ actor JoinAPI: KeyEnvelopeAPI {
     }
     func releasePost() { holdPost = false; postContinuation?.resume(); postContinuation = nil }
     func releaseGet() { holdGet = false; getContinuation?.resume(); getContinuation = nil }
+    func simulateLostBootstrapResponse() { loseBootstrapResponse = true }
     func pendingIDs() -> Set<String> { Set(requests.values.filter { $0.status == "pending" }.map(\.requestId)) }
     func setStatus(_ id: String, _ status: String, envelope: Data = Data()) throws {
         guard let old = requests[id] else { throw JoinRequestError.notFound }
@@ -59,7 +61,9 @@ actor JoinAPI: KeyEnvelopeAPI {
     }
     func listDevices() async throws -> [AccountDeviceDTO] { [] }
     func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
+        if account != nil { return false }
         account = AccountKeyStateDTO(recoverySalt: salt, kdfVersion: kdfVersion, kdfParams: kdfParams, recoveryArkEnvelope: recoveryEnvelope, arkGeneration: 1)
+        if loseBootstrapResponse { throw URLError(.networkConnectionLost) }
         return true
     }
     func getAccount() async throws -> AccountKeyStateDTO? { account }
@@ -217,6 +221,55 @@ actor JoinAPI: KeyEnvelopeAPI {
                     "Only a matching code advances to pairing and clears input")
         try require(!ProfilePairingGate.shared.requiresRecoveryConfirmation && !ProfilePairingGate.shared.isPaired,
                     "Verification clears the pending flag but does not complete pairing")
+        let lostAPI = JoinAPI()
+        await lostAPI.simulateLostBootstrapResponse()
+        let lostManager = AccountKeyManager(api: lostAPI, deviceKeyProvider: DeviceKeyStore(),
+                                           pendingRegistrations: MemoryRegistration())
+        var lostPending = false
+        let lostBootstrap = KeyLayerViewModel(manager: lostManager, beginEnrollment: {},
+            recoveryConfirmationRequired: { lostPending }, setRecoveryConfirmationRequired: { lostPending = $0 })
+        await lostBootstrap.startBootstrap()
+        try require(!lostPending, "Failed bootstrap must not demand confirmation of a code that was never displayed")
+        await lostBootstrap.beginSetup()
+        try require(lostBootstrap.phase == .chooseJoinMethod,
+                    "An uncertain bootstrap must use ordinary account recovery instead of claiming the code was saved")
+
+        let storageAPI = JoinAPI()
+        let storageManager = AccountKeyManager(api: storageAPI, deviceKeyProvider: DeviceKeyStore(),
+                                              pendingRegistrations: MemoryRegistration())
+        var storagePending = false
+        var rejectSave = true
+        let storage = KeyLayerViewModel(manager: storageManager, beginEnrollment: {},
+            recoveryConfirmationRequired: { storagePending }, setRecoveryConfirmationRequired: {
+                if rejectSave { throw NSError(domain: "disk write failed", code: 1) }
+                storagePending = $0
+            })
+        await storage.startBootstrap()
+        let failedAccount = await storageAPI.account
+        try require(storage.phase != .error(KeyLayerStrings.connectionFailed) && failedAccount == nil,
+                    "Local enrollment write failure must stop bootstrap and report a local storage error")
+        rejectSave = false
+        await storage.startBootstrap()
+        guard case .showingRecoveryCode(let storageCode) = storage.phase else { fatalError("Expected saved-code display") }
+        await storage.confirmSaved()
+        rejectSave = true
+        await storage.submitRecoveryCode(storageCode)
+        try require(storage.phase == .confirmingRecoveryCode && storagePending
+                    && storage.inputError != nil && storage.inputError != KeyLayerStrings.connectionFailed,
+                    "Confirmation write failure must retain the gate and report storage rather than connectivity")
+        rejectSave = false
+        await storage.submitRecoveryCode(storageCode)
+        try require(storage.phase == .readyToPair && !storagePending,
+                    "A successful local write retry may release the confirmation gate")
+        let alreadyInitialized = KeyLayerViewModel(manager: storageManager, beginEnrollment: {},
+            recoveryConfirmationRequired: { storagePending }, setRecoveryConfirmationRequired: {
+                if !$0 { throw NSError(domain: "disk write failed", code: 1) }
+                storagePending = true
+            })
+        await alreadyInitialized.startBootstrap()
+        try require(alreadyInitialized.phase == .error(KeyLayerStrings.saveFailed),
+                    "Failed flag cleanup after an existing account must report storage failure")
+        print("PASS bootstrap failures: lost response uses ordinary recovery; local write errors keep their own message and gate")
         print("PASS recovery confirmation: one-time display, wrong/checksummed codes, normalized input, reopen, gating")
         print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval, too-many-pending, retry routing")
     }

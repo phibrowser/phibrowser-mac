@@ -110027,7 +110027,7 @@
         }
       }
     },
-    "sync.recoveryCode.oneTimeNotice" : {
+    "sync.recovery.save.oneTimeNotice" : {
       "comment" : "Recovery code display - one-time visibility warning and required next-step verification",
       "extractionState" : "manual",
       "localizations" : {
@@ -110039,7 +110039,7 @@
         }
       }
     },
-    "sync.recoveryCode.confirmTitle" : {
+    "sync.recovery.entry.confirmTitle" : {
       "comment" : "Sync setup - title requiring re-entry of the saved recovery code",
       "extractionState" : "manual",
       "localizations" : {
@@ -110051,7 +110051,7 @@
         }
       }
     },
-    "sync.recoveryCode.confirmExplanation" : {
+    "sync.recovery.entry.confirmExplanation" : {
       "comment" : "Sync setup - explanation of required recovery code verification",
       "extractionState" : "manual",
       "localizations" : {
@@ -110059,6 +110059,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter the recovery code you just saved. Sync will stay off until you confirm the code and finish setup."
+          }
+        }
+      }
+    },
+    "sync.setup.saveFailed" : {
+      "comment" : "Sync setup - local enrollment or recovery confirmation could not be saved",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save sync setup on this device. Try again."
           }
         }
       }

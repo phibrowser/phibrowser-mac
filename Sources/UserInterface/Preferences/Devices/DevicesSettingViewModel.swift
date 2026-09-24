@@ -23,7 +23,7 @@ final class DevicesSettingViewModel: ObservableObject {
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
-    var syncReport: () async -> SyncHelper.Report? = { nil }
+    var syncReport: (_ requestSync: Bool) async -> SyncHelper.Report? = { _ in nil }
     @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
@@ -36,7 +36,7 @@ final class DevicesSettingViewModel: ObservableObject {
     var currentDeviceID: String? { try? manager.deviceKeyProviderForTesting.deviceKeyId() }
     static let requestFailed = NSLocalizedString("sync.settings.requestFailed", value: "Couldn’t load sync information. Check your connection and retry.", comment: "Sync settings request failed")
 
-    func refreshStatus() async {
+    func refreshStatus(requestSync: Bool = false) async {
         guard isCurrentAccount() else { return }
         let generation = loadGeneration
         requiresReconfiguration = reconfigurationRequired()
@@ -46,7 +46,7 @@ final class DevicesSettingViewModel: ObservableObject {
             summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
             return
         }
-        let report = await syncReport()
+        let report = await syncReport(requestSync)
         guard generation == loadGeneration, isCurrentAccount() else { return }
         paired = pairingComplete()
         guard paired else {
@@ -74,13 +74,13 @@ final class DevicesSettingViewModel: ObservableObject {
         }
     }
 
-    private func refresh() async {
+    private func refresh(requestSync: Bool = false) async {
         guard !refreshInFlight, isCurrentAccount() else { return }
         refreshInFlight = true
         defer { refreshInFlight = false }
         async let pendingLoad: Void = refreshPending()
         async let deviceLoad: Void = refreshDevices()
-        await refreshStatus()
+        await refreshStatus(requestSync: requestSync)
         await pendingLoad
         await deviceLoad
     }
@@ -107,7 +107,7 @@ final class DevicesSettingViewModel: ObservableObject {
             switch result {
             case .unlocked:
                 unlockState = .unlocked
-                await refresh()
+                await refresh(requestSync: true)
                 guard generation == loadGeneration, isCurrentAccount() else { return }
                 startPolling()
             case .needsJoin:    unlockState = .needsJoin

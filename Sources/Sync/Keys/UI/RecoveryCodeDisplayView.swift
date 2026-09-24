@@ -17,7 +17,7 @@ struct RecoveryCodeDisplayView: View {
                 .themedForeground(.textPrimaryStrong)
 
             Text(NSLocalizedString(
-                "sync.recoveryCode.oneTimeNotice",
+                "sync.recovery.save.oneTimeNotice",
                 value: "This recovery code is shown only once. Save it somewhere safe. On the next screen, enter it to confirm you saved it before continuing sync setup.",
                 comment: "Recovery code display - one-time visibility warning and required next-step verification"))
                 .font(.body)

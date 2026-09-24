@@ -13,6 +13,7 @@ struct PairingLocal: Equatable, Identifiable {
 enum KeyLayerStrings {
     static let invalidRecoveryCode = NSLocalizedString("sync.setup.invalidRecoveryCode", value: "Check your recovery code and try again.", comment: "Sync recovery input rejected")
     static let connectionFailed = NSLocalizedString("sync.setup.connectionFailed", value: "Couldn’t connect to sync. Check your connection and try again.", comment: "Sync setup request failed")
+    static let saveFailed = NSLocalizedString("sync.setup.saveFailed", value: "Couldn’t save sync setup on this device. Try again.", comment: "Sync setup - local enrollment or recovery confirmation could not be saved")
     static let signInRequired = NSLocalizedString("sync.setup.signInRequired", value: "Sign in again to continue setting up sync.", comment: "Sync setup authentication expired")
     static let tooManyJoinRequests = NSLocalizedString("sync.setup.tooManyJoinRequests", value: "Too many pending requests. Try again later or use a recovery code.", comment: "Sync setup error shown when the account already has too many pending requests to join from a new device")
 }
@@ -298,6 +299,11 @@ final class KeyLayerViewModel: ObservableObject {
         do {
             try beginEnrollment()
             try setRecoveryConfirmationRequired(true)
+        } catch {
+            phase = .error(KeyLayerStrings.saveFailed)
+            return
+        }
+        do {
             let code = try await manager.bootstrap()
             guard generation == operationGeneration, flowIsCurrent else { return }
             createdAccountInThisFlow = true
@@ -305,10 +311,16 @@ final class KeyLayerViewModel: ObservableObject {
         } catch AccountKeyError.alreadyInitialized {
             guard generation == operationGeneration, flowIsCurrent else { return }
             do { try setRecoveryConfirmationRequired(false); phase = .chooseJoinMethod }
-            catch { phase = .error(KeyLayerStrings.connectionFailed) }
+            catch { phase = .error(KeyLayerStrings.saveFailed) }
         } catch {
             guard generation == operationGeneration, flowIsCurrent else { return }
-            phase = .error(KeyLayerStrings.connectionFailed)
+            // No code reached the display. A lost PUT response can leave an
+            // existing server account, but cannot truthfully require re-entry of
+            // a code the user never saw. Retry uses the ordinary recovery route.
+            do {
+                try setRecoveryConfirmationRequired(false)
+                phase = .error(KeyLayerStrings.connectionFailed)
+            } catch { phase = .error(KeyLayerStrings.saveFailed) }
         }
     }
 
@@ -331,9 +343,17 @@ final class KeyLayerViewModel: ObservableObject {
         defer { if generation == operationGeneration { workingOperation = false } }
         do {
             try beginEnrollment()
+        } catch {
+            inputError = KeyLayerStrings.saveFailed
+            return
+        }
+        do {
             try await manager.joinWithRecoveryCode(code)
             guard generation == operationGeneration, flowIsCurrent else { return }
-            if confirming { try setRecoveryConfirmationRequired(false) }
+            if confirming {
+                do { try setRecoveryConfirmationRequired(false) }
+                catch { inputError = KeyLayerStrings.saveFailed; return }
+            }
             verified()
         } catch AccountKeyError.badRecoveryCode {
             guard generation == operationGeneration, flowIsCurrent else { return }

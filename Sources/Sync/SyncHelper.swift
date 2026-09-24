@@ -1,7 +1,7 @@
 import Foundation
 
 /// Account-scoped completion coordinator. Engines own data, keys and transport;
-/// this helper only requests rounds and records their common completion barrier.
+/// observing their progress must never feed back into unbounded refresh requests.
 @MainActor
 final class SyncHelper {
     static let lastSuccessDefaultsKey = "sync.lastCoordinatedSuccess"
@@ -9,9 +9,10 @@ final class SyncHelper {
     struct Participant {
         let id: String
         let read: @MainActor () async -> SyncContextSnapshot?
-        let requestSync: @MainActor () -> Void
+        /// True only when the owner accepted the request. Transport completion is
+        /// observed separately; a bridge that drops an accepted request times out.
+        let requestSync: @MainActor () -> Bool
         // Native state can change while asynchronous bridge observations are outstanding.
-        // Its owner supplies a non-suspending read for the final completion fence.
         var currentSnapshot: (@MainActor () -> SyncContextSnapshot?)? = nil
     }
 
@@ -23,7 +24,6 @@ final class SyncHelper {
 
     private struct Round {
         let startedAt: Date
-        let ids: Set<String>
         let previousSuccesses: [String: Date]
     }
 
@@ -31,9 +31,15 @@ final class SyncHelper {
     private let participants: () -> [Participant]
     private let saveSuccess: (Date) -> Bool
     private let now: () -> Date
+    private let minimumRoundInterval: TimeInterval
+    private let staleInterval: TimeInterval
+    private let roundTimeout: TimeInterval
     private var upstream: [String: Participant] = [:]
     private var lastSuccess: Date?
-    private var completedEvidence: [String: Date]?
+    private var observedIDs: Set<String>?
+    private var needsRound = true
+    private var coordinationFailed = false
+    private var nextRequestAt: Date?
     private var round: Round?
     private var generation = UUID()
     private var retired = false
@@ -43,35 +49,44 @@ final class SyncHelper {
 
     init(isEligible: @escaping () -> Bool, participants: @escaping () -> [Participant],
          lastSuccess: Date?, saveSuccess: @escaping (Date) -> Bool,
-         now: @escaping () -> Date = Date.init) {
+         now: @escaping () -> Date = Date.init,
+         minimumRoundInterval: TimeInterval = 60, staleInterval: TimeInterval = 300,
+         roundTimeout: TimeInterval = 60) {
         self.isEligible = isEligible
         self.participants = participants
         self.lastSuccess = lastSuccess
         self.saveSuccess = saveSuccess
         self.now = now
+        self.minimumRoundInterval = minimumRoundInterval
+        self.staleInterval = staleInterval
+        self.roundTimeout = roundTimeout
     }
 
-    /// Sentinel's future authenticated adapter registers here, using a namespaced id
-    /// such as "sentinel". Until registered it is not part of the completion barrier.
-    /// No IPC, data transfer or Sentinel key ownership is implied by this hook.
+    /// Sentinel's future authenticated adapter registers here, using a namespaced id.
+    /// Until registered it is not part of the completion barrier. No IPC or keys are owned here.
     func registerUpstream(_ participant: Participant) {
         guard !retired, !participants().contains(where: { $0.id == participant.id }) else { return }
         upstream[participant.id] = participant
-        invalidateMembership()
+        membershipDidChange()
     }
 
     func unregisterUpstream(id: String) {
         guard upstream.removeValue(forKey: id) != nil else { return }
-        invalidateMembership()
+        membershipDidChange()
     }
 
-    private func invalidateMembership() {
+    /// The owner forwards cached membership changes synchronously, including changes
+    /// during a bridge await. This fences replies without enumerating Profiles twice.
+    func membershipDidChange() {
+        guard !retired else { return }
         generation = UUID()
         refreshTask?.cancel()
         refreshTask = nil
         round = nil
-        completedEvidence = nil
-        report.summary = SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess)
+        observedIDs = nil
+        needsRound = true
+        coordinationFailed = false
+        report = Report(summary: SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess))
     }
 
     func start() {
@@ -85,9 +100,11 @@ final class SyncHelper {
         }
     }
 
-    /// Coalesces the background observation and a pane's immediate refresh.
-    func refresh() async {
+    /// Ordinary pane/background polls only observe. An explicit pane reload may
+    /// request a round, coalesced with in-flight work and the same minimum interval.
+    func refresh(requestSync: Bool = false) async {
         guard !retired else { return }
+        if requestSync && round == nil { needsRound = true }
         if let refreshTask { await refreshTask.value; return }
         let expected = generation
         let pending = Task<Void, Never> { [weak self] in
@@ -104,35 +121,36 @@ final class SyncHelper {
         pollTask?.cancel(); pollTask = nil
         refreshTask?.cancel(); refreshTask = nil
         round = nil
-        completedEvidence = nil
         report = Report()
     }
 
-    private func currentParticipants() -> [Participant] {
-        let base = participants()
-        let ids = Set(base.map(\.id))
-        return base + upstream.values.filter { !ids.contains($0.id) }.sorted { $0.id < $1.id }
+    private func resetIneligible() {
+        round = nil
+        observedIDs = nil
+        needsRound = true
+        coordinationFailed = false
+        report = Report()
     }
 
     private func observe(generation expected: UUID) async {
-        guard isEligible() else {
-            round = nil; completedEvidence = nil; report = Report()
-            return
-        }
-        let sources = currentParticipants()
+        guard !retired, generation == expected else { return }
+        guard isEligible() else { resetIneligible(); return }
+        let base = participants()
+        let baseIDs = Set(base.map(\.id))
+        let sources = base + upstream.values.filter { !baseIDs.contains($0.id) }.sorted { $0.id < $1.id }
         let ids = Set(sources.map(\.id))
+        if observedIDs != ids {
+            observedIDs = ids
+            round = nil
+            needsRound = true
+            coordinationFailed = false
+        }
         var snapshots: [String: SyncContextSnapshot] = [:]
         for source in sources {
             let snapshot = await source.read()
             guard !retired, generation == expected else { return }
-            guard isEligible() else { round = nil; completedEvidence = nil; report = Report(); return }
+            guard isEligible() else { resetIneligible(); return }
             if let snapshot, snapshot.id == source.id { snapshots[source.id] = snapshot }
-        }
-        // Profile creation/removal while a bridge reply is pending invalidates this observation.
-        guard ids == Set(currentParticipants().map(\.id)) else {
-            round = nil; completedEvidence = nil
-            report.summary = SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess)
-            return
         }
         for source in sources {
             if let current = source.currentSnapshot {
@@ -141,34 +159,59 @@ final class SyncHelper {
         }
         report.requiredIDs = ids
         report.snapshots = snapshots
-        let observed = SyncStatusSummary.reduce(paired: true, requiredIDs: ids, snapshots: Array(snapshots.values))
-        let successes = snapshots.compactMapValues(\.lastSuccess)
-        if ids.isEmpty {
-            round = nil; completedEvidence = nil
+        guard !ids.isEmpty else {
             report.summary = SyncStatusSummary(phase: .checking, lastSuccess: lastSuccess)
             return
         }
-        let changed = completedEvidence == nil || completedEvidence != successes || observed.phase != .upToDate
-        if !ids.isEmpty && (round.map { $0.ids != ids } == true || (round == nil && changed)) {
-            round = Round(startedAt: now(), ids: ids, previousSuccesses: successes)
-            for source in sources { source.requestSync() }
-        }
-        if let round, observed.phase == .upToDate,
-           ids.allSatisfy({ id in
-               guard let time = successes[id], time >= round.startedAt else { return false }
-               return round.previousSuccesses[id].map { time > $0 } ?? true
-           }) {
-            let completion = now()
-            guard saveSuccess(completion) else {
-                report.summary = SyncStatusSummary(phase: .needsAttention, lastSuccess: lastSuccess)
-                return
+        let observed = SyncStatusSummary.reduce(paired: true, requiredIDs: ids, snapshots: Array(snapshots.values))
+        let successes = snapshots.compactMapValues(\.lastSuccess)
+        let time = now()
+        if let round {
+            if time.timeIntervalSince(round.startedAt) >= roundTimeout {
+                self.round = nil
+                needsRound = true
+                coordinationFailed = true
+                nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
+            } else if observed.phase == .upToDate, ids.allSatisfy({ id in
+                guard let success = successes[id], success >= round.startedAt else { return false }
+                return round.previousSuccesses[id].map { success > $0 } ?? true
+            }) {
+                if saveSuccess(time) {
+                    lastSuccess = time
+                    self.round = nil
+                    coordinationFailed = false
+                } else {
+                    coordinationFailed = true
+                }
             }
-            lastSuccess = completion
-            completedEvidence = successes
-            self.round = nil
         }
-        report.summary = SyncStatusSummary(
-            phase: round != nil && observed.phase == .upToDate ? .syncing : observed.phase,
-            lastSuccess: lastSuccess)
+        // Commit-only cycles, late replies and ordinary pending work are observations,
+        // never demand. The engines' own schedulers handle local/remote changes.
+        let failed = observed.phase == .offline || observed.phase == .needsAttention
+        let stale = ids.contains { id in
+            successes[id].map { time.timeIntervalSince($0) >= staleInterval } ?? true
+        }
+        if round == nil, needsRound || failed || stale,
+           nextRequestAt.map({ time >= $0 }) ?? true {
+            nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
+            let accepted = sources.allSatisfy { $0.requestSync() }
+            guard !retired, generation == expected else { return }
+            guard isEligible() else { resetIneligible(); return }
+            if accepted {
+                round = Round(startedAt: time, previousSuccesses: successes)
+                needsRound = false
+                coordinationFailed = false
+            } else {
+                needsRound = true
+                coordinationFailed = true
+            }
+        }
+        let phase: SyncSummaryPhase
+        if failed { phase = observed.phase }
+        else if coordinationFailed { phase = .needsAttention }
+        else if round != nil && observed.phase == .upToDate { phase = .syncing }
+        else if needsRound { phase = .checking }
+        else { phase = observed.phase }
+        report.summary = SyncStatusSummary(phase: phase, lastSuccess: lastSuccess)
     }
 }

@@ -414,6 +414,9 @@ import SwiftUI
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in
+                // ProfileManager publishes its main-thread cache synchronously.
+                // Fence an outstanding status read before any queued continuation resumes.
+                MainActor.assumeIsolated { self?.syncHelper?.membershipDidChange() }
                 Task { @MainActor in
                     await self?.syncKeyController?.silentUnlockAndResolve()
                     // A profile arriving late can be the first unlock this process gets, so
@@ -700,31 +703,38 @@ import SwiftUI
                 if pullPhi { await engine.pullOnce() }
             })
         let chromiumStatus = ChromiumSyncStatus()
+        syncHelper?.stop()
         syncHelper = SyncHelper(
             isEligible: { [weak self] in
                 guard let self else { return false }
                 return AccountController.shared.account === account
                     && self.phiSyncEngine === builtEngine
                     && ProfilePairingGate.shared.isPaired
+                    && self.phiSyncPairingEnabled
+                    && self.syncKeyController?.manager.currentARK != nil
             },
             participants: { [weak self] in
                 guard let self, let engine = builtEngine else { return [] }
-                ProfileManager.shared.refresh()
                 let profiles = self.syncStatusProfileIDs
                 guard !profiles.isEmpty else { return [] }
                 // The existing bridge interprets only empty UUID + empty types as
                 // catch-up. A nonempty UUID with no types is deliberately a no-op.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
                     requestSync: { [weak self] in
-                        guard self?.phiSyncPairingEnabled == true,
-                              self?.syncKeyController?.manager.currentARK != nil else { return }
+                        guard let self, self.phiSyncEngine === engine,
+                              AccountController.shared.account === account,
+                              self.phiSyncPairingEnabled,
+                              self.syncKeyController?.manager.currentARK != nil,
+                              let bridge = ChromiumLauncher.sharedInstance().bridge,
+                              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) else { return false }
                         Task { await engine.pullOnce() }
-                        ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncInvalidation?(
+                        bridge.notifyPhiSyncInvalidation?(
                             forAccount: accountId, profileUUID: "", dataTypeIds: [], excludingClientId: "")
+                        return true
                     }, currentSnapshot: { engine.statusSnapshot })]
                 participants += profiles.map { id in
                     SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
-                                          requestSync: {}) // Included in the one account-wide request above.
+                                          requestSync: { true }) // Included in the accepted account-wide request above.
                 }
                 return participants
             },

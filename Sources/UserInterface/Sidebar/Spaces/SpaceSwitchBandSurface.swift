@@ -103,26 +103,27 @@ extension SpaceSwitchBandSurface {
     }
 
     /// Flies the strip's glass chip from the source pip to the target pip as
-    /// an explicit CA layer animation for a spawn/materialize switch — the
-    /// one animation kind that keeps playing while the switch's synchronous
-    /// window build blocks the main thread. False (zero side effects) when
-    /// the strip isn't mounted or can't fly (see
+    /// an explicit CA layer animation, started with the switch's
+    /// `activeSpaceId` flip — the one animation kind that keeps playing
+    /// while the switch's synchronous session build blocks the main thread.
+    /// The stand-in sweeps itself when it lands. False (zero side effects)
+    /// when the strip isn't mounted or can't fly (see
     /// `SpacesStripHostingView.beginSpacesChipFlight`); the SwiftUI chip
     /// then keeps today's behavior.
     func beginSpacesChipFlight(fromSpaceId: String, toSpaceId: String,
-                               duration: TimeInterval) -> Bool {
+                               pipCount: Int, duration: TimeInterval) -> Bool {
         guard let strip = spacesStripRowView as? SpacesStripHostingView else { return false }
         return strip.beginSpacesChipFlight(fromSpaceId: fromSpaceId,
                                            toSpaceId: toSpaceId,
+                                           pipCount: pipCount,
                                            duration: duration)
     }
 
-    /// Sweeps the chip flight's stand-in and restores the SwiftUI chip.
-    /// Idempotent; wired into the switch's shared leaving-side restore so
-    /// every resolution — reveal, failure, supersession — sweeps exactly
-    /// once.
-    func cancelSpacesChipFlight() {
-        (spacesStripRowView as? SpacesStripHostingView)?.cancelSpacesChipFlight()
+    /// Sweeps the chip flight while it is still heading for `toSpaceId` —
+    /// run when that switch fails or is forced to settle, so the stand-in
+    /// never keeps flying to a Space the slot has backed out of.
+    func cancelSpacesChipFlight(toSpaceId: String) {
+        (spacesStripRowView as? SpacesStripHostingView)?.cancelSpacesChipFlight(toSpaceId: toSpaceId)
     }
 
     /// Hides/reveals the live band content while the push-in overlay (which

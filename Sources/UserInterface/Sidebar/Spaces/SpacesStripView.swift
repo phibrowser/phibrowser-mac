@@ -656,7 +656,11 @@ struct SpacesStripView: View {
                 addButton
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // `minWidth: 0` makes the measured width the row's own, never its
+        // content's: without it a row that lays out every pip (a fresh
+        // mount, or a sidebar narrowed after a wide one) is as wide as
+        // those pips, measures as fitting them all, and never overflows.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         // The whole row is the add button's hover region, so the "+" is
         // already visible by the time the cursor could reach its
         // far-right slot.
@@ -866,8 +870,8 @@ struct SpacesStripView: View {
         // shifts and clips with the row.
         .background {
             // Concealed while the hosting view's CA stand-in flies a
-            // spawn/materialize switch (the only animation kind that plays
-            // through the rebuild's main-thread block). `.identity` on both
+            // switch (the only animation kind that plays through the
+            // switch's main-thread blocks). `.identity` on both
             // edges: the concealment flips in the same update pass as the
             // `activeSpaceId` switch, whose row-level animation would
             // otherwise fade the removal — a doubled chip beside the
@@ -1063,8 +1067,7 @@ struct SpacesStripView: View {
         }
         // Room left of the trailing slot (which keeps a small gap before it).
         let budget = availableWidth - item - spacing
-        // Everything fits, with the "+" trailing?
-        if width(total) <= budget { return total }
+        if Self.allPipsFit(count: total, availableWidth: availableWidth) { return total }
         // Overflowing: the "…" takes the trailing slot, and BOTH edge peeks
         // are reserved regardless of the window's position, so the whole-pip
         // count never reflows while the row slides.
@@ -1072,6 +1075,13 @@ struct SpacesStripView: View {
         var count = total - 1
         while count > 1, width(count) + peekAllowance > budget { count -= 1 }
         return count
+    }
+
+    /// Whether `count` pips all fit in a row `availableWidth` wide, with the
+    /// "+" trailing — the row then shows every pip and never slides.
+    static func allPipsFit(count: Int, availableWidth: CGFloat) -> Bool {
+        let width = count <= 0 ? 0 : CGFloat(count) * stripItemWidth + CGFloat(count - 1) * stripSpacing
+        return width <= availableWidth - stripItemWidth - stripSpacing
     }
 
     /// Pips in drag order: the local `stripOrderedIds` snapshot (rearranged live

@@ -8904,6 +8904,9 @@ final class SpaceWindowSlot: ObservableObject {
         timing.mark("leaving_agent_hook.end")
         if spaceId != activeSpaceId {
             activeSpaceId = spaceId
+            if animated, let previousSpaceId {
+                beginChipFlight(fromSpaceId: previousSpaceId, toSpaceId: spaceId)
+            }
             timing.mark("active_space.publish.end")
             manager.persistActiveSpaceId(spaceId)
             timing.mark("active_space.persist.end")
@@ -11026,6 +11029,24 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
+    /// Flies the on-screen strip's glass chip to the new active pip, in the
+    /// same turn as the `activeSpaceId` flip that moves the SwiftUI chip.
+    /// The band slide can start a whole main-thread block later (a dormant
+    /// session's tree bind, a cold spawn); a flight started then restarted
+    /// from the source pip behind a chip that had already moved.
+    private func beginChipFlight(fromSpaceId: String, toSpaceId: String) {
+        guard !isCreatingSpace, let shell, shell.window.isVisible,
+              let leaving = visibleController, leaving.spaceId == fromSpaceId,
+              leaving.mainSplitViewController.isViewLoaded else { return }
+        let surface = spaceSwitchSurface(of: leaving)
+        guard surface.view.window === shell.window,
+              !surface.view.isHiddenOrHasHiddenAncestor else { return }
+        _ = surface.beginSpacesChipFlight(fromSpaceId: fromSpaceId,
+                                          toSpaceId: toSpaceId,
+                                          pipCount: presentedSpaces.count,
+                                          duration: Self.swapAnimationDuration)
+    }
+
     /// Starts the band slide on the leaving session's sidebar. Returns nil
     /// when nothing can animate (no band, zero duration, shell not on
     /// screen), in which case the caller presents instantly.
@@ -11080,12 +11101,9 @@ final class SpaceWindowSlot: ObservableObject {
             startLeavingChrome: { [weak self, weak prevSurface] in
                 self?.rampWindowTheme(prevThemeContext, from: sourceTheme, to: targetTheme, duration: duration)
                 prevSurface?.rampSpaceTint(fromHex: sourceColorHex, toHex: targetColorHex, duration: duration)
-                _ = prevSurface?.beginSpacesChipFlight(fromSpaceId: leaving.spaceId,
-                                                       toSpaceId: enteringSpaceId,
-                                                       duration: duration)
             },
             restoreLeavingTheme: { [weak self, weak prevSurface] in
-                prevSurface?.cancelSpacesChipFlight()
+                prevSurface?.cancelSpacesChipFlight(toSpaceId: enteringSpaceId)
                 self?.themeRampTimer?.invalidate()
                 self?.themeRampTimer = nil
                 prevThemeContext.setTheme(sourceTheme)

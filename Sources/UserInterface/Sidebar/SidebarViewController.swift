@@ -26,6 +26,8 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// The stand-in chip currently flying, nil when idle. One flight at a
     /// time: a new begin sweeps the previous one first.
     private var chipFlightLayer: CALayer?
+    /// The Space the live flight is heading for.
+    private var chipFlightTargetId: String?
 
     /// Keep AppKit's window-background drag off the strip row. The main window
     /// sets `isMovableByWindowBackground = true`
@@ -53,20 +55,36 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// Flies the glass chip from the source pip to the target pip as an
     /// EXPLICIT Core Animation layer animation — the one animation kind that
     /// keeps playing in the render server while the main thread is blocked
-    /// (the materialize rebuild, the spawn's createBrowser; SwiftUI and
-    /// NSAnimationContext view animations both freeze there). The SwiftUI
-    /// chip is concealed in the same runloop turn, so the same CATransaction
-    /// commits the swap — no doubled and no missing chip frame. The stand-in
-    /// is swept by `cancelSpacesChipFlight` when the switch resolves.
+    /// (the dormant session's tree bind, the spawn's createBrowser, the
+    /// materialize rebuild; SwiftUI and NSAnimationContext view animations
+    /// all freeze there). Started by the slot in the same runloop turn as
+    /// the `activeSpaceId` flip, and the SwiftUI chip is concealed here, so
+    /// one CATransaction commits the swap — no doubled and no missing chip
+    /// frame, and no SwiftUI chip that has already moved for the flight to
+    /// restart behind. The stand-in sweeps itself when it lands (the SwiftUI
+    /// chip is at the target by then), or when a new flight begins.
     ///
     /// Returns false — with zero side effects — when the flight can't run
-    /// (no geometry published yet, either pip not wholly inside the
-    /// viewport's clip frame, degenerate input); the strip then behaves
-    /// exactly as it did before this feature existed.
+    /// (the `pipCount` pips overflow the row, no geometry published yet,
+    /// either pip not wholly inside the viewport's clip frame, degenerate
+    /// input); the strip then behaves exactly as it did before this
+    /// feature existed.
     func beginSpacesChipFlight(fromSpaceId: String,
                                toSpaceId: String,
+                               pipCount: Int,
                                duration: TimeInterval) -> Bool {
         guard let geometry = stripGeometry, let hostLayer = layer else { return false }
+        // Only a row that shows every pip holds still. An overflowing row
+        // re-centers on the new pip and slides under the stand-in, which is
+        // not part of it; the SwiftUI chip, which rides the row, keeps those
+        // switches.
+        guard SpacesStripView.allPipsFit(count: pipCount,
+                                         availableWidth: geometry.rowWidth) else { return false }
+        // A Space created in this same turn (a new Incognito Space) has no
+        // pip laid out yet; lay the strip out now so its frame is published.
+        if geometry.pipFrames[toSpaceId] == nil {
+            layoutSubtreeIfNeeded()
+        }
         // Eligibility first, sweep second: an ineligible begin must leave a
         // flight already on this strip untouched, or "returns false with
         // zero side effects" would hold only while no flight is live.
@@ -77,6 +95,7 @@ final class SpacesStripHostingView: ThemedHostingView {
             viewportFrame: geometry.viewportFrame,
             duration: duration) else { return false }
         cancelSpacesChipFlight()
+        chipFlightTargetId = toSpaceId
         let from = Self.chipLayerRect(endpoints.from, boundsHeight: bounds.height,
                                       isFlipped: isFlipped)
         let to = Self.chipLayerRect(endpoints.to, boundsHeight: bounds.height,
@@ -85,26 +104,45 @@ final class SpacesStripHostingView: ThemedHostingView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             fill = NSColor(resource: .sidebarTabSelected).cgColor
         }
+        // The completion block covers the slide added inside this group:
+        // it sweeps the stand-in once it lands, unless a newer flight has
+        // replaced it.
+        weak var landing: CALayer?
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, let landing, self.chipFlightLayer === landing else { return }
+            self.cancelSpacesChipFlight()
+        }
         let chip = Self.makeChipFlightLayer(from: from, to: to, duration: duration,
                                             fillColor: fill)
+        landing = chip
         // Below the SwiftUI content, like the chip it stands in for — the
         // pips draw on top of it (zPosition < 0 sublayers composite under
         // the hosting view's SwiftUI layers; probed for the design).
         hostLayer.insertSublayer(chip, at: 0)
+        CATransaction.commit()
         chipFlightLayer = chip
         geometry.isChipConcealed = true
         return true
     }
 
-    /// Sweeps the stand-in and restores the SwiftUI chip. Idempotent — wired
-    /// into the switch's shared restoreLeaving, which every resolution
-    /// (reveal, failure, supersession) funnels through.
+    /// Sweeps the stand-in and restores the SwiftUI chip. Idempotent — run
+    /// when the flight lands and ahead of every new flight.
     func cancelSpacesChipFlight() {
         chipFlightLayer?.removeFromSuperlayer()
         chipFlightLayer = nil
+        chipFlightTargetId = nil
         if let geometry = stripGeometry, geometry.isChipConcealed {
             geometry.isChipConcealed = false
         }
+    }
+
+    /// Sweeps the flight only while it is still heading for `toSpaceId`:
+    /// a switch that fails or is forced to settle drops its own stand-in,
+    /// never the one a newer switch has started since.
+    func cancelSpacesChipFlight(toSpaceId: String) {
+        guard chipFlightTargetId == toSpaceId else { return }
+        cancelSpacesChipFlight()
     }
 
     /// Resolves a flight's endpoints, or nil ("don't fly") unless both pips

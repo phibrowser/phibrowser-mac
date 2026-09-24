@@ -638,8 +638,37 @@ class SpaceSessionController: NSWindowController {
             mainSplitViewController.view.appearance = appearance
             if isHosted {
                 mainSplitViewController.sidebarViewController.view.appearance = appearance
+                if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+                    mainSplitViewController.floatingSidebarContent.view.appearance = appearance
+                }
             }
         }
+    }
+
+    /// Hosted mode: pins this session's own trees (page tree, docked and
+    /// floating sidebar content) to the appearance they draw in, resolved to
+    /// a concrete one even when it follows the system. Those trees otherwise
+    /// inherit the shell window's appearance, which is the presented
+    /// session's and changes only when a slide lands (`applyWindowChrome`):
+    /// during a switch between Spaces of different appearances — an
+    /// Incognito Space is always dark — both trees drew in the leaving one's,
+    /// and the entering Space flipped to its own after the landing. The
+    /// landing's `applyThemeAppearance` hands them back to the window.
+    func pinContentAppearanceForSwitch() {
+        guard isHosted, mainSplitViewController.isViewLoaded else { return }
+        let appearance = resolvedContentAppearance
+        mainSplitViewController.view.appearance = appearance
+        mainSplitViewController.sidebarViewController.view.appearance = appearance
+        if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            mainSplitViewController.floatingSidebarContent.view.appearance = appearance
+        }
+    }
+
+    /// The appearance this session's content draws in: its fixed window
+    /// appearance, or the one the app currently resolves to.
+    var resolvedContentAppearance: NSAppearance? {
+        let context = browserState.themeContext
+        return context.windowAppearance ?? context.currentAppearance.nsAppearance
     }
     
     private func setupContentView() {

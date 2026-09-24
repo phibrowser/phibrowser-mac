@@ -502,10 +502,15 @@ enum SentinelHelper {
         AppLogInfo("Posted account deleted event (requestID \(event.requestID), bundleID \(identifier))")
     }
 
-    static func loginItemIdentifier() -> String {
-        let mainBundleID = Bundle.main.bundleIdentifier?.lowercased() ?? ""
+    static func loginItemIdentifier(
+        browserBundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> String {
+        let mainBundleID = browserBundleIdentifier?.lowercased() ?? ""
         if mainBundleID.contains("canary") {
             return "com.phibrowser.canary.Sentinel"
+        }
+        if mainBundleID.contains("dev") {
+            return "com.phibrowser.dev.Sentinel"
         }
         return "com.phibrowser.Sentinel"
     }

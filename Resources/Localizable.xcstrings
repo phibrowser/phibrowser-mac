@@ -68051,6 +68051,18 @@
         }
       }
     },
+    "settings.ai.phiSentinel.phiChatHotkeyToggle" : {
+      "comment" : "AI settings - Toggle to enable opening Phi Chat by pressing Shift three times",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Summon Phi Chat with Shift Shift Shift"
+          }
+        }
+      }
+    },
     "settings.ai.privateAI.title" : {
       "comment" : "AI settings - Row that opens Phi Sentinel's Private AI page",
       "extractionState" : "extracted_with_value",

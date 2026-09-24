@@ -244,6 +244,7 @@ private struct BrowserMemorySectionView: View {
 private struct PhiSentinelSectionView: View {
     @AppStorage(PhiPreferences.AISettings.launchSentinelOnLogin.rawValue)
     private var launchSentinelOnLogin: Bool = PhiPreferences.AISettings.launchSentinelOnLogin.defaultValue
+    @StateObject private var phiChatHotkeyPreference = PhiChatHotkeyPreferenceSync.shared
 
     let enabled: Bool
 
@@ -261,6 +262,17 @@ private struct PhiSentinelSectionView: View {
 
                 Divider()
 
+                AIToggleRow(
+                    title: NSLocalizedString("settings.ai.phiSentinel.phiChatHotkeyToggle", value: "Summon Phi Chat with Shift Shift Shift", comment: "AI settings - Toggle to enable opening Phi Chat by pressing Shift three times"),
+                    isOn: Binding(
+                        get: { phiChatHotkeyPreference.isEnabled },
+                        set: { setPhiChatHotkeyEnabled($0) }
+                    ),
+                    enabled: enabled
+                )
+
+                Divider()
+
                 AINavigationRow(
                     title: NSLocalizedString("settings.ai.privateAI.title", value: "Private AI", comment: "AI settings - Row that opens Phi Sentinel's Private AI page"),
                     enabled: enabled,
@@ -271,10 +283,20 @@ private struct PhiSentinelSectionView: View {
         .onChange(of: launchSentinelOnLogin) {
             notifyNativeSettingsChanged()
         }
+        .onAppear {
+            phiChatHotkeyPreference.reload()
+        }
     }
 
     private func openPrivateAI() {
         SentinelHelper.openDashboard(section: "experimental")
+    }
+
+    private func setPhiChatHotkeyEnabled(_ isEnabled: Bool) {
+        phiChatHotkeyPreference.setEnabled(isEnabled)
+        if isEnabled {
+            SentinelHelper.launch()
+        }
     }
 }
 

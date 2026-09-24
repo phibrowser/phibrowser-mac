@@ -2064,6 +2064,17 @@ extension AppController {
             action: #selector(commandDispatch(_:)), command: .IDC_NEW_TAB, target: nil)
         add(NSLocalizedString("profile.menu.newIncognitoWindow", value: "New Incognito Window", comment: "Profile menu - New Incognito Window action"),
             action: #selector(commandDispatch(_:)), command: .IDC_NEW_INCOGNITO_WINDOW, target: nil)
+        if PhiBuildCapabilities.supportsAuthentication, !ApplicationState.shared.isAuthenticated {
+            menu.addItem(.separator())
+            add(NSLocalizedString("profile.menu.signIn", value: "Sign in", comment: "Profile menu - Sign in action when not signed in"),
+                action: #selector(signInFromProfileMenu(_:)), target: self)
+        }
+    }
+
+    @objc private func signInFromProfileMenu(_ sender: NSMenuItem) {
+        Task { @MainActor in
+            LoginController.shared.showLoginWindow()
+        }
     }
 
     /// Inline title for a switcher row: the Space name in the label color followed
@@ -3338,6 +3349,9 @@ extension AppController {
                 return false
             }
             return !bookmark.isFolder
+        }
+        if item.action == #selector(signInFromProfileMenu(_:)) {
+            return PhiBuildCapabilities.supportsAuthentication && !ApplicationState.shared.isAuthenticated
         }
         let canUseBrowser = ApplicationState.shared.canUseBrowser
         if !canUseBrowser {

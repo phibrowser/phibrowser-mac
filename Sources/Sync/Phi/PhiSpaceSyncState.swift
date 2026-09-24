@@ -92,8 +92,8 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     // has one drain state across settings, Spaces, bookmarks, pins and future kinds. Never duplicate it in
     // per-kind PhiOwnedItemTable files (§3.5).
     //
-    // There are 12 fields: spec §3.5's eleven marker-derived values plus spaceSectionEnabled, a persisted gate
-    // value. CASE 3.12 in PhiOwnedItemStateTests pins their names; review this contract before adding more.
+    // This includes the persisted gate and the account enrollment replay acknowledgement.
+    // CASE 3.12 in PhiOwnedItemStateTests pins the shared field set; none belongs in a per-kind file.
     //
     // New fields must use decodeIfPresent with defaults in explicit init(from:). Synthesized decoding ignores
     // property defaults for missing nonoptional keys, invalidating older tables and potentially sending users
@@ -103,6 +103,8 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var hadRecords = false
     var spaceSectionEnabled = false
     var markerMovedWhileGateShut = false
+    /// Enrollment replay is acknowledged atomically with the durable replay latch.
+    var lastEnrollmentReplayToken: UUID? = nil
     var didReplayForEmptyTable = false
     var lastDrainedBirthday: String?
     /// `client_tag_hash` -> lastSeenAtMs. Rows the server holds under data type
@@ -257,6 +259,7 @@ extension PhiSpaceSyncTable {
         hadRecords = try container.decode(Bool.self, forKey: .hadRecords)
         spaceSectionEnabled = try container.decode(Bool.self, forKey: .spaceSectionEnabled)
         markerMovedWhileGateShut = try container.decode(Bool.self, forKey: .markerMovedWhileGateShut)
+        lastEnrollmentReplayToken = try container.decodeIfPresent(UUID.self, forKey: .lastEnrollmentReplayToken)
         didReplayForEmptyTable = try container.decode(Bool.self, forKey: .didReplayForEmptyTable)
         lastDrainedBirthday = try container.decodeIfPresent(String.self, forKey: .lastDrainedBirthday)
         unreadableTagHashes = try container.decode([String: Int64].self, forKey: .unreadableTagHashes)

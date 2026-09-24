@@ -148,9 +148,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                             store: MemorySpaceStore,
                             client: FakePhiSyncClient,
                             markerStore: (any PhiSyncMarkerStore)? = nil,
+                            replayToken: UUID? = nil,
                             clock: Clock = Clock()) -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
                       defaults: defaults, deviceKeyId: "devA", pairingComplete: true,
+                      enrollmentSpaceReplayToken: replayToken,
                       settings: [],
                       spaceAccess: access, spaceStore: store,
                       markerStore: markerStore,
@@ -618,6 +620,89 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(false)
         await engine.setSpaceSyncEnabled(true)
         XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), marker)
+    }
+
+    /// While unpaired no round runs, so the gate close is dropped and no pull moves the
+    /// marker. Setup completion must still replay the type under the confirmed mappings;
+    /// legacy activation (no replay request) must not.
+    func testCompletingSetupReplaysTheTypeEvenThoughTheGateNeverClosed() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let marker = defaults.data(forKey: PhiSyncEngine.markerStateKey)
+        XCTAssertNotNil(marker)
+
+        engine.suspendForPairing()
+        await engine.setSpaceSyncEnabled(false)
+        await engine.enableAfterPairing()
+        await engine.setSpaceSyncEnabled(true)
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), marker,
+                       "Legacy activation keeps the marker")
+
+        engine.suspendForPairing()
+        await engine.setSpaceSyncEnabled(false)
+        await engine.enableAfterPairing(replayToken: UUID())
+        await engine.setSpaceSyncEnabled(true)
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                     "Setup completion drops the marker so the type replays")
+    }
+
+    func testEnrollmentReplayRetriesLatchFailureAndLandsTheConfirmedSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1", name: "Account Work")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let priorCalls = client.getUpdatesCalls.count
+        engine.suspendForPairing()
+        access.spaces = [localSpace("LOCAL-1", "Local Work", order: 1)]
+        access.spaceMappings = ["LOCAL-1": "u1"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        let token = UUID()
+        await engine.enableAfterPairing(replayToken: token)
+        store.failNextSave = true
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.count, priorCalls,
+                       "A failed latch write blocks the old incremental pull")
+        store.failNextSave = false
+        await engine.pullOnce()
+        XCTAssertNil(client.getUpdatesCalls[priorCalls].marker)
+        XCTAssertEqual(store.table.lastEnrollmentReplayToken, token)
+        XCTAssertEqual(access.spaces.first { $0.spaceId == "LOCAL-1" }?.name, "Account Work")
+    }
+
+    func testRestartRestoresEnrollmentReplayBeforeActivationAndConsumesItOnce() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        let first = makeEngine(access: access, store: store, client: client)
+        await first.setSpaceSyncEnabled(true)
+        await first.pullOnce()
+        first.suspendForPairing()
+        let token = UUID()
+        let restarted = makeEngine(access: access, store: store, client: client, replayToken: token)
+        let priorCalls = client.getUpdatesCalls.count
+        await restarted.pullOnce()
+        XCTAssertNil(client.getUpdatesCalls[priorCalls].marker)
+        XCTAssertEqual(store.table.lastEnrollmentReplayToken, token)
+        let marker = defaults.data(forKey: PhiSyncEngine.markerStateKey)
+        XCTAssertNotNil(marker)
+        restarted.suspendForPairing()
+        let again = makeEngine(access: access, store: store, client: client, replayToken: token)
+        let nextCalls = client.getUpdatesCalls.count
+        await again.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls[nextCalls].marker, marker,
+                       "The same enrollment cannot replay on every startup")
     }
 
     func testAnEmptyTableWithHadRecordsReplaysExactlyOnce() async throws {

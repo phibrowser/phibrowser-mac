@@ -72,6 +72,9 @@ exact-name matches within the Profile selected in step 1 (or already mapped).
 Ambiguous names stay undecided. Changing Profile choices recomputes automatic
 suggestions; explicit Space choices, including clearing a picker, survive Back.
 Suggestions never persist mappings or bypass overwrite review and Finish.
+A stored Space identity absent from the fresh account list (server reset, or an
+unpublished local mint) may receive a suggestion; confirming an account Space
+for that row replaces the stale mapping, as explicit Profile adoption does.
 
 Every entry and submission preflight fetches new Profile and Space candidates;
 GET requests bypass response caches. A failed refresh has no cached-choice
@@ -89,11 +92,24 @@ snapshot so a Space-write retry retains its remaining choices. Fresh preflight
 still rejects independent changes to the server candidates or reviewed Space data.
 
 All native data rounds and Chromium ready-key exposure require enrollment.
+Completing setup replays the shared Phi data type once under the confirmed Space
+mappings, because no round (not even the gate close) runs while unpaired. Completion
+atomically stores an optional replay token in the version-1 enrollment record;
+legacy migration leaves it absent. Startup and activation pass the token to the
+engine. The serialized gate and every live pull compare it with the Space table's
+optional `lastEnrollmentReplayToken`, saving that acknowledgement together with
+`markerMovedWhileGateShut` before clearing the marker. Failed saves block incremental
+pulls and retry; a crash before activation restores the same demand from enrollment.
+Once acknowledged, the same token never requests another replay. Both added fields
+decode as absent in older records, preserving their prior behavior. The existing
+single writer and shared marker own replay; no per-kind cursor is added.
 Read-only pairing previews use the serialized engine queue without advancing
 cursors or landing/publishing data. Each preview starts with an empty marker and
 store birthday, then pins subsequent pages to the first response's server
 generation. A changed persisted birthday or `not_my_birthday` response discards
-preview choices and requires explicit reconfiguration. Ordinary previews never
+preview choices and requires explicit reconfiguration. Legacy enrollment stops
+retrying when this persisted condition is observed; only explicit setup can recover.
+Ordinary previews never
 repair persisted sync metadata or depend on background sync to repair it while
 enrollment is incomplete.
 
@@ -1209,10 +1225,15 @@ The Chromium half of the routing tie-break is covered by
 `unit_tests --gtest_filter='PhiURLRouter*'`).
 
 Every XCTest suite named above is **compile-only**
-(`xcodebuild build-for-testing`); the convergence harness is the one exception.
+(`xcodebuild build-for-testing`). The convergence harness and standalone hostless
+regressions execute independently of that application host.
 `xcodebuild test` is never run: a hosted XCTest bundle launches a Phi host
 process that collides with the developer's running Phi through
 `ProcessSingleton`. Nothing here is a substitute for two real Macs — the
 cross-device acceptance cases, including the known limitations this document
 records, live in [Sync E2E test cases](sync-e2e-test-cases.md), which is a
 manual QA reference and not an execution report.
+
+The hostless `./build-scripts/test-sync-space-replay.sh` regression covers enrollment
+replay persistence, failed latch/marker writes, restart before activation, and
+one-shot replay without launching the application.

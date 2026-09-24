@@ -43,6 +43,7 @@ final class ProfilePairingGate {
     private var enrollment = SyncPairingEnrollment()
     private(set) var enrollmentGeneration = UUID()
     var isPaired: Bool { enrollment.isPaired }
+    var spaceReplayToken: UUID? { enrollment.spaceReplayToken }
 
     func configureEnrollment(deviceKeyID: String, recordData: Data?,
                              saveRecord: @escaping (Data) -> Bool,
@@ -65,7 +66,7 @@ final class ProfilePairingGate {
     }
 
     func completeEnrollment(verifiedDeviceKeyID: String? = nil) throws {
-        try enrollment.setPaired(true, verifiedDeviceKeyID: verifiedDeviceKeyID)
+        try enrollment.setPaired(true, verifiedDeviceKeyID: verifiedDeviceKeyID, replaySpaces: true)
         NotificationCenter.default.post(name: .phiSyncPairingStateDidChange, object: self)
     }
 

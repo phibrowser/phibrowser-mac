@@ -99,6 +99,7 @@ func AppLogError(_ message: String) {}
     }
     func syncUuid(forSpaceId id: String) -> String? { spaceKeys.syncUuid(forSpaceId: id) }
     func mapSpace(_ id: String, toSyncUuid uuid: String) throws { try spaceKeys.map(spaceId: id, toSyncUuid: uuid) }
+    func removeSpaceMapping(forSpaceId id: String) { spaceKeys.removeMapping(forSpaceId: id) }
     func ensureSpaceMapped(spaceId: String) throws -> String { try spaceKeys.ensureMapped(spaceId: spaceId) }
     func resolveMappings() async {}
 }
@@ -208,6 +209,11 @@ struct PairingLoadTimedOut: Error {}
         try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
                     "Fresh entry must also suggest Spaces for an already-mapped Profile and a stale Space identity")
         try require(store.map == ["LOCAL-1": "old-account-space"], "A fresh suggestion must not replace a persisted identity yet")
+        // Finish then replaces the stale identity instead of failing with alreadyMapped.
+        store.failingID = nil
+        await wizard.finish(controller: controller)
+        try require(store.map == ["LOCAL-1": "acct-1", "LOCAL-2": "acct-2"],
+                    "A confirmed suggestion must replace a stale Space identity")
     }
     static func ambiguousSpaceSuggestions() throws {
         func suggested(_ locals: [PhiLocalSpace], _ account: [PhiAccountSpaceSummary],

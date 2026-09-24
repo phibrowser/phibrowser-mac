@@ -941,13 +941,21 @@ actor PhiSyncEngine {
     private var roundOffline = false
     nonisolated func suspendForPairing() { stopSignal.setPaired(false) }
 
-    func enableAfterPairing() { stopSignal.setPaired(true) }
+    /// The enrollment owner persists this token with completion and supplies it again
+    /// at startup. A live pull consumes it through the same durable replay latch as a
+    /// gate opening, even if activation was interrupted or its first write failed.
+    func enableAfterPairing(replayToken: UUID? = nil) {
+        stopSignal.setPaired(true)
+        if let replayToken { enrollmentSpaceReplayToken = replayToken }
+    }
+    private var enrollmentSpaceReplayToken: UUID?
 
     init(domainKeys: any PhiDomainKeyProviding,
          client: PhiSyncProtocolClient,
          defaults: UserDefaults,
          deviceKeyId: String,
          pairingComplete: Bool = false,
+         enrollmentSpaceReplayToken: UUID? = nil,
          settings: [SyncableSetting] = SyncableSettings.all,
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
@@ -957,6 +965,7 @@ actor PhiSyncEngine {
          previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.stopSignal = StopSignal(paired: pairingComplete)
+        self.enrollmentSpaceReplayToken = enrollmentSpaceReplayToken
         self.domainKeys = domainKeys
         self.client = client
         self.defaults = defaults
@@ -1056,11 +1065,15 @@ actor PhiSyncEngine {
 
     /// The gate edge itself. Runs as a queued round; never call it directly.
     private func applySpaceGate(_ enabled: Bool) {
-        guard enabled != spaceSectionEnabled else { return }
-        spaceSectionEnabled = enabled
-        guard mutateSpaceTable({ $0.spaceSectionEnabled = enabled }) else {
-            roundOutcome = .cursorSaveFailed
-            return
+        let replayRequested = enabled && enrollmentSpaceReplayToken != nil
+            && enrollmentSpaceReplayToken != loadSpaceTable().lastEnrollmentReplayToken
+        guard enabled != spaceSectionEnabled || replayRequested else { return }
+        if enabled != spaceSectionEnabled {
+            spaceSectionEnabled = enabled
+            guard mutateSpaceTable({ $0.spaceSectionEnabled = enabled }) else {
+                roundOutcome = .cursorSaveFailed
+                return
+            }
         }
         guard enabled else { return }
         if !armSpaceReplayIfNeeded() { roundOutcome = .cursorSaveFailed }
@@ -1095,6 +1108,14 @@ actor PhiSyncEngine {
     /// Returns false only when a durable write failed; the write helper already counted it.
     @discardableResult
     private func armSpaceReplayIfNeeded() -> Bool {
+        if let token = enrollmentSpaceReplayToken, token != loadSpaceTable().lastEnrollmentReplayToken {
+            // Acknowledge only with the latch in the same write. Failure keeps the token
+            // pending on every live pull; restart reloads it from durable enrollment.
+            guard mutateSpaceTable({ table in
+                table.markerMovedWhileGateShut = true
+                table.lastEnrollmentReplayToken = token
+            }) else { return false }
+        }
         let table = loadSpaceTable()
         guard table.markerMovedWhileGateShut || (!table.hasDrainedFullReplay && !table.drainInProgress) else {
             return true

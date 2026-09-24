@@ -466,6 +466,14 @@ final class PairingWizardViewModel: ObservableObject {
                        controller: SyncKeyController) throws -> Bool {
         switch decision.assignment {
         case .existing(let syncUuid):
+            // A stored identity absent from the fresh account list (server reset, or minted here
+            // and never published) is what the same-name suggestion may replace. As with explicit
+            // Profile adoption, the confirmed choice replaces the stale mapping; an identity the
+            // account still holds stays a hard mismatch below.
+            if let current = controller.syncUuid(forSpaceId: decision.localSpaceId), current != syncUuid,
+               !spacesInput.accountSpaces.contains(where: { $0.syncUuid == current }) {
+                controller.removeSpaceMapping(forSpaceId: decision.localSpaceId)
+            }
             do {
                 try controller.mapSpace(decision.localSpaceId, toSyncUuid: syncUuid)
             } catch SpaceSyncMappingError.alreadyMapped {

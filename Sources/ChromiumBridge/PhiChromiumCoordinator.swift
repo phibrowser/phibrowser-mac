@@ -454,7 +454,11 @@ import SwiftUI
                     case .notSignedIn: return .retry
                     }
                     let profiles = try await profileKeys.accountProfiles()
-                    guard case .success(let spaces) = await engine.previewAccountSpaces() else { return .retry }
+                    guard case .success(let spaces) = await engine.previewAccountSpaces() else {
+                        // A reset account fails every preview until explicit reconfiguration,
+                        // which starts a fresh enrollment anyway; retrying cannot succeed.
+                        return engine.requiresReconfiguration ? .notLegacy : .retry
+                    }
                     guard let self, self.syncKeyController === controller, !controller.isRetired,
                           gate.enrollmentGeneration == generation else { return .notLegacy }
                     let profileMap = profileKeys.allMappings()
@@ -668,6 +672,7 @@ import SwiftUI
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
                                       pairingComplete: ProfilePairingGate.shared.isPaired,
+                                      enrollmentSpaceReplayToken: ProfilePairingGate.shared.spaceReplayToken,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
                                       markerStore: markerStore,
                                       ownedKinds: ownedKinds,
@@ -936,8 +941,9 @@ import SwiftUI
         }
         guard let engine = phiSyncEngine, let controller = syncKeyController else { return }
         pairingActivationTask?.cancel()
+        let replayToken = ProfilePairingGate.shared.spaceReplayToken
         pairingActivationTask = Task { @MainActor [weak self] in
-            await engine.enableAfterPairing()
+            await engine.enableAfterPairing(replayToken: replayToken)
             guard let self, !Task.isCancelled, self.phiSyncEngine === engine,
                   self.syncKeyController === controller, !controller.isRetired,
                   ProfilePairingGate.shared.isPaired else { return }

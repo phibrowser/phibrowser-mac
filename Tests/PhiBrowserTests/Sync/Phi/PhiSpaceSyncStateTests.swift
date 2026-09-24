@@ -2,6 +2,20 @@ import XCTest
 @testable import Phi
 
 final class PhiSpaceSyncStateTests: XCTestCase {
+    func testEnrollmentReplayTokenPreservesOldTables() throws {
+        var table = PhiSpaceSyncTable()
+        table.lastEnrollmentReplayToken = UUID()
+        table.hasDrainedFullReplay = true
+        let encoded = try JSONEncoder().encode(table)
+        XCTAssertEqual(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded), table)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "lastEnrollmentReplayToken")
+        let legacy = try JSONDecoder().decode(PhiSpaceSyncTable.self,
+                                             from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(legacy.lastEnrollmentReplayToken)
+        XCTAssertTrue(legacy.hasDrainedFullReplay)
+    }
+
 
     final class FakeStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()

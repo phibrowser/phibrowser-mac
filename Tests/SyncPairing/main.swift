@@ -42,6 +42,18 @@ struct PairingTests {
         precondition(confirmation.isPaired)
         print("PASS persisted recovery confirmation: restart, enrollment bypass, failed writes, confirmed pairing")
         let gate = ProfilePairingGate()
+        var completedRecord: Data?
+        try gate.configureEnrollment(deviceKeyID: "replay", recordData: nil,
+                                     saveRecord: { completedRecord = $0; return true })
+        try gate.completeEnrollment()
+        let replayToken = gate.spaceReplayToken
+        precondition(replayToken != nil)
+        try gate.configureEnrollment(deviceKeyID: "replay", recordData: completedRecord,
+                                     saveRecord: { _ in true })
+        precondition(gate.isPaired && gate.spaceReplayToken == replayToken,
+                     "Completion must restore replay after a crash before activation")
+        try gate.beginEnrollment()
+        precondition(gate.spaceReplayToken == nil)
         let host = RecordingHost()
         gate.modalHost = host
         gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
@@ -75,6 +87,7 @@ struct PairingTests {
         try enrollment.configure(deviceKeyID: "a", recordData: nil,
             saveRecord: { _ in writes += 1; return true }, legacyEvidence: verified)
         precondition(enrollment.isPaired && writes == 1)
+        precondition(enrollment.spaceReplayToken == nil, "Legacy migration must not demand a replay")
         try enrollment.setPaired(false)
         precondition(!enrollment.isPaired && writes == 2)
         try enrollment.configure(deviceKeyID: "a", recordData: nil, saveRecord: { _ in false })

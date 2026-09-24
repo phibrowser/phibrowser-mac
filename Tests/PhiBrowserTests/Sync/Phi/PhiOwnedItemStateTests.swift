@@ -443,9 +443,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.12
 
-    /// CASE 3.12: shared-marker field set. Adding a thirteenth field requires reviewing
-    /// the ownership comment: all four kinds share these fields; none belongs in a per-kind file.
-    func testTheSharedMarkerStateIsExactlyTheseTwelveFields() {
+    /// CASE 3.12: account-scoped marker/replay state shared by all kinds.
+    /// Enrollment acknowledgement belongs beside its replay latch, never in a per-kind file.
+    func testTheSharedMarkerStateIsAccountScoped() {
         let all = Set(Mirror(reflecting: PhiSpaceSyncTable()).children.compactMap(\.label))
 
         let marker = all.subtracting(["formatVersion", "cursors"])
@@ -456,6 +456,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
             "hadRecords",
             "spaceSectionEnabled",
             "markerMovedWhileGateShut",
+            "lastEnrollmentReplayToken",
             "didReplayForEmptyTable",
             "lastDrainedBirthday",
             "unreadableTagHashes",
@@ -463,6 +464,8 @@ final class PhiOwnedItemStateTests: XCTestCase {
             "pinsHadRecords",
             "bookmarksReplayedForEmptyTable",
             "pinsReplayedForEmptyTable",
+            "urlRulesHadRecords",
+            "urlRulesReplayedForEmptyTable",
         ])
     }
 

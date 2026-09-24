@@ -6,6 +6,7 @@ struct SyncPairingRecord: Codable, Equatable {
     let deviceKeyID: String
     let paired: Bool
     var recoveryConfirmationRequired: Bool? = nil
+    var spaceReplayToken: UUID? = nil
 }
 
 struct SyncPairingLegacyEvidence {
@@ -42,6 +43,8 @@ struct SyncPairingEnrollment {
 
     var isPaired: Bool { SyncPairingEligibility.isPaired(record: record, deviceKeyID: deviceKeyID) }
 
+    var spaceReplayToken: UUID? { isPaired ? record?.spaceReplayToken : nil }
+
     var requiresRecoveryConfirmation: Bool {
         record?.version == 1 && record?.deviceKeyID == deviceKeyID
             && record?.recoveryConfirmationRequired == true
@@ -70,7 +73,8 @@ struct SyncPairingEnrollment {
         }
     }
 
-    mutating func setPaired(_ paired: Bool, verifiedDeviceKeyID: String? = nil) throws {
+    mutating func setPaired(_ paired: Bool, verifiedDeviceKeyID: String? = nil,
+                            replaySpaces: Bool = false) throws {
         let pending = requiresRecoveryConfirmation
         guard !paired || !pending else { throw SyncPairingPersistenceError.recoveryConfirmationRequired }
         if let verifiedDeviceKeyID { deviceKeyID = verifiedDeviceKeyID }
@@ -80,8 +84,11 @@ struct SyncPairingEnrollment {
                                        recoveryConfirmationRequired: pending)
         }
         guard !deviceKeyID.isEmpty, let saveRecord else { throw SyncPairingPersistenceError.writeFailed }
+        // Completion and its replay requirement must survive a crash as one record.
+        // Legacy migration leaves the optional token absent.
         let candidate = SyncPairingRecord(version: 1, deviceKeyID: deviceKeyID, paired: paired,
-                                         recoveryConfirmationRequired: pending)
+                                         recoveryConfirmationRequired: pending,
+                                         spaceReplayToken: paired ? (replaySpaces ? UUID() : record?.spaceReplayToken) : nil)
         guard saveRecord(try JSONEncoder().encode(candidate)) else {
             throw SyncPairingPersistenceError.writeFailed
         }

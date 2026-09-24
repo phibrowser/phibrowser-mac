@@ -365,6 +365,25 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
     }
 
+    /// A stored identity the account no longer has (server reset, or an unpublished local
+    /// mint) seeds `.addAsNew`, and a same-name suggestion may replace it. Finish must then
+    /// replace the stale mapping instead of failing with `alreadyMapped`.
+    func testASuggestionOverAStaleSpaceIdentityFinishesByReplacingTheMapping() async throws {
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work")], accountSpaces: [account("acct-1", name: "Work")])
+        api.profileEnvelopes["uuid-a"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Personal", ark: try XCTUnwrap(controller.manager.currentARK))
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "uuid-a", forLocalProfile: "Default")
+        store.map["LOCAL-1"] = "stale-identity"
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        XCTAssertEqual(wizard.spaceSelections["LOCAL-1"], .existing(syncUuid: "acct-1"))
+
+        await wizard.finish(controller: controller)
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(store.map["LOCAL-1"], "acct-1")
+    }
+
     // MARK: - 5. Finish fails at step 1
 
     /// Assert a reread, not a fixed value. On failure, applyPairingDecisions calls startPairing

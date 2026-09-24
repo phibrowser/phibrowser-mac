@@ -55551,6 +55551,54 @@
             "state" : "translated",
             "value" : "Sign in"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログイン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로그인"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se connecter"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anmelden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log in"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar sesión"
+          }
         }
       }
     },
@@ -110036,6 +110084,54 @@
             "state" : "translated",
             "value" : "This recovery code is shown only once. Save it somewhere safe. On the next screen, enter it to confirm you saved it before continuing sync setup."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此恢复代码只会显示一次。请将它保存在安全的地方。在下一个屏幕上，输入该代码以确认你已保存，然后再继续设置同步。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此復原代碼只會顯示一次。請將它儲存在安全的地方。在下一個畫面中，請先輸入此代碼以確認你已儲存，再繼續設定同步。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この復旧コードは一度しか表示されません。安全な場所に保存してください。次の画面でこのコードを入力して保存したことを確認してから、同期の設定を続けてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 복구 코드는 한 번만 표시돼요. 안전한 곳에 저장해 주세요. 다음 화면에서 이 코드를 입력해 저장했는지 확인한 후 동기화 설정을 계속하세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce code de récupération n'est affiché qu'une seule fois. Enregistrez-le en lieu sûr. Sur l'écran suivant, saisissez-le pour confirmer que vous l'avez enregistré avant de poursuivre la configuration de la synchronisation."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Wiederherstellungscode wird nur einmal angezeigt. Sichere ihn an einem sicheren Ort. Gib ihn auf dem nächsten Bildschirm ein, um zu bestätigen, dass du ihn gesichert hast, bevor du mit der Einrichtung der Synchronisierung fortfährst."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze herstelcode wordt maar één keer getoond. Bewaar de code op een veilige plek. Voer de code op het volgende scherm in om te bevestigen dat je deze hebt bewaard voordat je verdergaat met het instellen van synchronisatie."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este código de recuperación se muestra solo una vez. Guárdalo en un lugar seguro. En la siguiente pantalla, introdúcelo para confirmar que lo guardaste antes de continuar con la configuración de sincronización."
+          }
         }
       }
     },
@@ -110047,6 +110143,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm your recovery code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认你的恢复代码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認你的復原代碼"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復旧コードを確認"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "복구 코드 확인"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmez votre code de récupération"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätige deinen Wiederherstellungscode"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bevestig je herstelcode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirma tu código de recuperación"
           }
         }
       }
@@ -110060,6 +110204,54 @@
             "state" : "translated",
             "value" : "Enter the recovery code you just saved. Sync will stay off until you confirm the code and finish setup."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入你刚刚保存的恢复代码。在你确认代码并完成设置之前，同步将保持关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請輸入你剛剛儲存的復原代碼。在你確認代碼並完成設定之前，同步會維持關閉。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先ほど保存した復旧コードを入力してください。コードを確認して設定を完了するまで、同期はオフのままです。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방금 저장한 복구 코드를 입력하세요. 코드를 확인하고 설정을 완료할 때까지 동기화는 꺼진 상태로 유지돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez le code de récupération que vous venez d'enregistrer. La synchronisation restera désactivée jusqu'à ce que vous confirmiez le code et terminiez la configuration."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib den Wiederherstellungscode ein, den du gerade gesichert hast. Die Synchronisierung bleibt deaktiviert, bis du den Code bestätigst und die Einrichtung abschließt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voer de herstelcode in die je zojuist hebt bewaard. Synchronisatie blijft uitgeschakeld totdat je de code bevestigt en het instellen voltooit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce el código de recuperación que acabas de guardar. La sincronización seguirá desactivada hasta que confirmes el código y finalices la configuración."
+          }
         }
       }
     },
@@ -110071,6 +110263,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t save sync setup on this device. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在此设备上保存同步设置。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在此裝置上儲存同步設定。請再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このデバイスに同期設定を保存できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 기기에 동기화 설정을 저장하지 못했어요. 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'enregistrer la configuration de la synchronisation sur cet appareil. Réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Synchronisierungseinrichtung konnte auf diesem Gerät nicht gespeichert werden. Versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan de synchronisatie-instellingen op dit apparaat niet bewaren. Probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar la configuración de sincronización en este dispositivo. Vuelve a intentarlo."
           }
         }
       }

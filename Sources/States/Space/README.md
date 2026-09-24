@@ -52,7 +52,9 @@ windows use their own `MainSplitViewController` split; Kiosk surfaces always
 report a collapsed, zero-width sidebar.
 
 Every Space's strip in the window reads its sliding viewport from the slot
-(`SpaceWindowSlot.stripViewportStart`), and only the strip on screen — the
+(`SpaceWindowSlot.stripViewportStart`), every strip computes it at the row
+width last measured on screen (`SpaceWindowSlot.stripViewportWidth`) so a
+hidden strip's own layout width can't move it, and only the strip on screen — the
 leaving Space's, during the band slide — animates a switch; the others snap
 (`SpacesStripPresence`), so the entering strip is at rest when the landing
 reveals it. The band's Core Animation clock starts one run-loop turn after the

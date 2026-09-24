@@ -690,6 +690,9 @@ struct SpacesStripView: View {
             proxy.size.width
         } action: { newWidth in
             stripGeometry.rowWidth = newWidth
+            if newWidth > 0, animatesOnScreen {
+                slot.stripViewportWidth = newWidth
+            }
             let count = visiblePipCount(availableWidth: measuredRowWidth - placeholderReserve)
             if count != fittedPipCount {
                 fittedPipCount = count
@@ -773,13 +776,18 @@ struct SpacesStripView: View {
         stripGeometry.rowWidth > 0 ? stripGeometry.rowWidth : .greatestFiniteMagnitude
     }
 
-    /// `ensureActivePipVisible` at the row's measured width. A no-op before
+    /// `ensureActivePipVisible` at the on-screen row's width. A no-op before
     /// the row's first layout, whose geometry action re-anchors it: the
     /// viewport start is shared by every Space's strip in the window, so an
-    /// unmeasured strip must not move it.
+    /// unmeasured strip must not move it. Every strip re-anchors on a switch,
+    /// so all of them compute at the width last measured on screen
+    /// (`SpaceWindowSlot.stripViewportWidth`): a hidden strip's own width
+    /// can be anything (the hidden floating panel's strip lays out 28pt
+    /// wide), and the last strip to re-anchor wins.
     private func reanchorViewport(animated: Bool) {
         guard stripGeometry.rowWidth > 0 else { return }
-        ensureActivePipVisible(availableWidth: stripGeometry.rowWidth, animated: animated)
+        let width = slot.stripViewportWidth > 0 ? slot.stripViewportWidth : stripGeometry.rowWidth
+        ensureActivePipVisible(availableWidth: width, animated: animated)
     }
 
     /// While the create form is up, a dashed placeholder pip follows the row;

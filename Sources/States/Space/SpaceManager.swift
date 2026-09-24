@@ -8104,6 +8104,12 @@ final class SpaceWindowSlot: ObservableObject {
     /// then reveals the entering one, and the two can only line up at the
     /// hand-over when they read the same viewport.
     @Published var stripViewportStart: Int = 0
+    /// The pip row's width as last measured by a strip on screen, 0 before
+    /// any has been. Every strip computes `stripViewportStart` at this width
+    /// rather than its own, so a hidden strip laid out at some other width
+    /// can't move the viewport. Plain storage: the width changes every frame
+    /// of a divider drag and must not re-render the strips.
+    var stripViewportWidth: CGFloat = 0
 
     /// The reorder surface of the strip on screen — the presented session's
     /// — for a drag that began as a press in another Space's strip.

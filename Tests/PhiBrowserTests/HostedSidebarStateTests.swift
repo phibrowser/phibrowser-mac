@@ -273,6 +273,29 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(decoded.colorAt(x: 20, y: 20)).alphaComponent, 0, accuracy: 0.01)
     }
 
+    func testBandCapturedAtAnotherWidthDoesNotStandIn() throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: UUID().uuidString)
+        session.warmUpDormantTree()
+        let split = try XCTUnwrap(slot.shell?.split)
+        session.presentInShell(completing: false, deferringChromium: true)
+        split.setSidebarGeometry(width: 240, collapsed: false)
+        split.view.layoutSubtreeIfNeeded()
+        let source: any SpaceSwitchBandSurface = session.mainSplitViewController.sidebarViewController
+        source.prepareSpaceSwitchBand()
+        let spaceId = UUID().uuidString
+        SpaceBandSnapshotCache.shared.capture(source, spaceId: spaceId)
+        defer { SpaceBandSnapshotCache.shared.remove(spaceId: spaceId) }
+        let width = source.spaceSwitchBandFrame.width
+
+        XCTAssertNotNil(SpaceBandSnapshotCache.shared.snapshot(for: spaceId, appearanceOf: source.view,
+                                                               width: width))
+        // The sidebar was resized since the capture: the image would stand
+        // in at its old size, so the switch goes without it.
+        XCTAssertNil(SpaceBandSnapshotCache.shared.snapshot(for: spaceId, appearanceOf: source.view,
+                                                            width: width + 60))
+    }
+
     func testIncognitoBandIsNeverSnapshotted() throws {
         let slot = makeSlot()
         let first = makeSession(in: slot, spaceId: UUID().uuidString)

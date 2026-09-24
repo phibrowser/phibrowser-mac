@@ -10605,7 +10605,8 @@ final class SpaceWindowSlot: ObservableObject {
             if controller.browserState.tabs.isEmpty,
                SpaceBandSnapshotCache.shared.snapshot(
                    for: controller.spaceId,
-                   appearanceOf: controller.mainSplitViewController.sidebarViewController.view) == nil {
+                   appearanceOf: controller.mainSplitViewController.sidebarViewController.view,
+                   width: bandFrame.width) == nil {
                 timing?.mark("animation.first_tab.wait")
                 var proceeded = false
                 let proceed: () -> Void = { [weak self, weak controller] in
@@ -10797,7 +10798,8 @@ final class SpaceWindowSlot: ObservableObject {
                                                     container: NSView) {
             guard controller.isDormant || controller.browserState.tabs.isEmpty,
                   let snapshot = SpaceBandSnapshotCache.shared.snapshot(for: controller.spaceId,
-                                                                     appearanceOf: surface.view) else { return }
+                                                                     appearanceOf: surface.view,
+                                                                     width: bandFrame.width) else { return }
             let bandInContainer = container.convert(surface.spaceSwitchBandFrame, from: surface.view)
             guard bandInContainer.width > 0, bandInContainer.height > 0 else { return }
             // The snapshot holds the whole band; a pinned strip that stays

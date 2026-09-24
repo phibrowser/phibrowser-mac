@@ -132,6 +132,16 @@ final class SpaceBandSnapshotCache {
         return snapshot
     }
 
+    /// The cached band for `spaceId`, only if it was captured at `width`:
+    /// the stand-in shows the image at its captured size, so a band from
+    /// before a sidebar resize draws its rows too short or cut off until
+    /// the live rows replace it. A mismatch counts as no cached band.
+    func snapshot(for spaceId: String, appearanceOf view: NSView, width: CGFloat) -> Snapshot? {
+        guard let snapshot = snapshot(for: spaceId, appearanceOf: view),
+              abs(snapshot.size.width - width) <= 0.5 else { return nil }
+        return snapshot
+    }
+
     /// A band captured while its live rows were suppressed is transparent.
     /// It must never replace a cold Space's available native controls.
     private static func hasVisibleContent(_ image: NSImage) -> Bool {

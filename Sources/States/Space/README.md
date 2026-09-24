@@ -80,7 +80,7 @@ slides: the leaving pinned strip stays put and the entering one takes over at la
 content until landing and holds pointer-driven dismissal during the transition.
 Both modes retain their band backing layers between switches. Live targets
 reconcile pending native row changes before motion. A dormant target with a
-cached band slides decoded pixels immediately, then reconciles and draws live
+cached band captured at the current band width slides decoded pixels immediately, then reconciles and draws live
 rows before uncovering them. Without a usable cache, it forms the available
 native rows, including New Tab, before motion starts. Initial floating layout runs during session hosting; return visits do not
 remount or reactivate it. Both backgrounds use the band's Core Animation clock; the

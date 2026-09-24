@@ -158,6 +158,7 @@ struct FolioLibraryView: View {
                 .foregroundStyle(model.filter == filter ? accent : .secondary)
                 .background(model.filter == filter ? accent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(model.filter == filter ? accent.opacity(0.18) : .primary.opacity(0.07)))
+                .contentShape(.rect)
         }.buttonStyle(.plain).accessibilityAddTraits(model.filter == filter ? .isSelected : [])
     }
 

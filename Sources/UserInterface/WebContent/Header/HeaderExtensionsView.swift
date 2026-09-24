@@ -58,7 +58,22 @@ struct BadgeCornerOverlay: View {
 /// `Button`-backed control beneath it (e.g. the sidebar address-bar extension
 /// icon, whose `HoverableButton` tap then never fires). Forcing `hitTest` to nil
 /// passes every event through to the control below.
+///
+/// Every host is pinned edge to edge over its control, so it takes no size
+/// from its content: the content-derived size constraints are turned off,
+/// which also spares a SwiftUI size query per badge on every layout pass
+/// (every frame of a sidebar resize, for the address bar's extension icons).
 final class BadgeHostingView<Content: View>: NSHostingView<Content> {
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        sizingOptions = []
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        sizingOptions = []
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 

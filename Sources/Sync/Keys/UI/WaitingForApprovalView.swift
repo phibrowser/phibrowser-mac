@@ -11,7 +11,7 @@ struct WaitingForApprovalView: View {
         VStack(spacing: 24) {
             ProgressView()
 
-            Text(NSLocalizedString("Waiting for approval", comment: "Waiting - title"))
+            Text(NSLocalizedString("sync.setup.waiting.title", value: "Waiting for approval", comment: "Sync setup - title while waiting for another device to approve this one"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
@@ -45,7 +45,7 @@ struct WaitingForApprovalView: View {
                 Text(error).font(.callout).foregroundColor(.red)
             }
             Button(NSLocalizedString("sync.setup.useRecovery", value: "Use a recovery code", comment: "Switch from approval to recovery code")) { viewModel.showRecoveryEntry() }
-            Button(NSLocalizedString("Cancel", comment: "Waiting - cancel")) { viewModel.cancelJoin() }
+            Button(NSLocalizedString("sync.setup.waiting.cancel", value: "Cancel", comment: "Sync setup - button that cancels the pending join request")) { viewModel.cancelJoin() }
                 .buttonStyle(.bordered)
         }
         .padding(32)

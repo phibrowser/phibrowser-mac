@@ -54,7 +54,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }()
 
     override func loadView() {
-        view = NSView()
+        view = PinnedGridItemView()
         setupUI()
     }
 

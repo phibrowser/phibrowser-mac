@@ -17,9 +17,9 @@ import AppKit
 /// Devices pane is authored in English throughout. That moves the gate's alert
 /// from Chinese to English; the gate's remaining labels are untouched.
 enum SelfRevokeStrings {
-    static let confirmTitle = NSLocalizedString(
-        "Remove this Mac from account sync?",
-        comment: "Self-revoke confirmation - title")
+    static let confirmTitle = NSLocalizedString("sync.removal.confirmation.title",
+        value: "Remove this Mac from account sync?",
+        comment: "Remove this device from sync - confirmation dialog title")
 
     /// Names every piece of state the teardown drops, because "remove" is
     /// otherwise easy to read as "delete my data": the server revokes this
@@ -30,13 +30,13 @@ enum SelfRevokeStrings {
         "sync.removal.explanation", value: "This Mac will stop syncing. Your local browsing data stays on this Mac. To join again, use approval from another device or your saved recovery code.",
         comment: "Consequences of removing this device from sync")
 
-    static let confirmAction = NSLocalizedString(
-        "Remove This Device",
-        comment: "Self-revoke confirmation - confirm")
+    static let confirmAction = NSLocalizedString("sync.removal.confirmation.confirm",
+        value: "Remove This Device",
+        comment: "Remove this device from sync - confirmation dialog button that removes the device")
 
-    static let cancel = NSLocalizedString(
-        "Cancel",
-        comment: "Self-revoke confirmation - cancel")
+    static let cancel = NSLocalizedString("sync.removal.confirmation.cancel",
+        value: "Cancel",
+        comment: "Remove this device from sync - confirmation dialog cancel button")
 
     /// Shown in place under the (now disabled) button when the server answers
     /// 409 `last_device`. The parenthetical is not politeness: an account
@@ -51,10 +51,9 @@ enum SelfRevokeStrings {
     /// `SyncKeyController` was gone by the time the button was clicked (a
     /// sign-out in another window, say). Retrying is the fix, so this reads as a
     /// transient failure rather than a refusal.
-    static let removalUnavailable = NSLocalizedString(
-        "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still "
-            + "signed in, then try again.",
-        comment: "Self-revoke - no sync controller")
+    static let removalUnavailable = NSLocalizedString("sync.removal.unavailable",
+        value: "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again.",
+        comment: "Remove this device from sync - error shown when sync is unavailable so the device was not removed")
 
     /// The shared second confirmation. `NSAlert` is the Preferences family's only
     /// confirmation idiom (`confirmationDialog` appears nowhere in this app), and

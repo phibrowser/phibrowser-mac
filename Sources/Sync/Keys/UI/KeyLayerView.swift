@@ -56,15 +56,15 @@ struct KeyLayerView: View {
             case .waitingForApproval(let code, let deadline):
                 WaitingForApprovalView(viewModel: viewModel, code: code, deadline: deadline)
             case .joinDenied:
-                message(NSLocalizedString("Request denied", comment: "Join denied - title"),
-                        NSLocalizedString("The other device denied this request.", comment: "Join denied - body"),
+                message(NSLocalizedString("sync.setup.joinDenied.title", value: "Request denied", comment: "Sync setup - title shown when another device denied this device's join request"),
+                        NSLocalizedString("sync.setup.joinDenied.message", value: "The other device denied this request.", comment: "Sync setup - message shown when another device denied this device's join request"),
                         retry: true)
             case .joinExpired:
-                message(NSLocalizedString("Request expired", comment: "Join expired - title"),
-                        NSLocalizedString("This request timed out. You can try again.", comment: "Join expired - body"),
+                message(NSLocalizedString("sync.setup.joinExpired.title", value: "Request expired", comment: "Sync setup - title shown when this device's join request timed out"),
+                        NSLocalizedString("sync.setup.joinExpired.message", value: "This request timed out. You can try again.", comment: "Sync setup - message shown when this device's join request timed out"),
                         retry: true)
             case .error(let m):
-                message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m,
+                message(NSLocalizedString("sync.setup.error.title", value: "Something went wrong", comment: "Sync setup - title of the error page"), m,
                         retry: true, retryRoutesFromStart: true)
             case .pairingProfiles(let locals, let remotes):
                 if let controller {
@@ -81,9 +81,10 @@ struct KeyLayerView: View {
                         pairingSelections.seed(locals: locals, remotes: remotes)
                     }
                 } else {
-                    message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"),
-                            NSLocalizedString("Pairing isn’t available right now.",
-                                comment: "Key layer - pairing phase reached with no controller to apply it"),
+                    message(NSLocalizedString("sync.setup.error.title", value: "Something went wrong", comment: "Sync setup - title of the error page"),
+                            NSLocalizedString("sync.setup.error.pairingUnavailable",
+                                value: "Pairing isn’t available right now.",
+                                comment: "Sync setup - error shown when profile matching cannot start on this device right now"),
                             retry: false)
                 }
             case .done:
@@ -119,7 +120,7 @@ struct KeyLayerView: View {
                 }
                 .buttonStyle(.borderedProminent)
             } else if retry {
-                Button(NSLocalizedString("Try another way", comment: "Key layer - retry")) {
+                Button(NSLocalizedString("sync.setup.tryAnotherWay", value: "Try another way", comment: "Sync setup - button on a denied or expired join request page that returns to the join method choice")) {
                     viewModel.chooseJoinAgain()
                 }
                 .buttonStyle(.borderedProminent)

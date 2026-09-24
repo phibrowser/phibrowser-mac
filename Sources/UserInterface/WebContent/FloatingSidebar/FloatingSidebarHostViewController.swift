@@ -21,6 +21,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var floatingSidebarWidthConstraint: Constraint?
     private var floatingSidebarHideWorkItem: DispatchWorkItem?
     private var floatingSidebarEnableWorkItem: DispatchWorkItem?
+    private var floatingSidebarWidthSyncWorkItem: DispatchWorkItem?
     private var floatingSidebarLastShownAt: Date?
     private var floatingSidebarShownFromRightToLeft = false
     private var floatingSidebarOcclusionObserver: NSObjectProtocol?
@@ -220,6 +221,10 @@ final class FloatingSidebarHostViewController: NSViewController {
     static let floatingSidebarInset: CGFloat = 5
     static let floatingSidebarShowDuration: TimeInterval = 0.15
     static let floatingSidebarHideDuration: TimeInterval = 0.15
+    /// Quiet period after the docked column's last width change before the
+    /// hidden panel follows it; shorter than the trigger's enable delay after
+    /// a collapse, so a deferred sync lands before the panel can first show.
+    static let floatingSidebarWidthSyncDelay: TimeInterval = 0.25
 
     /// The column's last expanded width as the bound state reported it; the
     /// source for a host outside a shell (a standalone Incognito window),
@@ -356,7 +361,40 @@ final class FloatingSidebarHostViewController: NSViewController {
         }
     }
 
+    /// Syncs the hidden panel to the docked column's width.
+    ///
+    /// While the column is expanded the panel cannot show, and a divider drag
+    /// changes the column's width on every frame: laying the hidden panel and
+    /// its resident trees out at each of those widths cost about a quarter of
+    /// every drag frame. The sync is deferred until the drag settles instead.
+    /// Collapsing the column, and showing the panel, apply it at once.
     func updateFloatingSidebarWidth() {
+        floatingSidebarWidthSyncWorkItem?.cancel()
+        floatingSidebarWidthSyncWorkItem = nil
+        guard isVisible || browserState?.sidebarCollapsed != false else {
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.floatingSidebarWidthSyncWorkItem = nil
+                self?.applyFloatingSidebarWidth()
+            }
+            floatingSidebarWidthSyncWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.floatingSidebarWidthSyncDelay,
+                execute: workItem
+            )
+            return
+        }
+        applyFloatingSidebarWidth()
+    }
+
+    /// Applies a width sync `updateFloatingSidebarWidth` deferred, if any.
+    private func flushPendingFloatingSidebarWidthSync() {
+        guard let workItem = floatingSidebarWidthSyncWorkItem else { return }
+        workItem.cancel()
+        floatingSidebarWidthSyncWorkItem = nil
+        applyFloatingSidebarWidth()
+    }
+
+    private func applyFloatingSidebarWidth() {
         let width = currentFloatingWidth + Self.floatingSidebarInset
         guard floatingSidebarWidthConstraint?.layoutConstraints.first?.constant != width else { return }
         floatingSidebarWidthConstraint?.update(offset: width)
@@ -395,6 +433,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// view is visible. Form them now, off screen, so the slide moves a
     /// finished panel instead of one that grows into shape.
     private func realizeHiddenContent() {
+        flushPendingFloatingSidebarWidthSync()
         if needsContentInstall, let state = browserState {
             installContent(for: state, visible: false)
         }
@@ -413,6 +452,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     func showFloatingSidebar() {
         guard shouldEnableFloatingSidebar() else { return }
+        flushPendingFloatingSidebarWidthSync()
         ensureFloatingSidebarIfNeeded()
         ensureFloatingSidebarOcclusionObserver()
         cancelFloatingSidebarHide()

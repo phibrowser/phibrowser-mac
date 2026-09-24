@@ -49,6 +49,12 @@ final class TrafficLightPositioner: NSObject {
     private var originalTopMargin: CGFloat?
     private var originalContainerHeight: CGFloat?
     private var isApplying = false
+    /// Set when AppKit moves a light while `apply()` is still writing, so the
+    /// move is corrected once the write finishes instead of being dropped.
+    private var needsReapply = false
+    /// Enough for AppKit re-tiling the three lights one at a time around our
+    /// writes; bounds the loop should AppKit ever keep moving them.
+    private static let maxApplyPasses = 4
     private var preFlushObserver: CFRunLoopObserver?
     /// Ahead of AppKit's flush observer, which sits at a large positive order,
     /// so the correction is in the frame AppKit is about to present.
@@ -105,11 +111,18 @@ final class TrafficLightPositioner: NSObject {
     /// before it is ever drawn. `apply()` returns without writing a frame when
     /// the placement already holds, which is what makes running it this often
     /// affordable.
+    ///
+    /// Core Animation commits on run-loop exit as well as before waiting, and
+    /// the loop can exit without ever waiting — a click run through a nested
+    /// event loop, such as pinning the floating sidebar — so the observer
+    /// watches both, or AppKit's placement is committed on exit and stays on
+    /// screen until the next wake.
     private func startPreFlushReassert() {
         guard preFlushObserver == nil else { return }
         let observer = CFRunLoopObserverCreateWithHandler(
             nil,
-            CFRunLoopActivity.beforeWaiting.rawValue,
+            CFRunLoopActivity.beforeWaiting.rawValue
+                | CFRunLoopActivity.exit.rawValue,
             true,
             Self.preFlushObserverOrder
         ) { [weak self] _, _ in
@@ -191,9 +204,31 @@ final class TrafficLightPositioner: NSObject {
         titlebarContainer.updateTrackingAreas()
     }
 
+    /// Re-asserts the placement, repeating while AppKit moved a light during
+    /// the previous write.
+    ///
+    /// AppKit re-tiles the lights one after another (on the sidebar expanding,
+    /// close, then miniaturize, then zoom), and each move reaches here
+    /// synchronously through `nativeTitlebarFrameDidChange`. A move that lands
+    /// while this is still writing used to be dropped by the re-entrancy
+    /// guard, and when that move was the last of AppKit's pass — zoom — no
+    /// later notification came to correct it: the disc was committed on
+    /// AppKit's line and stayed there for the rest of the sidebar animation.
     func apply() {
-        guard !isApplying,
-              let window,
+        guard !isApplying else {
+            needsReapply = true
+            return
+        }
+        var passes = 0
+        repeat {
+            needsReapply = false
+            applyOnce()
+            passes += 1
+        } while needsReapply && passes < Self.maxApplyPasses
+    }
+
+    private func applyOnce() {
+        guard let window,
               !window.styleMask.contains(.fullScreen) else { return }
         let buttons = Self.buttonTypes.compactMap {
             window.standardWindowButton($0)

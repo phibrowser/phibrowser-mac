@@ -12,7 +12,7 @@ struct RecoveryCodeDisplayView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text(NSLocalizedString("Save your recovery code", comment: "Recovery code display - title"))
+            Text(NSLocalizedString("sync.recovery.save.title", value: "Save your recovery code", comment: "Sync setup - title of the page that shows a new recovery code"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
@@ -39,8 +39,8 @@ struct RecoveryCodeDisplayView: View {
                 .cornerRadius(8)
 
             Button(justCopied
-                   ? NSLocalizedString("Copied", comment: "Recovery code display - copy button, just copied")
-                   : NSLocalizedString("Copy", comment: "Recovery code display - copy button")) {
+                   ? NSLocalizedString("sync.recovery.save.copied", value: "Copied", comment: "Sync setup - copy button title right after the recovery code was copied")
+                   : NSLocalizedString("sync.recovery.save.copy", value: "Copy", comment: "Sync setup - button that copies the recovery code")) {
                 copyRecoveryCode()
             }
             .buttonStyle(.bordered)
@@ -52,7 +52,7 @@ struct RecoveryCodeDisplayView: View {
                     .foregroundColor(.red)
             }
 
-            Button(NSLocalizedString("I've saved it", comment: "Recovery code display - confirm button")) {
+            Button(NSLocalizedString("sync.recovery.save.confirm", value: "I've saved it", comment: "Sync setup - button confirming the user saved the recovery code")) {
                 Task { await viewModel.confirmSaved() }
             }
             .buttonStyle(.borderedProminent)

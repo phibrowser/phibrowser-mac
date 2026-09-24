@@ -185,10 +185,16 @@ final class BitwardenService: ObservableObject, CredentialProvider {
     /// self-hosted instance). Pass both or neither; omitting them uses the
     /// default US cloud. The caller (login sheet) derives them from the chosen
     /// server region, so this stays vendor-URL-agnostic.
+    /// `newDeviceOtp` is the code Bitwarden emails when it does not recognize
+    /// this install as a known device. Omit it on the first attempt: that
+    /// attempt is what makes the server send the mail, and it comes back as
+    /// `BitwardenHelperErrorCode.newDeviceVerificationRequired` so the sign-in
+    /// sheet can ask for the code and retry.
     func login(
         email: String,
         masterPassword: String,
         twoFactor: String?,
+        newDeviceOtp: String? = nil,
         identityURL: String? = nil,
         apiURL: String? = nil
     ) async throws {
@@ -201,6 +207,7 @@ final class BitwardenService: ObservableObject, CredentialProvider {
             "action": BitwardenTimeoutAction.current.rawValue,
         ]
         if let twoFactor { params["twoFactor"] = twoFactor }
+        if let newDeviceOtp, !newDeviceOtp.isEmpty { params["newDeviceOtp"] = newDeviceOtp }
         if let identityURL, let apiURL, !identityURL.isEmpty, !apiURL.isEmpty {
             params["server"] = ["identityUrl": identityURL, "apiUrl": apiURL]
         }
@@ -223,10 +230,11 @@ final class BitwardenService: ObservableObject, CredentialProvider {
     /// `twoFactor` is a freshly typed second-factor code, needed only when a
     /// 2FA account's remember token is absent or expired (the helper replays
     /// its stored token otherwise).
-    func unlock(secret: String?, twoFactor: String? = nil) async throws {
+    func unlock(secret: String?, twoFactor: String? = nil, newDeviceOtp: String? = nil) async throws {
         var params: [String: Any] = [:]
         if let secret { params["masterPassword"] = secret }
         if let twoFactor, !twoFactor.isEmpty { params["twoFactor"] = twoFactor }
+        if let newDeviceOtp, !newDeviceOtp.isEmpty { params["newDeviceOtp"] = newDeviceOtp }
         _ = try await client.send(method: "unlock", params: params, timeout: 60)
         _ = await status()
     }
@@ -332,6 +340,23 @@ final class BitwardenService: ObservableObject, CredentialProvider {
     }
 }
 
+/// The `error.code` values the helper sends beside its message (its
+/// `EngineError::code`), naming the failures a caller must *act* on: each one
+/// says which credential the server is still missing. Failures without a code
+/// are display-only.
+enum BitwardenHelperErrorCode: String {
+    /// The account's second factor is required and no remembered device trust
+    /// covers this login.
+    case twoFactorRequired
+    /// Bitwarden's new-device login protection: the server does not recognize
+    /// this install and has emailed a one-time code, which the next attempt
+    /// must carry as `newDeviceOtp`.
+    case newDeviceVerificationRequired
+    /// The code sent with the last attempt was wrong or expired; a fresh one
+    /// has been emailed.
+    case invalidNewDeviceOtp
+}
+
 /// Low-level transport to `PhiBitwardenHelper`. Spawns the helper with one end
 /// of a socketpair(2) as its stdin — there is no filesystem socket, so no other
 /// process can connect to or impersonate either side — and keeps that single
@@ -353,7 +378,10 @@ final class BitwardenHelperClient: @unchecked Sendable {
         case ioFailed
         case frameTooLarge
         case invalidResponse
-        case helperError(String)
+        /// A failure the helper reported. `code` is present only for the ones a
+        /// caller acts on rather than merely displays — see
+        /// `BitwardenHelperErrorCode`.
+        case helperError(message: String, code: String?)
         case shuttingDown
 
         /// Without this, every case renders as Foundation's opaque
@@ -375,11 +403,17 @@ final class BitwardenHelperClient: @unchecked Sendable {
                 return "The Bitwarden helper sent an oversized response."
             case .invalidResponse:
                 return "The Bitwarden helper sent an invalid response."
-            case .helperError(let message):
+            case .helperError(let message, _):
                 return message
             case .shuttingDown:
                 return "The Bitwarden helper is shutting down."
             }
+        }
+
+        /// The actionable code the helper tagged this failure with, if any.
+        var helperCode: BitwardenHelperErrorCode? {
+            guard case .helperError(_, let code) = self, let code else { return nil }
+            return BitwardenHelperErrorCode(rawValue: code)
         }
     }
 
@@ -498,8 +532,9 @@ final class BitwardenHelperClient: @unchecked Sendable {
         }
         guard let ok = response["ok"] as? Bool else { throw ClientError.invalidResponse }
         if ok { return response["result"] as? [String: Any] ?? [:] }
-        let message = (response["error"] as? [String: Any])?["message"] as? String ?? "Helper error"
-        throw ClientError.helperError(message)
+        let error = response["error"] as? [String: Any]
+        let message = error?["message"] as? String ?? "Helper error"
+        throw ClientError.helperError(message: message, code: error?["code"] as? String)
     }
 
     // MARK: - Helper lifecycle

@@ -142,11 +142,13 @@ final class DevicesSettingViewModel: ObservableObject {
             await refreshPending()
             await refreshDevices()
         } catch DeviceApprovalError.notUnlocked {
-            actionError = NSLocalizedString("This device isn’t unlocked yet.",
-                comment: "Devices - approve blocked when locked")
+            actionError = NSLocalizedString("sync.devices.error.locked",
+                value: "This device isn’t unlocked yet.",
+                comment: "Devices settings - error shown when approving a device before this device is unlocked")
         } catch let e as JoinRequestError where e == .notPending {
-            actionError = NSLocalizedString("That request already expired.",
-                comment: "Devices - approve stale request")
+            actionError = NSLocalizedString("sync.devices.error.requestExpired",
+                value: "That request already expired.",
+                comment: "Devices settings - error shown when approving a request that already expired")
             await refreshPending()
         } catch {
             actionError = Self.requestFailed

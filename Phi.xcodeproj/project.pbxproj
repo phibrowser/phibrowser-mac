@@ -454,6 +454,7 @@
 		B17DE00000000000000000E4 /* Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt in Copy Bitwarden GPL Notices */ = {isa = PBXBuildFile; fileRef = B17DE00000000000000000E6 /* Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt */; };
 		B17DE0000000000000000B01 /* BitwardenSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000B02 /* BitwardenSessionStore.swift */; };
 		B7A100013001000000000002 /* SentinelLanguagePreferenceSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A100013001000000000001 /* SentinelLanguagePreferenceSync.swift */; };
+		B7A100013001000000000004 /* PhiChatHotkeyPreferenceSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A100013001000000000003 /* PhiChatHotkeyPreferenceSync.swift */; };
 		B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */; };
 		B7C4E1A2D93F5068C1AE4B27 /* TabDataModelSchemaV13.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9D6C4581B0A73E5D18F0C6 /* TabDataModelSchemaV13.swift */; };
 		B8C1B3DE901D130723BDFF30 /* BookmarkKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34F236AC381F208106EF9B34 /* BookmarkKind.swift */; };
@@ -1257,6 +1258,7 @@
 		B17DE00000000000000000E6 /* Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt"; sourceTree = SOURCE_ROOT; };
 		B17DE0000000000000000B02 /* BitwardenSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitwardenSessionStore.swift; sourceTree = "<group>"; };
 		B7A100013001000000000001 /* SentinelLanguagePreferenceSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelLanguagePreferenceSync.swift; sourceTree = "<group>"; };
+		B7A100013001000000000003 /* PhiChatHotkeyPreferenceSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChatHotkeyPreferenceSync.swift; sourceTree = "<group>"; };
 		C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SidebarTabListViewController+MultiSelectionDragPreview.swift"; sourceTree = "<group>"; };
 		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
 		C70000000000000000000001 /* CustomTooltipController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomTooltipController.swift; sourceTree = "<group>"; };
@@ -2590,6 +2592,7 @@
 				19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */,
 				3703C9832F6956E600E7CF6D /* SentinelHelper.swift */,
 				B7A100013001000000000001 /* SentinelLanguagePreferenceSync.swift */,
+				B7A100013001000000000003 /* PhiChatHotkeyPreferenceSync.swift */,
 				7C0A10013041000100000001 /* SentinelTelemetryConsentSync.swift */,
 				3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */,
 				68A1E1BFA1F745FFB849186B /* CrashFeedbackCoordinator.swift */,
@@ -3523,6 +3526,7 @@
 				F9E478A224C44EA7BC0D85CC /* AccountDeletedEventAuthentication.swift in Sources */,
 				3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */,
 				B7A100013001000000000002 /* SentinelLanguagePreferenceSync.swift in Sources */,
+				B7A100013001000000000004 /* PhiChatHotkeyPreferenceSync.swift in Sources */,
 				7C0A10023041000100000002 /* SentinelTelemetryConsentSync.swift in Sources */,
 				3703C9862F6956E600E7CF6D /* SentinelVersionGuard.swift in Sources */,
 				D996649CAC474B1EB5FBF515 /* CrashFeedbackCoordinator.swift in Sources */,

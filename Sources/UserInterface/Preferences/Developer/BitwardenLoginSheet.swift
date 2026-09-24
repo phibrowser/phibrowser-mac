@@ -63,10 +63,18 @@ struct BitwardenLoginSheet: View {
     @State private var email = ""
     @State private var password = ""
     @State private var twoFactor = ""
+    /// The one-time code from Bitwarden's new-device verification email.
+    @State private var deviceCode = ""
+    /// Set once the server has answered `newDeviceVerificationRequired` — the
+    /// only point at which the code exists, since that answer is what sends
+    /// the mail. Keeps the field out of the way for known devices.
+    @State private var needsDeviceVerification = false
     @State private var region: Region = .us
     @State private var selfHostURL = ""
     @State private var isBusy = false
     @State private var errorMessage: String?
+    /// Non-error feedback (a resent verification code), shown in place.
+    @State private var notice: String?
 
     /// Bitwarden brand blue for the primary action and links.
     private let brandBlue = Color(red: 0.204, green: 0.286, blue: 0.851)
@@ -82,6 +90,13 @@ struct BitwardenLoginSheet: View {
                 passwordStep
             case (.unlock, _):
                 unlockStep
+            }
+
+            if let notice {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let errorMessage {
@@ -183,6 +198,7 @@ struct BitwardenLoginSheet: View {
                     step = .email
                     password = ""
                     twoFactor = ""
+                    clearDeviceVerification()
                     errorMessage = nil
                 }
                 .buttonStyle(.plain)
@@ -210,6 +226,8 @@ struct BitwardenLoginSheet: View {
                         .onSubmit { if canSubmitPassword { submitLogin() } }
                 }
             }
+
+            deviceVerificationField { submitLogin() }
 
             primaryButton(NSLocalizedString("settings.bitwardenLoginSheet.loginButton", value: "Sign in", comment: "Bitwarden sign-in sheet - Submit button")) {
                 submitLogin()
@@ -246,6 +264,8 @@ struct BitwardenLoginSheet: View {
                         .onSubmit { if canSubmitPassword { submitUnlock() } }
                 }
             }
+
+            deviceVerificationField { submitUnlock() }
 
             primaryButton(NSLocalizedString("settings.bitwardenUnlockSheet.unlockButton", value: "Unlock", comment: "Bitwarden unlock sheet - submit button")) {
                 submitUnlock()
@@ -290,6 +310,36 @@ struct BitwardenLoginSheet: View {
     }
 
     // MARK: - Building blocks
+
+    /// Bitwarden's new-device login protection. The server refuses every login
+    /// from an unrecognized device until it is answered with the one-time code
+    /// it emails, so this appears only after an attempt has come back asking
+    /// for one — that attempt is what sent the mail. "Resend" is another
+    /// codeless attempt, which is how the server is asked for a fresh code.
+    @ViewBuilder
+    private func deviceVerificationField(onSubmit: @escaping () -> Void) -> some View {
+        if needsDeviceVerification {
+            VStack(alignment: .leading, spacing: 6) {
+                requiredLabel(NSLocalizedString("settings.bitwardenLoginSheet.deviceVerificationCodeField.label", value: "Verification code", comment: "Bitwarden sign-in sheet - Label of the field for the one-time code emailed when signing in from a device the account has not seen before"))
+                Text(NSLocalizedString("settings.bitwardenLoginSheet.deviceVerificationCodeField.hint", value: "Bitwarden does not recognize this device. Enter the code it just emailed you.", comment: "Bitwarden sign-in sheet - Explanation shown above the new-device verification code field"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                styledField {
+                    TextField("", text: $deviceCode)
+                        .disableAutocorrection(true)
+                        .onSubmit { if canSubmitPassword { onSubmit() } }
+                }
+                Button(NSLocalizedString("settings.bitwardenLoginSheet.resendDeviceVerificationCodeLink", value: "Email me a new code", comment: "Bitwarden sign-in sheet - Link that asks the server to send another new-device verification code")) {
+                    resendDeviceCode()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(brandBlue)
+                .disabled(isBusy)
+            }
+        }
+    }
 
     private func requiredLabel(_ text: String) -> some View {
         HStack(spacing: 2) {
@@ -383,7 +433,9 @@ struct BitwardenLoginSheet: View {
         return value
     }
 
-    private func submitLogin() {
+    /// `resendingCode` deliberately drops any code already typed: a login that
+    /// carries none is exactly how the server is asked to email a fresh one.
+    private func submitLogin(resendingCode: Bool = false) {
         guard canSubmitPassword else { return }
         if region == .selfHosted, normalizedBaseURL(selfHostURL) == nil {
             step = .email
@@ -392,9 +444,11 @@ struct BitwardenLoginSheet: View {
         }
         isBusy = true
         errorMessage = nil
+        notice = nil
         let email = self.email
         let password = self.password
         let twoFactor = self.twoFactor.isEmpty ? nil : self.twoFactor
+        let deviceCode = resendingCode || self.deviceCode.isEmpty ? nil : self.deviceCode
         let server = serverURLs()
 
         Task {
@@ -403,6 +457,7 @@ struct BitwardenLoginSheet: View {
                     email: email,
                     masterPassword: password,
                     twoFactor: twoFactor,
+                    newDeviceOtp: deviceCode,
                     identityURL: server?.identity,
                     apiURL: server?.api
                 )
@@ -412,35 +467,75 @@ struct BitwardenLoginSheet: View {
                     dismiss()
                 }
             } catch {
-                await MainActor.run {
-                    isBusy = false
-                    errorMessage = error.localizedDescription
-                }
+                await MainActor.run { handleFailure(error, resendingCode: resendingCode) }
             }
         }
     }
 
-    private func submitUnlock() {
+    private func submitUnlock(resendingCode: Bool = false) {
         guard canSubmitPassword else { return }
         isBusy = true
         errorMessage = nil
+        notice = nil
         let password = self.password
         let twoFactor = self.twoFactor.isEmpty ? nil : self.twoFactor
+        let deviceCode = resendingCode || self.deviceCode.isEmpty ? nil : self.deviceCode
 
         Task {
             do {
-                try await BitwardenService.shared.unlock(secret: password, twoFactor: twoFactor)
+                try await BitwardenService.shared.unlock(
+                    secret: password,
+                    twoFactor: twoFactor,
+                    newDeviceOtp: deviceCode
+                )
                 await MainActor.run {
                     isBusy = false
                     onComplete()
                     dismiss()
                 }
             } catch {
-                await MainActor.run {
-                    isBusy = false
-                    errorMessage = error.localizedDescription
-                }
+                await MainActor.run { handleFailure(error, resendingCode: resendingCode) }
             }
+        }
+    }
+
+    /// Another codeless attempt: the refusal it earns is what carries the new
+    /// email, so `handleFailure` reports it as a notice rather than an error.
+    private func resendDeviceCode() {
+        deviceCode = ""
+        switch mode {
+        case .login: submitLogin(resendingCode: true)
+        case .unlock: submitUnlock(resendingCode: true)
+        }
+    }
+
+    private func clearDeviceVerification() {
+        needsDeviceVerification = false
+        deviceCode = ""
+        notice = nil
+    }
+
+    /// Turns a failed sign-in into the next thing to ask the user for. The
+    /// new-device cases are not dead ends — they name the credential that is
+    /// still missing — so they open the verification field instead of just
+    /// printing the helper's sentence.
+    @MainActor
+    private func handleFailure(_ error: Error, resendingCode: Bool) {
+        isBusy = false
+        switch (error as? BitwardenHelperClient.ClientError)?.helperCode {
+        case .newDeviceVerificationRequired:
+            needsDeviceVerification = true
+            if resendingCode {
+                notice = NSLocalizedString("settings.bitwardenLoginSheet.deviceVerificationCodeResent", value: "A new verification code is on its way to your inbox.", comment: "Bitwarden sign-in sheet - Confirmation that another new-device verification code has been emailed")
+            } else {
+                errorMessage = NSLocalizedString("settings.bitwardenLoginSheet.deviceVerificationRequiredError", value: "Enter the verification code emailed to you to finish signing in.", comment: "Bitwarden sign-in sheet - Error shown when the account requires verifying this device before signing in")
+            }
+        case .invalidNewDeviceOtp:
+            needsDeviceVerification = true
+            deviceCode = ""
+            errorMessage = NSLocalizedString("settings.bitwardenLoginSheet.deviceVerificationCodeInvalidError", value: "That verification code is incorrect or has expired.", comment: "Bitwarden sign-in sheet - Error shown when the entered new-device verification code is rejected")
+        default:
+            errorMessage = error.localizedDescription
         }
     }
 }

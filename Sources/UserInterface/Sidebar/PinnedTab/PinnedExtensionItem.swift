@@ -78,7 +78,7 @@ class PinnedExtensionItem: NSCollectionViewItem {
     private var badgeHost: BadgeHostingView<BadgeCornerOverlay>?
 
     override func loadView() {
-        view = NSView()
+        view = PinnedGridItemView()
         setupUI()
     }
 

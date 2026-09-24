@@ -20,12 +20,14 @@ struct PairingStepBar: View {
 
     private var segments: [Segment] {
         [Segment(id: 1,
-                 title: NSLocalizedString("Profiles",
-                                          comment: "Settings - Tab title for profiles management"),
+                 title: NSLocalizedString("sync.pairing.stepBar.profiles",
+                                          value: "Profiles",
+                                          comment: "Sync setup step bar - label of the profile matching step"),
                  isComplete: step == .spaces, isCurrent: step == .profiles),
          Segment(id: 2,
-                 title: NSLocalizedString("Spaces",
-                                          comment: "Settings - Tab title for profiles and spaces management"),
+                 title: NSLocalizedString("sync.pairing.stepBar.spaces",
+                                          value: "Spaces",
+                                          comment: "Sync setup step bar - label of the Space matching step"),
                  isComplete: false, isCurrent: step == .spaces)]
     }
 
@@ -47,8 +49,9 @@ struct PairingStepBar: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(String(
-                    format: NSLocalizedString("Step %1$d of %2$d: %3$@",
-                                              comment: "Pairing wizard - step bar position, for VoiceOver"),
+                    format: NSLocalizedString("sync.pairing.stepBar.position",
+                                              value: "Step %1$d of %2$d: %3$@",
+                                              comment: "Sync setup step bar - VoiceOver label; %1$d is the current step, %2$d the step count, %3$@ the step name"),
                     segment.id, segments.count, segment.title))
             }
             Spacer(minLength: 0)
@@ -64,7 +67,7 @@ struct PairingStepBar: View {
                 .font(.caption)
                 .themedForeground(.textPrimaryStrong)
         } else {
-            Text("\(segment.id)")
+            Text(segment.id, format: .number)
                 .font(.caption)
                 .themedForeground(segment.isCurrent ? .textPrimaryStrong : .textSecondary)
         }

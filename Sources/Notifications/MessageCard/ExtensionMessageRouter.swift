@@ -290,6 +290,9 @@ final class ExtensionMessageRouter {
             SaveForLaterService.handleVideoGist(context)
             return nil
         }
+        register(type: "saveForLater.videoArticles") { context in
+            return SaveForLaterService.handleVideoArticles(context)
+        }
 
         register(type: "agentSpace.create") { context in
             AgentSpaceRouter.handleCreate(context: context)

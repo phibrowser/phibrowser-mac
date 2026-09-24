@@ -697,7 +697,7 @@ final class SyncKeyController {
     /// try the next suffix" turns a missing bridge into unbounded probing.
     private func uniqueDisplayName(basedOn raw: String) -> String {
         let base = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? NSLocalizedString("Profile", comment: "Fallback name for an account profile registered with no name")
+            ? NSLocalizedString("sync.pairing.unnamedProfileName", value: "Profile", comment: "Sync setup - name given to a local profile created for an account profile that has no name")
             : raw
         guard profileCreator.displayNameExists(base) else { return base }
         for suffix in 2...50 {

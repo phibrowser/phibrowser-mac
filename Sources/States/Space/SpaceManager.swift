@@ -10285,6 +10285,10 @@ final class SpaceWindowSlot: ObservableObject {
             onSwapSettled?()
             return
         }
+        // Each tree slides in its own appearance; the window takes the
+        // entering one's only at the landing (`pinContentAppearanceForSwitch`).
+        leaving.pinContentAppearanceForSwitch()
+        entering.pinContentAppearanceForSwitch()
         root.layoutSubtreeIfNeeded()
         let width = root.bounds.width
         let forward = (direction == .forward)
@@ -10315,6 +10319,7 @@ final class SpaceWindowSlot: ObservableObject {
             }
             CATransaction.commit()
             entering?.completePresentationInShell()
+            self?.shell?.split.contentHost.backdrop.appearance = nil
             self?.isAnimatingWindowSlide = false
             self?.windowSlideCancel = nil
             onSwapSettled?()
@@ -10346,6 +10351,7 @@ final class SpaceWindowSlot: ObservableObject {
         // The page-area backdrop ramps to the entering theme with the slide.
         let contentHost = shell.split.contentHost
         let fromFill = contentHost.backdrop.presentedFillColor
+        contentHost.backdrop.appearance = entering.resolvedContentAppearance
         contentHost.followTheme(of: entering)
         if let fromFill {
             contentHost.backdrop.animateFill(from: fromFill, duration: duration, startTime: CACurrentMediaTime())
@@ -10601,6 +10607,12 @@ final class SpaceWindowSlot: ObservableObject {
             // slide: the leaving ones stay put and keep showing, as before.
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            // Each side keeps its own appearance for the slide while the
+            // shell window still wears the leaving one's (see
+            // `pinContentAppearanceForSwitch`); pinned before the entering
+            // band is formed so its rows draw in their final appearance.
+            leaving?.pinContentAppearanceForSwitch()
+            controller.pinContentAppearanceForSwitch()
             controller.presentSidebarViewInShell()
             timing?.mark("sidebar.pinned.mount.end")
             slot?.shell?.split.floatingSidebarHost.present(controller.browserState, retainingPrevious: true)
@@ -10694,6 +10706,11 @@ final class SpaceWindowSlot: ObservableObject {
             if let split = slot?.shell?.split {
                 for backdrop in [split.sidebarHost.backdrop, split.contentHost.backdrop] {
                     let from = backdrop.presentedFillColor
+                    // The backdrop's material resolves against its own
+                    // appearance, not the theme it follows: left inheriting
+                    // the window's, an Incognito Space's backdrop kept the
+                    // leaving Space's material until the landing.
+                    backdrop.appearance = controller.resolvedContentAppearance
                     if backdrop === split.sidebarHost.backdrop {
                         split.sidebarHost.followTheme(of: controller)
                     } else {
@@ -10898,8 +10915,17 @@ final class SpaceWindowSlot: ObservableObject {
             enteringSurface?.setSwitchBandContentHidden(false)
             enteringSurface?.setSpaceSwitchBackdropHidden(false)
             restoreLeavingTheme()
+            releaseBackdropAppearance()
             slot?.hostedBandSlideDidEnd(self)
             onSwapSettled?()
+        }
+
+        /// Hands the shell backdrops' appearance back to the window, which
+        /// wears the presented session's again (see `startMotion`).
+        private func releaseBackdropAppearance() {
+            guard let split = slot?.shell?.split else { return }
+            split.sidebarHost.backdrop.appearance = nil
+            split.contentHost.backdrop.appearance = nil
         }
 
         private func finishIfReady() {
@@ -10937,6 +10963,7 @@ final class SpaceWindowSlot: ObservableObject {
             restoreLeavingTheme()
             enteringSurface?.setSpaceSwitchBackdropHidden(false)
             entering.completePresentationInShell()
+            releaseBackdropAppearance()
             CATransaction.commit()
             timing?.mark("animation.cleanup.end")
             if enteringStandIn != nil {
@@ -11003,7 +11030,11 @@ final class SpaceWindowSlot: ObservableObject {
         let prevThemeContext = leaving.browserState.themeContext
         let sourceTheme = prevThemeContext.currentTheme
         let sourceMirrors = prevThemeContext.mirrorsSharedTheme
-        let targetTheme = manager?.resolvedTheme(forSpaceId: enteringSpaceId) ?? sourceTheme
+        // An Incognito Space has no persisted theme — `resolvedTheme` would
+        // answer the global one — and always shows the fixed Incognito theme.
+        let targetTheme = SpaceManager.isIncognitoSpaceId(enteringSpaceId)
+            ? Theme.incognito
+            : manager?.resolvedTheme(forSpaceId: enteringSpaceId) ?? sourceTheme
         let sourceColorHex = manager?.spaces.first(where: { $0.spaceId == leaving.spaceId })?.colorHex
         let targetColorHex = manager?.spaces.first(where: { $0.spaceId == enteringSpaceId })?.colorHex
         let slide = HostedBandSlide(

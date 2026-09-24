@@ -183,14 +183,31 @@ final class ShellSplitViewController: NSViewController {
     /// The column's width the last time it was expanded, or 0 before any.
     private(set) var lastExpandedSidebarWidth: CGFloat = 0
 
+    private var sidebarWidthPersistWorkItem: DispatchWorkItem?
+    private var lastRecordedSidebarWidth: CGFloat?
+    /// Quiet period after the column's last width change before the width is
+    /// written to the account's defaults.
+    private static let sidebarWidthPersistDelay: TimeInterval = 0.3
+
+    /// Records the column's width: at once in memory, for the floating panel,
+    /// and on disk once the width settles. Each account-defaults write
+    /// serializes and atomically rewrites the whole store, and a divider drag
+    /// reports a new width (twice) on every frame.
     private func recordSidebarWidth() {
         guard let item = sidebarSplitViewItem else { return }
         let width = item.isCollapsed ? 0 : item.viewController.view.frame.width
+        guard width != lastRecordedSidebarWidth else { return }
+        lastRecordedSidebarWidth = width
         if width >= Self.leftItemMinWidth {
             lastExpandedSidebarWidth = width
         }
         guard width != Self.leftItemMinWidth else { return }
-        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+        sidebarWidthPersistWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+        }
+        sidebarWidthPersistWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
     }
 }
 
@@ -269,6 +286,13 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// still went through, so a sidebar dragged to its maximum stuck there.
     /// Such a tree now overruns the column instead, which is visible and
     /// fixable where it happens; the divider stays the user's.
+    ///
+    /// Only the presented resident follows the column's width live. A hidden
+    /// one holds its width (`heldWidth`, at the same priority) and catches up
+    /// once the column has stopped changing: AppKit lays out hidden views
+    /// too, so with every resident following, a divider drag re-laid out
+    /// every Space's sidebar on every frame. They are caught up well before
+    /// a switch can present one, so presenting stays a flag flip.
     func host(_ sidebarView: NSView) {
         guard sidebarView.superview !== view else { return }
         sidebarView.removeFromSuperview()
@@ -278,11 +302,17 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
         view.addSubview(sidebarView)
         let trailing = sidebarView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         trailing.priority = Self.residentTrailingPriority
+        let heldWidth = sidebarView.widthAnchor.constraint(equalToConstant: view.bounds.width)
+        heldWidth.priority = Self.residentTrailingPriority
+        residentWidthConstraints[ObjectIdentifier(sidebarView)] = ResidentWidthConstraints(
+            trailing: trailing,
+            heldWidth: heldWidth
+        )
         NSLayoutConstraint.activate([
             sidebarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebarView.topAnchor.constraint(equalTo: view.topAnchor),
             sidebarView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            trailing,
+            heldWidth,
         ])
     }
 
@@ -292,6 +322,10 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// residency exists to avoid.
     func present(_ sidebarView: NSView) {
         host(sidebarView)
+        if let constraints = residentWidthConstraints[ObjectIdentifier(sidebarView)] {
+            constraints.heldWidth.isActive = false
+            constraints.trailing.isActive = true
+        }
         sidebarView.isHidden = false
         if view.subviews.last !== sidebarView {
             let presented = Unmanaged.passUnretained(sidebarView).toOpaque()
@@ -308,15 +342,67 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     func conceal(_ sidebarView: NSView) {
         guard sidebarView.superview === view else { return }
         sidebarView.isHidden = true
+        if let constraints = residentWidthConstraints[ObjectIdentifier(sidebarView)] {
+            constraints.heldWidth.constant = view.bounds.width
+            constraints.trailing.isActive = false
+            constraints.heldWidth.isActive = true
+        }
     }
 
     /// Takes `sidebarView` out of the column for good: its session is
     /// leaving the shell.
     func evict(_ sidebarView: NSView) {
         guard sidebarView.superview === view else { return }
+        // The held width is the view's own constraint and would outlive the
+        // removal, following the view wherever it goes next.
+        residentWidthConstraints.removeValue(forKey: ObjectIdentifier(sidebarView))?
+            .heldWidth.isActive = false
         sidebarView.removeFromSuperview()
         sidebarView.translatesAutoresizingMaskIntoConstraints = true
         sidebarView.isHidden = false
+    }
+
+    private struct ResidentWidthConstraints {
+        /// Follows the column; active while the resident is presented.
+        let trailing: NSLayoutConstraint
+        /// Holds a width; active while the resident is hidden.
+        let heldWidth: NSLayoutConstraint
+    }
+
+    private var residentWidthConstraints: [ObjectIdentifier: ResidentWidthConstraints] = [:]
+    private var heldWidthSyncWorkItem: DispatchWorkItem?
+    /// Quiet period after the column's last width change before the hidden
+    /// residents take the new width.
+    private static let heldWidthSyncDelay: TimeInterval = 0.2
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(columnFrameDidChange),
+            name: NSView.frameDidChangeNotification,
+            object: view
+        )
+    }
+
+    @objc private func columnFrameDidChange(_ notification: Notification) {
+        heldWidthSyncWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.heldWidthSyncWorkItem = nil
+            self?.syncHeldWidths()
+        }
+        heldWidthSyncWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.heldWidthSyncDelay, execute: workItem)
+    }
+
+    /// Brings every hidden resident to the column's current width.
+    private func syncHeldWidths() {
+        let width = view.bounds.width
+        for constraints in residentWidthConstraints.values
+        where constraints.heldWidth.isActive && constraints.heldWidth.constant != width {
+            constraints.heldWidth.constant = width
+        }
     }
 }
 

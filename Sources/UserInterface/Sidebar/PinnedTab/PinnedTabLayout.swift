@@ -252,3 +252,20 @@ private extension PinnedTabLayout {
         yOffset += metrics.sectionHeight
     }
 }
+
+/// Root view for every item in a `PinnedTabLayout` grid. The layout gives
+/// each item an exact frame and never takes a preferred size back (it keeps
+/// `shouldInvalidateLayout(forPreferredLayoutAttributes:withOriginalAttributes:)`
+/// at its default, false), but `NSCollectionView` still asks each visible
+/// item to fit itself — a full Auto Layout fitting pass per item — every
+/// time the grid lays out, which is every frame of a sidebar resize. The
+/// layout's attributes are returned as they are. (`NSView` answers the
+/// `NSCollectionViewElement` requirement in a category Swift does not see, so
+/// this implements it through the conformance rather than an `override`.)
+class PinnedGridItemView: NSView, NSCollectionViewElement {
+    func preferredLayoutAttributesFitting(
+        _ layoutAttributes: NSCollectionViewLayoutAttributes
+    ) -> NSCollectionViewLayoutAttributes {
+        layoutAttributes
+    }
+}

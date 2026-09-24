@@ -28,7 +28,13 @@ struct WebContentHeaderView: View {
 
     @State private var extensionsModel: WebContentHeaderExtensionsModel
     @State private var isExtensionPopoverShown = false
-    @State private var totalHeaderWidth: CGFloat = 10000
+    /// The header row's measured width, kept outside SwiftUI state: a
+    /// sidebar divider drag changes it every frame, and re-rendering the
+    /// header (address bar included) at each width cost a fifth of every
+    /// drag frame. `trailingFit` is what re-renders, when a width change
+    /// moves a trailing item in or out.
+    @State private var measuredWidth = MeasuredHeaderWidth()
+    @State private var trailingFit: HeaderTrailingArea.WidthFit?
     @Environment(\.phiAppearance) private var appearance
     @Environment(\.colorScheme) private var colorScheme
 
@@ -72,7 +78,8 @@ struct WebContentHeaderView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        _ = trailingFit
+        return VStack(spacing: 0) {
             Spacer()
 
             HStack(spacing: 0) {
@@ -100,7 +107,7 @@ struct WebContentHeaderView: View {
                 Spacer(minLength: 0)
 
                 HeaderTrailingArea(
-                    availableWidth: max(0, totalHeaderWidth - leadingButtonsWidth - addressBarReservedWidth),
+                    availableWidth: trailingAvailableWidth,
                     pinnedExtensions: extensionsModel.visiblePinnedExtensions,
                     showDownload: state.showDownloadButton,
                     showMemory: state.showMemoryButton,
@@ -126,7 +133,11 @@ struct WebContentHeaderView: View {
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
             } action: { newValue in
-                totalHeaderWidth = newValue
+                measuredWidth.value = newValue
+                let fit = currentTrailingFit
+                if fit != trailingFit {
+                    trailingFit = fit
+                }
             }
 
             Spacer()
@@ -134,6 +145,22 @@ struct WebContentHeaderView: View {
         .frame(maxWidth: .infinity)
         .environment(\.phiAppearance, state.pageAppearance ?? appearance)
         .environment(\.colorScheme, state.pageAppearance.map { $0.isDark ? .dark : .light } ?? colorScheme)
+    }
+
+    private var trailingAvailableWidth: CGFloat {
+        max(0, measuredWidth.value - leadingButtonsWidth - addressBarReservedWidth)
+    }
+
+    private var currentTrailingFit: HeaderTrailingArea.WidthFit {
+        HeaderTrailingArea.widthFit(
+            availableWidth: trailingAvailableWidth,
+            pinnedCount: extensionsModel.visiblePinnedExtensions.count,
+            showDownload: state.showDownloadButton,
+            showMemory: state.showMemoryButton,
+            showFeedback: state.showFeedbackButton,
+            feedbackIconOnly: state.isFeedbackIconOnly,
+            showChat: state.showChatButton
+        )
     }
 
     private var leadingButtonsWidth: CGFloat {
@@ -423,4 +450,11 @@ struct HeaderControlAnchorView: NSViewRepresentable {
     )
     .frame(height: 30)
     .border(Color.green, width: 2)
+}
+
+/// Plain storage for `WebContentHeaderView`'s measured width, so writing it
+/// does not re-render the header.
+private final class MeasuredHeaderWidth {
+    /// Unbounded until measured: every trailing item fits.
+    var value: CGFloat = 10000
 }

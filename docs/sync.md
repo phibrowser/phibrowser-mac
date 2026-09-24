@@ -72,9 +72,16 @@ exact-name matches within the Profile selected in step 1 (or already mapped).
 Ambiguous names stay undecided. Changing Profile choices recomputes automatic
 suggestions; explicit Space choices, including clearing a picker, survive Back.
 Suggestions never persist mappings or bypass overwrite review and Finish.
-A stored Space identity absent from the fresh account list (server reset, or an
-unpublished local mint) may receive a suggestion; confirming an account Space
-for that row replaces the stale mapping, as explicit Profile adoption does.
+A missing stored Space identity may receive a suggestion, but absence from readable
+choices alone does not authorize replacement. Preview carries the count of entities
+it could not decrypt, identify, validate by tag, or accept as supported Spaces.
+Only a fresh fully paginated preview with zero such skips can authorize replacing
+the exact prior mapping after confirmation. Known non-Space kinds, default Space,
+and tombstones are intentionally excluded and do not count as uncertainty.
+Preflight also revalidates this completeness evidence. Mapping validation and the
+replacement use one durable write: a claimed target, changed old identity or failed
+save preserves the old mapping. An incomplete preview does not auto-complete an
+apparently empty account. These guards reuse existing pairing error text.
 
 Every entry and submission preflight fetches new Profile and Space candidates;
 GET requests bypass response caches. A failed refresh has no cached-choice

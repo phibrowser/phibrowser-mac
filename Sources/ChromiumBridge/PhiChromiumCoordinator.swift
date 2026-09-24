@@ -468,7 +468,7 @@ import SwiftUI
                         profileMap[$0.profileId].map { remoteProfiles.contains($0) } == true
                     } && Set(profileMap.values).count == profileMap.count
                     let spaceMap = controller.allSpaceMappings()
-                    let remoteSpaces = Set(spaces.map(\.syncUuid))
+                    let remoteSpaces = Set(spaces.spaces.map(\.syncUuid))
                     let validSpaces = self.pairableLocalSpaces().allSatisfy {
                         $0.spaceId == LocalStore.defaultSpaceId ||
                         spaceMap[$0.spaceId].map { remoteSpaces.contains($0) } == true
@@ -1100,7 +1100,7 @@ import SwiftUI
     /// showing the wizard. `.engineUnavailable` covers an in-flight notification after logout/self-revocation
     /// discarded it and uses the ordinary error page.
     @MainActor
-    func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
+    func previewAccountSpaces() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError> {
         guard let engine = phiSyncEngine else { return .failure(.engineUnavailable) }
         return await engine.previewAccountSpaces()
     }

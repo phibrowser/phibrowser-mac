@@ -67,6 +67,13 @@ struct PhiAccountSpaceSummary: Equatable, Sendable {
     let overlayOpacityDarkMilli: Int64
 }
 
+/// A readable choice list is not necessarily proof that an old identity is absent.
+/// Keep scan completeness attached to its payload across asynchronous UI refreshes.
+struct PhiAccountSpacePreview: Equatable, Sendable {
+    let spaces: [PhiAccountSpaceSummary]
+    let skippedEntityCount: Int
+}
+
 enum PhiSpacePreviewError: Error, Equatable {
     /// The coordinator has no engine.
     case engineUnavailable
@@ -891,7 +898,7 @@ actor PhiSyncEngine {
     /// Single-use result mailbox (section 4.3). A class, rather than inout, can cross the Task
     /// boundary.
     final class PreviewBox {
-        var result: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
+        var result: Result<PhiAccountSpacePreview, PhiSpacePreviewError>?
     }
 
     /// What one queued round does. An enum rather than a closure so the body stays
@@ -1048,7 +1055,7 @@ actor PhiSyncEngine {
     /// This is the sole Space-shaped read allowed with spaceSectionEnabled closed because it writes
     /// nothing. Results are transient UI data. Opening the gate still clears the marker and replays
     /// the full type through the normal landing path.
-    func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
+    func previewAccountSpaces() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError> {
         let box = PreviewBox()
         await serialized(.preview(box))
         return box.result ?? .failure(.retired)
@@ -1697,7 +1704,10 @@ actor PhiSyncEngine {
                         unreadable += 1     // Count only; do not add to `unreadableTagHashes`.
                         continue
                     }
-                    guard case .space(let space)? = decoded.kind else { continue }
+                    // An unknown protobuf kind could be a Space from a newer client.
+                    // Known other kinds are irrelevant; an unknown kind is not absence.
+                    guard let kind = decoded.kind else { unreadable += 1; continue }
+                    guard case .space(let space) = kind else { continue }
                     let expected = PhiSyncEntity.clientTagHash(
                         for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
                     guard expected == entity.clientTagHash else { unreadable += 1; continue }
@@ -1756,7 +1766,7 @@ actor PhiSyncEngine {
         AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                    + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
                    + "ms=\(now() - startedAt)")
-        box.result = .success(out)
+        box.result = .success(PhiAccountSpacePreview(spaces: out, skippedEntityCount: refused + unreadable))
     }
 
     // MARK: - §11 round counters

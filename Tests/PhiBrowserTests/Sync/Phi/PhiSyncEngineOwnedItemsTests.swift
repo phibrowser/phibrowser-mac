@@ -2407,9 +2407,9 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         let engine = makeEngine(client: client)
 
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result else { return XCTFail("expected success") }
+        guard case .success(let previewResult) = result else { return XCTFail("expected success") }
         XCTAssertGreaterThan(client.getUpdatesCalls.count, 64, "Preview is not limited to 64 pages")
-        XCTAssertEqual(summaries.map(\.syncUuid), ["su-1"])
+        XCTAssertEqual(previewResult.spaces.map(\.syncUuid), ["su-1"])
     }
 
     /// CASE 11.3: exceeding page budget returns truncated with two counts exposed through an independent
@@ -2474,9 +2474,9 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                                 ownedKinds: [bookmarkKind(bookmarkAccess, bookmarkStore)])
 
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result else { return XCTFail("expected success") }
-        XCTAssertEqual(summaries.map(\.syncUuid), ["su-live"], "The list excludes tombstones and bookmarks")
-        XCTAssertEqual(summaries.first?.name, "Work")
+        guard case .success(let previewResult) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(previewResult.spaces.map(\.syncUuid), ["su-live"], "The list excludes tombstones and bookmarks")
+        XCTAssertEqual(previewResult.spaces.first?.name, "Work")
         // No materialization: no local reads/writes, owned-table loads or commits.
         XCTAssertTrue(bookmarkAccess.calls.isEmpty, "Preview does not access local bookmarks")
         XCTAssertTrue(bookmarkStore.hadRecordsSeen.isEmpty, "Preview does not load owned cursor tables")

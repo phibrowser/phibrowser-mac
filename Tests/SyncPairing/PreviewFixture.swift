@@ -2,7 +2,8 @@ import CryptoKit
 import Foundation
 
 // The runner inserts the complete production runPreview method. These stand-ins isolate
-// pagination from the app host; encrypted entity decoding is covered by the hosted suite.
+// filtering and pagination from the app host. Codec results are boundary fixtures;
+// authenticated decryption remains covered by the hosted suite.
 /* PRODUCTION_PREVIEW_TYPES */
 /* PRODUCTION_MARKER_TYPE */
 
@@ -22,17 +23,20 @@ func AppLogInfo(_ message: String) {}
 struct PreviewField { var stringValue = ""; var intValue: Int64 = 0 }
 struct Phi_PhiSpaceEntity {
     var spaceUuid = ""
+    var refused = false
     var name = PreviewField(), iconName = PreviewField(), colorHex = PreviewField()
     var profileUuid = PreviewField(), themeID = PreviewField()
     var overlayOpacityLight = PreviewField(), overlayOpacityDark = PreviewField()
 }
 struct PreviewDecoded {
-    enum Kind { case space(Phi_PhiSpaceEntity) }
+    enum Kind { case space(Phi_PhiSpaceEntity), bookmark }
     var kind: Kind?
 }
 enum PhiEntityCodec {
+    static var decoded: [Data: PreviewDecoded] = [:]
     static func decrypt(_ data: Data, key: SymmetricKey) throws -> PreviewDecoded {
-        preconditionFailure("Pagination fixtures must not substitute for encrypted entity tests")
+        guard let value = decoded[data] else { throw NSError(domain: "Unreadable fixture", code: 1) }
+        return value
     }
 }
 enum PhiSyncEntity {
@@ -42,7 +46,7 @@ enum PhiSyncEntity {
 }
 enum SyncableSpaces {
     static let defaultSpaceUuid = "default"
-    static func refuses(_ space: Phi_PhiSpaceEntity) -> Bool { false }
+    static func refuses(_ space: Phi_PhiSpaceEntity) -> Bool { space.refused }
 }
 struct PreviewRemoteEntity {
     let clientTagHash: String
@@ -51,6 +55,7 @@ struct PreviewRemoteEntity {
     let version: Int64
 }
 final class PreviewClient {
+    var entities: [PreviewRemoteEntity] = []
     var birthday = "current-server"
     var resetAfterFirstPage = false
     var failNextRequest = false
@@ -67,14 +72,44 @@ final class PreviewClient {
             birthday = "reset-during-preview"
             resetAfterFirstPage = false
         }
-        return ([], Data([1]), responseBirthday, marker == nil)
+        return (marker == nil ? entities : [], Data([1]), responseBirthday, marker == nil)
     }
+}
+
+func testPreviewCompleteness() async throws {
+    let fixture = PreviewFixture()
+    fixture.markerState = PhiSyncMarkerFile()
+    var valid = Phi_PhiSpaceEntity(); valid.spaceUuid = "valid"
+    var refused = Phi_PhiSpaceEntity(); refused.spaceUuid = "refused"; refused.refused = true
+    var defaultSpace = Phi_PhiSpaceEntity(); defaultSpace.spaceUuid = "default"
+    PhiEntityCodec.decoded = [
+        Data([1]): PreviewDecoded(kind: .space(valid)),
+        Data([2]): PreviewDecoded(kind: .space(refused)),
+        Data([3]): PreviewDecoded(kind: nil),
+        Data([4]): PreviewDecoded(kind: .bookmark),
+        Data([5]): PreviewDecoded(kind: .space(defaultSpace))
+    ]
+    defer { PhiEntityCodec.decoded = [:] }
+    func row(_ hash: String, _ data: UInt8, deleted: Bool = false) -> PreviewRemoteEntity {
+        PreviewRemoteEntity(clientTagHash: hash, deleted: deleted, ciphertext: Data([data]), version: 1)
+    }
+    fixture.client.entities = [row("valid", 1), row("invalid", 9), row("wrong-tag", 1),
+        row("refused", 2), row("unknown", 3), row("bookmark", 4), row("default", 5),
+        row("settings", 9), row("deleted", 9, deleted: true)]
+    guard case .success(let preview) = await fixture.preview() else {
+        preconditionFailure("Readable choices must remain available")
+    }
+    precondition(preview.spaces.map(\.syncUuid) == ["valid"])
+    precondition(preview.skippedEntityCount == 4,
+                 "Unreadable, wrong-tag, refused and unknown entities must prevent absence claims")
+    precondition(fixture.markerStore.file == PhiSyncMarkerFile(), "Preview must remain read-only")
+    print("PASS preview completeness: skipped unknown/unreadable/refused entities retain uncertainty")
 }
 final class PreviewKeys {
     func domainKey() async throws -> SymmetricKey { SymmetricKey(size: .bits256) }
 }
 final class PreviewFixture {
-    final class PreviewBox { var result: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>? }
+    final class PreviewBox { var result: Result<PhiAccountSpacePreview, PhiSpacePreviewError>? }
     let stopSignal = EngineStopSignal(paired: false)
     let domainKeys = PreviewKeys()
     let client = PreviewClient()
@@ -94,7 +129,7 @@ final class PreviewFixture {
     func observeServerDate() {}
     /* PRODUCTION_PREVIEW */
 
-    func preview() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
+    func preview() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError> {
         let box = PreviewBox()
         await runPreview(into: box)
         return box.result!

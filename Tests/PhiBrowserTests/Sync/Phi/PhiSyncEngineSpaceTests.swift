@@ -654,6 +654,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     func testEnrollmentReplayRetriesLatchFailureAndLandsTheConfirmedSpace() async throws {
         let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace("LOCAL-1", "Local Work", order: 1)]
+        access.spaceMappings = ["LOCAL-1": "u1"]
         let store = MemorySpaceStore()
         let client = FakePhiSyncClient()
         client.seed(tagHash: spaceHash("u1"),
@@ -661,12 +665,24 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        let priorCalls = client.getUpdatesCalls.count
+        await engine.pullOnce() // Drain our own initial publication before changing the mapping.
+        XCTAssertNotNil(store.table.cursors["u1"]?.reconciled)
+        XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
+        XCTAssertNil(store.table.cursors["u1"]?.heldProfileUuid,
+                     "The first pull must land a baseline, never exercise Fallback B")
+        XCTAssertEqual(access.spaces.first?.name, "Account Work")
         engine.suspendForPairing()
-        access.spaces = [localSpace("LOCAL-1", "Local Work", order: 1)]
-        access.spaceMappings = ["LOCAL-1": "u1"]
-        access.profileIdByUuid = ["uuid-a": "Default"]
-        access.uuidByProfileId = ["Default": "uuid-a"]
+        // Preserve reviewed fields while binding the account identity to another local row.
+        var remapped = try XCTUnwrap(access.spaces.first)
+        remapped.spaceId = "LOCAL-2"
+        access.spaces = [remapped]
+        access.spaceMappings = ["LOCAL-2": "u1"]
+        let priorAccessCalls = access.calls.count
+        await engine.enableAfterPairing()
+        await engine.pullOnce()
+        XCTAssertFalse(access.calls.dropFirst(priorAccessCalls).contains(.order(["LOCAL-2"])),
+                       "An incremental pull cannot re-land an already reconciled, unparked entity")
+        let priorCalls = client.getUpdatesCalls.count
         let token = UUID()
         await engine.enableAfterPairing(replayToken: token)
         store.failNextSave = true
@@ -678,7 +694,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
         XCTAssertNil(client.getUpdatesCalls[priorCalls].marker)
         XCTAssertEqual(store.table.lastEnrollmentReplayToken, token)
-        XCTAssertEqual(access.spaces.first { $0.spaceId == "LOCAL-1" }?.name, "Account Work")
+        XCTAssertTrue(access.calls.dropFirst(priorAccessCalls).contains(.order(["LOCAL-2"])),
+                      "Only replay delivers the reconciled entity again and lands under the new mapping")
+        XCTAssertEqual(access.spaces.first { $0.spaceId == "LOCAL-2" }?.name, "Account Work")
     }
 
     func testRestartRestoresEnrollmentReplayBeforeActivationAndConsumesItOnce() async throws {
@@ -2672,8 +2690,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let tableBefore = store.table
 
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result else { return XCTFail("expected success") }
-        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-1"])
+        guard case .success(let previewResult) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(previewResult.spaces.map(\.syncUuid), ["sync-1"])
 
         XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data([0xAB]),
                        "The marker remains byte-for-byte unchanged")
@@ -2791,9 +2809,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
 
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result else { return XCTFail("expected success") }
-        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-ok"])
-        XCTAssertFalse(summaries.contains { $0.isDefault },
+        guard case .success(let previewResult) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(previewResult.spaces.map(\.syncUuid), ["sync-ok"])
+        XCTAssertEqual(previewResult.skippedEntityCount, 3)
+        XCTAssertFalse(previewResult.spaces.contains { $0.isDefault },
                        "isDefault is always false because default Spaces are excluded (§4.3 rule 6)")
         XCTAssertTrue(store.table.unreadableTagHashes.isEmpty, "Preview writes no persistent state")
     }
@@ -2816,7 +2835,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
 
         let result = await engine.previewAccountSpaces()
-        guard case .success(let summaries) = result, let summary = summaries.first else {
+        guard case .success(let previewResult) = result, let summary = previewResult.spaces.first else {
             return XCTFail("expected one summary")
         }
         XCTAssertEqual(summary.themeId, "coral")

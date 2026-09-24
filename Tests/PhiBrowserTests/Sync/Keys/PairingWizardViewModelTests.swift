@@ -90,7 +90,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let (wizard, controller, _, _) = try await makeWizard(
             locals: [], accountSpaces: [], preview: {
                 await hold.enter()
-                return .success([])
+                return .success(.init(spaces: [], skippedEntityCount: 0))
             })
         let load = Task { await wizard.start(controller: controller) }
         while await hold.calls == 0 { await Task.yield() }
@@ -108,7 +108,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             locals: [local("LOCAL-1", name: "Local")], accountSpaces: [remote], preview: {
                 previews += 1
                 if previews > 1 { await hold.enter() }
-                return .success([remote])
+                return .success(.init(spaces: [remote], skippedEntityCount: 0))
             })
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
@@ -132,7 +132,7 @@ final class PairingWizardViewModelTests: XCTestCase {
     private func makeWizard(
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
-        preview: (() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>)? = nil,
+        preview: (() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>)? = nil,
         loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline
     ) async throws -> (PairingWizardViewModel, SyncKeyController, LedgerSpaceMappingStore, FakeAPI) {
         let api = FakeAPI()
@@ -151,7 +151,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             notifyChromium: {})
         let wizard = PairingWizardViewModel(
             keyLayer: KeyLayerViewModel(manager: manager),
-            previewAccountSpaces: preview ?? { .success(accountSpaces) },
+            previewAccountSpaces: preview ?? { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) },
             pairableLocalSpaces: { locals },
             themeDisplayName: { _ in nil },
             loadDeadline: loadDeadline)
@@ -284,7 +284,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         var accountSpaces = [account("acct-1", name: "Work"), account("acct-2", name: "Reading")]
         let (wizard, controller, store, _) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
-            accountSpaces: accountSpaces, preview: { .success(accountSpaces) })
+            accountSpaces: accountSpaces, preview: { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) })
         store.map["STALE"] = "acct-2"
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
@@ -507,9 +507,9 @@ final class PairingWizardViewModelTests: XCTestCase {
         let (wizard, controller, _, _) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: [],
             preview: {
-                let work = Task { () -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> in
+                let work = Task { () -> Result<PhiAccountSpacePreview, PhiSpacePreviewError> in
                     try? await Task.sleep(for: .seconds(2))
-                    return .success([])
+                    return .success(.init(spaces: [], skippedEntityCount: 0))
                 }
                 return await work.value
             },
@@ -536,7 +536,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let hold = PreviewHold()
         let (wizard, controller, store, api) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: [],
-            preview: { await hold.enter(); return .success([]) })
+            preview: { await hold.enter(); return .success(.init(spaces: [], skippedEntityCount: 0)) })
         api.listProfilesError = KeyAPIError.http(500, "boom")
 
         let run = Task { await wizard.start(controller: controller) }
@@ -571,7 +571,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let spaces = [account("acct-1", name: "Work")]
         let (wizard, controller, _, _) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: spaces,
-            preview: { await hold.enter(); return .success(spaces) })
+            preview: { await hold.enter(); return .success(.init(spaces: spaces, skippedEntityCount: 0)) })
 
         // First load: block preview.
         let first = Task { await wizard.start(controller: controller) }

@@ -252,9 +252,9 @@ final class SyncKeyController {
         return try spaceKeys.ensureMapped(spaceId: spaceId)
     }
 
-    func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
+    func mapSpace(_ spaceId: String, toSyncUuid uuid: String, replacing expectedUuid: String? = nil) throws {
         guard let spaceKeys else { throw SpaceSyncMappingError.mappingLayerUnavailable }
-        try spaceKeys.map(spaceId: spaceId, toSyncUuid: uuid)
+        try spaceKeys.map(spaceId: spaceId, toSyncUuid: uuid, replacing: expectedUuid)
     }
 
     func removeSpaceMapping(forSpaceId spaceId: String) {

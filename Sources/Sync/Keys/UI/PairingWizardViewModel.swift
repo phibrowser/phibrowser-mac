@@ -71,7 +71,7 @@ private struct PairingWizardLoadFailure: Error { let message: String }
 /// The abandoned preview safely finishes in the engine queue: §4.3 forbids persistence, and its own
 /// previewDeadlineMs budget eventually stops it.
 private final class PreviewRace: @unchecked Sendable {
-    typealias Outcome = Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
+    typealias Outcome = Result<PhiAccountSpacePreview, PhiSpacePreviewError>?
 
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Outcome, Never>?
@@ -114,7 +114,7 @@ final class PairingWizardViewModel: ObservableObject {
     /// Created by the wizard (moved from AppModalPairingHost.present); this reference is read-only.
     let keyLayer: KeyLayerViewModel
 
-    private let previewAccountSpaces: () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+    private let previewAccountSpaces: () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>
     private let pairableLocalSpaces: () -> [PhiLocalSpace]
     private let themeDisplayName: (String) -> String?
     private let loadDeadline: Duration
@@ -169,6 +169,7 @@ final class PairingWizardViewModel: ObservableObject {
         sessionActive && !controller.isRetired && enrollmentGeneration == gate.enrollmentGeneration
     }
 
+    private var previewSkippedEntityCount = 0
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
     private var profileDecisions: [PairingDecision] = []
@@ -180,7 +181,7 @@ final class PairingWizardViewModel: ObservableObject {
                                                       accountProfileNames: [:])
 
     init(keyLayer: KeyLayerViewModel,
-         previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>,
+         previewAccountSpaces: @escaping () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>,
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace],
          themeDisplayName: @escaping (String) -> String?,
          loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline,
@@ -225,6 +226,7 @@ final class PairingWizardViewModel: ObservableObject {
         mappedProfileUuids = [:]
         explicitSpaceChoices = []
         profileDecisions = []
+        previewSkippedEntityCount = 0
         loadGeneration += 1
         let generation = loadGeneration
         phase = .loading
@@ -262,7 +264,9 @@ final class PairingWizardViewModel: ObservableObject {
         switch spaces {
         case .failure(let failure):
             phase = .error(message: failure.message, resume: .reload)
-        case .success(let accountSpaces):
+        case .success(let preview):
+            let accountSpaces = preview.spaces
+            previewSkippedEntityCount = preview.skippedEntityCount
             loadedLocals = locals
             loadedRemotes = remotes
             reseedProfileSelections(locals: locals, remotes: remotes)
@@ -271,7 +275,7 @@ final class PairingWizardViewModel: ObservableObject {
             seedSpaceSelections(controller: controller)
             step = .profiles
             phase = .profiles(locals: locals, remotes: remotes)
-            if shouldCompleteNewAccount, remotes.isEmpty, accountSpaces.isEmpty {
+            if shouldCompleteNewAccount, previewSkippedEntityCount == 0, remotes.isEmpty, accountSpaces.isEmpty {
                 continueToSpaces()
                 addAllAsNew()
                 await finish(controller: controller)
@@ -466,16 +470,17 @@ final class PairingWizardViewModel: ObservableObject {
                        controller: SyncKeyController) throws -> Bool {
         switch decision.assignment {
         case .existing(let syncUuid):
-            // A stored identity absent from the fresh account list (server reset, or minted here
-            // and never published) is what the same-name suggestion may replace. As with explicit
-            // Profile adoption, the confirmed choice replaces the stale mapping; an identity the
-            // account still holds stays a hard mismatch below.
-            if let current = controller.syncUuid(forSpaceId: decision.localSpaceId), current != syncUuid,
+            // Missing from readable choices does not prove absent if preview skipped any
+            // entity. Only a complete readable scan can authorize replacing the exact old
+            // mapping; validation and persistence must leave it intact on failure.
+            var replacedUuid: String?
+            if previewSkippedEntityCount == 0,
+               let current = controller.syncUuid(forSpaceId: decision.localSpaceId), current != syncUuid,
                !spacesInput.accountSpaces.contains(where: { $0.syncUuid == current }) {
-                controller.removeSpaceMapping(forSpaceId: decision.localSpaceId)
+                replacedUuid = current
             }
             do {
-                try controller.mapSpace(decision.localSpaceId, toSyncUuid: syncUuid)
+                try controller.mapSpace(decision.localSpaceId, toSyncUuid: syncUuid, replacing: replacedUuid)
             } catch SpaceSyncMappingError.alreadyMapped {
                 guard controller.syncUuid(forSpaceId: decision.localSpaceId) == syncUuid else {
                     // R12: log mismatch only, never UUIDs.
@@ -521,8 +526,10 @@ final class PairingWizardViewModel: ObservableObject {
             phase = .error(message: PairingWizardStrings.previewFailed, resume: .reload)
             return false
         }
-        let fresh = makeSpacesInput(accountSpaces: spaces, remotes: remotes, controller: controller)
-        guard locals == loadedLocals, remotes == loadedRemotes, fresh == spacesInput else {
+        let fresh = makeSpacesInput(accountSpaces: spaces.spaces, remotes: remotes, controller: controller)
+        guard locals == loadedLocals, remotes == loadedRemotes, fresh == spacesInput,
+              spaces.skippedEntityCount == previewSkippedEntityCount else {
+            previewSkippedEntityCount = spaces.skippedEntityCount
             loadedLocals = locals
             loadedRemotes = remotes
             reseedProfileSelections(locals: locals, remotes: remotes)
@@ -594,12 +601,12 @@ final class PairingWizardViewModel: ObservableObject {
     /// insufficient: UI cannot free the engine, and engine paging checks cannot shorten an in-flight request.
     /// M3-3 §5.8 raised both from 45 to 120 s because counting Spaces now traverses bookmarks/pins across the
     /// account; loading copy states that wait.
-    private func loadAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PairingWizardLoadFailure> {
+    private func loadAccountSpaces() async -> Result<PhiAccountSpacePreview, PairingWizardLoadFailure> {
         let preview = previewAccountSpaces
         let deadline = loadDeadline
         // Both racers are unstructured tasks using the one-shot PreviewRace gate. The deadline returns
         // immediately without waiting for an uncancelable child, unlike a task group.
-        let outcome: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>? =
+        let outcome: Result<PhiAccountSpacePreview, PhiSpacePreviewError>? =
             await withCheckedContinuation { continuation in
                 let race = PreviewRace(continuation)
                 Task { race.finish(await preview()) }

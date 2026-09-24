@@ -85,9 +85,12 @@ final class SpaceSyncMappingManager {
     }
 
     /// Wizard mapping to an existing account Space. Guard both reserved namespaces first (R-M3-4a-6): local
-    /// uppercase spaceId cannot substitute for checking account UUIDs. Then reject default Space, existing
-    /// mapping and a UUID claimed by another local Space.
-    func map(spaceId: String, toSyncUuid uuid: String) throws {
+    /// uppercase spaceId cannot substitute for checking account UUIDs. Then reject default Space, an
+    /// unreviewed existing mapping and a UUID claimed by another local Space.
+    /// `expectedUuid` authorizes a confirmed replacement after a complete readable
+    /// account preview proved that identity absent. Compare before one atomic write;
+    /// failed validation or persistence leaves the old mapping intact.
+    func map(spaceId: String, toSyncUuid uuid: String, replacing expectedUuid: String? = nil) throws {
         guard !SpaceManager.isIncognitoSpaceId(spaceId) else {
             throw SpaceSyncMappingError.reservedSpaceId
         }
@@ -98,7 +101,7 @@ final class SpaceSyncMappingManager {
         guard spaceId != LocalStore.defaultSpaceId else {
             throw SpaceSyncMappingError.defaultSpaceIsImplicit
         }
-        guard store.syncUuid(forSpaceId: spaceId) == nil else {
+        guard store.syncUuid(forSpaceId: spaceId) == expectedUuid else {
             throw SpaceSyncMappingError.alreadyMapped
         }
         guard !store.allMappings().values.contains(uuid) else {

@@ -98,7 +98,9 @@ func AppLogError(_ message: String) {}
         return id
     }
     func syncUuid(forSpaceId id: String) -> String? { spaceKeys.syncUuid(forSpaceId: id) }
-    func mapSpace(_ id: String, toSyncUuid uuid: String) throws { try spaceKeys.map(spaceId: id, toSyncUuid: uuid) }
+    func mapSpace(_ id: String, toSyncUuid uuid: String, replacing expectedUuid: String? = nil) throws {
+        try spaceKeys.map(spaceId: id, toSyncUuid: uuid, replacing: expectedUuid)
+    }
     func removeSpaceMapping(forSpaceId id: String) { spaceKeys.removeMapping(forSpaceId: id) }
     func ensureSpaceMapped(spaceId: String) throws -> String { try spaceKeys.ensureMapped(spaceId: spaceId) }
     func resolveMappings() async {}
@@ -130,6 +132,60 @@ struct PairingLoadTimedOut: Error {}
     }
     enum ProfileMode { case register, adopt, create }
     enum Change { case none, serverSpace, newProfile, missingProfile, localDuringApply }
+    @MainActor static func replacementNeedsCompletePreview(initialSkipped: Int = 1) async throws {
+        let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
+        store.failingID = nil
+        store.map = ["LOCAL-1": "unreadable-account-space"]
+        let controller = SyncKeyController(api: api, spaceStore: store)
+        api.envelopes["remote-profile"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Personal", ark: controller.manager.currentARK!)
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default")
+        var skipped = initialSkipped
+        let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
+            previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: skipped)) },
+            pairableLocalSpaces: { [local("LOCAL-1", "Work")] }, themeDisplayName: { _ in nil }, gate: gate)
+        await wizard.start(controller: controller)
+        skipped = 1
+        if initialSkipped == 0 {
+            await wizard.finish(controller: controller)
+            try require(store.map == ["LOCAL-1": "unreadable-account-space"] && !gate.isPaired,
+                        "A preview that becomes incomplete during preflight cannot authorize a write")
+            wizard.continueToSpaces()
+        }
+        await wizard.finish(controller: controller)
+        try require(store.map == ["LOCAL-1": "unreadable-account-space"] && !gate.isPaired,
+                    "A skipped entity cannot authorize replacing a missing identity")
+        guard case .error(_, .backToSpaces) = wizard.phase else {
+            throw NSError(domain: "Incomplete preview must reject the replacement", code: 1)
+        }
+        skipped = 0
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+        try require(store.map == ["LOCAL-1": "unreadable-account-space"],
+                    "Changed preview completeness must request fresh review first")
+        wizard.continueToSpaces()
+        await wizard.finish(controller: controller)
+        try require(store.map == ["LOCAL-1": "acct-1"] && gate.isPaired,
+                    "A fresh complete preview can authorize an atomic replacement")
+    }
+
+    @MainActor static func replacementRejectsClaimsAndChangedIdentities() throws {
+        let store = RetrySpaceStore()
+        store.failingID = nil
+        store.map = ["LOCAL-1": "old", "LOCAL-2": "claimed"]
+        let manager = SpaceSyncMappingManager(store: store)
+        do {
+            try manager.map(spaceId: "LOCAL-1", toSyncUuid: "claimed", replacing: "old")
+            throw NSError(domain: "Duplicate identity must be rejected", code: 1)
+        } catch SpaceSyncMappingError.syncUuidAlreadyClaimed {}
+        try require(store.map == ["LOCAL-1": "old", "LOCAL-2": "claimed"],
+                    "A rejected claim must preserve the original mapping")
+        do {
+            try manager.map(spaceId: "LOCAL-1", toSyncUuid: "new", replacing: "outdated")
+            throw NSError(domain: "A changed identity must be rejected", code: 1)
+        } catch SpaceSyncMappingError.alreadyMapped {}
+        try require(store.map["LOCAL-1"] == "old", "Replacement must compare the reviewed identity")
+    }
     @MainActor static func run(_ mode: ProfileMode = .register, change: Change = .none) async throws {
         let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
         let controller = SyncKeyController(api: api, spaceStore: store)
@@ -140,7 +196,7 @@ struct PairingLoadTimedOut: Error {}
                 key: Data(count: 32), name: "Remote name", ark: controller.manager.currentARK!)
         }
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
-            previewAccountSpaces: { .success(account) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate)
+            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate)
         await wizard.start(controller: controller)
         if mode == .adopt { wizard.profileSelections["Default"] = .remote("remote-profile") }
         if mode == .create { wizard.profileRemoteChoices["remote-profile"] = .createLocal }
@@ -183,7 +239,7 @@ struct PairingLoadTimedOut: Error {}
         let locals = [local("LOCAL-1", "Work"), local("LOCAL-2", "Reading")]
         let account = [remote("acct-1", "Work"), remote("acct-2", "Reading")]
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
-            previewAccountSpaces: { .success(account) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil })
+            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil })
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
         try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
@@ -209,7 +265,12 @@ struct PairingLoadTimedOut: Error {}
         try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
                     "Fresh entry must also suggest Spaces for an already-mapped Profile and a stale Space identity")
         try require(store.map == ["LOCAL-1": "old-account-space"], "A fresh suggestion must not replace a persisted identity yet")
-        // Finish then replaces the stale identity instead of failing with alreadyMapped.
+        // Failed replacement must preserve the old identity until one durable write succeeds.
+        store.failingID = "LOCAL-1"
+        await wizard.finish(controller: controller)
+        try require(store.map == ["LOCAL-1": "old-account-space"],
+                    "A failed replacement must retain the prior Space identity")
+        await wizard.retry(controller: controller)
         store.failingID = nil
         await wizard.finish(controller: controller)
         try require(store.map == ["LOCAL-1": "acct-1", "LOCAL-2": "acct-2"],
@@ -240,6 +301,9 @@ struct PairingLoadTimedOut: Error {}
     }
     @MainActor static func main() async throws {
         try ambiguousSpaceSuggestions()
+        try await replacementNeedsCompletePreview()
+        try await replacementNeedsCompletePreview(initialSkipped: 0)
+        try replacementRejectsClaimsAndChangedIdentities()
         try await sameNameSuggestions()
         try await run(.register)
         try await run(.adopt)

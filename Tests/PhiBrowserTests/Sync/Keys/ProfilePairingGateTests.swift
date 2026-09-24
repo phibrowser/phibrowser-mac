@@ -153,8 +153,8 @@ final class ProfilePairingGateTests: XCTestCase {
     /// avoid all singletons, and the wizard must preserve that isolation.
     private func makeHost(
         _ recorder: ModalSessionRecorder,
-        previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
-            = { .success([]) },
+        previewAccountSpaces: @escaping () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>
+            = { .success(.init(spaces: [], skippedEntityCount: 0)) },
         pairableLocalSpaces: @escaping () -> [PhiLocalSpace] = { [] }
     ) -> AppModalPairingHost {
         AppModalPairingHost(scheduler: { recorder.schedule($0) },
@@ -296,7 +296,7 @@ final class ProfilePairingGateTests: XCTestCase {
         let recorder = ModalSessionRecorder()
         let spaceStore = PairingWizardViewModelTests.LedgerSpaceMappingStore()
         let host = makeHost(recorder,
-                            previewAccountSpaces: { .success([]) },
+                            previewAccountSpaces: { .success(.init(spaces: [], skippedEntityCount: 0)) },
                             pairableLocalSpaces: { [] })
         let controller = makeController(spaceStore: spaceStore)
         host.present(controller: controller)

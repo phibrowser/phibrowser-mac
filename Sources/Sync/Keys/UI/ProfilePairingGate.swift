@@ -206,7 +206,7 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
     private let stopModal: @MainActor () -> Void
     /// The wizard view model's three external dependencies, injected here so
     /// `present()` never reaches for a singleton itself (see `init`).
-    private let previewAccountSpaces: () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+    private let previewAccountSpaces: () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>
     private let pairableLocalSpaces: () -> [PhiLocalSpace]
     private let themeDisplayName: (String) -> String?
 
@@ -248,7 +248,7 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
          },
          runModal: @escaping @MainActor (NSWindow) -> Void = { NSApp.runModal(for: $0) },
          stopModal: @escaping @MainActor () -> Void = { NSApp.stopModal() },
-         previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+         previewAccountSpaces: @escaping () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>
              = { await PhiChromiumCoordinator.shared.previewAccountSpaces() },
          // Use nonisolated closures because themeDisplayName is passed to the pure SpaceOverwriteDiff.diffs
          // and cannot be MainActor-isolated. Only the MainActor wizard VM calls them, so assumeIsolated is

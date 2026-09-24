@@ -137,8 +137,13 @@ client → { "challenge_response": "<same>", "client_version": "1.0.0", "protoco
 ```
 client → { "protocol_version": 1, "request_id": "<uuid>", "method": "<m>", "params": { … } }
 server → { "ok": true,  "result": { … }, "request_id": "<same>" }
-       | { "ok": false, "error": { "message": "…" }, "request_id": "<same>" }
+       | { "ok": false, "error": { "message": "…", "code"?: "…" }, "request_id": "<same>" }
 ```
+
+An error carries a `code` only when the client must *act* on it rather than
+display it — `twoFactorRequired`, `newDeviceVerificationRequired`,
+`invalidNewDeviceOtp` — each naming the credential the server is still waiting
+for. Everything else is message-only.
 
 The helper runs each request on its own thread and echoes the `request_id`, so
 replies may complete out of order (a 60 s `login` never blocks a concurrent
@@ -151,8 +156,8 @@ taker and is dropped, with no effect on the shared connection.
 | Method | Params | Result |
 |---|---|---|
 | `status` | — | `{ status: "notInstalled"\|"notConfigured"\|"loggedOut"\|"locked"\|"unlocked", account?: "…" }` |
-| `login` | `{ email, masterPassword, twoFactor?, server?: { identityUrl, apiUrl }, timeout, action }` | `{}` on success |
-| `unlock` | `{ masterPassword?, twoFactor? }` | `{}` (re-establishes a locked vault from the password; `twoFactor` is a fresh code for a 2FA account whose remember token is absent/expired) |
+| `login` | `{ email, masterPassword, twoFactor?, newDeviceOtp?, server?: { identityUrl, apiUrl }, timeout, action }` | `{}` on success |
+| `unlock` | `{ masterPassword?, twoFactor?, newDeviceOtp? }` | `{}` (re-establishes a locked vault from the password; `twoFactor` is a fresh code for a 2FA account whose remember token is absent/expired) |
 | `lock` | — | `{}` (→ `locked` state, account kept) |
 | `logout` | — | `{}` |
 | `setTimeout` | `{ timeout, action }` | `{}` (updates the session-timeout policy live) |
@@ -191,6 +196,11 @@ the current production server. Patches carried on `phi/rust-v3.0.0-patched`
   `remember: true`) through `PasswordLoginResponse` — upstream parses it and
   then drops it in `process_response`, which strands 2FA accounts on every
   re-login (unlock/restore) that has no fresh code to offer (§7.6).
+- `password_token_request.rs` + `password.rs` + `internal.rs`/`builder.rs` +
+  `identity_token_response.rs`: new-device login protection (§7.7). Upstream
+  can neither send the `newDeviceOtp` the server asks for nor put this
+  install's own `deviceIdentifier` in the token body, so an account with the
+  protection on could never sign in from Phi at all (§6.2).
 
 **`Cargo.lock` is inherited verbatim from `sdk-internal` @ `rust-v3.0.0`.** This is
 mandatory, not optional: the SDK depends on pre-release RustCrypto crates
@@ -217,6 +227,8 @@ let result = client.0.auth().login_password(&PasswordLoginRequest {
     // (result.two_factor_token, Phi patch) to replay as provider `Remember`
     // on later logins from this device.
     two_factor: token.map(|t| TwoFactorRequest { token: t, provider: Authenticator, remember: true }),
+    // Phi patch: the emailed new-device code, on the retry that carries one.
+    new_device_otp: None,
 }).await?;
 if result.two_factor.is_some() { /* prompt for the 2FA code and retry */ }
 
@@ -241,10 +253,31 @@ Two hard-won facts about client construction:
 - **The version value is compared against per-account minimums**, so
   `client_settings()` reports a current official client release
   (`BITWARDEN_CLIENT_VERSION`), not the helper's own crate version. It also
-  supplies a **stable `device_identifier`** persisted at
-  `~/Library/Application Support/PhiBitwardenHelper/device-id` — Bitwarden keys
-  known-device tracking (and new-device verification emails) on it, so it must
-  survive helper restarts.
+  supplies a **stable `device_identifier`** persisted as `bitwarden-device-id`
+  in the browser's data folder (`PHI_BROWSER_DATA_DIR`) — Bitwarden keys
+  known-device tracking on it, so it must survive helper restarts.
+
+**New-device login protection.** An account with it on (the default for
+accounts without 2FA) makes the identity endpoint refuse any login whose
+`deviceIdentifier` it does not recognize: it emails a one-time code and answers
+`invalid_grant` with error model message `new device verification required`.
+The next attempt must carry that code as `newDeviceOtp`; another attempt
+*without* one is how a fresh code is requested. Two upstream gaps made this a
+dead end, both patched:
+
+- `PasswordTokenRequest` had no `newDeviceOtp` field, so the demand was
+  unanswerable — and since a device only becomes known through a token grant it
+  could never obtain, the account was locked out of Phi permanently rather than
+  temporarily.
+- `request_identity_tokens` sent a hardcoded `DeviceType::ChromeBrowser` and
+  the constant identifier `b86dd6ab-…`, ignoring `ClientSettings`. The
+  persisted `device_identifier` above reached the network only as a
+  `Device-Identifier` header, which the identity endpoint does not use for
+  device tracking, so it had no effect on anything.
+
+The helper reports the two outcomes as the `newDeviceVerificationRequired` and
+`invalidNewDeviceOtp` error codes (§5), which is what makes the sign-in sheet
+show its verification-code field and its "email me a new code" action.
 
 The `header_probe` example (`cargo run --example header_probe --features
 bitwarden-sdk`, debug builds only) captures a login request against a local

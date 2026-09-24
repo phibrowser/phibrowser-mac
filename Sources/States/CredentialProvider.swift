@@ -30,8 +30,10 @@ protocol CredentialProvider: AnyObject {
     /// unlock; pass `nil` to request the provider's biometric/keychain path.
     /// `twoFactor` is a freshly typed second-factor code for providers whose
     /// unlock is a re-login and whose device trust (remember token) has
-    /// expired; normally nil.
-    func unlock(secret: String?, twoFactor: String?) async throws
+    /// expired; normally nil. `newDeviceOtp` is the one-time code such a
+    /// provider's server emails when it does not recognize this device; also
+    /// normally nil, since only a refused unlock can have produced one.
+    func unlock(secret: String?, twoFactor: String?, newDeviceOtp: String?) async throws
 
     /// Drop the in-memory vault key. Idempotent.
     func lock() async

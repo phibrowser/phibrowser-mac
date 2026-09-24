@@ -57372,6 +57372,66 @@
         }
       }
     },
+    "settings.bitwardenLoginSheet.deviceVerificationCodeField.hint" : {
+      "comment" : "Bitwarden sign-in sheet - Explanation shown above the new-device verification code field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bitwarden does not recognize this device. Enter the code it just emailed you."
+          }
+        }
+      }
+    },
+    "settings.bitwardenLoginSheet.deviceVerificationCodeField.label" : {
+      "comment" : "Bitwarden sign-in sheet - Label of the field for the one-time code emailed when signing in from a device the account has not seen before",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verification code"
+          }
+        }
+      }
+    },
+    "settings.bitwardenLoginSheet.deviceVerificationCodeInvalidError" : {
+      "comment" : "Bitwarden sign-in sheet - Error shown when the entered new-device verification code is rejected",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "That verification code is incorrect or has expired."
+          }
+        }
+      }
+    },
+    "settings.bitwardenLoginSheet.deviceVerificationCodeResent" : {
+      "comment" : "Bitwarden sign-in sheet - Confirmation that another new-device verification code has been emailed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A new verification code is on its way to your inbox."
+          }
+        }
+      }
+    },
+    "settings.bitwardenLoginSheet.deviceVerificationRequiredError" : {
+      "comment" : "Bitwarden sign-in sheet - Error shown when the account requires verifying this device before signing in",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enter the verification code emailed to you to finish signing in."
+          }
+        }
+      }
+    },
     "settings.bitwardenLoginSheet.emailField.label" : {
       "comment" : "Bitwarden login sheet - email field label",
       "extractionState" : "extracted_with_value",
@@ -57848,6 +57908,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "記住電子郵件"
+          }
+        }
+      }
+    },
+    "settings.bitwardenLoginSheet.resendDeviceVerificationCodeLink" : {
+      "comment" : "Bitwarden sign-in sheet - Link that asks the server to send another new-device verification code",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Email me a new code"
           }
         }
       }

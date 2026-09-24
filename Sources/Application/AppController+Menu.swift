@@ -2963,6 +2963,15 @@ extension AppController {
     // MARK: - Menu Validation
 
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(toggleSidebar(_:))
+            || item.action == #selector(toggleChatbar(_:)) {
+            guard let currentWindow = NSApp.keyWindow ?? NSApp.mainWindow,
+                  let sessionController = currentWindow.windowController as? SpaceSessionController,
+                  !sessionController.isLibraryOverlayVisible else {
+                return false
+            }
+        }
+
         if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             let lifecycleSafeActions: [Selector] = [

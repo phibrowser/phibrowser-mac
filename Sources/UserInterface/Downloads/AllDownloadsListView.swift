@@ -201,6 +201,7 @@ struct DownloadsSearchField: NSViewRepresentable {
         field.sendsWholeSearchString = false
         field.delegate = context.coordinator
         context.coordinator.monitorClicksOutside(field)
+        context.coordinator.monitorFindShortcut(field)
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
@@ -219,11 +220,13 @@ struct DownloadsSearchField: NSViewRepresentable {
 
     static func dismantleNSView(_ field: NSSearchField, coordinator: Coordinator) {
         coordinator.stopMonitoringClicks()
+        coordinator.stopMonitoringFindShortcut()
     }
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
         private var clickMonitor: Any?
+        private var findShortcutMonitor: Any?
 
         init(text: Binding<String>) {
             self.text = text
@@ -245,6 +248,23 @@ struct DownloadsSearchField: NSViewRepresentable {
         func stopMonitoringClicks() {
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
             clickMonitor = nil
+        }
+
+        func monitorFindShortcut(_ field: NSSearchField) {
+            stopMonitoringFindShortcut()
+            findShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak field] event in
+                guard let field, let window = field.window,
+                      event.window === window,
+                      event.modifierFlags.contains(.command),
+                      event.charactersIgnoringModifiers?.lowercased() == "f" else { return event }
+                window.makeFirstResponder(field)
+                return nil
+            }
+        }
+
+        func stopMonitoringFindShortcut() {
+            if let findShortcutMonitor { NSEvent.removeMonitor(findShortcutMonitor) }
+            findShortcutMonitor = nil
         }
 
         func controlTextDidChange(_ notification: Notification) {

@@ -66,6 +66,7 @@ class SpaceSessionController: NSWindowController {
 
     /// Window-scoped Library view, created on first use.
     private var libraryOverlayController: LibraryOverlayController?
+    var isLibraryOverlayVisible: Bool { libraryOverlayController?.isVisible == true }
     private var libraryWindowController: LibraryWindowController?
 
     func openLibraryInNewWindow(section: LibraryViewModule.Section? = nil) {

@@ -118,8 +118,12 @@ among all required contexts.
 Native success requires a drained pull, accepted publication, successful cursor
 persistence, and no pending/quarantined input, output, or follow-up work. A conflict
 resolved by the same round's scoped retry does not count as a failure. Exhausted
-conflicts and other failures remain failures even when another item recovers. Rows
-that are deliberately never published (hidden, purged or unmapped owner Spaces)
+conflicts and other failures remain failures even when another item recovers.
+Domain-key lookup failures count toward the round's status: network unavailability
+(including transport errors wrapped by the key client) reports Offline; HTTP,
+authorization and key-envelope failures report Needs attention. Failed rounds
+retain the previous success time, and a later successful round clears the failure.
+Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
 and refused arrivals are exclusions, not pending work. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync

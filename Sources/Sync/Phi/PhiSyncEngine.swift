@@ -1551,6 +1551,10 @@ actor PhiSyncEngine {
     }
 
     private func noteStatusError(_ error: Error) {
+        if case let KeyAPIError.transport(underlying) = error {
+            noteStatusError(underlying)
+            return
+        }
         roundOutboundFailed = true
         let code = (error as NSError).code
         if (error as NSError).domain == NSURLErrorDomain,
@@ -1915,6 +1919,8 @@ actor PhiSyncEngine {
         do {
             key = try await domainKeys.domainKey()
         } catch {
+            noteStatusError(error)
+            roundOutcome = .pullFailed
             AppLogWarn("[phi-sync] pull skipped: domain key unavailable (\(PhiSyncLog.describe(error)))")
             return false
         }
@@ -3052,6 +3058,7 @@ actor PhiSyncEngine {
         do {
             key = try await domainKeys.domainKey()
         } catch {
+            noteStatusError(error)
             AppLogWarn("[phi-sync] push skipped: domain key unavailable (\(PhiSyncLog.describe(error)))")
             return
         }

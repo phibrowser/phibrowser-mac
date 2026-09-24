@@ -16,6 +16,31 @@ struct PairingTests {
         precondition(!lifetime.blocksData(revision: lifetime.revision))
         lifetime.stop()
         precondition(lifetime.blocksData(revision: lifetime.revision))
+        var confirmationRecord: Data?
+        var confirmation = SyncPairingEnrollment()
+        try confirmation.configure(deviceKeyID: "confirmation", recordData: nil,
+                                   saveRecord: { confirmationRecord = $0; return true })
+        try confirmation.setRecoveryConfirmationRequired(true)
+        try confirmation.setPaired(false)
+        try confirmation.configure(deviceKeyID: "confirmation", recordData: confirmationRecord,
+                                   saveRecord: { confirmationRecord = $0; return true })
+        precondition(confirmation.requiresRecoveryConfirmation && !confirmation.isPaired)
+        do {
+            try confirmation.setPaired(true)
+            preconditionFailure("Pairing cannot bypass recovery confirmation after restart")
+        } catch SyncPairingPersistenceError.recoveryConfirmationRequired {}
+        try confirmation.configure(deviceKeyID: "confirmation", recordData: confirmationRecord, saveRecord: { _ in false })
+        do {
+            try confirmation.setRecoveryConfirmationRequired(false)
+            preconditionFailure("Failed persistence cannot confirm recovery")
+        } catch SyncPairingPersistenceError.writeFailed {}
+        precondition(confirmation.requiresRecoveryConfirmation)
+        try confirmation.configure(deviceKeyID: "confirmation", recordData: confirmationRecord,
+                                   saveRecord: { confirmationRecord = $0; return true })
+        try confirmation.setRecoveryConfirmationRequired(false)
+        try confirmation.setPaired(true)
+        precondition(confirmation.isPaired)
+        print("PASS persisted recovery confirmation: restart, enrollment bypass, failed writes, confirmed pairing")
         let gate = ProfilePairingGate()
         let host = RecordingHost()
         gate.modalHost = host

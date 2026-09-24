@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0CD31E694E1BC7C813824EFE /* SyncHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69A9FD7809B0AD933D8FE39B /* SyncHelper.swift */; };
 		DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */; };
 		DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */; };
 		DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121101 /* SyncPairingState.swift */; };
@@ -797,6 +798,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		69A9FD7809B0AD933D8FE39B /* SyncHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SyncHelper.swift; path = ../SyncHelper.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChromiumSyncStatus.swift; path = ../../ChromiumBridge/ChromiumSyncStatus.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncStatusSnapshot.swift; path = ../SyncStatusSnapshot.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121101 /* SyncPairingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingState.swift; sourceTree = "<group>"; };
@@ -1550,6 +1552,7 @@
 				D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */,
 				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
 				DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */,
+				69A9FD7809B0AD933D8FE39B /* SyncHelper.swift */,
 				DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */,
 				DB90EAB144A61C14E0121101 /* SyncPairingState.swift */,
 				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
@@ -4035,6 +4038,7 @@
 				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
 				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
 				DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */,
+				0CD31E694E1BC7C813824EFE /* SyncHelper.swift in Sources */,
 				DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */,
 				DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */,
 				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,

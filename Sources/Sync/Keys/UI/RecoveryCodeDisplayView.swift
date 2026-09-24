@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Shows the recovery code generated during bootstrap and lets the user
-/// confirm they saved it before continuing. Purely presentational: all state
+/// acknowledge saving it before the separate verification step. Purely presentational: all state
 /// transitions live on `KeyLayerViewModel`.
 struct RecoveryCodeDisplayView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
@@ -16,9 +16,10 @@ struct RecoveryCodeDisplayView: View {
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
-            Text(NSLocalizedString("sync.recovery.save.explanation",
-                value: "Store this code somewhere safe. You will need it to add another device to your account.",
-                comment: "Sync setup - explanation on the page that shows a new recovery code"))
+            Text(NSLocalizedString(
+                "sync.recovery.save.oneTimeNotice",
+                value: "This recovery code is shown only once. Save it somewhere safe. On the next screen, enter it to confirm you saved it before continuing sync setup.",
+                comment: "Recovery code display - one-time visibility warning and required next-step verification"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
@@ -26,7 +27,7 @@ struct RecoveryCodeDisplayView: View {
             // Deliberately not selectable (no `.textSelection` modifier): it
             // backs this Text with an NSTextView, whose mouse-tracking loop for a drag
             // selection drains main-actor continuations. `confirmSaved()` can
-            // land `.done` mid-drag, which tears this view and its window down
+            // replace this view mid-drag, which tears its text view down
             // and leaves the tracking loop spinning forever on a mouse-up that
             // can never arrive — a 100% CPU hang of the whole browser's main
             // thread. The Copy button below gives the same affordance safely.

@@ -6,15 +6,19 @@ import SwiftUI
 struct RecoveryCodeEntryView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
 
+    private var isConfirmation: Bool { viewModel.phase == .confirmingRecoveryCode }
+
     var body: some View {
         VStack(spacing: 24) {
-            Text(NSLocalizedString("sync.recovery.entry.title", value: "Enter your recovery code", comment: "Sync setup - title of the page for entering a recovery code"))
+            Text(isConfirmation
+                 ? NSLocalizedString("sync.recovery.entry.confirmTitle", value: "Confirm your recovery code", comment: "Sync setup - title requiring re-entry of the saved recovery code")
+                 : NSLocalizedString("sync.recovery.entry.title", value: "Enter your recovery code", comment: "Sync setup - title of the page for entering a recovery code"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
-            Text(NSLocalizedString("sync.recovery.entry.explanation",
-                value: "Enter the recovery code you saved when you set up sync on another device.",
-                comment: "Sync setup - explanation on the page for entering a recovery code"))
+            Text(isConfirmation
+                 ? NSLocalizedString("sync.recovery.entry.confirmExplanation", value: "Enter the recovery code you just saved. Sync will stay off until you confirm the code and finish setup.", comment: "Sync setup - explanation of required recovery code verification")
+                 : NSLocalizedString("sync.recovery.entry.explanation", value: "Enter the recovery code you saved when you set up sync on another device.", comment: "Sync setup - explanation on the page for entering a recovery code"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)

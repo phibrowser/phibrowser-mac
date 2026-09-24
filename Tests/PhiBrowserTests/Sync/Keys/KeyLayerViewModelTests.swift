@@ -9,10 +9,10 @@ final class KeyLayerViewModelTests: XCTestCase {
         try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "test-device", recordData: nil, saveRecord: { _ in true })
     }
 
-    /// Review A9: only the recovery-code screen pins the window open. Every other phase can
-    /// be closed, and the `.done` phase in particular is what `confirmSaved()` moves to.
+    /// Only the one-time display pins the window; deferred confirmation stays gated.
     func testOnlyTheRecoveryCodeScreenRequiresAcknowledgementBeforeClosing() {
         XCTAssertTrue(KeyLayerPhase.showingRecoveryCode("ABCDE-FGHIJ").requiresAcknowledgement)
+        XCTAssertFalse(KeyLayerPhase.confirmingRecoveryCode.requiresAcknowledgement)
         for phase in [KeyLayerPhase.idle, .enteringRecoveryCode, .chooseJoinMethod, .joinDenied,
                       .joinExpired, .working, .done, .error("x"),
                       .waitingForApproval(code: "1234", deadline: Date()),
@@ -21,19 +21,22 @@ final class KeyLayerViewModelTests: XCTestCase {
         }
     }
 
-    /// Review A9: the window may not close while the code is on screen, and confirming is
-    /// what releases it. The window-delegate half is AppKit; this pins the state it reads.
-    func testConfirmingTheRecoveryCodeReleasesTheWindow() async {
+    /// Re-entry may be deferred because its pending requirement is durable.
+    func testReenteringTheRecoveryCodeReleasesTheWindow() async {
         let api = AccountKeyManagerTests.FakeAPI()
         let vm = KeyLayerViewModel(manager: AccountKeyManager(
             api: api, deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider()))
         await vm.startBootstrap()
         XCTAssertTrue(vm.phase.requiresAcknowledgement)
+        guard case .showingRecoveryCode(let code) = vm.phase else { return XCTFail("expected code") }
         await vm.confirmSaved()
+        XCTAssertFalse(vm.phase.requiresAcknowledgement)
+        XCTAssertTrue(ProfilePairingGate.shared.requiresRecoveryConfirmation)
+        await vm.submitRecoveryCode(code)
         XCTAssertFalse(vm.phase.requiresAcknowledgement)
     }
 
-    func testBootstrapMovesToShowingCodeThenDone() async {
+    func testBootstrapRequiresCodeReentryBeforePairing() async {
         let api = AccountKeyManagerTests.FakeAPI()
         let deviceKeyProvider = AccountKeyManagerTests.FakeDeviceKeyProvider()
         let vm = KeyLayerViewModel(manager: AccountKeyManager(api: api, deviceKeyProvider: deviceKeyProvider))
@@ -43,7 +46,9 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertFalse(code.isEmpty)
 
         await vm.confirmSaved()
-        guard case .readyToPair = vm.phase else { return XCTFail("expected done") }
+        XCTAssertEqual(vm.phase, .confirmingRecoveryCode)
+        await vm.submitRecoveryCode(code)
+        guard case .readyToPair = vm.phase else { return XCTFail("expected ready to pair") }
     }
 
     /// Regression (registration-timing bug): a first-device bootstrap must
@@ -70,7 +75,7 @@ final class KeyLayerViewModelTests: XCTestCase {
         await vm.beginSetup(controller: controller)
         XCTAssertEqual(vm.phase, .introduction)
         await vm.continueSetup()
-        guard case .showingRecoveryCode = vm.phase else {
+        guard case .showingRecoveryCode(let code) = vm.phase else {
             return XCTFail("expected recovery code")
         }
         XCTAssertEqual(api.profileEnvelopes.count, 0)
@@ -78,7 +83,9 @@ final class KeyLayerViewModelTests: XCTestCase {
         // Confirming the saved code completes bootstrap — and must register the
         // local profile in-session, without waiting for a restart.
         await vm.confirmSaved()
-        guard case .readyToPair = vm.phase else { return XCTFail("expected done") }
+        XCTAssertEqual(vm.phase, .confirmingRecoveryCode)
+        await vm.submitRecoveryCode(code)
+        guard case .readyToPair = vm.phase else { return XCTFail("expected ready to pair") }
         XCTAssertEqual(api.profileEnvelopes.count, 0, "Verification alone must not register profiles")
     }
 

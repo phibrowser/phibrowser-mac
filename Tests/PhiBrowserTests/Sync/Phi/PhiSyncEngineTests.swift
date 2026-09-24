@@ -1362,7 +1362,7 @@ final class PhiSyncEngineTests: XCTestCase {
                        "the edit keeps the timestamp it was stamped with, not a fresh one")
     }
 
-    /// A locked key layer must abort the round quietly, without committing anything.
+    /// A locked key layer must abort the round without committing and report the blocked state.
     func testLockedDomainKeyAbortsTheRound() async throws {
         let client = FakePhiSyncClient()
         let keys = StubDomainKeys(key: SymmetricKey(size: .bits256))
@@ -1374,6 +1374,55 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.pushLocalSettings()
 
         XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        XCTAssertNil(engine.statusSnapshot.lastSuccess)
+    }
+
+    func testDomainKeyFailuresReportStatusBeforeAnySyncRequest() async {
+        let failures: [(Error, SyncContextPhase)] = [
+            (KeyAPIError.transport(URLError(.notConnectedToInternet)), .offline),
+            (KeyAPIError.transport(URLError(.timedOut)), .offline),
+            (KeyAPIError.http(503, "unavailable"), .needsAttention),
+            (ProfileKeyManagerError.badEnvelope, .needsAttention),
+            (KeyAPIError.transport(URLError(.userAuthenticationRequired)), .needsAttention)
+        ]
+        for (error, expected) in failures {
+            let client = FakePhiSyncClient()
+            let keys = StubDomainKeys(key: SymmetricKey(size: .bits256))
+            keys.error = error
+            let engine = PhiSyncEngine(domainKeys: keys, client: client, defaults: defaults,
+                                       deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey))
+            await engine.pullOnce()
+            XCTAssertEqual(engine.statusSnapshot.phase, expected)
+            await engine.pushLocalSettings()
+            XCTAssertEqual(engine.statusSnapshot.phase, expected)
+            XCTAssertNil(engine.statusSnapshot.lastSuccess)
+            XCTAssertTrue(client.getUpdatesCalls.isEmpty)
+            XCTAssertTrue(client.commits.isEmpty)
+        }
+    }
+
+    func testDomainKeyRecoveryClearsFailureAndLaterFailurePreservesSuccessTime() async throws {
+        let client = FakePhiSyncClient()
+        let keys = StubDomainKeys(key: SymmetricKey(size: .bits256))
+        keys.error = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let engine = PhiSyncEngine(domainKeys: keys, client: client, defaults: defaults,
+                                   deviceKeyId: "devA", pairingComplete: true, settings: registry(settingKey))
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .offline)
+
+        keys.error = nil
+        await engine.pullOnce()
+        XCTAssertEqual(engine.statusSnapshot.phase, .upToDate)
+        let success = try XCTUnwrap(engine.statusSnapshot.lastSuccess)
+        let pulls = client.getUpdatesCalls.count, commits = client.commits.count
+
+        keys.error = KeyAPIError.http(503, "unavailable")
+        await engine.pushLocalSettings()
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        XCTAssertEqual(engine.statusSnapshot.lastSuccess, success)
+        XCTAssertEqual(client.getUpdatesCalls.count, pulls)
+        XCTAssertEqual(client.commits.count, commits)
     }
 
     // MARK: - Serialization

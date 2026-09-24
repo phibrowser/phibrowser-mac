@@ -92,7 +92,7 @@ previous case's hidden Space or pending edit determine the next result.
 
 | ID | Priority / mode | Preconditions and steps | Expected result |
 | --- | --- | --- | --- |
-| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, then select “I've saved it”. Restart A. | A presents a recovery code and requires acknowledgment before dismissing that step. Setup completes; restart unlocks the existing account without creating another account key or asking to bootstrap again. |
+| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, select “I've saved it”, try an incorrect code and then re-enter the saved code. Complete matching and restart A. Also close/reopen or restart between saving and verification. | The code warns it is shown only once. The next screen has blank input and never re-displays the code. Incorrect input cannot start sync. Pending confirmation survives reopening/restart despite device unlock. Correct input allows matching; only full setup enables sync. |
 | SYNC-A02 | P0 / Manual | U1 initialized on A; B is fresh. Sign in as U1 on B, choose “Enter a recovery code”, enter A's code and complete pairing. Create one bookmark on each Mac. | B joins the same account; existing data arrives and both new bookmarks propagate once. A's existing data remains intact. |
 | SYNC-A03 | P0 / Manual | Fresh B joining U1. Try an invalid code, then a valid code belonging to U2, then U1's correct code. | Incorrect codes cannot unlock U1 or expose its data. Failure remains recoverable; the correct code can complete joining without resetting A. |
 | SYNC-A04 | P0 / Manual | Fresh B requests approval. On A open Settings → Sync, compare the displayed verification code and approve the matching request. Finish pairing on B. | Request/device and code correspond on both Macs. B progresses without hanging; it receives U1 data only after approval and mapping. |
@@ -323,7 +323,7 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 
 | Case | Steps | Required result | Result |
 | --- | --- | --- | --- |
-| UX-01 | First device opens Sync, starts setup, saves recovery code | No account creation before Continue; one window through completion | Not run |
+| UX-01 | First device opens Sync, starts setup, saves and re-enters recovery code | No account creation before Continue; one-time warning; incorrect input/restart cannot bypass confirmation; one window through completion | Not run |
 | UX-02 | B uses a bad recovery code, then corrects it | Editable retained input and actionable inline error; proceeds to matching | Not run |
 | UX-03 | B requests approval; A approves in Sync | Matching codes/device, live expiry, recovery alternative; one continuous window | Not run |
 | UX-04 | Later/close/Escape during load, choice, overwrite review, refresh and error; restart B | Local browsing works; Sync says unpaired/not started; no automatic reopening or data sync | Not run |
@@ -343,6 +343,12 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 | UX-18 | Open synced bookmarks/pins or update only their favicons; then edit and revert content within debounce | Local-only changes retain success; real edits invalidate immediately and their round restores status even after a revert | Not run |
 | UX-19 | On B open join-method selection, request approval, cancel and request again three times; repeat with window close and recovery entry | No Finish later before verification; A's refreshed list contains only B's current request; approving it advances B; other devices' requests survive | Not run |
 | UX-20 | Match Profiles with same-name local/account Spaces, revisit Profile choices, edit or clear a Space picker and go Back; repeat with ambiguous names and stale Space identities | Unique names within the selected Profile are preselected; stored valid identities win; explicit choices survive Back; ambiguity stays undecided; no writes before Finish | Not run |
+| UX-21 | With Sync settings closed, browse continuously and delay a previously requested catch-up until after another cycle completes | Ordinary pending/commit cycles and late successes cause no new helper pull/catch-up. Forced rounds are at least 60 seconds apart | Not run |
+| UX-22 | Reject dispatch before pairing/key readiness; then accept but drop a request while engines still claim Up to date, and deliver success after its deadline | Rejected dispatch never enters Syncing. The missing new evidence times out after 60 seconds at the next observation, keeps the prior common time, and waits another 60 seconds before retry | Not run |
+| UX-23 | Lose the first account-creation response before the recovery code is displayed; reopen setup. Separately fail local enrollment/confirmation writes | Reopen offers ordinary join/recovery, without claiming an unseen code was saved. Local save failures have a distinct error and cannot release confirmation | Not run |
+| UX-24 | Keep one user Profile unloaded for the session, including past other contexts' stale interval. Then activate its Space and let sync settle | Checking and the prior common time are retained without helper catch-up traffic. Loading is never forced by status. Once all contexts settle, one fresh barrier can complete | Not run |
+| UX-25 | Let Initial sync or Syncing continue beyond the helper deadline and retry interval; then finish normally | The genuine progress phase is retained, without synthetic Needs attention or extra forced rounds. Deferred coordination resumes once the engines settle | Not run |
+| UX-26 | Complete a common round, then repeatedly close/reopen the Sync pane within 60 seconds | Up to date and the common time remain visible while the explicit request waits. Only actual dispatch changes the helper phase to Syncing | Not run |
 
 Automated evidence is recorded separately from these manual cases: hostless
 pairing/device/status/invalidation regressions and convergence properties have
@@ -369,3 +375,35 @@ The PR #153 follow-up regressions also run without launching a browser host:
 
 These use production code with temporary or in-memory app/transport/storage
 boundaries. They do not mark the manual app UI or two-Mac cases above as passed.
+
+### Coordinated last-success acceptance (PHI-1251)
+
+- With at least two user Profiles, close Settings and change Chromium data. Open
+  Settings after catch-up: the common time advances only after native data and
+  both Profiles complete a fresh round. Merely opening/reopening Settings must
+  not synthesize or reset that time.
+- Hold one Profile offline or with pending/error state. Let native and the other
+  Profile finish: the previous common time remains. Restore the held Profile and
+  verify one completed barrier advances the time without repeated refresh loops.
+- Add/remove a Profile during an outstanding status callback; completion must
+  wait for the current participant set. Switch accounts during the callback and
+  verify neither the new account nor the retired account receives a late write.
+- An unloaded Profile or framework lacking status support cannot report success;
+  it remains Checking without automatic helper retries, even after another
+  context's evidence becomes stale or an active round expires. Explicit reconfiguration
+  or removal clears the common time. Restart preserves the last recorded time
+  as history and requires fresh completion before claiming Up to date.
+- Sentinel is a hostless registration-hook test only; no Sentinel transport is
+  enabled by this change. Live two-Mac acceptance remains required before release.
+
+`build-scripts/test-sync-helper.sh` exercises the production helper with a fake
+clock and controlled engine boundaries: continuous commit/pending cycles and late
+prior completions cause no new requests; explicit/membership/failure/stale demand
+shares a minimum interval; rejected and expired requests preserve the prior time;
+retired accounts and membership/native changes fence outstanding observations.
+Lazy/missing Profiles and long-running Initial sync/Syncing defer forced work
+without synthetic errors, and throttled pane reloads retain Up to date and history.
+`build-scripts/test-sync-join.sh` also covers a lost bootstrap response, local save
+failure before account creation, confirmation write failure/retry, and failed
+cleanup of an already-initialized account. These are hostless regression results,
+not evidence that the manual cases above passed.

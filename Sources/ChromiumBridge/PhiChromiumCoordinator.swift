@@ -118,6 +118,7 @@ import SwiftUI
         phiSyncEngine?.requiresReconfiguration == true
             || (pendingNativeCleanup != nil && pendingNativeCleanup?.accountID == AccountController.shared.account?.userID)
     }
+    @MainActor private(set) var syncHelper: SyncHelper?
     @MainActor var syncStatusSnapshot: SyncContextSnapshot? { phiSyncEngine?.statusSnapshot }
     @MainActor var syncStatusProfileIDs: [String] {
         ProfileManager.shared.userAssignableProfiles.map(\.profileId)
@@ -334,7 +335,8 @@ import SwiftUI
             invalidateEnrollment: {
                 guard let deviceID = try? stack.manager.deviceKeyProviderForTesting.deviceKeyId(),
                       let bytes = try? JSONEncoder().encode(SyncPairingRecord(version: 1, deviceKeyID: deviceID, paired: false)),
-                      account.userDefaults.set(bytes, forKey: ProfilePairingGate.enrollmentDefaultsKey) else {
+                      account.userDefaults.set(bytes, forKey: ProfilePairingGate.enrollmentDefaultsKey),
+                      account.userDefaults.removeObject(forKey: SyncHelper.lastSuccessDefaultsKey) else {
                     AppLogWarn("[phi-sync] removed enrollment could not be persisted")
                     throw NativeSyncResetError.cleanupFailed
                 }
@@ -412,6 +414,9 @@ import SwiftUI
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in
+                // ProfileManager publishes its main-thread cache synchronously.
+                // Fence an outstanding status read before any queued continuation resumes.
+                MainActor.assumeIsolated { self?.syncHelper?.membershipDidChange() }
                 Task { @MainActor in
                     await self?.syncKeyController?.silentUnlockAndResolve()
                     // A profile arriving late can be the first unlock this process gets, so
@@ -697,6 +702,46 @@ import SwiftUI
                 }
                 if pullPhi { await engine.pullOnce() }
             })
+        let chromiumStatus = ChromiumSyncStatus()
+        syncHelper?.stop()
+        syncHelper = SyncHelper(
+            isEligible: { [weak self] in
+                guard let self else { return false }
+                return AccountController.shared.account === account
+                    && self.phiSyncEngine === builtEngine
+                    && ProfilePairingGate.shared.isPaired
+                    && self.phiSyncPairingEnabled
+                    && self.syncKeyController?.manager.currentARK != nil
+            },
+            participants: { [weak self] in
+                guard let self, let engine = builtEngine else { return [] }
+                let profiles = self.syncStatusProfileIDs
+                guard !profiles.isEmpty else { return [] }
+                // The existing bridge interprets only empty UUID + empty types as
+                // catch-up. A nonempty UUID with no types is deliberately a no-op.
+                var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
+                    requestSync: { [weak self] in
+                        guard let self, self.phiSyncEngine === engine,
+                              AccountController.shared.account === account,
+                              self.phiSyncPairingEnabled,
+                              self.syncKeyController?.manager.currentARK != nil,
+                              let bridge = ChromiumLauncher.sharedInstance().bridge,
+                              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) else { return false }
+                        Task { await engine.pullOnce() }
+                        bridge.notifyPhiSyncInvalidation?(
+                            forAccount: accountId, profileUUID: "", dataTypeIds: [], excludingClientId: "")
+                        return true
+                    }, currentSnapshot: { engine.statusSnapshot })]
+                participants += profiles.map { id in
+                    SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
+                                          requestSync: { true }) // Included in the accepted account-wide request above.
+                }
+                return participants
+            },
+            lastSuccess: account.userDefaults.date(forKey: SyncHelper.lastSuccessDefaultsKey),
+            saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) })
+        syncHelper?.start()
+
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in
@@ -1223,6 +1268,8 @@ import SwiftUI
         // Back to the direct-store fallback: with no engine there is no second
         // writer, so the facade may touch the store itself (§5.3's one exception).
         PhiSpaceSyncState.shared.intentSink = nil
+        syncHelper?.stop()
+        syncHelper = nil
         phiSyncEngine?.shutdown()
         phiSyncEngine = nil
         phiDomainKeys?.clear()

@@ -31,5 +31,6 @@ import Foundation
         }
         print("PASS status: unpaired, missing contexts, partial failure, revisions, timestamp, complete-round predicates")
         await testConflictStatus()
+        await testDomainKeyStatus()
     }
 }

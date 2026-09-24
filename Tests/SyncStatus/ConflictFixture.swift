@@ -1,9 +1,12 @@
+import CryptoKit
 import Foundation
 
-// The runner inserts production outcome handlers, retry tails and round completion.
+// The runner inserts production outcome handlers, key preflights, retry tails and round completion.
 // Storage/wire stand-ins keep this regression independent of the AppKit test host.
 func AppLogError(_ message: String) {}
 func AppLogWarn(_ message: String) {}
+/* KEY_API_ERROR */
+enum PhiSyncLog { static func describe(_ error: Error) -> String { "test-error" } }
 struct PhiCommitEntry { var deleted = false; var clientTagHash = "test-tag" }
 struct Phi_PhiSpaceEntity { func serializedData() throws -> Data { Data([1]) } }
 enum PhiCommitOutcome {
@@ -122,6 +125,36 @@ final class ConflictFixture {
     /* FINISH_STATUS */
     /* STATUS_ERROR */
 
+    struct DomainKeys {
+        var error: Error?
+        func domainKey() async throws -> SymmetricKey {
+            if let error { throw error }
+            return SymmetricKey(size: .bits256)
+        }
+    }
+    enum KeyStage: CaseIterable { case pull, push }
+    var domainKeys = DomainKeys()
+    /* PULL_KEY */
+    private func readPushDomainKey() async {
+        /* PUSH_KEY */
+    }
+
+    func runKeyRound(_ stage: KeyStage, error: Error?) async -> SyncContextSnapshot {
+        domainKeys.error = error
+        roundOutboundFailed = false
+        roundOffline = false
+        roundOutcome = .ok
+        // A settings push is reached only after this round has already drained a pull.
+        canPublishThisRound = stage == .push
+        let revision = statusState.update(statusState.snapshot.lastSuccess == nil ? .initialSync : .syncing)
+        switch stage {
+        case .pull: _ = await readPullDomainKey(thenPush: true)
+        case .push: await readPushDomainKey()
+        }
+        finishStatusRound(revision: revision)
+        return statusState.snapshot
+    }
+
     func run() async -> SyncContextSnapshot {
         let revision = statusState.update(.initialSync)
         switch kind {
@@ -165,4 +198,30 @@ func testConflictStatus() async {
         }
     }
     print("PASS conflict status: resolved, exhausted, mixed failure, failed recovery pull/commit for Spaces and owned items")
+}
+
+func testDomainKeyStatus() async {
+    let failures: [(Error, SyncContextPhase)] = [
+        (KeyAPIError.transport(URLError(.notConnectedToInternet)), .offline),
+        (KeyAPIError.transport(URLError(.timedOut)), .offline),
+        (KeyAPIError.http(503, "unavailable"), .needsAttention),
+        (KeyAPIError.decode, .needsAttention),
+        (KeyAPIError.transport(URLError(.userAuthenticationRequired)), .needsAttention)
+    ]
+    for stage in ConflictFixture.KeyStage.allCases {
+        for (error, expected) in failures {
+            let fixture = ConflictFixture(kind: .space, retryResult: .accepted)
+            let failed = await fixture.runKeyRound(stage, error: error)
+            precondition(failed.phase == expected, "A failed \(stage) domain key must report \(expected), got \(failed.phase)")
+            precondition(failed.lastSuccess == nil)
+            if stage == .pull { precondition(fixture.roundOutcome == .pullFailed && !fixture.canPublishThisRound) }
+
+            let recovered = await fixture.runKeyRound(stage, error: nil)
+            precondition(recovered.phase == .upToDate && recovered.lastSuccess != nil)
+            let failedAgain = await fixture.runKeyRound(stage, error: error)
+            precondition(failedAgain.phase == expected && failedAgain.lastSuccess == recovered.lastSuccess,
+                         "Key failures must preserve, never advance, the last successful sync time")
+        }
+    }
+    print("PASS domain key status: pull/push offline, HTTP, decode, auth, recovery and preserved success time")
 }

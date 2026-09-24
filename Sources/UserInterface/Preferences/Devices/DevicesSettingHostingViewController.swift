@@ -120,12 +120,15 @@ final class DevicesSettingHostingViewController: NSViewController {
         let accountID = AccountController.shared.account?.userID
         viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
         viewModel.accountName = AccountController.shared.account?.userInfo?.email ?? ""
-        viewModel.nativeStatus = { PhiChromiumCoordinator.shared.syncStatusSnapshot }
+        viewModel.syncReport = { requestSync in
+            guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
+            await helper.refresh(requestSync: requestSync)
+            return helper.report
+        }
         viewModel.reconfigurationRequired = { [weak self] in
             self?.syncKeyController?.requiresReconfiguration == true
                 || PhiChromiumCoordinator.shared.nativeSyncRequiresReconfiguration
         }
-        viewModel.profileIDs = { PhiChromiumCoordinator.shared.syncStatusProfileIDs }
         viewModel.profileNames = { Dictionary(uniqueKeysWithValues:
             ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }) }
         boundManager = syncStack.manager

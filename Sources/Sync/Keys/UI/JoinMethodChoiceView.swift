@@ -7,21 +7,21 @@ struct JoinMethodChoiceView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text(NSLocalizedString("Add this device to your account", comment: "Join choice - title"))
+            Text(NSLocalizedString("sync.setup.joinMethod.title", value: "Add this device to your account", comment: "Sync setup - title of the page that asks how this device joins the account"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
-            Text(NSLocalizedString("Choose how to set up sync on this device.", comment: "Join choice - explanation"))
+            Text(NSLocalizedString("sync.setup.joinMethod.explanation", value: "Choose how to set up sync on this device.", comment: "Sync setup - explanation under the join method title"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
 
-            Button(NSLocalizedString("Request approval from another device", comment: "Join choice - request approval")) {
+            Button(NSLocalizedString("sync.setup.joinMethod.requestApproval", value: "Request approval from another device", comment: "Sync setup - option that asks another signed-in device to approve this one")) {
                 Task { await viewModel.startJoinRequest() }
             }
             .buttonStyle(.borderedProminent)
 
-            Button(NSLocalizedString("Enter a recovery code", comment: "Join choice - use recovery code")) {
+            Button(NSLocalizedString("sync.setup.joinMethod.useRecoveryCode", value: "Enter a recovery code", comment: "Sync setup - option that joins this device with a saved recovery code")) {
                 viewModel.showRecoveryEntry()
             }
             .buttonStyle(.bordered)

@@ -1,6 +1,776 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "sync.devices.approve" : {
+      "comment" : "Devices settings - button that approves a device waiting to join",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve"
+          }
+        }
+      }
+    },
+    "sync.devices.deny" : {
+      "comment" : "Devices settings - button that denies a device waiting to join",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deny"
+          }
+        }
+      }
+    },
+    "sync.devices.error.locked" : {
+      "comment" : "Devices settings - error shown when approving a device before this device is unlocked",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device isn’t unlocked yet."
+          }
+        }
+      }
+    },
+    "sync.devices.error.requestExpired" : {
+      "comment" : "Devices settings - error shown when approving a request that already expired",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That request already expired."
+          }
+        }
+      }
+    },
+    "sync.devices.expiresAt" : {
+      "comment" : "Devices settings - when a pending join request expires; %@ is the time",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires: %@"
+          }
+        }
+      }
+    },
+    "sync.devices.noPendingRequests" : {
+      "comment" : "Devices settings - shown when no device is waiting for approval",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No devices are waiting for approval."
+          }
+        }
+      }
+    },
+    "sync.devices.notSetUp" : {
+      "comment" : "Devices settings - shown when this device has not joined sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device isn’t set up for sync yet."
+          }
+        }
+      }
+    },
+    "sync.devices.pendingRequestTitle" : {
+      "comment" : "Devices settings - a device waiting to join; %1$@ is the device name, %2$@ its platform, such as macOS",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "sync.devices.removeThisDevice" : {
+      "comment" : "Devices settings - button that removes this device from sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove this device from sync…"
+          }
+        }
+      }
+    },
+    "sync.devices.setUp" : {
+      "comment" : "Devices settings - button that starts sync setup on this device",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up sync on this device"
+          }
+        }
+      }
+    },
+    "sync.devices.verifyCode" : {
+      "comment" : "Devices settings - asks to compare a join request's code with the other device; %@ is the code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify this code matches the other device: %@"
+          }
+        }
+      }
+    },
+    "sync.pairing.back" : {
+      "comment" : "Sync setup - button that returns to the previous step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "sync.pairing.continue" : {
+      "comment" : "Sync setup - button that moves from profile matching to Space matching",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "sync.pairing.error.applyFailed" : {
+      "comment" : "Sync setup - error shown when the chosen matches could not be applied",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.createLocalProfileFailed" : {
+      "comment" : "Profile matching - error shown when a profile could not be created on this Mac; %@ is the profile name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t create a profile named “%@” on this Mac."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.profileApplyFailed" : {
+      "comment" : "Sync setup - error shown when one profile match could not be applied",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t apply one of your profile choices. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.profileLoadFailed" : {
+      "comment" : "Sync setup - error shown when the account's profiles could not be loaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load your account’s profiles. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.profileLoadTimedOut" : {
+      "comment" : "Profile matching - error shown when the account's profiles did not load in time",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load the account’s profiles in time. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.spaceLoadFailed" : {
+      "comment" : "Sync setup - error shown when the account's Spaces could not be loaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load your account’s Spaces. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.spaceLoadIncomplete" : {
+      "comment" : "Sync setup - error shown when only part of the account's Spaces could be loaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load all of your account’s Spaces. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.spaceLoadTimedOut" : {
+      "comment" : "Sync setup - error shown when the account's Spaces did not load in time",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load your account’s Spaces in time. Check your connection and retry."
+          }
+        }
+      }
+    },
+    "sync.pairing.error.syncUnavailable" : {
+      "comment" : "Sync setup - error shown when sync is unavailable so the account's Spaces cannot be loaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded."
+          }
+        }
+      }
+    },
+    "sync.pairing.finish" : {
+      "comment" : "Sync setup - button that applies the chosen matches",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish"
+          }
+        }
+      }
+    },
+    "sync.pairing.loading.detail" : {
+      "comment" : "Sync setup - detail shown while the account's Spaces are loading",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi is counting the Spaces in your account. This can take up to two minutes."
+          }
+        }
+      }
+    },
+    "sync.pairing.loading.title" : {
+      "comment" : "Sync setup - title while the account's profiles and Spaces are loading",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading your account…"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.apply" : {
+      "comment" : "Sync setup review - button that accepts the listed changes and starts sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.explanation" : {
+      "comment" : "Sync setup - explanation on the review page listing Space values the account will replace",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one."
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.color" : {
+      "comment" : "Sync setup review - Space field name: the Space color",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.darkOpacity" : {
+      "comment" : "Sync setup review - Space field name: overlay opacity in dark appearance",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark overlay opacity"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.icon" : {
+      "comment" : "Sync setup review - Space field name: the Space icon",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icon"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.lightOpacity" : {
+      "comment" : "Sync setup review - Space field name: overlay opacity in light appearance",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light overlay opacity"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.name" : {
+      "comment" : "Sync setup review - Space field name: the Space name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.field.theme" : {
+      "comment" : "Sync setup review - Space field name: the Space theme",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Theme"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.fieldAccessibilityLabel" : {
+      "comment" : "Sync setup review - VoiceOver label for one changed value; %1$@ is the field name, %2$@ the value on this Mac, %3$@ the account value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ changes from %2$@ to %3$@"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.noCustomValue" : {
+      "comment" : "Sync setup review - shown for a Space value that is not customized, such as no pinned theme",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No custom value"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.opacityPercent" : {
+      "comment" : "Sync setup review - an overlay opacity as a whole percentage; %1$d is the number",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d%%"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.opacityPercentDecimal" : {
+      "comment" : "Sync setup review - an overlay opacity as a percentage with one decimal; %1$.1f is the number",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$.1f%%"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.spaceAccessibilityLabel" : {
+      "comment" : "Sync setup review - VoiceOver label for one Space's changes; %@ is the Space name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes to Space “%@”"
+          }
+        }
+      }
+    },
+    "sync.pairing.overwrite.title" : {
+      "comment" : "Sync setup - title of the review page listing Space values the account will replace",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review what changes"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.assignTo" : {
+      "comment" : "Sync setup profile matching - option that matches an account profile to a profile on this Mac; %@ is that profile's name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assign to %@"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.choosePlaceholder" : {
+      "comment" : "Sync setup profile matching - picker placeholder before a choice is made",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose…"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.confirm" : {
+      "comment" : "Sync setup profile matching - button that confirms the chosen matches",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.createOnThisMac" : {
+      "comment" : "Sync setup profile matching - option that creates a new profile on this Mac for an account profile",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create on this Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.explanation" : {
+      "comment" : "Sync setup profile matching - explanation above the list of profiles to match",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to."
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.registerAsNew" : {
+      "comment" : "Sync setup profile matching - option that adds a profile on this Mac to the account as a new profile",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register as new"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.title" : {
+      "comment" : "Sync setup - title of the profile matching step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match your profiles"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.unclaimedHeader" : {
+      "comment" : "Sync setup profile matching - header of account profiles no profile on this Mac is matched to",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unclaimed account profiles"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.unnamedRemote" : {
+      "comment" : "Sync setup profile matching - account profile whose name cannot be decrypted; %@ is a short identifier",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unnamed profile (%@)"
+          }
+        }
+      }
+    },
+    "sync.pairing.profiles.unreadable" : {
+      "comment" : "Sync setup profile matching - status of an account profile that cannot be decrypted yet",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t be read right now — Phi keeps retrying in the background"
+          }
+        }
+      }
+    },
+    "sync.pairing.removeThisDevice" : {
+      "comment" : "Sync setup - button that removes this device from sync instead of finishing setup",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove this device from sync…"
+          }
+        }
+      }
+    },
+    "sync.pairing.retry" : {
+      "comment" : "Sync setup - button that retries after an error",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.accountColumn" : {
+      "comment" : "Sync setup Space matching - header of the column listing account Spaces",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.accountSpaceOption" : {
+      "comment" : "Sync setup Space matching - picker option for an account Space; %1$@ is the Space name, %2$@ its profile",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.addAllAsNew" : {
+      "comment" : "Sync setup Space matching - button that adds every undecided Space to the account as a new Space",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add all as new"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.addAsNew" : {
+      "comment" : "Sync setup Space matching - picker option that adds this Space to the account as a new Space",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add as new"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.choosePlaceholder" : {
+      "comment" : "Sync setup Space matching - picker placeholder before a choice is made",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose…"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.defaultInAccount" : {
+      "comment" : "Sync setup Space matching - account column text for the default Space, which always exists in the account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already in your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.defaultRowAccessibilityLabel" : {
+      "comment" : "Sync setup Space matching - VoiceOver label for the default Space row; %@ is the Space name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space “%@” is the default Space and is already in your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.explanation" : {
+      "comment" : "Sync setup Space matching - explanation above the list of Spaces to match",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted."
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.localColumn" : {
+      "comment" : "Sync setup Space matching - header of the column listing Spaces on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.localRowAccessibilityLabel" : {
+      "comment" : "Sync setup Space matching - VoiceOver label for a Space on this Mac; %1$@ is the Space name, %2$@ its profile",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space “%1$@” on this Mac, in profile %2$@"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.notAssigned" : {
+      "comment" : "Sync setup Space matching - account column text for a Space with no choice yet",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not assigned yet"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.pickerAccessibilityLabel" : {
+      "comment" : "Sync setup Space matching - VoiceOver label for the account Space picker; %@ is the Space name on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account Space for “%@”"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.title" : {
+      "comment" : "Sync setup - title of the Space matching step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match your Spaces"
+          }
+        }
+      }
+    },
+    "sync.pairing.spaces.unknownName" : {
+      "comment" : "Sync setup Space matching - placeholder for a profile or Space name that cannot be resolved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "—"
+          }
+        }
+      }
+    },
+    "sync.pairing.stepBar.position" : {
+      "comment" : "Sync setup step bar - VoiceOver label; %1$d is the current step, %2$d the step count, %3$@ the step name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step %1$d of %2$d: %3$@"
+          }
+        }
+      }
+    },
+    "sync.pairing.stepBar.profiles" : {
+      "comment" : "Sync setup step bar - label of the profile matching step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiles"
+          }
+        }
+      }
+    },
+    "sync.pairing.stepBar.spaces" : {
+      "comment" : "Sync setup step bar - label of the Space matching step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces"
+          }
+        }
+      }
+    },
+    "sync.pairing.submitting" : {
+      "comment" : "Sync setup - progress title while the chosen matches are applied",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applying your choices…"
+          }
+        }
+      }
+    },
+    "sync.pairing.unnamedProfileName" : {
+      "comment" : "Sync setup - name given to a local profile created for an account profile that has no name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile"
+          }
+        }
+      }
+    },
     "sync.reconfigure.title" : {
       "comment" : "Action to explicitly reset local sync state and configure it again",
       "extractionState" : "manual",
@@ -64,6 +834,314 @@
     "" : {
 
     },
+    "sync.recovery.entry.explanation" : {
+      "comment" : "Sync setup - explanation on the page for entering a recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the recovery code you saved when you set up sync on another device."
+          }
+        }
+      }
+    },
+    "sync.recovery.entry.placeholder" : {
+      "comment" : "Sync setup - placeholder of the recovery code text field",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovery code"
+          }
+        }
+      }
+    },
+    "sync.recovery.entry.submit" : {
+      "comment" : "Sync setup - button that submits the entered recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Submit"
+          }
+        }
+      }
+    },
+    "sync.recovery.entry.title" : {
+      "comment" : "Sync setup - title of the page for entering a recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter your recovery code"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.confirm" : {
+      "comment" : "Sync setup - button confirming the user saved the recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I've saved it"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.copied" : {
+      "comment" : "Sync setup - copy button title right after the recovery code was copied",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.copy" : {
+      "comment" : "Sync setup - button that copies the recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.explanation" : {
+      "comment" : "Sync setup - explanation on the page that shows a new recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Store this code somewhere safe. You will need it to add another device to your account."
+          }
+        }
+      }
+    },
+    "sync.recovery.save.title" : {
+      "comment" : "Sync setup - title of the page that shows a new recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save your recovery code"
+          }
+        }
+      }
+    },
+    "sync.removal.confirmation.cancel" : {
+      "comment" : "Remove this device from sync - confirmation dialog cancel button",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "sync.removal.confirmation.confirm" : {
+      "comment" : "Remove this device from sync - confirmation dialog button that removes the device",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove This Device"
+          }
+        }
+      }
+    },
+    "sync.removal.confirmation.title" : {
+      "comment" : "Remove this device from sync - confirmation dialog title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove this Mac from account sync?"
+          }
+        }
+      }
+    },
+    "sync.removal.unavailable" : {
+      "comment" : "Remove this device from sync - error shown when sync is unavailable so the device was not removed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again."
+          }
+        }
+      }
+    },
+    "sync.setup.error.pairingUnavailable" : {
+      "comment" : "Sync setup - error shown when profile matching cannot start on this device right now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing isn’t available right now."
+          }
+        }
+      }
+    },
+    "sync.setup.error.title" : {
+      "comment" : "Sync setup - title of the error page",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong"
+          }
+        }
+      }
+    },
+    "sync.setup.joinDenied.message" : {
+      "comment" : "Sync setup - message shown when another device denied this device's join request",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other device denied this request."
+          }
+        }
+      }
+    },
+    "sync.setup.joinDenied.title" : {
+      "comment" : "Sync setup - title shown when another device denied this device's join request",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request denied"
+          }
+        }
+      }
+    },
+    "sync.setup.joinExpired.message" : {
+      "comment" : "Sync setup - message shown when this device's join request timed out",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request timed out. You can try again."
+          }
+        }
+      }
+    },
+    "sync.setup.joinExpired.title" : {
+      "comment" : "Sync setup - title shown when this device's join request timed out",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request expired"
+          }
+        }
+      }
+    },
+    "sync.setup.joinMethod.explanation" : {
+      "comment" : "Sync setup - explanation under the join method title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose how to set up sync on this device."
+          }
+        }
+      }
+    },
+    "sync.setup.joinMethod.requestApproval" : {
+      "comment" : "Sync setup - option that asks another signed-in device to approve this one",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request approval from another device"
+          }
+        }
+      }
+    },
+    "sync.setup.joinMethod.title" : {
+      "comment" : "Sync setup - title of the page that asks how this device joins the account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add this device to your account"
+          }
+        }
+      }
+    },
+    "sync.setup.joinMethod.useRecoveryCode" : {
+      "comment" : "Sync setup - option that joins this device with a saved recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a recovery code"
+          }
+        }
+      }
+    },
+    "sync.setup.tryAnotherWay" : {
+      "comment" : "Sync setup - button on a denied or expired join request page that returns to the join method choice",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another way"
+          }
+        }
+      }
+    },
+    "sync.setup.waiting.cancel" : {
+      "comment" : "Sync setup - button that cancels the pending join request",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "sync.setup.waiting.title" : {
+      "comment" : "Sync setup - title while waiting for another device to approve this one",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for approval"
+          }
+        }
+      }
+    },
+    "sync.setup.windowTitle" : {
+      "comment" : "Sync setup - window title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish setting up sync"
+          }
+        }
+      }
+    },
+    "sync.status.lastSuccessAt" : {
+      "comment" : "Devices settings - time of the last successful sync on this Mac; %@ is the date and time",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last successful sync on this Mac: %@"
+          }
+        }
+      }
+    },
     "—" : {
       "comment" : "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)"
     },
@@ -94,18 +1172,6 @@
           }
         }
       }
-    },
-    "%1$.1f%%" : {
-      "comment" : "Overwrite confirmation - an overlay opacity as a percentage with one decimal"
-    },
-    "%1$@ (%2$@)" : {
-      "comment" : "Pairing wizard - an account Space named %1$@ in profile %2$@"
-    },
-    "%1$@ changes from %2$@ to %3$@" : {
-      "comment" : "Overwrite confirmation - accessibility label for one changed field"
-    },
-    "%1$d%%" : {
-      "comment" : "Overwrite confirmation - an overlay opacity as a whole percentage"
     },
     "%lld" : {
 
@@ -543,12 +1609,6 @@
           }
         }
       }
-    },
-    "Account" : {
-      "comment" : "Pairing wizard - account column header"
-    },
-    "Account Space for “%@”" : {
-      "comment" : "Pairing wizard - accessibility label for the assignment picker"
     },
     "accountDataExport.cancelButton" : {
       "comment" : "Account data export - Button abandoning verification without cancelling a server task",
@@ -3849,15 +4909,6 @@
           }
         }
       }
-    },
-    "Add all as new" : {
-      "comment" : "Pairing wizard - assign every undecided Space to \"Add as new\""
-    },
-    "Add as new" : {
-      "comment" : "Pairing wizard - add this Space to the account as a new one"
-    },
-    "Add this device to your account" : {
-      "comment" : "Join choice - title"
     },
     "addressBar.configuration.defaultPlaceholder" : {
       "comment" : "Address bar - Default placeholder supplied by its configuration",
@@ -7711,9 +8762,6 @@
           }
         }
       }
-    },
-    "Already in your account" : {
-      "comment" : "Pairing wizard - default Space row, account side"
     },
     "app.activeSpaceContextMenu.deleteSpaceAction" : {
       "comment" : "Active Space context menu - Delete the active Space",
@@ -23008,18 +24056,6 @@
         }
       }
     },
-    "Apply" : {
-      "comment" : "Overwrite confirmation - apply every decision and start syncing"
-    },
-    "Applying your choices…" : {
-      "comment" : "Pairing wizard - submitting page"
-    },
-    "Approve" : {
-      "comment" : "Devices - approve"
-    },
-    "Assign to %@" : {
-      "comment" : "Profile pairing - assign to a local profile"
-    },
     "Back" : {
       "comment" : "Web content header - Accessibility description for back navigation button"
     },
@@ -29316,23 +30352,8 @@
         }
       }
     },
-    "Can’t be read right now — Phi keeps retrying in the background" : {
-      "comment" : "Profile pairing - undecryptable remote row"
-    },
     "Cancel" : {
       "comment" : "Self-revoke confirmation - cancel\nWaiting - cancel"
-    },
-    "Changes to Space “%@”" : {
-      "comment" : "Overwrite confirmation - accessibility label for one Space's section"
-    },
-    "Choose how to set up sync on this device." : {
-      "comment" : "Join choice - explanation"
-    },
-    "Choose…" : {
-      "comment" : "Profiles settings - download location not set"
-    },
-    "Color" : {
-      "comment" : "General settings - Theme color row title"
     },
     "common.bookmarkDeletion.bookmarksMessage" : {
       "comment" : "Bookmark multi-selection delete confirmation body for bookmarks",
@@ -36348,44 +37369,8 @@
     "Continue" : {
       "comment" : "Pairing wizard - finish step 1"
     },
-    "Copied" : {
-      "comment" : "Recovery code display - copy button, just copied"
-    },
     "Copy" : {
       "comment" : "Recovery code display - copy button"
-    },
-    "Couldn’t apply one of your profile choices. Check your connection and retry." : {
-      "comment" : "Pairing wizard - a profile decision failed"
-    },
-    "Couldn’t create a profile named “%@” on this Mac." : {
-      "comment" : "Pairing - local profile creation failed"
-    },
-    "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry." : {
-      "comment" : "Pairing wizard - applying the decisions failed"
-    },
-    "Couldn’t load all of your account’s Spaces. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview truncated"
-    },
-    "Couldn’t load the account’s profiles in time. Check your connection and retry." : {
-      "comment" : "Pairing - load timeout"
-    },
-    "Couldn’t load your account’s profiles. Check your connection and retry." : {
-      "comment" : "Pairing wizard - profile load failed"
-    },
-    "Couldn’t load your account’s Spaces in time. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview timed out"
-    },
-    "Couldn’t load your account’s Spaces. Check your connection and retry." : {
-      "comment" : "Pairing wizard - Space preview failed"
-    },
-    "Create on this Mac" : {
-      "comment" : "Profile pairing - create locally option"
-    },
-    "Dark overlay opacity" : {
-      "comment" : "Overwrite confirmation - the dark-appearance overlay opacity field"
-    },
-    "Deny" : {
-      "comment" : "Devices - deny"
     },
     "Devices" : {
       "comment" : "Devices settings - header\nSettings - Tab title for device management"
@@ -40558,15 +41543,6 @@
         }
       }
     },
-    "Enter a recovery code" : {
-      "comment" : "Join choice - use recovery code"
-    },
-    "Enter the recovery code you saved when you set up sync on another device." : {
-      "comment" : "Recovery code entry - explanation"
-    },
-    "Enter your recovery code" : {
-      "comment" : "Recovery code entry - title"
-    },
     "extensions.list.manageExtensionsButton" : {
       "comment" : "Extension list - Button to open extensions management page",
       "extractionState" : "extracted_with_value",
@@ -42726,9 +43702,6 @@
     "Finish" : {
       "comment" : "Onboarding password manager - Finish button"
     },
-    "Finish setting up sync" : {
-      "comment" : "Pairing wizard - window title"
-    },
     "folio.library.allItems" : {
       "comment" : "Folio library - Filter showing every saved item",
       "extractionState" : "extracted_with_value",
@@ -43312,9 +44285,6 @@
           }
         }
       }
-    },
-    "I've saved it" : {
-      "comment" : "Recovery code display - confirm button"
     },
     "Icon" : {
       "comment" : "Spaces settings - icon section header"
@@ -44462,12 +45432,6 @@
         }
       }
     },
-    "Light overlay opacity" : {
-      "comment" : "Overwrite confirmation - the light-appearance overlay opacity field"
-    },
-    "Loading your account…" : {
-      "comment" : "Pairing wizard - loading page"
-    },
     "localData.bookmarks.importedFromArcFolderTitle" : {
       "comment" : "Arc bookmarks import folder title",
       "extractionState" : "extracted_with_value",
@@ -45008,23 +45972,8 @@
         }
       }
     },
-    "Match your profiles" : {
-      "comment" : "Profile pairing - title"
-    },
-    "Match your Spaces" : {
-      "comment" : "Pairing wizard - step 2 title"
-    },
     "Name" : {
       "comment" : "Editor - Label for the title/name input field"
-    },
-    "No custom value" : {
-      "comment" : "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead"
-    },
-    "No devices are waiting for approval." : {
-      "comment" : "Devices - empty"
-    },
-    "Not assigned yet" : {
-      "comment" : "Pairing wizard - account column placeholder for an undecided row"
     },
     "notifications.card.runButton" : {
       "comment" : "Notification card run button - Executes the suggested action",
@@ -50312,9 +51261,6 @@
         }
       }
     },
-    "Pairing isn’t available right now." : {
-      "comment" : "Key layer - pairing phase reached with no controller to apply it"
-    },
     "peek.bookmarkCell.closePeekTooltip" : {
       "comment" : "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark",
       "extractionState" : "extracted_with_value",
@@ -50615,14 +51561,8 @@
         }
       }
     },
-    "Phi is counting the Spaces in your account. This can take up to two minutes." : {
-      "comment" : "Pairing wizard - loading page progress detail"
-    },
     "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done." : {
       "comment" : "Pairing wizard - step 1 explanation"
-    },
-    "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted." : {
-      "comment" : "Pairing wizard - step 2 explanation"
     },
     "Profile" : {
       "comment" : "Fallback name for an account profile registered with no name"
@@ -50789,41 +51729,11 @@
         }
       }
     },
-    "Recovery code" : {
-      "comment" : "Recovery code entry - text field placeholder"
-    },
-    "Register as new" : {
-      "comment" : "Profile pairing - register as new option"
-    },
-    "Remove This Device" : {
-      "comment" : "Self-revoke confirmation - confirm"
-    },
-    "Remove this device from sync…" : {
-      "comment" : "Devices - remove this device from sync\nPairing wizard - self-revoke exit"
-    },
-    "Remove this Mac from account sync?" : {
-      "comment" : "Self-revoke confirmation - title"
-    },
-    "Request approval from another device" : {
-      "comment" : "Join choice - request approval"
-    },
-    "Request denied" : {
-      "comment" : "Join denied - title"
-    },
-    "Request expired" : {
-      "comment" : "Join expired - title"
-    },
     "Resolve" : {
       "comment" : "Devices - pairing banner button"
     },
     "Retry" : {
       "comment" : "Phi Link - Retry loading official bot"
-    },
-    "Review what changes" : {
-      "comment" : "Overwrite confirmation - title"
-    },
-    "Save your recovery code" : {
-      "comment" : "Recovery code display - title"
     },
     "Save your recovery code first" : {
       "comment" : "Key layer - title of the alert shown when closing the window before confirming the recovery code was saved"
@@ -51430,9 +52340,6 @@
     },
     "Set up sync" : {
       "comment" : "Key layer window title"
-    },
-    "Set up sync on this device" : {
-      "comment" : "Devices - set up"
     },
     "settings.account.defaultBrowser.defaultStatus" : {
       "comment" : "Account settings - Status text when Phi is the default browser",
@@ -91862,15 +92769,6 @@
     "Sign in to manage devices." : {
       "comment" : "Devices - signed out"
     },
-    "Something went wrong" : {
-      "comment" : "Key layer error - title"
-    },
-    "Space “%@” is the default Space and is already in your account" : {
-      "comment" : "Pairing wizard - accessibility label for the default Space row"
-    },
-    "Space “%1$@” on this Mac, in profile %2$@" : {
-      "comment" : "Pairing wizard - accessibility label for a local Space row"
-    },
     "Spaces" : {
       "comment" : "Settings - Tab title for profiles and spaces management"
     },
@@ -92654,21 +93552,6 @@
         }
       }
     },
-    "Step %1$d of %2$d: %3$@" : {
-      "comment" : "Pairing wizard - step bar position, for VoiceOver"
-    },
-    "Store this code somewhere safe. You will need it to add another device to your account." : {
-      "comment" : "Recovery code display - explanation"
-    },
-    "Submit" : {
-      "comment" : "Recovery code entry - submit button"
-    },
-    "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again." : {
-      "comment" : "Self-revoke - no sync controller"
-    },
-    "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded." : {
-      "comment" : "Pairing wizard - no engine for the Space preview"
-    },
     "sync.pairing.spacesToAdd" : {
       "comment" : "Space pairing - heading for account Spaces that will be created on this Mac",
       "extractionState" : "manual",
@@ -93292,15 +94175,6 @@
           }
         }
       }
-    },
-    "That request already expired." : {
-      "comment" : "Devices - approve stale request"
-    },
-    "The other device denied this request." : {
-      "comment" : "Join denied - body"
-    },
-    "Theme" : {
-      "comment" : "General settings - Theme section title"
     },
     "themes.appearance.darkOption" : {
       "comment" : "Appearance choice: always dark mode",
@@ -93962,23 +94836,11 @@
         }
       }
     },
-    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one." : {
-      "comment" : "Overwrite confirmation - explanation"
-    },
     "This code is shown only once. Without it, no other device can join your account if this Mac is lost. Confirm you have saved it to continue." : {
       "comment" : "Key layer - body of the alert shown when closing the window before confirming the recovery code was saved"
     },
-    "This device isn’t set up for sync yet." : {
-      "comment" : "Devices - needs join"
-    },
-    "This device isn’t unlocked yet." : {
-      "comment" : "Devices - approve blocked when locked"
-    },
     "This is the last device on the account, so it can’t be removed. Finish pairing on this device (profiles that can’t be read don’t block it), or set up sync on another device first, then try again." : {
       "comment" : "Self-revoke - last active device"
-    },
-    "This Mac" : {
-      "comment" : "Pairing wizard - local column header"
     },
     "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open." : {
       "comment" : "Extra warning shown when the account's Spaces have not been synced yet"
@@ -93988,9 +94850,6 @@
     },
     "This request expires at " : {
       "comment" : "Waiting - expiry prefix"
-    },
-    "This request timed out. You can try again." : {
-      "comment" : "Join expired - body"
     },
     "timeMachine.helpMenu.emptyPlaceholder" : {
       "comment" : "Help menu - Time Machine submenu placeholder when no completed backups exist",
@@ -94414,15 +95273,6 @@
           }
         }
       }
-    },
-    "Try another way" : {
-      "comment" : "Key layer - retry"
-    },
-    "Unclaimed account profiles" : {
-      "comment" : "Profile pairing - unclaimed remotes header"
-    },
-    "Unnamed profile (%@)" : {
-      "comment" : "Profile pairing - remote profile whose name couldn’t be decrypted"
     },
     "updates.menu.availableStatus" : {
       "comment" : "Phi menu - Menu item text when new version is available",
@@ -95376,15 +96226,6 @@
         }
       }
     },
-    "Verify this code matches the other device: " : {
-      "comment" : "Devices - verify prefix"
-    },
-    "Waiting for approval" : {
-      "comment" : "Waiting - title"
-    },
-    "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to." : {
-      "comment" : "Profile pairing - explanation"
-    },
     "You’re not signed in." : {
       "comment" : "Key layer - not signed in"
     },
@@ -95450,17 +96291,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sync contents"
-          }
-        }
-      }
-    },
-    "sync.devices.expires" : {
-      "comment" : "Pending device request expiry label",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expires"
           }
         }
       }
@@ -95791,17 +96621,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Initial sync in progress"
-          }
-        }
-      }
-    },
-    "sync.status.lastSuccess" : {
-      "comment" : "Local completion timestamp label",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last successful sync on this Mac"
           }
         }
       }

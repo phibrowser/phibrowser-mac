@@ -34,27 +34,27 @@ enum PairingWizardPhase: Equatable {
 /// Centralized wizard strings shared by KeyLayerViewModel's two R12 replacements. Each English key uses the
 /// same catalog entry/comment to avoid conflicting generated comments.
 enum PairingWizardStrings {
-    static let profileLoadFailed = NSLocalizedString(
-        "Couldn’t load your account’s profiles. Check your connection and retry.",
-        comment: "Pairing wizard - profile load failed")
-    static let profileDecisionFailed = NSLocalizedString(
-        "Couldn’t apply one of your profile choices. Check your connection and retry.",
-        comment: "Pairing wizard - a profile decision failed")
-    static let previewUnavailable = NSLocalizedString(
-        "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded.",
-        comment: "Pairing wizard - no engine for the Space preview")
-    static let previewFailed = NSLocalizedString(
-        "Couldn’t load your account’s Spaces. Check your connection and retry.",
-        comment: "Pairing wizard - Space preview failed")
-    static let previewTruncated = NSLocalizedString(
-        "Couldn’t load all of your account’s Spaces. Check your connection and retry.",
-        comment: "Pairing wizard - Space preview truncated")
-    static let previewTimedOut = NSLocalizedString(
-        "Couldn’t load your account’s Spaces in time. Check your connection and retry.",
-        comment: "Pairing wizard - Space preview timed out")
-    static let applyFailed = NSLocalizedString(
-        "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry.",
-        comment: "Pairing wizard - applying the decisions failed")
+    static let profileLoadFailed = NSLocalizedString("sync.pairing.error.profileLoadFailed",
+        value: "Couldn’t load your account’s profiles. Check your connection and retry.",
+        comment: "Sync setup - error shown when the account's profiles could not be loaded")
+    static let profileDecisionFailed = NSLocalizedString("sync.pairing.error.profileApplyFailed",
+        value: "Couldn’t apply one of your profile choices. Check your connection and retry.",
+        comment: "Sync setup - error shown when one profile match could not be applied")
+    static let previewUnavailable = NSLocalizedString("sync.pairing.error.syncUnavailable",
+        value: "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded.",
+        comment: "Sync setup - error shown when sync is unavailable so the account's Spaces cannot be loaded")
+    static let previewFailed = NSLocalizedString("sync.pairing.error.spaceLoadFailed",
+        value: "Couldn’t load your account’s Spaces. Check your connection and retry.",
+        comment: "Sync setup - error shown when the account's Spaces could not be loaded")
+    static let previewTruncated = NSLocalizedString("sync.pairing.error.spaceLoadIncomplete",
+        value: "Couldn’t load all of your account’s Spaces. Check your connection and retry.",
+        comment: "Sync setup - error shown when only part of the account's Spaces could be loaded")
+    static let previewTimedOut = NSLocalizedString("sync.pairing.error.spaceLoadTimedOut",
+        value: "Couldn’t load your account’s Spaces in time. Check your connection and retry.",
+        comment: "Sync setup - error shown when the account's Spaces did not load in time")
+    static let applyFailed = NSLocalizedString("sync.pairing.error.applyFailed",
+        value: "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry.",
+        comment: "Sync setup - error shown when the chosen matches could not be applied")
 }
 
 /// Result.Failure must conform to Error; String does not. Wrap the message that will be rendered.

@@ -12,27 +12,28 @@ struct SpacePairingStepView: View {
     let model: SpacePairingModel
 
     /// Localized unresolved-name display; pure logic returns nil.
-    static let unresolvedName = NSLocalizedString(
-        "—", comment: "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)")
+    static let unresolvedName = NSLocalizedString("sync.pairing.spaces.unknownName",
+        value: "—",
+        comment: "Sync setup Space matching - placeholder for a profile or Space name that cannot be resolved")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(NSLocalizedString("Match your Spaces", comment: "Pairing wizard - step 2 title"))
+            Text(NSLocalizedString("sync.pairing.spaces.title", value: "Match your Spaces", comment: "Sync setup - title of the Space matching step"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
-            Text(NSLocalizedString(
-                "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted.",
-                comment: "Pairing wizard - step 2 explanation"))
+            Text(NSLocalizedString("sync.pairing.spaces.explanation",
+                value: "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted.",
+                comment: "Sync setup Space matching - explanation above the list of Spaces to match"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 16) {
-                Text(NSLocalizedString("This Mac", comment: "Pairing wizard - local column header"))
+                Text(NSLocalizedString("sync.pairing.spaces.localColumn", value: "This Mac", comment: "Sync setup Space matching - header of the column listing Spaces on this Mac"))
                     .font(.headline)
                     .themedForeground(.textPrimaryStrong)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(NSLocalizedString("Account", comment: "Pairing wizard - account column header"))
+                Text(NSLocalizedString("sync.pairing.spaces.accountColumn", value: "Account", comment: "Sync setup Space matching - header of the column listing account Spaces"))
                     .font(.headline)
                     .themedForeground(.textPrimaryStrong)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,8 +117,9 @@ struct SpacePairingStepView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(
-            format: NSLocalizedString("Space “%1$@” on this Mac, in profile %2$@",
-                                      comment: "Pairing wizard - accessibility label for a local Space row"),
+            format: NSLocalizedString("sync.pairing.spaces.localRowAccessibilityLabel",
+                                      value: "Space “%1$@” on this Mac, in profile %2$@",
+                                      comment: "Sync setup Space matching - VoiceOver label for a Space on this Mac; %1$@ is the Space name, %2$@ its profile"),
             local.name, profile))
     }
 
@@ -125,13 +127,14 @@ struct SpacePairingStepView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Picker("", selection: binding(for: local)) {
-                    Text(NSLocalizedString("Choose…", comment: "Profiles settings - download location not set"))
+                    Text(NSLocalizedString("sync.pairing.spaces.choosePlaceholder", value: "Choose…", comment: "Sync setup Space matching - picker placeholder before a choice is made"))
                         .tag(SpacePairingModel.Assignment?.none)
                     ForEach(model.assignableAccountSpaces(for: local), id: \.syncUuid) { summary in
                         Label {
                             Text(String(
-                                format: NSLocalizedString("%1$@ (%2$@)",
-                                                          comment: "Pairing wizard - an account Space named %1$@ in profile %2$@"),
+                                format: NSLocalizedString("sync.pairing.spaces.accountSpaceOption",
+                                                          value: "%1$@ (%2$@)",
+                                                          comment: "Sync setup Space matching - picker option for an account Space; %1$@ is the Space name, %2$@ its profile"),
                                 summary.name, model.profileName(for: summary) ?? Self.unresolvedName))
                         } icon: {
                             // Reuse the left column's icon component: icons quickly show that a local Space
@@ -141,14 +144,16 @@ struct SpacePairingStepView: View {
                         }
                         .tag(SpacePairingModel.Assignment?.some(.existing(syncUuid: summary.syncUuid)))
                     }
-                    Text(NSLocalizedString("Add as new",
-                                           comment: "Pairing wizard - add this Space to the account as a new one"))
+                    Text(NSLocalizedString("sync.pairing.spaces.addAsNew",
+                                           value: "Add as new",
+                                           comment: "Sync setup Space matching - picker option that adds this Space to the account as a new Space"))
                         .tag(SpacePairingModel.Assignment?.some(.addAsNew))
                 }
                 .labelsHidden()
                 .accessibilityLabel(String(
-                    format: NSLocalizedString("Account Space for “%@”",
-                                              comment: "Pairing wizard - accessibility label for the assignment picker"),
+                    format: NSLocalizedString("sync.pairing.spaces.pickerAccessibilityLabel",
+                                              value: "Account Space for “%@”",
+                                              comment: "Sync setup Space matching - VoiceOver label for the account Space picker; %@ is the Space name on this Mac"),
                     local.name))
                 if model.assignment(for: local) != nil {
                     Image(systemName: "checkmark.circle.fill")
@@ -157,8 +162,9 @@ struct SpacePairingStepView: View {
                 }
             }
             if model.assignment(for: local) == nil {
-                Text(NSLocalizedString("Not assigned yet",
-                                       comment: "Pairing wizard - account column placeholder for an undecided row"))
+                Text(NSLocalizedString("sync.pairing.spaces.notAssigned",
+                                       value: "Not assigned yet",
+                                       comment: "Sync setup Space matching - account column text for a Space with no choice yet"))
                     .font(.caption)
                     .themedForeground(.textTertiary)
             }
@@ -179,8 +185,9 @@ struct SpacePairingStepView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(NSLocalizedString("Already in your account",
-                                   comment: "Pairing wizard - default Space row, account side"))
+            Text(NSLocalizedString("sync.pairing.spaces.defaultInAccount",
+                                   value: "Already in your account",
+                                   comment: "Sync setup Space matching - account column text for the default Space, which always exists in the account"))
                 .font(.body)
                 .themedForeground(.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -188,8 +195,9 @@ struct SpacePairingStepView: View {
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(
-            format: NSLocalizedString("Space “%@” is the default Space and is already in your account",
-                                      comment: "Pairing wizard - accessibility label for the default Space row"),
+            format: NSLocalizedString("sync.pairing.spaces.defaultRowAccessibilityLabel",
+                                      value: "Space “%@” is the default Space and is already in your account",
+                                      comment: "Sync setup Space matching - VoiceOver label for the default Space row; %@ is the Space name"),
             local.name))
     }
 

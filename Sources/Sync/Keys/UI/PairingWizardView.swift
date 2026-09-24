@@ -53,16 +53,17 @@ struct PairingWizardView: View {
     private var content: some View {
         switch viewModel.phase {
         case .loading:
-            statusPage(message: NSLocalizedString("Loading your account…",
-                                                  comment: "Pairing wizard - loading page"),
-                       detail: NSLocalizedString(
-                           "Phi is counting the Spaces in your account. This can take up to two minutes.",
-                           comment: "Pairing wizard - loading page progress detail"),
+            statusPage(message: NSLocalizedString("sync.pairing.loading.title",
+                                                  value: "Loading your account…",
+                                                  comment: "Sync setup - title while the account's profiles and Spaces are loading"),
+                       detail: NSLocalizedString("sync.pairing.loading.detail",
+                           value: "Phi is counting the Spaces in your account. This can take up to two minutes.",
+                           comment: "Sync setup - detail shown while the account's Spaces are loading"),
                        showsProgress: true)
         case .profiles(let locals, let remotes):
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text(NSLocalizedString("Match your profiles", comment: "Profile pairing - title"))
+                    Text(NSLocalizedString("sync.pairing.profiles.title", value: "Match your profiles", comment: "Sync setup - title of the profile matching step"))
                         .font(.title2.bold())
                         .themedForeground(.textPrimaryStrong)
                     Text(NSLocalizedString(
@@ -91,8 +92,9 @@ struct PairingWizardView: View {
         case .confirmOverwrite(let items):
             confirmationPage(items)
         case .submitting:
-            statusPage(message: NSLocalizedString("Applying your choices…",
-                                                  comment: "Pairing wizard - submitting page"),
+            statusPage(message: NSLocalizedString("sync.pairing.submitting",
+                                                  value: "Applying your choices…",
+                                                  comment: "Sync setup - progress title while the chosen matches are applied"),
                        showsProgress: true)
         case .done:
             statusPage(message: nil, showsProgress: true).onAppear {
@@ -132,13 +134,14 @@ struct PairingWizardView: View {
         assert(!items.isEmpty)
         return ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
-                Text(NSLocalizedString("Review what changes",
-                                       comment: "Overwrite confirmation - title"))
+                Text(NSLocalizedString("sync.pairing.overwrite.title",
+                                       value: "Review what changes",
+                                       comment: "Sync setup - title of the review page listing Space values the account will replace"))
                     .font(.title2.bold())
                     .themedForeground(.textPrimaryStrong)
-                Text(NSLocalizedString(
-                    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one.",
-                    comment: "Overwrite confirmation - explanation"))
+                Text(NSLocalizedString("sync.pairing.overwrite.explanation",
+                    value: "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one.",
+                    comment: "Sync setup - explanation on the review page listing Space values the account will replace"))
                     .font(.body)
                     .themedForeground(.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -160,8 +163,9 @@ struct PairingWizardView: View {
             .padding(.vertical, 10)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(String(
-                format: NSLocalizedString("Changes to Space “%@”",
-                                          comment: "Overwrite confirmation - accessibility label for one Space's section"),
+                format: NSLocalizedString("sync.pairing.overwrite.spaceAccessibilityLabel",
+                                          value: "Changes to Space “%@”",
+                                          comment: "Sync setup review - VoiceOver label for one Space's changes; %@ is the Space name"),
                 item.spaceName))
             ForEach(Array(item.changes.enumerated()), id: \.offset) { _, change in
                 SettingsRowDivider()
@@ -191,8 +195,9 @@ struct PairingWizardView: View {
         // Expose the whole row as one accessibility element so VoiceOver does not read the arrow separately.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(
-            format: NSLocalizedString("%1$@ changes from %2$@ to %3$@",
-                                      comment: "Overwrite confirmation - accessibility label for one changed field"),
+            format: NSLocalizedString("sync.pairing.overwrite.fieldAccessibilityLabel",
+                                      value: "%1$@ changes from %2$@ to %3$@",
+                                      comment: "Sync setup review - VoiceOver label for one changed value; %1$@ is the field name, %2$@ the value on this Mac, %3$@ the account value"),
             Self.fieldLabel(change.field), Self.spoken(change.local), Self.spoken(change.account)))
     }
 
@@ -232,25 +237,27 @@ struct PairingWizardView: View {
     /// Do not reuse Default: SettingsSectionCard uses it as the default Space/Profile badge in this same
     /// window (§6.4). Confirmation instead means this side has no custom value; distinct keys avoid
     /// conflicting meanings.
-    private static let noCustomValue = NSLocalizedString(
-        "No custom value",
-        comment: "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead")
+    private static let noCustomValue = NSLocalizedString("sync.pairing.overwrite.noCustomValue",
+        value: "No custom value",
+        comment: "Sync setup review - shown for a Space value that is not customized, such as no pinned theme")
 
     /// One switch supplies all six visible and accessibility field labels. Reuse existing
     /// Name/Icon/Color/Theme keys with their existing catalog comments (§6.8); different comments for the same
     /// key are concatenated during generation.
     private static func fieldLabel(_ field: SpaceOverwriteDiff.Field) -> String {
         switch field {
-        case .name: return NSLocalizedString("Name", comment: "Editor - Label for the title/name input field")
-        case .icon: return NSLocalizedString("Icon", comment: "Spaces settings - icon section header")
-        case .color: return NSLocalizedString("Color", comment: "General settings - Theme color row title")
-        case .theme: return NSLocalizedString("Theme", comment: "General settings - Theme section title")
+        case .name: return NSLocalizedString("sync.pairing.overwrite.field.name", value: "Name", comment: "Sync setup review - Space field name: the Space name")
+        case .icon: return NSLocalizedString("sync.pairing.overwrite.field.icon", value: "Icon", comment: "Sync setup review - Space field name: the Space icon")
+        case .color: return NSLocalizedString("sync.pairing.overwrite.field.color", value: "Color", comment: "Sync setup review - Space field name: the Space color")
+        case .theme: return NSLocalizedString("sync.pairing.overwrite.field.theme", value: "Theme", comment: "Sync setup review - Space field name: the Space theme")
         case .opacityLight:
-            return NSLocalizedString("Light overlay opacity",
-                                     comment: "Overwrite confirmation - the light-appearance overlay opacity field")
+            return NSLocalizedString("sync.pairing.overwrite.field.lightOpacity",
+                                     value: "Light overlay opacity",
+                                     comment: "Sync setup review - Space field name: overlay opacity in light appearance")
         case .opacityDark:
-            return NSLocalizedString("Dark overlay opacity",
-                                     comment: "Overwrite confirmation - the dark-appearance overlay opacity field")
+            return NSLocalizedString("sync.pairing.overwrite.field.darkOpacity",
+                                     value: "Dark overlay opacity",
+                                     comment: "Sync setup review - Space field name: overlay opacity in dark appearance")
         }
     }
 
@@ -258,12 +265,14 @@ struct PairingWizardView: View {
     /// percentages could display two genuinely different values being overwritten as equal.
     private static func percentText(_ milliUnits: Int64) -> String {
         if milliUnits % 10 == 0 {
-            return String(format: NSLocalizedString("%1$d%%",
-                                                    comment: "Overwrite confirmation - an overlay opacity as a whole percentage"),
+            return String(format: NSLocalizedString("sync.pairing.overwrite.opacityPercent",
+                                                    value: "%1$d%%",
+                                                    comment: "Sync setup review - an overlay opacity as a whole percentage; %1$d is the number"),
                           Int(milliUnits / 10))
         }
-        return String(format: NSLocalizedString("%1$.1f%%",
-                                                comment: "Overwrite confirmation - an overlay opacity as a percentage with one decimal"),
+        return String(format: NSLocalizedString("sync.pairing.overwrite.opacityPercentDecimal",
+                                                value: "%1$.1f%%",
+                                                comment: "Sync setup review - an overlay opacity as a percentage with one decimal; %1$.1f is the number"),
                       Double(milliUnits) / 10)
     }
 
@@ -306,8 +315,9 @@ struct PairingWizardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 if case .spaces = viewModel.phase, hasUndecidedRows {
-                    Button(NSLocalizedString("Add all as new",
-                                             comment: "Pairing wizard - assign every undecided Space to \"Add as new\"")) {
+                    Button(NSLocalizedString("sync.pairing.spaces.addAllAsNew",
+                                             value: "Add all as new",
+                                             comment: "Sync setup Space matching - button that adds every undecided Space to the account as a new Space")) {
                         viewModel.addAllAsNew()
                     }
                     .buttonStyle(.bordered)
@@ -321,8 +331,9 @@ struct PairingWizardView: View {
                 actions
             }
             // The app-modal's sole alternative exit appears on every page, including confirmation.
-            Button(NSLocalizedString("Remove this device from sync…",
-                                     comment: "Pairing wizard - self-revoke exit")) {
+            Button(NSLocalizedString("sync.pairing.removeThisDevice",
+                                     value: "Remove this device from sync…",
+                                     comment: "Sync setup - button that removes this device from sync instead of finishing setup")) {
                 confirmAndRemoveThisDevice()
             }
             .buttonStyle(.bordered)
@@ -344,7 +355,7 @@ struct PairingWizardView: View {
     private var actions: some View {
         switch viewModel.phase {
         case .profiles:
-            Button(NSLocalizedString("Continue", comment: "Pairing wizard - finish step 1")) {
+            Button(NSLocalizedString("sync.pairing.continue", value: "Continue", comment: "Sync setup - button that moves from profile matching to Space matching")) {
                 viewModel.continueToSpaces()
             }
             .buttonStyle(.borderedProminent)
@@ -355,12 +366,13 @@ struct PairingWizardView: View {
             .disabled(!viewModel.profileRowsDecided
                       || viewModel.phase == .loading || viewModel.phase == .submitting)
         case .spaces:
-            Button(NSLocalizedString("Back",
-                                     comment: "Web content header - Accessibility description for back navigation button")) {
+            Button(NSLocalizedString("sync.pairing.back",
+                                     value: "Back",
+                                     comment: "Sync setup - button that returns to the previous step")) {
                 viewModel.backToProfiles()
             }
             .buttonStyle(.bordered)
-            Button(NSLocalizedString("Finish", comment: "Onboarding password manager - Finish button")) {
+            Button(NSLocalizedString("sync.pairing.finish", value: "Finish", comment: "Sync setup - button that applies the chosen matches")) {
                 Task { await viewModel.finish(controller: controller) }
             }
             .buttonStyle(.borderedProminent)
@@ -371,20 +383,22 @@ struct PairingWizardView: View {
             // and Return. Apply has no key equivalent; full keyboard access reaches it first in declaration
             // order Apply → Back → Remove. Do not add cancelAction: Esc must not dismiss this blocking
             // app-modal.
-            Button(NSLocalizedString("Apply",
-                                     comment: "Overwrite confirmation - apply every decision and start syncing")) {
+            Button(NSLocalizedString("sync.pairing.overwrite.apply",
+                                     value: "Apply",
+                                     comment: "Sync setup review - button that accepts the listed changes and starts sync")) {
                 Task { await viewModel.applyConfirmedOverwrite(controller: controller) }
             }
             .buttonStyle(.bordered)
             .disabled(!viewModel.canSubmit)
-            Button(NSLocalizedString("Back",
-                                     comment: "Web content header - Accessibility description for back navigation button")) {
+            Button(NSLocalizedString("sync.pairing.back",
+                                     value: "Back",
+                                     comment: "Sync setup - button that returns to the previous step")) {
                 viewModel.backFromConfirmation()
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
         case .error:
-            Button(NSLocalizedString("Retry", comment: "Phi Link - Retry loading official bot")) {
+            Button(NSLocalizedString("sync.pairing.retry", value: "Retry", comment: "Sync setup - button that retries after an error")) {
                 Task { await viewModel.retry(controller: controller) }
             }
             .buttonStyle(.borderedProminent)

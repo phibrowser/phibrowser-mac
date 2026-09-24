@@ -278,13 +278,15 @@ struct ProfilePairingView: View {
     /// In gate context the wizard chrome owns these three strings (§5.3); only settings uses them here.
     /// Internal static values allow §10.7 item 5's explicit Devices-copy assertions, unlike private computed
     /// properties even under testable import. Values match the prior settings title/body/primary branches.
-    static let settingsTitle = NSLocalizedString("Match your profiles",
-                                                 comment: "Profile pairing - title")
-    static let settingsBody = NSLocalizedString(
-        "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to.",
-        comment: "Profile pairing - explanation")
-    static let settingsPrimaryTitle = NSLocalizedString("Confirm",
-                                                        comment: "Profile pairing - confirm button")
+    static let settingsTitle = NSLocalizedString("sync.pairing.profiles.title",
+                                                 value: "Match your profiles",
+                                                 comment: "Sync setup - title of the profile matching step")
+    static let settingsBody = NSLocalizedString("sync.pairing.profiles.explanation",
+        value: "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to.",
+        comment: "Sync setup profile matching - explanation above the list of profiles to match")
+    static let settingsPrimaryTitle = NSLocalizedString("sync.pairing.profiles.confirm",
+                                                        value: "Confirm",
+                                                        comment: "Sync setup profile matching - button that confirms the chosen matches")
 
     var body: some View {
         switch context {
@@ -329,8 +331,9 @@ struct ProfilePairingView: View {
     private var rows: some View {
         ForEach(locals) { local in localRow(local) }
         if !model.unclaimedRemotes.isEmpty {
-            Text(NSLocalizedString("Unclaimed account profiles",
-                                   comment: "Profile pairing - unclaimed remotes header"))
+            Text(NSLocalizedString("sync.pairing.profiles.unclaimedHeader",
+                                   value: "Unclaimed account profiles",
+                                   comment: "Sync setup profile matching - header of account profiles no profile on this Mac is matched to"))
                 .font(.headline)
                 .themedForeground(.textPrimaryStrong)
             ForEach(model.unclaimedRemotes, id: \.uuid) { remote in remoteRow(remote) }
@@ -348,7 +351,7 @@ struct ProfilePairingView: View {
                 ForEach(model.remoteOptions(for: local), id: \.uuid) { remote in
                     Text(remoteLabel(remote)).tag(Choice.remote(remote.uuid))
                 }
-                Text(NSLocalizedString("Register as new", comment: "Profile pairing - register as new option"))
+                Text(NSLocalizedString("sync.pairing.profiles.registerAsNew", value: "Register as new", comment: "Sync setup profile matching - option that adds a profile on this Mac to the account as a new profile"))
                     .tag(Choice.registerNew)
             }
             .labelsHidden()
@@ -371,21 +374,25 @@ struct ProfilePairingView: View {
                 // an envelope that will not open under the current ARK. Offering
                 // them would leave a modal whose primary button can never
                 // succeed and whose other exit (`last_device`) may be closed too.
-                Text(NSLocalizedString("Can’t be read right now — Phi keeps retrying in the background",
-                                       comment: "Profile pairing - undecryptable remote row"))
+                Text(NSLocalizedString("sync.pairing.profiles.unreadable",
+                                       value: "Can’t be read right now — Phi keeps retrying in the background",
+                                       comment: "Sync setup profile matching - status of an account profile that cannot be decrypted yet"))
                     .font(.callout)
                     .themedForeground(.textSecondary)
             } else {
                 Picker("", selection: remoteChoiceBinding(for: remote)) {
-                    Text(NSLocalizedString("Choose…",
-                                           comment: "Profiles settings - download location not set"))
+                    Text(NSLocalizedString("sync.pairing.profiles.choosePlaceholder",
+                                           value: "Choose…",
+                                           comment: "Sync setup profile matching - picker placeholder before a choice is made"))
                         .tag(RemoteChoice?.none)
-                    Text(NSLocalizedString("Create on this Mac",
-                                           comment: "Profile pairing - create locally option"))
+                    Text(NSLocalizedString("sync.pairing.profiles.createOnThisMac",
+                                           value: "Create on this Mac",
+                                           comment: "Sync setup profile matching - option that creates a new profile on this Mac for an account profile"))
                         .tag(RemoteChoice?.some(.createLocal))
                     ForEach(model.assignableLocals(for: remote), id: \.profileId) { local in
-                        Text(String(format: NSLocalizedString("Assign to %@",
-                                    comment: "Profile pairing - assign to a local profile"),
+                        Text(String(format: NSLocalizedString("sync.pairing.profiles.assignTo",
+                                    value: "Assign to %@",
+                                    comment: "Sync setup profile matching - option that matches an account profile to a profile on this Mac; %@ is that profile's name"),
                                     local.displayName))
                             .tag(RemoteChoice?.some(.adopt(localProfileId: local.profileId)))
                     }
@@ -451,8 +458,9 @@ struct ProfilePairingView: View {
     }
 
     private func remoteLabel(_ remote: RemoteProfile) -> String {
-        remote.name ?? String(format: NSLocalizedString(
-            "Unnamed profile (%@)", comment: "Profile pairing - remote profile whose name couldn’t be decrypted"),
+        remote.name ?? String(format: NSLocalizedString("sync.pairing.profiles.unnamedRemote",
+            value: "Unnamed profile (%@)",
+            comment: "Sync setup profile matching - account profile whose name cannot be decrypted; %@ is a short identifier"),
             String(remote.uuid.prefix(8)))
     }
 }

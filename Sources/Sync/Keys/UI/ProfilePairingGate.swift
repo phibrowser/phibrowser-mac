@@ -283,8 +283,9 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
         // Keep the window nonclosable. Resizing may enlarge it, but cannot shrink below 720×560.
         window.styleMask = [.titled, .closable, .resizable]
         window.delegate = self
-        window.title = NSLocalizedString("Finish setting up sync",
-                                         comment: "Pairing wizard - window title")
+        window.title = NSLocalizedString("sync.setup.windowTitle",
+                                         value: "Finish setting up sync",
+                                         comment: "Sync setup - window title")
         window.level = .modalPanel
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 560))

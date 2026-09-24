@@ -8,19 +8,19 @@ struct RecoveryCodeEntryView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text(NSLocalizedString("Enter your recovery code", comment: "Recovery code entry - title"))
+            Text(NSLocalizedString("sync.recovery.entry.title", value: "Enter your recovery code", comment: "Sync setup - title of the page for entering a recovery code"))
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
 
-            Text(NSLocalizedString(
-                "Enter the recovery code you saved when you set up sync on another device.",
-                comment: "Recovery code entry - explanation"))
+            Text(NSLocalizedString("sync.recovery.entry.explanation",
+                value: "Enter the recovery code you saved when you set up sync on another device.",
+                comment: "Sync setup - explanation on the page for entering a recovery code"))
                 .font(.body)
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
 
             TextField(
-                NSLocalizedString("Recovery code", comment: "Recovery code entry - text field placeholder"),
+                NSLocalizedString("sync.recovery.entry.placeholder", value: "Recovery code", comment: "Sync setup - placeholder of the recovery code text field"),
                 text: $viewModel.recoveryInput
             )
             .textFieldStyle(.roundedBorder)
@@ -33,7 +33,7 @@ struct RecoveryCodeEntryView: View {
                     .foregroundColor(.red)
             }
 
-            Button(NSLocalizedString("Submit", comment: "Recovery code entry - submit button")) {
+            Button(NSLocalizedString("sync.recovery.entry.submit", value: "Submit", comment: "Sync setup - button that submits the entered recovery code")) {
                 Task { await viewModel.submitRecoveryCode(viewModel.recoveryInput) }
             }
             .buttonStyle(.borderedProminent)

@@ -412,9 +412,9 @@ final class KeyLayerViewModel: ObservableObject {
         } catch is PairingLoadTimedOut {
             guard !Task.isCancelled else { return }
             AppLogWarn("[phi-sync] pairing load exceeded its \(loadDeadline) deadline")
-            phase = .error(NSLocalizedString(
-                "Couldn’t load the account’s profiles in time. Check your connection and retry.",
-                comment: "Pairing - load timeout"))
+            phase = .error(NSLocalizedString("sync.pairing.error.profileLoadTimedOut",
+                value: "Couldn’t load the account’s profiles in time. Check your connection and retry.",
+                comment: "Profile matching - error shown when the account's profiles did not load in time"))
         } catch {
             guard !Task.isCancelled else { return }
             // R12: log detailed errors only; show fixed localized text, not interpolated Swift errors without
@@ -511,9 +511,9 @@ final class KeyLayerViewModel: ObservableObject {
                         // The one throw that means "the bridge did not make a
                         // profile"; the generic catch below would render it as
                         // raw enum text in the modal.
-                        pairingError = String(format: NSLocalizedString(
-                            "Couldn’t create a profile named “%@” on this Mac.",
-                            comment: "Pairing - local profile creation failed"), displayName)
+                        pairingError = String(format: NSLocalizedString("sync.pairing.error.createLocalProfileFailed",
+                            value: "Couldn’t create a profile named “%@” on this Mac.",
+                            comment: "Profile matching - error shown when a profile could not be created on this Mac; %@ is the profile name"), displayName)
                         continue
                     }
                 }

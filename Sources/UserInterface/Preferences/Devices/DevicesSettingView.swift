@@ -55,9 +55,9 @@ struct DevicesSettingView: View {
                     Button(NSLocalizedString("sync.settings.retry", value: "Retry", comment: "Reload sync settings")) { Task { await viewModel.loadAll() } }
                 case .needsJoin:
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(NSLocalizedString("This device isn’t set up for sync yet.", comment: "Devices - needs join"))
+                        Text(NSLocalizedString("sync.devices.notSetUp", value: "This device isn’t set up for sync yet.", comment: "Devices settings - shown when this device has not joined sync"))
                             .themedForeground(.textPrimary)
-                        Button(NSLocalizedString("Set up sync on this device", comment: "Devices - set up")) {
+                        Button(NSLocalizedString("sync.devices.setUp", value: "Set up sync on this device", comment: "Devices settings - button that starts sync setup on this device")) {
                             onJoinThisDevice()
                         }
                         .buttonStyle(.borderedProminent)
@@ -106,7 +106,7 @@ struct DevicesSettingView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(statusTitle(viewModel.summary.phase)).font(.headline)
             if let date = viewModel.summary.lastSuccess {
-                Text(NSLocalizedString("sync.status.lastSuccess", value: "Last successful sync on this Mac", comment: "Local completion timestamp label") + ": " + date.formatted())
+                Text(String(format: NSLocalizedString("sync.status.lastSuccessAt", value: "Last successful sync on this Mac: %@", comment: "Devices settings - time of the last successful sync on this Mac; %@ is the date and time"), date.formatted()))
                     .font(.callout).themedForeground(.textSecondary)
             }
             if viewModel.summary.phase == .needsAttention {
@@ -143,7 +143,7 @@ struct DevicesSettingView: View {
                     HStack {
                         Image(systemName: "laptopcomputer")
                         Text(device.name)
-                        Text(device.platform).font(.caption).themedForeground(.textSecondary)
+                        Text(verbatim: Self.platformName(device.platform)).font(.caption).themedForeground(.textSecondary)
                         Spacer()
                         if device.deviceKeyID == viewModel.currentDeviceID {
                             Text(NSLocalizedString("sync.devices.thisMac", value: "This Mac", comment: "Current authorized device marker")).font(.caption)
@@ -177,8 +177,9 @@ struct DevicesSettingView: View {
             Text(NSLocalizedString("sync.recovery.explanation", value: "To join on another device, approve its request here or use your saved recovery code. The code is shown only when sync is first set up.", comment: "Explain existing recovery options without offering retrieval"))
                 .font(.callout)
             HStack(spacing: 10) {
-                Button(NSLocalizedString("Remove this device from sync…",
-                                         comment: "Devices - remove this device from sync")) {
+                Button(NSLocalizedString("sync.devices.removeThisDevice",
+                                         value: "Remove this device from sync…",
+                                         comment: "Devices settings - button that removes this device from sync")) {
                     Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
                 }
                 .buttonStyle(.bordered)
@@ -222,13 +223,13 @@ struct DevicesSettingView: View {
     @ViewBuilder
     private var pendingSection: some View {
         if viewModel.pending.isEmpty {
-            Text(NSLocalizedString("No devices are waiting for approval.", comment: "Devices - empty"))
+            Text(NSLocalizedString("sync.devices.noPendingRequests", value: "No devices are waiting for approval.", comment: "Devices settings - shown when no device is waiting for approval"))
                 .themedForeground(.textPrimary)
         } else {
             ForEach(viewModel.pending) { item in
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("\(item.name) · \(item.platform)")
+                        Text(String(format: NSLocalizedString("sync.devices.pendingRequestTitle", value: "%1$@ · %2$@", comment: "Devices settings - a device waiting to join; %1$@ is the device name, %2$@ its platform, such as macOS"), item.name, Self.platformName(item.platform)))
                             .font(.body.bold())
                             .themedForeground(.textPrimaryStrong)
                         // Deliberately not selectable (no `.textSelection`
@@ -236,19 +237,19 @@ struct DevicesSettingView: View {
                         // 3-second poll that refreshes `viewModel.pending` can
                         // remove this row while AppKit's mouse-tracking loop is
                         // live, orphaning the loop and hanging the main thread.
-                        Text(NSLocalizedString("sync.devices.expires", value: "Expires", comment: "Pending device request expiry label") + ": " + item.deadline.formatted(date: .omitted, time: .shortened))
+                        Text(String(format: NSLocalizedString("sync.devices.expiresAt", value: "Expires: %@", comment: "Devices settings - when a pending join request expires; %@ is the time"), item.deadline.formatted(date: .omitted, time: .shortened)))
                             .font(.caption).themedForeground(.textSecondary)
-                        Text(NSLocalizedString("Verify this code matches the other device: ", comment: "Devices - verify prefix") + item.verificationCode)
+                        Text(String(format: NSLocalizedString("sync.devices.verifyCode", value: "Verify this code matches the other device: %@", comment: "Devices settings - asks to compare a join request's code with the other device; %@ is the code"), item.verificationCode))
                             .font(.system(.callout, design: .monospaced))
                             .themedForeground(.textPrimary)
                     }
                     Spacer()
-                    Button(NSLocalizedString("Approve", comment: "Devices - approve")) {
+                    Button(NSLocalizedString("sync.devices.approve", value: "Approve", comment: "Devices settings - button that approves a device waiting to join")) {
                         Task { await viewModel.approve(item) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(viewModel.busyRequestIDs.contains(item.id))
-                    Button(NSLocalizedString("Deny", comment: "Devices - deny")) {
+                    Button(NSLocalizedString("sync.devices.deny", value: "Deny", comment: "Devices settings - button that denies a device waiting to join")) {
                         Task { await viewModel.deny(item) }
                     }
                     .buttonStyle(.bordered)
@@ -259,6 +260,23 @@ struct DevicesSettingView: View {
                 .background(Color(nsColor: .textBackgroundColor))
                 .cornerRadius(8)
             }
+        }
+    }
+}
+
+extension DevicesSettingView {
+    /// Platform identifiers arrive from the sync backend in lowercase (`macos`). They are shown
+    /// as product names, which are not translated; an unknown identifier is shown unchanged.
+    static func platformName(_ platform: String) -> String {
+        switch platform.lowercased() {
+        case "macos": return "macOS"
+        case "ios": return "iOS"
+        case "ipados": return "iPadOS"
+        case "windows": return "Windows"
+        case "linux": return "Linux"
+        case "android": return "Android"
+        case "chromeos": return "ChromeOS"
+        default: return platform
         }
     }
 }

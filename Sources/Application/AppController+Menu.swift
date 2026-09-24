@@ -2022,6 +2022,10 @@ extension AppController {
                 if #available(macOS 27.0, *), command == .IDC_OPTIONS {
                     item.preferredImageVisibility = .hidden
                 }
+                #else
+                if command == .IDC_OPTIONS {
+                    item.image = nil
+                }
                 #endif
             }
             menu.addItem(item)

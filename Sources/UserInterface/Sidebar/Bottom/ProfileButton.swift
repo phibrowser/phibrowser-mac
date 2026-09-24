@@ -80,8 +80,10 @@ struct ProfileButton: NSViewRepresentable {
                let data = controller.avatarPNG(for: account),
                let avatar = NSImage(data: data) {
                 image = avatar
+                layer?.borderWidth = 1
             } else {
                 image = NSImage(systemSymbolName: "person.crop.circle.fill", accessibilityDescription: nil)
+                layer?.borderWidth = 0
             }
         }
 

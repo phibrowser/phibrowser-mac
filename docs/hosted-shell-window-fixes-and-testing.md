@@ -21,6 +21,14 @@ geometry owner, not one shared tab model across different Spaces or profiles.
 `BrowserState.sidebarCollapsed` and `sidebarWidth` are read-only projections;
 they no longer store per-Space geometry.
 
+Reader and Peek are layer-backed views inside the session's web-content
+container, above the page and below the floating sidebar. They share the main
+window's responder chain and create no child windows. Hiding or closing an
+overlay detaches its root and releases keyboard focus before its Chromium
+view goes away. Peek retains its card geometry, controls and appear animation.
+The omnibox remains a separate child window and suspends overlay shortcuts;
+tab search temporarily hides the page overlays.
+
 Several Chromium UI paths assumed that the visible NSWindow had a Views
 widget, or that its toolbar compositor was running. Neither is true for the
 plain Swift shell. The fixes route native presentation to the visible shell,

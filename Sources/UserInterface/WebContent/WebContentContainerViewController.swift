@@ -306,6 +306,8 @@ class WebContentContainerViewController: NSViewController {
         /// (in contentContainer → webContentVC.view) can't clip the stroke.
         /// Bump only if a higher-z layer is intentionally introduced.
         static let contentOuterBorder: CGFloat = 1000
+        /// Reader and Peek cover the page, below the floating sidebar.
+        static let pageOverlay: CGFloat = 1050
         /// Floating sidebar slides in above the content area; must sit above
         /// `contentOuterBorder` so the outer-border stroke doesn't render on
         /// top of the panel.

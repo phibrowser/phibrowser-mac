@@ -376,7 +376,7 @@
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
 		A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
-		A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */; };
+		A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* PageOverlayView.swift */; };
 		A81113410000000000000002 /* OOBEAnalyticsSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000001 /* OOBEAnalyticsSession.swift */; };
 		A81113410000000000000004 /* FirstTimeActionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000003 /* FirstTimeActionTracker.swift */; };
 		A8D093553F519F8E1E7A8233 /* AccountSpaceSyncMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1712FF7D13CEB2498B026081 /* AccountSpaceSyncMappingStore.swift */; };
@@ -1172,7 +1172,7 @@
 		A71E00000000000000000003 /* CredentialApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialApprovalAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessApprovalAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
-		A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumHostingPanel.swift; sourceTree = "<group>"; };
+		A7E1C0010000000000000001 /* PageOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageOverlayView.swift; sourceTree = "<group>"; };
 		A81113410000000000000001 /* OOBEAnalyticsSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OOBEAnalyticsSession.swift; sourceTree = "<group>"; };
 		A81113410000000000000003 /* FirstTimeActionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstTimeActionTracker.swift; sourceTree = "<group>"; };
 		A8F100112FF0000000000011 /* PhiUninstallCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiUninstallCore.swift; sourceTree = "<group>"; };
@@ -2941,7 +2941,6 @@
 				D1F600052FD6000000000005 /* DiffableOutlineView.swift */,
 				37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */,
 				B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */,
-				A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */,
 				B0F370C82E43242F000B51F9 /* PhiSplitView.swift */,
 				CCBF8F382E653A8C00B9A99E /* HoverableView.swift */,
 				CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */,
@@ -3069,6 +3068,7 @@
 				8E486A762F3EEF8A00078DEC /* StatusURLViewModel.swift */,
 				8E486A742F3ED68600078DEC /* StatusURLView.swift */,
 				37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */,
+				A7E1C0010000000000000001 /* PageOverlayView.swift */,
 				377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */,
 				B0F370B82E430CA5000B51F9 /* WebContentViewController.swift */,
 				37E5B1A0301200AB00000001 /* ExtensionSidePanelView.swift */,
@@ -3710,7 +3710,7 @@
 				375B2D8C2ED408270053FECC /* AccountUserDefaults.swift in Sources */,
 				37C1B0D82ED6DCBD00DD4496 /* Shortcuts.swift in Sources */,
 				B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */,
-				A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */,
+				A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* SpaceSessionControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
 				4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */,

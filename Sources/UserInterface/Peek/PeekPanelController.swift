@@ -7,27 +7,11 @@ import AppKit
 import SnapKit
 import SwiftUI
 
-/// Floating Peek panel: previews a cross-site page opened from a bookmark- or
-/// pinned-bound tab in a child window floating over the page pane (the web-
-/// content area only — the sidebar stays fully usable), instead of a normal
-/// tab.
-///
-/// Each peek belongs to its opener tab and every opener can carry its own;
-/// the single panel always hosts the focused opener's peek — switching tabs
-/// swaps the hosted content (or hides the panel when the focused tab has no
-/// peek), and only closing a peek (X, Esc, Cmd-W, click on the page around
-/// it) or expanding it ends it. Presentation only — every state transition
-/// goes through `BrowserState` (`closePeek` / `expandPeekIntoTab`), whose
-/// `peekState` the window controller observes. The hosted view belongs to a live Chromium strip tab
-/// kept off the Mac tab list; a child window is required so the panel
-/// reliably draws above the accelerated web-content surface and moves with
-/// the parent.
+/// Peek overlay hosted in the main browser window, above the page and
+/// below the floating sidebar. Each overlay belongs to its origin tab;
+/// switching tabs hides or replaces its content without closing that tab.
+/// Presentation only: BrowserState owns the overlay tab's lifecycle.
 final class PeekPanelController {
-    /// See `ChromiumHostingPanel`: hosting a re-parented Chromium view in a
-    /// key panel needs the shared key-equivalent routing, or every shortcut
-    /// this panel's event monitor does not name is swallowed.
-    private final class PeekPanel: ChromiumHostingPanel {}
-
     /// Rounded opaque backing for the card, and what casts its shadow. A
     /// plain layer-backed view instead of NSVisualEffectView: the effect
     /// view's behind-window backdrop is composited by the window server and
@@ -104,10 +88,7 @@ final class PeekPanelController {
     /// transparent, so a bare glyph competes with whatever the page behind
     /// the peek happens to be showing there.
     private final class PeekControlButton: NSButton {
-        /// Window whose theme the accent resolves against. The panel is a
-        /// child window with no window controller of its own, so resolving
-        /// against it would fall back to the global theme instead of the
-        /// browser window's (each window carries its own theme context).
+        /// Resolve the accent against the owning browser window's theme.
         weak var themeHostWindow: NSWindow?
 
         private var isHovered = false {
@@ -250,9 +231,8 @@ final class PeekPanelController {
     /// controller because it must record presses from before the first peek,
     /// which is when this controller is built.
     private weak var originTracker: PeekOriginTracker?
-    private let panel: PeekPanel
     /// Transparent content view spanning card + control gutter.
-    private let rootView = NSView()
+    private let rootView = PageOverlayView()
     private let containerView = PeekContainerView()
     private let controlColumn = PeekControlColumnView()
     private let webHostView = NSView()
@@ -271,7 +251,7 @@ final class PeekPanelController {
     /// landing idempotent across the completion block and the teardown paths.
     private var isFlying = false
     /// The armed flight's start transform, held between `armAppearFlight`
-    /// (before the panel is ordered in) and `runAppearFlight` (once it is on
+    /// (before the overlay is revealed) and `runAppearFlight` (once it is on
     /// screen). Non-nil only inside that gap.
     private var pendingFlightStart: CATransform3D?
     /// The armed flight's start corner radius; see `pendingFlightStart`.
@@ -280,10 +260,6 @@ final class PeekPanelController {
     private var isConcealedByInWindowOverlay = false
     /// See `setEclipsedByInWindowOverlay`.
     private var isEclipsedByInWindowOverlay = false
-    /// The omnibox host window this panel is currently eclipsed by, so
-    /// reveals can re-order themselves under it. See
-    /// `setEclipsedByInWindowOverlay`.
-    private weak var eclipsingOverlayWindow: NSWindow?
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -298,24 +274,6 @@ final class PeekPanelController {
         toastViewController = OverlayToastViewController(
             state: browserState, toastCenter: toastCenter, isPanel: true)
         anchorView.postsFrameChangedNotifications = true
-
-        panel = PeekPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: true
-        )
-        panel.isOpaque = false
-        // The card draws its own shadow (see `shadowMargin`); the system
-        // window shadow would add a second halo around the whole frame,
-        // which now spans the page card almost edge to edge.
-        panel.hasShadow = false
-        panel.isMovableByWindowBackground = false
-        panel.hidesOnDeactivate = false
-        panel.backgroundColor = .clear
-        panel.isReleasedWhenClosed = false
-
-        panel.contentView = rootView
 
         rootView.addSubview(containerView)
         containerView.snp.makeConstraints { make in
@@ -345,6 +303,7 @@ final class PeekPanelController {
     deinit {
         removeEventMonitor()
         removeGeometryObservers()
+        rootView.removeFromSuperview()
     }
 
     // MARK: - Presentation
@@ -387,51 +346,19 @@ final class PeekPanelController {
     /// hosted content and bindings stay alive; `present(tab:)` reveals again.
     func hide() {
         toastCenter.clearWindow(windowId: toastViewController.state.windowId)
-        guard panel.isVisible else { return }
         landAppearFlight()
         removeEventMonitor()
-        panel.parent?.removeChildWindow(panel)
-        panel.orderOut(nil)
+        rootView.removeFromSuperview()
     }
 
-    /// While the omnibox floats over the panel (it lives in a sibling child
-    /// window of the same browser window), the panel stays visible but goes
-    /// input-inert: its local monitor must not fight the omnibox for
-    /// Esc/shortcuts or close the peek on the omnibox's background clicks,
-    /// and reveals must not steal the omnibox's key. On un-eclipse the panel
-    /// takes key back.
-    func setEclipsedByInWindowOverlay(_ eclipsed: Bool, by overlayWindow: NSWindow? = nil) {
+    /// The omnibox keeps keyboard ownership while the page remains visible.
+    func setEclipsedByInWindowOverlay(_ eclipsed: Bool) {
         guard isEclipsedByInWindowOverlay != eclipsed else { return }
         isEclipsedByInWindowOverlay = eclipsed
-        eclipsingOverlayWindow = eclipsed ? overlayWindow : nil
-        if eclipsed {
-            // Already on screen: drop under the host that just came up.
-            if panel.isVisible { orderUnderEclipsingOverlay() }
-        } else {
-            revealIfStillCurrent()
-        }
+        if !eclipsed { revealIfStillCurrent() }
     }
 
-    /// Places the panel directly under the omnibox host, ordering it in if it
-    /// was off screen. The host and this panel are child windows of the same
-    /// browser window sharing its level, so which one covers the other is a
-    /// question of sibling order — the omnibox cannot buy that layering with a
-    /// raised level without also floating above other applications. Returns
-    /// false when there is no host on screen to sit under.
-    @discardableResult
-    private func orderUnderEclipsingOverlay() -> Bool {
-        guard let overlayWindow = eclipsingOverlayWindow,
-              overlayWindow.isVisible else { return false }
-        panel.order(.below, relativeTo: overlayWindow.windowNumber)
-        return true
-    }
-
-    /// While an in-window blocking overlay (tab search) is up, the panel
-    /// steps aside entirely: it is a child window, which draws above every
-    /// in-window view, so left in place it would cover the overlay. Content
-    /// stays mounted — the opener's page shows beneath, which is what the
-    /// overlay targets anyway (a committed navigation closes the peek
-    /// through `closePeekForAddressBarNavigation`).
+    /// Tab search temporarily exposes the origin page beneath the overlay.
     func setConcealedByInWindowOverlay(_ concealed: Bool) {
         guard isConcealedByInWindowOverlay != concealed else { return }
         isConcealedByInWindowOverlay = concealed
@@ -458,31 +385,28 @@ final class PeekPanelController {
     /// Idempotent teardown of the panel. Never closes the tab itself — that
     /// is `BrowserState`'s job (`closePeek`) or Chromium's (window teardown).
     func dismiss() {
+        let restoreFocus = rootView.containsFirstResponder
         removeEventMonitor()
         removeGeometryObservers()
-        // Detach the Chromium view BEFORE the window goes away: its lifetime
-        // is owned by Chromium and it must not linger in a dying hierarchy.
+        rootView.removeFromSuperview()
         detachHostedContent()
-        if let parent = panel.parent {
-            parent.removeChildWindow(panel)
-            panel.orderOut(nil)
-            parent.makeKey()
-        } else {
-            panel.orderOut(nil)
+        if restoreFocus, let page = browserState?.focusingTab?.webContentView,
+           page.window === parentWindow {
+            parentWindow?.makeFirstResponder(page)
+            browserState?.focusingTab?.webContentWrapper?.focus()
         }
     }
 
-    /// Synchronous best-effort detach used from `tabWillBeRemove`, while the
-    /// closing WebContents is still alive. The full dismiss follows through
-    /// the async `closeTab` → `peekState` path.
+    /// Detach before the closing WebContents goes away, including releasing
+    /// its first responder. The later state-driven dismiss is idempotent.
     func detachContentIfHosting(tabId: Int) {
         guard hostedTab?.guid == tabId else { return }
-        detachHostedContent()
+        dismiss()
     }
 
     @discardableResult
     func showToast(id: UUID, message: String, shareURLs: [URL], duration: TimeInterval, tabId: Int) -> Bool {
-        guard panel.isVisible, hostedTab?.guid == tabId else { return false }
+        guard rootView.isPresented, hostedTab?.guid == tabId else { return false }
         return toastCenter.show(
             title: message, duration: duration, placement: .topTrailing,
             shareURLs: shareURLs, in: .windowId(toastViewController.state.windowId), id: id) != nil
@@ -493,7 +417,7 @@ final class PeekPanelController {
     }
 
     func showHighlightLinkCopyConfirmation(url: URL, tabId: Int) {
-        guard panel.isVisible, hostedTab?.guid == tabId else { return }
+        guard rootView.isPresented, hostedTab?.guid == tabId else { return }
         toastCenter.showHighlightLinkCopyConfirmation(url: url, in: toastViewController.state)
     }
 
@@ -522,42 +446,20 @@ final class PeekPanelController {
     // MARK: - Internals
 
     private func reveal(focusContent: Bool, flyIn: Bool) {
-        // Content mounts regardless, but the panel stays down until the
-        // in-window overlay it stepped aside for goes away.
-        guard !isConcealedByInWindowOverlay else { return }
-        guard let parentWindow else { return }
+        guard !isConcealedByInWindowOverlay,
+              let parentWindow, anchorView?.window === parentWindow,
+              let content = browserState?.windowController?.mainSplitViewController
+                .webContentContainerViewController else { return }
+        content.installPageOverlay(rootView)
         refreshControlTints()
         layoutOnAnchor()
-        // Before the panel is ordered in, so the first frame the window server
-        // paints is already the flight's first frame instead of the settled
-        // panel. Arming only sets the model geometry — the animations need a
-        // panel that is actually on screen, and go on below.
-        if flyIn {
-            armAppearFlight()
-        }
-        if panel.parent == nil {
-            parentWindow.addChildWindow(panel, ordered: .above)
-        }
-        var focusesContent = false
-        if isEclipsedByInWindowOverlay {
-            // Visible beneath the floating omnibox, but never its key — and
-            // never over it: come in under the host rather than to the front.
-            if !orderUnderEclipsingOverlay() {
-                panel.orderFront(nil)
-            }
-        } else {
-            panel.makeKeyAndOrderFront(nil)
-            focusesContent = focusContent
-        }
-        // On screen now, so the flight plays against a live render context.
-        // Before the Chromium focus hop below on purpose: that call blocks the
-        // main thread, and an explicit layer animation already handed to the
-        // render server keeps playing straight through it.
+        if flyIn { armAppearFlight() }
+        rootView.isHidden = false
         runAppearFlight()
-        if focusesContent, let webView = webHostView.subviews.first {
-            // Re-parenting a Chromium view clears the first responder;
-            // without this, keyboard input inside the peek page is dead.
-            panel.makeFirstResponder(webView)
+        if focusContent, !isEclipsedByInWindowOverlay,
+           let webView = webHostView.subviews.first {
+            parentWindow.makeKey()
+            parentWindow.makeFirstResponder(webView)
             hostedTab?.webContentWrapper?.focus()
         }
         installEventMonitorIfNeeded()
@@ -581,21 +483,9 @@ final class PeekPanelController {
 
     // MARK: - Appear flight
 
-    /// Arms a flight out of the press that opened the peek: the card's MODEL
-    /// geometry is put ON the press, so the very first frame the window
-    /// server paints once the panel is ordered in is already the flight's
-    /// first frame. `runAppearFlight` plays it from there.
-    ///
-    /// The animations themselves cannot be added here, which is what stopped
-    /// this working. A layer in a window that has never been ordered in is
-    /// not attached to a live render context: animations committed against it
-    /// run against a clock nothing is drawing to, and the transaction's
-    /// completion block — which lands the flight, removing all three
-    /// animations — fires on that same commit. The peek then just appeared.
-    ///
-    /// No-ops without a usable origin (keyboard open, session restore, a
-    /// press already spent on an earlier flight); the panel then appears the
-    /// way it did before this existed.
+    /// Prepare the card's first frame before revealing the overlay. Start
+    /// the animations only after the view is visible in the browser window.
+    /// Keyboard opens, restored peeks and Reduce Motion skip the flight.
     private func armAppearFlight() {
         // Order matters: the origin is consumed FIRST, then Reduce Motion is
         // honoured. The press belongs to this peek whether or not it gets an
@@ -745,7 +635,7 @@ final class PeekPanelController {
     /// `originScreenPoint`: the card shrunk to `startWidth` and moved so its
     /// centre sits on the press. The press is clamped to keep the shrunk card
     /// wholly inside the card's own frame — it can land up to the pane inset
-    /// outside it, and the window clips whatever leaves its frame.
+    /// outside it, and the overlay clips whatever leaves its frame.
     ///
     /// - Parameter anchorPoint: the layer's own `anchorPoint`, which is what
     ///   the scale pins. It is NOT the UIKit-familiar (0.5, 0.5) here:
@@ -780,7 +670,7 @@ final class PeekPanelController {
         // therefore already at `cardScreenFrame.origin + a + scale·(size/2 -
         // a)` once the shrink lands, and the travel makes up the remainder.
         // Screen space and the container's layer space are both bottom-up
-        // (the panel's content view is unflipped), so the offset carries over
+        // (the overlay root is unflipped), so the offset carries over
         // unchanged.
         let a = CGPoint(x: anchorPoint.x * cardScreenFrame.width,
                         y: anchorPoint.y * cardScreenFrame.height)
@@ -900,7 +790,7 @@ final class PeekPanelController {
         // window) with a proportional side margin.
         let insetX = max(Self.minPaneInset, cardRect.width * Self.paneInsetRatio)
         let card = cardRect.insetBy(dx: insetX, dy: Self.paneVerticalInset)
-        // The window spans the card, the control gutter to its right, and the
+        // The overlay spans the card, the control gutter to its right, and the
         // shadow margin around the lot — the card view sits back inside it at
         // exactly the inset it had before there was a shadow, so the peek
         // keeps its place on the page. The gutter is taken out of the card's
@@ -908,26 +798,23 @@ final class PeekPanelController {
         // instead of pushing the controls off the page pane.
         let maxX = min(card.maxX + Self.controlGutterWidth + Self.shadowMargin, cardRect.maxX)
         let originX = card.minX - Self.shadowMargin
-        panel.setFrame(CGRect(x: originX,
+        rootView.setScreenFrame(CGRect(x: originX,
                               y: card.minY - Self.shadowMargin,
                               width: max(maxX - originX, Self.controlGutterWidth),
-                              height: card.height + Self.shadowMargin * 2),
-                       display: true)
+                              height: card.height + Self.shadowMargin * 2))
         // Auto Layout has to catch up before the appear flight transforms the
         // card's layer: the scale is applied about the layer's OWN centre, so
         // a layer still carrying its pre-frame bounds would shrink about the
-        // wrong point and fly out of the wrong place. `setFrame(display:)`
-        // lays out nothing on a window that has never been ordered in, which
-        // is exactly the first-peek case.
-        rootView.layoutSubtreeIfNeeded()
+        // wrong point and fly out of the wrong place. `setScreenFrame` above
+        // also completes that layout before the flight is armed.
     }
 
-    /// Screen rect of the card alone: the window frame minus the shadow
+    /// Screen rect of the card alone: the overlay frame minus the shadow
     /// margin and the control gutter. Derived from the frame rather than read
     /// off the view so it is right before the first layout pass — the appear
     /// flight runs on the frame `layoutOnAnchor` has only just set.
     private var cardScreenRect: NSRect {
-        var rect = panel.frame.insetBy(dx: Self.shadowMargin, dy: Self.shadowMargin)
+        var rect = rootView.screenFrame.insetBy(dx: Self.shadowMargin, dy: Self.shadowMargin)
         rect.size.width = max(0, rect.width - Self.controlGutterWidth)
         return rect
     }
@@ -952,7 +839,7 @@ final class PeekPanelController {
 
     private func installGeometryObserversIfNeeded() {
         if parentResizeObserver == nil, let parentWindow {
-            // Child windows do not follow parent resizes on their own.
+            // Recompute the overlay frame when the browser window resizes.
             parentResizeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: parentWindow,
@@ -975,7 +862,7 @@ final class PeekPanelController {
     }
 
     private func relayoutIfVisible() {
-        guard panel.isVisible else { return }
+        guard rootView.isPresented else { return }
         layoutOnAnchor()
     }
 
@@ -1000,21 +887,17 @@ final class PeekPanelController {
         eventMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .keyDown]
         ) { [weak self] event in
-            guard let self, self.panel.isVisible,
+            guard let self, self.rootView.isPresented,
                   !self.isEclipsedByInWindowOverlay else { return event }
             switch event.type {
             case .keyDown:
+                guard event.window === self.parentWindow,
+                      self.parentWindow?.isKeyWindow == true,
+                      self.rootView.containsFirstResponder else { return event }
                 // Esc closes the peek. Cmd-W must be swallowed here: strip-
                 // active is the bound opener while the peek is up, so letting
                 // it reach Chromium's IDC_CLOSE_TAB would close the opener.
                 if event.keyCode == 53 {
-                    // Unless another child window of the browser window holds
-                    // key — the find bar Cmd-F opens over the peek does — whose
-                    // own Esc (end the find session) must win.
-                    guard event.window == nil || event.window === self.panel
-                            || event.window === self.parentWindow else {
-                        return event
-                    }
                     self.closeHostedPeek()
                     return nil
                 }
@@ -1032,7 +915,7 @@ final class PeekPanelController {
                     // Share Kiosk's configurable Open in Space binding with
                     // Open as Tab, scoped to this Peek's window so another
                     // visible Peek cannot consume the active window's command.
-                    if (NSApp.keyWindow === self.panel || NSApp.keyWindow === self.parentWindow),
+                    if (NSApp.keyWindow === self.parentWindow),
                        let expandKey = Shortcuts.key(for: .PHI_KIOSK_OPEN_IN_SPACE),
                        eventKeys.matchingKeys.contains(expandKey) {
                         self.expandButtonClicked(nil)
@@ -1055,8 +938,23 @@ final class PeekPanelController {
                 // A press in another child window floating over the pane —
                 // the find bar Cmd-F opens for the peek — is aimed at that
                 // window, not at the page around the peek.
-                if let window = event.window, window !== self.panel,
-                   window !== self.parentWindow {
+                if event.window !== self.parentWindow {
+                    return event
+                }
+                // The floating sidebar now shares this window. A click on it
+                // must reach its controls even where it overlaps the peek.
+                if let sidebar = self.browserState?.windowController?.mainSplitViewController
+                    .webContentContainerViewController.floatingSidebarContainerView,
+                   !sidebar.isHiddenOrHasHiddenAncestor,
+                   sidebar.bounds.contains(sidebar.convert(event.locationInWindow, from: nil)) {
+                    return event
+                }
+                // Reader may have been opened above an existing peek. Only
+                // the top page overlay should interpret clicks in its area.
+                if let topOverlay = self.rootView.superview?.subviews.reversed()
+                    .compactMap({ $0 as? PageOverlayView })
+                    .first(where: { $0.isPresented && $0.screenFrame.contains(location) }),
+                   topOverlay !== self.rootView {
                     return event
                 }
                 // A press in the resize corridor is grabbing the window's
@@ -1068,8 +966,8 @@ final class PeekPanelController {
                    self.isResizeCorridorGrab(screenPoint: location) {
                     return event
                 }
-                if self.panel.frame.contains(location) {
-                    // The window is wider than the card: a click in the
+                if self.rootView.screenFrame.contains(location) {
+                    // The overlay is wider than the card: a click in the
                     // control gutter that misses a button is a click on the
                     // page around the peek, and closes it like any other.
                     if self.isPointOnPanelContent(screenPoint: location) {
@@ -1110,9 +1008,10 @@ final class PeekPanelController {
     /// Whether a screen point lands on the card (page included) or on one of
     /// the controls, as opposed to the empty strip around them.
     private func isPointOnPanelContent(screenPoint: NSPoint) -> Bool {
-        let inWindow = panel.convertPoint(fromScreen: screenPoint)
-        let inRoot = rootView.convert(inWindow, from: nil)
-        guard let hit = rootView.hitTest(inRoot) else { return false }
+        guard let parentWindow, let superview = rootView.superview else { return false }
+        let inWindow = parentWindow.convertPoint(fromScreen: screenPoint)
+        let inSuperview = superview.convert(inWindow, from: nil)
+        guard let hit = rootView.hitTest(inSuperview) else { return false }
         return hit !== rootView
     }
 

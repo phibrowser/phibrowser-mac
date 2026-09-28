@@ -130,9 +130,8 @@ final class ShellWindow: NSWindow {
     // MARK: - Child-window key status
 
     /// Whether the key window is a child of this shell: the omnibox host
-    /// panel, the peek and reader panels, and — in hosted mode — every child
-    /// window Chromium attaches here for the presented browser (find bar,
-    /// permission bubble, dialogs). The chain is a finite acyclic AppKit
+    /// panel and every child window Chromium attaches here for the presented
+    /// browser (find bar, permission bubble, dialogs). The chain is a finite acyclic AppKit
     /// window hierarchy, so the walk terminates.
     var childWindowIsKey: Bool {
         guard let key = NSApp.keyWindow, key !== self else { return false }

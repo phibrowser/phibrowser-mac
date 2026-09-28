@@ -7,33 +7,15 @@ import AppKit
 import Combine
 import SnapKit
 
-/// Reader View overlay panel: hosts the reader extension's reading-surface
-/// tab in a child window covering the WHOLE page pane (the web-content area
-/// only — the sidebar stays fully usable). The origin tab keeps its live
-/// page underneath; closing the overlay simply reveals it again.
-///
-/// The peek panel's sibling, minus its chrome: the reader page carries its
-/// own HUD (style controls, text-to-speech, close), so the panel is a bare
-/// full-bleed host. Each reader belongs to its origin tab and every origin
-/// can carry its own; the single panel always hosts the focused origin's
-/// reader — switching tabs swaps the hosted content (or hides the panel
-/// when the focused tab has none). Presentation only — every state
-/// transition goes through `BrowserState` (`closeReaderOverlay` /
-/// `expandReaderOverlayIntoTab`), whose `readerOverlayState` the window
-/// controller observes. The hosted view belongs to a live Chromium strip
-/// tab kept off the Mac tab list; a child window is required so the panel
-/// reliably draws above the accelerated web-content surface and moves with
-/// the parent.
+/// Reader overlay hosted in the main browser window, above the page and
+/// below the floating sidebar. Each overlay belongs to its origin tab;
+/// switching tabs hides or replaces its content without closing that tab.
+/// Presentation only: BrowserState owns the overlay tab's lifecycle.
 final class ReaderPanelController {
-    /// See `ChromiumHostingPanel`: hosting a re-parented Chromium view in a
-    /// key panel needs the shared key-equivalent routing, or every shortcut
-    /// this panel's event monitor does not name is swallowed.
-    private final class ReaderPanel: ChromiumHostingPanel {}
-
     /// Opaque backing matching the page pane's rounded corners, so the
     /// full-pane cover reads as the pane itself switching to the reader
     /// rather than a card floating over it.
-    private final class ReaderContainerView: NSView {
+    private final class ReaderContainerView: PageOverlayView {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             wantsLayer = true
@@ -70,7 +52,6 @@ final class ReaderPanelController {
     /// covers. A closure because the card view belongs to whichever
     /// `WebContentViewController` is currently displayed.
     private let cardViewProvider: () -> NSView?
-    private let panel: ReaderPanel
     private let containerView = ReaderContainerView()
     private weak var hostedTab: Tab?
     private var eventMonitor: Any?
@@ -84,10 +65,6 @@ final class ReaderPanelController {
     private var isConcealedByInWindowOverlay = false
     /// See `setEclipsedByInWindowOverlay`.
     private var isEclipsedByInWindowOverlay = false
-    /// The omnibox host window this panel is currently eclipsed by, so
-    /// reveals can re-order themselves under it. See
-    /// `setEclipsedByInWindowOverlay`.
-    private weak var eclipsingOverlayWindow: NSWindow?
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -98,27 +75,12 @@ final class ReaderPanelController {
         self.anchorView = anchorView
         self.cardViewProvider = cardViewProvider
         anchorView.postsFrameChangedNotifications = true
-
-        panel = ReaderPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: true
-        )
-        panel.isOpaque = false
-        // Full cover — a shadow could only bleed onto the sidebar.
-        panel.hasShadow = false
-        panel.isMovableByWindowBackground = false
-        panel.hidesOnDeactivate = false
-        panel.backgroundColor = .clear
-        panel.isReleasedWhenClosed = false
-
-        panel.contentView = containerView
     }
 
     deinit {
         removeEventMonitor()
         removeGeometryObservers()
+        containerView.removeFromSuperview()
     }
 
     // MARK: - Presentation
@@ -155,50 +117,18 @@ final class ReaderPanelController {
     /// Temporarily hides the panel while the origin tab is not focused. The
     /// hosted content stays alive; `present(tab:)` reveals again.
     func hide() {
-        guard panel.isVisible else { return }
         removeEventMonitor()
-        panel.parent?.removeChildWindow(panel)
-        panel.orderOut(nil)
+        containerView.removeFromSuperview()
     }
 
-    /// While the omnibox floats over the panel (it lives in a sibling child
-    /// window of the same browser window), the panel stays visible but goes
-    /// input-inert: its local key monitor must not fight the omnibox for Esc
-    /// and shortcuts, and reveals must not steal the omnibox's key. On
-    /// un-eclipse the panel takes key back so the reader page keeps
-    /// receiving keystrokes.
-    func setEclipsedByInWindowOverlay(_ eclipsed: Bool, by overlayWindow: NSWindow? = nil) {
+    /// The omnibox keeps keyboard ownership while the page remains visible.
+    func setEclipsedByInWindowOverlay(_ eclipsed: Bool) {
         guard isEclipsedByInWindowOverlay != eclipsed else { return }
         isEclipsedByInWindowOverlay = eclipsed
-        eclipsingOverlayWindow = eclipsed ? overlayWindow : nil
-        if eclipsed {
-            // Already on screen: drop under the host that just came up.
-            if panel.isVisible { orderUnderEclipsingOverlay() }
-        } else {
-            revealIfStillCurrent()
-        }
+        if !eclipsed { revealIfStillCurrent() }
     }
 
-    /// Places the panel directly under the omnibox host, ordering it in if it
-    /// was off screen. The host and this panel are child windows of the same
-    /// browser window sharing its level, so which one covers the other is a
-    /// question of sibling order — the omnibox cannot buy that layering with a
-    /// raised level without also floating above other applications. Returns
-    /// false when there is no host on screen to sit under.
-    @discardableResult
-    private func orderUnderEclipsingOverlay() -> Bool {
-        guard let overlayWindow = eclipsingOverlayWindow,
-              overlayWindow.isVisible else { return false }
-        panel.order(.below, relativeTo: overlayWindow.windowNumber)
-        return true
-    }
-
-    /// While an in-window blocking overlay (tab search) is up, the panel
-    /// steps aside entirely: it is a child window, which draws above every
-    /// in-window view, so left in place it would cover the overlay. Content
-    /// stays mounted — the origin page shows beneath, which is what the
-    /// overlay targets anyway (a committed navigation closes the reader
-    /// through `closeReaderOverlayForAddressBarNavigation`).
+    /// Tab search temporarily exposes the origin page beneath the overlay.
     func setConcealedByInWindowOverlay(_ concealed: Bool) {
         guard isConcealedByInWindowOverlay != concealed else { return }
         isConcealedByInWindowOverlay = concealed
@@ -226,26 +156,23 @@ final class ReaderPanelController {
     /// is `BrowserState`'s job (`closeReaderOverlay`) or Chromium's (window
     /// teardown).
     func dismiss() {
+        let restoreFocus = containerView.containsFirstResponder
         removeEventMonitor()
         removeGeometryObservers()
-        // Detach the Chromium view BEFORE the window goes away: its lifetime
-        // is owned by Chromium and it must not linger in a dying hierarchy.
+        containerView.removeFromSuperview()
         detachHostedContent()
-        if let parent = panel.parent {
-            parent.removeChildWindow(panel)
-            panel.orderOut(nil)
-            parent.makeKey()
-        } else {
-            panel.orderOut(nil)
+        if restoreFocus, let page = browserState?.focusingTab?.webContentView,
+           page.window === parentWindow {
+            parentWindow?.makeFirstResponder(page)
+            browserState?.focusingTab?.webContentWrapper?.focus()
         }
     }
 
-    /// Synchronous best-effort detach used from `tabWillBeRemove`, while the
-    /// closing WebContents is still alive. The full dismiss follows through
-    /// the async `closeTab` → `readerOverlayState` path.
+    /// Detach before the closing WebContents goes away, including releasing
+    /// its first responder. The later state-driven dismiss is idempotent.
     func detachContentIfHosting(tabId: Int) {
         guard hostedTab?.guid == tabId else { return }
-        detachHostedContent()
+        dismiss()
     }
 
     // MARK: - Internals
@@ -258,29 +185,17 @@ final class ReaderPanelController {
     }
 
     private func reveal() {
-        // Content mounts regardless, but the panel stays down until the
-        // in-window overlay it stepped aside for goes away.
-        guard !isConcealedByInWindowOverlay else { return }
-        guard let parentWindow else { return }
+        guard !isConcealedByInWindowOverlay,
+              let parentWindow, anchorView?.window === parentWindow,
+              let content = browserState?.windowController?.mainSplitViewController
+                .webContentContainerViewController else { return }
+        content.installPageOverlay(containerView)
         layoutOnAnchor()
-        if panel.parent == nil {
-            parentWindow.addChildWindow(panel, ordered: .above)
-        }
-        if isEclipsedByInWindowOverlay {
-            // Visible beneath the floating omnibox, but never its key — and
-            // never over it: come in under the host rather than to the front.
-            if !orderUnderEclipsingOverlay() {
-                panel.orderFront(nil)
-            }
-        } else {
-            panel.makeKeyAndOrderFront(nil)
-            if let webView = containerView.subviews.first {
-                // Re-parenting a Chromium view clears the first responder;
-                // without this, keyboard input inside the reader page is
-                // dead.
-                panel.makeFirstResponder(webView)
-                hostedTab?.webContentWrapper?.focus()
-            }
+        containerView.isHidden = false
+        if !isEclipsedByInWindowOverlay, let webView = containerView.subviews.first {
+            parentWindow.makeKey()
+            parentWindow.makeFirstResponder(webView)
+            hostedTab?.webContentWrapper?.focus()
         }
         installEventMonitorIfNeeded()
         installGeometryObserversIfNeeded()
@@ -306,7 +221,7 @@ final class ReaderPanelController {
     private func layoutOnAnchor() {
         guard let paneRect = paneScreenRect() else { return }
         // The whole card, edge to edge — the reader stands in for the page.
-        panel.setFrame(paneRect, display: true)
+        containerView.setScreenFrame(paneRect)
     }
 
     /// Follows the card view currently being covered; re-registered when the
@@ -329,7 +244,7 @@ final class ReaderPanelController {
 
     private func installGeometryObserversIfNeeded() {
         if parentResizeObserver == nil, let parentWindow {
-            // Child windows do not follow parent resizes on their own.
+            // Recompute the overlay frame when the browser window resizes.
             parentResizeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: parentWindow,
@@ -352,7 +267,7 @@ final class ReaderPanelController {
     }
 
     private func relayoutIfVisible() {
-        guard panel.isVisible else { return }
+        guard containerView.isPresented else { return }
         layoutOnAnchor()
     }
 
@@ -377,8 +292,11 @@ final class ReaderPanelController {
         eventMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.keyDown]
         ) { [weak self] event in
-            guard let self, self.panel.isVisible,
-                  !self.isEclipsedByInWindowOverlay else { return event }
+            guard let self, self.containerView.isPresented,
+                  !self.isEclipsedByInWindowOverlay,
+                  event.window === self.parentWindow,
+                  self.parentWindow?.isKeyWindow == true,
+                  self.containerView.containsFirstResponder else { return event }
             // Esc closes the reader. Cmd-W must be swallowed here: strip-
             // active is the origin while the overlay is up, so letting it
             // reach Chromium's IDC_CLOSE_TAB would close the origin.
@@ -391,11 +309,9 @@ final class ReaderPanelController {
                 self.closeHostedReader()
                 return nil
             }
-            // The reader's web view holds focus while the panel is key, so
-            // app shortcuts never reach their normal handlers — the hosted
-            // Chromium view consumes key equivalents before the menu or
-            // `CommandDispatcher` sees them. Match the closing shortcuts
-            // here instead:
+            // The reader's web view holds focus while the overlay is active, so
+            // handle its closing shortcuts before Chromium or the main menu
+            // interprets them as commands for the origin tab:
             // - Toggle Reader View itself: the same press that opened the
             //   reader must close it.
             // - Back/Forward read as "leave the reader" — matching the

@@ -146,8 +146,8 @@ of ordinary-window commands that use the same default key.
 | `PHI_KIOSK_OPEN_IN_SPACE` | Cmd-O | Open the Kiosk page in the Space shown by the toolbar's primary action. |
 | `PHI_KIOSK_CHOOSE_SPACE` | Shift-Cmd-O | Show the toolbar's "Open in" Space selection menu. |
 
-Peek also uses `PHI_KIOSK_OPEN_IN_SPACE` for "Open as Tab" while its panel is
-visible in the active window and is not eclipsed by an in-window overlay.
+Peek also uses `PHI_KIOSK_OPEN_IN_SPACE` for "Open as Tab" while its content
+has focus in the active browser window and is not eclipsed by the omnibox.
 The binding is read from the same configuration, including overrides and
 disabling, and invokes the existing Peek expansion action.
 

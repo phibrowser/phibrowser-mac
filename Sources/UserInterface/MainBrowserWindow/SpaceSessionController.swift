@@ -115,15 +115,10 @@ class SpaceSessionController: NSWindowController {
     private var readerPanelController: ReaderPanelController?
     var readerPanelControllerIfLoaded: ReaderPanelController? { readerPanelController }
 
-    /// Child window hosting the omnibox overlay ABOVE the peek/reader
-    /// panels: those are child windows themselves, and a child window draws
-    /// above every in-window view — an in-window omnibox would be covered by
-    /// them. It stays in the browser window's own level so it keeps the
-    /// window's place in the inter-app stacking order (any level above
-    /// `.normal` would leave it floating over other apps once ours
-    /// deactivates); the ordering above the peek/reader panels comes from
-    /// sibling order among the children instead. Created on first use, and
-    /// taken off screen again when the overlay dismisses.
+    /// Omnibox child window above the browser's page overlays. It shares the
+    /// browser's window level so it follows the app's stacking order, and is
+    /// removed when the omnibox dismisses. Reader and Peek live in the main
+    /// window's view hierarchy beneath it.
     private(set) var omniBoxHostPanel: NSPanel?
     private var omniBoxHostResizeObserver: NSObjectProtocol?
 
@@ -169,8 +164,7 @@ class SpaceSessionController: NSWindowController {
         // activation on top of another app's windows.
         panel.level = window.level
         if panel.parent == nil {
-            // Re-attaching on every show lands the host above the peek and
-            // reader panels, the siblings it has to cover.
+            // Reattach above the browser's other child UI on every show.
             window.addChildWindow(panel, ordered: .above)
         }
         panel.ignoresMouseEvents = false
@@ -839,10 +833,8 @@ class SpaceSessionController: NSWindowController {
                         self.omniBoxHostPanel?.ignoresMouseEvents = true
                         self.window?.makeKey()
                     }
-                    self.peekPanelController?.setEclipsedByInWindowOverlay(
-                        visible, by: self.omniBoxHostPanel)
-                    self.readerPanelController?.setEclipsedByInWindowOverlay(
-                        visible, by: self.omniBoxHostPanel)
+                    self.peekPanelController?.setEclipsedByInWindowOverlay(visible)
+                    self.readerPanelController?.setEclipsedByInWindowOverlay(visible)
                     if !visible {
                         self.retireOmniBoxHostPanelIfIdle()
                     }

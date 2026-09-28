@@ -108,9 +108,8 @@ extension SpaceSessionController {
                 addressViewPresent: addressView != nil
             )
             
-            // Mount in the omnibox host panel: the overlay must draw ABOVE
-            // the peek/reader panels, which are child windows and cover
-            // every in-window view (see attachAndShowOmniBoxHostPanel).
+            // The omnibox host stays above Reader, Peek and the browser's
+            // other content (see attachAndShowOmniBoxHostPanel).
             if let hostView = attachAndShowOmniBoxHostPanel()?.contentView {
                 hostView.addSubview(omnibackgroundView)
                 omnibackgroundView.snp.remakeConstraints { make in

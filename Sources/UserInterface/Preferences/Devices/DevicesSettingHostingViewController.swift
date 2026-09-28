@@ -119,7 +119,7 @@ final class DevicesSettingHostingViewController: NSViewController {
     private func installHostingController() {
         let accountID = AccountController.shared.account?.userID
         viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
-        viewModel.accountName = AccountController.shared.account?.userInfo?.email ?? ""
+        viewModel.isSignedIn = { AccountController.shared.account != nil }
         viewModel.syncReport = { requestSync in
             guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
             await helper.refresh(requestSync: requestSync)

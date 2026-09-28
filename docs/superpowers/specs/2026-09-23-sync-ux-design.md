@@ -47,7 +47,10 @@ are ordered vertically, with secondary details expandable.
 
 ### Account and status
 
-Show the current account so users can identify where their data belongs. Keep
+The pane has no in-page title and does not show the account email; the toolbar
+already names the pane and Settings → Account identifies the account. A
+signed-out pane is recognised locally and shows the sign-in prompt without
+issuing a key request, so it never surfaces a connection error. Keep
 the status region in a stable position; routine background rounds should not
 make the entire pane flash between states.
 

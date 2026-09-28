@@ -53,4 +53,18 @@ final class DevicesSettingViewModelTests: XCTestCase {
         XCTAssertEqual(api.denyCalls, ["jr-7"])
         await vm.stopPolling()
     }
+
+    func testLoadAllSignedOutShowsSignInWithoutKeyRequest() async throws {
+        let api = FakeAPI()
+        // What the real client throws when there is no token to send.
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.userAuthenticationRequired))
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let svc = DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider)
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.isSignedIn = { false }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .notSignedIn)
+        XCTAssertNil(vm.actionError)
+    }
 }

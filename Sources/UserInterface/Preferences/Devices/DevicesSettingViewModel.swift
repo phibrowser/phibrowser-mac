@@ -27,7 +27,10 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
-    var accountName: String = ""
+    /// Whether an account is signed in. The key API refuses to send a request
+    /// without a token and reports that as a transport failure, so a signed-out
+    /// pane has to be recognised here or it would show a connection error.
+    var isSignedIn: () -> Bool = { true }
     var profileNames: () -> [String: String] = { [:] }
     func contextTitle(_ id: String) -> String {
         if id == "phi" { return NSLocalizedString("sync.status.phiData", value: "Phi data", comment: "Native sync context display name") }
@@ -99,6 +102,13 @@ final class DevicesSettingViewModel: ObservableObject {
     func loadAll() async {
         loadGeneration &+= 1
         let generation = loadGeneration
+        guard isSignedIn() else {
+            doStopPolling()
+            actionError = nil
+            requiresReconfiguration = false
+            unlockState = .notSignedIn
+            return
+        }
         unlockState = .loading
         requiresReconfiguration = reconfigurationRequired()
         do {

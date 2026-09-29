@@ -20,6 +20,7 @@
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		16733583CF857EA24EA6DE0D /* sync_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57CD882BA97396ECFC85AAE6 /* sync_entity.pb.swift */; };
 		184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE13005B45461A584F7F1C /* SyncKeyController.swift */; };
+		DB90EAB144A61C14E0121402 /* SyncProfileMappingPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */; };
 		1F8484277AF6957257C01DBD /* PhiOwnedItemState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69537E85565061483273F0A2 /* PhiOwnedItemState.swift */; };
 		20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */; };
 		2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */; };
@@ -823,6 +824,7 @@
 		356C43512D010ACB56FE22E3 /* DevicesSettingViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingViewModel.swift; sourceTree = "<group>"; };
 		35C9DFC9858BD91409670173 /* SyncableSpaces.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableSpaces.swift; sourceTree = "<group>"; };
 		35EE13005B45461A584F7F1C /* SyncKeyController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncKeyController.swift; sourceTree = "<group>"; };
+		DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProfileMappingPause.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
@@ -2148,6 +2150,7 @@
 				A55D7E5143F932DF1031B744 /* SyncKeyStack.swift */,
 				1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */,
 				35EE13005B45461A584F7F1C /* SyncKeyController.swift */,
+				DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */,
 				8ED3785F123750CD029A126E /* AccountProfileSyncMappingStore.swift */,
 				1712FF7D13CEB2498B026081 /* AccountSpaceSyncMappingStore.swift */,
 				6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */,
@@ -4011,6 +4014,7 @@
 				5A423BD20CC3D90DAA1ACC1F /* DevicesSettingViewController.swift in Sources */,
 				DDB903D2F1942C30466411C6 /* ProfileKeyManager.swift in Sources */,
 				184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */,
+				DB90EAB144A61C14E0121402 /* SyncProfileMappingPause.swift in Sources */,
 				0604A0F7564970C47522F57E /* AccountProfileSyncMappingStore.swift in Sources */,
 				686A8B97FDFABB61BB2539FD /* ProfilePairingView.swift in Sources */,
 				91EBBA3B9E637B630495B980 /* PhiDomainKeyManager.swift in Sources */,

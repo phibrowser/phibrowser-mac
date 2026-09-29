@@ -3580,10 +3580,23 @@ actor PhiSyncEngine {
         // republish that row as a new Space under a fresh uuid. Kept, the mapping resolves the
         // cursor's `hidden`, so the row is soft-deleted like a remote deletion (§9.2) and the
         // retention sweep purges it.
+        //
+        // Unless that would hide the last live user Space, the invariant `deleteSpace` holds (the
+        // older build counted this row as remaining). Every ending above already set `hidden` in
+        // `table`, so the row is outside `liveLocalUserSpaceIds` here: an empty set means hiding
+        // it leaves none. Then the mapping is dropped instead, as before this rule: the row stays
+        // visible and a later round publishes it under a new uuid. A row kept by that fallback
+        // counts as live for the next one, since its mapping no longer resolves the hidden cursor.
         var keptLive = 0
+        var keptVisible = 0
         for uuid in tombstonedThisRound {
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
             if await spaceAccess.isKnownLocalSpace(local) {
+                if await liveLocalUserSpaceIds(table: table).isEmpty {
+                    await spaceAccess.dropSpaceMapping(forSpaceId: local)
+                    keptVisible += 1
+                    continue
+                }
                 // Close its windows as a remote tombstone's hide does.
                 try? await spaceAccess.hide(spaceId: local)
                 keptLive += 1
@@ -3593,6 +3606,7 @@ actor PhiSyncEngine {
         }
         // R12: count only.
         if keptLive > 0 { AppLogWarn("[phi-sync] a finished Space deletion left a live row; hiding it count=\(keptLive)") }
+        if keptVisible > 0 { AppLogWarn("[phi-sync] a finished Space deletion left the last live user Space; keeping it visible count=\(keptVisible)") }
         writeSpaceTable(table)
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict

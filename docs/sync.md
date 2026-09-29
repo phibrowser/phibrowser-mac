@@ -563,15 +563,21 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   tombstone (R-D6-10), a `pendingDelete` finalized locally because it was never
   published, and a tombstone given up after three rejections all leave a cursor
   with `deletedAtMs` and `hidden`, and remove the Space's mapping when its local
-  row no longer exists. A `pendingDelete` persisted by an older build can sit on
-  a live row (it was recorded before a cascade that then failed). For such a row
-  the mapping is kept: dropping it would publish the row as a new Space under a
-  fresh uuid. With the mapping in place the cursor's `hidden` applies, so the
-  row's windows are closed and it leaves the strip like a remote deletion
-  (design §9.2), and the retention sweep purges it after 30 days. The device then
-  agrees with the account, where the tombstone was applied (or, for the other two
-  endings, where the Space was never published or stays as the give-up already
-  accepts).
+  row no longer exists. The row can still exist when an older build recorded the
+  `pendingDelete` before a cascade that then failed (this build records it only
+  after the cascade committed). For such a row the mapping is kept: dropping it
+  would publish the row as a new Space under a fresh uuid. With the mapping in
+  place the cursor's `hidden` applies, so the row's windows are closed and it
+  leaves the strip like a remote deletion (design §9.2), and the retention sweep
+  purges it after 30 days. The device then agrees with the account, where the
+  tombstone was applied (or, for the other two endings, where the Space was never
+  published or stays as the give-up already accepts).
+- **Last-user-Space fallback.** Hiding such a row must not leave the device with
+  no live user Space, the invariant `deleteSpace` holds (the older build counted
+  the row as remaining when the user deleted the others). When no other live
+  user Space is left, the mapping of that row is dropped instead and it is not
+  hidden: it stays visible and a later round publishes it under a new uuid, the
+  behaviour before the rule above. This is logged as a count.
 - **Retention purge retry.** The 30-day sweep drops a Space's mapping only
   after its purge cascade succeeded, so a purged cursor whose mapping is still
   present marks a cascade that failed or was cut short, and every later sweep

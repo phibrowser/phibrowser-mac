@@ -2604,6 +2604,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        // Another live user Space outside the sync view, so hiding LOCAL-1 leaves one standing.
+        access.pairableSpacesOverride = [localSpace("LOCAL-1", "Work", order: 0),
+                                         localSpace("LOCAL-2", "Home", order: 1)]
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var unpublished = PhiSpaceCursor()
@@ -2620,6 +2623,27 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertNotNil(cursor.deletedAtMs)
         XCTAssertTrue(cursor.hidden)
+    }
+
+    /// 7b''' fallback. Hiding the live row would leave no live user Space, the invariant
+    /// `deleteSpace` holds: the mapping is dropped instead and the row stays visible.
+    func testALegacyDeleteOnTheLastLiveUserSpaceKeepsItVisible() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var unpublished = PhiSpaceCursor()
+        unpublished.pendingDelete = true
+        store.table.cursors["sync-1"] = unpublished
+        let engine = makeEngine(access: access, store: store, client: FakePhiSyncClient())
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalSpacesChange()
+
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "The last live user Space is not hidden")
+        XCTAssertFalse(access.calls.contains(.hide("LOCAL-1")))
+        XCTAssertNotNil(store.table.cursors["sync-1"]?.deletedAtMs, "The old uuid stays a tombstone")
     }
 
     /// 7b''''. A local deletion is recorded while the engine is paused for pairing: it is a local table

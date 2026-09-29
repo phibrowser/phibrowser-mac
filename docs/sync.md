@@ -118,7 +118,13 @@ a measured pass leaves it unmapped, and leaves only when a pass or an adopt
 resolves it or it no longer exists locally. A held pass erases nothing, and
 `clearResolved()` keeps the set while the account key is still available; it
 empties once the key is gone or the controller is retired. So a mapping whose
-envelope is gone keeps pausing even when its replacement registration fails. `runMappingRepairPass()` runs auto-create and then a mapping pass,
+envelope is gone keeps pausing even when its replacement registration fails.
+Beside the pass result the controller publishes `lastMappingsFailureCategory`
+(`SyncProfileMappingFailureCategory`: offline, sign-in expired, server error,
+other), for the Sync status only. It names the latest failure the pass met (for
+a measured pass that reports an auto-create failure, that failure's), carries no
+text or identifiers, changes neither the pass result nor the pause's reason, and
+is nil after a pass that succeeds and after `clearResolved()`. `runMappingRepairPass()` runs auto-create and then a mapping pass,
 both single-flight, outside the engine, under the existing gates (enrollment
 complete, unlocked). Nothing pauses on these inputs yet.
 

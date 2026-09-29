@@ -22,6 +22,22 @@ enum SyncProfileMappingPassResult: String, Equatable {
     case definitiveFailure
 }
 
+/// What the latest mapping failure looked like, for the Sync status only: it
+/// lets the status say "offline" while no engine round runs to find out. It
+/// carries no text and no identifiers, and it changes neither the pass result
+/// nor the pause's reason. Published by the key layer beside
+/// `SyncProfileMappingPassResult`; nil after a pass that succeeds.
+enum SyncProfileMappingFailureCategory: String, Equatable {
+    /// A transport error that means no connectivity.
+    case offline
+    /// 401 or 403, or no token to send.
+    case signInExpired
+    /// 5xx, 429 or 408.
+    case serverError
+    /// Anything else, including a definitive refusal.
+    case other
+}
+
 /// Pure answer to "must sync pause because a syncable local Profile is not
 /// mapped to an account Profile" (plan 2026-09-29, ruling R1). Foundation only:
 /// every input arrives as a value, so the coordinator can evaluate it

@@ -189,6 +189,11 @@ final class SyncKeyController {
     /// a pass has run, and again after `clearResolved()`.
     private(set) var lastMappingsPassResult: SyncProfileMappingPassResult?
 
+    /// Status-only category of the failure behind `lastMappingsPassResult`: nil
+    /// when the last pass succeeded, before any pass, and after `clearResolved()`.
+    /// Nothing decides anything on it; the pause's reason comes from the result.
+    private(set) var lastMappingsFailureCategory: SyncProfileMappingFailureCategory?
+
     /// Local Profiles this controller created (§3.6's auto-create, the pairing
     /// wizard's "create local") and has not finished adopting. The pause ignores
     /// them until the adopt has finished or failed.
@@ -199,6 +204,7 @@ final class SyncKeyController {
     /// an account Profile that auto-create could not claim is what keeps that
     /// Profile's registration waiting.
     private var lastAutoCreateFailure: SyncProfileMappingPassResult?
+    private var lastAutoCreateFailureCategory: SyncProfileMappingFailureCategory?
 
     init(manager: AccountKeyManager, approvals: DeviceApprovalService, profileKeys: ProfileKeyManager,
          spaceKeys: SpaceSyncMappingManager? = nil,
@@ -444,6 +450,7 @@ final class SyncKeyController {
         needsPairingActionable = false
         if isRetired || manager.currentARK == nil { knownUnmappedProfileIds = [] }
         lastMappingsPassResult = nil
+        lastMappingsFailureCategory = nil
         if wasPopulated { notifyChromium() }
         announceMappingsResolved(.cleared)
     }
@@ -548,6 +555,8 @@ final class SyncKeyController {
         // Every failure this pass met, by class (BH-15). Any transient one holds
         // the pass; the worst one becomes `lastMappingsPassResult`.
         var failures: Set<SyncProfileMappingPassResult> = []
+        // The status-only category of the latest failure this pass met.
+        var failureCategory: SyncProfileMappingFailureCategory?
         // Evidence for `knownUnmappedProfileIds`, applied only after the retirement
         // checks below: Profiles this pass resolved, and Profiles whose persisted
         // mapping it found gone on the server.
@@ -578,6 +587,7 @@ final class SyncKeyController {
                 hasUnknownLocal = true
                 let failure = Self.mappingFailureResult(for: error)
                 failures.insert(failure)
+                failureCategory = Self.mappingFailureCategory(for: error)
                 AppLogInfo("[phi-sync-probe] unknown(\(failure.rawValue)) profile=\(local.profileId) (\(PhiSyncLog.describe(error)))")
                 if let previous = resolved[local.profileId] { next[local.profileId] = previous }
             }
@@ -604,6 +614,7 @@ final class SyncKeyController {
             // one flap retires a pending join for good.
             failures.insert(Self.mappingFailureResult(for: error))
             lastMappingsPassResult = Self.passResult(failures)
+            lastMappingsFailureCategory = Self.mappingFailureCategory(for: error)
             resolved.merge(next) { _, new in new }
             noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
             if !resolved.isEmpty { notifyChromium() }
@@ -643,6 +654,7 @@ final class SyncKeyController {
                         // the mapping that refused it, so it is transient.
                         let failure = Self.mappingFailureResult(for: error)
                         failures.insert(failure)
+                        failureCategory = Self.mappingFailureCategory(for: error)
                         AppLogWarn("[phi-sync] profile registration failed class=\(failure.rawValue) profile=\(local.profileId) (\(PhiSyncLog.describe(error)))")
                     }
                 }
@@ -672,10 +684,12 @@ final class SyncKeyController {
             provenAbsent.formUnion(stillUnmapped.map(\.profileId))
             if result == .measured, !stillUnmapped.isEmpty, let autoCreateFailure = lastAutoCreateFailure {
                 result = autoCreateFailure
+                failureCategory = lastAutoCreateFailureCategory
             }
             outcome = .measured
         }
         lastMappingsPassResult = result
+        lastMappingsFailureCategory = result == .measured ? nil : failureCategory
         noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
         AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing) actionable=\(needsPairingActionable) outcome=\(outcome.rawValue) result=\(result.rawValue)")
         if !resolved.isEmpty { notifyChromium() }
@@ -734,6 +748,31 @@ final class SyncKeyController {
             return .definitiveFailure
         default:
             return .heldTransient
+        }
+    }
+
+    /// The status-only category of one failure. Offline is a transport error that
+    /// means no connectivity; a missing token (the client's
+    /// `userAuthenticationRequired` transport error) reads as sign-in expired,
+    /// like 401 and 403; 5xx, 429 and 408 are server errors; everything else,
+    /// a definitive refusal included, is other.
+    nonisolated static func mappingFailureCategory(for error: Error) -> SyncProfileMappingFailureCategory {
+        guard let error = error as? KeyAPIError else { return .other }
+        switch error {
+        case .transport(let underlying):
+            guard let urlError = underlying as? URLError else { return .other }
+            switch urlError.code {
+            case .userAuthenticationRequired: return .signInExpired
+            case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost,
+                 .dnsLookupFailed, .timedOut, .internationalRoamingOff, .dataNotAllowed:
+                return .offline
+            default: return .other
+            }
+        case .http(let status, _):
+            if status == 401 || status == 403 { return .signInExpired }
+            if status >= 500 || status == 429 || status == 408 { return .serverError }
+            return .other
+        case .decode, .lastActiveDevice: return .other
         }
     }
 
@@ -936,6 +975,7 @@ final class SyncKeyController {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
         lastAutoCreateFailure = nil
+        lastAutoCreateFailureCategory = nil
         let accountUuids: Set<String>
         do {
             accountUuids = try await profileKeys.accountProfileUuids()
@@ -1038,7 +1078,10 @@ final class SyncKeyController {
     /// Keeps the worse of this round's failures; a definitive one outranks a transient one.
     private func noteAutoCreateFailure(_ error: Error) {
         let failure = Self.mappingFailureResult(for: error)
-        if lastAutoCreateFailure != .definitiveFailure { lastAutoCreateFailure = failure }
+        if lastAutoCreateFailure != .definitiveFailure {
+            lastAutoCreateFailure = failure
+            lastAutoCreateFailureCategory = Self.mappingFailureCategory(for: error)
+        }
     }
 
     private func finishRefresh(_ outcome: ProfileRefreshOutcome,

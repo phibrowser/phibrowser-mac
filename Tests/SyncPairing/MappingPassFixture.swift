@@ -157,7 +157,8 @@ struct MappingPassTests {
         try await retirementStopsAutoCreateAtLookup()
         try await retirementDuringCreateLeavesProfileUnmapped()
         try await retiredRepairPassDoesNothing()
-        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt")
+        try await failureCategory()
+        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither
@@ -501,5 +502,52 @@ struct MappingPassTests {
         await m.controller.runMappingRepairPass()
         precondition(m.creator.createCalls.isEmpty && m.api.puts.isEmpty && m.store.map.count == 1,
                      "A repair pass kept writing after retirement")
+    }
+
+    /// P2b C: the status-only category beside the pass result.
+    @MainActor static func failureCategory() async throws {
+        let cases: [(Error, SyncProfileMappingFailureCategory)] = [
+            (KeyAPIError.transport(URLError(.notConnectedToInternet)), .offline),
+            (KeyAPIError.transport(URLError(.networkConnectionLost)), .offline),
+            (KeyAPIError.transport(URLError(.userAuthenticationRequired)), .signInExpired),
+            (KeyAPIError.http(401, ""), .signInExpired),
+            (KeyAPIError.http(403, ""), .signInExpired),
+            (KeyAPIError.http(503, ""), .serverError),
+            (KeyAPIError.http(429, ""), .serverError),
+            (KeyAPIError.http(408, ""), .serverError),
+            (KeyAPIError.http(400, ""), .other),
+            (KeyAPIError.transport(URLError(.badServerResponse)), .other),
+            (ProfileKeyManagerError.notUnlocked, .other),
+            (ProfileKeyManagerError.badEnvelope, .other),
+        ]
+        for (error, expected) in cases {
+            let category = SyncKeyController.mappingFailureCategory(for: error)
+            precondition(category == expected, "\(error) -> \(category), expected \(expected)")
+        }
+
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        await s.controller.resolveMappings()
+        precondition(s.controller.lastMappingsFailureCategory == nil)
+        s.creator.profiles.append((profileId: "Profile 2", displayName: "Home"))
+        for (error, expected) in [(KeyAPIError.transport(URLError(.notConnectedToInternet)), .offline),
+                                  (KeyAPIError.http(401, ""), .signInExpired),
+                                  (KeyAPIError.http(502, ""), .serverError),
+                                  (KeyAPIError.http(400, ""), .other)] as [(Error, SyncProfileMappingFailureCategory)] {
+            s.api.putError = error
+            await s.controller.resolveMappings()
+            precondition(s.controller.lastMappingsFailureCategory == expected)
+        }
+        let before = s.pause()
+        precondition(before.reason == .needsAttention && s.controller.lastMappingsPassResult == .definitiveFailure,
+                     "The category must not change the result or the reason")
+        s.api.listError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await s.controller.resolveMappings()
+        precondition(s.controller.lastMappingsFailureCategory == .offline && s.pause().reason == .retrying)
+        s.api.listError = nil
+        s.api.putError = nil
+        await s.controller.resolveMappings()
+        precondition(s.controller.lastMappingsPassResult == .measured && s.controller.lastMappingsFailureCategory == nil,
+                     "A pass that succeeds clears the category")
     }
 }

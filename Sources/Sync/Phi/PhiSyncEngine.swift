@@ -2754,6 +2754,22 @@ actor PhiSyncEngine {
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
             let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
+            // `currentSpaces()` leaves out a Space whose Profile has no mapping, while the row check
+            // above reads unfiltered storage. For such a Space `existing` is nil although its mapped
+            // row exists, and `land` would take its create branch over that row. Park instead; it
+            // lands once the Space is back in the sync view. A held re-park is not written back to
+            // `pendingApply`, for the reason the landing-failure park below gives.
+            if existing == nil, !isDefault, let mapped = localSpaceId,
+               await spaceAccess.isKnownLocalSpace(mapped) {
+                AppLogWarn("[phi-sync] a mapped space is outside the sync view tag=\(String(tag.prefix(8))); parking the entity")
+                if item.fromServer {
+                    cursor.pendingApply = try? item.entity.serializedData()
+                    cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                    cursor.version = max(cursor.version, item.version)
+                    table.cursors[item.uuid] = cursor
+                }
+                continue
+            }
             // C1 / defect 0.3-2: the well-known default row is deletable now, so `land` can
             // legitimately reach its CREATE branch for this identity on a device whose row is
             // gone. D1 keeps `profile_uuid` off the wire for it, so there is no account binding

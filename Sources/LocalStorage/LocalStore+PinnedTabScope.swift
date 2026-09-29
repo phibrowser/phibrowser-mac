@@ -28,10 +28,12 @@ enum LocalStoreWriteError: LocalizedError, Equatable {
     case folderNotEmpty, rowAlreadyMapped
     case spaceImporting(spaceId: String)
     case rowNotFound, rowIsRoot, invalidURL, targetNotWritable, noCandidateSurvived, rowNotInActiveScope
+    /// A Space create named a `spaceId` a row already has; inserting it would overwrite that row.
+    case spaceAlreadyExists
 
     var errorDescription: String? {
         switch self {
-        case .rowNotFound, .rowIsRoot, .invalidURL, .targetNotWritable, .noCandidateSurvived, .rowNotInActiveScope, .folderNotEmpty, .rowAlreadyMapped, .spaceImporting:
+        case .rowNotFound, .rowIsRoot, .invalidURL, .targetNotWritable, .noCandidateSurvived, .rowNotInActiveScope, .folderNotEmpty, .rowAlreadyMapped, .spaceImporting, .spaceAlreadyExists:
             return nil
         case .storeUnavailable:
             return NSLocalizedString("localData.pinnedTabScope.unavailableError", value: "Local browser data is unavailable.",

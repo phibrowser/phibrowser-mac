@@ -396,7 +396,7 @@ A Space cursor carries one payload in each direction, and they are symmetric:
 
 | field | direction | written by | cleared by |
 | --- | --- | --- | --- |
-| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect) | the apply pass | a successful landing |
+| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect, a mapped Space the sync view leaves out) | the apply pass | a successful landing |
 | `pendingProjection` | outbound — this device's own projection of the Space, with each changed field already stamped at the time the user changed it (ruling C2-a, design option S2) | the stamping pass, from the debounced local-Spaces-change round, ahead of the pull gate | a landing, an accepted commit, a tombstone, or a revert that leaves nothing to publish |
 
 Both are serialized `PhiSpaceEntity` bytes in `sync.phiSpaces`, both are
@@ -407,6 +407,17 @@ the field decodes with it nil (the rule
 `PhiOwnedItemCursor.rekeyRejectRounds` states for its own addition). A build
 **older** than this one ignores the key and stamps Space edits at publish time
 again, which is the pre-C2-a behaviour — correct, just coarser.
+
+The last case guards a create over an existing row. The apply pass finds the
+landing target in `currentSpaces()`, which leaves out a Space whose Profile has
+no sync mapping, but validates the mapped local id against unfiltered storage.
+For such a Space the target is missing although its row exists, and `land`
+would create a row under a `spaceId` that is already taken; `spaceId` is
+unique, so SwiftData overwrote the existing row (Profile binding and order
+reset, bookmark root orphaned). The pass parks the entity instead, and
+`LocalStore.createSpaceBody` refuses a duplicate `spaceId` with
+`LocalStoreWriteError.spaceAlreadyExists`, which the pass's landing-failure
+catch also turns into a park.
 
 `pendingProjection` is written only for a cursor that already has a
 `reconciled` baseline. A Space this device has never published has no per-field

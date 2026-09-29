@@ -3432,8 +3432,10 @@ actor PhiSyncEngine {
         var work = spaceCommitEntries(from: table, outgoing: outgoing)
         if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
         // §9.1 second gate's bookkeeping half: an unpublished pendingDelete is
-        // finalized here rather than sent. Its local row is gone, so its mapping
-        // goes too, below, the same way an accepted tombstone's does.
+        // finalized here rather than sent. Its mapping goes too, below, the same
+        // way an accepted tombstone's does. `hidden` as for the other endings: a
+        // legacy pendingDelete recorded before a cascade that then failed sits on a
+        // live row, which keeps its mapping below and is soft-deleted (§9.2).
         var finalized: Set<String> = []
         for (uuid, var cursor) in table.cursors where cursor.pendingDelete {
             guard cursor.entityId == nil || cursor.version == 0 else { continue }
@@ -3442,6 +3444,7 @@ actor PhiSyncEngine {
             cursor.server = nil
             cursor.pendingProjection = nil
             cursor.deletedAtMs = now()
+            cursor.hidden = true
             table.cursors[uuid] = cursor
             finalized.insert(uuid)
         }
@@ -3510,10 +3513,25 @@ actor PhiSyncEngine {
         // absent, so retaining mappings would return dead IDs. Keep permanent tombstone cursors.
         // Collection occurred in synchronous applySpaceCommitOutcome; mapping writes happen here on
         // the main actor.
+        //
+        // Only for a row that is really gone. A pendingDelete persisted by an older build may sit
+        // on a live row (recorded before a cascade that then failed); dropping its mapping would
+        // republish that row as a new Space under a fresh uuid. Kept, the mapping resolves the
+        // cursor's `hidden`, so the row is soft-deleted like a remote deletion (§9.2) and the
+        // retention sweep purges it.
+        var keptLive = 0
         for uuid in tombstonedThisRound {
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if await spaceAccess.isKnownLocalSpace(local) {
+                // Close its windows as a remote tombstone's hide does.
+                try? await spaceAccess.hide(spaceId: local)
+                keptLive += 1
+                continue
+            }
             await spaceAccess.dropSpaceMapping(forSpaceId: local)
         }
+        // R12: count only.
+        if keptLive > 0 { AppLogWarn("[phi-sync] a finished Space deletion left a live row; hiding it count=\(keptLive)") }
         writeSpaceTable(table)
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
@@ -3598,7 +3616,7 @@ actor PhiSyncEngine {
                 cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
-                // The local row is gone as for `.applied`, so the mapping is dropped the same way.
+                // Ends like `.applied`: the mapping is dropped once the caller confirms the row is gone.
                 tombstoned.insert(item.uuid)
             }
         case .rejected(let type):

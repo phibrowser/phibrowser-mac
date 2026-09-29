@@ -541,10 +541,19 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   after the row is observed absent cannot miss it. The entity is parked in
   `pendingApply` so that it still lands if the cascade fails; a recorded deletion
   clears it.
-- **Every ending drops the mapping.** An accepted tombstone (R-D6-10), a
-  `pendingDelete` finalized locally because it was never published, and a
-  tombstone given up after three rejections all leave a cursor with
-  `deletedAtMs` and remove the Space's mapping, since its local row is gone.
+- **Every ending drops the mapping of a row that is gone.** An accepted
+  tombstone (R-D6-10), a `pendingDelete` finalized locally because it was never
+  published, and a tombstone given up after three rejections all leave a cursor
+  with `deletedAtMs` and `hidden`, and remove the Space's mapping when its local
+  row no longer exists. A `pendingDelete` persisted by an older build can sit on
+  a live row (it was recorded before a cascade that then failed). For such a row
+  the mapping is kept: dropping it would publish the row as a new Space under a
+  fresh uuid. With the mapping in place the cursor's `hidden` applies, so the
+  row's windows are closed and it leaves the strip like a remote deletion
+  (design §9.2), and the retention sweep purges it after 30 days. The device then
+  agrees with the account, where the tombstone was applied (or, for the other two
+  endings, where the Space was never published or stays as the give-up already
+  accepts).
 - **Accepted gap: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round. If

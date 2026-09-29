@@ -2524,6 +2524,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
 
         access.spaces = []                                   // The local row is already deleted
+        access.knownLocalSpaceIds = []
         await engine.recordLocalDeletion(syncUuid: "sync-1") // Captured by the facade before the cascade
         await engine.handleLocalSpacesChange()               // One push sends and accepts the tombstone
 
@@ -2579,7 +2580,6 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         access.spaces = []                                   // The local row is already deleted
-        access.knownLocalSpaceIds = ["LOCAL-1"]
         let store = MemorySpaceStore()
         store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var unpublished = PhiSpaceCursor()
@@ -2595,6 +2595,31 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertNotNil(cursor.deletedAtMs)
         XCTAssertFalse(cursor.pendingDelete)
+    }
+
+    /// 7b'''. A legacy `pendingDelete` on a LIVE row (recorded by an older build before a cascade that
+    /// then failed) keeps its mapping when it ends: the row is hidden, not republished under a new uuid.
+    func testALegacyDeleteOnALiveRowKeepsItsMappingAndHidesTheRow() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var unpublished = PhiSpaceCursor()
+        unpublished.pendingDelete = true
+        store.table.cursors["sync-1"] = unpublished
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalSpacesChange()
+
+        XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1", "A live row keeps its mapping")
+        XCTAssertTrue(access.calls.contains(.hide("LOCAL-1")), "The live row is soft-deleted")
+        XCTAssertFalse(spaceCommits(client).contains { !$0.deleted }, "Nothing is republished")
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
+        XCTAssertNotNil(cursor.deletedAtMs)
+        XCTAssertTrue(cursor.hidden)
     }
 
     /// 7c. Replaying the tombstone after cleanup is a no-op; snapshot cannot resurrect its UUID.

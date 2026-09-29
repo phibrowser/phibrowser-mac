@@ -80,7 +80,8 @@ final class BitwardenService: ObservableObject, CredentialProvider {
         // world-executable signed binary an attacker could spawn). Feed the
         // transport a `restore` built from that store — sent after every
         // handshake — and a sink for the helper's `persist` events. See
-        // BitwardenSessionStore and docs/bitwarden-password-manager.md §7.
+        // BitwardenSessionStore and docs/bitwarden-password-manager.md under
+        // "Session persistence".
         let persistenceGate = sessionPersistenceGate
         client.sessionRestoreProvider = {
             persistenceGate.performIfEnabled {

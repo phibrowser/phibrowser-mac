@@ -1,8 +1,10 @@
 # Analytics
 
-Last updated: 2026-09-23
+Scope: native event semantics and the framework-to-native relay. Official builds
+configure analytics; the open-source build excludes initialization.
 
-Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
+Phi Browser supports Countly and PostHog analytics. During migration, existing
+Countly events and their PostHog equivalents can coexist.
 
 ## Initialization
 
@@ -19,23 +21,17 @@ PostHog SDK config uses `captureApplicationLifecycleEvents = true`, so `$app_ins
 
 If the project token or host is empty, `AppController` logs a warning and skips PostHog init; the app runs without analytics rather than crashing.
 
-### PostHog config pipeline
+### Build configuration boundary
 
-```
-build-scripts/posthogConfig                           ← source of truth (checked in)
-  ↓  build-scripts/generate-posthog-config.sh
-Sources/Utilities/PostHogConfig.generated.swift       ← checked in with empty defaults; overwritten at archive time
-  ↓  compiled into the binary
-PostHogGeneratedConfig.{projectToken,host}
-  ↓  read by
-PostHogEnv.{projectToken,host}.value
-```
+`Sources/Utilities/PostHogConfig.generated.swift` is the checked-in empty-default
+configuration. `PostHogEnv` reads its `projectToken` and `host`; missing values
+skip initialization. Official packaging supplies these values through separate
+release tooling, which is not part of this checkout. No private build input or
+dashboard access is required to work on native event semantics.
 
-The values are no longer written into `PhiBrowser-Info.plist`, so they can't be extracted with a one-liner `PlistBuddy` against the installed bundle. They do still live in the Mach-O as string literals (PostHog project tokens are public write keys by design), so this is defense-in-depth, not a secret.
-
-Nightly and release builds share the same self-hosted PostHog instance; the bundle identifier (`$app_namespace`) — which contains `.canary.` for nightly — is the way to split the channels in dashboards. Each archive script (`adhoc-build.sh`, `nightly-build.sh`, `public-build.sh`) invokes the generator before `xcodebuild`.
-
-A plain Xcode Run/Debug compiles the empty-value default and runs without PostHog; no setup script is needed. After a local archive, the generated file will show up as locally modified — don't commit that.
+The open-source configuration excludes PostHog setup regardless of these values.
+Do not add production credentials or tenant-specific dashboard links to this
+document. Client-side configuration should not be treated as a secret vault.
 
 ## Sentinel telemetry consent contract
 
@@ -65,9 +61,9 @@ notification payload.
 
 | Boundary | PostHog call | Location |
 | --- | --- | --- |
-| Active account changed | `identify(auth0.sub, userProperties)` | `AccountController/Account.swift` |
-| Logout | `capture("user_logged_out")` then `reset()` | `Onboarding/AuthManager.swift` |
-| Effective metrics reporting change | Capture anonymous `metrics_reporting_changed`, then identify only after opt-in | `ChromiumBridge/PhiChromiumCoordinator.swift` |
+| Active account changed | `identify(auth0.sub, userProperties)` | `Sources/AccountController/Account.swift` |
+| Logout | `capture("user_logged_out")` then `reset()` | `Sources/UserInterface/Onboarding/AuthManager.swift` |
+| Effective metrics reporting change | Capture anonymous `metrics_reporting_changed`, then identify only after opt-in | `Sources/ChromiumBridge/PhiChromiumCoordinator.swift` |
 
 Distinct ID == Auth0 `sub`. When Chromium metrics reporting is enabled, identify also sets `chromium_metrics_client_id` to Chromium's UMA client ID. A temporarily unavailable client ID does not prevent identification.
 
@@ -105,50 +101,50 @@ are out of scope.
 
 | Event | Trigger | File |
 |-------|---------|------|
-| `$app_opened` | SDK lifecycle auto-capture; enriched with `layout_mode` (`balanced` / `performance` / `comfortable`), `ai_enabled` (bool), and `is_guest_mode` (bool) via a `beforeSend` hook | `Application/AppController.swift` |
+| `$app_opened` | SDK lifecycle auto-capture; enriched with `layout_mode` (`balanced` / `performance` / `comfortable`), `ai_enabled` (bool), and `is_guest_mode` (bool) via a `beforeSend` hook | `Sources/Application/AppController.swift` |
 | `$app_installed` / `$app_updated` / `$app_backgrounded` | SDK lifecycle auto-capture | — |
-| `user_logged_in` | Auth0 login completed | `Onboarding/Login/LoginViewController.swift` |
-| `login_retried` | User tapped "Go back and try again" after failed/timed-out login | `Onboarding/Login/LoginViewController.swift` |
-| `user_logged_out` | User logged out; identity reset follows | `Onboarding/AuthManager.swift` |
-| `metrics_reporting_changed` | Chromium reports an effective metrics and crash-reporting consent transition. The event contains only `enabled` and is captured under the current anonymous identity. A later metrics-enabled authenticated activation may associate that anonymous phase with the account. Initial-state synchronization does not emit it. | `ChromiumBridge/PhiChromiumCoordinator.swift` |
-| `guest_mode_entered` | User successfully crossed the local credential boundary and entered Guest Mode | `Onboarding/LoginController.swift` |
-| `guest_mode_exited` | Guest account migration and authenticated account publication completed; `trigger` is `account_setting` or `ai_setting` | `Onboarding/LoginController.swift` |
-| `oobe_step_viewed` | OOBE presents a semantic step; includes stable `step`, one-based `step_index`, and `is_guest` | `Onboarding/OOBEAnalyticsSession.swift` |
-| `oobe_step_completed` | The current OOBE step accepts its user action; includes the step properties and monotonic `duration_seconds` | `Onboarding/OOBEAnalyticsSession.swift` |
-| `oobe_finished` | Authenticated browser access is published or Guest entry succeeds; includes `is_guest`, `steps_completed`, and active `total_duration_seconds` | `Onboarding/OOBEAnalyticsSession.swift` |
-| `oobe_interrupted` | The user directly closes the OOBE window before success, or Phi terminates while it is active; includes the last step, active duration, and `reason` (`window_closed` or `app_terminated`) | `Onboarding/OOBEAnalyticsSession.swift` |
-| `onboarding_completed` | **Legacy compatibility event:** user tapped Next on the theme welcome screen. Its historical name and trigger remain unchanged; new OOBE events use the `oobe_` prefix | `Onboarding/Welcome/OnboardingWelcomeViewController.swift` |
-| `import_viewed` | The browser-data import window is presented or brought forward; `entry_point` is always `menu` | `MainBrowserWindow/SpaceSessionController+Actions.swift` |
-| `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Onboarding/Importer/BrowserDataImporter.swift` |
-| `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Onboarding/Importer/BrowserDataImporter.swift` |
-| `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |
-| `browser_migration_finished` | A Migration run (the one-click wizard) reaches its end, however much of the plan landed; includes `source_browser` (`arc` / `zen`), `profiles_created` and `spaces_created` — counts only, never Profile or Space names or source paths | `States/BrowserMigrationRunner.swift` |
-| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
-| `space_created` | A user-created Space succeeds; includes `total_spaces`, whether it uses a non-default profile, and `surface` (`sidebar`, `standalone_window`, or `library`) | `Sidebar/Spaces/CreateSpacePanel.swift` |
-| `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `States/ProfileManager.swift` |
-| `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `States/Space/SpaceManager.swift` |
-| `space_switched` | A user-initiated switch activates a different Space; includes `total_spaces` | `States/Space/SpaceManager.swift` |
-| `space_deleted` | The user confirms deletion of a non-default Space from the sidebar or Settings | `Sidebar/Spaces/SpacesStripView.swift`, `Preferences/Spaces/SpacesSettingsView.swift` |
-| `ai_features_toggled` | User enabled/disabled AI features in settings | `Preferences/AISettings/AISettingView.swift` |
-| `connector_status` | Snapshot of each AI connector's connected/disconnected state, fired on refresh | `Preferences/AISettings/AISettingsConnectorViewModel.swift` |
-| `ai_sidebar_opened` | A tab's AI sidebar changed from collapsed to expanded; `trigger` is `button`, `shortcut`, or `restore` | `WebContent/WebContentViewController.swift` |
-| `ai_sidebar_closed` | A tab's AI sidebar changed from expanded to collapsed; includes that tab's `duration_seconds` dwell time | `WebContent/WebContentViewController.swift` |
-| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `Kiosk/KioskBrowserWindowController.swift` |
-| `kiosk_opened_in_space` | A Kiosk page starts transferring into a Space; includes `total_spaces` without Space identifiers | `States/Space/SpaceManager.swift` |
-| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `Kiosk/KioskBrowserWindowController.swift` |
-| `agent_task_started` | An agent task record is created or rebound; includes `origin`, `persistent`, and normalized `agent_name` | `States/AgentSpace/AgentSpaceManager.swift` |
-| `agent_task_completed` | An active task ends through the completion path; includes the start properties and `success` | `States/AgentSpace/AgentSpaceManager.swift` |
-| `agent_user_space_command` | An agent command passes the user-space browsing-data permission gate; includes `command` and normalized `agent_name` | `Notifications/MessageCard/ExtensionMessageRouter.swift`, `States/AgentSpace/AgentSpaceRouter+Management.swift` |
-| `agent_credential_access_requested` | Agent credential access is evaluated; includes `kind`, `approved`, `prompted`, and normalized `agent_name` without credential scope or content | `States/CredentialAccessCoordinator.swift` |
-| `agent_credential_access_approved` | Credential access is approved by a prompt or existing grant; includes `kind`, `approval_type`, and normalized `agent_name` | `States/CredentialAccessCoordinator.swift` |
-| `scripting_command_invoked` | An allowlisted AppleScript command other than version checking returns; includes command, outcome, success, and bounded client attribution | `Application/Apple Scripts/PhiScriptCommands.swift` |
-| `language_changed` | Phi's General settings picker changes from one stored language preference to another; includes only `from` and `to` | `Preferences/General/GeneralSettingView.swift` |
-| `feature_entry_tapped` | A visible Chat, Memory, Download, or Organize Tabs entry accepts a tap; `button` is `chat`, `memory`, `download`, or `organize_tabs`, and `surface` is `sidebar` or `web_content_header` | `Sidebar/SidebarViewController.swift`, `Sidebar/TabList/Views/SidebarCellViews.swift`, `WebContent/FloatingSidebar/FloatingSidebarViewController.swift`, `WebContent/Header/WebContentHeader.swift`, `HorizontalBar/TabStrip/TabStripRightButtons.swift` |
-| `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
-| `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
-| `highlight_link_copied` | A highlight link is copied while `shortHighlightLinksEnabled` is enabled at callback time; includes only `is_short_link` (bool), covering short-link success and long-link fallback | `ChromiumBridge/PhiChromiumCoordinator.swift` |
-| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), Peek/Kiosk preferences, and the content blocking switches (`block_ads_enabled`, `block_cookie_banners_enabled`, `block_trackers_enabled`; true when any profile has the switch on) | `Application/AppControlle+LaunchInfo.swift` |
-| *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
+| `user_logged_in` | Auth0 login completed | `Sources/UserInterface/Onboarding/Login/LoginViewController.swift` |
+| `login_retried` | User tapped "Go back and try again" after failed/timed-out login | `Sources/UserInterface/Onboarding/Login/LoginViewController.swift` |
+| `user_logged_out` | User logged out; identity reset follows | `Sources/UserInterface/Onboarding/AuthManager.swift` |
+| `metrics_reporting_changed` | Chromium reports an effective metrics and crash-reporting consent transition. The event contains only `enabled` and is captured under the current anonymous identity. A later metrics-enabled authenticated activation may associate that anonymous phase with the account. Initial-state synchronization does not emit it. | `Sources/ChromiumBridge/PhiChromiumCoordinator.swift` |
+| `guest_mode_entered` | User successfully crossed the local credential boundary and entered Guest Mode | `Sources/UserInterface/Onboarding/LoginController.swift` |
+| `guest_mode_exited` | Guest account migration and authenticated account publication completed; `trigger` is `account_setting` or `ai_setting` | `Sources/UserInterface/Onboarding/LoginController.swift` |
+| `oobe_step_viewed` | OOBE presents a semantic step; includes stable `step`, one-based `step_index`, and `is_guest` | `Sources/UserInterface/Onboarding/OOBEAnalyticsSession.swift` |
+| `oobe_step_completed` | The current OOBE step accepts its user action; includes the step properties and monotonic `duration_seconds` | `Sources/UserInterface/Onboarding/OOBEAnalyticsSession.swift` |
+| `oobe_finished` | Authenticated browser access is published or Guest entry succeeds; includes `is_guest`, `steps_completed`, and active `total_duration_seconds` | `Sources/UserInterface/Onboarding/OOBEAnalyticsSession.swift` |
+| `oobe_interrupted` | The user directly closes the OOBE window before success, or Phi terminates while it is active; includes the last step, active duration, and `reason` (`window_closed` or `app_terminated`) | `Sources/UserInterface/Onboarding/OOBEAnalyticsSession.swift` |
+| `onboarding_completed` | **Legacy compatibility event:** user tapped Next on the theme welcome screen. Its historical name and trigger remain unchanged; new OOBE events use the `oobe_` prefix | `Sources/UserInterface/Onboarding/Welcome/OnboardingWelcomeViewController.swift` |
+| `import_viewed` | The browser-data import window is presented or brought forward; `entry_point` is always `menu` | `Sources/UserInterface/MainBrowserWindow/SpaceSessionController+Actions.swift` |
+| `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Sources/UserInterface/Onboarding/Importer/BrowserDataImporter.swift` |
+| `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Sources/UserInterface/Onboarding/Importer/BrowserDataImporter.swift` |
+| `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Sources/UserInterface/Onboarding/Importer/BrowserDataImporter.swift` |
+| `browser_migration_finished` | A Migration run (the one-click wizard) reaches its end, however much of the plan landed; includes `source_browser` (`arc` / `zen`), `profiles_created` and `spaces_created` — counts only, never Profile or Space names or source paths | `Sources/States/BrowserMigrationRunner.swift` |
+| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Sources/Utilities/FirstTimeActionTracker.swift` |
+| `space_created` | A user-created Space succeeds; includes `total_spaces`, whether it uses a non-default profile, and `surface` (`sidebar`, `standalone_window`, or `library`) | `Sources/UserInterface/Sidebar/Spaces/CreateSpacePanel.swift` |
+| `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `Sources/States/ProfileManager.swift` |
+| `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `Sources/States/Space/SpaceManager.swift` |
+| `space_switched` | A user-initiated switch activates a different Space; includes `total_spaces` | `Sources/States/Space/SpaceManager.swift` |
+| `space_deleted` | The user confirms deletion of a non-default Space from the sidebar or Settings | `Sources/UserInterface/Sidebar/Spaces/SpacesStripView.swift`, `Sources/UserInterface/Preferences/Spaces/SpacesSettingsView.swift` |
+| `ai_features_toggled` | User enabled/disabled AI features in settings | `Sources/UserInterface/Preferences/AISettings/AISettingView.swift` |
+| `connector_status` | Snapshot of each AI connector's connected/disconnected state, fired on refresh | `Sources/UserInterface/Preferences/AISettings/AISettingsConnectorViewModel.swift` |
+| `ai_sidebar_opened` | A tab's AI sidebar changed from collapsed to expanded; `trigger` is `button`, `shortcut`, or `restore` | `Sources/UserInterface/WebContent/WebContentViewController.swift` |
+| `ai_sidebar_closed` | A tab's AI sidebar changed from expanded to collapsed; includes that tab's `duration_seconds` dwell time | `Sources/UserInterface/WebContent/WebContentViewController.swift` |
+| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `Sources/UserInterface/Kiosk/KioskBrowserWindowController.swift` |
+| `kiosk_opened_in_space` | A Kiosk page starts transferring into a Space; includes `total_spaces` without Space identifiers | `Sources/States/Space/SpaceManager.swift` |
+| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `Sources/UserInterface/Kiosk/KioskBrowserWindowController.swift` |
+| `agent_task_started` | An agent task record is created or rebound; includes `origin`, `persistent`, and normalized `agent_name` | `Sources/States/AgentSpace/AgentSpaceManager.swift` |
+| `agent_task_completed` | An active task ends through the completion path; includes the start properties and `success` | `Sources/States/AgentSpace/AgentSpaceManager.swift` |
+| `agent_user_space_command` | An agent command passes the user-space browsing-data permission gate; includes `command` and normalized `agent_name` | `Sources/Notifications/MessageCard/ExtensionMessageRouter.swift`, `Sources/States/AgentSpace/AgentSpaceRouter+Management.swift` |
+| `agent_credential_access_requested` | Agent credential access is evaluated; includes `kind`, `approved`, `prompted`, and normalized `agent_name` without credential scope or content | `Sources/States/CredentialAccessCoordinator.swift` |
+| `agent_credential_access_approved` | Credential access is approved by a prompt or existing grant; includes `kind`, `approval_type`, and normalized `agent_name` | `Sources/States/CredentialAccessCoordinator.swift` |
+| `scripting_command_invoked` | An allowlisted AppleScript command other than version checking returns; includes command, outcome, success, and bounded client attribution | `Sources/Application/Apple Scripts/PhiScriptCommands.swift` |
+| `language_changed` | Phi's General settings picker changes from one stored language preference to another; includes only `from` and `to` | `Sources/UserInterface/Preferences/General/GeneralSettingView.swift` |
+| `feature_entry_tapped` | A visible Chat, Memory, Download, or Organize Tabs entry accepts a tap; `button` is `chat`, `memory`, `download`, or `organize_tabs`, and `surface` is `sidebar` or `web_content_header` | `Sources/UserInterface/Sidebar/SidebarViewController.swift`, `Sources/UserInterface/Sidebar/TabList/Views/SidebarCellViews.swift`, `Sources/UserInterface/WebContent/FloatingSidebar/FloatingSidebarViewController.swift`, `Sources/UserInterface/WebContent/Header/WebContentHeader.swift`, `Sources/UserInterface/HorizontalBar/TabStrip/TabStripRightButtons.swift` |
+| `bookmark_manager_opened` | A native Bookmark Manager page session starts | `Sources/UserInterface/WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
+| `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `Sources/UserInterface/WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
+| `highlight_link_copied` | A highlight link is copied while `shortHighlightLinksEnabled` is enabled at callback time; includes only `is_short_link` (bool), covering short-link success and long-link fallback | `Sources/ChromiumBridge/PhiChromiumCoordinator.swift` |
+| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), Peek/Kiosk preferences, and the content blocking switches (`block_ads_enabled`, `block_cookie_banners_enabled`, `block_trackers_enabled`; true when any profile has the switch on) | `Sources/Application/AppControlle+LaunchInfo.swift` |
+| *Framework-originated events* | Received through the bridge delegate; see [Framework-originated events](#framework-originated-events) | `Sources/ChromiumBridge/ChromiumAnalyticsRelay.swift` |
 
 For `highlight_link_copied`, the fraction of events with `is_short_link = true`
 measures short-link success within Chromium's one-second deadline among completed
@@ -167,7 +163,7 @@ The content blocking switches live in Chromium's profile prefs, which are not
 readable when the snapshot is captured. `ContentBlockingSettings` mirrors them
 into UserDefaults (`metrics.contentBlocking.switchesByProfile`) whenever it
 learns them, and the snapshot reads that mirror
-(`States/ContentBlockingAnalytics.swift`). A profile whose settings were never
+(`Sources/States/ContentBlockingAnalytics.swift`). A profile whose settings were never
 opened on this version reports off. No list, URL or site is reported.
 
 `language_changed` is emitted only by Phi's picker. A language change made in
@@ -177,22 +173,19 @@ language actually active for that process.
 
 Naming rule: **don't reuse PostHog-reserved names** (anything starting with `$`, or that collides with SDK-auto events like "app installed"). For features that could be ambiguous with app-level concepts (e.g. downloads), prefix with the feature scope (`file_download_*`, not `download_*`).
 
-## Chromium-originated events
+## Framework-originated events
 
-Chromium browser-process code captures events through the `phi_analytics`
-component (Chromium repo, `chrome/browser/phinomenon/analytics/`). They cross
-the bridge delegate's `captureAnalyticsEvent:module:properties:` into
-`ChromiumBridge/ChromiumAnalyticsRelay.swift`, which stamps
-`event_source: "chromium"` and `module` onto every accepted event, drops reserved
-`$`-prefixed names, logs each accepted capture (the end-to-end observable on
-token-less local builds), and skips the SDK call when PostHog was never
-initialized. The relay checks no consent — the metrics-reporting switch gates
-identity association, not event flow, same as for Mac events. Delivery is
-best-effort: an event racing browser exit may be lost.
+The framework calls the bridge delegate's
+`captureAnalyticsEvent:module:properties:`. The native
+`ChromiumAnalyticsRelay` stamps `event_source: "chromium"` and `module`, drops
+reserved `$`-prefixed names, logs accepted captures and skips the SDK call when
+PostHog was not initialized. The relay does not gate event delivery on the metrics
+preference: that preference gates identity association, as for native events.
+Delivery is best-effort; events racing browser exit may be lost.
 
-Those events are not inventoried in the table above. Their registry lives
-beside the component: `chrome/browser/phinomenon/analytics/README.md` in the
-Chromium repo, with the naming rules and privacy contract they follow.
+Framework producers are outside this repository. Their absence from the native
+event inventory is not evidence that they emit no events. Native changes should
+preserve the bridge payload and event-name validation contract.
 
 ## Adding a new event
 
@@ -200,7 +193,5 @@ Chromium repo, with the naming rules and privacy contract they follow.
 2. If a matching Countly event already exists, keep both calls side-by-side during migration.
 3. Add a row to the Events table above.
 
-For a Chromium-originated event the flow lives on the Chromium side instead:
-call `phi_analytics::Capture()` at the action site and add the registry row to
-`chrome/browser/phinomenon/analytics/README.md` in the same change — nothing
-changes on the Mac side.
+For a framework-originated event, coordinate producer changes with the framework
+maintainer. This repository owns the delegate and relay contract.

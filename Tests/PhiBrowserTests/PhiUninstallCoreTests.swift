@@ -440,6 +440,31 @@ final class PhiUninstallCoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: secret.path))
     }
 
+    func testProcessWaiterObservesExitDeliveredByRunLoop() {
+        let exitTimer = Timer(timeInterval: 0.02, repeats: false) { _ in }
+        RunLoop.current.add(exitTimer, forMode: .default)
+        defer { exitTimer.invalidate() }
+
+        XCTAssertTrue(PhiUninstallProcessWaiter.waitUntil(
+            timeout: 1,
+            pollInterval: 0.005,
+            isRunning: { exitTimer.isValid }
+        ))
+    }
+
+    func testProcessWaiterRejectsProcessStillRunningAfterTimeout() {
+        let exitTimer = Timer(timeInterval: 60, repeats: false) { _ in }
+        RunLoop.current.add(exitTimer, forMode: .default)
+        defer { exitTimer.invalidate() }
+
+        XCTAssertFalse(PhiUninstallProcessWaiter.waitUntil(
+            timeout: 0.02,
+            pollInterval: 0.005,
+            isRunning: { exitTimer.isValid }
+        ))
+        XCTAssertTrue(exitTimer.isValid)
+    }
+
     func testProcessWaiterCompletesAndTimesOut() {
         var pollsRemaining = 2
         XCTAssertTrue(PhiUninstallProcessWaiter.waitUntil(

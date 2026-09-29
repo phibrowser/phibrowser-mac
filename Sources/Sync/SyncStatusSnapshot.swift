@@ -41,8 +41,8 @@ struct SyncKindStatus: Equatable, Sendable {
 
 /// Ordered by precedence: when one round hits several, the earliest case wins.
 enum SyncProblemCategory: String, CaseIterable, Sendable {
-    case resetRequired, saveFailedOnThisMac, signInExpired, offline, rejectedByServer,
-         serverError, unreadableRemoteData, waitingForProfilePairing
+    case resetRequired, saveFailedOnThisMac, readFailedOnThisMac, signInExpired, offline,
+         rejectedByServer, serverError, unreadableRemoteData, waitingForProfilePairing
 }
 
 /// Metadata only (R12): a category, an optional kind and a time. No field can carry text.

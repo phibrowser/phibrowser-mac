@@ -269,16 +269,25 @@ Bookmarks, Pinned tabs, URL rules; no Profiles yet) it holds received and sent c
 most recent round in which that kind had activity, with that round's time, and the pending
 (waiting to send) and held (parked) counts from the kind's table after the last round that
 visited it. Settings count changed keys; Space and owned kinds count landings and published
-entities plus tombstones. Kinds a round does not visit keep their values: Spaces and owned
-kinds while the Space gate is shut, an owned kind whose table the round did not load. Every
-detail change is a status update, so it bumps the revision. The last problem is one
-`SyncProblemCategory` with an optional kind and a time, chosen by precedence (reset
-required, save failed on this Mac, sign-in expired, offline, rejected by server, server
-error, unreadable remote data). HTTP 401/403 map to sign-in expired, other HTTP, key-envelope
-and unattributed outbound failures to server error, exhausted conflicts and rejected commits
-to rejected by server. It is replaced by the next failing round, kept through rounds that
-neither fail nor succeed, and cleared only by a final Up to date. Held items alone produce
-no category; the held count explains them. R12: the detail has no string field, so it cannot
+entities plus tombstones. Owned pending is the live edits the round did not publish (outside
+the slice budget, or sent and not applied, a conflict counted once after its scoped retry) plus
+the pending-delete cursors, each counted once; a round whose publication pass did not run keeps
+the last known count. Held uses the same conditions that make the round's inbound work pending:
+Spaces parked, held for a Profile or tombstone-parked; owned items parked, tombstone-parked or
+waiting for a split partner; settings unreadable. Kinds a round does not read keep their values:
+owned kinds while the Space gate is shut or whose table the round did not load. The Space table
+is read every round, so Space pending and held follow it even with the gate shut (with no
+activity counts). Every detail change is a status update, so it bumps the revision. The last
+problem is one `SyncProblemCategory` with an optional kind and a time, chosen by precedence
+(reset required, save failed on this Mac, couldn't read data on this Mac, sign-in expired,
+offline, rejected by server, server error, unreadable remote data). HTTP 401/403 map to sign-in
+expired, other HTTP, key-envelope and unattributed outbound failures to server error, exhausted
+conflicts and rejected commits to rejected by server, an owned kind's local read failure to
+couldn't read data (with the kind), unreadable tags to unreadable remote data without a kind
+(the Space table quarantines owned kinds' tags too). It is replaced by the next failing round,
+kept through rounds that neither fail nor succeed, and cleared only by a final Up to date. Held
+items alone produce no category. Invariant, covered by the status harness: a round that ends
+Needs attention always has a non-zero held count or a problem category. R12: the detail has no string field, so it cannot
 carry names, identifiers, URLs, hosts, error text or status numbers.
 
 The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now

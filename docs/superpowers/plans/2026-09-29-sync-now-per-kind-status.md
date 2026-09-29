@@ -619,3 +619,21 @@ Deviations from the plan text, recorded as they were made.
   now carries a `Result` (`finished`, `failed(category)`, `rejected`) instead of a Bool. The last
   problem may predate the tap (for example after a round that expired without a new failure);
   it is still the best available category.
+- **Review I-4 / I-5 / M-1.** Owned pending is now `liveUnpublished` (status-only counter:
+  live candidates outside the slice, plus live work items of a pass that did not apply, with
+  conflicts counted by the scoped retry pass) plus `pendingDelete` cursors; `testRoundDetail` no
+  longer asserts the double count. Not counted: conflicted live items when the retry's pull
+  fails (the round fails with a category anyway) and items refused over an unreadable tag. When
+  the kind's unrestricted publication pass did not run (`publicationCounted` false, for example
+  publication closed), the count keeps the last known value, at least the pending deletes,
+  because the live edits are unknown without a snapshot. Held now includes
+  `pendingPartnerLineage`. New category `readFailedOnThisMac` ("Couldn’t read data on this Mac"),
+  third in precedence after save failed, noted per failed owned kind (sorted, so the first kind
+  is stable); `roundOutcome == .cursorSaveFailed` also notes save failed, even without a counted
+  write failure. To make the invariant hold with the Space gate shut, the Spaces row is now
+  included whenever a Space store exists (pending/held from the table, no activity counts); this
+  changes the T2 rule that a gate-shut round leaves Spaces out. Owned kinds are still left out
+  while the gate is shut (their tables are not loaded then). M-1: unreadable tags in the Space
+  table are noted without a kind, and also while the gate is shut. New hostless case
+  `testNeedsAttentionIsExplained` checks the invariant for every Needs-attention condition of
+  `finishStatusRound`.

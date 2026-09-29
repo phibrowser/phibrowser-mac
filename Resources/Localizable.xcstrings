@@ -107090,6 +107090,17 @@
         }
       }
     },
+    "sync.status.problem.readFailed" : {
+      "comment" : "Sync settings - last sync problem: this Mac could not read its own local data of one kind, such as Bookmarks, to sync it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read data on this Mac"
+          }
+        }
+      }
+    },
     "sync.status.problem.rejected" : {
       "comment" : "Sync settings - last sync problem: the sync service did not accept changes sent from this Mac",
       "localizations" : {

@@ -36,6 +36,7 @@ import Foundation
         testStatusStateDetail()
         testRoundDetail()
         testRoundProblems()
+        testNeedsAttentionIsExplained()
         await testConflictStatus()
         await testDomainKeyStatus()
     }
@@ -95,8 +96,9 @@ func testRoundProblemPrecedence() {
             }
         }
     }
-    precondition(Array(order.prefix(7)) == [.resetRequired, .saveFailedOnThisMac, .signInExpired, .offline,
-                                             .rejectedByServer, .serverError, .unreadableRemoteData])
+    precondition(Array(order.prefix(8)) == [.resetRequired, .saveFailedOnThisMac, .readFailedOnThisMac,
+                                             .signInExpired, .offline, .rejectedByServer, .serverError,
+                                             .unreadableRemoteData])
     print("PASS problem precedence: most severe category wins, first report of a category keeps its kind")
 }
 
@@ -163,8 +165,12 @@ func testRoundDetail() {
     var ownedDelete = PhiOwnedItemCursor(); ownedDelete.pendingDelete = true
     var ownedParked = PhiOwnedItemCursor(); ownedParked.pendingApply = Data([1])
     var ownedTombstone = PhiOwnedItemCursor(); ownedTombstone.pendingTombstone = true
-    f.ownedTables["bookmarks"] = PhiOwnedItemTable(cursors: ["x": ownedDelete, "y": ownedParked, "z": ownedTombstone])
-    f.ownedCounters["bookmarks"] = OwnedRoundCounters(pendingPublish: 2, tombstones: 1, pushed: 1, applied: 4)
+    var ownedPartner = PhiOwnedItemCursor(); ownedPartner.pendingPartnerLineage = "lineage"
+    f.ownedTables["bookmarks"] = PhiOwnedItemTable(cursors: ["x": ownedDelete, "y": ownedParked, "z": ownedTombstone,
+                                                             "w": ownedPartner])
+    // pendingPublish (2) already includes the over-budget delete "x"; the status must not add it twice.
+    f.ownedCounters["bookmarks"] = OwnedRoundCounters(pendingPublish: 2, tombstones: 1, pushed: 1, applied: 4,
+                                                      liveUnpublished: 1, publicationCounted: true)
     f.ownedTables["pins"] = PhiOwnedItemTable()
     let first = f.finish()
     let firstKinds = first.detail?.kinds ?? [:]
@@ -173,8 +179,9 @@ func testRoundDetail() {
     precondition(firstKinds[.settings] == SyncKindStatus(received: 2, sent: 1, activityAt: at, pending: 0, held: 0))
     precondition(firstKinds[.spaces] == SyncKindStatus(received: 3, sent: 3, activityAt: at, pending: 2, held: 3),
                  "Space pending/held come from the table, received/sent from the round counters")
-    precondition(firstKinds[.bookmarks] == SyncKindStatus(received: 4, sent: 2, activityAt: at, pending: 3, held: 2),
-                 "Owned pending adds unpublished work and pending deletes; held is parked or tombstone-parked")
+    precondition(firstKinds[.bookmarks] == SyncKindStatus(received: 4, sent: 2, activityAt: at, pending: 2, held: 3),
+                 "Owned pending is unpublished live edits plus pending-delete cursors, each counted once; "
+                 + "held is parked, tombstone-parked or waiting for a split partner")
     precondition(firstKinds[.pinnedTabs] == SyncKindStatus() && firstKinds[.urlRules] == nil,
                  "A loaded kind without activity reports zeros; an unloaded kind is left out")
     precondition(first.phase == .needsAttention && first.detail?.lastProblem == nil,
@@ -187,8 +194,10 @@ func testRoundDetail() {
     f.cursorSaveFailures = 1
     let second = f.finish()
     precondition(second.revision > first.revision)
-    precondition(second.detail?.kinds[.spaces] == firstKinds[.spaces] && second.detail?.kinds[.bookmarks] == firstKinds[.bookmarks],
-                 "Kinds a gate-shut round did not visit keep their values")
+    precondition(second.detail?.kinds[.spaces] == SyncKindStatus(received: 3, sent: 3, activityAt: at, pending: 0, held: 0),
+                 "A gate-shut round still reads the Space table: activity is kept, pending and held follow the table")
+    precondition(second.detail?.kinds[.bookmarks] == firstKinds[.bookmarks],
+                 "Owned kinds a gate-shut round did not visit keep their values")
     precondition(second.detail?.kinds[.settings] == firstKinds[.settings], "A zero-activity round keeps received/sent")
     precondition(second.phase == .needsAttention && second.detail?.lastProblem?.category == .saveFailedOnThisMac)
 
@@ -198,6 +207,15 @@ func testRoundDetail() {
     precondition(third.phase == .upToDate && third.detail?.lastProblem == nil)
     precondition(third.detail?.kinds[.spaces] == SyncKindStatus(received: 3, sent: 3, activityAt: at, pending: 0, held: 0))
     precondition(third.detail?.kinds[.bookmarks] == firstKinds[.bookmarks])
+
+    // A loaded owned kind whose publication pass did not run keeps its last known pending count.
+    f.ownedTables = ["bookmarks": PhiOwnedItemTable()]
+    f.ownedCounters = ["bookmarks": OwnedRoundCounters()]
+    let unpublished = f.finish()
+    precondition(unpublished.detail?.kinds[.bookmarks]?.pending == 2 && unpublished.detail?.kinds[.bookmarks]?.held == 0)
+    f.ownedCounters = ["bookmarks": OwnedRoundCounters(publicationCounted: true)]
+    precondition(f.finish().detail?.kinds[.bookmarks]?.pending == 0, "A publication pass with nothing left clears it")
+    f.ownedTables = [:]; f.ownedCounters = [:]
 
     // A problem stays through a round that neither fails nor succeeds.
     f.noteError(URLError(.notConnectedToInternet))
@@ -213,6 +231,50 @@ func testRoundDetail() {
     print("PASS round detail: Space/owned/settings counts, unvisited kinds, held without category, clearing rule, reset")
 }
 
+/// Whenever a native round ends Needs attention, the pane can explain it: some held count is
+/// non-zero or a problem category is recorded. One fresh round per Needs-attention condition of
+/// `finishStatusRound`.
+func testNeedsAttentionIsExplained() {
+    typealias Stage = (ConflictFixture) -> Void
+    func owned(_ edit: @escaping (inout PhiOwnedItemCursor) -> Void) -> Stage {
+        { var cursor = PhiOwnedItemCursor(); edit(&cursor)
+          $0.ownedTables["bookmarks"] = PhiOwnedItemTable(cursors: ["b": cursor]) }
+    }
+    func space(_ edit: @escaping (inout PhiSpaceCursor) -> Void) -> Stage {
+        { var cursor = PhiSpaceCursor(); edit(&cursor); $0.spaceTable.cursors = ["s": cursor] }
+    }
+    let stages: [(String, Stage)] = [
+        ("outbound failure", { $0.roundOutboundFailed = true }),
+        ("cursor save failure", { $0.cursorSaveFailures = 1 }),
+        ("cursor save outcome", { $0.roundOutcome = .cursorSaveFailed }),
+        ("pull failure", { $0.noteError(PhiSyncProtocolError.http(500)); $0.roundOutcome = .pullFailed }),
+        ("unusable settings", { $0.roundOutcome = .unusableSettings }),
+        ("unreadable settings", { $0.unreadableSettingsRecord = Data() }),
+        ("Space pendingApply", space { $0.pendingApply = Data([1]) }),
+        ("Space held for a Profile", space { $0.heldProfileUuid = "profile" }),
+        ("Space pendingTombstone", space { $0.pendingTombstone = true }),
+        ("Space parked, gate shut", { f in
+            f.spaceSectionEnabled = false
+            var cursor = PhiSpaceCursor(); cursor.pendingApply = Data([1]); f.spaceTable.cursors = ["s": cursor] }),
+        ("unreadable tags", { $0.spaceTable.unreadableTagHashes = ["tag": "reason"] }),
+        ("owned pendingApply", owned { $0.pendingApply = Data([1]) }),
+        ("owned pendingTombstone", owned { $0.pendingTombstone = true }),
+        ("owned pendingPartnerLineage", owned { $0.pendingPartnerLineage = "lineage" }),
+        ("owned local read failure", { $0.ownedReadFailed = ["bookmarks"] }),
+        ("reconfiguration required", { $0.requiresReconfiguration = true }),
+    ]
+    for (name, stage) in stages {
+        let f = ConflictFixture(kind: .space, retryResult: .accepted)
+        f.canPublishThisRound = true
+        stage(f)
+        let snapshot = f.finish()
+        precondition(snapshot.phase == .needsAttention, "\(name): expected Needs attention, got \(snapshot.phase)")
+        let held = snapshot.detail?.kinds.values.contains { $0.held > 0 } ?? false
+        precondition(held || snapshot.detail?.lastProblem != nil, "\(name): Needs attention without a held count or a category")
+    }
+    print("PASS needs attention: every condition leaves a held count or a problem category")
+}
+
 func testRoundProblems() {
     typealias Stage = (ConflictFixture) -> Void
     let cases: [(Stage, SyncProblemCategory, SyncKind?)] = [
@@ -222,7 +284,10 @@ func testRoundProblems() {
         ({ $0.noteError(URLError(.cannotConnectToHost)) }, .offline, nil),
         ({ $0.unreadableSettingsRecord = Data() }, .unreadableRemoteData, .settings),
         ({ $0.roundOutcome = .unusableSettings }, .unreadableRemoteData, .settings),
-        ({ $0.spaceTable.unreadableTagHashes = ["tag": "reason"] }, .unreadableRemoteData, .spaces),
+        // The Space table also quarantines owned kinds' tags, so the category carries no kind.
+        ({ $0.spaceTable.unreadableTagHashes = ["tag": "reason"] }, .unreadableRemoteData, nil),
+        ({ $0.ownedReadFailed = ["urlrules", "pins"] }, .readFailedOnThisMac, .pinnedTabs),
+        ({ $0.roundOutcome = .cursorSaveFailed }, .saveFailedOnThisMac, nil),
         // Owned unreadable arrivals do not fail a round by themselves; with a parked row they explain it.
         ({ var parked = PhiOwnedItemCursor(); parked.pendingApply = Data([1])
            $0.ownedTables["pins"] = PhiOwnedItemTable(cursors: ["p": parked])

@@ -376,6 +376,10 @@ struct OwnedRoundCounters {
     var collapsed = 0
     var transferred = 0
     var yieldNoPartner = 0
+    // Status only, never logged: live edits this round did not publish (outside the slice or not
+    // applied), and whether the unrestricted publication pass ran, for "waiting to send".
+    var liveUnpublished = 0
+    var publicationCounted = false
 }
 
 /// Type-erased owned-kind registration. The engine depends only on these registrations, not a fixed
@@ -1606,24 +1610,40 @@ actor PhiSyncEngine {
         if settingsUnreadable || roundOutcome == .unusableSettings {
             detail.note(.unreadableRemoteData, kind: .settings)
         }
-        if cursorSaveFailures > 0 { detail.note(.saveFailedOnThisMac) }
-        if spaceSectionEnabled, spaceStore != nil {
-            detail.kinds[.spaces] = SyncKindStatus(received: spaceCounters.applied,
-                sent: spaceCounters.pushed + spaceCounters.tombstones,
+        if cursorSaveFailures > 0 || roundOutcome == .cursorSaveFailed { detail.note(.saveFailedOnThisMac) }
+        for label in ownedReadFailed.sorted() {
+            detail.note(.readFailedOnThisMac, kind: SyncKind(ownedLabel: label))
+        }
+        // The same held conditions `finishStatusRound` treats as pending inbound, so Needs
+        // attention always has a held count or a category.
+        if spaceStore != nil {
+            // The Space table is read every round; a shut gate only means no activity counts.
+            detail.kinds[.spaces] = SyncKindStatus(
+                received: spaceSectionEnabled ? spaceCounters.applied : 0,
+                sent: spaceSectionEnabled ? spaceCounters.pushed + spaceCounters.tombstones : 0,
                 pending: spaces.cursors.values.filter { $0.pendingProjection != nil || $0.pendingDelete }.count,
                 held: spaces.cursors.values.filter {
                     $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone
                 }.count)
-            if !spaces.unreadableTagHashes.isEmpty { detail.note(.unreadableRemoteData, kind: .spaces) }
+        }
+        // Owned kinds quarantine their unreadable tags in the Space table too, so no kind.
+        if !spaces.unreadableTagHashes.isEmpty { detail.note(.unreadableRemoteData) }
+        if spaceSectionEnabled, spaceStore != nil {
             for registration in ownedKinds {
                 guard let kind = SyncKind(ownedLabel: registration.label),
                       !ownedReadFailed.contains(registration.label),
                       let table = ownedTables[registration.label] else { continue }
                 let counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+                let deletes = table.cursors.values.filter(\.pendingDelete).count
+                // Without a publication pass the live edits are unknown this round; keep the
+                // last known count rather than report them as sent.
+                let pending = counters.publicationCounted ? counters.liveUnpublished + deletes
+                    : max(statusState.snapshot.detail?.kinds[kind]?.pending ?? 0, deletes)
                 detail.kinds[kind] = SyncKindStatus(received: counters.applied,
-                    sent: counters.pushed + counters.tombstones,
-                    pending: counters.pendingPublish + table.cursors.values.filter(\.pendingDelete).count,
-                    held: table.cursors.values.filter { $0.pendingApply != nil || $0.pendingTombstone }.count)
+                    sent: counters.pushed + counters.tombstones, pending: pending,
+                    held: table.cursors.values.filter {
+                        $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
+                    }.count)
                 if counters.unreadable > 0 { detail.note(.unreadableRemoteData, kind: kind) }
             }
         }
@@ -4637,6 +4657,8 @@ actor PhiSyncEngine {
         if onlyIdentities == nil {
             counters.pendingPublish += (deleteCandidates.count - tombstoneSlice.count)
                 + (liveCandidates.count - liveSlice.count)
+            counters.liveUnpublished += liveCandidates.count - liveSlice.count
+            counters.publicationCounted = true
         }
 
         // Batch only readable tags (section 5.5). Skip quarantined hashes: the server's client-tag
@@ -4786,6 +4808,12 @@ actor PhiSyncEngine {
             await registration.notePublishApplied(appliedLive)
         }
 
+        // Status only: live edits of this pass that did not apply. Conflicts headed for the
+        // scoped retry are counted by that pass instead.
+        counters.liveUnpublished += work.filter { item in
+            item.payload != nil && !appliedLive.contains(item.identity)
+                && !(retryOnConflict && conflicted.contains(item.identity))
+        }.count
         ownedCounters[registration.label] = counters
         let saved = writeOwnedTable(registration, table)
 

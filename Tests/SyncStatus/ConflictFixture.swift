@@ -43,6 +43,7 @@ struct PhiOwnedItemCursor {
 struct PhiOwnedItemTable { var cursors: [String: PhiOwnedItemCursor] = [:] }
 struct OwnedRoundCounters {
     var pendingPublish = 0, tombstones = 0, pushed = 0, resurrected = 0, applied = 0, unreadable = 0
+    var liveUnpublished = 0, publicationCounted = false
 }
 struct SpaceRoundCounters { var tombstones = 0, pushed = 0, conflicts = 0, applied = 0 }
 struct OwnedKindRegistration { let label: String }
@@ -62,7 +63,7 @@ final class ConflictFixture {
     var storedBirthday = "birthday"
     var roundOutboundFailed = false, roundOffline = false
     var canPublishThisRound = true
-    enum RoundOutcome { case ok, pageBudgetExhausted, pullFailed, unusableSettings }
+    enum RoundOutcome { case ok, pageBudgetExhausted, pullFailed, unusableSettings, cursorSaveFailed }
     var roundOutcome = RoundOutcome.ok
     var cursorSaveFailures = 0, queuedDataRounds = 1
     var ownedReadFailed: Set<String> = []

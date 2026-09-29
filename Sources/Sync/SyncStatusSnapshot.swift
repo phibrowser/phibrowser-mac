@@ -109,7 +109,7 @@ enum SyncRequestState: Equatable, Sendable {
 
 /// One rule for the Sync now control, shared by the pane and the hostless tests.
 struct SyncNowButtonState: Equatable {
-    enum Hint: Equatable { case none, waitingForCurrentSync, waitingForProfiles, failed }
+    enum Hint: Equatable { case none, waitingForCurrentSync, startingShortly, waitingForProfiles, failed }
     let isVisible: Bool
     let isEnabled: Bool
     let showsProgress: Bool
@@ -124,6 +124,8 @@ struct SyncNowButtonState: Equatable {
         case .inFlight: return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .none)
         case .queued(.unobservable, _):
             return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForProfiles)
+        case .queued(.rateLimited, _):
+            return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .startingShortly)
         case .queued:
             return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForCurrentSync)
         case .rejected: return Self(isVisible: true, isEnabled: true, showsProgress: false, hint: .failed)

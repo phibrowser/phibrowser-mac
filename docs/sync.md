@@ -271,7 +271,16 @@ and unattributed outbound failures to server error, exhausted conflicts and reje
 to rejected by server. It is replaced by the next failing round, kept through rounds that
 neither fail nor succeed, and cleared only by a final Up to date. Held items alone produce
 no category; the held count explains them. R12: the detail has no string field, so it cannot
-carry names, identifiers, URLs, hosts, error text or status numbers. Local
+carry names, identifiers, URLs, hosts, error text or status numbers.
+
+The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now
+button calls `requestSyncNow()` directly, not through the pane's 3-second poll, whose
+in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
+phase and `Report.request` to the control (Queued Busy: waiting for the current sync;
+Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
+Rejected: could not start); the pane adds its own unlock and pairing check. The view alone
+turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
+no user-facing strings. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including

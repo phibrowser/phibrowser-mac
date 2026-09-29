@@ -81,6 +81,30 @@ Clicking either the Details label or its disclosure arrow toggles the status
 details. Both use the same expansion state and preserve the native disclosure
 control's keyboard and accessibility behavior.
 
+*Addendum 2026-09-29 (M3-4 ruling D25; plan
+[Sync now and per-kind status](../plans/2026-09-29-sync-now-per-kind-status.md)).*
+Once pairing is complete and the key is unlocked, the status row carries a **Sync now**
+action in its trailing control slot. It asks this Mac for a coordinated round through the
+same path as a pane reload: coalesced with a round already running and subject to the
+shared 60-second minimum interval. While the request waits or runs the button is disabled
+and shows progress, with a short hint that says whether it waits for the current sync, will
+start shortly (minimum interval), or waits for every profile to report status; a refused
+request says it could not start. The hint, progress indicator and button keep fixed space,
+so the status row does not move or change height. VoiceOver announces when a requested
+sync has finished.
+
+The status row may add one line with the most recent problem of this Mac's native sync: a
+localized category (for example No connection, Sign-in expired, Server error) and a
+relative time, cleared by the next fully successful round. Inside Details, the Phi data
+context lists one row per supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs,
+URL rules): received and sent counts of the kind's most recent sync with changes, and
+waiting-to-send and held counts only when they are non-zero. There is no Profiles row and
+no Chromium per-category row until those have their own numbers. The pane never shows
+internal error text, HTTP status numbers, identifiers, names, URLs or hosts; this replaces
+the predecessor plan's "Do not introduce raw diagnostic errors" rule with "only categorized
+problems and counts". The UX spec still wins over D25 on states and identity: no Paused
+state is added and the account email is not shown.
+
 ### Devices
 
 The target design lists joined devices with name, type, and a This Mac marker.
@@ -345,8 +369,11 @@ existing host is preferable to introducing a competing wizard/window manager.
     removal still retains local data and invalidates the old enrollment.
 11. Status covers offline, authentication failure, partial Profile/domain failure,
     checking, initial catch-up, and success without conflating authorization with
-    completed synchronization. No unsupported device facts or sync categories
-    are displayed as available.
+    completed synchronization. Per-kind counts appear only for Phi kinds the native
+    engine syncs, and the last problem only as a localized category with a relative
+    time; no unsupported device facts or sync categories are displayed as available.
+    Sync now never bypasses pairing, key, account or rate-limit gates, and a queued,
+    running or refused request is visible as such.
 12. Keyboard navigation, Escape/close semantics, focus on resume, VoiceOver state
     announcements, and narrow/long localized labels remain usable. Recovery-code
     acknowledgment and destructive-review keyboard defaults remain protected.
@@ -370,3 +397,4 @@ test execution report.
 
 1. [Pairing prerequisite and setup flow](../plans/2026-09-23-sync-pairing-implementation.md)
 2. [Sync status and devices](../plans/2026-09-23-sync-status-devices-implementation.md)
+3. [Sync now and per-kind status](../plans/2026-09-29-sync-now-per-kind-status.md)

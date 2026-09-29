@@ -571,3 +571,25 @@ Deviations from the plan text, recorded as they were made.
   0.25 s coalescing window, and a request during a running pull is served by one follow-up
   pull instead of a second concurrent `pullOnce()` task. `requestCatchUp()` needed no return
   value. New hostless case in `Tests/SyncInvalidation/main.swift`.
+- **T5.** `SyncNowButtonState.Hint` gained `.startingShortly`, so Rate limited ("Sync will
+  start shortly…", `sync.status.syncNowStartingShortly`) and Busy ("Waiting for current
+  sync…") read differently; the hostless truth table follows. The hosting controller sets
+  `viewModel.syncNowReport` (it calls `requestSyncNow()` and returns the helper's report,
+  so one `apply` path serves the poll and the tap) rather than a closure returning only the
+  state. The view model also keeps `isSubmittingSyncNow` so the control shows progress from
+  the tap until the helper answers, and a `syncNowOutcome` the view turns into the
+  VoiceOver announcement: "Sync finished" when a request it saw queued or in flight returns to
+  Idle, the failure text when it ends Rejected; an Idle answer to the tap itself (helper
+  stopped or ineligible) announces nothing. The hint sits beside the button in the control
+  slot, in a fixed 200 pt, single-line, tail-truncated area with the full text as tooltip and
+  accessibility hint, and the progress indicator keeps its space while hidden, so the row does
+  not move; the plan's "one hint line under the phase" would have changed the row's height.
+  The last-problem line shows the category and a relative time only (no kind). Kinds with no
+  counts yet, or with nothing non-zero to show, read "No recent changes"
+  (`sync.status.kindNoActivity`, added). Extra strings: `sync.status.syncNowInProgress`
+  (progress label) and `sync.status.detailsExpanded` / `detailsCollapsed` (disclosure value).
+  URL rules use "URL rules", the sentence-case form the sync strings already use
+  (`sync.contents.phi`); the editor's title-case "URL Rules" is a window title. Sync now is
+  also disabled while a reconfiguration runs. Plural variations are English one/other with
+  identical text, so translators get the plural slots. One view-model case was added to the
+  hosted `DevicesSettingViewModelTests` (compiled, never run).

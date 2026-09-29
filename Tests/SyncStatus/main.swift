@@ -107,7 +107,7 @@ func testSyncNowButton() {
         (.idle, B(isVisible: true, isEnabled: true, showsProgress: false, hint: .none)),
         (.inFlight(startedAt: at), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .none)),
         (.queued(reason: .busy, notBefore: nil), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForCurrentSync)),
-        (.queued(reason: .rateLimited, notBefore: at), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForCurrentSync)),
+        (.queued(reason: .rateLimited, notBefore: at), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .startingShortly)),
         (.queued(reason: .unobservable, notBefore: nil), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForProfiles)),
         (.rejected, B(isVisible: true, isEnabled: true, showsProgress: false, hint: .failed)),
     ]

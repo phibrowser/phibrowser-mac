@@ -532,9 +532,15 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   it stands, the apply loop treats an arriving entity for the uuid like a
   `pendingDelete` one — delete beats a concurrent edit for Spaces (design §9.2):
   it learns the entity id and version for the tombstone, keeps the mapping and
-  lands nothing, so the dead-mapping repair cannot re-land the Space a round
-  already in flight saw disappear. The entity is parked in `pendingApply` so that
-  it still lands if the cascade fails; a recorded deletion clears it.
+  lands nothing. The mark is read twice: once before the entity is considered,
+  and again inside the dead-mapping repair, after the row was seen to be gone and
+  before the mapping is dropped. The second read is what keeps a round already in
+  flight from re-landing the Space: a deletion that begins and cascades while the
+  round is between the two reads is visible only to the second, and because the mark is
+  set before the cascade and held until after the deletion round, a read made
+  after the row is observed absent cannot miss it. The entity is parked in
+  `pendingApply` so that it still lands if the cascade fails; a recorded deletion
+  clears it.
 - **Every ending drops the mapping.** An accepted tombstone (R-D6-10), a
   `pendingDelete` finalized locally because it was never published, and a
   tombstone given up after three rejections all leave a cursor with

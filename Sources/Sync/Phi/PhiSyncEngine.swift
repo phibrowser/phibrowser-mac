@@ -2657,6 +2657,20 @@ actor PhiSyncEngine {
             // The default Space resolves through a constant, not a mapping row. Dead-mapping repair
             // would incorrectly remint its local ID.
             if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
+                // The check above ran before this row-absence observation, with main-actor hops in
+                // between: a deletion that began and cascaded since then shows up only now. The mark
+                // is set before the cascade and held past the deletion round, so reading it after
+                // seeing the row gone cannot miss that deletion.
+                if await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid) {
+                    if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                    cursor.version = max(cursor.version, item.version)
+                    cursor.pendingApply = nil
+                    // Parked as in the branch above, so a failed cascade still lands it next round.
+                    if item.fromServer { cursor.pendingApply = try? item.entity.serializedData() }
+                    table.cursors[item.uuid] = cursor
+                    table.unreadableTagHashes.removeValue(forKey: tag)
+                    continue
+                }
                 // Drop a mapping whose local row no longer exists and treat the entity as unmapped.
                 // This repairs both interrupted deletion and a crash between mapping-first
                 // creation's two writes (R-M3-4a-87). Preserve this recovery path during

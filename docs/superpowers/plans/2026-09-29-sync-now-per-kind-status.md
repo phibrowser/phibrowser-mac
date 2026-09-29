@@ -593,3 +593,11 @@ Deviations from the plan text, recorded as they were made.
   also disabled while a reconfiguration runs. Plural variations are English one/other with
   identical text, so translators get the plural slots. One view-model case was added to the
   hosted `DevicesSettingViewModelTests` (compiled, never run).
+- **Review I-3.** `SyncHelper` keeps a separate `syncNowPending`, set only by
+  `requestSyncNow()`; the pane-open `refresh(requestSync: true)` still sets
+  `explicitRefreshPending` and dispatches exactly as before, but no longer shows on the
+  button. Queued derives from `syncNowPending` alone. In flight is expressed by one flag on the
+  helper's `Round` (`syncNow`), set when the dispatch consumed `syncNowPending` or when a tap
+  arrives while any round runs (the tap joins it, as coalescing already did); an automatic or
+  pane-open round without a tap reports Idle. Rejected is set only when a dispatch that
+  consumed `syncNowPending` is refused, and is cleared by the next tap or any accepted dispatch.

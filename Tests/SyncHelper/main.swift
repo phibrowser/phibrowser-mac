@@ -63,6 +63,7 @@ import Foundation
         await syncNowRateLimitAndCoalescing()
         await syncNowRejectionAndResets()
         await syncNowUnobservablePolicies()
+        await syncNowIgnoresOtherDemand()
         await reportCarriesNativeDetail()
     }
 
@@ -556,6 +557,43 @@ import Foundation
                      "Without any observable participant nothing dispatches")
         blind.stop()
         print("PASS helper Sync now: unobservable Profile queues under waitForAllObservable, dispatches under dispatchToObservable with the barrier kept")
+    }
+
+    @MainActor static func syncNowIgnoresOtherDemand() async {
+        // The pane-open request queues without a tap: the button stays idle.
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(110)
+        await helper.refresh(requestSync: true)
+        precondition(helper.report.request == .idle, "The pane-open request must not show on the button")
+        f.tick(160)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2 && helper.report.request == .idle,
+                     "A round the pane-open request started is not the button's round")
+        f.tick(162)
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: Date(timeIntervalSince1970: 160)) && f.requests["phi"] == 2,
+                     "A tap joins the running round and shows it")
+        f.succeed(at: 164)
+        await helper.refresh()
+        precondition(helper.report.request == .idle)
+        helper.stop()
+
+        // An automatic dispatch refused at startup is not the button's failure.
+        let g = Fixture(), automatic = g.helper()
+        g.status("phi", .upToDate, at: 90); g.status("profile", .upToDate, at: 80)
+        g.acceptsRequests = false
+        await automatic.refresh()
+        precondition(g.requests["phi"] == 1 && automatic.report.request == .idle,
+                     "A refused automatic dispatch must not report the button as rejected")
+        g.tick(170)
+        state = await automatic.requestSyncNow()
+        precondition(state == .rejected && g.requests["phi"] == 2, "A refused Sync now dispatch is rejected")
+        g.acceptsRequests = true; g.tick(240)
+        await automatic.refresh()
+        precondition(g.requests["phi"] == 3 && automatic.report.request == .idle,
+                     "An accepted automatic dispatch clears the rejection without showing on the button")
+        automatic.stop()
+        print("PASS helper Sync now: pane-open and automatic demand stay off the button; a tap joins a running round")
     }
 
     @MainActor static func reportCarriesNativeDetail() async {

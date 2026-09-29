@@ -36,6 +36,8 @@ final class SyncHelper {
     private struct Round {
         let startedAt: Date
         let previousSuccesses: [String: Date]
+        /// Started by, or joined by, a Sync now request; only such a round is shown on the button.
+        var syncNow: Bool
     }
 
     private enum CoordinationFailure { case timedOut, requestRejected, persistence }
@@ -53,6 +55,10 @@ final class SyncHelper {
     private var observedIDs: Set<String>?
     private var needsRound = true
     private var explicitRefreshPending = false
+    /// Set only by `requestSyncNow()`; the button's queued and rejected states derive from it
+    /// alone, so the pane-open request and automatic demand never show on the button.
+    private var syncNowPending = false
+    /// A dispatch that consumed `syncNowPending` was refused.
     private var requestRejected = false
     private var coordinationFailure: CoordinationFailure?
     private var nextRequestAt: Date?
@@ -104,6 +110,7 @@ final class SyncHelper {
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
+        syncNowPending = false
         requestRejected = false
         updateTransientFailure(nil)
         report = Report(summary: SyncStatusSummary(
@@ -143,7 +150,8 @@ final class SyncHelper {
     /// helper's own poll; the returned state says why.
     func requestSyncNow() async -> SyncRequestState {
         guard !retired else { return .idle }
-        if round == nil { explicitRefreshPending = true }
+        requestRejected = false
+        if round == nil { syncNowPending = true } else { round?.syncNow = true }
         if let joined = refreshTask {
             await joined.value
             if refreshTask == joined { refreshTask = nil }
@@ -166,6 +174,7 @@ final class SyncHelper {
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
+        syncNowPending = false
         requestRejected = false
         coordinationFailure = nil
         report = Report()
@@ -255,23 +264,26 @@ final class SyncHelper {
             let observable = ids.compactMap { snapshots[$0] }.filter(Self.isObservable)
             canRequestExplicitly = !observable.isEmpty && observable.allSatisfy(Self.isSettled)
         }
+        let explicit = explicitRefreshPending || syncNowPending
         if round == nil,
-           (canRequest && (needsRound || explicitRefreshPending || failed || stale))
-            || (explicitRefreshPending && canRequestExplicitly),
+           (canRequest && (needsRound || explicit || failed || stale))
+            || (explicit && canRequestExplicitly),
            nextRequestAt.map({ time >= $0 }) ?? true {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
+            let bySyncNow = syncNowPending
             explicitRefreshPending = false
+            syncNowPending = false
             let accepted = sources.allSatisfy { $0.requestSync() }
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             if accepted {
-                round = Round(startedAt: time, previousSuccesses: successes)
+                round = Round(startedAt: time, previousSuccesses: successes, syncNow: bySyncNow)
                 needsRound = false
                 requestRejected = false
                 updateTransientFailure(nil)
             } else {
                 needsRound = true
-                requestRejected = true
+                if bySyncNow { requestRejected = true }
                 updateTransientFailure(.requestRejected)
             }
         }
@@ -299,12 +311,13 @@ final class SyncHelper {
         }
     }
 
-    /// Why an explicit request has not dispatched yet, in the order the blocks clear:
-    /// visibility, then busy engines, then the shared minimum interval.
+    /// The Sync now request only: in flight while a round it started or joined runs; otherwise
+    /// why it has not dispatched yet, in the order the blocks clear: visibility, then busy
+    /// engines, then the shared minimum interval.
     private func requestState(ids: Set<String>, snapshots: [String: SyncContextSnapshot],
                               time: Date) -> SyncRequestState {
-        if let round { return .inFlight(startedAt: round.startedAt) }
-        guard explicitRefreshPending else { return requestRejected ? .rejected : .idle }
+        if let round, round.syncNow { return .inFlight(startedAt: round.startedAt) }
+        guard syncNowPending else { return requestRejected ? .rejected : .idle }
         let observable = ids.compactMap { snapshots[$0] }.filter(Self.isObservable)
         if observable.isEmpty
             || (observable.count != ids.count && unobservablePolicy == .waitForAllObservable) {

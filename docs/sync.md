@@ -182,11 +182,13 @@ to the pairing, key, account and bridge-support gates.
 `requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
 semantics, joins an observation in progress and then observes once more, so a
 request recorded during a poll is never left behind, and returns the report's
-`SyncRequestState`. `Report.request` is In flight (with the round's start) while a
-round is active; Queued while an explicit request waits, with the reason
-Unobservable (a participant is missing or Checking), Busy (Initial sync or Syncing)
-or Rate limited (with the earliest dispatch time); Rejected after an adapter refused
-the last dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
+`SyncRequestState`. `Report.request` describes that request only; the pane-open
+request and automatic demand never appear in it. It is In flight (with the round's
+start) while a round that a Sync now request started, or joined after the tap, is
+active; Queued while a Sync now request waits, with the reason Unobservable (a
+participant is missing or Checking), Busy (Initial sync or Syncing) or Rate limited
+(with the earliest dispatch time); Rejected after an adapter refused a dispatch that
+carried a Sync now request, until the next tap or accepted dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
 to Idle. A queued request dispatches on the helper's own poll. The helper's
 `ExplicitRequestPolicy` decides only explicit requests while a participant is
 unobservable: `.waitForAllObservable` (the default) keeps them queued;

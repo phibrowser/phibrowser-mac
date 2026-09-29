@@ -661,3 +661,9 @@ Deviations from the plan text, recorded as they were made.
   only when its recorded time is at or after the tap; otherwise "Sync did not finish". "Sync
   finished" now needs only a common success newer than at the tap, whatever the current phase,
   because the helper moves `lastSuccess` only on a coordinated success.
+- **Second review M-b.** The per-kind row is built with localized formats instead of a
+  hard-coded separator: count phrases are joined pairwise with `sync.status.kindCountsList`
+  ("%1$@ · %2$@"), and the relative time is added last with `sync.status.kindCountsWithTime`,
+  so translators can reorder parts and change the separator. The time now comes after all
+  counts and the line truncates at the tail, so the time is cut first; the full text stays in
+  the tooltip and the accessibility value.

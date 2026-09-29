@@ -106609,6 +106609,28 @@
         }
       }
     },
+    "sync.status.kindCountsList" : {
+      "comment" : "Sync settings - joins count phrases of one kind of content, such as Received 2 and Sent 1, into one line; %1$@ is the phrases so far, %2$@ the next phrase",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "sync.status.kindCountsWithTime" : {
+      "comment" : "Sync settings - one kind of content's counts followed by when its most recent sync with changes happened; %1$@ is the counts, such as Received 2 · Sent 1, %2$@ a relative time, such as 5 min. ago",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "sync.status.kindHeld" : {
       "comment" : "Sync settings - how many synced items of one kind of content are held on this Mac and not applied yet, for example because they could not be read; %lld is the number",
       "localizations" : {

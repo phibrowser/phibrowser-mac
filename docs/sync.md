@@ -554,6 +554,15 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   agrees with the account, where the tombstone was applied (or, for the other two
   endings, where the Space was never published or stays as the give-up already
   accepts).
+- **Retention purge retry.** The 30-day sweep drops a Space's mapping only
+  after its purge cascade succeeded, so a purged cursor whose mapping is still
+  present marks a cascade that failed or was cut short, and every later sweep
+  retries it. A retried uuid is skipped (and counted in the log) when its local
+  row was created after the cursor's `deletedAtMs`: such a row cannot be the
+  Space that was deleted, and no known path maps a purged uuid to a live Space.
+  The check compares against the row's `createdDate`, which for a Space landed
+  from the account is the account's `created_at_ms`, so it is a guard, not a
+  proof.
 - **Accepted gap: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round. If

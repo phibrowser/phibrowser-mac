@@ -1249,12 +1249,33 @@ actor PhiSyncEngine {
             AppLogInfo("[phi-sync] retrying retention purge count=\(cascade.count - expired.count)")
         }
 
+        // A retry cascades a row this sweep did not see expire. No path is known that maps a purged
+        // uuid to a live Space, but if one existed every sweep would delete it with all its contents:
+        // a row created after the deletion it would be purged for cannot be that deleted Space.
+        let retryOnly = Set(cascade).subtracting(expired)
+        var createdMsBySpaceId: [String: Int64] = [:]
+        if !retryOnly.isEmpty {
+            for space in await spaceAccess.allSpacesForOrdering() {
+                createdMsBySpaceId[space.spaceId] = Int64(space.createdDate.timeIntervalSince1970 * 1000)
+            }
+        }
+        var skippedNewer = 0
+        defer {
+            // R12: count only.
+            if skippedNewer > 0 { AppLogWarn("[phi-sync] retention purge retry skipped rows created after their deletion count=\(skippedNewer)") }
+        }
+
         // Phase 2: cascade the data. No table copy is held across these awaits.
         for uuid in cascade {
             guard !isStopped else { return }
             // D6: purgeExpired returns syncUuid, while purge accepts a local ID. Unresolved means
             // no local row to remove; phase 1 already persisted the tombstone cursor.
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if retryOnly.contains(uuid), let deletedAtMs = table.cursors[uuid]?.deletedAtMs,
+               let createdMs = createdMsBySpaceId[local], createdMs > deletedAtMs {
+                skippedNewer += 1
+                continue
+            }
             do {
                 try await spaceAccess.purge(spaceId: local)
                 // Remove the mapping only after purge succeeds. Keep the permanent tombstone cursor

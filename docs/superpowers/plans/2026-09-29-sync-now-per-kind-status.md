@@ -549,3 +549,13 @@ Deviations from the plan text, recorded as they were made.
   their category survives only when something else keeps the round from succeeding. A local
   read failure (`ownedReadFailed`) still forces Needs attention without a category; no listed
   category fits it.
+- **T3.** `ExplicitRequestPolicy` is nested in `SyncHelper`; the default stays
+  `.waitForAllObservable` (owner decision pending), and switching is the one init argument
+  `unobservablePolicy:` at `PhiChromiumCoordinator`'s `SyncHelper(...)`. `.rejected` comes from
+  a dedicated flag set by a refused dispatch and cleared by an accepted one, a membership
+  change or an ineligibility reset, so a persistence failure cannot mask or fake it. Queue
+  reasons are reported in the order they clear: unobservable, busy, rate limited. "Up to date
+  without a timestamp" counts as unobservable, as in `SyncStatusSummary`. Under
+  `.dispatchToObservable` at least one participant must be observable. `requestSyncNow()`
+  joins an observation in progress and then observes once more; to let it start that second
+  observation safely, `refresh` now clears `refreshTask` only when it still holds its own task.

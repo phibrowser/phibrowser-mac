@@ -20,6 +20,17 @@ final class SyncHelper {
         var requiredIDs: Set<String> = []
         var snapshots: [String: SyncContextSnapshot] = [:]
         var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+        var request: SyncRequestState = .idle
+    }
+
+    /// What an explicit request does while a participant is unobservable (missing or Checking),
+    /// such as a lazy Profile that is never loaded. Automatic demand always waits.
+    enum ExplicitRequestPolicy {
+        /// Wait until every participant is observable and settled.
+        case waitForAllObservable
+        /// Dispatch once every observable participant is settled. Unobservable participants
+        /// still receive the request and remain in the completion barrier.
+        case dispatchToObservable
     }
 
     private struct Round {
@@ -36,11 +47,13 @@ final class SyncHelper {
     private let minimumRoundInterval: TimeInterval
     private let staleInterval: TimeInterval
     private let roundTimeout: TimeInterval
+    private let unobservablePolicy: ExplicitRequestPolicy
     private var upstream: [String: Participant] = [:]
     private var lastSuccess: Date?
     private var observedIDs: Set<String>?
     private var needsRound = true
     private var explicitRefreshPending = false
+    private var requestRejected = false
     private var coordinationFailure: CoordinationFailure?
     private var nextRequestAt: Date?
     private var round: Round?
@@ -54,7 +67,8 @@ final class SyncHelper {
          lastSuccess: Date?, saveSuccess: @escaping (Date) -> Bool,
          now: @escaping () -> Date = Date.init,
          minimumRoundInterval: TimeInterval = 60, staleInterval: TimeInterval = 300,
-         roundTimeout: TimeInterval = 60) {
+         roundTimeout: TimeInterval = 60,
+         unobservablePolicy: ExplicitRequestPolicy = .waitForAllObservable) {
         self.isEligible = isEligible
         self.participants = participants
         self.lastSuccess = lastSuccess
@@ -63,6 +77,7 @@ final class SyncHelper {
         self.minimumRoundInterval = minimumRoundInterval
         self.staleInterval = staleInterval
         self.roundTimeout = roundTimeout
+        self.unobservablePolicy = unobservablePolicy
     }
 
     /// Sentinel's future authenticated adapter registers here, using a namespaced id.
@@ -89,6 +104,7 @@ final class SyncHelper {
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
+        requestRejected = false
         updateTransientFailure(nil)
         report = Report(summary: SyncStatusSummary(
             phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess))
@@ -117,7 +133,23 @@ final class SyncHelper {
         }
         refreshTask = pending
         await pending.value
-        if generation == expected { refreshTask = nil }
+        if generation == expected, refreshTask == pending { refreshTask = nil }
+    }
+
+    /// Sync now: an explicit request with the pane reload's semantics (coalesced with an
+    /// active round, same minimum interval). It joins an observation in progress and then
+    /// observes once more, because the joined one may have passed its dispatch point before
+    /// this request was recorded. A request that cannot dispatch yet stays queued for the
+    /// helper's own poll; the returned state says why.
+    func requestSyncNow() async -> SyncRequestState {
+        guard !retired else { return .idle }
+        if round == nil { explicitRefreshPending = true }
+        if let joined = refreshTask {
+            await joined.value
+            if refreshTask == joined { refreshTask = nil }
+        }
+        await refresh()
+        return report.request
     }
 
     func stop() {
@@ -134,6 +166,7 @@ final class SyncHelper {
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
+        requestRejected = false
         coordinationFailure = nil
         report = Report()
     }
@@ -175,6 +208,7 @@ final class SyncHelper {
         guard !ids.isEmpty else {
             report.summary = SyncStatusSummary(
                 phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess)
+            report.request = requestState(ids: ids, snapshots: snapshots, time: now())
             return
         }
         let observed = SyncStatusSummary.reduce(paired: true, requiredIDs: ids, snapshots: Array(snapshots.values))
@@ -212,15 +246,18 @@ final class SyncHelper {
         // A missing/Checking Profile may be deliberately unloaded. Busy engines
         // already own their work. Neither can benefit from an all-context forced
         // round; retain demand until every participant is observable and settled.
-        let canRequest = ids.allSatisfy { id in
-            guard let snapshot = snapshots[id] else { return false }
-            switch snapshot.phase {
-            case .upToDate: return snapshot.lastSuccess != nil
-            case .offline, .needsAttention: return true
-            case .checking, .initialSync, .syncing: return false
-            }
+        let canRequest = ids.allSatisfy { snapshots[$0].map(Self.isSettled) ?? false }
+        // Only an explicit request may skip unobservable participants, and only by policy.
+        let canRequestExplicitly: Bool
+        switch unobservablePolicy {
+        case .waitForAllObservable: canRequestExplicitly = canRequest
+        case .dispatchToObservable:
+            let observable = ids.compactMap { snapshots[$0] }.filter(Self.isObservable)
+            canRequestExplicitly = !observable.isEmpty && observable.allSatisfy(Self.isSettled)
         }
-        if round == nil, canRequest, needsRound || explicitRefreshPending || failed || stale,
+        if round == nil,
+           (canRequest && (needsRound || explicitRefreshPending || failed || stale))
+            || (explicitRefreshPending && canRequestExplicitly),
            nextRequestAt.map({ time >= $0 }) ?? true {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             explicitRefreshPending = false
@@ -230,9 +267,11 @@ final class SyncHelper {
             if accepted {
                 round = Round(startedAt: time, previousSuccesses: successes)
                 needsRound = false
+                requestRejected = false
                 updateTransientFailure(nil)
             } else {
                 needsRound = true
+                requestRejected = true
                 updateTransientFailure(.requestRejected)
             }
         }
@@ -244,5 +283,40 @@ final class SyncHelper {
         else if needsRound && observed.phase == .upToDate { phase = .checking }
         else { phase = observed.phase }
         report.summary = SyncStatusSummary(phase: phase, lastSuccess: lastSuccess)
+        report.request = requestState(ids: ids, snapshots: snapshots, time: time)
+    }
+
+    /// Checking, and success without a timestamp, are no evidence (see `SyncStatusSummary`).
+    private static func isObservable(_ snapshot: SyncContextSnapshot) -> Bool {
+        snapshot.phase != .checking && !(snapshot.phase == .upToDate && snapshot.lastSuccess == nil)
+    }
+
+    private static func isSettled(_ snapshot: SyncContextSnapshot) -> Bool {
+        switch snapshot.phase {
+        case .upToDate: return snapshot.lastSuccess != nil
+        case .offline, .needsAttention: return true
+        case .checking, .initialSync, .syncing: return false
+        }
+    }
+
+    /// Why an explicit request has not dispatched yet, in the order the blocks clear:
+    /// visibility, then busy engines, then the shared minimum interval.
+    private func requestState(ids: Set<String>, snapshots: [String: SyncContextSnapshot],
+                              time: Date) -> SyncRequestState {
+        if let round { return .inFlight(startedAt: round.startedAt) }
+        guard explicitRefreshPending else { return requestRejected ? .rejected : .idle }
+        let observable = ids.compactMap { snapshots[$0] }.filter(Self.isObservable)
+        if observable.isEmpty
+            || (observable.count != ids.count && unobservablePolicy == .waitForAllObservable) {
+            return .queued(reason: .unobservable, notBefore: nil)
+        }
+        if observable.contains(where: { $0.phase == .initialSync || $0.phase == .syncing }) {
+            return .queued(reason: .busy, notBefore: nil)
+        }
+        if let nextRequestAt, time < nextRequestAt {
+            return .queued(reason: .rateLimited, notBefore: nextRequestAt)
+        }
+        // Recorded after this observation's dispatch point; the next observation dispatches it.
+        return .queued(reason: .busy, notBefore: nil)
     }
 }

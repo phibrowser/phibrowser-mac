@@ -173,6 +173,22 @@ A requested round pulls native data and refreshes all Profile namespaces through
 the existing account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID
 and type list empty; a nonempty UUID with empty types is a no-op).
 
+`requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
+semantics, joins an observation in progress and then observes once more, so a
+request recorded during a poll is never left behind, and returns the report's
+`SyncRequestState`. `Report.request` is In flight (with the round's start) while a
+round is active; Queued while an explicit request waits, with the reason
+Unobservable (a participant is missing or Checking), Busy (Initial sync or Syncing)
+or Rate limited (with the earliest dispatch time); Rejected after an adapter refused
+the last dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
+to Idle. A queued request dispatches on the helper's own poll. The helper's
+`ExplicitRequestPolicy` decides only explicit requests while a participant is
+unobservable: `.waitForAllObservable` (the default) keeps them queued;
+`.dispatchToObservable` dispatches once every observable participant is settled,
+still sends the request to every participant and keeps the unobservable one in the
+completion barrier, so such a round expires without a common time and without an
+error. Automatic demand always waits for every participant.
+
 All required participants remain in the barrier, including lazy Profiles that
 have not been loaded. Missing reads and Checking snapshots are unobservable, not
 stale evidence. While any participant is unobservable or reports Initial sync or

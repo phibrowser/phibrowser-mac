@@ -56,6 +56,7 @@ final class PassMappingStore: ProfileSyncMappingStore {
 final class PassProfileCreator: LocalProfileCreating {
     var profiles: [(profileId: String, displayName: String)] = []
     var createResults: [String?] = []
+    var onCreate: (() -> Void)?
     private(set) var createCalls: [String] = []
     var userAssignableProfileIds: [(profileId: String, displayName: String)] { profiles }
     func displayNameExists(_ name: String) -> Bool {
@@ -64,6 +65,7 @@ final class PassProfileCreator: LocalProfileCreating {
     func createProfile(displayName: String) async -> String? {
         createCalls.append(displayName)
         await Task.yield()
+        onCreate?()
         let result = createResults.isEmpty ? "Created \(createCalls.count)" : createResults.removeFirst()
         if let result { profiles.append((profileId: result, displayName: displayName)) }
         return result
@@ -152,7 +154,10 @@ struct MappingPassTests {
         try await autoCreateIsSingleFlight()
         try await capCountsAttempts()
         try await goneEnvelopeEvidenceSurvives()
-        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence")
+        try await retirementStopsAutoCreateAtLookup()
+        try await retirementDuringCreateLeavesProfileUnmapped()
+        try await retiredRepairPassDoesNothing()
+        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither
@@ -424,5 +429,77 @@ struct MappingPassTests {
         precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
         s.controller.retire()
         precondition(s.controller.knownUnmappedProfileIds == [])
+    }
+
+    /// P2b B: an account switch while auto-create awaits its name lookup stops the
+    /// round before any Profile is created in the next account's session.
+    @MainActor static func retirementStopsAutoCreateAtLookup() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        try s.seedRemote("uuid-work", name: "Work")
+        s.api.onGet = { uuid in
+            guard uuid == "uuid-work" else { return }
+            await MainActor.run { s.controller.retire() }
+        }
+        s.events = []
+        let outcome = await s.controller.ensureLocalProfilesForAccount()
+        precondition(s.creator.createCalls.isEmpty, "A retired round created a Profile")
+        // The one announcement is `retire()`'s own `.cleared`.
+        precondition(outcome == .failed && s.events == ["resolve"] && s.outcomes.last == "cleared",
+                     "A retired round announced: \(s.events)")
+        precondition(s.store.map.count == 1 && s.controller.undecryptableRemoteUuids.isEmpty)
+    }
+
+    /// P2b B: the bridge's create completes after retirement. The Profile exists
+    /// locally; the retired controller neither adopts nor maps it, and it does not
+    /// stay in `profileIdsBeingCreated`.
+    @MainActor static func retirementDuringCreateLeavesProfileUnmapped() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        try s.seedRemote("uuid-work", name: "Work")
+        var gets = 0
+        s.api.onGet = { uuid in if uuid == "uuid-work" { await MainActor.run { gets += 1 } } }
+        s.creator.onCreate = { s.controller.retire() }
+        s.events = []
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        let created = s.creator.profiles.first { $0.displayName == "Work" }
+        precondition(created != nil, "The bridge made the Profile")
+        precondition(s.store.map[created!.profileId] == nil && gets == 1, "A retired controller adopted the Profile")
+        precondition(s.controller.profileIdsBeingCreated.isEmpty)
+        precondition(s.events == ["resolve"] && s.outcomes.last == "cleared",
+                     "A retired controller announced: \(s.events)")
+
+        // The wizard's path through the same call throws once retired.
+        do {
+            _ = try await s.controller.createLocalProfileAndAdopt(uuid: "uuid-work", displayName: "Work")
+            preconditionFailure("A retired controller created and adopted")
+        } catch is CancellationError {}
+        precondition(s.creator.createCalls.count == 1)
+    }
+
+    @MainActor static func retiredRepairPassDoesNothing() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        s.creator.profiles.append((profileId: "Profile 2", displayName: "Home"))
+        try s.seedRemote("uuid-work", name: "Work")
+        s.controller.retire()
+        s.events = []
+        await s.controller.runMappingRepairPass()
+        await s.controller.resolveMappings()
+        precondition(s.creator.createCalls.isEmpty && s.api.puts.isEmpty && s.store.map.count == 1)
+        precondition(s.events == [] && s.controller.lastMappingsPassResult == nil)
+
+        // Retired inside the repair pass's auto-create half: neither half writes.
+        let m = Stack(); defer { m.close() }
+        try m.seedMappedLocal("Default", uuid: "uuid-default")
+        m.creator.profiles.append((profileId: "Profile 2", displayName: "Home"))
+        try m.seedRemote("uuid-work", name: "Work")
+        m.api.onGet = { uuid in
+            guard uuid == "uuid-work" else { return }
+            await MainActor.run { m.controller.retire() }
+        }
+        await m.controller.runMappingRepairPass()
+        precondition(m.creator.createCalls.isEmpty && m.api.puts.isEmpty && m.store.map.count == 1,
+                     "A repair pass kept writing after retirement")
     }
 }

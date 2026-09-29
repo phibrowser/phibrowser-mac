@@ -1219,7 +1219,15 @@ pinned by a test named in its own `// Review A<n>` comment in the code.
 - **A retired `SyncKeyController` writes nothing.** Teardown calls
   `retire()`; a pass parked in a network call when the account went away
   resumes on the next account's token and used to register every unmapped
-  local Profile into it under the old ARK.
+  local Profile into it under the old ARK. `retire()` also cancels the shared
+  auto-create round, and the round, `createLocalProfileAndAdopt` and the repair
+  pass check retirement after every await and before every create, adopt or
+  mapping write. A stopped round returns `.failed` without posting
+  `.phiProfileAutoCreateDidRun`. When the bridge's create completes after
+  retirement, the Profile stays local and unmapped (it is not deleted), never
+  enters `profileIdsBeingCreated`, and only metadata is logged. An adopt whose
+  own lookup is in flight at retirement can still write its mapping, into the
+  retired account's mapping store.
 - **Guest migration ignores soft-deleted rules** on both stores: a Space
   deletion soft-deletes its rules for the sync tombstone, and a Guest store has
   no engine to purge them.

@@ -23,7 +23,8 @@ extension Notification.Name {
     static let phiProfileMappingsDidResolve = Notification.Name("phiProfileMappingsDidResolve")
 
     /// Posted by `ensureLocalProfilesForAccount()` immediately before EVERY
-    /// return, `.failed` and `.skipped` included. userInfo:
+    /// return, `.failed` and `.skipped` included, except a round that the
+    /// controller's `retire()` stopped: that one returns `.failed` silently. userInfo:
     ///   outcome:      "unchanged" | "changed" | "skipped" | "failed"
     ///   created:      Int   // profiles actually created + adopted this round
     ///   skippedUuids: Int   // account uuids left unclaimed this round
@@ -456,11 +457,12 @@ final class SyncKeyController {
     private(set) var isRetired = false
 
     /// The teardown entry (review A11): clears the cache like `clearResolved()`, cancels the
-    /// running pass, and marks the controller so a pass that cannot be cancelled mid-request
-    /// still writes nothing once it resumes.
+    /// running pass and auto-create round, and marks the controller so a pass or round that
+    /// cannot be cancelled mid-request still writes nothing once it resumes.
     func retire() {
         isRetired = true
         resolveTask?.cancel()
+        autoCreateTask?.cancel()
         clearResolved()
     }
 
@@ -553,7 +555,9 @@ final class SyncKeyController {
         var provenAbsent: Set<String> = []
         for local in locals {
             do {
-                if let rec = try await profileKeys.resolvedRecord(forLocalProfile: local.profileId) {
+                let record = try await profileKeys.resolvedRecord(forLocalProfile: local.profileId)
+                guard !isRetired else { return }
+                if let rec = record {
                     next[local.profileId] = (rec.uuid, rec.passphrase)
                     resolvedNow.insert(local.profileId)
                     probeResolve("existing", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
@@ -570,6 +574,7 @@ final class SyncKeyController {
                     unmappedLocals.append(local)
                 }
             } catch {
+                guard !isRetired else { return }
                 hasUnknownLocal = true
                 let failure = Self.mappingFailureResult(for: error)
                 failures.insert(failure)
@@ -813,7 +818,13 @@ final class SyncKeyController {
     /// leaves NO mapping behind, which is what makes both retries work next
     /// round: `pendingCreatedProfiles` for the profile this call created, and the
     /// "adopt the same-named unmapped profile" search for the un-suffixed case.
+    ///
+    /// A retired controller creates, adopts and maps nothing and throws
+    /// `CancellationError`. A bridge create that completes after retirement may
+    /// have made the Profile already; it is left local and unmapped, never
+    /// deleted, and never enters `profileIdsBeingCreated`.
     func createLocalProfileAndAdopt(uuid: String, displayName: String) async throws -> String {
+        guard !isRetired else { throw CancellationError() }
         let profileId: String
         if let pending = reusablePendingProfile(forUuid: uuid) {
             // A previous attempt already made a profile for exactly this uuid and
@@ -822,7 +833,13 @@ final class SyncKeyController {
             profileId = pending
         } else {
             let name = uniqueDisplayName(basedOn: displayName)
-            guard let created = await profileCreator.createProfile(displayName: name) else {
+            let result = await profileCreator.createProfile(displayName: name)
+            guard !isRetired else {
+                // R12: metadata only, no profileId or uuid.
+                AppLogInfo("[phi-sync] controller retired while a profile was being created; created=\(result != nil), left local and unmapped")
+                throw CancellationError()
+            }
+            guard let created = result else {
                 throw ProfileKeyManagerError.badEnvelope
             }
             // Recorded BEFORE the adopt, because the adopt is the step that can
@@ -838,8 +855,9 @@ final class SyncKeyController {
         defer {
             profileIdsBeingCreated.remove(profileId)
             // No pass follows a failed adopt; announce so the pause counts this
-            // Profile now instead of at the next trigger.
-            if !adopted { announceMappingsResolved(.held) }
+            // Profile now instead of at the next trigger. A retired controller
+            // announces nothing.
+            if !adopted, !isRetired { announceMappingsResolved(.held) }
         }
         // The create is this round's only suspension, and `$profiles` runs a
         // `resolveMappings()` pass inside it; whatever claimed this very uuid
@@ -856,6 +874,10 @@ final class SyncKeyController {
             return profileId
         }
         _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
+        // The adopt writes its mapping right after its lookup returns; a
+        // retirement inside that lookup cannot be fenced from here. Record nothing
+        // more for the controller that is gone.
+        guard !isRetired else { throw CancellationError() }
         adopted = true
         // Resolved: a pass that holds before it looks again must not keep pausing for it.
         knownUnmappedProfileIds.remove(profileId)
@@ -905,6 +927,7 @@ final class SyncKeyController {
     private var autoCreateTask: Task<ProfileRefreshOutcome, Never>?
 
     private func ensureLocalProfilesForAccountOnce() async -> ProfileRefreshOutcome {
+        guard !isRetired else { return retiredRefresh() }
         // Same gate as the Space section (§3.5), not modal visibility: flag-setting and presentation are
         // separate events, and relaunch during pairing adds another gap. A gate-closed round is
         // profile_refresh=skipped, explicitly not failure (§11). Reporting failed would miscount and make the
@@ -916,7 +939,10 @@ final class SyncKeyController {
         let accountUuids: Set<String>
         do {
             accountUuids = try await profileKeys.accountProfileUuids()
+            // The listing may have answered for the next account (review A11).
+            guard !isRetired else { return retiredRefresh() }
         } catch {
+            guard !isRetired else { return retiredRefresh() }
             noteAutoCreateFailure(error)
             AppLogWarn("[phi-sync] account profile refresh failed (\(PhiSyncLog.describe(error)))")
             return await finishRefresh(.failed, created: 0, skipped: 0)
@@ -937,7 +963,11 @@ final class SyncKeyController {
         for uuid in missing {
             guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
             let remote: RemoteProfile
-            do { remote = try await profileKeys.remoteProfile(uuid: uuid) } catch {
+            do {
+                remote = try await profileKeys.remoteProfile(uuid: uuid)
+                guard !isRetired else { return retiredRefresh() }
+            } catch {
+                guard !isRetired else { return retiredRefresh() }
                 noteAutoCreateFailure(error)
                 skipped += 1; continue
             }
@@ -971,9 +1001,11 @@ final class SyncKeyController {
                 attempts += 1
                 do {
                     _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: twin.profileId)
+                    guard !isRetired else { return retiredRefresh() }
                     knownUnmappedProfileIds.remove(twin.profileId)
                     created += 1
                 } catch {
+                    guard !isRetired else { return retiredRefresh() }
                     noteAutoCreateFailure(error)
                     AppLogInfo("[phi-sync] twin adopt failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
                     skipped += 1
@@ -983,14 +1015,24 @@ final class SyncKeyController {
             attempts += 1
             do {
                 _ = try await createLocalProfileAndAdopt(uuid: uuid, displayName: name)
+                guard !isRetired else { return retiredRefresh() }
                 created += 1
             } catch {
+                guard !isRetired else { return retiredRefresh() }
                 noteAutoCreateFailure(error)
                 AppLogInfo("[phi-sync] auto-create failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
                 skipped += 1
             }
         }
         return await finishRefresh(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+    }
+
+    /// A round stopped by `retire()`: `.failed`, as `PhiSpaceLocalAccess` answers
+    /// for a dropped controller, and no `.phiProfileAutoCreateDidRun`, as a
+    /// retired pass announces nothing either.
+    private func retiredRefresh() -> ProfileRefreshOutcome {
+        AppLogInfo("[phi-sync] auto-create round stopped: the controller was retired")
+        return .failed
     }
 
     /// Keeps the worse of this round's failures; a definitive one outranks a transient one.
@@ -1009,6 +1051,7 @@ final class SyncKeyController {
             // never self-heals, because next round the mapping exists and the uuid
             // is no longer missing.
             await resolveMappings()
+            guard !isRetired else { return retiredRefresh() }
         }
         let label: String
         switch outcome {

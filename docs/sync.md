@@ -98,6 +98,23 @@ Within the same session, completed Profile writes advance the expected review
 snapshot so a Space-write retry retains its remaining choices. Fresh preflight
 still rejects independent changes to the server candidates or reviewed Space data.
 
+After enrollment the background mapping pass (`SyncKeyController.resolveMappings()`)
+never adopts an account Profile by count: one unmapped local beside one unclaimed
+account Profile stays unmapped (M3-4 ruling D20). Auto-create's same-name twin
+search still adopts, after a Profile auto-create already made for that uuid. A
+local with no twin is registered as a new account Profile without asking, once no
+account Profile is left that auto-create could still claim. Envelopes that do not
+open under the ARK, and uuids the persisted mapping gives to deleted locals, never
+hold registration. Register and lookup failures are classified: transient
+(transport, 5xx, 408/429, 401/403, locked, a mapping that moved) holds the pass
+(`.held`); definitive (bad envelope, another 4xx, an undecodable body) measures
+and reports `.definitiveFailure`. The controller publishes the unmapped set of the
+last measured pass, the last pass result and the Profiles it is creating, read on
+`.phiProfileMappingsDidResolve`; the pure `SyncProfileMappingPause` turns them into
+a pause decision. `runMappingRepairPass()` runs auto-create and then a mapping pass,
+both single-flight, outside the engine, under the existing gates (enrollment
+complete, unlocked). Nothing pauses on these inputs yet.
+
 All native data rounds and Chromium ready-key exposure require enrollment.
 Completing setup replays the shared Phi data type once under the confirmed Space
 mappings, because no round (not even the gate close) runs while unpaired. Completion
@@ -358,6 +375,10 @@ when the Profile UUID and key have not changed.
 Withdrawing a Profile key stops the Chromium engine, including initialization,
 without clearing its metadata. Returning the same UUID/key resumes the existing
 sync state; changing the UUID retains the existing namespace-reset behavior.
+`SyncKeyController.chromiumKeysWithdrawn` withdraws every Profile's key at once:
+`profileSyncInfo` answers nil while it is set and the same UUID/key after it is
+cleared, because the resolved cache is untouched. Its owner sets it and sends
+`notifyPhiSyncKeysChanged`; no caller sets it yet.
 
 ## Pairing and initial catch-up
 

@@ -74,3 +74,29 @@ PYRESET
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_build/ResetFixture.swift" -o "$task_build/reset-tests"
 "$task_build/reset-tests"
+python3 - "$task_root" "$task_build/MappingPassFixture.swift" <<'PYPASS'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+def section(path, start, end):
+    text = (root / path).read_text()
+    a = text.index(start)
+    return text[a:text.index(end, a)]
+controller = 'Sources/Sync/Keys/SyncKeyController.swift'
+text = (root / controller).read_text()
+fixture = (root / 'Tests/SyncPairing/MappingPassFixture.swift').read_text()
+fixture = fixture.replace('/* PRODUCTION_NOTIFICATIONS */', section(controller, 'extension Notification.Name {', '/// A pairing decision'))
+fixture = fixture.replace('/* PRODUCTION_PROFILE_CREATING */', section(controller, '@MainActor\nprotocol LocalProfileCreating', 'enum NativeSyncResetError'))
+fixture = fixture.replace('/* PRODUCTION_REFRESH_OUTCOME */', section('Sources/Sync/Phi/PhiSpaceLocalAccess.swift', 'enum ProfileRefreshOutcome:', '/// The engine is an'))
+fixture = fixture.replace('/* PRODUCTION_KEY_API_ERROR */', section('Sources/Sync/Keys/KeyEnvelopeAPIClient.swift', 'enum KeyAPIError:', '\n') + '\n')
+fixture = fixture.replace('    /* PRODUCTION_PASS_STATE */', section(controller, '    /// What an announcement says about', '    init(manager:'))
+fixture = fixture.replace('    /* PRODUCTION_KEY_DELIVERY */', section(controller, '    /// While true, `profileSyncInfo`', '    /// Local profiles as reported by'))
+a = text.index('    /// Drops every cached key and pings Chromium')
+fixture = fixture.replace('    /* PRODUCTION_PASSES */', text[a:text.rindex('\n}')])
+Path(sys.argv[2]).write_text(fixture)
+PYPASS
+xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
+  "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" "$task_root/Sources/Sync/Keys/PhiKeyCrypto.swift" \
+  "$task_root/Sources/Sync/Keys/SyncProfileMappingPause.swift" \
+  "$task_build/MappingPassFixture.swift" -o "$task_build/pass-tests"
+"$task_build/pass-tests"

@@ -79,7 +79,10 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertLessThanOrEqual(api.profileEnvelopes.count, 1)
     }
 
-    func testSingleRemoteSingleLocalAutoAdopts() async throws {
+    /// D20: one unmapped local beside one unclaimed account Profile is not a match.
+    /// The pass neither merges them nor registers the local while §3.6 can still
+    /// claim that account Profile (the repair pass runs auto-create first).
+    func testSingleRemoteSingleLocalAreNotMergedByCount() async throws {
         let api = FakeAPI()
         // Device A bootstraps and registers one profile.
         let providerA = FakeDeviceKeyProvider()
@@ -98,9 +101,11 @@ final class SyncKeyControllerTests: XCTestCase {
         _ = mgrBSeed // silence unused
         let (c, _) = makeController(api: api, provider: providerB, locals: [("Default", "Default")])
         await c.silentUnlockAndResolve()
-        XCTAssertFalse(c.needsPairing)
-        XCTAssertEqual(c.profileSyncInfo(forProfileId: "Default")?.uuid, recA.uuid)
-        XCTAssertEqual(c.profileSyncInfo(forProfileId: "Default")?.passphrase, recA.passphrase)
+        XCTAssertTrue(c.needsPairing)
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Default"))
+        XCTAssertEqual(api.profileEnvelopes.keys.sorted(), [recA.uuid], "no registration while the account Profile is claimable")
+        XCTAssertEqual(c.lastMeasuredUnmappedProfileIds, ["Default"])
+        XCTAssertEqual(c.lastMappingsPassResult, .measured)
     }
 
     func testAmbiguousSetsNeedsPairing() async throws {

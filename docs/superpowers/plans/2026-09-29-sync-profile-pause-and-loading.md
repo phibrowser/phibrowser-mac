@@ -223,3 +223,26 @@ the engine is stopped; the apply loop's defensive checks), P5 on the second
 | A1 | Edits made during a pause carry the resume time (section 3, point 8) |
 | A2 | Profile loading relies on upstream keep-alive behaviour until the framework has an explicit call |
 | A3 | A Profile loaded without a window publishes an empty open-tabs header for this device |
+
+## Implementation notes
+
+### P1 (commit `00b8b45f`)
+
+| # | Deviation | Why |
+| --- | --- | --- |
+| N1 | `SyncProfileMappingPause.evaluate` takes a fifth input, `lastPassResult: SyncProfileMappingPassResult?`, next to the four in 4.1 | The reason (`registering` / `retrying` / `needsAttention`) cannot be derived from the four sets. The enum lives in the predicate's file, so the predicate stays Foundation-only and the key layer publishes that type |
+| N2 | Reason is pass-level, not per Profile | The key layer classifies a pass, not each Profile. A definitive failure anywhere in the last pass gives `needsAttention` while any Profile is unmapped |
+
+### P2
+
+| # | Deviation or addition | Why |
+| --- | --- | --- |
+| N3 | The register branch also ignores account uuids that the persisted mapping gives to a local Profile that no longer exists (`claimable = remote − claimed − undecryptable − persisted-mapped`) | A deleted local keeps its mapping entry, so auto-create never grows that account Profile back and nothing on this Mac can claim it. Without this, one deleted Profile holds registration of every new local for good, which under R1 is a pause that never ends. Neither the twin search nor auto-create could ever adopt such a uuid, so no adopt is lost |
+| N4 | `ensureLocalProfilesForAccount()` is single-flight (a caller arriving mid-round gets that round's outcome) | The repair pass calls it from outside the engine; two interleaving rounds would each create a Profile for the same uuid |
+| N5 | Lookup failures of mapped locals are classified too, not only register and adopt failures | A mapped local whose envelope no longer opens (definitive) was held silently forever; it now reports `.definitiveFailure`. The pass is still `.held` for the predicates, as before |
+| N6 | An error type not listed in the classifier is transient | Before BH-15 every failure was retried on the next trigger; that stays the default. `ProfileKeyManagerError.alreadyMapped` is transient (the next pass sees the mapping that refused it) |
+| N7 | A measured pass that leaves a Profile unmapped reports the latest auto-create round's failure class | Otherwise a Profile waiting behind an account Profile that auto-create keeps failing to claim reads as `registering` forever. `createLocalProfileAndAdopt` throws `badEnvelope` for "the bridge made no Profile" as well, so that case reports `needsAttention` |
+| N8 | A Profile leaving `profileIdsBeingCreated` without an adopt posts `.phiProfileMappingsDidResolve` as `.held` | No pass follows a failed adopt, and the pause has to count that Profile at once. `.held` changes nothing for the pairing gate |
+| N9 | A transient register failure now holds `needsPairing` / `needsPairingActionable` instead of setting them true | Required by "held, not measured-unmapped". Only the pairing gate reads them on announcements, and it acts on `.cleared` only; the Sync pane reads enrollment, not these |
+| N10 | BH-16 done: the auto-create cap counts attempts (twin adopts and creates), not successes | Small; a round whose creates keep failing now stops after three attempts |
+| N11 | Known gap for P4: a Profile enters `profileIdsBeingCreated` only after `createProfile` returns its id, but `ProfileManager.createProfile` refreshes the list (and so fires the `$profiles` sink) in the same main-queue block just before it completes | The synchronous check in the sink sees the new Profile as unmapped for that one step. P4 must tolerate it (for example evaluate after the sink's hop, or treat a creation in flight as ignorable); the key layer cannot name a Profile before the bridge does |

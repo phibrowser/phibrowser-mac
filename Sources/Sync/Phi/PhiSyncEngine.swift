@@ -2055,8 +2055,10 @@ actor PhiSyncEngine {
         // publication's reload detects loss, clears the marker/drain state and stops this round's
         // publication so the next round replays the full type (CASE 6.26).
         if spaceLive { await beginOwnedRound() }
-        // A snapshot, used for the cursor keys it carries and never written back.
-        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
+        // Built from a snapshot, used for the cursor keys it carries and never written back. Each
+        // page then adds its own Space arrivals, so a tombstone on a later page of this pull
+        // resolves a Space the pull itself introduced.
+        var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2264,6 +2266,12 @@ actor PhiSyncEngine {
                 }
 
                 if spaceLive {
+                    // Same hash the index builder uses; the entry is what next pull's index would
+                    // seed from the cursor this page's landing writes.
+                    for arrival in batch.decoded {
+                        tagIndex[PhiSyncEntity.clientTagHash(
+                            for: PhiSyncEntity.spaceClientTag(arrival.uuid))] = arrival.uuid
+                    }
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
                     // One load/apply/write per page is safe only in this serialized path:
@@ -2428,7 +2436,6 @@ actor PhiSyncEngine {
         var decoded: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
         var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
         var unreadableHashes: [String] = []
-        var unknownTombstoneHashes: [String] = []
     }
 
     /// Persists what this round's routing learned about entities the shared marker has
@@ -2444,10 +2451,10 @@ actor PhiSyncEngine {
         }
     }
 
-    /// Rebuild client_tag_hash-to-space_uuid routing once per pull. Tombstones lack ciphertext/UUID
-    /// and SHA1 is one-way. Seed with cursor keys, mapping values and default-space (D6): a freshly
-    /// paired Space can receive a tombstone before its first commit creates a cursor. Never seed
-    /// local Space IDs, which are not wire identities.
+    /// Rebuild client_tag_hash-to-space_uuid routing once per pull; each page then extends it with its
+    /// own Space arrivals. Tombstones lack ciphertext/UUID and SHA1 is one-way. Seed with cursor keys,
+    /// mapping values and default-space (D6): a freshly paired Space can receive a tombstone before its
+    /// first commit creates a cursor. Never seed local Space IDs, which are not wire identities.
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         var uuids = Set(table.cursors.keys)
         uuids.insert(SyncableSpaces.defaultSpaceUuid)
@@ -2479,7 +2486,6 @@ actor PhiSyncEngine {
                 // server has already replaced the specifics, so no create for that row can
                 // ever arrive again.
                 AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag hash=\(shortHash)")
-                batch.unknownTombstoneHashes.append(entity.clientTagHash)
                 return
             }
             batch.tombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))

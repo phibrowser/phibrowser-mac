@@ -88,7 +88,14 @@ struct DevicesSettingView: View {
         .onDisappear { Task { await viewModel.stopPolling() } }
         .onChange(of: viewModel.syncNowOutcome) { _, outcome in
             guard let outcome else { return }
-            announce(outcome.rejected ? Self.syncNowFailedText : NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
+            switch outcome.result {
+            case .finished:
+                announce(NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
+            case .failed(let category):
+                announce(category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known"))
+            case .rejected:
+                announce(Self.syncNowFailedText)
+            }
         }
     }
 

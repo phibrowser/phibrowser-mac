@@ -107260,6 +107260,17 @@
         }
       }
     },
+    "sync.status.syncNowIncomplete" : {
+      "comment" : "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync did not finish"
+          }
+        }
+      }
+    },
     "sync.status.syncNowInProgress" : {
       "comment" : "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a requested sync waits or runs",
       "localizations" : {

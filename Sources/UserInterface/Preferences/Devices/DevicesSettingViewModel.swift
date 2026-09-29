@@ -34,8 +34,20 @@ final class DevicesSettingViewModel: ObservableObject {
     /// Set when a Sync now request the helper accepted or queued has ended, or when the helper
     /// refused it; the view announces it. `serial` makes repeated outcomes distinct.
     @Published private(set) var syncNowOutcome: SyncNowOutcome?
-    struct SyncNowOutcome: Equatable { let serial: UInt64; let rejected: Bool }
+    struct SyncNowOutcome: Equatable {
+        enum Result: Equatable {
+            /// Up to date with a common success newer than at the tap.
+            case finished
+            /// Ended without that success; the native last problem, if one is recorded.
+            case failed(SyncProblemCategory?)
+            case rejected
+        }
+        let serial: UInt64
+        let result: Result
+    }
     private var awaitingSyncNow = false
+    /// The common success time when the tap was made; only a newer one means the sync finished.
+    private var syncNowBaseline: Date?
     private var syncNowSerial: UInt64 = 0
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
@@ -69,6 +81,7 @@ final class DevicesSettingViewModel: ObservableObject {
     func syncNow() async {
         guard isUnlocked, !isSubmittingSyncNow, isCurrentAccount() else { return }
         let generation = loadGeneration
+        syncNowBaseline = summary.lastSuccess
         isSubmittingSyncNow = true
         defer { isSubmittingSyncNow = false }
         let report = await syncNowReport()
@@ -78,7 +91,7 @@ final class DevicesSettingViewModel: ObservableObject {
         apply(report)
         switch requestState {
         case .queued, .inFlight: awaitingSyncNow = true
-        case .rejected: finishSyncNow(rejected: true)
+        case .rejected: finishSyncNow(.rejected)
         case .idle: break // Nothing was recorded (helper stopped or ineligible).
         }
     }
@@ -101,17 +114,22 @@ final class DevicesSettingViewModel: ObservableObject {
         requestState = report?.request ?? .idle
         nativeDetail = report?.snapshots["phi"]?.detail
         guard awaitingSyncNow else { return }
+        // A dropped request (no helper, ineligible, sync not started) ends without a word.
+        guard report != nil, summary.phase != .notStarted else { awaitingSyncNow = false; return }
         switch requestState {
         case .queued, .inFlight: break
-        case .idle: finishSyncNow(rejected: false)
-        case .rejected: finishSyncNow(rejected: true)
+        case .rejected: finishSyncNow(.rejected)
+        case .idle:
+            let succeeded = summary.phase == .upToDate
+                && summary.lastSuccess.map { success in syncNowBaseline.map { success > $0 } ?? true } == true
+            finishSyncNow(succeeded ? .finished : .failed(nativeDetail?.lastProblem?.category))
         }
     }
 
-    private func finishSyncNow(rejected: Bool) {
+    private func finishSyncNow(_ result: SyncNowOutcome.Result) {
         awaitingSyncNow = false
         syncNowSerial &+= 1
-        syncNowOutcome = SyncNowOutcome(serial: syncNowSerial, rejected: rejected)
+        syncNowOutcome = SyncNowOutcome(serial: syncNowSerial, result: result)
     }
 
     private func clearStatus() {

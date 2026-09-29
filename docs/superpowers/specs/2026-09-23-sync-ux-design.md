@@ -86,12 +86,18 @@ control's keyboard and accessibility behavior.
 Once pairing is complete and the key is unlocked, the status row carries a **Sync now**
 action in its trailing control slot. It asks this Mac for a coordinated round through the
 same path as a pane reload: coalesced with a round already running and subject to the
-shared 60-second minimum interval. While the request waits or runs the button is disabled
-and shows progress, with a short hint that says whether it waits for the current sync, will
-start shortly (minimum interval), or waits for every profile to report status; a refused
-request says it could not start. The hint, progress indicator and button keep fixed space,
-so the status row does not move or change height. VoiceOver announces when a requested
-sync has finished.
+shared 60-second minimum interval. Only the user's own request shows on the button: opening
+the pane and background sync never make it spin or report a failure. While the request
+waits or runs the button is disabled and shows progress, with a short hint that says whether
+it waits for the current sync, will start shortly (minimum interval), or waits for every
+profile to report status. When this Mac refuses to start the requested sync, the hint says it
+could not start until the next tap or the next sync this Mac starts. The hint, progress
+indicator and button keep fixed space, so the status row does not move or change height.
+When a requested sync ends, VoiceOver announces "Sync finished" only if everything is up to
+date with a newer successful sync than at the tap; otherwise it announces the last problem's
+category, or "Sync did not finish" when none is known, and a refusal as could not start. A
+sync that fails ends as soon as every context has settled on the failure, instead of after a
+minute. A request dropped because sync stopped or became unavailable ends silently.
 
 The status row may add one line with the most recent problem of this Mac's native sync: a
 localized category (for example No connection, Sign-in expired, Server error) and a

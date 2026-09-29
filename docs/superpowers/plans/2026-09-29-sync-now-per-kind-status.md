@@ -612,3 +612,10 @@ Deviations from the plan text, recorded as they were made.
   and the pane (I-2) reports it as a failure. `automaticRetryAt` (start + timeout + minimum
   interval) keeps automatic `failed`/`needsRound`/stale demand on the pre-fix schedule; the
   pane-open request and Sync now are limited only by the ordinary minimum interval.
+- **Review I-2.** The view model captures `summary.lastSuccess` at the tap. On the move to
+  Idle it announces "Sync finished" only for Up to date with a newer common success; otherwise
+  the native last-problem category, or the new `sync.status.syncNowIncomplete` ("Sync did not
+  finish"). A nil report or a Not started summary ends the wait silently. `SyncNowOutcome`
+  now carries a `Result` (`finished`, `failed(category)`, `rejected`) instead of a Bool. The last
+  problem may predate the tap (for example after a round that expired without a new failure);
+  it is still the best available category.

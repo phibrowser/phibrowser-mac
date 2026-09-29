@@ -81,8 +81,25 @@ final class DevicesSettingViewModelTests: XCTestCase {
         report.request = .idle
         report.summary = SyncStatusSummary(phase: .upToDate, lastSuccess: started)
         await vm.refreshStatus()
-        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 1, rejected: false))
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 1, result: .finished))
         XCTAssertTrue(vm.syncNowButton.isEnabled)
+
+        // A request that ends without a newer common success is a failure, with the last problem.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        detail.lastProblem = SyncErrorSummary(category: .offline, kind: nil, at: started)
+        report.snapshots["phi"] = SyncContextSnapshot(id: "phi", phase: .offline, lastSuccess: started, revision: 4, detail: detail)
+        report.summary = SyncStatusSummary(phase: .offline, lastSuccess: started)
+        report.request = .idle
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 2, result: .failed(.offline)))
+
+        // A request dropped with the helper (no report) ends silently.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        vm.syncReport = { _ in nil }
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome?.serial, 2)
         await vm.stopPolling()
     }
 

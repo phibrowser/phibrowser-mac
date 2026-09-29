@@ -65,11 +65,22 @@ final class ApplyFakeSpaceAccess: PhiSpaceLocalAccess {
     var storedSpaceIds: Set<String> = []
     var mappings: [String: String] = [:]           // local id -> sync uuid
     var profileIdByUuid: [String: String] = [:]
-    /// Successive answers of `isBeingDeletedLocally`; the last one repeats.
-    var beingDeletedAnswers: [Bool] = [false]
-    /// Called after every `isBeingDeletedLocally` answer, to model a deletion starting in between.
-    var afterBeingDeletedRead: ((Int) -> Void)?
-    private(set) var beingDeletedReads = 0
+    /// The facade's being-deleted mark for every mapped Space.
+    var beingDeleted = false
+    /// A local deletion that begins, and whose cascade commits, when the pass first reaches this
+    /// call: the mark goes up and every mapped row leaves both views. Keyed by the call rather
+    /// than by a read count, so an added read elsewhere in the pass cannot shift the script.
+    enum Checkpoint { case markRead, localIdLookup, profileLookup }
+    var deletionStartsAfter: Checkpoint?
+    private func reach(_ checkpoint: Checkpoint) {
+        guard deletionStartsAfter == checkpoint else { return }
+        deletionStartsAfter = nil
+        beingDeleted = true
+        for id in mappings.keys {
+            spaces.removeAll { $0.spaceId == id }
+            storedSpaceIds.remove(id)
+        }
+    }
     private(set) var writes: [String] = []
 
     func currentSpaces() -> [PhiLocalSpace] { spaces }
@@ -77,12 +88,16 @@ final class ApplyFakeSpaceAccess: PhiSpaceLocalAccess {
     func globalUuid(forProfileId profileId: String) -> String? {
         profileIdByUuid.first { $0.value == profileId }?.key
     }
-    func localProfileId(forGlobalUuid uuid: String) -> String? { profileIdByUuid[uuid] }
+    func localProfileId(forGlobalUuid uuid: String) -> String? {
+        defer { reach(.profileLookup) }
+        return profileIdByUuid[uuid]
+    }
     func isKnownLocalProfile(_ profileId: String) -> Bool { profileIdByUuid.values.contains(profileId) }
     func dropMapping(forProfileId profileId: String) { writes.append("dropProfileMapping") }
     func syncUuid(forSpaceId spaceId: String) -> String? { mappings[spaceId] }
     func localSpaceId(forSyncUuid uuid: String) -> String? {
-        mappings.filter { $0.value == uuid }.keys.sorted().first
+        defer { reach(.localIdLookup) }
+        return mappings.filter { $0.value == uuid }.keys.sorted().first
     }
     func ensureMapped(spaceId: String) throws -> String {
         if let uuid = mappings[spaceId] { return uuid }
@@ -100,10 +115,8 @@ final class ApplyFakeSpaceAccess: PhiSpaceLocalAccess {
     func isKnownLocalSpace(_ spaceId: String) -> Bool { storedSpaceIds.contains(spaceId) }
     func allSpaceMappings() -> [String: String] { mappings }
     func isBeingDeletedLocally(syncUuid: String) -> Bool {
-        let answer = beingDeletedAnswers[min(beingDeletedReads, beingDeletedAnswers.count - 1)]
-        beingDeletedReads += 1
-        afterBeingDeletedRead?(beingDeletedReads)
-        return answer
+        defer { reach(.markRead) }
+        return beingDeleted
     }
     func pairableSpaces() -> [PhiLocalSpace] { spaces }
     func isImporting(intoSpaceId spaceId: String) -> Bool { false }
@@ -167,6 +180,13 @@ private func applyAccess() -> ApplyFakeSpaceAccess {
     return access
 }
 
+private func applyLocalSpace(_ spaceId: String, profileId: String = "profile-a") -> PhiLocalSpace {
+    PhiLocalSpace(spaceId: spaceId, profileId: profileId, name: "Work", colorHex: "#101010",
+                  iconName: "icon", sortOrder: 0,
+                  createdDate: Date(timeIntervalSince1970: TimeInterval(applyNowMs - 3_600_000) / 1000),
+                  themeId: nil, opacityLight: nil, opacityDark: nil)
+}
+
 private func publishedCursor(version: Int64) -> PhiSpaceCursor {
     var cursor = PhiSpaceCursor()
     cursor.entityId = "srv-a"
@@ -204,13 +224,10 @@ func checkASpaceBeingDeletedIsNotLandedAgain(report: Report) {
     let cascading = runToCompletion { () async -> (PhiSpaceSyncTable, [String], [String: String]) in
         let access = await applyAccess()
         await MainActor.run {
-            access.spaces = [PhiLocalSpace(spaceId: "local-a", profileId: "profile-a", name: "Work",
-                                           colorHex: "#101010", iconName: "icon", sortOrder: 0,
-                                           createdDate: Date(timeIntervalSince1970: 1_696_396_400),
-                                           themeId: nil, opacityLight: nil, opacityDark: nil)]
+            access.spaces = [applyLocalSpace("local-a")]
             access.storedSpaceIds = ["local-a"]
             access.mappings = ["local-a": "sync-a"]
-            access.beingDeletedAnswers = [true]
+            access.beingDeleted = true
         }
         var table = PhiSpaceSyncTable()
         table.cursors["sync-a"] = publishedCursor(version: 4)
@@ -228,13 +245,14 @@ func checkASpaceBeingDeletedIsNotLandedAgain(report: Report) {
     report.markPassed("spaces.apply.a-space-being-deleted-is-not-updated")
 
     // R1: the deletion begins after the first mark read, and its cascade removes the row before
-    // the row check. Only the second read, after the row was seen gone, can see it.
+    // the row check. Only the read after the row was seen gone can see it.
     let racing = runToCompletion { () async -> (PhiSpaceSyncTable, [String], [String], [String: String]) in
         let access = await applyAccess()
         await MainActor.run {
-            access.storedSpaceIds = []                   // the cascade has committed
+            access.spaces = [applyLocalSpace("local-a")]
+            access.storedSpaceIds = ["local-a"]
             access.mappings = ["local-a": "sync-a"]
-            access.beingDeletedAnswers = [false, true]
+            access.deletionStartsAfter = .markRead
         }
         var table = PhiSpaceSyncTable()
         table.cursors["sync-a"] = publishedCursor(version: 4)
@@ -250,6 +268,41 @@ func checkASpaceBeingDeletedIsNotLandedAgain(report: Report) {
                     && racing.0.cursors["sync-a"]?.pendingApply != nil,
                  "writes \(racing.2); mappings \(racing.3)")
     report.markPassed("spaces.apply.a-deletion-begun-mid-round-keeps-its-mapping")
+
+    // F1: the row is still there at the row check; the deletion begins and its cascade commits
+    // during a later main-actor hop, so the pass sees the absence only as `existing == nil`. The
+    // ordinary identity and the default identity (no row check, no profile lookup) both.
+    for (uuid, local, checkpoint) in [("sync-a", "local-a", ApplyFakeSpaceAccess.Checkpoint.profileLookup),
+                                      (SyncableSpaces.defaultSpaceUuid, LocalStore.defaultSpaceId,
+                                       .localIdLookup)] {
+        let late = runToCompletion { () async -> (PhiSpaceSyncTable, [String], [String: String]) in
+            let access = await applyAccess()
+            await MainActor.run {
+                access.profileIdByUuid["profile-uuid-default"] = LocalStore.defaultProfileId
+                access.spaces = [applyLocalSpace(local)]
+                access.storedSpaceIds = [local]
+                access.mappings = [local: uuid]
+                access.deletionStartsAfter = checkpoint
+            }
+            var table = PhiSpaceSyncTable()
+            var cursor = publishedCursor(version: 4)
+            cursor.reconciled = try? applyEntity(uuid).serializedData()
+            cursor.server = cursor.reconciled
+            table.cursors[uuid] = cursor
+            let host = SpaceApplyHost(access: access, nowMs: applyNowMs)
+            let after = await host.apply([(uuid: uuid, entity: applyEntity(uuid, name: "Renamed"),
+                                           entityId: "srv-a", version: 6)], to: table)
+            return (after, await access.writes, await access.mappings)
+        }
+        let property = uuid == "sync-a"
+            ? "spaces.apply.a-deletion-committed-before-landing-is-not-re-created"
+            : "spaces.apply.a-default-space-deletion-committed-before-landing-is-not-re-created"
+        report.check(property,
+                     !late.1.contains("create") && late.2[local] == uuid
+                        && late.0.cursors[uuid]?.version == 6 && late.0.cursors[uuid]?.pendingApply != nil,
+                     "writes \(late.1); mappings \(late.2)")
+        report.markPassed(property)
+    }
 
     // Control: with no deletion anywhere, the same dead mapping is repaired and the Space lands.
     let repaired = runToCompletion { () async -> [String] in

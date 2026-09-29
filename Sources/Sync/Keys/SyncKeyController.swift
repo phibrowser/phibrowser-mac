@@ -91,6 +91,10 @@ final class SyncKeyController {
     var requiresReconfiguration: Bool { markerStore?.load().requiresReconfiguration == true || runtimeRequiresReconfiguration() }
 
     private let isPairingComplete: @MainActor () -> Bool
+    /// `ProfileManager.isProfileListEnumerated`: until the list has been read once, an
+    /// empty `localProfilesProvider()` answer says nothing about which Profiles exist, so
+    /// the unmapped evidence is not pruned against it (plan 2026-09-29, AM-1).
+    private let isProfileListEnumerated: @MainActor () -> Bool
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
@@ -212,6 +216,7 @@ final class SyncKeyController {
          notifyChromium: @escaping () -> Void,
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
          isPairingComplete: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.isPaired },
+         isProfileListEnumerated: @escaping @MainActor () -> Bool = { true },
          retirePhiSync: @escaping (Bool) -> Void = { _ in },
          invalidateEnrollment: @escaping () throws -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
@@ -226,6 +231,7 @@ final class SyncKeyController {
          runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
          runtimeRemovalPending: @escaping () -> Bool = { false }) {
         self.isPairingComplete = isPairingComplete
+        self.isProfileListEnumerated = isProfileListEnumerated
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -699,10 +705,13 @@ final class SyncKeyController {
     /// Updates `knownUnmappedProfileIds` from one pass: Profiles that no longer
     /// exist locally leave, Profiles it proved unmapped enter, and Profiles it
     /// resolved leave last (a 404 that the same pass re-registered is resolved).
-    /// Nothing else leaves, whatever the pass result.
+    /// Nothing else leaves, whatever the pass result. A list that has never been
+    /// enumerated prunes nothing (AM-1): its emptiness is not a deletion.
     private func noteUnmappedEvidence(locals: [(profileId: String, displayName: String)],
                                       resolved: Set<String>, absent: Set<String>) {
-        knownUnmappedProfileIds.formIntersection(locals.map(\.profileId))
+        if isProfileListEnumerated() {
+            knownUnmappedProfileIds.formIntersection(locals.map(\.profileId))
+        }
         knownUnmappedProfileIds.formUnion(absent)
         knownUnmappedProfileIds.subtract(resolved)
     }

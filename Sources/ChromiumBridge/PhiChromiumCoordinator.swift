@@ -333,6 +333,7 @@ import SwiftUI
             notifyChromium: {
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
             },
+            isProfileListEnumerated: { ProfileManager.shared.isProfileListEnumerated },
             // A closure, not a direct reference to the singleton — same shape as
             // `notifyChromium` above, and for the same reason: the self-revoke unit tests
             // build their own controller and must not reach the real coordinator.

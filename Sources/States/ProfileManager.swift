@@ -58,6 +58,12 @@ final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()
 
     @Published private(set) var profiles: [PhiBrowserProfile] = []
+    /// True once a bridge read has returned a complete, non-empty Profile list; never
+    /// reset. Until then `profiles` is empty because nothing has been read, not because
+    /// there is nothing to sync, so sync admits no round before it (plan 2026-09-29,
+    /// AM-1; docs/sync.md, "Enrollment and setup"). Set before `profiles` is assigned,
+    /// so a `$profiles` subscriber (which runs before the value is stored) reads it true.
+    private(set) var isProfileListEnumerated = false
     private var archiveObservers: [NSObjectProtocol] = []
     private var archiveTimer: Timer?
     private var archiveInFlight = false
@@ -100,6 +106,7 @@ final class ProfileManager: ObservableObject {
         let decodedProfiles = raw.compactMap(Self.decode(_:))
         // An incomplete bridge response must not look like Profile deletion.
         guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return false }
+        isProfileListEnumerated = true
         profiles = decodedProfiles
         persistDisplayNamesToLocalStore(decodedProfiles)
         drainChatArchives()
@@ -115,8 +122,9 @@ final class ProfileManager: ObservableObject {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         let raw = bridge.listProfiles()
         let decodedProfiles = raw.compactMap(Self.decode(_:))
-        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count,
-              decodedProfiles != profiles else { return }
+        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return }
+        isProfileListEnumerated = true
+        guard decodedProfiles != profiles else { return }
         profiles = decodedProfiles
     }
 

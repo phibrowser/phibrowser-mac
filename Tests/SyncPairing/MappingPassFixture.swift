@@ -89,6 +89,9 @@ final class SyncKeyController {
         profileCreator = creator
         isPairingComplete = paired
     }
+    /// `ProfileManager.isProfileListEnumerated` (AM-1).
+    var profileListEnumerated = true
+    func isProfileListEnumerated() -> Bool { profileListEnumerated }
     /* PRODUCTION_PASS_STATE */
     /* PRODUCTION_KEY_DELIVERY */
     /* PRODUCTION_PASSES */
@@ -158,7 +161,8 @@ struct MappingPassTests {
         try await retirementDuringCreateLeavesProfileUnmapped()
         try await retiredRepairPassDoesNothing()
         try await failureCategory()
-        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category")
+        try await unenumeratedListKeepsEvidence()
+        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category, no evidence pruning before the list is enumerated")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither
@@ -430,6 +434,28 @@ struct MappingPassTests {
         precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
         s.controller.retire()
         precondition(s.controller.knownUnmappedProfileIds == [])
+    }
+
+    /// AM-1: a Profile list that has never been enumerated is empty because nothing
+    /// has been read; a pass over it must not drop the evidence of a gone mapping.
+    @MainActor static func unenumeratedListKeepsEvidence() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        s.creator.profiles.append((profileId: "Profile 1", displayName: "Profile 1"))
+        s.store.map["Profile 1"] = "uuid-one"
+        s.api.putError = KeyAPIError.http(503, "")
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
+        let listed = s.creator.profiles
+        s.creator.profiles = []
+        s.controller.profileListEnumerated = false
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"],
+                     "A list that was never enumerated pruned the evidence")
+        s.controller.profileListEnumerated = true
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == [], "An enumerated list prunes as before")
+        s.creator.profiles = listed
     }
 
     /// P2b B: an account switch while auto-create awaits its name lookup stops the

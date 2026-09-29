@@ -76,6 +76,7 @@ import Foundation
         stopIgnoresLateCompletion()
         failureRetriesWithoutBlocking()
         developerSwitchAndEligibility()
+        nothingWhileNotStartedOrIneligible()
         timeoutMovesOn()
         synchronousCompletion()
     }
@@ -266,6 +267,24 @@ import Foundation
         f.at(151)
         precondition(f.started == ["A"])
         print("PASS profile loader: developer switch and eligibility")
+    }
+
+    @MainActor static func nothingWhileNotStartedOrIneligible() {
+        let f = Fixture(["A"])
+        f.unloadOnRefresh = ["A"]
+        for step in stride(from: 0.0, through: 300, by: 30) { f.at(step) }
+        f.loader.loadNow()
+        precondition(f.refreshes == 0 && f.started.isEmpty && f.wakes.isEmpty,
+                     "Before sync has started: no refresh, no load, no wake")
+        let g = Fixture(["A"])
+        g.eligible = false
+        g.loader.syncDidStart()
+        for step in stride(from: 30.0, through: 300, by: 60) { g.at(step) }
+        g.loader.loadNow()
+        precondition(g.refreshes == 0 && g.started.isEmpty, "While ineligible: no refresh, no load")
+        precondition(!g.wakes.isEmpty && g.wakes.allSatisfy { $0 == 60 },
+                     "While ineligible: one wake per recheck interval, nothing more")
+        print("PASS profile loader: no refresh and no load before it starts or while it is ineligible")
     }
 
     @MainActor static func timeoutMovesOn() {

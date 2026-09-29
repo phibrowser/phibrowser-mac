@@ -215,6 +215,8 @@ the engine is stopped; the apply loop's defensive checks), P5 on the second
 | M7 | Import from another browser creating several Profiles: one pause, all registered, resume |
 | M8 | Memory: with N Profiles, footprint of all Phi processes 10 seconds and 2 minutes after the background load, per additional Profile |
 | M9 | Open a Space in a Profile that was loaded in the background: tabs restore correctly |
+| M10 | With a mapped Profile that has no window on B, install on A an extension that opens a welcome tab on install: no window appears on B for that Profile |
+| M11 | Delete a Profile that was loaded in the background: its directory is removed without restarting the app |
 
 ## 9. Accepted residuals
 
@@ -223,6 +225,7 @@ the engine is stopped; the apply loop's defensive checks), P5 on the second
 | A1 | Edits made during a pause carry the resume time (section 3, point 8) |
 | A2 | Profile loading relies on upstream keep-alive behaviour until the framework has an explicit call |
 | A3 | A Profile loaded without a window publishes an empty open-tabs header for this device |
+| A4 | Background-loaded Profiles stay loaded after sign-out, account switch or removing this Mac from sync: the loader stops but has no unload call, and a load in flight at teardown completes and stays loaded. They are released when the app quits. Follow-up: the explicit hold and release call in the framework (A2) |
 
 ## 10. Timing design for P3 and P4 (version 2)
 
@@ -463,3 +466,4 @@ Changes to the invariants and residuals of 10.9:
 | N26 | A Sync now request while the loader cannot load (paused, not enumerated, ineligible, switched off) is dropped, not queued | The helper's own queue (plan 10.7) decides what a Sync now during a pause becomes; the loader continues through `evaluate()` when the pause ends |
 | N27 | Hooks for P4: `isPaused` and `isProfileListEnumerated` are closures of `SyncProfileLoader.init` with the defaults "not paused" and "enumerated"; the coordinator passes neither yet. P4 passes "an episode exists" (engine gate on) and AM-1's "list enumerated", and calls `syncProfileLoader?.evaluate()` where 10.2 step 5 says "tell the Profile loader to continue" and when the list is enumerated for the first time | P3 and P4 are not implemented yet |
 | N28 | Review F1: the loader's 60-second recheck calls a new `ProfileManager.refreshIfChanged()` instead of `refresh()`. It does the same bridge read and decode, assigns `profiles` only when the decoded list differs (`PhiBrowserProfile` is `Hashable`, so the comparison includes `isLoaded` and `isInUse`), and runs neither the chat-archive drain nor the display-name upserts. `refresh()` is unchanged | Candidate (a) of the review. No `refresh()` caller waits for an emission (all read `profiles` synchronously after the call) and no subscriber relies on a publish of an unchanged list: the key layer's `$profiles` sink deduplicates by id, the loader's own sink only re-evaluates, and the SwiftUI observers (and `AllDownloadsListView`'s `onChange`) only re-render. So (b) was possible too, but it would change what about 30 other `refresh()` calls do (settings pane `onAppear`s, agent Space routing, import repair, the key layer's `localProfilesProvider`, the create/rename/delete completions) and need a flag to keep the side effects for them; (a) leaves them exactly as they are. Every Profile mutation goes through `refresh()`, so a change the light read publishes is in practice a load or in-use change; if it ever is a rename or a new Profile, the next `refresh()` runs the side effects |
+| N29 | Review F2: no unload at teardown; documented as residual A4 and in docs/sync.md's Teardown row, no code change. Manual checks M10 (an extension's welcome tab must not open a window for a background-loaded Profile) and M11 (deleting a background-loaded Profile removes its directory without a restart) added; both need real builds. docs/sync.md now states that a started loader that cannot load wakes once per recheck interval without refreshing or loading, and the harness proves it and that nothing runs before it is started | Unloading needs the framework's hold and release call; `ensureProfileLoaded:` has no counterpart today |

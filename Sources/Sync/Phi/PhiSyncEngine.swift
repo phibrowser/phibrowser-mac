@@ -2754,6 +2754,22 @@ actor PhiSyncEngine {
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
             let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
+            // A second observation of absence: a deletion that began after the reads above and
+            // committed its cascade during the main-actor hops since then shows up only here, and
+            // `land` would re-create the row under the same local id. As in the dead-mapping repair,
+            // a mark read after the absence was observed is conclusive (the default identity
+            // included: its row is deletable too).
+            if existing == nil, localSpaceId != nil,
+               await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid) {
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingApply = nil
+                // Parked as in the branches above, so a failed cascade still lands it next round.
+                if item.fromServer { cursor.pendingApply = try? item.entity.serializedData() }
+                table.cursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
             // `currentSpaces()` leaves out a Space whose Profile has no mapping, while the row check
             // above reads unfiltered storage. For such a Space `existing` is nil although its mapped
             // row exists, and `land` would take its create branch over that row. Park instead; it

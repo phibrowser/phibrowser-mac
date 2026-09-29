@@ -547,15 +547,18 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   (or when the cascade fails). While it stands, the apply loop treats an arriving entity for the uuid like a
   `pendingDelete` one — delete beats a concurrent edit for Spaces (design §9.2):
   it learns the entity id and version for the tombstone, keeps the mapping and
-  lands nothing. The mark is read twice: once before the entity is considered,
-  and again inside the dead-mapping repair, after the row was seen to be gone and
-  before the mapping is dropped. The second read is what keeps a round already in
-  flight from re-landing the Space: a deletion that begins and cascades while the
-  round is between the two reads is visible only to the second, and because the mark is
-  set before the cascade and held until after the deletion round, a read made
-  after the row is observed absent cannot miss it. The entity is parked in
-  `pendingApply` so that it still lands if the cascade fails; a recorded deletion
-  clears it.
+  lands nothing. The mark is read before the entity is considered, and again
+  after each observation that the row is gone, before any decision based on that
+  absence: inside the dead-mapping repair (the row check failed) before the
+  mapping is dropped, and when the landing target is missing from
+  `currentSpaces()` before `land` could create the row again. The later reads are
+  what keep a round already in flight from re-landing the Space: a deletion that
+  begins and cascades while the round is between two reads is visible only to
+  the later one, and because the mark is set before the cascade and held until
+  after the deletion round, a read made after the row is observed absent cannot
+  miss it. The last read covers the default identity too; its row is deletable,
+  so it can be marked. The entity is parked in `pendingApply` so that it still
+  lands if the cascade fails; a recorded deletion clears it.
 - **Every ending drops the mapping of a row that is gone.** An accepted
   tombstone (R-D6-10), a `pendingDelete` finalized locally because it was never
   published, and a tombstone given up after three rejections all leave a cursor

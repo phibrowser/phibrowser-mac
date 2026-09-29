@@ -528,8 +528,12 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   `PhiSpaceSyncState.beginLocalDeletion` resolves the Space's sync uuid and puts
   it in an in-memory being-deleted set; the intent carries that uuid, and the
   engine round records `pendingDelete` under it without resolving the mapping
-  again. The mark ends when that round has run (or when the cascade fails). While
-  it stands, the apply loop treats an arriving entity for the uuid like a
+  again. That round writes the table even while the engine is paused for
+  pairing or reconfiguration (a local write, not network; it still runs in the
+  engine's round queue, so it never interleaves with a round holding a table
+  copy); the deletion is published when sync next runs. Only a retired engine
+  (sign-out, key invalidation) skips it. The mark ends when that round has run
+  (or when the cascade fails). While it stands, the apply loop treats an arriving entity for the uuid like a
   `pendingDelete` one — delete beats a concurrent edit for Spaces (design §9.2):
   it learns the entity id and version for the tombstone, keeps the mapping and
   lands nothing. The mark is read twice: once before the entity is considered,
@@ -572,8 +576,11 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   interrupted-deletion repair in the apply loop drops the dead mapping and lands
   the entity again under a new local id. The Space reappears here; deleting it again
   removes it everywhere. The same happens when the account is switched while the
-  cascade runs. Closing this gap would need a persisted deletion intent, which
-  is a format change and is not done.
+  cascade runs, and when the engine is retired (sign-out or key invalidation)
+  between the cascade and its round: the retirement also clears the facade's
+  direct store, so there is nowhere left to record the deletion. Closing this
+  gap would need a persisted deletion intent, which is a format change and is
+  not done.
 
 ## Stamps and the hybrid logical clock
 

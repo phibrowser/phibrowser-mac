@@ -754,8 +754,9 @@ import SwiftUI
             Task { @MainActor in
                 switch intent {
                 case .recordLocalDeletion(_, let syncUuid):
-                    // The round has recorded `pendingDelete` (or never ran) when this returns, so
-                    // the facade's being-deleted mark ends here, engine or not.
+                    // The round has recorded `pendingDelete` when this returns, also while the engine
+                    // is paused for pairing or reconfiguration; only a retired engine records nothing.
+                    // So the facade's being-deleted mark ends here, engine or not.
                     await engine?.recordLocalDeletion(syncUuid: syncUuid)
                     PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid)
                 case .runRetentionSweep: await engine?.runRetentionSweep()

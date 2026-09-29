@@ -2622,6 +2622,23 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(cursor.hidden)
     }
 
+    /// 7b''''. A local deletion is recorded while the engine is paused for pairing: it is a local table
+    /// write, and dropping it would let the dead-mapping repair re-land the Space later.
+    func testALocalDeletionIsRecordedWhileTheEngineIsPausedForPairing() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        store.table.cursors["sync-1"] = published
+        let engine = makeEngine(access: access, store: store, client: FakePhiSyncClient())
+        await engine.setSpaceSyncEnabled(true)
+        engine.suspendForPairing()
+        await engine.recordLocalDeletion(syncUuid: "sync-1")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.pendingDelete, true)
+    }
+
     /// 7c. Replaying the tombstone after cleanup is a no-op; snapshot cannot resurrect its UUID.
     func testAPurgedUuidIsNeverResurrected() async throws {
         let clock = Clock()

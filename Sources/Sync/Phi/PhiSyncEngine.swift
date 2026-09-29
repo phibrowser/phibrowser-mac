@@ -1484,6 +1484,14 @@ actor PhiSyncEngine {
             return
         }
         activePairingRevision = stopSignal.revision
+        if isStopped, case .recordLocalDeletion(let uuid) = round {
+            // A local table write, not network: pairing, reconfiguration and a pairing-revision
+            // change must not drop it, or the facade's being-deleted mark ends with nothing recorded
+            // and the dead-mapping repair later re-lands the Space. Retirement (checked above) still
+            // stops it. Running in this queue slot keeps it apart from every round's table copy.
+            recordLocalDeletionWhileBlocked(uuid)
+            return
+        }
         guard !isStopped else { return }
 
         let reportsStatus: Bool
@@ -5235,6 +5243,18 @@ actor PhiSyncEngine {
         let changed = body(&table)
         if changed { writeSpaceTable(table) }
         return changed
+    }
+
+    /// `.recordLocalDeletion` for a round that `isStopped` blocks while the engine is not retired.
+    /// `writeSpaceTable` would skip the write on that same check, so the table is saved here with
+    /// only the retirement check: after `shutdown()` the store may be reset for the next account.
+    /// Published when sync next runs, like any `pendingDelete`.
+    private func recordLocalDeletionWhileBlocked(_ uuid: String) {
+        guard let spaceStore else { return }
+        var table = spaceStore.load()
+        guard table.recordLocalDeletion(spaceId: uuid), !stopSignal.isStopped,
+              spaceStore.save(table) else { return }
+        Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
     }
 
     // MARK: - Hybrid logical clock (C2 / R2.1)

@@ -38,8 +38,8 @@ final class SyncHelper {
         let previousSuccesses: [String: Date]
         /// Revisions at dispatch; a sample past them is evidence from after the request.
         let previousRevisions: [String: UInt64]
-        /// The previous observation already met the early-failure condition.
-        var failureObserved = false
+        /// When an observation first met the early-failure condition, uninterrupted since.
+        var failureSince: Date?
         /// Started by, or joined by, a Sync now request; only such a round is shown on the button.
         var syncNow: Bool
     }
@@ -69,6 +69,10 @@ final class SyncHelper {
     /// Automatic demand after a round that ended early on failure waits as long as it would
     /// have after that round's timeout, so failing sync is not retried more often.
     private var automaticRetryAt: Date?
+    /// A round ended early on failure, kept until its timeout only to record a late success
+    /// exactly as the running round would have. It never shows as a request in flight.
+    private var endedRound: Round?
+    private static let pollInterval: TimeInterval = 3
     private var round: Round?
     private var generation = UUID()
     private var retired = false
@@ -114,6 +118,8 @@ final class SyncHelper {
         refreshTask?.cancel()
         refreshTask = nil
         round = nil
+        endedRound = nil
+        automaticRetryAt = nil
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
@@ -129,7 +135,7 @@ final class SyncHelper {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                do { try await Task.sleep(for: .seconds(3)) }
+                do { try await Task.sleep(for: .seconds(Self.pollInterval)) }
                 catch { return }
             }
         }
@@ -178,6 +184,8 @@ final class SyncHelper {
 
     private func resetIneligible() {
         round = nil
+        endedRound = nil
+        automaticRetryAt = nil
         observedIDs = nil
         needsRound = true
         explicitRefreshPending = false
@@ -204,6 +212,7 @@ final class SyncHelper {
         if observedIDs != ids {
             observedIDs = ids
             round = nil
+            endedRound = nil
             needsRound = true
             updateTransientFailure(nil)
         }
@@ -241,10 +250,8 @@ final class SyncHelper {
                 // without fresh evidence is a coordination timeout error.
                 updateTransientFailure(observed.phase == .upToDate ? .timedOut : nil)
                 nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
-            } else if observed.phase == .upToDate, ids.allSatisfy({ id in
-                guard let success = successes[id], success >= round.startedAt else { return false }
-                return round.previousSuccesses[id].map { success > $0 } ?? true
-            }) {
+            } else if observed.phase == .upToDate,
+                      Self.completes(round, ids: ids, successes: successes) {
                 if saveSuccess(time) {
                     lastSuccess = time
                     self.round = nil
@@ -257,17 +264,36 @@ final class SyncHelper {
                 return round.previousRevisions[id].map { snapshot.revision > $0 } ?? true
             }) {
                 // Every participant has reported since the request and settled on a failure.
-                // One such sample may be transient (Chromium retries on its own); a second
-                // consecutive one ends the round now instead of at the timeout.
-                if round.failureObserved {
-                    self.round = nil
-                    needsRound = true
-                    automaticRetryAt = round.startedAt.addingTimeInterval(roundTimeout + minimumRoundInterval)
+                // One sample may be transient (Chromium retries on its own), and several refresh
+                // sources can observe within a second, so the failure must persist for at least
+                // one poll interval of time before the round ends ahead of its timeout.
+                if let since = round.failureSince {
+                    if time.timeIntervalSince(since) >= Self.pollInterval {
+                        self.round = nil
+                        endedRound = round
+                        needsRound = true
+                        automaticRetryAt = round.startedAt.addingTimeInterval(roundTimeout + minimumRoundInterval)
+                    }
                 } else {
-                    self.round?.failureObserved = true
+                    self.round?.failureSince = time
                 }
             } else {
-                self.round?.failureObserved = false
+                self.round?.failureSince = nil
+            }
+        } else if let ended = endedRound {
+            // A failure that clears before the timeout still completes the early-ended round.
+            if time.timeIntervalSince(ended.startedAt) >= roundTimeout {
+                endedRound = nil
+            } else if observed.phase == .upToDate, Self.completes(ended, ids: ids, successes: successes) {
+                if saveSuccess(time) {
+                    lastSuccess = time
+                    endedRound = nil
+                    needsRound = false
+                    automaticRetryAt = nil
+                    coordinationFailure = nil
+                } else {
+                    coordinationFailure = .persistence
+                }
             }
         }
         // Commit-only cycles, late replies and ordinary pending work are observations,
@@ -297,6 +323,7 @@ final class SyncHelper {
             || (canRequest && (needsRound || failed || stale) && automaticAllowed) {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             let bySyncNow = syncNowPending
+            endedRound = nil
             explicitRefreshPending = false
             syncNowPending = false
             let accepted = sources.allSatisfy { $0.requestSync() }
@@ -323,6 +350,14 @@ final class SyncHelper {
         else { phase = observed.phase }
         report.summary = SyncStatusSummary(phase: phase, lastSuccess: lastSuccess)
         report.request = requestState(ids: ids, snapshots: snapshots, time: time)
+    }
+
+    /// Every participant succeeded after the round's request, newer than before it.
+    private static func completes(_ round: Round, ids: Set<String>, successes: [String: Date]) -> Bool {
+        ids.allSatisfy { id in
+            guard let success = successes[id], success >= round.startedAt else { return false }
+            return round.previousSuccesses[id].map { success > $0 } ?? true
+        }
     }
 
     /// Checking, and success without a timestamp, are no evidence (see `SyncStatusSummary`).

@@ -251,6 +251,51 @@ struct InvalidationTests {
         print("PASS pairing: immediate ordered catch-up, unchanged-gate deduplication and retirement")
     }
 
+    /// Sync now reaches the coordinator through the helper's "phi" participant: a manual
+    /// catch-up joins a pending SSE catch-up or a pull in flight instead of starting its own,
+    /// and the participant refuses once `isRunning` is false.
+    @MainActor
+    static func manualCatchUpTests() async throws {
+        let transport = Transport()
+        let state = PullState()
+        var config = PhiSyncInvalidationCoordinator.Configuration()
+        config.tickInterval = 3600
+        config.coalescingInterval = 0.2
+        config.retryDelay = { _ in 0.01 }
+        let coordinator = PhiSyncInvalidationCoordinator(configuration: config, now: { 100 },
+            stream: { receive in try await transport.run(receive: receive) },
+            pull: { demand in
+                state.demands.append(demand)
+                if state.block { await withCheckedContinuation { state.releasePull = $0 } }
+            })
+        defer { coordinator.stop(); state.releasePull?.resume() }
+        try expect(!coordinator.isRunning, "A new coordinator claimed to run")
+        coordinator.start()
+        try await eventually("Initial catch-up") { state.demands.count == 1 }
+        try await eventually("Connection") { await transport.count == 1 }
+
+        try await transport.send("event: ready\ndata: {}\n\n")
+        coordinator.requestCatchUp()
+        try await eventually("Joined catch-up missing") { state.demands.count == 2 }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try expect(state.demands == [.catchUp, .catchUp], "Manual catch-up did not join the pending SSE catch-up")
+
+        state.block = true
+        coordinator.requestCatchUp()
+        try await eventually("Blocking pull did not start") { state.releasePull != nil }
+        coordinator.requestCatchUp(); coordinator.requestCatchUp()
+        state.block = false
+        let release = state.releasePull; state.releasePull = nil; release?.resume()
+        try await eventually("Follow-up pull missing") { state.demands.count == 4 }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try expect(state.demands.count == 4 && state.demands.last == .catchUp,
+                   "Manual catch-ups during a pull did not collapse into one follow-up")
+
+        coordinator.stop()
+        try expect(!coordinator.isRunning, "Stopped coordinator still reports running")
+        print("PASS manual catch-up: joins a pending SSE catch-up and a pull in flight; stopped coordinator refuses")
+    }
+
     @MainActor
     static func unavailableServerTests() async throws {
         let transport = RejectedTransport()
@@ -366,6 +411,7 @@ struct InvalidationTests {
             try parserTests()
             try await schedulerTests()
             try await pairingCatchUpTests()
+            try await manualCatchUpTests()
             try await unavailableServerTests()
             try await httpTests()
             guard CommandLine.arguments.count == 2 else { throw Failure.assertion("Missing loopback fixture URL") }

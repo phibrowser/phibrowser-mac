@@ -24,7 +24,31 @@ final class DevicesSettingViewModel: ObservableObject {
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
     var syncReport: (_ requestSync: Bool) async -> SyncHelper.Report? = { _ in nil }
+    /// Sync now: records an explicit request with the helper and returns its report.
+    var syncNowReport: () async -> SyncHelper.Report? = { nil }
     @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+    @Published private(set) var requestState: SyncRequestState = .idle
+    @Published private(set) var nativeDetail: SyncNativeDetail?
+    /// From a Sync now tap until the helper answers, so the control never looks idle in between.
+    @Published private(set) var isSubmittingSyncNow = false
+    /// Set when a Sync now request the helper accepted or queued has ended, or when the helper
+    /// refused it; the view announces it. `serial` makes repeated outcomes distinct.
+    @Published private(set) var syncNowOutcome: SyncNowOutcome?
+    struct SyncNowOutcome: Equatable {
+        enum Result: Equatable {
+            /// Up to date with a common success newer than at the tap.
+            case finished
+            /// Ended without that success; the native last problem, if one is recorded.
+            case failed(SyncProblemCategory?)
+            case rejected
+        }
+        let serial: UInt64
+        let result: Result
+    }
+    private var awaitingSyncNow = false
+    /// The common success time when the tap was made; only a newer one means the sync finished.
+    private var syncNowBaseline: Date?
+    private var syncNowSerial: UInt64 = 0
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
     /// Whether an account is signed in. The key API refuses to send a request
@@ -44,22 +68,76 @@ final class DevicesSettingViewModel: ObservableObject {
         let generation = loadGeneration
         requiresReconfiguration = reconfigurationRequired()
         paired = pairingComplete()
-        guard paired else {
-            contextSnapshots = [:]; requiredIDs = []
-            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
-            return
-        }
+        guard paired else { clearStatus(); return }
         let report = await syncReport(requestSync)
         guard generation == loadGeneration, isCurrentAccount() else { return }
         paired = pairingComplete()
-        guard paired else {
-            contextSnapshots = [:]; requiredIDs = []
-            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
-            return
+        guard paired else { clearStatus(); return }
+        apply(report)
+    }
+
+    /// Sync now. Calls the helper directly instead of `refresh`, whose in-flight guard would
+    /// drop a tap made during the 3 s poll.
+    func syncNow() async {
+        guard isUnlocked, !isSubmittingSyncNow, isCurrentAccount() else { return }
+        let generation = loadGeneration
+        syncNowBaseline = summary.lastSuccess
+        isSubmittingSyncNow = true
+        defer { isSubmittingSyncNow = false }
+        let report = await syncNowReport()
+        guard generation == loadGeneration, isCurrentAccount() else { return }
+        paired = pairingComplete()
+        guard paired else { clearStatus(); return }
+        apply(report)
+        switch requestState {
+        case .queued, .inFlight: awaitingSyncNow = true
+        case .rejected: finishSyncNow(.rejected)
+        case .idle: break // Nothing was recorded (helper stopped or ineligible).
         }
+    }
+
+    /// The Sync now control: the helper's request state, the pane's own unlock and pairing
+    /// checks, and progress while a tap is being submitted.
+    var syncNowButton: SyncNowButtonState {
+        guard isUnlocked, paired else {
+            return SyncNowButtonState(isVisible: false, isEnabled: false, showsProgress: false, hint: .none)
+        }
+        let state = SyncNowButtonState.reduce(summary: summary.phase, request: requestState)
+        guard isSubmittingSyncNow else { return state }
+        return SyncNowButtonState(isVisible: state.isVisible, isEnabled: false, showsProgress: true, hint: .none)
+    }
+
+    private func apply(_ report: SyncHelper.Report?) {
         contextSnapshots = report?.snapshots ?? [:]
         requiredIDs = report?.requiredIDs ?? []
         summary = report?.summary ?? SyncStatusSummary(phase: .checking, lastSuccess: nil)
+        requestState = report?.request ?? .idle
+        nativeDetail = report?.snapshots["phi"]?.detail
+        guard awaitingSyncNow else { return }
+        // A dropped request (no helper, ineligible, sync not started) ends without a word.
+        guard report != nil, summary.phase != .notStarted else { awaitingSyncNow = false; return }
+        switch requestState {
+        case .queued, .inFlight: break
+        case .rejected: finishSyncNow(.rejected)
+        case .idle:
+            let succeeded = summary.phase == .upToDate
+                && summary.lastSuccess.map { success in syncNowBaseline.map { success > $0 } ?? true } == true
+            finishSyncNow(succeeded ? .finished : .failed(nativeDetail?.lastProblem?.category))
+        }
+    }
+
+    private func finishSyncNow(_ result: SyncNowOutcome.Result) {
+        awaitingSyncNow = false
+        syncNowSerial &+= 1
+        syncNowOutcome = SyncNowOutcome(serial: syncNowSerial, result: result)
+    }
+
+    private func clearStatus() {
+        contextSnapshots = [:]; requiredIDs = []
+        summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+        requestState = .idle
+        nativeDetail = nil
+        awaitingSyncNow = false
     }
 
     func refreshDevices() async {
@@ -178,6 +256,7 @@ final class DevicesSettingViewModel: ObservableObject {
         loadGeneration &+= 1
         deviceGeneration &+= 1
         pendingGeneration &+= 1
+        awaitingSyncNow = false
         doStopPolling()
     }
 

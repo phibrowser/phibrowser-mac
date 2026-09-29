@@ -171,7 +171,31 @@ applies, and late successful replies never request another round. The engines'
 existing local-change and invalidation schedulers continue to own normal work.
 A requested round pulls native data and refreshes all Profile namespaces through
 the existing account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID
-and type list empty; a nonempty UUID with empty types is a no-op).
+and type list empty; a nonempty UUID with empty types is a no-op). The native
+participant does not start either itself: it asks the running
+`PhiSyncInvalidationCoordinator` for a catch-up, whose pull performs both, so helper,
+SSE and fallback-timer pulls share one coalesced, single-flight pull. A request made
+while a pull is running is served by one follow-up pull. The participant refuses
+(the helper reports Rejected) when the coordinator is absent or stopped, in addition
+to the pairing, key, account and bridge-support gates.
+
+`requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
+semantics, joins an observation in progress and then observes once more, so a
+request recorded during a poll is never left behind, and returns the report's
+`SyncRequestState`. `Report.request` describes that request only; the pane-open
+request and automatic demand never appear in it. It is In flight (with the round's
+start) while a round that a Sync now request started, or joined after the tap, is
+active; Queued while a Sync now request waits, with the reason Unobservable (a
+participant is missing or Checking), Busy (Initial sync or Syncing) or Rate limited
+(with the earliest dispatch time); Rejected after an adapter refused a dispatch that
+carried a Sync now request, until the next tap or accepted dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
+to Idle. A queued request dispatches on the helper's own poll. The helper's
+`ExplicitRequestPolicy` decides only explicit requests while a participant is
+unobservable: `.waitForAllObservable` (the default) keeps them queued;
+`.dispatchToObservable` dispatches once every observable participant is settled,
+still sends the request to every participant and keeps the unobservable one in the
+completion barrier, so such a round expires without a common time and without an
+error. Automatic demand always waits for every participant.
 
 All required participants remain in the barrier, including lazy Profiles that
 have not been loaded. Missing reads and Checking snapshots are unobservable, not
@@ -189,7 +213,13 @@ reports Needs attention only when all engines claim Up to date without fresh
 completion evidence. Checking, Initial sync and Syncing remain their observed
 states, and real engine failures retain their existing error state. A previous
 timeout never overrides later missing status or healthy work. Retry waits at least
-another 60 seconds and until every context is observable and settled. Rejected requests have the same rate limit and cannot be
+another 60 seconds and until every context is observable and settled. A round also ends
+early, without a common time, when the summary is Offline or Needs attention in two
+consecutive observations in which every participant has reported a revision newer than
+at dispatch and is settled (one failed sample may be transient). Automatic demand after
+such an early end waits until the round's timeout plus the minimum interval, the time it
+would have waited after expiry, so failing sync is not retried more often; an explicit
+request needs only the minimum interval. Rejected requests have the same rate limit and cannot be
 completed by unrelated success samples. Rebuilding the stack stops the old helper.
 
 Only when every required context is Up to date with a success newer than its
@@ -231,7 +261,43 @@ Domain-key lookup failures count toward the round's status: network unavailabili
 authorization and key-envelope failures report Needs attention. Failed rounds
 retain the previous success time, and a later successful round clears the failure.
 Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
-and refused arrivals are exclusions, not pending work. Local
+and refused arrivals are exclusions, not pending work.
+
+The native snapshot also carries in-memory `SyncNativeDetail` (never persisted, so a
+relaunch starts empty); Chromium snapshots carry none. Per Phi kind (Settings, Spaces,
+Bookmarks, Pinned tabs, URL rules; no Profiles yet) it holds received and sent counts of the
+most recent round in which that kind had activity, with that round's time, and the pending
+(waiting to send) and held (parked) counts from the kind's table after the last round that
+visited it. Settings count changed keys; Space and owned kinds count landings and published
+entities plus tombstones. Owned pending is the live edits the round did not publish (outside
+the slice budget, or sent and not applied, a conflict counted once after its scoped retry) plus
+the pending-delete cursors, each counted once; a round whose publication pass did not run keeps
+the last known count. Held uses the same conditions that make the round's inbound work pending:
+Spaces parked, held for a Profile or tombstone-parked; owned items parked, tombstone-parked or
+waiting for a split partner; settings unreadable. Kinds a round does not read keep their values:
+owned kinds while the Space gate is shut or whose table the round did not load. The Space table
+is read every round, so Space pending and held follow it even with the gate shut (with no
+activity counts). Every detail change is a status update, so it bumps the revision. The last
+problem is one `SyncProblemCategory` with an optional kind and a time, chosen by precedence
+(reset required, save failed on this Mac, couldn't read data on this Mac, sign-in expired,
+offline, rejected by server, server error, unreadable remote data). HTTP 401/403 map to sign-in
+expired, other HTTP, key-envelope and unattributed outbound failures to server error, exhausted
+conflicts and rejected commits to rejected by server, an owned kind's local read failure to
+couldn't read data (with the kind), unreadable tags to unreadable remote data without a kind
+(the Space table quarantines owned kinds' tags too). It is replaced by the next failing round,
+kept through rounds that neither fail nor succeed, and cleared only by a final Up to date. Held
+items alone produce no category. Invariant, covered by the status harness: a round that ends
+Needs attention always has a non-zero held count or a problem category. R12: the detail has no string field, so it cannot
+carry names, identifiers, URLs, hosts, error text or status numbers.
+
+The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now
+button calls `requestSyncNow()` directly, not through the pane's 3-second poll, whose
+in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
+phase and `Report.request` to the control (Queued Busy: waiting for the current sync;
+Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
+Rejected: could not start); the pane adds its own unlock and pairing check. The view alone
+turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
+no user-facing strings. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including

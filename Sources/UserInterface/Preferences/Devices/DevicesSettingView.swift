@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Settings → Sync: setup and sync status, authorized devices, and recovery/removal.
@@ -85,6 +86,17 @@ struct DevicesSettingView: View {
             }
         }
         .onDisappear { Task { await viewModel.stopPolling() } }
+        .onChange(of: viewModel.syncNowOutcome) { _, outcome in
+            guard let outcome else { return }
+            switch outcome.result {
+            case .finished:
+                announce(NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
+            case .failed(let category):
+                announce(category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known"))
+            case .rejected:
+                announce(Self.syncNowFailedText)
+            }
+        }
     }
 
     // MARK: - Shared pane styling
@@ -205,8 +217,11 @@ struct DevicesSettingView: View {
                 if viewModel.summary.phase == .needsAttention {
                     hintText(NSLocalizedString("sync.status.partialFailure", value: "Some content needs attention. Check the details and your connection.", comment: "One or more sync contexts failed"))
                 }
+                if let problem = viewModel.nativeDetail?.lastProblem {
+                    hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
+                }
             } control: {
-                EmptyView()
+                syncNowControl
             }
 
             Divider()
@@ -219,10 +234,15 @@ struct DevicesSettingView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .themedForeground(.textTertiary)
                         .rotationEffect(.degrees(isStatusDetailsExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityValue(isStatusDetailsExpanded
+                ? NSLocalizedString("sync.status.detailsExpanded", value: "Expanded", comment: "Sync settings - VoiceOver value of the Details disclosure while it shows per-context status")
+                : NSLocalizedString("sync.status.detailsCollapsed", value: "Collapsed", comment: "Sync settings - VoiceOver value of the Details disclosure while per-context status is hidden"))
 
             if isStatusDetailsExpanded {
                 ForEach(viewModel.requiredIDs.sorted(), id: \.self) { id in
@@ -232,9 +252,130 @@ struct DevicesSettingView: View {
                             .font(.system(size: 12))
                             .themedForeground(.textSecondary)
                     }
+                    if id == "phi", let detail = viewModel.nativeDetail {
+                        ForEach(SyncKind.allCases, id: \.self) { kind in
+                            kindRow(kind, status: detail.kinds[kind])
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// Sync now in the status row's control slot. The hint and the progress indicator keep
+    /// their space while the button is shown, so the row neither jumps nor changes height
+    /// when the request state changes.
+    @ViewBuilder
+    private var syncNowControl: some View {
+        let state = viewModel.syncNowButton
+        if state.isVisible {
+            HStack(spacing: 8) {
+                Group {
+                    if state.hint == .failed {
+                        errorText(Self.syncNowFailedText)
+                    } else if let hint = syncNowHint(state.hint) {
+                        hintText(hint)
+                    }
+                }
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(syncNowHint(state.hint) ?? "")
+                .frame(width: 200, alignment: .trailing)
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(state.showsProgress ? 1 : 0)
+                    .accessibilityHidden(!state.showsProgress)
+                    .accessibilityLabel(NSLocalizedString("sync.status.syncNowInProgress", value: "Sync in progress", comment: "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a requested sync waits or runs"))
+                actionButton(NSLocalizedString("sync.status.syncNow", value: "Sync Now", comment: "Sync settings - button that asks this Mac to sync all content now")) {
+                    Task { await viewModel.syncNow() }
+                }
+                .disabled(!state.isEnabled || viewModel.isReconfiguring)
+                .accessibilityHint(syncNowHint(state.hint) ?? "")
+            }
+        }
+    }
+
+    private static var syncNowFailedText: String {
+        NSLocalizedString("sync.status.syncNowFailed", value: "Couldn’t start sync. Try again later.", comment: "Sync settings - shown beside Sync Now when this Mac refused to start the requested sync")
+    }
+
+    private func syncNowHint(_ hint: SyncNowButtonState.Hint) -> String? {
+        switch hint {
+        case .none: return nil
+        case .waitingForCurrentSync: return NSLocalizedString("sync.status.syncNowQueued", value: "Waiting for current sync…", comment: "Sync settings - shown beside Sync Now when the requested sync waits for a sync already running")
+        case .startingShortly: return NSLocalizedString("sync.status.syncNowStartingShortly", value: "Sync will start shortly…", comment: "Sync settings - shown beside Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute")
+        case .waitingForProfiles: return NSLocalizedString("sync.status.syncNowWaitingProfiles", value: "Waiting for all profiles to be available", comment: "Sync settings - shown beside Sync Now when the requested sync waits until every browser profile reports its sync status")
+        case .failed: return Self.syncNowFailedText
+        }
+    }
+
+    /// One per-kind line under the Phi data context: counts only, never names or content.
+    private func kindRow(_ kind: SyncKind, status: SyncKindStatus?) -> some View {
+        let summary = kindSummary(status)
+        return SettingsDetailRow(kindTitle(kind)) {
+            Text(summary)
+                .font(.system(size: 12))
+                .themedForeground(.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(summary)
+        }
+        .padding(.leading, 16)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(kindTitle(kind))
+        .accessibilityValue(summary)
+    }
+
+    private func kindSummary(_ status: SyncKindStatus?) -> String {
+        guard let status else { return Self.noKindActivityText }
+        var parts: [String] = []
+        if let activityAt = status.activityAt {
+            parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindReceived", value: "Received %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac received from the account in its most recent sync with changes; %lld is the number"), status.received))
+            parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindSent", value: "Sent %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac sent to the account in its most recent sync with changes; %lld is the number"), status.sent))
+            // When those counts happened, so an old count does not read as current.
+            parts.append(activityAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
+        }
+        if status.pending > 0 {
+            parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindPending", value: "Waiting to send %lld", comment: "Sync settings - how many local changes of one kind of content wait to be sent to the account; %lld is the number"), status.pending))
+        }
+        if status.held > 0 {
+            parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindHeld", value: "Held %lld", comment: "Sync settings - how many synced items of one kind of content are held on this Mac and not applied yet, for example because they could not be read; %lld is the number"), status.held))
+        }
+        return parts.isEmpty ? Self.noKindActivityText : parts.joined(separator: " · ")
+    }
+
+    private static var noKindActivityText: String {
+        NSLocalizedString("sync.status.kindNoActivity", value: "No recent changes", comment: "Sync settings - shown for one kind of content, such as Bookmarks, when no sync since the app started has sent or received changes of that kind")
+    }
+
+    private func kindTitle(_ kind: SyncKind) -> String {
+        switch kind {
+        case .settings: return NSLocalizedString("sync.status.kind.settings", value: "Settings", comment: "Sync settings - per-kind status row for synced app settings")
+        case .spaces: return NSLocalizedString("sync.status.kind.spaces", value: "Spaces", comment: "Sync settings - per-kind status row for synced Spaces")
+        case .bookmarks: return NSLocalizedString("sync.status.kind.bookmarks", value: "Bookmarks", comment: "Sync settings - per-kind status row for synced bookmarks and folders")
+        case .pinnedTabs: return NSLocalizedString("sync.status.kind.pinnedTabs", value: "Pinned tabs", comment: "Sync settings - per-kind status row for synced pinned tabs")
+        case .urlRules: return NSLocalizedString("sync.status.kind.urlRules", value: "URL rules", comment: "Sync settings - per-kind status row for synced URL rules, the rules that open matching URLs in a chosen Space")
+        }
+    }
+
+    private func problemTitle(_ category: SyncProblemCategory) -> String {
+        switch category {
+        case .offline: return NSLocalizedString("sync.status.problem.offline", value: "No connection", comment: "Sync settings - last sync problem: this Mac could not reach the sync service")
+        case .signInExpired: return NSLocalizedString("sync.status.problem.signInExpired", value: "Sign-in expired", comment: "Sync settings - last sync problem: the account sign-in is no longer valid")
+        case .serverError: return NSLocalizedString("sync.status.problem.serverError", value: "Server error", comment: "Sync settings - last sync problem: the sync service returned an error")
+        case .saveFailedOnThisMac: return NSLocalizedString("sync.status.problem.saveFailed", value: "Couldn’t save sync state on this Mac", comment: "Sync settings - last sync problem: this Mac could not store its sync progress")
+        case .readFailedOnThisMac: return NSLocalizedString("sync.status.problem.readFailed", value: "Couldn’t read data on this Mac", comment: "Sync settings - last sync problem: this Mac could not read its own local data of one kind, such as Bookmarks, to sync it")
+        case .rejectedByServer: return NSLocalizedString("sync.status.problem.rejected", value: "Server rejected changes", comment: "Sync settings - last sync problem: the sync service did not accept changes sent from this Mac")
+        case .unreadableRemoteData: return NSLocalizedString("sync.status.problem.unreadable", value: "Some synced data couldn’t be read", comment: "Sync settings - last sync problem: some data from the account could not be read on this Mac")
+        case .resetRequired: return NSLocalizedString("sync.status.problem.resetRequired", value: "Sync needs to be reset", comment: "Sync settings - last sync problem: sync must be set up again before it can continue")
+        case .waitingForProfilePairing: return NSLocalizedString("sync.status.problem.waitingForProfilePairing", value: "Waiting for a profile to be paired", comment: "Sync settings - last sync problem: some synced items wait until a browser profile on this Mac is paired with the account")
+        }
+    }
+
+    private func announce(_ text: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text,
+                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     // MARK: - Devices

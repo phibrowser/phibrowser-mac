@@ -873,6 +873,33 @@ actor PhiSyncEngine {
     private var activePairingRevision: UInt64 = 0
     private var isStopped: Bool { stopSignal.blocksData(revision: activePairingRevision) }
 
+    /// The pause while a local Profile is not mapped to an account Profile (plan 2026-09-29,
+    /// section 10.3). Next to `StopSignal`, not part of it: turning it on never bumps the
+    /// generation and no write guard inside a round reads it, so a round already admitted
+    /// finishes with its landings, cursor saves, acknowledgements and marker advance. It is read
+    /// at round admission in `run(_:)` and, for the Syncing status only, by `serialized(_:)` and
+    /// `markLocalChangePending()`. Lock-protected so the coordinator sets it synchronously on the
+    /// main actor. In memory only.
+    private final class ProfileMappingGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var closed = false
+
+        var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
+        func set(_ value: Bool) { lock.lock(); closed = value; lock.unlock() }
+    }
+
+    private let profileMappingGate = ProfileMappingGate()
+
+    /// Whether rounds are paused for an unmapped Profile. See `setProfileMappingPause(_:)`.
+    nonisolated var isProfileMappingPaused: Bool { profileMappingGate.isClosed }
+
+    /// Turns the unmapped-Profile gate on or off. While it is on, a queued pull, push,
+    /// local-change round or retention sweep returns at admission without writing or showing
+    /// Syncing; the local deletion intent, the Space gate edge and the read-only preview still
+    /// run. Turning it off admits the next round; nothing that was turned away is replayed, so
+    /// the caller requests a catch-up and queues the retention sweep again. Idempotent.
+    nonisolated func setProfileMappingPause(_ paused: Bool) { profileMappingGate.set(paused) }
+
     /// Retires the engine for good: rounds queued behind an in-flight one never run, and the
     /// round already in flight skips every write it has left — the account-scoped cursor
     /// (`writeState`), the settings themselves and their `<key>.phiSync*` sidecars
@@ -947,7 +974,8 @@ actor PhiSyncEngine {
         statusState.update(.needsAttention, round: Self.resetRequiredRound)
     }
     nonisolated func markLocalChangePending() {
-        if !requiresReconfiguration { statusState.update(.syncing) }
+        // The round this change schedules is turned away at admission while the gate is on.
+        if !requiresReconfiguration, !profileMappingGate.isClosed { statusState.update(.syncing) }
     }
     private var roundOutboundFailed = false
     private var roundOffline = false
@@ -1477,7 +1505,7 @@ actor PhiSyncEngine {
         }
         if reportsStatus {
             queuedDataRounds += 1
-            if !requiresReconfiguration { statusState.update(.syncing) }
+            if !requiresReconfiguration, !profileMappingGate.isClosed { statusState.update(.syncing) }
         }
         let previous = roundQueue
         let task = Task { [previous] in
@@ -1507,6 +1535,21 @@ actor PhiSyncEngine {
             return
         }
         guard !isStopped else { return }
+        // Plan 10.3: the unmapped-Profile gate is decided here, after the wait for the previous
+        // round, and only here. The preview has already run above. The local deletion intent and
+        // the Space gate edge are local writes that must survive the pause, so they are admitted;
+        // every other round returns before it writes anything or shows Syncing. The decision is
+        // carried to the tail (AM-3): a round admitted only through the exemption skips the
+        // favicon backfill and its network requests. Nothing inside the round reads the gate.
+        let admittedThroughPauseExemption: Bool
+        if profileMappingGate.isClosed {
+            switch round {
+            case .spaceGate, .recordLocalDeletion: admittedThroughPauseExemption = true
+            default: return
+            }
+        } else {
+            admittedThroughPauseExemption = false
+        }
 
         let reportsStatus: Bool
         switch round {
@@ -1598,7 +1641,7 @@ actor PhiSyncEngine {
         if reportsStatus { finishStatusRound(revision: statusRevision) }
         await logSpaceRound()
         logOwnedRounds()
-        await runFaviconBackfill()
+        if !admittedThroughPauseExemption { await runFaviconBackfill() }
     }
 
     private func finishStatusRound(revision: UInt64) {

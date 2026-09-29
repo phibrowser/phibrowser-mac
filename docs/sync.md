@@ -126,7 +126,8 @@ a measured pass that reports an auto-create failure, that failure's), carries no
 text or identifiers, changes neither the pass result nor the pause's reason, and
 is nil after a pass that succeeds and after `clearResolved()`. `runMappingRepairPass()` runs auto-create and then a mapping pass,
 both single-flight, outside the engine, under the existing gates (enrollment
-complete, unlocked). Nothing pauses on these inputs yet.
+complete, unlocked). The engine has the gate these inputs are to drive (below);
+nothing sets it yet (plan task P4).
 
 All native data rounds and Chromium ready-key exposure require enrollment.
 Completing setup replays the shared Phi data type once under the confirmed Space
@@ -179,6 +180,27 @@ does not resurrect a previous account, and removal alone does not request startu
 Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
 A generation fence also rejects old rounds after rapid re-enrollment.
+
+The pause while a local Profile is unmapped is a separate, softer stop. The
+engine keeps an in-memory, lock-protected gate beside the stop signal
+(`PhiSyncEngine.setProfileMappingPause(_:)`, read back through
+`isProfileMappingPaused`), which the coordinator sets and clears synchronously
+on the main actor. It takes effect at round boundaries: `run(_:)` reads it once,
+after the wait for the previous round, and a pull, push, local-change round
+(settings, Spaces, owned kinds) or retention sweep that meets it returns before
+it writes anything or shows Syncing. A round admitted before the gate came on
+finishes with all its landings, cursor saves, acknowledgements and marker
+advance; nothing inside a round reads the gate, it never bumps the generation,
+and it is not the pairing stop (`suspendForPairing()`), which does abort a
+round. Exempt: the read-only preview, the Space gate edge and the local
+deletion intent. A round admitted only through that exemption while the gate
+is on skips the favicon backfill tail, so the pause starts no favicon request.
+While the gate is on, neither `markLocalChangePending()` nor the queue's own
+Syncing update changes the status. Rounds turned away are not replayed:
+clearing the gate admits the next round, and the caller requests a catch-up and
+queues the retention sweep again. An engine whose gate is never set behaves
+exactly as before. The coordinator's episode, repair loop, key withdrawal and
+status overlay are plan tasks P4 and P5.
 
 ## Sync status contract
 
@@ -683,7 +705,7 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   it in an in-memory being-deleted set; the intent carries that uuid, and the
   engine round records `pendingDelete` under it without resolving the mapping
   again. That round writes the table even while the engine is paused for
-  pairing or reconfiguration (a local write, not network; it still runs in the
+  pairing, reconfiguration or an unmapped Profile (a local write, not network; it still runs in the
   engine's round queue, so it never interleaves with a round holding a table
   copy); the deletion is published when sync next runs. Only a retired engine
   (sign-out, key invalidation) skips it. The mark ends when that round has run

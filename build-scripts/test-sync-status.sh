@@ -49,3 +49,44 @@ xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/
   "$task_root/Sources/Sync/SyncStatusSnapshot.swift" \
   "$task_build/ConflictFixture.swift" "$task_root/Tests/SyncStatus/main.swift" -o "$task_build/tests"
 "$task_build/tests"
+# Plan 10.3: round admission under the unmapped-Profile gate, on the production queue, entry and tail.
+python3 - "$task_root" "$task_build/RoundAdmission.swift" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+source = (root / 'Sources/Sync/Phi/PhiSyncEngine.swift').read_text()
+fixture = (root / 'Tests/SyncStatus/RoundAdmissionFixture.swift').read_text()
+def method(signature):
+    start = source.index(signature)
+    end = source.index('{', start) + 1
+    depth = 1
+    while depth:
+        if source[end] == '{': depth += 1
+        if source[end] == '}': depth -= 1
+        end += 1
+    return source[start:end]
+for placeholder, signatures in [
+    ('STOP_SIGNAL', ['    private final class StopSignal']),
+    ('IS_STOPPED', ['    private var isStopped: Bool']),
+    ('GATE', ['    private final class ProfileMappingGate', '    private let profileMappingGate',
+              '    nonisolated var isProfileMappingPaused', '    nonisolated func setProfileMappingPause(']),
+    ('ROUND', ['    private enum Round {']),
+    ('REQUIRES_RECONFIGURATION', ['    nonisolated var requiresReconfiguration: Bool']),
+    ('MARK_PENDING', ['    nonisolated func markLocalChangePending(']),
+    ('SERIALIZED', ['    private func serialized(']),
+    ('RUN', ['    private func run(_ round: Round)'])]:
+    parts = []
+    for signature in signatures:
+        if signature == '    private let profileMappingGate':
+            start = source.index(signature)
+            parts.append(source[start:source.index('\n', start)])
+        else:
+            parts.append(method(signature))
+    fixture = fixture.replace('    /* ' + placeholder + ' */', '\n'.join(parts))
+assert '/* ' not in fixture.split('actor RoundAdmissionFixture')[1].split('private var roundOutboundFailed')[0]
+Path(sys.argv[2]).write_text(fixture)
+PY
+xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
+  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_build/RoundAdmission.swift" \
+  -o "$task_build/admission"
+"$task_build/admission"

@@ -7722,6 +7722,7 @@ final class SpaceManager: ObservableObject {
     func bind(to account: Account) {
         guard boundAccount !== account || isStoreBindingSuspended else { return }
         guard MainActor.assumeIsolated({ !account.localStorage.isClosedForAccountDirectoryRemoval }) else { return }
+        let rebindsSameAccount = boundAccount === account
         suspendStoreBinding()
         pendingDeletionSpaceIds.removeAll()
         boundAccount = account
@@ -7766,7 +7767,17 @@ final class SpaceManager: ObservableObject {
         }
         lastStoreSpaces = Space.reconcile(seededSpaces, with: spaces)
         spaces = lastStoreSpaces
-        cachedURLRules = MainActor.assumeIsolated { account.localStorage.getAllURLRules() }
+        // A failed read must not replace this account's routing table with []. Rebinding the same
+        // account after a suspension keeps its previous rules, which Chromium still holds. Another
+        // account's rules must not route here, so they are cleared (after an unbind they already are).
+        // The flag is still raised so held external opens are released; the rules publisher below reads
+        // again on subscription and after every save, and its first readable snapshot replaces the cache.
+        if let rules = MainActor.assumeIsolated({ account.localStorage.readableURLRules() }) {
+            cachedURLRules = rules
+        } else {
+            AppLogError("[SpaceManager] URL rule read failed at bind; waiting for the rules publisher")
+            if !rebindsSameAccount { cachedURLRules = [] }
+        }
         hasLoadedURLRules = true
         isStoreBindingSuspended = false
 

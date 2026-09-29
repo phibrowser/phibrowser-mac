@@ -16,7 +16,7 @@ kept running and left out the Spaces of a Profile without a mapping.
 | --- | --- |
 | R1 | Every local Profile that is meant to sync takes part in sync. If one is not mapped to an account Profile, sync is paused as a whole until it is |
 | R2 | The pause covers Chromium-side sync too. Chromium keys are withdrawn after a delay of 15 seconds, so a Profile that maps within seconds does not restart every Chromium sync engine |
-| R3 | Native data pauses immediately (amended by section 10, pending the owner's confirmation: it pauses when the round in flight ends). The Sync status shows the pause only after 15 seconds |
+| R3 | Native data pauses immediately (amended by section 10, confirmed by the owner on 2026-09-29: it pauses when the round in flight ends; a pause never aborts a round that has been admitted). The Sync status shows the pause only after 15 seconds |
 | R4 | A new local Profile is registered as a new account Profile automatically. The user is not asked |
 | R5 | Every mapped Profile is loaded so it syncs without a window. First version: Swift only, through the existing bridge call. Memory per sync-only Profile is tolerable up to 200 to 300 MB and is to be measured |
 
@@ -389,8 +389,10 @@ round-boundary rule as sound for data integrity. It raised four new points.
 They are folded in here; no further design review is planned, the
 implementation is reviewed as code.
 
-Amendments AM-1 and the owner ruling R3 as amended are pending the owner's
-confirmation. P3 and P4 do not start before it.
+Amendment AM-1 and the owner ruling R3 as amended were confirmed by the owner
+on 2026-09-29: native data pauses when the round in flight ends, a pause never
+aborts a round that has been admitted, and at launch no device starts a round
+before the Profile list has been enumerated. P3 and P4 may start.
 
 | # | Finding | Amendment |
 | --- | --- | --- |

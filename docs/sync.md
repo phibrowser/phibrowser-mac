@@ -212,7 +212,7 @@ the episode and the outputs before it applies any difference:
 
 | Step | Rule |
 | --- | --- |
-| Prerequisites | Engine present, key controller present and not retired, account key unlocked, enrollment complete and activated. Without them there is no episode and every output of the pause is off |
+| Prerequisites | Engine present, key controller present and not retired, account key unlocked, enrollment complete and activated, and this Mac not requiring reconfiguration (`nativeSyncRequiresReconfiguration`, the same source as the Profile loader's eligibility: an account reset by another device keeps enrollment and the key until setup runs again). Without them there is no episode and every output of the pause is off |
 | Predicate | `SyncProfileMappingPause` over the user-assignable Profiles of the list the trigger passed (the Profile-list sink passes the value it was given; every other caller the current list), the persisted mappings, `knownUnmappedProfileIds`, `profileIdsBeingCreated` and the last pass result. Evaluated only with the prerequisites met and the list enumerated |
 | Episode | Starts when the predicate pauses, runs a repair pass at once and arms one timer for its 15-second mark; ends when the predicate is clear or a prerequisite goes. A second unmapped Profile does not restart it |
 | Engine gate | On while an episode exists, and from engine construction until the Profile list has been enumerated (AM-1) |
@@ -229,7 +229,7 @@ stops or starts the invalidation coordinator; the invalidation stream stays
 connected and the pulls it requests return at admission. Nothing about it is
 persisted.
 
-Repair: one loop per episode calls `runMappingRepairPass()`, then waits 5 seconds,
+Repair: one loop per episode calls `runMappingRepairPass()` (unless reconfiguration is required when the pass falls due: the engine enters that state without telling the coordinator, so the pass is skipped without network work, the delay does not grow, and a reconciliation ends the episode), then waits 5 seconds,
 doubling to 5 minutes, and repeats while its episode is current. Foreground,
 wake, an unlock and the pane's Retry (`retryProfileMappingRepair()`) replace the
 pending wait with an immediate pass and restart the delay at 5 seconds; a request

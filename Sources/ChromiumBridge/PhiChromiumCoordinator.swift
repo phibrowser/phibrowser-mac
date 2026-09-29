@@ -1472,6 +1472,9 @@ import SwiftUI
                     done()
                 }
             },
+            // The engine can enter reconfiguration without telling this coordinator, so the
+            // state is read again when a pass falls due, not only at the last reconciliation.
+            canRunRepairPass: { [weak self] in self?.nativeSyncRequiresReconfiguration == false },
             refreshProfileList: { _ = ProfileManager.shared.refresh() },
             reconcileNow: { [weak self] in self?.reconcileProfileMappingPause() },
             schedule: { delay, fire in
@@ -1500,6 +1503,10 @@ import SwiftUI
                 && controller.manager.currentARK != nil
                 && ProfilePairingGate.shared.isPaired
                 && phiSyncPairingEnabled
+                // Reset by another device: enrollment and mappings stay until the user sets
+                // sync up again, but nothing may be created in or registered into that account.
+                // The same source as the Profile loader's eligibility.
+                && !nativeSyncRequiresReconfiguration
         }
         var pause = SyncProfileMappingPause.notPaused
         if prerequisitesMet, enumerated, let controller {

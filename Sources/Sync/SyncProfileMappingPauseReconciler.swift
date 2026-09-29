@@ -27,7 +27,8 @@ final class SyncProfileMappingPauseReconciler {
         /// The current key controller; nil without one.
         var controller: ObjectIdentifier?
         /// Step 1: enrollment complete, account key unlocked, engine present, controller not
-        /// retired.
+        /// retired, and the account not reset by another device (this Mac does not require
+        /// reconfiguration).
         var prerequisitesMet: Bool
         /// AM-1: `ProfileManager.isProfileListEnumerated`.
         var isProfileListEnumerated: Bool
@@ -75,6 +76,10 @@ final class SyncProfileMappingPauseReconciler {
         var resume: @MainActor () -> Void
         /// `SyncKeyController.runMappingRepairPass()`; calls the completion when it returns.
         var runRepairPass: @MainActor (@escaping @MainActor () -> Void) -> Void
+        /// Read right before every pass: false while this Mac requires reconfiguration. The
+        /// engine sets that state without telling the owner, so the prerequisites of the last
+        /// reconciliation cannot be relied on when a pass falls due.
+        var canRunRepairPass: @MainActor () -> Bool = { true }
         /// AM-1: reads the Profile list again; a successful read publishes it.
         var refreshProfileList: @MainActor () -> Void
         /// Computes the inputs from the current state and calls `reconcile(_:)`.
@@ -245,11 +250,31 @@ final class SyncProfileMappingPauseReconciler {
         guard var loop = repairLoop, !loop.running else { return }
         loop.cancelWait?()
         loop.cancelWait = nil
-        loop.running = true
         loop.again = false
-        repairLoop = loop
         let id = loop.episode
+        guard effects.canRunRepairPass() else {
+            // No pass and no network work. Not a failure either: the delay does not grow.
+            // The state that forbids the pass is a missing prerequisite, so reconciling now
+            // ends the episode; the wait below only matters if it does not.
+            repairLoop = loop
+            effects.log("profile mapping pause: repair pass skipped; reconfiguration required")
+            effects.reconcileNow()
+            guard repairLoop?.episode == id, repairLoop?.running == false else { return }
+            armRepairWait(episode: id, delay: loop.delay)
+            return
+        }
+        loop.running = true
+        repairLoop = loop
         effects.runRepairPass { [weak self] in self?.repairPassEnded(episode: id) }
+    }
+
+    private func armRepairWait(episode id: UInt64, delay: TimeInterval) {
+        repairLoop?.cancelWait?()
+        repairLoop?.cancelWait = effects.schedule(delay) { [weak self] in
+            guard let self, self.repairLoop?.episode == id else { return }
+            self.repairLoop?.cancelWait = nil
+            self.runRepair()
+        }
     }
 
     private func repairPassEnded(episode id: UInt64) {
@@ -262,12 +287,8 @@ final class SyncProfileMappingPauseReconciler {
         }
         let delay = loop.delay
         loop.delay = min(loop.delay * 2, timing.maximumRetryDelay)
-        loop.cancelWait = effects.schedule(delay) { [weak self] in
-            guard let self, self.repairLoop?.episode == id else { return }
-            self.repairLoop?.cancelWait = nil
-            self.runRepair()
-        }
         repairLoop = loop
+        armRepairWait(episode: id, delay: delay)
     }
 
     /// AM-1: while an engine exists and the list has not been enumerated, read it again

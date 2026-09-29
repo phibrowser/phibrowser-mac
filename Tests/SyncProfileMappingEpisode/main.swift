@@ -18,6 +18,10 @@ final class Handle {}
     var paired = true
     var unlocked = true
     var retired = false
+    /// `nativeSyncRequiresReconfiguration`: a prerequisite, and read again when a pass falls due.
+    var reconfiguring = false
+    /// Forbids a pass without touching the prerequisites, to observe the skipped pass alone.
+    var repairBlocked = false
     var enumerated = true
     var syncable = ["Default"]
     var mappings = ["Default": "u-default"]
@@ -63,6 +67,7 @@ final class Handle {}
             self.effects.append("pass")
             if let passAtOnce = self.passAtOnce { passAtOnce(); done() } else { self.pendingPasses.append(done) }
         },
+        canRunRepairPass: { !self.reconfiguring && !self.repairBlocked },
         refreshProfileList: {
             self.listReads += 1
             if self.listReadSucceeds { self.enumerated = true; self.reconcile() }
@@ -79,7 +84,7 @@ final class Handle {}
     var armed: [Timer] { timers.filter { !$0.cancelled && !$0.fired } }
 
     func inputs() -> Reconciler.Inputs {
-        let prerequisites = engine != nil && controller != nil && paired && unlocked && !retired
+        let prerequisites = engine != nil && controller != nil && paired && unlocked && !retired && !reconfiguring
         var pause = SyncProfileMappingPause.notPaused
         if prerequisites, enumerated {
             pause = .evaluate(syncableProfileIds: syncable, persistedMappings: mappings,
@@ -123,6 +128,59 @@ final class Handle {}
         teardownDuringEpisode()
         profileBeingCreatedByTheKeyLayer()
         deviceWithoutEpisodeDoesNothing()
+        reconfigurationStopsTheEpisode()
+    }
+
+    /// Review R1: an account reset by another device keeps enrollment and the key, but no
+    /// episode may run a repair pass for it.
+    @MainActor static func reconfigurationStopsTheEpisode() {
+        // No episode while reconfiguration is required.
+        let f = Fixture()
+        f.reconfiguring = true
+        f.addProfile("New")
+        f.reconcile()
+        precondition(f.reconciler.episode == nil && f.passes.isEmpty && f.armed.isEmpty && !f.gate,
+                     "An episode started while this Mac requires reconfiguration")
+
+        // An episode that exists when the flag becomes set ends at the next reconciliation.
+        let g = Fixture()
+        g.passAtOnce = {}
+        g.addProfile("New")
+        g.reconcile()
+        g.advance(to: 20)
+        precondition(g.keysWithdrawn && !g.armed.isEmpty)
+        g.reconfiguring = true
+        g.reconcile()
+        precondition(g.reconciler.episode == nil && g.armed.isEmpty && !g.keysWithdrawn,
+                     "The episode outlived the reconfiguration state or kept a timer")
+
+        // A pass that falls due while the flag is set (the engine set it without a
+        // reconciliation) does nothing, and the episode ends there.
+        let h = Fixture()
+        h.passAtOnce = {}
+        h.addProfile("New")
+        h.reconcile()
+        precondition(h.passes == [0] && h.armed.contains { $0.at == 5 })
+        h.reconfiguring = true
+        h.advance(to: 5)
+        precondition(h.passes == [0], "A repair pass ran while reconfiguration is required")
+        precondition(h.reconciler.episode == nil && h.armed.isEmpty, "The skipped pass did not end the episode")
+
+        // A skipped pass is not a failure: the next wait keeps the delay.
+        let k = Fixture()
+        k.passAtOnce = {}
+        k.addProfile("New")
+        k.reconcile()
+        k.advance(to: 15.5)  // passes at 0, 5 and 15; the next is due at 35, then 40 s later
+        k.repairBlocked = true
+        k.advance(to: 76)     // skipped at 35 and at 75
+        precondition(k.passes == [0, 5, 15] && k.reconciler.episode != nil)
+        precondition(k.armed.contains { $0.at == 115 }, "A skipped pass lengthened the backoff: \(k.armed.map(\.at))")
+        k.repairBlocked = false
+        k.advance(to: 115)
+        precondition(k.passes == [0, 5, 15, 115] && k.armed.contains { $0.at == 155 },
+                     "The first pass after the skips waits the delay it would have waited")
+        print("PASS profile mapping episode: no episode and no repair pass while this Mac requires reconfiguration")
     }
 
     /// 10.2 steps 1 to 4 as pure functions, over every combination of the inputs they

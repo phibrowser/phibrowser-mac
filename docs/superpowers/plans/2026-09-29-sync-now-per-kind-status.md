@@ -667,3 +667,11 @@ Deviations from the plan text, recorded as they were made.
   so translators can reorder parts and change the separator. The time now comes after all
   counts and the line truncates at the tail, so the time is cut first; the full text stays in
   the tooltip and the accessibility value.
+- **Second review M-c.** Confirmed possible: the scoped retry recomputes live and delete
+  candidates from the whole snapshot with a fresh 250-entry budget, orders them by depth and
+  then identity, and only then filters the work to the conflicted identities. After the retry's
+  pull, new candidates (landed remote changes, republish flags) or a changed depth order can
+  place more than the budget ahead of a conflicted identity, which the first pass then did not
+  count (it left conflicts to the retry) and the retry did not send. The retry pass now adds
+  conflicted identities that are still live candidates but outside its slice to
+  `liveUnpublished`. Reporting only; publication is unchanged.

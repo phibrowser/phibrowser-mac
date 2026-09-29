@@ -4659,6 +4659,11 @@ actor PhiSyncEngine {
                 + (liveCandidates.count - liveSlice.count)
             counters.liveUnpublished += liveCandidates.count - liveSlice.count
             counters.publicationCounted = true
+        } else if let onlyIdentities {
+            // Status only: the retry re-slices the whole snapshot under a fresh budget, so a
+            // conflicted live edit it leaves out is sent by neither pass.
+            counters.liveUnpublished += onlyIdentities.intersection(liveCandidates)
+                .subtracting(liveSlice).count
         }
 
         // Batch only readable tags (section 5.5). Skip quarantined hashes: the server's client-tag

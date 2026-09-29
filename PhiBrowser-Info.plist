@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+	<dict>
+		<key>EphemeralBrowserSessionIsSupported</key>
+		<true/>
+		<key>IsSupported</key>
+		<true/>
+		<key>CallbackURLMatchingIsSupported</key>
+		<true/>
+	</dict>
 	<key>ATSApplicationFontsPath</key>
 	<string>Fonts</string>
 	<key>CFBundleDocumentTypes</key>

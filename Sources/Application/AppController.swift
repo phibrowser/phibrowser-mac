@@ -130,8 +130,6 @@ import PostHog
             permitsSentinelLaunch = true
         }
         
-        //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
-        
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
         hasFinishedLaunching = true
         #if PHI_OSS_BUILD
@@ -146,7 +144,7 @@ import PostHog
         SentinelTelemetryConsentPublisher.shared.start()
         #endif
         
-        //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
+        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
         #if !PHI_OSS_BUILD
         setupSparkle()

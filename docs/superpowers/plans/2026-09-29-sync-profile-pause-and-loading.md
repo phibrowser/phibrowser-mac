@@ -378,6 +378,42 @@ reconciliation, which clears the outputs of this feature by step 1.
 | B5 | The invalidation stream stays connected during a pause; its hints are dropped and the catch-up at the end replaces them |
 | B6 | The two hazards of aborting a round (baseline lost after a landing; acknowledgement lost after an accepted first publication) remain for the existing abort paths, unpairing and reconfiguration. They are recorded in the debt register and are not made more frequent by this feature |
 
+### 10.10 Amendments after the second review
+
+The second external review (Codex, 2026-09-29) found all twelve findings
+against version 1 closed, three of them by task P2b, and confirmed the
+round-boundary rule as sound for data integrity. It raised four new points.
+They are folded in here; no further design review is planned, the
+implementation is reviewed as code.
+
+Amendments AM-1 and the owner ruling R3 as amended are pending the owner's
+confirmation. P3 and P4 do not start before it.
+
+| # | Finding | Amendment |
+| --- | --- | --- |
+| AM-1 | At launch the Profile list is empty until the first refresh succeeds. The predicate reads an empty list as "nothing to sync" and admits rounds. With an empty list the apply loop can also treat a valid mapped Profile as missing and drop its mapping, and the key layer prunes its unmapped evidence against that list (note for P4, item 6 of the P2b report) | `ProfileManager` exposes whether the list has been enumerated successfully at least once. Until then the engine gate is on, no episode is started, no key is withdrawn, and the status stays at Checking. A failed refresh is retried with the delays of 10.5. The key layer does not prune evidence against a list that has not been enumerated. This applies to every new engine before its first round is requested |
+| AM-2 | A helper round that was dispatched just before an episode starts never reaches the coordinated success it waits for | On episode start the helper invalidates the observations of a round in flight and keeps the request as queued. At 15 seconds the request is cancelled and marked as cancelled. When the episode ends a fresh round is created. The engine round itself is never cancelled. The pause check is repeated after every asynchronous participant read |
+| AM-3 | The exempt round types share the common tail of a round, which drains the favicon backfill queue and starts network requests | A round that was admitted only through the exemption, while the gate is on, skips the favicon tail. The admission decision is carried to the tail; no check is added inside the round's data writes |
+| AM-4 | Replacing `silentUnlockAndResolve()` by the repair pass in the Profile-list sink also changed devices that are not paused | The replacement applies only while an episode exists |
+
+Implementation constraints confirmed by the review:
+
+| Point | Constraint |
+| --- | --- |
+| Admission | The gate is checked inside `run(_:)` after the wait for the previous round, not where the round is queued |
+| Chained work | Pull-then-publish and conflict retries are part of the admitted round and finish. A follow-up pull of a page budget is a new round and meets the gate |
+| Publication after a pause | The catch-up at the end is sufficient: its pull is followed by the publication of every native kind |
+| Notifying the bridge | `episode` and `applied` are committed before the bridge is notified |
+| Status | The pause is presented as an overlay computed when the status is read, not as a phase written once, because the completion of the admitted round writes the phase |
+
+Changes to the invariants and residuals of 10.9:
+
+| # | Change |
+| --- | --- |
+| I7 | Scoped to P3 and P4, with one exception: at launch no device starts a round before the Profile list has been enumerated (AM-1). The background loading of Profiles (P6) changes resource use on every device by design and is not covered by I7 |
+| B7 (new) | During the one round that finishes after an episode has started, a deletion of a Space that arrives from the account is applied even if the Space belongs to the unmapped Profile: the Space is hidden and its contents are kept for the retention period |
+| B8 (new) | A retirement during the adopt step's own lookup can still write one mapping into the retired account's own store (implementation note N17) |
+
 ## Implementation notes
 
 ### P1 (commit `00b8b45f`)

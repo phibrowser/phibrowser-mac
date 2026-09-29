@@ -105,18 +105,21 @@ private struct PersistedAuthReauthenticationState {
 
 extension AuthManager {
     var requiresReauthentication: Bool {
-        reauthenticationState.requiredDetails != nil || hasPersistedReauthenticationState
+        !blocksAutomaticCredentialRecovery
+            && (reauthenticationState.requiredDetails != nil || hasPersistedReauthenticationState)
     }
 
     func hasReauthenticationGraceSession() -> Bool {
-        reauthenticationState.requiredDetails != nil || hasPersistedReauthenticationState
+        !blocksAutomaticCredentialRecovery
+            && (reauthenticationState.requiredDetails != nil || hasPersistedReauthenticationState)
     }
 
     func restorePersistedReauthenticationStateIfNeeded(
         promptIfDue: Bool,
         trigger: String
     ) {
-        guard reauthenticationState.requiredDetails == nil else {
+        guard !blocksAutomaticCredentialRecovery,
+              reauthenticationState.requiredDetails == nil else {
             return
         }
 
@@ -141,6 +144,7 @@ extension AuthManager {
 
     @MainActor
     func enterReauthenticationRequiredState(reason: AuthReauthenticationReason) {
+        guard !blocksAutomaticCredentialRecovery else { return }
         let now = Date()
         hydrateAccountForReauthenticationIfNeeded()
         restorePersistedReauthenticationStateIfNeeded(
@@ -190,7 +194,8 @@ extension AuthManager {
 
     @MainActor
     func promptForReauthenticationIfNeeded(trigger: String) {
-        guard !isPresentingReauthenticationPrompt,
+        guard !blocksAutomaticCredentialRecovery,
+              !isPresentingReauthenticationPrompt,
               let details = reauthenticationState.requiredDetails else {
             return
         }
@@ -227,6 +232,7 @@ extension AuthManager {
 
     @MainActor
     func reauthenticateExpiredSession() async -> Bool {
+        guard !blocksAutomaticCredentialRecovery else { return false }
         if case .reauthenticating = reauthenticationState {
             return false
         }
@@ -246,6 +252,7 @@ extension AuthManager {
     /// Replaces an in-flight attempt so an explicit user action can take priority.
     @MainActor
     func restartReauthenticationSession() async -> Bool {
+        guard !blocksAutomaticCredentialRecovery else { return false }
         guard let details = reauthenticationState.requiredDetails else {
             return true
         }

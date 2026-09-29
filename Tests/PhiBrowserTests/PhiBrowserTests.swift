@@ -2069,7 +2069,12 @@ final class PhiBrowserTests: XCTestCase {
 
     @MainActor
     func testAuthManagerStartRenewTimerDoesNotReplaceExistingValidTimer() async throws {
-        let authManager = AuthManager()
+        let suiteName = "AuthRenewTimerTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let authManager = AuthManager(defaults: defaults)
+        defer { authManager.stopRenewTimer() }
+        XCTAssertFalse(authManager.blocksAutomaticCredentialRecovery)
 
         authManager.startRenewTimer()
         let firstTimer = try await waitForRenewTimer(in: authManager)
@@ -3452,4 +3457,88 @@ private final class AuthReauthenticationWebAuthTestSession {
 
 private final class BookmarkMenuTestTarget: NSObject {
     @objc func menuAction(_ sender: Any?) {}
+}
+
+/// Exercises the actual AuthManager recovery gates without accessing real credentials.
+final class AuthLogoutRecoveryTests: XCTestCase {
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+
+    override func setUpWithError() throws {
+        suiteName = "AuthLogoutRecoveryTests.\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+    }
+
+    @MainActor
+    func testFailedDeletionBlocksRecoveryBeforeStorageIsTouched() {
+        let auth = AuthManager(defaults: defaults)
+        XCTAssertFalse(auth.blocksAutomaticCredentialRecovery)
+
+        let cleared = auth.invalidateLocalCredentialSession {
+            XCTAssertTrue(auth.blocksAutomaticCredentialRecovery)
+            XCTAssertFalse(auth.hasRecoverableLoginSession())
+            return false
+        }
+
+        XCTAssertFalse(cleared)
+        XCTAssertTrue(auth.blocksAutomaticCredentialRecovery)
+        XCTAssertNil(auth.storedUserInfo())
+        XCTAssertFalse(auth.checkLoginStatusOnChromiumLaunch())
+        XCTAssertNil(auth.getAccessTokenSyncly())
+        XCTAssertFalse(auth.shouldRenewOnReopen())
+    }
+
+    @MainActor
+    func testLogoutStillBlocksRecoveryAfterRelaunchForEitherCleanupResult() throws {
+        for cleanupSucceeded in [false, true] {
+            let auth = AuthManager(defaults: defaults)
+            XCTAssertEqual(
+                auth.invalidateLocalCredentialSession { cleanupSucceeded },
+                cleanupSucceeded
+            )
+
+            let reopenedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            let relaunched = AuthManager(defaults: reopenedDefaults)
+            XCTAssertTrue(relaunched.blocksAutomaticCredentialRecovery)
+            XCTAssertFalse(relaunched.hasRecoverableLoginSession())
+            XCTAssertNil(relaunched.storedUserInfo())
+        }
+    }
+
+    @MainActor
+    func testFailedDeletionPreventsAsynchronousCredentialRecoveryAndRenewal() async {
+        let auth = AuthManager(defaults: defaults)
+        auth.invalidateLocalCredentialSession { false }
+
+        await auth.refreshAuthStatus()
+        await auth.recoverFromSharedStoreIfNeeded()
+        let credentials = await auth.getActiveCredentials()
+        let renewed = await auth.renewCredentialsAsync(operation: "logout regression test", force: true)
+
+        XCTAssertNil(credentials)
+        XCTAssertNil(renewed)
+        XCTAssertNil(auth.currentCredentials)
+        XCTAssertTrue(auth.blocksAutomaticCredentialRecovery)
+    }
+
+    @MainActor
+    func testLogoutSuppressesPersistedReauthenticationAndLateFailure() async {
+        let auth = AuthManager(defaults: defaults)
+        auth.invalidateLocalCredentialSession { false }
+        auth.hasPersistedReauthenticationState = true
+
+        XCTAssertFalse(auth.requiresReauthentication)
+        XCTAssertFalse(auth.hasReauthenticationGraceSession())
+        auth.enterReauthenticationRequiredState(reason: .invalidRefreshToken)
+        XCTAssertEqual(auth.reauthenticationState, .normal)
+        let reauthenticated = await auth.reauthenticateExpiredSession()
+        let restarted = await auth.restartReauthenticationSession()
+        XCTAssertFalse(reauthenticated)
+        XCTAssertFalse(restarted)
+    }
 }

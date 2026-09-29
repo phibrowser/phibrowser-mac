@@ -8037,10 +8037,17 @@ final class SpaceManager: ObservableObject {
     /// Do not cache the resolver (R-M3-4a-46): pushRoutingTableToChromium resolves tie-break keys anew per
     /// payload. Main-actor isolation is required because getAllURLRules reads mainContext, as for
     /// applyRemoteRebind.
+    ///
+    /// A failed store read keeps the previous cache and skips the push: replacing it with [] would clear every
+    /// rule in Chromium's routing table until the next successful reload.
     @MainActor
     func reloadURLRulesFromStore() {
         guard let account = boundAccount else { return }
-        cachedURLRules = account.localStorage.getAllURLRules()
+        guard let rules = account.localStorage.readableURLRules() else {
+            AppLogError("[SpaceManager] URL rule reload failed; keeping the previous routing table")
+            return
+        }
+        cachedURLRules = rules
         hasLoadedURLRules = true
         urlRuleReloadCountForTesting += 1
         // §5.8 item 3: applyRuleEdits and every §6.6 write end here, ensuring every cache replacement emits a

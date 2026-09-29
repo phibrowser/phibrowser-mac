@@ -65,6 +65,7 @@ import Foundation
         await syncNowUnobservablePolicies()
         await syncNowIgnoresOtherDemand()
         await failingRoundEndsEarly()
+        await earlyEndKeepsLateSuccess()
         await reportCarriesNativeDetail()
     }
 
@@ -649,6 +650,68 @@ import Foundation
                      "An explicit request is limited by the minimum interval, not the automatic retry delay")
         tapped.stop()
         print("PASS helper: a round that fails after the request ends early; automatic retries keep their cadence")
+    }
+
+    /// Ends a Sync now round early: tapped at 170, failure first seen at 173, ended at 176.
+    @MainActor static func earlyEndedHelper(_ f: Fixture) async -> SyncHelper {
+        let helper = await f.completedHelper()
+        f.tick(170); f.status("phi", .offline, at: 103)
+        _ = await helper.requestSyncNow()
+        f.tick(173); f.status("phi", .offline, at: 103); f.status("profile", .offline, at: 103)
+        await helper.refresh()
+        f.tick(176)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && f.requests["phi"] == 2)
+        return helper
+    }
+
+    @MainActor static func earlyEndKeepsLateSuccess() async {
+        // Overlapping refresh sources observing 0.2 s apart cannot end the round.
+        let e = Fixture(), quick = await e.completedHelper()
+        e.tick(170); e.status("phi", .offline, at: 103)
+        _ = await quick.requestSyncNow()
+        e.tick(173); e.status("phi", .offline, at: 103); e.status("profile", .offline, at: 103)
+        await quick.refresh()
+        e.time = Date(timeIntervalSince1970: 173.2)
+        await quick.refresh()
+        precondition(quick.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "Two failing observations 0.2 s apart must not end the round")
+        quick.stop()
+
+        // Recovery inside the window records the success the running round would have.
+        let f = Fixture(), helper = await earlyEndedHelper(f)
+        f.succeed(at: 180)
+        await helper.refresh()
+        precondition(f.saved == Date(timeIntervalSince1970: 180) && helper.report.summary.phase == .upToDate,
+                     "A late success inside the window is recorded")
+        f.tick(183)
+        await helper.refresh()
+        precondition(helper.report.summary.phase == .upToDate && helper.report.request == .idle
+                     && f.requests["phi"] == 2, "The recovered round leaves no demand and never shows as Checking")
+        helper.stop()
+
+        // Recovery after the window records nothing until the next round.
+        let g = Fixture(), late = await earlyEndedHelper(g)
+        g.succeed(at: 231)
+        await late.refresh()
+        precondition(g.saved == Date(timeIntervalSince1970: 103) && late.report.summary.phase == .checking,
+                     "A success after the window does not complete the ended round")
+        g.tick(290); g.succeed(at: 290)
+        await late.refresh()
+        precondition(g.requests["phi"] == 3, "The next automatic round runs on the old schedule")
+        late.stop()
+
+        // A membership change after an early end drops the retry delay: minimum interval only.
+        let h = Fixture(), moved = await earlyEndedHelper(h)
+        moved.membershipDidChange()
+        h.tick(227)
+        await moved.refresh()
+        precondition(h.requests["phi"] == 2)
+        h.tick(230)
+        await moved.refresh()
+        precondition(h.requests["phi"] == 3, "Membership change must not keep the early-end retry delay")
+        moved.stop()
+        print("PASS helper: early end needs a failure one poll apart and keeps a late success inside the timeout")
     }
 
     @MainActor static func reportCarriesNativeDetail() async {

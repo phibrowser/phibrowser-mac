@@ -317,7 +317,7 @@ struct DevicesSettingView: View {
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail) // The time comes last and is cut first.
                 .help(summary)
         }
         .padding(.leading, 16)
@@ -329,11 +329,9 @@ struct DevicesSettingView: View {
     private func kindSummary(_ status: SyncKindStatus?) -> String {
         guard let status else { return Self.noKindActivityText }
         var parts: [String] = []
-        if let activityAt = status.activityAt {
+        if status.activityAt != nil {
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindReceived", value: "Received %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac received from the account in its most recent sync with changes; %lld is the number"), status.received))
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindSent", value: "Sent %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac sent to the account in its most recent sync with changes; %lld is the number"), status.sent))
-            // When those counts happened, so an old count does not read as current.
-            parts.append(activityAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
         }
         if status.pending > 0 {
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindPending", value: "Waiting to send %lld", comment: "Sync settings - how many local changes of one kind of content wait to be sent to the account; %lld is the number"), status.pending))
@@ -341,7 +339,13 @@ struct DevicesSettingView: View {
         if status.held > 0 {
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindHeld", value: "Held %lld", comment: "Sync settings - how many synced items of one kind of content are held on this Mac and not applied yet, for example because they could not be read; %lld is the number"), status.held))
         }
-        return parts.isEmpty ? Self.noKindActivityText : parts.joined(separator: " · ")
+        guard var counts = parts.first else { return Self.noKindActivityText }
+        for part in parts.dropFirst() {
+            counts = String(format: NSLocalizedString("sync.status.kindCountsList", value: "%1$@ · %2$@", comment: "Sync settings - joins count phrases of one kind of content, such as Received 2 and Sent 1, into one line; %1$@ is the phrases so far, %2$@ the next phrase"), counts, part)
+        }
+        guard let activityAt = status.activityAt else { return counts }
+        // When the received and sent counts happened, so an old count does not read as current.
+        return String(format: NSLocalizedString("sync.status.kindCountsWithTime", value: "%1$@ · %2$@", comment: "Sync settings - one kind of content's counts followed by when its most recent sync with changes happened; %1$@ is the counts, such as Received 2 · Sent 1, %2$@ a relative time, such as 5 min. ago"), counts, activityAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
     }
 
     private static var noKindActivityText: String {

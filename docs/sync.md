@@ -231,12 +231,17 @@ completion evidence. Checking, Initial sync and Syncing remain their observed
 states, and real engine failures retain their existing error state. A previous
 timeout never overrides later missing status or healthy work. Retry waits at least
 another 60 seconds and until every context is observable and settled. A round also ends
-early, without a common time, when the summary is Offline or Needs attention in two
-consecutive observations in which every participant has reported a revision newer than
-at dispatch and is settled (one failed sample may be transient). Automatic demand after
-such an early end waits until the round's timeout plus the minimum interval, the time it
-would have waited after expiry, so failing sync is not retried more often; an explicit
-request needs only the minimum interval. Rejected requests have the same rate limit and cannot be
+early, for the request state, when the summary stays Offline or Needs attention with every
+participant settled and sampled after dispatch (a revision newer than at dispatch; a
+Chromium Profile's revision moves on every read) for at least one poll interval (3 seconds)
+of time, measured by timestamps, not by the number of observations. Its request baseline is
+kept until the round's timeout: if every context then reports a newer success, the common
+time is recorded exactly as the running round would have, and no demand remains; after the
+timeout the baseline is dropped without recording anything. Automatic demand after an early
+end waits until the round's timeout plus the minimum interval, the time it would have waited
+after expiry, so failing sync is not retried more often; an explicit request needs only the
+minimum interval, and a membership change, ineligibility or a new dispatch clears the kept
+baseline and the extra delay. Rejected requests have the same rate limit and cannot be
 completed by unrelated success samples. Rebuilding the stack stops the old helper.
 
 Only when every required context is Up to date with a success newer than its

@@ -1272,3 +1272,41 @@ func checkALandedSpaceIsNoLongerRefused(report: Report) {
     report.markPassed("spaces.a-refused-cursor-is-not-published")
     report.markPassed("spaces.a-landed-space-publishes-its-local-edits")
 }
+
+// MARK: - DI-3: a local deletion in flight is recorded under its captured uuid
+
+/// While a local deletion is in flight the apply loop does not land an arriving entity; it only harvests
+/// the entity id and version into the cursor. The queued deletion then marks the uuid the facade captured
+/// before the cascade. This pins the table half: a cursor that learned its entity id only through that
+/// harvest (a paired Space never committed from here) is tombstoned, and one a peer's tombstone
+/// soft-deleted in the same window is not tombstoned again.
+func checkALocalDeletionInFlightIsRecordedByItsCapturedUuid(report: Report) {
+    var table = PhiSpaceSyncTable()
+    var harvested = PhiSpaceCursor()      // no entityId before the in-flight round
+    harvested.entityId = "srv-a"
+    harvested.version = 6
+    table.cursors["space-a"] = harvested
+    var softDeleted = PhiSpaceCursor()
+    softDeleted.entityId = "srv-b"
+    softDeleted.version = 7
+    softDeleted.hidden = true
+    softDeleted.deletedAtMs = 1_700_000_000_000
+    table.cursors["space-b"] = softDeleted
+
+    let markedA = table.recordLocalDeletion(spaceId: "space-a")
+    let markedB = table.recordLocalDeletion(spaceId: "space-b")
+    let markedUnknown = table.recordLocalDeletion(spaceId: "space-unknown")
+    report.check("spaces.local-delete.a-harvested-cursor-is-tombstoned",
+                 markedA && table.cursors["space-a"]?.pendingDelete == true
+                    && table.cursors["space-a"]?.version == 6,
+                 "the harvested cursor was not marked: \(String(describing: table.cursors["space-a"]))")
+    report.check("spaces.local-delete.a-remote-tombstone-in-the-window-is-not-echoed",
+                 !markedB && table.cursors["space-b"]?.pendingDelete == false,
+                 "a soft-deleted cursor was marked for a second tombstone")
+    report.check("spaces.local-delete.an-unknown-uuid-mints-no-cursor",
+                 !markedUnknown && table.cursors["space-unknown"] == nil && table.cursors.count == 2,
+                 "recordLocalDeletion minted or marked a cursor for a uuid it did not hold")
+    report.markPassed("spaces.local-delete.a-harvested-cursor-is-tombstoned")
+    report.markPassed("spaces.local-delete.a-remote-tombstone-in-the-window-is-not-echoed")
+    report.markPassed("spaces.local-delete.an-unknown-uuid-mints-no-cursor")
+}

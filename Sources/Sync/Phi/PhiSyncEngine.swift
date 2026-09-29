@@ -922,6 +922,7 @@ actor PhiSyncEngine {
         /// never committed and the Space is later resurrected from a peer's
         /// entity. The queue is the only thing that makes the single writer real.
         case retentionSweep
+        /// Carries the syncUuid captured when the deletion started, not the local id.
         case recordLocalDeletion(String)
         /// Local owned-kind change (M3-3 section 5.7), identified by registry label rather than one
         /// case per kind. Owned deletion originates in the section 4.7 diff, not deletion hooks
@@ -1168,8 +1169,8 @@ actor PhiSyncEngine {
     /// table copies across network/main-actor suspensions. An interleaved deletion would be
     /// overwritten, permanently losing pendingDelete and allowing the next incoming entity to
     /// recreate the Space. Call only from outside a round, like setSpaceSyncEnabled.
-    func recordLocalDeletion(spaceId: String) async {
-        await serialized(.recordLocalDeletion(spaceId))
+    func recordLocalDeletion(syncUuid: String) async {
+        await serialized(.recordLocalDeletion(syncUuid))
     }
 
     func runRetentionSweep() async {
@@ -1531,16 +1532,11 @@ actor PhiSyncEngine {
             applySpaceGate(enabled)
         case .retentionSweep:
             await applyRetentionSweep()
-        case .recordLocalDeletion(let localSpaceId):
-            // Translate the local SpaceManager ID to the cursor's syncUuid at this boundary
-            // (section 3.4). No mapping means never published and hence no tombstone to send,
-            // matching recordLocalDeletion's entityId guard. The PhiSpaceSyncState facade still
-            // accepts local IDs.
-            if let uuid = await spaceAccess?.syncUuid(forSpaceId: localSpaceId) {
-                runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
-            } else {
-                AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
-            }
+        case .recordLocalDeletion(let uuid):
+            // The facade captured the syncUuid before the cascade (section 3.4). Resolving the local
+            // id here would be too late: a round ahead of this one may have dropped or replaced the
+            // mapping. An unmapped Space never reaches the engine.
+            runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
         case .localOwnedChange(let label):
             // Suppress echoes as for localSpaceChange. The label is diagnostic only: publication
             // visits every registered kind, so any owned-kind change schedules an ordinary push
@@ -2631,12 +2627,21 @@ actor PhiSyncEngine {
             }
             // A soft-deleted uuid is never resurrected by a replayed create.
             if cursor.deletedAtMs != nil { cursor.pendingApply = nil; table.cursors[item.uuid] = cursor; continue }
-            if cursor.pendingDelete {
-                // A local deletion wins over a concurrent live update. Learn the current
+            // A local deletion in flight (cascade running, or its intent queued behind this round)
+            // has no `pendingDelete` yet, and its row may already be gone: without this the
+            // dead-mapping repair below would land it again as a new Space.
+            let beingDeleted = await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid)
+            if cursor.pendingDelete || beingDeleted {
+                // A local deletion wins over a concurrent live update (§9.2). Learn the current
                 // server version for its tombstone without recreating the deleted local row.
                 if !item.entityId.isEmpty { cursor.entityId = item.entityId }
                 cursor.version = max(cursor.version, item.version)
                 cursor.pendingApply = nil
+                if beingDeleted, !cursor.pendingDelete, item.fromServer {
+                    // The cascade can still fail and leave the Space in place: park the entity so
+                    // the next round lands it then. A recorded deletion clears it in this branch.
+                    cursor.pendingApply = try? item.entity.serializedData()
+                }
                 table.cursors[item.uuid] = cursor
                 table.unreadableTagHashes.removeValue(forKey: tag)
                 continue

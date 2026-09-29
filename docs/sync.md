@@ -524,6 +524,17 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   its mapping on `.applied`, and the next round minted the surviving row a new
   uuid and published it as a new Space, detached from its account-side bookmarks
   and pins.
+- **Identity captured up front, in-flight rounds held off.** Before the cascade,
+  `PhiSpaceSyncState.beginLocalDeletion` resolves the Space's sync uuid and puts
+  it in an in-memory being-deleted set; the intent carries that uuid, and the
+  engine round records `pendingDelete` under it without resolving the mapping
+  again. The mark ends when that round has run (or when the cascade fails). While
+  it stands, the apply loop treats an arriving entity for the uuid like a
+  `pendingDelete` one — delete beats a concurrent edit for Spaces (design §9.2):
+  it learns the entity id and version for the tombstone, keeps the mapping and
+  lands nothing, so the dead-mapping repair cannot re-land the Space a round
+  already in flight saw disappear. The entity is parked in `pendingApply` so that
+  it still lands if the cascade fails; a recorded deletion clears it.
 - **Accepted gap: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round. If

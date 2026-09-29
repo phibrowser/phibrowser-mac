@@ -2141,14 +2141,14 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        // The facade's parameter is a LOCAL spaceId in all three calls (§3.4).
-        await engine.recordLocalDeletion(spaceId: "LOCAL-P")
-        await engine.recordLocalDeletion(spaceId: "LOCAL-A")
-        await engine.recordLocalDeletion(spaceId: "LOCAL-NEVER")
+        // The facade hands over the syncUuid it captured before the cascade (§3.4).
+        await engine.recordLocalDeletion(syncUuid: "sync-published")
+        await engine.recordLocalDeletion(syncUuid: "sync-agent")
+        await engine.recordLocalDeletion(syncUuid: "sync-never")
         XCTAssertTrue(store.table.cursors["sync-published"]!.pendingDelete)
         XCTAssertFalse(store.table.cursors["sync-agent"]!.pendingDelete)
         XCTAssertEqual(store.table.cursors.count, 2,
-                       "an unmapped local id is not a tombstone; it must not mint a cursor")
+                       "a uuid with no cursor is not a tombstone; it must not mint a cursor")
     }
 
     /// The single-writer rule (§5.3): the facade delivers an INTENT that runs on
@@ -2169,7 +2169,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        await engine.recordLocalDeletion(spaceId: "LOCAL-1")
+        await engine.recordLocalDeletion(syncUuid: "sync-1")
         await engine.handleLocalSpacesChange()
         XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete
                       || store.table.cursors["sync-1"]!.deletedAtMs != nil)
@@ -2213,7 +2213,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let round = Task { await engine.handleLocalSpacesChange() }
         await arrived.wait()          // the push is parked inside commit, table copy in hand
 
-        let deletion = Task { await engine.recordLocalDeletion(spaceId: "LOCAL-1") }
+        let deletion = Task { await engine.recordLocalDeletion(syncUuid: "sync-1") }
         for _ in 0..<32 { await Task.yield() }
         XCTAssertFalse(store.table.cursors["sync-1"]!.pendingDelete,
                        "the intent must queue behind the round, not run inside its table window")
@@ -2523,7 +2523,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.pullOnce()
 
         access.spaces = []                                   // The local row is already deleted
-        await engine.recordLocalDeletion(spaceId: "LOCAL-1") // The facade accepts a local id
+        await engine.recordLocalDeletion(syncUuid: "sync-1") // Captured by the facade before the cascade
         await engine.handleLocalSpacesChange()               // One push sends and accepts the tombstone
 
         XCTAssertTrue(spaceCommits(client).contains { $0.deleted })
@@ -2533,6 +2533,42 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertNotNil(cursor.deletedAtMs, "The cursor remains as a permanent tombstone record")
         XCTAssertFalse(cursor.pendingDelete)
+    }
+
+    /// 7b'. §9.2, delete beats a concurrent edit: an entity that arrives while a local deletion is in
+    /// flight (row already gone, `pendingDelete` not yet recorded) is neither landed nor treated as a
+    /// dead mapping. The mapping survives, so the queued deletion tombstones the same uuid.
+    func testAnEntityArrivingDuringALocalDeletionIsNotLandedAgain() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = []                                   // The cascade has removed the row
+        access.beingDeletedSyncUuids = ["sync-1"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        published.reconciled = try spaceEntity("sync-1").serializedData()
+        published.server = published.reconciled
+        store.table.cursors["sync-1"] = published
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 6, entityId: "srv-1")
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()                              // A peer edit lands in the in-flight round
+
+        XCTAssertTrue(access.calls.filter { if case .create = $0 { return true }; return false }.isEmpty,
+                      "A Space being deleted is not landed again")
+        XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1", "No dead-mapping repair")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.version, 6, "The tombstone learns the new version")
+
+        access.beingDeletedSyncUuids = []
+        await engine.recordLocalDeletion(syncUuid: "sync-1")
+        await engine.handleLocalSpacesChange()
+        XCTAssertTrue(spaceCommits(client).contains { $0.deleted })
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "The mapping is removed when the tombstone is applied")
     }
 
     /// 7c. Replaying the tombstone after cleanup is a no-op; snapshot cannot resurrect its UUID.
@@ -2561,9 +2597,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(spaceCommits(client).isEmpty)
     }
 
-    /// 8. recordLocalDeletion receives local id at the boundary. Without a mapping,
-    /// it is a no-op: no cursor creation and no commit.
-    func testRecordLocalDeletionTranslatesTheLocalIdAndNoOpsWithNoMapping() async throws {
+    /// 8. recordLocalDeletion receives the syncUuid the facade captured. A uuid with no
+    /// cursor is a no-op: no cursor creation and no commit.
+    func testRecordLocalDeletionMarksTheCapturedUuidAndNoOpsWithNoCursor() async throws {
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace("LOCAL-1", "Work", order: 0),
                          localSpace("LOCAL-2", "Reading", order: 1)]
@@ -2576,10 +2612,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: FakePhiSyncClient())
         await engine.setSpaceSyncEnabled(true)
 
-        await engine.recordLocalDeletion(spaceId: "LOCAL-1")
+        await engine.recordLocalDeletion(syncUuid: "sync-1")
         XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete)
 
-        await engine.recordLocalDeletion(spaceId: "LOCAL-2")   // Never published
+        await engine.recordLocalDeletion(syncUuid: "sync-LOCAL-2")   // Never published
         XCTAssertEqual(store.table.cursors.count, 1, "Without a mapping there is no tombstone to send or cursor to create")
     }
 

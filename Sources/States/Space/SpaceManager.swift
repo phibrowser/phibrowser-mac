@@ -6319,19 +6319,31 @@ final class SpaceManager: ObservableObject {
             return
         }
         let deletionStoreIdentifier = storeIdentifier
+        // Delete origin (§9.1). Every user-visible delete already funnels here:
+        // the strip, Settings > Spaces, the app menu, the CDP
+        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
+        // account identity is captured now, while the mapping still resolves, and
+        // marked as being deleted so a sync round already in flight does not
+        // re-land the Space the cascade removes (§9.2). nil for an unmapped Space:
+        // agent Spaces never get a mapping, which keeps the orphan sweep silent.
+        let syncUuid = MainActor.assumeIsolated {
+            PhiSpaceSyncState.shared.beginLocalDeletion(spaceId: spaceId)
+        }
         Task { @MainActor [weak self] in
             do {
                 try await account.localStorage.deleteSpaceCascadeThrowing(
                     spaceId: spaceId, origin: .userIntent)
-                guard let self, self.storeIdentifier == deletionStoreIdentifier else { return }
-                // Delete origin (§9.1). Every user-visible delete already funnels here:
-                // the strip, Settings > Spaces, the app menu, the CDP
-                // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
-                // helper marks ONLY a uuid with an entityId, which is what makes the
-                // orphan sweep silent: agent Spaces never get one. Only after the cascade
-                // committed: a failed cascade leaves the Space in the strip, and a tombstone
-                // for it would delete it on every other device and re-mint it here.
-                PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId)
+                guard let self, self.storeIdentifier == deletionStoreIdentifier else {
+                    // The account changed under the cascade; its engine went with it.
+                    if let syncUuid { PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid) }
+                    return
+                }
+                // Only after the cascade committed: a failed cascade leaves the Space in
+                // the strip, and a tombstone for it would delete it on every other device
+                // and re-mint it here. The table marks ONLY a uuid with an entityId.
+                if let syncUuid {
+                    PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId, syncUuid: syncUuid)
+                }
                 self.clearThemeRecords(forSpaceId: spaceId)
                 // Publish the committed list before revealing pips again, even
                 // if the store publisher's delivery is still queued.
@@ -6339,6 +6351,8 @@ final class SpaceManager: ObservableObject {
                 self.pendingDeletionSpaceIds.remove(spaceId)
                 self.reloadURLRulesFromStore()
             } catch {
+                // Nothing was delivered, so there is nothing to roll back in sync.
+                if let syncUuid { PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid) }
                 if self?.storeIdentifier == deletionStoreIdentifier {
                     self?.pendingDeletionSpaceIds.remove(spaceId)
                 }

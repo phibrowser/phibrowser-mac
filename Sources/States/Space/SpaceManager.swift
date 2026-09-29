@@ -6307,12 +6307,6 @@ final class SpaceManager: ObservableObject {
             AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
         }
-        // Delete origin (§9.1). Every user-visible delete already funnels here:
-        // the strip, Settings > Spaces, the app menu, the CDP
-        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
-        // helper marks ONLY a uuid with an entityId, which is what makes the
-        // orphan sweep silent: agent Spaces never get one.
-        MainActor.assumeIsolated { PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId) }
         // Cascade-delete the Space, tagged tabs/bookmarks and rules in one transaction to prevent ghost
         // Spaces/orphan rows after a crash and inconsistent intermediate UI publications.
         // LocalStore.deleteSpace leaves the cascade decision to callers. Rules must be removed too, or remain
@@ -6330,6 +6324,14 @@ final class SpaceManager: ObservableObject {
                 try await account.localStorage.deleteSpaceCascadeThrowing(
                     spaceId: spaceId, origin: .userIntent)
                 guard let self, self.storeIdentifier == deletionStoreIdentifier else { return }
+                // Delete origin (§9.1). Every user-visible delete already funnels here:
+                // the strip, Settings > Spaces, the app menu, the CDP
+                // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
+                // helper marks ONLY a uuid with an entityId, which is what makes the
+                // orphan sweep silent: agent Spaces never get one. Only after the cascade
+                // committed: a failed cascade leaves the Space in the strip, and a tombstone
+                // for it would delete it on every other device and re-mint it here.
+                PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId)
                 self.clearThemeRecords(forSpaceId: spaceId)
                 // Publish the committed list before revealing pips again, even
                 // if the store publisher's delivery is still queued.

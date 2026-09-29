@@ -509,6 +509,33 @@ always existed locally. Both are fixed:
   lingers there until they update; the tombstone is the current value of that
   row and is redelivered on their next full replay.
 
+## Local Space deletion
+
+`SpaceManager.deleteSpace` is the one delete origin (design §9.1): the strip,
+Settings > Spaces, the app menu, the CDP `agentSpace.spaces.delete` face and the
+startup orphan sweep all reach its single sync hook in `finishDeletingSpace`,
+after the early-return guards. The engine marks `pendingDelete` only on a cursor
+with an `entityId`; a Space without a mapping (an agent Space) records nothing.
+
+- **Cascade first, intent second.** The deletion intent reaches the engine only
+  after `deleteSpaceCascadeThrowing` has committed. A failed cascade puts the
+  Space back in the strip and records nothing, so no tombstone is sent for a
+  Space that still exists. Sending one deleted it on every other device, dropped
+  its mapping on `.applied`, and the next round minted the surviving row a new
+  uuid and published it as a new Space, detached from its account-side bookmarks
+  and pins.
+- **Accepted gap: a crash between the cascade and the engine round.**
+  `pendingDelete` is written by a queued engine round, not in the cascade's
+  transaction, and nothing about the deletion is persisted before that round. If
+  the app dies after the cascade committed and before the round wrote the cursor
+  table, no tombstone is ever sent: the Space stays on every other device, and
+  when the account next delivers its entity (a peer edit or a replay) the
+  interrupted-deletion repair in the apply loop drops the dead mapping and lands
+  the entity again under a new local id. The Space reappears here; deleting it again
+  removes it everywhere. The same happens when the account is switched while the
+  cascade runs. Closing this gap would need a persisted deletion intent, which
+  is a format change and is not done.
+
 ## Stamps and the hybrid logical clock
 
 Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of

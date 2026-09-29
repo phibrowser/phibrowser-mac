@@ -64,6 +64,7 @@ import Foundation
         await syncNowRejectionAndResets()
         await syncNowUnobservablePolicies()
         await syncNowIgnoresOtherDemand()
+        await failingRoundEndsEarly()
         await reportCarriesNativeDetail()
     }
 
@@ -594,6 +595,60 @@ import Foundation
                      "An accepted automatic dispatch clears the rejection without showing on the button")
         automatic.stop()
         print("PASS helper Sync now: pane-open and automatic demand stay off the button; a tap joins a running round")
+    }
+
+    @MainActor static func failingRoundEndsEarly() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.status("phi", .offline, at: 103)
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        f.tick(171)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "Failure evidence from before the request cannot end the round")
+        f.tick(173); f.status("phi", .syncing, at: 103); f.status("profile", .upToDate, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "A participant still working keeps the round")
+        f.tick(175); f.status("phi", .offline, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "One failed sample may be transient")
+        f.tick(178)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && helper.report.summary.phase == .offline
+                     && f.saved == Date(timeIntervalSince1970: 103),
+                     "A round every participant has settled on a failure since the request ends at the second such sample")
+        // Automatic demand keeps today's cadence: the timeout (230) plus the interval (290).
+        for second in stride(from: 181, through: 289, by: 3) {
+            f.tick(Double(second))
+            await helper.refresh()
+        }
+        precondition(f.requests["phi"] == 2, "An early end must not retry failing sync sooner than a timeout would")
+        f.tick(290)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 3 && helper.report.request == .idle,
+                     "The automatic retry runs on the old schedule and stays off the button")
+        helper.stop()
+
+        // A tap after an early end only waits for the ordinary minimum interval.
+        let g = Fixture(), tapped = await g.completedHelper()
+        g.tick(170); g.status("phi", .needsAttention, at: 103)
+        _ = await tapped.requestSyncNow()
+        g.tick(172); g.status("phi", .needsAttention, at: 103); g.status("profile", .upToDate, at: 103)
+        await tapped.refresh()
+        g.tick(175)
+        await tapped.refresh()
+        precondition(tapped.report.request == .idle && g.requests["phi"] == 2)
+        g.tick(200)
+        state = await tapped.requestSyncNow()
+        precondition(state == .queued(reason: .rateLimited, notBefore: Date(timeIntervalSince1970: 230)))
+        g.tick(230)
+        await tapped.refresh()
+        precondition(g.requests["phi"] == 3 && tapped.report.request == .inFlight(startedAt: g.time),
+                     "An explicit request is limited by the minimum interval, not the automatic retry delay")
+        tapped.stop()
+        print("PASS helper: a round that fails after the request ends early; automatic retries keep their cadence")
     }
 
     @MainActor static func reportCarriesNativeDetail() async {

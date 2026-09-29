@@ -36,6 +36,10 @@ final class SyncHelper {
     private struct Round {
         let startedAt: Date
         let previousSuccesses: [String: Date]
+        /// Revisions at dispatch; a sample past them is evidence from after the request.
+        let previousRevisions: [String: UInt64]
+        /// The previous observation already met the early-failure condition.
+        var failureObserved = false
         /// Started by, or joined by, a Sync now request; only such a round is shown on the button.
         var syncNow: Bool
     }
@@ -62,6 +66,9 @@ final class SyncHelper {
     private var requestRejected = false
     private var coordinationFailure: CoordinationFailure?
     private var nextRequestAt: Date?
+    /// Automatic demand after a round that ended early on failure waits as long as it would
+    /// have after that round's timeout, so failing sync is not retried more often.
+    private var automaticRetryAt: Date?
     private var round: Round?
     private var generation = UUID()
     private var retired = false
@@ -222,6 +229,8 @@ final class SyncHelper {
         }
         let observed = SyncStatusSummary.reduce(paired: true, requiredIDs: ids, snapshots: Array(snapshots.values))
         let successes = snapshots.compactMapValues(\.lastSuccess)
+        let revisions = snapshots.mapValues(\.revision)
+        let failed = observed.phase == .offline || observed.phase == .needsAttention
         let time = now()
         if let round {
             if time.timeIntervalSince(round.startedAt) >= roundTimeout {
@@ -243,11 +252,26 @@ final class SyncHelper {
                 } else {
                     coordinationFailure = .persistence
                 }
+            } else if failed, ids.allSatisfy({ id in
+                guard let snapshot = snapshots[id], Self.isSettled(snapshot) else { return false }
+                return round.previousRevisions[id].map { snapshot.revision > $0 } ?? true
+            }) {
+                // Every participant has reported since the request and settled on a failure.
+                // One such sample may be transient (Chromium retries on its own); a second
+                // consecutive one ends the round now instead of at the timeout.
+                if round.failureObserved {
+                    self.round = nil
+                    needsRound = true
+                    automaticRetryAt = round.startedAt.addingTimeInterval(roundTimeout + minimumRoundInterval)
+                } else {
+                    self.round?.failureObserved = true
+                }
+            } else {
+                self.round?.failureObserved = false
             }
         }
         // Commit-only cycles, late replies and ordinary pending work are observations,
         // never demand. The engines' own schedulers handle local/remote changes.
-        let failed = observed.phase == .offline || observed.phase == .needsAttention
         let stale = snapshots.values.contains { snapshot in
             snapshot.phase == .upToDate
                 && (snapshot.lastSuccess.map { time.timeIntervalSince($0) >= staleInterval } ?? false)
@@ -265,10 +289,12 @@ final class SyncHelper {
             canRequestExplicitly = !observable.isEmpty && observable.allSatisfy(Self.isSettled)
         }
         let explicit = explicitRefreshPending || syncNowPending
+        let intervalPassed = nextRequestAt.map { time >= $0 } ?? true
+        let automaticAllowed = intervalPassed && (automaticRetryAt.map { time >= $0 } ?? true)
+        // `canRequestExplicitly` includes `canRequest` under either policy.
         if round == nil,
-           (canRequest && (needsRound || explicit || failed || stale))
-            || (explicit && canRequestExplicitly),
-           nextRequestAt.map({ time >= $0 }) ?? true {
+           (explicit && canRequestExplicitly && intervalPassed)
+            || (canRequest && (needsRound || failed || stale) && automaticAllowed) {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             let bySyncNow = syncNowPending
             explicitRefreshPending = false
@@ -277,7 +303,8 @@ final class SyncHelper {
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             if accepted {
-                round = Round(startedAt: time, previousSuccesses: successes, syncNow: bySyncNow)
+                round = Round(startedAt: time, previousSuccesses: successes,
+                              previousRevisions: revisions, syncNow: bySyncNow)
                 needsRound = false
                 requestRejected = false
                 updateTransientFailure(nil)

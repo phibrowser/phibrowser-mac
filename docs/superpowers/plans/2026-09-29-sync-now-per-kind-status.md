@@ -601,3 +601,14 @@ Deviations from the plan text, recorded as they were made.
   arrives while any round runs (the tap joins it, as coalescing already did); an automatic or
   pane-open round without a tap reports Idle. Rejected is set only when a dispatch that
   consumed `syncNowPending` is refused, and is cleared by the next tap or any accepted dispatch.
+- **Review I-1.** The round records participant revisions at dispatch and ends early when
+  the observed summary is Offline or Needs attention and every participant is settled with a
+  revision past the recorded one, in two consecutive observations rather than one: the
+  existing barrier test (`completionBarrier`) expects a Profile that reports Offline once and
+  then Up to date inside the same round to complete it, and Chromium retries on its own. This
+  costs one 3-second poll. Chromium revisions are per-read counters, so for Profiles the
+  condition means "sampled after dispatch"; the native revision moves on every engine status
+  update. No new request state: an early end returns the request to Idle with a failed summary,
+  and the pane (I-2) reports it as a failure. `automaticRetryAt` (start + timeout + minimum
+  interval) keeps automatic `failed`/`needsRound`/stale demand on the pre-fix schedule; the
+  pane-open request and Sync now are limited only by the ordinary minimum interval.

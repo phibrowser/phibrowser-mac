@@ -795,6 +795,10 @@ import SwiftUI
                     && ProfilePairingGate.shared.isPaired
                     && self.phiSyncPairingEnabled
                     && controller.manager.currentARK != nil
+                    // Reset by another device: keys stay deliverable until the user sets
+                    // sync up again, but nothing should be loaded for it meanwhile. The
+                    // engine reads the persisted flag when built, so this covers both.
+                    && !self.nativeSyncRequiresReconfiguration
             },
             isEnabled: { !UserDefaults.standard.bool(forKey: SyncProfileLoader.disabledDefaultsKey) },
             load: { profileId, done in

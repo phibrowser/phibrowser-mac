@@ -59,6 +59,7 @@ final class LibraryViewModule: NSViewController {
     private let presentation: Presentation
     private let downloadsManager = DownloadsManager(profileIds: [])
     private let folioModel: FolioLibraryModel
+    private var findShortcutMonitor: Any?
     var onDismiss: (() -> Void)?
 
     init(browserState: BrowserState, presentation: Presentation = .embedded) {
@@ -69,6 +70,10 @@ final class LibraryViewModule: NSViewController {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        if let findShortcutMonitor { NSEvent.removeMonitor(findShortcutMonitor) }
+    }
 
     override var acceptsFirstResponder: Bool { presentation == .standalone }
 
@@ -93,6 +98,15 @@ final class LibraryViewModule: NSViewController {
         let host = ThemedHostingController(rootView: content, themeSource: browserState.themeContext)
         addChild(host)
         view = host.view
+        findShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.navigationState.selection == .spaces,
+                  let window = self.viewIfLoaded?.window, window.isVisible,
+                  event.window === window,
+                  event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "f" else { return event }
+            // Spaces has no search; keep Find from reaching the browser behind Library.
+            return nil
+        }
     }
 }
 

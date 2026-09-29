@@ -10,7 +10,7 @@ import Foundation
 /// Supervises Sentinel liveness while Phi AI is enabled and relaunches it when
 /// it dies.
 ///
-/// Hybrid monitoring (see `docs/plans/2026-07-09-sentinel-watchdog-design.md`):
+/// Hybrid monitoring (see `docs/sentinel-lifecycle.md`):
 /// - Primary: `NSWorkspace` `didTerminateApplicationNotification`, filtered to
 ///   the Sentinel bundle ID, gives an immediate reaction with zero polling cost.
 /// - Backstop: a low-frequency liveness poll in case a termination notification

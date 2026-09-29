@@ -51,7 +51,7 @@ struct BitwardenPersistedSession: Codable, Equatable {
 /// here binds the item's ACL to the *app's* code signature instead — which the
 /// helper binary does not satisfy — and the helper receives its session only via
 /// an explicit `restore` the app sends after the handshake. See
-/// `docs/bitwarden-password-manager.md` §7.
+/// `docs/bitwarden-password-manager.md` under "Session persistence".
 ///
 /// This uses the **data-protection keychain** (`kSecUseDataProtectionKeychain`):
 /// access is scoped by the app's keychain access group, an OS-enforced boundary

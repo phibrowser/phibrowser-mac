@@ -87,10 +87,6 @@ Silent architectural shifts are prohibited.
 - No bullet lists
 - No long explanations
 
-## Commit Timing
-- Do NOT commit immediately after making changes
-- Wait for explicit instruction before committing
-
 ---
 
 # Documentation Rules

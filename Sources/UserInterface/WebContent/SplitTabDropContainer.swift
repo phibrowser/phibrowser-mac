@@ -478,7 +478,8 @@ final class SplitTabDropContainer: NSView {
     func splitZoneForScreenPoint(_ screenPoint: CGPoint,
                                  draggedTabId: Int,
                                  draggedTabCount: Int = 1) -> DropZone? {
-        guard draggedTabCount == 1,
+        guard isSplitDragContextValid(at: screenPoint, draggedTabId: draggedTabId,
+                                      draggedTabCount: draggedTabCount),
               let mode = resolveMode(draggedTabId: draggedTabId),
               let pointInSelf = pointInSelfForScreenPoint(screenPoint) else { return nil }
         let area = pageAreaProvider?() ?? bounds
@@ -494,10 +495,12 @@ final class SplitTabDropContainer: NSView {
                                  draggedTabId: Int,
                                  draggedTabCount: Int = 1) -> Bool {
         guard draggedTabCount == 1,
-              resolveMode(draggedTabId: draggedTabId) != nil,
-              let pointInSelf = pointInSelfForScreenPoint(screenPoint) else { return false }
-        let area = pageAreaProvider?() ?? bounds
-        return area.contains(pointInSelf)
+              let state = browserState,
+              state.splitGroup(forTabId: draggedTabId) == nil,
+              let pointInSelf = pointInSelfForScreenPoint(screenPoint),
+              (pageAreaProvider?() ?? bounds).contains(pointInSelf) else { return false }
+        restorePreviousFocusIfNeeded(for: .normalTab(tabId: draggedTabId), state: state)
+        return resolveMode(draggedTabId: draggedTabId) != nil
     }
 
     private func pointInSelfForScreenPoint(_ screenPoint: CGPoint) -> CGPoint? {
@@ -751,8 +754,8 @@ final class SplitTabDropContainer: NSView {
     /// no drop is allowed. `create` when the focused tab is not a split;
     /// `replace` when it is — but only if the split isn't pinned and the
     /// dragged item isn't already a pane of that split.
-    private func resolveMode(for source: DragSource, state: BrowserState) -> Mode? {
-        guard let focusedTab = state.focusingTab else { return nil }
+    private func resolveMode(for source: DragSource, state: BrowserState, focusedTab: Tab? = nil) -> Mode? {
+        guard let focusedTab = focusedTab ?? state.focusingTab else { return nil }
         guard let group = state.splitGroup(forTabId: focusedTab.guid) else {
             return .create
         }
@@ -775,6 +778,21 @@ final class SplitTabDropContainer: NSView {
                group.contains(tabId: liveTab.guid) { return nil }
         }
         return .replace(splitId: group.id)
+    }
+
+    private func restorePreviousFocusIfNeeded(for source: DragSource, state: BrowserState) {
+        let draggedTabId: Int?
+        switch source {
+        case .normalTab(let tabId):
+            draggedTabId = tabId
+        case .pinnedTab(let dbGuid), .bookmark(let dbGuid):
+            draggedTabId = state.tabs.first(where: { $0.guidInLocalDB == dbGuid })?.guid
+        }
+        guard let draggedTabId,
+              let previousId = state.tabDraggingSession.previousFocusedTabId,
+              let previousTab = state.tabs.first(where: { $0.guid == previousId }),
+              resolveMode(for: source, state: state, focusedTab: previousTab) != nil else { return }
+        state.tabDraggingSession.restorePreviousFocusForSplitDrop(draggedTabId: draggedTabId)
     }
 
     /// Screen-point variant used by the TabStrip manual-drag flow, which only
@@ -1198,17 +1216,21 @@ final class SplitTabDropContainer: NSView {
               isSameWindowDrag(pasteboardItem, sender: sender, state: state),
               sender.draggingPasteboard.phiNormalTabIds().count <= 1,
               let source = parseDragSource(pasteboardItem),
-              !isSourceASplit(source, state: state),
-              let mode = resolveMode(for: source, state: state) else {
+              !isSourceASplit(source, state: state) else {
             hideHighlights()
             return Evaluation(operation: [], zone: nil)
         }
         let pointInSelf = convert(sender.draggingLocation, from: nil)
-        let area = pageAreaProvider?() ?? bounds
-        guard area.contains(pointInSelf) else {
+        guard (pageAreaProvider?() ?? bounds).contains(pointInSelf) else {
             hideHighlights()
             return Evaluation(operation: [], zone: nil)
         }
+        restorePreviousFocusIfNeeded(for: source, state: state)
+        guard let mode = resolveMode(for: source, state: state) else {
+            hideHighlights()
+            return Evaluation(operation: [], zone: nil)
+        }
+        let area = pageAreaProvider?() ?? bounds
         // Drag is contextually valid and the cursor is over the page area:
         // show the directional hint cards so the user can see where they land.
         activeMode = mode

@@ -725,7 +725,10 @@ enum PhiUninstallProcessWaiter {
             if let deadline, Date() >= deadline {
                 return false
             }
-            Thread.sleep(forTimeInterval: pollInterval)
+            // AppKit's running-application state only advances with the run loop.
+            // This synchronous waiter runs in the standalone uninstall helper.
+            let nextPoll = Date().addingTimeInterval(pollInterval)
+            RunLoop.current.run(until: deadline.map { min($0, nextPoll) } ?? nextPoll)
         }
         return true
     }

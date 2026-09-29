@@ -895,13 +895,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// groups the user closed by hand (the snapshot's parked-only entries).
 /// Chromium retires a closed-group window at the replay seam — neither
 /// rebuilt nor parked, and its "Reopen Closed Window" undo entry survives —
-/// instead of parking it forever. @"ghost" names the saved windows the
-/// client can map back to a Space — the only ones that may park. With it
-/// present (even empty), a window in none of the three arrays is rebuilt
-/// instead of parked, since nothing could ever materialize it; without it, a
-/// window in neither of the other two arrays parks exactly as before. A
-/// missing @"closedGroup" key reads as empty. nil = unarmed, the full replay,
-/// exactly like the old selector's nil.
+/// instead of parking it forever. A window in neither array parks exactly as
+/// before. A missing @"closedGroup" key reads as empty. nil = unarmed, the
+/// full replay, exactly like the old selector's nil.
 - (nullable NSDictionary<NSString *, NSArray<NSNumber *> *> *)coldStartRestorePlan;
 
 /// Which profiles own the eager windows of THIS cold start — profile
@@ -950,20 +946,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// parked registry, same per-profile timing and growth contract.
 ///
 /// `profileBasename` names the profile whose replay this receipt settles;
-/// `replayedWindowIds` are the previous-session window ids of every saved
-/// normal window that replay is rebuilding right now: the eager matches,
-/// plus — when the plan carried a ghost set — the windows the plan could not
-/// place. The replay scanned that profile's WHOLE session file before
-/// reporting, so an eager id whose window belongs to this profile and which
-/// is absent from `replayedWindowIds` names a window the file no longer
-/// holds: no window will ever arrive for it, this launch or any later one.
-/// That is the settlement signal the client's cold-start repair hangs on —
-/// per profile, with no timer and no all-profiles barrier. Conversely an id
-/// in `replayedWindowIds` that the client's record does not know is an
-/// unplaceable window about to arrive: the client seats it in the saved
-/// window group by profile, the way it seats restore's stand-in window,
-/// instead of minting a window of its own — and leaves that group's repair
-/// to it.
+/// `replayedWindowIds` are the previous-session window ids that replay
+/// matched from the eager set — the windows being rebuilt right now. The
+/// replay scanned that profile's WHOLE session file before reporting, so an
+/// eager id whose window belongs to this profile and which is absent from
+/// `replayedWindowIds` names a window the file no longer holds: no window
+/// will ever arrive for it, this launch or any later one. That is the
+/// settlement signal the client's cold-start repair hangs on — per profile,
+/// with no timer and no all-profiles barrier.
 - (void)coldStartParkedGhostWindows:
             (NSDictionary<NSString *, NSArray<NSNumber *> *> *)parkedWindowIdsByProfileId
         replayedForProfile:(NSString *)profileBasename
@@ -1804,11 +1794,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// entry left alone so cmd+shift+t can bring the group back. Retirement is
 /// per window and only with the undo entry actually on the stack — a
 /// closed-group window with no undo entry to answer for it parks exactly as
-/// before, so nothing can be lost to a record the undo stack never got.
-/// @"ghost" names the windows the caller can map back to a Space, and
-/// confines parking to them: with it present (even empty), a window in none
-/// of the three arrays is rebuilt instead of parked; without it, a window in
-/// neither of the other two parks as before. A missing @"closedGroup" key
+/// before, so nothing can be lost to a record the undo stack never got. A
+/// window in neither array parks as before. A missing @"closedGroup" key
 /// reads as empty; a nil `restorePlan` restores everything, exactly like a
 /// nil `eagerWindowIds`. The receipt may still name a closed-group window
 /// whose retirement is pending (it is checked against the undo stack after

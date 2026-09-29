@@ -1,4 +1,9 @@
-# Phi sync publishing
+# Native sync contracts
+
+Scope: account-scoped native sync, pairing and the public framework bridge.
+Official sync services and a compatible framework are prerequisites; a self-built
+open-source app does not enable Phi account sync. Server implementation and
+framework internals are outside this repository.
 
 For manual cross-device acceptance, see the [Sync E2E test cases](sync-e2e-test-cases.md).
 
@@ -315,18 +320,16 @@ transport-only local-data count API cannot be used for full-sync status.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone
-does not establish runtime correctness. See the UX acceptance record in
+does not establish runtime correctness. See the reusable UX acceptance cases in
 [sync-e2e-test-cases.md](sync-e2e-test-cases.md).
 
-## Chromium sync endpoint
+## Framework sync endpoint
 
-`ChromiumLauncher` supplies a default `--sync-url` when starting the embedded
-framework. Canary builds (`NIGHTLY_BUILD=1`) use
-`https://sync.stag.phibrowser.com/chromium-sync`; release builds
-(`NIGHTLY_BUILD=0`) use `https://sync.phibrowser.com/chromium-sync`.
-The build channel selects this default independently of `DEBUG`. Explicit
-launch arguments are appended afterwards, so a supplied `--sync-url=...`
-overrides the channel default.
+`ChromiumLauncher` supplies a channel-specific default `--sync-url` to the
+embedded framework. The default is selected by `NIGHTLY_BUILD`, independently of
+`DEBUG`; explicit launch arguments are appended afterwards and can override it.
+Use the configured test environment when validating service integration. Endpoint
+configuration does not bypass the open-source build's authentication/sync boundary.
 
 ## Phi Chat profile exclusion
 
@@ -378,6 +381,66 @@ mapping notifications do not schedule more work when the gate is unchanged.
 Capture the same invalidation coordinator as the engine, so an old account's
 completion cannot wake its replacement after teardown.
 
+## Invalidation transport and recovery
+
+Invalidation is a lossy scheduling hint, not a data channel or durable event log.
+Correctness must survive missing notifications: the engines recover through their
+existing GetUpdates markers, merge rules and periodic catch-up. SSE `id` and
+`retry` fields are not sync cursors and do not replace those markers.
+
+The existing sync backend client opens one account-scoped
+`GET /sync/invalidations?client_id=<device-key-id>` stream. It obtains the current
+bearer token from the shared authentication boundary for each connection attempt
+and sends it only in the Authorization header, never in the URL or logs. Native
+transport rejects redirects, disables cookies and requires an HTTP 200
+`text/event-stream` response. A successful connection alone is not healthy until
+it receives `ready`.
+
+The client consumes these event shapes:
+
+```text
+event: ready
+data: {}
+
+event: invalidate
+data: {"namespace":"chromium:phi","data_types":[2000],"source_client_id":"producer-id"}
+
+```
+
+`ready` schedules catch-up for native sync and, through the optional bridge, all
+eligible Chromium Profiles. `chromium:phi` with type 2000 requests a native pull;
+`chromium:<profile-uuid>` forwards the type list to that Profile's engine. Hints
+carry routing metadata only, not entity content, ciphertext or keys. Unknown
+event types are ignored; supported types and eligibility remain engine concerns.
+Malformed or oversized events close the stream and leave fallback polling in
+place. Fragmented input and CRLF are supported; an incomplete event is discarded
+when reconnecting.
+
+Source exclusion is only an optimization. The service contract excludes matching
+producers using the connection's non-empty `client_id`; native dispatch also
+ignores its own device-key ID for Phi hints. Chromium uses a per-Profile cache
+GUID instead, so the bridge forwards `source_client_id` for the receiving engine
+to apply its own exclusion. When coalesced hints have different producers, clear
+the exclusion ID rather than suppressing another client's changes. An empty
+Profile UUID and empty type list on the bridge mean account-wide catch-up; this
+is not a content notification or permission to bypass engine eligibility gates.
+
+The invalidation coordinator shares the account/key-engine lifetime. Stop it
+before tearing down the engine; account, engine identity, generation and
+connection-attempt checks reject stale callbacks. Authentication changes reopen
+the stream with a fresh token. Wake/foreground requests catch-up and reconnects.
+A heartbeat watchdog handles silent stalls; retries use bounded backoff with
+jitter. Current fallback intervals are 60 seconds while unhealthy and 300 seconds
+while healthy. A 250-ms coalescing window combines demands; catch-up supersedes
+individual hints, and only one pull runs at a time with pending follow-up work.
+An older service without this endpoint leaves polling active. An older framework
+without the optional selector retains its existing sync scheduling.
+
+Source and focused checks: [parser, scheduler and HTTP transport](../Sources/Sync/Phi/PhiSyncInvalidation.swift),
+[account/engine routing](../Sources/ChromiumBridge/PhiChromiumCoordinator.swift),
+and [hostless invalidation tests](../Tests/SyncInvalidation/main.swift). These
+native checks do not certify a deployed service or framework implementation.
+
 ## Pull before commit
 
 Invalidation schedules refreshes but does not bypass preflight. Every round that may
@@ -386,8 +449,8 @@ complete GetUpdates and process the received updates. Local change notifications
 the same prerequisite as explicit pushes. A completed pull can authorize multiple
 commit batches in that round; each batch does not need a separate GetUpdates.
 
-The gate is on **publication**, not on stamping. The settings stamping pass (AM-1)
-and the Spaces one (C2-a) deliberately run from the debounced local-change path
+The gate is on **publication**, not on stamping. The settings stamping pass
+and the Spaces one deliberately run from the debounced local-change path
 *ahead* of this gate, so an offline edit carries its own edit time; they write local
 sidecar and cursor state and commit nothing. See "Stamps and the hybrid logical
 clock".
@@ -456,10 +519,9 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   user-data backup therefore restores the marker that belongs to that backup,
   and the replay it triggers re-lands the missing rows instead of emitting
   tombstones for them.
-- Known residual `E-M3-4a-1`: the first whole-scale adoption of settings is not
+- Known limitation: the first whole-scale adoption of settings is not
   atomic, so a crash between "values written" and "adoption flag written"
-  replays the page and performs that adoption a second time. It is recorded in
-  the milestone's design errata and is not fixed here.
+  replays the page and performs that adoption a second time. This remains a limitation of the native adoption sequence.
 
 ### `pendingApply` and `pendingProjection`
 
@@ -467,8 +529,8 @@ A Space cursor carries one payload in each direction, and they are symmetric:
 
 | field | direction | written by | cleared by |
 | --- | --- | --- | --- |
-| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect) | the apply pass | a successful landing |
-| `pendingProjection` | outbound — this device's own projection of the Space, with each changed field already stamped at the time the user changed it (ruling C2-a, design option S2) | the stamping pass, from the debounced local-Spaces-change round, ahead of the pull gate | a landing, an accepted commit, a tombstone, or a revert that leaves nothing to publish |
+| `pendingApply` | inbound — a decrypted entity this device could not land yet (a deferred landing, a mapping write failure, or a rebind that did not take effect) | the apply pass | a successful landing |
+| `pendingProjection` | outbound — this device's own projection of the Space, with each changed field already stamped at the time the user changed it | the stamping pass, from the debounced local-Spaces-change round, ahead of the pull gate | a landing, an accepted commit, a tombstone, or a revert that leaves nothing to publish |
 
 Both are serialized `PhiSpaceEntity` bytes in `sync.phiSpaces`, both are
 optional, and neither is on the wire. Adding `pendingProjection` needed no
@@ -476,24 +538,24 @@ optional, and neither is on the wire. Adding `pendingProjection` needed no
 reads an optional with `decodeIfPresent`, so a table written by a build without
 the field decodes with it nil (the rule
 `PhiOwnedItemCursor.rekeyRejectRounds` states for its own addition). A build
-**older** than this one ignores the key and stamps Space edits at publish time
-again, which is the pre-C2-a behaviour — correct, just coarser.
+without Space edit-time stamping ignores the key and stamps Space edits at publish time
+again, which is the earlier publish-time behavior — correct, just coarser.
 
 `pendingProjection` is written only for a cursor that already has a
 `reconciled` baseline. A Space this device has never published has no per-field
-history to preserve, so its first publication stays wholesale (A1) and is
+history to preserve, so its first publication stays wholesale and is
 stamped at publish time as before. `SyncableSpaces.snapshot` reads the field
 back as the effective baseline for *stamps only*; `reconciled` remains what
 decides whether a field changed at all.
 
 ## Default Space role
 
-Two things that used to be one, and are now separate by name (ruling C1):
+Default Space identity and the default Space role are distinct:
 
 - The **identity** `"default-space"` — the well-known first-launch Space row
   (`LocalStore.defaultSpaceId`) and the reserved account uuid it is hard-wired
   to (`SyncableSpaces.defaultSpaceUuid`). It needs no mapping row and it carries
-  D1's two field suppressions: `profile_uuid` and `theme_id` are neither emitted
+  the default identity's two field suppressions: `profile_uuid` and `theme_id` are neither emitted
   nor applied for it. Those suppressions are attached to the IDENTITY, tested as
   `uuid == defaultSpaceUuid` in both directions, and they do **not** follow the
   role.
@@ -542,12 +604,12 @@ cannot hold zero or two holders, which is why this is not a per-Space flag.
 - **Mixed versions.** An old client neither reads nor writes the key; `merge`
   carries it through and `apply` refuses to write unregistered keys, so a round
   trip through an old client preserves the account's role. The old client keeps
-  its own device-local role until it updates — no worse than before C1, when
+  its own device-local role until it updates — as with clients where
   every client had one.
-- **Not in the D7 overwrite confirmation.** The role is not a per-Space field
+- **Not in the per-Space overwrite confirmation.** The role is not a per-Space field
   and the register is self-correcting, so the join-time diff does not mention it.
 
-Consequence accepted with the ruling: once the role sits on an ordinary Space,
+Consequence: once the role sits on an ordinary Space,
 that Space carries its own `theme_id`, so the global theme picker (which writes
 `setTheme(forSpaceId: currentDefaultSpaceId)`) pins and syncs a theme on it.
 `resolvedThemeId` still falls back to the global theme when the holder has no
@@ -564,7 +626,7 @@ always existed locally. Both are fixed:
 - A `default-space` tombstone lands like any other: hide → `deletedAtMs` →
   30-day retention → purge.
 - A live `default-space` entity whose local row is gone is created under this
-  device's own `Default` profile (D1 publishes no `profile_uuid` to resolve for
+  device's own `Default` profile (the default identity publishes no `profile_uuid` to resolve for
   it), still with no `theme_id` and no rebind. Before, it parked forever on
   `unresolvedProfile`.
 - **Safety case.** Hiding the last live user Space would leave a device with
@@ -583,12 +645,11 @@ always existed locally. Both are fixed:
 ## Stamps and the hybrid logical clock
 
 Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of
-epoch milliseconds. Ruling C2 replaced the "devices run NTP" premise behind
-those stamps with a hybrid logical clock, stamped at **edit** time rather than
-at publish time. The wire format did not change: stamps are simply integers
+epoch milliseconds. The client uses a hybrid logical clock and records supported edits at **edit**
+time rather than assuming synchronized device wall clocks at publication. The wire format did not change: stamps are simply integers
 that can now run ahead of wall clock.
 
-`Sources/Sync/Phi/PhiHybridClock.swift` holds the formula below and AM-2's
+`Sources/Sync/Phi/PhiHybridClock.swift` holds the formula below and the source-side
 correction helpers (`wallClockCorrectionThresholdMs`, `wallClockCorrection`,
 `corrected`), and nothing else. It is a value type of its own so the engine and
 the hostless convergence harness run the *same* code rather than two copies that
@@ -615,11 +676,11 @@ this area, so the split is explicit:
 
 The rule of thumb: a value that is *compared against another wire stamp* is
 logical; a value that is *compared against wall clock* (a 30-day window, a
-timeout) stays wall clock. That split is also what AM-2's clock correction
+timeout) stays wall clock. That split is also what the source-side clock correction
 follows exactly — see "Correcting a broken clock at the source" below: the
 `hlcNow()` row is corrected, the `now()` row is not.
 
-### Edit-time stamping (AM-1)
+### Edit-time stamping
 
 A changed merge unit takes the row's own edit-date column, raised one above the
 stamp of the value it overwrites:
@@ -634,18 +695,17 @@ stamp of the value it overwrites:
   stamp) takes `locationUpdatedDate`, the optional column schema V13 adds to
   `TabDataModel`. A local user move writes it; a reorder inside one parent is
   rank, a landed remote move is not an edit, and the Space retag a moved folder
-  performs on its descendants is diagnostic and never republished (R-M3-3-18).
-  The one engine-authored writer is C4's lift of a yielded child out of a
+  performs on its descendants is diagnostic and never republished.
+  The one engine-authored writer is the lift of a yielded child out of a
   remotely deleted folder, a location this device must defend against peers that
   still hold the old parent ("Edit beats delete"). A row with no recorded move —
   pre-V13, or one whose location only
   ever arrived from a peer — keeps the pre-V13 behaviour exactly: `hlcNow()`
   against a baseline, stamp 0 without one.
 - URL rules — content takes `contentUpdatedDate`, the target takes
-  `targetUpdatedDate`; both were already edit-time and now carry the AM-1 bump,
+  `targetUpdatedDate`; both use edit time raised above the overwritten stamp,
   which closes the same slow-clock hole. `rank` uses `hlcNow()`.
-- pin `split_partner_uuid` stays on `hlcNow()`. Ruling Q-R2-3 wants it folded
-  into the content stamp, but `updateTabSplitPartnerBody` is shared with sync
+- pin `split_partner_uuid` stays on `hlcNow()`. It is separate from the content stamp because `updateTabSplitPartnerBody` is shared with sync
   landing, so setting `contentUpdatedDate` there would restamp landed remote
   links as local edits.
 - Spaces — there is no edit-date column to take, so the edit time is *recorded*
@@ -665,15 +725,15 @@ stamp of the value it overwrites:
   back, so a revert publishes nothing. A field whose bytes match the **pending
   projection** keeps the stamp it was given, so a second offline edit of another
   field leaves the first field's edit time alone. And `rank` is unchanged: only
-  a Space outside §7's kept set is rewritten, and the pass records that stamp
+  a Space outside the retained ordering set is rewritten, and the pass records that stamp
   once instead of re-issuing it on every later local change.
 
   The stamping pass honours `isStopped`, the Space gate and `spaceStore` /
   `spaceAccess`, and it inherits `snapshot`'s exclusions (parked, refused,
   hidden, soft-deleted and unmapped Spaces are never projected, so a parked
   Space keeps stamping at publish time). It deliberately does **not** honour the
-  pull gate — that is the point — or guard 1's `hasDrainedFullReplay`, because
-  guard 1 protects the account from a device that has not seen its Spaces yet
+  pull gate — that is the point — or the `hasDrainedFullReplay` publication prerequisite, because
+  that prerequisite protects the account from a device that has not seen its Spaces yet
   and this pass commits nothing; the "no baseline, no pending projection" rule
   above covers that case structurally. Identities are resolved read-only, never
   minted. A failed table write costs nothing irrecoverable: the edit is still on
@@ -682,15 +742,15 @@ stamp of the value it overwrites:
 
 The bare edit column is never enough on its own: a device whose clock runs
 behind would replace a value it merged from a peer with a *smaller* stamp and
-lose its own, causally later, edit — which is the defect C2 exists to remove.
+lose its own, causally later, edit — which the logical floor prevents.
 
 Everything else is still stamped at publish time, on `hlcNow()`:
 
 | quantity | why it has no edit time |
 | --- | --- |
-| every **rank**, on every kind | a drag has no edit-date column on any kind, and ruling Q-R2-5 leaves it that way; M3-4a §14.3 item 11 already registers the cost. A Space rank is the one that comes closest: the stamping pass runs from the drag's own debounced round, so its `hlcNow()` is taken within the debounce of the drag rather than at the next successful pull. That is a consequence of where the pass sits, not a promise — the stamp is still an `hlcNow()`, not a recorded drag time, and it is the pass's clock that a peer compares against |
+| every **rank**, on every kind | a drag has no edit-date column on any kind. A Space rank is the one that comes closest: the stamping pass runs from the drag's own debounced round, so its `hlcNow()` is taken within the debounce of the drag rather than at the next successful pull. That is a consequence of where the pass sits, not a promise — the stamp is still an `hlcNow()`, not a recorded drag time, and it is the pass's clock that a peer compares against |
 | pin `split_partner_uuid` | the only column it could borrow is shared with sync landing (above) |
-| a Space with no `reconciled` baseline | first publication is wholesale (A1), so there is no per-field history to preserve; the same applies to a parked Space, which `snapshot` excludes |
+| a Space with no `reconciled` baseline | first publication is wholesale, so there is no per-field history to preserve; the same applies to a parked Space, which `snapshot` excludes |
 
 ### Where `maxSeen` lives, and why it is not beside the marker
 
@@ -728,7 +788,7 @@ therefore drags the account's logical time with it, and the clock degrades
 gracefully into a Lamport counter, which still orders causally related edits
 correctly.
 
-### Correcting a broken clock at the source (AM-2)
+### Correcting a broken clock at the source
 
 The no-clamp rule above is about *receiving*. It says nothing about what this
 device puts on the wire next, and that is where a wildly wrong clock can be
@@ -748,8 +808,8 @@ matters here is measured in minutes.
 
 The stored value is the *correction*, not the raw measurement, so no second
 reader has to re-apply the threshold. It changes only what this device stamps
-next, so every device still merges byte-identical inputs and R2.4 stands
-untouched. A change is logged once, at metadata level (the two offsets and the
+next; received entity bytes remain unchanged, so every device still merges the
+same inputs. A change is logged once, at metadata level (the two offsets and the
 threshold, never a header or anything a user typed).
 
 **What is corrected** is every wall-clock instant that becomes an LWW stamp, and
@@ -762,7 +822,7 @@ only those:
   `targetUpdatedDate` are written by `LocalStore` from the same broken `Date()`,
   so correcting only `hlcNow()` would leave every edit-time stamp uncorrected.
   The engine hands the offset to `SyncableOwnedItems.snapshot` beside `hlcMax`,
-  and the kinds apply it *before* AM-1 raises the result above the stamp it
+  and the kinds apply it *before* edit-time stamping raises the result above the stamp it
   overwrites. The columns themselves are never rewritten — they are local
   wall-clock quantities that other readers compare against wall clock.
 
@@ -775,7 +835,7 @@ the *local side of an incoming merge*. Leaving those raw is not a cosmetic gap:
 on a device an hour fast, an **earlier** local edit beats a **later** remote one
 at merge time and the uncorrected stamp lands in `reconciled`, where the
 corrected outbound path can no longer undo it. What the claiming projections
-keep at 0 is `hlcMax` and `now`, which is a separate ruling: AM-1's logical floor
+keep at 0 is `hlcMax` and `now`, which is a separate constraint: edit-time stamping's logical floor
 would let an untouched local row beat the arrival it is claiming. An edit time is
 corrected wherever one is read.
 
@@ -786,7 +846,7 @@ wall clock, and correcting one side of that comparison is how a correction turns
 into a bug.
 
 Why the offset is **persisted**, and persisted in `stateKeys`: an offline edit is
-stamped at edit time (AM-1), so a plane edit on a Mac whose clock is a year out
+stamped at edit time, so an edit on a Mac whose clock is a year out
 would otherwise be stamped a year ahead the moment it publishes. The last
 estimate is the best answer available until the next pull, and a broken clock is
 broken by a roughly constant amount. The offset is a property of the *device*,
@@ -802,31 +862,29 @@ Stamp 0 is untouched by all of this. It still means "derived, must never beat a
 real action" — no-baseline ranks, a no-baseline bookmark location with no
 recorded move, the reseeded scope mirror — it is never produced by the clock,
 and observing it is a no-op because `max` is. A no-baseline location that *does*
-record a move takes AM-1's `hlcMax` floor instead: that is what will let a
-deliberately lifted bookmark survive a republish over a tombstone (R4.6),
+record a move takes edit-time stamping's `hlcMax` floor instead: that is what will let a
+deliberately lifted bookmark survive a republish over a tombstone,
 instead of leaving a location any peer can overwrite at will.
 
-### `deleteDecidedAtMs` and A9
+### `deleteDecidedAtMs` and pending-delete cancellation
 
 `cursor.deleteDecidedAtMs` is written from `hlcNow()`, not `now()`, and this is
-mandatory rather than tidy. A9 (`SyncableOwnedItems.plan`) compares it against
+mandatory rather than tidy. The pending-delete cancellation step in `SyncableOwnedItems.plan` compares it against
 `max(K.locationStamp(of: merged), K.contentStamp(of: merged))`, both wire LWW
 stamps: if the decision stayed on wall clock while stamps moved to logical time,
 then on any account whose logical time has run ahead of wall clock *every*
-inbound entity would look newer than the deletion and A9 would cancel *every*
+inbound entity would look newer than the deletion and the cancellation step would cancel *every*
 local delete. `deletedAtMs` is the opposite case — it drives the 30-day
-retention expiry against `now()` — and stays wall clock. Both ends carry a
-comment saying so.
+retention expiry against `now()` — and stays wall clock.
 
-The `contentStamp` half is ruling C4-a and is new: M3-3 shipped A9 on the
-location stamp alone (CASE U-23), so a remote **rename** that arrived after this
-device had decided to delete still lost. The other two conjuncts are unchanged —
+The cancellation predicate considers content as well as location, so a remote
+rename can cancel a pending deletion. Two additional conjuncts must hold:
 the cancelled deletion must land under a live parent and outside a subtree a
 remote tombstone is removing this round — and they are what keeps a cancelled
 deletion from landing an orphan. `contentStamp` is a kind query beside
 `locationStamp`: the newest of the four bookmark content stamps, of the three pin
 content stamps, or the URL rule's content-group carrier; its protocol default is
-`locationStamp`, so a kind that declares no content unit keeps A9 as shipped.
+`locationStamp`, so a kind that declares no content unit uses the location comparison.
 
 ### Mixed versions
 
@@ -838,7 +896,7 @@ cost, stated plainly: on an account whose logical time has run ahead of wall
 clock, an **old** client's edits can lose to the values it is trying to
 overwrite, with no user-visible explanation, bounded by the skew.
 
-Downgrading one device is the same story locally. A build older than C2-a
+Downgrading one device is the same story locally. A build older than Space edit-time stamping
 ignores the `pendingProjection` key in `sync.phiSpaces` — it does not know the
 field, so `Codable` drops it — and stamps its Space edits at publish time
 again. It publishes correct, merely coarser, stamps, and re-upgrading picks the
@@ -847,14 +905,12 @@ either direction and no table is invalidated.
 
 ## Edit beats delete
 
-Ruling C4. When a delete and an edit of the same item are concurrent, **the edit
+When a delete and an edit of the same item are concurrent, **the edit
 wins**, whichever side reached the server first, for bookmarks, folders, pinned
 tabs and URL rules alike. The reason is asymmetry of cost, not symmetry of
 mechanism: a delete is easy to redo, an edit is not, and a wrongly kept deletion
-costs more than a wrongly kept item. This supersedes M3-3's decision to keep
-bookmarks and pins out of yielding on grounds of volume; the blast radius is held
-down by the predicate below instead, and by `resurrected` on the counter line,
-whose steady state is ~0.
+costs more than a wrongly kept item. The predicate below bounds resurrection; `resurrected` counters make repeated
+yielding observable and should settle near zero.
 
 **Say it plainly, because users see it:** an item you deleted can reappear on
 your device when another device had an unpublished edit of it. Deleting it again
@@ -885,7 +941,7 @@ republish"), matching rules.
   re-indexing must never look like intent, and the projection carries the
   baseline's rank anyway. `is_folder` is an invariant, refused rather than merged.
 - **"A live local row currently claims it" is a hard conjunct**, not an
-  implementation accident. It is what makes pin scope migration safe (T5): a
+  implementation accident. It is what makes pin scope migration safe: a
   migration is a tombstone under the old `(lineage, owner)` identity plus a create
   under the new one, and after it no live row claims the old identity, so its
   tombstone hard-deletes. Two further protections stand in front of it — a scope
@@ -896,14 +952,14 @@ republish"), matching rules.
 
 ### Direction (ii) — a local pending delete meets an inbound edit
 
-A9, extended by C4-a from a newer location stamp to a newer stamp on any merge
-unit; see "`deleteDecidedAtMs` and A9" above for the condition and the clock it
+The pending-delete cancellation step considers a newer stamp on any merge
+unit; see "`deleteDecidedAtMs` and pending-delete cancellation" for the condition and the clock it
 depends on. When the cancelled item's local row is already gone, landing
 **recreates** it from the payload rather than dropping the steps — otherwise the
 next round's diff would find the row missing and the delete would win after all.
 
 For URL rules the boundary is drawn by branch order rather than by a second
-predicate: an inbound entity for a soft-deleted rule reaches A9 only after the
+predicate: an inbound entity for a soft-deleted rule reaches pending-delete cancellation only after the
 transfer and park branches have found no merge partner at all. A collapse loser
 points at its winner for as long as that winner exists, so an **engine-authored**
 collapse deletion is never the one an edit cancels; when the winner is gone too,
@@ -937,7 +993,7 @@ the group is empty and keeping the edited rule is the coherent outcome.
   one exception to "only a local user move writes that column". Its republish has
   no baseline, and without a recorded move the no-baseline path would stamp the
   location 0, which any peer could overwrite at will.
-- **A folder-move cycle resolves by last operation wins** (ruling C5-a). Two
+- **A folder-move cycle resolves by last operation wins**. Two
   devices moving F1 into F2 and F2 into F1 produce a page whose parent graph has
   a cycle. `SyncableOwnedItems.plan` step 4 is a Kahn topological sort; what it
   cannot order is a cycle, and instead of dropping it into `refused` — which
@@ -983,7 +1039,7 @@ the group is empty and keeping the edited rule is the coherent outcome.
     with F1 nowhere in the page. Neither device ever sees both moves in one page
     in that race, so a page-only graph would land the cycle on both of them and
     nothing would repair it. A local row's side of the comparison is its
-    projection's location stamp, which under AM-1 is its move's own time; its
+    projection's location stamp, which under edit-time stamping is its move's own time; its
     revert is the same one an arrival gets, and it is republished, so the peer
     learns where the folder went back to. Each arrival is compared through the
     location that will actually land — the arrival merged with this device's
@@ -1022,11 +1078,11 @@ the group is empty and keeping the edited rule is the coherent outcome.
   pin carries the empty link at `hlcNow()`, which beats a peer's stale non-empty
   one. Yielding both halves because one was edited is explicitly not done — the
   user deleted the other half and did not touch it.
-- Scope migration is never a delete an edit can beat (T5, above).
+- Scope migration is never a delete an edit can beat.
 - Only a **Space-owned** identity can have its yield revoked by a hidden or
   purged Space. A Profile- or App-scoped pin has no Space cursor to consult, so
   it is admitted rather than withheld; testing `spaceCursors[owner]` alone would
-  have withheld those yields every round, forever (T6).
+  have withheld those yields every round, forever.
 
 ### Mixed versions
 
@@ -1040,8 +1096,7 @@ live and unpublished until the build is upgraded or the tombstone cursor expires
 
 ## Refusals, retries and account switches
 
-Rules established by the 2026-09-20 review of the integration branch. Each is
-pinned by a test named in its own `// Review A<n>` comment in the code.
+The engine must preserve these persistence, retry and account-isolation rules.
 
 - **Opening the Space gate is marker-first.** The nil marker is persisted
   before `markerMovedWhileGateShut` is consumed and the drain armed; a failed
@@ -1127,7 +1182,7 @@ written" restart window falls on them.
   (`adopted`), a collapse pass soft-deletes all but one member of a settled
   group (`collapsed`), and a yield pass keeps an unpublished local edit alive
   when a remote delete arrives for the same rule (`transferred` /
-  `yield_no_partner`). The last pass is this kind's half of ruling C4; its
+  `yield_no_partner`). The last pass is this kind's edit-over-delete policy; its
   user-visible consequence is stated once, under "Edit beats delete".
 - The cursor table lives in `users/<sub>/sync/urlrules-cursors.json`. Its field
   set is exactly the one the bookmark and pinned-tab tables use; the merge
@@ -1179,7 +1234,7 @@ written" restart window falls on them.
   version. Every publish segment re-checks that admission, because the
   republication can fail or be interrupted; a rule whose target Space has since
   gone hidden or purged has the yield revoked and the row hard-deleted instead.
-  Bookmarks and pinned tabs yield as well since ruling C4, without the transfer
+  Bookmarks and pinned tabs also yield, without the transfer
   and park branches, which need a merge partner; see "Edit beats delete".
 - While a rule's inbound entity is parked because its merge partner is not at
   rest, the round's diff emits no tombstone for it and writes nothing at all
@@ -1190,128 +1245,47 @@ written" restart window falls on them.
   snapshots), never through the UI publisher. The coordinator subscribes with a
   bare sink and tears the subscription down with the engine.
 
-## Verification
+## Source and verification
 
-`PhiSyncEngineTests`, `PhiSyncEngineSpaceTests`, and
-`PhiSyncEngineOwnedItemsTests` cover wire ordering, failed and paginated pulls,
-remote merge before publication, and bounded conflict recovery. These tests use
-dedicated defaults suites and injected in-memory protocol/local-access fakes.
+The implementation entry points are under [Sources/Sync/Phi](../Sources/Sync/Phi)
+and [Sources/Sync/Keys](../Sources/Sync/Keys). The native bridge is declared in
+[PhiChromiumBridgeHeader.h](../Sources/ChromiumBridge/PhiChromiumBridgeHeader.h).
+`PhiSyncEngine`, `SyncableSettings`, `SyncableSpaces`, `SyncableOwnedItems`,
+`BookmarkKind`, `PinKind`, `URLRuleKind` and `PhiHybridClock` own the rules above.
 
-The marker boundary and the URL rule kind add five test files:
+Focused suites in [Tests/PhiBrowserTests/Sync](../Tests/PhiBrowserTests/Sync)
+cover pairing, marker persistence, failed/paginated pulls, merges, logical
+clocks, status and account retirement. Store-level suites cover throwing writes,
+rollback and migration. Use the [testing guide](testing.md) for hosted execution;
+compiling an XCTest bundle does not execute it.
 
-- `Tests/PhiBrowserTests/Sync/Phi/PhiSyncMarkerBoundaryTests.swift` — the
-  per-page marker boundary: forced cursor-write failures, the zero-publish
-  round, the deterministic abort switches, the loss-replay ordering and the
-  mapping-before-row create branch.
-- `Tests/PhiBrowserTests/Sync/Phi/URLRuleKindTests.swift` — the rule codec,
-  normalization, merge units, counters, the editor's edit set and the
-  `pendingLocalEdit` lifecycle.
-- `Tests/PhiBrowserTests/Sync/Phi/URLRuleMergeTests.swift` — the three
-  automatic merge passes (claim, collapse, yield) end to end through the
-  engine.
-- `Tests/PhiBrowserTests/LocalStoreURLRuleThrowingTests.swift` — the store-level
-  throwing primitives, the batch entry, every real-store migration case (V11 to
-  V12, which adds the six sync columns to `SpaceURLRule`; V12 to V13, which adds
-  `TabDataModel.locationUpdatedDate` and backfills nothing) and the
-  routing-table refresh.
-- `Tests/PhiBrowserTests/AccountUserDefaultsRollbackTests.swift` — the
-  `AccountUserDefaults` write-face rollback.
-
-`Tests/PhiBrowserTests/Sync/Phi/PhiHybridClockTests.swift` covers the hybrid
-logical clock itself, the stamp-0 invariants that survive it, the offline-edit
-scenarios for both a rename and a move, the §4.3 carrier rule under the location
-edit date, and A9's boundary on an account whose logical time has run a year
-ahead of wall clock, for the location stamp and for C4-a's content stamp. The
-write side — which gestures record `locationUpdatedDate` and which deliberately
-do not — lives in `Tests/PhiBrowserTests/LocalStoreBookmarkThrowingTests.swift`.
-
-Space edit-time stamping (C2-a) is covered on both sides of the pull gate:
-`SyncableSpacesTests.swift` for the projection rules themselves — an offline
-rename keeping its own time, two successive offline edits keeping their own
-per-field times, a slow clock still clearing the stamp it overwrites, a revert
-collapsing back onto the baseline, a drag restamping only the Space that moved
-and not restamping it again, and D1's suppressions surviving all of it — and
-`PhiSyncEngineSpaceTests.swift` for the round: the stamping pass running behind
-a shut pull gate, a landing merging against the pending projection and then
-spending it, a shut Space gate holding the pass, and a failed cursor write that
-neither loses the edit nor publishes. `PhiSpaceSyncStateTests.swift` pins the
-cursor round trip with and without the new key.
-
-"Edit beats delete" is covered in three places: the derived predicate, the tree
-outcomes and both A9 halves in `SyncableOwnedItemsTests.swift`; the rules
-boundary, including a collapse loser whose soft delete an edit must not cancel,
-in `URLRuleMergeTests.swift`; and the engine half — the republish at the
-tombstone's own version, the `resurrected` counter, the folder-delete lift, a
-redelivered tombstone that must not undo its own yield, a Profile-scoped pin's
-yield, and the unlinked split partner — in `PhiSyncEngineOwnedItemsTests.swift`.
-
-One suite is **not** compile-only. The hostless convergence harness runs:
+The [convergence harness](../Tests/SyncConvergence/README.md) exercises production
+merge/stamp functions with simulated replicas. Run it as a regression gate after
+changing merge, stamp, tombstone or landing-decision logic:
 
 ```sh
-bash build-scripts/test-sync-convergence.sh          # ~20 s, fixed default seed
+bash build-scripts/test-sync-convergence.sh
 ```
 
-It symlinks the production merge files — `SyncableSettings`, `SyncableSpaces`,
-`BookmarkKind`, `PinKind`, `URLRuleKind`, `SyncableOwnedItems`,
-`PinnedTabScopeMirror`, `PhiDefaultSpaceMirror`, `PhiHybridClock` and the
-generated protos — at their real `internal` visibility, slices out of `Sources/`
-at build time the handful of value types and constants they name, and builds one
-SwiftPM executable: no `xcodebuild`, no Phi host, no Chromium framework, no
-network, and nothing written under `Sources/`. It does need Python 3 and a
-resolved `swift-protobuf` checkout, which it takes from the one Xcode resolved
-into DerivedData at the revision `Package.resolved` pins, or from
-`SWIFT_PROTOBUF_PATH`. Layer 1 asserts the algebraic properties of each `merge`
-and of the clock; Layer 2 runs 3+ simulated replicas against a model of the real
-server, with each replica stamping through the
-production `PhiHybridClock` (`SYNC_CONV_HLC=0` replays the pre-C2 wall-clock
-behaviour for comparison, and the skew scenarios always run both). Under clock
-skew the harness asserts that a **causally later** edit always wins — an edit
-whose author had already observed every competing edit — while reporting
-concurrent losses, which LWW gives up by definition. Layer 2 also asserts ruling
-C4 in both directions, using the production decision functions: an item whose
-delete an edit beat exists on every replica, and a delete no edit contradicted
-stays gone everywhere. See `Tests/SyncConvergence/README.md`.
+It requires Python 3 and the pinned `swift-protobuf` checkout described in its
+README. It uses a service model, not a live sync backend. Inspect
+[ExpectedFailures.swift](../Tests/SyncConvergence/Sources/SyncConvergence/ExpectedFailures.swift)
+alongside a result: exit 0 means no unexpected property failure, not that every
+property is satisfied. Exit 1 reports an unexpected violation; exit 2 means an
+expected failure stopped reproducing and needs review.
 
-It is a **regression gate**, not a report: any change to a `merge`, a `stamp`, a
-tombstone or a landing-decision function must run it and see exit status 0.
-Status 0 means no property failed that was not already registered in
-`Tests/SyncConvergence/Sources/SyncConvergence/ExpectedFailures.swift`, and no
-registered failure silently started passing; status 1 is an unexpected
-violation, status 2 a registered entry that no longer reproduces and must be
-removed. Every registered entry carries a hard-coded witness that is re-evaluated
-on every run, and each is printed in full — root cause, what it waits on and its
-counterexample — green or red.
+The current `bookmarks.associativity` and `urlrules.associativity` expected
+failures arise from a deliberate position/rank rule: rank merges by LWW within
+one position, but when positions differ the position winner supplies its rank,
+because rank has meaning only within that position. Different fold orders can
+therefore choose different legal ranks. This does not split the account: pulls
+and version-checked commits sequence replicas through one server value. The
+harness separately checks convergence and quiescence for the counterexamples.
+Changing the rule changes user-visible order after a cross-Space move, so it
+requires a product decision, not merely a merge-layer cleanup. Do not erase
+expected failures without changing the rule and its witnesses, and do not
+substitute the model for real storage/network acceptance.
 
-There are two entries today, `bookmarks.associativity` and
-`urlrules.associativity`, and they are the same rule twice: "the position winner
-supplies rank" (A14 / R-M3-3-25, and R-M3-4a-40 for a rule's target) is not
-associative, because whether two positions agree — so rank merges by LWW — or
-differ — so rank comes from the position winner — depends on which pair is folded
-first. This is a **designed rule retained by ruling C5-b, not a defect**: replicas
-cannot diverge from it, because every value a replica computes is a merge against
-the single server chain, so fold order decides only which legal outcome a race
-lands on. The harness asserts exactly that separately
-(`simulation.*.rank-coherence-cannot-diverge-replicas`) and reports how many
-distinct converged values the witness can produce. Repairing the rule would
-change which rank a user sees after a cross-Space move, so it is a product call
-rather than a merge-layer fix; neither entry may be deleted until the rule itself
-changes.
-
-The Chromium half of the routing tie-break is covered by
-`phi_url_router_unittest.cc` in the fork, which is built and run separately
-(`autoninja -C out/PhiRelease chrome unit_tests`, then
-`unit_tests --gtest_filter='PhiURLRouter*'`).
-
-Every XCTest suite named above is **compile-only**
-(`xcodebuild build-for-testing`). The convergence harness and standalone hostless
-regressions execute independently of that application host.
-`xcodebuild test` is never run: a hosted XCTest bundle launches a Phi host
-process that collides with the developer's running Phi through
-`ProcessSingleton`. Nothing here is a substitute for two real Macs — the
-cross-device acceptance cases, including the known limitations this document
-records, live in [Sync E2E test cases](sync-e2e-test-cases.md), which is a
-manual QA reference and not an execution report.
-
-The hostless `./build-scripts/test-sync-space-replay.sh` regression covers enrollment
-replay persistence, failed latch/marker writes, restart before activation, and
-one-shot replay without launching the application.
+Use the [Sync E2E cases](sync-e2e-test-cases.md) for two-Mac acceptance, including
+mixed versions, recovery and current limitations. Record native, framework and
+service versions rather than carrying forward historical pass/fail claims.

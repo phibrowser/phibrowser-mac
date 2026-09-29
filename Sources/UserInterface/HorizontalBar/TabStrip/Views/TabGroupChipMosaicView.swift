@@ -22,8 +22,7 @@ enum MosaicCellContent: Equatable, Sendable {
 }
 
 /// 2×2 favicon mosaic shown inside a collapsed tab-group chip in
-/// full mode. See `docs/superpowers/specs/2026-05-13-tab-group-
-/// collapsed-chip-favicons-design.md` for the visual spec.
+/// full mode.
 ///
 /// The view is purely presentational: it accepts `memberFavicons`
 /// (`[Data?]` of length `min(memberCount, 4)`) and `memberCount`
@@ -51,7 +50,7 @@ final class TabGroupChipMosaicView: NSView {
     /// descriptor used to render the mosaic. Position 0 is
     /// top-left, 1 top-right, 2 bottom-left, 3 bottom-right.
     ///
-    /// Rules (see spec §3.2):
+    /// Rules:
     /// - `memberCount == 0`: all empty.
     /// - `1 ≤ memberCount ≤ 4`: fill slots `0..<memberCount` with
     ///   `.favicon(index:)`, remainder `.empty`.

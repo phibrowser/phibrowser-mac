@@ -510,10 +510,8 @@ extension Tab: ContextMenuRepresentable {
             // inside it without waiting for the bookmark publisher to refresh
             // and surface a `Bookmark` instance.
             let folderGuid = UUID().uuidString
-            state.localStore.createDirectory(title: folderName,
-                                             profileId: state.profileId,
-                                             parentId: nil,
-                                             guid: folderGuid)
+            // Use the scoped manager so the folder and split share a Space.
+            state.bookmarkManager.addFolder(title: folderName, guid: folderGuid)
             state.addSplitBookmarkFromTab(self, toFolderGuid: folderGuid, bindLiveSplit: false)
         }
     }

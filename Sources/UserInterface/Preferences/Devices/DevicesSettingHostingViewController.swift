@@ -125,11 +125,7 @@ final class DevicesSettingHostingViewController: NSViewController {
             await helper.refresh(requestSync: requestSync)
             return helper.report
         }
-        viewModel.syncNowReport = {
-            guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
-            _ = await helper.requestSyncNow()
-            return helper.report
-        }
+        viewModel.syncNowReport = { await PhiChromiumCoordinator.shared.requestSyncNow() }
         viewModel.reconfigurationRequired = { [weak self] in
             self?.syncKeyController?.requiresReconfiguration == true
                 || PhiChromiumCoordinator.shared.nativeSyncRequiresReconfiguration

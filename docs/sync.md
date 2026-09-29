@@ -398,6 +398,44 @@ sync state; changing the UUID retains the existing namespace-reset behavior.
 cleared, because the resolved cache is untouched. Its owner sets it and sends
 `notifyPhiSyncKeysChanged`; no caller sets it yet.
 
+## Profile loading
+
+Chromium runs a Profile's sync only while the Profile is loaded, and
+`getProfileSyncStatus` reports nothing (Checking) for a Profile that is not, so
+the helper never completes a coordinated round while one is missing. Every
+mapped Profile is therefore loaded in the background (plan 2026-09-29, R5).
+`SyncProfileLoader` (`Sources/Sync/`) decides; `PhiChromiumCoordinator` builds
+and retires it with the engine and the helper, and supplies the Profile list,
+the checks, the load call and a timer.
+
+| Point | Rule |
+| --- | --- |
+| Which | User-assignable Profiles that the cached list reports as not loaded and for which `SyncKeyController.profileSyncInfo` would return a key now (enrolled, keys not withdrawn, mapping resolved under the unlocked account key) |
+| Call | `ensureProfileLoaded:`, the existing bridge call: loads without a window, returns at once if already loaded, takes no keep-alive of its own. Completions are handled on the main thread |
+| When | The first load no earlier than 30 seconds after `startPhiSyncIfReady()` starts the schedule (unlocked, enrolled, native sync running; at launch this follows the silent unlock and so the session restore of the first window). One load at a time, 5 seconds after the previous one ended |
+| Unloaded again | A Profile that had a window unloads after its last window closes, and nothing tells the Mac side. The loader refreshes `ProfileManager`'s list every 60 seconds while it runs, and re-evaluates on every refresh by anyone else; a Profile shown as not loaded again is loaded again. A Profile it loaded itself waits 60 seconds before a still-stale list can ask for it again |
+| Sync now | `PhiChromiumCoordinator.requestSyncNow()` (the pane's button) first tells the loader to load every Profile that needs it at once, without the initial delay, the gap or a pending retry delay, once each, then asks the helper; its request stays queued as Unobservable until the Profiles report |
+| Not while | Disabled by the developer switch, not eligible (signed out or another account, controller retired, not enrolled, account key locked), sync paused for an unmapped Profile, or the Profile list not enumerated yet. The last two are closures that the pause coordination (plan task P4) supplies; until then they read "not paused" and "enumerated". A Sync now request made meanwhile is dropped |
+| Failures | A failed load, or one that has not completed after 60 seconds, is retried after 30 seconds, doubling up to 10 minutes; the other Profiles go on. A Profile seen loaded forgets its failures |
+| Teardown | Sign-out, account switch, self-removal and engine retirement stop the loader with the engine. A load already requested cannot be cancelled; its completion is ignored |
+| Logs | Counts and durations only, no Profile identifiers |
+
+The helper's `ExplicitRequestPolicy` stays `.waitForAllObservable`.
+
+Developer switch: `phi.sync.debug.profileLoadingDisabled` in
+`UserDefaults.standard`. Absent or false, the loader runs; true turns it off,
+for measuring memory without it. It is read at every decision, so it takes
+effect within one recheck interval. It is not a synced setting and has no UI.
+
+Dependency on upstream Chromium: a Profile loaded this way and never given a
+window stays loaded until the process exits, because Chromium gives every newly
+loaded Profile a "waiting for first browser window" keep-alive that only a
+window clears. That is upstream behaviour, not a Phi contract; a Chromium
+rebase can change it, and the loader would then keep reloading Profiles that
+unload. An explicit hold and release call in the framework is follow-up work.
+A Profile loaded without a window also publishes an empty open-tabs header for
+this device (plan residual A3).
+
 ## Pairing and initial catch-up
 
 The Space pairing page lists unmatched account Spaces even when this Mac has

@@ -123,6 +123,25 @@ import SwiftUI
     @MainActor var syncStatusProfileIDs: [String] {
         ProfileManager.shared.userAssignableProfiles.map(\.profileId)
     }
+    /// Loads mapped Profiles that are not in memory so their Chromium sync runs without a
+    /// window (docs/sync.md, "Profile loading"). Built and retired with the engine, like the
+    /// helper; `startPhiSyncIfReady()` starts its initial delay.
+    @MainActor private var syncProfileLoader: SyncProfileLoader?
+    /// The loader's one pending timer; each request replaces the previous one.
+    @MainActor private var syncProfileLoaderWake: Task<Void, Never>?
+    /// Every Profile-list refresh, not only membership changes: a refresh is what shows
+    /// that a Profile unloaded after its last window closed.
+    private var syncProfileLoaderCancellable: AnyCancellable?
+
+    /// The pane's Sync now. A Profile that is not loaded stays Checking, which keeps the
+    /// helper's request queued, so the loader loads the mapped ones first, at once.
+    @MainActor
+    func requestSyncNow() async -> SyncHelper.Report? {
+        guard let helper = syncHelper else { return nil }
+        syncProfileLoader?.loadNow()
+        _ = await helper.requestSyncNow()
+        return helper.report
+    }
 
 
     // MARK: - Phi Space sync (M3-2)
@@ -749,6 +768,56 @@ import SwiftUI
             saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) })
         syncHelper?.start()
 
+        syncProfileLoader?.stop()
+        syncProfileLoaderWake?.cancel()
+        syncProfileLoader = SyncProfileLoader(
+            profiles: {
+                let manager = ProfileManager.shared
+                let assignable = Set(manager.userAssignableProfiles.map(\.profileId))
+                return manager.profiles.map {
+                    SyncProfileLoader.Profile(id: $0.profileId, isLoaded: $0.isLoaded,
+                                              isUserAssignable: assignable.contains($0.profileId))
+                }
+            },
+            refreshProfiles: { _ = ProfileManager.shared.refresh() },
+            // Exactly what Chromium would be handed now: enrolled, keys not withdrawn, and a
+            // mapping resolved under the unlocked account key.
+            hasDeliverableKey: { [weak self] profileId in
+                self?.syncKeyController?.profileSyncInfo(forProfileId: profileId) != nil
+            },
+            isEligible: { [weak self] in
+                guard let self, let controller = self.syncKeyController else { return false }
+                return AccountController.shared.account === account
+                    && self.phiSyncEngine === builtEngine
+                    && !controller.isRetired
+                    && ProfilePairingGate.shared.isPaired
+                    && self.phiSyncPairingEnabled
+                    && controller.manager.currentARK != nil
+            },
+            isEnabled: { !UserDefaults.standard.bool(forKey: SyncProfileLoader.disabledDefaultsKey) },
+            load: { profileId, done in
+                guard let bridge = ChromiumLauncher.sharedInstance().bridge else { done(false); return }
+                bridge.ensureProfileLoaded(profileId) { success in
+                    DispatchQueue.main.async { MainActor.assumeIsolated { done(success) } }
+                }
+            },
+            wake: { [weak self] delay in
+                self?.syncProfileLoaderWake?.cancel()
+                self?.syncProfileLoaderWake = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    self?.syncProfileLoader?.evaluate()
+                }
+            },
+            log: { AppLogInfo("[phi-sync] \($0)") })
+        // `@Published` emits before the value is stored, and the loader's own refresh must
+        // not re-enter it, so the list is read on the next main-actor turn.
+        syncProfileLoaderCancellable = ProfileManager.shared.$profiles
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.syncProfileLoader?.evaluate() }
+            }
+
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in
@@ -1030,6 +1099,7 @@ import SwiftUI
             }
 
         invalidation.start()
+        syncProfileLoader?.syncDidStart()
 
         // Local Space edits: the SwiftData publisher (already value-deduped) plus
         // the theme/opacity notification, because those two maps live in the
@@ -1283,6 +1353,13 @@ import SwiftUI
         PhiSpaceSyncState.shared.intentSink = nil
         syncHelper?.stop()
         syncHelper = nil
+        // A load already requested completes in Chromium; the stopped loader ignores it.
+        syncProfileLoaderCancellable?.cancel()
+        syncProfileLoaderCancellable = nil
+        syncProfileLoaderWake?.cancel()
+        syncProfileLoaderWake = nil
+        syncProfileLoader?.stop()
+        syncProfileLoader = nil
         phiSyncEngine?.shutdown()
         phiSyncEngine = nil
         phiDomainKeys?.clear()

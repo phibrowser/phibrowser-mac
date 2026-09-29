@@ -51,7 +51,8 @@ struct ProfileExtensionInfo: Identifiable, Hashable {
 /// CRUD goes through the bridge (`createProfileWithDisplayName:completion:`,
 /// `deleteProfile:completion:`); after each mutation the manager refreshes
 /// its cache so subscribers see the new shape. Lazy profile loading
-/// (`ensureProfileLoaded:`) is driven from `SpaceManager.activate` and
+/// (`ensureProfileLoaded:`) is driven from `SpaceManager.activate` and, for
+/// sync, from `SyncProfileLoader` (docs/sync.md, "Profile loading"); it
 /// doesn't change the published list.
 final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()

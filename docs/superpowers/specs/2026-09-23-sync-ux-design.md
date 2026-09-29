@@ -103,7 +103,8 @@ The status row may add one line with the most recent problem of this Mac's nativ
 localized category (for example No connection, Sign-in expired, Server error) and a
 relative time, cleared by the next fully successful round. Inside Details, the Phi data
 context lists one row per supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs,
-URL rules): received and sent counts of the kind's most recent sync with changes, and
+URL rules): received and sent counts of the kind's most recent sync with changes, with how
+long ago that sync was, and
 waiting-to-send and held counts only when they are non-zero. There is no Profiles row and
 no Chromium per-category row until those have their own numbers. The pane never shows
 internal error text, HTTP status numbers, identifiers, names, URLs or hosts; this replaces

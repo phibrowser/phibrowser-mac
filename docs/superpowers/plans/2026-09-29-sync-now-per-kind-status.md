@@ -637,3 +637,17 @@ Deviations from the plan text, recorded as they were made.
   table are noted without a kind, and also while the gate is shut. New hostless case
   `testNeedsAttentionIsExplained` checks the invariant for every Needs-attention condition of
   `finishStatusRound`.
+- **Review M-2, skipped.** The settings `invalidMessage` path does not recover inside the round:
+  `dropTheEntityCursorAfterInvalidMessage()` sets `roundOutboundFailed`, so the round ends Needs
+  attention and only the next round rediscovers the entity. Without the note the round would
+  get the `serverError` fallback instead, which is less accurate; the note is kept.
+- **Review M-3.** A per-kind row with counts appends the relative time of that activity
+  (abbreviated, for example "5 min. ago") to its trailing text, which is also the row's
+  accessibility value. The trailing text is one line, middle-truncated, with the full text as
+  tooltip; the longest English row fits the pane's width by estimate only (never seen).
+- **Review M-4.** Added: `manualCatchUpTests` (T4) covers the coordinator side of a stopped
+  coordinator. Left out: a hostless case for the participant's refusal itself, because it is an
+  inline closure in `PhiChromiumCoordinator` that reads `AccountController`, `ChromiumLauncher`,
+  the key controller and the pairing flag, and the harness splices only named methods; and
+  splicing the settings sent/received count sites, which sit inside `pushSettings` and the pull's
+  settings apply, whose surrounding wire and storage code the fixture would have to stub.

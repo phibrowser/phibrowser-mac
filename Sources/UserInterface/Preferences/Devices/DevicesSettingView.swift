@@ -316,6 +316,9 @@ struct DevicesSettingView: View {
             Text(summary)
                 .font(.system(size: 12))
                 .themedForeground(.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(summary)
         }
         .padding(.leading, 16)
         .accessibilityElement(children: .ignore)
@@ -326,9 +329,11 @@ struct DevicesSettingView: View {
     private func kindSummary(_ status: SyncKindStatus?) -> String {
         guard let status else { return Self.noKindActivityText }
         var parts: [String] = []
-        if status.activityAt != nil {
+        if let activityAt = status.activityAt {
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindReceived", value: "Received %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac received from the account in its most recent sync with changes; %lld is the number"), status.received))
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindSent", value: "Sent %lld", comment: "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac sent to the account in its most recent sync with changes; %lld is the number"), status.sent))
+            // When those counts happened, so an old count does not read as current.
+            parts.append(activityAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
         }
         if status.pending > 0 {
             parts.append(String.localizedStringWithFormat(NSLocalizedString("sync.status.kindPending", value: "Waiting to send %lld", comment: "Sync settings - how many local changes of one kind of content wait to be sent to the account; %lld is the number"), status.pending))

@@ -396,7 +396,7 @@ A Space cursor carries one payload in each direction, and they are symmetric:
 
 | field | direction | written by | cleared by |
 | --- | --- | --- | --- |
-| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect) | the apply pass | a successful landing |
+| `pendingApply` | inbound — a decrypted entity this device could not land yet (§3.5 fallback B, a landing failure, a mapping write failure, a rebind that did not take effect, a mapped Space the sync view leaves out) | the apply pass | a successful landing |
 | `pendingProjection` | outbound — this device's own projection of the Space, with each changed field already stamped at the time the user changed it (ruling C2-a, design option S2) | the stamping pass, from the debounced local-Spaces-change round, ahead of the pull gate | a landing, an accepted commit, a tombstone, or a revert that leaves nothing to publish |
 
 Both are serialized `PhiSpaceEntity` bytes in `sync.phiSpaces`, both are
@@ -407,6 +407,17 @@ the field decodes with it nil (the rule
 `PhiOwnedItemCursor.rekeyRejectRounds` states for its own addition). A build
 **older** than this one ignores the key and stamps Space edits at publish time
 again, which is the pre-C2-a behaviour — correct, just coarser.
+
+The last case guards a create over an existing row. The apply pass finds the
+landing target in `currentSpaces()`, which leaves out a Space whose Profile has
+no sync mapping, but validates the mapped local id against unfiltered storage.
+For such a Space the target is missing although its row exists, and `land`
+would create a row under a `spaceId` that is already taken; `spaceId` is
+unique, so SwiftData overwrote the existing row (Profile binding and order
+reset, bookmark root orphaned). The pass parks the entity instead, and
+`LocalStore.createSpaceBody` refuses a duplicate `spaceId` with
+`LocalStoreWriteError.spaceAlreadyExists`, which the pass's landing-failure
+catch also turns into a park.
 
 `pendingProjection` is written only for a cursor that already has a
 `reconciled` baseline. A Space this device has never published has no per-field
@@ -508,6 +519,79 @@ always existed locally. Both are fixed:
 - In a mixed account, old clients still ignore the tombstone, so the Space
   lingers there until they update; the tombstone is the current value of that
   row and is redelivered on their next full replay.
+
+## Local Space deletion
+
+`SpaceManager.deleteSpace` is the one delete origin (design §9.1): the strip,
+Settings > Spaces, the app menu, the CDP `agentSpace.spaces.delete` face and the
+startup orphan sweep all reach its single sync hook in `finishDeletingSpace`,
+after the early-return guards. The engine marks `pendingDelete` only on a cursor
+with an `entityId`; a Space without a mapping (an agent Space) records nothing.
+
+- **Cascade first, intent second.** The deletion intent reaches the engine only
+  after `deleteSpaceCascadeThrowing` has committed. A failed cascade puts the
+  Space back in the strip and records nothing, so no tombstone is sent for a
+  Space that still exists. Sending one deleted it on every other device, dropped
+  its mapping on `.applied`, and the next round minted the surviving row a new
+  uuid and published it as a new Space, detached from its account-side bookmarks
+  and pins.
+- **Identity captured up front, in-flight rounds held off.** Before the cascade,
+  `PhiSpaceSyncState.beginLocalDeletion` resolves the Space's sync uuid and puts
+  it in an in-memory being-deleted set; the intent carries that uuid, and the
+  engine round records `pendingDelete` under it without resolving the mapping
+  again. That round writes the table even while the engine is paused for
+  pairing or reconfiguration (a local write, not network; it still runs in the
+  engine's round queue, so it never interleaves with a round holding a table
+  copy); the deletion is published when sync next runs. Only a retired engine
+  (sign-out, key invalidation) skips it. The mark ends when that round has run
+  (or when the cascade fails). While it stands, the apply loop treats an arriving entity for the uuid like a
+  `pendingDelete` one — delete beats a concurrent edit for Spaces (design §9.2):
+  it learns the entity id and version for the tombstone, keeps the mapping and
+  lands nothing. The mark is read twice: once before the entity is considered,
+  and again inside the dead-mapping repair, after the row was seen to be gone and
+  before the mapping is dropped. The second read is what keeps a round already in
+  flight from re-landing the Space: a deletion that begins and cascades while the
+  round is between the two reads is visible only to the second, and because the mark is
+  set before the cascade and held until after the deletion round, a read made
+  after the row is observed absent cannot miss it. The entity is parked in
+  `pendingApply` so that it still lands if the cascade fails; a recorded deletion
+  clears it.
+- **Every ending drops the mapping of a row that is gone.** An accepted
+  tombstone (R-D6-10), a `pendingDelete` finalized locally because it was never
+  published, and a tombstone given up after three rejections all leave a cursor
+  with `deletedAtMs` and `hidden`, and remove the Space's mapping when its local
+  row no longer exists. A `pendingDelete` persisted by an older build can sit on
+  a live row (it was recorded before a cascade that then failed). For such a row
+  the mapping is kept: dropping it would publish the row as a new Space under a
+  fresh uuid. With the mapping in place the cursor's `hidden` applies, so the
+  row's windows are closed and it leaves the strip like a remote deletion
+  (design §9.2), and the retention sweep purges it after 30 days. The device then
+  agrees with the account, where the tombstone was applied (or, for the other two
+  endings, where the Space was never published or stays as the give-up already
+  accepts).
+- **Retention purge retry.** The 30-day sweep drops a Space's mapping only
+  after its purge cascade succeeded, so a purged cursor whose mapping is still
+  present marks a cascade that failed or was cut short, and every later sweep
+  retries it. A retried uuid is skipped (and counted in the log) when its local
+  row was created after the cursor's `deletedAtMs`: such a row cannot be the
+  Space that was deleted, and no known path maps a purged uuid to a live Space.
+  The check compares against the row's `createdDate`, which for a Space landed
+  from the account is the account's `created_at_ms`, so it is a guard, not a
+  proof.
+- **Accepted gap: a crash between the cascade and the engine round.**
+  `pendingDelete` is written by a queued engine round, not in the cascade's
+  transaction, and nothing about the deletion is persisted before that round. If
+  the app dies after the cascade committed and before the round wrote the cursor
+  table, no tombstone is ever sent: the Space stays on every other device, and
+  when the account next delivers its entity (a peer edit or a replay) the
+  interrupted-deletion repair in the apply loop drops the dead mapping and lands
+  the entity again under a new local id. The Space reappears here; deleting it again
+  removes it everywhere. The same happens when the account is switched while the
+  cascade runs, and when the engine is retired (sign-out or key invalidation)
+  between the cascade and its round: the retirement also clears the facade's
+  direct store, so there is nowhere left to record the deletion. Closing this
+  gap would need a persisted deletion intent, which is a format change and is
+  not done.
 
 ## Stamps and the hybrid logical clock
 

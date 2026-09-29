@@ -496,9 +496,9 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         let state = PhiSpaceSyncState()
         var delivered: [String] = []
         state.intentSink = { intent in
-            if case .recordLocalDeletion(let id) = intent { delivered.append(id) }
+            if case .recordLocalDeletion(_, let uuid) = intent { delivered.append(uuid) }
         }
-        state.recordLocalDeletion(spaceId: "u1")
+        state.recordLocalDeletion(spaceId: "LOCAL-1", syncUuid: "u1")
         XCTAssertEqual(delivered, ["u1"])
     }
 
@@ -508,9 +508,30 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         store.table.cursors["u1"] = published("u1")
         let state = PhiSpaceSyncState()
         state.directStore = store
-        state.recordLocalDeletion(spaceId: "u1")
+        state.recordLocalDeletion(spaceId: "LOCAL-1", syncUuid: "u1")
         XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete)
         XCTAssertEqual(store.saves, 1)
+    }
+
+    /// §9.2: the uuid is captured and marked before the cascade, and the mark ends once the
+    /// deletion is recorded (here synchronously, on the no-engine path) or abandoned.
+    @MainActor
+    func testALocalDeletionIsMarkedFromItsStartUntilItIsRecorded() {
+        let store = FakeStore()
+        store.table.cursors["u1"] = published("u1")
+        let state = PhiSpaceSyncState()
+        state.directStore = store
+        state.syncUuidLookup = { $0 == "LOCAL-1" ? "u1" : nil }
+        XCTAssertNil(state.beginLocalDeletion(spaceId: "LOCAL-AGENT"), "an unmapped Space has no identity")
+        XCTAssertEqual(state.beginLocalDeletion(spaceId: "LOCAL-1"), "u1")
+        XCTAssertTrue(state.isBeingDeletedLocally(syncUuid: "u1"))
+        state.recordLocalDeletion(spaceId: "LOCAL-1", syncUuid: "u1")
+        XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete)
+        XCTAssertFalse(state.isBeingDeletedLocally(syncUuid: "u1"))
+
+        XCTAssertEqual(state.beginLocalDeletion(spaceId: "LOCAL-1"), "u1")
+        state.endLocalDeletion(syncUuid: "u1")   // the cascade failed
+        XCTAssertFalse(state.isBeingDeletedLocally(syncUuid: "u1"))
     }
 
     /// R-D6-9 changes the third criterion from hidden local Spaces to mapped local

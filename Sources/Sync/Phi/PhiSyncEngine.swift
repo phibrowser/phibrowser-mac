@@ -922,6 +922,7 @@ actor PhiSyncEngine {
         /// never committed and the Space is later resurrected from a peer's
         /// entity. The queue is the only thing that makes the single writer real.
         case retentionSweep
+        /// Carries the syncUuid captured when the deletion started, not the local id.
         case recordLocalDeletion(String)
         /// Local owned-kind change (M3-3 section 5.7), identified by registry label rather than one
         /// case per kind. Owned deletion originates in the section 4.7 diff, not deletion hooks
@@ -1168,8 +1169,8 @@ actor PhiSyncEngine {
     /// table copies across network/main-actor suspensions. An interleaved deletion would be
     /// overwritten, permanently losing pendingDelete and allowing the next incoming entity to
     /// recreate the Space. Call only from outside a round, like setSpaceSyncEnabled.
-    func recordLocalDeletion(spaceId: String) async {
-        await serialized(.recordLocalDeletion(spaceId))
+    func recordLocalDeletion(syncUuid: String) async {
+        await serialized(.recordLocalDeletion(syncUuid))
     }
 
     func runRetentionSweep() async {
@@ -1226,20 +1227,55 @@ actor PhiSyncEngine {
         guard let spaceAccess, spaceStore != nil else { return }
         var table = loadSpaceTable()
         let expired = table.purgeExpired(nowMs: now())
-        guard !expired.isEmpty else { return }
-        // Phase 1: persist the trimmed table with no suspension in between. The
-        // cursors are now permanent tombstones -- §9.1's two promises (a
-        // replayed tombstone is a no-op, snapshot never resurrects the uuid)
-        // rest on the cursor being there with a `deletedAtMs`, so they hold even
-        // if the cascade below is interrupted.
-        writeSpaceTable(table)
+        if !expired.isEmpty {
+            // Phase 1: persist the trimmed table with no suspension in between. The
+            // cursors are now permanent tombstones -- §9.1's two promises (a
+            // replayed tombstone is a no-op, snapshot never resurrects the uuid)
+            // rest on the cursor being there with a `deletedAtMs`, so they hold even
+            // if the cascade below is interrupted.
+            writeSpaceTable(table)
+        }
+        // Retry set: a cursor purged by an earlier sweep whose mapping is still present never
+        // finished its cascade (see the catch below). Only uuids are read out of the table; it is
+        // not written again, so no stale copy crosses the awaits.
+        let purged = table.purgedSyncUuids.subtracting(expired)
+        var mapped: Set<String> = []
+        if !purged.isEmpty { mapped = Set(await spaceAccess.allSpaceMappings().values) }
+        let cascade = PhiSpaceSyncTable.retentionCascadeUuids(expired: expired, purged: purged,
+                                                              mapped: mapped)
+        guard !cascade.isEmpty else { return }
+        if cascade.count > expired.count {
+            // R12: count only.
+            AppLogInfo("[phi-sync] retrying retention purge count=\(cascade.count - expired.count)")
+        }
+
+        // A retry cascades a row this sweep did not see expire. No path is known that maps a purged
+        // uuid to a live Space, but if one existed every sweep would delete it with all its contents:
+        // a row created after the deletion it would be purged for cannot be that deleted Space.
+        let retryOnly = Set(cascade).subtracting(expired)
+        var createdMsBySpaceId: [String: Int64] = [:]
+        if !retryOnly.isEmpty {
+            for space in await spaceAccess.allSpacesForOrdering() {
+                createdMsBySpaceId[space.spaceId] = Int64(space.createdDate.timeIntervalSince1970 * 1000)
+            }
+        }
+        var skippedNewer = 0
+        defer {
+            // R12: count only.
+            if skippedNewer > 0 { AppLogWarn("[phi-sync] retention purge retry skipped rows created after their deletion count=\(skippedNewer)") }
+        }
 
         // Phase 2: cascade the data. No table copy is held across these awaits.
-        for uuid in expired {
+        for uuid in cascade {
             guard !isStopped else { return }
             // D6: purgeExpired returns syncUuid, while purge accepts a local ID. Unresolved means
             // no local row to remove; phase 1 already persisted the tombstone cursor.
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if retryOnly.contains(uuid), let deletedAtMs = table.cursors[uuid]?.deletedAtMs,
+               let createdMs = createdMsBySpaceId[local], createdMs > deletedAtMs {
+                skippedNewer += 1
+                continue
+            }
             do {
                 try await spaceAccess.purge(spaceId: local)
                 // Remove the mapping only after purge succeeds. Keep the permanent tombstone cursor
@@ -1448,6 +1484,14 @@ actor PhiSyncEngine {
             return
         }
         activePairingRevision = stopSignal.revision
+        if isStopped, case .recordLocalDeletion(let uuid) = round {
+            // A local table write, not network: pairing, reconfiguration and a pairing-revision
+            // change must not drop it, or the facade's being-deleted mark ends with nothing recorded
+            // and the dead-mapping repair later re-lands the Space. Retirement (checked above) still
+            // stops it. Running in this queue slot keeps it apart from every round's table copy.
+            recordLocalDeletionWhileBlocked(uuid)
+            return
+        }
         guard !isStopped else { return }
 
         let reportsStatus: Bool
@@ -1517,16 +1561,11 @@ actor PhiSyncEngine {
             applySpaceGate(enabled)
         case .retentionSweep:
             await applyRetentionSweep()
-        case .recordLocalDeletion(let localSpaceId):
-            // Translate the local SpaceManager ID to the cursor's syncUuid at this boundary
-            // (section 3.4). No mapping means never published and hence no tombstone to send,
-            // matching recordLocalDeletion's entityId guard. The PhiSpaceSyncState facade still
-            // accepts local IDs.
-            if let uuid = await spaceAccess?.syncUuid(forSpaceId: localSpaceId) {
-                runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
-            } else {
-                AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
-            }
+        case .recordLocalDeletion(let uuid):
+            // The facade captured the syncUuid before the cascade (section 3.4). Resolving the local
+            // id here would be too late: a round ahead of this one may have dropped or replaced the
+            // mapping. An unmapped Space never reaches the engine.
+            runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
         case .localOwnedChange(let label):
             // Suppress echoes as for localSpaceChange. The label is diagnostic only: publication
             // visits every registered kind, so any owned-kind change schedules an ordinary push
@@ -2041,8 +2080,10 @@ actor PhiSyncEngine {
         // publication's reload detects loss, clears the marker/drain state and stops this round's
         // publication so the next round replays the full type (CASE 6.26).
         if spaceLive { await beginOwnedRound() }
-        // A snapshot, used for the cursor keys it carries and never written back.
-        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
+        // Built from a snapshot, used for the cursor keys it carries and never written back. Each
+        // page then adds its own Space arrivals, so a tombstone on a later page of this pull
+        // resolves a Space the pull itself introduced.
+        var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2250,6 +2291,12 @@ actor PhiSyncEngine {
                 }
 
                 if spaceLive {
+                    // Same hash the index builder uses; the entry is what next pull's index would
+                    // seed from the cursor this page's landing writes.
+                    for arrival in batch.decoded {
+                        tagIndex[PhiSyncEntity.clientTagHash(
+                            for: PhiSyncEntity.spaceClientTag(arrival.uuid))] = arrival.uuid
+                    }
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
                     // One load/apply/write per page is safe only in this serialized path:
@@ -2414,7 +2461,6 @@ actor PhiSyncEngine {
         var decoded: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
         var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
         var unreadableHashes: [String] = []
-        var unknownTombstoneHashes: [String] = []
     }
 
     /// Persists what this round's routing learned about entities the shared marker has
@@ -2430,10 +2476,10 @@ actor PhiSyncEngine {
         }
     }
 
-    /// Rebuild client_tag_hash-to-space_uuid routing once per pull. Tombstones lack ciphertext/UUID
-    /// and SHA1 is one-way. Seed with cursor keys, mapping values and default-space (D6): a freshly
-    /// paired Space can receive a tombstone before its first commit creates a cursor. Never seed
-    /// local Space IDs, which are not wire identities.
+    /// Rebuild client_tag_hash-to-space_uuid routing once per pull; each page then extends it with its
+    /// own Space arrivals. Tombstones lack ciphertext/UUID and SHA1 is one-way. Seed with cursor keys,
+    /// mapping values and default-space (D6): a freshly paired Space can receive a tombstone before its
+    /// first commit creates a cursor. Never seed local Space IDs, which are not wire identities.
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         var uuids = Set(table.cursors.keys)
         uuids.insert(SyncableSpaces.defaultSpaceUuid)
@@ -2465,7 +2511,6 @@ actor PhiSyncEngine {
                 // server has already replaced the specifics, so no create for that row can
                 // ever arrive again.
                 AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag hash=\(shortHash)")
-                batch.unknownTombstoneHashes.append(entity.clientTagHash)
                 return
             }
             batch.tombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))
@@ -2599,7 +2644,9 @@ actor PhiSyncEngine {
 
             // §6.5: refuse to materialize agent / incognito payloads. Refusing is
             // NOT a claim the account should not hold it, so no tombstone is ever
-            // pushed back; `refusedAtMs` only stops the re-decrypt every round.
+            // pushed back. `refusedAtMs` does not skip any later decrypt; it keeps
+            // the uuid out of `SyncableSpaces.snapshot` until a later version of
+            // the entity lands, which clears it.
             if SyncableSpaces.refuses(item.entity) {
                 cursor.refusedAtMs = now()
                 cursor.pendingApply = nil
@@ -2609,12 +2656,21 @@ actor PhiSyncEngine {
             }
             // A soft-deleted uuid is never resurrected by a replayed create.
             if cursor.deletedAtMs != nil { cursor.pendingApply = nil; table.cursors[item.uuid] = cursor; continue }
-            if cursor.pendingDelete {
-                // A local deletion wins over a concurrent live update. Learn the current
+            // A local deletion in flight (cascade running, or its intent queued behind this round)
+            // has no `pendingDelete` yet, and its row may already be gone: without this the
+            // dead-mapping repair below would land it again as a new Space.
+            let beingDeleted = await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid)
+            if cursor.pendingDelete || beingDeleted {
+                // A local deletion wins over a concurrent live update (§9.2). Learn the current
                 // server version for its tombstone without recreating the deleted local row.
                 if !item.entityId.isEmpty { cursor.entityId = item.entityId }
                 cursor.version = max(cursor.version, item.version)
                 cursor.pendingApply = nil
+                if beingDeleted, !cursor.pendingDelete, item.fromServer {
+                    // The cascade can still fail and leave the Space in place: park the entity so
+                    // the next round lands it then. A recorded deletion clears it in this branch.
+                    cursor.pendingApply = try? item.entity.serializedData()
+                }
                 table.cursors[item.uuid] = cursor
                 table.unreadableTagHashes.removeValue(forKey: tag)
                 continue
@@ -2630,6 +2686,20 @@ actor PhiSyncEngine {
             // The default Space resolves through a constant, not a mapping row. Dead-mapping repair
             // would incorrectly remint its local ID.
             if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
+                // The check above ran before this row-absence observation, with main-actor hops in
+                // between: a deletion that began and cascaded since then shows up only now. The mark
+                // is set before the cascade and held past the deletion round, so reading it after
+                // seeing the row gone cannot miss that deletion.
+                if await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid) {
+                    if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                    cursor.version = max(cursor.version, item.version)
+                    cursor.pendingApply = nil
+                    // Parked as in the branch above, so a failed cascade still lands it next round.
+                    if item.fromServer { cursor.pendingApply = try? item.entity.serializedData() }
+                    table.cursors[item.uuid] = cursor
+                    table.unreadableTagHashes.removeValue(forKey: tag)
+                    continue
+                }
                 // Drop a mapping whose local row no longer exists and treat the entity as unmapped.
                 // This repairs both interrupted deletion and a crash between mapping-first
                 // creation's two writes (R-M3-4a-87). Preserve this recovery path during
@@ -2684,6 +2754,22 @@ actor PhiSyncEngine {
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
             let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
+            // `currentSpaces()` leaves out a Space whose Profile has no mapping, while the row check
+            // above reads unfiltered storage. For such a Space `existing` is nil although its mapped
+            // row exists, and `land` would take its create branch over that row. Park instead; it
+            // lands once the Space is back in the sync view. A held re-park is not written back to
+            // `pendingApply`, for the reason the landing-failure park below gives.
+            if existing == nil, !isDefault, let mapped = localSpaceId,
+               await spaceAccess.isKnownLocalSpace(mapped) {
+                AppLogWarn("[phi-sync] a mapped space is outside the sync view tag=\(String(tag.prefix(8))); parking the entity")
+                if item.fromServer {
+                    cursor.pendingApply = try? item.entity.serializedData()
+                    cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                    cursor.version = max(cursor.version, item.version)
+                    table.cursors[item.uuid] = cursor
+                }
+                continue
+            }
             // C1 / defect 0.3-2: the well-known default row is deletable now, so `land` can
             // legitimately reach its CREATE branch for this identity on a device whose row is
             // gone. D1 keeps `profile_uuid` off the wire for it, so there is no account binding
@@ -2796,6 +2882,9 @@ actor PhiSyncEngine {
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
             cursor.pendingApply = nil
+            // A landed entity is no longer refused: a stale refusal would keep this Space out of
+            // `SyncableSpaces.snapshot`, so its local edits would never publish.
+            cursor.refusedAtMs = nil
             table.cursors[item.uuid] = cursor
             table.unreadableTagHashes.removeValue(forKey: tag)
             landedAny = true
@@ -3388,7 +3477,11 @@ actor PhiSyncEngine {
         var work = spaceCommitEntries(from: table, outgoing: outgoing)
         if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
         // §9.1 second gate's bookkeeping half: an unpublished pendingDelete is
-        // finalized here rather than sent.
+        // finalized here rather than sent. Its mapping goes too, below, the same
+        // way an accepted tombstone's does. `hidden` as for the other endings: a
+        // legacy pendingDelete recorded before a cascade that then failed sits on a
+        // live row, which keeps its mapping below and is soft-deleted (§9.2).
+        var finalized: Set<String> = []
         for (uuid, var cursor) in table.cursors where cursor.pendingDelete {
             guard cursor.entityId == nil || cursor.version == 0 else { continue }
             cursor.pendingDelete = false
@@ -3396,14 +3489,17 @@ actor PhiSyncEngine {
             cursor.server = nil
             cursor.pendingProjection = nil
             cursor.deletedAtMs = now()
+            cursor.hidden = true
             table.cursors[uuid] = cursor
+            finalized.insert(uuid)
         }
-        guard !work.isEmpty else { writeSpaceTable(table); return }
+        guard !work.isEmpty || !finalized.isEmpty else { writeSpaceTable(table); return }
 
         var conflicted: Set<String> = []
-        // Locally originated tombstones accepted this round (R-D6-10). Collect synchronously in
-        // applySpaceCommitOutcome, then remove mappings after batching via their main-actor writer.
-        var tombstonedThisRound: Set<String> = []
+        // Locally originated tombstones accepted this round (R-D6-10), plus the deletions finalized
+        // above and those given up on. Collect synchronously in applySpaceCommitOutcome, then
+        // remove mappings after batching via their main-actor writer.
+        var tombstonedThisRound = finalized
         var encryptionFailed = false
         while !work.isEmpty {
             let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
@@ -3462,10 +3558,25 @@ actor PhiSyncEngine {
         // absent, so retaining mappings would return dead IDs. Keep permanent tombstone cursors.
         // Collection occurred in synchronous applySpaceCommitOutcome; mapping writes happen here on
         // the main actor.
+        //
+        // Only for a row that is really gone. A pendingDelete persisted by an older build may sit
+        // on a live row (recorded before a cascade that then failed); dropping its mapping would
+        // republish that row as a new Space under a fresh uuid. Kept, the mapping resolves the
+        // cursor's `hidden`, so the row is soft-deleted like a remote deletion (§9.2) and the
+        // retention sweep purges it.
+        var keptLive = 0
         for uuid in tombstonedThisRound {
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if await spaceAccess.isKnownLocalSpace(local) {
+                // Close its windows as a remote tombstone's hide does.
+                try? await spaceAccess.hide(spaceId: local)
+                keptLive += 1
+                continue
+            }
             await spaceAccess.dropSpaceMapping(forSpaceId: local)
         }
+        // R12: count only.
+        if keptLive > 0 { AppLogWarn("[phi-sync] a finished Space deletion left a live row; hiding it count=\(keptLive)") }
         writeSpaceTable(table)
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
@@ -3550,6 +3661,8 @@ actor PhiSyncEngine {
                 cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
+                // Ends like `.applied`: the mapping is dropped once the caller confirms the row is gone.
+                tombstoned.insert(item.uuid)
             }
         case .rejected(let type):
             roundOutboundFailed = true
@@ -5146,6 +5259,18 @@ actor PhiSyncEngine {
         let changed = body(&table)
         if changed { writeSpaceTable(table) }
         return changed
+    }
+
+    /// `.recordLocalDeletion` for a round that `isStopped` blocks while the engine is not retired.
+    /// `writeSpaceTable` would skip the write on that same check, so the table is saved here with
+    /// only the retirement check: after `shutdown()` the store may be reset for the next account.
+    /// Published when sync next runs, like any `pendingDelete`.
+    private func recordLocalDeletionWhileBlocked(_ uuid: String) {
+        guard let spaceStore else { return }
+        var table = spaceStore.load()
+        guard table.recordLocalDeletion(spaceId: uuid), !stopSignal.isStopped,
+              spaceStore.save(table) else { return }
+        Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
     }
 
     // MARK: - Hybrid logical clock (C2 / R2.1)

@@ -171,11 +171,17 @@ final class SyncKeyController {
     // of that notification sees one consistent picture. `SyncProfileMappingPause`
     // turns them into a decision; nothing here pauses anything.
 
-    /// The local Profiles the last MEASURED pass left without a resolved account
-    /// Profile: never mapped and not registered, or mapped to an envelope that is
-    /// gone. Nil until a pass has measured, and again after `clearResolved()`. A
-    /// held pass leaves it as it was.
-    private(set) var lastMeasuredUnmappedProfileIds: Set<String>?
+    /// The local Profiles whose mapping this controller knows to be absent on the
+    /// server: a lookup found the envelope of their persisted mapping gone (404),
+    /// or a MEASURED pass left them without a resolved account Profile. Evidence,
+    /// not a per-pass answer: a held pass adds what it proved and erases nothing,
+    /// so a 404 followed by a failed re-registration keeps pausing although the
+    /// persisted mapping still exists. A Profile leaves only when a pass or an
+    /// adopt resolves it, or when it no longer exists locally. `clearResolved()`
+    /// keeps it while the account key is still available (a failed startup
+    /// unlock proves nothing about the server's Profiles) and empties it once the
+    /// key is gone or the controller is retired.
+    private(set) var knownUnmappedProfileIds: Set<String> = []
 
     /// How the last pass ended: measured, held by a transient failure (a later
     /// pass can fix it), or refused definitively (the user has to act). Nil until
@@ -420,6 +426,10 @@ final class SyncKeyController {
     /// `.phiProfileMappingsDidResolve`. Staying silent would leave the browser
     /// blocked behind a modal with nothing left to pair.
     ///
+    /// `knownUnmappedProfileIds` survives it while the account key is still
+    /// available: a startup unlock that failed says nothing about which mappings
+    /// are gone on the server.
+    ///
     /// It announces as `.cleared`, NOT like a measured pass: the false predicates
     /// below say "unknown", so the gate may take its window down but must not
     /// read them as "this join finished" and retire `sync.joinPairingPending`.
@@ -431,7 +441,7 @@ final class SyncKeyController {
         resolved = [:]
         needsPairing = false
         needsPairingActionable = false
-        lastMeasuredUnmappedProfileIds = nil
+        if isRetired || manager.currentARK == nil { knownUnmappedProfileIds = [] }
         lastMappingsPassResult = nil
         if wasPopulated { notifyChromium() }
         announceMappingsResolved(.cleared)
@@ -536,10 +546,16 @@ final class SyncKeyController {
         // Every failure this pass met, by class (BH-15). Any transient one holds
         // the pass; the worst one becomes `lastMappingsPassResult`.
         var failures: Set<SyncProfileMappingPassResult> = []
+        // Evidence for `knownUnmappedProfileIds`, applied only after the retirement
+        // checks below: Profiles this pass resolved, and Profiles whose persisted
+        // mapping it found gone on the server.
+        var resolvedNow: Set<String> = []
+        var provenAbsent: Set<String> = []
         for local in locals {
             do {
                 if let rec = try await profileKeys.resolvedRecord(forLocalProfile: local.profileId) {
                     next[local.profileId] = (rec.uuid, rec.passphrase)
+                    resolvedNow.insert(local.profileId)
                     probeResolve("existing", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
                 } else {
                     // A non-nil priorMapping here means the local is mapped to a UUID
@@ -550,6 +566,7 @@ final class SyncKeyController {
                     // two lines within one bundle.
                     let priorMapping = profileKeys.mappedGlobalUuid(forProfileId: local.profileId)
                     AppLogInfo("[phi-sync-probe] unmapped profile=\(local.profileId) priorMapping=\(priorMapping.map { String($0.prefix(8)) } ?? "none")")
+                    if priorMapping != nil { provenAbsent.insert(local.profileId) }
                     unmappedLocals.append(local)
                 }
             } catch {
@@ -583,6 +600,7 @@ final class SyncKeyController {
             failures.insert(Self.mappingFailureResult(for: error))
             lastMappingsPassResult = Self.passResult(failures)
             resolved.merge(next) { _, new in new }
+            noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
             if !resolved.isEmpty { notifyChromium() }
             announceMappingsResolved(.held)
             return
@@ -612,6 +630,7 @@ final class SyncKeyController {
                         let rec = try await profileKeys.registerLocalProfile(
                             profileId: local.profileId, displayName: local.displayName)
                         next[local.profileId] = (rec.uuid, rec.passphrase)
+                        resolvedNow.insert(local.profileId)
                         probeResolve("register", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
                     } catch {
                         // `alreadyMapped` cannot normally reach here (only unmapped
@@ -645,16 +664,28 @@ final class SyncKeyController {
             needsPairing = !stillUnmapped.isEmpty || !stillUnclaimed.isEmpty
             needsPairingActionable = !stillUnmapped.isEmpty
                 || !stillUnclaimed.subtracting(undecryptableRemoteUuids).isEmpty
-            lastMeasuredUnmappedProfileIds = Set(stillUnmapped.map(\.profileId))
+            provenAbsent.formUnion(stillUnmapped.map(\.profileId))
             if result == .measured, !stillUnmapped.isEmpty, let autoCreateFailure = lastAutoCreateFailure {
                 result = autoCreateFailure
             }
             outcome = .measured
         }
         lastMappingsPassResult = result
+        noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
         AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing) actionable=\(needsPairingActionable) outcome=\(outcome.rawValue) result=\(result.rawValue)")
         if !resolved.isEmpty { notifyChromium() }
         announceMappingsResolved(outcome)
+    }
+
+    /// Updates `knownUnmappedProfileIds` from one pass: Profiles that no longer
+    /// exist locally leave, Profiles it proved unmapped enter, and Profiles it
+    /// resolved leave last (a 404 that the same pass re-registered is resolved).
+    /// Nothing else leaves, whatever the pass result.
+    private func noteUnmappedEvidence(locals: [(profileId: String, displayName: String)],
+                                      resolved: Set<String>, absent: Set<String>) {
+        knownUnmappedProfileIds.formIntersection(locals.map(\.profileId))
+        knownUnmappedProfileIds.formUnion(absent)
+        knownUnmappedProfileIds.subtract(resolved)
     }
 
     /// Every announcement states its outcome; there is no unmarked variant, so an
@@ -826,6 +857,8 @@ final class SyncKeyController {
         }
         _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
         adopted = true
+        // Resolved: a pass that holds before it looks again must not keep pausing for it.
+        knownUnmappedProfileIds.remove(profileId)
         pendingCreatedProfiles[uuid] = nil
         return profileId
     }
@@ -938,6 +971,7 @@ final class SyncKeyController {
                 attempts += 1
                 do {
                     _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: twin.profileId)
+                    knownUnmappedProfileIds.remove(twin.profileId)
                     created += 1
                 } catch {
                     noteAutoCreateFailure(error)

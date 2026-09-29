@@ -28,6 +28,7 @@ final class PassAPI: KeyEnvelopeAPI {
     var puts: [String] = []
     var onGet: ((String) async -> Void)?
     var getErrors: [String: Error] = [:]
+    var listError: Error?
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
         if let putError { throw putError }
         puts.append(uuid)
@@ -39,7 +40,9 @@ final class PassAPI: KeyEnvelopeAPI {
         if let error = getErrors[uuid] { throw error }
         return envelopes[uuid].map { ProfileKeyDTO(profileKeyEnvelope: $0) }
     }
-    func listProfiles() async throws -> [ProfileSummaryDTO] { envelopes.keys.sorted().map { ProfileSummaryDTO(profileUuid: $0) } }
+    func listProfiles() async throws -> [ProfileSummaryDTO] {
+        if let listError { throw listError }
+        return envelopes.keys.sorted().map { ProfileSummaryDTO(profileUuid: $0) } }
     func revokeDevice(deviceKeyId: String) async throws {}
 }
 final class PassMappingStore: ProfileSyncMappingStore {
@@ -69,12 +72,15 @@ final class PassProfileCreator: LocalProfileCreating {
 
 @MainActor
 final class SyncKeyController {
+    let manager: AccountKeyManager
     let profileKeys: ProfileKeyManager
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
     private let notifyChromium: () -> Void
     private let profileCreator: any LocalProfileCreating
     private let isPairingComplete: @MainActor () -> Bool
-    init(profileKeys: ProfileKeyManager, creator: PassProfileCreator, paired: @escaping @MainActor () -> Bool = { true }) {
+    init(manager: AccountKeyManager, profileKeys: ProfileKeyManager, creator: PassProfileCreator,
+         paired: @escaping @MainActor () -> Bool = { true }) {
+        self.manager = manager
         self.profileKeys = profileKeys
         localProfilesProvider = { creator.userAssignableProfileIds }
         notifyChromium = {}
@@ -99,7 +105,7 @@ struct MappingPassTests {
         private var tokens: [NSObjectProtocol] = []
         init() {
             controller = SyncKeyController(
-                profileKeys: ProfileKeyManager(api: api, keyManager: manager, mappingStore: store), creator: creator)
+                manager: manager, profileKeys: ProfileKeyManager(api: api, keyManager: manager, mappingStore: store), creator: creator)
             tokens.append(NotificationCenter.default.addObserver(
                 forName: .phiProfileMappingsDidResolve, object: nil, queue: nil) { [unowned self] note in
                     MainActor.assumeIsolated {
@@ -127,7 +133,7 @@ struct MappingPassTests {
         func pause() -> SyncProfileMappingPause {
             SyncProfileMappingPause.evaluate(
                 syncableProfileIds: creator.profiles.map(\.profileId), persistedMappings: store.map,
-                lastMeasuredUnmappedProfileIds: controller.lastMeasuredUnmappedProfileIds,
+                knownUnmappedProfileIds: controller.knownUnmappedProfileIds,
                 profileIdsBeingCreated: controller.profileIdsBeingCreated,
                 lastPassResult: controller.lastMappingsPassResult)
         }
@@ -145,7 +151,8 @@ struct MappingPassTests {
         try await creationIsTracked()
         try await autoCreateIsSingleFlight()
         try await capCountsAttempts()
-        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap")
+        try await goneEnvelopeEvidenceSurvives()
+        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither
@@ -159,7 +166,7 @@ struct MappingPassTests {
         await s.controller.resolveMappings()
         precondition(s.store.map["Profile 2"] == nil, "A lone new local was merged by count")
         precondition(s.api.puts.isEmpty, "A claimable account Profile must hold registration until auto-create had its turn")
-        precondition(s.controller.lastMeasuredUnmappedProfileIds == ["Profile 2"])
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 2"])
         precondition(s.controller.lastMappingsPassResult == .measured)
         precondition(s.pause().reason == .registering && s.pause().unmappedProfileIds == ["Profile 2"])
 
@@ -169,7 +176,7 @@ struct MappingPassTests {
         let registered = s.store.map["Profile 2"]
         precondition(registered != nil && registered != "uuid-work" && s.api.puts == [registered!],
                      "The new local must be registered as a new account Profile (R4)")
-        precondition(s.controller.lastMeasuredUnmappedProfileIds == [] && s.controller.lastMappingsPassResult == .measured)
+        precondition(s.controller.knownUnmappedProfileIds == [] && s.controller.lastMappingsPassResult == .measured)
         precondition(!s.pause().isPaused)
         precondition(s.controller.profileSyncInfo(forProfileId: "Profile 2")?.uuid == registered)
     }
@@ -192,13 +199,13 @@ struct MappingPassTests {
             let s = Stack(); defer { s.close() }
             try s.seedMappedLocal("Default", uuid: "uuid-default")
             await s.controller.resolveMappings()
-            precondition(s.controller.lastMeasuredUnmappedProfileIds == [])
+            precondition(s.controller.knownUnmappedProfileIds == [])
             s.creator.profiles.append((profileId: "Profile 2", displayName: "Home"))
             s.api.putError = error
             await s.controller.resolveMappings()
             precondition(s.outcomes.last == "held", "A transient registration failure must not measure")
             precondition(s.controller.lastMappingsPassResult == .heldTransient)
-            precondition(s.controller.lastMeasuredUnmappedProfileIds == [], "A held pass keeps the last measured set")
+            precondition(s.controller.knownUnmappedProfileIds == [], "A held pass adds only what it proved")
             precondition(s.controller.profileSyncInfo(forProfileId: "Default") != nil, "Mapped Profiles keep their keys")
             precondition(s.pause().reason == .retrying && s.pause().unmappedProfileIds == ["Profile 2"])
             s.api.putError = nil
@@ -215,7 +222,7 @@ struct MappingPassTests {
         await s.controller.resolveMappings()
         precondition(s.outcomes.last == "measured")
         precondition(s.controller.lastMappingsPassResult == .definitiveFailure)
-        precondition(s.controller.lastMeasuredUnmappedProfileIds == ["Profile 2"])
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 2"])
         precondition(s.pause().reason == .needsAttention)
         precondition(SyncKeyController.mappingFailureResult(for: ProfileKeyManagerError.badEnvelope) == .definitiveFailure)
         precondition(SyncKeyController.mappingFailureResult(for: PhiKeyCryptoError.decryptFailed) == .definitiveFailure)
@@ -276,7 +283,7 @@ struct MappingPassTests {
         // Enrollment incomplete: auto-create is skipped, the pass registers nothing.
         let gated = Stack(); defer { gated.close() }
         let controller = SyncKeyController(
-            profileKeys: ProfileKeyManager(api: gated.api, keyManager: gated.manager, mappingStore: gated.store),
+            manager: gated.manager, profileKeys: ProfileKeyManager(api: gated.api, keyManager: gated.manager, mappingStore: gated.store),
             creator: gated.creator, paired: { false })
         gated.creator.profiles.append((profileId: "Profile 2", displayName: "Home"))
         try gated.seedRemote("uuid-work", name: "Work")
@@ -358,5 +365,64 @@ struct MappingPassTests {
         _ = await s.controller.ensureLocalProfilesForAccount()
         precondition(s.creator.createCalls.count == SyncKeyController.maxAutoCreatesPerRound)
         precondition(s.controller.lastMappingsPassResult == nil)
+    }
+
+    /// P2b A: a 404 on a mapped Profile's envelope is evidence that outlives a
+    /// held pass and a cache clear, so the pause holds although the persisted
+    /// mapping still exists.
+    @MainActor static func goneEnvelopeEvidenceSurvives() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        try s.seedMappedLocal("Profile 1", uuid: "uuid-one")
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == [] && !s.pause().isPaused)
+
+        // The envelope is gone; the replacement registration fails transiently.
+        s.api.envelopes["uuid-one"] = nil
+        s.api.putError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await s.controller.resolveMappings()
+        precondition(s.outcomes.last == "held" && s.store.map["Profile 1"] == "uuid-one")
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"], "A held pass dropped the 404 evidence")
+        precondition(s.pause().isPaused && s.pause().unmappedProfileIds == ["Profile 1"] && s.pause().reason == .retrying)
+
+        // A pass that holds at the listing proves nothing and erases nothing.
+        s.api.listError = KeyAPIError.http(503, "")
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"] && s.pause().isPaused)
+        s.api.listError = nil
+
+        // A cache clear with the account key still available keeps it.
+        s.controller.clearResolved()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"] && s.pause().isPaused,
+                     "clearResolved() erased the evidence while the key was available")
+
+        // A successful registration resolves it.
+        s.api.putError = nil
+        await s.controller.resolveMappings()
+        precondition(s.store.map["Profile 1"] != "uuid-one" && s.controller.knownUnmappedProfileIds == [])
+        precondition(!s.pause().isPaused)
+
+        // Deleting the local Profile removes it.
+        s.api.envelopes[s.store.map["Profile 1"]!] = nil
+        s.api.putError = KeyAPIError.http(503, "")
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
+        s.creator.profiles.removeAll { $0.profileId == "Profile 1" }
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == [], "A deleted local stayed in the evidence")
+
+        // The key gone, or the controller retired, empties it.
+        s.creator.profiles.append((profileId: "Profile 1", displayName: "Profile 1"))
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
+        let ark = s.manager.currentARK
+        s.manager.currentARK = nil
+        s.controller.clearResolved()
+        precondition(s.controller.knownUnmappedProfileIds == [])
+        s.manager.currentARK = ark
+        await s.controller.resolveMappings()
+        precondition(s.controller.knownUnmappedProfileIds == ["Profile 1"])
+        s.controller.retire()
+        precondition(s.controller.knownUnmappedProfileIds == [])
     }
 }

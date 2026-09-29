@@ -28,8 +28,9 @@ enum SyncProfileMappingPassResult: String, Equatable {
 /// synchronously from the Profile-list sink and a hostless harness can pin it.
 ///
 /// A Profile counts as unmapped when it has no persisted mapping, or when the
-/// last measured pass left it unresolved (a persisted mapping whose account
-/// envelope is gone). Profiles the key layer is creating itself are ignored
+/// key layer knows its mapping is absent on the server (a persisted mapping
+/// whose account envelope is gone, or a measured pass that left it unmapped).
+/// Profiles the key layer is creating itself are ignored
 /// until their adopt step has finished or failed: they are unmapped only for
 /// the moment between the bridge creating them and the adopt writing the
 /// mapping, and pausing for that moment would restart every Chromium engine.
@@ -55,20 +56,23 @@ struct SyncProfileMappingPause: Equatable {
     ///   - syncableProfileIds: the local Profiles the rule covers
     ///     (`ProfileManager.userAssignableProfiles`).
     ///   - persistedMappings: local Profile id -> account Profile uuid.
-    ///   - lastMeasuredUnmappedProfileIds: the Profiles the last MEASURED pass
-    ///     left unresolved; nil when no pass has measured yet.
+    ///   - knownUnmappedProfileIds: `SyncKeyController.knownUnmappedProfileIds`,
+    ///     the Profiles whose mapping the key layer knows to be absent on the
+    ///     server. It survives held passes and a cache clear while the account
+    ///     key is still available, so a persisted mapping whose envelope is gone
+    ///     keeps pausing until a pass resolves it.
     ///   - profileIdsBeingCreated: Profiles the key layer created and has not
     ///     finished adopting.
     ///   - lastPassResult: how the last pass ended; nil when none has run.
     static func evaluate(syncableProfileIds: [String],
                          persistedMappings: [String: String],
-                         lastMeasuredUnmappedProfileIds: Set<String>?,
+                         knownUnmappedProfileIds: Set<String>,
                          profileIdsBeingCreated: Set<String>,
                          lastPassResult: SyncProfileMappingPassResult?) -> SyncProfileMappingPause {
         let unmapped = Set(syncableProfileIds.filter { profileId in
             guard !profileIdsBeingCreated.contains(profileId) else { return false }
             return persistedMappings[profileId] == nil
-                || lastMeasuredUnmappedProfileIds?.contains(profileId) == true
+                || knownUnmappedProfileIds.contains(profileId)
         })
         guard !unmapped.isEmpty else { return .notPaused }
         let reason: Reason

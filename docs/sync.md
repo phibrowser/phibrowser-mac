@@ -108,10 +108,17 @@ open under the ARK, and uuids the persisted mapping gives to deleted locals, nev
 hold registration. Register and lookup failures are classified: transient
 (transport, 5xx, 408/429, 401/403, locked, a mapping that moved) holds the pass
 (`.held`); definitive (bad envelope, another 4xx, an undecodable body) measures
-and reports `.definitiveFailure`. The controller publishes the unmapped set of the
-last measured pass, the last pass result and the Profiles it is creating, read on
+and reports `.definitiveFailure`. The controller publishes the Profiles whose
+mapping it knows to be absent on the server (`knownUnmappedProfileIds`), the last
+pass result and the Profiles it is creating, read on
 `.phiProfileMappingsDidResolve`; the pure `SyncProfileMappingPause` turns them into
-a pause decision. `runMappingRepairPass()` runs auto-create and then a mapping pass,
+a pause decision. The known-unmapped set is evidence, not a per-pass answer: a
+Profile enters when a lookup finds its persisted mapping's envelope gone (404) or
+a measured pass leaves it unmapped, and leaves only when a pass or an adopt
+resolves it or it no longer exists locally. A held pass erases nothing, and
+`clearResolved()` keeps the set while the account key is still available; it
+empties once the key is gone or the controller is retired. So a mapping whose
+envelope is gone keeps pausing even when its replacement registration fails. `runMappingRepairPass()` runs auto-create and then a mapping pass,
 both single-flight, outside the engine, under the existing gates (enrollment
 complete, unlocked). Nothing pauses on these inputs yet.
 

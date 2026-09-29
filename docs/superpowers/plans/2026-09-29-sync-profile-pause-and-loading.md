@@ -400,3 +400,11 @@ reconciliation, which clears the outputs of this feature by step 1.
 | N9 | A transient register failure now holds `needsPairing` / `needsPairingActionable` instead of setting them true | Required by "held, not measured-unmapped". Only the pairing gate reads them on announcements, and it acts on `.cleared` only; the Sync pane reads enrollment, not these |
 | N10 | BH-16 done: the auto-create cap counts attempts (twin adopts and creates), not successes | Small; a round whose creates keep failing now stops after three attempts |
 | N11 | Known gap for P4: a Profile enters `profileIdsBeingCreated` only after `createProfile` returns its id, but `ProfileManager.createProfile` refreshes the list (and so fires the `$profiles` sink) in the same main-queue block just before it completes | The synchronous check in the sink sees the new Profile as unmapped for that one step. P4 must tolerate it (for example evaluate after the sink's hop, or treat a creation in flight as ignorable); the key layer cannot name a Profile before the bridge does |
+
+### P2b
+
+| # | Deviation or addition | Why |
+| --- | --- | --- |
+| N12 | `lastMeasuredUnmappedProfileIds` is replaced by `knownUnmappedProfileIds` (non-optional), and the predicate's input is renamed to match. It is not a second property beside the measured set | The evidence set contains every Profile the measured set did (a measured pass adds its unmapped Profiles to it) and differs only in surviving held passes and a cache clear. Keeping both would give the predicate two inputs of which one is always a subset of the other; the old name would describe the wrong meaning. The hosted test that read the old name reads the new one |
+| N13 | A Profile enters the evidence on a 404 only when it has a persisted mapping; a Profile with no mapping enters it only through a measured pass | The predicate already pauses for a Profile with no persisted mapping, so a "no mapping, so nothing to look up" nil adds no information |
+| N14 | A successful adopt (twin adopt, create-and-adopt) removes the adopted Profile from the evidence, besides a pass that resolves it | Otherwise the wrap-up pass after an adopt must succeed before the pause ends; a transient failure in that pass would keep pausing for a Profile that is mapped and readable |

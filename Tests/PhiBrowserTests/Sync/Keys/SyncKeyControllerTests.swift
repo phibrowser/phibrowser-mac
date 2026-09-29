@@ -104,7 +104,7 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertTrue(c.needsPairing)
         XCTAssertNil(c.profileSyncInfo(forProfileId: "Default"))
         XCTAssertEqual(api.profileEnvelopes.keys.sorted(), [recA.uuid], "no registration while the account Profile is claimable")
-        XCTAssertEqual(c.lastMeasuredUnmappedProfileIds, ["Default"])
+        XCTAssertEqual(c.knownUnmappedProfileIds, ["Default"])
         XCTAssertEqual(c.lastMappingsPassResult, .measured)
     }
 

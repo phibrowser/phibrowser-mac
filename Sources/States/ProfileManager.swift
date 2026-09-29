@@ -106,6 +106,20 @@ final class ProfileManager: ObservableObject {
         return true
     }
 
+    /// The sync Profile loader's periodic recheck (docs/sync.md, "Profile loading"):
+    /// the same bridge read as `refresh()`, but `profiles` is assigned only when the
+    /// decoded list differs (a Profile loading or unloading is the change it exists to
+    /// see), and none of `refresh()`'s side effects run. An unchanged list publishes
+    /// nothing, so observing views do not re-evaluate every recheck.
+    func refreshIfChanged() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        let raw = bridge.listProfiles()
+        let decodedProfiles = raw.compactMap(Self.decode(_:))
+        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count,
+              decodedProfiles != profiles else { return }
+        profiles = decodedProfiles
+    }
+
     /// Convenience lookup — nil if the basename isn't known. Most callers
     /// only need the displayName for UI labelling.
     func profile(for profileId: String) -> PhiBrowserProfile? {

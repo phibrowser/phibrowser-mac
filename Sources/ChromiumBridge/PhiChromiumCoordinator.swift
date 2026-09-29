@@ -779,7 +779,9 @@ import SwiftUI
                                               isUserAssignable: assignable.contains($0.profileId))
                 }
             },
-            refreshProfiles: { _ = ProfileManager.shared.refresh() },
+            // Not `refresh()`: every 60 seconds for the whole session, that would publish an
+            // unchanged list and run its chat-archive drain and display-name upserts.
+            refreshProfiles: { ProfileManager.shared.refreshIfChanged() },
             // Exactly what Chromium would be handed now: enrolled, keys not withdrawn, and a
             // mapping resolved under the unlocked account key.
             hasDeliverableKey: { [weak self] profileId in

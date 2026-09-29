@@ -16,7 +16,7 @@ kept running and left out the Spaces of a Profile without a mapping.
 | --- | --- |
 | R1 | Every local Profile that is meant to sync takes part in sync. If one is not mapped to an account Profile, sync is paused as a whole until it is |
 | R2 | The pause covers Chromium-side sync too. Chromium keys are withdrawn after a delay of 15 seconds, so a Profile that maps within seconds does not restart every Chromium sync engine |
-| R3 | Native data pauses immediately. The Sync status shows the pause only after 15 seconds |
+| R3 | Native data pauses immediately (amended by section 10, pending the owner's confirmation: it pauses when the round in flight ends). The Sync status shows the pause only after 15 seconds |
 | R4 | A new local Profile is registered as a new account Profile automatically. The user is not asked |
 | R5 | Every mapped Profile is loaded so it syncs without a window. First version: Swift only, through the existing bridge call. Memory per sync-only Profile is tolerable up to 200 to 300 MB and is to be measured |
 
@@ -223,6 +223,160 @@ the engine is stopped; the apply loop's defensive checks), P5 on the second
 | A1 | Edits made during a pause carry the resume time (section 3, point 8) |
 | A2 | Profile loading relies on upstream keep-alive behaviour until the framework has an explicit call |
 | A3 | A Profile loaded without a window publishes an empty open-tabs header for this device |
+
+## 10. Timing design for P3 and P4 (version 2)
+
+Version 1 set the engine stop bit synchronously and bumped the generation, so
+a round in flight was aborted. External review (Codex, 2026-09-29, twelve
+findings, eight of them severe) showed that such aborts are not safe once
+they become routine: an abort after a landing and before its baseline is
+saved lets a later snapshot treat the landed value as a fresh local edit, and
+an abort between an accepted first publication and its acknowledgement lets a
+later local deletion go unrecorded. Version 1 also carried too much stored
+state: the stored phase and the epoch invalidated the retry task on the way
+from grace to paused, and the inert path could leave the feature's own bits
+set. Version 1 is withdrawn.
+
+Version 2 rests on two decisions:
+
+1. **The pause takes effect at round boundaries.** No round is aborted. While
+   the pause holds, no new round starts. A round already running finishes
+   normally.
+2. **Outputs are derived, not stored.** One idempotent function computes what
+   the engine gate, the key withdrawal, the helper and the status should be,
+   from the prerequisites, the predicate and the clock, and applies the
+   difference.
+
+This changes owner ruling R3 in one respect, to be confirmed by the owner:
+native data no longer stops at once; it stops when the round in flight ends.
+
+### 10.1 Owner and state
+
+`PhiChromiumCoordinator` owns the pause. Main actor only, never persisted.
+
+| Field | Meaning |
+| --- | --- |
+| `episode` | Nil, or an identifier plus the time the predicate first reported an unmapped Profile. It ends when the predicate is clear or the prerequisites are gone |
+| `applied` | The outputs last applied: engine gate, keys withdrawn, status published. Used only to apply differences |
+
+Presentation is derived: during the first 15 seconds of an episode nothing is
+shown and Chromium keys are delivered; after that the pause is shown and the
+keys are withdrawn.
+
+### 10.2 One reconciliation function
+
+`reconcileProfileMappingPause(profiles:)` is synchronous and runs on the main
+actor. It takes the Profile list as an argument: the Profile-list sink passes
+the value it was given, because the published property still holds the
+previous list while the sink runs. Other callers pass the current list.
+
+Callers: the Profile-list sink, the observers of
+`.phiProfileMappingsDidResolve` and `.phiProfileAutoCreateDidRun`, the
+15-second timer of the episode, the end of engine build, enrollment and
+unlock changes before they enable work, and teardown.
+
+| Step | Rule |
+| --- | --- |
+| 1. Prerequisites | Enrollment complete, account key unlocked, engine present, controller not retired. If any is missing the desired outputs are all off and the episode ends. The feature's own outputs are still cleared if they were applied, so nothing of this feature stays set |
+| 2. Predicate | Evaluated on the given list, the persisted mappings, the key layer's unmapped evidence (10.6), the last pass result and the Profiles being created |
+| 3. Episode | Predicate paused and no episode: start one, start its repair loop (10.5), arm one timer for its 15-second mark. Predicate clear and an episode exists: end it |
+| 4. Desired outputs | Engine gate on while an episode exists. Keys withdrawn and status published while an episode exists and is at least 15 seconds old |
+| 5. Apply differences | Gate on or off. Keys: set the flag on the controller, notify the bridge. Status: publish or clear the reason. On the change from gate on to gate off: request a catch-up from the invalidation coordinator, queue the retention sweep, tell the Profile loader to continue |
+
+The invalidation coordinator is never stopped or started by this feature.
+While the gate is on, the pulls it requests return at the round entry check.
+`activatePairedSync()` and `startPhiSyncIfReady()` are not changed, except
+that they call the reconciliation function before they enable work.
+
+### 10.3 Engine gate
+
+A nonisolated, lock-based flag next to `StopSignal`, not part of it: it does
+not bump the generation and is not read by the write guards inside a round.
+It is read in one place, the round entry check.
+
+| Round type | While the gate is on |
+| --- | --- |
+| Pull, push, local-change rounds, retention sweep | Return at the round entry check without setting Syncing |
+| `.preview`, `.recordLocalDeletion`, `.spaceGate` | Run normally |
+
+`markLocalChangePending()` and the unconditional Syncing update in
+`serialized()` do nothing for a round that the gate turns away.
+
+A round that is running when the gate turns on finishes, including its
+landings, cursor saves, acknowledgements and marker advance. For that one
+round the existing behaviour applies: the Spaces of an unmapped Profile are
+left out of the snapshot, and the apply loop's defensive checks keep an
+existing row from being created again.
+
+### 10.4 Profiles created by the key layer
+
+No global flag. A Profile that the key layer creates is unmapped for a moment
+before its id is known and until its adopt step ends. The reconciliation may
+start an episode in that moment. Nothing is aborted, nothing is shown for 15
+seconds, and the episode ends when the adopt step ends. The per-Profile
+exclusion of P2 (`profileIdsBeingCreated`) stays and shortens that moment.
+
+### 10.5 Repair loop
+
+One loop per episode, identified by the episode. It calls
+`runMappingRepairPass()`, never a bare resolve and never the startup unlock
+path, waits, and repeats while its episode is the current one. The delay
+starts at 5 seconds and doubles to 5 minutes. Foreground, wake, unlock and the
+pane's Retry replace the pending wait with an immediate pass and reset the
+delay, only while an episode exists. Outside an episode nothing of this
+feature calls the key layer.
+
+The Profile-list sink calls the repair pass instead of
+`silentUnlockAndResolve()` when the controller is already unlocked, so a
+failed device-envelope lookup no longer clears the key cache during an
+episode.
+
+### 10.6 Key layer additions (task P2b)
+
+| Item | Change |
+| --- | --- |
+| Unmapped evidence | A Profile whose mapping is known to be absent on the server stays in the published unmapped set until it is positively resolved. A held pass and a cache clear while the account key is still available do not erase it |
+| Retirement | Auto-create and create-and-adopt check retirement after every suspension and immediately before every mutation of the Profile list. Retiring the controller cancels the shared auto-create task |
+| Failure category | The key layer publishes a status-only category next to the pass result: offline, sign-in expired, server error, other. The predicate's reason stays as it is |
+
+### 10.7 Helper and status
+
+The helper gets a pause-aware path, separate from eligibility and from
+membership changes:
+
+| Episode age | Helper |
+| --- | --- |
+| Under 15 seconds | Dispatches nothing. Keeps and returns its last report. A Sync now request stays queued and is dispatched when the episode ends |
+| 15 seconds or more | Reports the pause phase with the reason and the failure category. A queued Sync now request is cancelled and marked as cancelled, so the pane announces nothing. The pane shows Retry instead of Sync now |
+
+Ending an episode does not call `membershipDidChange()`.
+
+### 10.8 Teardown
+
+Sign-out, account switch, engine retirement and key-controller invalidation
+end the episode, which stops its repair loop and timer, and run the
+reconciliation, which clears the outputs of this feature by step 1.
+
+### 10.9 Invariants and accepted residuals
+
+| # | Invariant |
+| --- | --- |
+| I1 | While an episode exists, no pull, push, local-change round or retention sweep starts |
+| I2 | This feature never aborts a round and never changes the generation |
+| I3 | No step that ends the pause is stopped by the pause |
+| I4 | Outputs of this feature are changed only by the reconciliation function, on the main actor, and are cleared whenever the prerequisites are missing |
+| I5 | The feature installs no observer or publisher besides its own timer and repair loop, and never stops or starts the invalidation coordinator |
+| I6 | Nothing about the pause is persisted |
+| I7 | A device on which the predicate stays clear sees no change: no timer, no key-layer call, no withdrawal, no catch-up, no report change |
+
+| # | Accepted residual |
+| --- | --- |
+| B1 | Edits made during a pause carry the resume time |
+| B2 | A round in flight when an episode starts finishes under the old partial behaviour; the apply loop's defensive checks cover it |
+| B3 | Chromium keeps syncing the mapped Profiles for the first 15 seconds of an episode |
+| B4 | Reasons are per pass, not per Profile |
+| B5 | The invalidation stream stays connected during a pause; its hints are dropped and the catch-up at the end replaces them |
+| B6 | The two hazards of aborting a round (baseline lost after a landing; acknowledgement lost after an accepted first publication) remain for the existing abort paths, unpairing and reconfiguration. They are recorded in the debt register and are not made more frequent by this feature |
 
 ## Implementation notes
 

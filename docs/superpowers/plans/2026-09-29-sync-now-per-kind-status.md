@@ -517,3 +517,16 @@ T1-T3 implement D25's per-kind counts, last problem and Sync now; T4 unifies the
 path; T5 presents them; T6 amends the spec where D25 overrides it; T7-T8 provide evidence.
 The work is complete only with passing hostless harnesses, a compiling hosted target, and
 recorded manual acceptance, or explicit Not run entries.
+
+## Implementation notes
+
+Deviations from the plan text, recorded as they were made.
+
+- **T1.** The merge takes the round time explicitly: `SyncNativeDetail.merging(round:at:)`.
+  Its input is a new Foundation-only `SyncRoundDetail` (the round's visited kinds plus its
+  most severe problem, collected with `note(_:kind:)`), so the category precedence is a pure,
+  tested rule instead of engine code. `SyncProblemCategory` cases are declared in precedence
+  order; `waitingForProfilePairing` is last. `SyncKind(ownedLabel:)` maps the engine's
+  owned-kind registration labels. The button reducer `SyncNowButtonState.reduce(summary:request:)`
+  also returns `isVisible` (false while Not started); the pane still adds its own unlock
+  check.

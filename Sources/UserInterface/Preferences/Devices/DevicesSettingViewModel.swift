@@ -36,9 +36,9 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var syncNowOutcome: SyncNowOutcome?
     struct SyncNowOutcome: Equatable {
         enum Result: Equatable {
-            /// Up to date with a common success newer than at the tap.
+            /// A common success newer than at the tap.
             case finished
-            /// Ended without that success; the native last problem, if one is recorded.
+            /// Ended without that success; the native last problem, if one was recorded after the tap.
             case failed(SyncProblemCategory?)
             case rejected
         }
@@ -48,6 +48,8 @@ final class DevicesSettingViewModel: ObservableObject {
     private var awaitingSyncNow = false
     /// The common success time when the tap was made; only a newer one means the sync finished.
     private var syncNowBaseline: Date?
+    /// Only a problem recorded at or after the tap describes this request.
+    private var syncNowTappedAt = Date.distantPast
     private var syncNowSerial: UInt64 = 0
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
@@ -82,6 +84,7 @@ final class DevicesSettingViewModel: ObservableObject {
         guard isUnlocked, !isSubmittingSyncNow, isCurrentAccount() else { return }
         let generation = loadGeneration
         syncNowBaseline = summary.lastSuccess
+        syncNowTappedAt = Date()
         isSubmittingSyncNow = true
         defer { isSubmittingSyncNow = false }
         let report = await syncNowReport()
@@ -120,9 +123,11 @@ final class DevicesSettingViewModel: ObservableObject {
         case .queued, .inFlight: break
         case .rejected: finishSyncNow(.rejected)
         case .idle:
-            let succeeded = summary.phase == .upToDate
-                && summary.lastSuccess.map { success in syncNowBaseline.map { success > $0 } ?? true } == true
-            finishSyncNow(succeeded ? .finished : .failed(nativeDetail?.lastProblem?.category))
+            // The helper moves `lastSuccess` only on a coordinated success, so a newer one is enough
+            // even if a later local edit has already started another round.
+            let succeeded = summary.lastSuccess.map { success in syncNowBaseline.map { success > $0 } ?? true } == true
+            let problem = nativeDetail?.lastProblem.flatMap { $0.at >= syncNowTappedAt ? $0.category : nil }
+            finishSyncNow(succeeded ? .finished : .failed(problem))
         }
     }
 

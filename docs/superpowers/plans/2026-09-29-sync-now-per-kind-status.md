@@ -657,3 +657,7 @@ Deviations from the plan text, recorded as they were made.
   the key controller and the pairing flag, and the harness splices only named methods; and
   splicing the settings sent/received count sites, which sit inside `pushSettings` and the pull's
   settings apply, whose surrounding wire and storage code the fixture would have to stub.
+- **Second review F2 / M-a.** The view model also captures the tap time and names a problem
+  only when its recorded time is at or after the tap; otherwise "Sync did not finish". "Sync
+  finished" now needs only a common success newer than at the tap, whatever the current phase,
+  because the helper moves `lastSuccess` only on a coordinated success.

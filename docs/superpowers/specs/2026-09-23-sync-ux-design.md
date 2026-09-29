@@ -93,11 +93,12 @@ it waits for the current sync, will start shortly (minimum interval), or waits f
 profile to report status. When this Mac refuses to start the requested sync, the hint says it
 could not start until the next tap or the next sync this Mac starts. The hint, progress
 indicator and button keep fixed space, so the status row does not move or change height.
-When a requested sync ends, VoiceOver announces "Sync finished" only if everything is up to
-date with a newer successful sync than at the tap; otherwise it announces the last problem's
-category, or "Sync did not finish" when none is known, and a refusal as could not start. A
-sync that fails ends as soon as every context has settled on the failure, instead of after a
-minute. A request dropped because sync stopped or became unavailable ends silently.
+When a requested sync ends, VoiceOver announces "Sync finished" only if this Mac recorded a
+newer coordinated successful sync than at the tap; otherwise it announces the category of a
+problem recorded since the tap, or "Sync did not finish" when there is none, and a refusal as
+could not start. A sync that fails ends once every context has stayed settled on the failure
+for a few seconds, instead of after a minute; if it recovers within that minute, the success
+is still recorded. A request dropped because sync stopped or became unavailable ends silently.
 
 The status row may add one line with the most recent problem of this Mac's native sync: a
 localized category (for example No connection, Sign-in expired, Server error) and a

@@ -72,6 +72,7 @@ import Foundation
         oneAtATimeWithGap()
         reloadAfterUnload()
         syncNowSkipsDelays()
+        syncNowRefreshesFirst()
         waitsWhilePausedOrNotEnumerated()
         stopIgnoresLateCompletion()
         failureRetriesWithoutBlocking()
@@ -173,6 +174,21 @@ import Foundation
         f.finish(true, at: 6.1)
         precondition(f.started.count == 4)
         print("PASS profile loader: Sync now loads at once, without the initial delay and the gap")
+    }
+
+    @MainActor static func syncNowRefreshesFirst() {
+        let f = Fixture(["A"])
+        f.loader.syncDidStart()
+        f.at(30)
+        f.finish(true, at: 30.2)
+        // The last window of A closed 20 seconds after the last recheck.
+        f.unloadOnRefresh = ["A"]
+        let refreshesBefore = f.refreshes
+        f.time = 50
+        f.loader.loadNow()
+        precondition(f.refreshes == refreshesBefore + 1, "Sync now refreshes the list first")
+        precondition(f.started == ["A", "A"], "Sync now sees a Profile that unloaded since the last recheck")
+        print("PASS profile loader: Sync now refreshes the list before choosing what to load")
     }
 
     @MainActor static func waitsWhilePausedOrNotEnumerated() {

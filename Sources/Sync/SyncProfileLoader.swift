@@ -105,11 +105,13 @@ final class SyncProfileLoader {
     }
 
     /// Sync now: every Profile that needs a load right now is loaded without the initial
-    /// delay, the gap, a pending retry delay or a recent-load wait. Dropped while the loader
+    /// delay, the gap, a pending retry delay or a recent-load wait. The list is refreshed
+    /// first, so a Profile that unloaded a moment ago counts. Dropped while the loader
     /// could not load anyway (not started, disabled, ineligible, paused, list not enumerated).
     func loadNow() {
         guard !stopped, startedAt != nil else { return }
         loadNowRequested = true
+        lastRecheckAt = nil
         evaluate()
     }
 

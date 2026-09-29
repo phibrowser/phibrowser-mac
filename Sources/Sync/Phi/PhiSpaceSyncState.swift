@@ -66,8 +66,9 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// Remote soft deletion (§9.2), the sole hidden meaning after D6. Invariant: hidden implies nonnil
     /// deletedAtMs, pinned by Task 2 tests.
     var hidden = false
-    /// Agent / incognito / excluded: recorded so it is not decrypted and
-    /// refused again every round. Such a cursor has NO `entityId`, which is
+    /// Agent / incognito / excluded payload refused at landing. Keeps the uuid
+    /// out of `SyncableSpaces.snapshot`; cleared when a later version of the
+    /// entity lands. A cursor created by a refusal has NO `entityId`, which is
     /// what makes §9.1's delete-origin criterion safe.
     var refusedAtMs: Int64?
     /// The 30-day sweep ran: baselines dropped, the cursor itself kept forever

@@ -2619,7 +2619,9 @@ actor PhiSyncEngine {
 
             // §6.5: refuse to materialize agent / incognito payloads. Refusing is
             // NOT a claim the account should not hold it, so no tombstone is ever
-            // pushed back; `refusedAtMs` only stops the re-decrypt every round.
+            // pushed back. `refusedAtMs` does not skip any later decrypt; it keeps
+            // the uuid out of `SyncableSpaces.snapshot` until a later version of
+            // the entity lands, which clears it.
             if SyncableSpaces.refuses(item.entity) {
                 cursor.refusedAtMs = now()
                 cursor.pendingApply = nil
@@ -2816,6 +2818,9 @@ actor PhiSyncEngine {
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
             cursor.pendingApply = nil
+            // A landed entity is no longer refused: a stale refusal would keep this Space out of
+            // `SyncableSpaces.snapshot`, so its local edits would never publish.
+            cursor.refusedAtMs = nil
             table.cursors[item.uuid] = cursor
             table.unreadableTagHashes.removeValue(forKey: tag)
             landedAny = true

@@ -1221,3 +1221,54 @@ func checkAFailedRetentionPurgeIsRetried(report: Report) {
     report.markPassed("spaces.retention.a-failed-purge-is-retried")
     report.markPassed("spaces.retention.a-retry-joins-a-new-expiry")
 }
+
+// MARK: - BH-1: a landed Space is published again
+
+/// A refusal writes `refusedAtMs`, and `SyncableSpaces.snapshot` leaves such a cursor out. When a later
+/// version of the entity lands, the engine clears the field next to `pendingApply`; this pins the other
+/// half of that contract: the same cursor with the field cleared is eligible, so its local edits publish.
+func checkALandedSpaceIsNoLongerRefused(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let profileUuid = Pool.uuids[0]
+    let created = Date(timeIntervalSince1970: 1_690_000_000)
+    var baseline = Phi_PhiSpaceEntity()
+    baseline.spaceUuid = simSpaceUuid
+    baseline.name = settingValue("Work", t0)
+    baseline.iconName = settingValue("icon", t0)
+    baseline.colorHex = settingValue("#101010", t0)
+    baseline.rank = settingValue("V", t0)
+    baseline.profileUuid = settingValue(profileUuid, t0)
+    baseline.themeID = settingValue("", t0)
+    baseline.overlayOpacityLight = settingValue(int: -1, t0)
+    baseline.overlayOpacityDark = settingValue(int: -1, t0)
+    baseline.createdAtMs = Int64(created.timeIntervalSince1970 * 1_000)
+    let renamed = PhiLocalSpace(spaceId: "local-a", profileId: "p", name: "Travel", colorHex: "#101010",
+                                iconName: "icon", sortOrder: 0, createdDate: created,
+                                themeId: nil, opacityLight: nil, opacityDark: nil)
+
+    func project(refusedAtMs: Int64?) -> Phi_PhiSpaceEntity? {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-a"
+        cursor.version = 3
+        cursor.reconciled = try? baseline.serializedData()
+        cursor.server = cursor.reconciled
+        cursor.refusedAtMs = refusedAtMs
+        var table = PhiSpaceSyncTable()
+        table.cursors[simSpaceUuid] = cursor
+        return SyncableSpaces.snapshot(spaces: [renamed], table: table,
+                                       globalUuid: { $0 == "p" ? profileUuid : nil },
+                                       syncUuid: { $0 == "local-a" ? simSpaceUuid : nil },
+                                       now: t0 + 60_000)[simSpaceUuid]
+    }
+
+    let refused = project(refusedAtMs: t0)
+    let landed = project(refusedAtMs: nil)
+    report.check("spaces.a-refused-cursor-is-not-published", refused == nil,
+                 "a cursor with refusedAtMs was projected: \(refused?.oneLine ?? "")")
+    report.check("spaces.a-landed-space-publishes-its-local-edits",
+                 landed?.name.stringValue == "Travel",
+                 "the cursor with refusedAtMs cleared projected \(landed?.oneLine ?? "nothing"); "
+                 + "expected the local rename")
+    report.markPassed("spaces.a-refused-cursor-is-not-published")
+    report.markPassed("spaces.a-landed-space-publishes-its-local-edits")
+}

@@ -183,14 +183,22 @@ final class SyncStatusState: @unchecked Sendable {
         return value
     }
 
+    /// Every update bumps the revision, so a sample carrying newer detail always wins the
+    /// newest-revision rule. A round's detail merges into the previous one; only a final
+    /// Up to date clears the last problem.
     @discardableResult
-    func update(_ phase: SyncContextPhase, completing revision: UInt64? = nil) -> UInt64 {
+    func update(_ phase: SyncContextPhase, completing revision: UInt64? = nil,
+                round: SyncRoundDetail? = nil) -> UInt64 {
         lock.lock(); defer { lock.unlock() }
         let finalPhase: SyncContextPhase = phase == .upToDate && revision != nil && revision != value.revision
             ? .syncing : phase
+        let time = Date()
+        var detail = value.detail
+        if let round { detail = (detail ?? SyncNativeDetail()).merging(round: round, at: time) }
+        if finalPhase == .upToDate { detail?.lastProblem = nil }
         value = SyncContextSnapshot(id: value.id, phase: finalPhase,
-            lastSuccess: finalPhase == .upToDate ? Date() : value.lastSuccess,
-            revision: value.revision &+ 1)
+            lastSuccess: finalPhase == .upToDate ? time : value.lastSuccess,
+            revision: value.revision &+ 1, detail: detail)
         return value.revision
     }
 }

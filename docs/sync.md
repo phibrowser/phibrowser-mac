@@ -231,7 +231,25 @@ Domain-key lookup failures count toward the round's status: network unavailabili
 authorization and key-envelope failures report Needs attention. Failed rounds
 retain the previous success time, and a later successful round clears the failure.
 Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
-and refused arrivals are exclusions, not pending work. Local
+and refused arrivals are exclusions, not pending work.
+
+The native snapshot also carries in-memory `SyncNativeDetail` (never persisted, so a
+relaunch starts empty); Chromium snapshots carry none. Per Phi kind (Settings, Spaces,
+Bookmarks, Pinned tabs, URL rules; no Profiles yet) it holds received and sent counts of the
+most recent round in which that kind had activity, with that round's time, and the pending
+(waiting to send) and held (parked) counts from the kind's table after the last round that
+visited it. Settings count changed keys; Space and owned kinds count landings and published
+entities plus tombstones. Kinds a round does not visit keep their values: Spaces and owned
+kinds while the Space gate is shut, an owned kind whose table the round did not load. Every
+detail change is a status update, so it bumps the revision. The last problem is one
+`SyncProblemCategory` with an optional kind and a time, chosen by precedence (reset
+required, save failed on this Mac, sign-in expired, offline, rejected by server, server
+error, unreadable remote data). HTTP 401/403 map to sign-in expired, other HTTP, key-envelope
+and unattributed outbound failures to server error, exhausted conflicts and rejected commits
+to rejected by server. It is replaced by the next failing round, kept through rounds that
+neither fail nor succeed, and cleared only by a final Up to date. Held items alone produce
+no category; the held count explains them. R12: the detail has no string field, so it cannot
+carry names, identifiers, URLs, hosts, error text or status numbers. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including

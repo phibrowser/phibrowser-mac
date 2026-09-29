@@ -530,3 +530,22 @@ Deviations from the plan text, recorded as they were made.
   owned-kind registration labels. The button reducer `SyncNowButtonState.reduce(summary:request:)`
   also returns `isVisible` (false while Not started); the pane still adds its own unlock
   check.
+- **T2.** The round detail is built inside `finishStatusRound` by a new
+  `roundStatusDetail(spaces:)`, not after `logSpaceRound()` / `logOwnedRounds()`: it reuses the
+  Space table `finishStatusRound` already loads and the in-memory owned tables, and uses the
+  same visit rule as those logs (Space gate open and a Space store present) plus "the owned
+  table was loaded and read this round". `build-scripts/test-sync-status.sh` splices it and
+  `resetRequiredRound`.
+  Settings "sent" counts keys whose value differs from the last server entity (by
+  `SyncableSettings.signature`), not `outgoing.values.count`, because the whole entity is
+  always committed; "received" counts keys whose local value changed. Settings pending is
+  always 0 and settings held is 1 while the entity is unreadable. Space held also counts
+  `pendingTombstone`, matching what forces Needs attention. Owned pending is the plan's
+  `pendingPublish` + `pendingDelete` cursors, which counts an over-budget delete twice.
+  Outbound failures without an error value (seal failure, outcome-count mismatch) fall back to
+  `serverError`; `NSURLErrorUserAuthenticationRequired` maps to `signInExpired`. `resetRequired`
+  is also recorded at engine start with a persisted reconfiguration requirement and by
+  `pauseForReconfiguration()`. An owned kind's unreadable arrivals do not fail a round, so
+  their category survives only when something else keeps the round from succeeding. A local
+  read failure (`ownedReadFailed`) still forces Needs attention without a category; no listed
+  category fits it.

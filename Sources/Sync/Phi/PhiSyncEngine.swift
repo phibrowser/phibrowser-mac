@@ -939,13 +939,23 @@ actor PhiSyncEngine {
     nonisolated var requiresReconfiguration: Bool { stopSignal.requiresReconfiguration }
     nonisolated func pauseForReconfiguration() {
         stopSignal.requireReconfiguration()
-        statusState.update(.needsAttention)
+        statusState.update(.needsAttention, round: Self.resetRequiredRound)
     }
     nonisolated func markLocalChangePending() {
         if !requiresReconfiguration { statusState.update(.syncing) }
     }
     private var roundOutboundFailed = false
     private var roundOffline = false
+    /// Status-only round state (R12: categories and counts). Reset by `run`, read by
+    /// `finishStatusRound`; nothing here is persisted.
+    private var roundDetail = SyncRoundDetail()
+    private var settingsReceivedThisRound = 0
+    private var settingsSentThisRound = 0
+    private static var resetRequiredRound: SyncRoundDetail {
+        var round = SyncRoundDetail()
+        round.note(.resetRequired)
+        return round
+    }
     nonisolated func suspendForPairing() { stopSignal.setPaired(false) }
 
     /// The enrollment owner persists this token with completion and supplies it again
@@ -1002,7 +1012,7 @@ actor PhiSyncEngine {
         self.markerState = resolvedMarkerStore.load()
         if markerState.requiresReconfiguration == true {
             stopSignal.requireReconfiguration()
-            statusState.update(.needsAttention)
+            statusState.update(.needsAttention, round: Self.resetRequiredRound)
         }
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
@@ -1460,6 +1470,9 @@ actor PhiSyncEngine {
             : statusState.snapshot.revision
         roundOutboundFailed = false
         roundOffline = false
+        roundDetail = SyncRoundDetail()
+        settingsReceivedThisRound = 0
+        settingsSentThisRound = 0
         // §11's counters are per ROUND, not per pull: one round can contain a
         // preflight pull and a scoped conflict retry. `pushSpaces` runs after the pull's tail.
         spaceCounters = SpaceRoundCounters()
@@ -1547,7 +1560,9 @@ actor PhiSyncEngine {
 
     private func finishStatusRound(revision: UInt64) {
         guard !stopSignal.isStopped else { return }
-        guard !requiresReconfiguration else { statusState.update(.needsAttention); return }
+        guard !requiresReconfiguration else {
+            statusState.update(.needsAttention, round: Self.resetRequiredRound); return
+        }
         guard !isStopped else { return }
         let spaces = loadSpaceTable()
         let pendingInbound = unreadableSettingsRecord != nil || spaces.cursors.values.contains { $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone }
@@ -1575,7 +1590,46 @@ actor PhiSyncEngine {
             || (roundOutcome != .ok && roundOutcome != .pageBudgetExhausted) { phase = .needsAttention }
         else if completion.succeeded { phase = .upToDate }
         else { phase = statusState.snapshot.lastSuccess == nil ? .initialSync : .syncing }
-        statusState.update(phase, completing: revision)
+        statusState.update(phase, completing: revision, round: roundStatusDetail(spaces: spaces))
+    }
+
+    /// This round's per-kind counts and most severe problem for the status snapshot, from the
+    /// round counters and the tables already in memory (no cursor file is re-read). Kinds the
+    /// round did not visit are left out so they keep their previous values: Spaces and owned
+    /// kinds while the Space gate is shut, an owned kind whose table was not loaded or read.
+    /// Counts and categories only (R12).
+    private func roundStatusDetail(spaces: PhiSpaceSyncTable) -> SyncRoundDetail {
+        var detail = roundDetail
+        let settingsUnreadable = unreadableSettingsRecord != nil
+        detail.kinds[.settings] = SyncKindStatus(received: settingsReceivedThisRound, sent: settingsSentThisRound,
+                                                 held: settingsUnreadable ? 1 : 0)
+        if settingsUnreadable || roundOutcome == .unusableSettings {
+            detail.note(.unreadableRemoteData, kind: .settings)
+        }
+        if cursorSaveFailures > 0 { detail.note(.saveFailedOnThisMac) }
+        if spaceSectionEnabled, spaceStore != nil {
+            detail.kinds[.spaces] = SyncKindStatus(received: spaceCounters.applied,
+                sent: spaceCounters.pushed + spaceCounters.tombstones,
+                pending: spaces.cursors.values.filter { $0.pendingProjection != nil || $0.pendingDelete }.count,
+                held: spaces.cursors.values.filter {
+                    $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone
+                }.count)
+            if !spaces.unreadableTagHashes.isEmpty { detail.note(.unreadableRemoteData, kind: .spaces) }
+            for registration in ownedKinds {
+                guard let kind = SyncKind(ownedLabel: registration.label),
+                      !ownedReadFailed.contains(registration.label),
+                      let table = ownedTables[registration.label] else { continue }
+                let counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+                detail.kinds[kind] = SyncKindStatus(received: counters.applied,
+                    sent: counters.pushed + counters.tombstones,
+                    pending: counters.pendingPublish + table.cursors.values.filter(\.pendingDelete).count,
+                    held: table.cursors.values.filter { $0.pendingApply != nil || $0.pendingTombstone }.count)
+                if counters.unreadable > 0 { detail.note(.unreadableRemoteData, kind: kind) }
+            }
+        }
+        // Every outbound failure has a category, even one reported without an error value.
+        if roundOutboundFailed, detail.problem == nil { detail.note(.serverError) }
+        return detail
     }
 
     private func noteStatusError(_ error: Error) {
@@ -1587,7 +1641,22 @@ actor PhiSyncEngine {
         let code = (error as NSError).code
         if (error as NSError).domain == NSURLErrorDomain,
            [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost,
-            NSURLErrorTimedOut, NSURLErrorDNSLookupFailed].contains(code) { roundOffline = true }
+            NSURLErrorTimedOut, NSURLErrorDNSLookupFailed].contains(code) {
+            roundOffline = true
+            roundDetail.note(.offline)
+            return
+        }
+        // Categories only; the status never carries the error's text or status number.
+        switch error {
+        case KeyAPIError.http(401, _), KeyAPIError.http(403, _),
+             PhiSyncProtocolError.http(401), PhiSyncProtocolError.http(403):
+            roundDetail.note(.signInExpired)
+        case let error as NSError where error.domain == NSURLErrorDomain
+                && error.code == NSURLErrorUserAuthenticationRequired:
+            roundDetail.note(.signInExpired)
+        default:
+            roundDetail.note(.serverError)
+        }
     }
 
     /// Emit the B-2 outcome here (sections 2.8/13.2), not in the queue-only serialized wrapper.
@@ -3143,10 +3212,14 @@ actor PhiSyncEngine {
                 // stamped a sidecar timestamp for every registered key on the way here, and
                 // those are exactly what a later merge compares against.
                 hasAdopted = true
+                settingsSentThisRound += outgoing.values.filter { key, value in
+                    last?.values[key].map(SyncableSettings.signature(of:)) != SyncableSettings.signature(of: value)
+                }.count
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
             case .conflict(_, let serverVersion):
                 guard retryOnConflict else {
                     roundOutboundFailed = true
+                    roundDetail.note(.rejectedByServer, kind: .settings)
                     AppLogWarn("[phi-sync] commit still conflicting server_version=\(serverVersion.map(String.init) ?? "unknown"); abandoning this round")
                     return
                 }
@@ -3156,18 +3229,21 @@ actor PhiSyncEngine {
                 await pushSettings(retryOnConflict: false)
             case .invalidMessage:
                 roundOutboundFailed = true
+                roundDetail.note(.rejectedByServer, kind: .settings)
                 // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
                 // reported per entry instead of thrown for the whole batch. Both paths exist:
                 // a peer that fails the round still throws.
                 dropTheEntityCursorAfterInvalidMessage()
             case .rejected(let responseType):
                 roundOutboundFailed = true
+                roundDetail.note(.rejectedByServer, kind: .settings)
                 AppLogError("[phi-sync] commit rejected response_type=\(responseType); abandoning this round")
                 return
             }
         } catch PhiSyncProtocolError.notMyBirthday {
             requireReconfiguration()
         } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
+            roundDetail.note(.rejectedByServer, kind: .settings)
             dropTheEntityCursorAfterInvalidMessage()
         } catch {
             noteStatusError(error)
@@ -3471,7 +3547,10 @@ actor PhiSyncEngine {
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
         // abandons only those entries; already applied entries remain valid (section 5.1).
         // A recovered conflict is success; retain other failures recorded during this round.
-        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        if !retryOnConflict, !conflicted.isEmpty {
+            roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
+        }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
@@ -3527,6 +3606,7 @@ actor PhiSyncEngine {
             spaceCounters.conflicts += 1
         case .invalidMessage:
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
             guard isTombstone else {
                 // "The server has no such row": drop the server-side triple and
                 // let the next round re-create through the client_tag unique
@@ -3553,6 +3633,7 @@ actor PhiSyncEngine {
             }
         case .rejected(let type):
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
             AppLogError("[phi-sync] space commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
         }
         table.cursors[item.uuid] = cursor
@@ -4721,7 +4802,10 @@ actor PhiSyncEngine {
         // One pull and one retry restricted to conflicted identities; a second conflict abandons
         // only those entries for this round (section 5.3).
         // Count only exhausted conflicts, without clearing another kind's publication failure.
-        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        if !retryOnConflict, !conflicted.isEmpty {
+            roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
+        }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
@@ -4803,6 +4887,7 @@ actor PhiSyncEngine {
             return
         case .invalidMessage:
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
             // A rejection must not create a cursor where none existed.
             guard existing != nil else { return }
             guard isTombstone else {
@@ -4844,6 +4929,7 @@ actor PhiSyncEngine {
             }
         case .rejected(let type):
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
             // Like conflict, this outcome provides no cursor-state evidence. Writing defaults would
             // create a ghost cursor.
             AppLogError("[phi-sync] owned-item commit rejected response_type=\(type) "
@@ -5078,7 +5164,7 @@ actor PhiSyncEngine {
     private func writeSettings(_ entity: Phi_PhiSettingEntity) -> Bool {
         guard !isStopped else { return false }
         isApplyingRemote = true
-        SyncableSettings.apply(entity, to: defaults, settings: settings)
+        settingsReceivedThisRound += SyncableSettings.apply(entity, to: defaults, settings: settings)
         isApplyingRemote = false
         return true
     }

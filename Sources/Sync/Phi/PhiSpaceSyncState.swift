@@ -145,6 +145,21 @@ struct PhiSpaceSyncTable: Codable, Equatable {
         Set(cursors.filter { $0.value.hidden }.keys)
     }
 
+    /// syncUuids whose retention sweep already ran (`purgedAtMs != nil`). The cursors are permanent, so
+    /// this only grows.
+    var purgedSyncUuids: Set<String> {
+        Set(cursors.filter { $0.value.purgedAtMs != nil }.keys)
+    }
+
+    /// The uuids whose local cascade a retention sweep runs, sorted: this sweep's newly `expired` uuids plus
+    /// every earlier-`purged` uuid that still has a local mapping. The sweep drops a mapping only after its
+    /// purge succeeds, so a purged cursor with a retained mapping marks a cascade that failed or was cut short
+    /// by a stop; `purgeExpired` never returns that uuid again, and this is its only retry path.
+    static func retentionCascadeUuids(expired: [String], purged: Set<String>,
+                                      mapped: Set<String>) -> [String] {
+        Set(expired).union(purged.intersection(mapped)).sorted()
+    }
+
     /// syncUuids actually present on the account (entityId != nil), precomputed for blocksProfileDeletion's
     /// third predicate (§3.5), whose main-actor caller does not own the table.
     var publishedSyncUuids: Set<String> {

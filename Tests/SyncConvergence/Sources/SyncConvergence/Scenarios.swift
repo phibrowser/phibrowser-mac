@@ -1168,3 +1168,56 @@ func checkAnEditedChildSurvivesItsFoldersDeletion(report: Report) {
     report.markPassed("bookmarks.tree.an-edited-child-yields-while-its-folder-dies")
     report.markPassed("bookmarks.tree.a-child-of-a-dead-folder-lifts-to-the-space-root")
 }
+
+// MARK: - DI-2: a failed retention purge is retried
+
+/// `purgeExpired` stamps `purgedAtMs` and never returns that uuid again, so the only retry marker for a
+/// cascade that threw (or was cut short by a stop) is the local mapping the sweep keeps until the purge
+/// succeeds. The cascade set of a later sweep must therefore hold every purged uuid that is still mapped,
+/// and nothing else: not a purged uuid whose purge already dropped its mapping, and not a live Space.
+func checkAFailedRetentionPurgeIsRetried(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let retention = PhiSpaceSyncState.retentionMs
+    func deleted(at ms: Int64) -> PhiSpaceCursor {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv"
+        cursor.hidden = true
+        cursor.deletedAtMs = ms
+        return cursor
+    }
+    var table = PhiSpaceSyncTable()
+    table.cursors["failed"] = deleted(at: t0)
+    table.cursors["done"] = deleted(at: t0)
+    table.cursors["later"] = deleted(at: t0 + retention / 2)
+    table.cursors["live"] = PhiSpaceCursor()
+
+    // Sweep 1: both old deletions expire. "done" purges and drops its mapping; "failed" throws and
+    // keeps it.
+    let firstExpired = table.purgeExpired(nowMs: t0 + retention + 1)
+    let firstCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: firstExpired, purged: table.purgedSyncUuids.subtracting(firstExpired),
+        mapped: ["failed", "done", "later", "live"])
+    // Sweep 2: nothing new expires, and "failed" is still mapped.
+    let secondExpired = table.purgeExpired(nowMs: t0 + retention + 2)
+    let mapped: Set<String> = ["failed", "later", "live"]
+    let secondCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: secondExpired, purged: table.purgedSyncUuids.subtracting(secondExpired), mapped: mapped)
+    // Sweep 3: "later" expires alongside the retry.
+    let thirdExpired = table.purgeExpired(nowMs: t0 + retention + retention / 2 + 1)
+    let thirdCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: thirdExpired, purged: table.purgedSyncUuids.subtracting(thirdExpired), mapped: mapped)
+
+    report.check("spaces.retention.expired-uuids-cascade-once",
+                 firstExpired == ["done", "failed"] && firstCascade == ["done", "failed"],
+                 "first sweep expired \(firstExpired), cascaded \(firstCascade)")
+    report.check("spaces.retention.a-failed-purge-is-retried",
+                 secondExpired.isEmpty && secondCascade == ["failed"],
+                 "second sweep expired \(secondExpired), cascaded \(secondCascade); expected only the "
+                 + "purged uuid whose mapping the failed cascade kept")
+    report.check("spaces.retention.a-retry-joins-a-new-expiry",
+                 thirdExpired == ["later"] && thirdCascade == ["failed", "later"],
+                 "third sweep expired \(thirdExpired), cascaded \(thirdCascade)")
+    report.markPassed("spaces.retention.expired-uuids-cascade-once")
+    report.markPassed("spaces.retention.a-failed-purge-is-retried")
+    report.markPassed("spaces.retention.a-retry-joins-a-new-expiry")
+}

@@ -1226,16 +1226,30 @@ actor PhiSyncEngine {
         guard let spaceAccess, spaceStore != nil else { return }
         var table = loadSpaceTable()
         let expired = table.purgeExpired(nowMs: now())
-        guard !expired.isEmpty else { return }
-        // Phase 1: persist the trimmed table with no suspension in between. The
-        // cursors are now permanent tombstones -- §9.1's two promises (a
-        // replayed tombstone is a no-op, snapshot never resurrects the uuid)
-        // rest on the cursor being there with a `deletedAtMs`, so they hold even
-        // if the cascade below is interrupted.
-        writeSpaceTable(table)
+        if !expired.isEmpty {
+            // Phase 1: persist the trimmed table with no suspension in between. The
+            // cursors are now permanent tombstones -- §9.1's two promises (a
+            // replayed tombstone is a no-op, snapshot never resurrects the uuid)
+            // rest on the cursor being there with a `deletedAtMs`, so they hold even
+            // if the cascade below is interrupted.
+            writeSpaceTable(table)
+        }
+        // Retry set: a cursor purged by an earlier sweep whose mapping is still present never
+        // finished its cascade (see the catch below). Only uuids are read out of the table; it is
+        // not written again, so no stale copy crosses the awaits.
+        let purged = table.purgedSyncUuids.subtracting(expired)
+        var mapped: Set<String> = []
+        if !purged.isEmpty { mapped = Set(await spaceAccess.allSpaceMappings().values) }
+        let cascade = PhiSpaceSyncTable.retentionCascadeUuids(expired: expired, purged: purged,
+                                                              mapped: mapped)
+        guard !cascade.isEmpty else { return }
+        if cascade.count > expired.count {
+            // R12: count only.
+            AppLogInfo("[phi-sync] retrying retention purge count=\(cascade.count - expired.count)")
+        }
 
         // Phase 2: cascade the data. No table copy is held across these awaits.
-        for uuid in expired {
+        for uuid in cascade {
             guard !isStopped else { return }
             // D6: purgeExpired returns syncUuid, while purge accepts a local ID. Unresolved means
             // no local row to remove; phase 1 already persisted the tombstone cursor.

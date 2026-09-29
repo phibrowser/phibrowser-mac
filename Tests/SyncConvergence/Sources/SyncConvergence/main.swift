@@ -54,6 +54,7 @@ checkPlannerBreaksACycleClosedByAParkedMove(report: report)
 checkAnOfflineMoveLosesToALaterOnlineMove(report: report)
 checkAnOfflineRenameLosesToALaterOnlineRename(report: report)
 checkAnEditedChildSurvivesItsFoldersDeletion(report: report)
+checkAFailedRetentionPurgeIsRetried(report: report)
 print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner, "
       + "the rank primitives and the normalisation of payloads the schema forbids")
 

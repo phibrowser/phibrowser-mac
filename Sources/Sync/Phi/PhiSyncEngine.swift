@@ -3418,7 +3418,9 @@ actor PhiSyncEngine {
         var work = spaceCommitEntries(from: table, outgoing: outgoing)
         if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
         // §9.1 second gate's bookkeeping half: an unpublished pendingDelete is
-        // finalized here rather than sent.
+        // finalized here rather than sent. Its local row is gone, so its mapping
+        // goes too, below, the same way an accepted tombstone's does.
+        var finalized: Set<String> = []
         for (uuid, var cursor) in table.cursors where cursor.pendingDelete {
             guard cursor.entityId == nil || cursor.version == 0 else { continue }
             cursor.pendingDelete = false
@@ -3427,13 +3429,15 @@ actor PhiSyncEngine {
             cursor.pendingProjection = nil
             cursor.deletedAtMs = now()
             table.cursors[uuid] = cursor
+            finalized.insert(uuid)
         }
-        guard !work.isEmpty else { writeSpaceTable(table); return }
+        guard !work.isEmpty || !finalized.isEmpty else { writeSpaceTable(table); return }
 
         var conflicted: Set<String> = []
-        // Locally originated tombstones accepted this round (R-D6-10). Collect synchronously in
-        // applySpaceCommitOutcome, then remove mappings after batching via their main-actor writer.
-        var tombstonedThisRound: Set<String> = []
+        // Locally originated tombstones accepted this round (R-D6-10), plus the deletions finalized
+        // above and those given up on. Collect synchronously in applySpaceCommitOutcome, then
+        // remove mappings after batching via their main-actor writer.
+        var tombstonedThisRound = finalized
         var encryptionFailed = false
         while !work.isEmpty {
             let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
@@ -3580,6 +3584,8 @@ actor PhiSyncEngine {
                 cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
+                // The local row is gone as for `.applied`, so the mapping is dropped the same way.
+                tombstoned.insert(item.uuid)
             }
         case .rejected(let type):
             roundOutboundFailed = true

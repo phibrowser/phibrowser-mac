@@ -1562,7 +1562,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testThreeRejectionsFinalizeTheDeleteAndStopResending() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
-        store.table = makeSpaceTable(access: access)
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 6
         cursor.pendingDelete = true
@@ -1574,6 +1574,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         for _ in 0..<3 { await engine.pushLocalSettings() }
         XCTAssertFalse(store.table.cursors["sync-1"]!.pendingDelete)
         XCTAssertNotNil(store.table.cursors["sync-1"]!.deletedAtMs)
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "giving up ends the delete like an accepted tombstone")
         let sent = spaceCommits(client).count
         await engine.pushLocalSettings()
         XCTAssertEqual(spaceCommits(client).count, sent, "no per-round resend loop")
@@ -2569,6 +2570,31 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.handleLocalSpacesChange()
         XCTAssertTrue(spaceCommits(client).contains { $0.deleted })
         XCTAssertNil(access.spaceMappings["LOCAL-1"], "The mapping is removed when the tombstone is applied")
+    }
+
+    /// 7b''. A local delete that is finalized without a commit (no entityId / version 0) ends like an
+    /// accepted tombstone: its local row is gone, so its mapping goes too.
+    func testAnUnpublishedLocalDeleteDropsTheMappingWhenFinalized() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = []                                   // The local row is already deleted
+        access.knownLocalSpaceIds = ["LOCAL-1"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var unpublished = PhiSpaceCursor()
+        unpublished.pendingDelete = true
+        store.table.cursors["sync-1"] = unpublished
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.handleLocalSpacesChange()
+
+        XCTAssertTrue(spaceCommits(client).isEmpty, "An unpublished delete is finalized, not sent")
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "The finalized delete removes the mapping")
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
+        XCTAssertNotNil(cursor.deletedAtMs)
+        XCTAssertFalse(cursor.pendingDelete)
     }
 
     /// 7c. Replaying the tombstone after cleanup is a no-op; snapshot cannot resurrect its UUID.

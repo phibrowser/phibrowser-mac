@@ -535,6 +535,10 @@ with an `entityId`; a Space without a mapping (an agent Space) records nothing.
   lands nothing, so the dead-mapping repair cannot re-land the Space a round
   already in flight saw disappear. The entity is parked in `pendingApply` so that
   it still lands if the cascade fails; a recorded deletion clears it.
+- **Every ending drops the mapping.** An accepted tombstone (R-D6-10), a
+  `pendingDelete` finalized locally because it was never published, and a
+  tombstone given up after three rejections all leave a cursor with
+  `deletedAtMs` and remove the Space's mapping, since its local row is gone.
 - **Accepted gap: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round. If

@@ -25,4 +25,5 @@ change the always-available "Open Phi Chat" status-menu item.
 
 Browser channel construction is in
 `Sources/Application/PhiChatHotkeyPreferenceSync.swift`; Sentinel's matching
-reader and migration are in `sentinel/Sources/Utilities/PhiChatHotkeyPreference.swift`.
+reader and migration live in the companion Sentinel repository. Verify the
+installed Sentinel version against the preference and notification contract above.

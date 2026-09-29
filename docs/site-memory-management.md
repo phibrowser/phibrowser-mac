@@ -105,16 +105,18 @@ same native menu and `SiteMemoryMenuActions` for eligibility, labels, settings
 state, captured account/profile/host, and mutation/error handling. The extension
 popover no longer includes memory management.
 
-This integration does not change the Lexington observer or popup. Its current
-`observationDisabledHosts` storage is not imported
-or synchronized yet. The follow-up extension change must query native settings
-on startup/page activation and arrange change notification or re-query after a
-native update. No automatic enable/disable broadcast is added here.
+## Companion integration requirements
 
-End-to-end removal still requires coordination with Lexington to pause matching
-capture, wait for uploads already on the wire, and discard queued old events;
-after server success invalidate the extension's memory cache and resume according
-to the persisted switch. This native API deletes server data only: it cannot
-clear the extension's IndexedDB outbox, and a successful server response alone
-does not guarantee old captures will never be uploaded again. No backend or
-extension data is deleted during tests; broker requests use injected executors.
+The native API does not import or synchronize an extension's separate
+`observationDisabledHosts` storage. A compatible extension must query the native
+settings on startup/page activation and re-query or observe an agreed change
+signal after native edits. This repository alone does not establish whether a
+particular installed extension version implements that coordination.
+
+End-to-end removal requires the capturing extension to pause matching capture,
+wait for uploads already on the wire, and discard queued old events. After server
+success it must invalidate its memory cache and resume according to the stored
+switch. The native API cannot clear an extension's IndexedDB outbox; a successful
+server response alone does not guarantee old captures will never be uploaded
+again. Native tests use injected broker executors and do not prove those
+companion behaviors.

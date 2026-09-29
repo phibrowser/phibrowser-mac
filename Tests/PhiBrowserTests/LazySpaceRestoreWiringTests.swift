@@ -177,40 +177,6 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
                         "closedGroup": [NSNumber(value: 2)]])
     }
 
-    func testPlanWireDictionaryCarriesTheGhostSetOnlyWhenPresent() {
-        // Chromium reads a present "ghost" array — even an empty one — as
-        // "park only these", and a missing one as the reverse whitelist, so
-        // nil must leave the key out rather than send it empty.
-        let confined = SpaceManager.ArmedRestorePlan(
-            eagerWindowIds: [NSNumber(value: 1)],
-            closedGroupWindowIds: [],
-            ghostWindowIds: [])
-        XCTAssertEqual(confined.wireDictionary,
-                       ["eager": [NSNumber(value: 1)],
-                        "closedGroup": [],
-                        "ghost": []])
-        let reverseWhitelist = SpaceManager.ArmedRestorePlan(
-            eagerWindowIds: [NSNumber(value: 1)],
-            closedGroupWindowIds: [])
-        XCTAssertNil(reverseWhitelist.wireDictionary["ghost"])
-    }
-
-    func testTheReopenPlanNeverConfinesParking() throws {
-        // A reopen's eager set is also what keeps it to one window (R1):
-        // confining parking there would hand back every window the record
-        // cannot place. Only the cold start sends a ghost set.
-        let plan = try XCTUnwrap(
-            SpaceManager.armedRestorePlan(
-                featureEnabled: true,
-                bridgeSupportsLazyRestore: true,
-                hasSnapshotEntries: true,
-                classification: Self.classification(
-                    eager: [1], ghosts: [2: "space-b"])
-            ))
-        XCTAssertNil(plan.ghostWindowIds)
-        XCTAssertNil(plan.wireDictionary["ghost"])
-    }
-
     func testARecordOfOnlyClosedGroupsStillArms() {
         // Scenario 2's record after every group closed by hand: no eager
         // window, no ghost, closed groups only. The gate must still arm —
@@ -1030,18 +996,6 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         )
     }
 
-    func testAWindowAReceiptSaysIsBeingRebuiltIsNotAvailableToAByProfileClaim() {
-        // An unplaceable window claims by profile, and it can arrive before
-        // the eager window of the same group. The eager window comes back by
-        // id, so its record must stay put for it; only the windows nothing
-        // is rebuilding are by-profile candidates.
-        XCTAssertEqual(
-            SpaceManager.fallbackClaimIndex(
-                [55: 0, 7: 0], parkedGhosts: [:], reportedReplayed: [7]),
-            [55: 0]
-        )
-    }
-
     // MARK: - What the reopen does once its restore settles
 
     /// `restoredAnyWindow` answers whether a profile STARTED a replay, not
@@ -1286,7 +1240,7 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
     /// profile's eager window registers, and writes, before any later
     /// profile's receipt arrives. A run that wrote nothing after that receipt
     /// quit with those windows missing from the record, and the next cold
-    /// start rebuilt each one as a window of its own.
+    /// start parked them where no Space reaches them.
 
     func testAReceiptThatRecordsALaterProfilesParkedWindowWritesTheSnapshot() {
         XCTAssertTrue(SpaceManager.coldStartReceiptWritesSnapshot(
@@ -1326,8 +1280,7 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         isRepaired: Bool = false,
         boundProfileId: String? = "profile-1",
         replayedWindowIdsByProfileId: [String: Set<Int>] = ["profile-1": []],
-        receiptWindowIds: Set<Int> = [11],
-        recordWindowIds: Set<Int> = [10, 11]
+        receiptWindowIds: Set<Int> = [11]
     ) -> SpaceManager.ColdStartRepairDecision {
         SpaceManager.coldStartRepairDecision(
             activeSpaceId: activeSpaceId,
@@ -1338,8 +1291,7 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             isRepaired: isRepaired,
             boundProfileId: boundProfileId,
             replayedWindowIdsByProfileId: replayedWindowIdsByProfileId,
-            receiptWindowIds: receiptWindowIds,
-            recordWindowIds: recordWindowIds)
+            receiptWindowIds: receiptWindowIds)
     }
 
     func testRepairsAnEntryWhoseEagerWindowTheFileNoLongerHolds() {
@@ -1410,62 +1362,6 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         XCTAssertEqual(Self.repairDecision(
             entryWindowMap: [11: "space-b"]
         ), .none)
-    }
-
-    func testAProfileThatRebuiltAWindowTheRecordDoesNotKnowIsNotRepaired() {
-        // Chromium rebuilt a saved window the plan could not place: its id
-        // is in no entry of the record. That window claims this profile's
-        // entry by profile when it arrives, so a repair spawned here would
-        // put an empty window on the very Space it is about to fill — and
-        // whichever of the two registers second replaces, and closes, the
-        // first, which can be the one carrying the user's tabs.
-        XCTAssertEqual(Self.repairDecision(
-            replayedWindowIdsByProfileId: ["profile-1": [99]],
-            recordWindowIds: [10, 11]
-        ), .none)
-    }
-
-    // MARK: - Which arriving restored windows may claim by profile
-
-    /// `claimRestoredWindow` matches a restored window on its previous-session
-    /// id first; this rule decides which of the misses may fall back to the
-    /// by-profile claim. The stand-in and the launch-grace zero id are the
-    /// two shapes it always had. The third is a window Chromium rebuilt
-    /// because the cold-start plan could not place it: its id is unknown to
-    /// the record by definition, and the receipt names it ahead of its
-    /// arrival. Without it every such window minted a slot of its own, and a
-    /// window group whose record was lost came back as one window per saved
-    /// window.
-
-    func testTheStandInClaimsByProfileRegardlessOfGrace() {
-        XCTAssertTrue(SpaceManager.restoredWindowClaimsByProfile(
-            restoredFromWindowId: -1, withinLaunchGrace: false,
-            reportedReplayedByProfile: false))
-    }
-
-    func testAZeroIdClaimsByProfileOnlyWithinTheLaunchGrace() {
-        XCTAssertTrue(SpaceManager.restoredWindowClaimsByProfile(
-            restoredFromWindowId: 0, withinLaunchGrace: true,
-            reportedReplayedByProfile: false))
-        XCTAssertFalse(SpaceManager.restoredWindowClaimsByProfile(
-            restoredFromWindowId: 0, withinLaunchGrace: false,
-            reportedReplayedByProfile: false))
-    }
-
-    func testAnUnplaceableWindowTheReceiptNamedClaimsByProfile() {
-        XCTAssertTrue(SpaceManager.restoredWindowClaimsByProfile(
-            restoredFromWindowId: 563375266, withinLaunchGrace: false,
-            reportedReplayedByProfile: true))
-    }
-
-    func testAnUnknownPositiveIdNoReceiptVouchesForNeverClaimsByProfile() {
-        // A saved window the record has no entry for and no receipt names
-        // (an unarmed full replay, or an older framework whose receipt has
-        // no replay half) must not be seated on a stale entry: that surfaces
-        // a closed Space. It mints, exactly as before.
-        XCTAssertFalse(SpaceManager.restoredWindowClaimsByProfile(
-            restoredFromWindowId: 563375266, withinLaunchGrace: true,
-            reportedReplayedByProfile: false))
     }
 
     // MARK: - Which record a launch reads and writes

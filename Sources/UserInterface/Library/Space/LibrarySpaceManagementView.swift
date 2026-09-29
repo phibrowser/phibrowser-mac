@@ -916,8 +916,9 @@ final class LibrarySpaceManagementController: NSViewController,
     }
     private var browserOwner: SpaceSessionController? {
         guard let window = view.window else { return nil }
+        // Overlay Library lives in a child panel; its parent owns the browser session.
         return (window.windowController as? LibraryWindowController)?.browserOwner
-            ?? SpaceSessionControllersManager.shared.findControllerWith(window: window)
+            ?? SpaceSessionControllersManager.shared.findControllerWith(window: window.parent ?? window)
     }
 
     private func open(itemID: String, isPin: Bool) {

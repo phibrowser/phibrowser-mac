@@ -4,10 +4,18 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import QuartzCore
 
-/// Presents Library inside the browser window, with a flight from the avatar.
+/// Presents Library over the browser in an attached panel, with a flight from the avatar.
 final class LibraryOverlayController {
+    private final class OverlayPanel: NSPanel {
+        var dismiss: (() -> Void)?
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { false }
+        override func performClose(_ sender: Any?) { dismiss?() }
+    }
+
     private final class OverlayView: NSView {
         var dismiss: (() -> Void)?
         var layoutCard: (() -> Void)?
@@ -37,17 +45,39 @@ final class LibraryOverlayController {
     private weak var source: NSView?
     private weak var previousResponder: NSResponder?
     private let module: LibraryViewModule
+    private let panel = OverlayPanel(contentRect: .zero, styleMask: [.titled, .fullSizeContentView],
+                                     backing: .buffered, defer: true)
     private let overlay = OverlayView()
     private let scrim = CALayer()
     private var observers: [NSObjectProtocol] = []
     private var eventMonitor: Any?
+    private var themeSubscription: AnyCancellable?
+    private var focusedTabSubscription: AnyCancellable?
     private var generation = 0
     private var isClosing = false
-    var isVisible: Bool { overlay.superview != nil }
+    var isVisible: Bool { panel.isVisible }
 
     init(parent: NSWindow, browserState: BrowserState) {
         self.parent = parent
         module = LibraryViewModule(browserState: browserState)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.titlebarSeparatorStyle = .none
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.tabbingMode = .disallowed
+        panel.collectionBehavior = [.fullScreenAuxiliary]
+        panel.appearance = browserState.themeContext.windowAppearance
+        themeSubscription = browserState.themeContext.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak browserState] _ in
+                self?.panel.appearance = browserState?.themeContext.windowAppearance
+            }
         overlay.wantsLayer = true
         overlay.autoresizingMask = [.width, .height]
         scrim.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor
@@ -64,9 +94,33 @@ final class LibraryOverlayController {
         overlay.dismiss = { [weak self] in self?.dismiss() }
         overlay.layoutCard = { [weak self] in self?.layoutContent() }
         module.onDismiss = { [weak self] in self?.dismiss() }
+        panel.dismiss = { [weak self] in self?.dismiss() }
+        focusedTabSubscription = browserState.$focusingTab
+            .map { $0?.guid }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                // Let the tab switch own focus instead of restoring the previous tab's responder.
+                self?.dismiss(animated: false, restoreFocus: false)
+            }
         for name in [NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
                 self?.dismiss(animated: false, restoreFocus: false)
+            })
+        }
+        for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification,
+                     NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
+                guard let self, self.isVisible else { return }
+                self.layoutPanel()
+            })
+        }
+        if let content = parent.contentView {
+            content.postsFrameChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification,
+                                                                    object: content, queue: .main) { [weak self] _ in
+                guard let self, self.isVisible else { return }
+                self.layoutPanel()
             })
         }
     }
@@ -74,33 +128,50 @@ final class LibraryOverlayController {
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
-        overlay.removeFromSuperview()
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        panel.contentView = nil
     }
 
     func show(from source: NSView, section: LibraryViewModule.Section? = nil, animated: Bool = true) {
-        guard let parent, let content = parent.contentView, source.window === parent else { return }
+        guard let parent, parent.contentView != nil, source.window === parent else { return }
         if let section { module.navigationState.selection = section }
         guard !isVisible || isClosing else { return }
         generation += 1
         isClosing = false
         self.source = source
         if !isVisible { previousResponder = parent.firstResponder }
-        overlay.frame = content.bounds
-        content.addSubview(overlay, positioned: .above, relativeTo: nil)
-        layoutContent()
+        panel.contentView = overlay
+        layoutPanel()
         overlay.layer?.removeAllAnimations()
         module.view.layer?.removeAllAnimations()
         scrim.removeAllAnimations()
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let startTransform = animated && !reduceMotion ? sourceTransform() : CATransform3DIdentity
+        // Arm the first frame before ordering the panel in. The panel itself
+        // always covers the full background, including during the card flight.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        scrim.opacity = animated ? 0 : 1
+        module.view.layer?.opacity = animated ? 0 : 1
+        module.view.layer?.transform = startTransform
+        CATransaction.commit()
         announceVisibility(true)
-        parent.makeFirstResponder(overlay)
+        if panel.parent == nil { parent.addChildWindow(panel, ordered: .above) }
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(overlay)
         installEventMonitor()
         guard animated else { return }
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        scrim.opacity = 1
+        module.view.layer?.opacity = 1
+        module.view.layer?.transform = CATransform3DIdentity
         fade(layer: scrim, from: 0, to: 1, duration: 0.16)
         fade(layer: module.view.layer, from: 0, to: 1, duration: 0.12)
         if !reduceMotion, let layer = module.view.layer {
             let flight = CASpringAnimation(keyPath: "transform")
-            flight.fromValue = NSValue(caTransform3D: sourceTransform())
+            flight.fromValue = NSValue(caTransform3D: startTransform)
             flight.toValue = NSValue(caTransform3D: CATransform3DIdentity)
             flight.mass = 1
             flight.stiffness = 620
@@ -109,6 +180,7 @@ final class LibraryOverlayController {
             flight.duration = 0.36
             layer.add(flight, forKey: "library.flight")
         }
+        CATransaction.commit()
     }
 
     func dismiss(animated: Bool = true, restoreFocus: Bool = true) {
@@ -117,22 +189,25 @@ final class LibraryOverlayController {
         generation += 1
         let closingGeneration = generation
         isClosing = true
-        if let parent, (parent.firstResponder as? NSView)?.isDescendant(of: overlay) == true {
+        if (panel.firstResponder as? NSView)?.isDescendant(of: overlay) == true {
             // End field editing before the card animates so its focus ring cannot linger.
-            parent.makeFirstResponder(overlay)
+            panel.makeFirstResponder(overlay)
         }
         let finish = { [weak self] in
             guard let self, self.generation == closingGeneration else { return }
-            let ownsFocus = (self.parent?.firstResponder as? NSView)?.isDescendant(of: self.overlay) == true
-            self.overlay.removeFromSuperview()
+            let ownsFocus = self.panel.isKeyWindow
+            self.panel.parent?.removeChildWindow(self.panel)
+            self.panel.orderOut(nil)
+            self.panel.contentView = nil
             self.isClosing = false
             if let eventMonitor = self.eventMonitor { NSEvent.removeMonitor(eventMonitor) }
             self.eventMonitor = nil
-            self.announceVisibility(false)
             if restoreFocus, ownsFocus {
+                self.parent?.makeKey()
                 self.parent?.makeFirstResponder(self.previousResponder)
             }
             self.previousResponder = nil
+            self.announceVisibility(false)
         }
         guard animated else { finish(); return }
         CATransaction.begin()
@@ -150,6 +225,19 @@ final class LibraryOverlayController {
             layer.add(flight, forKey: "library.flight")
         }
         CATransaction.commit()
+    }
+
+    private func layoutPanel() {
+        guard let parent, let content = parent.contentView else { return }
+        // Let AppKit clip the panel to the same system window corners as its
+        // parent. Fullscreen and borderless parents have square corners.
+        let rounded = parent.styleMask.contains(.titled) && !parent.styleMask.contains(.fullScreen)
+        let style: NSWindow.StyleMask = rounded ? [.titled, .fullSizeContentView] : [.borderless, .fullSizeContentView]
+        if panel.styleMask != style { panel.styleMask = style }
+        let frame = parent.convertToScreen(content.convert(content.bounds, to: nil))
+        panel.setFrame(frame, display: true)
+        overlay.frame = NSRect(origin: .zero, size: frame.size)
+        layoutContent()
     }
 
     private func layoutContent() {
@@ -172,8 +260,10 @@ final class LibraryOverlayController {
     }
 
     private func sourceTransform() -> CATransform3D {
-        guard let source, source.window === parent, let layer = module.view.layer else { return CATransform3DIdentity }
-        return Self.flightTransform(card: module.view.frame, origin: source.convert(source.bounds, to: overlay), anchorPoint: layer.anchorPoint)
+        guard let parent, let source, source.window === parent, let layer = module.view.layer else { return CATransform3DIdentity }
+        let screenRect = parent.convertToScreen(source.convert(source.bounds, to: nil))
+        let origin = overlay.convert(panel.convertFromScreen(screenRect), from: nil)
+        return Self.flightTransform(card: module.view.frame, origin: origin, anchorPoint: layer.anchorPoint)
     }
 
     private func fade(layer: CALayer?, from: Float, to: Float, duration: TimeInterval) {
@@ -188,23 +278,17 @@ final class LibraryOverlayController {
 
     private func installEventMonitor() {
         guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .mouseEntered, .cursorUpdate]) { [weak self] event in
-            guard let self, event.window === self.parent, self.isVisible else { return event }
-            if event.type == .mouseEntered || event.type == .cursorUpdate {
-                // Tracking-area delivery bypasses hit testing. Leave mouseExited
-                // untouched so covered controls can clear their existing hover.
-                guard let content = self.parent?.contentView else { return event }
-                return Self.isBackgroundTrackingArea(event.trackingArea, in: content, overlay: self.overlay) ? nil : event
-            }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self, event.window === self.panel, self.isVisible else { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if event.keyCode == 53, modifiers.isEmpty,
-               let handle = self.parent?.firstResponder as? LibrarySpaceDragHandle.Handle, handle.isDragging {
+               let handle = self.panel.firstResponder as? LibrarySpaceDragHandle.Handle, handle.isDragging {
                 handle.cancelOperation(nil)
                 return nil
             }
             // Let inline editors consume Escape to cancel their draft first.
             if event.keyCode == 53, modifiers.isEmpty,
-               let editor = self.parent?.firstResponder as? NSTextView, editor.isFieldEditor {
+               let editor = self.panel.firstResponder as? NSTextView, editor.isFieldEditor {
                 return event
             }
             if (event.keyCode == 53 && modifiers.isEmpty)
@@ -214,19 +298,6 @@ final class LibraryOverlayController {
             }
             return event
         }
-    }
-
-    /// Block only areas positively identified in a covered view. SwiftUI can
-    /// deliver tracking events with private/shared areas absent from trackingAreas;
-    /// treating an unknown area as background suppresses Library's own onHover.
-    static func isBackgroundTrackingArea(_ area: NSTrackingArea?, in root: NSView, overlay: NSView) -> Bool {
-        guard let area, root !== overlay else { return false }
-        // An ancestor may host shared tracking for both Library and the browser.
-        if !overlay.isDescendant(of: root),
-           root.trackingAreas.contains(where: { $0 === area }) {
-            return true
-        }
-        return root.subviews.contains { isBackgroundTrackingArea(area, in: $0, overlay: overlay) }
     }
 
     private func announceVisibility(_ visible: Bool) {

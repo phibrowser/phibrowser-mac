@@ -12,8 +12,7 @@ import PostHog
 /// with one shared basename into the configured folder. Identifiers keep
 /// the original SaveForLater/saveForLater names; only the product-facing
 /// strings say Folio ("Memory is what Phi remembers about you, Folio is
-/// what you chose to keep"). Design:
-/// docs/plans/2026-08-31-save-for-later-design.md.
+/// what you chose to keep"). See `docs/folio-capture.md`.
 ///
 /// A save is a background job detached from the tab: both capture legs start
 /// the moment the save is triggered, and once their payloads are in hand

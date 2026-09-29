@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import OSLog
 
 enum PhiUninstallerMainError: Error, LocalizedError {
     case missingValue(String)
@@ -18,6 +19,22 @@ enum PhiUninstallerMainError: Error, LocalizedError {
     case invalidCommitSignal
     case unsafePlan(String)
     case deletionFailures([String])
+
+    var logCode: String {
+        switch self {
+        case .missingValue: return "missing_value"
+        case .unsupportedArguments: return "unsupported_arguments"
+        case .missingPlan: return "missing_plan"
+        case .unsupportedPlanVersion: return "unsupported_plan_version"
+        case .invalidAppSignature: return "invalid_app_signature"
+        case .browserStillRunning: return "browser_still_running"
+        case .sentinelDidNotExit: return "sentinel_did_not_exit"
+        case .chatShimDidNotExit: return "chat_shim_did_not_exit"
+        case .invalidCommitSignal: return "invalid_commit_signal"
+        case .unsafePlan: return "unsafe_plan"
+        case .deletionFailures: return "deletion_failures"
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -47,22 +64,31 @@ enum PhiUninstallerMainError: Error, LocalizedError {
     }
 }
 
+private let uninstallLogger = Logger(subsystem: "com.phibrowser.PhiUninstaller", category: "uninstall")
+
 do {
     try PhiUninstallerMain.run(arguments: Array(CommandLine.arguments.dropFirst()))
     exit(0)
 } catch {
+    let code = (error as? PhiUninstallerMainError)?.logCode ?? "unexpected_error"
+    writePhiUninstallerLog("Uninstall failed: \(code)", isPublic: true)
     let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     writePhiUninstallerLog(message)
     exit(1)
 }
 
-private func writePhiUninstallerLog(_ message: String) {
+private func writePhiUninstallerLog(_ message: String, isPublic: Bool = false) {
     let formattedMessage = "PhiUninstaller: \(message)"
-    NSLog("%@", formattedMessage)
+    if isPublic {
+        uninstallLogger.notice("\(formattedMessage, privacy: .public)")
+    } else {
+        uninstallLogger.notice("\(formattedMessage, privacy: .private)")
+    }
     FileHandle.standardError.write(Data("\(formattedMessage)\n".utf8))
 }
 
 enum PhiUninstallerMain {
+    static let browserExitTimeout: TimeInterval = 10
     static let sentinelExitTimeout: TimeInterval = 180
 
     static func run(arguments: [String]) throws {
@@ -128,6 +154,7 @@ enum PhiUninstallerMain {
         try FileHandle.standardOutput.write(
             contentsOf: Data(PhiUninstallReadiness.committedToken.utf8)
         )
+        writePhiUninstallerLog("Uninstall committed for \(plan.channel.browserBundleID)", isPublic: true)
 
         // Close the shim before waiting for Chromium: a live app window may
         // keep the browser alive. Only the independently verified bundle is targeted.
@@ -142,22 +169,26 @@ enum PhiUninstallerMain {
             }
             application.terminate()
         }
-        guard PhiUninstallProcessWaiter.waitUntil(timeout: 15, isRunning: {
-            !runningApplications(bundleID: chatShimID).isEmpty
-        }) else {
+        guard waitForApplicationsToExit(bundleID: chatShimID, timeout: 15) else {
             throw PhiUninstallerMainError.chatShimDidNotExit(chatShimID)
         }
 
+        writePhiUninstallerLog("Waiting for host pid=\(plan.hostProcessID)", isPublic: true)
         _ = PhiUninstallProcessWaiter.waitUntil(timeout: nil) {
             PhiUninstallProcessWaiter.isProcessRunning(plan.hostProcessID)
         }
 
-        guard runningApplications(bundleID: plan.channel.browserBundleID).isEmpty else {
+        // Process exit can precede Launch Services' application-exit notification.
+        guard waitForApplicationsToExit(
+            bundleID: plan.channel.browserBundleID,
+            timeout: browserExitTimeout
+        ) else {
             throw PhiUninstallerMainError.browserStillRunning(plan.channel.browserBundleID)
         }
-        guard PhiUninstallProcessWaiter.waitUntil(timeout: sentinelExitTimeout, isRunning: {
-            !runningApplications(bundleID: plan.channel.sentinelBundleID).isEmpty
-        }) else {
+        guard waitForApplicationsToExit(
+            bundleID: plan.channel.sentinelBundleID,
+            timeout: sentinelExitTimeout
+        ) else {
             throw PhiUninstallerMainError.sentinelDidNotExit(plan.channel.sentinelBundleID)
         }
 
@@ -178,11 +209,13 @@ enum PhiUninstallerMain {
                 writePhiUninstallerLog(message)
             }
         )
+        writePhiUninstallerLog("Deleting channel data", isPublic: true)
         var failures = executor.execute(dataPlan)
 
         if runningApplications(bundleID: plan.channel.browserBundleID).isEmpty,
            runningApplications(bundleID: chatShimID).isEmpty,
            runningApplications(bundleID: plan.channel.sentinelBundleID).isEmpty {
+            writePhiUninstallerLog("Deleting app bundles", isPublic: true)
             failures.append(contentsOf: executor.execute(appBundlePlan))
         } else {
             failures.append(
@@ -193,6 +226,7 @@ enum PhiUninstallerMain {
         if !failures.isEmpty {
             throw PhiUninstallerMainError.deletionFailures(failures)
         }
+        writePhiUninstallerLog("Uninstall completed", isPublic: true)
     }
 
     static func loadPlan(at planURL: URL) throws -> PhiUninstallPlan {
@@ -205,8 +239,22 @@ enum PhiUninstallerMain {
         )
     }
 
+    private static func waitForApplicationsToExit(bundleID: String, timeout: TimeInterval) -> Bool {
+        writePhiUninstallerLog("Waiting for \(bundleID) to exit", isPublic: true)
+        let exited = PhiUninstallProcessWaiter.waitUntil(timeout: timeout) {
+            !runningApplications(bundleID: bundleID).isEmpty
+        }
+        if !exited {
+            let pids = runningApplications(bundleID: bundleID).map(\.processIdentifier)
+            writePhiUninstallerLog("Exit timed out for \(bundleID), pids=\(pids)", isPublic: true)
+        }
+        return exited
+    }
+
     private static func runningApplications(bundleID: String) -> [NSRunningApplication] {
-        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        // Refresh AppKit state even for the final restart checks after synchronous deletion.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter { !$0.isTerminated }
     }
 

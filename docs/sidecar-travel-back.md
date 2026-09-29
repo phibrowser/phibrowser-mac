@@ -1,56 +1,18 @@
 # Sidecar browser-scene restoration
 
-Date: 2026-09-09. Updated: 2026-09-14. Status: Profile-scoped chat and standalone
-Phi Chat restoration implemented locally, pending paired-browser acceptance.
-Earlier Hello/Default cross-Profile live/closed Tab acceptance passed; the
-broader isolated-chat matrix remains pending.
-
-## Profile-isolation integration (2026-09-14)
-
-Ongoing work now lives in `phibrowser-mac-chat-profile-isolation` on
-`feature/chat-profile-isolation`, based on current dev `ab39c60b`. Only the
-Profile feature delta was ported from the old `sidecar-travel-back` worktree;
-that worktree remains unchanged. Current dev's Folio translations, message
-reassembly, addressed Phi Chat source collapse and SiteMemory cleanup remain
-intact. Profile deletion keeps both memory cleanup and conversation archival;
-import rollback opts out of both. This is not an installed browser update.
-
-Installed Canary 827 (`2026.9.14.1540`) contains the basic restoration message
-names but not `sidecar.chat.profiles`. Loading a newer Sidecar alone cannot
-provide that native handler. Testing the global Profile chooser requires this
-native feature build and the matching Sidecar/backend, not merely a larger
-Canary build number.
-
-## Earlier same-Profile integration (2026-09-14)
-
-The owner approved publishing the committed same-Profile stage without taking
-ongoing cross-Profile/isolation changes from either source worktree. This replays
-`b04a028a` onto dev `2621fb7a`, paired with phi-ai `f7a19df42` integrated onto
-staging `b0dd0f8b7`. The Xcode project retains dev's SiteMemory router registration
-alongside the new Travel Back files. Cross-Profile handoff, Space-identity
-reopening, runtime-identity hints and standalone Phi Chat restoration were not
-part of that earlier stage; the Profile-isolation integration above adds them.
-
-The integrated Canary `build-for-testing` passed with signing disabled and a
-command-local Xcode developer directory. All eight pure policy tests passed in
-an isolated SwiftPM fixture linked to the actual policy/test files. The paired
-Sidecar passed 962 tests, 10 metadata tests, 37 root type-check tasks, changed-file
-lint/format and its build. No browser was launched or installed. Coordinate
-native, Sidecar and phi-agent registry-v2 delivery; do not replace a local
-Profile-isolation/registry-v3 setup with this earlier stage. Full lifecycle and
-first-paint acceptance remain outstanding.
+Scope: the native restoration and extension message contract. Extension storage
+and deployment are companion components and require separate integration checks.
 
 ## Decision and ownership
 
 Travel Back continues a conversation at its last recorded reopenable browser scene:
 Profile, Space, page and two-pane split (order, divider, ratio and active pane).
-On the owner's 2026-09-10 follow-up, Sidecar skips new-tab/internal-page captures
+Sidecar skips new-tab/internal-page captures
 rather than clearing that snapshot, and resumes recording on the next HTTP(S)
 page. This includes a split dissolving onto an NTP survivor. Native capture still
 reports the actual current scene without inventing a page; persistence policy
 belongs to Sidecar. Strict arrival cannot acknowledge a non-reopenable capture.
-The owner chose preserving conflicting work rather than dismantling another
-split. Equal URLs count as already there only in the same Profile AND Space.
+Restoration preserves conflicting work rather than dismantling another split. Equal URLs count as already there only in the same Profile AND Space.
 Tab groups, scroll/form state, pins and bookmarks are not restored.
 
 `ExtensionMessageRouter` authenticates and translates trusted UI requests;
@@ -62,16 +24,15 @@ hiding. `BrowserState+TravelBack` owns tab/split/sidebar lifecycle; the pure
 Existing `aiChatTabs` and `chatIdentifier(for:)` remain the only sidebar ownership
 model. In-flight creation keys participate in shared split binding resolution.
 
-The 2026-09-10 cross-Profile change deliberately replaces profile-local extension
-session notes with transient native handoffs. Destination `BrowserState` owns
+Cross-Profile restoration uses transient native handoffs. Destination `BrowserState` owns
 one bounded envelope per receiving Sidecar; it holds a conversation ID and
 source/recipient/operation/expiry metadata, never messages or credentials.
 Sidecar owns conversation access, selection and metadata writes; phi-agent owns
 durable chat data. There is no new backend handoff service or global window-state
 registry. Native and Sidecar ship together, without an old-browser mutation
-fallback. The bundled phi-agent must carry phi-ai's shared metadata registry v3.
-General metadata read compatibility is retained, but no historical-location
-migration is designed for this unreleased feature.
+fallback. The installed companions must support the same chat metadata and ownership
+contract. Legacy metadata compatibility or migration must be verified against
+the specific installed versions.
 
 ## Target policy
 
@@ -105,7 +66,7 @@ sends `sourceKind: "phi-chat"` and a page-lifetime UUID `sourceId`, with no sour
 window or binding. Its restore lands while the shim owns the foreground, so the
 destination window is fronted with `NSApp.activate(ignoringOtherApps:)`: cooperative
 activation is declined on macOS 26 and `makeKeyAndOrderFront` alone leaves Phi behind
-the shim (2026-09-21). Replies are
+the shim. Replies are
 `{ok:true,result:...}` or `{ok:false,error:<known code>}`; errors never echo URLs.
 
 A sidebar reference is `{profileId, windowId, chatTabId, boundTabId}`. `chatTabId`
@@ -138,18 +99,17 @@ vertical/0.5 and the matching page or first pane; capture never persists a
 filtered partial split.
 
 **The bridge authenticates extension identity, not the source Profile/frame.**
-Declared context and exact recipient consistency remain the owner-approved
-trusted-Sidecar model, not protection against a compromised built-in extension.
+Declared context and exact recipient consistency remain the trusted-Sidecar model, not protection against a compromised built-in extension.
 An operation UUID is correlation, not proof of authenticated Chromium sender
 context. This does not grant external CDP agents a UI-command authorization bypass.
-The owner explicitly chose this product-level logical isolation on 2026-09-11;
-no Chromium caller-attribution change is required. Standalone Phi Chat now uses
+This is logical isolation inside the trusted companion contract, not independent
+framework attribution of every declared field. Standalone Phi Chat now uses
 its source ID for receipt correlation, never window enumeration. Native reuses
 the destination's slot or an eligible ordinary window group, creating one when
 none exists. Sidecar keeps the global viewer open and does not record another
 window's scene. `view=chat` in an ordinary Profile grants no global chat access.
 
-## Explicit Tab moves (2026-09-11)
+## Explicit Tab moves
 
 Cross-Profile menu moves with an existing Sidecar use `moveCarriedConversation`;
 page-only moves retain the existing path. Native prepares the target page or
@@ -170,19 +130,17 @@ page-only success. The native finish budget is 20 seconds after preparation.
 Failure before commit keeps ownership and source Tabs. After commit, ownership
 stays at the target even if arrival fails; Sidecar releases the source chat but
 native retains its page. Already-created target Tabs are not rolled back. No
-other historical chats migrate. Since the 2026-09-14 category revision, account-wide
+other historical chats migrate. Account-wide
 categories remain assigned when chat ownership moves. Shared split order, divider,
 ratio and focused member are preserved. The backend remains responsible for
-chat isolation, in-flight access revocation and move idempotency; see phi-ai
-`docs/chat-profile-isolation.md`. The 2026-09-11 native build-for-testing passed;
-this is not live acceptance of new isolated-chat or Phi Chat flows.
+chat isolation, in-flight access revocation and move idempotency. Native request
+handling alone does not establish these companion guarantees.
 
-## Profile deletion and chat organization (2026-09-14)
+## Profile deletion and chat organization
 
 Deleting a user Profile retains its conversations in Phi Chat's protected,
-localized Uncategorized category. The same-day owner follow-up merged With Phi
-into this view, so it also contains ordinary unfiled chats within their existing
-access scope. Deleted-Profile chats' backend owner becomes global; messages and
+localized Uncategorized category, alongside ordinary unfiled chats within their
+existing access scope. Deleted-Profile chats' backend owner becomes global; messages and
 last-scene evidence remain intact. The merge does not change native delivery. Deleted browser
 identities are not silently recreated by Travel Back. User categories now belong
 to the account and category movement never changes conversation ownership.
@@ -209,14 +167,10 @@ built-in Sidecar only when authenticated, AI-enabled and a complete Profile list
 is available; otherwise it returns an unavailable error. Phi Chat uses it for
 peer Profile/category filters, never to infer deletion from network failure.
 Native deletion confirmations distinguish removed browser data from retained
-chats and deferred delivery; new catalog entries are English-only pending the
-normal localization pipeline. Backend and UI details belong to companion phi-ai
-`docs/chat-profile-isolation.md`.
+chats and deferred delivery. The companion owns chat storage and category UI.
 
-Pure journal tests cover crash/reload, account separation, failed intent cleanup
-and AI/account eligibility (5/5). Native build-for-testing is the compile gate;
-never launch app-hosted XCTest beside a live browser. This revision has not
-replaced the running Canary automatically. Paired acceptance must exercise AI-off,
+Journal tests cover crash/reload, account separation, failed intent cleanup and
+AI/account fencing. Paired acceptance must additionally exercise AI-off,
 backend failure/restart, account switches, retry after recategorization and both
 live/closed-Tab restoration.
 
@@ -271,41 +225,15 @@ disabled without replaying it on enable. This is capability readiness, not full
 page load. Split creation/focus uses existing ordered helpers and lifecycle
 completion on the next main turn, not inside Chromium's mutation stack.
 
-## Verification and acceptance
+## Verification
 
-Final cross-Profile implementation checks (2026-09-10): Xcode 26.6
-`build-for-testing` passed; 11 pure native policy tests passed in an isolated
-SwiftPM fixture using the actual scene policy and test files. The companion
-passed 918 Sidecar tests, 11 metadata tests, root type check (36 tasks), changed-file
-lint/format and Sidecar build. Validation includes the final independent acceptance
-deadline and delayed/non-cooperative receiver regressions. No installed app was
-replaced or launched. Prior same-Profile owner acceptance does not validate this
-new cross-Profile path. Companion evidence and coordinated registry-v3 requirement:
-phi-ai `docs/chat-metadata-store.md`.
+Exercise same-Profile and cross-Profile restoration, rejected Profile/Space
+mismatches, standalone Phi Chat,
+closed target tabs, split restoration, explicit tab moves and Profile deletion.
+Record the native app, framework and extension versions. An acknowledged native
+request does not prove extension storage migration or end-to-end restoration.
 
-Owner follow-up (2026-09-10): after matching-backend preparation, restoring from
-Default to Hello reused the still-open Tab without duplication. Closing the Tab
-then restoring correctly switched Space and created a replacement. No native Tab
-lookup change was needed for this follow-up. These two owner-reported scenarios
-support the mixed-version diagnosis. The owner clarified that Hello and Default
-belong to different Profiles, so both cross-Space and cross-Profile live-Tab reuse
-and closed-Tab recreation are accepted. The remaining split/window and failure
-matrix below is not thereby accepted.
-
-Use existing project checks plus paired-browser acceptance for:
-
-- Live/closed Tab across Spaces of one Profile and across two Profiles; identical
-  URLs in different identities must not prevent switching.
-- Existing target windows in this and other window groups, no target window,
-  cold/unloaded Profile, parked session window, empty target, fullscreen/minimized.
-- Cold/warm Sidecars, both split orientations/ratios and active panes, migrated
-  binding after pane close, same shared instance and conflicting split preservation.
-- Deleted/rebound target, switch/close/move mid-restore, duplicate actions, stale
-  acknowledgement/cancellation, access/save failure, timeout and late arrival.
-- Messages and streaming state preserved; no arrival reminder; departure creates
-  no automatic destination attachment; subsequent restoration reuses the saved Tab.
-
-`build-for-testing` must not launch the app-hosted XCTest runner beside live user
-browsers. The fixture is policy execution, not independent lifecycle review.
-The original intermittent white-sidebar rendering incident remains unproven;
-no first-paint speedup or complete browser acceptance is claimed by compilation.
+Verify that account switches reject late replies, duplicate operations do not
+repeat destructive work, and recovery retries use the recorded operation scope.
+Do not include conversation contents, operation tokens or credentials in shared
+test reports.

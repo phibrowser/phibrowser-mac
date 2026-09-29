@@ -330,12 +330,23 @@ extension AppController {
         }
     }
     
-    /// Re-runs the main-menu hook so pref-gated items appear or disappear
+    /// Schedules the main-menu hook so pref-gated items appear or disappear
     /// without waiting for Chromium's next menu swap — the View ▸ agent items
     /// follow the agent CDP switch (`AgentCDPListener.setEnabled` calls this).
-    /// Safe to call repeatedly: the hook is remove-then-insert idempotent.
+    /// Coalesces repeated requests and waits until menu tracking ends.
     func refreshPrefGatedMenuItems() {
-        hookAndRebuildMainMenu()
+        guard !isMainMenuRefreshScheduled else { return }
+        isMainMenuRefreshScheduled = true
+
+        // The main dispatch queue also drains during menu tracking. Use only
+        // default mode to avoid mutating AppKit's active menu backing views.
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isMainMenuRefreshScheduled = false
+                self.hookAndRebuildMainMenu()
+            }
+        }
     }
 
     private func hookAndRebuildMainMenu() {

@@ -1,13 +1,10 @@
 # Sync E2E test cases
 
-This is a manual acceptance reference for QA, not an execution report. All cases
-start as **Not run**. The source baseline is Mac `83361acd` on
-`sync/convergence-hardening` and sync-service `main@d49cf41` (PR #3), inspected
-on 2026-09-22. Staging runs that service image (`sha-d49cf41`); production still
-runs `sha-bdbccd1`, whose create path upserts by client tag instead of answering
-a conflicting create with CONFLICT.
-Record the actual native app, embedded framework and service versions for every
-run: these sources do not establish which features a distributed build contains.
+This is a reusable manual acceptance reference, not an execution report. All
+cases start as **Not run** in a fresh run. Record the actual native app, embedded
+framework and service versions; source references alone do not establish which
+features a distributed build contains. The service must implement the contract
+required by each case, especially duplicate-create conflict handling.
 
 ## Scope and acceptance rules
 
@@ -21,7 +18,7 @@ run: these sources do not establish which features a distributed build contains.
 | Exclusions | Chromium passwords, cookies and autofill are rejected by this service. Phi owns bookmark sync; Chromium BOOKMARKS is disabled. The reserved `PhiChat` Profile is local-only. Conversation storage is a separate feature. |
 
 Profile pairing is in scope; do not infer that all Profile names, avatars or
-settings synchronize. The Sync UX cases below cover the new settings pane. Ordinary
+settings synchronize. The Sync UX cases below cover settings and setup. Ordinary
 open tabs are not Phi pinned tabs: Chromium session data must not be interpreted
 as a requirement to recreate every tab automatically on the other Mac.
 
@@ -53,15 +50,12 @@ as a requirement to recreate every tab automatically on the other Mac.
    Chromium builds. Use **C** for the third-device and long-offline cases. A
    second app instance with a different `--user-data-dir` is not full isolation:
    native preferences, account storage and Keychain may still be shared.
-2. Use disposable staging accounts **U1** and **U2**. Record the actual endpoints
-   of native sync, key APIs and Chromium sync, and the deployed service image tag
-   (`sha-<commit>`) of the environment under test — a product version string does
-   not identify the server behavior. Canary defaults to staging and release to
-   production; an explicit Chromium sync URL can override that default. Do not mix
-   environments within a run. A case marked *create-guard* depends on the server
-   create path answering a conflicting create with CONFLICT, which requires
-   `sha-d49cf41` or later; on `sha-bdbccd1` record it as **Blocked** with the
-   image tag as the reason, never as Pass.
+2. Use disposable test accounts **U1** and **U2**. Record the actual endpoints
+   and deployed service artifact; a product version string alone does not
+   identify service behavior. Do not mix environments within a run. A case
+   marked *create-guard* requires a conflicting create to return CONFLICT with
+   the live entity identity/version. Confirm this capability in the designated
+   test service; otherwise record the case as **Blocked**, never as Pass.
 3. Prepare a fresh-install fixture and a populated-account fixture separately.
    Have engineering prepare any full reset using the current reset runbook;
    deleting only the app or only Chromium data does not reset native cursors,
@@ -126,7 +120,7 @@ previous case's hidden Space or pending edit determine the next result.
 | SYNC-S06 | P0 / Manual | Delete ordinary S2 on A with bookmarks, pins and rules attached; leave other user Spaces alive. Wait, restart B and reconnect C if available. | S2 disappears on peers. Its content is not reassigned to an unrelated Space/Profile. Hidden retained rows do not count as live UI data; no peer recreates S2 just because it retained rows. |
 | SYNC-S07 | P0 / Manual | With S1 available on both Macs, delete the original default Space. Open a context-free window; restart and compare both devices. Try deleting the last remaining user Space separately. | The original default identity can be deleted; the default role transfers and converges. Context-free windows use the resolved live default. The last live user Space cannot be locally deleted. |
 | SYNC-S08 | P1 / Assisted | On B delay delivery/mapping of the successor Space while A deletes the original default Space. Deliver the successor later. | B retains a usable Space while the default tombstone is deferred. Once a successor is live/mapped, deletion and role resolution complete. B does not overwrite the account's role with its temporary local fallback. |
-| SYNC-S09 | P1 / Manual | Inspect the original default Space on both Macs while changing themes and other ordinary Space properties. Create/use Incognito and agent Spaces. | The `default-space` identity does not synchronize a Profile binding or per-Space theme pin. Global theme settings still synchronize. Runtime Incognito/agent Spaces do not become ordinary paired user Spaces. Once the default-Space role sits on an ordinary Space, that Space carries its own `theme_id` and the global theme picker pins and syncs a theme on it (ruling C1-b): expected behavior, not a leaked suppression. |
+| SYNC-S09 | P1 / Manual | Inspect the original default Space on both Macs while changing themes and other ordinary Space properties. Create/use Incognito and agent Spaces. | The `default-space` identity does not synchronize a Profile binding or per-Space theme pin. Global theme settings still synchronize. Runtime Incognito/agent Spaces do not become ordinary paired user Spaces. Once the default-Space role sits on an ordinary Space, that Space carries its own `theme_id` and the global theme picker pins and syncs a theme on it: expected behavior, not a leaked suppression. |
 | SYNC-S10 | P1 / Manual | Hand the default-Space role to a successor on A by deleting its current holder, while B has not yet paired that successor Space. Compare the resolved default Space and context-free window target on both Macs. Then pair the successor on B. | B falls back to the first live user Space in account order and writes nothing back: the account register keeps naming the successor A chose, and B's temporary local choice is never published. Once the successor is paired on B, B adopts the originally registered Space without a second hand-off, and both Macs resolve the same holder. |
 | SYNC-S11 | P1 / Manual | From a shared S1 baseline, disconnect A and rename S1 offline. On online B, which has already observed that baseline, rename S1 later to a third value and let it publish. Reconnect A. Separately, on one Mac change an S1 field and put the original value back before the change publishes. | B's causally later rename wins on both Macs; A's older offline rename does not overwrite it when it finally publishes, and no rename flips back afterwards. The edited-and-reverted field publishes nothing: no entity update, no peer-visible change and no reordering. |
 
@@ -143,7 +137,7 @@ previous case's hidden Space or pending edit determine the next result.
 | SYNC-B07 | P0 / Manual | Reverse B04's direction: disconnect A and delete a previously synced bookmark there. On online B rename it or change its URL and let that edit publish. Reconnect A. Repeat on an account whose logical time has run ahead of wall clock. | A's pending local deletion is cancelled and the bookmark survives on every device carrying B's content, including when logical time is ahead of wall clock. If its parent folder was deleted in the same operation, it survives at the Space root. Deleting it again after B's edit is observed removes it everywhere. |
 | SYNC-B08 | P1 / Assisted | Produce a yielded bookmark with B04 or B05, then have engineering redeliver that same tombstone to the device that has just yielded (a replayed page or a repeated delivery of the current tombstone value). | The redelivered tombstone does not hard-delete the yielded row. The item stays live, its republication at the tombstone's version still happens, and after convergence it is present on every device with the surviving edit. |
 
-| SYNC-B09 | P1 / Manual | Take A and B offline. On A move folder F1 into F2; on B move F2 into F1 (a 3-folder ring is a useful second run). Reconnect B first, then A. Also run it with A reconnecting first. | Ruling C5-a: the move with the newer location stamp stands and the older move is undone — that folder returns to where it was before its move, not to the Space root. Every device shows the same tree with no cycle, and the user who made the older move sees their folder back at its previous parent. A device that had already published the losing move may show the two folders nested inside each other for one round until a peer publishes the revert. |
+| SYNC-B09 | P1 / Manual | Take A and B offline. On A move folder F1 into F2; on B move F2 into F1 (a 3-folder ring is a useful second run). Reconnect B first, then A. Also run it with A reconnecting first. | The move with the newer location stamp stands and the older move is undone — that folder returns to where it was before its move, not to the Space root. Every device shows the same tree with no cycle, and the user who made the older move sees their folder back at its previous parent. A device that had already published the losing move may show the two folders nested inside each other for one round until a peer publishes the revert. |
 
 For B03 (and for
 R03 in the rules section), the rank a moved item lands on inside its new owner
@@ -223,9 +217,9 @@ automatic pass. Use developer sync diagnostics when the app has no suitable UI.
 | SYNC-F09 | P0 / Assisted | Export an A backup, make further changes on A/B and converge, then restore the older backup to A. Separately lose one owned-item cursor table while retaining local data. | Restored marker/cursor recovery replays remote changes. A does not interpret missing local history as an instruction to delete B's data or recreate account rows with new identities. B remains intact. |
 | SYNC-F10 | P1 / Assisted | Inject unreadable ciphertext for one entity/settings payload or an unresolved Profile/Space key, while keeping other valid entities available. Repair the fixture/key and replay. | Unreadable data is not overwritten with local defaults or leaked as plaintext. Eligible unaffected data can progress according to its gates. Recovery is retryable; unresolvable ownership is not silently assigned elsewhere. |
 | SYNC-F11 | P1 / Assisted | Run A/B/C on the current convergence build with a controlled clock-skew fixture. Bound the injected skew to **under 5 minutes** (below `PhiHybridClock.wallClockCorrectionThresholdMs`) so no source-side correction applies and the hybrid logical clock alone orders the edits; the fixture must also offset the `Date()` that `LocalStore` writes into `contentUpdatedDate`/`locationUpdatedDate`, not only `hlcNow()`, or the edit-time stamps stay honest and the case proves nothing. B first observes A's edit, then makes a causally later edit while its wall clock is slower. Separately vary reconnect order for independent offline edits. | Causally later observed edits win despite the slow clock. All devices converge. Do not require every concurrent offline edit to survive same-field LWW, or assume that last upload wins. Prefer an injected clock over changing an active Mac's system clock/authentication environment. |
-| SYNC-F12 | P2 / Assisted | Upgrade a supported previous persisted-store fixture to this build. Separately run a supported mixed-client pair with one older client lacking the new convergence behavior. | Supported upgrades preserve data and complete replay. Record expected feature differences: old clients may lack default-role sync, edit-over-delete protection, `pendingProjection` edit-time Space stamping or source-side clock correction. A Mac older than `83361acd` against a server at `sha-d49cf41` or later can strand an entity: it retries a create CONFLICT as another create and gives the entity up after three rounds. Ruling C3-c: that combination is **unsupported** — scope any mixed-client pair to clients at `83361acd` or newer and record an older client as Blocked. Do not promise unsupported downgrade compatibility or classify documented old-client behavior as a new-build regression. |
+| SYNC-F12 | P2 / Assisted | Upgrade a supported previous persisted-store fixture to this build. Separately run a supported mixed-client pair with one older client lacking the new convergence behavior. | Supported upgrades preserve data and complete replay. Record expected feature differences: old clients may lack default-role sync, edit-over-delete protection, `pendingProjection` edit-time Space stamping or source-side clock correction. A client without create-conflict identity adoption against a service that rejects duplicate live creates can strand an entity: it retries a create CONFLICT as another create and gives the entity up after three rounds. That combination is **unsupported**: verify the client supports identity adoption and record unsupported combinations as Blocked. Do not promise unsupported downgrade compatibility or classify documented old-client behavior as a new-build regression. |
 | SYNC-F13 | P0 / Assisted | Put B's clock one hour off through the injected-clock fixture, with A correct and both converged. Let B complete one pull, then edit the same fields on A and afterwards on B, and inspect B's published stamps, the metadata log and the retention timestamps of a deletion made on B. Repeat the whole case with a 2-minute offset. | At one hour the offset exceeds the 5-minute threshold: the whole measured offset corrects the stamps B publishes, the change is logged once at metadata level (offsets and threshold only), and B's later edits win on every device. `deletedAtMs` and the 30-day retention window stay on B's uncorrected wall clock. At 2 minutes no correction is applied at all and the edits still converge. |
-| SYNC-F14 | P0 / Assisted (*create-guard*) | On a service at `sha-d49cf41` or later, after a fresh join take A and B offline and on each first-publish the same client tag with different content — for example the same normalized host/path/target URL rule. Reconnect both and let at least three completed rounds settle without further edits. | The losing create is answered with CONFLICT carrying the live row's entity id and version; the loser harvests both and its one scoped retry is an update at that version, not a second create. One entity with one identity survives, no cursor is left with an empty entity id and a version above 0, and the item keeps synchronizing after three or more rounds instead of being given up. |
+| SYNC-F14 | P0 / Assisted (*create-guard*) | On a service that rejects duplicate live creates, after a fresh join take A and B offline and on each first-publish the same client tag with different content — for example the same normalized host/path/target URL rule. Reconnect both and let at least three completed rounds settle without further edits. | The losing create is answered with CONFLICT carrying the live row's entity id and version; the loser harvests both and its one scoped retry is an update at that version, not a second create. One entity with one identity survives, no cursor is left with an empty entity id and a version above 0, and the item keeps synchronizing after three or more rounds instead of being given up. |
 | SYNC-F15 | P0 / Manual | Populate a store with a V12 build (URL-rule sync columns present, no bookmark location edit column), then upgrade that same user data directory to this build. Inspect pre-existing bookmarks, move one locally, and inspect it again. | Migration completes, the app starts and no data is lost. `locationUpdatedDate` is nil for pre-existing rows and is set after a new local move; nothing is republished merely because the column was added. |
 
 ## Deterministic fault checks and evidence
@@ -305,21 +299,16 @@ Their exact applicability must be reviewed against the tested build.
 - [Sync engine and debug hooks](../Sources/Sync/Phi/PhiSyncEngine.swift),
   [native notification scheduler](../Sources/Sync/Phi/PhiSyncInvalidation.swift),
   [convergence harness limitations](../Tests/SyncConvergence/README.md).
-- Companion repository: `sync-service/internal/chromiumsync/datatype.go` for the
-  server datatype allowlist. Its presence alone does not enable a client type.
-- Company knowledge base, relative to `~/.agents/company-knowledge/`:
-  `30-projects/phinomenon/sync-service/{operations,status,contracts}.md`,
-  `30-projects/phinomenon/sync-service/design/2026-09-21-concurrency-review-rulings.md`
-  and `design/2026-09-16-m3-4a-url-rules-marker-boundary-design.md` beneath that project.
-  Historical design steps are context; current code and `sync.md` take precedence
-  where later convergence changes supersede them.
+The service and framework must support the tested client contracts. Record their
+versions in the execution report; private source paths are not prerequisites for
+reading this matrix. The current native source and [sync contract](sync.md) define
+the client behavior.
 
-## Sync UX acceptance (2026-09-23)
+## Sync UX acceptance
 
-These cases supplement the data-convergence scenarios above. They remain **Not
-run** until exercised with recorded app/framework/server versions on two Macs.
-The implementation branch is `feat/sync-ux` based on native `1b4e7305`; framework
-source changes are in the canonical Chromium checkout. This is not a release signoff.
+These cases supplement the data-convergence scenarios above. The Result column
+is an unexecuted template, not release evidence. Copy it into a separate run
+report and record the native, framework and service versions used on two Macs.
 
 | Case | Steps | Required result | Result |
 | --- | --- | --- | --- |
@@ -350,33 +339,19 @@ source changes are in the canonical Chromium checkout. This is not a release sig
 | UX-25 | Let Initial sync or Syncing continue beyond the helper deadline and retry interval; then finish normally | The genuine progress phase is retained, without synthetic Needs attention or extra forced rounds. Deferred coordination resumes once the engines settle | Not run |
 | UX-26 | Complete a common round, then repeatedly close/reopen the Sync pane within 60 seconds | Up to date and the common time remain visible while the explicit request waits. Only actual dispatch changes the helper phase to Syncing | Not run |
 
-Automated evidence is recorded separately from these manual cases: hostless
-pairing/device/status/invalidation regressions and convergence properties have
-executed; native `build-for-testing` compiles hosted tests but does not run them.
-Targeted Chromium object builds compile the changed implementation/tests; a new
-`components_unittests` binary has not been linked/executed in this task.
+## Automated checks
 
-The PR #153 follow-up regressions also run without launching a browser host:
+Hostless scripts under `build-scripts/` exercise production native logic with
+controlled storage/transport boundaries. Relevant scripts include
+`test-sync-cleanup-resume.sh`, `test-sync-pairing-retry.sh`, `test-sync-join.sh`,
+`test-sync-setup-dismissal.sh`, `test-sync-local-changes.sh`,
+`test-sync-helper.sh` and `test-sync-space-replay.sh`.
 
-- `build-scripts/test-sync-cleanup-resume.sh`: deferred login, account replacement,
-  sign-out, request coalescing, and ordinary removal.
-- `build-scripts/test-sync-pairing-retry.sh`: registration/adoption/creation retries,
-  retained choices, changed server candidates, local edits during submission,
-  same-name Space suggestions, Profile changes, ambiguity and manual overrides.
-- `build-scripts/test-sync-join.sh`: production verification state machine and
-  account manager with in-memory keys/transport; cancel/recovery/close withdrawal,
-  stale same-key requests, failed withdrawal, delayed POST, cancelled approval
-  polling and successful current approval.
-- `build-scripts/test-sync-setup-dismissal.sh`: pane refresh notification on defer,
-  unchanged enrollment, and duplicate/retired-session suppression.
-- `build-scripts/test-sync-local-changes.sh`: Core Data/Combine publishers and the
-  production SwiftData schema, local-only and failed saves, immediate content
-  invalidation, debounced bursts, and edit/revert settlement.
+Follow each script's environment requirements. These checks do not mark the
+manual UI or two-Mac cases as passed. Application-hosted tests follow the
+[testing guide](testing.md); a build-for-testing result alone is compile evidence.
 
-These use production code with temporary or in-memory app/transport/storage
-boundaries. They do not mark the manual app UI or two-Mac cases above as passed.
-
-### Coordinated last-success acceptance (PHI-1251)
+### Coordinated last-success acceptance
 
 - With at least two user Profiles, close Settings and change Chromium data. Open
   Settings after catch-up: the common time advances only after native data and
@@ -393,8 +368,8 @@ boundaries. They do not mark the manual app UI or two-Mac cases above as passed.
   context's evidence becomes stale or an active round expires. Explicit reconfiguration
   or removal clears the common time. Restart preserves the last recorded time
   as history and requires fresh completion before claiming Up to date.
-- Sentinel is a hostless registration-hook test only; no Sentinel transport is
-  enabled by this change. Live two-Mac acceptance remains required before release.
+- The native helper exposes an upstream registration hook; this does not itself
+  enable a Sentinel transport. Live two-Mac acceptance remains required before release.
 
 `build-scripts/test-sync-helper.sh` exercises the production helper with a fake
 clock and controlled engine boundaries: continuous commit/pending cycles and late
@@ -405,5 +380,5 @@ Lazy/missing Profiles and long-running Initial sync/Syncing defer forced work
 without synthetic errors, and throttled pane reloads retain Up to date and history.
 `build-scripts/test-sync-join.sh` also covers a lost bootstrap response, local save
 failure before account creation, confirmation write failure/retry, and failed
-cleanup of an already-initialized account. These are hostless regression results,
-not evidence that the manual cases above passed.
+cleanup of an already-initialized account. These are hostless regression scenarios; their existence does not establish a
+result for the manual cases above.

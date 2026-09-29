@@ -100,3 +100,19 @@ struct SyncProfileMappingPause: Equatable {
         return SyncProfileMappingPause(isPaused: true, unmappedProfileIds: unmapped.sorted(), reason: reason)
     }
 }
+
+/// What the Sync status receives about the pause (plan 2026-09-29, 10.7). Derived by the
+/// coordinator's reconciliation from the episode's age and handed to `SyncHelper`; the
+/// helper reports it and the status presentation overlays it when it reads the report.
+/// Carries local Profile ids, never names or account identifiers.
+enum SyncProfileMappingPauseStatus: Equatable {
+    /// No episode.
+    case none
+    /// The first 15 seconds of an episode: nothing is shown and no helper round is dispatched.
+    case grace
+    /// An episode 15 seconds or older: the pause is shown, with the predicate's reason, the key
+    /// layer's status-only failure category and the Profiles that are not mapped.
+    case paused(reason: SyncProfileMappingPause.Reason,
+                failureCategory: SyncProfileMappingFailureCategory?,
+                unmappedProfileIds: [String])
+}

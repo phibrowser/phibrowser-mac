@@ -171,7 +171,13 @@ applies, and late successful replies never request another round. The engines'
 existing local-change and invalidation schedulers continue to own normal work.
 A requested round pulls native data and refreshes all Profile namespaces through
 the existing account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID
-and type list empty; a nonempty UUID with empty types is a no-op).
+and type list empty; a nonempty UUID with empty types is a no-op). The native
+participant does not start either itself: it asks the running
+`PhiSyncInvalidationCoordinator` for a catch-up, whose pull performs both, so helper,
+SSE and fallback-timer pulls share one coalesced, single-flight pull. A request made
+while a pull is running is served by one follow-up pull. The participant refuses
+(the helper reports Rejected) when the coordinator is absent or stopped, in addition
+to the pairing, key, account and bridge-support gates.
 
 `requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
 semantics, joins an observation in progress and then observes once more, so a

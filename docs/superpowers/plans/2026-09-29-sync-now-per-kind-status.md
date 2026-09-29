@@ -559,3 +559,15 @@ Deviations from the plan text, recorded as they were made.
   `.dispatchToObservable` at least one participant must be observable. `requestSyncNow()`
   joins an observation in progress and then observes once more; to let it start that second
   observation safely, `refresh` now clears `refreshTask` only when it still holds its own task.
+- **T4.** Rerouted as planned; `PhiSyncInvalidation.swift` is unchanged. Checked before
+  changing it: `requestCatchUp()` is a silent no-op while the coordinator is stopped, so the
+  participant checks `isRunning` itself and returns `false` (Rejected) then; the coordinator
+  is started only when pairing, the pairing flag and the ARK are all present, the same
+  conditions as the helper's `isEligible`, and it is built and retired together with the
+  engine. The `.catchUp` demand performs both the native `pullOnce()` and the account-wide
+  Chromium catch-up, as the old participant did. The pull closure calls the bridge
+  optionally, so the participant keeps its bridge-support check to refuse rather than accept
+  a request the bridge cannot serve. Differences from before: the pull starts after the
+  0.25 s coalescing window, and a request during a running pull is served by one follow-up
+  pull instead of a second concurrent `pullOnce()` task. `requestCatchUp()` needed no return
+  value. New hostless case in `Tests/SyncInvalidation/main.swift`.

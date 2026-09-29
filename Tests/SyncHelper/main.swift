@@ -11,6 +11,8 @@ import Foundation
     var saves = 0
     var canSave = true
     var acceptsRequests = true
+    /// Runs inside a participant's asynchronous read, before it returns.
+    var onRead: ((String) -> Void)?
     func tick(_ time: TimeInterval) { self.time = Date(timeIntervalSince1970: time) }
     func status(_ id: String, _ phase: SyncContextPhase, at time: TimeInterval? = nil) {
         snapshots[id] = SyncContextSnapshot(id: id, phase: phase,
@@ -21,7 +23,7 @@ import Foundation
         for id in ids { status(id, .upToDate, at: time) }
     }
     func participant(_ id: String) -> SyncHelper.Participant {
-        SyncHelper.Participant(id: id, read: { self.snapshots[id] }, requestSync: {
+        SyncHelper.Participant(id: id, read: { self.onRead?(id); return self.snapshots[id] }, requestSync: {
             self.requests[id, default: 0] += 1
             return self.acceptsRequests
         })
@@ -67,6 +69,113 @@ import Foundation
         await failingRoundEndsEarly()
         await earlyEndKeepsLateSuccess()
         await reportCarriesNativeDetail()
+        await profileMappingPauseGrace()
+        await profileMappingPauseCancelsRoundObservation()
+        await profileMappingPauseQueuesSyncNow()
+        await profileMappingPauseCheckedAfterEveryRead()
+    }
+
+    static let shownPause = SyncProfileMappingPauseStatus.paused(
+        reason: .retrying, failureCategory: .offline, unmappedProfileIds: ["Profile 2"])
+
+    /// Plan 10.7: under 15 seconds the helper dispatches nothing and keeps its last report;
+    /// ending the pause is not a membership change.
+    @MainActor static func profileMappingPauseGrace() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        let before = helper.report.summary
+        let reads = f.enumerations
+        helper.setProfileMappingPause(.grace)
+        for second in stride(from: 110, through: 500, by: 30) {
+            f.tick(Double(second))
+            await helper.refresh(requestSync: true)
+        }
+        precondition(f.requests == ["phi": 1, "profile": 1] && f.enumerations == reads,
+                     "The helper read or dispatched during the grace")
+        precondition(helper.report.summary == before && helper.report.profileMappingPause == .none
+                     && helper.report.request == .idle, "The grace changed the report")
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.summary == before, "Ending the pause reset the report like a membership change")
+        f.succeed(at: 501)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2, "Ending the pause did not ask for a fresh round")
+        f.succeed(at: 505)
+        await helper.refresh()
+        precondition(f.saved == f.time && helper.report.summary.phase == .upToDate)
+        helper.stop()
+        print("PASS helper: a pause under 15 seconds dispatches nothing and keeps the report; its end asks for a fresh round")
+    }
+
+    /// AM-2: a round dispatched just before an episode starts is invalidated; its Sync now
+    /// request stays queued, is cancelled once the pause is shown, and a fresh round runs
+    /// after the episode.
+    @MainActor static func profileMappingPauseCancelsRoundObservation() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170)
+        let state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        helper.setProfileMappingPause(.grace)
+        precondition(helper.report.request == .queued(reason: .busy, notBefore: nil),
+                     "The Sync now request of an invalidated round must stay queued")
+        f.succeed(at: 172)
+        await helper.refresh()
+        precondition(f.saved == Date(timeIntervalSince1970: 103), "An invalidated round recorded a coordinated success")
+        helper.setProfileMappingPause(shownPause)
+        precondition(helper.report.request == .idle && helper.report.syncNowCancelledByPause
+                     && helper.report.profileMappingPause == shownPause,
+                     "The shown pause must cancel the queued request and report the pause")
+        await helper.refresh()
+        precondition(helper.report.profileMappingPause == shownPause && helper.report.syncNowCancelledByPause)
+        helper.membershipDidChange()
+        precondition(helper.report.profileMappingPause == shownPause, "A membership change dropped the shown pause")
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.profileMappingPause == .none && !helper.report.syncNowCancelledByPause)
+        f.tick(240); f.succeed(at: 240)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 3 && helper.report.request == .idle, "No fresh round after the episode")
+        f.succeed(at: 244)
+        await helper.refresh()
+        precondition(f.saved == f.time)
+        helper.stop()
+        print("PASS helper: an episode invalidates the round in flight, keeps then cancels its Sync now, and a fresh round follows")
+    }
+
+    /// Plan 10.7: a Sync now during the grace stays queued and is dispatched when the
+    /// episode ends; one during the shown pause is cancelled at once.
+    @MainActor static func profileMappingPauseQueuesSyncNow() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        helper.setProfileMappingPause(.grace)
+        f.tick(170)
+        var state = await helper.requestSyncNow()
+        precondition(state == .queued(reason: .busy, notBefore: nil) && f.requests["phi"] == 1)
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.request == .queued(reason: .busy, notBefore: nil))
+        f.succeed(at: 171)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2 && helper.report.request == .inFlight(startedAt: f.time),
+                     "The queued Sync now was not dispatched when the episode ended")
+        helper.setProfileMappingPause(shownPause)
+        f.tick(300)
+        state = await helper.requestSyncNow()
+        precondition(state == .idle && helper.report.syncNowCancelledByPause && f.requests["phi"] == 2,
+                     "A Sync now while the pause is shown must be cancelled, not dispatched")
+        helper.stop()
+        print("PASS helper: Sync now queues through the grace and dispatches at its end; the shown pause cancels it")
+    }
+
+    /// AM-2: the pause is checked again after every asynchronous participant read.
+    @MainActor static func profileMappingPauseCheckedAfterEveryRead() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.succeed(at: 170)
+        var fired = false
+        f.onRead = { id in
+            guard id == "profile", !fired else { return }
+            fired = true
+            helper.setProfileMappingPause(.grace)
+        }
+        await helper.refresh(requestSync: true)
+        precondition(fired && f.requests["phi"] == 1, "A round was dispatched after the pause began mid-observation")
+        helper.stop()
+        print("PASS helper: the pause is checked after every asynchronous participant read")
     }
 
     @MainActor static func waitingStatesRemainObservational() async {

@@ -21,6 +21,15 @@ final class SyncHelper {
         var snapshots: [String: SyncContextSnapshot] = [:]
         var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
         var request: SyncRequestState = .idle
+        /// `.paused` while a Profile mapping pause is shown (an episode 15 seconds or older,
+        /// plan 2026-09-29, 10.7); `.none` otherwise, the first 15 seconds included. The
+        /// status presentation overlays it on `summary` when it reads the report: the
+        /// completion of a round admitted before the pause still writes the phase.
+        var profileMappingPause: SyncProfileMappingPauseStatus = .none
+        /// A queued Sync now request that the shown pause cancelled, so the pane announces
+        /// nothing for it. Cleared when the pause ends, by the next request and by the
+        /// resets that return `request` to Idle.
+        var syncNowCancelledByPause = false
     }
 
     /// What an explicit request does while a participant is unobservable (missing or Checking),
@@ -76,6 +85,8 @@ final class SyncHelper {
     private var round: Round?
     private var generation = UUID()
     private var retired = false
+    /// What the coordinator's reconciliation last handed over; see `setProfileMappingPause(_:)`.
+    private var mappingPause: SyncProfileMappingPauseStatus = .none
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private(set) var report = Report()
@@ -128,6 +139,62 @@ final class SyncHelper {
         updateTransientFailure(nil)
         report = Report(summary: SyncStatusSummary(
             phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess))
+        report.profileMappingPause = shownMappingPause
+    }
+
+    /// The Profile mapping pause, as the coordinator's reconciliation derives it from the
+    /// episode's age (plan 2026-09-29, 10.7). A path of its own, separate from eligibility
+    /// and from membership changes: it keeps the barrier's membership, the common time and
+    /// the rate limit, and no participant is read or asked for a round while it holds.
+    ///
+    /// - An episode starting (`.grace` or `.paused` after `.none`) invalidates the
+    ///   observations of a round in flight, which could never reach its coordinated success
+    ///   now, and keeps a Sync now request that round carried as queued (AM-2). The engine
+    ///   round itself is never cancelled.
+    /// - `.grace` keeps the last report; a Sync now request stays queued.
+    /// - `.paused` reports the pause, and a queued Sync now request is cancelled and marked
+    ///   as cancelled.
+    /// - `.none` asks for a fresh round, dispatched on the helper's own poll like any other
+    ///   demand, together with a Sync now request still queued. It is not a membership change.
+    func setProfileMappingPause(_ status: SyncProfileMappingPauseStatus) {
+        guard !retired, status != mappingPause else { return }
+        let episodeStarts = mappingPause == .none
+        mappingPause = status
+        if status == .none {
+            report.profileMappingPause = .none
+            report.syncNowCancelledByPause = false
+            needsRound = true
+            report.request = syncNowPending ? .queued(reason: .busy, notBefore: nil) : .idle
+            return
+        }
+        if episodeStarts {
+            generation = UUID()
+            refreshTask?.cancel()
+            refreshTask = nil
+            if let round, round.syncNow { syncNowPending = true }
+            round = nil
+            endedRound = nil
+            needsRound = true
+        }
+        noteMappingPause()
+    }
+
+    /// `.paused` when the pause is shown, `.none` otherwise.
+    private var shownMappingPause: SyncProfileMappingPauseStatus {
+        if case .paused = mappingPause { return mappingPause }
+        return .none
+    }
+
+    /// The report while the pause holds: the last summary and snapshots, the pause once it
+    /// is shown, and the Sync now request queued (grace) or cancelled (shown).
+    private func noteMappingPause() {
+        report.profileMappingPause = shownMappingPause
+        if case .paused = mappingPause, syncNowPending {
+            syncNowPending = false
+            report.syncNowCancelledByPause = true
+        }
+        requestRejected = false
+        report.request = syncNowPending ? .queued(reason: .busy, notBefore: nil) : .idle
     }
 
     func start() {
@@ -164,6 +231,7 @@ final class SyncHelper {
     func requestSyncNow() async -> SyncRequestState {
         guard !retired else { return .idle }
         requestRejected = false
+        report.syncNowCancelledByPause = false
         if round == nil { syncNowPending = true } else { round?.syncNow = true }
         if let joined = refreshTask {
             await joined.value
@@ -193,6 +261,7 @@ final class SyncHelper {
         requestRejected = false
         coordinationFailure = nil
         report = Report()
+        report.profileMappingPause = shownMappingPause
     }
 
     private func updateTransientFailure(_ failure: CoordinationFailure?) {
@@ -205,6 +274,7 @@ final class SyncHelper {
     private func observe(generation expected: UUID) async {
         guard !retired, generation == expected else { return }
         guard isEligible() else { resetIneligible(); return }
+        guard mappingPause == .none else { noteMappingPause(); return }
         let base = participants()
         let baseIDs = Set(base.map(\.id))
         let sources = base + upstream.values.filter { !baseIDs.contains($0.id) }.sorted { $0.id < $1.id }
@@ -221,6 +291,9 @@ final class SyncHelper {
             let snapshot = await source.read()
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
+            // An episode starting also changes the generation; the pause check is repeated
+            // here in its own right (plan 10.10, AM-2).
+            guard mappingPause == .none else { noteMappingPause(); return }
             if let snapshot, snapshot.id == source.id { snapshots[source.id] = snapshot }
         }
         for source in sources {

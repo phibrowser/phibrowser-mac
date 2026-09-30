@@ -270,7 +270,7 @@ struct SyncStatusPresentation: Equatable {
     static func present(summary: SyncSummaryPhase, request: SyncRequestState,
                         profileMappingPause: SyncProfileMappingPauseStatus,
                         syncNowCancelledByPause: Bool, profileListNotEnumeratedSince: Date?,
-                        resetRequired: Bool, profileNames: [String: String], now: Date) -> Self {
+                        resetRequired: Bool, profileNames: () -> [String: String], now: Date) -> Self {
         let button = SyncNowButtonState.reduce(summary: summary, request: request)
         let announces = !syncNowCancelledByPause
         guard !resetRequired, summary != .notStarted else {
@@ -278,7 +278,8 @@ struct SyncStatusPresentation: Equatable {
                         showsProfileListWait: false, announcesSyncNowOutcome: announces)
         }
         if case let .paused(reason, failure, ids) = profileMappingPause {
-            let names = ids.compactMap { profileNames[$0] }
+            let resolved = profileNames()
+            let names = ids.compactMap { resolved[$0] }
                 .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             let profiles: PausedProfiles = names.isEmpty ? .unnamed
                 : names.count > maximumNamedProfiles ? .count(names.count) : .names(names)
@@ -291,5 +292,13 @@ struct SyncStatusPresentation: Equatable {
         let headline: Headline = waited >= profileListWaitAttention ? .phase(.needsAttention) : .phase(summary)
         return Self(headline: headline, syncNow: button, showsRetry: false, pause: nil,
                     showsProfileListWait: waited >= profileListWaitLine, announcesSyncNowOutcome: announces)
+    }
+
+    /// Whether "Sync resumed" is announced: a shown pause gave way to a normal summary. One that
+    /// gives way to a reset, to Not started (for example the account key became unavailable) or
+    /// to another shown pause has not resumed sync.
+    static func announcesResume(wasPaused: Bool, now presentation: Self, resetRequired: Bool) -> Bool {
+        wasPaused && !resetRequired && presentation.pause == nil
+            && presentation.headline != .phase(.notStarted)
     }
 }

@@ -107020,7 +107020,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your sign-in has expired. Sign in again to continue."
+            "value" : "Your sign-in needs to be renewed."
           }
         }
       }

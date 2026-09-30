@@ -79,6 +79,8 @@ import Foundation
         statusPresentationGraceAndCancelledSyncNow()
         statusPresentationProfileListWait()
         statusPresentationProfileNames()
+        statusPresentationReadsNamesOnlyForThePause()
+        statusPresentationAnnouncesResume()
     }
 
     static let overlayNow = Date(timeIntervalSince1970: 10_000)
@@ -92,7 +94,7 @@ import Foundation
         SyncStatusPresentation.present(summary: summary, request: request, profileMappingPause: pause,
             syncNowCancelledByPause: cancelled,
             profileListNotEnumeratedSince: listSince.map { overlayNow.addingTimeInterval(-$0) },
-            resetRequired: reset, profileNames: names, now: overlayNow)
+            resetRequired: reset, profileNames: { names }, now: overlayNow)
     }
 
     /// Every value of the helper's pause, each reason and failure category.
@@ -194,6 +196,43 @@ import Foundation
                      "Only resolved names are counted")
         precondition(profiles(["Gone"]) == .unnamed, "No resolved name: the card says a profile without naming it")
         print("PASS overlay: one to three Profiles by name, more by count; unresolved ids are left out")
+    }
+
+    /// The Profile names are read only for a shown pause, not on every read of the status row.
+    static func statusPresentationReadsNamesOnlyForThePause() {
+        var reads = 0
+        func present(_ summary: SyncSummaryPhase, _ pause: SyncProfileMappingPauseStatus,
+                     reset: Bool = false) -> SyncStatusPresentation {
+            SyncStatusPresentation.present(summary: summary, request: .idle, profileMappingPause: pause,
+                syncNowCancelledByPause: false, profileListNotEnumeratedSince: overlayNow.addingTimeInterval(-600),
+                resetRequired: reset, profileNames: { reads += 1; return overlayNames }, now: overlayNow)
+        }
+        _ = present(.upToDate, .none)
+        _ = present(.syncing, .grace)
+        _ = present(.needsAttention, shownPause, reset: true)
+        _ = present(.notStarted, shownPause)
+        precondition(reads == 0, "The Profile names were read without a shown pause")
+        precondition(present(.upToDate, shownPause).pause?.profiles == .names(["Home"]) && reads == 1,
+                     "A shown pause reads the Profile names once")
+        print("PASS overlay: the Profile names are read only for a shown pause")
+    }
+
+    /// "Sync resumed" only when a shown pause gives way to a normal summary: not to a reset,
+    /// Not started (the account key became unavailable) or another shown pause.
+    static func statusPresentationAnnouncesResume() {
+        func resumes(wasPaused: Bool = true, _ presentation: SyncStatusPresentation, reset: Bool = false) -> Bool {
+            SyncStatusPresentation.announcesResume(wasPaused: wasPaused, now: presentation, resetRequired: reset)
+        }
+        for summary in [SyncSummaryPhase.upToDate, .syncing, .offline, .needsAttention, .checking] {
+            precondition(resumes(overlay(summary)), "A pause that gives way to \(summary) resumed sync")
+        }
+        precondition(resumes(overlay(.checking, listSince: 600)), "The list wait is a normal summary")
+        precondition(!resumes(wasPaused: false, overlay(.upToDate)), "No shown pause, nothing resumed")
+        precondition(!resumes(overlay(.notStarted)), "A pause that gives way to Not started has not resumed sync")
+        precondition(!resumes(overlay(.needsAttention, reset: true), reset: true),
+                     "A pause that gives way to a reset has not resumed sync")
+        precondition(!resumes(overlay(.upToDate, shownPause)), "A pause still shown has not resumed sync")
+        print("PASS overlay: Sync resumed only when a shown pause gives way to a normal summary")
     }
 
     /// Review R3: the report says since when the engine gate has been on because the Profile

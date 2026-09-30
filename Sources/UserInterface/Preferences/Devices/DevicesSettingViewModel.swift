@@ -117,7 +117,7 @@ final class DevicesSettingViewModel: ObservableObject {
             profileMappingPause: profileMappingPause, syncNowCancelledByPause: syncNowCancelledByPause,
             profileListNotEnumeratedSince: profileListNotEnumeratedSince,
             resetRequired: resetRequired,
-            profileNames: profileNames(), now: statusReadAt)
+            profileNames: profileNames, now: statusReadAt)
     }
 
     /// A reset or reconfiguration wins over the pause: Retry cannot fix it.
@@ -147,8 +147,10 @@ final class DevicesSettingViewModel: ObservableObject {
         syncNowCancelledByPause = report?.syncNowCancelledByPause ?? false
         profileListNotEnumeratedSince = report?.profileListNotEnumeratedSince
         statusReadAt = Date()
-        // The pause ended in the report; one that gives way to a reset has not resumed sync.
-        if wasPaused, report != nil, profileMappingPause == .none, !resetRequired { pauseEndedSerial &+= 1 }
+        // The pause ended in the report; one that gives way to a reset or Not started has not resumed sync.
+        if report != nil, profileMappingPause == .none,
+           SyncStatusPresentation.announcesResume(wasPaused: wasPaused, now: statusPresentation,
+                                                  resetRequired: resetRequired) { pauseEndedSerial &+= 1 }
         guard awaitingSyncNow else { return }
         // A dropped request (no helper, ineligible, sync not started) ends without a word.
         guard report != nil, summary.phase != .notStarted else { awaitingSyncNow = false; return }

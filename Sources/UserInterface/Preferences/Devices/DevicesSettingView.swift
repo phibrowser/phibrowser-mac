@@ -338,7 +338,7 @@ struct DevicesSettingView: View {
     private func pauseFailure(_ failure: SyncProfileMappingFailureCategory) -> String {
         switch failure {
         case .offline: return NSLocalizedString("sync.status.pause.failure.offline", value: "No connection. Sync continues when this Mac is back online.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because this Mac could not reach the sync service")
-        case .signInExpired: return NSLocalizedString("sync.status.pause.failure.signInExpired", value: "Your sign-in has expired. Sign in again to continue.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because the account sign-in is no longer valid")
+        case .signInExpired: return NSLocalizedString("sync.status.pause.failure.signInExpired", value: "Your sign-in needs to be renewed.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because the account sign-in is no longer valid")
         case .serverError: return NSLocalizedString("sync.status.pause.failure.serverError", value: "The sync service returned an error.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because of an error on the sync service")
         case .other: return NSLocalizedString("sync.status.pause.failure.other", value: "Something went wrong while setting up the profile.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed for another reason")
         }

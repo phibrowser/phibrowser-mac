@@ -167,6 +167,7 @@ final class Handle {}
         profileListFollowUp()
         teardownDuringEpisode()
         profileBeingCreatedByTheKeyLayer()
+        profileBeingCreatedWithoutReconciliation()
         deviceWithoutEpisodeDoesNothing()
         reconfigurationStopsTheEpisode()
         nestedListChangeDoesNotChooseTheSilentUnlock()
@@ -668,6 +669,33 @@ final class Handle {}
         f.reconcile()
         precondition(f.reconciler.episode == nil && f.gateCalls == [true, false])
         print("PASS profile mapping episode: a Profile the key layer creates ends its episode with its adopt")
+    }
+
+    /// 10.4, as production runs it: the key layer marks the Profile as being created without a
+    /// reconciliation of its own, so the episode ends at the 15-second mark or at the adopt's
+    /// announcement, whichever comes first, and the keys are never touched.
+    @MainActor static func profileBeingCreatedWithoutReconciliation() {
+        for adoptFirst in [false, true] {
+            let f = Fixture()
+            f.addProfile("Created")
+            f.reconcile()  // the list sink sees it before the key layer names it
+            precondition(f.reconciler.episode != nil)
+            f.creating = ["Created"]  // no reconciliation follows
+            f.advance(to: 10)
+            precondition(f.reconciler.episode != nil && f.statusCalls == [.grace], "The episode ended with no trigger")
+            if adoptFirst {
+                f.creating = []; f.map("Created")
+                f.reconcile()  // the adopt's announcement
+            } else {
+                f.advance(to: 15)
+            }
+            precondition(f.reconciler.episode == nil && f.keyCalls.isEmpty && f.statusCalls == [.grace, .none]
+                         && f.gateCalls == [true, false] && f.armed.isEmpty,
+                         "A Profile being created showed the pause or withdrew the keys (adopt first: \(adoptFirst))")
+            f.advance(to: 600)
+            precondition(f.keyCalls.isEmpty && f.statusCalls == [.grace, .none], "The ended episode kept working")
+        }
+        print("PASS profile mapping episode: without a reconciliation, a Profile being created ends its episode at 15 s or at its adopt")
     }
 
     /// I7: a device on which the predicate stays clear sees nothing of this feature.

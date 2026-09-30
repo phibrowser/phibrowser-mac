@@ -9379,11 +9379,12 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Closes the shell for good. Called when the slot leaves the registry;
-    /// no-op without a shell.
+    /// without a shell only the observers and dormant sessions are dropped.
     func closeShellIfPresent() {
-        activeHostedBandSlide?.cancelInteractive()
-        if let spaceSwipeMonitor { NSEvent.removeMonitor(spaceSwipeMonitor) }
-        spaceSwipeMonitor = nil
+        // The sidebar-width subscription retains the shell's sidebar host
+        // view, whose resident strips retain this slot: without the explicit
+        // teardown neither is ever released.
+        invalidate()
         discardDormantSessions()
         guard let shell else { return }
         self.shell = nil
@@ -12949,8 +12950,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// frame observers. The blocks capture the slot weakly, but without
     /// explicit removal NotificationCenter keeps the registrations (and
     /// blocks) alive until app exit, firing as no-ops against a slot the
-    /// manager no longer tracks. Called by `SpaceManager.unbind` when the
-    /// account goes away while windows may still be open, and from `deinit`.
+    /// manager no longer tracks. Called by `closeShellIfPresent` when the
+    /// slot leaves the registry, by `SpaceManager.unbind` when the account
+    /// goes away while windows may still be open, and from `deinit`.
     fileprivate func invalidate() {
         activeHostedBandSlide?.cancelInteractive()
         if let spaceSwipeMonitor { NSEvent.removeMonitor(spaceSwipeMonitor) }

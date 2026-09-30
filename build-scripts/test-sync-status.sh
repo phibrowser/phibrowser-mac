@@ -46,7 +46,7 @@ fixture = fixture.replace('        /* PUSH_KEY */', push + '        _ = key')
 Path(sys.argv[2]).write_text(fixture)
 PY
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
-  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" \
+  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_root/Sources/Sync/Keys/SyncProfileMappingPause.swift" \
   "$task_build/ConflictFixture.swift" "$task_root/Tests/SyncStatus/main.swift" -o "$task_build/tests"
 "$task_build/tests"
 # Plan 10.3: round admission under the unmapped-Profile gate, on the production queue, entry and tail.
@@ -87,6 +87,7 @@ assert '/* ' not in fixture.split('actor RoundAdmissionFixture')[1].split('priva
 Path(sys.argv[2]).write_text(fixture)
 PY
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
-  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_build/RoundAdmission.swift" \
+  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_root/Sources/Sync/Keys/SyncProfileMappingPause.swift" \
+  "$task_build/RoundAdmission.swift" \
   -o "$task_build/admission"
 "$task_build/admission"

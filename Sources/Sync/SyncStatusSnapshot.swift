@@ -204,3 +204,92 @@ final class SyncStatusState: @unchecked Sendable {
         return value.revision
     }
 }
+
+/// What the Sync pane shows for the helper's report, with the Profile mapping pause and the
+/// unread Profile list laid over the summary (plan 2026-09-29, 4.5, 10.7 and 10.10). Computed
+/// from the report on every read and never stored: the completion of a round admitted before
+/// the pause still writes the phase, so a pause written once would be overwritten.
+///
+/// Precedence, highest first:
+/// 1. Reset required or reconfiguration: the summary and the Sync now control as they are,
+///    nothing about the pause or the list. Retry cannot fix a reset.
+/// 2. Not started (unpaired or ineligible): as it is.
+/// 3. Pause shown (`.paused`): headline Sync paused over any summary (Syncing, Up to date,
+///    Offline, Needs attention, a leftover Syncing of plan note N35), the reason, the failure
+///    category, the Profiles, and Retry in place of Sync now.
+/// 4. Profile list not enumerated for `profileListWaitLine` or more: the summary with the
+///    waiting line; from `profileListWaitAttention` the headline is Needs attention. Sync now
+///    stays; no Retry, because the list read is retried automatically.
+/// 5. Otherwise, the grace included: the summary and Sync now as they are. A Sync now during
+///    the grace is reported queued Busy by the helper and shows as waiting.
+///
+/// Foundation only: carries enums, counts and local Profile display names, never identifiers.
+struct SyncStatusPresentation: Equatable {
+    enum Headline: Equatable {
+        case phase(SyncSummaryPhase)
+        case paused
+    }
+
+    /// The local Profiles the pause waits for, by display name. Ids that no longer resolve
+    /// to a name (a Profile deleted meanwhile) are left out.
+    enum PausedProfiles: Equatable {
+        /// One to `maximumNamedProfiles` names, sorted for display.
+        case names([String])
+        /// More names than that.
+        case count(Int)
+        /// None of the ids resolved.
+        case unnamed
+    }
+
+    struct Pause: Equatable {
+        let reason: SyncProfileMappingPause.Reason
+        let failure: SyncProfileMappingFailureCategory?
+        let profiles: PausedProfiles
+    }
+
+    let headline: Headline
+    /// The Sync now control; hidden while Retry is shown.
+    let syncNow: SyncNowButtonState
+    /// Retry in the Sync now slot; it runs the Profile mapping repair pass.
+    let showsRetry: Bool
+    let pause: Pause?
+    /// The Profile list has not been enumerated for `profileListWaitLine` or more.
+    let showsProfileListWait: Bool
+    /// False when the pause cancelled the Sync now request: the control returns to idle and
+    /// nothing is announced for that request.
+    let announcesSyncNowOutcome: Bool
+
+    /// The unread list is shown as a problem line after this long (the list retry reaches
+    /// its 30-second cap at about this time, plan note N59).
+    static let profileListWaitLine: TimeInterval = 30
+    /// ... and as Needs attention after this long: several capped retries have failed.
+    static let profileListWaitAttention: TimeInterval = 5 * 60
+    /// Up to this many Profiles are named; more are counted.
+    static let maximumNamedProfiles = 3
+
+    static func present(summary: SyncSummaryPhase, request: SyncRequestState,
+                        profileMappingPause: SyncProfileMappingPauseStatus,
+                        syncNowCancelledByPause: Bool, profileListNotEnumeratedSince: Date?,
+                        resetRequired: Bool, profileNames: [String: String], now: Date) -> Self {
+        let button = SyncNowButtonState.reduce(summary: summary, request: request)
+        let announces = !syncNowCancelledByPause
+        guard !resetRequired, summary != .notStarted else {
+            return Self(headline: .phase(summary), syncNow: button, showsRetry: false, pause: nil,
+                        showsProfileListWait: false, announcesSyncNowOutcome: announces)
+        }
+        if case let .paused(reason, failure, ids) = profileMappingPause {
+            let names = ids.compactMap { profileNames[$0] }
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            let profiles: PausedProfiles = names.isEmpty ? .unnamed
+                : names.count > maximumNamedProfiles ? .count(names.count) : .names(names)
+            let hidden = SyncNowButtonState(isVisible: false, isEnabled: false, showsProgress: false, hint: .none)
+            return Self(headline: .paused, syncNow: hidden, showsRetry: true,
+                        pause: Pause(reason: reason, failure: failure, profiles: profiles),
+                        showsProfileListWait: false, announcesSyncNowOutcome: announces)
+        }
+        let waited = profileListNotEnumeratedSince.map { now.timeIntervalSince($0) } ?? -1
+        let headline: Headline = waited >= profileListWaitAttention ? .phase(.needsAttention) : .phase(summary)
+        return Self(headline: headline, syncNow: button, showsRetry: false, pause: nil,
+                    showsProfileListWait: waited >= profileListWaitLine, announcesSyncNowOutcome: announces)
+    }
+}

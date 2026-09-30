@@ -48,7 +48,7 @@ PYEXTRACT
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" "$task_root/Sources/Sync/Keys/PhiKeyCrypto.swift" \
   "$task_build/ProfileCandidatesFixture.swift" \
-  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" \
+  "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_root/Sources/Sync/Keys/SyncProfileMappingPause.swift" \
   "$task_root/Sources/Sync/Keys/SyncPairingState.swift" \
   "$task_build/EngineStopSignal.swift" "$task_build/Gate.swift" "$task_root/Tests/SyncPairing/GateDependencies.swift" \
   "$task_build/PreviewFixture.swift" "$task_build/KeyReadinessFixture.swift" "$task_root/Tests/SyncPairing/main.swift" -o "$task_build/tests"

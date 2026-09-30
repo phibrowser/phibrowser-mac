@@ -74,6 +74,126 @@ import Foundation
         await profileMappingPauseQueuesSyncNow()
         await profileMappingPauseCheckedAfterEveryRead()
         await profileListNotEnumeratedIsReported()
+        statusPresentationOverlaysThePause()
+        statusPresentationPrecedence()
+        statusPresentationGraceAndCancelledSyncNow()
+        statusPresentationProfileListWait()
+        statusPresentationProfileNames()
+    }
+
+    static let overlayNow = Date(timeIntervalSince1970: 10_000)
+    static let overlayNames = ["Profile 1": "Work", "Profile 2": "Home", "Profile 3": "alpha",
+                               "Profile 4": "Travel", "Profile 5": "Kids"]
+
+    static func overlay(_ summary: SyncSummaryPhase, _ pause: SyncProfileMappingPauseStatus = .none,
+                        request: SyncRequestState = .idle, cancelled: Bool = false,
+                        listSince: TimeInterval? = nil, reset: Bool = false,
+                        names: [String: String] = overlayNames) -> SyncStatusPresentation {
+        SyncStatusPresentation.present(summary: summary, request: request, profileMappingPause: pause,
+            syncNowCancelledByPause: cancelled,
+            profileListNotEnumeratedSince: listSince.map { overlayNow.addingTimeInterval(-$0) },
+            resetRequired: reset, profileNames: names, now: overlayNow)
+    }
+
+    /// Plan 4.5 and 10.7: every value of the helper's pause, each reason and failure category.
+    static func statusPresentationOverlaysThePause() {
+        let idleButton = SyncNowButtonState.reduce(summary: .upToDate, request: .idle)
+        for pause in [SyncProfileMappingPauseStatus.none, .grace] {
+            let shown = overlay(.upToDate, pause)
+            precondition(shown.headline == .phase(.upToDate) && shown.pause == nil && !shown.showsRetry
+                         && shown.syncNow == idleButton && !shown.showsProfileListWait,
+                         "Nothing about the pause is shown outside the shown pause (\(pause))")
+        }
+        let reasons: [SyncProfileMappingPause.Reason] = [.registering, .retrying, .needsAttention]
+        let failures: [SyncProfileMappingFailureCategory?] = [nil, .offline, .signInExpired, .serverError, .other]
+        for reason in reasons {
+            for failure in failures {
+                let shown = overlay(.upToDate, .paused(reason: reason, failureCategory: failure,
+                                                       unmappedProfileIds: ["Profile 2"]))
+                precondition(shown.headline == .paused && shown.showsRetry && !shown.syncNow.isVisible
+                             && shown.pause == .init(reason: reason, failure: failure, profiles: .names(["Home"])),
+                             "The shown pause must carry its reason and category (\(reason), \(String(describing: failure)))")
+            }
+        }
+        print("PASS overlay: none and grace show nothing; the shown pause carries reason, category, Profiles and Retry")
+    }
+
+    /// Reset wins over the pause; the pause wins over Syncing (N35's leftover included),
+    /// Up to date, Offline and Needs attention; Not started shows nothing of it.
+    static func statusPresentationPrecedence() {
+        let pause = SyncProfileMappingPauseStatus.paused(reason: .retrying, failureCategory: .offline,
+                                                         unmappedProfileIds: ["Profile 1"])
+        for summary in [SyncSummaryPhase.syncing, .upToDate, .offline, .needsAttention, .checking, .initialSync] {
+            let shown = overlay(summary, pause, request: .inFlight(startedAt: overlayNow))
+            precondition(shown.headline == .paused && shown.showsRetry && !shown.syncNow.isVisible,
+                         "The shown pause must win over \(summary)")
+        }
+        let reset = overlay(.needsAttention, pause, reset: true)
+        precondition(reset.headline == .phase(.needsAttention) && reset.pause == nil && !reset.showsRetry
+                     && reset.syncNow == SyncNowButtonState.reduce(summary: .needsAttention, request: .idle),
+                     "Reset required must win over the pause: Retry cannot fix a reset")
+        let resetWaiting = overlay(.checking, listSince: 600, reset: true)
+        precondition(resetWaiting.headline == .phase(.checking) && !resetWaiting.showsProfileListWait,
+                     "Reset required must win over the list wait")
+        let notStarted = overlay(.notStarted, pause)
+        precondition(notStarted.headline == .phase(.notStarted) && notStarted.pause == nil
+                     && !notStarted.showsRetry && !notStarted.syncNow.isVisible, "Not started shows no pause")
+        let both = overlay(.checking, pause, listSince: 600)
+        precondition(both.headline == .paused && !both.showsProfileListWait, "The shown pause wins over the list wait")
+        print("PASS overlay: reset wins over the pause; the pause wins over Syncing, Up to date, Offline and the list wait")
+    }
+
+    /// N46: a Sync now during the grace shows as waiting; a request the pause cancelled
+    /// returns the control to idle without an announcement.
+    static func statusPresentationGraceAndCancelledSyncNow() {
+        let grace = overlay(.syncing, .grace, request: .queued(reason: .busy, notBefore: nil))
+        precondition(grace.headline == .phase(.syncing) && grace.pause == nil && !grace.showsRetry
+                     && grace.syncNow == .init(isVisible: true, isEnabled: false, showsProgress: true,
+                                               hint: .waitingForCurrentSync) && grace.announcesSyncNowOutcome,
+                     "A Sync now during the grace shows as queued Busy")
+        let pause = SyncProfileMappingPauseStatus.paused(reason: .registering, failureCategory: nil,
+                                                         unmappedProfileIds: ["Profile 1"])
+        let cancelled = overlay(.upToDate, pause, cancelled: true)
+        precondition(!cancelled.announcesSyncNowOutcome && cancelled.syncNow.hint == .none
+                     && !cancelled.syncNow.showsProgress, "A cancelled Sync now is neither announced nor failed")
+        let resumed = overlay(.upToDate, .none, cancelled: false)
+        precondition(resumed.announcesSyncNowOutcome && resumed.syncNow == SyncNowButtonState.reduce(summary: .upToDate, request: .idle),
+                     "After the pause the control is idle and outcomes are announced again")
+        print("PASS overlay: a Sync now in the grace shows as waiting; a cancelled one ends silently")
+    }
+
+    /// AM-1 / review R3: the unread Profile list shows a line from 30 s and Needs attention
+    /// from 5 minutes, never Retry.
+    static func statusPresentationProfileListWait() {
+        let early = overlay(.checking, listSince: 29)
+        precondition(early.headline == .phase(.checking) && !early.showsProfileListWait, "Under 30 s shows nothing")
+        let line = overlay(.checking, listSince: 30)
+        precondition(line.headline == .phase(.checking) && line.showsProfileListWait && !line.showsRetry,
+                     "From 30 s the waiting line is shown with the summary")
+        let late = overlay(.checking, listSince: 299)
+        precondition(late.headline == .phase(.checking) && late.showsProfileListWait)
+        let attention = overlay(.checking, listSince: 300)
+        precondition(attention.headline == .phase(.needsAttention) && attention.showsProfileListWait
+                     && !attention.showsRetry && attention.syncNow.isVisible && attention.pause == nil,
+                     "From 5 minutes Needs attention with the line, and no Retry")
+        let read = overlay(.upToDate, listSince: nil)
+        precondition(read.headline == .phase(.upToDate) && !read.showsProfileListWait)
+        print("PASS overlay: the unread Profile list shows a line from 30 s and Needs attention from 5 minutes, no Retry")
+    }
+
+    /// Names for one to three Profiles, a count above that; an id that no longer resolves is left out.
+    static func statusPresentationProfileNames() {
+        func profiles(_ ids: [String]) -> SyncStatusPresentation.PausedProfiles? {
+            overlay(.upToDate, .paused(reason: .registering, failureCategory: nil, unmappedProfileIds: ids)).pause?.profiles
+        }
+        precondition(profiles(["Profile 1", "Profile 3", "Profile 2"]) == .names(["alpha", "Home", "Work"]),
+                     "Up to three names, sorted for display")
+        precondition(profiles(["Profile 1", "Profile 2", "Profile 3", "Profile 4"]) == .count(4), "Four are counted")
+        precondition(profiles(["Profile 1", "Gone"]) == .names(["Work"]), "An id that does not resolve is not listed")
+        precondition(profiles(["Profile 1", "Profile 2", "Profile 3", "Gone", "Also gone"]) == .names(["alpha", "Home", "Work"]),
+                     "Only resolved names are counted")
+        precondition(profiles(["Gone"]) == .unnamed, "No resolved name: the card says a profile without naming it")
+        print("PASS overlay: one to three Profiles by name, more by count; unresolved ids are left out")
     }
 
     /// Review R3: the report says since when the engine gate has been on because the Profile

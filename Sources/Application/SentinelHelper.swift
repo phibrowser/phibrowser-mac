@@ -282,9 +282,16 @@ enum AuthenticatedSentinelSessionLifecycle {
     /// boundary was cleared. This is not part of ordinary Guest lifecycle:
     /// the termination request is reserved for the exceptional case where an
     /// already running Sentinel may still possess the previous account token.
+    /// It goes through the browser-update termination request, the only
+    /// browser-owned stop path that bypasses Sentinel's quit guard while Phi
+    /// is running; a plain quit would be refused and show a quit alert.
     static func containCredentialBoundaryFailure() {
         SentinelWatchdog.shared.stop()
-        SentinelHelper.terminate()
+        if SentinelHelper.requestTerminationForBrowserUpdate() {
+            AppLogInfo("Stopped Sentinel after credential boundary cleanup failure")
+        } else {
+            AppLogError("Sentinel did not exit after credential boundary cleanup failure; it may still hold the previous account token")
+        }
     }
 
     private static func schedulePhiReactivationAfterRegistration() {
@@ -371,17 +378,6 @@ enum SentinelHelper {
 
     static func launch() {
         ensureRunning(identifier: loginItemIdentifier())
-    }
-
-    static func terminate() {
-        let identifier = loginItemIdentifier()
-        for app in NSWorkspace.shared.runningApplications {
-            guard let bundleID = app.bundleIdentifier,
-                  bundleID.caseInsensitiveCompare(identifier) == .orderedSame,
-                  !app.isTerminated else { continue }
-            app.terminate()
-            AppLogInfo("Sent terminate signal to Sentinel (pid \(app.processIdentifier))")
-        }
     }
 
     static func terminateAll() {

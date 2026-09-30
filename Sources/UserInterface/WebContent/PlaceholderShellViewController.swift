@@ -55,11 +55,20 @@ final class PlaceholderShellViewController: NSViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// See `WebContentViewController.paintsOwnBackdrop`.
+    var paintsOwnBackdrop = true {
+        didSet {
+            guard isViewLoaded else { return }
+            (view as? ColoredVisualEffectView)?.suppressesBackdrop = !paintsOwnBackdrop
+        }
+    }
+
     override func loadView() {
         let root = PlaceholderShellRootView()
         root.themedBackgroundColor = .windowOverlayBackground
         root.material = .fullScreenUI
         root.wantsLayer = true
+        root.suppressesBackdrop = !paintsOwnBackdrop
         self.view = root
         setupView()
         observeLayoutMode()

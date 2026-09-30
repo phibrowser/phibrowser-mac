@@ -188,8 +188,11 @@ Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
 A generation fence also rejects old rounds after rapid re-enrollment.
 
-The pause while a local Profile is unmapped is a separate, softer stop. The
-engine keeps an in-memory, lock-protected gate beside the stop signal
+The pause while a local Profile is unmapped is a separate, softer stop.
+Comments in the sync sources cite identifiers such as AM-1, R2, D20 or 10.2; they
+refer to the implementation plan kept in the company knowledge base under
+`30-projects/phinomenon/sync-service/design/2026-09-29-sync-profile-pause-and-loading-plan.md`.
+The engine keeps an in-memory, lock-protected gate beside the stop signal
 (`PhiSyncEngine.setProfileMappingPause(_:)`, read back through
 `isProfileMappingPaused`), which the coordinator sets and clears synchronously
 on the main actor. It takes effect at round boundaries: `run(_:)` reads it once,
@@ -228,8 +231,9 @@ the episode and the outputs before it applies any difference:
 Triggers: the Profile-list sink, the `.phiProfileMappingsDidResolve` and
 `.phiProfileAutoCreateDidRun` observers, the episode's 15-second mark, the end of
 engine build (before any round is requested), `activatePairedSync()`,
-`startPhiSyncIfReady()` and the unlock observer before they enable work, and
-teardown. A pause never aborts a round, never bumps the generation and never
+`startPhiSyncIfReady()` and the unlock observer before they enable work, the
+Profile-list retry after each read, a repair pass skipped because reconfiguration
+is required, and teardown. A pause never aborts a round, never bumps the generation and never
 stops or starts the invalidation coordinator; the invalidation stream stays
 connected and the pulls it requests return at admission. Nothing about it is
 persisted.
@@ -481,8 +485,9 @@ admitted before the pause still writes the phase. Precedence, highest first:
 
 A Sync now request that the pause cancelled (`syncNowCancelledByPause`) returns the control to
 idle and is not announced. The pause row (title and lines) is one accessibility element;
-Retry has its own label; VoiceOver announces "Sync resumed" when a shown pause ends, but not
-when it gives way to a reset. The pane shows Profile display names, resolved from
+Retry has its own label; VoiceOver announces "Sync resumed" only when a shown pause gives way
+to a normal summary, not when it gives way to a reset or Not started
+(`SyncStatusPresentation.announcesResume`). The pane shows Profile display names, resolved from
 `ProfileManager` by id, and localized categories, never identifiers or error text. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
@@ -504,7 +509,10 @@ What the pane shows, as a contract:
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round
-  clears it. Held items alone produce no line.
+  clears it. Held items alone produce no line. The pause row omits it; the
+  pause's own failure-category line takes its place. When the headline is Needs
+  attention only because of the Profile list wait, the row keeps the last problem
+  line but not the "Some content needs attention" line, which follows the summary.
 - **Per-kind rows.** Inside Details the Phi data context lists one row per
   supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs, URL rules): the
   received and sent counts of the kind's most recent sync with changes, with how

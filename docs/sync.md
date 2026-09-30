@@ -459,7 +459,26 @@ phase and `Report.request` to the control (Queued Busy: waiting for the current 
 Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
 Rejected: could not start); the pane adds its own unlock and pairing check. The view alone
 turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
-no user-facing strings. Local
+no user-facing strings.
+
+The pane lays the Profile mapping pause and the unread Profile list over the summary with
+`SyncStatusPresentation.present` (`SyncStatusSnapshot.swift`, Foundation only), computed from
+the last report on every 3-second read and never stored, because the completion of a round
+admitted before the pause still writes the phase. Precedence, highest first:
+
+| State in the report and the pane | Pane shows |
+| --- | --- |
+| Reconfiguration required, or the native last problem is Reset required | The summary and Sync now as they are; nothing of the pause or the list wait. Retry cannot fix a reset |
+| Summary Not started | As it is (no control) |
+| `profileMappingPause == .paused` | Headline "Sync paused" over any summary (Syncing, including a Syncing left from a round queued before the gate, Up to date, Offline, Needs attention, Checking), a reason line (setting up / trying again / needs attention), a line for the failure category when there is one (offline wording only for Offline; sign-in expired, server error, other), the Profiles by display name (one to three names; above three a count; ids that no longer resolve are left out; none resolved: "A profile"), the last success time, and Retry in the Sync now slot with the same fixed space. Retry calls `PhiChromiumCoordinator.retryProfileMappingRepair()` |
+| `profileListNotEnumeratedSince` 30 s or more ago | The summary with the line "Waiting for profiles to load"; from 5 minutes the headline is Needs attention. Sync now stays; no Retry, because the list read is retried automatically |
+| Grace (`.none` during the first 15 s of an episode) and no episode | The summary and Sync now as they are; a Sync now during the grace is queued Busy and shows "Waiting for current sync". A Syncing left from a round queued before the gate stays visible for up to those 15 s |
+
+A Sync now request that the pause cancelled (`syncNowCancelledByPause`) returns the control to
+idle and is not announced. The pause row (title and lines) is one accessibility element;
+Retry has its own label; VoiceOver announces "Sync resumed" when a shown pause ends, but not
+when it gives way to a reset. The pane shows Profile display names, resolved from
+`ProfileManager` by id, and localized categories, never identifiers or error text. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including

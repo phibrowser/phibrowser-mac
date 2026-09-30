@@ -96,6 +96,9 @@ protocol PhiSpaceLocalAccess: AnyObject {
     /// Second tag-index seed (§3.4): a wizard-mapped Space may lack a cursor before its first commit, while
     /// the account tombstone can arrive first.
     func allSpaceMappings() -> [String: String]
+    /// Whether a local deletion of this Space has started and is not yet recorded in the table (§9.2): the
+    /// apply loop must neither land it nor treat its vanished row as a dead mapping.
+    func isBeingDeletedLocally(syncUuid: String) -> Bool
 
     /// Pairing step-2 local column (§5.4), applying only §6.5 identity exclusions: incognito and both agent
     /// characteristics. Include default Space and do not require mapped Profiles. That is a publication
@@ -239,6 +242,10 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     func allSpaceMappings() -> [String: String] {
         controller?.allSpaceMappings() ?? [:]
+    }
+
+    func isBeingDeletedLocally(syncUuid: String) -> Bool {
+        PhiSpaceSyncState.shared.isBeingDeletedLocally(syncUuid: syncUuid)
     }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool {

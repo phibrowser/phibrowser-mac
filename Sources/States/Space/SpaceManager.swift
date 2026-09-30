@@ -6204,12 +6204,6 @@ final class SpaceManager: ObservableObject {
             AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
         }
-        // Delete origin (§9.1). Every user-visible delete already funnels here:
-        // the strip, Settings > Spaces, the app menu, the CDP
-        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
-        // helper marks ONLY a uuid with an entityId, which is what makes the
-        // orphan sweep silent: agent Spaces never get one.
-        MainActor.assumeIsolated { PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId) }
         // Cascade-delete the Space, tagged tabs/bookmarks and rules in one transaction to prevent ghost
         // Spaces/orphan rows after a crash and inconsistent intermediate UI publications.
         // LocalStore.deleteSpace leaves the cascade decision to callers. Rules must be removed too, or remain
@@ -6222,11 +6216,31 @@ final class SpaceManager: ObservableObject {
             return
         }
         let deletionStoreIdentifier = storeIdentifier
+        // Delete origin (§9.1). Every user-visible delete already funnels here:
+        // the strip, Settings > Spaces, the app menu, the CDP
+        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
+        // account identity is captured now, while the mapping still resolves, and
+        // marked as being deleted so a sync round already in flight does not
+        // re-land the Space the cascade removes (§9.2). nil for an unmapped Space:
+        // agent Spaces never get a mapping, which keeps the orphan sweep silent.
+        let syncUuid = MainActor.assumeIsolated {
+            PhiSpaceSyncState.shared.beginLocalDeletion(spaceId: spaceId)
+        }
         Task { @MainActor [weak self] in
             do {
                 try await account.localStorage.deleteSpaceCascadeThrowing(
                     spaceId: spaceId, origin: .userIntent)
-                guard let self, self.storeIdentifier == deletionStoreIdentifier else { return }
+                guard let self, self.storeIdentifier == deletionStoreIdentifier else {
+                    // The account changed under the cascade; its engine went with it.
+                    if let syncUuid { PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid) }
+                    return
+                }
+                // Only after the cascade committed: a failed cascade leaves the Space in
+                // the strip, and a tombstone for it would delete it on every other device
+                // and re-mint it here. The table marks ONLY a uuid with an entityId.
+                if let syncUuid {
+                    PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId, syncUuid: syncUuid)
+                }
                 self.clearThemeRecords(forSpaceId: spaceId)
                 // Publish the committed list before revealing pips again, even
                 // if the store publisher's delivery is still queued.
@@ -6234,6 +6248,8 @@ final class SpaceManager: ObservableObject {
                 self.pendingDeletionSpaceIds.remove(spaceId)
                 self.reloadURLRulesFromStore()
             } catch {
+                // Nothing was delivered, so there is nothing to roll back in sync.
+                if let syncUuid { PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid) }
                 if self?.storeIdentifier == deletionStoreIdentifier {
                     self?.pendingDeletionSpaceIds.remove(spaceId)
                 }
@@ -7603,6 +7619,7 @@ final class SpaceManager: ObservableObject {
     func bind(to account: Account) {
         guard boundAccount !== account || isStoreBindingSuspended else { return }
         guard MainActor.assumeIsolated({ !account.localStorage.isClosedForAccountDirectoryRemoval }) else { return }
+        let rebindsSameAccount = boundAccount === account
         suspendStoreBinding()
         pendingDeletionSpaceIds.removeAll()
         boundAccount = account
@@ -7647,7 +7664,17 @@ final class SpaceManager: ObservableObject {
         }
         lastStoreSpaces = Space.reconcile(seededSpaces, with: spaces)
         spaces = lastStoreSpaces
-        cachedURLRules = MainActor.assumeIsolated { account.localStorage.getAllURLRules() }
+        // A failed read must not replace this account's routing table with []. Rebinding the same
+        // account after a suspension keeps its previous rules, which Chromium still holds. Another
+        // account's rules must not route here, so they are cleared (after an unbind they already are).
+        // The flag is still raised so held external opens are released; the rules publisher below reads
+        // again on subscription and after every save, and its first readable snapshot replaces the cache.
+        if let rules = MainActor.assumeIsolated({ account.localStorage.readableURLRules() }) {
+            cachedURLRules = rules
+        } else {
+            AppLogError("[SpaceManager] URL rule read failed at bind; waiting for the rules publisher")
+            if !rebindsSameAccount { cachedURLRules = [] }
+        }
         hasLoadedURLRules = true
         isStoreBindingSuspended = false
 
@@ -7934,10 +7961,17 @@ final class SpaceManager: ObservableObject {
     /// Do not cache the resolver (R-M3-4a-46): pushRoutingTableToChromium resolves tie-break keys anew per
     /// payload. Main-actor isolation is required because getAllURLRules reads mainContext, as for
     /// applyRemoteRebind.
+    ///
+    /// A failed store read keeps the previous cache and skips the push: replacing it with [] would clear every
+    /// rule in Chromium's routing table until the next successful reload.
     @MainActor
     func reloadURLRulesFromStore() {
         guard let account = boundAccount else { return }
-        cachedURLRules = account.localStorage.getAllURLRules()
+        guard let rules = account.localStorage.readableURLRules() else {
+            AppLogError("[SpaceManager] URL rule reload failed; keeping the previous routing table")
+            return
+        }
+        cachedURLRules = rules
         hasLoadedURLRules = true
         urlRuleReloadCountForTesting += 1
         // §5.8 item 3: applyRuleEdits and every §6.6 write end here, ensuring every cache replacement emits a

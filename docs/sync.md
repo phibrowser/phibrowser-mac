@@ -498,7 +498,9 @@ What the pane shows, as a contract:
 
 - **States.** The status row shows Not started (unpaired), Checking, Initial sync,
   Syncing, Up to date (with the common completion time), Offline or Needs
-  attention. There is no Paused state, and the account email is not shown.
+  attention. The summary has no Paused state, and the account email is not
+  shown. The one pause the pane shows is the Profile mapping pause, laid over
+  the summary as "Sync paused" by the precedence table above.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round
@@ -511,10 +513,12 @@ What the pane shows, as a contract:
   those have their own numbers; no unsupported category is shown as available.
 - **Never shown.** Only categorized problems and counts reach the pane. It never
   shows internal error text, HTTP status numbers, identifiers, names, URLs or
-  hosts, or any other user content.
+  hosts, or any other user content. The one exception is the display names of
+  the Profiles a shown mapping pause waits for.
 - **Sync now.** The button appears in the status row's trailing control slot only
   when pairing is complete and the key is unlocked; an unpaired (not set up) or
-  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key, account or
+  locked Mac shows no button. Offline and Needs attention keep it available.
+  While the pane shows the Profile mapping pause, Retry takes its slot. It never bypasses the pairing, key, account or
   rate-limit gates. A tap is coalesced with a round already running and is subject
   to the shared 60-second minimum interval. Only the user's own request is shown:
   opening the pane and background sync never make the button spin or report a

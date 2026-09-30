@@ -93,7 +93,7 @@ final class SyncKeyController {
     private let isPairingComplete: @MainActor () -> Bool
     /// `ProfileManager.isProfileListEnumerated`: until the list has been read once, an
     /// empty `localProfilesProvider()` answer says nothing about which Profiles exist, so
-    /// the unmapped evidence is not pruned against it (plan 2026-09-29, AM-1).
+    /// the unmapped evidence is not pruned against it (docs/sync.md, "Enrollment and setup").
     private let isProfileListEnumerated: @MainActor () -> Bool
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
@@ -169,7 +169,7 @@ final class SyncKeyController {
     func noteUndecryptableRemote(_ uuid: String) { undecryptableRemoteUuids.insert(uuid) }
     func noteDecryptableRemote(_ uuid: String) { undecryptableRemoteUuids.remove(uuid) }
 
-    // MARK: - Profile mapping pause inputs (plan 2026-09-29)
+    // MARK: - Profile mapping pause inputs (docs/sync.md, "Enrollment and setup")
     //
     // Read the way the two pairing predicates above are read: every write lands
     // before the `.phiProfileMappingsDidResolve` that announces it, so an observer
@@ -508,8 +508,8 @@ final class SyncKeyController {
     /// `clearResolved()`'s. Only the branch that ASSIGNS the two predicates
     /// announces `.measured`.
     ///
-    /// Registration failures are classified, never swallowed (plan 2026-09-29,
-    /// BH-15). A transient one (transport, offline, 5xx, 401/403, still locked)
+    /// Registration failures are classified, never swallowed. A
+    /// transient one (transport, offline, 5xx, 401/403, still locked)
     /// holds the pass exactly like an unknown local: the Profile it could not
     /// register must not read as "measured, unmapped", which is an answer. A
     /// definitive one (bad envelope, an unexpected 4xx) still measures, and
@@ -633,7 +633,7 @@ final class SyncKeyController {
             // Registration waits only for an account Profile that §3.6's twin search
             // or auto-create can still claim onto this Mac, so a same-named local is
             // adopted rather than forked. Two kinds can never be claimed that way and
-            // must not hold registration forever (plan 2026-09-29, A4): an envelope
+            // must not hold registration forever: an envelope
             // that does not open under this ARK, and a uuid the persisted mapping
             // already gives to a local Profile that no longer exists (auto-create
             // deliberately never grows that one back).
@@ -792,7 +792,7 @@ final class SyncKeyController {
         return .measured
     }
 
-    /// Plan 2026-09-29 §4.3: the one entry the pause's retry drives. §3.6's
+    /// The one entry the pause's retry drives. §3.6's
     /// auto-create (twin search, then create) runs FIRST and the mapping pass
     /// second: an account Profile that auto-create claims leaves the unclaimed set
     /// before the pass decides whether to register, so a same-named local is
@@ -955,7 +955,7 @@ final class SyncKeyController {
     /// has a profile this Mac does not" is exactly the ambiguity the modal exists
     /// to resolve, and auto-claiming would take the choice away from the user.
     ///
-    /// Single-flight since the repair pass (plan 2026-09-29 §4.3) calls it from
+    /// Single-flight since the repair pass calls it from
     /// outside the engine as well: two rounds interleaving at their awaits would
     /// both see the same uuid missing and each create a Profile for it. A caller
     /// arriving mid-round gets that round's outcome.

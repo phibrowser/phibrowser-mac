@@ -257,7 +257,7 @@ struct MappingPassTests {
         precondition(!s.pause().isPaused)
     }
 
-    /// Deviation recorded in the plan: a uuid the persisted mapping gives to a
+    /// A uuid the persisted mapping gives to a
     /// deleted local is never grown back, so it must not hold registration either.
     @MainActor static func deletedLocalMappingDoesNotBlock() async throws {
         let s = Stack(); defer { s.close() }

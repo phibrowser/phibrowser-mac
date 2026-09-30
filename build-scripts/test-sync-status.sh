@@ -49,7 +49,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/
   "$task_root/Sources/Sync/SyncStatusSnapshot.swift" "$task_root/Sources/Sync/Keys/SyncProfileMappingPause.swift" \
   "$task_build/ConflictFixture.swift" "$task_root/Tests/SyncStatus/main.swift" -o "$task_build/tests"
 "$task_build/tests"
-# Plan 10.3: round admission under the unmapped-Profile gate, on the production queue, entry and tail.
+# Round admission under the unmapped-Profile gate, on the production queue, entry and tail.
 python3 - "$task_root" "$task_build/RoundAdmission.swift" <<'PY'
 from pathlib import Path
 import sys

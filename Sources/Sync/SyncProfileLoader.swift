@@ -1,7 +1,7 @@
 import Foundation
 
 /// Loads every mapped user Profile that is not in memory, so that its Chromium sync runs
-/// without a window (plan 2026-09-29, section 4.6; docs/sync.md, "Profile loading").
+/// without a window (docs/sync.md, "Profile loading").
 /// Decisions only: the owner supplies the Profile list, the checks, the load call and a
 /// timer, which is what lets `build-scripts/test-sync-profile-loader.sh` run it hostless.
 ///

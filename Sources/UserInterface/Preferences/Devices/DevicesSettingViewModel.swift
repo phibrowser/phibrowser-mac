@@ -30,7 +30,7 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var requestState: SyncRequestState = .idle
     @Published private(set) var nativeDetail: SyncNativeDetail?
     /// The helper report's pause fields as last read; `statusPresentation` lays them over the
-    /// summary on every read (plan 2026-09-29, 10.10), and nothing else interprets them.
+    /// summary on every read (docs/sync.md, "Sync status contract"), and nothing else interprets them.
     @Published private(set) var profileMappingPause: SyncProfileMappingPauseStatus = .none
     @Published private(set) var syncNowCancelledByPause = false
     @Published private(set) var profileListNotEnumeratedSince: Date?

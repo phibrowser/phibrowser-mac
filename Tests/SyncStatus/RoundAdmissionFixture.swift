@@ -186,7 +186,7 @@ enum AdmissionFailure: Error { case assertion(String) }
                    "The admitted round finishes with every write and its tail; the queued push is turned away: \(events)")
     }
 
-    /// Review R8, the admission constraint of 10.10: a round queued while the gate is off and
+    /// Review R8, the admission constraint: a round queued while the gate is off and
     /// still waiting when it comes on is turned away when it runs. Round A is parked in its
     /// network call; round B is queued behind it with the gate off; only after the fixture
     /// acknowledges that B is in the queue does the gate come on; A then finishes completely.
@@ -208,7 +208,7 @@ enum AdmissionFailure: Error { case assertion(String) }
                    "Round A finishes with its favicon tail; round B, queued before the gate, is turned away: \(events)")
     }
 
-    /// Plan 10.3 exemptions and AM-3: the preview, the Space gate edge and the local deletion intent
+    /// Exemptions (AM-3): the preview, the Space gate edge and the local deletion intent
     /// run while the gate is on; the last two skip the favicon tail.
     static func testExemptions() async throws {
         let engine = RoundAdmissionFixture()

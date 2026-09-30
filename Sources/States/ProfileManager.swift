@@ -60,8 +60,8 @@ final class ProfileManager: ObservableObject {
     @Published private(set) var profiles: [PhiBrowserProfile] = []
     /// True once a bridge read has returned a complete, non-empty Profile list; never
     /// reset. Until then `profiles` is empty because nothing has been read, not because
-    /// there is nothing to sync, so sync admits no round before it (plan 2026-09-29,
-    /// AM-1; docs/sync.md, "Enrollment and setup"). Set before `profiles` is assigned,
+    /// there is nothing to sync, so sync admits no round before it
+    /// (docs/sync.md, "Enrollment and setup"). Set before `profiles` is assigned,
     /// so a `$profiles` subscriber (which runs before the value is stored) reads it true.
     private(set) var isProfileListEnumerated = false
     private var archiveObservers: [NSObjectProtocol] = []

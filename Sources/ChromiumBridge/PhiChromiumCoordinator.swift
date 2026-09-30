@@ -133,8 +133,8 @@ import SwiftUI
     /// that a Profile unloaded after its last window closed.
     private var syncProfileLoaderCancellable: AnyCancellable?
 
-    /// The pause while a local Profile is not mapped to an account Profile (plan 2026-09-29,
-    /// section 10; docs/sync.md, "Enrollment and setup"): its episode, the outputs last
+    /// The pause while a local Profile is not mapped to an account Profile
+    /// (docs/sync.md, "Enrollment and setup"): its episode, the outputs last
     /// applied, the episode's 15-second mark and repair loop. Only
     /// `reconcileProfileMappingPause(profiles:)` drives it, and nothing else sets the engine
     /// gate, `chromiumKeysWithdrawn` or the helper's pause. Main actor only, never persisted.
@@ -142,7 +142,7 @@ import SwiftUI
     /// an unenumerated Profile list, and every output it applies names the object it went to.
     @MainActor private var profileMappingPauseState: SyncProfileMappingPauseReconciler?
 
-    /// The pane's Retry while sync is paused for an unmapped Profile (plan 10.5): an immediate
+    /// The pane's Retry while sync is paused for an unmapped Profile: an immediate
     /// repair pass, and the repair loop's first delay again. Outside an episode it does nothing.
     @MainActor
     func retryProfileMappingRepair() {
@@ -454,7 +454,7 @@ import SwiftUI
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.syncHelper?.membershipDidChange()
-                    // Plan 10.2: the list this sink was given, before any await; `profiles`
+                    // The list this sink was given, before any await; `profiles`
                     // still holds the previous one while the sink runs. The follow-up is chosen
                     // once the episode for these inputs is committed, which is later when this
                     // sink runs inside another reconciliation (review R2).
@@ -817,7 +817,7 @@ import SwiftUI
                     // engine reads the persisted flag when built, so this covers both.
                     && !self.nativeSyncRequiresReconfiguration
             },
-            // N27: the engine gate is on exactly while an episode exists or the Profile list
+            // The engine gate is on exactly while an episode exists or the Profile list
             // has not been enumerated (AM-1).
             isPaused: { [weak self] in self?.phiSyncEngine?.isProfileMappingPaused == true },
             isProfileListEnumerated: { ProfileManager.shared.isProfileListEnumerated },
@@ -882,7 +882,7 @@ import SwiftUI
             // other manager is a cheap no-op.
             Task { @MainActor in
                 // An unlock changes the pause's prerequisites, and retries the repair of an
-                // episode that was already running at once (plan 10.5); an episode this
+                // episode that was already running at once; an episode this
                 // reconciliation starts runs its first pass by itself. Neither does anything
                 // on a device with no episode.
                 let hadEpisode = self?.profileMappingPauseState?.episode != nil
@@ -911,7 +911,7 @@ import SwiftUI
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 // Every pass result, held and cleared ones included, may start or end the
-                // pause (plan 10.2).
+                // pause.
                 self?.reconcileProfileMappingPause()
                 self?.refreshSpaceSyncGate()
                 // C1 step 3, the second half of the re-evaluation: a register naming a Space this device had
@@ -1089,7 +1089,7 @@ import SwiftUI
         // Before any work is enabled: an unmapped Profile keeps the gate on from here.
         reconcileProfileMappingPause()
 
-        // Foreground and wake also retry an episode's repair at once (plan 10.5); without an
+        // Foreground and wake also retry an episode's repair at once; without an
         // episode that call does nothing. Unpairing stops the invalidation coordinator without
         // `stopPhiSync()`, so a start after re-pairing finds the previous tokens (review R6).
         removePhiSyncForegroundAndWakeObservers()
@@ -1416,7 +1416,7 @@ import SwiftUI
         phiSyncEngine = nil
         phiDomainKeys?.clear()
         phiDomainKeys = nil
-        // Plan 10.8: without an engine the prerequisites are gone, so this ends the episode
+        // Without an engine the prerequisites are gone, so this ends the episode
         // (its 15-second mark and repair loop with it) and stops the Profile list retry. A
         // gate and a helper pause applied to the engine just dropped are forgotten with it.
         // So are keys withdrawn from the controller: the only caller,
@@ -1439,9 +1439,9 @@ import SwiftUI
         }
     }
 
-    // MARK: - Profile mapping pause (plan 2026-09-29, section 10)
+    // MARK: - Profile mapping pause (docs/sync.md, "Enrollment and setup")
 
-    /// The one reconciliation (plan 10.2). `profiles` is the list to evaluate: the
+    /// The one reconciliation. `profiles` is the list to evaluate: the
     /// Profile-list sink passes the value it was given, every other caller the current one.
     /// Callers: that sink, the `.phiProfileMappingsDidResolve` and
     /// `.phiProfileAutoCreateDidRun` observers, the episode's 15-second mark and the Profile
@@ -1555,8 +1555,7 @@ import SwiftUI
                      isAccountKeyUnlocked: controller?.manager.currentARK != nil)
     }
 
-    /// The gate went from on to off on the current engine (plan implementation notes, "P4
-    /// must call", item 3): the rounds it turned away are not replayed, so a catch-up (its
+    /// The gate went from on to off on the current engine: the rounds it turned away are not replayed, so a catch-up (its
     /// pull is followed by the publication of every native kind) and the retention sweep are
     /// queued again, and the Profile loader continues. Before `startPhiSyncIfReady()` has
     /// started the schedule nothing was turned away: that start requests its own catch-up and

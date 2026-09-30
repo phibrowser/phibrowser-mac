@@ -95,7 +95,7 @@ import Foundation
             resetRequired: reset, profileNames: names, now: overlayNow)
     }
 
-    /// Plan 4.5 and 10.7: every value of the helper's pause, each reason and failure category.
+    /// Every value of the helper's pause, each reason and failure category.
     static func statusPresentationOverlaysThePause() {
         let idleButton = SyncNowButtonState.reduce(summary: .upToDate, request: .idle)
         for pause in [SyncProfileMappingPauseStatus.none, .grace] {
@@ -118,7 +118,7 @@ import Foundation
         print("PASS overlay: none and grace show nothing; the shown pause carries reason, category, Profiles and Retry")
     }
 
-    /// Reset wins over the pause; the pause wins over Syncing (N35's leftover included),
+    /// Reset wins over the pause; the pause wins over Syncing (a leftover from a round queued before the gate included),
     /// Up to date, Offline and Needs attention; Not started shows nothing of it.
     static func statusPresentationPrecedence() {
         let pause = SyncProfileMappingPauseStatus.paused(reason: .retrying, failureCategory: .offline,
@@ -143,7 +143,7 @@ import Foundation
         print("PASS overlay: reset wins over the pause; the pause wins over Syncing, Up to date, Offline and the list wait")
     }
 
-    /// N46: a Sync now during the grace shows as waiting; a request the pause cancelled
+    /// A Sync now during the grace shows as waiting; a request the pause cancelled
     /// returns the control to idle without an announcement.
     static func statusPresentationGraceAndCancelledSyncNow() {
         let grace = overlay(.syncing, .grace, request: .queued(reason: .busy, notBefore: nil))
@@ -223,7 +223,7 @@ import Foundation
     static let shownPause = SyncProfileMappingPauseStatus.paused(
         reason: .retrying, failureCategory: .offline, unmappedProfileIds: ["Profile 2"])
 
-    /// Plan 10.7: under 15 seconds the helper dispatches nothing and keeps its last report;
+    /// Under 15 seconds the helper dispatches nothing and keeps its last report;
     /// ending the pause is not a membership change.
     @MainActor static func profileMappingPauseGrace() async {
         let f = Fixture(), helper = await f.completedHelper()
@@ -284,7 +284,7 @@ import Foundation
         print("PASS helper: an episode invalidates the round in flight, keeps then cancels its Sync now, and a fresh round follows")
     }
 
-    /// Plan 10.7: a Sync now during the grace stays queued and is dispatched when the
+    /// A Sync now during the grace stays queued and is dispatched when the
     /// episode ends; one during the shown pause is cancelled at once.
     @MainActor static func profileMappingPauseQueuesSyncNow() async {
         let f = Fixture(), helper = await f.completedHelper()

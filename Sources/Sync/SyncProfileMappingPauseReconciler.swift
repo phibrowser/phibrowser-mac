@@ -2,7 +2,7 @@ import Foundation
 
 /// The episode of the pause while a local Profile is not mapped to an account Profile, and
 /// the one reconciliation that derives every output of that pause from the current inputs
-/// (plan 2026-09-29, section 10; docs/sync.md, "Enrollment and setup"). Decisions only:
+/// (docs/sync.md, "Enrollment and setup"). Decisions only:
 /// `PhiChromiumCoordinator` owns the one instance, computes the inputs and supplies the
 /// effects and a timer, which is what lets `build-scripts/test-sync-profile-mapping-episode.sh`
 /// run it hostless.
@@ -96,7 +96,7 @@ final class SyncProfileMappingPauseReconciler {
         /// list has not been enumerated; nil once it has (review R3).
         var publishListNotEnumerated: @MainActor (Date?) -> Void = { _ in }
         /// The gate went from on to off on the current engine: catch-up, retention sweep,
-        /// Profile loader (plan implementation notes, "P4 must call", item 3).
+        /// Profile loader.
         var resume: @MainActor () -> Void
         /// `SyncKeyController.runMappingRepairPass()`; calls the completion when it returns.
         var runRepairPass: @MainActor (@escaping @MainActor () -> Void) -> Void
@@ -228,7 +228,7 @@ final class SyncProfileMappingPauseReconciler {
         chosenFor != nil && chosenFor == current && !hasEpisode
     }
 
-    /// What the Profile-list sink runs after it has reconciled (10.5, AM-4).
+    /// What the Profile-list sink runs after it has reconciled (AM-4).
     enum ProfileListFollowUp: Equatable {
         /// The startup path, unchanged for a device with no episode.
         case silentUnlockAndResolve

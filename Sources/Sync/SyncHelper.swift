@@ -22,7 +22,7 @@ final class SyncHelper {
         var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
         var request: SyncRequestState = .idle
         /// `.paused` while a Profile mapping pause is shown (an episode 15 seconds or older,
-        /// plan 2026-09-29, 10.7); `.none` otherwise, the first 15 seconds included. The
+        /// docs/sync.md, "Sync status contract"); `.none` otherwise, the first 15 seconds included. The
         /// status presentation overlays it on `summary` when it reads the report: the
         /// completion of a round admitted before the pause still writes the phase.
         var profileMappingPause: SyncProfileMappingPauseStatus = .none
@@ -160,7 +160,7 @@ final class SyncHelper {
     }
 
     /// The Profile mapping pause, as the coordinator's reconciliation derives it from the
-    /// episode's age (plan 2026-09-29, 10.7). A path of its own, separate from eligibility
+    /// episode's age (docs/sync.md, "Sync status contract"). A path of its own, separate from eligibility
     /// and from membership changes: it keeps the barrier's membership, the common time and
     /// the rate limit, and no participant is read or asked for a round while it holds.
     ///
@@ -310,7 +310,7 @@ final class SyncHelper {
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             // An episode starting also changes the generation; the pause check is repeated
-            // here in its own right (plan 10.10, AM-2).
+            // here in its own right (AM-2).
             guard mappingPause == .none else { noteMappingPause(); return }
             if let snapshot, snapshot.id == source.id { snapshots[source.id] = snapshot }
         }

@@ -39,7 +39,7 @@ enum SyncProfileMappingFailureCategory: String, Equatable {
 }
 
 /// Pure answer to "must sync pause because a syncable local Profile is not
-/// mapped to an account Profile" (plan 2026-09-29, ruling R1). Foundation only:
+/// mapped to an account Profile" (docs/sync.md, "Enrollment and setup"). Foundation only:
 /// every input arrives as a value, so the coordinator can evaluate it
 /// synchronously from the Profile-list sink and a hostless harness can pin it.
 ///
@@ -101,7 +101,7 @@ struct SyncProfileMappingPause: Equatable {
     }
 }
 
-/// What the Sync status receives about the pause (plan 2026-09-29, 10.7). Derived by the
+/// What the Sync status receives about the pause (docs/sync.md, "Sync status contract"). Derived by the
 /// coordinator's reconciliation from the episode's age and handed to `SyncHelper`; the
 /// helper reports it and the status presentation overlays it when it reads the report.
 /// Carries local Profile ids, never names or account identifiers.

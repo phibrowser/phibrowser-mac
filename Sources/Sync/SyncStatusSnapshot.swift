@@ -206,7 +206,7 @@ final class SyncStatusState: @unchecked Sendable {
 }
 
 /// What the Sync pane shows for the helper's report, with the Profile mapping pause and the
-/// unread Profile list laid over the summary (plan 2026-09-29, 4.5, 10.7 and 10.10). Computed
+/// unread Profile list laid over the summary (docs/sync.md, "Sync status contract"). Computed
 /// from the report on every read and never stored: the completion of a round admitted before
 /// the pause still writes the phase, so a pause written once would be overwritten.
 ///
@@ -215,7 +215,7 @@ final class SyncStatusState: @unchecked Sendable {
 ///    nothing about the pause or the list. Retry cannot fix a reset.
 /// 2. Not started (unpaired or ineligible): as it is.
 /// 3. Pause shown (`.paused`): headline Sync paused over any summary (Syncing, Up to date,
-///    Offline, Needs attention, a leftover Syncing of plan note N35), the reason, the failure
+///    Offline, Needs attention, a leftover Syncing from a round admitted before the gate), the reason, the failure
 ///    category, the Profiles, and Retry in place of Sync now.
 /// 4. Profile list not enumerated for `profileListWaitLine` or more: the summary with the
 ///    waiting line; from `profileListWaitAttention` the headline is Needs attention. Sync now
@@ -260,7 +260,7 @@ struct SyncStatusPresentation: Equatable {
     let announcesSyncNowOutcome: Bool
 
     /// The unread list is shown as a problem line after this long (the list retry reaches
-    /// its 30-second cap at about this time, plan note N59).
+    /// its 30-second cap at about this time).
     static let profileListWaitLine: TimeInterval = 30
     /// ... and as Needs attention after this long: several capped retries have failed.
     static let profileListWaitAttention: TimeInterval = 5 * 60

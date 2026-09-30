@@ -873,8 +873,8 @@ actor PhiSyncEngine {
     private var activePairingRevision: UInt64 = 0
     private var isStopped: Bool { stopSignal.blocksData(revision: activePairingRevision) }
 
-    /// The pause while a local Profile is not mapped to an account Profile (plan 2026-09-29,
-    /// section 10.3). Next to `StopSignal`, not part of it: turning it on never bumps the
+    /// The pause while a local Profile is not mapped to an account Profile
+    /// (docs/sync.md, "Enrollment and setup"). Next to `StopSignal`, not part of it: turning it on never bumps the
     /// generation and no write guard inside a round reads it, so a round already admitted
     /// finishes with its landings, cursor saves, acknowledgements and marker advance. It is read
     /// at round admission in `run(_:)` and, for the Syncing status only, by `serialized(_:)` and
@@ -1535,7 +1535,7 @@ actor PhiSyncEngine {
             return
         }
         guard !isStopped else { return }
-        // Plan 10.3: the unmapped-Profile gate is decided here, after the wait for the previous
+        // The unmapped-Profile gate is decided here, after the wait for the previous
         // round, and only here. The preview has already run above. The local deletion intent and
         // the Space gate edge are local writes that must survive the pause, so they are admitted;
         // every other round returns before it writes anything or shows Syncing. The decision is

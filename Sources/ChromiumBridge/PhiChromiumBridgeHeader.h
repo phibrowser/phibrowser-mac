@@ -1020,6 +1020,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // guard with respondsToSelector: (framework/client version skew).
 - (BOOL)isSameSiteForURL:(NSString *)urlA url:(NSString *)urlB;
 
+/// When `windowId` no longer resolves to a browser, a tab with a non-empty
+/// `customGuid` is dropped: the GUID binds it to that window, and opening it
+/// elsewhere would lose the binding. Without a GUID the URL opens in a new
+/// window.
 - (void)createNewTabWithUrl:(NSString*)urlString
                    windowId:(int64_t)windowId
                  customGuid:(NSString* _Nullable)customGuid
@@ -1032,6 +1036,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                    focusAfterCreate:(BOOL)focus;
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;
+/// Same missing-window rule as the `focusAfterCreate:` variant above: a tab
+/// with a non-empty `customGuid` is dropped, one without opens a new window.
 - (void)createNewTabWithUrl:(NSString*)urlString
                     atIndex:(NSInteger)index
                    windowId:(NSInteger)windowId

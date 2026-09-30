@@ -454,7 +454,7 @@ couldn't read data (with the kind), unreadable tags to unreadable remote data wi
 (the Space table quarantines owned kinds' tags too). It is replaced by the next failing round,
 kept through rounds that neither fail nor succeed, and cleared only by a final Up to date. Held
 items alone produce no category. Invariant, covered by the status harness: a round that ends
-Needs attention always has a non-zero held count or a problem category. R12: the detail has no string field, so it cannot
+Needs attention always has a non-zero held count or a problem category. The detail has no string field, so it cannot
 carry names, identifiers, URLs, hosts, error text or status numbers.
 
 The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now
@@ -493,6 +493,45 @@ loaded user Profiles; it never creates Profiles or sync services. It combines
 transport/auth/crypto/controller state, initial downloads, cycle evidence,
 active-delegate pending counts, and a final backend pending-work fence. The old
 transport-only local-data count API cannot be used for full-sync status.
+
+What the pane shows, as a contract:
+
+- **States.** The status row shows Not started (unpaired), Checking, Initial sync,
+  Syncing, Up to date (with the common completion time), Offline or Needs
+  attention. There is no Paused state, and the account email is not shown.
+- **Last problem.** When this Mac's native sync has recorded a problem, the status
+  row adds one line: a localized category (for example No connection, Sign-in
+  expired, Server error) and a relative time. The next fully successful round
+  clears it. Held items alone produce no line.
+- **Per-kind rows.** Inside Details the Phi data context lists one row per
+  supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs, URL rules): the
+  received and sent counts of the kind's most recent sync with changes, with how
+  long ago that sync was, and the waiting-to-send and held counts only when they
+  are non-zero. There is no Profiles row and no per-category Chromium row until
+  those have their own numbers; no unsupported category is shown as available.
+- **Never shown.** Only categorized problems and counts reach the pane. It never
+  shows internal error text, HTTP status numbers, identifiers, names, URLs or
+  hosts, or any other user content.
+- **Sync now.** The button appears in the status row's trailing control slot only
+  when pairing is complete and the key is unlocked; an unpaired (not set up) or
+  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key, account or
+  rate-limit gates. A tap is coalesced with a round already running and is subject
+  to the shared 60-second minimum interval. Only the user's own request is shown:
+  opening the pane and background sync never make the button spin or report a
+  failure. While the request waits or runs, the button is disabled and shows
+  progress, with a hint: waiting for the current sync (busy), starting shortly
+  (rate limited) or waiting for every profile to report status. When this Mac
+  refuses to start the requested sync, the hint says it could not start, until
+  the next tap or the next sync this Mac starts. The hint, progress indicator and
+  button keep fixed space, so the status row does not move or change height.
+- **Ending a requested sync.** When it ends, VoiceOver announces "Sync finished"
+  only if this Mac recorded a newer coordinated success than at the tap;
+  otherwise it announces the category of a problem recorded since the tap, or
+  "Sync did not finish" when there is none, and a refusal as could not start. A
+  failing sync (for example offline) ends once every context has stayed settled on
+  the failure for a few seconds instead of after a minute; if it recovers within
+  that minute, the success is still recorded. A request dropped because sync
+  stopped or became unavailable ends silently.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone

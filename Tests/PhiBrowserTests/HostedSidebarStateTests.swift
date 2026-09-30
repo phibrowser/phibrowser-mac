@@ -1237,6 +1237,34 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertTrue(otherWindow.isKeyWindow)
     }
 
+    func testChromiumShowDuringActivationDoesNotReenterTheSwitch() async throws {
+        let context = try XCTUnwrap(store.getMainContext())
+        context.insert(ProfileModel(profileId: LocalStore.defaultProfileId))
+        context.insert(SpaceModel(spaceId: "second", profileId: LocalStore.defaultProfileId,
+            name: "Second", colorHex: "#AAAAAA", iconName: "target", sortOrder: 0))
+        try context.save()
+        manager.bind(to: store.account)
+        await drainPresentationUpdates()
+        let targetSpaceId = "second"
+        XCTAssertTrue(manager.spaces.contains { $0.spaceId == targetSpaceId })
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: "first")
+        slot.registerWindow(first, for: first.spaceId)
+        nextWindowId += 1
+        let state = ReentrantSeedBrowserState(windowId: nextWindowId, localStore: store,
+            profileId: LocalStore.defaultProfileId, spaceId: targetSpaceId)
+        let target = makeSession(in: slot, state: state)
+        slot.registerWindow(target, for: targetSpaceId)
+        XCTAssertTrue(slot.visibleController === first)
+        // Chromium answers the switch's seed tab with a synchronous show of
+        // the same, not yet presented, window.
+        state.onSeed = { slot.presentRequestedSession(target) }
+        slot.presentRequestedSession(target)
+        await drainPresentationUpdates()
+        XCTAssertEqual(state.seedCount, 1, "A show answering the switch's own seed tab must not start another switch")
+        XCTAssertTrue(slot.visibleController === target)
+    }
+
     private func descendants(of view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap { descendants(of: $0) }
     }
@@ -1267,6 +1295,21 @@ final class HostedSidebarStateTests: XCTestCase {
         let drained = expectation(description: "Presentation updates drained")
         DispatchQueue.main.async { drained.fulfill() }
         await fulfillment(of: [drained], timeout: 2)
+    }
+}
+
+/// Stands in for the bridge's quick-lookup tab: counts seeds and runs
+/// `onSeed` inline, as Chromium's show of the seeded window reaches the client
+/// before the bridge call returns. Re-entry is capped so an unguarded switch
+/// fails the count instead of overflowing the stack.
+private final class ReentrantSeedBrowserState: BrowserState {
+    var seedCount = 0
+    var onSeed: (() -> Void)?
+
+    override func createQuickLookupTab(customGuid: String? = nil) {
+        seedCount += 1
+        guard seedCount < 3 else { return }
+        onSeed?()
     }
 }
 

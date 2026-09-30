@@ -8691,13 +8691,10 @@ final class SpaceWindowSlot: ObservableObject {
     /// be misclassified.
     private static let tabDrivenCloseTTL: TimeInterval = 2.0
 
-    /// Set for the duration of an `activate(spaceId:)` call so the
-    /// `didBecomeKey` notification that `makeKeyAndOrderFront` emits
-    /// (synchronously or asynchronously) does not re-trigger animation
-    /// through `handleWindowDidBecomeKey`. The handler animates only
-    /// EXTERNAL switches — Chromium routing a tab into a sibling
-    /// Space's window via the URL rule throttle, primarily — which we
-    /// distinguish from self-initiated activations by this flag.
+    /// Set for the duration of an `activate(spaceId:)` call so a Space
+    /// switch Chromium requests from inside it (`presentRequestedSession`)
+    /// is told apart from an external one and dropped: it answers the
+    /// activation's own work before that activation has presented its Space.
     private var isPerformingActivate = false
 
     /// `NSWindow.didMove` / `didResize` tokens for the currently-visible
@@ -9840,9 +9837,10 @@ final class SpaceWindowSlot: ObservableObject {
             // burst to defer past. The old 0.6s defer only delayed the runtime
             // — and its slot-local `windowsBySpaceId` re-check silently skipped
             // the seed whenever the map had changed underneath it in the
-            // meantime. Chromium does not activate hidden windows on tab
-            // creation (TabsProxy::NewQuickLookupTab), so this cannot front the
-            // window either.
+            // meantime. Chromium neither activates a hidden window on tab
+            // creation nor asks for it to be presented
+            // (TabsProxy::NewQuickLookupTab), so this cannot front the window
+            // or switch to its Space either.
             bridge.createQuickLookupTab(withWindowId: windowIdNumber.int64Value,
                                         customGuid: nil)
             completion(id)
@@ -10189,6 +10187,15 @@ final class SpaceWindowSlot: ObservableObject {
         // Inactive shows may surface the initial session, never a background
         // Space. Restore emits inactive shows for every concealed sibling.
         guard shouldActivate || visibleController === controller else { return }
+        // A switch requested while an activation runs is Chromium answering
+        // that activation's own work — the initial tab of an empty live Space
+        // shows its window — before the activation has presented the Space.
+        // Following it re-enters the activation, which seeds another tab.
+        // A cascade's `beforeunload` show is still adopted below.
+        if isPerformingActivate, !isCascadingSlotClose, visibleController !== controller {
+            AppLogInfo("[SpaceWindowSlot] presentRequestedSession(\(controller.spaceId)) dropped: activation in progress")
+            return
+        }
         if isCascadingSlotClose, visibleController !== controller {
             // Mid-cascade the only Chromium show is a `beforeunload` prompt
             // (Chromium activates its tab, then parents the dialog to the

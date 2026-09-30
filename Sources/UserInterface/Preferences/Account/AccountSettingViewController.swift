@@ -609,7 +609,7 @@ class AccountViewModel: ObservableObject {
         
         // Step 4: local account state — credentials, cached profile and avatar,
         // and the account reference — was cleared by `AuthManager.logOut()`.
-        AppLogDebug("🚪 [Logout] Step 4: Local account state cleared")
+        AppLogDebug("🚪 [Logout] Step 4: Local session invalidated")
         ApplicationState.shared.requireLogin()
         
         // Step 5: close the settings window.
@@ -629,7 +629,7 @@ class AccountViewModel: ObservableObject {
         // Step 7: reopen the login window and return to onboarding.
         AppLogDebug("🚪 [Logout] Step 7: Showing login window for OOBE")
         LoginController.shared.showLoginWindow()
-        AppLogDebug("🚪 [Logout] ✅ Logout flow completed successfully")
+        AppLogDebug("🚪 [Logout] Logout flow returned to the login window")
     }
 
     @MainActor

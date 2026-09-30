@@ -1090,7 +1090,9 @@ import SwiftUI
         reconcileProfileMappingPause()
 
         // Foreground and wake also retry an episode's repair at once (plan 10.5); without an
-        // episode that call does nothing.
+        // episode that call does nothing. Unpairing stops the invalidation coordinator without
+        // `stopPhiSync()`, so a start after re-pairing finds the previous tokens (review R6).
+        removePhiSyncForegroundAndWakeObservers()
         phiSyncForegroundObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self, weak invalidation] _ in
@@ -1349,20 +1351,13 @@ import SwiftUI
     private func stopPhiSync() {
         phiInvalidationCoordinator?.stop()
         phiInvalidationCoordinator = nil
-        if let observer = phiSyncWakeObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            phiSyncWakeObserver = nil
-        }
+        removePhiSyncForegroundAndWakeObservers()
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
         phiSettingsInvalidationPending = false
         // Dropped with the subscription: the next account's preferences are a different
         // domain's worth of values, and a stale signature would swallow its first edit.
         phiSyncedSettingsSignature = nil
-        if let observer = phiSyncForegroundObserver {
-            NotificationCenter.default.removeObserver(observer)
-            phiSyncForegroundObserver = nil
-        }
         pairingActivationTask?.cancel()
         pairingActivationTask = nil
         phiSyncPairingEnabled = false
@@ -1429,6 +1424,19 @@ import SwiftUI
         // its keys and notifies the bridge. Restoring them here would hand Chromium the old
         // account's keys for that moment (review R4).
         reconcileProfileMappingPause(controllerIsBeingRetired: true)
+    }
+
+    /// The two observers `startPhiSyncIfReady()` installs; each start replaces them.
+    @MainActor
+    private func removePhiSyncForegroundAndWakeObservers() {
+        if let observer = phiSyncWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            phiSyncWakeObserver = nil
+        }
+        if let observer = phiSyncForegroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSyncForegroundObserver = nil
+        }
     }
 
     // MARK: - Profile mapping pause (plan 2026-09-29, section 10)

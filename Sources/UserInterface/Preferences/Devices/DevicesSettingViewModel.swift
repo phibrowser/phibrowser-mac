@@ -29,6 +29,17 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
     @Published private(set) var requestState: SyncRequestState = .idle
     @Published private(set) var nativeDetail: SyncNativeDetail?
+    /// The helper report's pause fields as last read; `statusPresentation` lays them over the
+    /// summary on every read (plan 2026-09-29, 10.10), and nothing else interprets them.
+    @Published private(set) var profileMappingPause: SyncProfileMappingPauseStatus = .none
+    @Published private(set) var syncNowCancelledByPause = false
+    @Published private(set) var profileListNotEnumeratedSince: Date?
+    /// When the report was last read; the unread Profile list's age is measured against it.
+    @Published private(set) var statusReadAt = Date()
+    /// Bumped when a shown pause ends, so the view announces that sync resumed.
+    @Published private(set) var pauseEndedSerial: UInt64 = 0
+    /// The pause card's Retry: `PhiChromiumCoordinator.retryProfileMappingRepair()`.
+    var retryProfileMappingRepair: () -> Void = {}
     /// From a Sync now tap until the helper answers, so the control never looks idle in between.
     @Published private(set) var isSubmittingSyncNow = false
     /// Set when a Sync now request the helper accepted or queued has ended, or when the helper
@@ -99,26 +110,50 @@ final class DevicesSettingViewModel: ObservableObject {
         }
     }
 
+    /// What the status row shows: the summary with the Profile mapping pause and the unread
+    /// Profile list laid over it. Computed from the last report on every read, never stored.
+    var statusPresentation: SyncStatusPresentation {
+        SyncStatusPresentation.present(summary: summary.phase, request: requestState,
+            profileMappingPause: profileMappingPause, syncNowCancelledByPause: syncNowCancelledByPause,
+            profileListNotEnumeratedSince: profileListNotEnumeratedSince,
+            resetRequired: resetRequired,
+            profileNames: profileNames(), now: statusReadAt)
+    }
+
+    /// A reset or reconfiguration wins over the pause: Retry cannot fix it.
+    private var resetRequired: Bool {
+        requiresReconfiguration || nativeDetail?.lastProblem?.category == .resetRequired
+    }
+
     /// The Sync now control: the helper's request state, the pane's own unlock and pairing
-    /// checks, and progress while a tap is being submitted.
+    /// checks, and progress while a tap is being submitted. Hidden while the pause shows Retry.
     var syncNowButton: SyncNowButtonState {
         guard isUnlocked, paired else {
             return SyncNowButtonState(isVisible: false, isEnabled: false, showsProgress: false, hint: .none)
         }
-        let state = SyncNowButtonState.reduce(summary: summary.phase, request: requestState)
+        let state = statusPresentation.syncNow
         guard isSubmittingSyncNow else { return state }
         return SyncNowButtonState(isVisible: state.isVisible, isEnabled: false, showsProgress: true, hint: .none)
     }
 
     private func apply(_ report: SyncHelper.Report?) {
+        let wasPaused = statusPresentation.pause != nil
         contextSnapshots = report?.snapshots ?? [:]
         requiredIDs = report?.requiredIDs ?? []
         summary = report?.summary ?? SyncStatusSummary(phase: .checking, lastSuccess: nil)
         requestState = report?.request ?? .idle
         nativeDetail = report?.snapshots["phi"]?.detail
+        profileMappingPause = report?.profileMappingPause ?? .none
+        syncNowCancelledByPause = report?.syncNowCancelledByPause ?? false
+        profileListNotEnumeratedSince = report?.profileListNotEnumeratedSince
+        statusReadAt = Date()
+        // The pause ended in the report; one that gives way to a reset has not resumed sync.
+        if wasPaused, report != nil, profileMappingPause == .none, !resetRequired { pauseEndedSerial &+= 1 }
         guard awaitingSyncNow else { return }
         // A dropped request (no helper, ineligible, sync not started) ends without a word.
         guard report != nil, summary.phase != .notStarted else { awaitingSyncNow = false; return }
+        // A request the pause cancelled returns the control to idle and is not announced.
+        guard statusPresentation.announcesSyncNowOutcome else { awaitingSyncNow = false; return }
         switch requestState {
         case .queued, .inFlight: break
         case .rejected: finishSyncNow(.rejected)
@@ -142,6 +177,9 @@ final class DevicesSettingViewModel: ObservableObject {
         summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
         requestState = .idle
         nativeDetail = nil
+        profileMappingPause = .none
+        syncNowCancelledByPause = false
+        profileListNotEnumeratedSince = nil
         awaitingSyncNow = false
     }
 

@@ -97,6 +97,9 @@ struct DevicesSettingView: View {
                 announce(Self.syncNowFailedText)
             }
         }
+        .onChange(of: viewModel.pauseEndedSerial) { _, _ in
+            announce(NSLocalizedString("sync.status.pauseEnded", value: "Sync resumed", comment: "Sync settings - VoiceOver announcement when sync, paused until every browser profile on this Mac was set up for sync, continues"))
+        }
     }
 
     // MARK: - Shared pane styling
@@ -209,19 +212,25 @@ struct DevicesSettingView: View {
     }
 
     private var statusCard: some View {
-        SettingsDetailCard {
-            row(statusTitle(viewModel.summary.phase)) {
-                if let date = viewModel.summary.lastSuccess {
-                    hintText(String(format: NSLocalizedString("sync.status.lastSuccessAt", value: "Last successful sync on this Mac: %@", comment: "Devices settings - time of the last successful sync on this Mac; %@ is the date and time"), date.formatted()))
+        let presentation = viewModel.statusPresentation
+        return SettingsDetailCard {
+            if let pause = presentation.pause {
+                pauseRow(pause)
+            } else {
+                row(headlineTitle(presentation.headline)) {
+                    lastSuccessHint
+                    if viewModel.summary.phase == .needsAttention {
+                        hintText(NSLocalizedString("sync.status.partialFailure", value: "Some content needs attention. Check the details and your connection.", comment: "One or more sync contexts failed"))
+                    }
+                    if presentation.showsProfileListWait {
+                        hintText(NSLocalizedString("sync.status.waitingForProfileList", value: "Waiting for profiles to load", comment: "Sync settings - problem line under the sync status while this Mac has not yet read its list of browser profiles; sync starts once it has, and it keeps trying on its own"))
+                    }
+                    if let problem = viewModel.nativeDetail?.lastProblem {
+                        hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
+                    }
+                } control: {
+                    syncNowControl
                 }
-                if viewModel.summary.phase == .needsAttention {
-                    hintText(NSLocalizedString("sync.status.partialFailure", value: "Some content needs attention. Check the details and your connection.", comment: "One or more sync contexts failed"))
-                }
-                if let problem = viewModel.nativeDetail?.lastProblem {
-                    hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
-                }
-            } control: {
-                syncNowControl
             }
 
             Divider()
@@ -259,6 +268,90 @@ struct DevicesSettingView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var lastSuccessHint: some View {
+        if let date = viewModel.summary.lastSuccess {
+            hintText(String(format: NSLocalizedString("sync.status.lastSuccessAt", value: "Last successful sync on this Mac: %@", comment: "Devices settings - time of the last successful sync on this Mac; %@ is the date and time"), date.formatted()))
+        }
+    }
+
+    private func headlineTitle(_ headline: SyncStatusPresentation.Headline) -> String {
+        switch headline {
+        case .phase(let phase): return statusTitle(phase)
+        case .paused: return Self.pausedTitle
+        }
+    }
+
+    private static var pausedTitle: String {
+        NSLocalizedString("sync.status.paused", value: "Sync paused", comment: "Sync settings - sync status while all sync waits until every browser profile on this Mac is set up for sync")
+    }
+
+    /// The status row while sync is paused for a Profile that is not set up for sync: the title
+    /// and its lines are one accessibility element, and Retry takes the Sync now slot with the
+    /// same fixed space, so the row keeps its layout when the pause starts or ends.
+    private func pauseRow(_ pause: SyncStatusPresentation.Pause) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(Self.pausedTitle)
+                    .font(.system(size: 13))
+                    .themedForeground(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                hintText(pauseReason(pause.reason))
+                if let failure = pause.failure {
+                    hintText(pauseFailure(failure))
+                }
+                hintText(pausedProfiles(pause.profiles))
+                lastSuccessHint
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 12)
+            HStack(spacing: 8) {
+                Color.clear
+                    .frame(width: 200, height: 1)
+                    .accessibilityHidden(true)
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                actionButton(NSLocalizedString("sync.status.pause.retry", value: "Retry", comment: "Sync settings - button in place of Sync Now while sync is paused; it tries again at once to set up the browser profiles that are not set up for sync")) {
+                    viewModel.retryProfileMappingRepair()
+                }
+                .disabled(viewModel.isReconfiguring)
+                .accessibilityLabel(NSLocalizedString("sync.status.pause.retryAccessibility", value: "Retry setting up profiles for sync", comment: "Sync settings - VoiceOver label of the Retry button shown while sync is paused until every browser profile on this Mac is set up for sync"))
+            }
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func pauseReason(_ reason: SyncProfileMappingPause.Reason) -> String {
+        switch reason {
+        case .registering: return NSLocalizedString("sync.status.pause.reason.registering", value: "Setting up a profile for sync…", comment: "Sync settings - line under Sync paused while this Mac sets up a new browser profile for sync; nothing has failed")
+        case .retrying: return NSLocalizedString("sync.status.pause.reason.retrying", value: "Couldn’t set up a profile for sync yet. Trying again automatically.", comment: "Sync settings - line under Sync paused after setting up a browser profile for sync failed in a way that is retried on its own")
+        case .needsAttention: return NSLocalizedString("sync.status.pause.reason.needsAttention", value: "Needs attention: a profile couldn’t be set up for sync.", comment: "Sync settings - line under Sync paused after the sync service refused to set up a browser profile; the user can press Retry")
+        }
+    }
+
+    private func pauseFailure(_ failure: SyncProfileMappingFailureCategory) -> String {
+        switch failure {
+        case .offline: return NSLocalizedString("sync.status.pause.failure.offline", value: "No connection. Sync continues when this Mac is back online.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because this Mac could not reach the sync service")
+        case .signInExpired: return NSLocalizedString("sync.status.pause.failure.signInExpired", value: "Your sign-in has expired. Sign in again to continue.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because the account sign-in is no longer valid")
+        case .serverError: return NSLocalizedString("sync.status.pause.failure.serverError", value: "The sync service returned an error.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed because of an error on the sync service")
+        case .other: return NSLocalizedString("sync.status.pause.failure.other", value: "Something went wrong while setting up the profile.", comment: "Sync settings - line under Sync paused when setting up a browser profile for sync failed for another reason")
+        }
+    }
+
+    private func pausedProfiles(_ profiles: SyncStatusPresentation.PausedProfiles) -> String {
+        switch profiles {
+        case .names(let names):
+            return String(format: NSLocalizedString("sync.status.pause.profilesNamed", value: "Not set up for sync yet: %@", comment: "Sync settings - line under Sync paused naming the browser profiles on this Mac that are not set up for sync; %@ is a list of one to three profile names"), ListFormatter.localizedString(byJoining: names))
+        case .count(let count):
+            return String.localizedStringWithFormat(NSLocalizedString("sync.status.pause.profilesCount", value: "%lld profiles are not set up for sync yet", comment: "Sync settings - line under Sync paused when more than three browser profiles on this Mac are not set up for sync; %lld is the number of profiles"), count)
+        case .unnamed:
+            return NSLocalizedString("sync.status.pause.profileUnnamed", value: "A profile is not set up for sync yet", comment: "Sync settings - line under Sync paused when the browser profile that is not set up for sync has no name to show")
         }
     }
 

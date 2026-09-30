@@ -106981,6 +106981,172 @@
         }
       }
     },
+    "sync.status.pause.failure.offline" : {
+      "comment" : "Sync settings - line under Sync paused when setting up a browser profile for sync failed because this Mac could not reach the sync service",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection. Sync continues when this Mac is back online."
+          }
+        }
+      }
+    },
+    "sync.status.pause.failure.other" : {
+      "comment" : "Sync settings - line under Sync paused when setting up a browser profile for sync failed for another reason",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong while setting up the profile."
+          }
+        }
+      }
+    },
+    "sync.status.pause.failure.serverError" : {
+      "comment" : "Sync settings - line under Sync paused when setting up a browser profile for sync failed because of an error on the sync service",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync service returned an error."
+          }
+        }
+      }
+    },
+    "sync.status.pause.failure.signInExpired" : {
+      "comment" : "Sync settings - line under Sync paused when setting up a browser profile for sync failed because the account sign-in is no longer valid",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your sign-in has expired. Sign in again to continue."
+          }
+        }
+      }
+    },
+    "sync.status.pause.profileUnnamed" : {
+      "comment" : "Sync settings - line under Sync paused when the browser profile that is not set up for sync has no name to show",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A profile is not set up for sync yet"
+          }
+        }
+      }
+    },
+    "sync.status.pause.profilesCount" : {
+      "comment" : "Sync settings - line under Sync paused when more than three browser profiles on this Mac are not set up for sync; %lld is the number of profiles",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld profile is not set up for sync yet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld profiles are not set up for sync yet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.status.pause.profilesNamed" : {
+      "comment" : "Sync settings - line under Sync paused naming the browser profiles on this Mac that are not set up for sync; %@ is a list of one to three profile names",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not set up for sync yet: %@"
+          }
+        }
+      }
+    },
+    "sync.status.pause.reason.needsAttention" : {
+      "comment" : "Sync settings - line under Sync paused after the sync service refused to set up a browser profile; the user can press Retry",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs attention: a profile couldn’t be set up for sync."
+          }
+        }
+      }
+    },
+    "sync.status.pause.reason.registering" : {
+      "comment" : "Sync settings - line under Sync paused while this Mac sets up a new browser profile for sync; nothing has failed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setting up a profile for sync…"
+          }
+        }
+      }
+    },
+    "sync.status.pause.reason.retrying" : {
+      "comment" : "Sync settings - line under Sync paused after setting up a browser profile for sync failed in a way that is retried on its own",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t set up a profile for sync yet. Trying again automatically."
+          }
+        }
+      }
+    },
+    "sync.status.pause.retry" : {
+      "comment" : "Sync settings - button in place of Sync Now while sync is paused; it tries again at once to set up the browser profiles that are not set up for sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        }
+      }
+    },
+    "sync.status.pause.retryAccessibility" : {
+      "comment" : "Sync settings - VoiceOver label of the Retry button shown while sync is paused until every browser profile on this Mac is set up for sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry setting up profiles for sync"
+          }
+        }
+      }
+    },
+    "sync.status.pauseEnded" : {
+      "comment" : "Sync settings - VoiceOver announcement when sync, paused until every browser profile on this Mac was set up for sync, continues",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync resumed"
+          }
+        }
+      }
+    },
+    "sync.status.paused" : {
+      "comment" : "Sync settings - sync status while all sync waits until every browser profile on this Mac is set up for sync",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync paused"
+          }
+        }
+      }
+    },
     "sync.status.phiContent" : {
       "comment" : "Native sync context label",
       "extractionState" : "stale",
@@ -107462,6 +107628,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已是最新狀態"
+          }
+        }
+      }
+    },
+    "sync.status.waitingForProfileList" : {
+      "comment" : "Sync settings - problem line under the sync status while this Mac has not yet read its list of browser profiles; sync starts once it has, and it keeps trying on its own",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for profiles to load"
           }
         }
       }

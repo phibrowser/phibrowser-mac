@@ -99,6 +99,14 @@ actor RoundAdmissionFixture {
     func recordLocalDeletion(syncUuid: String) async { await serialized(.recordLocalDeletion(syncUuid)) }
     func previewAccountSpaces() async { await serialized(.preview(PreviewBox())) }
     func clearEvents() { events = [] }
+
+    /// Test hook: returns once `count` data rounds have entered the production queue.
+    /// `serialized(_:)` counts a data round and makes it the queue's tail in one synchronous
+    /// actor step, before its first suspension, so the count is the acknowledgement that a
+    /// round is queued; nothing about admission has been decided at that point.
+    func waitUntilQueued(dataRounds count: Int) async {
+        while queuedDataRounds < count { await Task.yield() }
+    }
 }
 
 enum AdmissionFailure: Error { case assertion(String) }
@@ -115,8 +123,10 @@ enum AdmissionFailure: Error { case assertion(String) }
         try await testExemptions()
         try await testClearingAdmitsNextRound()
         try await testNoSyncingWhileGated()
+        try await testAdmissionIsDecidedWhenTheRoundRuns()
         print("PASS round admission: gate never set, rounds turned away, admitted round finishes, "
-              + "exemptions without favicon tail, clearing admits, no Syncing while gated")
+              + "exemptions without favicon tail, clearing admits, no Syncing while gated, "
+              + "admission decided when a round runs, not when it is queued")
     }
 
     /// I7: an engine whose gate is never set runs every round and its favicon tail as before.
@@ -174,6 +184,28 @@ enum AdmissionFailure: Error { case assertion(String) }
         try expect(events == ["pull:entered", "pull:landed", "pull:cursorSaved", "pull:published",
                               "outcome", "finishStatus", "favicon"],
                    "The admitted round finishes with every write and its tail; the queued push is turned away: \(events)")
+    }
+
+    /// Review R8, the admission constraint of 10.10: a round queued while the gate is off and
+    /// still waiting when it comes on is turned away when it runs. Round A is parked in its
+    /// network call; round B is queued behind it with the gate off; only after the fixture
+    /// acknowledges that B is in the queue does the gate come on; A then finishes completely.
+    static func testAdmissionIsDecidedWhenTheRoundRuns() async throws {
+        let engine = RoundAdmissionFixture()
+        await engine.setHoldNetwork(true)
+        let roundA = Task { await engine.pullOnce() }
+        while !(await engine.parkedInNetwork) { await Task.yield() }
+        try expect(!engine.isProfileMappingPaused, "Round B is queued with the gate off")
+        let roundB = Task { await engine.pushLocalSettings() }
+        await engine.waitUntilQueued(dataRounds: 2)
+        engine.setProfileMappingPause(true)
+        await engine.setHoldNetwork(false)
+        await roundA.value
+        await roundB.value
+        let events = await engine.events
+        try expect(events == ["pull:entered", "pull:landed", "pull:cursorSaved", "pull:published",
+                              "outcome", "finishStatus", "favicon"],
+                   "Round A finishes with its favicon tail; round B, queued before the gate, is turned away: \(events)")
     }
 
     /// Plan 10.3 exemptions and AM-3: the preview, the Space gate edge and the local deletion intent

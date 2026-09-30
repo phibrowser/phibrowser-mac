@@ -46,6 +46,7 @@ import PostHog
     #endif
     
     var menuObservation: NSKeyValueObservation?
+    var isMainMenuRefreshScheduled = false
     /// Rebuilds flag-gated menu rows once PostHog's flags land — they arrive
     /// after setup, over the network, and every menu built before then read
     /// each flag as off.
@@ -129,8 +130,6 @@ import PostHog
             permitsSentinelLaunch = true
         }
         
-        //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
-        
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
         hasFinishedLaunching = true
         #if PHI_OSS_BUILD
@@ -145,7 +144,7 @@ import PostHog
         SentinelTelemetryConsentPublisher.shared.start()
         #endif
         
-        //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
+        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
         #if !PHI_OSS_BUILD
         setupSparkle()
@@ -304,9 +303,8 @@ import PostHog
             // Flags arrive after setup, over the network. Menus built
             // before then read every flag as off, so a flag-gated row
             // (Folio's File menu entries) would stay missing for the whole
-            // session even once the flag was known. The hook is
-            // remove-then-insert idempotent, so re-running it costs nothing
-            // when nothing moved.
+            // session even once the flag was known. Schedule a refresh after
+            // menu tracking ends so an open menu is not rebuilt in place.
             featureFlagObservation = NotificationCenter.default.addObserver(
                 forName: PostHogSDK.didReceiveFeatureFlags,
                 object: nil,

@@ -1315,9 +1315,8 @@ class BrowserState {
     //
     // Driven by PhiChromiumCoordinator.windowDidEnter/ExitPlaceholderMode,
     // which are themselves triggered by Browser::Show/HidePlaceholder on the
-    // Chromium side. See docs/superpowers/specs/
-    // 2026-05-25-placeholder-on-last-tab-close-design.md §6.1 / §9.1 for
-    // the synchronous detach contract.
+    // Chromium side. The detach contract must complete synchronously before
+    // native state can expose the placeholder wrapper.
     // =========================================================================
 
     @MainActor

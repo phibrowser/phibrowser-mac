@@ -9,9 +9,6 @@
 //  the splitView / AI chat / bookmark bar / progress bar — placeholder
 //  doesn't use any of them.
 //
-//  See docs/superpowers/specs/2026-05-25-placeholder-on-last-tab-close-design.md
-//  (v3, shell approach) — sections §6.3, §6.5, §9.1, §9.2 are most relevant.
-//
 
 import AppKit
 import Combine

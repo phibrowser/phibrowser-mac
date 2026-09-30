@@ -256,6 +256,7 @@ struct SpaceThemeEditorView: View {
 
     private static let innerCardSize = NSSize(width: 312, height: 83)
     private static let swatchGroupWidth: CGFloat = 200
+    private static let colorDotDiameter: CGFloat = 16
     private static let sliderWidth: CGFloat = 199
     private static let panelDivider = Color(nsColor: .separatorColor)
     private static let panelInnerBorder = Color(nsColor: .separatorColor)
@@ -359,6 +360,10 @@ struct SpaceThemeEditorView: View {
 
             HStack(spacing: 0) {
                 ForEach(ThemeManager.shared.orderedThemes, id: \.id) { theme in
+                    if isEmbeddedInMenu, theme.id != ThemeManager.shared.orderedThemes.first?.id {
+                        Spacer(minLength: 0)
+                    }
+
                     ThemeSwatchView(
                         fillColor: theme == .pure
                             ? .white
@@ -367,11 +372,13 @@ struct SpaceThemeEditorView: View {
                         selected: selectedThemeId == theme.id,
                         title: nil,
                         showsContrastBorder: theme == .pure,
-                        dotDiameter: 16,
+                        dotDiameter: Self.colorDotDiameter,
                         ringDiameter: 20,
                         action: { selectTheme(theme.id) }
                     )
-                    .frame(maxWidth: .infinity)
+                    // Align the visible endpoint dots with the full-width menu slider.
+                    .frame(width: isEmbeddedInMenu ? Self.colorDotDiameter : nil)
+                    .frame(maxWidth: isEmbeddedInMenu ? nil : .infinity)
                     .accessibilityLabel(theme.name)
                 }
             }

@@ -35,6 +35,29 @@ output is not guaranteed to be redacted and can contain payload fragments.
 Gateway process and stderr streams are retained separately because they overlap
 but are not interchangeable.
 
+## Durable outbox and account ownership
+
+The feedback form owns the draft. Send first prepares a complete, account-scoped
+job under `Account.userDataStorage/feedbackOutbox/<job-id>/`, including copies of
+selected files and captured logs. The user must not have to keep the form open
+while the network upload runs. Only a complete, validated job is published by
+an atomic manifest write; a preparation failure leaves the draft available and
+removes the partial job directory.
+
+`FeedbackOutboxUploader` scans the authenticated account's directory at launch
+and on account/access changes. It persists preparation, per-attachment upload,
+retry and submit state in the manifest so a later scan can resume from saved
+sources rather than collect newer logs. Before processing a job or making network
+requests, it checks that the same account is still active. A different signed-in
+user must never upload the previous account's feedback.
+
+Required attachments must finish uploading before submit; the network calls go
+through `APIClient`. Successful submit marks the job and removes its directory.
+Failures receive bounded retry and backoff, then the job is discarded after the
+configured retry limit. Do not promise indefinite retention or exactly-once
+server submission if a response is lost. The form does not expose background
+retry state as if it were a synchronous send result.
+
 ## Snapshot and packaging
 
 Preparation runs off the main actor before publishing the outbox manifest.
@@ -59,3 +82,12 @@ fail the job rather than substituting a newer session. Old jobs retain existing
 prepared attachments; if rebuilding is necessary, use only their saved sources,
 without acquiring new live logs. Uploads still use APIClient's presign, PUT, and
 submit flow, with account checks before network work.
+
+## Source and verification
+
+- [Feedback view model, outbox preparation, manifest and uploader](../Sources/UserInterface/Feedback/FeedbackOutbox.swift)
+
+Verify queued delivery across form closure and app restart, account switching
+before and during upload, partial preparation cleanup, retry exhaustion and a
+missing saved snapshot. Check the manifest's saved-source provenance without
+including attachment contents or user identifiers in test output.

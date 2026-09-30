@@ -386,7 +386,14 @@ participant is read or asked for a round. When an episode starts, the
 observations of a round in flight are invalidated (that round could never reach
 its coordinated success; the engine round itself is not cancelled) and a Sync now
 request it carried stays queued. During the first 15 seconds (`.grace`) the report
-is kept as it was and a Sync now request stays queued as Busy. From 15 seconds
+is kept as it stood when the episode started and a Sync now request stays queued
+as Busy. What it stood at depends on the trigger. An episode started by a
+mapping announcement, the unlock observer or another trigger that is not a
+Profile-list change keeps the report of before the episode. An episode started
+by a Profile-list change (the usual case: a new Profile appears) follows the
+sink's `membershipDidChange()`, which runs first: the report is already reset
+to Checking and a queued Sync now request is already dropped, so the grace
+keeps Checking and has no Sync now to hold. From 15 seconds
 (`.paused`) `Report.profileMappingPause` carries the pause and a queued Sync now
 request is cancelled, `request` returns to Idle and `syncNowCancelledByPause` is
 set so the pane announces nothing; a new request is cancelled the same way. The

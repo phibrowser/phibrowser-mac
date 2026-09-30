@@ -80,6 +80,9 @@ final class SyncProfileMappingPauseReconciler {
         var firstRetryDelay: TimeInterval = 5
         var maximumRetryDelay: TimeInterval = 300
         var maximumListRetryDelay: TimeInterval = 30
+        /// The repair loop's longest wait while the latest mapping failure is offline: the
+        /// connection can come back at any moment and nothing observes it (review R5).
+        var maximumOfflineRetryDelay: TimeInterval = 30
     }
 
     /// What the owner does for the reconciliation. Each acts on the current object only.
@@ -101,6 +104,9 @@ final class SyncProfileMappingPauseReconciler {
         /// engine sets that state without telling the owner, so the prerequisites of the last
         /// reconciliation cannot be relied on when a pass falls due.
         var canRunRepairPass: @MainActor () -> Bool = { true }
+        /// Read when a repair pass ends: the key layer's category of the latest mapping
+        /// failure (`SyncKeyController.lastMappingsFailureCategory`), which that pass set.
+        var failureCategory: @MainActor () -> SyncProfileMappingFailureCategory? = { nil }
         /// AM-1: reads the Profile list again; a successful read publishes it.
         var refreshProfileList: @MainActor () -> Void
         /// Computes the inputs from the current state and calls `reconcile(_:)`.
@@ -344,8 +350,11 @@ final class SyncProfileMappingPauseReconciler {
             runRepair()
             return
         }
-        let delay = loop.delay
-        loop.delay = min(loop.delay * 2, timing.maximumRetryDelay)
+        // Offline: at most 30 seconds (review R5). The next delay doubles from the wait
+        // actually used, so a later failure of another category grows from there.
+        let cap = effects.failureCategory() == .offline ? timing.maximumOfflineRetryDelay : timing.maximumRetryDelay
+        let delay = min(loop.delay, cap)
+        loop.delay = min(delay * 2, timing.maximumRetryDelay)
         repairLoop = loop
         armRepairWait(episode: id, delay: delay)
     }

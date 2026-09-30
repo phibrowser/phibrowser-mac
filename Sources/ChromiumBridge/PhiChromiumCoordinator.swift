@@ -1493,6 +1493,7 @@ import SwiftUI
             // The engine can enter reconfiguration without telling this coordinator, so the
             // state is read again when a pass falls due, not only at the last reconciliation.
             canRunRepairPass: { [weak self] in self?.nativeSyncRequiresReconfiguration == false },
+            failureCategory: { [weak self] in self?.syncKeyController?.lastMappingsFailureCategory },
             refreshProfileList: { _ = ProfileManager.shared.refresh() },
             reconcileNow: { [weak self] in self?.reconcileProfileMappingPause() },
             schedule: { delay, fire in

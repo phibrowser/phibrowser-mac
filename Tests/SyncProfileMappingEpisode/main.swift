@@ -83,6 +83,7 @@ final class Handle {}
             if let passAtOnce = self.passAtOnce { passAtOnce(); done() } else { self.pendingPasses.append(done) }
         },
         canRunRepairPass: { !self.reconfiguring && !self.repairBlocked },
+        failureCategory: { self.category },
         refreshProfileList: {
             self.listReads += 1
             if self.listReadSucceeds { self.enumerated = true; self.reconcile() }
@@ -170,6 +171,27 @@ final class Handle {}
         reconfigurationStopsTheEpisode()
         nestedListChangeDoesNotChooseTheSilentUnlock()
         listRetryIsCappedAndReported()
+        offlineRepairWaitsAtMostThirtySeconds()
+    }
+
+    /// Review R5: while the latest mapping failure is offline the repair loop waits at most
+    /// 30 seconds; other categories keep the 5-minute cap, growing from the wait last used.
+    @MainActor static func offlineRepairWaitsAtMostThirtySeconds() {
+        let f = Fixture()
+        f.passAtOnce = { f.category = .offline }
+        f.addProfile("New")
+        f.reconcile()
+        f.advance(to: 600)
+        var waits = zip(f.passes.dropFirst(), f.passes).map { $0 - $1 }
+        precondition(Array(waits.prefix(6)) == [5, 10, 20, 30, 30, 30] && waits.allSatisfy { $0 <= 30 },
+                     "Offline backoff: \(waits)")
+        let before = f.passes.count
+        f.passAtOnce = { f.category = .serverError }
+        f.advance(to: 3000)
+        waits = zip(f.passes.dropFirst(before), f.passes.dropFirst(before - 1)).map { $0 - $1 }
+        precondition(Array(waits.prefix(5)) == [30, 60, 120, 240, 300], "Backoff after going back online: \(waits)")
+        precondition(f.reconciler.episode != nil && f.armed.count == 1)
+        print("PASS profile mapping episode: the repair loop waits at most 30 s while offline")
     }
 
     /// Review R3: the AM-1 list retry backs off 5, 10, 20, then every 30 seconds, logs the

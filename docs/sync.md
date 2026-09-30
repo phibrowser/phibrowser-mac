@@ -230,7 +230,10 @@ connected and the pulls it requests return at admission. Nothing about it is
 persisted.
 
 Repair: one loop per episode calls `runMappingRepairPass()` (unless reconfiguration is required when the pass falls due: the engine enters that state without telling the coordinator, so the pass is skipped without network work, the delay does not grow, and a reconciliation ends the episode), then waits 5 seconds,
-doubling to 5 minutes, and repeats while its episode is current. Foreground,
+doubling to 5 minutes, and repeats while its episode is current. While the
+latest mapping failure the pass left is offline (`lastMappingsFailureCategory`),
+a wait is at most 30 seconds, because nothing observes the connection coming
+back; the next delay doubles from the wait used. Foreground,
 wake, an unlock and the pane's Retry (`retryProfileMappingRepair()`) replace the
 pending wait with an immediate pass and restart the delay at 5 seconds; a request
 during a pass runs one more pass after it. During an episode, and with the

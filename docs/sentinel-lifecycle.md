@@ -21,9 +21,11 @@ up permanently after a fixed number of attempts.
 
 `start()` and `stop()` are idempotent. `stop()` removes the observer and cancels
 poll/recovery work. Every intentional shutdown path must stop supervision before
-asking Sentinel to terminate, including AI disable, update installation and
-uninstall. Otherwise the watchdog can resurrect a process being deliberately
-stopped. Account and build capability gates remain owned by their existing
+asking Sentinel to terminate, including AI disable, update installation,
+uninstall and credential-boundary cleanup failure. These paths use the
+browser-update termination request, because Sentinel refuses a plain quit while
+the browser is running. Otherwise the watchdog can resurrect a process being
+deliberately stopped. Account and build capability gates remain owned by their existing
 lifecycle callers; the watchdog is not a second authentication policy.
 
 The [Phi Chat hotkey](sentinel-phi-chat-hotkey.md) and

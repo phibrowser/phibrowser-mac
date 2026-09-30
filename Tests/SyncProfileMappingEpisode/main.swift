@@ -38,6 +38,14 @@ final class Handle {}
     var status: SyncProfileMappingPauseStatus = .none
     var statusCalls: [SyncProfileMappingPauseStatus] = []
     var resumes = 0
+    /// Runs inside the resume effect, as the Profile loader's due list refresh does.
+    var onResume: (() -> Void)?
+    /// The Chromium key cache (`SyncKeyController.resolved`) is populated.
+    var keyCache = true
+    /// The Profile-list sink's follow-ups, as chosen.
+    var followUps: [Reconciler.ProfileListFollowUp] = []
+    /// Silent unlocks the sink scheduled, with the controller each was chosen for.
+    var scheduledUnlocks: [ObjectIdentifier?] = []
     /// Repair passes started, with the time each started.
     var passes: [TimeInterval] = []
     /// Completes a pass at once when set; otherwise the completion waits in `pendingPasses`.
@@ -61,7 +69,7 @@ final class Handle {}
             self.notifications += 1; self.effects.append("notify")
         },
         publishStatus: { self.status = $0; self.statusCalls.append($0); self.effects.append("status") },
-        resume: { self.resumes += 1; self.effects.append("resume") },
+        resume: { self.resumes += 1; self.effects.append("resume"); self.onResume?() },
         runRepairPass: { done in
             self.passes.append(self.time)
             self.effects.append("pass")
@@ -93,10 +101,33 @@ final class Handle {}
         }
         return .init(engine: engine.map(ObjectIdentifier.init), controller: controller.map(ObjectIdentifier.init),
                      prerequisitesMet: prerequisites, isProfileListEnumerated: enumerated,
-                     pause: pause, failureCategory: category)
+                     pause: pause, failureCategory: category, isAccountKeyUnlocked: unlocked)
     }
 
     func reconcile() { reconciler.reconcile(inputs()) }
+
+    /// The coordinator's Profile-list sink: reconcile with the published list, then the
+    /// follow-up it is handed (`runProfileListFollowUp`).
+    func listPublished(_ delivered: (@MainActor (Reconciler.ProfileListFollowUp) -> Void)? = nil) {
+        reconciler.reconcile(inputs()) { followUp in
+            delivered?(followUp)
+            self.followUps.append(followUp)
+            if followUp == .repairPass { self.reconciler.kickRepair() }
+            if followUp == .silentUnlockAndResolve { self.scheduledUnlocks.append(self.controller.map(ObjectIdentifier.init)) }
+        }
+    }
+
+    /// The scheduled silent unlocks run; each device-envelope lookup fails late, and the
+    /// failure path (`clearResolved()`) empties the key cache.
+    func runScheduledUnlocksFailingLate() {
+        let scheduled = scheduledUnlocks
+        scheduledUnlocks = []
+        for chosenFor in scheduled where Reconciler.shouldRunDeferredSilentUnlock(
+            chosenFor: chosenFor, current: controller.map(ObjectIdentifier.init),
+            hasEpisode: reconciler.episode != nil) {
+            keyCache = false
+        }
+    }
 
     /// Moves the clock, firing every armed timer that falls due on the way, in order.
     func advance(to target: TimeInterval) {
@@ -129,6 +160,84 @@ final class Handle {}
         profileBeingCreatedByTheKeyLayer()
         deviceWithoutEpisodeDoesNothing()
         reconfigurationStopsTheEpisode()
+        nestedListChangeDoesNotChooseTheSilentUnlock()
+    }
+
+    /// Review R2: an episode ends; its resume lets the loader refresh the list, which publishes
+    /// a new unmapped Profile from inside the reconciliation. The sink's follow-up must be
+    /// chosen after its queued inputs start the next episode, so no silent unlock is scheduled
+    /// beside that episode's repair, and a late envelope failure cannot empty the key cache.
+    @MainActor static func nestedListChangeDoesNotChooseTheSilentUnlock() {
+        let f = Fixture()
+        f.addProfile("New")
+        f.listPublished()
+        precondition(f.followUps == [.nothing] && f.reconciler.episode != nil)
+        f.finishPass()
+        f.onResume = {
+            f.onResume = nil
+            f.addProfile("Newer")
+            f.listPublished()
+        }
+        f.map("New")
+        f.reconcile()
+        precondition(f.resumes == 1 && f.reconciler.episode != nil, "The nested list change started no episode")
+        precondition(f.followUps == [.nothing, .nothing] && f.scheduledUnlocks.isEmpty,
+                     "A follow-up chosen from the stale episode scheduled a silent unlock: \(f.followUps)")
+        precondition(f.passes.count == 2, "The new episode runs its own repair pass")
+        // The repair maps the Profile and the episode ends; a late failure changes nothing.
+        f.map("Newer"); f.finishPass(); f.reconcile()
+        f.runScheduledUnlocksFailingLate()
+        precondition(f.reconciler.episode == nil && f.keyCache, "The key cache was cleared after the repair")
+
+        // (b): a silent unlock chosen without an episode does not run once one exists, nor for
+        // a controller that is no longer current.
+        let g = Fixture()
+        g.listPublished()
+        precondition(g.followUps == [.silentUnlockAndResolve] && g.scheduledUnlocks.count == 1)
+        g.addProfile("New"); g.reconcile()
+        g.runScheduledUnlocksFailingLate()
+        precondition(g.keyCache, "A deferred silent unlock ran during an episode")
+        let h = Fixture()
+        h.listPublished()
+        h.controller = Handle()
+        h.runScheduledUnlocksFailingLate()
+        precondition(h.keyCache, "A deferred silent unlock ran for a controller that is gone")
+        let k = Fixture()
+        k.listPublished()
+        k.runScheduledUnlocksFailingLate()
+        precondition(!k.keyCache, "Without an episode the silent unlock runs as before")
+
+        // Every queued follow-up is delivered exactly once: two sinks inside one effect, a
+        // plain reconciliation queued behind them (its inputs win), and a sink that runs
+        // inside the delivery of another follow-up.
+        let m = Fixture()
+        m.addProfile("New")
+        m.reconcile()
+        m.finishPass()
+        var delivered: [String: [SyncProfileMappingPauseReconciler.ProfileListFollowUp]] = [:]
+        func record(_ tag: String) -> @MainActor (SyncProfileMappingPauseReconciler.ProfileListFollowUp) -> Void {
+            { delivered[tag, default: []].append($0) }
+        }
+        m.onResume = {
+            m.onResume = nil
+            m.addProfile("Newer")
+            m.listPublished(record("first"))
+            m.listPublished { followUp in
+                record("second")(followUp)
+                m.listPublished(record("inside a delivery"))
+            }
+            m.reconcile()
+        }
+        m.map("New")
+        m.reconcile()
+        let expected: [String: [SyncProfileMappingPauseReconciler.ProfileListFollowUp]] = [
+            "first": [.nothing], "second": [.nothing], "inside a delivery": [.repairPass]]
+        precondition(delivered == expected,
+                     "A queued follow-up was lost, repeated or chosen from stale state: \(delivered)")
+        let settled = m.followUps.count
+        m.reconcile(); m.reconcile()
+        precondition(m.followUps.count == settled, "A follow-up was delivered again by a later reconciliation")
+        print("PASS profile mapping episode: a list change inside a reconciliation chooses its follow-up after its own episode transition")
     }
 
     /// Review R1: an account reset by another device keeps enrollment and the key, but no

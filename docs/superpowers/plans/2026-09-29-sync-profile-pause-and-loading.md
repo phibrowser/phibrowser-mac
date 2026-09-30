@@ -529,3 +529,10 @@ P5 receives:
 | `SyncHelper.report` | `request` | `SyncRequestState` | Unchanged type. During the grace a Sync now shows as `.queued(reason: .busy, notBefore: nil)` |
 | `PhiChromiumCoordinator` | `retryProfileMappingRepair()` | `@MainActor () -> Void` | The pane's Retry: an immediate repair pass and the first delay again; nothing outside an episode |
 | `PhiChromiumCoordinator` | `requestSyncNow()` | unchanged | While the pause is shown the helper cancels the request at once |
+
+### Review fixes, second round (R2 to R8)
+
+| # | Deviation, interpretation or addition | Why |
+| --- | --- | --- |
+| N57 | R2(a): `reconcile(_:profileListFollowUp:)` takes the Profile-list sink's follow-up. A reentrant call queues its inputs and its follow-ups as one pending value (the latest inputs win, every follow-up queued so far is kept), and the loop delivers them right after the step for those inputs, with the choice made from the episode before and after that step. `runProfileListFollowUp(_:)` in the coordinator does what the sink did after its reconciliation | A sink nested in a reconciliation (the resume lets the loader publish the list) used to choose from the episode as it stood before its own inputs were applied, and scheduled a silent unlock beside the repair of the episode those inputs started. Keeping inputs and follow-ups in one value means a queued follow-up cannot outlive the loop that takes it; Swift has no exception that could unwind between queueing and delivery. The harness proves exactly-once delivery for two nested sinks, a plain reconciliation queued behind them and a sink inside a delivery |
+| N58 | R2(b): `shouldRunDeferredSilentUnlock(chosenFor:current:hasEpisode:)` is checked when the follow-up's task runs, before `silentUnlockAndResolve()` is called. The check cannot cover an episode that starts while that call is already waiting on the device-envelope lookup | That window exists without the pause too (see the report on `silentUnlockAndResolve()`); closing it would change the key layer's failure path, which this round does not touch |

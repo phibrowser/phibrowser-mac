@@ -37,6 +37,8 @@ final class SyncProfileMappingPauseReconciler {
         var pause: SyncProfileMappingPause
         /// The key layer's status-only category of the latest mapping failure.
         var failureCategory: SyncProfileMappingFailureCategory?
+        /// The account key is unlocked; decides the Profile-list follow-up (AM-4).
+        var isAccountKeyUnlocked = false
     }
 
     struct Episode: Equatable {
@@ -107,7 +109,9 @@ final class SyncProfileMappingPauseReconciler {
     private var listRetryDelay: TimeInterval?
     private var cancelListRetry: (@MainActor () -> Void)?
     private var reconciling = false
-    private var pendingInputs: Inputs?
+    /// A reentrant call's inputs and the Profile-list follow-ups queued with them. One value,
+    /// so a queued follow-up cannot exist without inputs that the running loop still takes.
+    private var pending: (inputs: Inputs, followUps: [@MainActor (ProfileListFollowUp) -> Void])?
 
     private let effects: Effects
     private let timing: Timing
@@ -155,16 +159,46 @@ final class SyncProfileMappingPauseReconciler {
     /// The one reconciliation (10.2). Reentrant calls, from an effect that publishes the
     /// Profile list or posts a mapping announcement, run after the current one with the
     /// latest inputs.
-    func reconcile(_ inputs: Inputs) {
-        guard !reconciling else { pendingInputs = inputs; return }
+    ///
+    /// `profileListFollowUp` is the Profile-list sink's: it is called once, with the follow-up
+    /// chosen right after the episode transition for these inputs (or for later inputs queued
+    /// behind them) has been committed. A sink that runs inside another reconciliation, and
+    /// whose own inputs are therefore queued, must not choose from the episode as it stands
+    /// before they are applied: an episode those inputs start selects `.nothing`, never the
+    /// silent unlock (review R2).
+    func reconcile(_ inputs: Inputs,
+                   profileListFollowUp: (@MainActor (ProfileListFollowUp) -> Void)? = nil) {
+        let followUp = profileListFollowUp.map { [$0] } ?? []
+        guard !reconciling else {
+            // The latest inputs win; every follow-up queued so far is kept for them.
+            pending = (inputs, (pending?.followUps ?? []) + followUp)
+            return
+        }
         reconciling = true
         defer { reconciling = false }
-        var next: Inputs? = inputs
+        var next: (inputs: Inputs, followUps: [@MainActor (ProfileListFollowUp) -> Void])? = (inputs, followUp)
         while let current = next {
-            pendingInputs = nil
-            step(current)
-            next = pendingInputs
+            pending = nil
+            let hadEpisode = episode != nil
+            step(current.inputs)
+            if !current.followUps.isEmpty {
+                let choice = Self.profileListFollowUp(hadEpisode: hadEpisode, hasEpisode: episode != nil,
+                                                      isUnlocked: current.inputs.isAccountKeyUnlocked)
+                // A follow-up that reconciles again is queued in `pending` and taken below.
+                for deliver in current.followUps { deliver(choice) }
+            }
+            next = pending
         }
+    }
+
+    /// Review R2(b): a silent unlock chosen by the Profile-list sink runs later, in a task.
+    /// It runs only if the controller it was chosen for is still the current one and no
+    /// episode exists by then; otherwise a failed device-envelope lookup could clear the key
+    /// cache that an episode's repair has just filled.
+    nonisolated static func shouldRunDeferredSilentUnlock(chosenFor: ObjectIdentifier?,
+                                                          current: ObjectIdentifier?,
+                                                          hasEpisode: Bool) -> Bool {
+        chosenFor != nil && chosenFor == current && !hasEpisode
     }
 
     /// What the Profile-list sink runs after it has reconciled (10.5, AM-4).

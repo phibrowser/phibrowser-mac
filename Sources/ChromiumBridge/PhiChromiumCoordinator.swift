@@ -451,31 +451,16 @@ import SwiftUI
             .sink { [weak self] profiles in
                 // ProfileManager publishes its main-thread cache synchronously.
                 // Fence an outstanding status read before any queued continuation resumes.
-                let followUp = MainActor.assumeIsolated { () -> SyncProfileMappingPauseReconciler.ProfileListFollowUp in
-                    guard let self else { return .silentUnlockAndResolve }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
                     self.syncHelper?.membershipDidChange()
                     // Plan 10.2: the list this sink was given, before any await; `profiles`
-                    // still holds the previous one while the sink runs.
-                    let hadEpisode = self.profileMappingPauseState?.episode != nil
-                    self.reconcileProfileMappingPause(profiles: profiles)
-                    // AM-4: during an episode the repair loop replaces the silent unlock, so a
-                    // failed device-envelope lookup cannot clear the key cache; elsewhere unchanged.
-                    let followUp = SyncProfileMappingPauseReconciler.profileListFollowUp(
-                        hadEpisode: hadEpisode, hasEpisode: self.profileMappingPauseState?.episode != nil,
-                        isUnlocked: self.syncKeyController?.manager.currentARK != nil)
-                    if followUp == .repairPass { self.profileMappingPauseState?.kickRepair() }
-                    return followUp
-                }
-                Task { @MainActor in
-                    if followUp == .silentUnlockAndResolve {
-                        await self?.syncKeyController?.silentUnlockAndResolve()
+                    // still holds the previous one while the sink runs. The follow-up is chosen
+                    // once the episode for these inputs is committed, which is later when this
+                    // sink runs inside another reconciliation (review R2).
+                    self.reconcileProfileMappingPause(profiles: profiles) { [weak self] followUp in
+                        self?.runProfileListFollowUp(followUp)
                     }
-                    // A profile arriving late can be the first unlock this process gets, so
-                    // this path has to be able to start the settings scheduling too.
-                    self?.startPhiSyncIfReady()
-                    // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
-                    // early-returns once scheduling starts).
-                    self?.refreshSpaceSyncGate()
                 }
             }
         buildPhiSyncEngine(stack: stack, accountId: account.userID,
@@ -1452,8 +1437,35 @@ import SwiftUI
     /// list retry, the end of engine build, `activatePairedSync()`, `startPhiSyncIfReady()`
     /// and the unlock observer before they enable work, and teardown.
     @MainActor
-    private func reconcileProfileMappingPause(profiles: [PhiBrowserProfile] = ProfileManager.shared.profiles) {
-        profileMappingPause.reconcile(profileMappingPauseInputs(profiles: profiles))
+    private func reconcileProfileMappingPause(
+        profiles: [PhiBrowserProfile] = ProfileManager.shared.profiles,
+        profileListFollowUp: (@MainActor (SyncProfileMappingPauseReconciler.ProfileListFollowUp) -> Void)? = nil
+    ) {
+        profileMappingPause.reconcile(profileMappingPauseInputs(profiles: profiles),
+                                      profileListFollowUp: profileListFollowUp)
+    }
+
+    /// The Profile-list sink's work after its reconciliation. AM-4: during an episode the
+    /// repair loop replaces the silent unlock, so a failed device-envelope lookup cannot clear
+    /// the key cache; elsewhere unchanged.
+    @MainActor
+    private func runProfileListFollowUp(_ followUp: SyncProfileMappingPauseReconciler.ProfileListFollowUp) {
+        if followUp == .repairPass { profileMappingPauseState?.kickRepair() }
+        let chosenFor = syncKeyController.map(ObjectIdentifier.init)
+        Task { @MainActor [weak self] in
+            if followUp == .silentUnlockAndResolve, let self, let controller = self.syncKeyController,
+               SyncProfileMappingPauseReconciler.shouldRunDeferredSilentUnlock(
+                   chosenFor: chosenFor, current: ObjectIdentifier(controller),
+                   hasEpisode: self.profileMappingPauseState?.episode != nil) {
+                await controller.silentUnlockAndResolve()
+            }
+            // A profile arriving late can be the first unlock this process gets, so
+            // this path has to be able to start the settings scheduling too.
+            self?.startPhiSyncIfReady()
+            // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
+            // early-returns once scheduling starts).
+            self?.refreshSpaceSyncGate()
+        }
     }
 
     @MainActor
@@ -1524,7 +1536,8 @@ import SwiftUI
         return .init(engine: engine.map(ObjectIdentifier.init),
                      controller: controller.map(ObjectIdentifier.init),
                      prerequisitesMet: prerequisitesMet, isProfileListEnumerated: enumerated,
-                     pause: pause, failureCategory: controller?.lastMappingsFailureCategory)
+                     pause: pause, failureCategory: controller?.lastMappingsFailureCategory,
+                     isAccountKeyUnlocked: controller?.manager.currentARK != nil)
     }
 
     /// The gate went from on to off on the current engine (plan implementation notes, "P4

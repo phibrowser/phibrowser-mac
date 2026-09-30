@@ -236,7 +236,14 @@ pending wait with an immediate pass and restart the delay at 5 seconds; a reques
 during a pass runs one more pass after it. During an episode, and with the
 account key unlocked, the Profile-list sink runs this repair instead of
 `silentUnlockAndResolve()`, so a failed device-envelope lookup cannot clear the
-key cache (AM-4); on a device with no episode the sink is unchanged. A Profile
+key cache (AM-4); on a device with no episode the sink is unchanged. The sink's
+choice is made by the reconciliation right after the episode transition for its
+list is committed: a sink that runs inside another reconciliation (the resume
+lets the Profile loader refresh the list) has its inputs queued, and its choice
+waits for them, so an episode they start selects nothing rather than the silent
+unlock. A silent unlock chosen this way runs later, in a task, and only if the
+key controller it was chosen for is still current and no episode exists by then.
+A Profile
 the key layer is creating can start an episode for the moment before its id is
 known (the list publishes before `createProfile` returns); nothing is aborted or
 shown and the episode ends when its adopt does.

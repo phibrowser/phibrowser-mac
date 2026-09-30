@@ -39,6 +39,11 @@ final class SyncProfileMappingPauseReconciler {
         var failureCategory: SyncProfileMappingFailureCategory?
         /// The account key is unlocked; decides the Profile-list follow-up (AM-4).
         var isAccountKeyUnlocked = false
+        /// Teardown: `controller` is retired right after this reconciliation, and `retire()`
+        /// clears its keys and notifies the bridge. Keys withdrawn from it are forgotten, not
+        /// restored, so Chromium never gets the old account's keys back for that moment
+        /// (review R4).
+        var controllerIsBeingRetired = false
     }
 
     struct Episode: Equatable {
@@ -394,7 +399,7 @@ final class SyncProfileMappingPauseReconciler {
                 effects.setKeysWithdrawn(true)
                 effects.log("profile mapping pause: chromium keys withdrawn")
                 effects.notifyKeysChanged()
-            } else if old.keysWithdrawnController == inputs.controller {
+            } else if old.keysWithdrawnController == inputs.controller, !inputs.controllerIsBeingRetired {
                 effects.setKeysWithdrawn(false)
                 effects.log("profile mapping pause: chromium keys restored")
                 effects.notifyKeysChanged()

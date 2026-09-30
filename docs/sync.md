@@ -262,9 +262,14 @@ enumeration with nothing unmapped only opens the gate.
 Timers exist only while they have work: the 15-second mark and the repair wait
 during an episode, the list retry before enumeration. Sign-out, account switch,
 self-removal and engine retirement (`stopPhiSync()`) reconcile without an engine,
-which ends the episode, cancels its timers, gives the keys back while the
-controller still exists and forgets the gate and helper pause of the engine being
-dropped. A device on which the predicate stays clear sees no change beyond the
+which ends the episode, cancels its timers and forgets the gate and helper
+pause of the engine being dropped. Keys withdrawn from the key controller are
+forgotten too, not restored: `invalidateSyncKeyController()` retires that
+controller right after `stopPhiSync()`, and `retire()` clears the keys and
+notifies the bridge once, so Chromium never gets the old account's keys back
+during sign-out, an account switch or self-removal. A reconciliation for any
+other missing prerequisite (lock, retirement found later, unpairing) still
+restores the flag and notifies. A device on which the predicate stays clear sees no change beyond the
 launch gate: no timer, no repair pass, no withdrawal, no catch-up, no report
 change.
 

@@ -1422,10 +1422,13 @@ import SwiftUI
         phiDomainKeys?.clear()
         phiDomainKeys = nil
         // Plan 10.8: without an engine the prerequisites are gone, so this ends the episode
-        // (its 15-second mark and repair loop with it), gives the keys back while the
-        // controller still exists, and stops the Profile list retry. A gate and a helper
-        // pause applied to the engine just dropped are forgotten with it.
-        reconcileProfileMappingPause()
+        // (its 15-second mark and repair loop with it) and stops the Profile list retry. A
+        // gate and a helper pause applied to the engine just dropped are forgotten with it.
+        // So are keys withdrawn from the controller: the only caller,
+        // `invalidateSyncKeyController()`, retires it right after this, and `retire()` clears
+        // its keys and notifies the bridge. Restoring them here would hand Chromium the old
+        // account's keys for that moment (review R4).
+        reconcileProfileMappingPause(controllerIsBeingRetired: true)
     }
 
     // MARK: - Profile mapping pause (plan 2026-09-29, section 10)
@@ -1439,10 +1442,12 @@ import SwiftUI
     @MainActor
     private func reconcileProfileMappingPause(
         profiles: [PhiBrowserProfile] = ProfileManager.shared.profiles,
+        controllerIsBeingRetired: Bool = false,
         profileListFollowUp: (@MainActor (SyncProfileMappingPauseReconciler.ProfileListFollowUp) -> Void)? = nil
     ) {
-        profileMappingPause.reconcile(profileMappingPauseInputs(profiles: profiles),
-                                      profileListFollowUp: profileListFollowUp)
+        var inputs = profileMappingPauseInputs(profiles: profiles)
+        inputs.controllerIsBeingRetired = controllerIsBeingRetired
+        profileMappingPause.reconcile(inputs, profileListFollowUp: profileListFollowUp)
     }
 
     /// The Profile-list sink's work after its reconciliation. AM-4: during an episode the

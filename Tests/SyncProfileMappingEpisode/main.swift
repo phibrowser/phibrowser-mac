@@ -18,6 +18,8 @@ final class Handle {}
     var paired = true
     var unlocked = true
     var retired = false
+    /// `stopPhiSync()`: the controller is retired right after the reconciliation (review R4).
+    var retiringController = false
     /// `nativeSyncRequiresReconfiguration`: a prerequisite, and read again when a pass falls due.
     var reconfiguring = false
     /// Forbids a pass without touching the prerequisites, to observe the skipped pass alone.
@@ -106,7 +108,8 @@ final class Handle {}
         }
         return .init(engine: engine.map(ObjectIdentifier.init), controller: controller.map(ObjectIdentifier.init),
                      prerequisitesMet: prerequisites, isProfileListEnumerated: enumerated,
-                     pause: pause, failureCategory: category, isAccountKeyUnlocked: unlocked)
+                     pause: pause, failureCategory: category, isAccountKeyUnlocked: unlocked,
+                     controllerIsBeingRetired: retiringController)
     }
 
     func reconcile() { reconciler.reconcile(inputs()) }
@@ -599,14 +602,21 @@ final class Handle {}
             f.advance(to: 20)
             precondition(f.keysWithdrawn && f.armed.count == 1, "The repair wait is armed")
             switch variant {
-            case 0: // `stopPhiSync()`: the engine and helper are gone, the controller not yet.
-                f.engine = nil
+            case 0: // `stopPhiSync()`: the engine and helper are gone, the controller is retired next.
+                f.engine = nil; f.retiringController = true
             case 1: f.retired = true
             default: f.unlocked = false
             }
             f.reconcile()
             precondition(f.reconciler.episode == nil && f.armed.isEmpty, "Teardown \(variant) left a timer")
-            precondition(!f.keysWithdrawn && f.notifications == 2, "Teardown \(variant) left the keys withdrawn")
+            if variant == 0 {
+                // Review R4: no "keys restored" before `retire()`, which clears and notifies.
+                precondition(f.keyCalls == [true] && f.notifications == 1
+                             && !f.logs.contains("profile mapping pause: chromium keys restored"),
+                             "Teardown handed the retiring controller's keys back to Chromium")
+            } else {
+                precondition(!f.keysWithdrawn && f.notifications == 2, "Teardown \(variant) left the keys withdrawn")
+            }
             if variant == 0 {
                 precondition(f.gateCalls == [true] && f.resumes == 0 && f.statusCalls.last != SyncProfileMappingPauseStatus.none,
                              "A gone engine and helper are not touched and nothing resumes")

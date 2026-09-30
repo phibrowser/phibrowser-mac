@@ -1476,6 +1476,7 @@ import SwiftUI
             setKeysWithdrawn: { [weak self] in self?.syncKeyController?.chromiumKeysWithdrawn = $0 },
             notifyKeysChanged: { ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?() },
             publishStatus: { [weak self] in self?.syncHelper?.setProfileMappingPause($0) },
+            publishListNotEnumerated: { [weak self] in self?.syncHelper?.setProfileListNotEnumerated(since: $0) },
             resume: { [weak self] in self?.resumeAfterProfileMappingPause() },
             runRepairPass: { [weak self] done in
                 guard let controller = self?.syncKeyController else { done(); return }

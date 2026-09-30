@@ -73,6 +73,31 @@ import Foundation
         await profileMappingPauseCancelsRoundObservation()
         await profileMappingPauseQueuesSyncNow()
         await profileMappingPauseCheckedAfterEveryRead()
+        await profileListNotEnumeratedIsReported()
+    }
+
+    /// Review R3: the report says since when the engine gate has been on because the Profile
+    /// list has not been enumerated; membership changes and ineligibility keep it, and it
+    /// changes nothing else.
+    @MainActor static func profileListNotEnumeratedIsReported() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        let since = Date(timeIntervalSince1970: 42)
+        let requests = f.requests
+        helper.setProfileListNotEnumerated(since: since)
+        precondition(helper.report.profileListNotEnumeratedSince == since && helper.report.summary.phase == .upToDate)
+        helper.membershipDidChange()
+        precondition(helper.report.profileListNotEnumeratedSince == since, "A membership change dropped the field")
+        f.paired = false
+        await helper.refresh()
+        precondition(helper.report.profileListNotEnumeratedSince == since, "Ineligibility dropped the field")
+        f.paired = true
+        precondition(f.requests == requests, "The field dispatched a round")
+        helper.setProfileListNotEnumerated(since: nil)
+        precondition(helper.report.profileListNotEnumeratedSince == nil)
+        helper.setProfileListNotEnumerated(since: since)
+        helper.stop()
+        precondition(helper.report.profileListNotEnumeratedSince == nil, "A stopped helper kept the field")
+        print("PASS helper: the report carries since when the Profile list has not been enumerated")
     }
 
     static let shownPause = SyncProfileMappingPauseStatus.paused(

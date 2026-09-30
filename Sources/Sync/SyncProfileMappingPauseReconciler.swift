@@ -55,15 +55,26 @@ final class SyncProfileMappingPauseReconciler {
         /// What the helper built with `statusEngine` has been handed.
         var status: SyncProfileMappingPauseStatus = .none
         var statusEngine: ObjectIdentifier?
+        /// AM-1: the gate of this engine is on because the Profile list has not been
+        /// enumerated, since the first reconciliation that saw the engine so (the end of its
+        /// build). The helper built with that engine reports it (review R3).
+        var listNotEnumerated: ListWait?
+    }
+
+    struct ListWait: Equatable {
+        let engine: ObjectIdentifier
+        let since: Date
     }
 
     struct Timing {
         /// Keys are withdrawn and the pause is shown once an episode is this old (R2, R3).
         var statusDelay: TimeInterval = 15
         /// The repair loop's first wait, doubling up to `maximumRetryDelay` (10.5); the
-        /// Profile list retry of AM-1 uses the same delays.
+        /// Profile list retry of AM-1 starts with the same delay and doubles up to
+        /// `maximumListRetryDelay`, because no round starts until it succeeds (review R3).
         var firstRetryDelay: TimeInterval = 5
         var maximumRetryDelay: TimeInterval = 300
+        var maximumListRetryDelay: TimeInterval = 30
     }
 
     /// What the owner does for the reconciliation. Each acts on the current object only.
@@ -73,6 +84,9 @@ final class SyncProfileMappingPauseReconciler {
         var setKeysWithdrawn: @MainActor (Bool) -> Void
         var notifyKeysChanged: @MainActor () -> Void
         var publishStatus: @MainActor (SyncProfileMappingPauseStatus) -> Void
+        /// Hands the helper the time since which the gate has been on because the Profile
+        /// list has not been enumerated; nil once it has (review R3).
+        var publishListNotEnumerated: @MainActor (Date?) -> Void = { _ in }
         /// The gate went from on to off on the current engine: catch-up, retention sweep,
         /// Profile loader (plan implementation notes, "P4 must call", item 3).
         var resume: @MainActor () -> Void
@@ -108,6 +122,8 @@ final class SyncProfileMappingPauseReconciler {
     private var repairLoop: RepairLoop?
     private var listRetryDelay: TimeInterval?
     private var cancelListRetry: (@MainActor () -> Void)?
+    /// The list retry has reached `maximumListRetryDelay` and said so once in the log.
+    private var listRetryCapLogged = false
     private var reconciling = false
     /// A reentrant call's inputs and the Profile-list follow-ups queued with them. One value,
     /// so a queued follow-up cannot exist without inputs that the running loop still takes.
@@ -238,9 +254,13 @@ final class SyncProfileMappingPauseReconciler {
         let time = effects.now()
         let previous = episode
         let current = Self.nextEpisode(previous, inputs: inputs, now: time, nextId: lastEpisodeId + 1)
-        let desired = Self.desiredOutputs(inputs: inputs, episode: current, now: time,
+        var desired = Self.desiredOutputs(inputs: inputs, episode: current, now: time,
                                           statusDelay: timing.statusDelay)
         let old = applied
+        if let engine = inputs.engine, !inputs.isProfileListEnumerated {
+            desired.listNotEnumerated = old.listNotEnumerated?.engine == engine
+                ? old.listNotEnumerated : ListWait(engine: engine, since: time)
+        }
         // Committed before any effect runs (10.10, "Notifying the bridge").
         episode = current
         applied = desired
@@ -261,7 +281,7 @@ final class SyncProfileMappingPauseReconciler {
                 self.effects.reconcileNow()
             }
         }
-        updateListRetry(inputs)
+        updateListRetry(inputs, listWait: old.listNotEnumerated, at: time)
         apply(old: old, desired: desired, inputs: inputs)
     }
 
@@ -326,10 +346,16 @@ final class SyncProfileMappingPauseReconciler {
     }
 
     /// AM-1: while an engine exists and the list has not been enumerated, read it again
-    /// after the repair loop's delays. A successful read publishes the list, whose sink
-    /// reconciles; `reconcileNow` covers a read that publishes nothing.
-    private func updateListRetry(_ inputs: Inputs) {
+    /// after 5 seconds, doubling to 30. A successful read publishes the list, whose sink
+    /// reconciles; `reconcileNow` covers a read that publishes nothing. Reaching the cap is
+    /// logged once, and so is the enumeration that follows it (metadata only).
+    private func updateListRetry(_ inputs: Inputs, listWait: ListWait?, at time: Date) {
         guard inputs.engine != nil, !inputs.isProfileListEnumerated else {
+            if listRetryCapLogged, inputs.isProfileListEnumerated, let listWait,
+               listWait.engine == inputs.engine {
+                effects.log("profile mapping pause: profile list enumerated after \(Int(time.timeIntervalSince(listWait.since))) s")
+            }
+            listRetryCapLogged = false
             cancelListRetry?()
             cancelListRetry = nil
             listRetryDelay = nil
@@ -337,7 +363,12 @@ final class SyncProfileMappingPauseReconciler {
         }
         guard cancelListRetry == nil else { return }
         let delay = listRetryDelay ?? timing.firstRetryDelay
-        listRetryDelay = min(delay * 2, timing.maximumRetryDelay)
+        listRetryDelay = min(delay * 2, timing.maximumListRetryDelay)
+        if delay >= timing.maximumListRetryDelay, !listRetryCapLogged {
+            listRetryCapLogged = true
+            let waited = listWait.map { Int(time.timeIntervalSince($0.since)) } ?? 0
+            effects.log("profile mapping pause: profile list not enumerated after \(waited) s; retrying every \(Int(delay)) s")
+        }
         cancelListRetry = effects.schedule(delay) { [weak self] in
             guard let self else { return }
             self.cancelListRetry = nil
@@ -374,6 +405,13 @@ final class SyncProfileMappingPauseReconciler {
                 effects.publishStatus(desired.status)
             } else if old.statusEngine != nil, old.statusEngine == inputs.engine {
                 effects.publishStatus(.none)
+            }
+        }
+        if desired.listNotEnumerated != old.listNotEnumerated {
+            if let wait = desired.listNotEnumerated {
+                effects.publishListNotEnumerated(wait.since)
+            } else if old.listNotEnumerated?.engine == inputs.engine {
+                effects.publishListNotEnumerated(nil)
             }
         }
         if resumed { effects.resume() }

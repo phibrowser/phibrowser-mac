@@ -30,6 +30,10 @@ final class SyncHelper {
         /// nothing for it. Cleared when the pause ends, by the next request and by the
         /// resets that return `request` to Idle.
         var syncNowCancelledByPause = false
+        /// Set while the engine gate is on because the Profile list has not been enumerated
+        /// (AM-1), to the time the engine was built: no round starts until the list is read.
+        /// Nil otherwise. Presentation is the status pane's (review R3).
+        var profileListNotEnumeratedSince: Date?
     }
 
     /// What an explicit request does while a participant is unobservable (missing or Checking),
@@ -87,6 +91,8 @@ final class SyncHelper {
     private var retired = false
     /// What the coordinator's reconciliation last handed over; see `setProfileMappingPause(_:)`.
     private var mappingPause: SyncProfileMappingPauseStatus = .none
+    /// What the reconciliation last handed over; see `setProfileListNotEnumerated(since:)`.
+    private var listNotEnumeratedSince: Date?
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private(set) var report = Report()
@@ -140,6 +146,17 @@ final class SyncHelper {
         report = Report(summary: SyncStatusSummary(
             phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess))
         report.profileMappingPause = shownMappingPause
+        report.profileListNotEnumeratedSince = listNotEnumeratedSince
+    }
+
+    /// The engine gate is on because the Profile list has not been enumerated, since the
+    /// given time (the engine's build), or nil once it has been. Only the coordinator's
+    /// reconciliation calls it. It changes the report and nothing else: the gate turns the
+    /// rounds away, and the helper's Checking already covers the unread list.
+    func setProfileListNotEnumerated(since: Date?) {
+        guard !retired else { return }
+        listNotEnumeratedSince = since
+        report.profileListNotEnumeratedSince = since
     }
 
     /// The Profile mapping pause, as the coordinator's reconciliation derives it from the
@@ -262,6 +279,7 @@ final class SyncHelper {
         coordinationFailure = nil
         report = Report()
         report.profileMappingPause = shownMappingPause
+        report.profileListNotEnumeratedSince = listNotEnumeratedSince
     }
 
     private func updateTransientFailure(_ failure: CoordinationFailure?) {

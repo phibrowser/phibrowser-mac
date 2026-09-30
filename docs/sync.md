@@ -251,8 +251,13 @@ shown and the episode ends when its adopt does.
 Launch (AM-1): `ProfileManager.isProfileListEnumerated` becomes true on the first
 complete, non-empty bridge read and never goes back. Until then the gate is on,
 no episode starts and no key is withdrawn; while an engine exists and the list is
-still not enumerated, the list is read again after 5 seconds, doubling to 5
-minutes. A first enumeration with nothing unmapped only opens the gate.
+still not enumerated, the list is read again after 5 seconds, doubling to 30
+seconds and then every 30 seconds, because no round starts until a read
+succeeds. Reaching the 30-second cap is logged once, and so is the enumeration
+that follows it (elapsed seconds only). The helper's report carries
+`profileListNotEnumeratedSince` (the time the engine was built) while the gate
+is on for this reason, and nil otherwise; membership changes keep it. A first
+enumeration with nothing unmapped only opens the gate.
 
 Timers exist only while they have work: the 15-second mark and the repair wait
 during an episode, the list retry before enumeration. Sign-out, account switch,

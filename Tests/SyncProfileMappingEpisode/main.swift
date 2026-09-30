@@ -38,6 +38,8 @@ final class Handle {}
     var status: SyncProfileMappingPauseStatus = .none
     var statusCalls: [SyncProfileMappingPauseStatus] = []
     var resumes = 0
+    /// What the helper was handed for the unenumerated list (review R3), in seconds.
+    var listWaitCalls: [TimeInterval?] = []
     /// Runs inside the resume effect, as the Profile loader's due list refresh does.
     var onResume: (() -> Void)?
     /// The Chromium key cache (`SyncKeyController.resolved`) is populated.
@@ -69,6 +71,9 @@ final class Handle {}
             self.notifications += 1; self.effects.append("notify")
         },
         publishStatus: { self.status = $0; self.statusCalls.append($0); self.effects.append("status") },
+        publishListNotEnumerated: {
+            self.listWaitCalls.append($0?.timeIntervalSince1970); self.effects.append("list wait")
+        },
         resume: { self.resumes += 1; self.effects.append("resume"); self.onResume?() },
         runRepairPass: { done in
             self.passes.append(self.time)
@@ -161,6 +166,51 @@ final class Handle {}
         deviceWithoutEpisodeDoesNothing()
         reconfigurationStopsTheEpisode()
         nestedListChangeDoesNotChooseTheSilentUnlock()
+        listRetryIsCappedAndReported()
+    }
+
+    /// Review R3: the AM-1 list retry backs off 5, 10, 20, then every 30 seconds, logs the
+    /// cap once and the late enumeration once, and the helper learns since when the gate has
+    /// been on for that reason.
+    @MainActor static func listRetryIsCappedAndReported() {
+        let f = Fixture()
+        f.enumerated = false
+        f.time = 50
+        f.reconcile()
+        precondition(f.listWaitCalls == [50], "The helper was not told since when the list is unread")
+        f.advance(to: 1000)
+        let reads = [50] + f.timers.map(\.at)
+        let waits = zip(reads.dropFirst(), reads).map { $0 - $1 }
+        precondition(Array(waits.prefix(7)) == [5, 10, 20, 30, 30, 30, 30], "List retry delays: \(waits)")
+        precondition(waits.allSatisfy { $0 <= 30 }, "The list retry waited longer than 30 s")
+        precondition(f.logs == ["profile mapping pause: profile list not enumerated after 35 s; retrying every 30 s"],
+                     "The cap was not logged exactly once: \(f.logs)")
+        precondition(f.listWaitCalls == [50], "The helper was handed the wait again: \(f.listWaitCalls)")
+        f.listReadSucceeds = true
+        f.advance(to: 1100)
+        precondition(f.enumerated && !f.gate && f.armed.isEmpty && f.listWaitCalls == [50, nil])
+        precondition(f.logs.count == 2 && f.logs[1].hasPrefix("profile mapping pause: profile list enumerated after "),
+                     "The enumeration after the cap was not logged once: \(f.logs)")
+
+        // A first read that succeeds before the cap logs nothing; a new engine waits anew,
+        // and the wait of an engine that is gone is forgotten, not cleared.
+        let g = Fixture()
+        g.enumerated = false
+        g.reconcile()
+        g.time = 3
+        g.engine = Handle()
+        g.reconcile()
+        precondition(g.listWaitCalls == [0, 3], "A new engine did not report its own wait")
+        g.engine = nil
+        g.reconcile()
+        precondition(g.listWaitCalls == [0, 3], "The wait of a gone engine was cleared on its helper")
+        g.engine = Handle()
+        g.reconcile()
+        g.enumerated = true
+        g.reconcile()
+        precondition(g.listWaitCalls == [0, 3, 3, nil] && g.logs.isEmpty && g.armed.isEmpty,
+                     "\(g.listWaitCalls) \(g.logs)")
+        print("PASS profile mapping episode: the list retry is capped at 30 s, logged once, and reported to the helper")
     }
 
     /// Review R2: an episode ends; its resume lets the loader refresh the list, which publishes
@@ -499,9 +549,9 @@ final class Handle {}
         f.syncable = ["Default"]
         // The list read retries with the repair loop's delays while it fails.
         f.advance(to: 40)
-        precondition(f.listReads == 3 && f.armed.map(\.at) == [75], "List retry delays: \(f.armed.map(\.at))")
+        precondition(f.listReads == 3 && f.armed.map(\.at) == [65], "List retry delays: \(f.armed.map(\.at))")
         f.listReadSucceeds = true
-        f.advance(to: 75)
+        f.advance(to: 65)
         precondition(f.enumerated && !f.gate && f.gateCalls == [true, false] && f.resumes == 1)
         precondition(f.armed.isEmpty && f.reconciler.episode == nil && f.passes.isEmpty && f.keyCalls.isEmpty,
                      "The first enumeration with nothing unmapped did more than open the gate")

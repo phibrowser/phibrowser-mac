@@ -395,24 +395,31 @@ enum SyncableSettings {
     /// Finally posts ``Notification/Name/phiSyncedSettingsDidApply`` with the keys that landed,
     /// so preferences whose owner caches them in memory (the theme keys) can re-read rather
     /// than wait for the next launch. Nothing is posted when no key landed.
+    ///
+    /// Returns how many landed keys changed their local value, for the sync status counts.
+    @discardableResult
     static func apply(
         _ entity: Phi_PhiSettingEntity,
         to defaults: UserDefaults,
         settings: [SyncableSetting] = SyncableSettings.all
-    ) {
+    ) -> Int {
         var applied: [String] = []
+        var changed = 0
         for setting in settings {
             guard let value = entity.values[setting.key] else { continue }
+            let previous = setting.read(defaults).map(signature(of:))
             setting.write(value, defaults)
             let expected = signature(of: value)
             guard let stored = setting.read(defaults), signature(of: stored) == expected else { continue }
             defaults.set(NSNumber(value: value.updatedAtMs), forKey: timestampKey(for: setting.key))
             defaults.set(expected, forKey: valueKey(for: setting.key))
             applied.append(setting.key)
+            if previous != expected { changed += 1 }
         }
-        guard !applied.isEmpty else { return }
+        guard !applied.isEmpty else { return changed }
         NotificationCenter.default.post(name: .phiSyncedSettingsDidApply, object: nil,
                                         userInfo: [appliedKeysUserInfoKey: applied])
+        return changed
     }
 
     /// `userInfo` key of ``Notification/Name/phiSyncedSettingsDidApply``; the value is a

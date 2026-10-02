@@ -320,6 +320,17 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertEqual(after.values[probeKey]?.updatedAtMs, 5_000, "must not be re-stamped with now")
     }
 
+    /// The sync status counts only keys whose local value changed, not re-stamped equal values.
+    func testApplyReturnsTheNumberOfChangedKeys() {
+        let first = SyncableSettings.apply(fromMap([probeKey: boolValue(true, at: 42)]),
+                                           to: defaults, settings: probeRegistry)
+        let second = SyncableSettings.apply(fromMap([probeKey: boolValue(true, at: 99)]),
+                                            to: defaults, settings: probeRegistry)
+
+        XCTAssertEqual(first, 1)
+        XCTAssertEqual(second, 0)
+    }
+
     /// A key absent from the registry is never blind-written into UserDefaults.
     func testApplyIgnoresKeysOutsideTheRegistry() {
         SyncableSettings.apply(

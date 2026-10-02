@@ -26,7 +26,7 @@ import Foundation
             return self.acceptsRequests
         })
     }
-    func helper() -> SyncHelper {
+    func helper(policy: SyncHelper.ExplicitRequestPolicy = .waitForAllObservable) -> SyncHelper {
         SyncHelper(isEligible: { self.paired }, participants: {
             self.enumerations += 1
             return self.ids.map(self.participant)
@@ -34,7 +34,7 @@ import Foundation
             self.saves += 1
             guard self.canSave else { return false }
             self.saved = date; return true
-        }, now: { self.time })
+        }, now: { self.time }, unobservablePolicy: policy)
     }
     func completedHelper() async -> SyncHelper {
         let helper = helper()
@@ -59,6 +59,14 @@ import Foundation
         await rejectedRequestsDoNotCreateRounds()
         await membershipAndUpstream()
         await delayedObservations()
+        await syncNowRequestStates()
+        await syncNowRateLimitAndCoalescing()
+        await syncNowRejectionAndResets()
+        await syncNowUnobservablePolicies()
+        await syncNowIgnoresOtherDemand()
+        await failingRoundEndsEarly()
+        await earlyEndKeepsLateSuccess()
+        await reportCarriesNativeDetail()
     }
 
     @MainActor static func waitingStatesRemainObservational() async {
@@ -388,5 +396,337 @@ import Foundation
         await pending.value
         precondition(lateHelper.report.summary.phase == .notStarted)
         print("PASS helper: native, membership and account fences reject delayed replies")
+    }
+
+    @MainActor static func syncNowRequestStates() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        precondition(helper.report.request == .idle)
+        f.tick(170); f.status("profile", .syncing)
+        var state = await helper.requestSyncNow()
+        precondition(state == .queued(reason: .busy, notBefore: nil) && f.requests["phi"] == 1,
+                     "A request while an engine is busy must queue, not dispatch")
+        f.succeed(at: 171)
+        await helper.refresh() // The helper's own poll dispatches the queued request.
+        precondition(helper.report.request == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        f.succeed(at: 175)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && f.saved == f.time && helper.report.summary.phase == .upToDate,
+                     "Completion returns the request to idle")
+        // A settled helper outside the interval dispatches immediately.
+        f.tick(240)
+        state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 3)
+        helper.stop()
+        print("PASS helper Sync now: idle, queued while busy, dispatched by the poll, in flight, idle on completion")
+    }
+
+    @MainActor static func syncNowRateLimitAndCoalescing() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(110)
+        var state = await helper.requestSyncNow()
+        let notBefore = Date(timeIntervalSince1970: 160)
+        precondition(state == .queued(reason: .rateLimited, notBefore: notBefore) && f.requests["phi"] == 1,
+                     "A request within the interval must say when it can run")
+        f.tick(130)
+        await helper.refresh()
+        precondition(helper.report.request == .queued(reason: .rateLimited, notBefore: notBefore)
+                     && helper.report.summary.phase == .upToDate,
+                     "A queued request survives polls and preserves the observed phase")
+        f.tick(160)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: notBefore) && f.requests["phi"] == 2,
+                     "The queued request dispatches on its own once the interval passes")
+        f.tick(162)
+        state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: notBefore) && f.requests["phi"] == 2,
+                     "A request during a round coalesces with it")
+        f.succeed(at: 164)
+        await helper.refresh()
+        f.tick(230)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && f.requests["phi"] == 2 && f.saves == 2,
+                     "A coalesced request must not queue another round")
+
+        // A tap during an observation in progress is not lost.
+        var hold = false
+        var reply: CheckedContinuation<SyncContextSnapshot?, Never>?
+        let g = Fixture()
+        g.status("phi", .upToDate, at: 90); g.status("profile", .upToDate, at: 90)
+        let raced = SyncHelper(isEligible: { true }, participants: {
+            [g.participant("phi"),
+             SyncHelper.Participant(id: "profile", read: {
+                 if hold { return await withCheckedContinuation { reply = $0 } }
+                 return g.snapshots["profile"]
+             }, requestSync: { g.requests["profile", default: 0] += 1; return true })]
+        }, lastSuccess: nil, saveSuccess: { _ in true }, now: { g.time })
+        await raced.refresh()
+        g.succeed(at: 103)
+        await raced.refresh()
+        g.tick(170); hold = true
+        let poll = Task { await raced.refresh() }
+        while reply == nil { await Task.yield() }
+        let tap = Task { await raced.requestSyncNow() }
+        for _ in 0..<10 { await Task.yield() }
+        hold = false
+        reply?.resume(returning: g.snapshots["profile"])
+        await poll.value
+        state = await tap.value
+        precondition(state == .inFlight(startedAt: g.time) && g.requests["phi"] == 2,
+                     "A request recorded during a poll dispatches without waiting for the next poll")
+        raced.stop()
+        helper.stop()
+        print("PASS helper Sync now: rate-limited queue with notBefore, auto-dispatch, coalescing, tap during a poll")
+    }
+
+    @MainActor static func syncNowRejectionAndResets() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.acceptsRequests = false
+        var state = await helper.requestSyncNow()
+        precondition(state == .rejected && f.requests["phi"] == 2, "A participant refusal reports rejected")
+        f.tick(175)
+        await helper.refresh()
+        precondition(helper.report.request == .rejected)
+        helper.membershipDidChange()
+        precondition(helper.report.request == .idle, "Membership changes reset the request state")
+        f.tick(240); f.acceptsRequests = true
+        state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 3)
+        f.paired = false
+        state = await helper.requestSyncNow()
+        precondition(state == .idle && helper.report.summary.phase == .notStarted, "Ineligibility resets to idle")
+        helper.stop()
+        state = await helper.requestSyncNow()
+        precondition(state == .idle)
+        print("PASS helper Sync now: refusal reports rejected; membership, ineligibility and stop reset to idle")
+    }
+
+    @MainActor static func syncNowUnobservablePolicies() async {
+        // Default policy: a lazy Profile keeps an explicit request queued, without traffic.
+        for decodedChecking in [false, true] {
+            let f = Fixture()
+            f.status("phi", .upToDate, at: 90)
+            if decodedChecking { f.status("profile", .checking) }
+            let helper = f.helper()
+            let state = await helper.requestSyncNow()
+            precondition(state == .queued(reason: .unobservable, notBefore: nil) && f.requests.isEmpty)
+            for second in stride(from: 103, through: 400, by: 3) {
+                f.tick(Double(second))
+                await helper.refresh()
+            }
+            precondition(helper.report.request == .queued(reason: .unobservable, notBefore: nil) && f.requests.isEmpty,
+                         "Under waitForAllObservable the request waits for every participant")
+            helper.stop()
+        }
+
+        // dispatchToObservable: the request dispatches; the barrier still requires the Profile.
+        let f = Fixture()
+        f.saved = Date(timeIntervalSince1970: 50)
+        f.status("phi", .upToDate, at: 90); f.status("profile", .checking)
+        let helper = f.helper(policy: .dispatchToObservable)
+        await helper.refresh()
+        precondition(f.requests.isEmpty, "Automatic demand still waits for every participant")
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests == ["phi": 1, "profile": 1],
+                     "An explicit request dispatches to all participants once the observable ones are settled")
+        f.tick(103); f.status("phi", .upToDate, at: 103)
+        await helper.refresh()
+        precondition(f.saves == 0 && helper.report.summary.phase == .checking
+                     && helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 100)),
+                     "The unobservable Profile stays in the completion barrier")
+        f.tick(160)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && helper.report.summary.phase == .checking
+                     && f.saved == Date(timeIntervalSince1970: 50),
+                     "Expiry without the Profile returns to idle without an error or a common time")
+        for second in stride(from: 163, through: 600, by: 3) {
+            f.tick(Double(second))
+            await helper.refresh()
+        }
+        precondition(f.requests["phi"] == 1, "Expiry must not start automatic retries while the Profile is unobservable")
+        f.tick(601); f.status("phi", .syncing, at: 103)
+        state = await helper.requestSyncNow()
+        precondition(state == .queued(reason: .busy, notBefore: nil), "Observable busy engines still queue the request")
+        f.status("phi", .upToDate, at: 602); f.tick(602)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        helper.stop()
+
+        let nothing = Fixture()
+        nothing.status("phi", .checking); nothing.status("profile", .checking)
+        let blind = nothing.helper(policy: .dispatchToObservable)
+        state = await blind.requestSyncNow()
+        precondition(state == .queued(reason: .unobservable, notBefore: nil) && nothing.requests.isEmpty,
+                     "Without any observable participant nothing dispatches")
+        blind.stop()
+        print("PASS helper Sync now: unobservable Profile queues under waitForAllObservable, dispatches under dispatchToObservable with the barrier kept")
+    }
+
+    @MainActor static func syncNowIgnoresOtherDemand() async {
+        // The pane-open request queues without a tap: the button stays idle.
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(110)
+        await helper.refresh(requestSync: true)
+        precondition(helper.report.request == .idle, "The pane-open request must not show on the button")
+        f.tick(160)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2 && helper.report.request == .idle,
+                     "A round the pane-open request started is not the button's round")
+        f.tick(162)
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: Date(timeIntervalSince1970: 160)) && f.requests["phi"] == 2,
+                     "A tap joins the running round and shows it")
+        f.succeed(at: 164)
+        await helper.refresh()
+        precondition(helper.report.request == .idle)
+        helper.stop()
+
+        // An automatic dispatch refused at startup is not the button's failure.
+        let g = Fixture(), automatic = g.helper()
+        g.status("phi", .upToDate, at: 90); g.status("profile", .upToDate, at: 80)
+        g.acceptsRequests = false
+        await automatic.refresh()
+        precondition(g.requests["phi"] == 1 && automatic.report.request == .idle,
+                     "A refused automatic dispatch must not report the button as rejected")
+        g.tick(170)
+        state = await automatic.requestSyncNow()
+        precondition(state == .rejected && g.requests["phi"] == 2, "A refused Sync now dispatch is rejected")
+        g.acceptsRequests = true; g.tick(240)
+        await automatic.refresh()
+        precondition(g.requests["phi"] == 3 && automatic.report.request == .idle,
+                     "An accepted automatic dispatch clears the rejection without showing on the button")
+        automatic.stop()
+        print("PASS helper Sync now: pane-open and automatic demand stay off the button; a tap joins a running round")
+    }
+
+    @MainActor static func failingRoundEndsEarly() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.status("phi", .offline, at: 103)
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        f.tick(171)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "Failure evidence from before the request cannot end the round")
+        f.tick(173); f.status("phi", .syncing, at: 103); f.status("profile", .upToDate, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "A participant still working keeps the round")
+        f.tick(175); f.status("phi", .offline, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "One failed sample may be transient")
+        f.tick(178)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && helper.report.summary.phase == .offline
+                     && f.saved == Date(timeIntervalSince1970: 103),
+                     "A round every participant has settled on a failure since the request ends at the second such sample")
+        // Automatic demand keeps today's cadence: the timeout (230) plus the interval (290).
+        for second in stride(from: 181, through: 289, by: 3) {
+            f.tick(Double(second))
+            await helper.refresh()
+        }
+        precondition(f.requests["phi"] == 2, "An early end must not retry failing sync sooner than a timeout would")
+        f.tick(290)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 3 && helper.report.request == .idle,
+                     "The automatic retry runs on the old schedule and stays off the button")
+        helper.stop()
+
+        // A tap after an early end only waits for the ordinary minimum interval.
+        let g = Fixture(), tapped = await g.completedHelper()
+        g.tick(170); g.status("phi", .needsAttention, at: 103)
+        _ = await tapped.requestSyncNow()
+        g.tick(172); g.status("phi", .needsAttention, at: 103); g.status("profile", .upToDate, at: 103)
+        await tapped.refresh()
+        g.tick(175)
+        await tapped.refresh()
+        precondition(tapped.report.request == .idle && g.requests["phi"] == 2)
+        g.tick(200)
+        state = await tapped.requestSyncNow()
+        precondition(state == .queued(reason: .rateLimited, notBefore: Date(timeIntervalSince1970: 230)))
+        g.tick(230)
+        await tapped.refresh()
+        precondition(g.requests["phi"] == 3 && tapped.report.request == .inFlight(startedAt: g.time),
+                     "An explicit request is limited by the minimum interval, not the automatic retry delay")
+        tapped.stop()
+        print("PASS helper: a round that fails after the request ends early; automatic retries keep their cadence")
+    }
+
+    /// Ends a Sync now round early: tapped at 170, failure first seen at 173, ended at 176.
+    @MainActor static func earlyEndedHelper(_ f: Fixture) async -> SyncHelper {
+        let helper = await f.completedHelper()
+        f.tick(170); f.status("phi", .offline, at: 103)
+        _ = await helper.requestSyncNow()
+        f.tick(173); f.status("phi", .offline, at: 103); f.status("profile", .offline, at: 103)
+        await helper.refresh()
+        f.tick(176)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && f.requests["phi"] == 2)
+        return helper
+    }
+
+    @MainActor static func earlyEndKeepsLateSuccess() async {
+        // Overlapping refresh sources observing 0.2 s apart cannot end the round.
+        let e = Fixture(), quick = await e.completedHelper()
+        e.tick(170); e.status("phi", .offline, at: 103)
+        _ = await quick.requestSyncNow()
+        e.tick(173); e.status("phi", .offline, at: 103); e.status("profile", .offline, at: 103)
+        await quick.refresh()
+        e.time = Date(timeIntervalSince1970: 173.2)
+        await quick.refresh()
+        precondition(quick.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 170)),
+                     "Two failing observations 0.2 s apart must not end the round")
+        quick.stop()
+
+        // Recovery inside the window records the success the running round would have.
+        let f = Fixture(), helper = await earlyEndedHelper(f)
+        f.succeed(at: 180)
+        await helper.refresh()
+        precondition(f.saved == Date(timeIntervalSince1970: 180) && helper.report.summary.phase == .upToDate,
+                     "A late success inside the window is recorded")
+        f.tick(183)
+        await helper.refresh()
+        precondition(helper.report.summary.phase == .upToDate && helper.report.request == .idle
+                     && f.requests["phi"] == 2, "The recovered round leaves no demand and never shows as Checking")
+        helper.stop()
+
+        // Recovery after the window records nothing until the next round.
+        let g = Fixture(), late = await earlyEndedHelper(g)
+        g.succeed(at: 231)
+        await late.refresh()
+        precondition(g.saved == Date(timeIntervalSince1970: 103) && late.report.summary.phase == .checking,
+                     "A success after the window does not complete the ended round")
+        g.tick(290); g.succeed(at: 290)
+        await late.refresh()
+        precondition(g.requests["phi"] == 3, "The next automatic round runs on the old schedule")
+        late.stop()
+
+        // A membership change after an early end drops the retry delay: minimum interval only.
+        let h = Fixture(), moved = await earlyEndedHelper(h)
+        moved.membershipDidChange()
+        h.tick(227)
+        await moved.refresh()
+        precondition(h.requests["phi"] == 2)
+        h.tick(230)
+        await moved.refresh()
+        precondition(h.requests["phi"] == 3, "Membership change must not keep the early-end retry delay")
+        moved.stop()
+        print("PASS helper: early end needs a failure one poll apart and keeps a late success inside the timeout")
+    }
+
+    @MainActor static func reportCarriesNativeDetail() async {
+        let f = Fixture(), helper = f.helper()
+        var round = SyncRoundDetail()
+        round.kinds[.spaces] = SyncKindStatus(received: 1, sent: 2, pending: 3, held: 4)
+        round.note(.rejectedByServer, kind: .spaces)
+        let detail = SyncNativeDetail().merging(round: round, at: Date(timeIntervalSince1970: 90))
+        f.snapshots["phi"] = SyncContextSnapshot(id: "phi", phase: .needsAttention, lastSuccess: nil,
+                                                 revision: 7, detail: detail)
+        f.status("profile", .upToDate, at: 90)
+        await helper.refresh()
+        precondition(helper.report.snapshots["phi"]?.detail == detail && helper.report.snapshots["profile"]?.detail == nil,
+                     "The report carries the native detail unchanged")
+        helper.stop()
+        print("PASS helper: report carries the native per-kind detail unchanged")
     }
 }

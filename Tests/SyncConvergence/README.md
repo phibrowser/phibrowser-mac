@@ -62,6 +62,22 @@ tested without a host at all.
   loudly rather than testing a stale copy, and the generated file is gitignored
   so no copy is ever committed.
 
+* **Engine members — re-hosted in a stub actor.**
+  `PhiSyncEngine` is an actor that cannot be compiled outside the app, but its
+  Space apply pass (`applySpaces`), its Space tag routing (`routeSpaceEntity`),
+  the two structs they use and the pull's per-page tag-index extension are
+  sliced into `extension SpaceApplyHost` (the `HOSTED` and `SNIPPETS` lists in
+  `extract_production_slices.py`; `private` is dropped from each member's own
+  head, nothing else changes). `SpaceApply.swift` declares the actor with the
+  few engine members those read (`spaceAccess`, `now()`, the round counters,
+  and stubs for the logger, `PhiSyncLog` and `PhiEntityCodec`), plus a fake
+  main-actor `PhiSpaceLocalAccess`, and pins the apply-loop decisions no pure
+  property reaches: a landing clears `refusedAtMs`, a Space being deleted
+  locally is neither updated nor re-created (including a deletion that begins
+  between the loop's two reads of the mark), a mapped Space outside the sync
+  view is parked rather than created over, and a tombstone on a later page
+  resolves a Space an earlier page of the same pull introduced.
+
 * **SwiftProtobuf — the checkout Xcode already resolved.**
   The build script reads the revision `Phi.xcodeproj`'s `Package.resolved` pins
   (1.38.1 / `55d7a1cc`), finds a matching checkout — `$SWIFT_PROTOBUF_PATH`,

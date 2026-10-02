@@ -24,7 +24,44 @@ final class DevicesSettingViewModel: ObservableObject {
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
     var syncReport: (_ requestSync: Bool) async -> SyncHelper.Report? = { _ in nil }
+    /// Sync now: records an explicit request with the helper and returns its report.
+    var syncNowReport: () async -> SyncHelper.Report? = { nil }
     @Published private(set) var summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+    @Published private(set) var requestState: SyncRequestState = .idle
+    @Published private(set) var nativeDetail: SyncNativeDetail?
+    /// The helper report's pause fields as last read; `statusPresentation` lays them over the
+    /// summary on every read (docs/sync.md, "Sync status contract"), and nothing else interprets them.
+    @Published private(set) var profileMappingPause: SyncProfileMappingPauseStatus = .none
+    @Published private(set) var syncNowCancelledByPause = false
+    @Published private(set) var profileListNotEnumeratedSince: Date?
+    /// When the report was last read; the unread Profile list's age is measured against it.
+    @Published private(set) var statusReadAt = Date()
+    /// Bumped when a shown pause ends, so the view announces that sync resumed.
+    @Published private(set) var pauseEndedSerial: UInt64 = 0
+    /// The pause card's Retry: `PhiChromiumCoordinator.retryProfileMappingRepair()`.
+    var retryProfileMappingRepair: () -> Void = {}
+    /// From a Sync now tap until the helper answers, so the control never looks idle in between.
+    @Published private(set) var isSubmittingSyncNow = false
+    /// Set when a Sync now request the helper accepted or queued has ended, or when the helper
+    /// refused it; the view announces it. `serial` makes repeated outcomes distinct.
+    @Published private(set) var syncNowOutcome: SyncNowOutcome?
+    struct SyncNowOutcome: Equatable {
+        enum Result: Equatable {
+            /// A common success newer than at the tap.
+            case finished
+            /// Ended without that success; the native last problem, if one was recorded after the tap.
+            case failed(SyncProblemCategory?)
+            case rejected
+        }
+        let serial: UInt64
+        let result: Result
+    }
+    private var awaitingSyncNow = false
+    /// The common success time when the tap was made; only a newer one means the sync finished.
+    private var syncNowBaseline: Date?
+    /// Only a problem recorded at or after the tap describes this request.
+    private var syncNowTappedAt = Date.distantPast
+    private var syncNowSerial: UInt64 = 0
     var pairingComplete: () -> Bool = { ProfilePairingGate.shared.isPaired }
     var isCurrentAccount: () -> Bool = { true }
     /// Whether an account is signed in. The key API refuses to send a request
@@ -44,22 +81,108 @@ final class DevicesSettingViewModel: ObservableObject {
         let generation = loadGeneration
         requiresReconfiguration = reconfigurationRequired()
         paired = pairingComplete()
-        guard paired else {
-            contextSnapshots = [:]; requiredIDs = []
-            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
-            return
-        }
+        guard paired else { clearStatus(); return }
         let report = await syncReport(requestSync)
         guard generation == loadGeneration, isCurrentAccount() else { return }
         paired = pairingComplete()
-        guard paired else {
-            contextSnapshots = [:]; requiredIDs = []
-            summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
-            return
+        guard paired else { clearStatus(); return }
+        apply(report)
+    }
+
+    /// Sync now. Calls the helper directly instead of `refresh`, whose in-flight guard would
+    /// drop a tap made during the 3 s poll.
+    func syncNow() async {
+        guard isUnlocked, !isSubmittingSyncNow, isCurrentAccount() else { return }
+        let generation = loadGeneration
+        syncNowBaseline = summary.lastSuccess
+        syncNowTappedAt = Date()
+        isSubmittingSyncNow = true
+        defer { isSubmittingSyncNow = false }
+        let report = await syncNowReport()
+        guard generation == loadGeneration, isCurrentAccount() else { return }
+        paired = pairingComplete()
+        guard paired else { clearStatus(); return }
+        apply(report)
+        switch requestState {
+        case .queued, .inFlight: awaitingSyncNow = true
+        case .rejected: finishSyncNow(.rejected)
+        case .idle: break // Nothing was recorded (helper stopped or ineligible).
         }
+    }
+
+    /// What the status row shows: the summary with the Profile mapping pause and the unread
+    /// Profile list laid over it. Computed from the last report on every read, never stored.
+    var statusPresentation: SyncStatusPresentation {
+        SyncStatusPresentation.present(summary: summary.phase, request: requestState,
+            profileMappingPause: profileMappingPause, syncNowCancelledByPause: syncNowCancelledByPause,
+            profileListNotEnumeratedSince: profileListNotEnumeratedSince,
+            resetRequired: resetRequired,
+            profileNames: profileNames, now: statusReadAt)
+    }
+
+    /// A reset or reconfiguration wins over the pause: Retry cannot fix it.
+    private var resetRequired: Bool {
+        requiresReconfiguration || nativeDetail?.lastProblem?.category == .resetRequired
+    }
+
+    /// The Sync now control: the helper's request state, the pane's own unlock and pairing
+    /// checks, and progress while a tap is being submitted. Hidden while the pause shows Retry.
+    var syncNowButton: SyncNowButtonState {
+        guard isUnlocked, paired else {
+            return SyncNowButtonState(isVisible: false, isEnabled: false, showsProgress: false, hint: .none)
+        }
+        let state = statusPresentation.syncNow
+        guard isSubmittingSyncNow else { return state }
+        return SyncNowButtonState(isVisible: state.isVisible, isEnabled: false, showsProgress: true, hint: .none)
+    }
+
+    private func apply(_ report: SyncHelper.Report?) {
+        let wasPaused = statusPresentation.pause != nil
         contextSnapshots = report?.snapshots ?? [:]
         requiredIDs = report?.requiredIDs ?? []
         summary = report?.summary ?? SyncStatusSummary(phase: .checking, lastSuccess: nil)
+        requestState = report?.request ?? .idle
+        nativeDetail = report?.snapshots["phi"]?.detail
+        profileMappingPause = report?.profileMappingPause ?? .none
+        syncNowCancelledByPause = report?.syncNowCancelledByPause ?? false
+        profileListNotEnumeratedSince = report?.profileListNotEnumeratedSince
+        statusReadAt = Date()
+        // The pause ended in the report; one that gives way to a reset or Not started has not resumed sync.
+        if report != nil, profileMappingPause == .none,
+           SyncStatusPresentation.announcesResume(wasPaused: wasPaused, now: statusPresentation,
+                                                  resetRequired: resetRequired) { pauseEndedSerial &+= 1 }
+        guard awaitingSyncNow else { return }
+        // A dropped request (no helper, ineligible, sync not started) ends without a word.
+        guard report != nil, summary.phase != .notStarted else { awaitingSyncNow = false; return }
+        // A request the pause cancelled returns the control to idle and is not announced.
+        guard statusPresentation.announcesSyncNowOutcome else { awaitingSyncNow = false; return }
+        switch requestState {
+        case .queued, .inFlight: break
+        case .rejected: finishSyncNow(.rejected)
+        case .idle:
+            // The helper moves `lastSuccess` only on a coordinated success, so a newer one is enough
+            // even if a later local edit has already started another round.
+            let succeeded = summary.lastSuccess.map { success in syncNowBaseline.map { success > $0 } ?? true } == true
+            let problem = nativeDetail?.lastProblem.flatMap { $0.at >= syncNowTappedAt ? $0.category : nil }
+            finishSyncNow(succeeded ? .finished : .failed(problem))
+        }
+    }
+
+    private func finishSyncNow(_ result: SyncNowOutcome.Result) {
+        awaitingSyncNow = false
+        syncNowSerial &+= 1
+        syncNowOutcome = SyncNowOutcome(serial: syncNowSerial, result: result)
+    }
+
+    private func clearStatus() {
+        contextSnapshots = [:]; requiredIDs = []
+        summary = SyncStatusSummary(phase: .notStarted, lastSuccess: nil)
+        requestState = .idle
+        nativeDetail = nil
+        profileMappingPause = .none
+        syncNowCancelledByPause = false
+        profileListNotEnumeratedSince = nil
+        awaitingSyncNow = false
     }
 
     func refreshDevices() async {
@@ -178,6 +301,7 @@ final class DevicesSettingViewModel: ObservableObject {
         loadGeneration &+= 1
         deviceGeneration &+= 1
         pendingGeneration &+= 1
+        awaitingSyncNow = false
         doStopPolling()
     }
 

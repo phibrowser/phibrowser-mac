@@ -1168,3 +1168,145 @@ func checkAnEditedChildSurvivesItsFoldersDeletion(report: Report) {
     report.markPassed("bookmarks.tree.an-edited-child-yields-while-its-folder-dies")
     report.markPassed("bookmarks.tree.a-child-of-a-dead-folder-lifts-to-the-space-root")
 }
+
+// MARK: - DI-2: a failed retention purge is retried
+
+/// `purgeExpired` stamps `purgedAtMs` and never returns that uuid again, so the only retry marker for a
+/// cascade that threw (or was cut short by a stop) is the local mapping the sweep keeps until the purge
+/// succeeds. The cascade set of a later sweep must therefore hold every purged uuid that is still mapped,
+/// and nothing else: not a purged uuid whose purge already dropped its mapping, and not a live Space.
+func checkAFailedRetentionPurgeIsRetried(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let retention = PhiSpaceSyncState.retentionMs
+    func deleted(at ms: Int64) -> PhiSpaceCursor {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv"
+        cursor.hidden = true
+        cursor.deletedAtMs = ms
+        return cursor
+    }
+    var table = PhiSpaceSyncTable()
+    table.cursors["failed"] = deleted(at: t0)
+    table.cursors["done"] = deleted(at: t0)
+    table.cursors["later"] = deleted(at: t0 + retention / 2)
+    table.cursors["live"] = PhiSpaceCursor()
+
+    // Sweep 1: both old deletions expire. "done" purges and drops its mapping; "failed" throws and
+    // keeps it.
+    let firstExpired = table.purgeExpired(nowMs: t0 + retention + 1)
+    let firstCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: firstExpired, purged: table.purgedSyncUuids.subtracting(firstExpired),
+        mapped: ["failed", "done", "later", "live"])
+    // Sweep 2: nothing new expires, and "failed" is still mapped.
+    let secondExpired = table.purgeExpired(nowMs: t0 + retention + 2)
+    let mapped: Set<String> = ["failed", "later", "live"]
+    let secondCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: secondExpired, purged: table.purgedSyncUuids.subtracting(secondExpired), mapped: mapped)
+    // Sweep 3: "later" expires alongside the retry.
+    let thirdExpired = table.purgeExpired(nowMs: t0 + retention + retention / 2 + 1)
+    let thirdCascade = PhiSpaceSyncTable.retentionCascadeUuids(
+        expired: thirdExpired, purged: table.purgedSyncUuids.subtracting(thirdExpired), mapped: mapped)
+
+    report.check("spaces.retention.expired-uuids-cascade-once",
+                 firstExpired == ["done", "failed"] && firstCascade == ["done", "failed"],
+                 "first sweep expired \(firstExpired), cascaded \(firstCascade)")
+    report.check("spaces.retention.a-failed-purge-is-retried",
+                 secondExpired.isEmpty && secondCascade == ["failed"],
+                 "second sweep expired \(secondExpired), cascaded \(secondCascade); expected only the "
+                 + "purged uuid whose mapping the failed cascade kept")
+    report.check("spaces.retention.a-retry-joins-a-new-expiry",
+                 thirdExpired == ["later"] && thirdCascade == ["failed", "later"],
+                 "third sweep expired \(thirdExpired), cascaded \(thirdCascade)")
+    report.markPassed("spaces.retention.expired-uuids-cascade-once")
+    report.markPassed("spaces.retention.a-failed-purge-is-retried")
+    report.markPassed("spaces.retention.a-retry-joins-a-new-expiry")
+}
+
+// MARK: - BH-1: a landed Space is published again
+
+/// A refusal writes `refusedAtMs`, and `SyncableSpaces.snapshot` leaves such a cursor out. When a later
+/// version of the entity lands, the engine clears the field next to `pendingApply`; this pins the other
+/// half of that contract: the same cursor with the field cleared is eligible, so its local edits publish.
+func checkALandedSpaceIsNoLongerRefused(report: Report) {
+    let t0: Int64 = 1_700_000_000_000
+    let profileUuid = Pool.uuids[0]
+    let created = Date(timeIntervalSince1970: 1_690_000_000)
+    var baseline = Phi_PhiSpaceEntity()
+    baseline.spaceUuid = simSpaceUuid
+    baseline.name = settingValue("Work", t0)
+    baseline.iconName = settingValue("icon", t0)
+    baseline.colorHex = settingValue("#101010", t0)
+    baseline.rank = settingValue("V", t0)
+    baseline.profileUuid = settingValue(profileUuid, t0)
+    baseline.themeID = settingValue("", t0)
+    baseline.overlayOpacityLight = settingValue(int: -1, t0)
+    baseline.overlayOpacityDark = settingValue(int: -1, t0)
+    baseline.createdAtMs = Int64(created.timeIntervalSince1970 * 1_000)
+    let renamed = PhiLocalSpace(spaceId: "local-a", profileId: "p", name: "Travel", colorHex: "#101010",
+                                iconName: "icon", sortOrder: 0, createdDate: created,
+                                themeId: nil, opacityLight: nil, opacityDark: nil)
+
+    func project(refusedAtMs: Int64?) -> Phi_PhiSpaceEntity? {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-a"
+        cursor.version = 3
+        cursor.reconciled = try? baseline.serializedData()
+        cursor.server = cursor.reconciled
+        cursor.refusedAtMs = refusedAtMs
+        var table = PhiSpaceSyncTable()
+        table.cursors[simSpaceUuid] = cursor
+        return SyncableSpaces.snapshot(spaces: [renamed], table: table,
+                                       globalUuid: { $0 == "p" ? profileUuid : nil },
+                                       syncUuid: { $0 == "local-a" ? simSpaceUuid : nil },
+                                       now: t0 + 60_000)[simSpaceUuid]
+    }
+
+    let refused = project(refusedAtMs: t0)
+    let landed = project(refusedAtMs: nil)
+    report.check("spaces.a-refused-cursor-is-not-published", refused == nil,
+                 "a cursor with refusedAtMs was projected: \(refused?.oneLine ?? "")")
+    report.check("spaces.a-landed-space-publishes-its-local-edits",
+                 landed?.name.stringValue == "Travel",
+                 "the cursor with refusedAtMs cleared projected \(landed?.oneLine ?? "nothing"); "
+                 + "expected the local rename")
+    report.markPassed("spaces.a-refused-cursor-is-not-published")
+    report.markPassed("spaces.a-landed-space-publishes-its-local-edits")
+}
+
+// MARK: - DI-3: a local deletion in flight is recorded under its captured uuid
+
+/// While a local deletion is in flight the apply loop does not land an arriving entity; it only harvests
+/// the entity id and version into the cursor. The queued deletion then marks the uuid the facade captured
+/// before the cascade. This pins the table half: a cursor that learned its entity id only through that
+/// harvest (a paired Space never committed from here) is tombstoned, and one a peer's tombstone
+/// soft-deleted in the same window is not tombstoned again.
+func checkALocalDeletionInFlightIsRecordedByItsCapturedUuid(report: Report) {
+    var table = PhiSpaceSyncTable()
+    var harvested = PhiSpaceCursor()      // no entityId before the in-flight round
+    harvested.entityId = "srv-a"
+    harvested.version = 6
+    table.cursors["space-a"] = harvested
+    var softDeleted = PhiSpaceCursor()
+    softDeleted.entityId = "srv-b"
+    softDeleted.version = 7
+    softDeleted.hidden = true
+    softDeleted.deletedAtMs = 1_700_000_000_000
+    table.cursors["space-b"] = softDeleted
+
+    let markedA = table.recordLocalDeletion(spaceId: "space-a")
+    let markedB = table.recordLocalDeletion(spaceId: "space-b")
+    let markedUnknown = table.recordLocalDeletion(spaceId: "space-unknown")
+    report.check("spaces.local-delete.a-harvested-cursor-is-tombstoned",
+                 markedA && table.cursors["space-a"]?.pendingDelete == true
+                    && table.cursors["space-a"]?.version == 6,
+                 "the harvested cursor was not marked: \(String(describing: table.cursors["space-a"]))")
+    report.check("spaces.local-delete.a-remote-tombstone-in-the-window-is-not-echoed",
+                 !markedB && table.cursors["space-b"]?.pendingDelete == false,
+                 "a soft-deleted cursor was marked for a second tombstone")
+    report.check("spaces.local-delete.an-unknown-uuid-mints-no-cursor",
+                 !markedUnknown && table.cursors["space-unknown"] == nil && table.cursors.count == 2,
+                 "recordLocalDeletion minted or marked a cursor for a uuid it did not hold")
+    report.markPassed("spaces.local-delete.a-harvested-cursor-is-tombstoned")
+    report.markPassed("spaces.local-delete.a-remote-tombstone-in-the-window-is-not-echoed")
+    report.markPassed("spaces.local-delete.an-unknown-uuid-mints-no-cursor")
+}

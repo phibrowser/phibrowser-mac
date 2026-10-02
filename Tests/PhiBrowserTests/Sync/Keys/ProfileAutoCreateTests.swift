@@ -278,9 +278,9 @@ final class ProfileAutoCreateTests: XCTestCase {
     }
 
     /// The one suspension in the round is `createProfile`; `$profiles` runs a
-    /// `resolveMappings()` pass inside it, whose 1:1 branch can claim the very
-    /// uuid being worked on. Re-checking afterwards is what keeps two locals from
-    /// mapping to one uuid.
+    /// `resolveMappings()` pass inside it, and a pairing decision can claim the
+    /// very uuid being worked on meanwhile. Re-checking afterwards is what keeps
+    /// two locals from mapping to one uuid.
     func testAUuidClaimedDuringTheSuspensionIsNotAdoptedTwice() async throws {
         let creator = FakeProfileCreator()
         let store = MemoryMappingStore()

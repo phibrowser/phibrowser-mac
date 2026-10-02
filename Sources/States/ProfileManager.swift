@@ -51,12 +51,19 @@ struct ProfileExtensionInfo: Identifiable, Hashable {
 /// CRUD goes through the bridge (`createProfileWithDisplayName:completion:`,
 /// `deleteProfile:completion:`); after each mutation the manager refreshes
 /// its cache so subscribers see the new shape. Lazy profile loading
-/// (`ensureProfileLoaded:`) is driven from `SpaceManager.activate` and
+/// (`ensureProfileLoaded:`) is driven from `SpaceManager.activate` and, for
+/// sync, from `SyncProfileLoader` (docs/sync.md, "Profile loading"); it
 /// doesn't change the published list.
 final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()
 
     @Published private(set) var profiles: [PhiBrowserProfile] = []
+    /// True once a bridge read has returned a complete, non-empty Profile list; never
+    /// reset. Until then `profiles` is empty because nothing has been read, not because
+    /// there is nothing to sync, so sync admits no round before it
+    /// (docs/sync.md, "Enrollment and setup"). Set before `profiles` is assigned,
+    /// so a `$profiles` subscriber (which runs before the value is stored) reads it true.
+    private(set) var isProfileListEnumerated = false
     private var archiveObservers: [NSObjectProtocol] = []
     private var archiveTimer: Timer?
     private var archiveInFlight = false
@@ -99,10 +106,26 @@ final class ProfileManager: ObservableObject {
         let decodedProfiles = raw.compactMap(Self.decode(_:))
         // An incomplete bridge response must not look like Profile deletion.
         guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return false }
+        isProfileListEnumerated = true
         profiles = decodedProfiles
         persistDisplayNamesToLocalStore(decodedProfiles)
         drainChatArchives()
         return true
+    }
+
+    /// The sync Profile loader's periodic recheck (docs/sync.md, "Profile loading"):
+    /// the same bridge read as `refresh()`, but `profiles` is assigned only when the
+    /// decoded list differs (a Profile loading or unloading is the change it exists to
+    /// see), and none of `refresh()`'s side effects run. An unchanged list publishes
+    /// nothing, so observing views do not re-evaluate every recheck.
+    func refreshIfChanged() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        let raw = bridge.listProfiles()
+        let decodedProfiles = raw.compactMap(Self.decode(_:))
+        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return }
+        isProfileListEnumerated = true
+        guard decodedProfiles != profiles else { return }
+        profiles = decodedProfiles
     }
 
     /// Convenience lookup — nil if the basename isn't known. Most callers

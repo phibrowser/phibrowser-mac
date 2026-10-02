@@ -66,8 +66,9 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// Remote soft deletion (§9.2), the sole hidden meaning after D6. Invariant: hidden implies nonnil
     /// deletedAtMs, pinned by Task 2 tests.
     var hidden = false
-    /// Agent / incognito / excluded: recorded so it is not decrypted and
-    /// refused again every round. Such a cursor has NO `entityId`, which is
+    /// Agent / incognito / excluded payload refused at landing. Keeps the uuid
+    /// out of `SyncableSpaces.snapshot`; cleared when a later version of the
+    /// entity lands. A cursor created by a refusal has NO `entityId`, which is
     /// what makes §9.1's delete-origin criterion safe.
     var refusedAtMs: Int64?
     /// The 30-day sweep ran: baselines dropped, the cursor itself kept forever
@@ -143,6 +144,21 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// PhiSpaceSyncState.refreshCaches translates to local IDs (§3.5).
     var hiddenSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.hidden }.keys)
+    }
+
+    /// syncUuids whose retention sweep already ran (`purgedAtMs != nil`). The cursors are permanent, so
+    /// this only grows.
+    var purgedSyncUuids: Set<String> {
+        Set(cursors.filter { $0.value.purgedAtMs != nil }.keys)
+    }
+
+    /// The uuids whose local cascade a retention sweep runs, sorted: this sweep's newly `expired` uuids plus
+    /// every earlier-`purged` uuid that still has a local mapping. The sweep drops a mapping only after its
+    /// purge succeeds, so a purged cursor with a retained mapping marks a cascade that failed or was cut short
+    /// by a stop; `purgeExpired` never returns that uuid again, and this is its only retry path.
+    static func retentionCascadeUuids(expired: [String], purged: Set<String>,
+                                      mapped: Set<String>) -> [String] {
+        Set(expired).union(purged.intersection(mapped)).sorted()
     }
 
     /// syncUuids actually present on the account (entityId != nil), precomputed for blocksProfileDeletion's
@@ -337,7 +353,8 @@ final class PhiSpaceSyncState {
     nonisolated static let retentionMs: Int64 = 30 * 24 * 60 * 60 * 1000
 
     enum Intent {
-        case recordLocalDeletion(String)
+        /// The local id and the syncUuid `beginLocalDeletion` captured while the mapping still resolved.
+        case recordLocalDeletion(spaceId: String, syncUuid: String)
         case runRetentionSweep
     }
 
@@ -366,6 +383,10 @@ final class PhiSpaceSyncState {
     private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
     private var referencedProfileUuids: Set<String> = []
+    /// syncUuids whose local deletion has started and is not yet recorded in the table (§9.2: delete beats
+    /// a concurrent edit). In memory only: the apply loop must not re-land them while the cascade and the
+    /// queued deletion round are in flight; from the round on, the cursor's `pendingDelete` protects them.
+    private var locallyDeletingSyncUuids: Set<String> = []
 
     func isHidden(_ spaceId: String) -> Bool { hiddenSpaceIds.contains(spaceId) }
 
@@ -386,7 +407,24 @@ final class PhiSpaceSyncState {
         }
     }
 
-    func recordLocalDeletion(spaceId: String) { deliver(.recordLocalDeletion(spaceId)) }
+    /// §9.1 hook, first half: captures the Space's syncUuid before its cascade removes the row and marks it
+    /// as being deleted. nil for an unmapped Space (an agent Space), for which the deletion is a no-op.
+    func beginLocalDeletion(spaceId: String) -> String? {
+        guard let uuid = syncUuidLookup?(spaceId) else { return nil }
+        locallyDeletingSyncUuids.insert(uuid)
+        return uuid
+    }
+
+    /// Second half, only after the cascade committed. The mark is ended once the intent has run.
+    func recordLocalDeletion(spaceId: String, syncUuid: String) {
+        deliver(.recordLocalDeletion(spaceId: spaceId, syncUuid: syncUuid))
+    }
+
+    /// Ends the mark: the cascade failed, or the deletion intent has run.
+    func endLocalDeletion(syncUuid: String) { locallyDeletingSyncUuids.remove(syncUuid) }
+
+    func isBeingDeletedLocally(syncUuid: String) -> Bool { locallyDeletingSyncUuids.contains(syncUuid) }
+
     func runRetentionSweep() { deliver(.runRetentionSweep) }
 
     /// §9.4: "a Profile still referenced by a Space cannot be deleted", widened
@@ -414,14 +452,17 @@ final class PhiSpaceSyncState {
             intentSink(intent)
             return
         }
+        // No engine: the write below is synchronous, so the deletion is recorded (or lost) on return.
+        defer {
+            if case .recordLocalDeletion(_, let syncUuid) = intent { endLocalDeletion(syncUuid: syncUuid) }
+        }
         guard let directStore else { return }
         var table = directStore.load()
         switch intent {
-        case .recordLocalDeletion(let spaceId):
-            // Translate local ID to the table's syncUuid key, as at the engine boundary (§3.4). Missing
-            // resolver/mapping means never published and no tombstone to send.
-            guard let uuid = syncUuidLookup?(spaceId) else { return }
-            table.recordLocalDeletion(spaceId: uuid)
+        case .recordLocalDeletion(_, let syncUuid):
+            // The syncUuid was captured before the cascade removed the row (§3.4); the mapping is not
+            // read again here.
+            table.recordLocalDeletion(spaceId: syncUuid)
         case .runRetentionSweep:
             // Data cascade needs SpaceManager, which the no-engine path has no
             // business driving; the sweep runs for real at the next engine start.

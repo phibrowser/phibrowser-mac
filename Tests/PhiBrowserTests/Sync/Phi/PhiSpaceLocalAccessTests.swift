@@ -44,6 +44,8 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
     var spaceMappings: [String: String] = [:]
     /// Whether getAllSpaces still contains the row; nil uses membership in spaces.
     var knownLocalSpaceIds: Set<String>?
+    /// syncUuids whose local deletion is in flight (`PhiSpaceSyncState.isBeingDeletedLocally`).
+    var beingDeletedSyncUuids: Set<String> = []
     /// Step 2 left column; nil uses spaces.
     var pairableSpacesOverride: [PhiLocalSpace]?
     /// The next ensureMapped/mapSpace throws this error, then clears it.
@@ -110,6 +112,7 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         return spaces.contains { $0.spaceId == spaceId }
     }
     func allSpaceMappings() -> [String: String] { spaceMappings }
+    func isBeingDeletedLocally(syncUuid: String) -> Bool { beingDeletedSyncUuids.contains(syncUuid) }
     func pairableSpaces() -> [PhiLocalSpace] { pairableSpacesOverride ?? spaces }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool { importingSpaceIds.contains(spaceId) }

@@ -19,6 +19,10 @@ fixture = fixture.replace('    /* PRODUCTION_PUBLISHERS */', '\n'.join(parts))
 marker = 'private final class SyncSaveEvidence'
 evidence = s[s.index(marker):] if marker in s else ''
 fixture = fixture.replace('/* PRODUCTION_SAVE_EVIDENCE */', evidence)
+space = (root / 'Sources/LocalStorage/LocalStore+Space.swift').read_text()
+start = space.index('    private func createSpaceBody(')
+end = space.index('\n    }', start) + len('\n    }')
+fixture = fixture.replace('    /* PRODUCTION_CREATE_SPACE_BODY */', space[start:end])
 Path(sys.argv[2]).write_text(fixture)
 PY
 xcrun swiftc -swift-version 5 -parse-as-library -Xfrontend -disable-sandbox -module-cache-path "$task_build/modules" \

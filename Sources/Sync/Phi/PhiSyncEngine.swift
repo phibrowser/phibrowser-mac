@@ -376,6 +376,10 @@ struct OwnedRoundCounters {
     var collapsed = 0
     var transferred = 0
     var yieldNoPartner = 0
+    // Status only, never logged: live edits this round did not publish (outside the slice or not
+    // applied), and whether the unrestricted publication pass ran, for "waiting to send".
+    var liveUnpublished = 0
+    var publicationCounted = false
 }
 
 /// Type-erased owned-kind registration. The engine depends only on these registrations, not a fixed
@@ -869,6 +873,33 @@ actor PhiSyncEngine {
     private var activePairingRevision: UInt64 = 0
     private var isStopped: Bool { stopSignal.blocksData(revision: activePairingRevision) }
 
+    /// The pause while a local Profile is not mapped to an account Profile
+    /// (docs/sync.md, "Enrollment and setup"). Next to `StopSignal`, not part of it: turning it on never bumps the
+    /// generation and no write guard inside a round reads it, so a round already admitted
+    /// finishes with its landings, cursor saves, acknowledgements and marker advance. It is read
+    /// at round admission in `run(_:)` and, for the Syncing status only, by `serialized(_:)` and
+    /// `markLocalChangePending()`. Lock-protected so the coordinator sets it synchronously on the
+    /// main actor. In memory only.
+    private final class ProfileMappingGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var closed = false
+
+        var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
+        func set(_ value: Bool) { lock.lock(); closed = value; lock.unlock() }
+    }
+
+    private let profileMappingGate = ProfileMappingGate()
+
+    /// Whether rounds are paused for an unmapped Profile. See `setProfileMappingPause(_:)`.
+    nonisolated var isProfileMappingPaused: Bool { profileMappingGate.isClosed }
+
+    /// Turns the unmapped-Profile gate on or off. While it is on, a queued pull, push,
+    /// local-change round or retention sweep returns at admission without writing or showing
+    /// Syncing; the local deletion intent, the Space gate edge and the read-only preview still
+    /// run. Turning it off admits the next round; nothing that was turned away is replayed, so
+    /// the caller requests a catch-up and queues the retention sweep again. Idempotent.
+    nonisolated func setProfileMappingPause(_ paused: Bool) { profileMappingGate.set(paused) }
+
     /// Retires the engine for good: rounds queued behind an in-flight one never run, and the
     /// round already in flight skips every write it has left — the account-scoped cursor
     /// (`writeState`), the settings themselves and their `<key>.phiSync*` sidecars
@@ -922,6 +953,7 @@ actor PhiSyncEngine {
         /// never committed and the Space is later resurrected from a peer's
         /// entity. The queue is the only thing that makes the single writer real.
         case retentionSweep
+        /// Carries the syncUuid captured when the deletion started, not the local id.
         case recordLocalDeletion(String)
         /// Local owned-kind change (M3-3 section 5.7), identified by registry label rather than one
         /// case per kind. Owned deletion originates in the section 4.7 diff, not deletion hooks
@@ -939,13 +971,24 @@ actor PhiSyncEngine {
     nonisolated var requiresReconfiguration: Bool { stopSignal.requiresReconfiguration }
     nonisolated func pauseForReconfiguration() {
         stopSignal.requireReconfiguration()
-        statusState.update(.needsAttention)
+        statusState.update(.needsAttention, round: Self.resetRequiredRound)
     }
     nonisolated func markLocalChangePending() {
-        if !requiresReconfiguration { statusState.update(.syncing) }
+        // The round this change schedules is turned away at admission while the gate is on.
+        if !requiresReconfiguration, !profileMappingGate.isClosed { statusState.update(.syncing) }
     }
     private var roundOutboundFailed = false
     private var roundOffline = false
+    /// Status-only round state (R12: categories and counts). Reset by `run`, read by
+    /// `finishStatusRound`; nothing here is persisted.
+    private var roundDetail = SyncRoundDetail()
+    private var settingsReceivedThisRound = 0
+    private var settingsSentThisRound = 0
+    private static var resetRequiredRound: SyncRoundDetail {
+        var round = SyncRoundDetail()
+        round.note(.resetRequired)
+        return round
+    }
     nonisolated func suspendForPairing() { stopSignal.setPaired(false) }
 
     /// The enrollment owner persists this token with completion and supplies it again
@@ -1002,7 +1045,7 @@ actor PhiSyncEngine {
         self.markerState = resolvedMarkerStore.load()
         if markerState.requiresReconfiguration == true {
             stopSignal.requireReconfiguration()
-            statusState.update(.needsAttention)
+            statusState.update(.needsAttention, round: Self.resetRequiredRound)
         }
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
@@ -1168,8 +1211,8 @@ actor PhiSyncEngine {
     /// table copies across network/main-actor suspensions. An interleaved deletion would be
     /// overwritten, permanently losing pendingDelete and allowing the next incoming entity to
     /// recreate the Space. Call only from outside a round, like setSpaceSyncEnabled.
-    func recordLocalDeletion(spaceId: String) async {
-        await serialized(.recordLocalDeletion(spaceId))
+    func recordLocalDeletion(syncUuid: String) async {
+        await serialized(.recordLocalDeletion(syncUuid))
     }
 
     func runRetentionSweep() async {
@@ -1226,20 +1269,55 @@ actor PhiSyncEngine {
         guard let spaceAccess, spaceStore != nil else { return }
         var table = loadSpaceTable()
         let expired = table.purgeExpired(nowMs: now())
-        guard !expired.isEmpty else { return }
-        // Phase 1: persist the trimmed table with no suspension in between. The
-        // cursors are now permanent tombstones -- §9.1's two promises (a
-        // replayed tombstone is a no-op, snapshot never resurrects the uuid)
-        // rest on the cursor being there with a `deletedAtMs`, so they hold even
-        // if the cascade below is interrupted.
-        writeSpaceTable(table)
+        if !expired.isEmpty {
+            // Phase 1: persist the trimmed table with no suspension in between. The
+            // cursors are now permanent tombstones -- §9.1's two promises (a
+            // replayed tombstone is a no-op, snapshot never resurrects the uuid)
+            // rest on the cursor being there with a `deletedAtMs`, so they hold even
+            // if the cascade below is interrupted.
+            writeSpaceTable(table)
+        }
+        // Retry set: a cursor purged by an earlier sweep whose mapping is still present never
+        // finished its cascade (see the catch below). Only uuids are read out of the table; it is
+        // not written again, so no stale copy crosses the awaits.
+        let purged = table.purgedSyncUuids.subtracting(expired)
+        var mapped: Set<String> = []
+        if !purged.isEmpty { mapped = Set(await spaceAccess.allSpaceMappings().values) }
+        let cascade = PhiSpaceSyncTable.retentionCascadeUuids(expired: expired, purged: purged,
+                                                              mapped: mapped)
+        guard !cascade.isEmpty else { return }
+        if cascade.count > expired.count {
+            // R12: count only.
+            AppLogInfo("[phi-sync] retrying retention purge count=\(cascade.count - expired.count)")
+        }
+
+        // A retry cascades a row this sweep did not see expire. No path is known that maps a purged
+        // uuid to a live Space, but if one existed every sweep would delete it with all its contents:
+        // a row created after the deletion it would be purged for cannot be that deleted Space.
+        let retryOnly = Set(cascade).subtracting(expired)
+        var createdMsBySpaceId: [String: Int64] = [:]
+        if !retryOnly.isEmpty {
+            for space in await spaceAccess.allSpacesForOrdering() {
+                createdMsBySpaceId[space.spaceId] = Int64(space.createdDate.timeIntervalSince1970 * 1000)
+            }
+        }
+        var skippedNewer = 0
+        defer {
+            // R12: count only.
+            if skippedNewer > 0 { AppLogWarn("[phi-sync] retention purge retry skipped rows created after their deletion count=\(skippedNewer)") }
+        }
 
         // Phase 2: cascade the data. No table copy is held across these awaits.
-        for uuid in expired {
+        for uuid in cascade {
             guard !isStopped else { return }
             // D6: purgeExpired returns syncUuid, while purge accepts a local ID. Unresolved means
             // no local row to remove; phase 1 already persisted the tombstone cursor.
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if retryOnly.contains(uuid), let deletedAtMs = table.cursors[uuid]?.deletedAtMs,
+               let createdMs = createdMsBySpaceId[local], createdMs > deletedAtMs {
+                skippedNewer += 1
+                continue
+            }
             do {
                 try await spaceAccess.purge(spaceId: local)
                 // Remove the mapping only after purge succeeds. Keep the permanent tombstone cursor
@@ -1427,7 +1505,7 @@ actor PhiSyncEngine {
         }
         if reportsStatus {
             queuedDataRounds += 1
-            if !requiresReconfiguration { statusState.update(.syncing) }
+            if !requiresReconfiguration, !profileMappingGate.isClosed { statusState.update(.syncing) }
         }
         let previous = roundQueue
         let task = Task { [previous] in
@@ -1448,7 +1526,30 @@ actor PhiSyncEngine {
             return
         }
         activePairingRevision = stopSignal.revision
+        if isStopped, case .recordLocalDeletion(let uuid) = round {
+            // A local table write, not network: pairing, reconfiguration and a pairing-revision
+            // change must not drop it, or the facade's being-deleted mark ends with nothing recorded
+            // and the dead-mapping repair later re-lands the Space. Retirement (checked above) still
+            // stops it. Running in this queue slot keeps it apart from every round's table copy.
+            recordLocalDeletionWhileBlocked(uuid)
+            return
+        }
         guard !isStopped else { return }
+        // The unmapped-Profile gate is decided here, after the wait for the previous
+        // round, and only here. The preview has already run above. The local deletion intent and
+        // the Space gate edge are local writes that must survive the pause, so they are admitted;
+        // every other round returns before it writes anything or shows Syncing. The decision is
+        // carried to the tail (AM-3): a round admitted only through the exemption skips the
+        // favicon backfill and its network requests. Nothing inside the round reads the gate.
+        let admittedThroughPauseExemption: Bool
+        if profileMappingGate.isClosed {
+            switch round {
+            case .spaceGate, .recordLocalDeletion: admittedThroughPauseExemption = true
+            default: return
+            }
+        } else {
+            admittedThroughPauseExemption = false
+        }
 
         let reportsStatus: Bool
         switch round {
@@ -1460,6 +1561,9 @@ actor PhiSyncEngine {
             : statusState.snapshot.revision
         roundOutboundFailed = false
         roundOffline = false
+        roundDetail = SyncRoundDetail()
+        settingsReceivedThisRound = 0
+        settingsSentThisRound = 0
         // §11's counters are per ROUND, not per pull: one round can contain a
         // preflight pull and a scoped conflict retry. `pushSpaces` runs after the pull's tail.
         spaceCounters = SpaceRoundCounters()
@@ -1517,16 +1621,11 @@ actor PhiSyncEngine {
             applySpaceGate(enabled)
         case .retentionSweep:
             await applyRetentionSweep()
-        case .recordLocalDeletion(let localSpaceId):
-            // Translate the local SpaceManager ID to the cursor's syncUuid at this boundary
-            // (section 3.4). No mapping means never published and hence no tombstone to send,
-            // matching recordLocalDeletion's entityId guard. The PhiSpaceSyncState facade still
-            // accepts local IDs.
-            if let uuid = await spaceAccess?.syncUuid(forSpaceId: localSpaceId) {
-                runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
-            } else {
-                AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
-            }
+        case .recordLocalDeletion(let uuid):
+            // The facade captured the syncUuid before the cascade (section 3.4). Resolving the local
+            // id here would be too late: a round ahead of this one may have dropped or replaced the
+            // mapping. An unmapped Space never reaches the engine.
+            runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
         case .localOwnedChange(let label):
             // Suppress echoes as for localSpaceChange. The label is diagnostic only: publication
             // visits every registered kind, so any owned-kind change schedules an ordinary push
@@ -1542,12 +1641,14 @@ actor PhiSyncEngine {
         if reportsStatus { finishStatusRound(revision: statusRevision) }
         await logSpaceRound()
         logOwnedRounds()
-        await runFaviconBackfill()
+        if !admittedThroughPauseExemption { await runFaviconBackfill() }
     }
 
     private func finishStatusRound(revision: UInt64) {
         guard !stopSignal.isStopped else { return }
-        guard !requiresReconfiguration else { statusState.update(.needsAttention); return }
+        guard !requiresReconfiguration else {
+            statusState.update(.needsAttention, round: Self.resetRequiredRound); return
+        }
         guard !isStopped else { return }
         let spaces = loadSpaceTable()
         let pendingInbound = unreadableSettingsRecord != nil || spaces.cursors.values.contains { $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone }
@@ -1575,7 +1676,62 @@ actor PhiSyncEngine {
             || (roundOutcome != .ok && roundOutcome != .pageBudgetExhausted) { phase = .needsAttention }
         else if completion.succeeded { phase = .upToDate }
         else { phase = statusState.snapshot.lastSuccess == nil ? .initialSync : .syncing }
-        statusState.update(phase, completing: revision)
+        statusState.update(phase, completing: revision, round: roundStatusDetail(spaces: spaces))
+    }
+
+    /// This round's per-kind counts and most severe problem for the status snapshot, from the
+    /// round counters and the tables already in memory (no cursor file is re-read). Kinds the
+    /// round did not visit are left out so they keep their previous values: Spaces and owned
+    /// kinds while the Space gate is shut, an owned kind whose table was not loaded or read.
+    /// Counts and categories only (R12).
+    private func roundStatusDetail(spaces: PhiSpaceSyncTable) -> SyncRoundDetail {
+        var detail = roundDetail
+        let settingsUnreadable = unreadableSettingsRecord != nil
+        detail.kinds[.settings] = SyncKindStatus(received: settingsReceivedThisRound, sent: settingsSentThisRound,
+                                                 held: settingsUnreadable ? 1 : 0)
+        if settingsUnreadable || roundOutcome == .unusableSettings {
+            detail.note(.unreadableRemoteData, kind: .settings)
+        }
+        if cursorSaveFailures > 0 || roundOutcome == .cursorSaveFailed { detail.note(.saveFailedOnThisMac) }
+        for label in ownedReadFailed.sorted() {
+            detail.note(.readFailedOnThisMac, kind: SyncKind(ownedLabel: label))
+        }
+        // The same held conditions `finishStatusRound` treats as pending inbound, so Needs
+        // attention always has a held count or a category.
+        if spaceStore != nil {
+            // The Space table is read every round; a shut gate only means no activity counts.
+            detail.kinds[.spaces] = SyncKindStatus(
+                received: spaceSectionEnabled ? spaceCounters.applied : 0,
+                sent: spaceSectionEnabled ? spaceCounters.pushed + spaceCounters.tombstones : 0,
+                pending: spaces.cursors.values.filter { $0.pendingProjection != nil || $0.pendingDelete }.count,
+                held: spaces.cursors.values.filter {
+                    $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone
+                }.count)
+        }
+        // Owned kinds quarantine their unreadable tags in the Space table too, so no kind.
+        if !spaces.unreadableTagHashes.isEmpty { detail.note(.unreadableRemoteData) }
+        if spaceSectionEnabled, spaceStore != nil {
+            for registration in ownedKinds {
+                guard let kind = SyncKind(ownedLabel: registration.label),
+                      !ownedReadFailed.contains(registration.label),
+                      let table = ownedTables[registration.label] else { continue }
+                let counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+                let deletes = table.cursors.values.filter(\.pendingDelete).count
+                // Without a publication pass the live edits are unknown this round; keep the
+                // last known count rather than report them as sent.
+                let pending = counters.publicationCounted ? counters.liveUnpublished + deletes
+                    : max(statusState.snapshot.detail?.kinds[kind]?.pending ?? 0, deletes)
+                detail.kinds[kind] = SyncKindStatus(received: counters.applied,
+                    sent: counters.pushed + counters.tombstones, pending: pending,
+                    held: table.cursors.values.filter {
+                        $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
+                    }.count)
+                if counters.unreadable > 0 { detail.note(.unreadableRemoteData, kind: kind) }
+            }
+        }
+        // Every outbound failure has a category, even one reported without an error value.
+        if roundOutboundFailed, detail.problem == nil { detail.note(.serverError) }
+        return detail
     }
 
     private func noteStatusError(_ error: Error) {
@@ -1587,7 +1743,22 @@ actor PhiSyncEngine {
         let code = (error as NSError).code
         if (error as NSError).domain == NSURLErrorDomain,
            [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost,
-            NSURLErrorTimedOut, NSURLErrorDNSLookupFailed].contains(code) { roundOffline = true }
+            NSURLErrorTimedOut, NSURLErrorDNSLookupFailed].contains(code) {
+            roundOffline = true
+            roundDetail.note(.offline)
+            return
+        }
+        // Categories only; the status never carries the error's text or status number.
+        switch error {
+        case KeyAPIError.http(401, _), KeyAPIError.http(403, _),
+             PhiSyncProtocolError.http(401), PhiSyncProtocolError.http(403):
+            roundDetail.note(.signInExpired)
+        case let error as NSError where error.domain == NSURLErrorDomain
+                && error.code == NSURLErrorUserAuthenticationRequired:
+            roundDetail.note(.signInExpired)
+        default:
+            roundDetail.note(.serverError)
+        }
     }
 
     /// Emit the B-2 outcome here (sections 2.8/13.2), not in the queue-only serialized wrapper.
@@ -2041,8 +2212,10 @@ actor PhiSyncEngine {
         // publication's reload detects loss, clears the marker/drain state and stops this round's
         // publication so the next round replays the full type (CASE 6.26).
         if spaceLive { await beginOwnedRound() }
-        // A snapshot, used for the cursor keys it carries and never written back.
-        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
+        // Built from a snapshot, used for the cursor keys it carries and never written back. Each
+        // page then adds its own Space arrivals, so a tombstone on a later page of this pull
+        // resolves a Space the pull itself introduced.
+        var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2250,6 +2423,12 @@ actor PhiSyncEngine {
                 }
 
                 if spaceLive {
+                    // Same hash the index builder uses; the entry is what next pull's index would
+                    // seed from the cursor this page's landing writes.
+                    for arrival in batch.decoded {
+                        tagIndex[PhiSyncEntity.clientTagHash(
+                            for: PhiSyncEntity.spaceClientTag(arrival.uuid))] = arrival.uuid
+                    }
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
                     // One load/apply/write per page is safe only in this serialized path:
@@ -2414,7 +2593,6 @@ actor PhiSyncEngine {
         var decoded: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
         var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
         var unreadableHashes: [String] = []
-        var unknownTombstoneHashes: [String] = []
     }
 
     /// Persists what this round's routing learned about entities the shared marker has
@@ -2430,10 +2608,10 @@ actor PhiSyncEngine {
         }
     }
 
-    /// Rebuild client_tag_hash-to-space_uuid routing once per pull. Tombstones lack ciphertext/UUID
-    /// and SHA1 is one-way. Seed with cursor keys, mapping values and default-space (D6): a freshly
-    /// paired Space can receive a tombstone before its first commit creates a cursor. Never seed
-    /// local Space IDs, which are not wire identities.
+    /// Rebuild client_tag_hash-to-space_uuid routing once per pull; each page then extends it with its
+    /// own Space arrivals. Tombstones lack ciphertext/UUID and SHA1 is one-way. Seed with cursor keys,
+    /// mapping values and default-space (D6): a freshly paired Space can receive a tombstone before its
+    /// first commit creates a cursor. Never seed local Space IDs, which are not wire identities.
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         var uuids = Set(table.cursors.keys)
         uuids.insert(SyncableSpaces.defaultSpaceUuid)
@@ -2465,7 +2643,6 @@ actor PhiSyncEngine {
                 // server has already replaced the specifics, so no create for that row can
                 // ever arrive again.
                 AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag hash=\(shortHash)")
-                batch.unknownTombstoneHashes.append(entity.clientTagHash)
                 return
             }
             batch.tombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))
@@ -2599,7 +2776,9 @@ actor PhiSyncEngine {
 
             // §6.5: refuse to materialize agent / incognito payloads. Refusing is
             // NOT a claim the account should not hold it, so no tombstone is ever
-            // pushed back; `refusedAtMs` only stops the re-decrypt every round.
+            // pushed back. `refusedAtMs` does not skip any later decrypt; it keeps
+            // the uuid out of `SyncableSpaces.snapshot` until a later version of
+            // the entity lands, which clears it.
             if SyncableSpaces.refuses(item.entity) {
                 cursor.refusedAtMs = now()
                 cursor.pendingApply = nil
@@ -2609,12 +2788,21 @@ actor PhiSyncEngine {
             }
             // A soft-deleted uuid is never resurrected by a replayed create.
             if cursor.deletedAtMs != nil { cursor.pendingApply = nil; table.cursors[item.uuid] = cursor; continue }
-            if cursor.pendingDelete {
-                // A local deletion wins over a concurrent live update. Learn the current
+            // A local deletion in flight (cascade running, or its intent queued behind this round)
+            // has no `pendingDelete` yet, and its row may already be gone: without this the
+            // dead-mapping repair below would land it again as a new Space.
+            let beingDeleted = await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid)
+            if cursor.pendingDelete || beingDeleted {
+                // A local deletion wins over a concurrent live update (§9.2). Learn the current
                 // server version for its tombstone without recreating the deleted local row.
                 if !item.entityId.isEmpty { cursor.entityId = item.entityId }
                 cursor.version = max(cursor.version, item.version)
                 cursor.pendingApply = nil
+                if beingDeleted, !cursor.pendingDelete, item.fromServer {
+                    // The cascade can still fail and leave the Space in place: park the entity so
+                    // the next round lands it then. A recorded deletion clears it in this branch.
+                    cursor.pendingApply = try? item.entity.serializedData()
+                }
                 table.cursors[item.uuid] = cursor
                 table.unreadableTagHashes.removeValue(forKey: tag)
                 continue
@@ -2630,6 +2818,20 @@ actor PhiSyncEngine {
             // The default Space resolves through a constant, not a mapping row. Dead-mapping repair
             // would incorrectly remint its local ID.
             if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
+                // The check above ran before this row-absence observation, with main-actor hops in
+                // between: a deletion that began and cascaded since then shows up only now. The mark
+                // is set before the cascade and held past the deletion round, so reading it after
+                // seeing the row gone cannot miss that deletion.
+                if await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid) {
+                    if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                    cursor.version = max(cursor.version, item.version)
+                    cursor.pendingApply = nil
+                    // Parked as in the branch above, so a failed cascade still lands it next round.
+                    if item.fromServer { cursor.pendingApply = try? item.entity.serializedData() }
+                    table.cursors[item.uuid] = cursor
+                    table.unreadableTagHashes.removeValue(forKey: tag)
+                    continue
+                }
                 // Drop a mapping whose local row no longer exists and treat the entity as unmapped.
                 // This repairs both interrupted deletion and a crash between mapping-first
                 // creation's two writes (R-M3-4a-87). Preserve this recovery path during
@@ -2684,6 +2886,38 @@ actor PhiSyncEngine {
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
             let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
+            // A second observation of absence: a deletion that began after the reads above and
+            // committed its cascade during the main-actor hops since then shows up only here, and
+            // `land` would re-create the row under the same local id. As in the dead-mapping repair,
+            // a mark read after the absence was observed is conclusive (the default identity
+            // included: its row is deletable too).
+            if existing == nil, localSpaceId != nil,
+               await spaceAccess.isBeingDeletedLocally(syncUuid: item.uuid) {
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingApply = nil
+                // Parked as in the branches above, so a failed cascade still lands it next round.
+                if item.fromServer { cursor.pendingApply = try? item.entity.serializedData() }
+                table.cursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
+            // `currentSpaces()` leaves out a Space whose Profile has no mapping, while the row check
+            // above reads unfiltered storage. For such a Space `existing` is nil although its mapped
+            // row exists, and `land` would take its create branch over that row. Park instead; it
+            // lands once the Space is back in the sync view. A held re-park is not written back to
+            // `pendingApply`, for the reason the landing-failure park below gives.
+            if existing == nil, !isDefault, let mapped = localSpaceId,
+               await spaceAccess.isKnownLocalSpace(mapped) {
+                AppLogWarn("[phi-sync] a mapped space is outside the sync view tag=\(String(tag.prefix(8))); parking the entity")
+                if item.fromServer {
+                    cursor.pendingApply = try? item.entity.serializedData()
+                    cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                    cursor.version = max(cursor.version, item.version)
+                    table.cursors[item.uuid] = cursor
+                }
+                continue
+            }
             // C1 / defect 0.3-2: the well-known default row is deletable now, so `land` can
             // legitimately reach its CREATE branch for this identity on a device whose row is
             // gone. D1 keeps `profile_uuid` off the wire for it, so there is no account binding
@@ -2796,6 +3030,9 @@ actor PhiSyncEngine {
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
             cursor.pendingApply = nil
+            // A landed entity is no longer refused: a stale refusal would keep this Space out of
+            // `SyncableSpaces.snapshot`, so its local edits would never publish.
+            cursor.refusedAtMs = nil
             table.cursors[item.uuid] = cursor
             table.unreadableTagHashes.removeValue(forKey: tag)
             landedAny = true
@@ -3143,10 +3380,14 @@ actor PhiSyncEngine {
                 // stamped a sidecar timestamp for every registered key on the way here, and
                 // those are exactly what a later merge compares against.
                 hasAdopted = true
+                settingsSentThisRound += outgoing.values.filter { key, value in
+                    last?.values[key].map(SyncableSettings.signature(of:)) != SyncableSettings.signature(of: value)
+                }.count
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
             case .conflict(_, let serverVersion):
                 guard retryOnConflict else {
                     roundOutboundFailed = true
+                    roundDetail.note(.rejectedByServer, kind: .settings)
                     AppLogWarn("[phi-sync] commit still conflicting server_version=\(serverVersion.map(String.init) ?? "unknown"); abandoning this round")
                     return
                 }
@@ -3156,18 +3397,21 @@ actor PhiSyncEngine {
                 await pushSettings(retryOnConflict: false)
             case .invalidMessage:
                 roundOutboundFailed = true
+                roundDetail.note(.rejectedByServer, kind: .settings)
                 // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
                 // reported per entry instead of thrown for the whole batch. Both paths exist:
                 // a peer that fails the round still throws.
                 dropTheEntityCursorAfterInvalidMessage()
             case .rejected(let responseType):
                 roundOutboundFailed = true
+                roundDetail.note(.rejectedByServer, kind: .settings)
                 AppLogError("[phi-sync] commit rejected response_type=\(responseType); abandoning this round")
                 return
             }
         } catch PhiSyncProtocolError.notMyBirthday {
             requireReconfiguration()
         } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
+            roundDetail.note(.rejectedByServer, kind: .settings)
             dropTheEntityCursorAfterInvalidMessage()
         } catch {
             noteStatusError(error)
@@ -3388,7 +3632,11 @@ actor PhiSyncEngine {
         var work = spaceCommitEntries(from: table, outgoing: outgoing)
         if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
         // §9.1 second gate's bookkeeping half: an unpublished pendingDelete is
-        // finalized here rather than sent.
+        // finalized here rather than sent. Its mapping goes too, below, the same
+        // way an accepted tombstone's does. `hidden` as for the other endings: a
+        // legacy pendingDelete recorded before a cascade that then failed sits on a
+        // live row, which keeps its mapping below and is soft-deleted (§9.2).
+        var finalized: Set<String> = []
         for (uuid, var cursor) in table.cursors where cursor.pendingDelete {
             guard cursor.entityId == nil || cursor.version == 0 else { continue }
             cursor.pendingDelete = false
@@ -3396,14 +3644,17 @@ actor PhiSyncEngine {
             cursor.server = nil
             cursor.pendingProjection = nil
             cursor.deletedAtMs = now()
+            cursor.hidden = true
             table.cursors[uuid] = cursor
+            finalized.insert(uuid)
         }
-        guard !work.isEmpty else { writeSpaceTable(table); return }
+        guard !work.isEmpty || !finalized.isEmpty else { writeSpaceTable(table); return }
 
         var conflicted: Set<String> = []
-        // Locally originated tombstones accepted this round (R-D6-10). Collect synchronously in
-        // applySpaceCommitOutcome, then remove mappings after batching via their main-actor writer.
-        var tombstonedThisRound: Set<String> = []
+        // Locally originated tombstones accepted this round (R-D6-10), plus the deletions finalized
+        // above and those given up on. Collect synchronously in applySpaceCommitOutcome, then
+        // remove mappings after batching via their main-actor writer.
+        var tombstonedThisRound = finalized
         var encryptionFailed = false
         while !work.isEmpty {
             let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
@@ -3462,16 +3713,48 @@ actor PhiSyncEngine {
         // absent, so retaining mappings would return dead IDs. Keep permanent tombstone cursors.
         // Collection occurred in synchronous applySpaceCommitOutcome; mapping writes happen here on
         // the main actor.
+        //
+        // Only for a row that is really gone. A pendingDelete persisted by an older build may sit
+        // on a live row (recorded before a cascade that then failed); dropping its mapping would
+        // republish that row as a new Space under a fresh uuid. Kept, the mapping resolves the
+        // cursor's `hidden`, so the row is soft-deleted like a remote deletion (§9.2) and the
+        // retention sweep purges it.
+        //
+        // Unless that would hide the last live user Space, the invariant `deleteSpace` holds (the
+        // older build counted this row as remaining). Every ending above already set `hidden` in
+        // `table`, so the row is outside `liveLocalUserSpaceIds` here: an empty set means hiding
+        // it leaves none. Then the mapping is dropped instead, as before this rule: the row stays
+        // visible and a later round publishes it under a new uuid. A row kept by that fallback
+        // counts as live for the next one, since its mapping no longer resolves the hidden cursor.
+        var keptLive = 0
+        var keptVisible = 0
         for uuid in tombstonedThisRound {
             guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            if await spaceAccess.isKnownLocalSpace(local) {
+                if await liveLocalUserSpaceIds(table: table).isEmpty {
+                    await spaceAccess.dropSpaceMapping(forSpaceId: local)
+                    keptVisible += 1
+                    continue
+                }
+                // Close its windows as a remote tombstone's hide does.
+                try? await spaceAccess.hide(spaceId: local)
+                keptLive += 1
+                continue
+            }
             await spaceAccess.dropSpaceMapping(forSpaceId: local)
         }
+        // R12: count only.
+        if keptLive > 0 { AppLogWarn("[phi-sync] a finished Space deletion left a live row; hiding it count=\(keptLive)") }
+        if keptVisible > 0 { AppLogWarn("[phi-sync] a finished Space deletion left the last live user Space; keeping it visible count=\(keptVisible)") }
         writeSpaceTable(table)
 
         // After one pull, retry only conflicted UUIDs, not unaffected Spaces. A second conflict
         // abandons only those entries; already applied entries remain valid (section 5.1).
         // A recovered conflict is success; retain other failures recorded during this round.
-        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        if !retryOnConflict, !conflicted.isEmpty {
+            roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
+        }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
@@ -3527,6 +3810,7 @@ actor PhiSyncEngine {
             spaceCounters.conflicts += 1
         case .invalidMessage:
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
             guard isTombstone else {
                 // "The server has no such row": drop the server-side triple and
                 // let the next round re-create through the client_tag unique
@@ -3550,9 +3834,12 @@ actor PhiSyncEngine {
                 cursor.pendingProjection = nil
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
+                // Ends like `.applied`: the mapping is dropped once the caller confirms the row is gone.
+                tombstoned.insert(item.uuid)
             }
         case .rejected(let type):
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: .spaces)
             AppLogError("[phi-sync] space commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
         }
         table.cursors[item.uuid] = cursor
@@ -4556,6 +4843,13 @@ actor PhiSyncEngine {
         if onlyIdentities == nil {
             counters.pendingPublish += (deleteCandidates.count - tombstoneSlice.count)
                 + (liveCandidates.count - liveSlice.count)
+            counters.liveUnpublished += liveCandidates.count - liveSlice.count
+            counters.publicationCounted = true
+        } else if let onlyIdentities {
+            // Status only: the retry re-slices the whole snapshot under a fresh budget, so a
+            // conflicted live edit it leaves out is sent by neither pass.
+            counters.liveUnpublished += onlyIdentities.intersection(liveCandidates)
+                .subtracting(liveSlice).count
         }
 
         // Batch only readable tags (section 5.5). Skip quarantined hashes: the server's client-tag
@@ -4705,6 +4999,12 @@ actor PhiSyncEngine {
             await registration.notePublishApplied(appliedLive)
         }
 
+        // Status only: live edits of this pass that did not apply. Conflicts headed for the
+        // scoped retry are counted by that pass instead.
+        counters.liveUnpublished += work.filter { item in
+            item.payload != nil && !appliedLive.contains(item.identity)
+                && !(retryOnConflict && conflicted.contains(item.identity))
+        }.count
         ownedCounters[registration.label] = counters
         let saved = writeOwnedTable(registration, table)
 
@@ -4721,7 +5021,10 @@ actor PhiSyncEngine {
         // One pull and one retry restricted to conflicted identities; a second conflict abandons
         // only those entries for this round (section 5.3).
         // Count only exhausted conflicts, without clearing another kind's publication failure.
-        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        if !retryOnConflict, !conflicted.isEmpty {
+            roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
+        }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
@@ -4803,6 +5106,7 @@ actor PhiSyncEngine {
             return
         case .invalidMessage:
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
             // A rejection must not create a cursor where none existed.
             guard existing != nil else { return }
             guard isTombstone else {
@@ -4844,6 +5148,7 @@ actor PhiSyncEngine {
             }
         case .rejected(let type):
             roundOutboundFailed = true
+            roundDetail.note(.rejectedByServer, kind: SyncKind(ownedLabel: registration.label))
             // Like conflict, this outcome provides no cursor-state evidence. Writing defaults would
             // create a ghost cursor.
             AppLogError("[phi-sync] owned-item commit rejected response_type=\(type) "
@@ -5078,7 +5383,7 @@ actor PhiSyncEngine {
     private func writeSettings(_ entity: Phi_PhiSettingEntity) -> Bool {
         guard !isStopped else { return false }
         isApplyingRemote = true
-        SyncableSettings.apply(entity, to: defaults, settings: settings)
+        settingsReceivedThisRound += SyncableSettings.apply(entity, to: defaults, settings: settings)
         isApplyingRemote = false
         return true
     }
@@ -5146,6 +5451,18 @@ actor PhiSyncEngine {
         let changed = body(&table)
         if changed { writeSpaceTable(table) }
         return changed
+    }
+
+    /// `.recordLocalDeletion` for a round that `isStopped` blocks while the engine is not retired.
+    /// `writeSpaceTable` would skip the write on that same check, so the table is saved here with
+    /// only the retirement check: after `shutdown()` the store may be reset for the next account.
+    /// Published when sync next runs, like any `pendingDelete`.
+    private func recordLocalDeletionWhileBlocked(_ uuid: String) {
+        guard let spaceStore else { return }
+        var table = spaceStore.load()
+        guard table.recordLocalDeletion(spaceId: uuid), !stopSignal.isStopped,
+              spaceStore.save(table) else { return }
+        Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
     }
 
     // MARK: - Hybrid logical clock (C2 / R2.1)

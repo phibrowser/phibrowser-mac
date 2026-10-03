@@ -2189,6 +2189,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                         excludingClientId:(NSString *)excludingClientId
     NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:));
 
+/// Rounds the corners of `webContent`'s pixels and stacks them among the other
+/// web views drawn by the same content surface (chromium ADR 0014): a higher
+/// `zOrder` draws above a lower one, and a web view the surface has just
+/// attached draws below all the others until this stacks it. The Mac client
+/// decides both, as views does for a WebView upstream; Chromium only applies
+/// them. Does nothing while `webContent` draws itself, and nothing carries
+/// over to a later attach (a cross-window drag, a hosting view installed over
+/// mounted web views), so call it again whenever the web view is mounted or
+/// laid out below the hosting container. Optional so an older framework
+/// without content surfaces ignores it.
+- (void)setContentHosting:(id<WebContentWrapper>)webContent
+            topLeftRadius:(CGFloat)topLeftRadius
+           topRightRadius:(CGFloat)topRightRadius
+        bottomRightRadius:(CGFloat)bottomRightRadius
+         bottomLeftRadius:(CGFloat)bottomLeftRadius
+                   zOrder:(NSInteger)zOrder;
+
 @end
 
 @protocol WebContentWrapper <NSObject>

@@ -80,18 +80,17 @@ accessibility carrier. The fills behind web views (page card, left container,
 split pane cards and host, AI Chat panel, placeholder page) go clear, so a gap
 where no page has drawn shows the page-area backdrop. Once per run-loop pass
 `ContentSurfaceHosting` tells Chromium each web view's corner radii and
-stacking order (`setContentHosting`). Web views mounted outside the container
-(Peek, Reader, the extension side panel, Kiosk windows, content fullscreen)
-draw themselves, and with the feature off no session receives a surface and
-nothing here changes.
+stacking order (`setContentHosting`), addressing each by its bridge wrapper,
+or docked DevTools, which has none, by the NSView the bridge handed over.
+Web views mounted outside the container (Peek, Reader, the extension side
+panel, Kiosk windows, content fullscreen) draw themselves, and with the
+feature off no session receives a surface and nothing here changes.
 
 Expected differences with the feature on: of more than five hidden tabs the
 oldest returns to the page-area backdrop, as does a tab idle for more than
-five minutes. Known limitations: docked DevTools has no bridge wrapper, so its
-pane stays square and below every other web view, and another tab's pixels
-can show through it while a tab switch keeps that tab mounted; a page whose
-view overruns its host during the AI Chat or extension side panel slide draws
-past the host's edge until the slide ends.
+five minutes. Known limitation: a page whose view overruns its host during
+the AI Chat or extension side panel slide draws past the host's edge until
+the slide ends.
 
 The feature is on by default. Run the content-surface row as is, then once
 with `--disable-features=PhiContentSurface`.

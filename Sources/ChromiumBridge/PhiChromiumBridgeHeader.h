@@ -2222,6 +2222,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
          bottomLeftRadius:(CGFloat)bottomLeftRadius
                    zOrder:(NSInteger)zOrder;
 
+/// As setContentHosting: above, for a web view with no WebContentWrapper,
+/// addressed by its NSView instead. Only docked DevTools needs it, as the
+/// client gets nothing for it but the NSView in
+/// devToolsDidAttachToTab:windowId:devToolsView:. Address every web view that
+/// has a wrapper by its wrapper. Optional so an older framework ignores it.
+- (void)setContentHostingForWebView:(NSView *)webView
+                      topLeftRadius:(CGFloat)topLeftRadius
+                     topRightRadius:(CGFloat)topRightRadius
+                  bottomRightRadius:(CGFloat)bottomRightRadius
+                   bottomLeftRadius:(CGFloat)bottomLeftRadius
+                             zOrder:(NSInteger)zOrder
+    NS_SWIFT_NAME(setContentHosting(forWebView:topLeftRadius:topRightRadius:bottomRightRadius:bottomLeftRadius:zOrder:));
+
 @end
 
 @protocol WebContentWrapper <NSObject>

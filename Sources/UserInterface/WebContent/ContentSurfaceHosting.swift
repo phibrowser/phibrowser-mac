@@ -29,14 +29,14 @@ final class ContentSurfaceHosting {
     }
 
     private struct Sent {
-        weak var wrapper: NSObject?
+        weak var address: NSObject?
         var hosting: Hosting
     }
 
     private weak var container: NSView?
     private weak var browserState: BrowserState?
     private var observer: CFRunLoopObserver?
-    /// Last `Hosting` sent, keyed by wrapper.
+    /// Last `Hosting` sent, keyed by address.
     private var sent: [ObjectIdentifier: Sent] = [:]
 
     /// After AppKit's flush observer, so the views are laid out.
@@ -69,9 +69,9 @@ final class ContentSurfaceHosting {
 
     /// The stacking order is the web views' back-to-front order below the
     /// container, so a tab waiting for its first paint under the current one
-    /// stays under it until promoted. Docked DevTools has no wrapper to
-    /// address it by and keeps Chromium's default: square, below every other
-    /// web view.
+    /// stays under it until promoted, and docked DevTools, mounted below its
+    /// page, stays above the web views of any tab mounted under the current
+    /// one.
     private func update() {
         guard let container, let browserState,
               let bridge = ChromiumLauncher.sharedInstance().bridge,
@@ -81,33 +81,48 @@ final class ContentSurfaceHosting {
             sent.removeAll()
             return
         }
-        var wrappers = (browserState.tabs + browserState.aiChatTabs.values)
-            .compactMap(\.webContentWrapper)
+        let tabs = browserState.tabs + browserState.aiChatTabs.values
+        var wrappers = tabs.compactMap(\.webContentWrapper)
         if let placeholder = browserState.placeholderWrapper {
             wrappers.append(placeholder)
         }
+        // A web view is addressed by its wrapper. Docked DevTools has none and
+        // is addressed by its web view, the view Chromium handed over.
+        var addresses = wrappers.map { (address: $0 as NSObject, webView: $0.nativeView) }
+        addresses += tabs.compactMap(\.devToolsView)
+            .map { (address: $0 as NSObject, webView: Optional($0)) }
         var seen = Set<ObjectIdentifier>()
-        let mounted = wrappers
-            .compactMap { wrapper -> (wrapper: WebContentWrapper & NSObject, webView: NSView, path: [Int])? in
-                guard seen.insert(ObjectIdentifier(wrapper)).inserted,
-                      let webView = wrapper.nativeView, webView.window === window,
+        let mounted = addresses
+            .compactMap { item -> (address: NSObject, webView: NSView, path: [Int])? in
+                guard seen.insert(ObjectIdentifier(item.address)).inserted,
+                      let webView = item.webView, webView.window === window,
                       let path = Self.indexPath(of: webView, below: container) else { return nil }
-                return (wrapper, webView, path)
+                return (item.address, webView, path)
             }
             .sorted { $0.path.lexicographicallyPrecedes($1.path) }
 
         var nowSent: [ObjectIdentifier: Sent] = [:]
         for (zOrder, item) in mounted.enumerated() {
             let hosting = Self.hosting(of: item.webView, zOrder: zOrder, below: container)
-            let key = ObjectIdentifier(item.wrapper)
-            if sent[key]?.wrapper !== item.wrapper || sent[key]?.hosting != hosting {
-                bridge.setContentHosting?(item.wrapper,
-                                          topLeftRadius: hosting.topLeft,
-                                          topRightRadius: hosting.topRight,
-                                          bottomRightRadius: hosting.bottomRight,
-                                          bottomLeftRadius: hosting.bottomLeft,
-                                          zOrder: hosting.zOrder)            }
-            nowSent[key] = Sent(wrapper: item.wrapper, hosting: hosting)
+            let key = ObjectIdentifier(item.address)
+            if sent[key]?.address !== item.address || sent[key]?.hosting != hosting {
+                if let wrapper = item.address as? WebContentWrapper {
+                    bridge.setContentHosting?(wrapper,
+                                              topLeftRadius: hosting.topLeft,
+                                              topRightRadius: hosting.topRight,
+                                              bottomRightRadius: hosting.bottomRight,
+                                              bottomLeftRadius: hosting.bottomLeft,
+                                              zOrder: hosting.zOrder)
+                } else {
+                    bridge.setContentHosting?(forWebView: item.webView,
+                                              topLeftRadius: hosting.topLeft,
+                                              topRightRadius: hosting.topRight,
+                                              bottomRightRadius: hosting.bottomRight,
+                                              bottomLeftRadius: hosting.bottomLeft,
+                                              zOrder: hosting.zOrder)
+                }
+            }
+            nowSent[key] = Sent(address: item.address, hosting: hosting)
         }
         sent = nowSent
     }

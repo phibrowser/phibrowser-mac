@@ -298,12 +298,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                 sessionId:(int64_t)sessionId;
 
 // ==========================================================================
-// Flicker fix: Tab visibility synchronization (Chromium → Mac notification)
+// First paint (Chromium → Mac notification)
 // ==========================================================================
 
-/// Called when a new tab has completed its first visually non-empty paint.
-/// Mac should bring the new tab's view to the front when receiving this.
-/// This is used for scenario 2: switching to a newly created tab that hasn't rendered yet.
+/// Called when a tab has completed its first visually non-empty paint.
+/// Kiosk windows remount their focused tab and finish opening on it (traffic
+/// lights, kiosk-opened capture, profile replacement); the page container of
+/// a normal window does not wait for it.
 /// @param tabId The Chromium tab ID that is ready to display
 /// @param windowId The window ID containing the tab
 - (void)tabReadyToDisplay:(int64_t)tabId windowId:(int64_t)windowId;

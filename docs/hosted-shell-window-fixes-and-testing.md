@@ -93,8 +93,8 @@ can show through it while a tab switch keeps that tab mounted; a page whose
 view overruns its host during the AI Chat or extension side panel slide draws
 past the host's edge until the slide ends.
 
-Run the content-surface row with `--enable-features=PhiContentSurface`, then
-once without it.
+The feature is on by default. Run the content-surface row as is, then once
+with `--disable-features=PhiContentSurface`.
 
 ## Verification boundary
 

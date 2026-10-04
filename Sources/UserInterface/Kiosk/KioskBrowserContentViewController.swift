@@ -76,11 +76,6 @@ final class KioskBrowserContentViewController: NSViewController {
         toolbarView.showSpaceSelectionMenu()
     }
 
-    func handlePreviousTabReadyForCleanup(tabId: Int) {
-        guard state.focusingTab?.guid != tabId else { return }
-        mountFocusedTab()
-    }
-
     func handleTabReadyToDisplay(tabId: Int) {
         guard state.focusingTab?.guid == tabId else { return }
         mountFocusedTab()
@@ -226,8 +221,6 @@ final class KioskBrowserContentViewController: NSViewController {
         focusedView.snp.remakeConstraints { make in
             make.edges.equalToSuperview()
         }
-        ChromiumLauncher.sharedInstance().bridge?
-            .confirmViewSwitchCompleted(Int64(state.windowId))
     }
 
     private func attachExtensionSidePanel(

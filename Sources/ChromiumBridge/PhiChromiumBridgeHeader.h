@@ -301,12 +301,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Flicker fix: Tab visibility synchronization (Chromium → Mac notification)
 // ==========================================================================
 
-/// Called after Chromium has hidden the previous WebContents.
-/// Mac should remove the previous tab's NSView from the view hierarchy.
-/// @param tabId The Chromium tab ID that was hidden
-/// @param windowId The window ID containing the tab
-- (void)previousTabReadyForCleanup:(int64_t)tabId windowId:(int64_t)windowId;
-
 /// Called when a new tab has completed its first visually non-empty paint.
 /// Mac should bring the new tab's view to the front when receiving this.
 /// This is used for scenario 2: switching to a newly created tab that hasn't rendered yet.
@@ -1437,16 +1431,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                        windowId:(int64_t)windowId
                     disposition:(PhiOmniboxSuggestionDisposition)disposition;
 - (void)deleteSuggestionAtLine:(size_t)line windowId:(int64_t)windowId;
-
-// ==========================================================================
-// Flicker fix: Tab visibility synchronization (Mac → Chromium confirmation)
-// ==========================================================================
-
-/// Called by Mac to confirm that the view switch has completed.
-/// After receiving this, Chromium will hide the previous WebContents
-/// and send previousTabReadyForCleanup notification.
-/// @param windowId The window ID where the view switch occurred
-- (void)confirmViewSwitchCompleted:(int64_t)windowId;
 
 /// Execute a Chromium command on the specified window.
 /// Goes through Chromium's internal command handling (e.g. chrome::ExecuteCommand),

@@ -721,8 +721,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     /// if the tab should not contribute an active-tab gap (pinned, not shown,
     /// or being dragged over the pinned zone). The caller picks which tab to
     /// query — the content border passes the *visible* controller's tab,
-    /// which can lag behind `browserState.focusingTab` during the
-    /// deferred-first-paint switch path.
+    /// which lags behind `browserState.focusingTab` until the page
+    /// container mounts the new tab.
     ///
     /// During this tab's own drag the source view is hidden in favor of a drag
     /// proxy in `dragOverlay`, and the proxy gets restyled to match whichever
@@ -753,8 +753,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     /// `activeTab` is the tab whose outline should be carved into the
     /// path (typically `currentWebContentController.associatedTab` —
     /// the *visible* tab — rather than `browserState.focusingTab`, to
-    /// stay aligned with the unified content-border outline during the
-    /// deferred-first-paint switch path).
+    /// stay aligned with the unified content-border outline until the
+    /// page container mounts the new tab).
     func groupGeometries(in coordView: NSView, activeTab: Tab?) -> [GroupGeometry] {
         let runs = currentGroupRuns()
         let normalTabs = browserState.normalTabs

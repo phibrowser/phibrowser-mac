@@ -108,13 +108,8 @@ final class KioskBrowserState: BrowserState {
         tabs.first(where: { $0.guid == tabId })?.title = newTitle
     }
 
-    override func handlePreviousTabReadyForCleanup(tabId: Int) {
-        windowController?.handlePreviousTabReadyForCleanup(tabId: tabId)
-    }
-
     override func handleTabReadyToDisplay(tabId: Int) {
-        guard let tab = tabs.first(where: { $0.guid == tabId }) else { return }
-        tab.hasFirstPaint = true
+        guard tabs.contains(where: { $0.guid == tabId }) else { return }
         windowController?.handleTabReadyToDisplay(tabId: tabId)
     }
 

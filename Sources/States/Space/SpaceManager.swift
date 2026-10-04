@@ -8842,20 +8842,6 @@ final class SpaceWindowSlot: ObservableObject {
     /// completion within `duration`, so this margin only ever covers a lost one.
     private static let swapFinalizeFallbackMargin: TimeInterval = 0.5
 
-    /// How long a cold reveal waits for the entering Space's first paint
-    /// before presenting it unpainted. Below the container's cold first-paint
-    /// budget (2s) on purpose: the reveal is the outer gate, and a page slow
-    /// enough to blow this deadline is presented behind the themed page-pane
-    /// mask, which that budget then lifts.
-    static let coldRevealFirstPaintDeadline: TimeInterval = 1.0
-
-    /// Margin between the target's first-paint signal and the present. The
-    /// signal is the renderer's — the composited frame, and whatever theme or
-    /// layout settles right behind it, land a beat later; presenting on the
-    /// signal itself can still swap onto a frame that is not quite the one
-    /// the user should meet.
-    static let coldRevealPostPaintSettle: TimeInterval = 0.1
-
     private weak var manager: SpaceManager?
 
     init(manager: SpaceManager, initialSpaceId: String?) {

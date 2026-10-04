@@ -1513,29 +1513,14 @@ class SpaceSessionController: NSWindowController {
     }
 
     // =========================================================================
-    // Flicker fix: Tab visibility synchronization
+    // Tab first paint
     // =========================================================================
 
-    /// Called when Chromium has hidden the previous tab and it's ready for cleanup.
-    /// Forwards to WebContentContainerViewController to remove the old NSView.
-    func handlePreviousTabReadyForCleanup(tabId: Int) {
-        if let kioskContentViewController {
-            kioskContentViewController.handlePreviousTabReadyForCleanup(tabId: tabId)
-            return
-        }
-        mainSplitViewController.webContentContainerViewController
-            .handlePreviousTabReadyForCleanup(tabId: tabId)
-    }
-
-    /// Called when a new tab has completed its first visually non-empty paint.
-    /// Forwards to WebContentContainerViewController to bring the new tab's view to front.
+    /// Called when a tab has completed its first visually non-empty paint.
+    /// Only Kiosk's content uses it: the page container mounts a tab
+    /// without waiting for its first paint (mac ADR 0011).
     func handleTabReadyToDisplay(tabId: Int) {
-        if let kioskContentViewController {
-            kioskContentViewController.handleTabReadyToDisplay(tabId: tabId)
-            return
-        }
-        mainSplitViewController.webContentContainerViewController
-            .handleTabReadyToDisplay(tabId: tabId)
+        kioskContentViewController?.handleTabReadyToDisplay(tabId: tabId)
     }
 
     // =========================================================================

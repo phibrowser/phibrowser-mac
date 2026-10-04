@@ -3061,22 +3061,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     // =========================================================================
-    // Flicker fix: Tab visibility synchronization
+    // Tab first paint
     // =========================================================================
 
-    /// Called by Chromium after hiding the previous WebContents.
-    /// Mac should clean up the previous tab's NSView from the view hierarchy.
-    func previousTabReady(forCleanup tabId: Int64, windowId: Int64) {
-        AppLogDebug("[Tab] previousTabReadyForCleanup: tabId=\(tabId), windowId=\(windowId)")
-        EventBus.shared
-            .send(TabEvent(browserId: windowId.intValue,
-                           action: .previousTabReadyForCleanup(tabId.intValue)))
-    }
-
-    /// Called by Chromium when a new tab has completed its first visually non-empty paint.
-    /// Mac should bring the new tab's view to the front.
+    /// Called by Chromium when a tab has completed its first visually non-empty paint.
     func tabReady(toDisplay tabId: Int64, windowId: Int64) {
-        // AppLogDebug("[FlickerFix][Coordinator] tabReadyToDisplay: tabId=\(tabId), windowId=\(windowId)")
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,
                            action: .tabReadyToDisplay(tabId.intValue)))

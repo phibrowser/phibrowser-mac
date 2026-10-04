@@ -68,10 +68,9 @@ final class ContentSurfaceHosting {
     }
 
     /// The stacking order is the web views' back-to-front order below the
-    /// container, so a tab waiting for its first paint under the current one
-    /// stays under it until promoted, and docked DevTools, mounted below its
-    /// page, stays above the web views of any tab mounted under the current
-    /// one.
+    /// container, so docked DevTools, mounted below its page, stays below it.
+    /// Only the current tab's views are mounted there, so the web views of
+    /// two tabs never overlap.
     private func update() {
         guard let container, let browserState,
               let bridge = ChromiumLauncher.sharedInstance().bridge,

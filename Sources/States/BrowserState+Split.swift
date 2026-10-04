@@ -449,6 +449,13 @@ extension BrowserState {
         } else {
             splits.append(group)
         }
+        // After `splits`, so the page container mounts the waiting pane with
+        // its split. Checked first: a restore replays every split here, and
+        // each write would publish.
+        let pair: Set = [storedPrimary, storedSecondary]
+        if !tabsAwaitingSplit.isDisjoint(with: pair) {
+            tabsAwaitingSplit.subtract(pair)
+        }
 
         // `consumePendingSplitPartner` already called `placeTabAdjacent`,
         // but a Chromium `tabIndicesUpdated` echo for the just-created
@@ -1420,6 +1427,8 @@ extension BrowserState {
             clearPartnerMark()
             return
         }
+        // Before the focus moves to it below (see `tabsAwaitingSplit`).
+        tabsAwaitingSplit.insert(tab.guid)
         // Sync Mac's focus to the new tab before `createSplit` decides which
         // side to pass Chromium as the primary pane. The new tab was created
         // with `focusAfterCreate: true`, so Chromium has already activated it,
@@ -1502,6 +1511,7 @@ extension BrowserState {
         // the placeTabAdjacent call and the bridge call).
         if createdSplitId == nil {
             clearPartnerMark()
+            tabsAwaitingSplit.remove(tab.guid)
         }
     }
 

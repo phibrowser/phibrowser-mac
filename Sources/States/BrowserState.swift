@@ -200,6 +200,14 @@ class BrowserState {
     /// side the *new* tab takes (the partner takes the other slot).
     var pendingSplitPartnerByCustomGuid: [String: PendingSplitPartner] = [:]
 
+    /// Tabs `openNewTabAsSplit` focuses before their split exists, from
+    /// their arrival until Chromium's split echo reaches `splits`
+    /// (`handleSplitCreated`) or `createSplit` fails. Their partner is the
+    /// tab that had focus, so the page container mounts such a tab only with
+    /// its split: mounted alone, it would take the partner's page out of the
+    /// window (mac ADR 0011).
+    @Published var tabsAwaitingSplit: Set<Int> = []
+
     /// customGuid → target URLs. The tab is initially opened as NTP (to keep
     /// `CrossDomainNewTabNavigationThrottle` from intercepting the initial
     /// load while the customGuid marker is set); once Chromium echoes the
@@ -5306,27 +5314,11 @@ class BrowserState {
     }
 
     // =========================================================================
-    // Flicker fix: Tab visibility synchronization
+    // Tab first paint
     // =========================================================================
 
-    /// Called when Chromium has hidden the previous WebContents and it's ready for cleanup.
-    /// This is part of the flicker fix - we defer cleanup until Chromium confirms the old tab is hidden.
-    func handlePreviousTabReadyForCleanup(tabId: Int) {
-        AppLogDebug("[Tab] handlePreviousTabReadyForCleanup: tabId=\(tabId)")
-        windowController?.handlePreviousTabReadyForCleanup(tabId: tabId)
-    }
-
-    /// Called when a new tab has completed its first visually non-empty paint.
-    /// Mac should bring the new tab's view to the front.
+    /// Called when a tab has completed its first visually non-empty paint.
     func handleTabReadyToDisplay(tabId: Int) {
-        // AppLogDebug("[FlickerFix][BrowserState] handleTabReadyToDisplay: tabId=\(tabId)")
-
-        // Mark the tab as having completed first paint
-        if let tab = tabs.first(where: { $0.guid == tabId }) {
-            tab.hasFirstPaint = true
-            // AppLogDebug("[FlickerFix][BrowserState] Set hasFirstPaint=true for tabId=\(tabId)")
-        }
-
         windowController?.handleTabReadyToDisplay(tabId: tabId)
     }
 

@@ -169,30 +169,6 @@ class Tab: WebContentRepresentable {
     /// reliably tell that no WebContents is visible.
     var isShowingNativeNTP: Bool = false
 
-    
-    // =========================================================================
-    // Flicker fix: Track first paint state for new tab switching (scenario 2)
-    // =========================================================================
-
-    /// Whether this tab has completed its first visually non-empty paint.
-    /// Used to determine if we can immediately show this tab (true) or need to
-    /// wait for first paint notification (false) when switching to it.
-    var hasFirstPaint: Bool = false
-
-    /// Whether this tab has content that can be shown right now — the gate
-    /// every "wait for the tab to paint before showing it" path checks.
-    ///
-    /// A native-NTP tab (`usesNativeNTP`, on an NTP or empty URL) never
-    /// clears `hasFirstPaint`: its content is an AppKit view painted with the
-    /// rest of the window, and the `chrome://newtab` WebContents behind it
-    /// never enters the view hierarchy, stays 0×0, and so never reports
-    /// `DidFirstVisuallyNonEmptyPaint`. Gating it on that signal only ever
-    /// runs the budgets down — 2s of masked page pane on a cold Incognito
-    /// Space reveal, plus the reveal's own 1s deadline on re-entry.
-    var isReadyToDisplay: Bool {
-        hasFirstPaint || (usesNativeNTP && (isNTP || (url?.isEmpty ?? true)))
-    }
-
     // =========================================================================
     // DevTools embedding state
     // =========================================================================

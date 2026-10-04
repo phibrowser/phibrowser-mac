@@ -35,7 +35,10 @@
  splitViewContainer, leftContainerView, the split pane cards and the AI Chat
  contentView are then clear (`hasContentSurface`), borders and corners kept;
  the container tells Chromium each web view's corner radii and stacking
- order. Without a surface every web view draws itself, as before.
+ order. Nothing of another tab shows through those clear fills: the
+ container mounts only the current tab's view and removes the others in the
+ same turn (mac ADR 0011). Without a surface every web view draws itself, as
+ before.
 
  Layout constraints:
  - splitViewContainer: trailing/bottom inset 8pt from view edges, top is 0

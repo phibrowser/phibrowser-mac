@@ -62,7 +62,7 @@ and separate Profiles. Exercise expanded and floating sidebar modes.
 | Extension window APIs | Focus, initial geometry and requested fullscreen display match the addressed browser window |
 | Fullscreen and crash pages | Switching away withdraws session-owned presentation; actions still target that session |
 | Dock reopen and capture | Reopen selects a valid visible shell; capture reflects the requested session's presented content |
-| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work unchanged; warm switches, cross-site navigation and closing the active tab show no blank frame |
+| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work unchanged; warm switches (to a recent tab, the fifth to twelfth most recent, a resized window, after five idle minutes or a Space switch), rapid switch cycles, cross-site navigation, entering, leaving and switching within a split, and switching from a tab with docked DevTools to a tab never shown show no blank frame and no other tab's page; a switch to a tab that has not painted keeps the previous page for at most four frames, then shows the page-area backdrop until its first frame; "Add Tab to New Split View" keeps the other pane shown; closing the active tab shows its successor no later than the previous build |
 
 OS permission state, camera/microphone availability and account eligibility are
 separate prerequisites. Reset a test site's permission when testing its prompt;
@@ -84,16 +84,28 @@ stacking order (`setContentHosting`), addressing each by its bridge wrapper,
 or docked DevTools, which has none, by the NSView the bridge handed over.
 Web views mounted outside the container (Peek, Reader, the extension side
 panel, Kiosk windows, content fullscreen) draw themselves, and with the
-feature off no session receives a surface and nothing here changes.
+feature off no session receives a surface.
+
+A tab switch is the page container's mount: it mounts the current tab's view
+and removes every other tab view in the same turn, with or without a surface
+(ADR 0011). The tab "Add Tab to New Split View" opens and focuses is mounted
+once its split reaches the tab model, so its partner, the outgoing tab, never
+leaves the window. Over a surface viz keeps the previous frame until the new tab's is
+ready or four frames pass. With the feature off the tabs draw themselves, so
+a switch to a tab Chromium has not kept alive, or a close, shows blank until
+its first frame; that configuration is a diagnostic fallback.
 
 Expected differences with the feature on: of more than five hidden tabs the
-oldest returns to the page-area backdrop, as does a tab idle for more than
-five minutes. Known limitation: a page whose view overruns its host during
-the AI Chat or extension side panel slide draws past the host's edge until
-the slide ends.
+oldest loses its frame, as does a tab idle for more than five minutes.
+Switching back to one, its renderer usually draws a new frame before the
+mount, as Chromium makes the tab visible on activation; a frame later than
+four frames after the mount shows the page-area backdrop until it lands.
+Known limitation: a page whose view overruns its host during the AI Chat or
+extension side panel slide draws past the host's edge until the slide ends.
 
 The feature is on by default. Run the content-surface row as is, then once
-with `--disable-features=PhiContentSurface`.
+with `--disable-features=PhiContentSurface` as a smoke test: no crash, and no
+blank frame on a switch to a recent tab.
 
 ## Verification boundary
 

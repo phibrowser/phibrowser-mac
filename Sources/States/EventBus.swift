@@ -43,9 +43,6 @@ struct TabEvent: WindowEvent {
         case updateTabRelationships(_ snapshot: NativeTabRelationshipSnapshot)
         case move(tab: Tab, toNewIndex: Int, selectAfterMove: Bool)
 
-        /// Chromium has hidden the previous tab and the native view can be released.
-        case previousTabReadyForCleanup(_ tabId: Int)
-
         /// Chromium produced the first non-empty paint for the tab.
         case tabReadyToDisplay(_ tabId: Int)
 
@@ -242,8 +239,6 @@ class EventBus {
             state.move(tab: tab, to: toNewIndex, selectAfterMove: selectAfterMove)
         case .openLinkAsPeek(let sourceTabId, let url):
             state.openLinkAsPeek(urlString: url, sourceTabId: sourceTabId)
-        case .previousTabReadyForCleanup(let tabId):
-            state.handlePreviousTabReadyForCleanup(tabId: tabId)
         case .tabReadyToDisplay(let tabId):
             state.handleTabReadyToDisplay(tabId: tabId)
         case .tabContentFullscreenChanged(let tabId, let isFullscreen):

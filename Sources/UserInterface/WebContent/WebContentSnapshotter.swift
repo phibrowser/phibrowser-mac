@@ -12,18 +12,17 @@ import Cocoa
 /// is permission-free (Screen Recording permission only governs capturing OTHER
 /// apps/screens).
 ///
-/// Used by tab dragging (`.nominalResolution`) and active-tab close masking
-/// (`.bestResolution`). Best-effort: returns nil on near-edge clipping, blank
+/// Tab dragging captures at `.nominalResolution`, the other callers at
+/// `.bestResolution`. Best-effort: returns nil on near-edge clipping, blank
 /// capture, or missing window — callers degrade gracefully.
 enum WebContentSnapshotter {
     /// Captures the on-screen pixels of `view`'s region from the window server.
-    /// - Parameter resolution: `.nominalResolution` (drag) or `.bestResolution` (close).
+    /// - Parameter resolution: `.nominalResolution` (drag) or `.bestResolution`.
     /// - Returns: the captured image, or nil if capture failed / looked clipped / blank.
-    static func captureOnScreen(_ view: NSView, resolution: CGWindowImageOption, insetBy inset: CGFloat = 0) -> NSImage? {
+    static func captureOnScreen(_ view: NSView, resolution: CGWindowImageOption) -> NSImage? {
         guard let window = view.window else { return nil }
 
-        // Optional inset, e.g. to exclude an ancestor-drawn outline from the capture.
-        let captureBounds = view.bounds.insetBy(dx: inset, dy: inset)
+        let captureBounds = view.bounds
         guard captureBounds.width > 0, captureBounds.height > 0 else { return nil }
 
         // Convert capture bounds to window coordinates, then to screen coordinates.

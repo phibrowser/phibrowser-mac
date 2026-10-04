@@ -69,13 +69,6 @@ class WebContentContainerViewController: NSViewController {
     /// in contentContainer at a time).
     private var placeholderShell: PlaceholderShellViewController?
 
-    /// Static snapshot of the closing active tab, laid over the content area to hide
-    /// the flash during the view swap. Single slot; independent of `placeholderShell`.
-    private var closePlaceholder: NSImageView?
-
-    /// Fallback that clears `closePlaceholder` if no swap-completion signal arrives.
-    private var closePlaceholderTimeout: DispatchWorkItem?
-
     /// Shared bookmark bar owned once per window and moved between controllers.
     private var sharedBookmarkBar: BookmarkBar?
     /// Current host for the shared bookmark bar.
@@ -118,9 +111,6 @@ class WebContentContainerViewController: NSViewController {
     // wait is on the model: a tab opened into a new split is mounted once its
     // split lands (`BrowserState.tabsAwaitingSplit`).
     // =========================================================================
-
-    /// Fallback duration to clear the close-snapshot placeholder when no swap signal arrives (in seconds)
-    private static let closeSnapshotTimeoutSeconds: Double = 0.8
 
     // MARK: - UI Components
 
@@ -376,8 +366,8 @@ class WebContentContainerViewController: NSViewController {
         }
 
         // First child of contentContainer, so every later subview (the tab's
-        // WebContentViewController, placeholder shell, close snapshot) stacks
-        // above it and covers it whenever real content is mounted.
+        // WebContentViewController, placeholder shell) stacks above it and
+        // covers it whenever real content is mounted.
         contentContainer.addSubview(pageAreaBackdrop)
         pageAreaBackdrop.snp.makeConstraints { make in
             pageAreaBackdropLeadingConstraint = make.leading.equalToSuperview().constraint
@@ -1665,10 +1655,10 @@ class WebContentContainerViewController: NSViewController {
         // chat is about to re-expand exactly where the ghost still flies.
         dropClosingAIChatGhost()
 
-        // Window-server snapshot of the closing content (maskClosingTab's
-        // capture path — local snapshot APIs return blank for the remote
-        // Chromium layer). Best effort: without it the card slides out
-        // with its header over an empty background.
+        // Window-server snapshot of the closing content (`WebContentSnapshotter`
+        // — local snapshot APIs return blank for the remote Chromium layer).
+        // Best effort: without it the card slides out with its header over
+        // an empty background.
         let snapshot = WebContentSnapshotter.captureOnScreen(
             panelView.contentHostView, resolution: .bestResolution)
         for subview in panelView.contentHostView.subviews {
@@ -1771,72 +1761,6 @@ class WebContentContainerViewController: NSViewController {
         updateContentOuterBorder()
     }
 
-    // MARK: - Close Snapshot Placeholder
-    //
-    // Hides the gray/black flash when closing the ACTIVE tab. Must run SYNCHRONOUSLY
-    // from PhiChromiumCoordinator.tabWillBeRemove — the async EventBus close fires
-    // only after Chromium destroys the WebContents, too late to capture pixels.
-
-    /// Lay a static snapshot of the closing active tab over the content area.
-    /// No-op (degrades to today's flash) if the closing tab isn't on-screen or capture fails.
-    @MainActor
-    func maskClosingTab(tabId: Int) {
-        guard let controller = currentWebContentController,
-              controller.associatedTab?.guid == tabId else {
-            return
-        }
-        // Single slot: clear any prior snapshot before capturing (rapid close).
-        clearClosePlaceholder()
-
-        // Snapshot only the inset web-content region, not the side margins: covering
-        // them makes AppKit additively re-tint that vibrancy strip, and it flickers.
-        let contentView = controller.closeSnapshotSourceView
-        // Comfortable draws a 1pt active-tab outline (outerBorderLayer) ABOVE this
-        // snapshot and re-morphs it on close; inset past it so the live layer owns it.
-        let borderInset: CGFloat = outerBorderLayer.path == nil ? 0 : outerBorderLayer.lineWidth
-        guard let image = WebContentSnapshotter.captureOnScreen(contentView, resolution: .bestResolution, insetBy: borderInset) else {
-            AppLogDebug("[CloseSnapshot] capture failed for tab \(tabId) — falling back to flash")
-            return
-        }
-
-        let imageView = NSImageView()
-        imageView.image = image
-        imageView.imageScaling = .scaleAxesIndependently
-        // Mirror the source's rounded corners (shrunk by the inset) so it lines up.
-        imageView.wantsLayer = true
-        if let sourceLayer = contentView.layer {
-            imageView.layer?.cornerCurve = sourceLayer.cornerCurve
-            imageView.layer?.cornerRadius = max(0, sourceLayer.cornerRadius - borderInset)
-            imageView.layer?.masksToBounds = true
-        }
-        // Cover only the inset content region; margins (and the outline) stay live.
-        imageView.frame = contentView.convert(contentView.bounds, to: contentContainer).insetBy(dx: borderInset, dy: borderInset)
-        contentContainer.addSubview(imageView)
-        // Commit the snapshot to the WindowServer synchronously, before this bridge
-        // callback returns and Chromium destroys the closing tab. Otherwise its CA
-        // commit can land a frame AFTER the remote layer has blanked (async, on the
-        // GPU/WindowServer side) → a 1-frame blank that then "recovers" = the flicker.
-        imageView.display()
-        CATransaction.flush()
-        closePlaceholder = imageView
-
-        let timeout = DispatchWorkItem { [weak self] in
-            self?.clearClosePlaceholder()
-        }
-        closePlaceholderTimeout = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeSnapshotTimeoutSeconds, execute: timeout)
-    }
-
-    /// Remove the close snapshot placeholder and cancel its timeout. Idempotent.
-    @MainActor
-    private func clearClosePlaceholder() {
-        guard closePlaceholder != nil || closePlaceholderTimeout != nil else { return }
-        closePlaceholderTimeout?.cancel()
-        closePlaceholderTimeout = nil
-        closePlaceholder?.removeFromSuperview()
-        closePlaceholder = nil
-    }
-
     /// Mounts `controller`'s view as the current tab and removes every other
     /// tab view in the same turn (see "Tab switch" above).
     private func switchToWebContentController(_ controller: WebContentViewController) {
@@ -1900,9 +1824,6 @@ class WebContentContainerViewController: NSViewController {
         // previous size until the next viewDidLayout corrects it.
         view.layoutSubtreeIfNeeded()
         updateContentOuterBorder()
-
-        // The successor is now mounted on top — drop the close snapshot (if any).
-        clearClosePlaceholder()
     }
 
     /// Removes every tab view except `controller`'s from `contentContainer`.

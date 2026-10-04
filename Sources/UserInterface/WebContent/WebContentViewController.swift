@@ -312,10 +312,6 @@ class WebContentViewController: NSViewController {
     /// Split-view container that owns the rounded background and spacing.
     private lazy var splitViewContainer = NSView()
 
-    /// Inset, rounded web-content region used as the close-snapshot source; excludes
-    /// the side margins so the placeholder doesn't cover the window-edge material.
-    var closeSnapshotSourceView: NSView { splitViewContainer }
-
     /// The visible rounded page card. What "cover the page pane" means for a
     /// full-pane overlay (the Reader panel): the controller's whole view also
     /// spans the window margins around the card, which must stay visible.

@@ -80,6 +80,21 @@ final class SplitPaneHostView: NSView {
         }
     }
 
+    /// See `WebContentViewController.hasContentSurface`. The host's own fill
+    /// shows only around the pane cards but lies under them too, so over a
+    /// content surface it moves to `gapFillView`, which leaves them out.
+    var hasContentSurface = false {
+        didSet {
+            guard hasContentSurface != oldValue else { return }
+            applyFills()
+            needsLayout = true
+        }
+    }
+
+    /// The host's fill with the pane cards cut out of it, present only over a
+    /// content surface and laid out with the panes.
+    private var gapFillView: NSView?
+
     /// Fires when the user releases the divider with a new ratio.
     var onRatioCommit: ((Double) -> Void)?
 
@@ -111,9 +126,9 @@ final class SplitPaneHostView: NSView {
         self.focusRingView = FocusRingView()
         super.init(frame: .zero)
         wantsLayer = true
-        phiLayer?.setBackgroundColor(.windowBackground)
         configurePaneContainer(primaryPaneContainer)
         configurePaneContainer(secondaryPaneContainer)
+        applyFills()
         addSubview(primaryPaneContainer)
         addSubview(secondaryPaneContainer)
         addSubview(dividerView)
@@ -355,6 +370,48 @@ final class SplitPaneHostView: NSView {
         }
         positionFocusRing(primaryFrame: primaryPaneContainer.frame,
                           secondaryFrame: secondaryPaneContainer.frame)
+        if let gapFillView {
+            layoutGapFill(gapFillView)
+        }
+    }
+
+    /// The host's and pane cards' fills (see `hasContentSurface`).
+    private func applyFills() {
+        setFill(ThemedColor.windowBackground.cgColorMapperOptional,
+                overContentSurface: hasContentSurface)
+        for container in [primaryPaneContainer, secondaryPaneContainer] {
+            container.setFill(NSColor.white <> NSColor.black,
+                              overContentSurface: hasContentSurface)
+        }
+        gapFillView?.removeFromSuperview()
+        gapFillView = nil
+        guard hasContentSurface else { return }
+        let gapFill = NSView()
+        gapFill.wantsLayer = true
+        gapFill.phiLayer?.setBackgroundColor(.windowBackground)
+        let mask = CAShapeLayer()
+        mask.fillRule = .evenOdd
+        gapFill.layer?.mask = mask
+        addSubview(gapFill, positioned: .below, relativeTo: nil)
+        gapFillView = gapFill
+    }
+
+    private func layoutGapFill(_ gapFillView: NSView) {
+        gapFillView.frame = bounds
+        guard let mask = gapFillView.layer?.mask as? CAShapeLayer else { return }
+        // Circular corners, as Chromium rounds the panes' pixels; the cards'
+        // own continuous curve has no CGPath form.
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        for card in [primaryPaneContainer.frame, secondaryPaneContainer.frame] where !card.isEmpty {
+            let radius = min(outerCornerRadius, card.width / 2, card.height / 2)
+            path.addRoundedRect(in: card, cornerWidth: radius, cornerHeight: radius)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.frame = gapFillView.bounds
+        mask.path = path
+        CATransaction.commit()
     }
 
     /// Shared pane-card area used by both the real split host and its replace
@@ -381,7 +438,6 @@ final class SplitPaneHostView: NSView {
     /// card rather than as halves of one outer clip.
     private func configurePaneContainer(_ container: NSView) {
         container.wantsLayer = true
-        container.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
         container.layer?.cornerCurve = .continuous
         container.layer?.cornerRadius = outerCornerRadius
         container.layer?.masksToBounds = true

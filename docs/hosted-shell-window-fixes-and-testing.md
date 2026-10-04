@@ -62,10 +62,39 @@ and separate Profiles. Exercise expanded and floating sidebar modes.
 | Extension window APIs | Focus, initial geometry and requested fullscreen display match the addressed browser window |
 | Fullscreen and crash pages | Switching away withdraws session-owned presentation; actions still target that session |
 | Dock reopen and capture | Reopen selects a valid visible shell; capture reflects the requested session's presented content |
+| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work unchanged; warm switches, cross-site navigation and closing the active tab show no blank frame |
 
 OS permission state, camera/microphone availability and account eligibility are
 separate prerequisites. Reset a test site's permission when testing its prompt;
 a remembered decision can correctly suppress presentation.
+
+### Content surface
+
+With the framework's `PhiContentSurface` feature on, Chromium hands each hosted
+session one content surface view right after creating its window
+(`contentSurfaceCreated`, through `BrowserState` like the extension side panel).
+The session's page container installs it once, above its zero-tab backdrop and
+below every tab's view, and from then on every web view mounted in that
+container draws there instead of in its own NSView, which stays the input and
+accessibility carrier. The fills behind web views (page card, left container,
+split pane cards and host, AI Chat panel, placeholder page) go clear, so a gap
+where no page has drawn shows the page-area backdrop. Once per run-loop pass
+`ContentSurfaceHosting` tells Chromium each web view's corner radii and
+stacking order (`setContentHosting`). Web views mounted outside the container
+(Peek, Reader, the extension side panel, Kiosk windows, content fullscreen)
+draw themselves, and with the feature off no session receives a surface and
+nothing here changes.
+
+Expected differences with the feature on: of more than five hidden tabs the
+oldest returns to the page-area backdrop, as does a tab idle for more than
+five minutes. Known limitations: docked DevTools has no bridge wrapper, so its
+pane stays square and below every other web view, and another tab's pixels
+can show through it while a tab switch keeps that tab mounted; a page whose
+view overruns its host during the AI Chat or extension side panel slide draws
+past the host's edge until the slide ends.
+
+Run the content-surface row with `--enable-features=PhiContentSurface`, then
+once without it.
 
 ## Verification boundary
 
@@ -84,3 +113,4 @@ Source entry points:
 - [Space session](../Sources/UserInterface/MainBrowserWindow/SpaceSessionController.swift)
 - [Session actions](../Sources/UserInterface/MainBrowserWindow/SpaceSessionController+Actions.swift)
 - [Window slots and Space routing](../Sources/States/Space/SpaceManager.swift)
+- [Content surface hosting](../Sources/UserInterface/WebContent/ContentSurfaceHosting.swift)

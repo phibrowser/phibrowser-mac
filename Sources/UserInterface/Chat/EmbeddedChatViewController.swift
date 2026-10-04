@@ -25,7 +25,19 @@ class EmbeddedChatViewController: NSViewController {
 
     /// The identifier for the associated tab (used for AI Chat tab lookup)
     private var tabIdentifier: String?
-    
+
+    /// See `WebContentViewController.hasContentSurface`.
+    var hasContentSurface = false {
+        didSet {
+            guard hasContentSurface != oldValue, isViewLoaded else { return }
+            applyFill()
+        }
+    }
+
+    private func applyFill() {
+        contentView.setFill(NSColor.white <> NSColor.black, overContentSurface: hasContentSurface)
+    }
+
     init(with browserState: BrowserState, tab: Tab? = nil) {
         self.browserState = browserState
         self.associatedTab = tab
@@ -47,8 +59,8 @@ class EmbeddedChatViewController: NSViewController {
         contentView.wantsLayer = true
         contentView.layer?.cornerCurve = .continuous
         contentView.layer?.cornerRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
-        contentView.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
-       
+        applyFill()
+
         contentView.layer?.borderWidth = 1
         contentView.phiLayer?.setBorderColor(.border)
         

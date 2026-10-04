@@ -27,6 +27,16 @@
              └── contentView             // AI Chat content container
                  └── aiChatWebView       // AI Chat WebView
  
+ Content surface (chromium ADR 0014, while Chromium's PhiContentSurface is on):
+ the container installs its Space instance's content surface view below this
+ whole tree, and every web view above (webContentView, the split panes,
+ aiChatWebView, docked DevTools) draws there instead of in its own NSView,
+ which stays the input and accessibility carrier. The fills of
+ splitViewContainer, leftContainerView, the split pane cards and the AI Chat
+ contentView are then clear (`hasContentSurface`), borders and corners kept;
+ the container tells Chromium each web view's corner radii and stacking
+ order. Without a surface every web view draws itself, as before.
+
  Layout constraints:
  - splitViewContainer: trailing/bottom inset 8pt from view edges, top is 0
  - leading inset is 0 when the sidebar is expanded, 8pt when collapsed or in traditional layout
@@ -329,6 +339,28 @@ class WebContentViewController: NSViewController {
             guard isViewLoaded else { return }
             (view as? ColoredVisualEffectView)?.suppressesBackdrop = !paintsOwnBackdrop
         }
+    }
+
+    /// Whether this page's web views draw through their Space instance's
+    /// content surface (chromium ADR 0014), which lies below this whole view
+    /// tree. The fills behind them (page card, left container, AI Chat panel,
+    /// split panes) are then clear. Follows its container's
+    /// (`WebContentContainerViewController.hasContentSurface`).
+    var hasContentSurface = false {
+        didSet {
+            guard hasContentSurface != oldValue, isViewLoaded else { return }
+            applyFills()
+            embeddedChatViewController?.hasContentSurface = hasContentSurface
+            currentSplitHost?.hasContentSurface = hasContentSurface
+        }
+    }
+
+    /// The page card's and left container's fills (see `hasContentSurface`).
+    private func applyFills() {
+        splitViewContainer.setFill(ThemedColor.contentOverlayBackground.cgColorMapperOptional,
+                                   overContentSurface: hasContentSurface)
+        leftContainerView.setFill(NSColor.white <> NSColor.black,
+                                  overContentSurface: hasContentSurface)
     }
 
     override func loadView() {
@@ -755,7 +787,7 @@ class WebContentViewController: NSViewController {
     }
 
     private func updateTheme() {
-        splitViewContainer.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
+        applyFills()
         // Theme change writes into ColoredVisualEffectView's colorView layer,
         // whose CA transaction commit re-applies kCAFilterPlusL on hostView's
         // layer-backed descendants. Re-clear (sync + post-commit) to keep
@@ -1105,6 +1137,7 @@ class WebContentViewController: NSViewController {
     private func setupView() {
         // Build the split view that hosts web content and optional AI Chat.
         setupContentSplitView()
+        applyFills()
 
         // Set initial visibility state
         updateHeaderVisibility()
@@ -1119,7 +1152,6 @@ class WebContentViewController: NSViewController {
         leftContainerView.layer?.cornerCurve = .continuous
         leftContainerView.layer?.cornerRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         leftContainerView.layer?.masksToBounds = true
-        leftContainerView.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
         // Border visibility is updated later based on the current layout mode.
         
         // Pin the header to the top edge of the left container.
@@ -1170,7 +1202,6 @@ class WebContentViewController: NSViewController {
         splitViewContainer.layer?.cornerCurve = .continuous
         splitViewContainer.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
         splitViewContainer.layer?.masksToBounds = true
-        splitViewContainer.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
         splitViewContainer.snp.makeConstraints { make in
             splitViewLeadingConstraint = make.leading.equalToSuperview().constraint
             make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
@@ -1209,7 +1240,8 @@ class WebContentViewController: NSViewController {
         
         // Skip AI Chat entirely in incognito mode.
         guard browserState?.isIncognito != true, let chatVC = embeddedChatViewController else { return }
-        
+        chatVC.hasContentSurface = hasContentSurface
+
         let aiChatSplitViewItem = NSSplitViewItem(viewController: chatVC)
         aiChatSplitViewItem.minimumThickness = 300
         aiChatSplitViewItem.maximumThickness = 800
@@ -1977,6 +2009,7 @@ class WebContentViewController: NSViewController {
                 ratio: group.ratio,
                 layoutMode: layoutMode
             )
+            newHost.hasContentSurface = hasContentSurface
             newHost.translatesAutoresizingMaskIntoConstraints = false
             hostView.addSubview(newHost)
             newHost.snp.makeConstraints { $0.edges.equalToSuperview() }
@@ -3304,6 +3337,19 @@ class WebContentViewController: NSViewController {
     }
 }
 
+extension NSView {
+    /// Paints `fill` behind this view's subviews, or nothing while
+    /// `overContentSurface`: the content surface (chromium ADR 0014) draws
+    /// the web views from below the whole page tree, so any fill behind them
+    /// would cover their pixels. Borders and corners are left as they are.
+    func setFill(_ fill: Mapper<CGColor?>, overContentSurface: Bool) {
+        phiLayer?.backgroundColor = overContentSurface ? nil : fill
+        if overContentSurface {
+            layer?.backgroundColor = nil
+        }
+    }
+}
+
 /// Host view for Chromium-rendered content (webContentView, devToolsView).
 ///
 /// **Vibrancy suppression**: Our ancestor `ColoredVisualEffectView`
@@ -3355,9 +3401,17 @@ class WebContentHostView: NSView {
         guard filterObservers[key] == nil else { return }
         subview.wantsLayer = true
         guard let layer = subview.layer else { return }
-        Self.stripVibrancyFilter(on: layer)
-        filterObservers[key] = layer.observe(\.compositingFilter, options: [.new]) { observedLayer, _ in
-            Self.stripVibrancyFilter(on: observedLayer)
+        filterObservers[key] = Self.observeVibrancyFilter(on: layer)
+    }
+
+    /// Strips AppKit's vibrancy filter from `layer` now and whenever AppKit
+    /// re-applies it, for as long as the returned observation lives. Also
+    /// used for the content surface's view, which sits under the same
+    /// visual-effect ancestors outside any host view.
+    static func observeVibrancyFilter(on layer: CALayer) -> NSKeyValueObservation {
+        stripVibrancyFilter(on: layer)
+        return layer.observe(\.compositingFilter, options: [.new]) { observedLayer, _ in
+            stripVibrancyFilter(on: observedLayer)
         }
     }
 

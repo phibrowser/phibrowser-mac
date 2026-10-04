@@ -353,6 +353,15 @@ class BrowserState {
     /// `ExtensionSidePanelState`).
     @Published private(set) var extensionSidePanel: ExtensionSidePanelState? = nil
 
+    /// The view of this Space instance's content surface (chromium ADR 0014),
+    /// which draws the pixels of every web view mounted below the view it is
+    /// added to. Set once, right after the window is created, and only while
+    /// Chromium's PhiContentSurface feature is on; nil means every web view
+    /// draws itself. Chromium owns it; the container view controller installs
+    /// it from a SYNCHRONOUS subscription. Driven by
+    /// PhiChromiumCoordinator.contentSurfaceCreated.
+    @Published private(set) var contentSurfaceView: NSView? = nil
+
     @Published var isDraggingTab = false
 
     /// Side-by-side tab splits, mirrored from Chromium (source of truth).
@@ -1408,6 +1417,11 @@ class BrowserState {
         } else if newPanel == nil, previous != nil {
             AppLogInfo("[ExtSidePanel] [BrowserState] panel closed windowId=\(windowId)")
         }
+    }
+
+    @MainActor
+    func adoptContentSurface(_ hostingView: NSView) {
+        contentSurfaceView = hostingView
     }
 
     /// Asks Chromium to close the extension side panel of this window (the

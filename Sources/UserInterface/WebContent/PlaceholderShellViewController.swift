@@ -63,6 +63,19 @@ final class PlaceholderShellViewController: NSViewController {
         }
     }
 
+    /// See `WebContentViewController.hasContentSurface`.
+    var hasContentSurface = false {
+        didSet {
+            guard hasContentSurface != oldValue, isViewLoaded else { return }
+            applyFill()
+        }
+    }
+
+    private func applyFill() {
+        leftContainerView.setFill(NSColor.white <> NSColor.black,
+                                  overContentSurface: hasContentSurface)
+    }
+
     override func loadView() {
         let root = PlaceholderShellRootView()
         root.themedBackgroundColor = .windowOverlayBackground
@@ -93,7 +106,7 @@ final class PlaceholderShellViewController: NSViewController {
         leftContainerView.layer?.cornerRadius =
             LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         leftContainerView.layer?.masksToBounds = true
-        leftContainerView.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
+        applyFill()
 
         leftContainerView.addSubview(headerView)
         headerView.snp.makeConstraints { make in

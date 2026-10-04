@@ -49,6 +49,7 @@ class WebContentContainerViewController: NSViewController {
         didSet {
             guard currentWebContentController !== oldValue else { return }
             bindCurrentHeaderPageColorPresentation()
+            updateMountedTabViewsOpacity()
         }
     }
     private var currentHeaderPageColorCancellable: AnyCancellable?
@@ -128,6 +129,17 @@ class WebContentContainerViewController: NSViewController {
     //      │ OnPreviousTabReadyForCleanup                          │
     //      │─────────────────────────▶│─────────────────────────▶│ handlePreviousTabReadyForCleanup
     //      │                          │                          │ remove old NSView
+    //
+    // Content surface (chromium ADR 0014): both flows run unchanged. The tab
+    // NSViews are still added, stacked and removed as above, but their pixels
+    // come from the Space instance's content surface below contentContainer,
+    // which stacks the web views in the order of their NSViews
+    // (`ContentSurfaceHosting`, at the end of the run-loop pass): "bring new
+    // view to front" raises the new tab there, and the old one stays visible
+    // under it until Chromium hides it. The rest of a tab view that is not
+    // current is kept transparent, as the current page's clear fills no
+    // longer cover it (`updateMountedTabViewsOpacity`). A tab drawn by the
+    // surface has no compositor of its own for Chromium to keep alive.
     // =========================================================================
 
     // =========================================================================
@@ -179,7 +191,9 @@ class WebContentContainerViewController: NSViewController {
     /// the reveal un-defers it), and what Chromium leaves in the page rect
     /// until its first frame lands is not ours to colour. `pageAreaBackdrop`
     /// covers the same gap from BELOW and stops covering it the moment the
-    /// tab's view is promoted above it; this covers it from above, and is
+    /// tab's view is promoted above it (over a content surface it no longer
+    /// hides the tab even before that: the tab's pixels draw in the surface,
+    /// above the backdrop); this covers it from above, and is
     /// committed to the WindowServer before the window is fronted so it cannot
     /// arrive a frame late.
     private var coldRevealMask: NSView?
@@ -842,6 +856,17 @@ class WebContentContainerViewController: NSViewController {
                 } else {
                     self.detachExtensionSidePanel()
                 }
+                self.updatePageAreaBackdropCorners(panelDocked: panel != nil)
+            }
+            .store(in: &cancellables)
+
+        // Content surface install. SYNCHRONOUS (no `.receive(on:)`): in the
+        // turn Chromium hands the view over, or, if it arrived before this
+        // subscription, right here, as @Published replays it.
+        browserState?.$contentSurfaceView
+            .compactMap { $0 }
+            .sink { [weak self] hostingView in
+                self?.installContentSurface(hostingView)
             }
             .store(in: &cancellables)
 
@@ -1341,6 +1366,7 @@ class WebContentContainerViewController: NSViewController {
         }
         let controller = WebContentViewController(state: state, tab: tab)
         controller.paintsOwnBackdrop = paintsOwnBackdrop
+        controller.hasContentSurface = hasContentSurface
         webContentControllers[identifier] = controller
         return controller
     }
@@ -1382,6 +1408,7 @@ class WebContentContainerViewController: NSViewController {
         // Create new controller with the associated tab
         let controller = WebContentViewController(state: browserState, tab: tab)
         controller.paintsOwnBackdrop = paintsOwnBackdrop
+        controller.hasContentSurface = hasContentSurface
         webContentControllers[identifier] = controller
         AppLogInfo("🆕 [WebContent] Created new controller for identifier '\(identifier)', tab.guid: \(tab.guid)")
         
@@ -1431,6 +1458,77 @@ class WebContentContainerViewController: NSViewController {
         controller.updateBookmarkBarVisibility(bookmarkCount: bookmarkBar.bookmarkCount)
     }
     
+    // MARK: - Content surface
+
+    /// The Space instance's content surface view (chromium ADR 0014), once
+    /// installed by `installContentSurface`.
+    private var contentSurfaceView: NSView?
+    private var contentSurfaceFilterObservation: NSKeyValueObservation?
+    private var contentSurfaceHosting: ContentSurfaceHosting?
+
+    /// Whether the pages here draw through a content surface. Pushed to every
+    /// page and the placeholder shell the way `paintsOwnBackdrop` is.
+    var hasContentSurface: Bool { contentSurfaceView != nil }
+
+    /// Installs the content surface's view just above `pageAreaBackdrop` and
+    /// below every tab's view, which makes `contentContainer` its hosting
+    /// container: every web view mounted below it (pages, split panes, the AI
+    /// Chat panel, docked DevTools, the placeholder shell) draws through it,
+    /// so the fills behind them go clear. Done once; moving the view out
+    /// would not take the web views still in `contentContainer` off it.
+    ///
+    /// Chromium creates one only for a hosted Space instance, whose pages
+    /// paint no backdrop of their own (`paintsOwnBackdrop`); a page painting
+    /// its vibrancy backdrop would cover the surface.
+    private func installContentSurface(_ hostingView: NSView) {
+        guard contentSurfaceView == nil else { return }
+        contentSurfaceView = hostingView
+        contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
+        hostingView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        // It sits under the same visual-effect views as the pages' own
+        // Chromium views; see WebContentHostView.
+        if let layer = hostingView.layer {
+            contentSurfaceFilterObservation = WebContentHostView.observeVibrancyFilter(on: layer)
+        }
+        for controller in webContentControllers.values {
+            controller.hasContentSurface = true
+        }
+        placeholderShell?.hasContentSurface = true
+        updatePageAreaBackdropCorners(panelDocked: browserState?.extensionSidePanel != nil)
+        updateMountedTabViewsOpacity()
+        contentSurfaceHosting = ContentSurfaceHosting(container: contentContainer,
+                                                      browserState: browserState)
+        AppLogInfo("[ContentSurface] [Container] installed windowId=\(browserState?.windowId ?? -1)")
+    }
+
+    /// Over a content surface the page card is clear and this backdrop shows
+    /// through it, so it squares its right corners with the card's while the
+    /// extension side panel is docked (see
+    /// `WebContentViewController.updateLeftContainerStyle`).
+    private func updatePageAreaBackdropCorners(panelDocked: Bool) {
+        guard hasContentSurface else { return }
+        pageAreaBackdrop.layer?.maskedCorners = panelDocked
+            ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+            : [.layerMinXMinYCorner, .layerMinXMaxYCorner,
+               .layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+    }
+
+    /// Over a content surface the current page's fills are clear, so a tab
+    /// view still mounted under it (the outgoing tab until Chromium has
+    /// hidden it, a new tab waiting for its first paint) would show its
+    /// address bar, borders and overlays through the page. Such a view is
+    /// kept transparent instead, which is all that shows of it today, when
+    /// the current page covers it; its web views draw in the surface either
+    /// way, below the current page's.
+    private func updateMountedTabViewsOpacity() {
+        guard hasContentSurface else { return }
+        for controller in webContentControllers.values where controller.isViewLoaded {
+            controller.view.alphaValue = controller === currentWebContentController ? 1 : 0
+        }
+    }
+
     // MARK: - Placeholder Shell
 
     /// Mount the placeholder shell inside `contentContainer` and ask it to
@@ -1450,6 +1548,7 @@ class WebContentContainerViewController: NSViewController {
         } else {
             shell = PlaceholderShellViewController(browserState: browserState)
             shell.paintsOwnBackdrop = paintsOwnBackdrop
+            shell.hasContentSurface = hasContentSurface
             addChild(shell)
             contentContainer.addSubview(shell.view)
             shell.view.snp.remakeConstraints { make in
@@ -2096,6 +2195,7 @@ class WebContentContainerViewController: NSViewController {
 
         // Save pending state - we'll complete the switch when first paint arrives
         pendingNewTabSwitch = (controller: controller, tabId: tab.guid, identifier: identifier)
+        updateMountedTabViewsOpacity()
 
         // AppLogDebug("[FlickerFix][Mac] New tab view added below current, waiting for tabReadyToDisplay, tabId=\(tab.guid)")
 

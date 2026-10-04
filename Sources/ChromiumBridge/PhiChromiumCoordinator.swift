@@ -3198,6 +3198,26 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     // =========================================================================
+    // Content surface (Chromium → Mac)
+    //
+    // Same addressing and synchronous hop as the extension side panel: sent
+    // right after mainBrowserWindowCreated for the same windowId, once per
+    // Space instance and only while PhiContentSurface is on.
+    // =========================================================================
+
+    func contentSurfaceCreated(_ windowId: Int64, hostingView: NSView) {
+        guard let windowController = SpaceSessionControllersManager.shared
+                .getAllWindows()
+                .first(where: { $0.windowId == Int(windowId) }) else {
+            AppLogWarn("[ContentSurface] [Coordinator] no controller for windowId=\(windowId)")
+            return
+        }
+        MainActor.assumeIsolated {
+            windowController.browserState.adoptContentSurface(hostingView)
+        }
+    }
+
+    // =========================================================================
     // Tab groups (Chromium → Mac)
     //
     // Forwards all 5 bridge callbacks through EventBus, matching the

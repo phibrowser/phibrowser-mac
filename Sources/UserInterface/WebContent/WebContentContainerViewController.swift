@@ -27,6 +27,10 @@ class WebContentContainerViewController: NSViewController {
     /// Currently focused tab identifier
     private var currentTabIdentifier: String?
     
+    /// Whether a tab has been mounted here yet; the first mount is the cold
+    /// one (see `switchToWebContentController`).
+    private var hasMountedTab = false
+
     /// Currently displayed WebContentViewController
     /// Hands keyboard focus to the presented tab. Hosted-window mode calls
     /// this after a Space switch installs the session's view tree: the
@@ -103,7 +107,9 @@ class WebContentContainerViewController: NSViewController {
     // confirmed back to Chromium. The new view is laid out at the page area's
     // size before it joins the window. Kiosk's `mountFocusedTab` has the same
     // shape, though it removes the other views before mounting and does not
-    // lay the new view out first. Over a
+    // lay the new view out first. The container's first mount (cold) leaves
+    // a never-shown tab's web view to the controller's deferred content
+    // update, one turn later. Over a
     // content surface (chromium ADR 0014) the swap is one frame there: the
     // incoming web views are attached and the outgoing ones hidden in this
     // turn, and viz keeps the previous frame up until the incoming tab's
@@ -1817,7 +1823,21 @@ class WebContentContainerViewController: NSViewController {
         // until the assignment below. Today the reachable code stays inside
         // the controller's own host; if you add a container-level lookup,
         // consult the `controller` parameter explicitly instead.
-        controller.refreshContentForCurrentTab()
+        //
+        // The container's first mount, the cold one (a Space's first reveal,
+        // a new window), leaves a never-shown tab's content to the
+        // controller's deferred update, so its web view joins the window one
+        // turn later, after the Chromium work queued behind this turn. When it
+        // joined here, the main-thread work that follows the join held up the
+        // tab's navigation commit and first frame (mac ADR 0011). With nothing
+        // mounted before there is no outgoing page or split to move in this
+        // turn. A later mount with nothing current, such as the successor of
+        // a closed tab, joins at once: that tab can already draw, and a turn
+        // later only shows the backdrop longer.
+        if hasMountedTab || !controller.hasDeferredContentUpdate {
+            controller.refreshContentForCurrentTab()
+        }
+        hasMountedTab = true
 
         // Unmount only now, unlike Kiosk: a split's two pages and its shared
         // AI Chat panel have just moved over from the outgoing view while it

@@ -471,9 +471,11 @@ class WebContentViewController: NSViewController {
     
     override func viewDidAppear() {
         super.viewDidAppear()
+        // Mount content that waited for a window (a cold mount's web view)
+        // first, so focus goes to a view that is in the window.
+        flushDeferredContentUpdateIfPossible()
         // Restore focus after the view enters the hierarchy.
         restoreFocusForCurrentTab()
-        flushDeferredContentUpdateIfPossible()
         updateLoginRequiredPresentation(for: associatedTab)
         // If this controller became associated with a fullscreen tab before
         // its view was in a window (so applyContentFullscreenState bailed
@@ -1470,11 +1472,18 @@ class WebContentViewController: NSViewController {
     }
 
     private func flushDeferredContentUpdateIfPossible() {
-        guard let tab = associatedTab,
-              deferredContentUpdateTabId == tab.guid,
+        guard hasDeferredContentUpdate,
+              let tab = associatedTab,
               view.window != nil else { return }
         deferredContentUpdateTabId = nil
         updateContentForTab(tab)
+    }
+
+    /// Whether the tab's content waits for the deferred update. A
+    /// never-shown tab's does from its first mount: `viewWillAppear` runs
+    /// before its view has a window.
+    var hasDeferredContentUpdate: Bool {
+        associatedTab.map { deferredContentUpdateTabId == $0.guid } ?? false
     }
 
     /// Restores this tab to a clean NTP after a Space URL rule routed a

@@ -10,7 +10,9 @@ import XCTest
 /// The page container's mount (mac ADR 0011) puts a tab's web view into the
 /// window already at the page area's size. A web view resized after it
 /// joined makes Chromium embed the new size with a zero deadline, and the
-/// grown strip shows the gutter until the page's next frame.
+/// grown strip shows the gutter until the page's next frame. The web view
+/// joins in the mount turn, except on the container's first mount, where it
+/// joins one turn later.
 @MainActor
 final class WebContentMountGeometryTests: XCTestCase {
 
@@ -59,20 +61,83 @@ final class WebContentMountGeometryTests: XCTestCase {
         try assertJoinedAtFinalSize(outgoing)
     }
 
+    /// The first tab a page container mounts (a Space's first reveal, a new
+    /// window) is mounted in its turn, but its web view joins the window on
+    /// the next one, still at the page area's size.
+    func testColdMountedWebViewJoinsTheWindowOnTheNextTurn() throws {
+        let fixture = try makeFixture(mountingFirstTab: false)
+        let incoming = fixture.webViews[0]
+
+        // Mounts the focused tab synchronously.
+        fixture.container.mountActiveTabForRestore()
+
+        XCTAssertNotNil(fixture.container.currentWebPanelSize, "the tab was not mounted")
+        XCTAssertNil(incoming.window, "the web view joined the window in the mount turn")
+        var joinedByNextTurn: Bool?
+        // Queued after the deferred update the mount scheduled.
+        DispatchQueue.main.async { joinedByNextTurn = incoming.window != nil }
+        try waitUntilMounted(incoming)
+        XCTAssertEqual(joinedByNextTurn, true)
+        try assertJoinedAtFinalSize(incoming)
+    }
+
+    /// The cold-mounted tab's web view takes the window's focus once it is in
+    /// the window. The fixture's first mount is into an empty container.
+    func testColdMountedWebViewTakesFocus() throws {
+        let fixture = try makeFixture()
+
+        XCTAssertTrue(fixture.window.firstResponder === fixture.webViews[0],
+                      "first responder: \(String(describing: fixture.window.firstResponder))")
+    }
+
+    /// Switching away from a mounted tab stays one turn: the incoming web
+    /// view is in the window when the mount returns, the outgoing one is out.
+    func testSwitchFromAMountedTabJoinsTheWindowInTheMountTurn() throws {
+        let fixture = try makeFixture()
+
+        fixture.state.focusingTab = fixture.tabs[1]
+        // Mounts the focused tab synchronously.
+        fixture.container.mountActiveTabForRestore()
+
+        XCTAssertNotNil(fixture.webViews[1].window)
+        XCTAssertNil(fixture.webViews[0].window)
+    }
+
+    /// A never-shown successor of the closed current tab finds nothing
+    /// current, but it is not the container's first mount: its web view joins
+    /// in the mount turn, as the successor can already draw.
+    func testSuccessorOfAClosedTabJoinsTheWindowInTheMountTurn() throws {
+        let fixture = try makeFixture()
+
+        // The close reaches the container before the focus change, as on
+        // device.
+        fixture.state.tabs = [fixture.tabs[1]]
+        fixture.state.updateNormalTabs()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(fixture.container.currentWebPanelSize, "the closed tab is still current")
+        fixture.state.focusingTab = fixture.tabs[1]
+        // Mounts the focused tab synchronously.
+        fixture.container.mountActiveTabForRestore()
+
+        XCTAssertNotNil(fixture.webViews[1].window)
+    }
+
     // MARK: - Helpers
 
     private struct Fixture {
         let state: BrowserState
+        let container: WebContentContainerViewController
         let window: NSWindow
         let tabs: [Tab]
         /// Held here: a wrapper's `nativeView` is weak.
         let webViews: [MountGeometryProbeView]
     }
 
-    /// Two tabs in a visible window, the first one mounted. Each web view
-    /// starts at a size of its own, as Chromium sizes a background tab to the
-    /// active tab's container.
-    private func makeFixture() throws -> Fixture {
+    /// Two tabs in a visible window, the first one focused and, unless
+    /// `mountingFirstTab` is false, mounted. Each web view starts at a size
+    /// of its own, as Chromium sizes a background tab to the active tab's
+    /// container.
+    private func makeFixture(mountingFirstTab: Bool = true) throws -> Fixture {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory,
@@ -105,8 +170,11 @@ final class WebContentMountGeometryTests: XCTestCase {
         windows.append(window)
         window.contentViewController = container
         window.orderFront(nil)
-        try waitUntilMounted(webViews[0])
-        return Fixture(state: state, window: window, tabs: tabs, webViews: webViews)
+        if mountingFirstTab {
+            try waitUntilMounted(webViews[0])
+        }
+        return Fixture(state: state, container: container, window: window, tabs: tabs,
+                       webViews: webViews)
     }
 
     /// Waits for `webView` to join the window, then lets the display cycle
@@ -134,9 +202,11 @@ final class WebContentMountGeometryTests: XCTestCase {
 }
 
 /// Stands in for a tab's web view: records every size it takes from the
-/// moment it joins a window.
+/// moment it joins a window, and takes focus as a web view does.
 private final class MountGeometryProbeView: NSView {
     private var entries: [(size: NSSize, uptime: TimeInterval)] = []
+
+    override var acceptsFirstResponder: Bool { true }
 
     var sizesInWindow: [NSSize] { entries.map(\.size) }
 

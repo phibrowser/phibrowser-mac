@@ -2193,7 +2193,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Rounds the corners of `webContent`'s pixels and stacks them among the other
 /// web views drawn by the same content surface (chromium ADR 0014): a higher
 /// `zOrder` draws above a lower one, and a web view the surface has just
-/// attached draws below all the others until this stacks it. The Mac client
+/// attached draws above all the others until this stacks it. The Mac client
 /// decides both, as views does for a WebView upstream; Chromium only applies
 /// them. Does nothing while `webContent` draws itself, and nothing carries
 /// over to a later attach (a cross-window drag, a hosting view installed over

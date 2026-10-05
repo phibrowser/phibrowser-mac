@@ -13,9 +13,9 @@ import Cocoa
 /// with the traffic lights. Mounting a web view, restacking a tab's view, a
 /// layout pass, docking DevTools and opening the AI Chat panel can each
 /// change what the surface has to be told, and a web view the surface
-/// attaches again starts out square and at the bottom; looking at the
-/// laid-out tree after AppKit's pass covers every such path. A pass with
-/// nothing new sends nothing, since each send makes Chromium draw a frame.
+/// attaches again starts out square and on top; looking at the laid-out
+/// tree after AppKit's pass covers every such path. A pass with nothing new
+/// sends nothing, since each send makes Chromium draw a frame.
 @MainActor
 final class ContentSurfaceHosting {
     /// What one web view's host is told: the radii of its four on-screen

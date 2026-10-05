@@ -100,8 +100,10 @@ class WebContentContainerViewController: NSViewController {
     // Every focus change takes this one path, whether or not the tab has
     // painted, whether or not a content surface is installed, and into, out
     // of or within a split; nothing waits for a first paint and nothing is
-    // confirmed back to Chromium. Kiosk's `mountFocusedTab` has the same
-    // shape, though it removes the other views before mounting. Over a
+    // confirmed back to Chromium. The new view is laid out at the page area's
+    // size before it joins the window. Kiosk's `mountFocusedTab` has the same
+    // shape, though it removes the other views before mounting and does not
+    // lay the new view out first. Over a
     // content surface (chromium ADR 0014) the swap is one frame there: the
     // incoming web views are attached and the outgoing ones hidden in this
     // turn, and viz keeps the previous frame up until the incoming tab's
@@ -1783,6 +1785,16 @@ class WebContentContainerViewController: NSViewController {
 
         // Add new view on top
         if controllerView.superview !== contentContainer {
+            // Lay the view out at the page area's size while it is still out
+            // of the window, so its web view joins the window at its final
+            // size. A web view resized after joining gets its new size
+            // embedded with a zero deadline, and the grown strip shows the
+            // gutter until the page's next frame (mac ADR 0011). A pending
+            // window layout is settled first, or the bounds read here are
+            // stale (see the sweep at the end).
+            view.layoutSubtreeIfNeeded()
+            controllerView.frame = contentContainer.bounds
+            controllerView.layoutSubtreeIfNeeded()
             contentContainer.addSubview(controllerView)
             controllerView.snp.remakeConstraints { make in
                 make.edges.equalToSuperview()

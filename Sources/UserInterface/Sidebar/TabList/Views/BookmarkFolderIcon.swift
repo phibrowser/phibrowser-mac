@@ -124,6 +124,7 @@ struct BookmarkFolderIconView: View {
                         }
                 } else {
                     LottieView(animation: animation)
+                        .configuration(LottieConfiguration(renderingEngine: .mainThread))
                         .playbackMode(playbackMode)
                         .animationDidFinish { completed in
                             guard completed else { return }

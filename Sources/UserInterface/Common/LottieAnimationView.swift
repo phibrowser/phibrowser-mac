@@ -212,11 +212,17 @@ struct LottieAnimationView: View {
     
     // MARK: - Lottie Content
     
+    // Both animations use the main-thread engine. Lottie's default engine builds
+    // Core Animation animations again each time the view rejoins a window, and
+    // header, address bar and sidebar buttons rejoin on every tab mount. Set per
+    // view: Chromium creates the first window before applicationWillFinishLaunching,
+    // too early to rely on LottieConfiguration.shared.
     @ViewBuilder
     private var lottieContent: some View {
         ZStack {
             // Main animation (forward)
             LottieView(animation: .named(config.animationName, bundle: config.bundle, subdirectory: config.subdirectory))
+                .configuration(LottieConfiguration(renderingEngine: .mainThread))
                 .playbackMode(playbackMode)
 //                .animationSpeed(config.animationSpeed ?? -1)
                 .animationDidFinish { completed in
@@ -255,6 +261,7 @@ struct LottieAnimationView: View {
             // Reverse animation (separate file, if provided)
             if let reverseAnimationName = config.reverseAnimationName {
                 LottieView(animation: .named(reverseAnimationName, bundle: config.bundle, subdirectory: config.subdirectory))
+                    .configuration(LottieConfiguration(renderingEngine: .mainThread))
                     .playbackMode(reversePlaybackMode)
                     .animationDidFinish { completed in
                         AppLogDebug("🎬 [\(reverseAnimationName)] reverse file animationDidFinish - completed: \(completed)")

@@ -137,6 +137,7 @@ struct DownloadButtonView: View {
     @ViewBuilder
     private var iconView: some View {
         LottieView(animation: .named("download-button", bundle: .main, subdirectory: "LottieFiles"))
+            .configuration(LottieConfiguration(renderingEngine: .mainThread))
             .playbackMode(playbackMode)
             .animationDidFinish { _ in
                 playbackMode = .paused(at: .progress(0))

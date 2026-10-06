@@ -78,6 +78,8 @@ struct SidebarBottomBarSwiftUI: View {
     var body: some View {
         regularLayout
             .frame(height: SidebarBottomBarState.singleRowHeight)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sidebar.footer")
     }
     
     // MARK: - Regular Layout

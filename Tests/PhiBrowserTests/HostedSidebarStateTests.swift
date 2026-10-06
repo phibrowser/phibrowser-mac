@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import XCTest
+import struct SwiftUI.Text
 @testable import Phi
 
 @MainActor
@@ -47,6 +48,50 @@ final class HostedSidebarStateTests: XCTestCase {
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         try await super.tearDown()
+    }
+
+    func testMediaVisitHistoryKeepsAllLiveTabsWhileSwitcherStaysLimited() {
+        let state = makeState(spaceId: "media-history")
+        let tabs = (0..<12).map { index in
+            Tab(guid: 100_000 + index, url: "https://example.test/\(index)",
+                isActive: false, index: index, title: "Media \(index)")
+        }
+        state.tabs = tabs
+        for tab in tabs { state.tabSwitchManager.recordActiveTab(tab) }
+        XCTAssertEqual(state.tabSwitchManager.visitedTabIDs, tabs.reversed().map(\.guid),
+                       "Unrelated visits must not erase older live media visit order")
+        XCTAssertEqual(state.tabSwitchManager.recentTabIDs,
+                       Array(tabs.reversed().prefix(TabSwitchMetrics.maxRecentTabs)).map(\.guid),
+                       "The existing tab switcher must keep its five-item scope")
+        state.tabSwitchManager.removeTab(tabID: tabs[4].guid)
+        state.tabs.removeAll { $0.guid == tabs[0].guid || $0.guid == tabs[4].guid }
+        state.tabSwitchManager.recordActiveTab(tabs[2])
+        XCTAssertEqual(state.tabSwitchManager.visitedTabIDs.first, tabs[2].guid)
+        XCTAssertFalse(state.tabSwitchManager.visitedTabIDs.contains(tabs[0].guid))
+        XCTAssertFalse(state.tabSwitchManager.visitedTabIDs.contains(tabs[4].guid))
+        XCTAssertEqual(state.tabSwitchManager.recentTabIDs.count, TabSwitchMetrics.maxRecentTabs)
+    }
+
+    func testMediaSwipeOwnsHorizontalAndMomentumButPassesVertical() {
+        let host = SidebarMediaHostingView(rootView: Text(verbatim: "Media gesture test"))
+        host.frame.size = NSSize(width: 400, height: 124)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 0))
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -45, deltaY: 1, phase: .changed, momentum: [], timestamp: 0.1))
+        host.cancelMediaSwipe()
+        XCTAssertTrue(host.isMediaSwipeCancelled)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -45, deltaY: 0, phase: .changed, momentum: [], timestamp: 0.15),
+                      "A cancelled physical swipe must not fall through to Space navigation")
+        XCTAssertTrue(host.isMediaSwipeCancelled, "Changed events must not adopt a new card after cancellation")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .ended, momentum: [], timestamp: 0.2))
+        XCTAssertFalse(host.isMediaSwipeCancelled)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -80, deltaY: 0, phase: [], momentum: .changed, timestamp: 0.3),
+                      "Momentum must remain consumed rather than starting Space navigation")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 1))
+        XCTAssertFalse(host.handleMediaSwipe(deltaX: 1, deltaY: -40, phase: .changed, momentum: [], timestamp: 1.1),
+                       "Vertical card scrolling must pass through")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 2))
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 45, deltaY: 1, phase: .changed, momentum: [], timestamp: 2.1),
+                      "A rightward card gesture must also stay out of Space navigation")
     }
 
     func testColdAndWarmPresentationCannotChangeCollapsedShell() throws {

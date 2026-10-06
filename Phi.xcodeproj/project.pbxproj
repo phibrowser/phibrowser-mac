@@ -405,6 +405,9 @@
 		ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A02 /* AgentPeerIdentity.swift */; };
 		ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A03 /* AgentDirectChannel.swift */; };
 		ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */; };
+		A17100000000000000000011 /* SidebarMediaBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000001 /* SidebarMediaBridge.swift */; };
+		A17100000000000000000012 /* SidebarMediaController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000002 /* SidebarMediaController.swift */; };
+		A17100000000000000000013 /* SidebarMediaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000003 /* SidebarMediaPlayerView.swift */; };
 		AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */; };
 		AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000003 /* PhiAgentTransport.swift */; };
 		AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000001 /* AgentSpaceManager.swift */; };
@@ -1203,6 +1206,9 @@
 		ACDC00000000000000000A02 /* AgentPeerIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerIdentity.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A03 /* AgentDirectChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectChannel.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDevToolsPageSession.swift; sourceTree = "<group>"; };
+		A17100000000000000000001 /* SidebarMediaBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMediaBridge.swift; sourceTree = "<group>"; };
+		A17100000000000000000002 /* SidebarMediaController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMediaController.swift; sourceTree = "<group>"; };
+		A17100000000000000000003 /* SidebarMediaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMediaPlayerView.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentEndpointResolver.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000003 /* PhiAgentTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentTransport.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000001 /* AgentSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceManager.swift; sourceTree = "<group>"; };
@@ -1844,6 +1850,7 @@
 			children = (
 				37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */,
 				CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */,
+				A17100000000000000000003 /* SidebarMediaPlayerView.swift */,
 				A18579F42E653D9600B9A99E /* ProfileButton.swift */,
 				37C1B2FD2EE2E26F00DD4496 /* DownloadButton.swift */,
 				7A5B00A02EF0000000000002 /* MemoryButton.swift */,
@@ -2413,6 +2420,7 @@
 				ACDC00000000000000000C01 /* AgentCDP */,
 				8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
+				A17100000000000000000001 /* SidebarMediaBridge.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
 				B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */,
 				B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */,
@@ -3015,6 +3023,7 @@
 				EE7E00000000000000000011 /* BrowserPeekState.swift */,
 				EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
+				A17100000000000000000002 /* SidebarMediaController.swift */,
 				747241560000000000000011 /* TravelBackScene.swift */,
 				747241560000000000000012 /* BrowserState+TravelBack.swift */,
 				5A454E000000000000000011 /* KioskBrowserState.swift */,
@@ -3558,6 +3567,7 @@
 				ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */,
 				ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */,
 				ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */,
+				A17100000000000000000011 /* SidebarMediaBridge.swift in Sources */,
 				CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */,
 				CCBF0FA02ECEC1AE005E729B /* AppController+Deeplink.swift in Sources */,
 				CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */,
@@ -3581,12 +3591,14 @@
 				3769C2E82EF9437A00A94DE0 /* ArcDataParser.swift in Sources */,
 				6A4750023B12345600000502 /* ZenDataParser.swift in Sources */,
 				CCBF8F422E653D9600B9A99E /* SidebarBottomBar.swift in Sources */,
+				A17100000000000000000013 /* SidebarMediaPlayerView.swift in Sources */,
 				A18579F32E653D9600B9A99E /* ProfileButton.swift in Sources */,
 				CCBF8F822E67F7C400B9A99E /* ExtensionManager.swift in Sources */,
 				B0F370D02E432CB8000B51F9 /* SpaceSessionController+Actions.swift in Sources */,
 				CCBF8F4C2E6543E800B9A99E /* BookmarkSectionController.swift in Sources */,
 				CC71BAB92E9E2E74006C7238 /* EventBlockBgView.swift in Sources */,
 				CCBF8FA72E69948D00B9A99E /* BrowserState.swift in Sources */,
+				A17100000000000000000012 /* SidebarMediaController.swift in Sources */,
 				CCAA000C2F00010000000001 /* BrowserState+PinnedTabScope.swift in Sources */,
 				CCAA000E2F00010000000001 /* BrowserState+PinnedTabTransfer.swift in Sources */,
 				AB1000000000000000000FA1 /* TabMultiSelection.swift in Sources */,

@@ -59,6 +59,26 @@ enum AutoPictureInPictureMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Presentation preference stays independent of the player enable switch.
+enum SidebarMediaPresentationMode: String, CaseIterable, Identifiable {
+    case alwaysExpanded
+    case alwaysCompact
+    case dynamic
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .alwaysExpanded:
+            return NSLocalizedString("settings.general.sidebarMedia.alwaysExpandedOption", value: "Always expanded", comment: "Sidebar media presentation option - Show the full player whenever background media is available")
+        case .alwaysCompact:
+            return NSLocalizedString("settings.general.sidebarMedia.alwaysCompactOption", value: "Always compact", comment: "Sidebar media presentation option - Keep transport controls compact without pointer or keyboard expansion")
+        case .dynamic:
+            return NSLocalizedString("settings.general.sidebarMedia.dynamicOption", value: "Dynamic (expand on hover)", comment: "Sidebar media presentation option - Expand after a brief pointer hover, or immediately using keyboard focus or VoiceOver")
+        }
+    }
+}
+
 enum PhiPreferences: String {
     case phiMainDebugMenuEnabled
     case phiLoginPhase
@@ -83,6 +103,7 @@ extension PhiPreferences {
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case showTabPreviews // Whether open tabs use custom hover preview cards
+        case sidebarMediaPlayerEnabled // Show controls for background page media
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
         case shortHighlightLinksEnabled // Use the sharing service for Copy Link to Highlight
@@ -113,6 +134,8 @@ extension PhiPreferences {
                 return false
             case .showTabPreviews:
                 return true
+            case .sidebarMediaPlayerEnabled:
+                return true
             case .showOpenTabIndicators:
                 return false
             case .showUnloadedTabIndicators:
@@ -130,8 +153,24 @@ extension PhiPreferences {
             }
         }
 
-        func loadValue() -> Bool {
-            UserDefaults.standard.bool(forKey: rawValue, default: defaultValue)
+        func loadValue(from defaults: UserDefaults = .standard) -> Bool {
+            defaults.bool(forKey: rawValue, default: defaultValue)
+        }
+
+        static let sidebarMediaPresentationModeKey = "sidebarMediaPresentationMode"
+
+        static func loadSidebarMediaPresentationMode(
+            from defaults: UserDefaults = .standard
+        ) -> SidebarMediaPresentationMode {
+            defaults.string(forKey: sidebarMediaPresentationModeKey)
+                .flatMap(SidebarMediaPresentationMode.init(rawValue:)) ?? .dynamic
+        }
+
+        static func saveSidebarMediaPresentationMode(
+            _ mode: SidebarMediaPresentationMode,
+            to defaults: UserDefaults = .standard
+        ) {
+            defaults.set(mode.rawValue, forKey: sidebarMediaPresentationModeKey)
         }
 
         static let autoPictureInPictureModeKey = "autoPictureInPictureMode"

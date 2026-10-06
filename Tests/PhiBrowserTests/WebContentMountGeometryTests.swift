@@ -61,6 +61,24 @@ final class WebContentMountGeometryTests: XCTestCase {
         try assertJoinedAtFinalSize(outgoing)
     }
 
+    /// A tab mounted before that comes back to an unchanged page area rejoins
+    /// at that size too.
+    func testRemountedTabJoinsTheWindowAtAnUnchangedPageAreaSize() throws {
+        let fixture = try makeFixture()
+        let outgoing = fixture.webViews[0]
+        fixture.state.focusingTab = fixture.tabs[1]
+        try waitUntilMounted(fixture.webViews[1])
+        XCTAssertNil(outgoing.window)
+
+        let sizeWhileAway = outgoing.frame.size
+        fixture.state.focusingTab = fixture.tabs[0]
+        try waitUntilMounted(outgoing)
+
+        // Precondition: the page area did not change.
+        XCTAssertEqual(outgoing.frame.size, sizeWhileAway)
+        try assertJoinedAtFinalSize(outgoing)
+    }
+
     /// The first tab a page container mounts (a Space's first reveal, a new
     /// window) is mounted in its turn, but its web view joins the window on
     /// the next one, still at the page area's size.

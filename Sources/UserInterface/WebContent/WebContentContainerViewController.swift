@@ -104,8 +104,9 @@ class WebContentContainerViewController: NSViewController {
     // Every focus change takes this one path, whether or not the tab has
     // painted, whether or not a content surface is installed, and into, out
     // of or within a split; nothing waits for a first paint and nothing is
-    // confirmed back to Chromium. The new view is laid out at the page area's
-    // size before it joins the window. Kiosk's `mountFocusedTab` has the same
+    // confirmed back to Chromium. A new view not at the page area's size is
+    // laid out at that size before it joins the window; one already at it
+    // joins without that layout. Kiosk's `mountFocusedTab` has the same
     // shape, though it removes the other views before mounting and does not
     // lay the new view out first. The container's first mount (cold) leaves
     // a never-shown tab's web view to the controller's deferred content
@@ -1791,16 +1792,27 @@ class WebContentContainerViewController: NSViewController {
 
         // Add new view on top
         if controllerView.superview !== contentContainer {
-            // Lay the view out at the page area's size while it is still out
-            // of the window, so its web view joins the window at its final
-            // size. A web view resized after joining gets its new size
-            // embedded with a zero deadline, and the grown strip shows the
-            // gutter until the page's next frame (mac ADR 0011). A pending
-            // window layout is settled first, or the bounds read here are
-            // stale (see the sweep at the end).
+            // A view not at the page area's size (never shown, so 0x0, or
+            // away while the window was resized) is laid out at that size
+            // while it is still out of the window, so its web view joins the
+            // window at its final size. A web view resized after joining gets
+            // its new size embedded with a zero deadline, and the grown strip
+            // shows the gutter until the page's next frame (mac ADR 0011). A
+            // view already at that size skips the layout: it costs about 3 ms
+            // even when nothing changes, and a rapid close's successor that
+            // joins that much later mostly reaches the screen two frames
+            // later. Its subtree's dirty flags cannot stand in for the size
+            // check: a split view in it always reports pending constraints.
+            // As before the off-window layout, a layout change made inside it
+            // while away at the same size (the bookmark bar toggled on a new
+            // tab page) lands after it joins. A pending window layout is
+            // settled first, or the bounds read here are stale (see the sweep
+            // at the end).
             view.layoutSubtreeIfNeeded()
-            controllerView.frame = contentContainer.bounds
-            controllerView.layoutSubtreeIfNeeded()
+            if controllerView.frame.size != contentContainer.bounds.size {
+                controllerView.frame = contentContainer.bounds
+                controllerView.layoutSubtreeIfNeeded()
+            }
             contentContainer.addSubview(controllerView)
             controllerView.snp.remakeConstraints { make in
                 make.edges.equalToSuperview()

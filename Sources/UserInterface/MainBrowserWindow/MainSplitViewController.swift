@@ -56,11 +56,15 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
 
-    private lazy var verticalTabListViewController: SidebarViewController = { SidebarViewController(browserState: state) }()
+    private lazy var sidebarMediaController = SidebarMediaController(browserState: state)
+    private lazy var verticalTabListViewController: SidebarViewController = {
+        SidebarViewController(browserState: state, mediaController: sidebarMediaController)
+    }()
 
     /// Per-Space content only; the panel and its visibility belong to the shell.
     /// Retaining this tree makes a return switch as ready as the docked sidebar.
-    private(set) lazy var floatingSidebarContent = FloatingSidebarViewController(browserState: state)
+    private(set) lazy var floatingSidebarContent = FloatingSidebarViewController(
+        browserState: state, mediaController: sidebarMediaController)
 
 
     /// This window's sidebar controller. Exposed so `SpaceManager` can drive

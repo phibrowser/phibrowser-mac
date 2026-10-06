@@ -292,6 +292,27 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         return controller
     }()
     private var state: BrowserState
+    private let mediaController: SidebarMediaController
+    // The player's own 3pt bottom inset plus this gap leaves 8pt above the footer.
+    private let mediaPlayerFooterGap: CGFloat = 5
+    private lazy var mediaPlayerFootprint: NSView = {
+        let footprint = NSView()
+        footprint.snp.makeConstraints { make in
+            make.height.equalTo(38 + mediaPlayerFooterGap)
+        }
+        return footprint
+    }()
+    private lazy var mediaPlayerView: SidebarMediaHostingView = {
+        let hosting = SidebarMediaHostingView(
+            rootView: SidebarMediaPlayerView(controller: mediaController, surface: .docked),
+            themeSource: state.themeContext
+        )
+        hosting.mediaController = mediaController
+        hosting.mediaSurface = .docked
+        hosting.sizingOptions = []
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        return hosting
+    }()
     /// Guards one-time download manager binding (see `bindDownloadsManagerIfNeeded`).
     private var didBindDownloadsManager = false
     /// SwiftUI-backed bottom toolbar.
@@ -474,10 +495,13 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private var cancellables = Set<AnyCancellable>()
     private var contentCancellables = Set<AnyCancellable>()
+    private var mediaWindowVisibilityCancellables = Set<AnyCancellable>()
+    private weak var mediaObservedWindow: NSWindow?
     private var headerHeightConstraint: Constraint?
     private var pinnedTabsHeightConstraint: Constraint?
     private var pinSpacerHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
+    private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
     private var hasSetupObservers = false
     private var hasSetupConfigObserver = false
@@ -486,8 +510,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private var sidebarTrackingArea: NSTrackingArea?
 
     
-    init(browserState: BrowserState) {
+    init(browserState: BrowserState, mediaController: SidebarMediaController) {
         self.state = browserState
+        self.mediaController = mediaController
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -555,6 +580,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         spaceTintGradientLayer.frame = spaceTintBackgroundView.bounds
         CATransaction.commit()
         updateHoverControlsForCurrentMouseLocation()
+        updateMediaActivation()
     }
     
     override func viewWillAppear() {
@@ -565,10 +591,12 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         super.viewDidAppear()
         bindDownloadsManagerIfNeeded()
         updateHoverControlsForCurrentMouseLocation()
+        updateMediaActivation()
     }
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
+        mediaController.setActive(false)
         // A concealed Space's sidebar keeps its hover state for its next reveal.
         guard view.window == nil else { return }
         setHoverControlsVisible(false, animated: false)
@@ -830,6 +858,23 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             make.leading.trailing.equalToSuperview().inset(8)
             messageCardHeightConstraint = make.height.equalTo(0).constraint
         }
+
+        mediaController.$item
+            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
+            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
+            .combineLatest(mediaController.$activeSurface)
+            .map { state, activeSurface in
+                let (presentation, visibility) = state
+                let (item, expanded, revalidating) = presentation
+                let (sourceVisible, dismissed) = visibility
+                return activeSurface != .docked || item == nil || revalidating
+                    || sourceVisible || dismissed
+                    ? CGFloat(0) : (expanded ? 124 : 38)
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
+            .store(in: &cancellables)
         
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.snp.makeConstraints { make in
@@ -878,6 +923,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }
     
     private func setupObservers(_ state: BrowserState) {
+        state.sidebarCollapsedPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateMediaActivation() }
+            .store(in: &cancellables)
+
         state.$layoutMode
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -1081,6 +1131,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 
     private func updateSidebarContentActivation() {
         let shouldActivate = shouldActivateSidebarContent()
+        updateMediaActivation(for: shouldActivate)
         guard shouldActivate != isSidebarContentActive else { return }
         isSidebarContentActive = shouldActivate
 
@@ -1119,6 +1170,34 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             .store(in: &contentCancellables)
 
         updateFavoriteHeight(pinnedTabViewController.contentHeight, isDragging: state.isDraggingTab)
+    }
+
+    private func updateMediaActivation(for layoutActive: Bool? = nil) {
+        observeMediaWindowVisibilityIfNeeded()
+        let window = view.window
+        let active = (layoutActive ?? isSidebarContentActive)
+            && !state.sidebarCollapsed
+            && !isCreateSpaceCoveredContentSuppressed
+            && window?.isVisible == true && window?.isMiniaturized == false
+            && window?.occlusionState.contains(.visible) == true
+            && !view.isHiddenOrHasHiddenAncestor
+        mediaController.setActive(active)
+    }
+
+    private func observeMediaWindowVisibilityIfNeeded() {
+        guard mediaObservedWindow !== view.window else { return }
+        mediaWindowVisibilityCancellables.removeAll()
+        mediaObservedWindow = view.window
+        guard let window = view.window else { return }
+        for name in [NSWindow.didChangeOcclusionStateNotification,
+                     NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification,
+                     NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.publisher(for: name, object: window)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.updateMediaActivation() }
+                .store(in: &mediaWindowVisibilityCancellables)
+        }
     }
     
     /// Subscription for the current focusing tab's `aiChatEnabled` state.
@@ -1191,6 +1270,49 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             context.duration = 0.2
             context.allowsImplicitAnimation = true
             view.layoutSubtreeIfNeeded()
+        }
+    }
+
+    private func updateMediaPlayerHeight(_ height: CGFloat) {
+        if height == 0 {
+            guard mediaPlayerHeightConstraint != nil else { return }
+            mediaPlayerHeightConstraint?.deactivate()
+            mainStackView.removeArrangedSubview(mediaPlayerFootprint)
+            mediaPlayerFootprint.removeFromSuperview()
+            mediaPlayerView.removeFromSuperview()
+            mediaPlayerHeightConstraint = nil
+            return
+        }
+        if mediaPlayerHeightConstraint == nil {
+            let index = mainStackView.arrangedSubviews.firstIndex(of: bottomBarSwiftUI)
+                ?? mainStackView.arrangedSubviews.count
+            mainStackView.insertArrangedSubview(mediaPlayerFootprint, at: index)
+            mediaPlayerFootprint.snp.makeConstraints { make in
+                make.leading.trailing.equalToSuperview()
+            }
+            // Only this sibling overlay grows. The compact footprint remains
+            // fixed so expansion cannot resize the tab list or move its rows.
+            view.addSubview(mediaPlayerView, positioned: .above, relativeTo: mainStackView)
+            mediaPlayerView.snp.makeConstraints { make in
+                make.leading.trailing.equalTo(mainStackView)
+                make.bottom.equalTo(mediaPlayerFootprint.snp.bottom).offset(-mediaPlayerFooterGap)
+                mediaPlayerHeightConstraint = make.height.equalTo(height).constraint
+            }
+        } else {
+            // The overlay's AppKit height owns animation; transport remains
+            // pinned above the footer and SwiftUI fills the live host bounds.
+            view.layoutSubtreeIfNeeded()
+            mediaPlayerHeightConstraint?.update(offset: height)
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                view.layoutSubtreeIfNeeded()
+            } else {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.28
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    context.allowsImplicitAnimation = true
+                    view.layoutSubtreeIfNeeded()
+                }
+            }
         }
     }
     
@@ -1535,6 +1657,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private func setCreateSpaceCoveredContentSuppressed(_ suppressed: Bool) {
         guard isCreateSpaceCoveredContentSuppressed != suppressed else { return }
         isCreateSpaceCoveredContentSuppressed = suppressed
+        updateMediaActivation()
 
         if suppressed {
             view.window?.customTooltipController.dismissAll()

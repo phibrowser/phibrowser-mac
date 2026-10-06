@@ -13,7 +13,11 @@ enum TabSwitchDirection {
 
 @MainActor
 final class TabSwitchManager {
-    private(set) var recentTabIDs: [Int] = []
+    private var visitHistoryTabIDs: [Int] = []
+    /// The switcher keeps its existing five-item scope; media uses the same
+    /// owner's complete live history so unrelated visits do not erase its order.
+    var recentTabIDs: [Int] { Array(visitHistoryTabIDs.prefix(TabSwitchMetrics.maxRecentTabs)) }
+    var visitedTabIDs: [Int] { visitHistoryTabIDs }
     private weak var browserState: BrowserState?
 
     private var session: Session?
@@ -43,15 +47,13 @@ final class TabSwitchManager {
         guard state.tabs.contains(where: { $0.guid == tab.guid }) else { return }
 
         let tabID = tab.guid
-        recentTabIDs.removeAll { $0 == tabID }
-        recentTabIDs.insert(tabID, at: 0)
-        if recentTabIDs.count > TabSwitchMetrics.maxRecentTabs {
-            recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
-        }
+        pruneHistory()
+        visitHistoryTabIDs.removeAll { $0 == tabID }
+        visitHistoryTabIDs.insert(tabID, at: 0)
     }
 
     func removeTab(tabID: Int) {
-        recentTabIDs.removeAll { $0 == tabID }
+        visitHistoryTabIDs.removeAll { $0 == tabID }
         snapshotCache.removeValue(forKey: tabID)
         guard var session else { return }
         session.candidateTabIDs.removeAll { $0 == tabID }
@@ -195,7 +197,7 @@ final class TabSwitchManager {
     private func pruneHistory() {
         guard let state = browserState else { return }
         let validIDs = Set(state.tabs.map(\.guid))
-        recentTabIDs.removeAll { !validIDs.contains($0) }
+        visitHistoryTabIDs.removeAll { !validIDs.contains($0) }
     }
 
     private func buildCandidates() -> [Int] {

@@ -3191,9 +3191,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     // =========================================================================
 
     func contentSurfaceCreated(_ windowId: Int64, hostingView: NSView) {
-        guard let windowController = SpaceSessionControllersManager.shared
-                .getAllWindows()
+        let manager = SpaceSessionControllersManager.shared
+        guard let windowController = manager.getAllWindows()
                 .first(where: { $0.windowId == Int(windowId) }) else {
+            // Sent once per Space instance: a window created before browser
+            // access keeps it until it is materialized, as it keeps its tabs.
+            if manager.hasDanglingWindow(for: Int(windowId)) {
+                manager.addContentSurfaceToDanglingWindow(hostingView, windowId: Int(windowId))
+                return
+            }
             AppLogWarn("[ContentSurface] [Coordinator] no controller for windowId=\(windowId)")
             return
         }

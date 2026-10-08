@@ -31,6 +31,11 @@ struct DanglingWindow {
     /// tabs in `processDanglingWindow` so kCreated handlers find the
     /// already-arrived members.
     var pendingGroupActions: [TabGroupEvent.TabGroupAction] = []
+    /// The content surface Chromium sent for this window (chromium ADR 0014).
+    /// It arrives once per Space instance, right after the window and so
+    /// before browser access; `processDanglingWindow` hands it to the new
+    /// `BrowserState` ahead of the pending tabs.
+    var contentSurfaceView: NSView?
 }
 
 class SpaceSessionControllersManager: MainBrowserWindowLookup {
@@ -71,7 +76,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
     private var windowControllers: Set<SpaceSessionController> = []
     
     /// Windows waiting to be converted to SpaceSessionController.
-    private var danglingWindows: [DanglingWindow] = []
+    var danglingWindows: [DanglingWindow] = []
 
     /// Original per-window interaction state captured while Guest-to-account
     /// migration temporarily freezes browser input.
@@ -171,6 +176,19 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         )
         return true
     }
+
+    /// Keep the content surface Chromium sent for a dangling window; see
+    /// `DanglingWindow.contentSurfaceView`.
+    @discardableResult
+    func addContentSurfaceToDanglingWindow(_ hostingView: NSView, windowId: Int) -> Bool {
+        assert(Thread.isMainThread)
+        guard let index = danglingWindows.firstIndex(where: { $0.windowId == windowId }) else {
+            return false
+        }
+        danglingWindows[index].contentSurfaceView = hostingView
+        AppLogInfo("[ContentSurface] [WindowManager] kept for dangling windowId=\(windowId)")
+        return true
+    }
     
     /// Hide a dangling window completely
     private func hideDanglingWindow(_ window: NSWindow) {
@@ -254,7 +272,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
     
     /// Restore a dangling window, or close it if no tabs arrived before access.
     @MainActor
-    private func processDanglingWindow(
+    func processDanglingWindow(
         _ danglingWindow: DanglingWindow,
         account: Account,
         migrationReceipt: GuestDataMigrationReceipt?
@@ -319,6 +337,11 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             slot: slot,
             chromiumWindow: hosted ? danglingWindow.window : nil
         )
+        // The surface before the tabs: the replayed tabs mount into a
+        // container that already hosts it.
+        if let hostingView = danglingWindow.contentSurfaceView {
+            windowController.browserState.adoptContentSurface(hostingView)
+        }
         
         // Process pending tabs that were created before browser access.
         for tab in danglingWindow.pendingTabs {
@@ -615,7 +638,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
     }
 
     @MainActor
-    private func rebindWindowController(
+    func rebindWindowController(
         _ oldController: SpaceSessionController,
         to account: Account,
         migrationReceipt: GuestDataMigrationReceipt?
@@ -709,6 +732,12 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             chromiumWindow: oldController.hostedChromiumWindow
         )
         let newState = replacement.browserState
+        // The content surface is sent once per Space instance (chromium ADR
+        // 0014): the replacement takes it over from the old state before the
+        // tabs are replayed into it.
+        if let hostingView = oldState.contentSurfaceView {
+            newState.adoptContentSurface(hostingView)
+        }
 
         for split in splits where split.isPinned {
             newState.pendingPinnedSplitMarkByCreateId.insert(split.id)

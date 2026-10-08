@@ -170,12 +170,15 @@ class WebContentContainerViewController: NSViewController {
     /// NTP-colored backdrop pinned under every other subview of
     /// `contentContainer`, tracing the page panel's exact geometry
     /// (`WebContentViewController.splitViewContainer`: same insets, corner
-    /// radius, and `.contentOverlayBackground` fill). Only visible while no
-    /// tab content is mounted above it — the zero-tab gap of a freshly
-    /// spawned Space window whose seed NTP hasn't mounted yet. Without it
-    /// that gap shows the window background, so the page area pops from
-    /// window color to NTP color when the tab lands; with it the page area
-    /// reads as an NTP from the first frame.
+    /// radius, and `.contentOverlayBackground` fill). Visible in the
+    /// zero-tab gap of a freshly spawned Space window whose seed NTP hasn't
+    /// mounted yet: without it that gap shows the window background, so the
+    /// page area pops from window color to NTP color when the tab lands; with
+    /// it the page area reads as an NTP from the first frame. Once a content
+    /// surface is installed the page card above it is clear, and this
+    /// backdrop shows through wherever the page has not painted: before a
+    /// cold page's first frame, under an evicted frame, in a split's gap
+    /// (`updatePageAreaBackdropCorners` squares its corners to match).
     private var pageAreaBackdropLeadingConstraint: Constraint?
     private lazy var pageAreaBackdrop: NSView = {
         let view = NSView()
@@ -374,9 +377,11 @@ class WebContentContainerViewController: NSViewController {
             make.edges.equalToSuperview()
         }
 
-        // First child of contentContainer, so every later subview (the tab's
-        // WebContentViewController, placeholder shell) stacks above it and
-        // covers it whenever real content is mounted.
+        // First child of contentContainer, so every later subview (the content
+        // surface's view, the tab's WebContentViewController, placeholder
+        // shell) stacks above it. Without a content surface, mounted content
+        // covers it; with one, the page card is clear and this backdrop shows
+        // through wherever the page has not painted.
         contentContainer.addSubview(pageAreaBackdrop)
         pageAreaBackdrop.snp.makeConstraints { make in
             pageAreaBackdropLeadingConstraint = make.leading.equalToSuperview().constraint

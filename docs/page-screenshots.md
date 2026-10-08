@@ -7,10 +7,14 @@ queries `Page.getFrameTree`, `Page.getLayoutMetrics`, and the page's
 `window.devicePixelRatio`, then sends `Page.captureScreenshot` with
 `format: "jpeg"`, `quality: 85`, `fromSurface: true`, `captureBeyondViewport: true`, and an
 explicit clip from `cssContentSize`. Width and height are rounded up. The clip
-scale is `min(1, 16384 / (width * DPR), 16384 / (height * DPR))`. Pages within
-the surface limit keep scale 1. Chromium encodes JPEG at quality 85; Swift copies
-and saves those bytes without re-encoding. Pre-capture dimensions must also fit the JPEG
-validation limits below. A final frame-tree query rejects a changed top-level
+scale first fits the physical dimensions within 16,384 pixels per axis. If the
+rounded output would still exceed 64 million pixels, it is reduced further in
+both axes, with a one-pixel rounding margin. Pages already within both limits
+keep scale 1. The pixel budget is checked after scaling, so wide or long pages
+are not rejected merely because their unscaled dimensions exceed the budget.
+Chromium encodes JPEG at quality 85; Swift copies and saves those bytes without
+re-encoding. The returned JPEG still passes the validation limits below.
+A final frame-tree query rejects a changed top-level
 frame, loader, or URL. The session closes with `defer` on success and failure.
 
 The page target, tab title, and originating `BrowserState.windowId` are snapped before the

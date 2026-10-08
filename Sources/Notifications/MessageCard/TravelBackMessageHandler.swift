@@ -7,7 +7,7 @@ import Foundation
 /// The bridge proves extension identity, NOT the caller's Profile/frame.
 /// Native holds only transient, addressed handoff IDs; chat data stays in phi-agent.
 enum TravelBackMessageHandler {
-    static let messageTypes = ["snapshot", "restore", "closeSource", "offer", "claim", "ack", "wait", "cancel", "claimProfileMove", "finishProfileMove"]
+    static let messageTypes = ["availability", "snapshot", "restore", "closeSource", "offer", "claim", "ack", "wait", "cancel", "claimProfileMove", "finishProfileMove"]
         .map { "sidecar.travelBack." + $0 }
 
     struct Request: Decodable {
@@ -18,6 +18,7 @@ enum TravelBackMessageHandler {
         let sourceId: String?
         let profileMove: Bool?
         let snapshot: TravelBackScene?
+        let target: TravelBackTarget?
         let sourceSidebar: TravelBackSidebar?
         let destinationSidebar: TravelBackSidebar?
         let operationId: String?
@@ -77,6 +78,10 @@ enum TravelBackMessageHandler {
                 move.completed = success
                 source.profileMoveRequests[sidebar.chatTabId] = move
                 return emptyReply
+            case "sidecar.travelBack.availability":
+                guard let target = request.target else { throw TravelBackFailure.invalidSnapshot }
+                observeAvailabilityChanges()
+                return try encode(["available": try isTargetAvailable(target)])
             case "sidecar.travelBack.snapshot":
                 guard let source else { throw TravelBackFailure.unavailable }
                 return try encode(source.travelBackScene(for: binding.tab))
@@ -160,6 +165,44 @@ enum TravelBackMessageHandler {
         }
     }
 
+    /// Process-lifetime invalidation subscriptions, not a second browser-state store.
+    @MainActor private static var availabilityObservers: [NSObjectProtocol] = []
+
+    @MainActor
+    private static func observeAvailabilityChanges() {
+        guard availabilityObservers.isEmpty else { return }
+        for name in [Notification.Name.spaceListDidChange, ProfileManager.listDidChange,
+                     .mainAccountChanged] {
+            availabilityObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    // Content-free and unbound: Phi Chat has no browser Tab binding.
+                    ExtensionMessaging.shared.broadcast(
+                        type: "sidecar.travelBack.availabilityChanged", payload: "{}")
+                }
+            })
+        }
+    }
+
+    @MainActor
+    private static func isTargetAvailable(_ target: TravelBackTarget) throws -> Bool {
+        guard !target.profileId.isEmpty, !target.spaceId.isEmpty else {
+            throw TravelBackFailure.invalidSnapshot
+        }
+        let spaces = SpaceManager.shared
+        guard let account = AccountController.shared.account,
+              spaces.storeIdentifier == account.localStorage.identifier,
+              let profiles = ProfileManager.readProfiles() else {
+            throw TravelBackFailure.unavailable
+        }
+        let space = spaces.spaces.first(where: { $0.spaceId == target.spaceId })
+        return target.isAvailable(profileIds: Set(profiles.map(\.profileId)),
+            spaceProfileId: space?.profileId,
+            spaceAllowed: space != nil && space?.isAgentSpace == false
+                && !SpaceManager.isIncognitoSpaceId(target.spaceId))
+    }
+
     @MainActor
     private static func restore(_ request: Request, source: BrowserState?,
                                 binding: (tab: Tab?, sidebar: TravelBackSidebar?)) async throws -> TravelBackDestination {
@@ -168,11 +211,9 @@ enum TravelBackMessageHandler {
             throw TravelBackFailure.invalidSnapshot
         }
         _ = try snapshot.layout?.splitView?.validated(for: page)
-        ProfileManager.shared.refresh()
-        guard ProfileManager.shared.profile(for: profileId) != nil,
-              let space = SpaceManager.shared.spaces.first(where: { $0.spaceId == spaceId }),
-              space.profileId == profileId, !space.isAgentSpace,
-              !SpaceManager.isIncognitoSpaceId(spaceId) else { throw TravelBackFailure.targetUnavailable }
+        guard try isTargetAvailable(.init(profileId: profileId, spaceId: spaceId)) else {
+            throw TravelBackFailure.targetUnavailable
+        }
         guard source?.travelBackRunning != true else { throw TravelBackFailure.busy }
         let manager = SpaceSessionControllersManager.shared
         let candidates = manager.getAllWindows().compactMap(\.browserState).filter {

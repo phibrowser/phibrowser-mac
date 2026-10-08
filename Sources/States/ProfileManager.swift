@@ -84,22 +84,30 @@ final class ProfileManager: ObservableObject {
 
     // MARK: - Read
 
+    static let listDidChange = Notification.Name("ProfileManager.listDidChange")
+
+    /// Complete, read-only bridge projection. Unlike refresh(), this does not
+    /// persist names or drain the chat archive journal.
+    static func readProfiles() -> [PhiBrowserProfile]? {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return nil }
+        let raw = bridge.listProfiles()
+        let decoded = raw.compactMap(Self.decode(_:))
+        guard !decoded.isEmpty, decoded.count == raw.count else { return nil }
+        return decoded
+    }
+
     /// Pulls the latest profile list from the bridge. Synchronous and
     /// cheap (Chromium-side just reads from in-memory ProfileAttributesStorage).
     /// Safe to call repeatedly on the main thread.
     @discardableResult
     func refresh() -> Bool {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
-            // Bridge not up yet at very early launch; `profiles` stays empty
-            // and the first post-launch `refresh()` (driven by any UI that
-            // needs profiles) will populate it.
-            return false
-        }
-        let raw = bridge.listProfiles()
-        let decodedProfiles = raw.compactMap(Self.decode(_:))
         // An incomplete bridge response must not look like Profile deletion.
-        guard !decodedProfiles.isEmpty, decodedProfiles.count == raw.count else { return false }
+        guard let decodedProfiles = Self.readProfiles() else { return false }
+        let identityChanged = Set(profiles.map(\.profileId)) != Set(decodedProfiles.map(\.profileId))
         profiles = decodedProfiles
+        if identityChanged {
+            NotificationCenter.default.post(name: Self.listDidChange, object: self)
+        }
         persistDisplayNamesToLocalStore(decodedProfiles)
         drainChatArchives()
         return true

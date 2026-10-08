@@ -8,6 +8,25 @@ final class TravelBackSceneTests: XCTestCase {
     private let first = TravelBackPage(url: "https://a.test/page?query=1#section")
     private let second = TravelBackPage(url: "https://b.test/page")
 
+    func testAvailabilityRequiresTheRecordedProfileAndSpaceBinding() {
+        let target = TravelBackTarget(profileId: "A", spaceId: "a")
+        XCTAssertTrue(target.isAvailable(profileIds: ["A", "B"], spaceProfileId: "A", spaceAllowed: true))
+        // Deleted Profile, deleted Space, moved Space, and restricted Space.
+        XCTAssertFalse(target.isAvailable(profileIds: ["B"], spaceProfileId: "A", spaceAllowed: true))
+        XCTAssertFalse(target.isAvailable(profileIds: ["A"], spaceProfileId: nil, spaceAllowed: false))
+        XCTAssertFalse(target.isAvailable(profileIds: ["A", "B"], spaceProfileId: "B", spaceAllowed: true))
+        XCTAssertFalse(target.isAvailable(profileIds: ["A"], spaceProfileId: "A", spaceAllowed: false))
+        // Tab/window liveness is intentionally absent: closed scenes remain reopenable.
+        XCTAssertTrue(target.isAvailable(profileIds: ["A"], spaceProfileId: "A", spaceAllowed: true))
+    }
+
+    func testAvailabilityDoesNotFabricateMissingIdentity() {
+        XCTAssertFalse(TravelBackTarget(profileId: "", spaceId: "a")
+            .isAvailable(profileIds: [""], spaceProfileId: "", spaceAllowed: true))
+        XCTAssertFalse(TravelBackTarget(profileId: "A", spaceId: "")
+            .isAvailable(profileIds: ["A"], spaceProfileId: "A", spaceAllowed: true))
+    }
+
     func testLegacySplitDefaultsWithoutChangingMemberOrder() throws {
         let split = try TravelBackSplit(members: [first, second]).validated(for: second)
         XCTAssertEqual(split.orientation, "vertical")

@@ -62,7 +62,7 @@ and separate Profiles. Exercise expanded and floating sidebar modes.
 | Extension window APIs | Focus, initial geometry and requested fullscreen display match the addressed browser window |
 | Fullscreen and crash pages | Switching away withdraws session-owned presentation; actions still target that session |
 | Dock reopen and capture | Reopen selects a valid visible shell; capture reflects the requested session's presented content |
-| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work unchanged; warm switches (to a recent tab, the fifth to twelfth most recent, a resized window, after five idle minutes or a Space switch), rapid switch cycles, cross-site navigation, entering, leaving and switching within a split, and switching from a tab with docked DevTools to a tab never shown show no blank frame and no other tab's page; a switch to a tab that has not painted keeps the previous page for at most four frames, then shows the page-area backdrop until its first frame; "Add Tab to New Split View" keeps the other pane shown; closing the active tab keeps the closed page on screen until its successor appears (chromium ADR 0014, close clone), and a cold successor that has not painted four frames after the mount shows the page-area backdrop until its first frame; a standalone Incognito window behaves the same on its switches and closes |
+| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work, Peek, Reader, the side panel and Kiosk windows showing blank until their first frame when hidden and shown again (chromium ADR 0016); warm switches (to a recent tab, the fifth to twelfth most recent, a resized window, after five idle minutes or a Space switch), rapid switch cycles, cross-site navigation, entering, leaving and switching within a split, and switching from a tab with docked DevTools to a tab never shown show no blank frame and no other tab's page; a switch to a tab that has not painted keeps the previous page for at most four frames, then shows the page-area backdrop until its first frame; "Add Tab to New Split View" keeps the other pane shown; closing the active tab keeps the closed page on screen until its successor appears (chromium ADR 0014, close clone), and a cold successor that has not painted four frames after the mount shows the page-area backdrop until its first frame; a standalone Incognito window behaves the same on its switches and closes |
 
 OS permission state, camera/microphone availability and account eligibility are
 separate prerequisites. Reset a test site's permission when testing its prompt;
@@ -86,17 +86,21 @@ surface is installed, since they would cover it. Once per run-loop pass
 stacking order (`setContentHosting`), addressing each by its bridge wrapper,
 or docked DevTools, which has none, by the NSView the bridge handed over.
 Web views mounted outside the container (Peek, Reader, the extension side
-panel, Kiosk windows, content fullscreen) draw themselves, and with the
-feature off no window receives a surface.
+panel, Kiosk windows, shadow windows, content fullscreen) draw themselves as
+upstream's do (chromium ADR 0016): each builds its compositor while shown and
+drops it when hidden, so one hidden and shown again (Peek or Reader switched
+away from and back, the side panel or a Kiosk window after a Space switch or
+a minimize and restore) shows blank until its first frame. With the feature
+off no window receives a surface.
 
 A tab switch is the page container's mount: it mounts the current tab's view
 and removes every other tab view in the same turn, with or without a surface
 (ADR 0011). The tab "Add Tab to New Split View" opens and focuses is mounted
 once its split reaches the tab model, so its partner, the outgoing tab, never
 leaves the window. Over a surface viz keeps the previous frame until the new tab's is
-ready or four frames pass. With the feature off the tabs draw themselves, so
-a switch to a tab that has no compositor of its own, or a close, shows blank
-until its first frame; that configuration is a diagnostic fallback.
+ready or four frames pass. With the feature off the tabs draw themselves and
+a hidden tab holds no compositor, so every switch and every close shows
+blank until its first frame; that configuration is a diagnostic fallback.
 
 Expected differences with the feature on: of more than five hidden tabs the
 oldest loses its frame, as does a tab idle for more than five minutes.

@@ -169,7 +169,11 @@ invalidates outstanding observations when membership changes.
 Only startup, membership changes, an explicit pane reload, failed status, or
 known stale success evidence (five minutes) may request a coordinated round.
 All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. A queued explicit reload preserves the observed phase and
+with an active round. The one exception is a Sync now request while the native
+participant (`Participant.isNative`) reports Offline: it skips the interval and
+dispatches as soon as the participants are settled, so the tap fails within seconds
+instead of waiting behind the interval that the pane-open request and automatic
+retries keep pushing forward. The pane-open request and automatic demand never skip it. A queued explicit reload preserves the observed phase and
 last common time until dispatch; it does not invalidate a completed barrier.
 Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
@@ -222,7 +226,11 @@ another 60 seconds and until every context is observable and settled. A round al
 early, for the request state, when the summary stays Offline or Needs attention with every
 participant settled and sampled after dispatch (a revision newer than at dispatch; a
 Chromium Profile's revision moves on every read) for at least one poll interval (3 seconds)
-of time, measured by timestamps, not by the number of observations. Its request baseline is
+of time, measured by timestamps, not by the number of observations. A round a Sync now
+request started or joined also ends early when the native participant alone has reported
+Offline since dispatch for that same interval, without waiting for Chromium Profiles, which
+can keep reporting Syncing or Checking without a connection. Offline is never reported as
+Rejected, so it does not turn the summary into Needs attention. Its request baseline is
 kept until the round's timeout: if every context then reports a newer success, the common
 time is recorded exactly as the running round would have, and no demand remains; after the
 timeout the baseline is dropped without recording anything. Automatic demand after an early
@@ -305,7 +313,10 @@ button calls `requestSyncNow()` directly, not through the pane's 3-second poll, 
 in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
 phase and `Report.request` to the control (Queued Busy: waiting for the current sync;
 Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
-Rejected: could not start); the pane adds its own unlock and pairing check. The view alone
+Rejected: could not start). While the request is Idle, a Syncing or Initial sync summary
+also disables the button with progress and no hint, so any running sync, not only one the
+request started, blocks a tap; Checking does not. The pane adds its own unlock and pairing
+check. The view alone
 turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
 no user-facing strings. Local
 changes to sync-visible fields invalidate the current result before debounce.
@@ -338,24 +349,28 @@ What the pane shows, as a contract:
   hosts, or any other user content.
 - **Sync now.** The button appears in the status row's trailing control slot only
   when pairing is complete and the key is unlocked; an unpaired (not set up) or
-  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key, account or
-  rate-limit gates. A tap is coalesced with a round already running and is subject
-  to the shared 60-second minimum interval. Only the user's own request is shown:
-  opening the pane and background sync never make the button spin or report a
-  failure. While the request waits or runs, the button is disabled and shows
-  progress, with a hint: waiting for the current sync (busy), starting shortly
-  (rate limited) or waiting for every profile to report status. When this Mac
-  refuses to start the requested sync, the hint says it could not start, until
-  the next tap or the next sync this Mac starts. The hint, progress indicator and
-  button keep fixed space, so the status row does not move or change height.
+  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key or account
+  gates. A tap is coalesced with a round already running and is subject
+  to the shared 60-second minimum interval, except that a tap while this Mac's
+  native sync is offline starts at once. While any sync runs (Syncing or Initial
+  sync), and while the user's request waits or runs, the button is disabled and
+  shows progress. Opening the pane and background sync never report a failure.
+  Why a request waits (the current sync, starting shortly, or every profile
+  reporting status) is the button's tooltip and VoiceOver hint; no hint text sits
+  beside the button. The progress indicator keeps its space and the button keeps
+  its full title, so the status row does not move.
 - **Ending a requested sync.** When it ends, VoiceOver announces "Sync finished"
   only if this Mac recorded a newer coordinated success than at the tap;
   otherwise it announces the category of a problem recorded since the tap, or
-  "Sync did not finish" when there is none, and a refusal as could not start. A
-  failing sync (for example offline) ends once every context has stayed settled on
-  the failure for a few seconds instead of after a minute; if it recovers within
-  that minute, the success is still recorded. A request dropped because sync
-  stopped or became unavailable ends silently.
+  "Sync did not finish" when there is none, and a refusal as could not start. The
+  same text, except for a finished sync, is shown as one line under the status row
+  until the next tap. A failing sync ends once every context has stayed settled on
+  the failure for a few seconds, or once this Mac's native sync has stayed offline
+  for a few seconds, instead of after a minute; if it recovers within that minute,
+  the success is still recorded. A request dropped because sync stopped or became
+  unavailable ends silently.
+- **Load errors.** A failed load of the devices waiting for approval is shown inside
+  the Devices section and cleared by the next successful load.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone

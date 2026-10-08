@@ -107,7 +107,9 @@ enum SyncRequestState: Equatable, Sendable {
     enum QueueReason: String, Sendable { case busy, rateLimited, unobservable }
 }
 
-/// One rule for the Sync now control, shared by the pane and the hostless tests.
+/// One rule for the Sync now control, shared by the pane and the hostless tests. Any running
+/// sync disables the control, including rounds the request did not start, so a tap never
+/// lands on a round it cannot speed up.
 struct SyncNowButtonState: Equatable {
     enum Hint: Equatable { case none, waitingForCurrentSync, startingShortly, waitingForProfiles, failed }
     let isVisible: Bool
@@ -120,6 +122,8 @@ struct SyncNowButtonState: Equatable {
             return Self(isVisible: false, isEnabled: false, showsProgress: false, hint: .none)
         }
         switch request {
+        case .idle where summary == .syncing || summary == .initialSync:
+            return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .none)
         case .idle: return Self(isVisible: true, isEnabled: true, showsProgress: false, hint: .none)
         case .inFlight: return Self(isVisible: true, isEnabled: false, showsProgress: true, hint: .none)
         case .queued(.unobservable, _):

@@ -14,6 +14,9 @@ final class SyncHelper {
         let requestSync: @MainActor () -> Bool
         // Native state can change while asynchronous bridge observations are outstanding.
         var currentSnapshot: (@MainActor () -> SyncContextSnapshot?)? = nil
+        /// The native engine. Its settled Offline lets a Sync now request fail fast: it skips
+        /// the minimum interval and ends its round without waiting for Chromium Profiles.
+        var isNative = false
     }
 
     struct Report {
@@ -240,6 +243,10 @@ final class SyncHelper {
         let successes = snapshots.compactMapValues(\.lastSuccess)
         let revisions = snapshots.mapValues(\.revision)
         let failed = observed.phase == .offline || observed.phase == .needsAttention
+        // Offline is always settled. Chromium Profiles can keep reporting Syncing or Checking
+        // without a connection, so a Sync now request does not wait for them to fail too.
+        let nativeOffline = sources.first(where: \.isNative)
+            .flatMap { snapshots[$0.id] }.flatMap { $0.phase == .offline ? $0 : nil }
         let time = now()
         if let round {
             if time.timeIntervalSince(round.startedAt) >= roundTimeout {
@@ -259,11 +266,14 @@ final class SyncHelper {
                 } else {
                     coordinationFailure = .persistence
                 }
-            } else if failed, ids.allSatisfy({ id in
+            } else if (failed && ids.allSatisfy({ id in
                 guard let snapshot = snapshots[id], Self.isSettled(snapshot) else { return false }
                 return round.previousRevisions[id].map { snapshot.revision > $0 } ?? true
-            }) {
-                // Every participant has reported since the request and settled on a failure.
+            })) || (round.syncNow && nativeOffline.map { offline in
+                round.previousRevisions[offline.id].map { offline.revision > $0 } ?? true
+            } == true) {
+                // Every participant has reported since the request and settled on a failure, or,
+                // for a Sync now round, the native engine has reported Offline since the request.
                 // One sample may be transient (Chromium retries on its own), and several refresh
                 // sources can observe within a second, so the failure must persist for at least
                 // one poll interval of time before the round ends ahead of its timeout.
@@ -317,9 +327,12 @@ final class SyncHelper {
         let explicit = explicitRefreshPending || syncNowPending
         let intervalPassed = nextRequestAt.map { time >= $0 } ?? true
         let automaticAllowed = intervalPassed && (automaticRetryAt.map { time >= $0 } ?? true)
+        // A Sync now request while the native engine is Offline dispatches at once, so it ends
+        // within seconds instead of waiting out the interval that other demand keeps pushing.
+        let explicitAllowed = intervalPassed || (syncNowPending && nativeOffline != nil)
         // `canRequestExplicitly` includes `canRequest` under either policy.
         if round == nil,
-           (explicit && canRequestExplicitly && intervalPassed)
+           (explicit && canRequestExplicitly && explicitAllowed)
             || (canRequest && (needsRound || failed || stale) && automaticAllowed) {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             let bySyncNow = syncNowPending

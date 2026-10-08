@@ -24,7 +24,7 @@ import Foundation
         SyncHelper.Participant(id: id, read: { self.snapshots[id] }, requestSync: {
             self.requests[id, default: 0] += 1
             return self.acceptsRequests
-        })
+        }, isNative: id == "phi")
     }
     func helper(policy: SyncHelper.ExplicitRequestPolicy = .waitForAllObservable) -> SyncHelper {
         SyncHelper(isEligible: { self.paired }, participants: {
@@ -66,6 +66,7 @@ import Foundation
         await syncNowIgnoresOtherDemand()
         await failingRoundEndsEarly()
         await earlyEndKeepsLateSuccess()
+        await syncNowFailsFastWhileNativeOffline()
         await reportCarriesNativeDetail()
     }
 
@@ -712,6 +713,65 @@ import Foundation
         precondition(h.requests["phi"] == 3, "Membership change must not keep the early-end retry delay")
         moved.stop()
         print("PASS helper: early end needs a failure one poll apart and keeps a late success inside the timeout")
+    }
+
+    @MainActor static func syncNowFailsFastWhileNativeOffline() async {
+        // Inside the minimum interval (160), a tap while the native engine is Offline dispatches
+        // at once, and its round ends on native evidence alone while a Profile keeps syncing.
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(110); f.status("phi", .offline, at: 103)
+        var state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 2,
+                     "A Sync now request while natively Offline skips the minimum interval")
+        f.tick(112); f.status("phi", .offline, at: 103); f.status("profile", .syncing, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 110)),
+                     "One native Offline sample may be transient")
+        f.tick(115); f.status("profile", .syncing, at: 103)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && helper.report.summary.phase == .offline
+                     && f.saved == Date(timeIntervalSince1970: 103),
+                     "A Sync now round ends once the native engine stays Offline for one poll interval")
+        helper.stop()
+
+        // Other explicit demand keeps the interval, and a round no tap joined keeps waiting for
+        // every participant.
+        let g = Fixture(), other = await g.completedHelper()
+        g.tick(110); g.status("phi", .offline, at: 103)
+        await other.refresh(requestSync: true)
+        precondition(g.requests["phi"] == 1, "The pane-open request does not skip the minimum interval")
+        g.tick(160)
+        await other.refresh()
+        precondition(g.requests["phi"] == 2 && other.report.request == .idle)
+        g.tick(162); g.status("phi", .offline, at: 103); g.status("profile", .syncing, at: 103)
+        await other.refresh()
+        g.tick(165); g.status("profile", .syncing, at: 103)
+        await other.refresh()
+        g.tick(166)
+        state = await other.requestSyncNow()
+        precondition(state == .inFlight(startedAt: Date(timeIntervalSince1970: 160)) && g.requests["phi"] == 2,
+                     "Native Offline alone does not end a round without a tap; a tap joins it")
+        g.tick(169)
+        await other.refresh()
+        precondition(other.report.request == .idle && g.saved == Date(timeIntervalSince1970: 103),
+                     "Once joined, the round ends on native Offline one poll interval later")
+        other.stop()
+
+        // Without a native participant nothing changes: the request waits for the interval.
+        let h = Fixture(), plain = SyncHelper(isEligible: { true }, participants: {
+            [SyncHelper.Participant(id: "phi", read: { h.snapshots["phi"] }, requestSync: {
+                h.requests["phi", default: 0] += 1; return true })]
+        }, lastSuccess: nil, saveSuccess: { _ in true }, now: { h.time })
+        h.ids = ["phi"]; h.status("phi", .upToDate, at: 90)
+        await plain.refresh()
+        h.succeed(at: 103)
+        await plain.refresh()
+        h.tick(110); h.status("phi", .offline, at: 103)
+        state = await plain.requestSyncNow()
+        precondition(state == .queued(reason: .rateLimited, notBefore: Date(timeIntervalSince1970: 160))
+                     && h.requests["phi"] == 1, "Only the native participant's Offline skips the interval")
+        plain.stop()
+        print("PASS helper Sync now: native Offline dispatches at once and ends the round without waiting for Profiles")
     }
 
     @MainActor static func reportCarriesNativeDetail() async {

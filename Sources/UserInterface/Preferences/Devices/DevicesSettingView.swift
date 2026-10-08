@@ -88,14 +88,19 @@ struct DevicesSettingView: View {
         .onDisappear { Task { await viewModel.stopPolling() } }
         .onChange(of: viewModel.syncNowOutcome) { _, outcome in
             guard let outcome else { return }
-            switch outcome.result {
-            case .finished:
-                announce(NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
-            case .failed(let category):
-                announce(category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known"))
-            case .rejected:
-                announce(Self.syncNowFailedText)
-            }
+            announce(syncNowFailureText(outcome.result)
+                ?? NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
+        }
+    }
+
+    /// The end of a Sync now request that did not finish, shown under the status row and
+    /// announced; nil when it finished.
+    private func syncNowFailureText(_ result: DevicesSettingViewModel.SyncNowOutcome.Result) -> String? {
+        switch result {
+        case .finished: return nil
+        case .failed(let category):
+            return category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - shown under the sync status, and announced by VoiceOver, when a sync the user started with Sync Now ended without finishing and no specific problem is known")
+        case .rejected: return Self.syncNowFailedText
         }
     }
 
@@ -220,6 +225,9 @@ struct DevicesSettingView: View {
                 if let problem = viewModel.nativeDetail?.lastProblem {
                     hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
                 }
+                if let outcome = viewModel.syncNowOutcome, let text = syncNowFailureText(outcome.result) {
+                    errorText(text)
+                }
             } control: {
                 syncNowControl
             }
@@ -262,49 +270,43 @@ struct DevicesSettingView: View {
         }
     }
 
-    /// Sync now in the status row's control slot. The hint and the progress indicator keep
-    /// their space while the button is shown, so the row neither jumps nor changes height
-    /// when the request state changes.
+    /// Sync now in the status row's control slot. The progress indicator keeps its space while
+    /// the button is shown, so the row does not jump when the request state changes, and the
+    /// button keeps its full title. Why a request waits is the button's tooltip and VoiceOver
+    /// hint; a request that did not finish is reported under the status row.
     @ViewBuilder
     private var syncNowControl: some View {
         let state = viewModel.syncNowButton
         if state.isVisible {
             HStack(spacing: 8) {
-                Group {
-                    if state.hint == .failed {
-                        errorText(Self.syncNowFailedText)
-                    } else if let hint = syncNowHint(state.hint) {
-                        hintText(hint)
-                    }
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(syncNowHint(state.hint) ?? "")
-                .frame(width: 200, alignment: .trailing)
                 ProgressView()
                     .controlSize(.small)
                     .opacity(state.showsProgress ? 1 : 0)
                     .accessibilityHidden(!state.showsProgress)
-                    .accessibilityLabel(NSLocalizedString("sync.status.syncNowInProgress", value: "Sync in progress", comment: "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a requested sync waits or runs"))
+                    .accessibilityLabel(NSLocalizedString("sync.status.syncNowInProgress", value: "Sync in progress", comment: "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a sync runs or a requested sync waits"))
                 actionButton(NSLocalizedString("sync.status.syncNow", value: "Sync Now", comment: "Sync settings - button that asks this Mac to sync all content now")) {
                     Task { await viewModel.syncNow() }
                 }
+                .fixedSize()
                 .disabled(!state.isEnabled || viewModel.isReconfiguring)
                 .accessibilityHint(syncNowHint(state.hint) ?? "")
             }
+            // On the stack, not the button: a disabled button shows no tooltip.
+            .help(syncNowHint(state.hint) ?? "")
+            .layoutPriority(1)
         }
     }
 
     private static var syncNowFailedText: String {
-        NSLocalizedString("sync.status.syncNowFailed", value: "Couldn’t start sync. Try again later.", comment: "Sync settings - shown beside Sync Now when this Mac refused to start the requested sync")
+        NSLocalizedString("sync.status.syncNowFailed", value: "Couldn’t start sync. Try again later.", comment: "Sync settings - shown under the sync status when this Mac refused to start the sync the user requested with Sync Now")
     }
 
     private func syncNowHint(_ hint: SyncNowButtonState.Hint) -> String? {
         switch hint {
         case .none: return nil
-        case .waitingForCurrentSync: return NSLocalizedString("sync.status.syncNowQueued", value: "Waiting for current sync…", comment: "Sync settings - shown beside Sync Now when the requested sync waits for a sync already running")
-        case .startingShortly: return NSLocalizedString("sync.status.syncNowStartingShortly", value: "Sync will start shortly…", comment: "Sync settings - shown beside Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute")
-        case .waitingForProfiles: return NSLocalizedString("sync.status.syncNowWaitingProfiles", value: "Waiting for all profiles to be available", comment: "Sync settings - shown beside Sync Now when the requested sync waits until every browser profile reports its sync status")
+        case .waitingForCurrentSync: return NSLocalizedString("sync.status.syncNowQueued", value: "Waiting for current sync…", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits for a sync already running")
+        case .startingShortly: return NSLocalizedString("sync.status.syncNowStartingShortly", value: "Sync will start shortly…", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute")
+        case .waitingForProfiles: return NSLocalizedString("sync.status.syncNowWaitingProfiles", value: "Waiting for all profiles to be available", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits until every browser profile reports its sync status")
         case .failed: return Self.syncNowFailedText
         }
     }
@@ -388,12 +390,16 @@ struct DevicesSettingView: View {
     /// the section does not render as a title over an empty card.
     private var hasDevicesContent: Bool {
         !viewModel.pending.isEmpty || !viewModel.devices.isEmpty || viewModel.devicesLoadError != nil
+            || viewModel.pendingLoadError != nil
     }
 
     private var devicesSection: some View {
         section(NSLocalizedString("sync.devices.title", value: "Devices", comment: "Devices authorized for this account")) {
             if !viewModel.pending.isEmpty {
                 SettingsDetailCard { pendingSection }
+            }
+            if let error = viewModel.pendingLoadError {
+                errorText(error)
             }
             if let error = viewModel.devicesLoadError {
                 SettingsDetailCard {

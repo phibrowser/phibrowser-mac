@@ -111,13 +111,18 @@ final class DevicesSettingViewModelTests: XCTestCase {
         report.request = .idle
         await vm.refreshStatus()
         XCTAssertEqual(vm.syncNowOutcome, .init(serial: 4, result: .finished))
+        // A sync the tap did not start still disables the button and shows progress.
+        XCTAssertFalse(vm.syncNowButton.isEnabled)
+        XCTAssertTrue(vm.syncNowButton.showsProgress)
 
-        // A request dropped with the helper (no report) ends silently.
+        // A tap clears the previous outcome; a request dropped with the helper (no report)
+        // ends silently.
         report.request = .inFlight(startedAt: started)
         await vm.syncNow()
+        XCTAssertNil(vm.syncNowOutcome)
         vm.syncReport = { _ in nil }
         await vm.refreshStatus()
-        XCTAssertEqual(vm.syncNowOutcome?.serial, 4)
+        XCTAssertNil(vm.syncNowOutcome)
         await vm.stopPolling()
     }
 

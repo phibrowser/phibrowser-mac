@@ -107644,7 +107644,7 @@
       }
     },
     "sync.status.syncNowFailed" : {
-      "comment" : "Sync settings - shown beside Sync Now when this Mac refused to start the requested sync",
+      "comment" : "Sync settings - shown under the sync status when this Mac refused to start the sync the user requested with Sync Now",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -107655,7 +107655,7 @@
       }
     },
     "sync.status.syncNowIncomplete" : {
-      "comment" : "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known",
+      "comment" : "Sync settings - shown under the sync status, and announced by VoiceOver, when a sync the user started with Sync Now ended without finishing and no specific problem is known",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -107666,7 +107666,7 @@
       }
     },
     "sync.status.syncNowInProgress" : {
-      "comment" : "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a requested sync waits or runs",
+      "comment" : "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a sync runs or a requested sync waits",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -107677,7 +107677,7 @@
       }
     },
     "sync.status.syncNowQueued" : {
-      "comment" : "Sync settings - shown beside Sync Now when the requested sync waits for a sync already running",
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits for a sync already running",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -107688,7 +107688,7 @@
       }
     },
     "sync.status.syncNowStartingShortly" : {
-      "comment" : "Sync settings - shown beside Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute",
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -107699,7 +107699,7 @@
       }
     },
     "sync.status.syncNowWaitingProfiles" : {
-      "comment" : "Sync settings - shown beside Sync Now when the requested sync waits until every browser profile reports its sync status",
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits until every browser profile reports its sync status",
       "localizations" : {
         "en" : {
           "stringUnit" : {

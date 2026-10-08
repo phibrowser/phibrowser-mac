@@ -6902,12 +6902,54 @@ final class SpaceManager: ObservableObject {
     }
 
     /// Snapshot of every Space's rules, in the order delivered by the
-    /// publisher (sorted by `spaceId` then `sortOrder`). Used by the
-    /// universal URL Rules editor where every rule lives in a single list
-    /// rather than one Space at a time.
+    /// publisher (sorted by `spaceId` then `sortOrder`). `spaceId` is a
+    /// device-local id, so this order means nothing to the user; display
+    /// surfaces read `rulesInDisplayOrder` instead.
     @MainActor
     var allRules: [SpaceRoutingRule] {
         cachedURLRules
+    }
+
+    /// Every rule in the order the universal URL Rules editor shows them.
+    /// See `displayOrderedRules(_:spaceOrder:)`.
+    @MainActor
+    var rulesInDisplayOrder: [SpaceRoutingRule] {
+        Self.displayOrderedRules(cachedURLRules, spaceOrder: spaces.map(\.spaceId))
+    }
+
+    /// Device-independent display order for URL rules. `sortOrder` is only a
+    /// dense index within one target Space, and `spaceId` is a per-device
+    /// local id, so grouping by `spaceId` gives each device its own arbitrary
+    /// group order. The Space strip order syncs, so groups follow it: user
+    /// Spaces in `spaceOrder`, then the generic Incognito target, then Kiosk,
+    /// then targets this device does not resolve (including stale runtime
+    /// Incognito ids), ordered by id. Within a group, rules follow
+    /// `sortOrder`, then `syncId ?? id`. Display only: routing precedence is
+    /// decided by `URLRouter` and `pushRoutingTableToChromium`.
+    static func displayOrderedRules(_ rules: [SpaceRoutingRule],
+                                    spaceOrder: [String]) -> [SpaceRoutingRule] {
+        var rankBySpaceId: [String: Int] = [:]
+        for spaceId in spaceOrder where !isIncognitoSpaceId(spaceId) && rankBySpaceId[spaceId] == nil {
+            rankBySpaceId[spaceId] = rankBySpaceId.count
+        }
+        let incognitoRank = rankBySpaceId.count
+        let kioskRank = incognitoRank + 1
+        let unknownRank = incognitoRank + 2
+        func groupRank(_ spaceId: String) -> Int {
+            if let rank = rankBySpaceId[spaceId] { return rank }
+            if spaceId == incognitoRuleTargetId { return incognitoRank }
+            if spaceId == kioskRuleTargetId { return kioskRank }
+            return unknownRank
+        }
+        return rules.sorted { lhs, rhs in
+            let l = groupRank(lhs.spaceId)
+            let r = groupRank(rhs.spaceId)
+            if l != r { return l < r }
+            // Only the unresolved group can mix target ids.
+            if lhs.spaceId != rhs.spaceId { return lhs.spaceId < rhs.spaceId }
+            if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            return (lhs.syncId ?? lhs.id) < (rhs.syncId ?? rhs.id)
+        }
     }
 
     /// The ONE write face for URL rules (R-M3-4a-45 / R-M3-4a-49). Touches only the

@@ -19,8 +19,11 @@ import SwiftUI
 ///
 /// Stays intentionally small: one host per row matched as either a domain
 /// suffix (host + all subdomains) or an exact domain, enable toggle,
-/// drag-to-reorder within the flat list. Dense per-target sort order is the
-/// store's job, not this view's.
+/// drag-to-reorder. Rules load grouped by target Space in Space strip order
+/// (`SpaceManager.rulesInDisplayOrder`); order is persisted only within one
+/// target Space, so a drop must land next to a rule with the same target
+/// (`reorderDestination`). Dense per-target sort order is the store's job,
+/// not this view's.
 struct URLRulesEditor: View {
     @ObservedObject var manager: SpaceManager
     let onClose: () -> Void
@@ -155,7 +158,9 @@ struct URLRulesEditor: View {
     // MARK: - Data
 
     private func load() {
-        rows = manager.allRules.map(Row.init(from:))
+        // Group by the target Space's strip position, not the device-local spaceId, so every device shows
+        // the same order.
+        rows = manager.rulesInDisplayOrder.map(Row.init(from:))
         loadedRows = rows
         removedRows = []
         // M5: a new load starts a fresh dirty map. The old whole-table fingerprint guard is gone: save-time
@@ -164,11 +169,11 @@ struct URLRulesEditor: View {
     }
 
     /// State-writing half of field refresh (spec §5.8 item 3, 8b-4 fix round 1). The pure refreshRows helper
-    /// owns all decisions, like computeEditSet. Read stored values from manager.allRules; views never access
-    /// the store directly.
+    /// owns all decisions, like computeEditSet. Read stored values from manager.rulesInDisplayOrder, so newly
+    /// stored rows append in display order; views never access the store directly.
     private func refreshFromStore() {
         let merged = Self.refreshRows(rows: rows, loaded: loadedRows, removed: removedRows,
-                                      stored: manager.allRules, dirty: dirty)
+                                      stored: manager.rulesInDisplayOrder, dirty: dirty)
         guard merged.changed else { return }
         rows = merged.rows
         // Dirty-tracking baseline follows the store (§5.8 item 4).
@@ -468,6 +473,28 @@ struct URLRulesEditor: View {
         }
 
         return EditSet(upserts: upserts, deletedIds: deletedIds)
+    }
+
+    /// Final index for dragging `sourceRow` to the `.above` drop position `dropRow`, or nil when the drop
+    /// would not persist. Save stores only a rule's index among rules with the same target Space
+    /// (computeEditSet's bucketIndex), so a drop is accepted only when the moved row ends up next to a
+    /// same-target rule and its order among same-target rules changes. Anything else would snap back after
+    /// the next load.
+    static func reorderDestination(rows: [Row], sourceRow: Int, dropRow: Int) -> Int? {
+        guard rows.indices.contains(sourceRow) else { return nil }
+        let target = max(0, min(dropRow, rows.count))
+        let destination = sourceRow < target ? target - 1 : target
+        guard destination != sourceRow else { return nil }
+        var updated = rows
+        let moved = updated.remove(at: sourceRow)
+        updated.insert(moved, at: destination)
+        let space = moved.targetSpaceId
+        let hasSameTargetNeighbor = (destination > 0 && updated[destination - 1].targetSpaceId == space)
+            || (destination + 1 < updated.count && updated[destination + 1].targetSpaceId == space)
+        guard hasSameTargetNeighbor else { return nil }
+        let before = rows.filter { $0.targetSpaceId == space }.map(\.id)
+        let after = updated.filter { $0.targetSpaceId == space }.map(\.id)
+        return before == after ? nil : destination
     }
 
     // MARK: - Row model
@@ -943,6 +970,14 @@ private struct RuleTableView: NSViewRepresentable {
             if dropOperation == .on {
                 tableView.setDropRow(row, dropOperation: .above)
             }
+            // Refuse drops whose position would not persist (another target Space's group, or no change in
+            // order among same-target rules): Save stores only the index within the target Space.
+            guard let item = info.draggingPasteboard.pasteboardItems?.first,
+                  let idString = item.string(forType: .string),
+                  let sourceRow = parent.rows.firstIndex(where: { $0.id.uuidString == idString }),
+                  URLRulesEditor.reorderDestination(rows: parent.rows, sourceRow: sourceRow,
+                                                    dropRow: row) != nil
+            else { return [] }
             return .move
         }
 
@@ -955,9 +990,9 @@ private struct RuleTableView: NSViewRepresentable {
                   let idString = item.string(forType: .string),
                   let sourceRow = parent.rows.firstIndex(where: { $0.id.uuidString == idString })
             else { return false }
-            let target = max(0, min(row, parent.rows.count))
-            let destination = sourceRow < target ? target - 1 : target
-            guard destination != sourceRow else { return false }
+            guard let destination = URLRulesEditor.reorderDestination(rows: parent.rows, sourceRow: sourceRow,
+                                                                      dropRow: row)
+            else { return false }
             var updated = parent.rows
             let moved = updated.remove(at: sourceRow)
             updated.insert(moved, at: destination)

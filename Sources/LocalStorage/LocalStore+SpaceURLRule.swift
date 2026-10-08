@@ -69,10 +69,22 @@ extension LocalStore {
     }
 
     /// Default read API excludes soft-deleted rows (`deletedDate != nil`), which are visible only to sync
-    /// (R-M3-4a-51). `urlRulesPublisher()` reads through this API and inherits the filter.
+    /// (R-M3-4a-51). A failed read returns [], which callers that replace a routing table must not use; they
+    /// read through `readableURLRules()` instead.
     @MainActor
     func getAllURLRules() -> [SpaceRoutingRule] {
-        guard let context = mainContext else { return [] }
+        readableURLRules() ?? []
+    }
+
+    /// Same rows as `getAllURLRules()`, but nil when the store cannot be read (no main context or a thrown
+    /// fetch), so a routing-table consumer can keep its previous snapshot instead of blanking routing.
+    /// `urlRulesPublisher()` reads through this API and inherits the soft-delete filter.
+    @MainActor
+    func readableURLRules() -> [SpaceRoutingRule]? {
+        guard let context = mainContext else {
+            AppLogError("[LocalStore] URL rule read skipped: no main context")
+            return nil
+        }
         do {
             let descriptor = FetchDescriptor<SpaceURLRule>(
                 predicate: #Predicate { $0.deletedDate == nil },
@@ -86,8 +98,8 @@ extension LocalStore {
                                  syncId: model.syncId, deletedDate: model.deletedDate)
             }
         } catch {
-            AppLogError("[LocalStore] getAllURLRules failed: \(error)")
-            return []
+            AppLogError("[LocalStore] URL rule read failed: \(error)")
+            return nil
         }
     }
 
@@ -1068,12 +1080,14 @@ extension LocalStore {
     @MainActor
     func urlRulesPublisher() -> AnyPublisher<[SpaceRoutingRule], Never> {
         guard mainContext != nil else {
-            return Just([]).eraseToAnyPublisher()
+            AppLogError("[LocalStore] urlRulesPublisher: no main context")
+            return Empty<[SpaceRoutingRule], Never>().eraseToAnyPublisher()
         }
 
-        let subject = CurrentValueSubject<[SpaceRoutingRule], Never>([])
-        let fetch = { self.getAllURLRules() }
-        subject.send(fetch())
+        // A failed read emits nothing, so subscribers keep their last good snapshot (a nil initial value is
+        // dropped by the compactMap below).
+        let fetch = { self.readableURLRules() }
+        let subject = CurrentValueSubject<[SpaceRoutingRule]?, Never>(fetch())
 
         let cancellable = NotificationCenter.default
             .publisher(for: .NSManagedObjectContextDidSave)
@@ -1084,9 +1098,12 @@ extension LocalStore {
                 )
             }
             .receive(on: DispatchQueue.main)
-            .sink { _ in subject.send(fetch()) }
+            .sink { _ in
+                if let rules = fetch() { subject.send(rules) }
+            }
 
         return subject
+            .compactMap { $0 }
             .removeDuplicates()
             .handleEvents(receiveCancel: { cancellable.cancel() })
             .prefix(untilOutputFrom: NotificationCenter.default.publisher(

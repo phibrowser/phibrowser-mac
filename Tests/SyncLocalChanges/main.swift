@@ -44,13 +44,29 @@ final class LocalStore {
 }
 /* PRODUCTION_SAVE_EVIDENCE */
 
+// The production Space create body against the real SwiftData schema. Only the bookmark-root
+// materialization is stubbed; it runs after the duplicate check.
+final class SpaceCreationStore {
+    typealias SpaceModel = TabDataModelSchemaV13.SpaceModel
+    enum LocalStoreWriteError: Error { case spaceAlreadyExists }
+    func bookmarkRoot(profileId: String, spaceId: String, in context: ModelContext,
+                      createIfNeeded: Bool) throws -> TabDataModelSchemaV13.TabDataModel? { nil }
+    /* PRODUCTION_CREATE_SPACE_BODY */
+    func create(spaceId: String, profileId: String, name: String, in context: ModelContext) throws {
+        try createSpaceBody(profileId: profileId, name: name, colorHex: "#000000", iconName: "star",
+                            spaceId: spaceId, createdDate: nil, in: context)
+    }
+}
+
 @main struct SyncLocalChangesTests {
     @MainActor static func main() throws {
         for kind in [TabDataType.bookmark, .pinnedTab] {
             try run(kind)
         }
         try runSwiftDataEvidence()
-        print("PASS: local-only writes stay silent; real edits invalidate before debounce; reversions drain")
+        try runDuplicateSpaceCreate()
+        print("PASS: local-only writes stay silent; real edits invalidate before debounce; reversions drain; "
+              + "a duplicate Space create throws and leaves the existing row alone")
     }
 
     @MainActor static func run(_ kind: TabDataType) throws {
@@ -156,6 +172,33 @@ final class LocalStore {
         context.delete(row)
         try context.save()
         check(saves.last == true, "SwiftData deletion must invalidate sync immediately")
+    }
+
+    /// `spaceId` is `@Attribute(.unique)`: an insert under a taken id would overwrite that row on save.
+    @MainActor static func runDuplicateSpaceCreate() throws {
+        let container = try ModelContainer(for: TabDataModelSchemaV13.TabDataModel.self,
+            TabDataModelSchemaV13.ProfileModel.self, TabDataModelSchemaV13.SpaceModel.self,
+            TabDataModelSchemaV13.SpaceURLRule.self, TabDataModelSchemaV13.BrowserDataSettingsModel.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let store = SpaceCreationStore()
+        try store.create(spaceId: "space-a", profileId: "Work", name: "Work", in: context)
+        try store.create(spaceId: "space-b", profileId: "Work", name: "Other", in: context)
+        try context.save()
+        var threw = false
+        do {
+            try store.create(spaceId: "space-a", profileId: "Home", name: "Remote", in: context)
+        } catch SpaceCreationStore.LocalStoreWriteError.spaceAlreadyExists {
+            threw = true
+        }
+        try context.save()
+        check(threw, "creating a Space under an existing spaceId must throw")
+        let rows = try context.fetch(FetchDescriptor<TabDataModelSchemaV13.SpaceModel>())
+            .filter { $0.spaceId == "space-a" }
+        check(rows.count == 1 && rows[0].profileId == "Work" && rows[0].name == "Work"
+                && rows[0].sortOrder == 0,
+              "a duplicate create must leave the existing row unchanged: "
+                + rows.map { "\($0.profileId)/\($0.name)/\($0.sortOrder)" }.joined(separator: ","))
     }
 
     @MainActor static func drain(_ duration: TimeInterval) {

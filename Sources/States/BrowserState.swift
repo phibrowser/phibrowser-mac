@@ -7301,6 +7301,12 @@ class BrowserState {
         let newGuid = UUID().uuidString
         migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
 
+        // A tab unpinned earlier in this session still carries its old pin's
+        // lineage. Pinning a normal tab is always a new pin (an owner change is
+        // a tombstone plus a new create), and the store rejects a lineage that
+        // has no active row, so drop the residue before the write.
+        tab.pinnedLineageId = nil
+        tab.pinnedCreatedDate = nil
         localStore.moveOrCreatePinnedTab(tab, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
         tab.guidInLocalDB = newGuid
         if let wrapper = tab.webContentWrapper {
@@ -7329,6 +7335,9 @@ class BrowserState {
             }
             migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
             tab.guidInLocalDB = newGuid
+            // Same residue as `moveNormalTabToPinned`: the new row has its own lineage.
+            tab.pinnedLineageId = nil
+            tab.pinnedCreatedDate = nil
             if splitId != nil {
                 tab.isPinned = true
             }

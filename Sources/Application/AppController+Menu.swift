@@ -789,6 +789,7 @@ extension AppController {
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
                 || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
                 || item.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
+                || item.action == #selector(AppController.copyFullPageScreenshotFromMenu(_:))
                 || item.tag == CommandWrapper.PHI_SAVE_FOR_LATER.rawValue
                 || item.tag == AppController.fileSaveForLaterLibraryItemTag
         }
@@ -841,12 +842,25 @@ extension AppController {
         Shortcuts.updateShortcut(for: sharePageItem)
         sharePageItem.target = target
 
+        let screenshotItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.copyFullPageScreenshot",
+                value: "Capture Full Page",
+                comment: "File menu - Capture the entire current webpage and copy it as an image"
+            ),
+            action: #selector(AppController.copyFullPageScreenshotFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        screenshotItem.target = target
+
         // Same slot Safari uses: directly above Print.
         if let printIndex = subMenu.items.firstIndex(where: {
             $0.tag == CommandWrapper.IDC_PRINT.rawValue
         }) {
-            subMenu.insertItem(sharePageItem, at: printIndex)
+            subMenu.insertItem(screenshotItem, at: printIndex)
+            subMenu.insertItem(sharePageItem, at: printIndex + 1)
         } else {
+            subMenu.addItem(screenshotItem)
             subMenu.addItem(sharePageItem)
         }
 
@@ -1203,6 +1217,12 @@ extension AppController {
             return
         }
         OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: copiedURLs, in: state)
+    }
+
+    @MainActor
+    @objc func copyFullPageScreenshotFromMenu(_ sender: Any?) {
+        guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return }
+        PageScreenshotService.shared.capture(in: state)
     }
 
     @MainActor
@@ -3315,6 +3335,13 @@ extension AppController {
                     : NSLocalizedString("app.editMenu.copySelectedTabURLState", value: "Copy URL", comment: "Edit menu - Single selected-tab URL title when updating menu state")
             }
             return state.hasCopyableSelectedTabURLs
+        }
+        if item.action == #selector(copyFullPageScreenshotFromMenu(_:)) {
+            return MainActor.assumeIsolated {
+                guard ApplicationState.shared.canUseBrowser,
+                      let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return false }
+                return PageScreenshotService.shared.canCapture(in: state)
+            }
         }
         if item.action == #selector(sharePageFromMenu(_:)) {
             guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {

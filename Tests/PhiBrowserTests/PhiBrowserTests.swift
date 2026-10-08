@@ -540,6 +540,14 @@ final class PhiBrowserTests: XCTestCase {
 
         XCTAssertEqual(shareItems.count, 1)
         XCTAssertEqual(shareIndex, printIndex - 1)
+        let screenshotItems = menu.items.filter {
+            $0.action == NSSelectorFromString("copyFullPageScreenshotFromMenu:")
+        }
+        let screenshotItem = try XCTUnwrap(screenshotItems.first)
+        XCTAssertEqual(screenshotItems.count, 1)
+        XCTAssertEqual(menu.items.firstIndex(of: screenshotItem), shareIndex - 1)
+        XCTAssertEqual(screenshotItem.keyEquivalent, "")
+        XCTAssertFalse(screenshotItem.isHidden)
         XCTAssertEqual(
             shareItem.action,
             NSSelectorFromString("sharePageFromMenu:")

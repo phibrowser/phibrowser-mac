@@ -34,6 +34,63 @@ fallback. The installed companions must support the same chat metadata and owner
 contract. Legacy metadata compatibility or migration must be verified against
 the specific installed versions.
 
+## Read-only target availability (2026-09-23, PHI-1630)
+
+Sidecar previously offered a return solely because a saved HTTP(S) URL existed;
+restore then refused deleted/rebound Spaces. The owner chose to hide invalid
+return-menu entries and keep the full-page Open in sidebar button disabled,
+without moving chats or following a Space into another Profile.
+
+The additive `sidecar.travelBack.availability` request carries the usual trusted
+source context plus `target: {profileId, spaceId}`. It returns
+`{ok:true,result:{available:boolean}}`. `TravelBackTarget` and
+`TravelBackMessageHandler.isTargetAvailable` share the recorded identity policy
+with restore. Tab/window liveness is deliberately irrelevant; a closed scene may
+still be recreated. A complete Profile list and the current account's Space store
+are required. A missing bridge/account/store returns `unavailable`, never a
+false deletion claim. Empty target identifiers remain `invalid_snapshot`.
+
+The query does not activate a Space, load a Profile, create a Tab, alter metadata,
+or refresh ProfileManager's persistent state. `ProfileManager.readProfiles()`
+reads a complete Chromium projection without `refresh()`'s display-name writes
+or archive-journal delivery. Restore also uses this read rather than trusting a
+cached Profile list after a failed refresh.
+
+On the first authorized availability query, the handler installs process-lifetime
+observers for `spaceListDidChange`, `ProfileManager.listDidChange` and account
+changes. They broadcast only `sidecar.travelBack.availabilityChanged` with `{}`:
+no URL, identity, conversation or operation data, and no sidebar binding filter.
+This includes the standalone Phi Chat surface. Space-list invalidations can also
+come from window-map changes; the query is cheap and has no navigation effects.
+There is no second browser-state store or periodic native polling. Sidecar pulls
+again on mount/conversation change, native invalidation, focus and reconnect;
+errors disable the entry but do not alter saved history. Restore retains its
+final checks for changes after preflight.
+
+Ship this native change before or with the corresponding Sidecar change. Existing
+Sidecar restore calls remain compatible. A newer Sidecar against an older native
+build disables the entry on query failure rather than using restore as a probe.
+No phi-agent protocol or database migration is involved. Source UI/state owner:
+phi-ai `docs/chat-metadata-store.md`, "Target availability before offering
+restoration".
+
+Validation: 13 hostless `TravelBackSceneTests` passed against the actual production
+source (two new availability cases), and Canary `build-for-testing` passed with
+signing disabled. The temporary SwiftPM harness symlinks the scene and test files;
+no app-hosted XCTest or browser was launched. Companion Sidecar added 12
+regressions and passed type/lint/build checks; its full suite has four unrelated
+failures documented in phi-ai.
+
+Live acceptance (2026-10-08): the owner passed the paired check on a local
+Debug-Canary build of this branch (rebased onto dev `e60f66a5`, build 886, the
+installed Canary 885's Framework 154.0.8037.54 and Sentinel unchanged) with the
+matching Sidecar loaded through `pnpm load:phi-canary -- --sidecar-only`.
+Covered: rebinding a Space to another Profile and deleting a Space hide the
+return entries and disable Open in sidebar in an already-open Phi Chat; moving
+the Space back re-enables them and restore succeeds; a closed Tab or window
+stays restorable; availability checks open no window and switch no Space. The
+official Canary was restored afterwards.
+
 ## Target policy
 
 1. Require recorded Profile and Space identity. Both must still exist and the
@@ -78,6 +135,7 @@ release themselves.
 
 | Type suffix (`sidecar.travelBack.`) | Additional input | Success result |
 | --- | --- | --- |
+| `availability` | `target: {profileId, spaceId}` | `{available: boolean}`; read-only identity check |
 | `snapshot` | none | page, Tab, window/Space/Profile/runtime, optional split, transient `relatedTabIds` |
 | `restore` | `snapshot` | destination Tab/window, actual `sidebar`, optional `sourceSidebar`, `sameSidecar` |
 | `offer` | `destinationSidebar`, UUID `operationId`, `conversationId` | `{}`; store one envelope, refuse overlap |

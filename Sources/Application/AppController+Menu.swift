@@ -328,11 +328,28 @@ extension AppController {
             AppLogDebug("Main menu changed: \(change)")
             self?.hookAndRebuildMainMenu()
         }
+        // Every layout-mode writer (View menu, Settings, tab-area context
+        // menu, sync) goes through the standard defaults.
+        lastMenuLayoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+        layoutModeMenuObservation = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let mode = PhiPreferences.GeneralSettings.loadLayoutMode()
+                guard mode != self.lastMenuLayoutMode else { return }
+                self.lastMenuLayoutMode = mode
+                self.refreshPrefGatedMenuItems()
+            }
+        }
     }
     
     /// Schedules the main-menu hook so pref-gated items appear or disappear
     /// without waiting for Chromium's next menu swap — the View ▸ agent items
-    /// follow the agent CDP switch (`AgentCDPListener.setEnabled` calls this).
+    /// follow the agent CDP switch (`AgentCDPListener.setEnabled` calls this),
+    /// and the Tab menu's New Tab title follows the layout mode.
     /// Coalesces repeated requests and waits until menu tracking ends.
     func refreshPrefGatedMenuItems() {
         guard !isMainMenuRefreshScheduled else { return }
@@ -609,6 +626,7 @@ extension AppController {
                         item.isHidden = true
                     }
                 }
+                Self.applyNewTabOrientation(in: subMenu)
             } else
             
             if menuRole == .help, let subMenu = menuItem.submenu {
@@ -738,6 +756,37 @@ extension AppController {
             }
             #endif // DEBUG || NIGHTLY_BUILD
         }
+    }
+
+    /// Chromium's Tab menu carries two items for New Tab to the Right, and only
+    /// their order tells them apart: both have the same tag, action and key
+    /// equivalent, and their titles are Chromium-localized strings. The order
+    /// comes from `BuildTabMenu` in chrome/browser/ui/cocoa/main_menu_builder.mm,
+    /// which lists the "to the Right" title first and a hidden "New Tab Below"
+    /// second. Upstream's `-[AppController onVerticalTabStripModeChanged:]`
+    /// (chrome/browser/app_controller_mac.mm, copied into Phi's
+    /// phi_app_controller_mac.mm) reads them the same way: [0] horizontal,
+    /// [1] vertical. Keep the indices below in step with both; the count check
+    /// cannot catch a reorder, which would only swap the titles shown.
+    ///
+    /// Upstream swaps them on its vertical tab strip mode, which Phi never
+    /// turns on, so swap them on the layout mode: only Comfortable lays tabs
+    /// out horizontally.
+    static func applyNewTabOrientation(
+        in tabMenu: NSMenu,
+        layoutMode: LayoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+    ) {
+        let items = tabMenu.items.filter {
+            $0.tag == CommandWrapper.IDC_NEW_TAB_TO_RIGHT.rawValue
+        }
+        guard items.count == 2 else {
+            AppLogWarn("Tab menu has \(items.count) New Tab to the Right items, expected 2; leaving them as built")
+            return
+        }
+        // items[0] is "to the Right", items[1] is "New Tab Below".
+        let vertical = !layoutMode.isTraditional
+        items[0].isHidden = vertical
+        items[1].isHidden = !vertical
     }
 
     static func installOrUpdateFileMenuItems(

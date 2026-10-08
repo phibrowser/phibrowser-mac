@@ -340,9 +340,9 @@ class WebContentViewController: NSViewController {
         }
     }
 
-    /// Whether this page's web views draw through their Space instance's
-    /// content surface (chromium ADR 0014), which lies below this whole view
-    /// tree. The fills behind them (page card, left container, AI Chat panel,
+    /// Whether this page's web views draw through their window's content
+    /// surface (chromium ADR 0014), which lies below this whole view tree.
+    /// The fills behind them (page card, left container, AI Chat panel,
     /// split panes) are then clear. Follows its container's
     /// (`WebContentContainerViewController.hasContentSurface`).
     var hasContentSurface = false {

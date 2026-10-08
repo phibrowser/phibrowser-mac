@@ -974,19 +974,20 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// with -getContentBlockingSettings:completion:. UI thread.
 - (void)contentBlockingStatusChanged:(NSString *)profileId;
 
-/// The content surface of Space instance `windowId` (chromium ADR 0014).
-/// `hostingView` shows the pixels of every web view mounted below the view it
-/// is added to, which becomes the hosting container; web views already
-/// mounted there switch over as it is added. Sent once, right after
-/// mainBrowserWindowCreated for the same `windowId`, and only while the
-/// PhiContentSurface feature is on: without it every web view draws itself
-/// as before. Add the view to the Space instance's page area, above the
-/// backdrop and below every tab's view, and leave it there: moving it out of
-/// its container does not take the web views still in that container off the
-/// surface. It draws only while shown in a window, so hiding it, or an
-/// ancestor, stops a background Space instance drawing. Chromium owns the
-/// surface and tears it down with the Space instance's browser; the view then
-/// draws nothing until the client drops it.
+/// The content surface of browser window `windowId` (chromium ADR 0014): a
+/// window whose page area the client hosts, a Space instance or a standalone
+/// Incognito window (chromium ADR 0016). `hostingView` shows the pixels of
+/// every web view mounted below the view it is added to, which becomes the
+/// hosting container; web views already mounted there switch over as it is
+/// added. Sent once, right after mainBrowserWindowCreated for the same
+/// `windowId`, and only while the PhiContentSurface feature is on: without it
+/// every web view draws itself as before. Add the view to the window's page
+/// area, above the backdrop and below every tab's view, and leave it there:
+/// moving it out of its container does not take the web views still in that
+/// container off the surface. It draws only while shown in a window, so
+/// hiding it, or an ancestor, stops a background window drawing. Chromium
+/// owns the surface and tears it down with the window's browser; the view
+/// then draws nothing until the client drops it.
 - (void)contentSurfaceCreated:(int64_t)windowId
                   hostingView:(NSView *)hostingView;
 

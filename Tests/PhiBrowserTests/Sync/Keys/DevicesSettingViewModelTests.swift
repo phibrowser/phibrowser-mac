@@ -54,6 +54,78 @@ final class DevicesSettingViewModelTests: XCTestCase {
         await vm.stopPolling()
     }
 
+    func testSyncNowUsesTheRequestAPIAndAnnouncesTheEnd() async throws {
+        let (_, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.pairingComplete = { true }
+        let started = Date(timeIntervalSince1970: 100)
+        var detail = SyncNativeDetail()
+        detail.kinds[.bookmarks] = SyncKindStatus(received: 2, sent: 1, activityAt: started, pending: 0, held: 1)
+        var report = SyncHelper.Report()
+        report.requiredIDs = ["phi"]
+        report.snapshots = ["phi": SyncContextSnapshot(id: "phi", phase: .syncing, lastSuccess: nil, revision: 3, detail: detail)]
+        report.summary = SyncStatusSummary(phase: .syncing, lastSuccess: nil)
+        report.request = .inFlight(startedAt: started)
+        var requests = 0
+        vm.syncNowReport = { requests += 1; return report }
+        vm.syncReport = { _ in report }
+        await vm.loadAll()
+        await vm.syncNow()
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(vm.requestState, .inFlight(startedAt: started))
+        XCTAssertEqual(vm.nativeDetail, detail)
+        XCTAssertTrue(vm.syncNowButton.showsProgress)
+        XCTAssertFalse(vm.syncNowButton.isEnabled)
+        XCTAssertNil(vm.syncNowOutcome)
+
+        report.request = .idle
+        report.summary = SyncStatusSummary(phase: .upToDate, lastSuccess: started)
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 1, result: .finished))
+        XCTAssertTrue(vm.syncNowButton.isEnabled)
+
+        // A request that ends without a newer common success is a failure; a problem recorded
+        // before the tap is not named.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        detail.lastProblem = SyncErrorSummary(category: .offline, kind: nil, at: started)
+        report.snapshots["phi"] = SyncContextSnapshot(id: "phi", phase: .offline, lastSuccess: started, revision: 4, detail: detail)
+        report.summary = SyncStatusSummary(phase: .offline, lastSuccess: started)
+        report.request = .idle
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 2, result: .failed(nil)))
+
+        // A problem recorded after the tap is named.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        detail.lastProblem = SyncErrorSummary(category: .offline, kind: nil, at: Date())
+        report.snapshots["phi"] = SyncContextSnapshot(id: "phi", phase: .offline, lastSuccess: started, revision: 5, detail: detail)
+        report.request = .idle
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 3, result: .failed(.offline)))
+
+        // A newer common success is finished even when a new round already runs.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        report.summary = SyncStatusSummary(phase: .syncing, lastSuccess: Date())
+        report.request = .idle
+        await vm.refreshStatus()
+        XCTAssertEqual(vm.syncNowOutcome, .init(serial: 4, result: .finished))
+        // A sync the tap did not start still disables the button and shows progress.
+        XCTAssertFalse(vm.syncNowButton.isEnabled)
+        XCTAssertTrue(vm.syncNowButton.showsProgress)
+
+        // A tap clears the previous outcome; a request dropped with the helper (no report)
+        // ends silently.
+        report.request = .inFlight(startedAt: started)
+        await vm.syncNow()
+        XCTAssertNil(vm.syncNowOutcome)
+        vm.syncReport = { _ in nil }
+        await vm.refreshStatus()
+        XCTAssertNil(vm.syncNowOutcome)
+        await vm.stopPolling()
+    }
+
     func testLoadAllSignedOutShowsSignInWithoutKeyRequest() async throws {
         let api = FakeAPI()
         // What the real client throws when there is no token to send.

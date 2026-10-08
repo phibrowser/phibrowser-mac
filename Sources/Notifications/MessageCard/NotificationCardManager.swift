@@ -92,6 +92,7 @@ final class NotificationCardManager: ObservableObject {
         let expiresAt: Int64
         let correlationId: String?
         var timer: DispatchSourceTimer?
+        var driverPrincipalId: String? = nil
         
         enum Decision: String {
             case accept, reject, timeout, ignore
@@ -183,8 +184,47 @@ final class NotificationCardManager: ObservableObject {
         messenger.sendResponse(result ?? "", requestId: context.requestId)
     }
 
+    private struct AgentNotificationRequest: Decodable {
+        let title: String
+        let message: String
+        let buttonTitle: String?
+        let expiresInSeconds: Int?
+    }
+
+    /// App-level agent notifications reuse the card queue and popup preference.
+    /// The acknowledgement is immediate; decisions are separate session-scoped events.
+    func handleAgentRequest(context: ExtensionMessageContext) -> String {
+        guard context.senderId == "cdp",
+              let principalId = context.driverPrincipalId, !principalId.isEmpty else {
+            return #"{"ok":false,"error":"agent_session_required"}"#
+        }
+        guard let data = context.payload.data(using: .utf8),
+              let request = try? JSONDecoder().decode(AgentNotificationRequest.self, from: data),
+              !request.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !request.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              (1...86_400).contains(request.expiresInSeconds ?? 300) else {
+            return #"{"ok":false,"error":"invalid_params"}"#
+        }
+        let notificationId = "agent-notification:\(UUID().uuidString)"
+        let timestamp = now()
+        let expiresAt = timestamp + Int64(request.expiresInSeconds ?? 300) * 1000
+        let payload: [String: AnyCodable] = [
+            "task_id": .string(notificationId),
+            "title": .string(request.title),
+            "description": .string(request.message),
+            "button_title": .string(request.buttonTitle ?? "Run"),
+            "timestamp": .string(String(timestamp)),
+            "expires_at": .string(String(expiresAt)),
+        ]
+        enqueueCard(envelope: ["messageId": .string(notificationId), "payload": .init(payload)],
+                    correlationId: context.requestId, driverPrincipalId: principalId)
+        // The ID is generated locally and contains only a fixed prefix and a UUID.
+        return #"{"notificationId":"\#(notificationId)"}"#
+    }
+
     @discardableResult
-    func enqueueCard(envelope: [String: AnyCodable], correlationId: String?) -> String? {
+    func enqueueCard(envelope: [String: AnyCodable], correlationId: String?,
+                     driverPrincipalId: String? = nil) -> String? {
         guard let payload = envelope["payload"]?.dictionaryValue else {
             return nil
         }
@@ -209,7 +249,8 @@ final class NotificationCardManager: ObservableObject {
                 buttonTitle: buttonTitle,
                 expiresAt: expiresAt,
                 correlationId: correlationId,
-                timer: nil
+                timer: nil,
+                driverPrincipalId: driverPrincipalId
             )
             queue.sync {
                 if let existing = cards.removeValue(forKey: taskId) {
@@ -244,7 +285,8 @@ final class NotificationCardManager: ObservableObject {
                 buttonTitle: buttonTitle,
                 expiresAt: expiresAt,
                 correlationId: correlationId,
-                timer: nil
+                timer: nil,
+                driverPrincipalId: driverPrincipalId
             )
             order.insert(taskId, at: 0)
             cards[taskId] = card
@@ -324,6 +366,14 @@ final class NotificationCardManager: ObservableObject {
     }
 
     private func sendDecision(card: Card, decision: Card.Decision) {
+        if let principalId = card.driverPrincipalId {
+            let response = ["notificationId": card.taskId, "decision": decision.rawValue]
+            guard let data = try? JSONEncoder().encode(response),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            messenger.broadcastToAgent(
+                type: "notification.response", payload: json, principalId: principalId)
+            return
+        }
         let payload: [String: AnyCodable] = [
             "decision": .string(decision.rawValue),
             "task_id": .string(card.taskId),

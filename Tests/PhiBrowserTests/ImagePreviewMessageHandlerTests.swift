@@ -25,6 +25,10 @@ final class ImagePreviewMessageHandlerTests: XCTestCase {
         func broadcast(type: String, payload: String) {
             broadcasts.append((type, payload))
         }
+
+        func broadcastToAgent(type: String, payload: String, principalId: String) {
+            XCTFail("Image previews must not send agent notification events")
+        }
     }
 
     private func context(

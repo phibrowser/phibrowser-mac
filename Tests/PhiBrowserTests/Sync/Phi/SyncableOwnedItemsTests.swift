@@ -944,6 +944,175 @@ final class SyncableOwnedItemsTests: XCTestCase {
         XCTAssertEqual(waitingForParent, "missing-parent")
     }
 
+    // MARK: - R-M3-4a-78: items of a deleted Space
+
+    /// Outbound half: a Space's cascade hard-deleted its rows and only the Space cursor recorded the
+    /// deletion. `deadOwnerDeletions` names every published, landed, undeleted item the dead Space
+    /// owns; passed as explicitDeletions, those bypass the two owner gates and nothing else.
+    func testADeletedSpacesItemsAreTombstonedThroughExplicitDeletions() {
+        var table = PhiOwnedItemTable()
+        table.cursors["dead-1"] = landedCursor(bookmarkPayload(uuid: "dead-1", spaceUuid: "su-dead"),
+                                               entityId: "srv-d1", ownerUuid: "su-dead")
+        table.cursors["dead-live"] = landedCursor(bookmarkPayload(uuid: "dead-live",
+                                                                  spaceUuid: "su-dead"),
+                                                  entityId: "srv-dl", ownerUuid: "su-dead")
+        var finished = landedCursor(bookmarkPayload(uuid: "dead-done", spaceUuid: "su-dead"),
+                                    entityId: "srv-dd", ownerUuid: "su-dead")
+        finished.deletedAtMs = 4_000
+        table.cursors["dead-done"] = finished
+        table.cursors["dead-unpublished"] = landedCursor(
+            bookmarkPayload(uuid: "dead-unpublished", spaceUuid: "su-dead"), entityId: "",
+            ownerUuid: "su-dead")
+        table.cursors["unmapped"] = landedCursor(bookmarkPayload(uuid: "unmapped",
+                                                                 spaceUuid: "su-unknown"),
+                                                 entityId: "srv-u", ownerUuid: "su-unknown")
+
+        let explicit = SyncableOwnedItems.deadOwnerDeletions(table: table, deadOwners: ["su-dead"])
+        XCTAssertEqual(explicit, ["dead-1", "dead-live"],
+                       "Only published, landed, undeleted items of the dead Space")
+        XCTAssertTrue(SyncableOwnedItems.deadOwnerDeletions(table: table, deadOwners: []).isEmpty)
+
+        let gated = SyncableOwnedItems.tombstones(BookmarkKind.self,
+                                                  locals: [row(identity: "dead-live")],
+                                                  table: table, resolve: resolve, scope: nil,
+                                                  nowMs: 5_000)
+        XCTAssertTrue(gated.identities.isEmpty, "The owner gates alone suppress every tombstone")
+
+        let result = SyncableOwnedItems.tombstones(BookmarkKind.self,
+                                                   locals: [row(identity: "dead-live")],
+                                                   table: table, resolve: resolve, scope: nil,
+                                                   nowMs: 5_000, explicitDeletions: explicit)
+        XCTAssertEqual(result.identities, ["dead-1"], "A row that still exists is never tombstoned")
+        XCTAssertEqual(result.cursorUpdates["dead-1"]?.pendingDelete, true)
+        XCTAssertEqual(result.cursorUpdates["dead-1"]?.deleteDecidedAtMs, 5_000)
+    }
+
+    /// Inbound half: an item this device never landed whose owner Space is deleted here is
+    /// discarded with a delete step instead of parked; its parked child follows it in the same plan.
+    func testAParkedTreeOwnedByADeletedSpaceIsDiscardedNotParked() {
+        let folder = bookmarkPayload(uuid: "f", spaceUuid: "su-dead", isFolder: true)
+        let child = bookmarkPayload(uuid: "c", spaceUuid: "su-dead", parentUuid: "f")
+        var table = PhiOwnedItemTable()
+        var parkedFolder = ownedCursor(entityId: "srv-f", version: 4)
+        parkedFolder.pendingApply = baselineBytes(folder)
+        parkedFolder.pendingOwnerUuid = "su-dead"
+        table.cursors["f"] = parkedFolder
+        var parkedChild = ownedCursor(entityId: "srv-c", version: 4)
+        parkedChild.pendingApply = baselineBytes(child)
+        parkedChild.pendingOwnerUuid = "f"
+        table.cursors["c"] = parkedChild
+        let parked = [
+            "f": ParkedOwnedItem(payload: baselineBytes(folder), pendingOwnerUuid: "su-dead"),
+            "c": ParkedOwnedItem(payload: baselineBytes(child), pendingOwnerUuid: "f"),
+        ]
+
+        let held = planned([], parked: parked, table: table)
+        XCTAssertEqual(Set(held.parked.keys), ["f", "c"], "Without a dead owner both stay parked")
+
+        var context = OwnedItemPlanContext()
+        context.deadOwners = ["su-dead"]
+        let plan = planned([], parked: parked, table: table, context: context)
+
+        XCTAssertTrue(plan.parked.isEmpty)
+        XCTAssertEqual(deleteIdentities(plan), ["f", "c"])
+        XCTAssertEqual(plan.discardedForDeadOwner, ["f": "su-dead", "c": "su-dead"])
+        XCTAssertEqual(plan.lifted, 0)
+    }
+
+    /// A child arriving after its folder was discarded in an earlier round follows the folder, rather
+    /// than lifting to the root of a Space that no longer exists.
+    func testAChildOfAFolderDiscardedWithItsSpaceIsDiscardedNotLifted() {
+        var table = PhiOwnedItemTable()
+        var folder = ownedCursor(entityId: "srv-f", version: 4, ownerUuid: "su-dead")
+        folder.deletedAtMs = 6_000
+        table.cursors["f"] = folder
+        var context = OwnedItemPlanContext()
+        context.deadOwners = ["su-dead"]
+
+        let plan = planned([arrival(bookmarkPayload(uuid: "late", spaceUuid: "su-dead",
+                                                    parentUuid: "f"))],
+                           table: table, context: context)
+
+        XCTAssertEqual(plan.lifted, 0)
+        XCTAssertEqual(plan.discardedForDeadOwner, ["late": "su-dead"])
+        // A folder deleted in a live Space still lifts its children, as before.
+        table.cursors["f"]?.ownerUuid = "su-1"
+        let lift = planned([arrival(bookmarkPayload(uuid: "late", parentUuid: "f"))],
+                           table: table, context: context)
+        XCTAssertEqual(lift.lifted, 1)
+        XCTAssertTrue(lift.discardedForDeadOwner.isEmpty)
+    }
+
+    /// The other two dead-owner outcomes: an item this device landed is left to its own outbound
+    /// tombstone, and a live row (a hidden Space here) keeps today's parking instead of being
+    /// hard-deleted by an arrival.
+    func testADeadOwnerLeavesLandedItemsToTheDiffAndLiveRowsParked() {
+        var table = PhiOwnedItemTable()
+        table.cursors["own"] = landedCursor(bookmarkPayload(uuid: "own", spaceUuid: "su-dead"),
+                                            entityId: "srv-o", version: 3, ownerUuid: "su-dead")
+        table.cursors["hidden"] = landedCursor(bookmarkPayload(uuid: "hidden", spaceUuid: "su-dead"),
+                                               entityId: "srv-h", version: 3, ownerUuid: "su-dead")
+        var context = OwnedItemPlanContext()
+        context.deadOwners = ["su-dead"]
+        context.liveLocalIdentities = ["hidden"]
+
+        let plan = planned([arrival(bookmarkPayload(uuid: "own", spaceUuid: "su-dead", title: "N"),
+                                    entityId: "srv-o", version: 7),
+                            arrival(bookmarkPayload(uuid: "hidden", spaceUuid: "su-dead", title: "N"),
+                                    entityId: "srv-h", version: 7)],
+                           table: table, context: context)
+
+        XCTAssertTrue(plan.steps.isEmpty)
+        XCTAssertTrue(plan.discardedForDeadOwner.isEmpty)
+        XCTAssertEqual(plan.supersededByDelete, 1)
+        XCTAssertEqual(plan.harvest["own"]?.version, 7, "The tombstone needs the newer version")
+        XCTAssertEqual(plan.parked["hidden"]?.pendingOwnerUuid, "su-dead")
+    }
+
+    /// Pins follow the same rule: a parked pin owned by a deleted Space is discarded.
+    func testAParkedPinOwnedByADeletedSpaceIsDiscarded() {
+        let pin = pinPayload(lineage: "LX", ownerKey: "su-dead")
+        let identity = PinKind.identity(of: pin)
+        var table = PhiOwnedItemTable()
+        var cursor = ownedCursor(entityId: "srv-p", version: 2)
+        cursor.pendingApply = baselineBytes(pin)
+        cursor.pendingOwnerUuid = "su-dead"
+        table.cursors[identity] = cursor
+        var context = OwnedItemPlanContext()
+        context.deadOwners = ["su-dead"]
+
+        let plan = SyncableOwnedItems.plan(
+            PinKind.self, arrivals: [],
+            parked: [identity: ParkedOwnedItem(payload: baselineBytes(pin),
+                                               pendingOwnerUuid: "su-dead")],
+            table: table, resolve: resolve, context: context)
+
+        XCTAssertTrue(plan.parked.isEmpty)
+        XCTAssertEqual(plan.discardedForDeadOwner, [identity: "su-dead"])
+        XCTAssertEqual(plan.steps.map(\.kind), [.delete])
+    }
+
+    /// The dead set: a queued or finished local deletion and a landed remote one, purged or not.
+    func testDeletedSyncUuidsNameEveryDeletedSpace() {
+        var table = PhiSpaceSyncTable()
+        var queued = PhiSpaceCursor()
+        queued.pendingDelete = true
+        table.cursors["queued"] = queued
+        var landed = PhiSpaceCursor()
+        landed.hidden = true
+        landed.deletedAtMs = 1_000
+        table.cursors["landed"] = landed
+        var purged = landed
+        purged.purgedAtMs = 2_000
+        table.cursors["purged"] = purged
+        var parkedTombstone = PhiSpaceCursor()
+        parkedTombstone.pendingTombstone = true      // the import lock still holds the row
+        table.cursors["parked"] = parkedTombstone
+        table.cursors["live"] = PhiSpaceCursor()
+
+        XCTAssertEqual(table.deletedSyncUuids, ["queued", "landed", "purged"])
+    }
+
     // MARK: - CASE 4a.19
 
     /// CASE 4a.19: snapshot immediately after apply restamps nothing (9).

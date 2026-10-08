@@ -102,6 +102,10 @@ struct OwnedOwnerMaps {
     /// Precomputed conjunction from section 4.2 rule 1: present in currentSpaces(), has a syncUuid,
     /// and its cursor is neither hidden nor purged.
     var eligibleSpaceUuids: Set<String> = []
+    /// Space uuids deleted on this device (`PhiSpaceSyncTable.deletedSyncUuids`). Bookmark and pin
+    /// publication tombstones the items they own; bookmark and pin landing discards inbound items
+    /// they own instead of parking them (R-M3-4a-78).
+    var deadSpaceUuids: Set<String> = []
     var globalUuidByProfileId: [String: String] = [:]
     var localProfileIdByGlobalUuid: [String: String] = [:]
     /// Local spaceId to the Profile that Space is bound to, from `currentSpaces()` (review A4/A5).
@@ -2291,12 +2295,38 @@ actor PhiSyncEngine {
                 }
 
                 if spaceLive {
+                    // Owners named by this page's owned arrivals and by items parked earlier, for
+                    // the extension below (R-M3-4a-78).
+                    batch.ownedOwnerUuids = parkedOwnedOwnerUuids()
+                    for registration in ownedKinds {
+                        for arrival in ownedBatches[registration.label]?.arrivals ?? [] {
+                            batch.ownedOwnerUuids.formUnion(registration.owners(arrival.payload))
+                        }
+                    }
                     // Same hash the index builder uses; the entry is what next pull's index would
                     // seed from the cursor this page's landing writes.
                     for arrival in batch.decoded {
                         tagIndex[PhiSyncEntity.clientTagHash(
                             for: PhiSyncEntity.spaceClientTag(arrival.uuid))] = arrival.uuid
                     }
+                    // A Space this device never had is named only by the items it owns. Index
+                    // those owners, then route the page's still-unknown tombstones again, so a
+                    // Space tombstone on the same page as its items, before them or after them,
+                    // still records a deleted Space cursor (R-M3-4a-78).
+                    for uuid in batch.ownedOwnerUuids {
+                        let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
+                        if tagIndex[hash] == nil { tagIndex[hash] = uuid }
+                    }
+                    for unknown in batch.unknownTombstones {
+                        guard let uuid = tagIndex[unknown.hash] else {
+                            AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag "
+                                       + "hash=\(String(unknown.hash.prefix(8)))")
+                            continue
+                        }
+                        batch.tombstones.append((uuid: uuid, entityId: unknown.entityId,
+                                                 version: unknown.version))
+                    }
+                    batch.unknownTombstones = []
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
                     // One load/apply/write per page is safe only in this serialized path:
@@ -2461,6 +2491,14 @@ actor PhiSyncEngine {
         var decoded: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
         var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
         var unreadableHashes: [String] = []
+        /// Tombstones whose tag hash no index entry named while the page was routed. The page's
+        /// tag-index extension retries them after adding `ownedOwnerUuids` (R-M3-4a-78).
+        var unknownTombstones: [(hash: String, entityId: String, version: Int64)] = []
+        /// Uuids this page's owned arrivals and every parked owned item name as their owner. A
+        /// Space this device never had is known only through them, and its tombstone must still
+        /// record a deleted Space cursor, so the items it owns are discarded instead of parked
+        /// forever (R-M3-4a-78).
+        var ownedOwnerUuids: Set<String> = []
     }
 
     /// Persists what this round's routing learned about entities the shared marker has
@@ -2480,8 +2518,12 @@ actor PhiSyncEngine {
     /// own Space arrivals. Tombstones lack ciphertext/UUID and SHA1 is one-way. Seed with cursor keys,
     /// mapping values and default-space (D6): a freshly paired Space can receive a tombstone before its
     /// first commit creates a cursor. Never seed local Space IDs, which are not wire identities.
+    /// Also seed the owners parked owned items wait on (R-M3-4a-78): a device that never had a Space
+    /// (a fresh install replaying the account) knows its uuid only from the bookmarks and pins parked
+    /// behind it, and dropping its tombstone as unknown would park them forever. A seeded uuid that
+    /// is not a Space (a parent folder) is harmless: only a Space entity hashes to its Space tag.
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
-        var uuids = Set(table.cursors.keys)
+        var uuids = Set(table.cursors.keys).union(parkedOwnedOwnerUuids())
         uuids.insert(SyncableSpaces.defaultSpaceUuid)
         if let spaceAccess {
             for uuid in await spaceAccess.allSpaceMappings().values { uuids.insert(uuid) }
@@ -2491,6 +2533,18 @@ actor PhiSyncEngine {
             index[PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))] = uuid
         }
         return index
+    }
+
+    /// Every `pendingOwnerUuid` a parked owned item waits on, across registered kinds. Read from the
+    /// engine's table mirror, which the round's owned initialization and every landing keep current.
+    private func parkedOwnedOwnerUuids() -> Set<String> {
+        var out: Set<String> = []
+        for table in ownedTables.values {
+            for cursor in table.cursors.values where cursor.pendingApply != nil {
+                if let owner = cursor.pendingOwnerUuid, !owner.isEmpty { out.insert(owner) }
+            }
+        }
+        return out
     }
 
     /// §5.2 steps 2-5, in this exact order.
@@ -2507,10 +2561,12 @@ actor PhiSyncEngine {
         // page, lose it forever.
         guard !entity.deleted else {
             guard let uuid = tagIndex[entity.clientTagHash] else {
-                // Nothing to hide: this device has neither the row nor a cursor, and the
-                // server has already replaced the specifics, so no create for that row can
-                // ever arrive again.
-                AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag hash=\(shortHash)")
+                // Not known yet. The page's tag-index extension retries it once the owners its
+                // owned arrivals and parked items name are indexed, and drops it there if it is
+                // still unknown: nothing to hide, and the server has already replaced the
+                // specifics, so no create for that row can ever arrive again.
+                batch.unknownTombstones.append((hash: entity.clientTagHash, entityId: entity.entityId,
+                                                version: entity.version))
                 return
             }
             batch.tombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))
@@ -3730,6 +3786,7 @@ actor PhiSyncEngine {
         // PhiSpaceLocalAccess's existing translation methods (R-D6-14(6)).
         maps.syncUuidBySpaceId[LocalStore.defaultSpaceId] = SyncableSpaces.defaultSpaceUuid
         maps.localSpaceIdBySyncUuid[SyncableSpaces.defaultSpaceUuid] = LocalStore.defaultSpaceId
+        maps.deadSpaceUuids = table.deletedSyncUuids
         let spaces = await spaceAccess.currentSpaces()
         for space in spaces {
             // The Space's own Profile binding, for rows landed into it (review A4/A5).
@@ -4276,6 +4333,22 @@ actor PhiSyncEngine {
             }
             counters.applied += 1
         }
+        // R-M3-4a-78, inbound half: a discarded item's delete step finalized its cursor above like
+        // a landed tombstone. Record the deleted Space as its owner, so a child arriving in a later
+        // round classifies this parent as dead with its Space rather than lifting to a Space root
+        // that no longer exists. R12: count only.
+        var discardedForDeadOwner = 0
+        for (identity, space) in output.plan.discardedForDeadOwner
+        where outcome.deleted.contains(identity) {
+            guard var cursor = table.cursors[identity] else { continue }
+            cursor.ownerUuid = space
+            table.cursors[identity] = cursor
+            discardedForDeadOwner += 1
+        }
+        if discardedForDeadOwner > 0 {
+            AppLogInfo("[phi-sync] discarded inbound items owned by a deleted Space "
+                       + "kind=\(registration.label) discarded=\(discardedForDeadOwner)")
+        }
         // After a successful M1 claim, remove the retired locally minted cursor (section 8.4.2(4) /
         // R-M3-4a-53). Its never-published predicate guarantees no server state is lost. Do not
         // remove it after rolled-back landing, or the surviving local identity could publish a
@@ -4506,6 +4579,16 @@ actor PhiSyncEngine {
             AppLogError("[phi-sync] owned-item diff domain unavailable kind=\(registration.label) "
                         + "(\(PhiSyncLog.describe(error)))")
             return          // Do not write any cursor-table bytes.
+        }
+        // R-M3-4a-78: count the tombstones this diff newly decided for items of a deleted Space,
+        // which is what heals an account a Space deletion left them live on. R12: count only.
+        let deadOwnerTombstones = diff.cursorUpdates.filter { identity, cursor in
+            cursor.pendingDelete && table.cursors[identity]?.pendingDelete != true
+                && cursor.ownerUuid.map { maps.deadSpaceUuids.contains($0) } == true
+        }.count
+        if deadOwnerTombstones > 0 {
+            AppLogInfo("[phi-sync] tombstoning items owned by a deleted Space "
+                       + "kind=\(registration.label) items=\(deadOwnerTombstones)")
         }
         for (identity, cursor) in diff.cursorUpdates { table.cursors[identity] = cursor }
 
@@ -5742,10 +5825,14 @@ extension OwnedKindRegistration {
                 // failed (R-exec-9). Matching, not pendingApply, is the criterion: unmatched parked
                 // cursors may legitimately require deletion. Successfully persisted matches already
                 // appear in allSyncIds, so passing the full pair set is equivalent.
+                // A deleted Space's cascade hard-deleted its rows; those deletions bypass the owner
+                // gates (R-M3-4a-78). Rows that still exist stay live through allSyncIds.
                 return SyncableOwnedItems.tombstones(
                     BookmarkKind.self, locals: live.map(PhiLocalBookmark.identityOnly),
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
-                    pendingClaims: Set(state.pairs.keys))
+                    pendingClaims: Set(state.pairs.keys),
+                    explicitDeletions: SyncableOwnedItems.deadOwnerDeletions(
+                        table: table, deadOwners: maps.deadSpaceUuids))
             },
             retryParkedClaims: { parked, maps, wallOffsetMs in
                 await retryParkedBookmarkClaims(parked, maps: maps, wallOffsetMs: wallOffsetMs,
@@ -5900,6 +5987,9 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     }
     context.liveLocalParents = Set(state.locals.filter(\.isFolder).compactMap(\.syncId))
     context.deletedSubtree = bookmarkDeletedSubtree(input.tombstoned, state: state)
+    // R-M3-4a-78, inbound half: discard items owned by a deleted Space instead of parking them.
+    context.deadOwners = input.maps.deadSpaceUuids
+    context.liveLocalIdentities = Set(state.identityToGuid.keys)
     out.plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals,
                                        parked: input.parked, table: input.table,
                                        resolve: resolve, context: context)
@@ -6778,9 +6868,13 @@ private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: 
         domain.append(row)
     }
     // Pins have no matched-but-unpersisted adoption state, so pendingClaims is empty (R-exec-9).
+    // Pins of a deleted Space were hard-deleted by its cascade; those deletions bypass the owner
+    // gates (R-M3-4a-78). Rows that still exist stay live through the full-store domain.
     return SyncableOwnedItems.tombstones(PinKind.self, locals: domain, table: table,
                                          resolve: resolve, scope: scope, nowMs: now,
-                                         pendingClaims: [])
+                                         pendingClaims: [],
+                                         explicitDeletions: SyncableOwnedItems.deadOwnerDeletions(
+                                             table: table, deadOwners: maps.deadSpaceUuids))
 }
 
 /// Incoming pin planning (section 4.4), without section 6 adoption: initial sync unions pins from
@@ -6831,6 +6925,9 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     context.localScope = state.localScope
     context.accountScope = state.accountScope
     context.scopeMovedMidRound = state.scopeMovedMidRound
+    // R-M3-4a-78, inbound half: discard pins owned by a deleted Space instead of parking them.
+    context.deadOwners = input.maps.deadSpaceUuids
+    context.liveLocalIdentities = liveIdentities
     out.plan = SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: input.parked,
                                        table: input.table, resolve: input.maps.resolver,
                                        context: context)

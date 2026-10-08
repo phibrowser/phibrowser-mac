@@ -216,7 +216,7 @@ HOSTED = [
 # block inside a long engine method, re-hosted as the body of a function the harness calls. The
 # block runs from the start marker up to (not including) the end marker.
 SNIPPETS = [
-    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: SpacePullBatch)",
+    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: inout SpacePullBatch)",
      "Sources/Sync/Phi/PhiSyncEngine.swift", r"^    private func pull\(",
      "// Same hash the index builder uses", "flushSpaceObservations(batch)"),
 ]

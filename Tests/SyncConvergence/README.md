@@ -75,8 +75,10 @@ tested without a host at all.
   property reaches: a landing clears `refusedAtMs`, a Space being deleted
   locally is neither updated nor re-created (including a deletion that begins
   between the loop's two reads of the mark), a mapped Space outside the sync
-  view is parked rather than created over, and a tombstone on a later page
-  resolves a Space an earlier page of the same pull introduced.
+  view is parked rather than created over, a tombstone on a later page
+  resolves a Space an earlier page of the same pull introduced, and a
+  tombstone for a Space known only from the owned items that name it is routed
+  rather than dropped, wherever it falls on the page (R-M3-4a-78).
 
 * **SwiftProtobuf — the checkout Xcode already resolved.**
   The build script reads the revision `Phi.xcodeproj`'s `Package.resolved` pins
@@ -476,6 +478,12 @@ and remain the XCTest suites' job:
   (`checkAnEditedChildSurvivesItsFoldersDeletion`): an edited child yields while
   its folder dies, an arrival still naming the dead folder lifts to the Space
   root, and the lifted node satisfies the same reachability invariants.
+  Deleting a Space is checked the same way (R-M3-4a-78, the four
+  `space-deletion.*` groups): the deleting device tombstones the Space's
+  bookmarks and pins from cursor state and a peer lands them; a fresh device
+  discards a parked tree owned by a deleted Space instead of holding it; a
+  racing create into the deleted Space is discarded, not held; and a move to a
+  live Space survives the deletion through A9 or the live-row criterion.
 * Space hide/purge and the 30-day retention lifecycle (Spaces and settings
   therefore have deletes switched off in the model);
 * landing into local storage, dense-order projection and the routing refresh;

@@ -279,7 +279,9 @@ Domain-key lookup failures count toward the round's status: network unavailabili
 authorization and key-envelope failures report Needs attention. Failed rounds
 retain the previous success time, and a later successful round clears the failure.
 Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
-and refused arrivals are exclusions, not pending work.
+and refused arrivals are exclusions, not pending work. Bookmarks and pins of a
+Space deleted on this device are not exclusions: their tombstones are ordinary
+publication work (see "Local Space deletion").
 
 The native snapshot also carries in-memory `SyncNativeDetail` (never persisted, so a
 relaunch starts empty); Chromium snapshots carry none. Per Phi kind (Settings, Spaces,
@@ -773,6 +775,46 @@ early-return guards. The engine marks `pendingDelete` only on a cursor with an
   deleted Space. The check compares against the row's `createdDate`, which for
   a Space landed from the account is the account's `created_at_ms`, so it is a
   guard, not a proof.
+- **The Space's bookmarks and pins are tombstoned too (R-M3-4a-78).** The
+  cascade hard-deletes them in the same transaction, and their owner Space then
+  fails both §4.7 owner gates (unmapped once the mapping is dropped, ineligible
+  while it remains), which used to suppress every item tombstone: the account
+  kept them live forever and a fresh device parked them behind the dead Space.
+  Bookmark and pin publication now passes `deadOwnerDeletions` as the diff's
+  explicit deletions: every item cursor with an `entityId`, a `reconciled`
+  baseline and no `deletedAtMs` whose `ownerUuid` names a Space in
+  `PhiSpaceSyncTable.deletedSyncUuids` (`pendingDelete`, `deletedAtMs` or
+  `purgedAtMs`). These bypass only the owner gates; the row must still be
+  absent, so a row that survives (a hidden Space on a receiving device, a failed
+  cascade) is never tombstoned, and "cascade first, intent second" still holds.
+  The set comes from durable cursor state, not from the delete event, so the
+  next publication round sends them (child before folder, at most 250 per kind
+  per round), a crash before that round loses nothing, and a device that deleted
+  a Space before this rule shipped tombstones the items it left behind, as long
+  as it still holds their cursors (the retention cascade drops them 30 days
+  after the Space's own deletion). A move to a live Space made concurrently on
+  another device survives: once it lands the row is live again and its owner
+  refreshes to the new Space; if this device decided first, A9 cancels the
+  pending deletion for the newer move, and a tombstone built on the stale
+  version conflicts on the server instead of deleting the moved entity.
+- **A deleted owner discards inbound items instead of parking them.** Owned
+  landing passes the same set to `plan`. An inbound bookmark or pin whose owner
+  Space is in it, directly or through a folder discarded with it, is resolved by
+  what this device holds: never landed here, it gets a `.delete` step, so its
+  cursor is finalized like a landed tombstone (payload and pending owner
+  cleared, `deletedAtMs` set, `entityId`/version kept) and records the dead
+  Space as `ownerUuid`, so a child arriving in a later round follows its folder
+  rather than lifting to a Space root that is gone; landed here and row gone,
+  the payload is dropped (`supersededByDelete`) and the item's own tombstone
+  above carries the deletion; a live row still parks as before. Parked items
+  are replayed every round, so trees parked by an earlier build resolve on the
+  next round once the Space is known dead. A device that never had the Space
+  learns its uuid from the parked items and this page's arrivals: the pull seeds
+  the Space tag index with their owner uuids and retries the page's unknown
+  tombstones after indexing them, so the Space tombstone records a deleted
+  cursor instead of being dropped as an unknown tag. URL rules are unchanged.
+  Residual: an item another device created in the Space while it was being
+  deleted stays live on the account; every device that lands it discards it.
 - **Known limitation: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round.

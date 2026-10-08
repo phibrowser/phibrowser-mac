@@ -77,6 +77,16 @@ struct OwnedItemPlanContext {
     var deletedSubtree: Set<String> = []
     /// Parent identities resolving to live local rows (A9's second conjunct).
     var liveLocalParents: Set<String> = []
+    /// Space uuids whose Space is deleted on this device (`PhiSpaceSyncTable.deletedSyncUuids`):
+    /// a local deletion queued or finished, or a remote tombstone landed. A Space deletion is
+    /// terminal, so an inbound item owned by one, directly or through a folder deleted with it,
+    /// has nowhere to land and no later round will give it one: plan resolves it instead of
+    /// parking it forever (R-M3-4a-78, inbound half). Bookmarks and pins fill this; URL rules
+    /// leave it empty, so their targets keep the transfer and park rules of §8.4.4.
+    var deadOwners: Set<String> = []
+    /// Identities a live local row claims, including rows in a hidden Space. A dead-owner item
+    /// with a live row keeps today's parking: a delete step would hard-delete that row.
+    var liveLocalIdentities: Set<String> = []
     /// Local/account pin scopes; bookmarks pass nil for both. Two nonnil unequal
     /// values trigger §7.3: no plan steps and all inbound entities parked.
     var localScope: PinnedTabScope? = nil
@@ -212,6 +222,12 @@ struct OwnedItemPlan {
     /// Zero when no cycle was broken.
     var cycleStampMs: Int64 = 0
     var supersededByDelete: Int
+    /// Inbound items this device never landed whose owner Space is deleted here, mapped to that
+    /// Space uuid (R-M3-4a-78, inbound half). Each also has a `.delete` step, so landing finalizes
+    /// its cursor exactly like a landed tombstone: no payload, no pending owner, `deletedAtMs`
+    /// set, entityId/version kept. The caller records the Space as the cursor's `ownerUuid`, so a
+    /// child arriving after its folder was discarded is discarded too instead of lifted.
+    var discardedForDeadOwner: [String: String] = [:]
     var cancelledDeletes: Set<String>
     /// Identity to harvested protocol entityId/version, even for discarded entities.
     var harvest: [String: (entityId: String, version: Int64)]
@@ -467,6 +483,9 @@ private enum OwnerState {
     /// Owner resolved outside the module: eligible Space, mapped Profile, or live local parent row.
     case external
     case unresolved
+    /// The owner Space is deleted on this device, directly or through a parent folder that went
+    /// with it. Carries that Space uuid (R-M3-4a-78, inbound half).
+    case dead(String)
 }
 
 enum SyncableOwnedItems {
@@ -659,15 +678,21 @@ enum SyncableOwnedItems {
     /// remint the local row as an unrelated create. Never exempt all pendingApply:
     /// unmatchable rows edited/deleted during retry must remain deletable.
     ///
-    /// explicitDeletions is the seventh argument and rules' second tombstone
-    /// source (R-M3-4a-78). Ordinary owner gates protect followers. A user Space
-    /// delete removes SpaceModel in the same transaction while its mapping remains,
-    /// making eligibility false and suppressing every rule tombstone. Explicit
-    /// user-intent soft deletions bypass only the two owner gates, preserving
+    /// explicitDeletions is the seventh argument and the second tombstone source
+    /// (R-M3-4a-78). Ordinary owner gates protect followers. A user Space delete
+    /// removes SpaceModel and hard-deletes the Space's bookmarks and pins in the
+    /// same cascade while its mapping remains (then is dropped), making the owner
+    /// unmapped or ineligible and suppressing every tombstone of its items.
+    /// Explicit deletion decisions bypass only the two owner gates, preserving
     /// the three criteria, pendingClaims exemption, and cursor bookkeeping.
+    /// Two origins feed it: URL rules pass their soft-deleted rows, and bookmarks
+    /// and pins pass `deadOwnerDeletions` -- items whose owner Space is deleted on
+    /// this device. The live-row criterion still applies, so an item whose row
+    /// survives (a hidden Space here, a failed cascade) is never tombstoned.
     /// The set must represent deletion decisions, not missing rows (R-M3-4a-85):
-    /// retention purge follows remote deletion, hard-deletes rules without
-    /// deletedDate, and never enters this set.
+    /// rule retention purge follows remote deletion, hard-deletes rules without
+    /// deletedDate, and never enters this set. A Space deletion is such a
+    /// decision for every item it owns, wherever it was decided.
     static func tombstones<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                              table: PhiOwnedItemTable, resolve: OwnerResolver,
                                              scope: PinnedTabScope?,
@@ -755,6 +780,28 @@ enum SyncableOwnedItems {
         }
         return OwnedItemTombstoneResult(identities: identities, cursorUpdates: cursorUpdates,
                                         deferred: deferredDeletions)
+    }
+
+    /// Bookmark and pin `explicitDeletions` (R-M3-4a-78, outbound half): every published,
+    /// landed, not yet deleted item whose last known owner names a Space deleted on this device
+    /// (`deadOwners` = `PhiSpaceSyncTable.deletedSyncUuids`). Derived from durable cursor state,
+    /// not from the delete event, so a device that deleted a Space before this rule existed still
+    /// tombstones the items it left live on the account, and a round lost to a crash or a failed
+    /// commit is simply recomputed. `tombstones` still requires the row to be absent here.
+    ///
+    /// A concurrent move to another Space is not lost: once it lands, the live row refreshes
+    /// `ownerUuid` to the new Space; if this device decided first, A9 in `plan` cancels the
+    /// pending deletion for a newer move, and the server's version check makes a tombstone
+    /// built on a stale version conflict instead of deleting the moved entity.
+    static func deadOwnerDeletions(table: PhiOwnedItemTable, deadOwners: Set<String>) -> Set<String> {
+        guard !deadOwners.isEmpty else { return [] }
+        var out: Set<String> = []
+        for (identity, cursor) in table.cursors {
+            guard !cursor.entityId.isEmpty, cursor.reconciled != nil, cursor.deletedAtMs == nil,
+                  let owner = cursor.ownerUuid, deadOwners.contains(owner) else { continue }
+            out.insert(identity)
+        }
+        return out
     }
 
     // MARK: - Derived yield predicate (C4 direction i)
@@ -974,8 +1021,16 @@ enum SyncableOwnedItems {
             // whose own arrival cancels ITS deletion this round keeps its children.
             if context.tombstonedIdentities.contains(uuid)
                 || table.cursors[uuid]?.deletedAtMs != nil
-                || table.cursors[uuid]?.pendingDelete == true { return .lift }
+                || table.cursors[uuid]?.pendingDelete == true {
+                // A folder that died with its Space takes its children along: the Space root a
+                // lift would land them in is gone too (R-M3-4a-78, inbound half).
+                if let space = table.cursors[uuid]?.ownerUuid, context.deadOwners.contains(space) {
+                    return .dead(space)
+                }
+                return .lift
+            }
             if context.liveLocalParents.contains(uuid) { return .external }
+            if context.deadOwners.contains(uuid) { return .dead(uuid) }
             if resolve.localSpaceId(uuid) != nil { return resolve.isEligibleSpace(uuid) ? .external : .unresolved }
             if resolve.localProfileId(uuid) != nil { return .external }
             return .unresolved
@@ -1134,17 +1189,24 @@ enum SyncableOwnedItems {
         // §8.4.4 locals (8b-3): α populates in section 6, β in the following A9/L1 branch.
         var parkedTombstonesOut: Set<String> = []
         var yieldedTombstones: Set<String> = []
+        var discardedForDeadOwner: [String: String] = [:]
+        // Every identity resolved above as dead this round, discarded or superseded, so a child
+        // later in topological order follows its folder instead of parking behind it.
+        var deadThisRound: [String: String] = [:]
 
         for item in ordered {
             let identity = item.identity
             var landingParent: String?
             var wasLifted = false
             var blockedBy: String?
+            var deadOwner: String?
             for owner in K.ownerUuids(of: item.entity) {
                 switch classify(owner) {
                 case .item(let parent):
                     if landedIdentities.contains(parent) {
                         landingParent = parent
+                    } else if let space = deadThisRound[parent] {
+                        deadOwner = space      // The parent resolved as dead above, this round
                     } else {
                         blockedBy = owner      // The parent is parked, refused, or cyclic
                     }
@@ -1155,8 +1217,38 @@ enum SyncableOwnedItems {
                     continue
                 case .unresolved:
                     blockedBy = owner
+                case .dead(let space):
+                    deadOwner = space
                 }
-                if blockedBy != nil { break }
+                if blockedBy != nil || deadOwner != nil { break }
+            }
+
+            // R-M3-4a-78, inbound half: the owner Space is deleted here and never comes back
+            // (a soft-deleted Space uuid is never resurrected), so parking would hold the item
+            // forever. Three outcomes, by what this device holds for the identity:
+            if let deadOwner {
+                deadThisRound[identity] = deadOwner
+                if context.liveLocalIdentities.contains(identity) || context.pairs[identity] != nil {
+                    // A live row (a hidden Space here): keep today's parking. A delete step would
+                    // hard-delete that row; the retention purge or the deleting device's own
+                    // tombstone removes it, and the parked payload resolves once the row is gone.
+                    blockedBy = deadOwner
+                } else if table.cursors[identity]?.reconciled != nil
+                            || table.cursors[identity]?.pendingDelete == true {
+                    // This device landed it and its row is gone with the Space: the outbound diff
+                    // owns that deletion (`deadOwnerDeletions`). Discard the payload; the version
+                    // harvested above is what that tombstone needs.
+                    supersededByDelete += 1
+                    continue
+                } else {
+                    // Never landed here: discard the payload and finalize the cursor the way a
+                    // landed tombstone does, keeping the harvested entityId/version.
+                    discardedForDeadOwner[identity] = deadOwner
+                    steps.append(OwnedItemApplyStep(identity: identity, kind: .delete,
+                                                    newParentUuid: nil, newRank: nil,
+                                                    payload: nil))
+                    continue
+                }
             }
 
             if let blockedBy {
@@ -1411,6 +1503,7 @@ enum SyncableOwnedItems {
         return OwnedItemPlan(steps: sorted, parked: parkedOut, refused: refused, lifted: lifted,
                              cyclesBroken: cyclesBroken, cycleStampMs: cycleStampMs,
                              supersededByDelete: supersededByDelete,
+                             discardedForDeadOwner: discardedForDeadOwner,
                              cancelledDeletes: cancelledDeletes, harvest: harvest,
                              mustRepublish: mustRepublish,
                              // RR9-15: normal returns must carry both sets. Per-identity α parking

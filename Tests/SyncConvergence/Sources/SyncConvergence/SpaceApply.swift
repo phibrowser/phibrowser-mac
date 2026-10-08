@@ -366,12 +366,46 @@ extension SpaceApplyHost {
         var tagIndex: [String: String] = [:]         // the pull's entry index knew nothing of it
         var page1 = SpacePullBatch()
         page1.decoded = [(uuid: "sync-new", entity: applyEntity("sync-new"), entityId: "srv-n", version: 1)]
-        extendTagIndex(&tagIndex, with: page1)
+        extendTagIndex(&tagIndex, with: &page1)
         var page2 = SpacePullBatch()
         let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("sync-new"))
         routeSpaceEntity(PhiRemoteEntity(entityId: "srv-n", clientTagHash: hash, version: 2,
                                          ciphertext: Data(), deleted: true),
                          key: SymmetricKey(size: .bits256), tagIndex: tagIndex, into: &page2)
         return page2.tombstones.map(\.uuid)
+    }
+}
+
+// MARK: - R-M3-4a-78: a tombstone for a Space this device never had
+
+/// A fresh device knows a deleted Space's uuid only from the items it owns. Its tombstone, whether
+/// it is routed before or after those items on the same page, must still reach the Space tombstone
+/// pass (which records a deleted cursor) instead of being dropped as an unknown tag; a tombstone no
+/// owner names is still dropped.
+func checkATombstoneForANeverSeenSpaceIsRouted(report: Report) {
+    let routed = runToCompletion { () async -> ([String], Int) in
+        let host = SpaceApplyHost(access: await applyAccess(), nowMs: applyNowMs)
+        return await host.routeATombstoneBeforeItsOwnedItems()
+    }
+    report.check("spaces.pull.a-tombstone-for-a-space-known-only-from-its-items-is-routed",
+                 routed.0 == ["sync-dead"] && routed.1 == 0,
+                 "routed tombstones \(routed.0); still unknown \(routed.1)")
+    report.markPassed("spaces.pull.a-tombstone-for-a-space-known-only-from-its-items-is-routed")
+}
+
+extension SpaceApplyHost {
+    /// One page: the Space tombstone is routed first, then the page's owned arrivals name the Space.
+    func routeATombstoneBeforeItsOwnedItems() -> ([String], Int) {
+        var tagIndex: [String: String] = [:]
+        var page = SpacePullBatch()
+        for uuid in ["sync-dead", "sync-nobody"] {
+            let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
+            routeSpaceEntity(PhiRemoteEntity(entityId: "srv-" + uuid, clientTagHash: hash, version: 9,
+                                             ciphertext: Data(), deleted: true),
+                             key: SymmetricKey(size: .bits256), tagIndex: tagIndex, into: &page)
+        }
+        page.ownedOwnerUuids = ["sync-dead", "bookmark-folder"]
+        extendTagIndex(&tagIndex, with: &page)
+        return (page.tombstones.map(\.uuid), page.unknownTombstones.count)
     }
 }

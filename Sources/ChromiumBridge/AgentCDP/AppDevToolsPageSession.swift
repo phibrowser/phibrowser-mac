@@ -59,7 +59,7 @@ final class AppDevToolsPageSession: @unchecked Sendable {
     private var timeoutItem: DispatchWorkItem?
 
     private static let wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-    private static let maxFrameBytes = 8 * 1024 * 1024
+    private let maxMessageBytes: Int
 
     /// How long one write may wait for a DevTools server that has stopped
     /// reading. Shorter than the agent channel's equivalent: the peer here is
@@ -72,8 +72,10 @@ final class AppDevToolsPageSession: @unchecked Sendable {
     /// fd, `upgradeFailed` when the target doesn't exist.
     @MainActor
     static func open(targetId: String,
-                     timeout: TimeInterval = 10) async throws -> AppDevToolsPageSession {
-        try await dial(endpoint: "/devtools/page/\(targetId)", timeout: timeout)
+                     timeout: TimeInterval = 10,
+                     maxMessageBytes: Int = 8 * 1024 * 1024) async throws -> AppDevToolsPageSession {
+        try await dial(endpoint: "/devtools/page/\(targetId)", timeout: timeout,
+                       maxMessageBytes: maxMessageBytes)
     }
 
     /// Dials the browser-level endpoint instead of a page's. Only the browser
@@ -213,7 +215,8 @@ final class AppDevToolsPageSession: @unchecked Sendable {
 
     @MainActor
     private static func dial(endpoint: String,
-                             timeout: TimeInterval) async throws -> AppDevToolsPageSession {
+                             timeout: TimeInterval,
+                             maxMessageBytes: Int = 8 * 1024 * 1024) async throws -> AppDevToolsPageSession {
         var fds: [Int32] = [-1, -1]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else {
             throw SessionError.transportUnavailable
@@ -226,13 +229,14 @@ final class AppDevToolsPageSession: @unchecked Sendable {
             Darwin.close(appFD)
             throw SessionError.transportUnavailable
         }
-        let session = AppDevToolsPageSession(fd: appFD)
+        let session = AppDevToolsPageSession(fd: appFD, maxMessageBytes: maxMessageBytes)
         try await session.upgrade(endpoint: endpoint, timeout: timeout)
         return session
     }
 
-    private init(fd: Int32) {
+    private init(fd: Int32, maxMessageBytes: Int) {
         self.fd = fd
+        self.maxMessageBytes = maxMessageBytes
         self.queue = DispatchQueue(label: "com.phibrowser.cdp.appsession.\(fd)")
         let flags = fcntl(fd, F_GETFL, 0)
         _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
@@ -263,7 +267,7 @@ final class AppDevToolsPageSession: @unchecked Sendable {
     }
 
     func close() {
-        queue.async { [weak self] in self?.teardown() }
+        queue.async { self.teardown() }
     }
 
     // MARK: - Handshake
@@ -290,9 +294,9 @@ final class AppDevToolsPageSession: @unchecked Sendable {
     private func startReadSource() {
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.onReadable() }
-        source.setCancelHandler { [weak self] in
-            guard let self else { return }
-            Darwin.close(self.fd)
+        let socketFD = fd
+        source.setCancelHandler {
+            Darwin.close(socketFD)
         }
         readSource = source
         source.resume()
@@ -405,12 +409,13 @@ final class AppDevToolsPageSession: @unchecked Sendable {
                 offset = 4
             } else if len == 127 {
                 guard buffer.count >= 10 else { return }
-                var v = 0
-                for i in 0..<8 { v = (v << 8) | Int(buffer[buffer.startIndex + 2 + i]) }
-                len = v
+                var v: UInt64 = 0
+                for i in 0..<8 { v = (v << 8) | UInt64(buffer[buffer.startIndex + 2 + i]) }
+                guard v <= UInt64(maxMessageBytes) else { fail(.connectionClosed); return }
+                len = Int(v)
                 offset = 10
             }
-            if len > Self.maxFrameBytes { fail(.connectionClosed); return }
+            if len > maxMessageBytes { fail(.connectionClosed); return }
             // Server frames MUST NOT be masked (RFC 6455 §5.1).
             guard !masked else { fail(.connectionClosed); return }
             guard buffer.count >= offset + len else { return }
@@ -430,6 +435,10 @@ final class AppDevToolsPageSession: @unchecked Sendable {
         case 0xa:                                   // pong
             break
         case 0x0:                                   // continuation
+            guard payload.count <= maxMessageBytes - fragData.count else {
+                fail(.connectionClosed)
+                return
+            }
             fragData.append(contentsOf: payload)
             if fin { dispatchMessage(opcode: fragOpcode, data: fragData); fragData = Data() }
         default:                                    // text (0x1) / binary (0x2)

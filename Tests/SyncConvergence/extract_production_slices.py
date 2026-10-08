@@ -133,6 +133,10 @@ VERBATIM = [
     ]),
     ("Sources/Sync/Phi/PhiSyncProtocolClient.swift", [
         (r"^enum PhiSyncEntity\b", True),
+        (r"^struct PhiRemoteEntity\b", True),
+    ]),
+    ("Sources/Sync/Keys/SpaceSyncMappingManager.swift", [
+        (r"^enum SpaceSyncMappingError\b", True),
     ]),
     ("Sources/UserInterface/Preferences/PhiPreferences.swift", [
         (r"^extension UserDefaults \{", True),
@@ -171,6 +175,12 @@ NAMESPACED = [
         (r"^    static func normalizedHost\b", True),
         (r"^    static func normalizedPathPrefix\b", True),
     ]),
+    ("extension LocalStore", "Sources/LocalStorage/LocalStore.swift", [
+        (r"^    static let defaultProfileId\b", False),
+    ]),
+    ("extension LocalStore", "Sources/LocalStorage/LocalStore+Space.swift", [
+        (r"^    static let defaultSpaceId\b", False),
+    ]),
     ("enum PhiSpaceSyncState", "Sources/Sync/Phi/PhiSpaceSyncState.swift", [
         (r"^    nonisolated static let retentionMs\b", False),
     ]),
@@ -184,6 +194,31 @@ NAMESPACED = [
         (r"^    enum GeneralSettings\b", True),
         (r"^    enum ThemeSettings\b", True),
     ]),
+]
+
+# (synthesized head, source file, [(member pattern, has_body)]) for engine members.
+#
+# The Space apply pass and the pull's tag routing are actor methods of PhiSyncEngine, which
+# cannot be compiled outside the app. They are re-hosted verbatim in an extension of the
+# harness's `SpaceApplyHost` actor (SpaceApply.swift), which supplies the few engine members they
+# read. `private` is dropped from each member's own head so the harness can call it; nothing
+# else in the text changes.
+HOSTED = [
+    ("extension SpaceApplyHost", "Sources/Sync/Phi/PhiSyncEngine.swift", [
+        (r"^    private struct SpacePullBatch\b", True),
+        (r"^    private struct SpaceRoundCounters\b", True),
+        (r"^    private func routeSpaceEntity\(", True),
+        (r"^    private func applySpaces\(", True),
+    ]),
+]
+
+# (function head, source file, enclosing member pattern, start marker, end marker): a statement
+# block inside a long engine method, re-hosted as the body of a function the harness calls. The
+# block runs from the start marker up to (not including) the end marker.
+SNIPPETS = [
+    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: SpacePullBatch)",
+     "Sources/Sync/Phi/PhiSyncEngine.swift", r"^    private func pull\(",
+     "// Same hash the index builder uses", "flushSpaceObservations(batch)"),
 ]
 
 HEADER = """// GENERATED -- do not edit, do not commit.
@@ -215,6 +250,26 @@ def main() -> None:
         chunks.append(head + " {\n")
         for pattern, body in members:
             chunks.append(slice_declaration(path, pattern, body) + "\n")
+        chunks.append("}\n")
+
+    for head, relative, members in HOSTED:
+        path = root / relative
+        chunks.append(f"\n// MARK: - {relative} -> {head}\n")
+        chunks.append(head + " {\n")
+        for pattern, body in members:
+            chunks.append(re.sub(r"^(\s*)private ", r"\1", slice_declaration(path, pattern, body), count=1) + "\n")
+        for fn, snippet_file, enclosing, start_marker, end_marker in SNIPPETS:
+            if snippet_file != relative:
+                continue
+            method = slice_declaration(path, enclosing, True)
+            start = method.find(start_marker)
+            end = method.find(end_marker, start)
+            if start == -1 or end == -1:
+                raise SystemExit(
+                    f"{path}: the block between '{start_marker}' and '{end_marker}' is gone.\n"
+                    "Update Tests/SyncConvergence/extract_production_slices.py to match."
+                )
+            chunks.append(fn + " {\n        " + method[start:end].rstrip() + "\n    }\n")
         chunks.append("}\n")
 
     out.parent.mkdir(parents=True, exist_ok=True)

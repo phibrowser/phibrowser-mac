@@ -42,16 +42,21 @@ struct OverlayToastView: View {
             }
 
             if let action = toast.action {
-                Button {
-                    action.handler()
-                    OverlayToastCenter.shared.dismiss(id: toast.id)
-                } label: {
-                    Text(action.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .overlayToastPrimaryStyle()
+                if action.isBordered {
+                    OverlayToastBorderedActionButton(action: action, toastID: toast.id, toastCenter: toastCenter)
+                        .fixedSize()
+                } else {
+                    Button {
+                        action.handler()
+                        OverlayToastCenter.shared.dismiss(id: toast.id)
+                    } label: {
+                        Text(action.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .overlayToastPrimaryStyle()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("overlayToast.action")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("overlayToast.action")
             }
         }
     }
@@ -134,6 +139,48 @@ private struct OverlayToastNaturalWidthKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct OverlayToastBorderedActionButton: NSViewRepresentable {
+    let action: OverlayToastAction
+    let toastID: UUID
+    let toastCenter: OverlayToastCenter
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action, toastID: toastID, toastCenter: toastCenter)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: action.title, target: context.coordinator,
+                              action: #selector(Coordinator.performAction(_:)))
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.setAccessibilityIdentifier("overlayToast.action")
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        nsView.title = action.title
+        context.coordinator.action = action
+        context.coordinator.toastID = toastID
+    }
+
+    final class Coordinator: NSObject {
+        var action: OverlayToastAction
+        var toastID: UUID
+        let toastCenter: OverlayToastCenter
+
+        init(action: OverlayToastAction, toastID: UUID, toastCenter: OverlayToastCenter) {
+            self.action = action
+            self.toastID = toastID
+            self.toastCenter = toastCenter
+        }
+
+        @MainActor @objc func performAction(_ sender: NSButton) {
+            action.handler()
+            toastCenter.dismiss(id: toastID)
+        }
     }
 }
 

@@ -110,6 +110,12 @@ extension LocalStore {
                                  createdDate: Date?, in context: ModelContext) throws {
         // Spaces from every profile share one strip order.
         let existing = try context.fetch(FetchDescriptor<SpaceModel>())
+        // `spaceId` is unique, so inserting a duplicate would silently overwrite the existing row
+        // (profile binding and order reset, bookmark root orphaned). No caller relies on that: UI
+        // creation passes a fresh UUID, and sync lands an existing row through its update branch.
+        guard !existing.contains(where: { $0.spaceId == spaceId }) else {
+            throw LocalStoreWriteError.spaceAlreadyExists
+        }
         let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
         let space = SpaceModel(
             spaceId: spaceId,

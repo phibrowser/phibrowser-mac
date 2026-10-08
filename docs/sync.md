@@ -338,12 +338,15 @@ What the pane shows, as a contract:
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round
   clears it. Held items alone produce no line.
+- **Details layout.** Details groups the browser Profiles under a Profiles row,
+  with one indented row per Profile showing its status, followed by the Phi data
+  row and its indented per-kind rows.
 - **Per-kind rows.** Inside Details the Phi data context lists one row per
   supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs, URL rules): the
   received and sent counts of the kind's most recent sync with changes, with how
   long ago that sync was, and the waiting-to-send and held counts only when they
-  are non-zero. There is no Profiles row and no per-category Chromium row until
-  those have their own numbers; no unsupported category is shown as available.
+  are non-zero. Profile rows have no counts and there is no per-category Chromium
+  row until those have their own numbers; no unsupported category is shown as available.
 - **Never shown.** Only categorized problems and counts reach the pane. It never
   shows internal error text, HTTP status numbers, identifiers, names, URLs or
   hosts, or any other user content.
@@ -364,13 +367,15 @@ What the pane shows, as a contract:
   otherwise it announces the category of a problem recorded since the tap, or
   "Sync did not finish" when there is none, and a refusal as could not start. The
   same text, except for a finished sync, is shown as one line under the status row
-  until the next tap. A failing sync ends once every context has stayed settled on
+  until the next tap, unless it is the category the Last problem line already
+  shows. A failing sync ends once every context has stayed settled on
   the failure for a few seconds, or once this Mac's native sync has stayed offline
   for a few seconds, instead of after a minute; if it recovers within that minute,
   the success is still recorded. A request dropped because sync stopped or became
   unavailable ends silently.
 - **Load errors.** A failed load of the devices waiting for approval is shown inside
-  the Devices section and cleared by the next successful load.
+  the Devices section and cleared by the next successful load. When the device list
+  also failed, only the device-list card shows the error, so it appears once.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone

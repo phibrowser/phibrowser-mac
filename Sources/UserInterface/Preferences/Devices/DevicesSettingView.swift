@@ -225,7 +225,8 @@ struct DevicesSettingView: View {
                 if let problem = viewModel.nativeDetail?.lastProblem {
                     hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
                 }
-                if let outcome = viewModel.syncNowOutcome, let text = syncNowFailureText(outcome.result) {
+                if let outcome = viewModel.syncNowOutcome, !repeatsLastProblem(outcome.result),
+                   let text = syncNowFailureText(outcome.result) {
                     errorText(text)
                 }
             } control: {
@@ -253,14 +254,23 @@ struct DevicesSettingView: View {
                 : NSLocalizedString("sync.status.detailsCollapsed", value: "Collapsed", comment: "Sync settings - VoiceOver value of the Details disclosure while per-context status is hidden"))
 
             if isStatusDetailsExpanded {
-                ForEach(viewModel.requiredIDs.sorted(), id: \.self) { id in
+                // Profiles are grouped under their own header row, indented like the kind rows
+                // under Phi data, so each Profile row reads as a Profile.
+                let profileIDs = viewModel.requiredIDs.filter { $0 != "phi" }.sorted()
+                if !profileIDs.isEmpty {
                     Divider()
-                    SettingsDetailRow(viewModel.contextTitle(id)) {
-                        Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
-                            .font(.system(size: 12))
-                            .themedForeground(.textSecondary)
+                    SettingsDetailRow(NSLocalizedString("sync.status.profiles", value: "Profiles", comment: "Sync settings - group row in Details above the sync status of each browser profile on this Mac")) {
+                        EmptyView()
                     }
-                    if id == "phi", let detail = viewModel.nativeDetail {
+                    ForEach(profileIDs, id: \.self) { id in
+                        contextRow(id)
+                            .padding(.leading, 16)
+                    }
+                }
+                if viewModel.requiredIDs.contains("phi") {
+                    Divider()
+                    contextRow("phi")
+                    if let detail = viewModel.nativeDetail {
                         ForEach(SyncKind.allCases, id: \.self) { kind in
                             kindRow(kind, status: detail.kinds[kind])
                         }
@@ -268,6 +278,22 @@ struct DevicesSettingView: View {
                 }
             }
         }
+    }
+
+    /// One sync context's name and status in Details.
+    private func contextRow(_ id: String) -> some View {
+        SettingsDetailRow(viewModel.contextTitle(id)) {
+            Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
+                .font(.system(size: 12))
+                .themedForeground(.textSecondary)
+        }
+    }
+
+    /// A failed Sync now whose category is the one the Last problem line already shows adds
+    /// nothing, so it is not repeated under it; it is still announced.
+    private func repeatsLastProblem(_ result: DevicesSettingViewModel.SyncNowOutcome.Result) -> Bool {
+        guard case .failed(let category?) = result else { return false }
+        return viewModel.nativeDetail?.lastProblem?.category == category
     }
 
     /// Sync now in the status row's control slot. The progress indicator keeps its space while
@@ -398,7 +424,8 @@ struct DevicesSettingView: View {
             if !viewModel.pending.isEmpty {
                 SettingsDetailCard { pendingSection }
             }
-            if let error = viewModel.pendingLoadError {
+            // Both loads fail the same way; the device-list card below already says it.
+            if let error = viewModel.pendingLoadError, viewModel.devicesLoadError == nil {
                 errorText(error)
             }
             if let error = viewModel.devicesLoadError {

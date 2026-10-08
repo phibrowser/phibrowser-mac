@@ -107621,6 +107621,17 @@
         }
       }
     },
+    "sync.status.profiles" : {
+      "comment" : "Sync settings - group row in Details above the sync status of each browser profile on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiles"
+          }
+        }
+      }
+    },
     "sync.status.syncNow" : {
       "comment" : "Sync settings - button that asks this Mac to sync all content now",
       "localizations" : {

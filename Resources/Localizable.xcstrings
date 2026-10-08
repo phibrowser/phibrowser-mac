@@ -106834,6 +106834,28 @@
         }
       }
     },
+    "sync.status.detailsCollapsed" : {
+      "comment" : "Sync settings - VoiceOver value of the Details disclosure while per-context status is hidden",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapsed"
+          }
+        }
+      }
+    },
+    "sync.status.detailsExpanded" : {
+      "comment" : "Sync settings - VoiceOver value of the Details disclosure while it shows per-context status",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expanded"
+          }
+        }
+      }
+    },
     "sync.status.initial" : {
       "comment" : "First sync is receiving account data",
       "localizations" : {
@@ -106889,6 +106911,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "初次同步進行中"
+          }
+        }
+      }
+    },
+    "sync.status.kind.bookmarks" : {
+      "comment" : "Sync settings - per-kind status row for synced bookmarks and folders",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmarks"
+          }
+        }
+      }
+    },
+    "sync.status.kind.pinnedTabs" : {
+      "comment" : "Sync settings - per-kind status row for synced pinned tabs",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned tabs"
+          }
+        }
+      }
+    },
+    "sync.status.kind.settings" : {
+      "comment" : "Sync settings - per-kind status row for synced app settings",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        }
+      }
+    },
+    "sync.status.kind.spaces" : {
+      "comment" : "Sync settings - per-kind status row for synced Spaces",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spaces"
+          }
+        }
+      }
+    },
+    "sync.status.kind.urlRules" : {
+      "comment" : "Sync settings - per-kind status row for synced URL rules, the rules that open matching URLs in a chosen Space",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL rules"
+          }
+        }
+      }
+    },
+    "sync.status.kindCountsList" : {
+      "comment" : "Sync settings - joins count phrases of one kind of content, such as Received 2 and Sent 1, into one line; %1$@ is the phrases so far, %2$@ the next phrase",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "sync.status.kindCountsWithTime" : {
+      "comment" : "Sync settings - one kind of content's counts followed by when its most recent sync with changes happened; %1$@ is the counts, such as Received 2 · Sent 1, %2$@ a relative time, such as 5 min. ago",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "sync.status.kindHeld" : {
+      "comment" : "Sync settings - how many synced items of one kind of content are held on this Mac and not applied yet, for example because they could not be read; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Held %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Held %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.status.kindNoActivity" : {
+      "comment" : "Sync settings - shown for one kind of content, such as Bookmarks, when no sync since the app started has sent or received changes of that kind",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recent changes"
+          }
+        }
+      }
+    },
+    "sync.status.kindPending" : {
+      "comment" : "Sync settings - how many local changes of one kind of content wait to be sent to the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Waiting to send %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Waiting to send %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.status.kindReceived" : {
+      "comment" : "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac received from the account in its most recent sync with changes; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Received %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Received %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.status.kindSent" : {
+      "comment" : "Sync settings - how many changes of one kind of content, such as Bookmarks, this Mac sent to the account in its most recent sync with changes; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sent %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sent %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.status.lastProblem" : {
+      "comment" : "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last problem: %1$@ (%2$@)"
           }
         }
       }
@@ -107249,6 +107462,105 @@
         }
       }
     },
+    "sync.status.problem.offline" : {
+      "comment" : "Sync settings - last sync problem: this Mac could not reach the sync service",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection"
+          }
+        }
+      }
+    },
+    "sync.status.problem.readFailed" : {
+      "comment" : "Sync settings - last sync problem: this Mac could not read its own local data of one kind, such as Bookmarks, to sync it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read data on this Mac"
+          }
+        }
+      }
+    },
+    "sync.status.problem.rejected" : {
+      "comment" : "Sync settings - last sync problem: the sync service did not accept changes sent from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server rejected changes"
+          }
+        }
+      }
+    },
+    "sync.status.problem.resetRequired" : {
+      "comment" : "Sync settings - last sync problem: sync must be set up again before it can continue",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync needs to be reset"
+          }
+        }
+      }
+    },
+    "sync.status.problem.saveFailed" : {
+      "comment" : "Sync settings - last sync problem: this Mac could not store its sync progress",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save sync state on this Mac"
+          }
+        }
+      }
+    },
+    "sync.status.problem.serverError" : {
+      "comment" : "Sync settings - last sync problem: the sync service returned an error",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server error"
+          }
+        }
+      }
+    },
+    "sync.status.problem.signInExpired" : {
+      "comment" : "Sync settings - last sync problem: the account sign-in is no longer valid",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in expired"
+          }
+        }
+      }
+    },
+    "sync.status.problem.unreadable" : {
+      "comment" : "Sync settings - last sync problem: some data from the account could not be read on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some synced data couldn’t be read"
+          }
+        }
+      }
+    },
+    "sync.status.problem.waitingForProfilePairing" : {
+      "comment" : "Sync settings - last sync problem: some synced items wait until a browser profile on this Mac is paired with the account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for a profile to be paired"
+          }
+        }
+      }
+    },
     "sync.status.profile" : {
       "comment" : "Unknown profile display name",
       "extractionState" : "manual",
@@ -107305,6 +107617,105 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定檔"
+          }
+        }
+      }
+    },
+    "sync.status.profiles" : {
+      "comment" : "Sync settings - group row in Details above the sync status of each browser profile on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiles"
+          }
+        }
+      }
+    },
+    "sync.status.syncNow" : {
+      "comment" : "Sync settings - button that asks this Mac to sync all content now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync Now"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowDone" : {
+      "comment" : "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync finished"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowFailed" : {
+      "comment" : "Sync settings - shown under the sync status when this Mac refused to start the sync the user requested with Sync Now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t start sync. Try again later."
+          }
+        }
+      }
+    },
+    "sync.status.syncNowIncomplete" : {
+      "comment" : "Sync settings - shown under the sync status, and announced by VoiceOver, when a sync the user started with Sync Now ended without finishing and no specific problem is known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync did not finish"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowInProgress" : {
+      "comment" : "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a sync runs or a requested sync waits",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync in progress"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowQueued" : {
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits for a sync already running",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for current sync…"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowStartingShortly" : {
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync will start shortly…"
+          }
+        }
+      }
+    },
+    "sync.status.syncNowWaitingProfiles" : {
+      "comment" : "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits until every browser profile reports its sync status",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for all profiles to be available"
           }
         }
       }

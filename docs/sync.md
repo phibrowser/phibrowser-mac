@@ -169,14 +169,42 @@ invalidates outstanding observations when membership changes.
 Only startup, membership changes, an explicit pane reload, failed status, or
 known stale success evidence (five minutes) may request a coordinated round.
 All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. A queued explicit reload preserves the observed phase and
+with an active round. The one exception is a Sync now request while the native
+participant (`Participant.isNative`) reports Offline: it skips the interval and
+dispatches as soon as the participants are settled, so the tap fails within seconds
+instead of waiting behind the interval that the pane-open request and automatic
+retries keep pushing forward. The pane-open request and automatic demand never skip it. A queued explicit reload preserves the observed phase and
 last common time until dispatch; it does not invalidate a completed barrier.
 Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
 existing local-change and invalidation schedulers continue to own normal work.
 A requested round pulls native data and refreshes all Profile namespaces through
 the existing account-wide `notifyPhiSyncInvalidation` catch-up (both Profile UUID
-and type list empty; a nonempty UUID with empty types is a no-op).
+and type list empty; a nonempty UUID with empty types is a no-op). The native
+participant does not start either itself: it asks the running
+`PhiSyncInvalidationCoordinator` for a catch-up, whose pull performs both, so helper,
+SSE and fallback-timer pulls share one coalesced, single-flight pull. A request made
+while a pull is running is served by one follow-up pull. The participant refuses
+(the helper reports Rejected) when the coordinator is absent or stopped, in addition
+to the pairing, key, account and bridge-support gates.
+
+`requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
+semantics, joins an observation in progress and then observes once more, so a
+request recorded during a poll is never left behind, and returns the report's
+`SyncRequestState`. `Report.request` describes that request only; the pane-open
+request and automatic demand never appear in it. It is In flight (with the round's
+start) while a round that a Sync now request started, or joined after the tap, is
+active; Queued while a Sync now request waits, with the reason Unobservable (a
+participant is missing or Checking), Busy (Initial sync or Syncing) or Rate limited
+(with the earliest dispatch time); Rejected after an adapter refused a dispatch that
+carried a Sync now request, until the next tap or accepted dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
+to Idle. A queued request dispatches on the helper's own poll. The helper's
+`ExplicitRequestPolicy` decides only explicit requests while a participant is
+unobservable: `.waitForAllObservable` (the default) keeps them queued;
+`.dispatchToObservable` dispatches once every observable participant is settled,
+still sends the request to every participant and keeps the unobservable one in the
+completion barrier, so such a round expires without a common time and without an
+error. Automatic demand always waits for every participant.
 
 All required participants remain in the barrier, including lazy Profiles that
 have not been loaded. Missing reads and Checking snapshots are unobservable, not
@@ -194,7 +222,22 @@ reports Needs attention only when all engines claim Up to date without fresh
 completion evidence. Checking, Initial sync and Syncing remain their observed
 states, and real engine failures retain their existing error state. A previous
 timeout never overrides later missing status or healthy work. Retry waits at least
-another 60 seconds and until every context is observable and settled. Rejected requests have the same rate limit and cannot be
+another 60 seconds and until every context is observable and settled. A round also ends
+early, for the request state, when the summary stays Offline or Needs attention with every
+participant settled and sampled after dispatch (a revision newer than at dispatch; a
+Chromium Profile's revision moves on every read) for at least one poll interval (3 seconds)
+of time, measured by timestamps, not by the number of observations. A round a Sync now
+request started or joined also ends early when the native participant alone has reported
+Offline since dispatch for that same interval, without waiting for Chromium Profiles, which
+can keep reporting Syncing or Checking without a connection. Offline is never reported as
+Rejected, so it does not turn the summary into Needs attention. Its request baseline is
+kept until the round's timeout: if every context then reports a newer success, the common
+time is recorded exactly as the running round would have, and no demand remains; after the
+timeout the baseline is dropped without recording anything. Automatic demand after an early
+end waits until the round's timeout plus the minimum interval, the time it would have waited
+after expiry, so failing sync is not retried more often; an explicit request needs only the
+minimum interval, and a membership change, ineligibility or a new dispatch clears the kept
+baseline and the extra delay. Rejected requests have the same rate limit and cannot be
 completed by unrelated success samples. Rebuilding the stack stops the old helper.
 
 Only when every required context is Up to date with a success newer than its
@@ -238,7 +281,46 @@ retain the previous success time, and a later successful round clears the failur
 Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
 and refused arrivals are exclusions, not pending work. Bookmarks and pins of a
 Space deleted on this device are not exclusions: their tombstones are ordinary
-publication work (see "Local Space deletion"). Local
+publication work (see "Local Space deletion").
+
+The native snapshot also carries in-memory `SyncNativeDetail` (never persisted, so a
+relaunch starts empty); Chromium snapshots carry none. Per Phi kind (Settings, Spaces,
+Bookmarks, Pinned tabs, URL rules; no Profiles yet) it holds received and sent counts of the
+most recent round in which that kind had activity, with that round's time, and the pending
+(waiting to send) and held (parked) counts from the kind's table after the last round that
+visited it. Settings count changed keys; Space and owned kinds count landings and published
+entities plus tombstones. Owned pending is the live edits the round did not publish (outside
+the slice budget, or sent and not applied, a conflict counted once after its scoped retry) plus
+the pending-delete cursors, each counted once; a round whose publication pass did not run keeps
+the last known count. Held uses the same conditions that make the round's inbound work pending:
+Spaces parked, held for a Profile or tombstone-parked; owned items parked, tombstone-parked or
+waiting for a split partner; settings unreadable. Kinds a round does not read keep their values:
+owned kinds while the Space gate is shut or whose table the round did not load. The Space table
+is read every round, so Space pending and held follow it even with the gate shut (with no
+activity counts). Every detail change is a status update, so it bumps the revision. The last
+problem is one `SyncProblemCategory` with an optional kind and a time, chosen by precedence
+(reset required, save failed on this Mac, couldn't read data on this Mac, sign-in expired,
+offline, rejected by server, server error, unreadable remote data). HTTP 401/403 map to sign-in
+expired, other HTTP, key-envelope and unattributed outbound failures to server error, exhausted
+conflicts and rejected commits to rejected by server, an owned kind's local read failure to
+couldn't read data (with the kind), unreadable tags to unreadable remote data without a kind
+(the Space table quarantines owned kinds' tags too). It is replaced by the next failing round,
+kept through rounds that neither fail nor succeed, and cleared only by a final Up to date. Held
+items alone produce no category. Invariant, covered by the status harness: a round that ends
+Needs attention always has a non-zero held count or a problem category. The detail has no string field, so it cannot
+carry names, identifiers, URLs, hosts, error text or status numbers.
+
+The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now
+button calls `requestSyncNow()` directly, not through the pane's 3-second poll, whose
+in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
+phase and `Report.request` to the control (Queued Busy: waiting for the current sync;
+Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
+Rejected: could not start). While the request is Idle, a Syncing or Initial sync summary
+also disables the button with progress and no hint, so any running sync, not only one the
+request started, blocks a tap; Checking does not. The pane adds its own unlock and pairing
+check. The view alone
+turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
+no user-facing strings. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including
@@ -248,6 +330,54 @@ loaded user Profiles; it never creates Profiles or sync services. It combines
 transport/auth/crypto/controller state, initial downloads, cycle evidence,
 active-delegate pending counts, and a final backend pending-work fence. The old
 transport-only local-data count API cannot be used for full-sync status.
+
+What the pane shows, as a contract:
+
+- **States.** The status row shows Not started (unpaired), Checking, Initial sync,
+  Syncing, Up to date (with the common completion time), Offline or Needs
+  attention. There is no Paused state, and the account email is not shown.
+- **Last problem.** When this Mac's native sync has recorded a problem, the status
+  row adds one line: a localized category (for example No connection, Sign-in
+  expired, Server error) and a relative time. The next fully successful round
+  clears it. Held items alone produce no line.
+- **Details layout.** Details groups the browser Profiles under a Profiles row,
+  with one indented row per Profile showing its status, followed by the Phi data
+  row and its indented per-kind rows.
+- **Per-kind rows.** Inside Details the Phi data context lists one row per
+  supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs, URL rules): the
+  received and sent counts of the kind's most recent sync with changes, with how
+  long ago that sync was, and the waiting-to-send and held counts only when they
+  are non-zero. Profile rows have no counts and there is no per-category Chromium
+  row until those have their own numbers; no unsupported category is shown as available.
+- **Never shown.** Only categorized problems and counts reach the pane. It never
+  shows internal error text, HTTP status numbers, identifiers, names, URLs or
+  hosts, or any other user content.
+- **Sync now.** The button appears in the status row's trailing control slot only
+  when pairing is complete and the key is unlocked; an unpaired (not set up) or
+  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key or account
+  gates. A tap is coalesced with a round already running and is subject
+  to the shared 60-second minimum interval, except that a tap while this Mac's
+  native sync is offline starts at once. While any sync runs (Syncing or Initial
+  sync), and while the user's request waits or runs, the button is disabled and
+  shows progress. Opening the pane and background sync never report a failure.
+  Why a request waits (the current sync, starting shortly, or every profile
+  reporting status) is the button's tooltip and VoiceOver hint; no hint text sits
+  beside the button. The progress indicator keeps its space and the button keeps
+  its full title, so the status row does not move.
+- **Ending a requested sync.** When it ends, VoiceOver announces "Sync finished"
+  only if this Mac recorded a newer coordinated success than at the tap;
+  otherwise it announces the category of a problem recorded since the tap, or
+  "Sync did not finish" when there is none, and a refusal as could not start. The
+  same text, except for a finished sync, is shown as one line under the status row
+  until the next tap, unless it is the category the Last problem line already
+  shows. A failing sync ends once every context has stayed settled on
+  the failure for a few seconds, or once this Mac's native sync has stayed offline
+  for a few seconds, instead of after a minute; if it recovers within that minute,
+  the success is still recorded. A request dropped because sync stopped or became
+  unavailable ends silently.
+- **Load errors.** A failed load of the devices waiting for approval is shown inside
+  the Devices section and cleared by the next successful load. When the device list
+  also failed, only the device-list card shows the error, so it appears once.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone

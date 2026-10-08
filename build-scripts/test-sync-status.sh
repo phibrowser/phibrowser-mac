@@ -23,8 +23,10 @@ fixture = fixture.replace('/* KEY_API_ERROR */', method('enum KeyAPIError:',
 for placeholder, name in [('SPACE_OUTCOME', 'applySpaceCommitOutcome'),
                           ('OWNED_OUTCOME', 'applyOwnedCommitOutcome'),
                           ('FINISH_STATUS', 'finishStatusRound'),
+                          ('ROUND_DETAIL', 'roundStatusDetail'),
                           ('STATUS_ERROR', 'noteStatusError')]:
     fixture = fixture.replace('    /* ' + placeholder + ' */', method('    private func ' + name + '('))
+fixture = fixture.replace('    /* RESET_ROUND */', method('    private static var resetRequiredRound:'))
 # Keep the production retry decision and its recursive call, replacing only the wire/storage setup.
 for placeholder, name, comment in [
     ('SPACE_RETRY', 'pushSpaces', '        // After one pull, retry only conflicted UUIDs'),

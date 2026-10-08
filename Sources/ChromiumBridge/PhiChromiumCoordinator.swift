@@ -722,21 +722,23 @@ import SwiftUI
                 guard let self, let engine = builtEngine else { return [] }
                 let profiles = self.syncStatusProfileIDs
                 guard !profiles.isEmpty else { return [] }
-                // The existing bridge interprets only empty UUID + empty types as
-                // catch-up. A nonempty UUID with no types is deliberately a no-op.
+                // The coordinator's catch-up pulls Phi and sends the bridge's account-wide
+                // catch-up (empty UUID + empty types; a nonempty UUID with no types is
+                // deliberately a no-op), sharing one single-flight pull with SSE and the
+                // fallback timer. A stopped coordinator would drop the request, so refuse it.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
                     requestSync: { [weak self] in
                         guard let self, self.phiSyncEngine === engine,
                               AccountController.shared.account === account,
                               self.phiSyncPairingEnabled,
                               self.syncKeyController?.manager.currentARK != nil,
-                              let bridge = ChromiumLauncher.sharedInstance().bridge,
-                              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) else { return false }
-                        Task { await engine.pullOnce() }
-                        bridge.notifyPhiSyncInvalidation?(
-                            forAccount: accountId, profileUUID: "", dataTypeIds: [], excludingClientId: "")
+                              // Built and retired together with `engine`.
+                              let invalidation = self.phiInvalidationCoordinator, invalidation.isRunning,
+                              ChromiumLauncher.sharedInstance().bridge?.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) == true
+                        else { return false }
+                        invalidation.requestCatchUp()
                         return true
-                    }, currentSnapshot: { engine.statusSnapshot })]
+                    }, currentSnapshot: { engine.statusSnapshot }, isNative: true)]
                 participants += profiles.map { id in
                     SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
                                           requestSync: { true }) // Included in the accepted account-wide request above.

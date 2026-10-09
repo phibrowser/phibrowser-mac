@@ -16,9 +16,16 @@ class OmniBoxViewModel: ObservableObject {
     private let chromiumBridge = ChromiumLauncher.sharedInstance().bridge
     private let browserState: BrowserState
     private let searchCoordinator = OmniBoxSearchCoordinator()
+    private let keywordSearchURLBuilder: (String, String) -> String?
+    private let searchEngineSpaceShortcutProvider: () -> Bool
+    @Published private(set) var isSearchEngineSpaceShortcutEnabled = false
     private(set) var preventInlineCompletion: Bool = false
     
     @Published private(set) var canUseTemporaryText = false
+    @Published private(set) var keywordSearchHint: OmniBoxKeywordSearchEngine?
+    @Published private(set) var selectedSearchEngine: OmniBoxKeywordSearchEngine?
+    private var suggestionsQuery: String?
+    private var keywordSearchDestination: (query: String, url: String)?
     
     var opennedFromCurrentTab = false
     /// A bookmark's tab and a pinned tab stand for their stored URL: an
@@ -58,9 +65,23 @@ class OmniBoxViewModel: ObservableObject {
     
     // MARK: - Initialization
     
-    init(configuration: OmniBoxConfiguration = .default, windowState: BrowserState) {
+    init(configuration: OmniBoxConfiguration = .default, windowState: BrowserState,
+         keywordSearchURLBuilder: ((String, String) -> String?)? = nil,
+         searchEngineSpaceShortcutProvider: (() -> Bool)? = nil) {
         self.configuration = configuration
         self.browserState = windowState
+        let bridge = chromiumBridge
+        let windowId = windowState.windowId.int64Value
+        self.keywordSearchURLBuilder = keywordSearchURLBuilder ?? { keyword, query in
+            guard let bridge,
+                  bridge.responds(to: #selector(PhiChromiumBridgeProtocol.keywordSearchURL(forKeyword:query:windowId:))) else { return nil }
+            return bridge.keywordSearchURL(forKeyword: keyword, query: query, windowId: windowId)
+        }
+        self.searchEngineSpaceShortcutProvider = searchEngineSpaceShortcutProvider ?? {
+            guard let bridge,
+                  bridge.responds(to: #selector(PhiChromiumBridgeProtocol.isSearchEngineSpaceShortcutEnabled(forWindowId:))) else { return false }
+            return bridge.isSearchEngineSpaceShortcutEnabled(forWindowId: windowId)
+        }
         setupBindings()
     }
     
@@ -68,6 +89,10 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     // MARK: - Private Setup
+
+    func refreshSearchEngineSpaceShortcut() {
+        isSearchEngineSpaceShortcutEnabled = searchEngineSpaceShortcutProvider()
+    }
     
     private func setupBindings() {
         state.$inputText
@@ -90,11 +115,14 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func handleIncomingSuggestions(_ results: [[String: Any]], for query: String) {
-        guard searchCoordinator.shouldAcceptResponse(forQuery: query) else {
+        guard selectedSearchEngine == nil,
+              query == state.inputText.trimmingCharacters(in: .whitespacesAndNewlines),
+              searchCoordinator.shouldAcceptResponse(forQuery: query) else {
             logOpenTrace(stage: "response-ignored", details: "query=\(query) reason=stale")
             return
         }
         logOpenTrace(stage: "response-received", details: "query=\(query) resultCount=\(results.count)")
+        suggestionsQuery = query
         handleSearchResults(results: results)
     }
     
@@ -204,14 +232,29 @@ class OmniBoxViewModel: ObservableObject {
     func selectNextSuggestion() {
         canUseTemporaryText = true
         state.selectNextSuggestion()
+        updateKeywordSearchHint(selectedIndex: state.selectedIndex)
     }
     
     func selectPreviousSuggestion() {
         canUseTemporaryText = true
         state.selectPreviousSuggestion()
+        updateKeywordSearchHint(selectedIndex: state.selectedIndex)
     }
     
     func handleEnterPressed(commandKeyPressed: Bool = false) {
+        if let engine = selectedSearchEngine {
+            guard !state.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            if let destination = keywordSearchDestination, destination.query == state.inputText {
+                openURL(destination.url, commandKeyPressed: commandKeyPressed)
+                return
+            }
+            guard let url = keywordSearchURLBuilder(engine.keyword, state.inputText), !url.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            openURL(url, commandKeyPressed: commandKeyPressed)
+            return
+        }
         if let selected = state.selectedSuggestion {
             handleNavigationAction(for: selected, commandKeyPressed: commandKeyPressed)
         } else if !state.inputText.isEmpty {
@@ -219,8 +262,85 @@ class OmniBoxViewModel: ObservableObject {
             openURL(url)
         }
     }
+
+    private func canUseKeywordSearchSuggestion(_ suggestion: OmniBoxSuggestion, for input: String) -> Bool {
+        guard let engine = suggestion.keywordSearchEngine,
+              input.count >= configuration.minInputLength else { return false }
+        // Chromium owns keyword matching. While its replacement results are pending,
+        // retain only query-free hints whose literal keyword still matches this input.
+        return suggestionsQuery == input
+            || (suggestion.url.isEmpty && engine.keyword.lowercased().hasPrefix(input.lowercased()))
+    }
+
+    private func updateKeywordSearchHint(selectedIndex: Int, inputText: String? = nil) {
+        let input = (inputText ?? state.inputText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = state.suggestions.indices.contains(selectedIndex) ? state.suggestions[selectedIndex] : nil
+        let suggestion = selected.flatMap { canUseKeywordSearchSuggestion($0, for: input) ? $0 : nil }
+            ?? state.suggestions.first { canUseKeywordSearchSuggestion($0, for: input) }
+        let engine = suggestion?.keywordSearchEngine
+        if keywordSearchHint != engine {
+            keywordSearchHint = engine
+        }
+    }
+
+    var canAcceptKeywordSearchWithSpace: Bool {
+        let input = state.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selectedSearchEngine == nil, isSearchEngineSpaceShortcutEnabled,
+              let suggestion = state.selectedSuggestion,
+              suggestion.type == .searchEngine else { return false }
+        return canUseKeywordSearchSuggestion(suggestion, for: input)
+    }
+
+    @discardableResult
+    func acceptKeywordSearchWithSpace() -> Bool {
+        guard canAcceptKeywordSearchWithSpace else { return false }
+        return acceptKeywordSearch()
+    }
+
+    @discardableResult
+    func acceptKeywordSearch(keyword: String? = nil) -> Bool {
+        guard selectedSearchEngine == nil else { return false }
+        let input = state.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suggestion: OmniBoxSuggestion?
+        if let keyword {
+            suggestion = state.suggestions.first {
+                $0.keywordSearchEngine?.keyword == keyword && canUseKeywordSearchSuggestion($0, for: input)
+            }
+        } else {
+            suggestion = state.selectedSuggestion.flatMap {
+                canUseKeywordSearchSuggestion($0, for: input) ? $0 : nil
+            } ?? state.suggestions.first {
+                $0.keywordSearchEngine == keywordSearchHint && canUseKeywordSearchSuggestion($0, for: input)
+            }
+        }
+        guard let suggestion, let engine = suggestion.keywordSearchEngine else { return false }
+        let query = suggestion.keywordSearchQuery ?? ""
+        keywordSearchDestination = suggestion.url.isEmpty ? nil : (query, suggestion.url)
+        browserState.stopAutoCompletion()
+        searchCoordinator.reset()
+        suggestionsQuery = nil
+        selectedSearchEngine = engine
+        keywordSearchHint = nil
+        canUseTemporaryText = false
+        state.clearSuggestions()
+        state.inputText = query
+        return true
+    }
+
+    @discardableResult
+    func exitKeywordSearchIfEmpty() -> Bool {
+        guard let engine = selectedSearchEngine, state.inputText.isEmpty else { return false }
+        keywordSearchDestination = nil
+        selectedSearchEngine = nil
+        state.inputText = engine.keyword
+        return true
+    }
     
     private func handleNavigationAction(for suggeston: OmniBoxSuggestion, commandKeyPressed: Bool = false) {
+        if let engine = suggeston.keywordSearchEngine, suggeston.url.isEmpty {
+            acceptKeywordSearch(keyword: engine.keyword)
+            return
+        }
         AppLogDebug("omni: handleNavigationAction suggeston: \(suggeston)")
         if shouldCreateInGroupOverview {
             let url = suggeston.url.isEmpty ? URLProcessor.processUserInput(state.inputText) : suggeston.url
@@ -343,6 +463,9 @@ class OmniBoxViewModel: ObservableObject {
         
         // Leave time for the hide animation to finish before resetting state.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.keywordSearchDestination = nil
+            self.selectedSearchEngine = nil
+            self.keywordSearchHint = nil
             self.state.reset()
         }
     }
@@ -358,7 +481,11 @@ class OmniBoxViewModel: ObservableObject {
         opensSubmissionInNewTab = false
         openedFromGroupOverview = false
         searchCoordinator.reset()
+        suggestionsQuery = nil
         openTraceSession = nil
+        keywordSearchDestination = nil
+        selectedSearchEngine = nil
+        keywordSearchHint = nil
         state.reset()
     }
     
@@ -375,8 +502,16 @@ class OmniBoxViewModel: ObservableObject {
     // MARK: - Private Methods
     
     private func handleInputChanged(_ text: String) {
+        guard selectedSearchEngine == nil else {
+            state.clearSuggestions()
+            return
+        }
+        updateKeywordSearchHint(selectedIndex: state.selectedIndex, inputText: text)
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedText.count < configuration.minInputLength {
+            searchCoordinator.reset()
+            suggestionsQuery = nil
+            browserState.stopAutoCompletion()
             state.clearSuggestions()
             return
         }
@@ -394,6 +529,7 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     private func performSearch(for query: String, source: OmniBoxSearchRequestSource) {
+        guard selectedSearchEngine == nil else { return }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedQuery.count >= configuration.minInputLength else {
             state.clearSuggestions()
@@ -418,10 +554,8 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     private func handleSearchResults(results: [[String: Any]]) {
-        let suggestions = results.compactMap { OmniBoxSuggestion(chromiumDic: $0) }
+        let finalSuggestions = results.map { OmniBoxSuggestion(chromiumDic: $0) }
             .filter { !$0.isEmpty && $0.isSupportedType }
-        
-        let finalSuggestions: [OmniBoxSuggestion] = suggestions
 
         // Preserve the user's manual selection (arrow-key navigation) across streamed
         // updates for the same query, otherwise late provider responses would yank the
@@ -430,7 +564,9 @@ class OmniBoxViewModel: ObservableObject {
             && state.selectedIndex >= 0
             && state.selectedIndex < finalSuggestions.count
         let newSelectedIndex: Int
-        if preserveManualSelection {
+        if canUseTemporaryText, let engine = state.selectedSuggestion?.keywordSearchEngine {
+            newSelectedIndex = finalSuggestions.firstIndex { $0.keywordSearchEngine == engine } ?? -1
+        } else if preserveManualSelection {
             newSelectedIndex = state.selectedIndex
         } else if finalSuggestions.first?.allowedToBeDefault == true {
             newSelectedIndex = 0
@@ -438,8 +574,14 @@ class OmniBoxViewModel: ObservableObject {
             newSelectedIndex = -1
         }
 
-        state.suggestions = finalSuggestions
-        state.selectedIndex = newSelectedIndex
+        let suggestionsChanged = state.suggestions != finalSuggestions
+        if suggestionsChanged {
+            state.suggestions = finalSuggestions
+        }
+        updateKeywordSearchHint(selectedIndex: newSelectedIndex)
+        if suggestionsChanged || state.selectedIndex != newSelectedIndex {
+            state.selectedIndex = newSelectedIndex
+        }
 
         logOpenTrace(
             stage: "results-applied",

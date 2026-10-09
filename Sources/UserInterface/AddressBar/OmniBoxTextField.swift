@@ -35,6 +35,8 @@ protocol OmniBoxTextFieldDelegate: AnyObject {
     func omniBoxTextFieldDidReceiveMoveDownEvent(_ textField: OmniBoxTextField) -> Bool
     func omniBoxTextFieldDidReceiveMoveUpEvent(_ textField: OmniBoxTextField) -> Bool
     func omniBoxTextFieldDidReceiveEnterEvent(_ textField: OmniBoxTextField, commandKeyPressed: Bool) -> Bool
+    func omniBoxTextFieldDidReceiveTabEvent(_ textField: OmniBoxTextField) -> Bool
+    func omniBoxTextFieldDidReceiveEmptyBackspaceEvent(_ textField: OmniBoxTextField) -> Bool
 }
 
 class OmniBoxTextField: NSView {
@@ -117,6 +119,16 @@ class OmniBoxTextField: NSView {
         self.appliedInlineCompletionText = nil
         self.stringValue = text
     }
+
+    func updateSearchPlaceholder(engineName: String?) {
+        let placeholder = engineName == nil
+            ? NSLocalizedString("addressBar.input.placeholder", value: "Search or Enter URL", comment: "Address bar - Text field placeholder prompting the user to search or enter a URL")
+            : NSLocalizedString("addressBar.keywordSearch.queryPlaceholder", value: "Search…", comment: "Address bar - Empty query placeholder beside the selected search engine badge")
+        textFiled.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+            .foregroundColor: NSColor.placeholderTextColor,
+            .font: NSFont.systemFont(ofSize: 16)
+        ])
+    }
     
     func selectAll() {
         if let fieldEditor = window?.fieldEditor(true, for: self) {
@@ -126,7 +138,7 @@ class OmniBoxTextField: NSView {
     
     func selectToEnd() {
         if let fieldEditor = window?.fieldEditor(true, for: self) {
-            let length = textFiled.stringValue.count
+            let length = (textFiled.stringValue as NSString).length
             fieldEditor.selectedRange = NSRange(location: length, length: 0)
         }
     }
@@ -139,6 +151,7 @@ extension OmniBoxTextField {
         guard let fieldEditor = window?.fieldEditor(false, for: self) else {
             return
         }
+        guard (fieldEditor as? NSTextView)?.hasMarkedText() != true else { return }
         
         AppLogDebug("[Omnibox] updateSelection inline:\(String(describing: inlineCompletString)), fill:\(String(describing: fillString)), canUseTmp:\(canUseTempString), inlineEnabled:\(inlineCompletionEnabled), originalText:\(originalText)")
         
@@ -294,6 +307,15 @@ extension OmniBoxTextField: NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard control as? NSTextField == self.textFiled else {
             return false
+        }
+        guard !textView.hasMarkedText() else { return false }
+
+        if commandSelector == #selector(NSTextView.insertTab(_:)) {
+            return omniBoxDelegate?.omniBoxTextFieldDidReceiveTabEvent(self) ?? false
+        }
+        if commandSelector == #selector(NSTextView.deleteBackward(_:)), textView.string.isEmpty,
+           omniBoxDelegate?.omniBoxTextFieldDidReceiveEmptyBackspaceEvent(self) == true {
+            return true
         }
         
         let hasInlineCompletion = (inlineCompletionSelection?.length ?? 0) > 0

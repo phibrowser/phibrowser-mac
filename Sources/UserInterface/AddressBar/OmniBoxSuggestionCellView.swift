@@ -29,8 +29,6 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         bg.layer?.cornerRadius = 8
         bg.layer?.cornerCurve = .continuous
         bg.backgroundColor = .clear
-        bg.phi.selectedColor = ThemedColor.themeColor.mapper
-        bg.phi.hoveredColor = ThemedColor.themeColor.opacity(0.16).mapper
         
         bg.hoverStateChanged = { [weak self] hovered in
             self?.isHovered = hovered
@@ -257,6 +255,10 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     // MARK: - Appearance
     
     func updateAppearance() {
+        let engine = suggestion?.keywordSearchEngine
+        let accent = engine?.accentColor ?? .themeColor
+        hoverableBg.phi.selectedColor = accent.mapper
+        hoverableBg.phi.hoveredColor = accent.opacity(0.16).mapper
         let rowView = superview as? NSTableRowView
         let isSelected = rowView?.isSelected ?? false
         let canShowSwitchToTab = showsSwitchToTabHint
@@ -276,11 +278,21 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         
         let isBuiltInIcon: Bool = {
             guard let suggestion else { return false }
-            if suggestion.type == .history { return false }
+            if suggestion.faviconPageURL != nil || suggestion.keywordSearchFaviconURL != nil { return false }
             return suggestion.iconName != nil || suggestion.iconURL == nil || (suggestion.iconURL?.isEmpty ?? false)
         }()
+        if !isBuiltInIcon { iconImageView.contentTintColor = nil }
         
-        if isSelected && isLightMode {
+        if isSelected, engine?.brandColor != nil {
+            // Spotify's bright green needs dark text; other brand fills use white.
+            let foreground: NSColor = engine?.keyword.lowercased() == "spotify.com" ? .black : .white
+            titleLabel.phi.textColor = ThemedColor(foreground).nsColorMapper
+            subtitleLabel.phi.textColor = ThemedColor(foreground.withAlphaComponent(0.85)).nsColorMapper
+            deleteButton.contentTintColor = foreground
+            if isBuiltInIcon {
+                iconImageView.contentTintColor = foreground
+            }
+        } else if isSelected && isLightMode {
             titleLabel.phi.textColor = ThemedColor(.white.withAlphaComponent(0.85)).nsColorMapper
             subtitleLabel.phi.textColor = ThemedColor(.white.withAlphaComponent(0.4)).nsColorMapper
             deleteButton.contentTintColor = .white

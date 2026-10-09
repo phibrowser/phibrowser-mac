@@ -3876,6 +3876,66 @@
         }
       }
     },
+    "addressBar.keywordSearch.placeholder" : {
+      "comment" : "Address bar - Placeholder after selecting a search engine; the placeholder is its name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search %@"
+          }
+        }
+      }
+    },
+    "addressBar.keywordSearch.queryPlaceholder" : {
+      "comment" : "Address bar - Empty query placeholder beside the selected search engine badge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search…"
+          }
+        }
+      }
+    },
+    "addressBar.keywordSearch.suggestionTitle" : {
+      "comment" : "Address bar - Suggestion that selects the named search engine",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search %@"
+          }
+        }
+      }
+    },
+    "addressBar.keywordSearch.tabHint" : {
+      "comment" : "Address bar - Hint to press Tab to search with the named search engine",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab to search %@"
+          }
+        }
+      }
+    },
+    "addressBar.keywordSearch.tabOrSpaceHint" : {
+      "comment" : "Address bar - Hint shown when Tab or Space can select the highlighted search engine; %@ is the engine name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab or Space to search %@"
+          }
+        }
+      }
+    },
     "addressBar.searchIcon.initialAccessibilityLabel" : {
       "comment" : "Address bar - Initial accessibility description for the search icon",
       "extractionState" : "extracted_with_value",

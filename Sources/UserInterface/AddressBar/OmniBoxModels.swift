@@ -24,7 +24,38 @@ enum OmniBoxSuggestionType: String, CaseIterable {
 
 // MARK: - OmniBox Suggestion Model
 
-struct OmniBoxSuggestion {
+struct OmniBoxKeywordSearchEngine: Equatable {
+    let keyword: String
+    let name: String
+
+    // Match the keywords seeded by Chromium, never the user-editable display name.
+    var brandColor: NSColor? {
+        switch keyword.lowercased() {
+        case "x.com", "twitter.com", "wikipedia.org": return NSColor(hex: 0x000000)
+        case "spotify.com": return NSColor(hex: 0x1DB954)
+        case "reddit.com": return NSColor(hex: 0xFF4500)
+        case "youtube.com": return NSColor(hex: 0xFF0000)
+        case "github.com": return NSColor(hex: 0x24292F)
+        case "gmail.com": return NSColor(hex: 0xEA4335)
+        case "docs.google.com", "calendar.google.com": return NSColor(hex: 0x4285F4)
+        case "drive.google.com": return NSColor(hex: 0x34A853)
+        default: return nil
+        }
+    }
+
+    var accentColor: ThemedColor {
+        brandColor.map { ThemedColor($0) } ?? .themeColor
+    }
+
+    init?(dictionary: [String: String]) {
+        guard let keyword = dictionary["keyword"], !keyword.isEmpty,
+              let name = dictionary["name"], !name.isEmpty else { return nil }
+        self.keyword = keyword
+        self.name = name
+    }
+}
+
+struct OmniBoxSuggestion: Equatable {
     let type: OmniBoxSuggestionType
     let title: String
     let subtitle: String?
@@ -40,7 +71,11 @@ struct OmniBoxSuggestion {
     let index: Int
     var inlineCompletionString: String?
     var allowedToBeDefault: Bool = true
-    
+    // Keyword-search metadata from a Chromium autocomplete match.
+    var keywordSearchEngine: OmniBoxKeywordSearchEngine?
+    var keywordSearchQuery: String?
+    var keywordSearchFaviconURL: URL?
+
     init(
         type: OmniBoxSuggestionType,
         title: String,
@@ -75,7 +110,7 @@ struct OmniBoxSuggestion {
         switch type {
         case .url:
             return "globe"
-        case .search, .searchSuggest:
+        case .search, .searchSuggest, .searchEngine:
             return "magnifyingglass"
         case .bookmark:
             return "star.fill"
@@ -121,26 +156,51 @@ struct OmniBoxSuggestion {
         default:
             omniTpye = .url
         }
+        let engine = type == "search-other-engine"
+            ? OmniBoxKeywordSearchEngine(dictionary: [
+                "keyword": chromiumDic["keywordSearchKeyword"] as? String ?? "",
+                "name": chromiumDic["keywordSearchName"] as? String ?? ""
+            ]) ?? (destinationUrl.isEmpty ? nil : OmniBoxKeywordSearchEngine(dictionary: [
+                "keyword": fillString.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? "",
+                "name": description
+            ])) : nil
+        let selectionEngine = destinationUrl.isEmpty ? engine : nil
+        let title = selectionEngine.map {
+            String(format: NSLocalizedString("addressBar.keywordSearch.suggestionTitle", value: "Search %@", comment: "Address bar - Suggestion that selects the named search engine"), $0.name)
+        } ?? contents
         self.init(type: omniTpye,
-                  title: contents,
-                  subtitle: description,
+                  title: title,
+                  subtitle: selectionEngine?.keyword ?? description,
                   url: destinationUrl,
-                  iconName: nil,
+                  iconName: omniTpye == .searchEngine ? "magnifyingglass" : nil,
                   iconURL: iconUrl,
                   index: index ?? -1,
                   relevanceScore: relevance,
                   isStarred: omniTpye == .bookmark,
                   stringToFill: fillString,
                   swapContentsAndDescription: swap,
-                  canDelete: deletable,
+                  canDelete: selectionEngine == nil && deletable,
                   hasTabMatch: tabMatch)
         self.inlineCompletionString = inlineCompletion
-        self.allowedToBeDefault = allowdToBeDefault
+        self.allowedToBeDefault = selectionEngine == nil && allowdToBeDefault
+        self.keywordSearchEngine = engine
+        self.keywordSearchQuery = engine != nil && !destinationUrl.isEmpty ? contents : nil
+        if omniTpye == .searchEngine,
+           let source = chromiumDic["keywordSearchFaviconURL"] as? String,
+           let faviconURL = URL(string: source),
+           let host = faviconURL.host, !host.isEmpty,
+           faviconURL.scheme == "https" || faviconURL.scheme == "http" {
+            self.keywordSearchFaviconURL = faviconURL
+        }
         
     }
     
     var isEmpty: Bool { title.isEmpty && (subtitle?.isEmpty ?? true) }
-    var isSupportedType: Bool { type != .pedal && type != .searchEngine }
+    var isSupportedType: Bool { type != .pedal /*&& type != .searchEngine*/ }
+
+    var faviconPageURL: URL? {
+        type == .history ? URL(string: url) : nil
+    }
 }
 
 extension OmniBoxSuggestion: CustomStringConvertible {
@@ -296,8 +356,8 @@ class OmniBoxState: ObservableObject {
     }
     
     func clearSuggestions() {
-        suggestions = []
-        selectedIndex = -1
+        if !suggestions.isEmpty { suggestions = [] }
+        if selectedIndex != -1 { selectedIndex = -1 }
 
     }
     
@@ -339,7 +399,16 @@ protocol OmniBoxActionDelegate: AnyObject {
 struct OmniSuggestionIconProvier {
     @MainActor
     static func updateImage(for iconImageView: NSImageView, with suggestion: OmniBoxSuggestion, defaultImage: NSImage? = nil) {
-        if suggestion.type == .history, let url = URL(string: suggestion.url) {
+        iconImageView.kf.cancelDownloadTask()
+        if suggestion.type == .searchEngine {
+            iconImageView.contentTintColor = nil
+            iconImageView.kf.setImage(
+                with: suggestion.keywordSearchFaviconURL,
+                placeholder: defaultIcon(for: .searchEngine),
+                options: [.transition(.fade(0.2)), .cacheOriginalImage]
+            )
+        } else if let url = suggestion.faviconPageURL {
+            iconImageView.contentTintColor = nil
             iconImageView.setFavicon(for: url)
         } else if let iconName = suggestion.iconName {
             iconImageView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
@@ -364,7 +433,7 @@ struct OmniSuggestionIconProvier {
             switch type {
             case .url:
                 return "globe"
-            case .search, .searchSuggest:
+            case .search, .searchSuggest, .searchEngine:
                 return "magnifyingglass"
             case .bookmark:
                 return "star.fill"

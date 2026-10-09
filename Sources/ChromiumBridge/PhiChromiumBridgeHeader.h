@@ -1407,6 +1407,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)clearWebsiteCookies:(NSString *)website windowId:(int64_t)windowId;
 
 // Autocomplete
+/// YES means Tab or Space; NO means Tab only for the window profile.
+- (BOOL)isSearchEngineSpaceShortcutEnabledForWindowId:(int64_t)windowId;
+
+/// Expands the selected engine's search template without requesting suggestions.
+/// Returns an empty string for an unavailable engine, empty query, or invalid URL.
+- (NSString *)keywordSearchURLForKeyword:(NSString *)keyword
+                                  query:(NSString *)query
+                               windowId:(int64_t)windowId;
 - (void)requestAutoCompleteSuggestionsForText:(NSString *)text preventInlineAutoComplete:(BOOL)preventInlineAutoComplete windowId:(int64_t)windowId;
 - (void)stopAutoCompleteSuggestions:(int64_t)windowId;
 - (void)selectSuggestionAtLine:(size_t)line

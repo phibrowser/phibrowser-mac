@@ -137,6 +137,41 @@ final class OmniBoxThemeTests: XCTestCase {
         XCTAssertTrue(panel.themeStateProvider === ThemeManager.shared)
     }
 
+    func testReusedEngineRowRestoresThemeColorsForAnUnknownKeyword() throws {
+        func suggestion(keyword: String, name: String) -> OmniBoxSuggestion {
+            OmniBoxSuggestion(chromiumDic: [
+                "type": "search-other-engine", "contents": "music", "description": name,
+                "keywordSearchKeyword": keyword, "keywordSearchName": name,
+                "destinationUrl": "", "fillIntoEdit": "", "line": 0
+            ])
+        }
+        let spotify = suggestion(keyword: "spotify.com", name: "My music")
+        let cell = OmniBoxSuggestionCellView(suggestion: spotify, index: 0, showsSwitchToTabHint: false)
+        let background = try XCTUnwrap(cell.subviews.first as? HoverableView)
+        let red = Theme(id: "engine-red", name: "Red", colorPalette: [.themeColor: ColorPair(.red)])
+        let blue = Theme(id: "engine-blue", name: "Blue", colorPalette: [.themeColor: ColorPair(.blue)])
+
+        cell.configure(with: spotify, index: 0)
+        let brandMapper = try XCTUnwrap(background.phi.selectedColor)
+        XCTAssertEqual(brandMapper[red, .light], NSColor(hex: 0x1DB954))
+        XCTAssertEqual(brandMapper[blue, .dark], NSColor(hex: 0x1DB954))
+
+        // A custom engine named Spotify must not inherit a previously used row's brand.
+        cell.configure(with: suggestion(keyword: "example.com", name: "Spotify"), index: 1)
+        let fallbackMapper = try XCTUnwrap(background.phi.selectedColor)
+        let hoverMapper = try XCTUnwrap(background.phi.hoveredColor)
+        for theme in [red, blue] {
+            for appearance in [Appearance.light, .dark] {
+                let expected = ThemedColor.themeColor.resolve(theme: theme, appearance: appearance)
+                XCTAssertEqual(fallbackMapper[theme, appearance], expected)
+                XCTAssertEqual(hoverMapper[theme, appearance], expected.withAlphaComponent(0.16))
+            }
+        }
+
+        cell.configure(with: suggestion(keyword: "twitter.com", name: "X"), index: 2)
+        XCTAssertEqual(try XCTUnwrap(background.phi.selectedColor)[blue, .dark], NSColor(hex: 0x000000))
+    }
+
     private func drainThemeUpdates() {
         let drained = expectation(description: "Theme updates delivered")
         DispatchQueue.main.async { drained.fulfill() }

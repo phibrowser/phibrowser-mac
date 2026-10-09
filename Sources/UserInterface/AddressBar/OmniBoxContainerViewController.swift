@@ -113,6 +113,9 @@ final class OmniBoxContainerViewController: NSViewController {
     
     private func setupKeyboardMonitoring() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if self?.omniBoxController?.handleKeywordSearchSpaceKeyDown(event) == true {
+                return nil
+            }
             return self?.handleKeyDown(event: event) ?? event
         }
     }
@@ -214,6 +217,7 @@ final class OmniBoxContainerViewController: NSViewController {
     
     
     func showOmniBox(fromAddressBar: Bool, addressView: NSView? = nil) {
+        omniBoxController?.prepareForPresentation()
         self.addressView = addressView
         showFromAddressBar = fromAddressBar && addressView != nil
         needsShowAnimation = true
@@ -222,6 +226,8 @@ final class OmniBoxContainerViewController: NSViewController {
             details: "fromAddressBar=\(fromAddressBar) anchored=\(showFromAddressBar)"
         )
         if !showFromAddressBar {
+            // Reposition on every opening, even when the content size is unchanged.
+            updateOmniBoxFrame()
             omniBoxController?.view.alphaValue = 1
             hasShown = true
         } else {

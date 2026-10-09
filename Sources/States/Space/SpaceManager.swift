@@ -11048,45 +11048,12 @@ final class SpaceWindowSlot: ObservableObject {
             guard !finished, entering == nil else { return }
             entering = controller
             timing?.mark("animation.attach.begin")
-            // A Space never shown in this window has no cached band and, as
-            // a dormant session, no tabs until the Browser spawned one turn
-            // after the switch reports its first tab: its band would slide
-            // in empty and fill ~100 ms later. Hold the leaving band still
-            // until that tab lands (bounded, so a Space with none to come
-            // still moves), then slide the formed rows in.
-            if !interactive, controller.browserState.tabs.isEmpty,
-               SpaceBandSnapshotCache.shared.snapshot(
-                   for: controller.spaceId,
-                   appearanceOf: controller.mainSplitViewController.sidebarViewController.view,
-                   width: bandFrame.width) == nil {
-                timing?.mark("animation.first_tab.wait")
-                var proceeded = false
-                let proceed: () -> Void = { [weak self, weak controller] in
-                    guard !proceeded, let self, let controller, !self.finished else { return }
-                    proceeded = true
-                    self.firstTabCancellable = nil
-                    self.firstTabTimeout?.invalidate()
-                    self.firstTabTimeout = nil
-                    self.timing?.mark("animation.first_tab.ready")
-                    self.beginEntering(controller)
-                }
-                firstTabCancellable = controller.browserState.$tabs
-                    .filter { !$0.isEmpty }
-                    .first()
-                    .receive(on: DispatchQueue.main)
-                    .sink { _ in proceed() }
-                firstTabTimeout = Timer.scheduledTimer(withTimeInterval: Self.firstTabWait, repeats: false) { _ in
-                    proceed()
-                }
-                return
-            }
+            // A Space never shown in this window (no cached band, no tabs
+            // until its spawned Browser reports one) slides in at once and
+            // its rows fill in as the first tab lands, rather than holding
+            // the switch on that Chromium round trip.
             beginEntering(controller)
         }
-
-        /// How long an empty entering band waits for its first tab.
-        private static let firstTabWait: TimeInterval = 0.25
-        private var firstTabCancellable: AnyCancellable?
-        private var firstTabTimeout: Timer?
 
         private func beginEntering(_ controller: SpaceSessionController) {
             if interactive {
@@ -11420,9 +11387,6 @@ final class SpaceWindowSlot: ObservableObject {
             finished = true
             fallbackTimer?.invalidate()
             fallbackTimer = nil
-            firstTabCancellable = nil
-            firstTabTimeout?.invalidate()
-            firstTabTimeout = nil
             restoreLeavingBand()
             enteringTabsCancellable = nil
             enteringStandIn?.removeFromSuperview()
@@ -11449,9 +11413,6 @@ final class SpaceWindowSlot: ObservableObject {
             finished = true
             fallbackTimer?.invalidate()
             fallbackTimer = nil
-            firstTabCancellable = nil
-            firstTabTimeout?.invalidate()
-            firstTabTimeout = nil
             // One transaction for the whole hand-over. The slide's completion
             // block runs outside any transaction, so the first nested commit
             // below (the entering header and pinned strip coming back) would

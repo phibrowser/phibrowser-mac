@@ -60,8 +60,8 @@ leaving Space's, during the band slide — animates a switch; the others snap
 reveals it. The band's Core Animation clock starts one run-loop turn after the
 entering side is prepared, once the strip's pending SwiftUI update has
 committed, so both move on the same frames. A Space never shown in the window
-(no cached band, no tabs yet) holds the leaving band until its first tab lands,
-bounded by `HostedBandSlide.firstTabWait`, instead of sliding an empty band in.
+(no cached band, no tabs yet) slides in without waiting for its first tab; its
+rows fill in when that tab lands.
 
 The shell also owns one `FloatingSidebarHostViewController`: its hover trigger,
 panel container, width and dismissal timers survive Space switches. While the

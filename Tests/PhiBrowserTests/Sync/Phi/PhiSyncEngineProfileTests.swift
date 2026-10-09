@@ -854,4 +854,36 @@ final class PhiSyncEngineProfileTests: XCTestCase {
 
         XCTAssertEqual([UInt8](try published(client, "pu-1").unknownFields.data), [0x20, 0x05])
     }
+
+    /// `created_at_ms` is published from the local Profile row and merged with min() of the
+    /// non-zero values: the earliest device's creation instant wins everywhere.
+    func testTheEarliestCreationInstantWinsOnTheAccount() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 900)]
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        var peer = profileEntity("pu-1", "Work")
+        peer.createdAtMs = 500
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(peer), version: 3)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+        XCTAssertTrue(profileCommits(client).isEmpty, "the later local instant changes nothing")
+
+        // A device that published first, with a later instant, is corrected by the earlier one.
+        let other = FakePhiProfileAccess()
+        other.profiles = [PhiLocalProfile(profileId: "Q1", displayName: "Home", createdAtMs: 300)]
+        other.mappings = ["Q1": "pu-2"]
+        var late = profileEntity("pu-2", "Home")
+        late.createdAtMs = 800
+        client.seed(tagHash: hash("pu-2"), ciphertext: try ciphertext(late), version: 4)
+        let second = makeEngine(profiles: other, store: drainedStore(), client: client)
+        await second.setSpaceSyncEnabled(true)
+        await second.pullOnce()
+
+        XCTAssertEqual(try published(client, "pu-2").createdAtMs, 300)
+        XCTAssertEqual(try published(client, "pu-1").createdAtMs, 500)
+    }
 }

@@ -1366,6 +1366,9 @@ extension LocalStore {
             return nil
         }
         let profile = ProfileModel(profileId: profileId)
+        // The Profile entity's `created_at_ms` (docs/sync.md, "Profile entity"). Rows created
+        // before this was recorded keep nil, which publishes 0, "unknown".
+        profile.createdDate = Date()
         context.insert(profile)
         return profile
     }

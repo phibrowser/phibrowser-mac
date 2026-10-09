@@ -1115,7 +1115,8 @@ Each account Profile is one Phi entity, `PhiProfileEntity` (kind 6 of data type
 2000), tagged `phi-profile:<profile_uuid>` where `profile_uuid` is the account
 uuid from `sync.profileGlobalUuids`, never the Chromium basename. The payload
 carries `name` (LWW `PhiSettingValue`) and `created_at_ms` (`min()` of non-zero
-values); fields 4-7 are reserved. `SyncableProfiles.merge` starts from `remote`
+values; a Profile row records its creation date when it is created, and rows
+created before that publish 0, "unknown"); fields 4-7 are reserved. `SyncableProfiles.merge` starts from `remote`
 like every other kind, so a newer client's reserved fields survive. Deleting an
 account Profile is the ordinary entity tombstone on its tag; the server is
 unchanged. The key registry (`/keys/v1/profiles`) still holds every envelope and

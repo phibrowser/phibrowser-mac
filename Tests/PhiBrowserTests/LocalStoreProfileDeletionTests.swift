@@ -67,4 +67,20 @@ final class LocalStoreProfileDeletionTests: XCTestCase {
         XCTAssertTrue(tabs.contains("other-pin"))
         XCTAssertFalse(profiles.contains("P2"))
     }
+
+    /// A new Profile row records when it was created, which the Profile entity publishes as
+    /// `created_at_ms`; an existing row without one is left alone (0 stays "unknown").
+    func testANewProfileRowRecordsItsCreationDate() async throws {
+        let store = try makeStore()
+        try await store.performBackgroundWriteAndWaitThrowing { context in
+            context.insert(ProfileModel(profileId: "Old"))
+        }
+        let before = Date()
+
+        let created = try XCTUnwrap(try store.profile(with: "New", createIfNeeded: true))
+        let existing = try XCTUnwrap(try store.profile(with: "Old", createIfNeeded: true))
+
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(created.createdDate), before.addingTimeInterval(-1))
+        XCTAssertNil(existing.createdDate)
+    }
 }

@@ -848,6 +848,13 @@ the field decodes with it nil (the rule
 without Space edit-time stamping ignores the key and stamps Space edits at publish time
 again, which is the earlier publish-time behavior — correct, just coarser.
 
+Every park of a server entity also records its `entityId` and version on the
+cursor. The shared marker moves past a parked entity, so the retry replays it
+with the cursor's version and no later pull brings that version back. Without
+it the landed Space keeps the older version and every commit from this device
+conflicts. A parked Space is never projected, so the newer version cannot
+publish a stale snapshot while it waits.
+
 The last case guards a create over an existing row. The apply pass finds the
 landing target in `currentSpaces()`, which leaves out a Space whose Profile has
 no sync mapping, but validates the mapped local id against unfiltered storage.

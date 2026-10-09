@@ -11,6 +11,7 @@ final class NotificationCardManagerTests: XCTestCase {
         var responses: [(response: String, requestId: String)] = []
         var errors: [(error: String, requestId: String)] = []
         var broadcasts: [(type: String, payload: String)] = []
+        var agentEvents: [(type: String, payload: String, principalId: String)] = []
 
         func sendResponse(_ response: String, requestId: String) {
             responses.append((response, requestId))
@@ -22,6 +23,10 @@ final class NotificationCardManagerTests: XCTestCase {
 
         func broadcast(type: String, payload: String) {
             broadcasts.append((type, payload))
+        }
+
+        func broadcastToAgent(type: String, payload: String, principalId: String) {
+            agentEvents.append((type, payload, principalId))
         }
     }
 
@@ -116,6 +121,128 @@ final class NotificationCardManagerTests: XCTestCase {
             cards.fulfill()
         }
         wait(for: [cards], timeout: 1.0)
+    }
+
+    func testAgentNotificationRequiresAuthenticatedDirectSession() {
+        let manager = NotificationCardManager()
+        for context in [
+            agentContext(principalId: nil),
+            agentContext(principalId: ""),
+            agentContext(senderId: "extension"),
+        ] {
+            XCTAssertEqual(manager.handleAgentRequest(context: context),
+                           #"{"ok":false,"error":"agent_session_required"}"#)
+        }
+        XCTAssertEqual(manager.count, 0)
+        XCTAssertEqual(ExtensionMessageRouter.shared.handle(
+            type: "notification.show", payload: "{}", requestId: "test", senderId: "cdp"),
+            #"{"ok":false,"error":"agent_session_required"}"#)
+    }
+
+    func testAgentNotificationRejectsInvalidPayloads() {
+        let manager = NotificationCardManager()
+        for payload in [
+            "not json", "{}",
+            #"{"title":" ","message":"Body"}"#,
+            #"{"title":"Title","message":""}"#,
+            #"{"title":"Title","message":"Body","buttonTitle":1}"#,
+            #"{"title":"Title","message":"Body","expiresInSeconds":0}"#,
+            #"{"title":"Title","message":"Body","expiresInSeconds":86401}"#,
+            #"{"title":"Title","message":"Body","expiresInSeconds":1.5}"#,
+        ] {
+            XCTAssertEqual(manager.handleAgentRequest(context: agentContext(payload: payload)),
+                           #"{"ok":false,"error":"invalid_params"}"#)
+        }
+        XCTAssertEqual(manager.count, 0)
+    }
+
+    func testAgentNotificationAcknowledgesAndRoutesDecisionOnlyToOwner() throws {
+        let messenger = TestMessenger()
+        let manager = NotificationCardManager(now: { 1000 }, messenger: messenger)
+        let reply = manager.handleAgentRequest(context: agentContext(payload:
+            #"{"title":"Ready","message":"Review the result","buttonTitle":"Review","expiresInSeconds":60}"#))
+        let id = try XCTUnwrap(decode(reply)?["notificationId"] as? String)
+        XCTAssertEqual(manager.latestTaskId, id)
+        XCTAssertTrue(messenger.agentEvents.isEmpty)
+
+        let published = expectation(description: "agent card published")
+        DispatchQueue.main.async {
+            guard let card = manager.latestCard else {
+                XCTFail("Expected an agent card")
+                published.fulfill()
+                return
+            }
+            XCTAssertEqual(card.title, "Ready")
+            XCTAssertEqual(card.message, "Review the result")
+            XCTAssertEqual(card.buttonTitle, "Review")
+            XCTAssertEqual(card.expiresAt, 61_000)
+            manager.decide(card: card, decision: .accept)
+            manager.decide(card: card, decision: .reject)
+            XCTAssertEqual(messenger.agentEvents.count, 1)
+            XCTAssertEqual(messenger.agentEvents.first?.principalId, "agent-a")
+            XCTAssertEqual(messenger.agentEvents.first?.type, "notification.response")
+            XCTAssertEqual(self.decode(messenger.agentEvents[0].payload)?["notificationId"] as? String, id)
+            XCTAssertEqual(self.decode(messenger.agentEvents[0].payload)?["decision"] as? String, "accept")
+            XCTAssertTrue(messenger.broadcasts.isEmpty)
+            XCTAssertEqual(manager.count, 0)
+            published.fulfill()
+        }
+        wait(for: [published], timeout: 1)
+    }
+
+    func testAgentNotificationsHaveUniqueIDsAndEvictionNotifiesOriginalOwner() throws {
+        let messenger = TestMessenger()
+        let manager = NotificationCardManager(maxQueueSize: 1, now: { 1000 }, messenger: messenger)
+        let first = manager.handleAgentRequest(context: agentContext())
+        let second = manager.handleAgentRequest(context: agentContext(principalId: "agent-b"))
+        let firstId = try XCTUnwrap(decode(first)?["notificationId"] as? String)
+        let secondId = try XCTUnwrap(decode(second)?["notificationId"] as? String)
+        XCTAssertNotEqual(firstId, secondId)
+        XCTAssertEqual(manager.latestTaskId, secondId)
+        XCTAssertEqual(messenger.agentEvents.count, 1)
+        XCTAssertEqual(messenger.agentEvents.first?.principalId, "agent-a")
+        XCTAssertEqual(decode(messenger.agentEvents[0].payload)?["notificationId"] as? String, firstId)
+        XCTAssertEqual(decode(messenger.agentEvents[0].payload)?["decision"] as? String, "timeout")
+        XCTAssertTrue(messenger.broadcasts.isEmpty)
+    }
+
+    func testHidingAgentCardDoesNotDecideAndRejectUsesScopedEvent() {
+        let messenger = TestMessenger()
+        let manager = NotificationCardManager(now: { 1000 }, messenger: messenger)
+        _ = manager.handleAgentRequest(context: agentContext())
+        let published = expectation(description: "agent card published")
+        DispatchQueue.main.async {
+            guard let card = manager.latestCard else {
+                XCTFail("Expected an agent card")
+                published.fulfill()
+                return
+            }
+            XCTAssertEqual(card.buttonTitle, "Run")
+            XCTAssertEqual(card.expiresAt, 301_000)
+            manager.hideCard()
+            XCTAssertTrue(messenger.agentEvents.isEmpty)
+            XCTAssertEqual(manager.count, 1)
+            manager.decide(card: card, decision: .reject)
+            XCTAssertEqual(messenger.agentEvents.count, 1)
+            XCTAssertEqual(self.decode(messenger.agentEvents[0].payload)?["decision"] as? String, "reject")
+            XCTAssertTrue(messenger.broadcasts.isEmpty)
+            published.fulfill()
+        }
+        wait(for: [published], timeout: 1)
+    }
+
+    private func agentContext(
+        payload: String = #"{"title":"Title","message":"Body"}"#,
+        senderId: String = "cdp",
+        principalId: String? = "agent-a"
+    ) -> ExtensionMessageContext {
+        ExtensionMessageContext(type: "notification.show", payload: payload,
+                                requestId: "agent-test", senderId: senderId,
+                                driverPrincipalId: principalId)
+    }
+
+    private func decode(_ json: String) -> [String: Any]? {
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
     }
 
     private func makeEnvelope(

@@ -304,16 +304,60 @@ final class PageScreenshotServiceTests: XCTestCase {
         }
     }
 
-    func testCDPCaptureRejectsOriginalPixelLimitsBeforeScaling() async throws {
-        for (width, height, dpr) in [(16385, 1, 2), (1, 16385, 2), (8001, 8000, 1)] {
+    func testCDPCaptureScalesWideRetinaPagesBeforeApplyingPixelLimits() async throws {
+        for width in [1719, 1904] {
+            let fixture = CDPFixture(data: try jpeg().base64EncodedString())
+            fixture.size = ["x": 0, "y": 0, "width": width, "height": 9519]
+            fixture.dpr = 2
+            _ = try await capture(fixture)
+            let clip = try XCTUnwrap(fixture.calls.first { $0.method == "Page.captureScreenshot" }?.params["clip"] as? [String: Double])
+            let scale = try XCTUnwrap(clip["scale"])
+            XCTAssertEqual(clip["width"], Double(width))
+            XCTAssertEqual(clip["height"], 9519)
+            XCTAssertEqual(scale, 16384.0 / (9519 * 2), accuracy: 0.0000001)
+            XCTAssertLessThanOrEqual(ceil(Double(width) * 2 * scale) * ceil(9519 * 2 * scale), 64_000_000)
+            XCTAssertEqual(fixture.closeCount, 1)
+        }
+    }
+
+    func testCDPCaptureScalesOversizedPagesWithinRoundedOutputBudget() async throws {
+        for (width, height, dpr) in [(16385, 1, 2), (1, 16385, 2), (8001, 8000, 1), (10000, 10000, 2), (20000, 10000, 1), (10000, 20000, 1)] {
             let fixture = CDPFixture(data: try jpeg().base64EncodedString())
             fixture.size = ["x": 0, "y": 0, "width": width, "height": height]
             fixture.dpr = dpr
-            do { _ = try await capture(fixture); XCTFail("Accepted oversized page") }
-            catch AppDevToolsPageSession.SessionError.commandFailed(let message) { XCTAssertEqual(message, "Page is too large to copy as one screenshot") }
-            XCTAssertFalse(fixture.calls.contains { $0.method == "Page.captureScreenshot" })
+            _ = try await capture(fixture)
+            let clip = try XCTUnwrap(fixture.calls.first { $0.method == "Page.captureScreenshot" }?.params["clip"] as? [String: Double])
+            let scale = try XCTUnwrap(clip["scale"])
+            let outputWidth = ceil(Double(width * dpr) * scale)
+            let outputHeight = ceil(Double(height * dpr) * scale)
+            XCTAssertGreaterThan(scale, 0)
+            XCTAssertLessThan(scale, 1)
+            XCTAssertLessThanOrEqual(outputWidth, 16_384)
+            XCTAssertLessThanOrEqual(outputHeight, 16_384)
+            XCTAssertLessThanOrEqual(outputWidth * outputHeight, 64_000_000)
+            XCTAssertEqual(clip["width"], Double(width))
+            XCTAssertEqual(clip["height"], Double(height))
             XCTAssertEqual(fixture.closeCount, 1)
         }
+    }
+
+    func testCDPCapturePreservesUnitScaleAtPixelBudget() async throws {
+        let fixture = CDPFixture(data: try jpeg().base64EncodedString())
+        fixture.size = ["x": 0, "y": 0, "width": 8000, "height": 8000]
+        fixture.dpr = 1
+        _ = try await capture(fixture)
+        let clip = try XCTUnwrap(fixture.calls.first { $0.method == "Page.captureScreenshot" }?.params["clip"] as? [String: Double])
+        XCTAssertEqual(clip["scale"], 1)
+    }
+
+    func testCDPCaptureRejectsOverflowingPhysicalDimensions() async throws {
+        let fixture = CDPFixture(data: try jpeg().base64EncodedString())
+        fixture.size = ["x": 0, "y": 0, "width": Double.greatestFiniteMagnitude, "height": 100]
+        fixture.dpr = 2
+        do { _ = try await capture(fixture); XCTFail("Accepted overflowing dimensions") }
+        catch AppDevToolsPageSession.SessionError.commandFailed {}
+        XCTAssertFalse(fixture.calls.contains { $0.method == "Page.captureScreenshot" })
+        XCTAssertEqual(fixture.closeCount, 1)
     }
 
     func testCDPCaptureChecksEveryDocumentIdentityFieldAndCloses() async throws {

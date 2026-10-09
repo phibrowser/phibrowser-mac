@@ -106,6 +106,7 @@ final class ApplyFakeSpaceAccess: PhiSpaceLocalAccess {
     }
     func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
         writes.append("mapSpace")
+        if mapsThatFail > 0 { mapsThatFail -= 1; throw LandingFailed() }
         mappings[spaceId] = uuid
     }
     func dropSpaceMapping(forSpaceId spaceId: String) {
@@ -130,10 +131,23 @@ final class ApplyFakeSpaceAccess: PhiSpaceLocalAccess {
     }
     func update(spaceId: String, name: String?, colorHex: String?,
                 iconName: String?, createdDate: Date?) async throws { writes.append("update") }
-    func rebind(spaceId: String, toProfileId profileId: String) async throws { writes.append("rebind") }
+    /// A rebind is recorded but moves nothing while this is above zero, the way
+    /// `SpaceManager.applyRemoteRebind` returns normally for a parked ghost window it only
+    /// materializes. Otherwise the row moves onto the Profile.
+    var rebindsThatDoNotTakeEffect = 0
+    func rebind(spaceId: String, toProfileId profileId: String) async throws {
+        writes.append("rebind")
+        if rebindsThatDoNotTakeEffect > 0 { rebindsThatDoNotTakeEffect -= 1; return }
+        guard let index = spaces.firstIndex(where: { $0.spaceId == spaceId }) else { return }
+        spaces[index].profileId = profileId
+    }
+    struct LandingFailed: Error {}
+    var landingsThatFail = 0
+    var mapsThatFail = 0
     func applyThemeState(spaceId: String, themeId: String?,
                          opacityLight: Double?, opacityDark: Double?) async throws {
         writes.append("applyThemeState")
+        if landingsThatFail > 0 { landingsThatFail -= 1; throw LandingFailed() }
     }
     func applyOrder(_ orderedSpaceIds: [String]) async throws {}
     func hide(spaceId: String) async throws { writes.append("hide") }
@@ -346,6 +360,66 @@ func checkAMappedSpaceOutsideTheSyncViewIsParked(report: Report) {
                  !result.1.contains("create") && cursor?.pendingApply != nil && cursor?.version == 6,
                  "writes \(result.1); pendingApply \(cursor?.pendingApply != nil)")
     report.markPassed("spaces.apply.a-mapped-space-outside-the-sync-view-is-parked")
+}
+
+// MARK: - A parked entity keeps the server version it arrived with
+
+/// The shared marker moves past a parked entity, so its retry replays it with the cursor's version
+/// and no later pull brings the server's version back. Each late park -- a rebind that did not take
+/// effect, a landing that threw, a mapping write that failed -- must therefore record the version and
+/// entity id when it parks, or the landed Space keeps the older version and every later commit from
+/// this device conflicts.
+func checkAParkedEntityKeepsItsServerVersion(report: Report) {
+    enum Park: String, CaseIterable { case rebind, landing, mapping }
+    for park in Park.allCases {
+        let rounds = runToCompletion { () async -> (PhiSpaceSyncTable, PhiSpaceSyncTable, String?) in
+            let access = await applyAccess()
+            var arrival = applyEntity("sync-a")
+            var table = PhiSpaceSyncTable()
+            await MainActor.run {
+                access.profileIdByUuid["profile-uuid-b"] = "profile-b"
+                switch park {
+                case .rebind:
+                    access.rebindsThatDoNotTakeEffect = 1
+                case .landing:
+                    access.landingsThatFail = 1
+                case .mapping:
+                    access.mapsThatFail = 1
+                }
+                if park != .mapping {
+                    access.spaces = [applyLocalSpace("local-a")]
+                    access.storedSpaceIds = ["local-a"]
+                    access.mappings = ["local-a": "sync-a"]
+                }
+            }
+            if park == .mapping {
+                // A Space this device has never had: no row, no mapping, no cursor.
+            } else {
+                table.cursors["sync-a"] = publishedCursor(version: 4)
+                // A peer moved the Space onto another Profile.
+                arrival.profileUuid = settingValue("profile-uuid-b", applyNowMs - 30_000)
+            }
+            let host = SpaceApplyHost(access: access, nowMs: applyNowMs)
+            let parked = await host.apply([(uuid: "sync-a", entity: arrival,
+                                            entityId: "srv-a", version: 6)], to: table)
+            let replayed = await host.apply([], to: parked)
+            let profile = await access.spaces.first?.profileId
+            return (parked, replayed, profile)
+        }
+        let parked = rounds.0.cursors["sync-a"]
+        let landed = rounds.1.cursors["sync-a"]
+        let property = "spaces.apply.a-\(park.rawValue)-park-keeps-the-server-version"
+        report.check(property,
+                     parked?.pendingApply != nil && parked?.version == 6 && parked?.entityId == "srv-a"
+                        && landed?.pendingApply == nil && landed?.reconciled != nil
+                        && landed?.version == 6 && landed?.entityId == "srv-a"
+                        && (park != .rebind || rounds.2 == "profile-b"),
+                     "parked \(String(describing: parked?.version))/\(parked?.entityId ?? "nil") "
+                        + "pending \(parked?.pendingApply != nil); landed "
+                        + "\(String(describing: landed?.version))/\(landed?.entityId ?? "nil") "
+                        + "pending \(landed?.pendingApply != nil); profile \(rounds.2 ?? "nil")")
+        report.markPassed(property)
+    }
 }
 
 // MARK: - A tombstone on a later page of the same pull

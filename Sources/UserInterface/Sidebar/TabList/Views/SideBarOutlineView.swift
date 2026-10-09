@@ -333,6 +333,20 @@ class SideBarOutlineView: DiffableOutlineView {
         updateDocumentHeightIfNeeded()
     }
 
+    /// An accessibility client can hold a cell's mock element across a reload
+    /// that empties the list (deactivating the Space, switching layout) and
+    /// later ask for that cell by its old row; AppKit throws
+    /// NSTableViewException for an out-of-range row instead of returning nil.
+    override func view(atColumn column: Int, row: Int, makeIfNecessary: Bool) -> NSView? {
+        guard row >= 0, row < numberOfRows else { return nil }
+        return super.view(atColumn: column, row: row, makeIfNecessary: makeIfNecessary)
+    }
+
+    override func rowView(atRow row: Int, makeIfNecessary: Bool) -> NSTableRowView? {
+        guard row >= 0, row < numberOfRows else { return nil }
+        return super.rowView(atRow: row, makeIfNecessary: makeIfNecessary)
+    }
+
     /// AppKit can position realized suffix rows using an estimated height for a
     /// newly inserted row in a variable-height outline, then leave those row
     /// views at the estimated origins after `rect(ofRow:)` resolves the final

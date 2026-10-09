@@ -83,6 +83,7 @@ struct NotificationMessageCardView: View {
                     onPrevious: { manager.showPrevious() },
                     onNext: { manager.showNext() }
                 )
+                .frame(maxWidth: layoutMode == .sidebar ? 275 : .infinity)
                 .background(
                     Group {
                         if manager.allCards.count > 1 {
@@ -101,6 +102,7 @@ struct NotificationMessageCardView: View {
                         isHovered = hovering
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }

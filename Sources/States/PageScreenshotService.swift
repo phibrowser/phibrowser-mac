@@ -71,7 +71,9 @@ final class PageScreenshotService {
     func start(targetId: String, windowId: Int, completion: @escaping (Outcome) -> Void) -> Bool {
         guard !isCapturing, !targetId.isEmpty, windowId >= 0 else { return false }
         isCapturing = true
-        let deadline = uptime() + timeoutInterval
+        let started = uptime()
+        let deadline = started + timeoutInterval
+        AppLogDebug("[Screenshot] capture.begin window=\(windowId) timeout=\(timeoutInterval)s")
         let changeCount = pasteboard.changeCount
         Task { @MainActor in
             let outcome: Outcome
@@ -86,9 +88,16 @@ final class PageScreenshotService {
                     outcome = .invalidImage
                 }
             } catch AppDevToolsPageSession.SessionError.timedOut {
+                AppLogWarn("[Screenshot] capture.error reason=timedOut elapsed=\(uptime() - started)s")
                 outcome = .timedOut
             } catch {
+                AppLogWarn("[Screenshot] capture.error reason=\(error) elapsed=\(uptime() - started)s")
                 outcome = .captureFailed
+            }
+            if case .copied(let jpeg) = outcome {
+                AppLogDebug("[Screenshot] capture.end outcome=copied bytes=\(jpeg.count) elapsed=\(uptime() - started)s")
+            } else {
+                AppLogWarn("[Screenshot] capture.end outcome=\(outcome) elapsed=\(uptime() - started)s")
             }
             isCapturing = false
             completion(outcome)
@@ -113,13 +122,23 @@ final class PageScreenshotService {
         }
     ) async throws -> String? {
         let started = ProcessInfo.processInfo.systemUptime
+        AppLogDebug("[Screenshot] session.open timeout=\(min(10, timeout))s")
         let session = try await openSession(targetId, min(10, timeout))
-        defer { session.close() }
+        defer {
+            session.close()
+            AppLogDebug("[Screenshot] session.close elapsed=\(ProcessInfo.processInfo.systemUptime - started)s")
+        }
 
         func send(_ method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
             let remaining = timeout - (ProcessInfo.processInfo.systemUptime - started)
             guard remaining > 0 else { throw AppDevToolsPageSession.SessionError.timedOut }
-            return try await session.command(method, params, min(15, remaining))
+            AppLogDebug("[Screenshot] cdp.begin method=\(method) timeout=\(min(15, remaining))s")
+            do {
+                return try await session.command(method, params, min(15, remaining))
+            } catch {
+                AppLogWarn("[Screenshot] cdp.error method=\(method) reason=\(error)")
+                throw error
+            }
         }
 
         let before = try documentIdentity(await send("Page.getFrameTree"))
@@ -134,24 +153,47 @@ final class PageScreenshotService {
               let result = pixelRatio["result"] as? [String: Any],
               let dpr = finiteNumber(result["value"]),
               rawWidth > 0, rawHeight > 0, dpr > 0 else {
+            AppLogWarn("[Screenshot] dimensions.reject reason=invalidMetricsOrDPR")
             throw AppDevToolsPageSession.SessionError.commandFailed("Invalid screenshot page dimensions")
         }
         let width = ceil(rawWidth), height = ceil(rawHeight)
-        guard width * dpr <= 32_768, height * dpr <= 32_768,
-              width * height * dpr * dpr <= 64_000_000 else {
+        let pixelWidth = width * dpr, pixelHeight = height * dpr
+        guard pixelWidth.isFinite, pixelHeight.isFinite,
+              pixelWidth > 0, pixelHeight > 0 else {
+            AppLogWarn("[Screenshot] dimensions.reject reason=invalidPhysicalDimensions")
+            throw AppDevToolsPageSession.SessionError.commandFailed("Invalid screenshot page dimensions")
+        }
+        var scale = min(1, 16_384 / pixelWidth, 16_384 / pixelHeight)
+        let boundedWidth = ceil(pixelWidth * scale), boundedHeight = ceil(pixelHeight * scale)
+        if boundedWidth * boundedHeight > 64_000_000 {
+            let areaScale = sqrt(64_000_000 / (boundedWidth * boundedHeight))
+            // Leave one pixel per axis for Chromium's integer-size rounding.
+            scale *= min((floor(boundedWidth * areaScale) - 1) / boundedWidth,
+                         (floor(boundedHeight * areaScale) - 1) / boundedHeight)
+        }
+        if scale < 1 { scale = scale.nextDown }
+        let outputWidth = ceil(pixelWidth * scale), outputHeight = ceil(pixelHeight * scale)
+        AppLogDebug("[Screenshot] dimensions css=\(width)x\(height) dpr=\(dpr) originalPixels=\(pixelWidth * pixelHeight) scale=\(scale) output=\(outputWidth)x\(outputHeight) projectedPixels=\(outputWidth * outputHeight)")
+        guard scale.isFinite, scale > 0,
+              outputWidth >= 1, outputHeight >= 1,
+              outputWidth <= 16_384, outputHeight <= 16_384,
+              outputWidth * outputHeight <= 64_000_000 else {
+            AppLogWarn("[Screenshot] dimensions.reject reason=outputPixelLimit output=\(outputWidth)x\(outputHeight) maxDimension=16384 maxPixels=64000000 beforeCapture=true")
             throw AppDevToolsPageSession.SessionError.commandFailed("Page is too large to copy as one screenshot")
         }
-        let scale = min(1, 16_384 / (width * dpr), 16_384 / (height * dpr))
         let shot = try await send("Page.captureScreenshot", params: [
             "format": "jpeg", "quality": 85, "fromSurface": true, "captureBeyondViewport": true,
             "clip": ["x": x, "y": y, "width": width, "height": height, "scale": scale],
         ])
         guard let base64 = shot["data"] as? String,
               base64.hasPrefix("/9j/"), base64.utf8.count <= maxBase64Bytes else {
+            AppLogWarn("[Screenshot] image.reject reason=invalidJPEGPrefixOrPayloadSize")
             throw AppDevToolsPageSession.SessionError.commandFailed("Invalid or oversized screenshot image")
         }
+        AppLogDebug("[Screenshot] image.received base64Bytes=\(base64.utf8.count) elapsed=\(ProcessInfo.processInfo.systemUptime - started)s")
         let after = try documentIdentity(await send("Page.getFrameTree"))
         guard before == after else {
+            AppLogWarn("[Screenshot] document.reject frameChanged=\(before.0 != after.0) loaderChanged=\(before.1 != after.1) urlChanged=\(before.2 != after.2)")
             throw AppDevToolsPageSession.SessionError.commandFailed("Page navigated while taking the screenshot")
         }
         return base64
@@ -196,6 +238,7 @@ final class PageScreenshotService {
               let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
               let height = properties[kCGImagePropertyPixelHeight] as? NSNumber else { return nil }
         let w = width.int64Value, h = height.int64Value
+        AppLogDebug("[Screenshot] image.validate width=\(w) height=\(h) bytes=\(data.count)")
         guard w > 0, h > 0, w <= 32_768, h <= 32_768, w * h <= 64_000_000,
               CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) != nil,
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return nil }

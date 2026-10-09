@@ -60,6 +60,17 @@ struct TravelBackScene: Codable {
     }
 }
 
+/// Recorded identity, not a request to create or load a Profile/Space.
+struct TravelBackTarget: Codable, Equatable {
+    let profileId: String
+    let spaceId: String
+
+    func isAvailable(profileIds: Set<String>, spaceProfileId: String?, spaceAllowed: Bool) -> Bool {
+        !profileId.isEmpty && !spaceId.isEmpty && profileIds.contains(profileId)
+            && spaceProfileId == profileId && spaceAllowed
+    }
+}
+
 enum TravelBackFailure: String, Error {
     case unauthorizedSender = "unauthorized_sender"
     case invalidSnapshot = "invalid_snapshot"

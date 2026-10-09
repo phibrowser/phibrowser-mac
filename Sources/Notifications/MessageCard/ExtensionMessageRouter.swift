@@ -120,6 +120,10 @@ final class ExtensionMessageRouter {
             return nil
         }
 
+        register(type: "notification.show") { context in
+            NotificationCardManager.shared.handleAgentRequest(context: context)
+        }
+
         register(type: "imagePreview") { context in
             ImagePreviewMessageHandler.handle(context)
             return nil  // The handler replies after presentation or validation failure.

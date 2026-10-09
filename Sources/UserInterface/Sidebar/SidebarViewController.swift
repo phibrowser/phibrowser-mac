@@ -827,8 +827,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         messageCardContainerView.setContentHuggingPriority(.defaultLow, for: .vertical)
         messageCardContainerView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         messageCardContainerView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().inset(8)
-            make.trailing.equalToSuperview()
+            make.leading.trailing.equalToSuperview().inset(8)
             messageCardHeightConstraint = make.height.equalTo(0).constraint
         }
         

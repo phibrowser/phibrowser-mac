@@ -20,7 +20,7 @@ import Cocoa
 final class ContentSurfaceHosting {
     /// What one web view's host is told: the radii of its four on-screen
     /// corners and its stacking order among the web views of the container.
-    private struct Hosting: Equatable {
+    struct Hosting: Equatable {
         var topLeft: CGFloat = 0
         var topRight: CGFloat = 0
         var bottomRight: CGFloat = 0
@@ -34,16 +34,22 @@ final class ContentSurfaceHosting {
     }
 
     private weak var container: NSView?
+    /// The surface's view: in `container`, or in the overlay of a page
+    /// lifted into content fullscreen (`update`).
+    private weak var surfaceView: NSView?
     private weak var browserState: BrowserState?
     private var observer: CFRunLoopObserver?
     /// Last `Hosting` sent, keyed by address.
     private var sent: [ObjectIdentifier: Sent] = [:]
+    /// Replaces the bridge sends in tests.
+    var sendForTesting: ((_ address: NSObject, _ hosting: Hosting) -> Void)?
 
     /// After AppKit's flush observer, so the views are laid out.
     private static let observerOrder = CFIndex.max
 
-    init(container: NSView, browserState: BrowserState?) {
+    init(container: NSView, surfaceView: NSView, browserState: BrowserState?) {
         self.container = container
+        self.surfaceView = surfaceView
         self.browserState = browserState
         let observer = CFRunLoopObserverCreateWithHandler(
             nil,
@@ -70,7 +76,11 @@ final class ContentSurfaceHosting {
     /// The stacking order is the web views' back-to-front order below the
     /// container, so docked DevTools, mounted below its page, stays below it.
     /// Only the current tab's views are mounted there, so the web views of
-    /// two tabs never overlap.
+    /// two tabs never overlap. A page lifted into content fullscreen takes
+    /// the surface's view with it into an overlay over the window
+    /// (`WebContentViewController.applyContentFullscreenState`): its web
+    /// views are enumerated below that overlay, above every web view left in
+    /// the container, and with no rounded ancestor up there they go square.
     private func update() {
         guard let container, let browserState,
               let bridge = ChromiumLauncher.sharedInstance().bridge,
@@ -91,21 +101,29 @@ final class ContentSurfaceHosting {
         addresses += tabs.compactMap(\.devToolsView)
             .map { (address: $0 as NSObject, webView: Optional($0)) }
         var seen = Set<ObjectIdentifier>()
-        let mounted = addresses
-            .compactMap { item -> (address: NSObject, webView: NSView, path: [Int])? in
-                guard seen.insert(ObjectIdentifier(item.address)).inserted,
-                      let webView = item.webView, webView.window === window,
-                      let path = Self.indexPath(of: webView, below: container) else { return nil }
-                return (item.address, webView, path)
-            }
-            .sorted { $0.path.lexicographicallyPrecedes($1.path) }
+        addresses = addresses.filter { seen.insert(ObjectIdentifier($0.address)).inserted }
+        var roots = [container]
+        if let overlay = surfaceView?.superview, overlay !== container {
+            roots.append(overlay)
+        }
+        let mounted = roots.flatMap { root in
+            addresses
+                .compactMap { item -> (address: NSObject, webView: NSView, root: NSView, path: [Int])? in
+                    guard let webView = item.webView, webView.window === window,
+                          let path = Self.indexPath(of: webView, below: root) else { return nil }
+                    return (item.address, webView, root, path)
+                }
+                .sorted { $0.path.lexicographicallyPrecedes($1.path) }
+        }
 
         var nowSent: [ObjectIdentifier: Sent] = [:]
         for (zOrder, item) in mounted.enumerated() {
-            let hosting = Self.hosting(of: item.webView, zOrder: zOrder, below: container)
+            let hosting = Self.hosting(of: item.webView, zOrder: zOrder, below: item.root)
             let key = ObjectIdentifier(item.address)
             if sent[key]?.address !== item.address || sent[key]?.hosting != hosting {
-                if let wrapper = item.address as? WebContentWrapper {
+                if let sendForTesting {
+                    sendForTesting(item.address, hosting)
+                } else if let wrapper = item.address as? WebContentWrapper {
                     bridge.setContentHosting?(wrapper,
                                               topLeftRadius: hosting.topLeft,
                                               topRightRadius: hosting.topRight,

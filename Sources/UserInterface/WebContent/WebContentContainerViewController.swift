@@ -1360,6 +1360,7 @@ class WebContentContainerViewController: NSViewController {
     private var contentSurfaceView: NSView?
     private var contentSurfaceFilterObservation: NSKeyValueObservation?
     private var contentSurfaceHosting: ContentSurfaceHosting?
+    var contentSurfaceHostingForTesting: ContentSurfaceHosting? { contentSurfaceHosting }
 
     /// Whether the pages here draw through a content surface. Pushed to every
     /// page and the placeholder shell the way `paintsOwnBackdrop` is.
@@ -1369,8 +1370,11 @@ class WebContentContainerViewController: NSViewController {
     /// below every tab's view, which makes `contentContainer` its hosting
     /// container: every web view mounted below it (pages, split panes, the AI
     /// Chat panel, docked DevTools, the placeholder shell) draws through it,
-    /// so the fills behind them go clear. Done once; moving the view out
-    /// would not take the web views still in `contentContainer` off it.
+    /// so the fills behind them go clear. Installed once; a page lifted into
+    /// content fullscreen borrows the view (`lendContentSurface(to:)`) and it
+    /// comes back here (`reclaimContentSurface`). Moving the view does not
+    /// take the web views still in `contentContainer` off the surface:
+    /// Chromium judges a web view's surface only when that web view moves.
     ///
     /// Chromium creates one for every browser window whose page area the Mac
     /// client hosts: a Space instance, whose pages paint no backdrop of their
@@ -1382,10 +1386,7 @@ class WebContentContainerViewController: NSViewController {
     private func installContentSurface(_ hostingView: NSView) {
         guard contentSurfaceView == nil else { return }
         contentSurfaceView = hostingView
-        contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
-        hostingView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        placeContentSurface(hostingView)
         // It sits under the same visual-effect views as the pages' own
         // Chromium views; see WebContentHostView.
         if let layer = hostingView.layer {
@@ -1398,8 +1399,47 @@ class WebContentContainerViewController: NSViewController {
         applyBackdropPainting()
         updatePageAreaBackdropCorners(panelDocked: browserState?.extensionSidePanel != nil)
         contentSurfaceHosting = ContentSurfaceHosting(container: contentContainer,
+                                                      surfaceView: hostingView,
                                                       browserState: browserState)
         AppLogInfo("[ContentSurface] [Container] installed windowId=\(browserState?.windowId ?? -1)")
+    }
+
+    /// Just above `pageAreaBackdrop`, below every tab's view.
+    private func placeContentSurface(_ hostingView: NSView) {
+        contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
+        hostingView.snp.remakeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+    }
+
+    /// Lends the surface's view to the page entering content fullscreen
+    /// (`WebContentViewController.applyContentFullscreenState`): it goes to
+    /// the bottom of `overlay` before the page's host view joins, so the
+    /// lifted web views find it in their ancestry and keep drawing through
+    /// it. Lifted alone they left the surface for a compositor of their own
+    /// and showed nothing until its first frame, with the AppKit fullscreen
+    /// transition holding the main thread meanwhile. The web views left here
+    /// (the AI Chat panel, the placeholder page, a split partner) stay on the
+    /// surface, below the lifted page.
+    func lendContentSurface(to overlay: NSView) {
+        guard let contentSurfaceView, contentSurfaceView.superview === contentContainer else { return }
+        contentSurfaceView.removeFromSuperview()
+        overlay.addSubview(contentSurfaceView, positioned: .below, relativeTo: nil)
+        contentSurfaceView.snp.remakeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        AppLogInfo("[ContentSurface] [Container] lent to content fullscreen windowId=\(browserState?.windowId ?? -1)")
+    }
+
+    /// Takes the surface's view back above `pageAreaBackdrop` when the page
+    /// leaves content fullscreen, or its controller goes away up there. Done
+    /// before the host view comes back, so its web views rejoin a tree the
+    /// surface is already under.
+    func reclaimContentSurface() {
+        guard let contentSurfaceView, contentSurfaceView.superview !== contentContainer else { return }
+        contentSurfaceView.removeFromSuperview()
+        placeContentSurface(contentSurfaceView)
+        AppLogInfo("[ContentSurface] [Container] reclaimed from content fullscreen windowId=\(browserState?.windowId ?? -1)")
     }
 
     /// Over a content surface the page card is clear and this backdrop shows

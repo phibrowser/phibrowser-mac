@@ -86,12 +86,14 @@ surface is installed, since they would cover it. Once per run-loop pass
 stacking order (`setContentHosting`), addressing each by its bridge wrapper,
 or docked DevTools, which has none, by the NSView the bridge handed over.
 Web views mounted outside the container (Peek, Reader, the extension side
-panel, Kiosk windows, shadow windows, content fullscreen) draw themselves as
+panel, Kiosk windows, shadow windows) draw themselves as
 upstream's do (chromium ADR 0016): each builds its compositor while shown and
 drops it when hidden, so one hidden and shown again (Peek or Reader switched
 away from and back, the side panel or a Kiosk window after a Space switch or
-a minimize and restore) shows blank until its first frame. With the feature
-off no window receives a surface.
+a minimize and restore) shows blank until its first frame. A page lifted into
+content fullscreen takes the surface's view with it into the fullscreen
+overlay and stays on the surface, square and on top while up there (mac ADR
+0010). With the feature off no window receives a surface.
 
 A tab switch is the page container's mount: it mounts the current tab's view
 and removes every other tab view in the same turn, with or without a surface

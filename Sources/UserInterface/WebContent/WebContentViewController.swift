@@ -126,9 +126,16 @@ class WebContentViewController: NSViewController {
     /// partner URL changes so entering or leaving a native URL renderer replaces
     /// that pane immediately instead of waiting for a focus switch.
     private var partnerContentCancellable: AnyCancellable?
-    /// Saved superview reference while hostView is re-parented to window.contentView
-    /// for HTML5 content fullscreen. Nil when not in fullscreen.
+    /// Saved superview reference while hostView is re-parented into an overlay
+    /// over window.contentView for HTML5 content fullscreen. Nil when not in
+    /// fullscreen.
     private weak var savedHostViewSuperview: NSView?
+    /// Covers `window.contentView` while this page is in content fullscreen,
+    /// holding the content surface's view under `hostView`.
+    private var contentFullscreenOverlay: NSView?
+    /// The container the surface was borrowed from; `parent` is gone by
+    /// `deinit`.
+    private weak var contentSurfaceLender: WebContentContainerViewController?
     private var progressObserverCancellables = Set<AnyCancellable>()
     private var lastProgressLogBucket: Int?
     private var isSubscriptionsSetup = false
@@ -2234,15 +2241,17 @@ class WebContentViewController: NSViewController {
 
     deinit {
         // If this controller is being torn down while still in content
-        // fullscreen, hostView sits under window.contentView — NOT inside
-        // self.view's subtree — so normal view-hierarchy teardown leaves
-        // it orphaned on top of the window. This happens specifically on
-        // close: Chromium's async DidToggleFullscreenModeForTab(false) can
-        // arrive after TabsProxy::OnTabWillBeRemoved has already erased the
-        // observer, so the terminal exit event never reaches Mac. Detach
-        // here as the last-resort guarantee.
+        // fullscreen, hostView sits in the overlay under window.contentView
+        // — NOT inside self.view's subtree — so normal view-hierarchy
+        // teardown leaves it orphaned on top of the window, with the content
+        // surface's view in it. This happens specifically on close:
+        // Chromium's async DidToggleFullscreenModeForTab(false) can arrive
+        // after TabsProxy::OnTabWillBeRemoved has already erased the
+        // observer, so the terminal exit event never reaches Mac. Give the
+        // surface back and detach here as the last-resort guarantee.
         if savedHostViewSuperview != nil {
-            hostView.removeFromSuperview()
+            contentSurfaceLender?.reclaimContentSurface()
+            contentFullscreenOverlay?.removeFromSuperview()
         }
     }
 
@@ -2282,10 +2291,16 @@ class WebContentViewController: NSViewController {
             }
     }
 
-    /// Enter or exit HTML5 content fullscreen by re-parenting `hostView`
-    /// directly under `window.contentView`. This covers every other Phi
+    /// Enter or exit HTML5 content fullscreen by re-parenting `hostView` into
+    /// an overlay over `window.contentView`. This covers every other Phi
     /// chrome element (tab strip, sidebar, header, AI chat, traffic lights)
-    /// in one move, and needs no per-element visibility toggling.
+    /// in one move, and needs no per-element visibility toggling. The page
+    /// container's content surface view goes into the overlay first, under
+    /// `hostView`, so the lifted web views keep drawing through the surface
+    /// (chromium ADR 0014: a web view draws through the hosting container
+    /// nearest in its ancestry). Lifted alone they left the surface, built a
+    /// compositor of their own and showed nothing until its first frame,
+    /// while the AppKit fullscreen transition held the main thread.
     private func applyContentFullscreenState(_ isFullscreen: Bool) {
         if isFullscreen {
             guard savedHostViewSuperview == nil else { return }
@@ -2317,8 +2332,21 @@ class WebContentViewController: NSViewController {
             // they reference hostView and would otherwise be torn down by
             // AutoLayout with an `unsatisfiable` log.
             webContentProgressBar.snp.removeConstraints()
+            let overlay = NSView()
+            overlay.wantsLayer = true
+            contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+            overlay.snp.makeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+            contentFullscreenOverlay = overlay
+            // The surface before the host view, so its web views join a tree
+            // the surface is already under. With no page container (a Kiosk
+            // window) or no surface (the feature off) the page draws itself
+            // up here, as before.
+            contentSurfaceLender = parent as? WebContentContainerViewController
+            contentSurfaceLender?.lendContentSurface(to: overlay)
             hostView.removeFromSuperview()
-            contentView.addSubview(hostView, positioned: .above, relativeTo: nil)
+            overlay.addSubview(hostView, positioned: .above, relativeTo: nil)
             hostView.snp.remakeConstraints { make in
                 make.edges.equalToSuperview()
             }
@@ -2330,6 +2358,11 @@ class WebContentViewController: NSViewController {
             restoreWebContentFirstResponder()
         } else {
             guard let original = savedHostViewSuperview else { return }
+            // The surface first again, so the host view's web views rejoin
+            // the container with the surface already back above the
+            // page-area backdrop.
+            contentSurfaceLender?.reclaimContentSurface()
+            contentSurfaceLender = nil
             hostView.removeFromSuperview()
             original.addSubview(hostView)
             hostView.snp.remakeConstraints { make in
@@ -2346,6 +2379,8 @@ class WebContentViewController: NSViewController {
                     make.height.equalTo(2)
                 }
             }
+            contentFullscreenOverlay?.removeFromSuperview()
+            contentFullscreenOverlay = nil
             savedHostViewSuperview = nil
             // Re-clear AppKit's kCAFilterPlusL after moving hostView back into
             // the ColoredVisualEffectView hierarchy (matches DevTools paths).

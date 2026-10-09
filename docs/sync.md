@@ -519,6 +519,13 @@ What the pane shows, as a contract:
   attention. The summary has no Paused state, and the account email is not
   shown. The one pause the pane shows is the Profile mapping pause, laid over
   the summary as "Sync paused" by the precedence table above.
+- **Reloads.** The pane reloads each time it appears. A pane already unlocked for
+  the same account, with its key still held, stays loaded while it reloads and
+  when that reload fails (for example offline); the status row keeps reporting
+  the helper's state, including the pause row. Only a first load that fails shows
+  the "Couldn't load sync information" card with Retry. While that card shows,
+  the pane watches the network path and reloads once, after 1 second, when the
+  connection comes back; a failure while already online waits for Retry.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round

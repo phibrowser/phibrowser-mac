@@ -1,4 +1,5 @@
 import Cocoa
+import Network
 import SwiftUI
 
 final class DevicesSettingHostingViewController: NSViewController {
@@ -120,6 +121,16 @@ final class DevicesSettingHostingViewController: NSViewController {
         let accountID = AccountController.shared.account?.userID
         viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
         viewModel.isSignedIn = { AccountController.shared.account != nil }
+        viewModel.accountID = { AccountController.shared.account?.userID }
+        viewModel.observeNetworkPath = { onUpdate in
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { path in
+                let satisfied = path.status == .satisfied
+                Task { @MainActor in onUpdate(satisfied) }
+            }
+            monitor.start(queue: .main)
+            return { monitor.cancel() }
+        }
         viewModel.syncReport = { requestSync in
             guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
             await helper.refresh(requestSync: requestSync)

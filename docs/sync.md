@@ -649,6 +649,14 @@ Profile mapping pause sets it: once an episode is 15 seconds old, and back when
 the episode ends or its prerequisites go, each time committing its state before
 it sends `notifyPhiSyncKeysChanged` (see "Enrollment and setup").
 
+A Profile being deleted has its own key withdrawn
+(`SyncKeyController.withdrawProfileKey`): its resolved entry is dropped,
+Chromium is pinged, and mapping passes skip it entirely (neither resolved,
+registered nor counted as unmapped, and its account Profile does not count as
+unclaimed for `needsPairing`), so a deleted Profile's basename can neither
+keep nor regain a key. A failed deletion restores it and re-resolves; a completed
+one ends the withdrawal once the Profile is gone from the list.
+
 ## Profile loading
 
 Chromium runs a Profile's sync only while the Profile is loaded, and
@@ -1141,8 +1149,8 @@ take parks the entity in `pendingApply`, retried every round; a parked Profile i
 not published over. An entity for a uuid with no local Profile here is stored as
 the baseline only; auto-create reads it.
 
-A remote Profile tombstone sets `deletedAtMs`: the uuid is no longer published or
-auto-created, and the local Profile is left in place. A deleted uuid comes back
+A Profile tombstone is applied as described in "Profile deletion and rename"; once
+recorded (`deletedAtMs`) the uuid is no longer published or auto-created. A deleted uuid comes back
 only with a newer version than the tombstone it recorded; the cursor is reset and
 the entity lands wholesale, and a mapping whose local Profile is gone is dropped
 so auto-create recreates the Profile. A replayed older create lands nothing. The
@@ -1163,6 +1171,79 @@ dropped. The marker advances and no round fails. The one visible effect is in an
 older client's pairing preview, which counts a Profile entity as an unreadable
 entity: `skippedEntityCount > 0` only disables the wizard's empty-account
 auto-finish shortcut. There is no migration.
+
+## Profile deletion and rename
+
+Renames are described in "Profile entity". Deleting a mapped Profile deletes it on
+every synced device where that is possible; an unmapped Profile (and Phi Chat or
+the agent fallback) stays a local deletion. The server is unchanged: the deletion
+is the Profile entity's tombstone, and the key registry row and the Chromium data
+in the uuid's server namespace stay (which is what makes an undelete lossless).
+
+Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
+`ProfileDeletionSync`: `.none` (the user-data backup rollback, and the default),
+`.userAction` and `.remoteTombstone`. A `.userAction` deletion of a mapped Profile:
+
+1. Persists the intent before anything is deleted:
+   `PhiSpaceSyncState.beginLocalProfileDeletion` writes `uuid -> local profile id`
+   to the account journal `sync.profileDeletionIntents`
+   (`AccountProfileDeletionIntentStore`). A failed write fails the deletion with
+   nothing deleted. The journal is the durable record: losing the mapping, the
+   process or the Space table does not lose the deletion.
+2. Withdraws the Profile's key (see "Chromium account and key lifecycle").
+3. Deletes the Profile in Chromium (chat archive journal, memories, as before).
+   Chromium reports success only once the profile directory is marked for
+   deletion (or was already gone), after closing its browsers without
+   beforeunload prompts, so success means the deletion is committed.
+4. On success removes the Profile-scoped pinned rows and the `ProfileModel` row
+   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort; the row is kept
+   while Space rows still point at it) and delivers `.recordLocalProfileDeletion`.
+   On failure removes the journal entry and gives the key back.
+
+The engine reconciles the journal at the start of every pull, push, Profile round
+and deletion round (`reconcileProfileDeletionIntents`, admitted while the
+unmapped-Profile pause is on): an entry whose Chromium deletion is still in
+flight is left alone; a Profile that still exists after a complete enumeration
+means the deletion never happened, so the entry is dropped; a published entity
+gets `pendingDelete` and `pushProfiles` commits its tombstone; a deleted or (after
+the full replay) never-published uuid is finalized locally. The entry is removed
+only when the tombstone commits, is given up on after three INVALID_MESSAGE
+rejections, or a peer's tombstone for the same uuid lands. While an entry or
+`pendingDelete` exists, an inbound entity for the uuid lands nothing (delete beats
+rename) but its id and version are learned for the tombstone. The mapping is kept
+until retention; Spaces whose binding names a deleted account Profile park and
+never trigger the dead-mapping repair, and pins owned by it are tombstoned on
+publication and discarded on landing (`deadProfileUuids`, like a deleted Space's).
+
+Other devices (`applyProfileTombstones`, inside the pull page before its table
+write). With no mapped local Profile, or one already gone, or this device's own
+deletion of the uuid journaled, the cursor is finalized. Otherwise
+`SyncableProfiles.tombstoneDecision` weighs `PhiProfileLocalAccess.profileDeletionBlockers`:
+
+| Local state | Result |
+| --- | --- |
+| The Default Profile | undelete |
+| A live user Space bound to it (not remotely soft-deleted; its own cursor neither deleted nor pending deletion) | undelete |
+| Only remotely soft-deleted (hidden) Space rows | delete; the rows are purged by Space retention |
+| An agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`) |
+| Nothing | delete |
+
+Delete runs `deleteProfile(sync: .remoteTombstone)`: the same Chromium deletion,
+key withdrawal and local row removal, with no journal and nothing published. A
+failed Chromium deletion defers; after three failed rounds the Profile is
+undeleted. A crash replays the page, finds the Profile gone and finalizes.
+Undelete keeps the baseline, takes the tombstone's id and version and drops
+`server`, so the next publication republishes the entity over the tombstone; the
+deleting device then sees a newer live version, resurrects the cursor, drops its
+dead mapping and auto-create recreates the Profile from the entity. Spaces are
+never rebound to another Profile. `SpaceManager.isProfileInUse` (the UI guard)
+still counts hidden rows, so after a remote Space deletion a user cannot delete
+that Profile locally until Space retention purges them.
+
+Retention follows the Space model: 30 days after `deletedAtMs` the cursor is
+trimmed to a permanent tombstone (`purgedAtMs`) and a mapping whose local Profile
+is gone is dropped; the cursor is the durable guard from then on.
+`clearLocalSyncState` empties the journal with the other cursors.
 
 ## Stamps and the hybrid logical clock
 
@@ -1433,6 +1514,12 @@ tabs and URL rules alike. The reason is asymmetry of cost, not symmetry of
 mechanism: a delete is easy to redo, an edit is not, and a wrongly kept deletion
 costs more than a wrongly kept item. The predicate below bounds resurrection; `resurrected` counters make repeated
 yielding observable and should settle near zero.
+
+Profiles follow the same rule with one documented exception: a device holding an
+unpublished rename of a Profile still deletes it when a peer's tombstone arrives
+and the Profile is deletable there. A Profile can only be deleted when it has no
+live Space, and a rename carries no data worth keeping. What the rule protects --
+live Spaces -- undeletes instead (see "Profile deletion and rename").
 
 **Say it plainly, because users see it:** an item you deleted can reappear on
 your device when another device had an unpublished edit of it. Deleting it again

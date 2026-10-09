@@ -269,6 +269,28 @@ final class SyncKeyController {
     /// Chromium itself.
     var chromiumKeysWithdrawn = false
 
+    /// Local Profiles being deleted (docs/sync.md, "Chromium account and key lifecycle"). Their key
+    /// is withdrawn and a mapping pass neither resolves nor registers them, so a deleted Profile's
+    /// basename cannot keep or regain a key and its absence never reads as "unmapped".
+    private(set) var profileIdsBeingDeleted: Set<String> = []
+
+    /// Stops Chromium sync for one Profile before it is deleted.
+    func withdrawProfileKey(profileId: String) {
+        profileIdsBeingDeleted.insert(profileId)
+        if resolved.removeValue(forKey: profileId) != nil { notifyChromium() }
+    }
+
+    /// The deletion failed: the Profile stays, so the next pass resolves its key again.
+    func restoreProfileKey(profileId: String) {
+        guard profileIdsBeingDeleted.remove(profileId) != nil else { return }
+        Task { @MainActor [weak self] in await self?.resolveMappings() }
+    }
+
+    /// The deletion committed; the Profile is gone from the local list.
+    func finishProfileKeyWithdrawal(profileId: String) {
+        profileIdsBeingDeleted.remove(profileId)
+    }
+
     /// Hot path: the bridge delegate calls this on every Chromium pull.
     /// Dictionary read only — no I/O, no crypto.
     func profileSyncInfo(forProfileId profileId: String) -> (uuid: String, passphrase: String)? {
@@ -398,6 +420,10 @@ final class SyncKeyController {
             throw NativeSyncResetError.cleanupFailed
         }
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
+        // The Profile deletion journal describes the cursors just cleared.
+        if let intents = PhiSpaceSyncState.shared.profileDeletionIntentStore, !intents.save([:]) {
+            throw NativeSyncResetError.cleanupFailed
+        }
         markerStore?.deleteFile()
         guard markerStore?.load().requiresReconfiguration != true else {
             throw NativeSyncResetError.cleanupFailed
@@ -562,7 +588,7 @@ final class SyncKeyController {
     private func resolveMappingsOnce() async {
         guard !isRetired else { return }
         var next: [String: (uuid: String, passphrase: String)] = [:]
-        let locals = localProfilesProvider()
+        let locals = localProfilesProvider().filter { !profileIdsBeingDeleted.contains($0.profileId) }
         var unmappedLocals: [(profileId: String, displayName: String)] = []
         var hasUnknownLocal = false
         // Every failure this pass met, by class (BH-15). Any transient one holds
@@ -629,12 +655,17 @@ final class SyncKeyController {
             lastMappingsPassResult = Self.passResult(failures)
             lastMappingsFailureCategory = Self.mappingFailureCategory(for: error)
             resolved.merge(next) { _, new in new }
+            // A withdrawal that landed while this pass was suspended still holds.
+            for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
             noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
             if !resolved.isEmpty { notifyChromium() }
             announceMappingsResolved(.held)
             return
         }
 
+        let uuidsBeingDeleted = Set(profileIdsBeingDeleted.compactMap {
+            profileKeys.mappedGlobalUuid(forProfileId: $0)
+        })
         if !hasUnknownLocal, isPairingComplete() {
             let claimed = Set(next.values.map { $0.uuid })
             // Registration waits only for an account Profile that §3.6's twin search
@@ -688,6 +719,8 @@ final class SyncKeyController {
         // partial pass can never erase a previously-good entry. The cache is
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).
         resolved.merge(next) { _, new in new }
+        // A withdrawal that landed while this pass was suspended still holds.
+        for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
         // Set by the one branch that assigns the predicates, so the announcement's
         // marker follows the assignment itself rather than a re-derived condition.
         var outcome = MappingsOutcome.held
@@ -698,7 +731,8 @@ final class SyncKeyController {
         } else {
             let claimedAfter = Set(next.values.map { $0.uuid })
             let stillUnmapped = locals.filter { next[$0.profileId] == nil }
-            var stillUnclaimed = remoteUuids.subtracting(claimedAfter)
+            // The account Profile of a Profile being deleted here is neither unclaimed nor owed.
+            var stillUnclaimed = remoteUuids.subtracting(claimedAfter).subtracting(uuidsBeingDeleted)
             // A registry row with no live Profile entity is not an account Profile this Mac lacks.
             if let view = profileEntityView?() { stillUnclaimed.formIntersection(view.liveUuids) }
             needsPairing = !stillUnmapped.isEmpty || !stillUnclaimed.isEmpty

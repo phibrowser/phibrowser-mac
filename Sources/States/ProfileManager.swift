@@ -23,6 +23,16 @@ struct PhiBrowserProfile: Hashable, Identifiable {
 }
 
 /// One default-search-provider candidate for a profile, projected from
+/// How a Profile deletion takes part in sync (docs/sync.md, "Profile deletion and rename").
+enum ProfileDeletionSync {
+    /// No sync involvement: the user-data backup rollback, and callers not yet migrated.
+    case none
+    /// The user deleted the Profile: record the intent first, delete it on every synced device.
+    case userAction
+    /// A remote tombstone deletes it here: nothing is recorded or published.
+    case remoteTombstone
+}
+
 /// Chromium's TemplateURLService. `id` is the engine's stable sync GUID — the
 /// wire identity used to set the default.
 struct SearchEngineInfo: Identifiable, Hashable {
@@ -245,14 +255,48 @@ final class ProfileManager: ObservableObject {
     /// Successful deletion starts best-effort memory cleanup for the original
     /// account. Completion reports Chromium deletion; cleanup failures are logged.
     /// Import rollback disables memory cleanup and conversation archival.
+    ///
+    /// `sync` other than `.none` also stops the Profile's Chromium sync before the deletion and,
+    /// once Chromium has committed it, removes the Profile's rows from the local store. A
+    /// `.userAction` deletion of a mapped Profile first persists its intent in the sync deletion
+    /// journal and fails without deleting anything when that write fails; the engine then
+    /// publishes the tombstone (docs/sync.md, "Profile deletion and rename").
     @MainActor
     func deleteProfile(_ profileId: String,
                        removeMemories: Bool = true,
                        archiveConversations: Bool = true,
+                       sync: ProfileDeletionSync = .none,
                        completion: @escaping (Bool, String?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
             completion(false, "bridge unavailable")
             return
+        }
+        let syncState = PhiSpaceSyncState.shared
+        let syncUuid: String?
+        switch sync {
+        case .none:
+            syncUuid = nil
+        case .userAction:
+            do {
+                syncUuid = try syncState.beginLocalProfileDeletion(localProfileId: profileId)
+            } catch {
+                AppLogError("[ProfileManager] could not persist the sync deletion intent")
+                completion(false, nil)
+                return
+            }
+        case .remoteTombstone:
+            syncUuid = nil
+            syncState.withdrawProfileKey?(profileId)
+        }
+        /// Undoes the sync preparation above when the deletion does not happen.
+        func cancelSync() {
+            switch sync {
+            case .none: break
+            case .userAction:
+                if let syncUuid { syncState.cancelLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId) }
+            case .remoteTombstone:
+                syncState.restoreProfileKey?(profileId)
+            }
         }
         let memoryService = removeMemories ? try? SiteMemoryService.currentAccount() : nil
         let journal = archiveConversations ? AccountController.shared.account.map(Self.chatArchiveJournal) : nil
@@ -261,6 +305,7 @@ final class ProfileManager: ObservableObject {
             // Persist before the irreversible browser operation, even with AI off.
             pending = try journal?.prepare(profileId: profileId)
         } catch {
+            cancelSync()
             AppLogError("[ProfileChatArchive] could not persist deletion intent")
             completion(false, NSLocalizedString("profiles.archive.prepareFailed",
                 value: "Could not save the conversation recovery record. Please try again.",
@@ -274,6 +319,24 @@ final class ProfileManager: ObservableObject {
                     catch { AppLogError("[ProfileChatArchive] could not persist deletion result") }
                 }
                 self?.refresh()
+                if success, sync != .none {
+                    let account = AccountController.shared.localDataAccount
+                    Task { @MainActor in
+                        // Best effort: a row left behind only keeps a pinned row nobody can open.
+                        do {
+                            try await account?.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId)
+                        } catch {
+                            AppLogWarn("[ProfileManager] could not remove the deleted profile's local rows")
+                        }
+                        if let syncUuid {
+                            syncState.recordLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId)
+                        } else {
+                            syncState.finishProfileKeyWithdrawal?(profileId)
+                        }
+                    }
+                } else if !success {
+                    cancelSync()
+                }
                 if success, removeMemories {
                     if let memoryService {
                         Task {

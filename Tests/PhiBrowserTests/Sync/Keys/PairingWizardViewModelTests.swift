@@ -764,7 +764,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         await wizard.start(controller: controller)
 
-        guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles") }
+        guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
         XCTAssertEqual(remotes.map(\.uuid), ["uuid-live"])
     }
 }

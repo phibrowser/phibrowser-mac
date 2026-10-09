@@ -140,4 +140,27 @@ final class SyncableProfilesTests: XCTestCase {
         XCTAssertEqual(SyncableProfiles.merge(local: ab, remote: c).createdAtMs, 400)
         XCTAssertEqual(SyncableProfiles.merge(local: a, remote: a), a)
     }
+
+    // MARK: - Remote tombstone decision
+
+    func testTheTombstoneDecision() {
+        var table = PhiSpaceSyncTable()
+        var hidden = PhiSpaceCursor(); hidden.hidden = true; hidden.deletedAtMs = 1
+        var deleting = PhiSpaceCursor(); deleting.pendingDelete = true
+        table.cursors = ["live": PhiSpaceCursor(), "hidden": hidden, "deleting": deleting]
+        func decide(_ b: ProfileDeletionBlockers) -> ProfileTombstoneDecision {
+            SyncableProfiles.tombstoneDecision(b, table: table)
+        }
+        XCTAssertEqual(decide(ProfileDeletionBlockers()), .delete)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(isDefaultProfile: true)), .undelete)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["live"])), .undelete)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: [nil])), .undelete,
+                       "an unpublished Space is a live Space")
+        XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["hidden"])), .delete)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["deleting"])), .deferApply)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(hasAgentSpaces: true)), .deferApply)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(isImporting: true)), .deferApply)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["deleting", "live"],
+                                                      hasAgentSpaces: true)), .undelete)
+    }
 }

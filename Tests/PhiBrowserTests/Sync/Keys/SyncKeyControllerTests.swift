@@ -393,4 +393,32 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
         XCTAssertEqual(api.profileEnvelopes.count, 2)
     }
+
+    // MARK: - Per-Profile key withdrawal (Profile deletion)
+
+    func testAWithdrawnProfileKeepsNoKeyAndIsNeverUnmapped() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        var pings = 0
+        let (c, _) = makeController(api: api, provider: provider,
+                                    locals: [("Default", "Default"), ("Profile 1", "Work")],
+                                    pinged: { pings += 1 })
+        await c.silentUnlockAndResolve()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"))
+        let pingsBefore = pings
+
+        c.withdrawProfileKey(profileId: "Profile 1")
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Profile 1"))
+        XCTAssertGreaterThan(pings, pingsBefore, "Chromium re-pulls and stops that Profile's sync")
+
+        await c.resolveMappings()
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Profile 1"), "a pass does not hand the key back")
+        XCTAssertFalse(c.knownUnmappedProfileIds.contains("Profile 1"))
+        XCTAssertFalse(c.needsPairing)
+
+        c.restoreProfileKey(profileId: "Profile 1")
+        await c.resolveMappings()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"), "a failed deletion gives it back")
+    }
 }

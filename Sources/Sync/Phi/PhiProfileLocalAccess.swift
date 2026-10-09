@@ -32,4 +32,23 @@ protocol PhiProfileLocalAccess: AnyObject {
     /// Drops a mapping whose local Profile no longer exists, so auto-create sees the account
     /// uuid as missing again.
     func dropMapping(forProfileId profileId: String)
+
+    /// Whether this device still has that user Profile (`userAssignableProfiles`).
+    func isKnownLocalProfile(_ profileId: String) -> Bool
+
+    // MARK: Deletion (docs/sync.md, "Profile deletion and rename")
+
+    /// The deletion journal: account profile uuid -> local profile id.
+    func profileDeletionIntents() -> [String: String]
+    /// Removes a journal entry once its tombstone committed or no tombstone is owed.
+    func finishLocalProfileDeletion(syncUuid: String)
+    /// Whether the Chromium deletion for this uuid is in flight right now.
+    func isProfileBeingDeletedLocally(syncUuid: String) -> Bool
+
+    /// What on this device stands in the way of applying a remote Profile tombstone.
+    func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers
+    /// Deletes the local Profile for a remote tombstone, the same way a local deletion does
+    /// (chats archived, memories removed, key withdrawn, local rows removed), with no journal.
+    /// True once Chromium has committed the deletion.
+    func deleteForRemoteTombstone(localProfileId: String) async -> Bool
 }

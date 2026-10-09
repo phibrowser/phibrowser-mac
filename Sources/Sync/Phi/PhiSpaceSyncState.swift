@@ -464,6 +464,8 @@ final class PhiSpaceSyncState {
         /// The local id and the syncUuid `beginLocalDeletion` captured while the mapping still resolved.
         case recordLocalDeletion(spaceId: String, syncUuid: String)
         case runRetentionSweep
+        /// A local Profile deletion finished in Chromium; its intent is already in the journal.
+        case recordLocalProfileDeletion(syncUuid: String)
     }
 
     /// Set by `PhiChromiumCoordinator` while an engine exists; nil means the
@@ -483,6 +485,13 @@ final class PhiSpaceSyncState {
     /// `account.localStorage.getAllSpaces()` in production. Needed for §9.4's
     /// third criterion (hidden local Spaces have no cursor `profile_uuid`).
     var localSpaceProfileIds: (() -> [(spaceId: String, profileId: String)])?
+    /// The account's Profile deletion journal (docs/sync.md, "Profile deletion and rename").
+    var profileDeletionIntentStore: (any PhiProfileDeletionIntentStore)?
+    /// `SyncKeyController`'s per-Profile key withdrawal, restore and its end after a completed
+    /// deletion. Closures so `ProfileManager` reaches the key layer only through this facade.
+    var withdrawProfileKey: ((String) -> Void)?
+    var restoreProfileKey: ((String) -> Void)?
+    var finishProfileKeyWithdrawal: ((String) -> Void)?
 
     /// Local Space IDs for SpaceManager.handleSpacesUpdate filtering (SpaceManager.swift:2691-2692),
     /// preserving its existing semantics.
@@ -498,6 +507,10 @@ final class PhiSpaceSyncState {
     /// a concurrent edit). In memory only: the apply loop must not re-land them while the cascade and the
     /// queued deletion round are in flight; from the round on, the cursor's `pendingDelete` protects them.
     private var locallyDeletingSyncUuids: Set<String> = []
+    /// Account profile uuids whose Chromium deletion is in flight. In memory only: the journal is
+    /// the durable record, and this mark only stops the engine from reading a Profile that is still
+    /// present as "the deletion never happened" while Chromium is still deleting it.
+    private var locallyDeletingProfileUuids: Set<String> = []
 
     func isHidden(_ spaceId: String) -> Bool { hiddenSpaceIds.contains(spaceId) }
 
@@ -542,6 +555,53 @@ final class PhiSpaceSyncState {
 
     func runRetentionSweep() { deliver(.runRetentionSweep) }
 
+    // MARK: - Local Profile deletion (docs/sync.md, "Profile deletion and rename")
+
+    /// First step of a user's Profile deletion, before Chromium deletes anything: resolves the
+    /// account uuid, persists the intent in the journal and withdraws the Profile's sync key.
+    /// nil for an unmapped Profile, which has nothing to propagate. Throws when the intent could
+    /// not be saved; the caller must then not delete.
+    func beginLocalProfileDeletion(localProfileId: String) throws -> String? {
+        guard let uuid = globalUuidLookup?(localProfileId) else { return nil }
+        guard let store = profileDeletionIntentStore else { throw PhiProfileDeletionError.intentNotSaved }
+        var intents = store.load()
+        intents[uuid] = localProfileId
+        guard store.save(intents) else { throw PhiProfileDeletionError.intentNotSaved }
+        locallyDeletingProfileUuids.insert(uuid)
+        withdrawProfileKey?(localProfileId)
+        return uuid
+    }
+
+    /// The Chromium deletion failed: forget the intent and give the Profile its key back.
+    func cancelLocalProfileDeletion(syncUuid: String, localProfileId: String) {
+        locallyDeletingProfileUuids.remove(syncUuid)
+        removeProfileDeletionIntent(syncUuid: syncUuid)
+        restoreProfileKey?(localProfileId)
+    }
+
+    /// The Chromium deletion committed. The journal entry stays until the tombstone commits; the
+    /// engine round records the deletion on the cursor. With no engine the journal alone carries
+    /// it to the next engine start.
+    func recordLocalProfileDeletion(syncUuid: String, localProfileId: String) {
+        locallyDeletingProfileUuids.remove(syncUuid)
+        finishProfileKeyWithdrawal?(localProfileId)
+        deliver(.recordLocalProfileDeletion(syncUuid: syncUuid))
+    }
+
+    func profileDeletionIntents() -> [String: String] { profileDeletionIntentStore?.load() ?? [:] }
+
+    func isProfileBeingDeletedLocally(syncUuid: String) -> Bool {
+        locallyDeletingProfileUuids.contains(syncUuid)
+    }
+
+    /// Removes one journal entry: its tombstone committed, or no tombstone is owed.
+    func removeProfileDeletionIntent(syncUuid: String) {
+        guard let store = profileDeletionIntentStore else { return }
+        var intents = store.load()
+        guard intents.removeValue(forKey: syncUuid) != nil else { return }
+        store.save(intents)
+    }
+
     /// §9.4: "a Profile still referenced by a Space cannot be deleted", widened
     /// from `SpaceManager.spaces` to the account. Fail-OPEN before the first
     /// full drain: a long-offline / long-locked machine must not be stuck with
@@ -571,6 +631,8 @@ final class PhiSpaceSyncState {
         defer {
             if case .recordLocalDeletion(_, let syncUuid) = intent { endLocalDeletion(syncUuid: syncUuid) }
         }
+        // The journal already holds a Profile deletion; the next engine round records it.
+        if case .recordLocalProfileDeletion = intent { return }
         guard let directStore else { return }
         var table = directStore.load()
         switch intent {
@@ -578,7 +640,7 @@ final class PhiSpaceSyncState {
             // The syncUuid was captured before the cascade removed the row (§3.4); the mapping is not
             // read again here.
             table.recordLocalDeletion(spaceId: syncUuid)
-        case .runRetentionSweep:
+        case .runRetentionSweep, .recordLocalProfileDeletion:
             // Data cascade needs SpaceManager, which the no-engine path has no
             // business driving; the sweep runs for real at the next engine start.
             return

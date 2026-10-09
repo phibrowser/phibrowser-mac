@@ -418,6 +418,19 @@ import SwiftUI
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
         // account, and the facade is a process-wide singleton.
         PhiSpaceSyncState.shared.directStore = spaceStateStore
+        // Profile deletion (docs/sync.md, "Profile deletion and rename"): the journal and the
+        // per-Profile key withdrawal are account-bound like the store above.
+        PhiSpaceSyncState.shared.profileDeletionIntentStore =
+            AccountProfileDeletionIntentStore(defaults: account.userDefaults)
+        PhiSpaceSyncState.shared.withdrawProfileKey = { [weak self] profileId in
+            self?.syncKeyController?.withdrawProfileKey(profileId: profileId)
+        }
+        PhiSpaceSyncState.shared.restoreProfileKey = { [weak self] profileId in
+            self?.syncKeyController?.restoreProfileKey(profileId: profileId)
+        }
+        PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = { [weak self] profileId in
+            self?.syncKeyController?.finishProfileKeyWithdrawal(profileId: profileId)
+        }
         PhiSpaceSyncState.shared.globalUuidLookup = { [weak self] profileId in
             self?.syncKeyController?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
         }
@@ -873,6 +886,10 @@ import SwiftUI
                     await engine?.recordLocalDeletion(syncUuid: syncUuid)
                     PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid)
                 case .runRetentionSweep: await engine?.runRetentionSweep()
+                case .recordLocalProfileDeletion(let syncUuid):
+                    // The journal holds the deletion until its tombstone commits, so a round
+                    // turned away here loses nothing; the next round records it.
+                    await engine?.recordLocalProfileDeletion(syncUuid: syncUuid)
                 }
             }
         }
@@ -1355,6 +1372,10 @@ import SwiftUI
         // in `stopPhiSync()` instead — that path deliberately keeps the direct-store
         // fallback alive (§5.3's one exception), and only this one owns the account switch.
         PhiSpaceSyncState.shared.directStore = nil
+        PhiSpaceSyncState.shared.profileDeletionIntentStore = nil
+        PhiSpaceSyncState.shared.withdrawProfileKey = nil
+        PhiSpaceSyncState.shared.restoreProfileKey = nil
+        PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = nil
         PhiSpaceSyncState.shared.globalUuidLookup = nil
         PhiSpaceSyncState.shared.localSpaceIdLookup = nil
         PhiSpaceSyncState.shared.syncUuidLookup = nil

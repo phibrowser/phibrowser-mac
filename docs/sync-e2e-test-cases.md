@@ -108,6 +108,12 @@ previous case's hidden Space or pending edit determine the next result.
 | SYNC-P07 | P1 / Manual | After normal convergence create another local Profile and Space on A, and exercise runtime pairing on B when required. | New account identities are discovered without reinstalling. B's Space uses the resolved intended Profile; no fallback to an unrelated/default Profile leaks its browsing context. |
 | SYNC-P08 | P0 / Assisted | While U1's pairing/request is in flight on B, sign out and sign in as U2. Release the delayed U1 response. Repeat with delayed key/device registration. | U1's old controller cannot register keys/Profiles into U2, apply U1 mappings to U2 or wake U2's engine with stale work. U2 remains isolated. |
 | SYNC-P09 | P0 / Manual | Rename a synced Profile on A, then a different one on B. Rename a Profile on A to a name another local Profile already uses on B. | Each rename reaches the other Mac. A name already taken on B is applied with a suffix ("Work (2)") and the suffixed name is not published back: A keeps the plain name. |
+| SYNC-P10 | P0 / Manual | Delete a synced Profile with no Spaces on A while B is online. | The Profile disappears from B shortly after, with its chats archived and its sync stopped. It does not come back after restarting either Mac. |
+| SYNC-P11 | P0 / Manual | Quit B. Delete a synced Profile on A. Start B. | B deletes the Profile once it catches up. |
+| SYNC-P12 | P0 / Manual | After P10, sign a fresh Mac C into the account and complete setup. | C does not create the deleted Profile, does not offer it in Profile matching, and its Devices pane shows no pending pairing for it. |
+| SYNC-P13 | P1 / Manual | Map B's Default Profile to an account Profile, then delete that account Profile on A. | B keeps its Default Profile and republishes it; A recreates the Profile, empty except for what Chromium sync restores. |
+| SYNC-P14 | P1 / Manual | Quit B. On B the Profile still has a user Space that A never received. Delete the Profile on A, then start B. | B keeps the Profile and its Space (edit beats delete); A recreates the Profile and receives the Space under it. |
+| SYNC-P15 | P1 / Assisted | Delete a synced Profile on A while A's sync is paused for an unmapped Profile, and separately while A's first full replay has not finished. Quit A in between and restart it. | The deletion is published once sync resumes; it is never lost and the Profile is not recreated on A. |
 
 ## Settings and Spaces
 

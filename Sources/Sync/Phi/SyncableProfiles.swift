@@ -14,6 +14,28 @@ struct PhiLocalProfile: Equatable {
     var createdAtMs: Int64
 }
 
+/// The local facts `SyncableProfiles.tombstoneDecision` weighs for one Profile.
+struct ProfileDeletionBlockers: Equatable {
+    /// The Default Profile is never deleted.
+    var isDefaultProfile = false
+    /// Account sync uuid of every live (not remotely soft-deleted) user Space bound to the
+    /// Profile; nil for one with no Space mapping.
+    var liveUserSpaceSyncUuids: [String?] = []
+    /// An agent Space is bound to the Profile.
+    var hasAgentSpaces = false
+    /// An import is writing into one of its Spaces.
+    var isImporting = false
+}
+
+/// What a remote Profile tombstone does on this device.
+enum ProfileTombstoneDecision: Equatable {
+    case delete
+    /// Retry next round.
+    case deferApply
+    /// The Profile cannot go here: republish the entity ("edit beats delete").
+    case undelete
+}
+
 /// Profile-side snapshot and merge for the Profile entity (docs/sync.md, "Profile entity").
 /// Pure functions, like `SyncableSpaces`: the engine owns all persistence.
 enum SyncableProfiles {
@@ -107,5 +129,24 @@ enum SyncableProfiles {
         let candidates = [local.createdAtMs, remote.createdAtMs].filter { $0 > 0 }
         merged.createdAtMs = candidates.min() ?? 0
         return merged
+    }
+
+    // MARK: - Remote tombstone (docs/sync.md, "Profile deletion and rename")
+
+    /// Whether a remote Profile tombstone deletes the local Profile here. The Default Profile and a
+    /// Profile that still has a live user Space are kept and the entity republished: edit beats
+    /// delete, and Spaces are never rebound elsewhere. A Space whose own deletion is still pending
+    /// here, an agent Space or an import in flight defers the decision to a later round.
+    static func tombstoneDecision(_ blockers: ProfileDeletionBlockers,
+                                  table: PhiSpaceSyncTable) -> ProfileTombstoneDecision {
+        if blockers.isDefaultProfile { return .undelete }
+        var deferApply = blockers.hasAgentSpaces || blockers.isImporting
+        for uuid in blockers.liveUserSpaceSyncUuids {
+            guard let uuid, let cursor = table.cursors[uuid] else { return .undelete }
+            if cursor.hidden || cursor.deletedAtMs != nil || cursor.purgedAtMs != nil { continue }
+            if cursor.pendingTombstone || cursor.pendingDelete { deferApply = true; continue }
+            return .undelete
+        }
+        return deferApply ? .deferApply : .delete
     }
 }

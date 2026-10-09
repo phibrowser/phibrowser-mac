@@ -328,6 +328,48 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         controller?.profileKeys.allMappings() ?? [:]
     }
 
+    func profileDeletionIntents() -> [String: String] {
+        PhiSpaceSyncState.shared.profileDeletionIntents()
+    }
+
+    func finishLocalProfileDeletion(syncUuid: String) {
+        PhiSpaceSyncState.shared.removeProfileDeletionIntent(syncUuid: syncUuid)
+    }
+
+    func isProfileBeingDeletedLocally(syncUuid: String) -> Bool {
+        PhiSpaceSyncState.shared.isProfileBeingDeletedLocally(syncUuid: syncUuid)
+    }
+
+    /// Classifies every Space row bound to the Profile. A remotely soft-deleted (hidden) row does
+    /// not count: it is kept for the retention window only. `SpaceManager.isProfileInUse` counts
+    /// those rows too, so it cannot answer this question.
+    func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers {
+        var blockers = ProfileDeletionBlockers()
+        blockers.isDefaultProfile = localProfileId == LocalStore.defaultProfileId
+        for model in account.localStorage.getAllSpaces() where model.profileId == localProfileId {
+            guard !SpaceManager.isIncognitoSpaceId(model.spaceId) else { continue }
+            if ImportTargetLock.shared.isImporting(into: model.spaceId) { blockers.isImporting = true }
+            if AgentSpaceManager.isAgentSpaceModel(name: model.name, iconName: model.iconName,
+                                                   colorHex: model.colorHex)
+                || AgentSpaceManager.isPersistentAgentSpaceModel(iconName: model.iconName,
+                                                                 colorHex: model.colorHex) {
+                blockers.hasAgentSpaces = true
+                continue
+            }
+            guard !PhiSpaceSyncState.shared.isHidden(model.spaceId) else { continue }
+            blockers.liveUserSpaceSyncUuids.append(syncUuid(forSpaceId: model.spaceId))
+        }
+        return blockers
+    }
+
+    func deleteForRemoteTombstone(localProfileId: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            ProfileManager.shared.deleteProfile(localProfileId, sync: .remoteTombstone) { success, _ in
+                continuation.resume(returning: success)
+            }
+        }
+    }
+
     func isProfileListEnumerated() -> Bool {
         ProfileManager.shared.isProfileListEnumerated
     }

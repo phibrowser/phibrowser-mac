@@ -2189,6 +2189,16 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                         excludingClientId:(NSString *)excludingClientId
     NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:));
 
+// Same as above. userInitiated (Sync Now) also retries Chromium sync right
+// away instead of waiting out exponential backoff from an earlier failure.
+// Optional for compatibility with frameworks that only have the 4-arg form.
+- (void)notifyPhiSyncInvalidationForAccount:(NSString *)accountId
+                              profileUUID:(NSString *)profileUUID
+                              dataTypeIds:(NSArray<NSNumber *> *)dataTypeIds
+                        excludingClientId:(NSString *)excludingClientId
+                            userInitiated:(BOOL)userInitiated
+    NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:userInitiated:));
+
 @end
 
 typedef NS_ENUM(NSInteger, PhiMediaControlAction) {

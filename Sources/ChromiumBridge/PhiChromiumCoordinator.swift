@@ -725,10 +725,18 @@ import SwiftUI
                 let bridge = ChromiumLauncher.sharedInstance().bridge
                 var pullPhi = false
                 switch demand {
-                case .catchUp:
+                case .catchUp, .requestedCatchUp:
                     pullPhi = true
-                    bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
-                                                       dataTypeIds: [], excludingClientId: "")
+                    // Sync now also lets Chromium skip its backoff; an older framework without
+                    // the selector gets the plain catch-up.
+                    if demand == .requestedCatchUp, bridge?.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:userInitiated:))) == true {
+                        bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
+                                                           dataTypeIds: [], excludingClientId: "",
+                                                           userInitiated: true)
+                    } else {
+                        bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
+                                                           dataTypeIds: [], excludingClientId: "")
+                    }
                 case .changes(let hints):
                     for hint in hints {
                         if hint.namespace == "chromium:phi", hint.dataTypes.contains(2000),
@@ -772,7 +780,7 @@ import SwiftUI
                 // deliberately a no-op), sharing one single-flight pull with SSE and the
                 // fallback timer. A stopped coordinator would drop the request, so refuse it.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
-                    requestSync: { [weak self] in
+                    requestSync: { [weak self] bySyncNow in
                         guard let self, self.phiSyncEngine === engine,
                               AccountController.shared.account === account,
                               self.phiSyncPairingEnabled,
@@ -781,12 +789,12 @@ import SwiftUI
                               let invalidation = self.phiInvalidationCoordinator, invalidation.isRunning,
                               ChromiumLauncher.sharedInstance().bridge?.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) == true
                         else { return false }
-                        invalidation.requestCatchUp()
+                        invalidation.requestCatchUp(requested: bySyncNow)
                         return true
                     }, currentSnapshot: { engine.statusSnapshot }, isNative: true)]
                 participants += profiles.map { id in
                     SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
-                                          requestSync: { true }) // Included in the accepted account-wide request above.
+                                          requestSync: { _ in true }) // Included in the accepted account-wide request above.
                 }
                 return participants
             },

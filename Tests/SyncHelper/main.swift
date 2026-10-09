@@ -6,6 +6,7 @@ import Foundation
     var ids = ["phi", "profile"]
     var snapshots: [String: SyncContextSnapshot] = [:]
     var requests: [String: Int] = [:]
+    var syncNowRequests: [String: Int] = [:]
     var enumerations = 0
     var saved: Date?
     var saves = 0
@@ -23,8 +24,9 @@ import Foundation
         for id in ids { status(id, .upToDate, at: time) }
     }
     func participant(_ id: String) -> SyncHelper.Participant {
-        SyncHelper.Participant(id: id, read: { self.onRead?(id); return self.snapshots[id] }, requestSync: {
+        SyncHelper.Participant(id: id, read: { self.onRead?(id); return self.snapshots[id] }, requestSync: { bySyncNow in
             self.requests[id, default: 0] += 1
+            if bySyncNow { self.syncNowRequests[id, default: 0] += 1 }
             return self.acceptsRequests
         }, isNative: id == "phi")
     }
@@ -57,6 +59,7 @@ import Foundation
         await completionBarrier()
         await lateSuccessAndBrowsingDoNotRequestRounds()
         await explicitRefreshIsRateLimited()
+        await onlySyncNowMarksItsDispatch()
         await failuresStalenessAndTimeout()
         await rejectedRequestsDoNotCreateRounds()
         await membershipAndUpstream()
@@ -557,6 +560,25 @@ import Foundation
         print("PASS helper: explicit refresh coalesces and respects minimum request interval")
     }
 
+    /// A pane reload dispatches an ordinary round; only Sync now marks its dispatch, which
+    /// lets Chromium skip its exponential backoff.
+    @MainActor static func onlySyncNowMarksItsDispatch() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170)
+        await helper.refresh(requestSync: true)
+        precondition(f.requests["phi"] == 2 && f.syncNowRequests.isEmpty,
+                     "A pane reload was dispatched as Sync now")
+        f.succeed(at: 172)
+        await helper.refresh()
+        f.tick(240)
+        let state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 3
+                     && f.syncNowRequests == ["phi": 1, "profile": 1],
+                     "Sync now was not marked on its dispatch")
+        helper.stop()
+        print("PASS helper: only Sync now marks its dispatch")
+    }
+
     @MainActor static func failuresStalenessAndTimeout() async {
         let f = Fixture(), helper = await f.completedHelper()
         f.tick(104); f.status("profile", .offline, at: 103)
@@ -650,12 +672,12 @@ import Foundation
         var holdProfile = false
         var profileReply: CheckedContinuation<SyncContextSnapshot?, Never>?
         let raced = SyncHelper(isEligible: { true }, participants: {
-            [SyncHelper.Participant(id: "phi", read: { race.snapshots["phi"] }, requestSync: { true },
+            [SyncHelper.Participant(id: "phi", read: { race.snapshots["phi"] }, requestSync: { _ in true },
                                     currentSnapshot: { race.snapshots["phi"] }),
              SyncHelper.Participant(id: "profile", read: {
                  if holdProfile { return await withCheckedContinuation { profileReply = $0 } }
                  return race.snapshots["profile"]
-             }, requestSync: { true })]
+             }, requestSync: { _ in true })]
         }, lastSuccess: nil, saveSuccess: { date in race.saved = date; return true }, now: { race.time })
         race.status("phi", .upToDate, at: 90); race.status("profile", .upToDate, at: 90)
         await raced.refresh()
@@ -681,7 +703,7 @@ import Foundation
 
         var resume: CheckedContinuation<SyncContextSnapshot?, Never>?
         let lateHelper = SyncHelper(isEligible: { true }, participants: {
-            [SyncHelper.Participant(id: "phi", read: { await withCheckedContinuation { resume = $0 } }, requestSync: { true })]
+            [SyncHelper.Participant(id: "phi", read: { await withCheckedContinuation { resume = $0 } }, requestSync: { _ in true })]
         }, lastSuccess: nil, saveSuccess: { _ in preconditionFailure("Retired account wrote a timestamp") })
         let pending = Task { await lateHelper.refresh() }
         while resume == nil { await Task.yield() }
@@ -751,7 +773,7 @@ import Foundation
              SyncHelper.Participant(id: "profile", read: {
                  if hold { return await withCheckedContinuation { reply = $0 } }
                  return g.snapshots["profile"]
-             }, requestSync: { g.requests["profile", default: 0] += 1; return true })]
+             }, requestSync: { _ in g.requests["profile", default: 0] += 1; return true })]
         }, lastSuccess: nil, saveSuccess: { _ in true }, now: { g.time })
         await raced.refresh()
         g.succeed(at: 103)
@@ -1052,7 +1074,7 @@ import Foundation
 
         // Without a native participant nothing changes: the request waits for the interval.
         let h = Fixture(), plain = SyncHelper(isEligible: { true }, participants: {
-            [SyncHelper.Participant(id: "phi", read: { h.snapshots["phi"] }, requestSync: {
+            [SyncHelper.Participant(id: "phi", read: { h.snapshots["phi"] }, requestSync: { _ in
                 h.requests["phi", default: 0] += 1; return true })]
         }, lastSuccess: nil, saveSuccess: { _ in true }, now: { h.time })
         h.ids = ["phi"]; h.status("phi", .upToDate, at: 90)

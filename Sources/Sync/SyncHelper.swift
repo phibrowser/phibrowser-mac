@@ -11,7 +11,8 @@ final class SyncHelper {
         let read: @MainActor () async -> SyncContextSnapshot?
         /// True only when the owner accepted the request. Transport completion is
         /// observed separately; a bridge that drops an accepted request times out.
-        let requestSync: @MainActor () -> Bool
+        /// `bySyncNow` marks a round the user asked for, which may skip engine backoff.
+        let requestSync: @MainActor (_ bySyncNow: Bool) -> Bool
         // Native state can change while asynchronous bridge observations are outstanding.
         var currentSnapshot: (@MainActor () -> SyncContextSnapshot?)? = nil
         /// The native engine. Its settled Offline lets a Sync now request fail fast: it skips
@@ -430,7 +431,7 @@ final class SyncHelper {
             endedRound = nil
             explicitRefreshPending = false
             syncNowPending = false
-            let accepted = sources.allSatisfy { $0.requestSync() }
+            let accepted = sources.allSatisfy { $0.requestSync(bySyncNow) }
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             if accepted {

@@ -339,7 +339,13 @@ active; Queued while a Sync now request waits, with the reason Unobservable (a
 participant is missing or Checking), Busy (Initial sync or Syncing) or Rate limited
 (with the earliest dispatch time); Rejected after an adapter refused a dispatch that
 carried a Sync now request, until the next tap or accepted dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
-to Idle. A queued request dispatches on the helper's own poll. The helper's
+to Idle. A queued request dispatches on the helper's own poll. A dispatch that carries a Sync now request
+passes `bySyncNow` to every participant: the native adapter queues a requested catch-up
+(`PhiSyncInvalidationDemand.requestedCatchUp`, which survives coalescing with automatic
+catch-ups) and sends Chromium its account-wide catch-up with `userInitiated: YES`, so each
+Profile's sync scheduler retries at once instead of waiting out exponential backoff from an
+earlier failure (server throttling still holds). A framework without that selector gets the
+plain catch-up; pane reloads and automatic demand never set it. The helper's
 `ExplicitRequestPolicy` decides only explicit requests while a participant is
 unobservable: `.waitForAllObservable` (the default) keeps them queued;
 `.dispatchToObservable` dispatches once every observable participant is settled,

@@ -1275,6 +1275,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 
     private func updateMediaPlayerHeight(_ height: CGFloat) {
         if height == 0 {
+            mediaPlayerView.cancelHeightAnimation()
             guard mediaPlayerHeightConstraint != nil else { return }
             mediaPlayerHeightConstraint?.deactivate()
             mainStackView.removeArrangedSubview(mediaPlayerFootprint)
@@ -1299,19 +1300,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
                 mediaPlayerHeightConstraint = make.height.equalTo(height).constraint
             }
         } else {
-            // The overlay's AppKit height owns animation; transport remains
-            // pinned above the footer and SwiftUI fills the live host bounds.
             view.layoutSubtreeIfNeeded()
-            mediaPlayerHeightConstraint?.update(offset: height)
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                view.layoutSubtreeIfNeeded()
-            } else {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.28
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    context.allowsImplicitAnimation = true
-                    view.layoutSubtreeIfNeeded()
-                }
+            mediaPlayerView.animateHeight(to: height) { [weak self] currentHeight in
+                guard let self else { return }
+                self.mediaPlayerHeightConstraint?.update(offset: currentHeight)
+                self.view.layoutSubtreeIfNeeded()
             }
         }
     }

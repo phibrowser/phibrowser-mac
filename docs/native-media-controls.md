@@ -85,7 +85,9 @@ seeking.
 ## Volume
 
 Clicking the volume button toggles a slider below the transport controls.
-Command-click toggles tab mute without changing slider visibility. Muting and
+Leaving the player hides the slider immediately in every presentation mode,
+while its row height animates closed.
+Option-click toggles tab mute without changing slider visibility. Muting and
 unmuting preserve the gain, and adjusting gain does not unmute the tab.
 
 Gain is a per-WebContents multiplier in [0, 1], combined with page volume and

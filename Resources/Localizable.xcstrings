@@ -92539,12 +92539,12 @@
       }
     },
     "sidebar.media.volumeButton" : {
-      "comment" : "Sidebar media player - Open volume slider; Command-click toggles tab mute",
+      "comment" : "Sidebar media player - Open volume slider; Option-click toggles tab mute",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Volume (⌘-click to toggle mute)"
+            "value" : "Volume (⌥-click to toggle mute)"
           }
         }
       }

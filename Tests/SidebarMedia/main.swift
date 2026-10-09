@@ -113,6 +113,8 @@ struct SidebarMediaHarness {
         await visitOrderCyclingFocusAndSplit()
         await cycleRevalidationAndStaleCallbacks()
         await preferencesPresentationAndHover()
+        await volumeClosesOnHoverExit()
+        await heightAnimationReversesAndCancels()
         await physicalTrackpadDirectionsAndSingleCommit()
         await gestureCancellation()
         print("Sidebar native adapter, controller and gesture checks passed")
@@ -201,12 +203,12 @@ struct SidebarMediaHarness {
         value["canSetVolume"] = true
         f.tabs[0].controls.emit(value)
         let controller = f.controller, item = require(controller.item)
-        controller.volumeButtonClicked(for: item, from: .docked, commandPressed: false)
+        controller.volumeButtonClicked(for: item, from: .docked, optionPressed: false)
         precondition(controller.isVolumeExpanded && !f.tabs[0].isAudioMuted,
                      "Ordinary volume clicks show a slider without muting")
-        controller.volumeButtonClicked(for: item, from: .docked, commandPressed: true)
+        controller.volumeButtonClicked(for: item, from: .docked, optionPressed: true)
         precondition(controller.isVolumeExpanded && f.tabs[0].isAudioMuted,
-                     "Command-click toggles mute without toggling the slider")
+                     "Option-click toggles mute without toggling the slider")
         controller.setVolume(0.35, for: require(controller.item), from: .docked)
         precondition(controller.item?.playback.volume == 0.35 && f.tabs[0].isAudioMuted)
         let count = f.tabs[0].controls.actions.count
@@ -778,15 +780,15 @@ struct SidebarMediaHarness {
         await tick()
         let controller = f.controller, controls = f.tabs[0].controls
         controller.setHovering(true, on: .docked)
-        await tick(400)
-        precondition(!controller.isExpanded, "Dynamic must wait for the 500ms dwell")
-        await tick(150)
-        precondition(controller.isExpanded)
+        await tick(40)
+        precondition(!controller.isExpanded, "A passing pointer must not expand the player immediately")
+        await tick(180)
+        precondition(controller.isExpanded, "Hover should reveal details within 220ms")
         controller.setExpanded(false, on: .docked)
         controller.setHovering(true, on: .docked)
-        await tick(80)
+        await tick(40)
         controller.setHovering(false, on: .docked)
-        await tick(550)
+        await tick(180)
         precondition(!controller.isExpanded, "Short hover must cancel delayed expansion")
         f.mode(.alwaysExpanded)
         await tick()
@@ -801,11 +803,11 @@ struct SidebarMediaHarness {
         await tick()
         controller.setHovering(true, on: .docked)
         controller.setActive(true, on: .floating)
-        await tick(550)
+        await tick(180)
         precondition(!controller.isExpanded, "Surface transfer must cancel dwell")
         controller.setHovering(true, on: .floating)
         f.mode(.alwaysCompact)
-        await tick(550)
+        await tick(180)
         precondition(!controller.isExpanded, "Preference changes must cancel dwell")
         let starts = controls.startCount, actions = controls.actions.count
         f.enabled(false)
@@ -822,6 +824,74 @@ struct SidebarMediaHarness {
         await tick()
         precondition(controller.isEnabled && controller.presentationMode == .alwaysCompact)
         precondition(controls.startCount == starts + 1 && !controller.isExpanded)
+    }
+
+    @MainActor
+    static func volumeClosesOnHoverExit() async {
+        let f = Fixture([50, 51]); defer { f.stop() }
+        await tick()
+        let controller = f.controller
+        for surface: SidebarMediaController.Surface in [.docked, .floating] {
+            controller.setActive(true, on: surface)
+            for mode: SidebarMediaPresentationMode in [.dynamic, .alwaysExpanded, .alwaysCompact] {
+                f.mode(mode)
+                await tick()
+                controller.setHovering(true, on: surface)
+                controller.volumeButtonClicked(for: require(controller.item), from: surface,
+                                               optionPressed: false)
+                precondition(controller.isVolumeExpanded)
+                let expanded = controller.isExpanded
+                let otherSurface: SidebarMediaController.Surface = surface == .docked ? .floating : .docked
+                controller.setHovering(false, on: otherSurface)
+                precondition(controller.isVolumeExpanded, "An inactive surface must not close the slider")
+                controller.setHovering(false, on: surface)
+                precondition(!controller.isVolumeExpanded, "Hover exit must close volume immediately in every mode")
+                precondition(controller.isExpanded == expanded, "Volume collapse must preserve the presentation mode")
+            }
+        }
+    }
+
+    @MainActor
+    static func heightAnimationReversesAndCancels() async {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 193, height: 200))
+        let host = SidebarMediaHostingView(rootView: AnyView(Text(verbatim: "Animated player")))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(host)
+        let height = host.heightAnchor.constraint(equalToConstant: 38)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            host.bottomAnchor.constraint(equalTo: container.bottomAnchor), height
+        ])
+        container.layoutSubtreeIfNeeded()
+        let bottom = host.frame.minY
+        var renderedHeights: [CGFloat] = []
+        let update: (CGFloat) -> Void = { value in
+            height.constant = value
+            container.layoutSubtreeIfNeeded()
+            renderedHeights.append(host.frame.height)
+            precondition(abs(host.frame.minY - bottom) < 0.5, "Resizing must keep the player above the footer")
+        }
+        host.animateHeight(to: 124, update: update)
+        await tick(65)
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            precondition(host.frame.height > 38 && host.frame.height < 124,
+                         "Expansion must render intermediate content heights")
+        }
+        let turnHeight = host.frame.height
+        host.animateHeight(to: 38, update: update)
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            precondition(host.frame.height == turnHeight, "Reversing must start at the visible height")
+        }
+        await tick(260)
+        precondition(abs(host.frame.height - 38) < 0.5, "Collapse must reach the compact height")
+        host.animateHeight(to: 124, update: update)
+        await tick(65)
+        host.cancelHeightAnimation()
+        let cancelledHeight = host.frame.height, updates = renderedHeights.count
+        await tick(240)
+        precondition(host.frame.height == cancelledHeight && renderedHeights.count == updates,
+                     "A removed or hidden player's cancelled animation must stop updating layout")
     }
 
     @MainActor

@@ -16,6 +16,7 @@ final class SidebarMediaHostingView: ThemedHostingView {
     var mediaSurface: SidebarMediaController.Surface = .docked {
         didSet { if oldValue != mediaSurface { cancelMediaSwipe() } }
     }
+    private var heightAnimationTimer: Timer?
     private let swipeTracker = SpaceSwipeTracker()
     private var swipeItem: SidebarMediaController.Item?
     private var swipeMonitor: Any?
@@ -24,6 +25,39 @@ final class SidebarMediaHostingView: ThemedHostingView {
     private var swipeSubscriptions = Set<AnyCancellable>()
 
     override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Update the actual host bounds so SwiftUI lays out every animation frame.
+    /// Layer-only resizing can leave the hosted content at its final size.
+    func animateHeight(to height: CGFloat, update: @escaping (CGFloat) -> Void) {
+        cancelHeightAnimation()
+        let initialHeight = frame.height
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              abs(initialHeight - height) > 0.5 else {
+            update(height)
+            return
+        }
+        let start = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                let progress = min(1, (ProcessInfo.processInfo.systemUptime - start) / 0.2)
+                let eased = progress * progress * (3 - 2 * progress)
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    context.allowsImplicitAnimation = false
+                    update(initialHeight + (height - initialHeight) * eased)
+                }
+                if progress >= 1 { self.cancelHeightAnimation() }
+            }
+        }
+        heightAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func cancelHeightAnimation() {
+        heightAnimationTimer?.invalidate()
+        heightAnimationTimer = nil
+    }
 
     private func bindSwipeCancellation() {
         cancelMediaSwipe()
@@ -144,10 +178,14 @@ final class SidebarMediaHostingView: ThemedHostingView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { cancelMediaSwipe() }
+        if window == nil {
+            cancelMediaSwipe()
+            cancelHeightAnimation()
+        }
     }
 
     isolated deinit {
+        heightAnimationTimer?.invalidate()
         if let swipeMonitor { NSEvent.removeMonitor(swipeMonitor) }
         if let swipeWindowCloseObserver { NotificationCenter.default.removeObserver(swipeWindowCloseObserver) }
     }
@@ -186,6 +224,30 @@ private struct SidebarMediaVolumeFrameKey: PreferenceKey {
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
+
+/// Shared feedback for transport, source, PiP and dismissal buttons.
+private struct SidebarMediaButtonStyle: ButtonStyle {
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .background {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(ThemedColor.textPrimary.swiftUIColor(theme: theme, appearance: appearance)
+                        .opacity(isEnabled ? (configuration.isPressed ? 0.18 : (isHovering ? 0.1 : 0)) : 0))
+            }
+            .opacity(isEnabled ? 1 : 0.4)
+            .scaleEffect(isEnabled && configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: configuration.isPressed)
+            .onHover { isHovering = $0 }
+    }
+}
 
 /// Uses the selected presentation mode. The hosting view is
 /// constrained to the sidebar's live width by SidebarViewController.
@@ -258,20 +320,32 @@ struct SidebarMediaPlayerView: View {
                 GeometryReader { geometry in
                     ZStack {
                       VStack(spacing: 0) {
-                       ZStack(alignment: .bottom) {
-                        // Keep details mounted during both directions of the
-                        // host-height animation so their opacity follows it.
-                        expandedDetails(item)
-                            .frame(height: max(0, geometry.size.height - (controller.isVolumeExpanded ? 34 : 0) - 32), alignment: .top)
-                            .frame(maxHeight: .infinity, alignment: .top)
-                            .clipped()
-                            .opacity(min(max((geometry.size.height - (controller.isVolumeExpanded ? 34 : 0) - 38) / 54, 0), 1))
-                            .allowsHitTesting(controller.isExpanded && geometry.size.height > 92)
-                            .accessibilityHidden(!controller.isExpanded || geometry.size.height <= 92)
-                        transportRow(item)
+                       GeometryReader { contentGeometry in
+                        let detailsHeight = max(0, contentGeometry.size.height - 32)
+                        let revealProgress = min(max((detailsHeight - 54) / 32, 0), 1)
+                        ZStack(alignment: .bottom) {
+                            // Reveal details near the end of expansion, reversing on collapse.
+                            // Clip before filling the host so content cannot cover transport.
+                            expandedDetails(item)
+                                .frame(height: detailsHeight, alignment: .top)
+                                .clipped()
+                                .opacity(revealProgress)
+                                .frame(maxHeight: .infinity, alignment: .top)
+                                .allowsHitTesting(controller.isExpanded && revealProgress >= 0.95)
+                                .accessibilityHidden(!controller.isExpanded || revealProgress < 0.95)
+                            transportRow(item)
+                        }
                        }
-                       .frame(maxHeight: .infinity)
-                       if controller.isVolumeExpanded { volumeRow(item).frame(height: 34) }
+                       volumeRow(item)
+                           .frame(height: controller.isVolumeExpanded ? 34 : 0)
+                           .clipped()
+                           .animation(reduceMotion ? nil : .easeInOut(duration: 0.2),
+                                      value: controller.isVolumeExpanded)
+                           // Hide immediately while the row height finishes collapsing.
+                           .opacity(controller.isVolumeExpanded ? 1 : 0)
+                           .animation(nil, value: controller.isVolumeExpanded)
+                           .allowsHitTesting(controller.isVolumeExpanded)
+                           .accessibilityHidden(!controller.isVolumeExpanded)
                       }
                       .id(item.tabId)
                       .transition(reduceMotion ? .opacity : .asymmetric(
@@ -390,7 +464,7 @@ struct SidebarMediaPlayerView: View {
             Button(action: { controller.showTab(for: item, from: surface) }) {
                 siteIcon(item).frame(width: 24, height: 24)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SidebarMediaButtonStyle())
             .focusEffectDisabled()
             .focused($compactFocused)
             .help(openTabLabel)
@@ -423,7 +497,7 @@ struct SidebarMediaPlayerView: View {
                           label: volumeLabel,
                           enabled: true, action: {
                               controller.volumeButtonClicked(for: item, from: surface,
-                                  commandPressed: NSEvent.modifierFlags.contains(.command))
+                                  optionPressed: NSEvent.modifierFlags.contains(.option))
                           })
                 .frame(width: 24)
                 .accessibilityIdentifier("sidebarMedia.volumeButton")
@@ -441,14 +515,10 @@ struct SidebarMediaPlayerView: View {
             ), in: 0...1, onEditingChanged: { editing in
                 volumeTarget = editing ? item : nil
             })
+            .themedTint(.themeColor)
             .disabled(!item.playback.canSetVolume || controller.isChangingTrack)
             .accessibilityLabel(volumeSliderLabel)
             .accessibilityIdentifier("sidebarMedia.volumeSlider")
-            Text(item.playback.volume.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
-                .font(.system(size: 10).monospacedDigit())
-                .foregroundStyle(secondary)
-                .frame(width: 32, alignment: .trailing)
-                .accessibilityIdentifier("sidebarMedia.volumeValue")
         }
         .padding(.horizontal, 10)
         .background(GeometryReader { geometry in
@@ -479,7 +549,7 @@ struct SidebarMediaPlayerView: View {
                                 .frame(width: 16, height: 16)
                                 .frame(width: 22, height: 22)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(SidebarMediaButtonStyle())
                         .focusEffectDisabled()
                         .foregroundStyle(foreground)
                         .help(item.playback.isPictureInPicture ? exitPictureInPictureLabel
@@ -495,7 +565,7 @@ struct SidebarMediaPlayerView: View {
                             .font(.system(size: 10, weight: .semibold))
                             .frame(width: 22, height: 22)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SidebarMediaButtonStyle())
                     .focusEffectDisabled()
                     .foregroundStyle(secondary)
                     .help(dismissLabel)
@@ -638,7 +708,7 @@ struct SidebarMediaPlayerView: View {
                 .foregroundStyle(foreground)
                 .frame(width: 28, height: 28)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarMediaButtonStyle())
         .focusEffectDisabled()
         .disabled(!item.playback.canPlayPause)
         .focused($playPauseFocused)
@@ -667,7 +737,7 @@ struct SidebarMediaPlayerView: View {
                 .foregroundStyle(foreground)
                 .frame(width: 22, height: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarMediaButtonStyle())
         .focusEffectDisabled()
         .disabled(!enabled)
         .help(label)
@@ -749,8 +819,8 @@ struct SidebarMediaPlayerView: View {
                           comment: "Sidebar media player - Accessible status when the source tab is not muted")
     }
     private var volumeLabel: String {
-        NSLocalizedString("sidebar.media.volumeButton", value: "Volume (⌘-click to toggle mute)",
-                          comment: "Sidebar media player - Open volume slider; Command-click toggles tab mute")
+        NSLocalizedString("sidebar.media.volumeButton", value: "Volume (⌥-click to toggle mute)",
+                          comment: "Sidebar media player - Open volume slider; Option-click toggles tab mute")
     }
     private var volumeSliderLabel: String {
         NSLocalizedString("sidebar.media.volumeSlider", value: "Playback volume",

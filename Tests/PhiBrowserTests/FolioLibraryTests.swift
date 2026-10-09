@@ -225,6 +225,43 @@ final class FolioLibraryTests: XCTestCase {
         (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
     }
 
+    func testHighlightsFollowTheItemMarkerNotAnArticleHeading() throws {
+        let long = String(repeating: "Paragraph.\n\n", count: 8_000)
+        try write("Recap.md", "---\ntitle: Recap\n---\n\n# Recap\n\n## Highlights\n\nThe match's best moments.")
+        try write("Long highlight.md", "---\ntitle: Long\n---\n\n# Long\n\n\(long)## Highlights\n\n### Highlight\n\n> Late quote")
+        let items = try FolioLibrary.list(folder: folder)
+        XCTAssertEqual(items.first { $0.basename == "Recap" }?.hasHighlights, false)
+        XCTAssertEqual(items.first { $0.basename == "Long highlight" }?.hasHighlights, true)
+
+        let unmarked = FolioDocument(markdown: "# Recap\n\n## Highlights\n\nThe match's best moments.",
+                                     source: nil, hasHighlights: false)
+        XCTAssertTrue(unmarked.article.contains("best moments"))
+        XCTAssertTrue(unmarked.highlights.isEmpty)
+        let marked = FolioDocument(markdown: "# Recap\n\n## Highlights\n\nThe article's own.\n\n## Highlights\n\n### Highlight\n\n> Mine",
+                                   source: nil, hasHighlights: true)
+        XCTAssertTrue(marked.article.contains("The article's own."))
+        XCTAssertTrue(marked.highlights.contains("Mine"))
+        XCTAssertFalse(marked.highlights.contains("The article's own."))
+    }
+
+    func testOneUnreadableFileDoesNotFailTheListing() throws {
+        try write("Readable.md", "---\ntitle: Readable\n---\nBody")
+        try write("Locked.md", "---\ntitle: Locked\n---\nBody")
+        let locked = folder.appendingPathComponent("Locked.md")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path) }
+        let items = try FolioLibrary.list(folder: folder)
+        XCTAssertEqual(items.map(\.basename), ["Readable"])
+    }
+
+    func testListingFrontmatterPrefixStopsAtTheClosingLine() {
+        let head = Data("---\ntitle: A\nsource: https://example.com\n---\n\n# A\n\nBody".utf8)
+        XCTAssertEqual(String(decoding: SaveForLaterService.frontmatterPrefix(head), as: UTF8.self),
+                       "---\ntitle: A\nsource: https://example.com\n---\n")
+        XCTAssertTrue(SaveForLaterService.frontmatterPrefix(Data("# No frontmatter".utf8)).isEmpty)
+        XCTAssertTrue(SaveForLaterService.frontmatterPrefix(Data("---\ntitle: cut off".utf8)).isEmpty)
+    }
+
     func testListingRefreshesMetadataWhenFileChanges() throws {
         try write("Article.md", "---\ntitle: Before\n---\nBody")
         let previous = try FolioLibrary.list(folder: folder)

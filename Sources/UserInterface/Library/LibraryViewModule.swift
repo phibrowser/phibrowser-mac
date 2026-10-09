@@ -206,6 +206,7 @@ private struct LibraryContentView: View {
             ])
             if selection == .folio {
                 await folioModel.refresh()
+                await folioModel.watchFolder()
             }
         }
         .onDisappear { folioModel.clear() }

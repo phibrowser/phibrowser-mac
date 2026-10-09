@@ -867,12 +867,17 @@ enum SaveForLaterService {
     /// carries alone, so Undo yields to it rather than deleting it; the
     /// rename that a highlight performs also means `basename` no longer
     /// resolves, which is the same conclusion by a second route.
+    ///
+    /// Folio's section is the LAST `## Highlights`, holding `### Highlight`
+    /// entries: an article that has its own heading of that name is not one
+    /// the user highlighted, and Undo must still remove it.
     private static func trashPair(basename: String, folder: URL) {
         Task.detached(priority: .utility) {
             let fileManager = FileManager.default
             let markdown = folder.appendingPathComponent(basename + ".md")
             if let content = try? String(contentsOf: markdown, encoding: .utf8),
-               content.contains("\n## Highlights\n") {
+               let section = content.range(of: "\n## Highlights\n", options: .backwards),
+               content[section.upperBound...].contains("### Highlight") {
                 AppLogDebug("[SaveForLater] undo skipped: item has highlights")
                 return
             }
@@ -949,6 +954,11 @@ enum SaveForLaterService {
             let landed = await Task.detached(priority: .utility) { () -> String in
                 renamePairSync(from: from, to: to, folder: folder)
             }.value
+            if landed != from {
+                await recordArchiveRename(
+                    from: folder.appendingPathComponent(from + ".mhtml"),
+                    to: folder.appendingPathComponent(landed + ".mhtml"))
+            }
             let encoded = (try? JSONEncoder().encode(["basename": landed]))
                 .flatMap { String(data: $0, encoding: .utf8) }
             libraryReply(encoded ?? "{\"error\":\"rename_failed\"}",
@@ -1178,7 +1188,9 @@ enum SaveForLaterService {
     private struct BrokerWrite {
         let handle: FileHandle
         let partURL: URL
-        let finalURL: URL
+        /// Mutable: a pair renamed while its webpage copy is still streaming
+        /// (a highlight taken during the capture) moves the copy's landing.
+        var finalURL: URL
         /// When this write last made progress. The sweep is an IDLE timeout,
         /// not a deadline from `writeBegin`: a large archive streams in 512
         /// KiB round trips, and a fixed budget from the start would drop the
@@ -1188,6 +1200,68 @@ enum SaveForLaterService {
     }
 
     private static var brokerWrites: [String: BrokerWrite] = [:]
+
+    /// Webpage copies whose pair was renamed before the copy landed, by the
+    /// archive URL the copy was aimed at. The markdown moves at once, but
+    /// the copy is still being captured or streamed under the old name, and
+    /// landing there would leave it beside no markdown — an orphan the
+    /// renamed item never shows as its webpage copy.
+    private static var renamedArchives: [URL: (to: URL, at: Date)] = [:]
+    /// Longer than any capture takes; short enough that the map stays small.
+    private static let renamedArchiveLifetime: TimeInterval = 600
+    /// Archives between `writeEnd` taking their token and the file landing.
+    private static var finishingArchives: Set<URL> = []
+
+    /// Where an archive aimed at `url` belongs now, following its pair's
+    /// renames — unless markdown sits at the old name again, which is a later
+    /// save that claimed the freed name and keeps its own copy.
+    private static func currentArchiveURL(_ url: URL) -> URL {
+        var current = url
+        let now = Date()
+        for _ in 0..<4 {
+            guard let renamed = renamedArchives[current],
+                  now.timeIntervalSince(renamed.at) < renamedArchiveLifetime,
+                  !FileManager.default.fileExists(
+                      atPath: current.deletingPathExtension()
+                          .appendingPathExtension("md").path) else { break }
+            current = renamed.to
+        }
+        return current
+    }
+
+    private static func recordArchiveRename(from old: URL, to new: URL) async {
+        let now = Date()
+        renamedArchives = renamedArchives.filter {
+            now.timeIntervalSince($0.value.at) < renamedArchiveLifetime
+        }
+        renamedArchives[old] = (new, now)
+        // A copy still streaming lands under the new name.
+        for (token, write) in brokerWrites where write.finalURL == old {
+            brokerWrites[token]?.finalURL = new
+        }
+        // A copy that is landing right now is moved by `writeEnd` once it
+        // has; one that landed between the move and now is moved here.
+        guard !finishingArchives.contains(old) else { return }
+        await moveLandedArchive(old, to: new)
+    }
+
+    /// Moves a copy that landed under its pair's old name to the new one,
+    /// when the old name holds no markdown and the new one has no copy yet.
+    private static func moveLandedArchive(_ old: URL, to new: URL) async {
+        await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            let oldMarkdown = old.deletingPathExtension().appendingPathExtension("md")
+            guard fileManager.fileExists(atPath: old.path),
+                  !fileManager.fileExists(atPath: new.path),
+                  !fileManager.fileExists(atPath: oldMarkdown.path) else { return }
+            do {
+                try fileManager.moveItem(at: old, to: new)
+                AppLogDebug("[SaveForLater] webpage copy followed its renamed pair")
+            } catch {
+                AppLogWarn("[SaveForLater] webpage copy left under its old name: \(error)")
+            }
+        }.value
+    }
 
     /// A broker file name is a bare `<basename>.md|.mhtml` inside the
     /// folder; anything that could escape it is refused.
@@ -1232,9 +1306,13 @@ enum SaveForLaterService {
                     at: folder, withIntermediateDirectories: true)
                 FileManager.default.createFile(atPath: partURL.path, contents: nil)
                 let handle = try FileHandle(forWritingTo: partURL)
+                let target = folder.appendingPathComponent(name)
                 brokerWrites[token] = BrokerWrite(
                     handle: handle, partURL: partURL,
-                    finalURL: folder.appendingPathComponent(name),
+                    // The pair may have been renamed while the page was
+                    // still being captured, before this write began.
+                    finalURL: target.pathExtension == "mhtml"
+                        ? currentArchiveURL(target) : target,
                     touched: Date())
                 // Sweep an upload the extension abandoned mid-stream, once it
                 // has actually gone quiet.
@@ -1323,6 +1401,8 @@ enum SaveForLaterService {
                              requestId: context.requestId)
                 return
             }
+            finishingArchives.insert(write.finalURL)
+            defer { finishingArchives.remove(write.finalURL) }
             let outcome = await Task.detached(priority: .utility) { () -> Bool in
                 do {
                     try write.handle.close()
@@ -1343,6 +1423,13 @@ enum SaveForLaterService {
                     return false
                 }
             }.value
+            if outcome, write.finalURL.pathExtension == "mhtml" {
+                // The pair was renamed while this copy was landing.
+                let settled = currentArchiveURL(write.finalURL)
+                if settled != write.finalURL {
+                    await moveLandedArchive(write.finalURL, to: settled)
+                }
+            }
             libraryReply(outcome ? "{\"ok\":true}" : "{\"error\":\"write_failed\"}",
                          requestId: context.requestId)
         }

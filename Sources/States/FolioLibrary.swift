@@ -84,8 +84,11 @@ enum FolioLibrary {
         for url in files where url.pathExtension == "md" {
             let basename = url.deletingPathExtension().lastPathComponent
             guard SaveForLaterService.libraryFileURL(basename: basename, ext: "md", folder: folder) != nil else { continue }
-            let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            // One file that cannot be read — renamed or removed by a save
+            // between the listing and this read, or unreadable — is skipped,
+            // not allowed to fail the whole library.
+            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true else { continue }
             let modified = values.contentModificationDate ?? .distantPast
             let size = values.fileSize ?? 0
             let hasWebpage = archives.contains(basename)
@@ -93,9 +96,10 @@ enum FolioLibrary {
                 items.append(item)
                 continue
             }
-            let handle = try FileHandle(forReadingFrom: url)
+            guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
             defer { try? handle.close() }
-            let head = String(decoding: try handle.read(upToCount: 64 * 1024) ?? Data(), as: UTF8.self)
+            guard let data = try? handle.read(upToCount: 64 * 1024) else { continue }
+            let head = String(decoding: data, as: UTF8.self)
             let fields = frontmatter(head).fields
             let savedString = fields["saved"] ?? ""
             let saved = dateParser.date(from: savedString) ?? {
@@ -107,10 +111,19 @@ enum FolioLibrary {
                 basename: basename, title: fields["title"].flatMap { $0.isEmpty ? nil : $0 } ?? basename,
                 source: fields["source"] ?? "", site: fields["site"] ?? "",
                 isVideo: fields["type"] == "video",
-                hasHighlights: head.contains("\n## Highlights\n") || basename.range(of: #" highlight( \d+)?$"#, options: .regularExpression) != nil,
+                hasHighlights: hasHighlightMarker(basename),
                 hasWebpage: hasWebpage, saved: saved, modified: modified, size: size))
         }
         return items.sorted { $0.modified == $1.modified ? $0.id < $1.id : $0.modified > $1.modified }
+    }
+
+    /// Whether an item holds highlights. Mirage renames a pair to
+    /// `<name> highlight` (with the usual ` 2` collision bump) when it takes
+    /// its first highlight, and always appends the section at the end of the
+    /// file — so the name answers this for a long article whose section lies
+    /// past any head, and an article's own "Highlights" heading does not.
+    static func hasHighlightMarker(_ basename: String) -> Bool {
+        basename.range(of: #" highlight( \d+)?$"#, options: .regularExpression) != nil
     }
 
     static func read(item: FolioItem, folder: URL) throws -> FolioDocument {
@@ -120,7 +133,8 @@ enum FolioLibrary {
         let limit = 16 * 1024 * 1024
         let data = try handle.read(upToCount: limit + 1) ?? Data()
         guard data.count <= limit else { throw CocoaError(.fileReadTooLarge) }
-        return FolioDocument(markdown: String(decoding: data, as: UTF8.self), source: item.sourceURL)
+        return FolioDocument(markdown: String(decoding: data, as: UTF8.self), source: item.sourceURL,
+                             hasHighlights: item.hasHighlights)
     }
 
     static func trash(item: FolioItem, folder: URL) throws {
@@ -140,17 +154,21 @@ struct FolioDocument: Sendable {
     let article: String
     let highlights: String
 
-    init(markdown: String, source: URL?) {
+    /// `hasHighlights` is the item's marker: without it the file holds no
+    /// Folio section, and a "Highlights" heading belongs to the article.
+    init(markdown: String, source: URL?, hasHighlights: Bool = true) {
         let document = Document(parsing: FolioLibrary.frontmatter(markdown).body)
         var children = Array(document.blockChildren)
         if let heading = children.first as? Heading, heading.level == 1 {
             children.removeFirst()
         }
-        // Split semantic headings only; fenced samples and nested quotes are content.
-        let split = children.firstIndex {
+        // Split semantic headings only; fenced samples and nested quotes are
+        // content. Folio's section is appended last, so an article heading of
+        // the same name earlier in the body does not split it.
+        let split = hasHighlights ? children.lastIndex {
             guard let heading = $0 as? Heading else { return false }
             return heading.level == 2 && heading.plainText == "Highlights"
-        }
+        } : nil
         var sanitizer = FolioMarkdownSanitizer(source: source)
         func sanitizedMarkdown(_ blocks: ArraySlice<BlockMarkup>) -> String {
             sanitizer.visit(Document(blocks))?.format()
@@ -199,6 +217,11 @@ final class FolioLibraryModel {
     var filter: Filter = .all
     var oldestFirst = false
     private var refreshing = false
+    /// A refresh asked for while one was running. The running one may have
+    /// listed the folder before the change that prompted this request — a
+    /// Trash, a save landing — so it goes round once more instead of the
+    /// request being dropped.
+    private var refreshRequested = false
     private var readGeneration = 0
 
     enum Filter: CaseIterable { case all, articles, videos, highlights }
@@ -231,13 +254,23 @@ final class FolioLibraryModel {
     }
 
     func refresh() async {
-        guard !refreshing else { return }
-        guard SaveForLaterService.featureEnabled else {
-            clear()
+        guard !refreshing else {
+            refreshRequested = true
             return
         }
         refreshing = true
         defer { refreshing = false; isLoading = false }
+        repeat {
+            refreshRequested = false
+            guard SaveForLaterService.featureEnabled else {
+                clear()
+                return
+            }
+            await load()
+        } while refreshRequested && !Task.isCancelled
+    }
+
+    private func load() async {
         let resolved = URL(fileURLWithPath: PhiPreferences.SaveForLater.effectiveFolderPath(forProfile: profileId), isDirectory: true)
         if resolved != folder {
             clear()
@@ -253,6 +286,41 @@ final class FolioLibraryModel {
             reconcileSelection()
         } catch {
             if !Task.isCancelled { loadError = error.localizedDescription }
+        }
+    }
+
+    /// Keeps the list current while the library is on screen: Mirage writes
+    /// saves, highlights and renames into the folder at any time, and so can
+    /// Finder. Runs until the calling task is cancelled.
+    func watchFolder() async {
+        while !Task.isCancelled {
+            let target = folder
+            let descriptor = open(target.path, O_EVTONLY)
+            guard descriptor >= 0 else {
+                // No folder yet — the first save creates it.
+                try? await Task.sleep(for: .seconds(2))
+                if FileManager.default.fileExists(atPath: target.path) { await refresh() }
+                continue
+            }
+            // Newest only: a save is a burst of writes, and one refresh after
+            // the burst covers all of them.
+            let changes = AsyncStream<DispatchSource.FileSystemEvent>(
+                bufferingPolicy: .bufferingNewest(1)) { continuation in
+                let source = DispatchSource.makeFileSystemObjectSource(
+                    fileDescriptor: descriptor, eventMask: [.write, .delete, .rename], queue: .main)
+                source.setEventHandler { continuation.yield(source.data) }
+                source.setCancelHandler { close(descriptor) }
+                continuation.onTermination = { _ in source.cancel() }
+                source.resume()
+            }
+            for await event in changes {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                await refresh()
+                // The folder itself moved or went away, or settings pointed
+                // the library elsewhere: watch whatever the path is now.
+                if !event.isDisjoint(with: [.delete, .rename]) || folder != target { break }
+            }
         }
     }
 

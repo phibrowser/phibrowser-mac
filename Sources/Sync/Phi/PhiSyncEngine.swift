@@ -2976,6 +2976,8 @@ actor PhiSyncEngine {
                     if (error as? SpaceSyncMappingError) == .persistFailed { cursorSaveFailures += 1 }
                     if item.fromServer {
                         cursor.pendingApply = try? item.entity.serializedData()
+                        cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                        cursor.version = max(cursor.version, item.version)
                         table.cursors[item.uuid] = cursor
                     }
                     continue
@@ -3000,6 +3002,8 @@ actor PhiSyncEngine {
                 // exactly as it was, so the re-park pass above picks it up again.
                 if item.fromServer {
                     cursor.pendingApply = try? item.entity.serializedData()
+                    cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                    cursor.version = max(cursor.version, item.version)
                     table.cursors[item.uuid] = cursor
                 }
                 continue
@@ -3020,6 +3024,8 @@ actor PhiSyncEngine {
                 AppLogWarn("[phi-sync] space rebind did not take effect tag=\(String(tag.prefix(8))); parking the entity")
                 if item.fromServer {   // same reason as the landing-failure park above
                     cursor.pendingApply = try? item.entity.serializedData()
+                    cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                    cursor.version = max(cursor.version, item.version)
                     table.cursors[item.uuid] = cursor
                 }
                 continue

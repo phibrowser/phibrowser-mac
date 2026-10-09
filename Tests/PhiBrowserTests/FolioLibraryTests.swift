@@ -237,11 +237,11 @@ final class FolioLibraryTests: XCTestCase {
                                      source: nil, hasHighlights: false)
         XCTAssertTrue(unmarked.article.contains("best moments"))
         XCTAssertTrue(unmarked.highlights.isEmpty)
-        let marked = FolioDocument(markdown: "# Recap\n\n## Highlights\n\nThe article's own.\n\n## Highlights\n\n### Highlight\n\n> Mine",
+        let marked = FolioDocument(markdown: "# Recap\n\n## Highlights\n\nThe article text.\n\n## Highlights\n\n### Highlight\n\n> Mine",
                                    source: nil, hasHighlights: true)
-        XCTAssertTrue(marked.article.contains("The article's own."))
+        XCTAssertTrue(marked.article.contains("The article text."))
         XCTAssertTrue(marked.highlights.contains("Mine"))
-        XCTAssertFalse(marked.highlights.contains("The article's own."))
+        XCTAssertFalse(marked.highlights.contains("The article text."))
     }
 
     func testOneUnreadableFileDoesNotFailTheListing() throws {

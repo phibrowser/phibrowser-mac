@@ -1669,6 +1669,12 @@ actor PhiSyncEngine {
             guard !isApplyingRemote else { return }
             // Same reason as `.localSpaceChange`: a rename carries the time the user made it.
             await stampLocalProfileEdits()
+            if spaceSectionEnabled, spaceStore != nil {
+                var table = loadSpaceTable()
+                let before = table
+                await convergeProfileNames(table: &table)
+                if table != before { writeSpaceTable(table) }
+            }
             await push(retryOnConflict: true)
         case .recordLocalProfileDeletion:
             break       // The reconciliation above did the work.
@@ -2547,6 +2553,7 @@ actor PhiSyncEngine {
                     await applySpaceTombstones(batch, table: &spaceTable)
                     await applyProfiles(batch, table: &spaceTable)
                     await applyProfileTombstones(batch, table: &spaceTable)
+                    await convergeProfileNames(table: &spaceTable)
                     writeSpaceTable(spaceTable)
 
                     // Land settings, Spaces, then registered owned kinds (section 5.2), allowing a
@@ -4182,6 +4189,7 @@ actor PhiSyncEngine {
             cursor.reconciled = try? merged.serializedData()
             cursor.server = try? item.entity.serializedData()
             cursor.pendingProjection = nil
+            cursor.convergedLocalName = nil
             cursor.pendingApply = nil
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
@@ -4452,6 +4460,73 @@ actor PhiSyncEngine {
         AppLogInfo("[phi-sync] purged deleted profiles count=\(expired.count)")
     }
 
+    /// Account-wide duplicate-name convergence, then the local reclaim (docs/sync.md, "Profile
+    /// entity"). Runs after every landed page and before a Profile round's push.
+    ///
+    /// Convergence: for each loser `SyncableProfiles.convergedNames` names whose Profile is mapped
+    /// here, rename it locally through the inbound-rename path (a taken name falls back to a local
+    /// suffix) and record the account name as a pending edit stamped now, so it publishes like a
+    /// user rename. A loser with a user rename of its own still pending, or already converging, is
+    /// left alone; one with no local Profile here is left to the device that has it.
+    ///
+    /// Reclaim: a mapped Profile whose local name differs from its account name takes the account
+    /// name once no other local Profile uses it. This releases a local suffix after the Profile
+    /// that held the name moved away. A name held by a local-only Profile stays a local suffix.
+    private func convergeProfileNames(table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let profileAccess else { return }
+        let renames = SyncableProfiles.convergedNames(table: table)
+        let candidates = table.profileCursors.contains { _, cursor in
+            cursor.reconciled != nil && cursor.localNameAtBaseline != nil
+        }
+        guard !renames.isEmpty || candidates else { return }
+        let locals = await profileAccess.currentProfiles()
+        let mappings = await profileAccess.allProfileMappings()
+        guard !isStopped else { return }
+        var localByUuid: [String: PhiLocalProfile] = [:]
+        for local in locals {
+            if let uuid = mappings[local.profileId] { localByUuid[uuid] = local }
+        }
+
+        for (uuid, newName) in renames.sorted(by: { $0.key < $1.key }) {
+            guard var cursor = table.profileCursors[uuid], let local = localByUuid[uuid],
+                  cursor.pendingProjection == nil, cursor.convergedLocalName == nil, cursor.pendingApply == nil,
+                  let bytes = cursor.reconciled,
+                  let baseline = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            guard let localName = await profileAccess.applyRemoteName(profileId: local.profileId,
+                                                                      name: newName) else { continue }
+            guard !isStopped else { return }
+            var pending = baseline
+            pending.name.stringValue = newName
+            pending.name.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: hlcNow(), overwrittenStampMs: baseline.name.updatedAtMs)
+            cursor.pendingProjection = try? pending.serializedData()
+            cursor.convergedLocalName = localName
+            table.profileCursors[uuid] = cursor
+            localByUuid[uuid]?.displayName = localName
+            AppLogInfo("[phi-sync] renaming a profile whose name another account profile holds")
+        }
+
+        for (uuid, local) in localByUuid.sorted(by: { $0.key < $1.key }) {
+            guard var cursor = table.profileCursors[uuid], renames[uuid] == nil,
+                  cursor.pendingProjection == nil, cursor.convergedLocalName == nil,
+                  cursor.pendingApply == nil, cursor.deletedAtMs == nil, !cursor.pendingDelete,
+                  let bytes = cursor.reconciled,
+                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            let accountName = entity.name.stringValue
+            // Only a local name that is the known counterpart of the baseline: a different one is
+            // the user's own rename, not yet stamped.
+            guard local.displayName == cursor.localNameAtBaseline,
+                  !accountName.isEmpty, accountName != local.displayName,
+                  await !profileAccess.isDisplayNameTaken(accountName, excluding: local.profileId),
+                  let renamed = await profileAccess.applyRemoteName(profileId: local.profileId,
+                                                                    name: accountName),
+                  renamed == accountName else { continue }
+            guard !isStopped else { return }
+            cursor.localNameAtBaseline = renamed
+            table.profileCursors[uuid] = cursor
+        }
+    }
+
     /// The local Profiles and mappings a Profile snapshot needs, read in two main-actor hops.
     private func localProfileSnapshotInputs() async -> (profiles: [PhiLocalProfile], mappings: [String: String])? {
         guard let profileAccess else { return nil }
@@ -4664,6 +4739,7 @@ actor PhiSyncEngine {
                 cursor.reconciled = try? outgoing.serializedData()
                 cursor.server = cursor.reconciled
                 cursor.pendingProjection = nil
+                cursor.convergedLocalName = nil
                 if let localName { cursor.localNameAtBaseline = localName }
             }
         case .conflict:

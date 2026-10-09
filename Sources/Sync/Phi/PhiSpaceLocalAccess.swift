@@ -340,6 +340,10 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         PhiSpaceSyncState.shared.isProfileBeingDeletedLocally(syncUuid: syncUuid)
     }
 
+    func isDisplayNameTaken(_ name: String, excluding profileId: String) -> Bool {
+        ProfileManager.shared.displayNameExists(name, excluding: profileId)
+    }
+
     func freshProfileIds() -> Set<String>? {
         ProfileManager.readProfiles().map { Set($0.map(\.profileId)) }
     }

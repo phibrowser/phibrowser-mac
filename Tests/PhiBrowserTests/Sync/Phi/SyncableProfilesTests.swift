@@ -165,4 +165,39 @@ final class SyncableProfilesTests: XCTestCase {
         XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["deleting", "live"],
                                                       hasRunningAgentSpace: true)), .undelete)
     }
+
+    // MARK: - Name convergence
+
+    private func liveTable(_ entries: [(uuid: String, name: String, stamp: Int64)]) throws -> PhiSpaceSyncTable {
+        var table = PhiSpaceSyncTable()
+        for entry in entries {
+            var cursor = PhiProfileCursor()
+            cursor.entityId = "e-\(entry.uuid)"
+            cursor.reconciled = try entity(entry.uuid, entry.name, at: entry.stamp).serializedData()
+            table.profileCursors[entry.uuid] = cursor
+        }
+        return table
+    }
+
+    func testTheEarliestNameStampKeepsTheName() throws {
+        let table = try liveTable([("pu-a", "Gemma", 200), ("pu-b", "Gemma", 100), ("pu-c", "Gemma", 300)])
+        XCTAssertEqual(SyncableProfiles.convergedNames(table: table),
+                       ["pu-a": "Gemma (2)", "pu-c": "Gemma (3)"])
+    }
+
+    func testEqualStampsTieOnTheUuidAndLiveNamesAreSkipped() throws {
+        let table = try liveTable([("pu-b", "Gemma", 100), ("pu-a", "Gemma", 100),
+                                   ("pu-c", "Gemma (2)", 50)])
+        XCTAssertEqual(SyncableProfiles.convergedNames(table: table), ["pu-b": "Gemma (3)"])
+    }
+
+    func testAConvergedSetIsLeftAlone() throws {
+        var table = try liveTable([("pu-a", "Gemma", 100), ("pu-b", "Gemma (2)", 300), ("pu-c", "Work", 1)])
+        var deleted = PhiProfileCursor()
+        deleted.entityId = "e-d"
+        deleted.deletedAtMs = 1
+        deleted.reconciled = try entity("pu-d", "Gemma", at: 1).serializedData()
+        table.profileCursors["pu-d"] = deleted
+        XCTAssertTrue(SyncableProfiles.convergedNames(table: table).isEmpty, "deleted Profiles hold no name")
+    }
 }

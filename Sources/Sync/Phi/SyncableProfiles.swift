@@ -78,7 +78,10 @@ enum SyncableProfiles {
             entity.profileUuid = uuid
             if let baseline {
                 let localNameAtBaseline = cursor?.localNameAtBaseline
-                if localNameAtBaseline == nil || localNameAtBaseline == profile.displayName {
+                if let pending, let converged = cursor?.convergedLocalName, converged == profile.displayName {
+                    // A convergence rename: the account name differs from the local one by design.
+                    entity.name = pending.name
+                } else if localNameAtBaseline == nil || localNameAtBaseline == profile.displayName {
                     entity.name = baseline.name
                 } else {
                     entity.name = stamped(string(profile.displayName), baseline.name, pending?.name, now)
@@ -132,6 +135,38 @@ enum SyncableProfiles {
         let candidates = [local.createdAtMs, remote.createdAtMs].filter { $0 > 0 }
         merged.createdAtMs = candidates.min() ?? 0
         return merged
+    }
+
+    // MARK: - Name convergence (docs/sync.md, "Profile entity")
+
+    /// Account-wide duplicate-name resolution, computed identically on every device from the live
+    /// Profile entities' baselines: among Profiles sharing an exact name, the one whose name was
+    /// set earliest (`name.updated_at_ms`, ties to the smaller uuid) keeps it, and every other one
+    /// gets "Name (2)", "Name (3)"… in that same order, skipping names already live on the account.
+    /// Returns `[uuid: newName]` for the Profiles that must be renamed; empty once converged.
+    static func convergedNames(table: PhiSpaceSyncTable) -> [String: String] {
+        var named: [(uuid: String, name: String, stamp: Int64)] = []
+        for uuid in table.liveProfileEntityUuids {
+            guard let bytes = table.profileCursors[uuid]?.reconciled,
+                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes),
+                  !entity.name.stringValue.isEmpty else { continue }
+            named.append((uuid, entity.name.stringValue, entity.name.updatedAtMs))
+        }
+        var taken = Set(named.map(\.name))
+        var out: [String: String] = [:]
+        let groups = Dictionary(grouping: named, by: \.name)
+        for name in groups.keys.sorted() {
+            guard let group = groups[name], group.count > 1 else { continue }
+            let ordered = group.sorted { $0.stamp == $1.stamp ? $0.uuid < $1.uuid : $0.stamp < $1.stamp }
+            var suffix = 2
+            for loser in ordered.dropFirst() {
+                while taken.contains("\(name) (\(suffix))") { suffix += 1 }
+                let candidate = "\(name) (\(suffix))"
+                taken.insert(candidate)
+                out[loser.uuid] = candidate
+            }
+        }
+        return out
     }
 
     // MARK: - Remote tombstone (docs/sync.md, "Profile deletion and rename")

@@ -21,9 +21,7 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
     func applyRemoteName(profileId: String, name: String) async -> String? {
         if failNextRename { failNextRename = false; return nil }
         let target = SyncKeyController.uniqueDisplayName(basedOn: name) { candidate in
-            self.profiles.contains {
-                $0.profileId != profileId && $0.displayName.caseInsensitiveCompare(candidate) == .orderedSame
-            }
+            self.isDisplayNameTaken(candidate, excluding: profileId)
         }
         guard let index = profiles.firstIndex(where: { $0.profileId == profileId }) else { return nil }
         profiles[index].displayName = target
@@ -37,6 +35,14 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
     }
 
     func isKnownLocalProfile(_ profileId: String) -> Bool { profiles.contains { $0.profileId == profileId } }
+    /// Names held by local Profiles this fake does not list as user Profiles (Phi Chat and so on).
+    var otherLocalNames: [String] = []
+    func isDisplayNameTaken(_ name: String, excluding profileId: String) -> Bool {
+        otherLocalNames.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+            || profiles.contains {
+                $0.profileId != profileId && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+            }
+    }
 
     // Deletion
     var intents: [String: String] = [:]
@@ -885,5 +891,107 @@ final class PhiSyncEngineProfileTests: XCTestCase {
 
         XCTAssertEqual(try published(client, "pu-2").createdAtMs, 300)
         XCTAssertEqual(try published(client, "pu-1").createdAtMs, 500)
+    }
+
+    // MARK: - Duplicate names across devices
+
+    /// Two Macs on one account, one fake server. Each has the two Profiles X and Y mapped.
+    private struct Mac {
+        let profiles: FakePhiProfileAccess
+        let store: MemorySpaceStore
+        let engine: PhiSyncEngine
+    }
+
+    private func mac(_ client: FakePhiSyncClient, suite: String) -> Mac {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "X", displayName: "Work", createdAtMs: 0),
+                             PhiLocalProfile(profileId: "Y", displayName: "Home", createdAtMs: 0)]
+        profiles.mappings = ["X": "pu-x", "Y": "pu-y"]
+        let store = drainedStore()
+        let suiteDefaults = UserDefaults(suiteName: "\(suiteName!).\(suite)")!
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                                   defaults: suiteDefaults, deviceKeyId: suite, pairingComplete: true,
+                                   settings: [], spaceAccess: FakePhiSpaceAccess(), spaceStore: store,
+                                   profileAccess: profiles, now: { [unowned self] in self.nowMs })
+        return Mac(profiles: profiles, store: store, engine: engine)
+    }
+
+    private func names(_ mac: Mac) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: mac.profiles.profiles.map { ($0.profileId, $0.displayName) })
+    }
+
+    func testTwoMacsGivingDifferentProfilesTheSameNameConverge() async throws {
+        let client = FakePhiSyncClient()
+        let a = mac(client, suite: "A")
+        let b = mac(client, suite: "B")
+        for m in [a, b] { await m.engine.setSpaceSyncEnabled(true) }
+        await a.engine.pullOnce()           // publishes X and Y
+        await b.engine.pullOnce()           // lands them
+
+        nowMs += 1_000
+        a.profiles.profiles[0].displayName = "Gemma"      // A: X -> Gemma at t1
+        await a.engine.handleLocalProfilesChange()
+        nowMs += 1_000
+        b.profiles.profiles[1].displayName = "Gemma"      // B (not yet synced): Y -> Gemma at t2
+        await b.engine.handleLocalProfilesChange()
+
+        for _ in 0..<4 {
+            nowMs += 1_000
+            await a.engine.pullOnce()
+            await b.engine.pullOnce()
+        }
+
+        XCTAssertEqual(names(a), ["X": "Gemma", "Y": "Gemma (2)"])
+        XCTAssertEqual(names(b), ["X": "Gemma", "Y": "Gemma (2)"])
+        XCTAssertEqual(try published(client, "pu-x").name.stringValue, "Gemma")
+        XCTAssertEqual(try published(client, "pu-y").name.stringValue, "Gemma (2)")
+    }
+
+    /// The loser's own local rename can land suffixed ("Gemma (3)") while its twin still holds the
+    /// local "Gemma (2)"; the reclaim then settles both on the account names within two rounds
+    /// (X first, which frees "Gemma (2)" for Y).
+    func testTheReclaimReleasesALocalSuffixInTheNextRound() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "X", displayName: "Gemma (2)", createdAtMs: 0),
+                             PhiLocalProfile(profileId: "Y", displayName: "Gemma (3)", createdAtMs: 0)]
+        profiles.mappings = ["X": "pu-x", "Y": "pu-y"]
+        let store = drainedStore()
+        for (uuid, name, local) in [("pu-x", "Gemma", "Gemma (2)"), ("pu-y", "Gemma (2)", "Gemma (3)")] {
+            var cursor = PhiProfileCursor()
+            cursor.entityId = "e-\(uuid)"
+            cursor.version = 5
+            cursor.reconciled = try profileEntity(uuid, name).serializedData()
+            cursor.server = cursor.reconciled
+            cursor.localNameAtBaseline = local
+            store.table.profileCursors[uuid] = cursor
+        }
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+        XCTAssertEqual(profiles.profiles[0].displayName, "Gemma", "X reclaims its account name first")
+        await engine.pullOnce()
+        XCTAssertEqual(profiles.profiles.map(\.displayName), ["Gemma", "Gemma (2)"])
+        XCTAssertEqual(store.table.profileCursors["pu-y"]?.localNameAtBaseline, "Gemma (2)")
+        XCTAssertTrue(profileCommits(client).isEmpty, "a reclaim publishes nothing")
+    }
+
+    func testANameHeldByALocalOnlyProfileStaysALocalSuffix() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.otherLocalNames = ["Work"]               // e.g. an unmapped local Profile
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work (2)", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 3)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        XCTAssertEqual(profiles.profiles[0].displayName, "Work (2)")
+        XCTAssertTrue(profileCommits(client).isEmpty, "the local suffix is never published")
     }
 }

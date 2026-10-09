@@ -97,6 +97,11 @@ struct PhiProfileCursor: Codable, Equatable {
     /// legitimately differ from the account name (auto-create and rename suffix duplicates), so
     /// "the local name changed" is decided against this, never against the account name.
     var localNameAtBaseline: String?
+    /// Set while this device publishes an account-wide name convergence rename
+    /// (`SyncableProfiles.convergedNames`): the local name the rename produced here, which may
+    /// carry a local suffix of its own. While the local name equals it, the snapshot publishes the
+    /// pending account name instead of the local one. Cleared when a baseline lands or commits.
+    var convergedLocalName: String?
     /// A local deletion whose tombstone has not committed yet.
     var pendingDelete = false
     /// Consecutive INVALID_MESSAGE rejections of that tombstone.

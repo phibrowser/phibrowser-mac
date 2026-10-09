@@ -36,6 +36,9 @@ protocol PhiProfileLocalAccess: AnyObject {
     /// Whether this device still has that user Profile (`userAssignableProfiles`).
     func isKnownLocalProfile(_ profileId: String) -> Bool
 
+    /// Whether any other local Profile (mapped or not, Phi Chat included) already uses `name`.
+    func isDisplayNameTaken(_ name: String, excluding profileId: String) -> Bool
+
     /// The Profile ids a fresh bridge read lists, without republishing the cached list; nil when
     /// the read failed.
     func freshProfileIds() -> Set<String>?

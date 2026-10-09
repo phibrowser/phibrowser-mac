@@ -1150,6 +1150,23 @@ take parks the entity in `pendingApply`, retried every round; a parked Profile i
 not published over. An entity for a uuid with no local Profile here is stored as
 the baseline only; auto-create reads it.
 
+Two account Profiles can end up with the same name (two Macs renaming different
+Profiles to one name at about the same time). Every device resolves this the same
+way from the live entities' baselines (`SyncableProfiles.convergedNames`): among
+Profiles sharing an exact name, the one whose name was set earliest
+(`name.updated_at_ms`, ties to the smaller uuid) keeps it, and the others become
+"Name (2)", "Name (3)"… in that order, skipping names already live on the account.
+After each landed page, and before a Profile round's push, a device renames each
+such loser it has a local Profile for through the inbound-rename path and publishes
+the new account name as an ordinary rename (`convergedLocalName` lets it publish
+"Name (2)" even when its own local rename had to fall back to a further local
+suffix); losers without a local Profile here are left to the device that has them.
+Then the local reclaim runs: a mapped Profile whose local name is the counterpart
+of its baseline but differs from the account name takes the account name once no
+other local Profile uses it, which releases a suffix the Profile had to take while
+another Profile held the name. A name held by a local-only Profile (unmapped, Phi
+Chat) is never free, so that suffix stays local and is never published.
+
 A Profile tombstone is applied as described in "Profile deletion and rename"; once
 recorded (`deletedAtMs`) the uuid is no longer published or auto-created. A deleted uuid comes back
 only with a newer version than the tombstone it recorded; the cursor is reset and

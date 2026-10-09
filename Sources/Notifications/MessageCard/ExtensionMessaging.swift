@@ -67,6 +67,17 @@ final class ExtensionMessaging: @MainActor ExtensionMessagingProtocol {
         }
     }
 
+    /// Delivers to the browser's extensions only, never to direct agent
+    /// channels. For events that carry user content (a page being saved, a
+    /// note the user typed) and have no task driver to scope them to.
+    @MainActor
+    func broadcastToExtensions(type: String, payload: String) {
+        DispatchQueue.main.async {
+            _ = ChromiumLauncher.sharedInstance().bridge?
+                .broadcastMessageToExtensions(withType: type, payload: payload)
+        }
+    }
+
     /// Agent card decisions never cross the extension broadcast channel.
     @MainActor
     func broadcastToAgent(type: String, payload: String, principalId: String) {

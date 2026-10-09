@@ -312,12 +312,17 @@ import PostHog
             // (Folio's File menu entries) would stay missing for the whole
             // session even once the flag was known. Schedule a refresh after
             // menu tracking ends so an open menu is not rebuilt in place.
+            // Mirage read the same flags at its own boot, usually before
+            // they loaded, so it is told the decided Folio state as well.
             featureFlagObservation = NotificationCenter.default.addObserver(
                 forName: PostHogSDK.didReceiveFeatureFlags,
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshPrefGatedMenuItems() }
+                MainActor.assumeIsolated {
+                    self?.refreshPrefGatedMenuItems()
+                    SaveForLaterService.broadcastArmedState()
+                }
             }
             AccountController.shared.reconcilePostHogIdentityForAnonymousLaunchIfNeeded(
                 isMetricsReportingEnabled: isMetricsReportingEnabled

@@ -33,6 +33,23 @@ enum ProfileDeletionSync {
     case remoteTombstone
 }
 
+/// Why `ProfileManager.deleteProfile` failed.
+enum ProfileDeletionFailure: Error {
+    /// A reason from the bridge or the chat-archive journal, shown as-is; nil when none was given.
+    case reason(String?)
+    /// The sync deletion record could not be saved, so nothing was deleted. The caller owns the
+    /// user-facing text.
+    case sync(PhiProfileDeletionError)
+
+    /// The reason text, for callers that only log it.
+    var reasonText: String? {
+        switch self {
+        case .reason(let text): return text
+        case .sync(let error): return String(describing: error)
+        }
+    }
+}
+
 /// Chromium's TemplateURLService. `id` is the engine's stable sync GUID — the
 /// wire identity used to set the default.
 struct SearchEngineInfo: Identifiable, Hashable {
@@ -266,9 +283,9 @@ final class ProfileManager: ObservableObject {
                        removeMemories: Bool = true,
                        archiveConversations: Bool = true,
                        sync: ProfileDeletionSync = .none,
-                       completion: @escaping (Bool, String?) -> Void) {
+                       completion: @escaping (Bool, ProfileDeletionFailure?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
-            completion(false, "bridge unavailable")
+            completion(false, .reason("bridge unavailable"))
             return
         }
         let syncState = PhiSpaceSyncState.shared
@@ -281,7 +298,7 @@ final class ProfileManager: ObservableObject {
                 syncUuid = try syncState.beginLocalProfileDeletion(localProfileId: profileId)
             } catch {
                 AppLogError("[ProfileManager] could not persist the sync deletion intent")
-                completion(false, nil)
+                completion(false, .sync(error as? PhiProfileDeletionError ?? .intentNotSaved))
                 return
             }
         case .remoteTombstone:
@@ -307,9 +324,9 @@ final class ProfileManager: ObservableObject {
         } catch {
             cancelSync()
             AppLogError("[ProfileChatArchive] could not persist deletion intent")
-            completion(false, NSLocalizedString("profiles.archive.prepareFailed",
+            completion(false, .reason(NSLocalizedString("profiles.archive.prepareFailed",
                 value: "Could not save the conversation recovery record. Please try again.",
-                comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile"))
+                comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile")))
             return
         }
         bridge.deleteProfile(profileId) { [weak self] success, error in
@@ -350,7 +367,7 @@ final class ProfileManager: ObservableObject {
                         AppLogWarn("[ProfileManager] Skipped memory cleanup for deleted profile \(profileId): account unavailable")
                     }
                 }
-                completion(success, error)
+                completion(success, success ? nil : .reason(error))
             }
         }
     }

@@ -1196,8 +1196,9 @@ Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
    deletion (or was already gone), after closing its browsers without
    beforeunload prompts, so success means the deletion is committed.
 4. On success removes the Profile-scoped pinned rows and the `ProfileModel` row
-   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort; the row is kept
-   while Space rows still point at it) and delivers `.recordLocalProfileDeletion`.
+   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort; rows of remotely
+   soft-deleted Spaces that still name the Profile go later with their Space) and
+   delivers `.recordLocalProfileDeletion`.
    On failure removes the journal entry and gives the key back.
 
 The engine reconciles the journal at the start of every pull, push, Profile round
@@ -1236,9 +1237,16 @@ Undelete keeps the baseline, takes the tombstone's id and version and drops
 `server`, so the next publication republishes the entity over the tombstone; the
 deleting device then sees a newer live version, resurrects the cursor, drops its
 dead mapping and auto-create recreates the Profile from the entity. Spaces are
-never rebound to another Profile. `SpaceManager.isProfileInUse` (the UI guard)
-still counts hidden rows, so after a remote Space deletion a user cannot delete
-that Profile locally until Space retention purges them.
+never rebound to another Profile.
+
+Local deletion uses the same hidden-row rule: the UI guard
+`SpaceManager.isProfileInUse` (Profiles settings, the menu and the post-modal
+re-check in `ProfileDeletionFlow`) and `PhiSpaceSyncState.blocksProfileDeletion`
+ignore Space rows a remote deletion soft-deleted
+(`PhiSpaceSyncState.hasLiveSpaceRow`), so a Profile whose Spaces were all deleted
+on another device can be deleted here at once. Live user Spaces and agent Spaces
+still block it. The hidden rows keep their `profileId` and are purged with their
+Spaces by Space retention.
 
 Retention follows the Space model: 30 days after `deletedAtMs` the cursor is
 trimmed to a permanent tombstone (`purgedAtMs`) and a mapping whose local Profile

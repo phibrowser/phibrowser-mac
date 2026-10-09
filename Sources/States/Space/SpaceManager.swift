@@ -1223,13 +1223,17 @@ final class SpaceManager: ObservableObject {
     /// mutations, and a stale "not in use" answer would offer deleting a
     /// profile whose Spaces exist — stranding them on a nonexistent
     /// profile. With no account bound the answer is "in use": a transition
-    /// window should disable profile deletion, not arm it.
+    /// window should disable profile deletion, not arm it. A Space row a remote
+    /// deletion soft-deleted (hidden for the retention window) does not count:
+    /// it is purged with its Space and keeps no user data reachable
+    /// (docs/sync.md, "Profile deletion and rename").
     func isProfileInUse(_ profileId: String) -> Bool {
         guard let account = boundAccount else { return true }
-        let storeSpaces = MainActor.assumeIsolated {
-            account.localStorage.getAllSpaces()
+        return MainActor.assumeIsolated {
+            PhiSpaceSyncState.shared.hasLiveSpaceRow(
+                localProfileId: profileId,
+                rows: account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) })
         }
-        return storeSpaces.contains { $0.profileId == profileId }
     }
 
     /// Currently-active Space of the key slot, derived from `activeSpaceId`.

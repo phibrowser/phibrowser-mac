@@ -1187,10 +1187,10 @@ private struct PinnedTabSnapshot: Equatable {
 
 extension LocalStore {
     /// Removes what a deleted Chromium Profile leaves in this store: its Profile-scoped pinned rows
-    /// (`profileId` set, `spaceId` nil) and its `ProfileModel` row, in one save. The row is kept
-    /// when Space-scoped rows still point at the Profile (remotely soft-deleted Spaces awaiting
-    /// retention); those go with their Spaces. Used by Profile deletion
-    /// (docs/sync.md, "Profile deletion and rename").
+    /// (`profileId` set, `spaceId` nil) and its `ProfileModel` row, in one save. Rows of remotely
+    /// soft-deleted Spaces may still name the Profile; they keep their `profileId` (the `profile`
+    /// relationship is nullified) and go with their Space when Space retention purges it. Used by
+    /// Profile deletion (docs/sync.md, "Profile deletion and rename").
     func deleteProfileRowCascadeThrowing(profileId: String) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
             let owner: String? = profileId
@@ -1198,13 +1198,6 @@ extension LocalStore {
                 predicate: #Predicate { $0.profileId == owner && $0.spaceId == nil }
             )) {
                 context.delete(row)
-            }
-            let remaining = try context.fetchCount(FetchDescriptor<TabDataModel>(
-                predicate: #Predicate { $0.profileId == owner && $0.spaceId != nil }
-            ))
-            guard remaining == 0 else {
-                AppLogInfo("[LocalStore] keeping a deleted profile's row: space rows still reference it count=\(remaining)")
-                return
             }
             for profile in try context.fetch(FetchDescriptor<ProfileModel>(
                 predicate: #Predicate { $0.profileId == profileId }

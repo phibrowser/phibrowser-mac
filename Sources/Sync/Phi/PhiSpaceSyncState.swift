@@ -616,10 +616,18 @@ final class PhiSpaceSyncState {
         // syncUuidLookup rather than the reverse resolver. Before D6 this checked hidden local Spaces.
         let rows = localSpaceProfileIds?() ?? []
         return rows.contains { row in
-            guard row.profileId == localProfileId,
+            guard row.profileId == localProfileId, !isHidden(row.spaceId),
                   let uuid = syncUuidLookup?(row.spaceId) else { return false }
             return publishedSyncUuids.contains(uuid)
         }
+    }
+
+    /// Whether a local Space row keeps this Profile from being deleted locally: any row bound to it
+    /// except one a remote deletion soft-deleted (hidden), which is only kept for the retention
+    /// window and purged with its Space. The same rule the follower applies to a remote Profile
+    /// tombstone (`profileDeletionBlockers`). `SpaceManager.isProfileInUse` answers through this.
+    func hasLiveSpaceRow(localProfileId: String, rows: [(spaceId: String, profileId: String)]) -> Bool {
+        rows.contains { $0.profileId == localProfileId && !isHidden($0.spaceId) }
     }
 
     private func deliver(_ intent: Intent) {

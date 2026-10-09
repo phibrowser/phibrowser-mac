@@ -116,9 +116,15 @@ enum ProfileDeletionFlow {
             ))
             return
         }
-        ProfileManager.shared.deleteProfile(profile.profileId) { success, error in
-            if !success {
-                presentFailure(error ?? NSLocalizedString("settings.profiles.deleteFailure.unknownError", value: "Unknown error", comment: "Fallback profile-delete error reason"))
+        ProfileManager.shared.deleteProfile(profile.profileId, sync: .userAction) { success, failure in
+            guard !success else { return }
+            switch failure {
+            case .sync(.intentNotSaved):
+                presentFailure(syncRecordFailedMessage)
+            case .reason(let reason?):
+                presentFailure(reason)
+            case .reason(nil), nil:
+                presentFailure(NSLocalizedString("settings.profiles.deleteFailure.unknownError", value: "Unknown error", comment: "Fallback profile-delete error reason"))
             }
         }
     }
@@ -142,8 +148,8 @@ enum ProfileDeletionFlow {
     }
 
     /// Failure reason shown when the deletion cannot be recorded for sync, so
-    /// the other devices would never learn about it. The deletion path reports
-    /// it as the completion error string, which `presentFailure` displays.
+    /// the other devices would never learn about it. `ProfileManager` reports it
+    /// as `ProfileDeletionFailure.sync(.intentNotSaved)`.
     static var syncRecordFailedMessage: String {
         NSLocalizedString("profiles.delete.syncRecordFailed", value: "Could not save the sync deletion record. Please try again.",
             comment: "Delete-profile error - Reason shown when the profile could not be deleted because its deletion could not be saved for sync to the user's other devices"

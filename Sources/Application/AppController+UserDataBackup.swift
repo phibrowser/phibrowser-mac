@@ -1112,7 +1112,7 @@ extension AppController {
                 if success {
                     AppLogInfo("[Debug] Phi user data import profile repair rolled back Chromium profile \(profileId)")
                 } else {
-                    AppLogWarn("[Debug] Phi user data import profile repair failed to roll back Chromium profile \(profileId): \(error ?? "unknown error")")
+                    AppLogWarn("[Debug] Phi user data import profile repair failed to roll back Chromium profile \(profileId): \(error?.reasonText ?? "unknown error")")
                 }
                 deleteNext(index: rollbackProfileIds.index(after: index))
             }

@@ -613,6 +613,36 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     /// R-D6-9 changes the third criterion from hidden local Spaces to mapped local
     /// Spaces whose entities have published. Hidden now means remote soft deletion,
     /// and those rows must no longer block Profile deletion.
+    /// A Profile whose only Space rows were soft-deleted by a remote Space deletion is deletable
+    /// locally: neither the local predicate (`SpaceManager.isProfileInUse`) nor the account
+    /// predicate counts the hidden rows.
+    @MainActor
+    func testAProfileWithOnlyHiddenSpaceRowsIsDeletableLocally() {
+        let state = PhiSpaceSyncState()
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var hidden = PhiSpaceCursor()
+        hidden.entityId = "srv-1"
+        hidden.hidden = true
+        hidden.deletedAtMs = 1
+        table.cursors["sync-hidden"] = hidden
+        var live = PhiSpaceCursor()
+        live.entityId = "srv-2"
+        table.cursors["sync-live"] = live
+        state.syncUuidLookup = { ["LOCAL-HIDDEN": "sync-hidden", "LOCAL-LIVE": "sync-live"][$0] }
+        state.localSpaceIdLookup = { ["sync-hidden": "LOCAL-HIDDEN", "sync-live": "LOCAL-LIVE"][$0] }
+        state.globalUuidLookup = { _ in nil }
+        let rows = [(spaceId: "LOCAL-HIDDEN", profileId: "Profile 2"),
+                    (spaceId: "LOCAL-LIVE", profileId: "Profile 3")]
+        state.localSpaceProfileIds = { rows }
+        state.refreshCaches(from: table)
+
+        XCTAssertFalse(state.hasLiveSpaceRow(localProfileId: "Profile 2", rows: rows))
+        XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 2"))
+        XCTAssertTrue(state.hasLiveSpaceRow(localProfileId: "Profile 3", rows: rows))
+        XCTAssertTrue(state.blocksProfileDeletion(localProfileId: "Profile 3"))
+    }
+
     @MainActor
     func testBlocksProfileDeletionCoversMappedAndPublishedLocalSpaces() {
         let state = PhiSpaceSyncState()

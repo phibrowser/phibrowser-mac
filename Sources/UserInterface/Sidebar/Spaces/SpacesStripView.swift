@@ -1726,24 +1726,7 @@ struct SpacesStripView: View {
     }
 
     private func confirmDelete(_ space: Space) {
-        let alert = NSAlert()
-        alert.messageText = String(
-            format: NSLocalizedString("sidebar.deleteSpaceConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
-            space.name
-        )
-        if AccountController.shared.localDataAccount?.localStorage.pinnedTabScope() == .space {
-            alert.informativeText = NSLocalizedString("sidebar.deleteSpaceConfirmation.spaceScopedMessage", value: "Bookmarks and pinned tabs belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation with Space-scoped pinned tabs"
-            )
-        } else {
-            alert.informativeText = NSLocalizedString("sidebar.deleteSpaceConfirmation.message", value: "Bookmarks belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation"
-            )
-        }
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: NSLocalizedString("sidebar.deleteSpaceConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
-        alert.addButton(withTitle: NSLocalizedString("sidebar.deleteSpaceConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard SpaceDeletionConfirmation.run(space: space) else { return }
         manager.deleteSpace(spaceId: space.spaceId, expectedStoreIdentifier: space.storeIdentifier)
         PostHogSDK.shared.capture("space_deleted")
     }

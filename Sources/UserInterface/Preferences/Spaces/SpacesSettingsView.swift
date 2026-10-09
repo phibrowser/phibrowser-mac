@@ -800,16 +800,7 @@ struct SpacesSettingsView: View {
 
     private func deleteSpace(_ space: Space) {
         guard spaceManager.canDeleteSpace(spaceId: space.spaceId) else { return }
-        let alert = NSAlert()
-        alert.messageText = String(
-            format: NSLocalizedString("settings.spaces.deleteConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
-            space.name
-        )
-        alert.informativeText = deleteSpaceConfirmationBody
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.deleteConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.deleteConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard SpaceDeletionConfirmation.run(space: space) else { return }
         spaceManager.deleteSpace(spaceId: space.spaceId, expectedStoreIdentifier: space.storeIdentifier)
         PostHogSDK.shared.capture("space_deleted")
     }
@@ -829,17 +820,6 @@ struct SpacesSettingsView: View {
                 comment: "Body of the change-Space-profile confirmation with App-scoped pinned tabs"
             )
         }
-    }
-
-    private var deleteSpaceConfirmationBody: String {
-        if pinnedTabScope == .space {
-            return NSLocalizedString("settings.spaces.deleteConfirmation.spaceScopedMessage", value: "Bookmarks and pinned tabs belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation with Space-scoped pinned tabs"
-            )
-        }
-        return NSLocalizedString("settings.spaces.deleteConfirmation.message", value: "Bookmarks belonging to this Space will also be removed. This action cannot be undone.",
-            comment: "Body of the delete-Space confirmation"
-        )
     }
 }
 

@@ -378,6 +378,7 @@
 		A57A00000000000000000004 /* inputting.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000003 /* inputting.json */; };
 		A708002022E87F3806A09FDA /* phi_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
+		A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */; };
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
 		A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
@@ -1182,6 +1183,7 @@
 		A57A00000000000000000003 /* inputting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = inputting.json; sourceTree = "<group>"; };
 		A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiEntityCodec.swift; sourceTree = "<group>"; };
 		A71E00000000000000000001 /* PhiAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAlert.swift; sourceTree = "<group>"; };
+		A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedDeletionConfirmation.swift; sourceTree = "<group>"; };
 		A71E00000000000000000003 /* CredentialApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialApprovalAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessApprovalAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
@@ -2951,6 +2953,7 @@
 				A7C021012FFD000000000001 /* ContextMenuEvent.swift */,
 				6A4750013B12345600000001 /* LoginRequiredPresentation.swift */,
 				A71E00000000000000000001 /* PhiAlert.swift */,
+				A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */,
 				A71E00000000000000000003 /* CredentialApprovalAlert.swift */,
 				A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */,
 				D12800000000000000000002 /* PhiSegmentedPicker.swift */,
@@ -3494,6 +3497,7 @@
 				6A4750013B12345600000002 /* LoginRequiredPresentation.swift in Sources */,
 				AB7090710000000000000004 /* SiteMemoryMenuActions.swift in Sources */,
 				A71E00000000000000000002 /* PhiAlert.swift in Sources */,
+				A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */,
 				A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */,
 				A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */,
 				D12800000000000000000001 /* PhiSegmentedPicker.swift in Sources */,

@@ -1011,41 +1011,7 @@ extension AppController {
               let profile = menuItem.representedObject as? PhiBrowserProfile else {
             return
         }
-        let alert = NSAlert()
-        alert.messageText = String(
-            format: NSLocalizedString("app.deleteProfileConfirmation.title", value: "Delete profile \u{201C}%@\u{201D}?", comment: "Title of the delete-profile confirmation"),
-            profile.displayName
-        )
-        alert.informativeText = NSLocalizedString("app.deleteProfileConfirmation.browserDataAndChats", value: "Cookies, history, extensions, and other browser data in this profile will be permanently removed. Conversations will be kept in Phi Chat under Uncategorized. If AI is disabled or unavailable, conversations will be moved when AI is enabled and available again.",
-            comment: "Spaces menu - Profile deletion confirmation distinguishing permanently removed browser data from retained conversations and explaining deferred organization while AI is unavailable"
-        )
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
-        alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        // Re-check AFTER the modal: the menu item was validated when the menu
-        // opened, and a Space can be bound to this profile while the
-        // confirmation sits on screen (background work — the agent surface
-        // included — keeps running under runModal). Nothing below this guard
-        // re-checks: neither ProfileManager nor the Chromium bridge knows
-        // about Space bindings.
-        guard !SpaceManager.shared.isProfileInUse(profile.profileId) else {
-            let errAlert = NSAlert()
-            errAlert.messageText = NSLocalizedString("app.deleteProfileFailure.title", value: "Couldn't delete profile", comment: "Title of the profile-delete error")
-            errAlert.informativeText = NSLocalizedString("app.deleteProfileFailure.inUseBySpace", value: "A Space is using this profile. Delete that Space or change its profile first.",
-                comment: "Body of the profile-delete error when a Space became bound to the profile before the deletion ran"
-            )
-            errAlert.runModal()
-            return
-        }
-        ProfileManager.shared.deleteProfile(profile.profileId) { success, error in
-            if !success {
-                let errAlert = NSAlert()
-                errAlert.messageText = NSLocalizedString("app.deleteProfileFailure.title", value: "Couldn't delete profile", comment: "Title of the profile-delete error")
-                errAlert.informativeText = error ?? NSLocalizedString("app.deleteProfileFailure.unknownError", value: "Unknown error", comment: "Fallback profile-delete error reason")
-                errAlert.runModal()
-            }
-        }
+        ProfileDeletionFlow.confirmAndDelete(profile)
     }
 
     private func configureBookmarksMenuItem(_ menuItem: NSMenuItem) {
@@ -2562,27 +2528,10 @@ extension AppController {
     func confirmSpaceDeletion(_ space: Space) {
         guard SpaceManager.shared.acceptsStoreAction(from: space.storeIdentifier),
               SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId) else { return }
-        let alert = NSAlert()
-        alert.messageText = String(
-            format: NSLocalizedString("app.deleteSpaceConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
-            space.name
-        )
-        let usesSpaceScopedPinnedTabs = MainActor.assumeIsolated {
-            AccountController.shared.localDataAccount?.localStorage.pinnedTabScope() == .space
+        let confirmed = MainActor.assumeIsolated {
+            SpaceDeletionConfirmation.run(space: space)
         }
-        if usesSpaceScopedPinnedTabs {
-            alert.informativeText = NSLocalizedString("app.deleteSpaceConfirmation.spaceScopedMessage", value: "Bookmarks and pinned tabs belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation with Space-scoped pinned tabs"
-            )
-        } else {
-            alert.informativeText = NSLocalizedString("app.deleteSpaceConfirmation.message", value: "Bookmarks belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation"
-            )
-        }
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: NSLocalizedString("app.deleteSpaceConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
-        alert.addButton(withTitle: NSLocalizedString("app.deleteSpaceConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard confirmed else { return }
         SpaceManager.shared.deleteSpace(spaceId: space.spaceId, expectedStoreIdentifier: space.storeIdentifier)
     }
 

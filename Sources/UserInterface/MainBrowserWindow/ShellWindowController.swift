@@ -168,6 +168,42 @@ final class ShellWindow: NSWindow {
         return super.makeFirstResponder(responder)
     }
 
+    // MARK: - Key-change diagnostics
+
+    /// The shell that resigned key most recently, for the next shell's
+    /// become-key log line.
+    private static weak var lastResignedKeyShell: ShellWindow?
+
+    /// Session window id of the Space this shell presents, or nil while a
+    /// dormant session has no Browser yet.
+    private var presentedWindowId: Int? {
+        (windowController as? SpaceSessionController)?.windowId
+    }
+
+    /// Logs every shell key change with its caller. A long-running 2.12.0
+    /// process once moved key to the oldest shell after each Cmd-W tab close
+    /// (`phibrowser-cmd-w-closes-whole-shell-window-on-stable-2-12` in the
+    /// company KB); stable builds cannot be attached, so the stack is the only
+    /// way to name the caller. `becomeKey` runs synchronously inside
+    /// `makeKeyWindow` and AppKit's own key fallback, so the stack holds the
+    /// code that moved key. Remove once that cause is found and fixed.
+    override func becomeKey() {
+        super.becomeKey()
+        let previous = Self.lastResignedKeyShell
+        let previousId = previous.flatMap { $0.presentedWindowId }.map(String.init) ?? "nil"
+        let eventType = NSApp.currentEvent.map { String($0.type.rawValue) } ?? "nil"
+        let stack = Thread.callStackSymbols.dropFirst().prefix(16).joined(separator: "\n    ")
+        AppLogInfo(
+            "[ShellKey] became key windowId=\(presentedWindowId.map(String.init) ?? "nil") "
+                + "previousShell=\(previous === self ? "self" : previousId) event=\(eventType)\n    \(stack)"
+        )
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        Self.lastResignedKeyShell = self
+    }
+
     /// A key event the presented session's Chromium window is redispatching.
     ///
     /// A shortcut the page declines (⌘T with the web content focused) comes

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Extract the production declarations the hostless merge harness needs.
 
-The merge core (SyncableSettings / SyncableSpaces / BookmarkKind / PinKind /
-URLRuleKind / SyncableOwnedItems) is pure, but it names a handful of value
+The merge core (SyncableSettings / SyncableSpaces / SyncableProfiles / BookmarkKind /
+PinKind / URLRuleKind / SyncableOwnedItems) is pure, but it names a handful of value
 types, protocols and constants that live in files whose *other* half drags in
 the app (LocalStore, AccountUserDefaults, SwiftData, AppKit, ThemedColor, the
 logger). Those files cannot be compiled whole outside the Xcode target.
@@ -120,6 +120,7 @@ VERBATIM = [
     ]),
     ("Sources/Sync/Phi/PhiSpaceSyncState.swift", [
         (r"^struct PhiSpaceCursor\b", True),
+        (r"^struct PhiProfileCursor\b", True),
         (r"^struct PhiSpaceSyncTable\b", True),
         (r"^extension PhiSpaceSyncTable \{", True),
     ]),

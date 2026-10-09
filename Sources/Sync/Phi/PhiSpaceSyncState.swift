@@ -76,6 +76,41 @@ struct PhiSpaceCursor: Codable, Equatable {
     var purgedAtMs: Int64?
 }
 
+/// Per-account-Profile sync shadow, keyed by the account profile uuid (a value of
+/// `sync.profileGlobalUuids`). Lives in the same account plist table as the Space cursors, so it
+/// shares the drain state and the atomic `sync.phiSpaces` write (docs/sync.md, "Profile entity").
+/// Every field is optional or defaulted and the table decodes it with `decodeIfPresent`, so a
+/// table written by a build without Profile entities still loads.
+struct PhiProfileCursor: Codable, Equatable {
+    var entityId: String?
+    var version: Int64 = 0
+    /// Serialized `Phi_PhiProfileEntity`: the change-detection baseline.
+    var reconciled: Data?
+    /// Serialized `Phi_PhiProfileEntity`: what the server holds; suppresses a redundant push.
+    var server: Data?
+    /// A decrypted entity whose landing failed (a rename that did not take); retried every round.
+    var pendingApply: Data?
+    /// Serialized `Phi_PhiProfileEntity`: this device's outbound projection, stamped when the
+    /// user renamed the Profile. Same role as `PhiSpaceCursor.pendingProjection`.
+    var pendingProjection: Data?
+    /// The local display name that corresponds to `reconciled` on THIS device. Local names can
+    /// legitimately differ from the account name (auto-create and rename suffix duplicates), so
+    /// "the local name changed" is decided against this, never against the account name.
+    var localNameAtBaseline: String?
+    /// A local deletion whose tombstone has not committed yet.
+    var pendingDelete = false
+    /// Consecutive INVALID_MESSAGE rejections of that tombstone.
+    var deleteRejectRounds = 0
+    /// A remote tombstone whose local application is deferred; retried every round.
+    var pendingTombstone = false
+    /// Consecutive rounds a deferred remote tombstone failed to apply.
+    var tombstoneDeferRounds = 0
+    /// The account Profile is deleted: a remote tombstone landed or this device's own committed.
+    var deletedAtMs: Int64?
+    /// The retention sweep trimmed the baselines; the cursor itself is kept as the tombstone record.
+    var purgedAtMs: Int64?
+}
+
 /// One cursor per account syncUuid, never local spaceId (M3-2b §3.1 / R-D6-8). Cursors can exist without rows
 /// (refused entities or retained tombstones); tag hashes derive from syncUuid for tombstone identity
 /// resolution; and resurrection guards must survive mapping deletion. Persist in account-scoped sync.phiSpaces
@@ -86,6 +121,8 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var formatVersion: Int = currentFormatVersion
     /// Keyed by account syncUuid.
     var cursors: [String: PhiSpaceCursor] = [:]
+    /// Profile entity cursors, keyed by account profile uuid (docs/sync.md, "Profile entity").
+    var profileCursors: [String: PhiProfileCursor] = [:]
 
     // MARK: - Shared marker-derived state (one copy across kinds)
     //
@@ -176,6 +213,52 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// third predicate (§3.5), whose main-actor caller does not own the table.
     var publishedSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.entityId != nil }.keys)
+    }
+
+    /// Account profile uuids that are deleted, or being deleted, on this device: a local deletion
+    /// queued (`pendingDelete`) or a deletion recorded (`deletedAtMs`, kept by the purged cursor).
+    var deletedProfileUuids: Set<String> {
+        Set(profileCursors.filter {
+            $0.value.pendingDelete || $0.value.deletedAtMs != nil || $0.value.purgedAtMs != nil
+        }.keys)
+    }
+
+    /// Account profile uuids with a live Profile entity on the account: an entity this device landed
+    /// or committed and that is not deleted. Local Profile auto-create requires membership here.
+    var liveProfileEntityUuids: Set<String> {
+        let deleted = deletedProfileUuids
+        return Set(profileCursors.filter { $0.value.entityId != nil && !deleted.contains($0.key) }.keys)
+    }
+
+    /// The account name of every live Profile entity, from its baseline (the landed account value),
+    /// falling back to a parked entity that has not landed yet.
+    var liveProfileEntityNames: [String: String] {
+        var names: [String: String] = [:]
+        for uuid in liveProfileEntityUuids {
+            guard let cursor = profileCursors[uuid],
+                  let bytes = cursor.reconciled ?? cursor.pendingApply,
+                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            names[uuid] = entity.name.stringValue
+        }
+        return names
+    }
+
+    /// Profile deletions older than the retention window: trims the cursors to permanent tombstone
+    /// records and returns their uuids. Same model as `purgeExpired` for Spaces.
+    mutating func purgeExpiredProfiles(nowMs: Int64) -> [String] {
+        var purged: [String] = []
+        for (uuid, cursor) in profileCursors {
+            guard let deletedAtMs = cursor.deletedAtMs, cursor.purgedAtMs == nil, !cursor.pendingTombstone,
+                  nowMs - deletedAtMs > PhiSpaceSyncState.retentionMs else { continue }
+            var tombstone = PhiProfileCursor()
+            tombstone.entityId = cursor.entityId
+            tombstone.version = cursor.version
+            tombstone.deletedAtMs = deletedAtMs
+            tombstone.purgedAtMs = nowMs
+            profileCursors[uuid] = tombstone
+            purged.append(uuid)
+        }
+        return purged.sorted()
     }
 
     // MARK: - Mutations (the engine runs these on its round queue; the facade
@@ -304,6 +387,9 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent(Bool.self, forKey: .urlRulesHadRecords) ?? false
         urlRulesReplayedForEmptyTable =
             try container.decodeIfPresent(Bool.self, forKey: .urlRulesReplayedForEmptyTable) ?? false
+        // M3-4b adds the Profile entity cursors; an absent key is a table from before Profile entities.
+        profileCursors =
+            try container.decodeIfPresent([String: PhiProfileCursor].self, forKey: .profileCursors) ?? [:]
     }
 }
 

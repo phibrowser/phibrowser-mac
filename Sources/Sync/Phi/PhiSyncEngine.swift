@@ -5644,6 +5644,8 @@ actor PhiSyncEngine {
             observeStamps(of: entity)
         case .setting(let entity):
             observeStamps(of: entity)
+        case .profile(let entity):
+            observeStamps([entity.name])
         case .none:
             break
         }

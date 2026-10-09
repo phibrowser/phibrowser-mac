@@ -83,6 +83,15 @@ nonisolated struct Phi_PhiEntity: Sendable {
     set {kind = .urlRule(newValue)}
   }
 
+  /// M3-4b
+  var profile: Phi_PhiProfileEntity {
+    get {
+      if case .profile(let v)? = kind {return v}
+      return Phi_PhiProfileEntity()
+    }
+    set {kind = .profile(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   nonisolated enum OneOf_Kind: Equatable, Sendable {
@@ -95,6 +104,8 @@ nonisolated struct Phi_PhiEntity: Sendable {
     case pinTab(Phi_PhiPinTabEntity)
     /// M3-4a
     case urlRule(Phi_PhiURLRuleEntity)
+    /// M3-4b
+    case profile(Phi_PhiProfileEntity)
 
   }
 
@@ -757,13 +768,59 @@ nonisolated struct Phi_PhiURLRuleEntity: Sendable {
   fileprivate var _rank: Phi_PhiSettingValue? = nil
 }
 
+/// One account Profile. Entity identity is the client tag
+/// "phi-profile:<profile_uuid>"; `profile_uuid` is repeated inside the payload
+/// because client_tag_hash is a one-way SHA1 and the receiver cannot recover the
+/// uuid from it.
+///
+/// Carries the account-level Profile's name and existence. Deleting an account
+/// Profile is the ordinary entity tombstone on this tag (no payload field). Only
+/// Profiles mapped through `sync.profileGlobalUuids` are ever published:
+/// unmapped, Phi Chat and agent-fallback Profiles stay device-local.
+///
+/// Same conventions as PhiSpaceEntity: every mutable field is a PhiSettingValue,
+/// always emitted, never omitted-when-empty.
+nonisolated struct Phi_PhiProfileEntity: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The ACCOUNT-LEVEL profile uuid (a value of the device's
+  /// `sync.profileGlobalUuids` mapping), NEVER the device-local Chromium
+  /// basename.
+  var profileUuid: String = String()
+
+  /// string_value, last-writer-wins. The account name of the Profile. A device
+  /// whose local name had to be suffixed for uniqueness keeps its local name and
+  /// does not republish the suffix as a rename.
+  var name: Phi_PhiSettingValue {
+    get {_name ?? Phi_PhiSettingValue()}
+    set {_name = newValue}
+  }
+  /// Returns true if `name` has been explicitly set.
+  var hasName: Bool {self._name != nil}
+  /// Clears the value of `name`. Subsequent reads from it will return its default value.
+  mutating func clearName() {self._name = nil}
+
+  /// NOT last-writer-wins: merged with min() of the non-zero values. Epoch ms of
+  /// ProfileModel.createdDate on the device that published the Profile, 0 when
+  /// unknown.
+  var createdAtMs: Int64 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _name: Phi_PhiSettingValue? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "phi"
 
 nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0\u{1}bookmark\0\u{3}pin_tab\0\u{3}url_rule\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0\u{1}bookmark\0\u{3}pin_tab\0\u{3}url_rule\0\u{1}profile\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -836,6 +893,19 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.kind = .urlRule(v)
         }
       }()
+      case 6: try {
+        var v: Phi_PhiProfileEntity?
+        var hadOneofValue = false
+        if let current = self.kind {
+          hadOneofValue = true
+          if case .profile(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.kind = .profile(v)
+        }
+      }()
       default: break
       }
     }
@@ -866,6 +936,10 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .urlRule?: try {
       guard case .urlRule(let v)? = self.kind else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .profile?: try {
+      guard case .profile(let v)? = self.kind else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
     }()
     case nil: break
     }
@@ -1412,6 +1486,50 @@ nonisolated extension Phi_PhiURLRuleEntity: SwiftProtobuf.Message, SwiftProtobuf
     if lhs._rank != rhs._rank {return false}
     if lhs.createdAtMs != rhs.createdAtMs {return false}
     if lhs.source != rhs.source {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Phi_PhiProfileEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PhiProfileEntity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}profile_uuid\0\u{1}name\0\u{3}created_at_ms\0\u{c}\u{4}\u{4}")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.profileUuid) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._name) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.createdAtMs) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.profileUuid.isEmpty {
+      try visitor.visitSingularStringField(value: self.profileUuid, fieldNumber: 1)
+    }
+    try { if let v = self._name {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if self.createdAtMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.createdAtMs, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Phi_PhiProfileEntity, rhs: Phi_PhiProfileEntity) -> Bool {
+    if lhs.profileUuid != rhs.profileUuid {return false}
+    if lhs._name != rhs._name {return false}
+    if lhs.createdAtMs != rhs.createdAtMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

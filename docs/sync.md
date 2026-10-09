@@ -1081,6 +1081,32 @@ early-return guards. The engine marks `pendingDelete` only on a cursor with an
   retirement also clears the facade's direct store). Closing this gap would
   need a persisted deletion intent, which is a format change.
 
+## Profile entity
+
+Each account Profile is one Phi entity, `PhiProfileEntity` (kind 6 of data type
+2000), tagged `phi-profile:<profile_uuid>` where `profile_uuid` is the account
+uuid from `sync.profileGlobalUuids`, never the Chromium basename. The payload
+carries `name` (LWW `PhiSettingValue`) and `created_at_ms` (`min()` of non-zero
+values); fields 4-7 are reserved. `SyncableProfiles.merge` starts from `remote`
+like every other kind, so a newer client's reserved fields survive. Deleting an
+account Profile is the ordinary entity tombstone on its tag; the server is
+unchanged.
+
+Cursors are `PhiSpaceSyncTable.profileCursors` (`PhiProfileCursor`), keyed by
+account profile uuid, in the same `sync.phiSpaces` table as the Space cursors:
+they share the drain state and the atomic table write, and a table written
+before this field decodes with an empty map (no format bump). The table derives
+`liveProfileEntityUuids` (an entity id and not deleted) and `deletedProfileUuids`
+(`pendingDelete`, `deletedAtMs` or `purgedAtMs`).
+
+Mixed versions: an older client that receives a live Profile entity decrypts it,
+finds a kind it does not own and ignores it (`routeSpaceEntity`'s unknown-kind
+step); a Profile tombstone is logged as a tombstone for an unknown tag and
+dropped. The marker advances and no round fails. The one visible effect is in an
+older client's pairing preview, which counts a Profile entity as an unreadable
+entity: `skippedEntityCount > 0` only disables the wizard's empty-account
+auto-finish shortcut. There is no migration.
+
 ## Stamps and the hybrid logical clock
 
 Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of
@@ -1697,8 +1723,9 @@ written" restart window falls on them.
 The implementation entry points are under [Sources/Sync/Phi](../Sources/Sync/Phi)
 and [Sources/Sync/Keys](../Sources/Sync/Keys). The native bridge is declared in
 [PhiChromiumBridgeHeader.h](../Sources/ChromiumBridge/PhiChromiumBridgeHeader.h).
-`PhiSyncEngine`, `SyncableSettings`, `SyncableSpaces`, `SyncableOwnedItems`,
-`BookmarkKind`, `PinKind`, `URLRuleKind` and `PhiHybridClock` own the rules above.
+`PhiSyncEngine`, `SyncableSettings`, `SyncableSpaces`, `SyncableProfiles`,
+`SyncableOwnedItems`, `BookmarkKind`, `PinKind`, `URLRuleKind` and `PhiHybridClock` own
+the rules above.
 
 Focused suites in [Tests/PhiBrowserTests/Sync](../Tests/PhiBrowserTests/Sync)
 cover pairing, marker persistence, failed/paginated pulls, merges, logical

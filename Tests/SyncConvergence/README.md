@@ -40,7 +40,7 @@ tested without a host at all.
 
 * **Merge core — symlinks, never copies.**
   `Sources/SyncConvergence/PhiSyncCore/*.swift` are relative symlinks to
-  `Sources/Sync/Phi/{SyncableSettings,SyncableSpaces,BookmarkKind,PinKind,URLRuleKind,SyncableOwnedItems,PinnedTabScopeMirror,PhiHybridClock}.swift`,
+  `Sources/Sync/Phi/{SyncableSettings,SyncableSpaces,SyncableProfiles,BookmarkKind,PinKind,URLRuleKind,SyncableOwnedItems,PinnedTabScopeMirror,PhiHybridClock}.swift`,
   and `PhiSyncCore/Proto` is a symlink to `Sources/Sync/Phi/Proto/Generated`.
   The harness lives in the same target, so it sees these declarations at their
   production `internal` visibility: no `public` annotations, no `@testable`,
@@ -145,7 +145,7 @@ domain on exactly two points, both tied to a documented contract, and the
 adversarial generators are kept, not deleted: they are what feeds the
 normalisation properties.
 
-For settings, Spaces, bookmarks, pins and URL rules:
+For settings, Spaces, Profiles, bookmarks, pins and URL rules:
 
 | Property | Statement |
 | --- | --- |

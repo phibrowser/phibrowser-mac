@@ -21,7 +21,7 @@ message PhiEntity {
     PhiBookmarkEntity bookmark = 3;   // M3-3
     PhiPinTabEntity   pin_tab  = 4;   // M3-3
     PhiURLRuleEntity  url_rule = 5;   // M3-4a
-    // M3-4b: PhiProfileEntity profile = 6;
+    PhiProfileEntity  profile  = 6;   // M3-4b
   }
 }
 
@@ -379,4 +379,35 @@ message PhiURLRuleEntity {
   int32 source = 8;
 
   reserved 9 to 12;  // M3-4b / M4. Do not reuse.
+}
+
+// One account Profile. Entity identity is the client tag
+// "phi-profile:<profile_uuid>"; `profile_uuid` is repeated inside the payload
+// because client_tag_hash is a one-way SHA1 and the receiver cannot recover the
+// uuid from it.
+//
+// Carries the account-level Profile's name and existence. Deleting an account
+// Profile is the ordinary entity tombstone on this tag (no payload field). Only
+// Profiles mapped through `sync.profileGlobalUuids` are ever published:
+// unmapped, Phi Chat and agent-fallback Profiles stay device-local.
+//
+// Same conventions as PhiSpaceEntity: every mutable field is a PhiSettingValue,
+// always emitted, never omitted-when-empty.
+message PhiProfileEntity {
+  // The ACCOUNT-LEVEL profile uuid (a value of the device's
+  // `sync.profileGlobalUuids` mapping), NEVER the device-local Chromium
+  // basename.
+  string profile_uuid = 1;
+
+  // string_value, last-writer-wins. The account name of the Profile. A device
+  // whose local name had to be suffixed for uniqueness keeps its local name and
+  // does not republish the suffix as a rename.
+  PhiSettingValue name = 2;
+
+  // NOT last-writer-wins: merged with min() of the non-zero values. Epoch ms of
+  // ProfileModel.createdDate on the device that published the Profile, 0 when
+  // unknown.
+  int64 created_at_ms = 3;
+
+  reserved 4 to 7;  // M4+. Do not reuse.
 }

@@ -75,6 +75,14 @@ enum PhiSyncEntity {
     /// Constant per-kind plaintext entities.name on the server, preserving zero knowledge and idempotency.
     static let urlRuleEntityName = "phi-urlrule"
 
+    /// One account Profile per entity, tagged phi-profile:profile_uuid, where profile_uuid is the account
+    /// uuid from sync.profileGlobalUuids, never the local Chromium basename. Deleting an account Profile is
+    /// the ordinary tombstone on this tag.
+    static let profileTagPrefix = "phi-profile:"
+    static func profileClientTag(_ uuid: String) -> String { profileTagPrefix + uuid }
+    /// Constant per-kind plaintext entities.name on the server, preserving zero knowledge and idempotency.
+    static let profileEntityName = "phi-profile"
+
     /// Chromium's rule: `base64(SHA1(<serialized empty specifics for the type> + client_tag))`.
     /// The server treats it as an opaque uniqueness key, but keeping the Chromium derivation
     /// means a fork client computing it the standard way lands on the same entity.
@@ -106,8 +114,8 @@ struct PhiRemoteEntity {
 struct PhiCommitEntry {
     let entityId: String?      // nil on create
     let clientTagHash: String
-    /// Per-kind plaintext server entities.name constant: phi-settings, phi-space, phi-bookmark, phi-pin or
-    /// phi-urlrule.
+    /// Per-kind plaintext server entities.name constant: phi-settings, phi-space, phi-bookmark, phi-pin,
+    /// phi-urlrule or phi-profile.
     let name: String
     let ciphertext: Data?      // nil for a tombstone
     let deleted: Bool

@@ -355,4 +355,55 @@ final class PhiEntityGoldenBytesTests: XCTestCase {
             "jodLs9n9WuFJYEJt7bRvO0o1l6w=")
         XCTAssertEqual(PhiSyncEntity.urlRuleEntityName, "phi-urlrule")
     }
+
+    // MARK: - M3-4b: PhiProfileEntity
+
+    /// The Profile entity's three field numbers and its `kind` slot 6 (the slot reserved by a
+    /// comment since M3-2). A swap would make two devices decode the same ciphertext differently.
+    func testProfileEntityFieldNumbersArePinned() throws {
+        var uuid = Phi_PhiProfileEntity()
+        uuid.profileUuid = "p"
+        XCTAssertEqual(firstByte(try uuid.serializedData(), "profile_uuid"), 0x0A)
+
+        var name = Phi_PhiProfileEntity()
+        name.name = stamped("Work", at: 1)
+        XCTAssertEqual(firstByte(try name.serializedData(), "name"), 0x12)
+
+        var createdAtMs = Phi_PhiProfileEntity()
+        createdAtMs.createdAtMs = 1
+        XCTAssertEqual(firstByte(try createdAtMs.serializedData(), "created_at_ms"), 0x18)
+    }
+
+    func testKindOneofUsesFieldSixForProfile() throws {
+        var envelope = Phi_PhiEntity()
+        envelope.profile = Phi_PhiProfileEntity()
+
+        let bytes = try envelope.serializedData()
+        XCTAssertEqual([UInt8](bytes), [0x32, 0x00])
+
+        let decoded = try Phi_PhiEntity(serializedBytes: bytes)
+        guard case .profile? = decoded.kind else {
+            return XCTFail("expected the `profile` variant of PhiEntity.kind")
+        }
+    }
+
+    /// Reserved fields 4-7 belong to a later milestone: a value there must survive this build's
+    /// decode as unknown bytes so `SyncableProfiles.merge` can carry it forward.
+    func testProfileEntityKeepsAReservedFieldInUnknownFields() throws {
+        let bytes = Data([0x0A, 0x01, 0x70, 0x20, 0x05])   // profile_uuid "p", field 4 varint 5
+        let decoded = try Phi_PhiProfileEntity(serializedBytes: bytes)
+        XCTAssertEqual(decoded.profileUuid, "p")
+        XCTAssertEqual([UInt8](decoded.unknownFields.data), [0x20, 0x05])
+        XCTAssertEqual(try decoded.serializedData(), bytes)
+    }
+
+    func testProfileTagAndHashArePinnedLiterals() {
+        XCTAssertEqual(PhiSyncEntity.profileTagPrefix, "phi-profile:")
+        XCTAssertEqual(PhiSyncEntity.profileClientTag("0123abcd"), "phi-profile:0123abcd")
+        XCTAssertEqual(
+            PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag("0123abcd")),
+            "teVzE6BujBfdRrvY/1cXeeelbcI=")
+        XCTAssertEqual(PhiSyncEntity.profileEntityName, "phi-profile")
+        XCTAssertFalse(PhiSyncEntity.profileEntityName.contains(":"))
+    }
 }

@@ -174,6 +174,82 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
 
+    /// M3-4b: a table written before Profile entities has no `profileCursors` key. It must decode
+    /// with an empty map rather than fail, which would discard the table and reopen pairing.
+    func testATableWrittenBeforeProfileCursorsStillDecodes() throws {
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var cursor = PhiProfileCursor()
+        cursor.entityId = "srv-p"
+        cursor.version = 3
+        cursor.localNameAtBaseline = "Work (2)"
+        table.profileCursors["pu-1"] = cursor
+        let encoded = try JSONEncoder().encode(table)
+        XCTAssertEqual(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded).profileCursors,
+                       ["pu-1": cursor])
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNotNil(object.removeValue(forKey: "profileCursors"))
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+
+        XCTAssertEqual(decoded.profileCursors, [:])
+        XCTAssertTrue(decoded.hasDrainedFullReplay)
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
+    }
+
+    func testProfileDerivedSetsSeparateLiveFromDeletedEntities() throws {
+        var entity = Phi_PhiProfileEntity()
+        entity.profileUuid = "live"
+        entity.name.stringValue = "Work"
+        var table = PhiSpaceSyncTable()
+        var live = PhiProfileCursor()
+        live.entityId = "e-live"
+        live.reconciled = try entity.serializedData()
+        table.profileCursors["live"] = live
+        var deleted = PhiProfileCursor()
+        deleted.entityId = "e-deleted"
+        deleted.deletedAtMs = 1
+        table.profileCursors["deleted"] = deleted
+        var deleting = PhiProfileCursor()
+        deleting.entityId = "e-deleting"
+        deleting.pendingDelete = true
+        table.profileCursors["deleting"] = deleting
+        var purged = PhiProfileCursor()
+        purged.purgedAtMs = 2
+        table.profileCursors["purged"] = purged
+        // A cursor with no entity id never reached the account.
+        table.profileCursors["unpublished"] = PhiProfileCursor()
+
+        XCTAssertEqual(table.liveProfileEntityUuids, ["live"])
+        XCTAssertEqual(table.deletedProfileUuids, ["deleted", "deleting", "purged"])
+        XCTAssertEqual(table.liveProfileEntityNames, ["live": "Work"])
+    }
+
+    func testPurgeExpiredProfilesKeepsATombstoneCursor() {
+        var table = PhiSpaceSyncTable()
+        var expired = PhiProfileCursor()
+        expired.entityId = "e-1"
+        expired.version = 4
+        expired.reconciled = Data([0x01])
+        expired.deletedAtMs = 1_000
+        table.profileCursors["old"] = expired
+        var fresh = PhiProfileCursor()
+        fresh.deletedAtMs = 1_000 + PhiSpaceSyncState.retentionMs
+        table.profileCursors["fresh"] = fresh
+        let now = 2_000 + PhiSpaceSyncState.retentionMs
+
+        XCTAssertEqual(table.purgeExpiredProfiles(nowMs: now), ["old"])
+
+        let purged = table.profileCursors["old"]
+        XCTAssertEqual(purged?.entityId, "e-1")
+        XCTAssertEqual(purged?.version, 4)
+        XCTAssertNil(purged?.reconciled)
+        XCTAssertEqual(purged?.purgedAtMs, now)
+        XCTAssertEqual(table.profileCursors["fresh"], fresh)
+        XCTAssertTrue(table.deletedProfileUuids.contains("old"))
+    }
+
     // MARK: - formatVersion reset (§3.6)
 
     func testAnOlderFormatIsDiscardedIntoAnEmptyTable() throws {

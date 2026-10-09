@@ -420,8 +420,6 @@ class SpaceSessionController: NSWindowController {
         }
         mainSplitViewController.view.layoutSubtreeIfNeeded()
         hostSidebarViewInShell()
-        SpaceBandSnapshotCache.shared.prefetch(spaceId: spaceId,
-                                               appearanceOf: mainSplitViewController.sidebarViewController.view)
     }
 
     /// The Browser spawned under this dormant session's reserved window id

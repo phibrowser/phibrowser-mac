@@ -523,7 +523,6 @@
 		CC59CE0000010000000000A1 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000010000000000A2 /* Space.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
 		CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */; };
-		CC59CE0000020000000000B1 /* SpaceBandSnapshotCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000B2 /* SpaceBandSnapshotCache.swift */; };
 		CC59CE000003000000000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000003000000000002 /* ProfileManager.swift */; };
 		CC5C51F62FB5C5560044D255 /* credits.html in Resources */ = {isa = PBXBuildFile; fileRef = CC5C51F52FB5C5560044D255 /* credits.html */; };
 		CC6335F72E4B29E000A176DA /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6335F62E4B29E000A176DA /* Logging.swift */; };
@@ -1326,7 +1325,6 @@
 		CC59CE0000010000000000A2 /* Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Space.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
 		CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceSwitchBandSurface.swift; sourceTree = "<group>"; };
-		CC59CE0000020000000000B2 /* SpaceBandSnapshotCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceBandSnapshotCache.swift; sourceTree = "<group>"; };
 		CC59CE000003000000000002 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		CC5C51F52FB5C5560044D255 /* credits.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = credits.html; sourceTree = "<group>"; };
 		CC6335F62E4B29E000A176DA /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
@@ -2808,7 +2806,6 @@
 			children = (
 				CC59CE000002000000000002 /* SpacesStripView.swift */,
 				CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */,
-				CC59CE0000020000000000B2 /* SpaceBandSnapshotCache.swift */,
 				CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */,
 				CC4F00040000000000000002 /* CreateSpacePanel.swift */,
 				CC4F00050000000000000002 /* SpaceChooserView.swift */,
@@ -3970,7 +3967,6 @@
 				CC59CE000001000000000001 /* SpaceManager.swift in Sources */,
 				CC59CE000002000000000001 /* SpacesStripView.swift in Sources */,
 				CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */,
-				CC59CE0000020000000000B1 /* SpaceBandSnapshotCache.swift in Sources */,
 				CC59CE000003000000000001 /* ProfileManager.swift in Sources */,
 				747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */,
 				37C1B2F72EE2882400DD4496 /* OverlayToastViewModel.swift in Sources */,

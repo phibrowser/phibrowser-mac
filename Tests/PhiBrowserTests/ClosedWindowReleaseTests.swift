@@ -29,11 +29,9 @@ final class ClosedWindowReleaseTests: XCTestCase {
         accountDirectory = account.userDataStorage
         store = LocalStore(account: account, storeDirectoryURL: directory, presentsCompatibilityAlerts: false)
         account.localStorage = store
-        SpaceBandSnapshotCache.shared.accountForTesting = account
     }
 
     override func tearDown() async throws {
-        SpaceBandSnapshotCache.shared.accountForTesting = nil
         manager.discardSpacePrewarm()
         // Only a window the test failed to close is still registered here.
         for slot in manager.slots { slot.closeShellIfPresent() }

@@ -36,7 +36,6 @@ final class SpaceDeletionTests: XCTestCase {
         try context.save()
         manager = SpaceManager(observeAccountChanges: false)
         manager.bind(to: account)
-        SpaceBandSnapshotCache.shared.accountForTesting = account
         await drain()
     }
 
@@ -47,7 +46,6 @@ final class SpaceDeletionTests: XCTestCase {
         slots.removeAll()
         await drain()
         manager = nil
-        SpaceBandSnapshotCache.shared.accountForTesting = nil
         try await account.localStorage.closeForAccountDirectoryRemoval()
         for url in [directory, account.userDataStorage].compactMap({ $0 }) {
             try? FileManager.default.removeItem(at: url)

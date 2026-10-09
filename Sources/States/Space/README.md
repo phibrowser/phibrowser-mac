@@ -60,8 +60,8 @@ leaving Space's, during the band slide — animates a switch; the others snap
 reveals it. The band's Core Animation clock starts one run-loop turn after the
 entering side is prepared, once the strip's pending SwiftUI update has
 committed, so both move on the same frames. A Space never shown in the window
-(no cached band, no tabs yet) slides in without waiting for its first tab; its
-rows fill in when that tab lands.
+(no tabs yet) slides in without waiting for its first tab; its rows fill in
+when Chromium reports that tab.
 
 The shell also owns one `FloatingSidebarHostViewController`: its hover trigger,
 panel container, width and dismissal timers survive Space switches. While the
@@ -79,10 +79,9 @@ pinned collection — the same pinned rows, per the Pinned Tab Scope — only th
 slides: the leaving pinned strip stays put and the entering one takes over at landing); it retains outgoing floating
 content until landing and holds pointer-driven dismissal during the transition.
 Both modes retain their band backing layers between switches. Live targets
-reconcile pending native row changes before motion. A dormant target with a
-cached band captured at the current band width slides decoded pixels immediately, then reconciles and draws live
-rows before uncovering them. Without a usable cache, it forms the available
-native rows, including New Tab, before motion starts. Initial floating layout runs during session hosting; return visits do not
+reconcile pending native row changes before motion. A dormant target forms the
+available native rows (pinned tabs, bookmarks, New Tab) before motion starts;
+its normal tabs appear when its Browser reports them, after the slide. Initial floating layout runs during session hosting; return visits do not
 remount or reactivate it. Both backgrounds use the band's Core Animation clock; the
 incoming floating surface removes its theme-fill binding while transparent so
 later theme updates cannot paint over the outgoing rows.

@@ -37,7 +37,6 @@ final class SpaceSwipeTransitionTests: XCTestCase {
         try context.save()
         manager = SpaceManager(observeAccountChanges: false)
         manager.bind(to: account)
-        SpaceBandSnapshotCache.shared.accountForTesting = account
         await drain()
     }
 
@@ -48,7 +47,6 @@ final class SpaceSwipeTransitionTests: XCTestCase {
         slots.removeAll()
         await drain()
         manager = nil
-        SpaceBandSnapshotCache.shared.accountForTesting = nil
         try await account.localStorage.closeForAccountDirectoryRemoval()
         for url in [directory, account.userDataStorage].compactMap({ $0 }) {
             try? FileManager.default.removeItem(at: url)
@@ -194,36 +192,6 @@ final class SpaceSwipeTransitionTests: XCTestCase {
         XCTAssertFalse(first.isSwitchAnimationInFlight)
         XCTAssertTrue(second.isSwitchAnimationInFlight)
         XCTAssertEqual(second.activeSpaceId, "first")
-    }
-
-    func testColdSwipeKeepsCachedRowsThroughCommitUntilLiveRowsArrive() async throws {
-        let slot = try makeSlot(showing: "first", target: "second")
-        let source = try XCTUnwrap(slot.visibleController).mainSplitViewController.sidebarViewController
-        let target = try XCTUnwrap(slot.windowController(for: "second"))
-        let surface = target.mainSplitViewController.sidebarViewController
-        source.prepareSpaceSwitchBand()
-        SpaceBandSnapshotCache.shared.capture(source, spaceId: "second")
-        defer { SpaceBandSnapshotCache.shared.remove(spaceId: "second") }
-        target.browserState.tabs = []
-        target.browserState.updateNormalTabs()
-        slot.handleSpaceSwipe(.update(distance: -150, velocity: 0, began: true))
-        let snapshot = try XCTUnwrap(surface.spaceSwitchBandContainer.subviews.compactMap { $0 as? SpaceBandSnapshotView }.first)
-        await drain()
-        XCTAssertNotNil(snapshot.superview, "A paused preview must keep cached rows")
-        XCTAssertFalse(target.isPresented)
-        slot.handleSpaceSwipe(.end(distance: -150, velocity: 0, cancelled: false))
-        try await waitForSettle(slot)
-        XCTAssertEqual(slot.activeSpaceId, "second")
-        XCTAssertNotNil(snapshot.superview, "Cold activation must not flash an empty band at landing")
-        XCTAssertNil(snapshot.layer?.animation(forKey: "phi.hostedBandSwipePosition"))
-        target.browserState.tabs = [Tab(guid: 9991, url: "https://example.test", isActive: true,
-                                        index: 0, title: "Restored tab")]
-        target.browserState.updateNormalTabs()
-        await drain()
-        await drain()
-        XCTAssertTrue(surface.spaceSwitchBandViews.allSatisfy { $0.alphaValue == 1 })
-        try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertNil(snapshot.superview)
     }
 
     func testRenderedSelectionBackgroundFollowsSwipeAndReversal() async throws {

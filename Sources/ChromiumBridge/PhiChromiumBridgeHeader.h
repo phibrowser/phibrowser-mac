@@ -2191,7 +2191,41 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
+  PhiMediaControlActionPlay,
+  PhiMediaControlActionPause,
+  PhiMediaControlActionSeekTo,
+  PhiMediaControlActionEnterPictureInPicture,
+  PhiMediaControlActionExitPictureInPicture,
+  PhiMediaControlActionPreviousTrack,
+  PhiMediaControlActionNextTrack,
+};
+
+/// All access is on Chromium's UI/main thread. One observer per controller.
+/// Snapshot schema and migration notes: docs/adr/phi-native-media-controls.md.
+@protocol PhiMediaControls <NSObject>
+/// Replaces the observer and immediately sends the current state (possibly nil).
+/// Capture the consumer weakly; this controller retains the block until stopped.
+- (void)startObserving:(void (^)(NSDictionary<NSString*, id>* _Nullable))observer;
+/// Detaches the MediaSession observer and invalidates outstanding tokens.
+/// Does not change playback or close picture-in-picture.
+- (void)stopObserving;
+/// Fresh position/state while observing; nil without a controllable session.
+- (nullable NSDictionary<NSString*, id>*)snapshot;
+/// YES means dispatched, not that the page accepted or completed the action.
+/// seconds is used only for SeekTo. Unsupported and stale actions return NO.
+- (BOOL)performAction:(PhiMediaControlAction)action
+       expectedToken:(NSString*)expectedToken
+             seconds:(double)seconds;
+/// Sets this tab's native user gain, independent of page volume and ducking.
+/// Finite values clamp to [0, 1]; invalid/stale requests return NO.
+- (BOOL)setVolume:(double)volume expectedToken:(NSString*)expectedToken;
+@end
+
 @protocol WebContentWrapper <NSObject>
+
+/// Lazily created, scoped exclusively to this wrapper's WebContents.
+@property(nonatomic, strong, readonly) id<PhiMediaControls> mediaControls;
 
 @property(nonatomic, weak, readonly, nullable) NSView *nativeView;
 @property(nonatomic, assign, readonly) BOOL isLoading;

@@ -181,28 +181,28 @@ private struct SidebarMediaTimelineFrameKey: PreferenceKey {
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
+private struct SidebarMediaVolumeFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+
 /// Uses the selected presentation mode. The hosting view is
 /// constrained to the sidebar's live width by SidebarViewController.
 struct SidebarMediaPlayerView: View {
     private struct ScrubTarget: Equatable {
         let tabId: Int
-        let targetId: String
+        let wrapperId: ObjectIdentifier
         let documentEpoch: Int
-        let source: String
-        let index: Int
-        let topDocumentTimeOrigin: Double
-        let mediaDocumentTimeOrigin: Double
-        let metadataIdentity: String
+        let sourceToken: String
+        let token: String
 
         init(_ item: SidebarMediaController.Item) {
             tabId = item.tabId
-            targetId = item.targetId
+            wrapperId = item.wrapperId
             documentEpoch = item.documentEpoch
-            source = item.playback.source
-            index = item.playback.index
-            topDocumentTimeOrigin = item.playback.topDocumentTimeOrigin
-            mediaDocumentTimeOrigin = item.playback.mediaDocumentTimeOrigin
-            metadataIdentity = item.playback.metadataIdentity
+            sourceToken = item.playback.sourceToken
+            token = item.playback.token
         }
     }
 
@@ -221,6 +221,8 @@ struct SidebarMediaPlayerView: View {
     @State private var isHovering = false
     @State private var hoverExitWorkItem: DispatchWorkItem?
     @State private var timelineFrame: CGRect = .zero
+    @State private var volumeFrame: CGRect = .zero
+    @State private var volumeTarget: SidebarMediaController.Item?
     @State private var cardDragItem: SidebarMediaController.Item?
 
     private var foreground: Color {
@@ -255,17 +257,21 @@ struct SidebarMediaPlayerView: View {
                !controller.isSourceVisible, !controller.isDismissed {
                 GeometryReader { geometry in
                     ZStack {
-                      ZStack(alignment: .bottom) {
+                      VStack(spacing: 0) {
+                       ZStack(alignment: .bottom) {
                         // Keep details mounted during both directions of the
                         // host-height animation so their opacity follows it.
                         expandedDetails(item)
-                            .frame(height: max(0, geometry.size.height - 32), alignment: .top)
+                            .frame(height: max(0, geometry.size.height - (controller.isVolumeExpanded ? 34 : 0) - 32), alignment: .top)
                             .frame(maxHeight: .infinity, alignment: .top)
                             .clipped()
-                            .opacity(min(max((geometry.size.height - 38) / 54, 0), 1))
+                            .opacity(min(max((geometry.size.height - (controller.isVolumeExpanded ? 34 : 0) - 38) / 54, 0), 1))
                             .allowsHitTesting(controller.isExpanded && geometry.size.height > 92)
                             .accessibilityHidden(!controller.isExpanded || geometry.size.height <= 92)
                         transportRow(item)
+                       }
+                       .frame(maxHeight: .infinity)
+                       if controller.isVolumeExpanded { volumeRow(item).frame(height: 34) }
                       }
                       .id(item.tabId)
                       .transition(reduceMotion ? .opacity : .asymmetric(
@@ -286,6 +292,7 @@ struct SidebarMediaPlayerView: View {
                 }
                 .coordinateSpace(name: "sidebarMedia.card")
                 .onPreferenceChange(SidebarMediaTimelineFrameKey.self) { timelineFrame = $0 }
+                .onPreferenceChange(SidebarMediaVolumeFrameKey.self) { volumeFrame = $0 }
                 .contentShape(Rectangle())
                 .simultaneousGesture(DragGesture(minimumDistance: 24, coordinateSpace: .named("sidebarMedia.card"))
                     .onChanged { value in
@@ -293,7 +300,7 @@ struct SidebarMediaPlayerView: View {
                         // pressed mouse drag may claim this parallel path.
                         guard NSEvent.pressedMouseButtons & 1 != 0,
                               controller.backgroundSourceCount > 1,
-                              !timelineFrame.contains(value.startLocation),
+                              !timelineFrame.contains(value.startLocation), !volumeFrame.contains(value.startLocation),
                               controller.matchesCurrentSource(item) else { return }
                         if cardDragItem == nil { cardDragItem = item }
                     }
@@ -302,7 +309,7 @@ struct SidebarMediaPlayerView: View {
                         guard let source = cardDragItem,
                               abs(value.translation.width) >= 40,
                               abs(value.translation.width) > abs(value.translation.height),
-                              !timelineFrame.contains(value.startLocation) else { return }
+                              !timelineFrame.contains(value.startLocation), !volumeFrame.contains(value.startLocation) else { return }
                         controller.cycleSource(for: source,
                                                direction: value.translation.width < 0 ? .next : .previous,
                                                from: surface)
@@ -355,13 +362,14 @@ struct SidebarMediaPlayerView: View {
                     if !isHovering && scrubTarget == nil { scheduleHoverCollapse() }
                 }
                 .onChange(of: item.playback.currentTime) { _, newValue in
-                    if !scrubbing { scrubValue = newValue }
+                    if !scrubbing, let newValue { scrubValue = newValue }
                 }
                 .onDisappear {
                     controller.setHovering(false, on: surface)
                     hoverExitWorkItem?.cancel()
                     hoverExitWorkItem = nil
                     scrubTarget = nil
+                    volumeTarget = nil
                     cardDragItem = nil
                     scrubCancelled = false
                     scrubbing = false
@@ -398,27 +406,55 @@ struct SidebarMediaPlayerView: View {
 
             Spacer(minLength: 0)
             HStack(spacing: 2) {
-                controlButton("backward.fill", label: rewindLabel,
-                              enabled: item.playback.canSeek) {
-                    controller.perform(.seek(item.playback.currentTime - 10), for: item, from: surface)
+                controlButton("backward.end.fill", label: previousTrackLabel,
+                              enabled: item.playback.canPreviousTrack) {
+                    controller.perform(.previousTrack, for: item, from: surface)
                 }
-                .accessibilityIdentifier("sidebarMedia.backward")
+                .accessibilityIdentifier("sidebarMedia.previousTrack")
                 playPauseButton(item)
-                controlButton("forward.fill", label: forwardLabel,
-                              enabled: item.playback.canSeek) {
-                    controller.perform(.seek(item.playback.currentTime + 10), for: item, from: surface)
+                controlButton("forward.end.fill", label: nextTrackLabel,
+                              enabled: item.playback.canNextTrack) {
+                    controller.perform(.nextTrack, for: item, from: surface)
                 }
-                .accessibilityIdentifier("sidebarMedia.forward")
+                .accessibilityIdentifier("sidebarMedia.nextTrack")
             }
             Spacer(minLength: 0)
             controlButton(item.isTabMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                          label: item.isTabMuted ? unmuteLabel : muteLabel,
-                          enabled: true, action: { controller.toggleMute(for: item, from: surface) })
+                          label: volumeLabel,
+                          enabled: true, action: {
+                              controller.volumeButtonClicked(for: item, from: surface,
+                                  commandPressed: NSEvent.modifierFlags.contains(.command))
+                          })
                 .frame(width: 24)
-                .accessibilityIdentifier("sidebarMedia.mute")
+                .accessibilityIdentifier("sidebarMedia.volumeButton")
+                .accessibilityValue(item.isTabMuted ? mutedStatusLabel : unmutedStatusLabel)
         }
         .padding(.horizontal, 8)
         .frame(height: 32)
+    }
+
+    private func volumeRow(_ item: SidebarMediaController.Item) -> some View {
+        HStack(spacing: 6) {
+            Slider(value: Binding(
+                get: { item.playback.volume ?? 1 },
+                set: { controller.setVolume($0, for: volumeTarget ?? item, from: surface) }
+            ), in: 0...1, onEditingChanged: { editing in
+                volumeTarget = editing ? item : nil
+            })
+            .disabled(!item.playback.canSetVolume || controller.isChangingTrack)
+            .accessibilityLabel(volumeSliderLabel)
+            .accessibilityIdentifier("sidebarMedia.volumeSlider")
+            Text(item.playback.volume.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
+                .font(.system(size: 10).monospacedDigit())
+                .foregroundStyle(secondary)
+                .frame(width: 32, alignment: .trailing)
+                .accessibilityIdentifier("sidebarMedia.volumeValue")
+        }
+        .padding(.horizontal, 10)
+        .background(GeometryReader { geometry in
+            Color.clear.preference(key: SidebarMediaVolumeFrameKey.self,
+                                   value: geometry.frame(in: .named("sidebarMedia.card")))
+        })
     }
 
     private func expandedDetails(_ item: SidebarMediaController.Item) -> some View {
@@ -475,11 +511,11 @@ struct SidebarMediaPlayerView: View {
                 }
             }
 
-            if let duration = item.playback.duration {
+            if let duration = item.playback.duration, let position = item.playback.currentTime {
                 VStack(spacing: 4) {
-                    timeline(item, duration: duration)
+                    timeline(item, duration: duration, currentTime: position)
                     HStack {
-                        Text(Self.timeString(item.playback.currentTime))
+                        Text(Self.timeString(position))
                             .accessibilityIdentifier("sidebarMedia.elapsed")
                         Spacer(minLength: 2)
                         Text(Self.timeString(duration))
@@ -488,11 +524,6 @@ struct SidebarMediaPlayerView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(secondary)
                 }
-            } else {
-                Text(liveLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 10)
@@ -503,9 +534,9 @@ struct SidebarMediaPlayerView: View {
     /// A single quiet progress line; the larger invisible hit area supports
     /// dragging, keyboard arrows, and VoiceOver adjustment without a knob.
     private func timeline(_ item: SidebarMediaController.Item,
-                          duration: Double) -> some View {
+                          duration: Double, currentTime: Double) -> some View {
         GeometryReader { geometry in
-            let position = scrubbing ? scrubValue : item.playback.currentTime
+            let position = scrubbing ? scrubValue : currentTime
             let fraction = min(max(position / duration, 0), 1)
             ZStack(alignment: .leading) {
                 Capsule().fill(secondary.opacity(0.34))
@@ -562,8 +593,8 @@ struct SidebarMediaPlayerView: View {
         .onMoveCommand { direction in
             guard item.playback.canSeek else { return }
             switch direction {
-            case .left: controller.perform(.seek(item.playback.currentTime - 5), for: item, from: surface)
-            case .right: controller.perform(.seek(item.playback.currentTime + 5), for: item, from: surface)
+            case .left: controller.perform(.seek(currentTime - 5), for: item, from: surface)
+            case .right: controller.perform(.seek(currentTime + 5), for: item, from: surface)
             default: break
             }
         }
@@ -572,12 +603,12 @@ struct SidebarMediaPlayerView: View {
         .accessibilityIdentifier("sidebarMedia.timeline")
         .accessibilityValue(String(
             format: progressValueFormat,
-            Self.timeString(item.playback.currentTime), Self.timeString(duration)))
+            Self.timeString(currentTime), Self.timeString(duration)))
         .accessibilityAdjustableAction { direction in
             guard item.playback.canSeek else { return }
             switch direction {
-            case .increment: controller.perform(.seek(item.playback.currentTime + 5), for: item, from: surface)
-            case .decrement: controller.perform(.seek(item.playback.currentTime - 5), for: item, from: surface)
+            case .increment: controller.perform(.seek(currentTime + 5), for: item, from: surface)
+            case .decrement: controller.perform(.seek(currentTime - 5), for: item, from: surface)
             @unknown default: break
             }
         }
@@ -609,6 +640,7 @@ struct SidebarMediaPlayerView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .disabled(!item.playback.canPlayPause)
         .focused($playPauseFocused)
         .help(item.playback.isPlaying ? pauseLabel : playLabel)
         .accessibilityLabel(item.playback.isPlaying ? pauseLabel : playLabel)
@@ -708,17 +740,29 @@ struct SidebarMediaPlayerView: View {
         NSLocalizedString("sidebar.media.progressValue", value: "%1$@ of %2$@",
                           comment: "Sidebar media player - Accessible playback position; first time is elapsed, second time is total duration")
     }
-    private var liveLabel: String {
-        NSLocalizedString("sidebar.media.live", value: "Live or duration unavailable",
-                          comment: "Sidebar media player - Status when playback has no finite duration")
+    private var mutedStatusLabel: String {
+        NSLocalizedString("sidebar.media.mutedStatus", value: "Muted",
+                          comment: "Sidebar media player - Accessible status when the source tab is muted")
     }
-    private var rewindLabel: String {
-        NSLocalizedString("sidebar.media.rewind", value: "Back 10 seconds",
-                          comment: "Sidebar media player - Seek backward ten seconds")
+    private var unmutedStatusLabel: String {
+        NSLocalizedString("sidebar.media.unmutedStatus", value: "Unmuted",
+                          comment: "Sidebar media player - Accessible status when the source tab is not muted")
     }
-    private var forwardLabel: String {
-        NSLocalizedString("sidebar.media.forward", value: "Forward 10 seconds",
-                          comment: "Sidebar media player - Seek forward ten seconds")
+    private var volumeLabel: String {
+        NSLocalizedString("sidebar.media.volumeButton", value: "Volume (⌘-click to toggle mute)",
+                          comment: "Sidebar media player - Open volume slider; Command-click toggles tab mute")
+    }
+    private var volumeSliderLabel: String {
+        NSLocalizedString("sidebar.media.volumeSlider", value: "Playback volume",
+                          comment: "Sidebar media player - Adjust the tab playback volume from zero to one hundred percent")
+    }
+    private var previousTrackLabel: String {
+        NSLocalizedString("sidebar.media.previousTrack", value: "Previous track",
+                          comment: "Sidebar media player - Play the previous track in the page queue")
+    }
+    private var nextTrackLabel: String {
+        NSLocalizedString("sidebar.media.nextTrack", value: "Next track",
+                          comment: "Sidebar media player - Play the next track in the page queue")
     }
     private var pauseLabel: String {
         NSLocalizedString("sidebar.media.pause", value: "Pause",

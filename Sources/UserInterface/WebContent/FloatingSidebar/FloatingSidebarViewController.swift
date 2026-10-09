@@ -352,14 +352,14 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         mediaController.$item
             .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
             .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
-            .combineLatest(mediaController.$activeSurface)
-            .map { state, activeSurface in
+            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
+            .map { state, activeSurface, volumeExpanded in
                 let (presentation, visibility) = state
                 let (item, expanded, revalidating) = presentation
                 let (sourceVisible, dismissed) = visibility
                 return activeSurface != .floating || item == nil || revalidating
                     || sourceVisible || dismissed
-                    ? CGFloat(0) : (expanded ? 124 : 38)
+                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)

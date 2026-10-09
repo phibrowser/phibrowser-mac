@@ -212,7 +212,7 @@ class Tab: WebContentRepresentable {
     /// Called when the tab's web content becomes focused.
     var onFocusGained: (() -> Void)?
     
-    private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
+    @Published private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
     let parent: Tab? = nil
     let subTabs: [Tab] = []
     var guid: Int

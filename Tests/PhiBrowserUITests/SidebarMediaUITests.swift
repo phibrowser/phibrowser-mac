@@ -192,26 +192,15 @@ final class SidebarMediaUITests: XCTestCase {
         let beforeDrag = seconds(elapsed.label) ?? 0
         let dragStart = timeline.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
         let dragEnd = timeline.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5))
-        dragStart.press(forDuration: 0.15, thenDragTo: dragEnd)
+        dragStart.click(forDuration: 0.15, thenDragTo: dragEnd)
         XCTAssertTrue(waitUntil(timeout: 8) {
             (seconds(elapsed.label) ?? 0) > beforeDrag + 50
         }, "Dragging the knobless timeline should seek the real media")
 
-        let afterDrag = seconds(elapsed.label) ?? 0
-        let back = app.buttons["sidebarMedia.backward"]
-        let forward = app.buttons["sidebarMedia.forward"]
-        XCTAssertTrue(back.isEnabled && forward.isEnabled,
-                      "The Range-backed fixture should expose ten-second seeking")
-        back.click()
-        XCTAssertTrue(waitUntil(timeout: 6) {
-            (seconds(elapsed.label) ?? Int.max) <= afterDrag - 7
-        }, "Backward should seek about ten seconds")
-        let afterBack = seconds(elapsed.label) ?? 0
-        forward.click()
-        XCTAssertTrue(waitUntil(timeout: 6) {
-            (seconds(elapsed.label) ?? 0) >= afterBack + 7
-        }, "Forward should seek about ten seconds")
-
+        let previous = app.buttons["sidebarMedia.previousTrack"]
+        let next = app.buttons["sidebarMedia.nextTrack"]
+        XCTAssertTrue(previous.exists && next.exists && !previous.isEnabled && !next.isEnabled,
+                      "A single-file source without page queue handlers must disable track navigation")
         try setMediaPreferences(in: app, enabled: nil, mode: .alwaysExpanded)
         offCard.hover()
         XCTAssertTrue(timeline.waitForExistence(timeout: 5), "Always expanded should show details without hovering")
@@ -372,12 +361,12 @@ final class SidebarMediaUITests: XCTestCase {
         let windowFrame = app.windows.firstMatch.frame
         func dragLeft() {
             card.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.15))
-                .press(forDuration: 0.1, thenDragTo: card.coordinate(
+                .click(forDuration: 0.1, thenDragTo: card.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.22, dy: 0.15)))
         }
         func dragRight() {
             card.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.15))
-                .press(forDuration: 0.1, thenDragTo: card.coordinate(
+                .click(forDuration: 0.1, thenDragTo: card.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.82, dy: 0.15)))
         }
         dragLeft()

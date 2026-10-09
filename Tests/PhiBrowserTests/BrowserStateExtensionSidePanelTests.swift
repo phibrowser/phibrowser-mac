@@ -528,6 +528,7 @@ final class WebContentPanelSeparationStyleTests: XCTestCase {
 /// pattern as `BookmarkLayoutTestWebContentWrapper`). `nativeView` is weak,
 /// matching the protocol — tests must hold the NSView strongly themselves.
 private final class ExtensionSidePanelTestWebContentWrapper: NSObject, WebContentWrapper {
+    let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!

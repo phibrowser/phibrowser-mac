@@ -4,281 +4,8 @@
     "" : {
 
     },
-    "settings.general.sidebarMedia.alwaysCompactOption" : {
-      "comment" : "Sidebar media presentation option - Keep transport controls compact without pointer or keyboard expansion",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Always compact"
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.alwaysExpandedOption" : {
-      "comment" : "Sidebar media presentation option - Show the full player whenever background media is available",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Always expanded"
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.dynamicOption" : {
-      "comment" : "Sidebar media presentation option - Expand after a brief pointer hover, or immediately using keyboard focus or VoiceOver",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dynamic (expand on hover)"
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.enabledTitle" : {
-      "comment" : "General settings - Toggle for controls for media playing in background tabs",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show sidebar media player"
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.hint" : {
-      "comment" : "General settings - Explanation of independent enable and presentation preferences, including accessible expansion in Dynamic mode",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turning the player off leaves media playing. Dynamic expands after a brief hover; keyboard focus and VoiceOver can reveal its details immediately."
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.presentationTitle" : {
-      "comment" : "General settings - Independent menu for the sidebar media player presentation mode",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Player display"
-          }
-        }
-      }
-    },
-    "settings.general.sidebarMedia.sectionTitle" : {
-      "comment" : "General settings - Section title for sidebar media player preferences",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sidebar media"
-          }
-        }
-      }
-    },
-    "sidebar.media.dismiss" : {
-      "comment" : "Sidebar media player - Hide this media source without changing playback",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dismiss media player"
-          }
-        }
-      }
-    },
-    "sidebar.media.enterPictureInPicture" : {
-      "comment" : "Sidebar media player - Pop the playing video into a floating picture-in-picture window",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open picture in picture"
-          }
-        }
-      }
-    },
-    "sidebar.media.exitPictureInPicture" : {
-      "comment" : "Sidebar media player - Return a picture-in-picture video to its page",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close picture in picture"
-          }
-        }
-      }
-    },
-    "sidebar.media.forward" : {
-      "comment" : "Sidebar media player - Seek forward ten seconds",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forward 10 seconds"
-          }
-        }
-      }
-    },
-    "sidebar.media.live" : {
-      "comment" : "Sidebar media player - Status when playback has no finite duration",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Live or duration unavailable"
-          }
-        }
-      }
-    },
-    "sidebar.media.mute" : {
-      "comment" : "Sidebar media player - Mute the tab that owns the media",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mute tab"
-          }
-        }
-      }
-    },
-    "sidebar.media.openTab" : {
-      "comment" : "Sidebar media player - Switch to the tab that owns the media",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show playing tab"
-          }
-        }
-      }
-    },
-    "sidebar.media.pause" : {
-      "comment" : "Sidebar media player - Pause the current page media",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pause"
-          }
-        }
-      }
-    },
-    "sidebar.media.play" : {
-      "comment" : "Sidebar media player - Resume the current page media",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Play"
-          }
-        }
-      }
-    },
-    "sidebar.media.progress" : {
-      "comment" : "Sidebar media player - Accessible label for the seek timeline",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playback position"
-          }
-        }
-      }
-    },
-    "sidebar.media.progressValue" : {
-      "comment" : "Sidebar media player - Accessible playback position; first time is elapsed, second time is total duration",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ of %2$@"
-          }
-        }
-      }
-    },
-    "sidebar.media.rewind" : {
-      "comment" : "Sidebar media player - Seek backward ten seconds",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back 10 seconds"
-          }
-        }
-      }
-    },
-    "sidebar.media.nextSource" : {
-      "comment" : "Sidebar media accessibility action - Cycle to the next background media tab without changing playback or tab focus",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next media source"
-          }
-        }
-      }
-    },
-    "sidebar.media.showDetails" : {
-      "comment" : "Sidebar media player - VoiceOver action to reveal metadata and seeking controls without pointer hover",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show media details"
-          }
-        }
-      }
-    },
-    "sidebar.media.unmute" : {
-      "comment" : "Sidebar media player - Unmute the tab that owns the media",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unmute tab"
-          }
-        }
-      }
-    },
-    "sidebar.media.untitled" : {
-      "comment" : "Sidebar media player - Fallback title when the page and media session have no title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Media"
-          }
-        }
-      }
+    "—" : {
+
     },
     "・" : {
       "shouldTranslate" : false
@@ -308,6 +35,9 @@
         }
       },
       "shouldTranslate" : false
+    },
+    "%lld%%" : {
+
     },
     "•" : {
       "shouldTranslate" : false
@@ -72460,6 +72190,90 @@
         }
       }
     },
+    "settings.general.sidebarMedia.alwaysCompactOption" : {
+      "comment" : "Sidebar media presentation option - Keep transport controls compact without pointer or keyboard expansion",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always compact"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.alwaysExpandedOption" : {
+      "comment" : "Sidebar media presentation option - Show the full player whenever background media is available",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always expanded"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.dynamicOption" : {
+      "comment" : "Sidebar media presentation option - Expand after a brief pointer hover, or immediately using keyboard focus or VoiceOver",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dynamic (expand on hover)"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.enabledTitle" : {
+      "comment" : "General settings - Toggle for controls for media playing in background tabs",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show sidebar media player"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.hint" : {
+      "comment" : "General settings - Explanation of independent enable and presentation preferences, including accessible expansion in Dynamic mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning the player off leaves media playing. Dynamic expands after a brief hover; keyboard focus and VoiceOver can reveal its details immediately."
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.presentationTitle" : {
+      "comment" : "General settings - Independent menu for the sidebar media player presentation mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Player display"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarMedia.sectionTitle" : {
+      "comment" : "General settings - Section title for sidebar media player preferences",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sidebar media"
+          }
+        }
+      }
+    },
     "settings.general.theme.colorTitle" : {
       "comment" : "General settings - Theme color row title",
       "extractionState" : "extracted_with_value",
@@ -92499,6 +92313,253 @@
         }
       }
     },
+    "sidebar.media.dismiss" : {
+      "comment" : "Sidebar media player - Hide this media source without changing playback",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss media player"
+          }
+        }
+      }
+    },
+    "sidebar.media.enterPictureInPicture" : {
+      "comment" : "Sidebar media player - Pop the playing video into a floating picture-in-picture window",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open picture in picture"
+          }
+        }
+      }
+    },
+    "sidebar.media.exitPictureInPicture" : {
+      "comment" : "Sidebar media player - Return a picture-in-picture video to its page",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close picture in picture"
+          }
+        }
+      }
+    },
+    "sidebar.media.forward" : {
+      "comment" : "Sidebar media player - Seek forward ten seconds",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forward 10 seconds"
+          }
+        }
+      }
+    },
+    "sidebar.media.live" : {
+      "comment" : "Sidebar media player - Status when playback has no finite duration",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live or duration unavailable"
+          }
+        }
+      }
+    },
+    "sidebar.media.mute" : {
+      "comment" : "Sidebar media player - Mute the tab that owns the media",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mute tab"
+          }
+        }
+      }
+    },
+    "sidebar.media.mutedStatus" : {
+      "comment" : "Sidebar media player - Accessible status when the source tab is muted",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muted"
+          }
+        }
+      }
+    },
+    "sidebar.media.nextSource" : {
+      "comment" : "Sidebar media accessibility action - Cycle to the next background media tab without changing playback or tab focus",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next media source"
+          }
+        }
+      }
+    },
+    "sidebar.media.nextTrack" : {
+      "comment" : "Sidebar media player - Play the next track in the page queue",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next track"
+          }
+        }
+      }
+    },
+    "sidebar.media.openTab" : {
+      "comment" : "Sidebar media player - Switch to the tab that owns the media",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show playing tab"
+          }
+        }
+      }
+    },
+    "sidebar.media.pause" : {
+      "comment" : "Sidebar media player - Pause the current page media",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause"
+          }
+        }
+      }
+    },
+    "sidebar.media.play" : {
+      "comment" : "Sidebar media player - Resume the current page media",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play"
+          }
+        }
+      }
+    },
+    "sidebar.media.previousTrack" : {
+      "comment" : "Sidebar media player - Play the previous track in the page queue",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous track"
+          }
+        }
+      }
+    },
+    "sidebar.media.progress" : {
+      "comment" : "Sidebar media player - Accessible label for the seek timeline",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playback position"
+          }
+        }
+      }
+    },
+    "sidebar.media.progressValue" : {
+      "comment" : "Sidebar media player - Accessible playback position; first time is elapsed, second time is total duration",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "sidebar.media.rewind" : {
+      "comment" : "Sidebar media player - Seek backward ten seconds",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back 10 seconds"
+          }
+        }
+      }
+    },
+    "sidebar.media.showDetails" : {
+      "comment" : "Sidebar media player - VoiceOver action to reveal metadata and seeking controls without pointer hover",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show media details"
+          }
+        }
+      }
+    },
+    "sidebar.media.unmute" : {
+      "comment" : "Sidebar media player - Unmute the tab that owns the media",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unmute tab"
+          }
+        }
+      }
+    },
+    "sidebar.media.unmutedStatus" : {
+      "comment" : "Sidebar media player - Accessible status when the source tab is not muted",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unmuted"
+          }
+        }
+      }
+    },
+    "sidebar.media.untitled" : {
+      "comment" : "Sidebar media player - Fallback title when the page and media session have no title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media"
+          }
+        }
+      }
+    },
+    "sidebar.media.volumeButton" : {
+      "comment" : "Sidebar media player - Open volume slider; Command-click toggles tab mute",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume (⌘-click to toggle mute)"
+          }
+        }
+      }
+    },
+    "sidebar.media.volumeSlider" : {
+      "comment" : "Sidebar media player - Adjust the tab playback volume from zero to one hundred percent",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playback volume"
+          }
+        }
+      }
+    },
     "sidebar.memoryButton.accessibilityLabel" : {
       "comment" : "Memory button - Tooltip & Accessibility label for the AI memory entry button shown in the sidebar bottom bar and the web content header trailing area",
       "extractionState" : "extracted_with_value",
@@ -108134,6 +108195,65 @@
         }
       }
     },
+    "sync.status.syncing" : {
+      "comment" : "Sync has pending work",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird synchronisiert…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Syncing…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisation en cours…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同期中…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동기화 중…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchroniseren…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在同步…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在同步…"
+          }
+        }
+      }
+    },
     "sync.status.syncNow" : {
       "comment" : "Sync settings - button that asks this Mac to sync all content now",
       "localizations" : {
@@ -108218,65 +108338,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waiting for all profiles to be available"
-          }
-        }
-      }
-    },
-    "sync.status.syncing" : {
-      "comment" : "Sync has pending work",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird synchronisiert…"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Syncing…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sincronizando…"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Synchronisation en cours…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同期中…"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동기화 중…"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Synchroniseren…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在同步…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在同步…"
           }
         }
       }

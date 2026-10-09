@@ -740,6 +740,15 @@ import SwiftUI
                                                                excludingClientId: hint.sourceClientID)
                         }
                     }
+                    // A Profile another device has just registered: map it now rather than at
+                    // the next periodic round. Dropped during a pause (docs/sync.md).
+                    if let controller = self.syncKeyController,
+                       let uuid = PhiSyncInvalidation.unmappedProfileUUID(
+                           in: hints, mapped: Set(controller.profileKeys.allMappedGlobalUuids()),
+                           ignoring: controller.undecryptableRemoteUuids) {
+                        AppLogInfo("[phi-sync] invalidation names an unmapped account profile uuid=\(String(uuid.prefix(8)))")
+                        self.profileMappingPause.unmappedAccountProfileHint()
+                    }
                 }
                 if pullPhi { await engine.pullOnce() }
             })

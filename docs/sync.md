@@ -702,7 +702,14 @@ data: {"namespace":"chromium:phi","data_types":[2000],"source_client_id":"produc
 
 `ready` schedules catch-up for native sync and, through the optional bridge, all
 eligible Chromium Profiles. `chromium:phi` with type 2000 requests a native pull;
-`chromium:<profile-uuid>` forwards the type list to that Profile's engine. Hints
+`chromium:<profile-uuid>` forwards the type list to that Profile's engine. The service
+sends no hint for a Profile registration, but the new account Profile's first Chromium
+commit does: a Profile hint whose UUID has no persisted mapping here and is not known to be
+undecryptable runs one `runMappingRepairPass()` through the pause's reconciler
+(`unmappedAccountProfileHint()`), so another device maps or auto-creates the Profile within
+seconds instead of at its next periodic round. Only on an idle device and at most once per
+30 seconds; a hint during a pause episode, or while the gate waits for the Profile list, is
+dropped, and the episode's own repair loop and closing catch-up cover it. Hints
 carry routing metadata only, not entity content, ciphertext or keys. Unknown
 event types are ignored; supported types and eligibility remain engine concerns.
 Malformed or oversized events close the stream and leave fallback polling in

@@ -83,6 +83,8 @@ final class SyncProfileMappingPauseReconciler {
         /// The repair loop's longest wait while the latest mapping failure is offline: the
         /// connection can come back at any moment and nothing observes it (review R5).
         var maximumOfflineRetryDelay: TimeInterval = 30
+        /// The shortest time between two passes started by `unmappedAccountProfileHint()`.
+        var minimumHintPassInterval: TimeInterval = 30
     }
 
     /// What the owner does for the reconciliation. Each acts on the current object only.
@@ -136,6 +138,9 @@ final class SyncProfileMappingPauseReconciler {
     /// The list retry has reached `maximumListRetryDelay` and said so once in the log.
     private var listRetryCapLogged = false
     private var reconciling = false
+    /// The pass `unmappedAccountProfileHint()` started last, and whether it is still running.
+    private var lastHintPassAt: Date?
+    private var hintPassRunning = false
     /// A reentrant call's inputs and the Profile-list follow-ups queued with them. One value,
     /// so a queued follow-up cannot exist without inputs that the running loop still takes.
     private var pending: (inputs: Inputs, followUps: [@MainActor (ProfileListFollowUp) -> Void])?
@@ -259,6 +264,25 @@ final class SyncProfileMappingPauseReconciler {
         }
         repairLoop = loop
         runRepair()
+    }
+
+    /// An invalidation names an account Profile this Mac has not mapped: another device has
+    /// just registered it and its first Chromium commit produced the hint. One mapping repair
+    /// pass, so §3.6's auto-create claims it within seconds instead of at the next periodic
+    /// round. Only on an idle device: during an episode, or while the gate waits for the
+    /// Profile list, the hint is dropped (B5); the episode's own loop runs the pass and its
+    /// end requests a catch-up. A hint while that pass runs, or within
+    /// `minimumHintPassInterval` of its start, is dropped too: hints are lossy, and the
+    /// periodic round still covers the Profile.
+    func unmappedAccountProfileHint() {
+        guard episode == nil, applied.gateEngine == nil, !hintPassRunning else { return }
+        let time = effects.now()
+        if let last = lastHintPassAt, time.timeIntervalSince(last) < timing.minimumHintPassInterval { return }
+        guard effects.canRunRepairPass() else { return }
+        lastHintPassAt = time
+        hintPassRunning = true
+        effects.log("profile mapping: repair pass for an unmapped account profile hint")
+        effects.runRepairPass { [weak self] in self?.hintPassRunning = false }
     }
 
     private func step(_ inputs: Inputs) {

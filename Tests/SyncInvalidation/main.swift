@@ -98,6 +98,25 @@ struct InvalidationTests {
         print("PASS parser: fragmented CR/LF/BOM, incomplete/unknown frames, validation and bounds")
     }
 
+    /// The first Chromium commit of an account Profile another device has just registered
+    /// names a namespace this Mac has not mapped; Phi hints, mapped Profiles and Profiles
+    /// whose envelope does not open here never do.
+    static func unmappedProfileHintTests() throws {
+        func hint(_ namespace: String, _ types: [Int] = [5]) -> PhiSyncInvalidation {
+            PhiSyncInvalidation(namespace: namespace, dataTypes: types, sourceClientID: "cache-guid")
+        }
+        let mapped: Set = ["u-default", "u-work"]
+        let find = { (hints: [PhiSyncInvalidation]) in
+            PhiSyncInvalidation.unmappedProfileUUID(in: hints, mapped: mapped, ignoring: ["u-sealed"])
+        }
+        try expect(find([hint("chromium:phi", [2000]), hint("chromium:u-default"), hint("chromium:u-work")]) == nil,
+                   "A mapped Profile or Phi hint read as a new account Profile")
+        try expect(find([hint("chromium:u-sealed")]) == nil, "An undecryptable account Profile triggers a pass on every commit")
+        try expect(find([hint("chromium:phi", [2001]), hint("chromium:u-default"), hint("chromium:u-new"), hint("chromium:u-other")]) == "u-new",
+                   "A newly registered account Profile was not found")
+        print("PASS unmapped Profile hint: only a namespace with no mapping and an envelope that opens here counts")
+    }
+
     @MainActor
     static func schedulerTests() async throws {
         let transport = Transport()
@@ -409,6 +428,7 @@ struct InvalidationTests {
     static func main() async {
         do {
             try parserTests()
+            try unmappedProfileHintTests()
             try await schedulerTests()
             try await pairingCatchUpTests()
             try await manualCatchUpTests()

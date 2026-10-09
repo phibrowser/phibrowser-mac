@@ -26,6 +26,15 @@ struct PhiSyncInvalidation: Codable, Equatable, Sendable {
             && dataTypes.allSatisfy { $0 > 0 && $0 <= Int(Int32.max) }
             && sourceClientID.utf8.count <= 256
     }
+
+    /// The first Profile namespace among `hints` that names no persisted mapping on this Mac
+    /// and no account Profile already known not to open here. The service sends no hint of
+    /// its own for a Profile registration; the first Chromium commit of a newly registered
+    /// account Profile is what reaches the other devices, so this is the signal to look for it.
+    static func unmappedProfileUUID(in hints: [PhiSyncInvalidation], mapped: Set<String>,
+                                    ignoring undecryptable: Set<String>) -> String? {
+        hints.lazy.compactMap(\.profileUUID).first { !mapped.contains($0) && !undecryptable.contains($0) }
+    }
 }
 
 enum PhiSyncInvalidationError: Error {

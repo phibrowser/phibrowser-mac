@@ -173,6 +173,55 @@ final class Handle {}
         nestedListChangeDoesNotChooseTheSilentUnlock()
         listRetryIsCappedAndReported()
         offlineRepairWaitsAtMostThirtySeconds()
+        unmappedAccountProfileHint()
+    }
+
+    /// A hint naming an account Profile this Mac has not mapped runs one repair pass on an
+    /// idle device, at most one per 30 seconds and none beside a running one; during an
+    /// episode, or while the gate waits for the Profile list, it is dropped (B5).
+    @MainActor static func unmappedAccountProfileHint() {
+        let idle = Fixture()
+        idle.reconcile()
+        idle.reconciler.unmappedAccountProfileHint()
+        precondition(idle.passes == [0] && idle.reconciler.episode == nil, "An idle device did not run one pass")
+        idle.reconciler.unmappedAccountProfileHint()
+        precondition(idle.passes == [0], "A hint beside a running pass started a second one")
+        idle.pendingPasses.removeFirst()()
+        idle.advance(to: 29)
+        idle.reconciler.unmappedAccountProfileHint()
+        precondition(idle.passes == [0], "A hint inside the interval started a pass")
+        idle.advance(to: 30)
+        idle.reconciler.unmappedAccountProfileHint()
+        precondition(idle.passes == [0, 30], "A hint after the interval did not start a pass")
+        precondition(idle.timers.isEmpty && idle.gateCalls.isEmpty && idle.statusCalls.isEmpty,
+                     "A hint pass armed a timer or touched the pause's outputs")
+        idle.pendingPasses.removeFirst()()
+        idle.reconfiguring = true
+        idle.advance(to: 100)
+        idle.reconciler.unmappedAccountProfileHint()
+        precondition(idle.passes == [0, 30], "A hint ran a pass while reconfiguration is required")
+
+        let paused = Fixture()
+        paused.passAtOnce = {}
+        paused.addProfile("New")
+        paused.reconcile()
+        precondition(paused.reconciler.episode != nil && paused.passes == [0])
+        paused.advance(to: 3)
+        paused.reconciler.unmappedAccountProfileHint()
+        precondition(paused.passes == [0], "A hint during an episode was not dropped")
+        paused.map("New")
+        paused.reconcile()
+        precondition(paused.reconciler.episode == nil && paused.resumes == 1)
+        paused.reconciler.unmappedAccountProfileHint()
+        precondition(paused.passes == [0, 3], "A dropped hint held back the next one")
+
+        let listing = Fixture()
+        listing.enumerated = false
+        listing.reconcile()
+        precondition(listing.gate)
+        listing.reconciler.unmappedAccountProfileHint()
+        precondition(listing.passes.isEmpty, "A hint ran a pass before the Profile list was enumerated")
+        print("PASS profile mapping episode: an unmapped account Profile hint runs one pass when idle and is dropped during a pause")
     }
 
     /// Review R5: while the latest mapping failure is offline the repair loop waits at most

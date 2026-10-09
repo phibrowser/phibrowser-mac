@@ -540,6 +540,14 @@ final class PhiBrowserTests: XCTestCase {
 
         XCTAssertEqual(shareItems.count, 1)
         XCTAssertEqual(shareIndex, printIndex - 1)
+        let screenshotItems = menu.items.filter {
+            $0.action == NSSelectorFromString("copyFullPageScreenshotFromMenu:")
+        }
+        let screenshotItem = try XCTUnwrap(screenshotItems.first)
+        XCTAssertEqual(screenshotItems.count, 1)
+        XCTAssertEqual(menu.items.firstIndex(of: screenshotItem), shareIndex - 1)
+        XCTAssertEqual(screenshotItem.keyEquivalent, "")
+        XCTAssertFalse(screenshotItem.isHidden)
         XCTAssertEqual(
             shareItem.action,
             NSSelectorFromString("sharePageFromMenu:")
@@ -1923,6 +1931,49 @@ final class PhiBrowserTests: XCTestCase {
             ChromiumMainMenuRole.resolve(helpItem, helpMenu: helpMenu),
             .help
         )
+    }
+
+    /// Mirrors the two New Tab items of Chromium's Tab menu template.
+    private func makeTabMenuWithNewTabItems() -> (NSMenu, right: NSMenuItem, below: NSMenuItem) {
+        let menu = NSMenu(title: "Tab")
+        let right = NSMenuItem(title: "New Tab to the Right", action: nil, keyEquivalent: "")
+        right.tag = CommandWrapper.IDC_NEW_TAB_TO_RIGHT.rawValue
+        let below = NSMenuItem(title: "New Tab Below", action: nil, keyEquivalent: "")
+        below.tag = CommandWrapper.IDC_NEW_TAB_TO_RIGHT.rawValue
+        below.isHidden = true
+        menu.addItem(right)
+        menu.addItem(below)
+        return (menu, right, below)
+    }
+
+    func testTabMenuShowsNewTabToTheRightInComfortableLayout() {
+        let (menu, right, below) = makeTabMenuWithNewTabItems()
+        AppController.applyNewTabOrientation(in: menu, layoutMode: .performance)
+
+        AppController.applyNewTabOrientation(in: menu, layoutMode: .comfortable)
+
+        XCTAssertEqual([right.isHidden, below.isHidden], [false, true])
+    }
+
+    func testTabMenuShowsNewTabBelowInVerticalLayouts() {
+        for layoutMode in [LayoutMode.balanced, .performance] {
+            let (menu, right, below) = makeTabMenuWithNewTabItems()
+
+            AppController.applyNewTabOrientation(in: menu, layoutMode: layoutMode)
+
+            XCTAssertEqual([right.isHidden, below.isHidden], [true, false], "\(layoutMode)")
+        }
+    }
+
+    func testTabMenuNewTabItemsLeftAloneWhenTemplateChanges() {
+        let menu = NSMenu(title: "Tab")
+        let only = NSMenuItem(title: "New Tab to the Right", action: nil, keyEquivalent: "")
+        only.tag = CommandWrapper.IDC_NEW_TAB_TO_RIGHT.rawValue
+        menu.addItem(only)
+
+        AppController.applyNewTabOrientation(in: menu, layoutMode: .performance)
+
+        XCTAssertFalse(only.isHidden)
     }
 
     func testBookmarkMenuContentBuilderAddsBookmarkThisTabAndRecursiveBookmarks() {

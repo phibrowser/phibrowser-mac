@@ -3126,6 +3126,13 @@ class BrowserState {
         guard ApplicationState.shared.isAuthenticated else {
             return
         }
+        // The chat panes of a closed window can outlive it and ask again when
+        // sign-in returns. Only a state that still backs a registered window
+        // may create; Chromium no longer has the closed one.
+        guard SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self else {
+            AppLogInfo("🤖 [AIChat] skipped AI tab for a window this state no longer backs windowId=\(windowId) identifier=\(identifier)")
+            return
+        }
         if aiChatTabs[identifier] != nil {
             return
         }

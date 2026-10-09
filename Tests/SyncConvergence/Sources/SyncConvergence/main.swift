@@ -61,6 +61,11 @@ checkALandingClearsARefusal(report: report)
 checkASpaceBeingDeletedIsNotLandedAgain(report: report)
 checkAMappedSpaceOutsideTheSyncViewIsParked(report: report)
 checkATombstoneResolvesASpaceFromAnEarlierPage(report: report)
+checkADeletedSpaceTombstonesItsItems(report: report)
+checkAFreshDeviceDropsItemsOfADeletedSpace(report: report)
+checkADeletingDeviceDoesNotHoldARacingCreate(report: report)
+checkAMoveOutOfADeletedSpaceSurvives(report: report)
+checkATombstoneForANeverSeenSpaceIsRouted(report: report)
 print("Layer 1: \(report.checks) algebraic checks over 5 merges, the shared LWW winner, "
       + "the rank primitives and the normalisation of payloads the schema forbids")
 

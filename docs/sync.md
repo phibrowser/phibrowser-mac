@@ -306,7 +306,11 @@ invalidates outstanding observations when membership changes.
 Only startup, membership changes, an explicit pane reload, failed status, or
 known stale success evidence (five minutes) may request a coordinated round.
 All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. A queued explicit reload preserves the observed phase and
+with an active round. The one exception is a Sync now request while the native
+participant (`Participant.isNative`) reports Offline: it skips the interval and
+dispatches as soon as the participants are settled, so the tap fails within seconds
+instead of waiting behind the interval that the pane-open request and automatic
+retries keep pushing forward. The pane-open request and automatic demand never skip it. A queued explicit reload preserves the observed phase and
 last common time until dispatch; it does not invalidate a completed barrier.
 Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
@@ -359,7 +363,11 @@ another 60 seconds and until every context is observable and settled. A round al
 early, for the request state, when the summary stays Offline or Needs attention with every
 participant settled and sampled after dispatch (a revision newer than at dispatch; a
 Chromium Profile's revision moves on every read) for at least one poll interval (3 seconds)
-of time, measured by timestamps, not by the number of observations. Its request baseline is
+of time, measured by timestamps, not by the number of observations. A round a Sync now
+request started or joined also ends early when the native participant alone has reported
+Offline since dispatch for that same interval, without waiting for Chromium Profiles, which
+can keep reporting Syncing or Checking without a connection. Offline is never reported as
+Rejected, so it does not turn the summary into Needs attention. Its request baseline is
 kept until the round's timeout: if every context then reports a newer success, the common
 time is recorded exactly as the running round would have, and no demand remains; after the
 timeout the baseline is dropped without recording anything. Automatic demand after an early
@@ -432,7 +440,9 @@ Domain-key lookup failures count toward the round's status: network unavailabili
 authorization and key-envelope failures report Needs attention. Failed rounds
 retain the previous success time, and a later successful round clears the failure.
 Rows that are deliberately never published (hidden, purged or unmapped owner Spaces)
-and refused arrivals are exclusions, not pending work.
+and refused arrivals are exclusions, not pending work. Bookmarks and pins of a
+Space deleted on this device are not exclusions: their tombstones are ordinary
+publication work (see "Local Space deletion").
 
 The native snapshot also carries in-memory `SyncNativeDetail` (never persisted, so a
 relaunch starts empty); Chromium snapshots carry none. Per Phi kind (Settings, Spaces,
@@ -466,7 +476,10 @@ button calls `requestSyncNow()` directly, not through the pane's 3-second poll, 
 in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
 phase and `Report.request` to the control (Queued Busy: waiting for the current sync;
 Queued Rate limited: starting shortly; Queued Unobservable: waiting for profiles;
-Rejected: could not start); the pane adds its own unlock and pairing check. The view alone
+Rejected: could not start). While the request is Idle, a Syncing or Initial sync summary
+also disables the button with progress and no hint, so any running sync, not only one the
+request started, blocks a tap; Checking does not. The pane adds its own unlock and pairing
+check. The view alone
 turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
 no user-facing strings.
 
@@ -513,12 +526,15 @@ What the pane shows, as a contract:
   pause's own failure-category line takes its place. When the headline is Needs
   attention only because of the Profile list wait, the row keeps the last problem
   line but not the "Some content needs attention" line, which follows the summary.
+- **Details layout.** Details groups the browser Profiles under a Profiles row,
+  with one indented row per Profile showing its status, followed by the Phi data
+  row and its indented per-kind rows.
 - **Per-kind rows.** Inside Details the Phi data context lists one row per
   supported Phi kind (Settings, Spaces, Bookmarks, Pinned tabs, URL rules): the
   received and sent counts of the kind's most recent sync with changes, with how
   long ago that sync was, and the waiting-to-send and held counts only when they
-  are non-zero. There is no Profiles row and no per-category Chromium row until
-  those have their own numbers; no unsupported category is shown as available.
+  are non-zero. Profile rows have no counts and there is no per-category Chromium
+  row until those have their own numbers; no unsupported category is shown as available.
 - **Never shown.** Only categorized problems and counts reach the pane. It never
   shows internal error text, HTTP status numbers, identifiers, names, URLs or
   hosts, or any other user content. The one exception is the display names of
@@ -526,24 +542,30 @@ What the pane shows, as a contract:
 - **Sync now.** The button appears in the status row's trailing control slot only
   when pairing is complete and the key is unlocked; an unpaired (not set up) or
   locked Mac shows no button. Offline and Needs attention keep it available.
-  While the pane shows the Profile mapping pause, Retry takes its slot. It never bypasses the pairing, key, account or
-  rate-limit gates. A tap is coalesced with a round already running and is subject
-  to the shared 60-second minimum interval. Only the user's own request is shown:
-  opening the pane and background sync never make the button spin or report a
-  failure. While the request waits or runs, the button is disabled and shows
-  progress, with a hint: waiting for the current sync (busy), starting shortly
-  (rate limited) or waiting for every profile to report status. When this Mac
-  refuses to start the requested sync, the hint says it could not start, until
-  the next tap or the next sync this Mac starts. The hint, progress indicator and
-  button keep fixed space, so the status row does not move or change height.
+  While the pane shows the Profile mapping pause, Retry takes its slot. It never bypasses the pairing, key or account
+  gates. A tap is coalesced with a round already running and is subject
+  to the shared 60-second minimum interval, except that a tap while this Mac's
+  native sync is offline starts at once. While any sync runs (Syncing or Initial
+  sync), and while the user's request waits or runs, the button is disabled and
+  shows progress. Opening the pane and background sync never report a failure.
+  Why a request waits (the current sync, starting shortly, or every profile
+  reporting status) is the button's tooltip and VoiceOver hint; no hint text sits
+  beside the button. The progress indicator keeps its space and the button keeps
+  its full title, so the status row does not move.
 - **Ending a requested sync.** When it ends, VoiceOver announces "Sync finished"
   only if this Mac recorded a newer coordinated success than at the tap;
   otherwise it announces the category of a problem recorded since the tap, or
-  "Sync did not finish" when there is none, and a refusal as could not start. A
-  failing sync (for example offline) ends once every context has stayed settled on
-  the failure for a few seconds instead of after a minute; if it recovers within
-  that minute, the success is still recorded. A request dropped because sync
-  stopped or became unavailable ends silently.
+  "Sync did not finish" when there is none, and a refusal as could not start. The
+  same text, except for a finished sync, is shown as one line under the status row
+  until the next tap, unless it is the category the Last problem line already
+  shows. A failing sync ends once every context has stayed settled on
+  the failure for a few seconds, or once this Mac's native sync has stayed offline
+  for a few seconds, instead of after a minute; if it recovers within that minute,
+  the success is still recorded. A request dropped because sync stopped or became
+  unavailable ends silently.
+- **Load errors.** A failed load of the devices waiting for approval is shown inside
+  the Devices section and cleared by the next successful load. When the device list
+  also failed, only the device-list card shows the error, so it appears once.
 
 Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone
@@ -985,6 +1007,46 @@ early-return guards. The engine marks `pendingDelete` only on a cursor with an
   deleted Space. The check compares against the row's `createdDate`, which for
   a Space landed from the account is the account's `created_at_ms`, so it is a
   guard, not a proof.
+- **The Space's bookmarks and pins are tombstoned too (R-M3-4a-78).** The
+  cascade hard-deletes them in the same transaction, and their owner Space then
+  fails both §4.7 owner gates (unmapped once the mapping is dropped, ineligible
+  while it remains), which used to suppress every item tombstone: the account
+  kept them live forever and a fresh device parked them behind the dead Space.
+  Bookmark and pin publication now passes `deadOwnerDeletions` as the diff's
+  explicit deletions: every item cursor with an `entityId`, a `reconciled`
+  baseline and no `deletedAtMs` whose `ownerUuid` names a Space in
+  `PhiSpaceSyncTable.deletedSyncUuids` (`pendingDelete`, `deletedAtMs` or
+  `purgedAtMs`). These bypass only the owner gates; the row must still be
+  absent, so a row that survives (a hidden Space on a receiving device, a failed
+  cascade) is never tombstoned, and "cascade first, intent second" still holds.
+  The set comes from durable cursor state, not from the delete event, so the
+  next publication round sends them (child before folder, at most 250 per kind
+  per round), a crash before that round loses nothing, and a device that deleted
+  a Space before this rule shipped tombstones the items it left behind, as long
+  as it still holds their cursors (the retention cascade drops them 30 days
+  after the Space's own deletion). A move to a live Space made concurrently on
+  another device survives: once it lands the row is live again and its owner
+  refreshes to the new Space; if this device decided first, A9 cancels the
+  pending deletion for the newer move, and a tombstone built on the stale
+  version conflicts on the server instead of deleting the moved entity.
+- **A deleted owner discards inbound items instead of parking them.** Owned
+  landing passes the same set to `plan`. An inbound bookmark or pin whose owner
+  Space is in it, directly or through a folder discarded with it, is resolved by
+  what this device holds: never landed here, it gets a `.delete` step, so its
+  cursor is finalized like a landed tombstone (payload and pending owner
+  cleared, `deletedAtMs` set, `entityId`/version kept) and records the dead
+  Space as `ownerUuid`, so a child arriving in a later round follows its folder
+  rather than lifting to a Space root that is gone; landed here and row gone,
+  the payload is dropped (`supersededByDelete`) and the item's own tombstone
+  above carries the deletion; a live row still parks as before. Parked items
+  are replayed every round, so trees parked by an earlier build resolve on the
+  next round once the Space is known dead. A device that never had the Space
+  learns its uuid from the parked items and this page's arrivals: the pull seeds
+  the Space tag index with their owner uuids and retries the page's unknown
+  tombstones after indexing them, so the Space tombstone records a deleted
+  cursor instead of being dropped as an unknown tag. URL rules are unchanged.
+  Residual: an item another device created in the Space while it was being
+  deleted stays live on the account; every device that lands it discards it.
 - **Known limitation: a crash between the cascade and the engine round.**
   `pendingDelete` is written by a queued engine round, not in the cascade's
   transaction, and nothing about the deletion is persisted before that round.

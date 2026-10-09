@@ -152,6 +152,17 @@ struct PhiSpaceSyncTable: Codable, Equatable {
         Set(cursors.filter { $0.value.purgedAtMs != nil }.keys)
     }
 
+    /// syncUuids whose Space is deleted on this device: a local deletion queued (`pendingDelete`) or
+    /// finished, or a remote one landed (`deletedAtMs`, kept by the permanent purged cursor). A Space
+    /// deletion is terminal -- a soft-deleted uuid is never resurrected -- so the bookmarks and pins
+    /// it owns are deleted with it (R-M3-4a-78): owned publication tombstones them and owned landing
+    /// discards their inbound payloads instead of parking them forever.
+    var deletedSyncUuids: Set<String> {
+        Set(cursors.filter {
+            $0.value.pendingDelete || $0.value.deletedAtMs != nil || $0.value.purgedAtMs != nil
+        }.keys)
+    }
+
     /// The uuids whose local cascade a retention sweep runs, sorted: this sweep's newly `expired` uuids plus
     /// every earlier-`purged` uuid that still has a local mapping. The sweep drops a mapping only after its
     /// purge succeeds, so a purged cursor with a retained mapping marks a cascade that failed or was cut short

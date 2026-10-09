@@ -320,11 +320,23 @@ class WebContentViewController: NSViewController {
     /// Test-only view of the page card (panel-separation style coverage).
     var leftContainerViewForTesting: NSView { leftContainerView }
 
+    /// Whether this page paints the themed vibrancy backdrop in the margins
+    /// around its card. Follows its container's
+    /// (`WebContentContainerViewController.paintsOwnBackdrop`): a hosted
+    /// session's pages leave the margins to the shell's page-area backdrop.
+    var paintsOwnBackdrop = true {
+        didSet {
+            guard isViewLoaded else { return }
+            (view as? ColoredVisualEffectView)?.suppressesBackdrop = !paintsOwnBackdrop
+        }
+    }
+
     override func loadView() {
         let view = ColoredVisualEffectView()
         view.themedBackgroundColor = .windowOverlayBackground
         view.material = .fullScreenUI
         view.wantsLayer = true
+        view.suppressesBackdrop = !paintsOwnBackdrop
         self.view = view
         setupView()
     }

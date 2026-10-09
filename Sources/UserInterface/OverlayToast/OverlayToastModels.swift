@@ -20,6 +20,7 @@ enum OverlayToastTarget: Equatable {
 /// the same id are the same toast.
 struct OverlayToastAction {
     let title: String
+    var isBordered: Bool = false
     let handler: @MainActor () -> Void
 }
 

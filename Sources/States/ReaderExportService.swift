@@ -83,14 +83,14 @@ enum ReaderExportService {
         "\(sanitizedBaseName(title: title)).\(ext)"
     }
 
-    /// A filesystem-safe basename built from a title. Shared with Save for
-    /// Later, whose file pair derives both names from one reserved basename.
+    /// A filesystem-safe basename built from a title. Shared with screenshots
+    /// and Save for Later, whose file pair derives both names from one basename.
     ///
     /// Path separators and the characters Finder and the common filesystems
     /// object to are replaced rather than stripped, so words do not run
     /// together, and the result is capped well under the 255-byte limit —
     /// which counts bytes, not characters, so a CJK title hits it far sooner.
-    static func sanitizedBaseName(title: String) -> String {
+    static func sanitizedBaseName(title: String, fallbackName: String? = nil) -> String {
         let forbidden = CharacterSet(charactersIn: "/\\:?%*|\"<>\u{0}")
             .union(.controlCharacters)
         let cleaned = title.components(separatedBy: forbidden).joined(separator: " ")
@@ -100,7 +100,7 @@ enum ReaderExportService {
         // Leading dots hide the file; an empty title would produce one.
         var base = collapsed.hasPrefix(".") ? String(collapsed.dropFirst()) : collapsed
         if base.isEmpty {
-            base = NSLocalizedString(
+            base = fallbackName ?? NSLocalizedString(
                 "browser.readerView.untitledArticle",
                 value: "Article",
                 comment: "Reader View - Fallback file name when an article has no title")

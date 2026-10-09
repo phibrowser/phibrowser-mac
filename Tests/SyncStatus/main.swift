@@ -113,9 +113,13 @@ func testSyncNowButton() {
         (.queued(reason: .unobservable, notBefore: nil), B(isVisible: true, isEnabled: false, showsProgress: true, hint: .waitingForProfiles)),
         (.rejected, B(isVisible: true, isEnabled: true, showsProgress: false, hint: .failed)),
     ]
+    let running = B(isVisible: true, isEnabled: false, showsProgress: true, hint: .none)
     for summary in [SyncSummaryPhase.checking, .initialSync, .syncing, .upToDate, .offline, .needsAttention] {
         for (request, expected) in cases {
-            precondition(B.reduce(summary: summary, request: request) == expected, "\(summary) \(request)")
+            // Any running sync disables an idle control, including rounds the request did not start.
+            let busy = request == .idle && (summary == .syncing || summary == .initialSync)
+            precondition(B.reduce(summary: summary, request: request) == (busy ? running : expected),
+                         "\(summary) \(request)")
         }
     }
     for (request, _) in cases {

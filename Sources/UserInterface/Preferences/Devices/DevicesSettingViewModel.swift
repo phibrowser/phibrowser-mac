@@ -9,6 +9,8 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var unlockState: UnlockState = .loading
     @Published private(set) var pending: [PendingApproval] = []
     @Published private(set) var actionError: String?
+    /// The pending-approval list failed to load; cleared by the next successful load.
+    @Published private(set) var pendingLoadError: String?
     @Published private(set) var devices: [AccountDeviceDTO] = []
     @Published private(set) var devicesLoadError: String?
     @Published private(set) var busyRequestIDs: Set<String> = []
@@ -43,7 +45,8 @@ final class DevicesSettingViewModel: ObservableObject {
     /// From a Sync now tap until the helper answers, so the control never looks idle in between.
     @Published private(set) var isSubmittingSyncNow = false
     /// Set when a Sync now request the helper accepted or queued has ended, or when the helper
-    /// refused it; the view announces it. `serial` makes repeated outcomes distinct.
+    /// refused it; the view announces it and shows a failure under the status row until the
+    /// next tap clears it. `serial` makes repeated outcomes distinct.
     @Published private(set) var syncNowOutcome: SyncNowOutcome?
     struct SyncNowOutcome: Equatable {
         enum Result: Equatable {
@@ -96,6 +99,7 @@ final class DevicesSettingViewModel: ObservableObject {
         let generation = loadGeneration
         syncNowBaseline = summary.lastSuccess
         syncNowTappedAt = Date()
+        syncNowOutcome = nil // The previous outcome no longer describes the pane.
         isSubmittingSyncNow = true
         defer { isSubmittingSyncNow = false }
         let report = await syncNowReport()
@@ -228,6 +232,7 @@ final class DevicesSettingViewModel: ObservableObject {
         guard isSignedIn() else {
             doStopPolling()
             actionError = nil
+            pendingLoadError = nil
             requiresReconfiguration = false
             unlockState = .notSignedIn
             return
@@ -259,9 +264,10 @@ final class DevicesSettingViewModel: ObservableObject {
             let rows = try await approvals.listPendingApprovals()
             guard generation == pendingGeneration, isCurrentAccount() else { return }
             pending = rows
+            pendingLoadError = nil
         } catch {
             guard generation == pendingGeneration, isCurrentAccount() else { return }
-            actionError = Self.requestFailed
+            pendingLoadError = Self.requestFailed
         }
     }
 

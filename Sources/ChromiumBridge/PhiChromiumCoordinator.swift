@@ -774,7 +774,7 @@ import SwiftUI
                         else { return false }
                         invalidation.requestCatchUp()
                         return true
-                    }, currentSnapshot: { engine.statusSnapshot })]
+                    }, currentSnapshot: { engine.statusSnapshot }, isNative: true)]
                 participants += profiles.map { id in
                     SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
                                           requestSync: { true }) // Included in the accepted account-wide request above.

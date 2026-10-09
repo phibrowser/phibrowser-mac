@@ -385,6 +385,20 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertFalse(crash.hostForTesting === first)
     }
 
+    func testHostedPagesPaintNoBackdropOfTheirOwn() throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: UUID().uuidString)
+        session.warmUpDormantTree()
+        // The margins around a page's card must show the shell's page-area
+        // backdrop, the one a Space switch ramps; a page painting its own
+        // there keeps the leaving Space's color until the switch lands.
+        let container = session.mainSplitViewController.webContentContainerViewController
+        let tab = Tab(url: "https://example.com", isActive: true, index: 0)
+        let page = try XCTUnwrap(container.splitPaneCompanionController(for: tab))
+        let backdrop = try XCTUnwrap(page.view as? ColoredVisualEffectView)
+        XCTAssertTrue(backdrop.suppressesBackdrop)
+    }
+
     func testConcealingASessionDropsItsLiftedFullscreenPage() async throws {
         let slot = makeSlot()
         let first = makeSession(in: slot, spaceId: UUID().uuidString)

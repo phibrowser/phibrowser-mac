@@ -46,6 +46,13 @@ import PostHog
     #endif
     
     var menuObservation: NSKeyValueObservation?
+    /// Refreshes the main menu when the layout mode changes, so the Tab menu's
+    /// layout-dependent New Tab title follows it; a layout change swaps no
+    /// menu, so `menuObservation` does not see it.
+    var layoutModeMenuObservation: NSObjectProtocol?
+    /// Layout mode last seen by `layoutModeMenuObservation`; the menu is
+    /// refreshed only when this actually changes.
+    var lastMenuLayoutMode: LayoutMode?
     var isMainMenuRefreshScheduled = false
     /// Rebuilds flag-gated menu rows once PostHog's flags land — they arrive
     /// after setup, over the network, and every menu built before then read

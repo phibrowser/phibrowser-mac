@@ -88,17 +88,22 @@ struct DevicesSettingView: View {
         .onDisappear { Task { await viewModel.stopPolling() } }
         .onChange(of: viewModel.syncNowOutcome) { _, outcome in
             guard let outcome else { return }
-            switch outcome.result {
-            case .finished:
-                announce(NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
-            case .failed(let category):
-                announce(category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now ended without finishing and no specific problem is known"))
-            case .rejected:
-                announce(Self.syncNowFailedText)
-            }
+            announce(syncNowFailureText(outcome.result)
+                ?? NSLocalizedString("sync.status.syncNowDone", value: "Sync finished", comment: "Sync settings - VoiceOver announcement when a sync the user started with Sync Now has finished"))
         }
         .onChange(of: viewModel.pauseEndedSerial) { _, _ in
             announce(NSLocalizedString("sync.status.pauseEnded", value: "Sync resumed", comment: "Sync settings - VoiceOver announcement when sync, paused until every browser profile on this Mac was set up for sync, continues"))
+        }
+    }
+
+    /// The end of a Sync now request that did not finish, shown under the status row and
+    /// announced; nil when it finished.
+    private func syncNowFailureText(_ result: DevicesSettingViewModel.SyncNowOutcome.Result) -> String? {
+        switch result {
+        case .finished: return nil
+        case .failed(let category):
+            return category.map(problemTitle) ?? NSLocalizedString("sync.status.syncNowIncomplete", value: "Sync did not finish", comment: "Sync settings - shown under the sync status, and announced by VoiceOver, when a sync the user started with Sync Now ended without finishing and no specific problem is known")
+        case .rejected: return Self.syncNowFailedText
         }
     }
 
@@ -228,6 +233,10 @@ struct DevicesSettingView: View {
                     if let problem = viewModel.nativeDetail?.lastProblem {
                         hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
                     }
+                    if let outcome = viewModel.syncNowOutcome, !repeatsLastProblem(outcome.result),
+                       let text = syncNowFailureText(outcome.result) {
+                        errorText(text)
+                    }
                 } control: {
                     syncNowControl
                 }
@@ -254,14 +263,23 @@ struct DevicesSettingView: View {
                 : NSLocalizedString("sync.status.detailsCollapsed", value: "Collapsed", comment: "Sync settings - VoiceOver value of the Details disclosure while per-context status is hidden"))
 
             if isStatusDetailsExpanded {
-                ForEach(viewModel.requiredIDs.sorted(), id: \.self) { id in
+                // Profiles are grouped under their own header row, indented like the kind rows
+                // under Phi data, so each Profile row reads as a Profile.
+                let profileIDs = viewModel.requiredIDs.filter { $0 != "phi" }.sorted()
+                if !profileIDs.isEmpty {
                     Divider()
-                    SettingsDetailRow(viewModel.contextTitle(id)) {
-                        Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
-                            .font(.system(size: 12))
-                            .themedForeground(.textSecondary)
+                    SettingsDetailRow(NSLocalizedString("sync.status.profiles", value: "Profiles", comment: "Sync settings - group row in Details above the sync status of each browser profile on this Mac")) {
+                        EmptyView()
                     }
-                    if id == "phi", let detail = viewModel.nativeDetail {
+                    ForEach(profileIDs, id: \.self) { id in
+                        contextRow(id)
+                            .padding(.leading, 16)
+                    }
+                }
+                if viewModel.requiredIDs.contains("phi") {
+                    Divider()
+                    contextRow("phi")
+                    if let detail = viewModel.nativeDetail {
                         ForEach(SyncKind.allCases, id: \.self) { kind in
                             kindRow(kind, status: detail.kinds[kind])
                         }
@@ -269,6 +287,22 @@ struct DevicesSettingView: View {
                 }
             }
         }
+    }
+
+    /// One sync context's name and status in Details.
+    private func contextRow(_ id: String) -> some View {
+        SettingsDetailRow(viewModel.contextTitle(id)) {
+            Text(statusTitle(SyncSummaryPhase(rawValue: viewModel.contextSnapshots[id]?.phase.rawValue ?? "checking") ?? .checking))
+                .font(.system(size: 12))
+                .themedForeground(.textSecondary)
+        }
+    }
+
+    /// A failed Sync now whose category is the one the Last problem line already shows adds
+    /// nothing, so it is not repeated under it; it is still announced.
+    private func repeatsLastProblem(_ result: DevicesSettingViewModel.SyncNowOutcome.Result) -> Bool {
+        guard case .failed(let category?) = result else { return false }
+        return viewModel.nativeDetail?.lastProblem?.category == category
     }
 
     @ViewBuilder
@@ -291,7 +325,7 @@ struct DevicesSettingView: View {
 
     /// The status row while sync is paused for a Profile that is not set up for sync: the title
     /// and its lines are one accessibility element, and Retry takes the Sync now slot with the
-    /// same fixed space, so the row keeps its layout when the pause starts or ends.
+    /// same layout, so the row keeps its shape when the pause starts or ends.
     private func pauseRow(_ pause: SyncStatusPresentation.Pause) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -309,9 +343,6 @@ struct DevicesSettingView: View {
             .accessibilityElement(children: .combine)
             Spacer(minLength: 12)
             HStack(spacing: 8) {
-                Color.clear
-                    .frame(width: 200, height: 1)
-                    .accessibilityHidden(true)
                 ProgressView()
                     .controlSize(.small)
                     .opacity(0)
@@ -319,9 +350,11 @@ struct DevicesSettingView: View {
                 actionButton(NSLocalizedString("sync.status.pause.retry", value: "Retry", comment: "Sync settings - button in place of Sync Now while sync is paused; it tries again at once to set up the browser profiles that are not set up for sync")) {
                     viewModel.retryProfileMappingRepair()
                 }
+                .fixedSize()
                 .disabled(viewModel.isReconfiguring)
                 .accessibilityLabel(NSLocalizedString("sync.status.pause.retryAccessibility", value: "Retry setting up profiles for sync", comment: "Sync settings - VoiceOver label of the Retry button shown while sync is paused until every browser profile on this Mac is set up for sync"))
             }
+            .layoutPriority(1)
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,49 +388,43 @@ struct DevicesSettingView: View {
         }
     }
 
-    /// Sync now in the status row's control slot. The hint and the progress indicator keep
-    /// their space while the button is shown, so the row neither jumps nor changes height
-    /// when the request state changes.
+    /// Sync now in the status row's control slot. The progress indicator keeps its space while
+    /// the button is shown, so the row does not jump when the request state changes, and the
+    /// button keeps its full title. Why a request waits is the button's tooltip and VoiceOver
+    /// hint; a request that did not finish is reported under the status row.
     @ViewBuilder
     private var syncNowControl: some View {
         let state = viewModel.syncNowButton
         if state.isVisible {
             HStack(spacing: 8) {
-                Group {
-                    if state.hint == .failed {
-                        errorText(Self.syncNowFailedText)
-                    } else if let hint = syncNowHint(state.hint) {
-                        hintText(hint)
-                    }
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(syncNowHint(state.hint) ?? "")
-                .frame(width: 200, alignment: .trailing)
                 ProgressView()
                     .controlSize(.small)
                     .opacity(state.showsProgress ? 1 : 0)
                     .accessibilityHidden(!state.showsProgress)
-                    .accessibilityLabel(NSLocalizedString("sync.status.syncNowInProgress", value: "Sync in progress", comment: "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a requested sync waits or runs"))
+                    .accessibilityLabel(NSLocalizedString("sync.status.syncNowInProgress", value: "Sync in progress", comment: "Sync settings - VoiceOver label of the progress indicator beside Sync Now while a sync runs or a requested sync waits"))
                 actionButton(NSLocalizedString("sync.status.syncNow", value: "Sync Now", comment: "Sync settings - button that asks this Mac to sync all content now")) {
                     Task { await viewModel.syncNow() }
                 }
+                .fixedSize()
                 .disabled(!state.isEnabled || viewModel.isReconfiguring)
                 .accessibilityHint(syncNowHint(state.hint) ?? "")
             }
+            // On the stack, not the button: a disabled button shows no tooltip.
+            .help(syncNowHint(state.hint) ?? "")
+            .layoutPriority(1)
         }
     }
 
     private static var syncNowFailedText: String {
-        NSLocalizedString("sync.status.syncNowFailed", value: "Couldn’t start sync. Try again later.", comment: "Sync settings - shown beside Sync Now when this Mac refused to start the requested sync")
+        NSLocalizedString("sync.status.syncNowFailed", value: "Couldn’t start sync. Try again later.", comment: "Sync settings - shown under the sync status when this Mac refused to start the sync the user requested with Sync Now")
     }
 
     private func syncNowHint(_ hint: SyncNowButtonState.Hint) -> String? {
         switch hint {
         case .none: return nil
-        case .waitingForCurrentSync: return NSLocalizedString("sync.status.syncNowQueued", value: "Waiting for current sync…", comment: "Sync settings - shown beside Sync Now when the requested sync waits for a sync already running")
-        case .startingShortly: return NSLocalizedString("sync.status.syncNowStartingShortly", value: "Sync will start shortly…", comment: "Sync settings - shown beside Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute")
-        case .waitingForProfiles: return NSLocalizedString("sync.status.syncNowWaitingProfiles", value: "Waiting for all profiles to be available", comment: "Sync settings - shown beside Sync Now when the requested sync waits until every browser profile reports its sync status")
+        case .waitingForCurrentSync: return NSLocalizedString("sync.status.syncNowQueued", value: "Waiting for current sync…", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits for a sync already running")
+        case .startingShortly: return NSLocalizedString("sync.status.syncNowStartingShortly", value: "Sync will start shortly…", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits because a sync ran moments ago; it starts on its own within a minute")
+        case .waitingForProfiles: return NSLocalizedString("sync.status.syncNowWaitingProfiles", value: "Waiting for all profiles to be available", comment: "Sync settings - tooltip and VoiceOver hint of Sync Now when the requested sync waits until every browser profile reports its sync status")
         case .failed: return Self.syncNowFailedText
         }
     }
@@ -481,12 +508,17 @@ struct DevicesSettingView: View {
     /// the section does not render as a title over an empty card.
     private var hasDevicesContent: Bool {
         !viewModel.pending.isEmpty || !viewModel.devices.isEmpty || viewModel.devicesLoadError != nil
+            || viewModel.pendingLoadError != nil
     }
 
     private var devicesSection: some View {
         section(NSLocalizedString("sync.devices.title", value: "Devices", comment: "Devices authorized for this account")) {
             if !viewModel.pending.isEmpty {
                 SettingsDetailCard { pendingSection }
+            }
+            // Both loads fail the same way; the device-list card below already says it.
+            if let error = viewModel.pendingLoadError, viewModel.devicesLoadError == nil {
+                errorText(error)
             }
             if let error = viewModel.devicesLoadError {
                 SettingsDetailCard {

@@ -283,8 +283,7 @@ final class ExtensionMessageRouter {
         // Mirage runs the save itself and reports back; the app keeps the
         // toast (window chrome) and the authenticated video-gist call.
         register(type: "saveForLater.saveResult") { context in
-            SaveForLaterService.handleSaveResult(context)
-            return "{}"
+            return SaveForLaterService.handleSaveResult(context)
         }
         register(type: "saveForLater.toast") { context in
             SaveForLaterService.handleToast(context)

@@ -190,13 +190,16 @@ enum SaveForLaterService {
             && PhiPreferences.SaveForLater.autoSaveOnSiteActions
     }
 
-    /// Pushes the armed state to Mirage's trigger relay. Called when the
-    /// settings toggle flips; Mirage also pulls on boot (`getArmed`).
+    /// Pushes the armed state, and the master flag as `enabled`, to Mirage.
+    /// Called when the settings toggle flips and whenever feature flags
+    /// arrive; Mirage also pulls on boot (`getArmed`), which on a launch is
+    /// usually before the flags have loaded.
     static func broadcastArmedState() {
-        AppLogDebug("[SaveForLater] broadcasting armed=\(autoTriggerArmed)")
+        AppLogDebug("[SaveForLater] broadcasting armed=\(autoTriggerArmed) " +
+                    "enabled=\(featureEnabled)")
         ExtensionMessaging.shared.broadcast(
             type: "saveForLater.armedChanged",
-            payload: "{\"armed\":\(autoTriggerArmed)}")
+            payload: "{\"armed\":\(autoTriggerArmed),\"enabled\":\(featureEnabled)}")
     }
 
     /// `saveForLater.getArmed`: Mirage's boot-time pull of the armed state.
@@ -310,7 +313,7 @@ enum SaveForLaterService {
                     if let tabId { payload["tabId"] = tabId }
                     guard let data = try? JSONSerialization.data(withJSONObject: payload),
                           let json = String(data: data, encoding: .utf8) else { return }
-                    ExtensionMessaging.shared.broadcast(
+                    ExtensionMessaging.shared.broadcastToExtensions(
                         type: "saveForLater.addNote", payload: json)
                 }
             })
@@ -502,6 +505,18 @@ enum SaveForLaterService {
         return data
     }
 
+    /// The leading `---` frontmatter block of a markdown prefix, through its
+    /// closing line; empty when the prefix does not hold a complete block.
+    nonisolated static func frontmatterPrefix(_ data: Data) -> Data {
+        let opening = Data("---\n".utf8)
+        guard data.starts(with: opening),
+              let close = data.range(of: Data("\n---\n".utf8),
+                                     in: (opening.count - 1)..<data.count) else {
+            return Data()
+        }
+        return data.prefix(upTo: close.upperBound)
+    }
+
     private struct BrokerListEntry: Encodable {
         let name: String
         let size: Int
@@ -559,33 +574,63 @@ enum SaveForLaterService {
                     }
                     return "{\"folder\":\"\",\"entries\":[]}"
                 }
-                var entries: [BrokerListEntry] = []
-                var headBudget = listingHeadBudget
-                for url in urls where ["md", "mhtml"].contains(url.pathExtension) {
-                    let values = try? url.resourceValues(
-                        forKeys: [.contentModificationDateKey, .fileSizeKey])
-                    var head: String?
-                    if url.pathExtension == "md", headBudget > 0,
-                       let handle = try? FileHandle(forReadingFrom: url) {
-                        defer { try? handle.close() }
-                        if let data = try? handle.read(upToCount: listingHeadBytes),
-                           !data.isEmpty {
-                            // A fixed byte prefix can land mid-character.
-                            // Frontmatter is ASCII and sits first, but the
-                            // head runs on into the body, so the tail is
-                            // trimmed back to a character boundary rather
-                            // than handed over as replacement characters.
-                            head = String(decoding: truncatedToUTF8Boundary(data),
-                                          as: UTF8.self)
-                            headBudget -= data.count
-                        }
+                struct Listed {
+                    let url: URL
+                    let size: Int
+                    let modified: Date
+                    var prefix = Data()
+                }
+                var listed: [Listed] = urls
+                    .filter { ["md", "mhtml"].contains($0.pathExtension) }
+                    .map { url in
+                        let values = try? url.resourceValues(
+                            forKeys: [.contentModificationDateKey, .fileSizeKey])
+                        return Listed(url: url, size: values?.fileSize ?? 0,
+                                      modified: values?.contentModificationDate
+                                          ?? .distantPast)
                     }
-                    entries.append(BrokerListEntry(
-                        name: url.lastPathComponent,
-                        size: values?.fileSize ?? 0,
-                        modified: (values?.contentModificationDate
-                                   ?? .distantPast).timeIntervalSince1970,
-                        head: head))
+                    // Newest first, so a budget that runs out leaves the
+                    // oldest items short rather than an arbitrary few.
+                    .sorted { $0.modified > $1.modified }
+                for index in listed.indices where listed[index].url.pathExtension == "md" {
+                    guard let handle = try? FileHandle(forReadingFrom: listed[index].url) else {
+                        continue
+                    }
+                    listed[index].prefix = (try? handle.read(upToCount: listingHeadBytes)) ?? Data()
+                    try? handle.close()
+                }
+                // Two passes over one budget. Every item's frontmatter comes
+                // first: the extension finds an item by its `source`, so an
+                // item listed without one is invisible to "already saved"
+                // and gets written a second time. Only what is left extends
+                // the newest heads into the body.
+                var heads = [Data?](repeating: nil, count: listed.count)
+                var headBudget = listingHeadBudget
+                for index in listed.indices {
+                    let frontmatter = frontmatterPrefix(listed[index].prefix)
+                    guard !frontmatter.isEmpty, frontmatter.count <= headBudget else { continue }
+                    heads[index] = frontmatter
+                    headBudget -= frontmatter.count
+                }
+                for index in listed.indices {
+                    let prefix = listed[index].prefix
+                    let current = heads[index]?.count ?? 0
+                    guard prefix.count > current,
+                          prefix.count - current <= headBudget else { continue }
+                    heads[index] = prefix
+                    headBudget -= prefix.count - current
+                }
+                let entries = listed.indices.map { index in
+                    BrokerListEntry(
+                        name: listed[index].url.lastPathComponent,
+                        size: listed[index].size,
+                        modified: listed[index].modified.timeIntervalSince1970,
+                        // A fixed byte prefix can land mid-character, so the
+                        // tail is trimmed back to a character boundary rather
+                        // than handed over as replacement characters.
+                        head: heads[index].map {
+                            String(decoding: truncatedToUTF8Boundary($0), as: UTF8.self)
+                        })
                 }
                 guard let data = try? JSONEncoder().encode(
                     Reply(folder: folder.path, entries: entries)),
@@ -1021,8 +1066,8 @@ enum SaveForLaterService {
         if let windowId { payload["windowId"] = windowId }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return false }
-        ExtensionMessaging.shared.broadcast(type: "saveForLater.save",
-                                            payload: json)
+        ExtensionMessaging.shared.broadcastToExtensions(
+                                            type: "saveForLater.save", payload: json)
         return await withCheckedContinuation { continuation in
             pendingSaves[requestId] = continuation
             Task { @MainActor in
@@ -1032,20 +1077,29 @@ enum SaveForLaterService {
         }
     }
 
-    /// `saveForLater.saveResult`: the reply to a save request.
-    nonisolated static func handleSaveResult(_ context: ExtensionMessageContext) {
+    /// `saveForLater.saveResult`: the reply to a save request. The answer
+    /// says whether the app still took it: an acknowledgement that arrives
+    /// after the timeout finds the user already told the save failed, so it
+    /// is refused (`accepted: false`) and Mirage stands down rather than
+    /// writing an item the toast said was not saved.
+    nonisolated static func handleSaveResult(_ context: ExtensionMessageContext) -> String {
+        let refused = "{\"accepted\":false}"
         guard context.senderId == ReaderExtensionBridge.extensionId,
               let data = context.payload.data(using: .utf8),
               let result = try? JSONDecoder().decode(SaveResult.self, from: data) else {
-            return
+            return refused
         }
-        MainActor.assumeIsolated {
+        return MainActor.assumeIsolated {
             if !result.ok {
                 AppLogDebug("[SaveForLater] extension save failed: " +
                             (result.error ?? "unknown"))
             }
-            pendingSaves.removeValue(forKey: result.requestId)?
-                .resume(returning: result.ok)
+            guard let continuation = pendingSaves.removeValue(forKey: result.requestId) else {
+                AppLogWarn("[SaveForLater] save acknowledged after its timeout; refused")
+                return refused
+            }
+            continuation.resume(returning: result.ok)
+            return "{\"accepted\":true}"
         }
     }
 

@@ -103,8 +103,11 @@ struct PhiProfileCursor: Codable, Equatable {
     var deleteRejectRounds = 0
     /// A remote tombstone whose local application is deferred; retried every round.
     var pendingTombstone = false
-    /// Consecutive rounds a deferred remote tombstone failed to apply.
+    /// Consecutive rounds the Chromium deletion for a remote tombstone failed.
     var tombstoneDeferRounds = 0
+    /// Wall-clock ms when a remote tombstone was first deferred by a local blocker (a running
+    /// agent Space, an import, a bound Space's pending deletion). Optional so older cursors decode.
+    var firstDeferredAtMs: Int64?
     /// The account Profile is deleted: a remote tombstone landed or this device's own committed.
     var deletedAtMs: Int64?
     /// This device deleted the Profile before any entity for it reached the account, so no
@@ -253,12 +256,16 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     mutating func purgeExpiredProfiles(nowMs: Int64) -> [String] {
         var purged: [String] = []
         for (uuid, cursor) in profileCursors {
+            // A tombstone still owed (`pendingDelete`) or a decision still pending stays as is.
             guard let deletedAtMs = cursor.deletedAtMs, cursor.purgedAtMs == nil, !cursor.pendingTombstone,
+                  !cursor.pendingDelete,
                   nowMs - deletedAtMs > PhiSpaceSyncState.retentionMs else { continue }
             var tombstone = PhiProfileCursor()
             tombstone.entityId = cursor.entityId
             tombstone.version = cursor.version
             tombstone.deletedAtMs = deletedAtMs
+            // Kept so a peer's first publication after the purge is still tombstoned, not resurrected.
+            tombstone.deletedBeforePublish = cursor.deletedBeforePublish
             tombstone.purgedAtMs = nowMs
             profileCursors[uuid] = tombstone
             purged.append(uuid)
@@ -540,8 +547,10 @@ final class PhiSpaceSyncState {
             ? AccountProfileEntityView(liveNames: table.liveProfileEntityNames,
                                        deletedUuids: table.deletedProfileUuids)
             : nil
-        if previousView?.liveUuids != accountProfileEntityView?.liveUuids
-            || previousView?.deletedUuids != accountProfileEntityView?.deletedUuids {
+        // Not when the view goes away (a reset or a restarted replay): with no view nothing is
+        // claimable, and a pass then would register every unmapped local Profile as new.
+        if let view = accountProfileEntityView,
+           previousView?.liveUuids != view.liveUuids || previousView?.deletedUuids != view.deletedUuids {
             profileEntityViewDidChange?()
         }
         if changed {
@@ -640,6 +649,16 @@ final class PhiSpaceSyncState {
     /// except one a remote deletion soft-deleted (hidden), which is only kept for the retention
     /// window and purged with its Space. The same rule the follower applies to a remote Profile
     /// tombstone (`profileDeletionBlockers`). `SpaceManager.isProfileInUse` answers through this.
+    /// The local Space ids among `spaceIds` that a remote deletion soft-deleted. Reads the stored
+    /// table as well as the cache, so an answer taken before the engine first refreshed the cache
+    /// is not an empty set.
+    func remotelyDeletedSpaceIds(among spaceIds: [String]) -> Set<String> {
+        let stored = directStore?.load().hiddenSyncUuids ?? []
+        return Set(spaceIds.filter { spaceId in
+            isHidden(spaceId) || syncUuidLookup?(spaceId).map { stored.contains($0) } == true
+        })
+    }
+
     func hasLiveSpaceRow(localProfileId: String, rows: [(spaceId: String, profileId: String)]) -> Bool {
         rows.contains { $0.profileId == localProfileId && !isHidden($0.spaceId) }
     }

@@ -52,7 +52,7 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
     /// What `refreshProfileList()` answers; false models a bridge read that failed.
     var refreshSucceeds = true
     private(set) var removedRows: [String] = []
-    func refreshProfileList() -> Bool { refreshSucceeds }
+    func freshProfileIds() -> Set<String>? { refreshSucceeds ? Set(profiles.map(\.profileId)) : nil }
     func removeLocalRows(ofDeletedProfile localProfileId: String) async { removedRows.append(localProfileId) }
     func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers {
         blockers[localProfileId] ?? ProfileDeletionBlockers()
@@ -732,7 +732,7 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertEqual(profileCommits(client).last?.deleted, false)
     }
 
-    func testARunningAgentSpaceDefersAtMostTenRounds() async throws {
+    func testARunningAgentSpaceDefersAtMostTwoHours() async throws {
         let profiles = FakePhiProfileAccess()
         let store = drainedStore()
         let client = FakePhiSyncClient()
@@ -740,14 +740,85 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         profiles.blockers["P1"] = ProfileDeletionBlockers(hasRunningAgentSpace: true)
         tombstone(client, version: 9)
 
-        for _ in 0..<9 { await engine.pullOnce() }
-        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true)
+        for _ in 0..<12 { await engine.pullOnce() }
+        nowMs += PhiSyncEngine.profileTombstoneDeferLimitMs - 1
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true, "rounds alone never undelete")
+        nowMs += 1
         await engine.pullOnce()
 
         XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, false)
+        XCTAssertNil(store.table.profileCursors["pu-1"]?.firstDeferredAtMs)
         XCTAssertNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
         XCTAssertEqual(profileCommits(client).last?.deleted, false)
         XCTAssertTrue(profiles.remoteDeletions.isEmpty)
+    }
+
+    func testADeferralAndOneChromiumFailureDoNotUndelete() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.blockers["P1"] = ProfileDeletionBlockers(isImporting: true)
+        tombstone(client, version: 9)
+        await engine.pullOnce()
+        await engine.pullOnce()
+        profiles.blockers = [:]
+        profiles.deleteResults = [false]
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true)
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.tombstoneDeferRounds, 1)
+        await engine.pullOnce()
+        XCTAssertEqual(profiles.remoteDeletions, ["P1", "P1"])
+        XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+    }
+
+    func testAPurgedProfileDeletedBeforePublicationIsStillTombstoned() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        var cursor = PhiProfileCursor()
+        cursor.deletedAtMs = nowMs
+        cursor.deletedBeforePublish = true
+        store.table.profileCursors["pu-1"] = cursor
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        nowMs += PhiSpaceSyncState.retentionMs + 1
+        await engine.runRetentionSweep()
+        XCTAssertNotNil(store.table.profileCursors["pu-1"]?.purgedAtMs)
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.deletedBeforePublish, true)
+
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 1)
+        await engine.pullOnce()
+
+        XCTAssertEqual(profileCommits(client).last?.deleted, true, "tombstoned, never resurrected")
+        XCTAssertTrue(store.table.liveProfileEntityUuids.isEmpty)
+    }
+
+    func testAnInFlightLocalDeletionThatSucceedsAfterAPeerTombstoneCommitsNothing() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.intents["pu-1"] = "P1"
+        profiles.inFlight = ["pu-1"]
+        tombstone(client, version: 9)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true)
+
+        // Chromium's deletion succeeds.
+        profiles.inFlight = []
+        profiles.profiles = []
+        await engine.recordLocalProfileDeletion(syncUuid: "pu-1")
+        await engine.handleLocalProfilesChange()
+
+        XCTAssertFalse(profileCommits(client).contains { $0.deleted }, "the peer's tombstone already stands")
+        XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, false)
+        XCTAssertTrue(profiles.intents.isEmpty)
     }
 
     func testAnIntentIsKeptWhenTheProfileListCouldNotBeReread() async throws {

@@ -239,7 +239,20 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.profileCursors["fresh"] = fresh
         let now = 2_000 + PhiSpaceSyncState.retentionMs
 
-        XCTAssertEqual(table.purgeExpiredProfiles(nowMs: now), ["old"])
+        var owed = PhiProfileCursor()
+        owed.entityId = "e-2"
+        owed.version = 2
+        owed.deletedAtMs = 1_000
+        owed.pendingDelete = true
+        table.profileCursors["owed"] = owed
+        var unpublished = PhiProfileCursor()
+        unpublished.deletedAtMs = 1_000
+        unpublished.deletedBeforePublish = true
+        table.profileCursors["unpublished"] = unpublished
+
+        XCTAssertEqual(table.purgeExpiredProfiles(nowMs: now), ["old", "unpublished"])
+        XCTAssertEqual(table.profileCursors["owed"], owed, "a tombstone still owed is never trimmed")
+        XCTAssertEqual(table.profileCursors["unpublished"]?.deletedBeforePublish, true)
 
         let purged = table.profileCursors["old"]
         XCTAssertEqual(purged?.entityId, "e-1")
@@ -631,6 +644,11 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(calls, 1, "an unchanged view announces nothing")
         table.profileCursors["pu-1"]?.pendingDelete = true
         state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 2)
+        // A reset (or a restarted replay) takes the view away: no pass may run against that, or
+        // with nothing claimable it would register every local Profile as a new account Profile.
+        state.refreshCaches(from: PhiSpaceSyncTable())
+        XCTAssertNil(state.accountProfileEntityView)
         XCTAssertEqual(calls, 2)
     }
 

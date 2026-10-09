@@ -340,8 +340,8 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         PhiSpaceSyncState.shared.isProfileBeingDeletedLocally(syncUuid: syncUuid)
     }
 
-    func refreshProfileList() -> Bool {
-        ProfileManager.shared.refresh()
+    func freshProfileIds() -> Set<String>? {
+        ProfileManager.readProfiles().map { Set($0.map(\.profileId)) }
     }
 
     func removeLocalRows(ofDeletedProfile localProfileId: String) async {

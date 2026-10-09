@@ -1207,12 +1207,18 @@ Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
 The engine reconciles the journal at the start of every pull, push, Profile round
 and deletion round (`reconcileProfileDeletionIntents`, admitted while the
 unmapped-Profile pause is on): an entry whose Chromium deletion is still in
-flight is left alone; a Profile that still exists after a complete enumeration
-means the deletion never happened, so the entry is dropped; a published entity
-gets `pendingDelete` and `pushProfiles` commits its tombstone; a deleted or (after
-the full replay) never-published uuid is finalized locally. The entry is removed
-only when the tombstone commits, is given up on after three INVALID_MESSAGE
-rejections, or a peer's tombstone for the same uuid lands. While an entry or
+flight is left alone, and so is every entry when a fresh bridge read of the
+Profile list fails (`ProfileManager.readProfiles`, which publishes nothing); a
+Profile the fresh read still lists means the deletion never happened, so the entry
+is dropped. Otherwise the leftover local rows are removed again (idempotent) and: a
+uuid whose peer tombstone was parked while the local deletion was in flight is
+finalized without committing; a published entity gets `pendingDelete` and
+`pushProfiles` commits its tombstone; a deleted or (after the full replay)
+never-published uuid is finalized locally, the latter marked
+`deletedBeforePublish` so a peer's later first publication is tombstoned rather
+than taken as an undelete. The entry is removed only when the tombstone commits,
+is given up on after three INVALID_MESSAGE rejections, or a peer's tombstone for
+the same uuid lands. While an entry or
 `pendingDelete` exists, an inbound entity for the uuid lands nothing (delete beats
 rename) but its id and version are learned for the tombstone. The mapping is kept
 until retention; Spaces whose binding names a deleted account Profile park and
@@ -1230,13 +1236,14 @@ deletion of the uuid journaled, the cursor is finalized. Otherwise
 | A live user Space bound to it (not remotely soft-deleted; its own cursor neither deleted nor pending deletion) | undelete |
 | Only remotely soft-deleted (hidden) Space rows | delete; the rows are purged by Space retention |
 | A persistent agent Space bound to it | undelete |
-| A running agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`); after 10 deferred rounds, undelete |
+| A running agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`); undelete once it has stayed deferred for 2 hours (`firstDeferredAtMs`, wall clock) |
 | Nothing | delete |
 
 Delete runs `deleteProfile(sync: .remoteTombstone)`: the same Chromium deletion,
-key withdrawal and local row removal, with no journal and nothing published. A
-failed Chromium deletion defers; after three failed rounds the Profile is
-undeleted. A crash replays the page, finds the Profile gone and finalizes.
+key withdrawal and local row removal, with no journal and nothing published; the
+engine repeats the idempotent row removal, also when it finds the Profile already
+gone. A failed Chromium deletion defers; after three failed rounds (counted apart
+from blocker deferrals) the Profile is undeleted. A crash replays the page, finds the Profile gone and finalizes.
 Undelete keeps the baseline, takes the tombstone's id and version and drops
 `server`, so the next publication republishes the entity over the tombstone; the
 deleting device then sees a newer live version, resurrects the cursor, drops its
@@ -1253,8 +1260,13 @@ still block it. The hidden Spaces are removed together with the Profile (see the
 deleting-device steps above).
 
 Retention follows the Space model: 30 days after `deletedAtMs` the cursor is
-trimmed to a permanent tombstone (`purgedAtMs`) and a mapping whose local Profile
-is gone is dropped; the cursor is the durable guard from then on.
+trimmed to a permanent tombstone (`purgedAtMs`, keeping `deletedBeforePublish`) and
+a mapping whose local Profile is gone is dropped; the cursor is the durable guard
+from then on. A cursor whose tombstone is still owed (`pendingDelete`) is not
+trimmed. A recorded deletion whose mapped local Profile still exists is decided
+again, unless that Profile was created after the deletion: Chromium numbers
+Profile basenames from a Local State counter that never goes back, so a basename
+is reused only after Local State itself was reset.
 `clearLocalSyncState` empties the journal with the other cursors.
 
 ## Stamps and the hybrid logical clock

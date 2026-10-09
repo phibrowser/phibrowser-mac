@@ -36,9 +36,9 @@ protocol PhiProfileLocalAccess: AnyObject {
     /// Whether this device still has that user Profile (`userAssignableProfiles`).
     func isKnownLocalProfile(_ profileId: String) -> Bool
 
-    /// Rereads the Profile list from the bridge. False when the read failed, so the cached list
-    /// may be stale.
-    func refreshProfileList() -> Bool
+    /// The Profile ids a fresh bridge read lists, without republishing the cached list; nil when
+    /// the read failed.
+    func freshProfileIds() -> Set<String>?
 
     // MARK: Deletion (docs/sync.md, "Profile deletion and rename")
 

@@ -374,9 +374,8 @@ final class ProfileManager: ObservableObject {
     /// row. Best effort and idempotent: the sync engine runs it again after a crash.
     @MainActor
     static func removeLocalRows(ofDeletedProfile profileId: String, account: Account) async {
-        let hidden = account.localStorage.getAllSpaces()
-            .filter { $0.profileId == profileId && PhiSpaceSyncState.shared.isHidden($0.spaceId) }
-            .map(\.spaceId)
+        let bound = account.localStorage.getAllSpaces().filter { $0.profileId == profileId }.map(\.spaceId)
+        let hidden = PhiSpaceSyncState.shared.remotelyDeletedSpaceIds(among: bound).sorted()
         do {
             try await account.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId,
                                                                           hiddenSpaceIds: hidden)

@@ -229,8 +229,9 @@ the same key to a Kiosk-only command still constitutes a conflict.
     `handleKeyEquivalent` path first. Unhandled events continue through Chromium.
   - `phi_command_handler.mm` calls the native `commandDispatch` path before its
     normal command handling.
-- Main-menu override:
-  - Under `BUILDFLAG(IS_MAC_PHI)`, `main_menu_builder.mm` asks
+- Menu and hidden-shortcut overrides:
+  - Under `BUILDFLAG(IS_MAC_PHI)`, main-menu items and Chromium's synthetic
+    hidden shortcut items share `PhiApplyKeyEquivalentOverride`, which asks
     `keyEquivalentOverrideForCommand:` for each command override.
   - No override returns `nil` and preserves Chromium's default.
   - An explicit disable returns an empty key equivalent and zero modifiers.
@@ -240,6 +241,9 @@ the same key to a Kiosk-only command still constitutes a conflict.
     targets remain Chromium-owned.
 - Main-menu rebuild:
   - `requestRebuildMainMenu` reruns `BuildMainMenu` and reapplies custom shortcuts.
+  - The same rebuild refreshes cached hidden key equivalents from their defaults
+    before applying current overrides, so rebinding, disabling, and restoring a
+    shortcut take effect without restarting the browser.
   - `PhiAppController::mainMenuRebuilt` restores the File menu delegate, rebuilds
     History/Bookmark/Tab MenuBridge content, and updates dynamic key equivalents.
 - Native-menu synchronization:
@@ -247,12 +251,17 @@ the same key to a Kiosk-only command still constitutes a conflict.
     corresponding Phi default. Menu items outside `DefaultShortcuts` are left
     unchanged.
 - Hidden-shortcut boundary:
-  - Menu overrides affect built `NSMenuItem` instances only. They do not remove
-    entries from `global_keyboard_shortcuts_mac.mm`'s synthetic hidden-shortcut
-    table.
+  - An override replaces all hidden aliases of that command, including numeric
+    keypad bindings. An explicit disable clears every alias; removing the override
+    restores Chromium's defaults. This covers `IDC_SELECT_NEXT_TAB`,
+    `IDC_SELECT_PREVIOUS_TAB`, and numbered tab selection without adding them to
+    the native Phi interceptor.
+  - Back/Forward's delayed WebContents-only aliases are suppressed while those
+    commands have an override; the configured binding is matched by the main menu.
   - A native Phi command that conflicts with a hidden Chromium accelerator must
-    match in the pre-dispatch interceptor. An unhandled event continues to the
-    hidden Chromium lookup.
+    still match in the pre-dispatch interceptor unless that Chromium command's
+    binding was changed or disabled. An unhandled event continues to the hidden
+    Chromium lookup.
 
 ## Persistence and Compatibility
 

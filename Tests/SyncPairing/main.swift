@@ -64,6 +64,10 @@ struct PairingTests {
         precondition(readiness.profileSyncInfo(forProfileId: "local") == nil, "Unpaired device exposed resolved keys")
         readiness.paired = true
         precondition(readiness.profileSyncInfo(forProfileId: "local")?.uuid == "remote")
+        readiness.chromiumKeysWithdrawn = true
+        precondition(readiness.profileSyncInfo(forProfileId: "local") == nil, "Withdrawn keys were delivered")
+        readiness.chromiumKeysWithdrawn = false
+        precondition(readiness.profileSyncInfo(forProfileId: "local")?.passphrase == "secret")
         let verified = SyncPairingLegacyEvidence(authorizedDeviceVerified: true,
             freshAccountMappingsVerified: true, explicitlyPending: false,
             spaceSectionEnabled: true, hasDrainedFullReplay: true,

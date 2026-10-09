@@ -123,6 +123,41 @@ import SwiftUI
     @MainActor var syncStatusProfileIDs: [String] {
         ProfileManager.shared.userAssignableProfiles.map(\.profileId)
     }
+    /// Loads mapped Profiles that are not in memory so their Chromium sync runs without a
+    /// window (docs/sync.md, "Profile loading"). Built and retired with the engine, like the
+    /// helper; `startPhiSyncIfReady()` starts its initial delay.
+    @MainActor private var syncProfileLoader: SyncProfileLoader?
+    /// The loader's one pending timer; each request replaces the previous one.
+    @MainActor private var syncProfileLoaderWake: Task<Void, Never>?
+    /// Every Profile-list refresh, not only membership changes: a refresh is what shows
+    /// that a Profile unloaded after its last window closed.
+    private var syncProfileLoaderCancellable: AnyCancellable?
+
+    /// The pause while a local Profile is not mapped to an account Profile
+    /// (docs/sync.md, "Enrollment and setup"): its episode, the outputs last
+    /// applied, the episode's 15-second mark and repair loop. Only
+    /// `reconcileProfileMappingPause(profiles:)` drives it, and nothing else sets the engine
+    /// gate, `chromiumKeysWithdrawn` or the helper's pause. Main actor only, never persisted.
+    /// Built on first use and kept for the process: it holds no timer outside an episode or
+    /// an unenumerated Profile list, and every output it applies names the object it went to.
+    @MainActor private var profileMappingPauseState: SyncProfileMappingPauseReconciler?
+
+    /// The pane's Retry while sync is paused for an unmapped Profile: an immediate
+    /// repair pass, and the repair loop's first delay again. Outside an episode it does nothing.
+    @MainActor
+    func retryProfileMappingRepair() {
+        profileMappingPauseState?.kickRepair()
+    }
+
+    /// The pane's Sync now. A Profile that is not loaded stays Checking, which keeps the
+    /// helper's request queued, so the loader loads the mapped ones first, at once.
+    @MainActor
+    func requestSyncNow() async -> SyncHelper.Report? {
+        guard let helper = syncHelper else { return nil }
+        syncProfileLoader?.loadNow()
+        _ = await helper.requestSyncNow()
+        return helper.report
+    }
 
 
     // MARK: - Phi Space sync (M3-2)
@@ -314,6 +349,7 @@ import SwiftUI
             notifyChromium: {
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
             },
+            isProfileListEnumerated: { ProfileManager.shared.isProfileListEnumerated },
             // A closure, not a direct reference to the singleton — same shape as
             // `notifyChromium` above, and for the same reason: the self-revoke unit tests
             // build their own controller and must not reach the real coordinator.
@@ -410,21 +446,21 @@ import SwiftUI
         // subscribe time — the startup path's own silent unlock covers that;
         // this only reacts to a *later* load/create.
         profilesCancellable = ProfileManager.shared.$profiles
-            .map { $0.map(\.profileId) }
-            .removeDuplicates()
+            .removeDuplicates { $0.map(\.profileId) == $1.map(\.profileId) }
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] profiles in
                 // ProfileManager publishes its main-thread cache synchronously.
                 // Fence an outstanding status read before any queued continuation resumes.
-                MainActor.assumeIsolated { self?.syncHelper?.membershipDidChange() }
-                Task { @MainActor in
-                    await self?.syncKeyController?.silentUnlockAndResolve()
-                    // A profile arriving late can be the first unlock this process gets, so
-                    // this path has to be able to start the settings scheduling too.
-                    self?.startPhiSyncIfReady()
-                    // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
-                    // early-returns once scheduling starts).
-                    self?.refreshSpaceSyncGate()
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.syncHelper?.membershipDidChange()
+                    // The list this sink was given, before any await; `profiles`
+                    // still holds the previous one while the sink runs. The follow-up is chosen
+                    // once the episode for these inputs is committed, which is later when this
+                    // sink runs inside another reconciliation (review R2).
+                    self.reconcileProfileMappingPause(profiles: profiles) { [weak self] followUp in
+                        self?.runProfileListFollowUp(followUp)
+                    }
                 }
             }
         buildPhiSyncEngine(stack: stack, accountId: account.userID,
@@ -704,6 +740,15 @@ import SwiftUI
                                                                excludingClientId: hint.sourceClientID)
                         }
                     }
+                    // A Profile another device has just registered: map it now rather than at
+                    // the next periodic round. Dropped during a pause (docs/sync.md).
+                    if let controller = self.syncKeyController,
+                       let uuid = PhiSyncInvalidation.unmappedProfileUUID(
+                           in: hints, mapped: Set(controller.profileKeys.allMappedGlobalUuids()),
+                           ignoring: controller.undecryptableRemoteUuids) {
+                        AppLogInfo("[phi-sync] invalidation names an unmapped account profile uuid=\(String(uuid.prefix(8)))")
+                        self.profileMappingPause.unmappedAccountProfileHint()
+                    }
                 }
                 if pullPhi { await engine.pullOnce() }
             })
@@ -749,6 +794,66 @@ import SwiftUI
             saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) })
         syncHelper?.start()
 
+        syncProfileLoader?.stop()
+        syncProfileLoaderWake?.cancel()
+        syncProfileLoader = SyncProfileLoader(
+            profiles: {
+                let manager = ProfileManager.shared
+                let assignable = Set(manager.userAssignableProfiles.map(\.profileId))
+                return manager.profiles.map {
+                    SyncProfileLoader.Profile(id: $0.profileId, isLoaded: $0.isLoaded,
+                                              isUserAssignable: assignable.contains($0.profileId))
+                }
+            },
+            // Not `refresh()`: every 60 seconds for the whole session, that would publish an
+            // unchanged list and run its chat-archive drain and display-name upserts.
+            refreshProfiles: { ProfileManager.shared.refreshIfChanged() },
+            // Exactly what Chromium would be handed now: enrolled, keys not withdrawn, and a
+            // mapping resolved under the unlocked account key.
+            hasDeliverableKey: { [weak self] profileId in
+                self?.syncKeyController?.profileSyncInfo(forProfileId: profileId) != nil
+            },
+            isEligible: { [weak self] in
+                guard let self, let controller = self.syncKeyController else { return false }
+                return AccountController.shared.account === account
+                    && self.phiSyncEngine === builtEngine
+                    && !controller.isRetired
+                    && ProfilePairingGate.shared.isPaired
+                    && self.phiSyncPairingEnabled
+                    && controller.manager.currentARK != nil
+                    // Reset by another device: keys stay deliverable until the user sets
+                    // sync up again, but nothing should be loaded for it meanwhile. The
+                    // engine reads the persisted flag when built, so this covers both.
+                    && !self.nativeSyncRequiresReconfiguration
+            },
+            // The engine gate is on exactly while an episode exists or the Profile list
+            // has not been enumerated (AM-1).
+            isPaused: { [weak self] in self?.phiSyncEngine?.isProfileMappingPaused == true },
+            isProfileListEnumerated: { ProfileManager.shared.isProfileListEnumerated },
+            isEnabled: { !UserDefaults.standard.bool(forKey: SyncProfileLoader.disabledDefaultsKey) },
+            load: { profileId, done in
+                guard let bridge = ChromiumLauncher.sharedInstance().bridge else { done(false); return }
+                bridge.ensureProfileLoaded(profileId) { success in
+                    DispatchQueue.main.async { MainActor.assumeIsolated { done(success) } }
+                }
+            },
+            wake: { [weak self] delay in
+                self?.syncProfileLoaderWake?.cancel()
+                self?.syncProfileLoaderWake = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    self?.syncProfileLoader?.evaluate()
+                }
+            },
+            log: { AppLogInfo("[phi-sync] \($0)") })
+        // `@Published` emits before the value is stored, and the loader's own refresh must
+        // not re-enter it, so the list is read on the next main-actor turn.
+        syncProfileLoaderCancellable = ProfileManager.shared.$profiles
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.syncProfileLoader?.evaluate() }
+            }
+
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in
@@ -785,6 +890,13 @@ import SwiftUI
             // re-checks the ARK on the controller this coordinator owns. A post from any
             // other manager is a cheap no-op.
             Task { @MainActor in
+                // An unlock changes the pause's prerequisites, and retries the repair of an
+                // episode that was already running at once; an episode this
+                // reconciliation starts runs its first pass by itself. Neither does anything
+                // on a device with no episode.
+                let hadEpisode = self?.profileMappingPauseState?.episode != nil
+                self?.reconcileProfileMappingPause()
+                if hadEpisode { self?.profileMappingPauseState?.kickRepair() }
                 self?.startPhiSyncIfReady()
                 self?.refreshSpaceSyncGate()
             }
@@ -807,6 +919,9 @@ import SwiftUI
             forName: .phiProfileMappingsDidResolve, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
+                // Every pass result, held and cleared ones included, may start or end the
+                // pause.
+                self?.reconcileProfileMappingPause()
                 self?.refreshSpaceSyncGate()
                 // C1 step 3, the second half of the re-evaluation: a register naming a Space this device had
                 // not paired becomes resolvable the moment the mapping exists, and pairing changes no local
@@ -820,7 +935,10 @@ import SwiftUI
         phiSpacePairingObserver = NotificationCenter.default.addObserver(
             forName: .phiProfileAutoCreateDidRun, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
+            MainActor.assumeIsolated {
+                self?.reconcileProfileMappingPause()
+                self?.refreshSpaceSyncGate()
+            }
         }
 
         // M3-3 §7.1 step 4: mirror → local. If `SyncableSettings.apply` lists the pin-scope key in `userInfo`,
@@ -854,6 +972,10 @@ import SwiftUI
                 self?.applyAccountPinnedTabScope(scope, store: store)
             }
         }
+
+        // Before any round is requested: a new engine starts with its gate off, and AM-1 turns
+        // it on until the Profile list has been enumerated.
+        reconcileProfileMappingPause()
     }
 
     /// Runs the existing local pinned-tab scope migration towards an account value that has just landed (§7.1
@@ -943,6 +1065,8 @@ import SwiftUI
             phiSyncPairingEnabled = false
             phiSyncEngine?.suspendForPairing()
             phiInvalidationCoordinator?.stop()
+            // Enrollment is a prerequisite of the pause: its outputs are cleared.
+            reconcileProfileMappingPause()
             ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
             return
         }
@@ -959,6 +1083,7 @@ import SwiftUI
                   self.syncKeyController === controller, ProfilePairingGate.shared.isPaired else { return }
             self.phiSyncPairingEnabled = true
             self.lastSpaceGateEnabled = true
+            self.reconcileProfileMappingPause()
             self.startPhiSyncIfReady()
             ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
         }
@@ -970,16 +1095,28 @@ import SwiftUI
               !invalidation.isRunning else { return }
         guard phiSyncPairingEnabled, ProfilePairingGate.shared.isPaired,
               syncKeyController?.manager.currentARK != nil else { return }
+        // Before any work is enabled: an unmapped Profile keeps the gate on from here.
+        reconcileProfileMappingPause()
 
+        // Foreground and wake also retry an episode's repair at once; without an
+        // episode that call does nothing. Unpairing stops the invalidation coordinator without
+        // `stopPhiSync()`, so a start after re-pairing finds the previous tokens (review R6).
+        removePhiSyncForegroundAndWakeObservers()
         phiSyncForegroundObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak invalidation] _ in
-            Task { @MainActor in invalidation?.foregroundOrWake() }
+        ) { [weak self, weak invalidation] _ in
+            Task { @MainActor in
+                invalidation?.foregroundOrWake()
+                self?.profileMappingPauseState?.kickRepair()
+            }
         }
         phiSyncWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak invalidation] _ in
-            Task { @MainActor in invalidation?.foregroundOrWake() }
+        ) { [weak self, weak invalidation] _ in
+            Task { @MainActor in
+                invalidation?.foregroundOrWake()
+                self?.profileMappingPauseState?.kickRepair()
+            }
         }
 
         // The value snapshot this subscription dedupes against starts at what the domain holds
@@ -1030,6 +1167,7 @@ import SwiftUI
             }
 
         invalidation.start()
+        syncProfileLoader?.syncDidStart()
 
         // Local Space edits: the SwiftData publisher (already value-deduped) plus
         // the theme/opacity notification, because those two maps live in the
@@ -1222,20 +1360,13 @@ import SwiftUI
     private func stopPhiSync() {
         phiInvalidationCoordinator?.stop()
         phiInvalidationCoordinator = nil
-        if let observer = phiSyncWakeObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            phiSyncWakeObserver = nil
-        }
+        removePhiSyncForegroundAndWakeObservers()
         phiSyncPushCancellable?.cancel()
         phiSyncPushCancellable = nil
         phiSettingsInvalidationPending = false
         // Dropped with the subscription: the next account's preferences are a different
         // domain's worth of values, and a stale signature would swallow its first edit.
         phiSyncedSettingsSignature = nil
-        if let observer = phiSyncForegroundObserver {
-            NotificationCenter.default.removeObserver(observer)
-            phiSyncForegroundObserver = nil
-        }
         pairingActivationTask?.cancel()
         pairingActivationTask = nil
         phiSyncPairingEnabled = false
@@ -1283,10 +1414,169 @@ import SwiftUI
         PhiSpaceSyncState.shared.intentSink = nil
         syncHelper?.stop()
         syncHelper = nil
+        // A load already requested completes in Chromium; the stopped loader ignores it.
+        syncProfileLoaderCancellable?.cancel()
+        syncProfileLoaderCancellable = nil
+        syncProfileLoaderWake?.cancel()
+        syncProfileLoaderWake = nil
+        syncProfileLoader?.stop()
+        syncProfileLoader = nil
         phiSyncEngine?.shutdown()
         phiSyncEngine = nil
         phiDomainKeys?.clear()
         phiDomainKeys = nil
+        // Without an engine the prerequisites are gone, so this ends the episode
+        // (its 15-second mark and repair loop with it) and stops the Profile list retry. A
+        // gate and a helper pause applied to the engine just dropped are forgotten with it.
+        // So are keys withdrawn from the controller: the only caller,
+        // `invalidateSyncKeyController()`, retires it right after this, and `retire()` clears
+        // its keys and notifies the bridge. Restoring them here would hand Chromium the old
+        // account's keys for that moment (review R4).
+        reconcileProfileMappingPause(controllerIsBeingRetired: true)
+    }
+
+    /// The two observers `startPhiSyncIfReady()` installs; each start replaces them.
+    @MainActor
+    private func removePhiSyncForegroundAndWakeObservers() {
+        if let observer = phiSyncWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            phiSyncWakeObserver = nil
+        }
+        if let observer = phiSyncForegroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSyncForegroundObserver = nil
+        }
+    }
+
+    // MARK: - Profile mapping pause (docs/sync.md, "Enrollment and setup")
+
+    /// The one reconciliation. `profiles` is the list to evaluate: the
+    /// Profile-list sink passes the value it was given, every other caller the current one.
+    /// Callers: that sink, the `.phiProfileMappingsDidResolve` and
+    /// `.phiProfileAutoCreateDidRun` observers, the episode's 15-second mark and the Profile
+    /// list retry, the end of engine build, `activatePairedSync()`, `startPhiSyncIfReady()`
+    /// and the unlock observer before they enable work, and teardown.
+    @MainActor
+    private func reconcileProfileMappingPause(
+        profiles: [PhiBrowserProfile] = ProfileManager.shared.profiles,
+        controllerIsBeingRetired: Bool = false,
+        profileListFollowUp: (@MainActor (SyncProfileMappingPauseReconciler.ProfileListFollowUp) -> Void)? = nil
+    ) {
+        var inputs = profileMappingPauseInputs(profiles: profiles)
+        inputs.controllerIsBeingRetired = controllerIsBeingRetired
+        profileMappingPause.reconcile(inputs, profileListFollowUp: profileListFollowUp)
+    }
+
+    /// The Profile-list sink's work after its reconciliation. AM-4: during an episode the
+    /// repair loop replaces the silent unlock, so a failed device-envelope lookup cannot clear
+    /// the key cache; elsewhere unchanged.
+    @MainActor
+    private func runProfileListFollowUp(_ followUp: SyncProfileMappingPauseReconciler.ProfileListFollowUp) {
+        if followUp == .repairPass { profileMappingPauseState?.kickRepair() }
+        let chosenFor = syncKeyController.map(ObjectIdentifier.init)
+        Task { @MainActor [weak self] in
+            if followUp == .silentUnlockAndResolve, let self, let controller = self.syncKeyController,
+               SyncProfileMappingPauseReconciler.shouldRunDeferredSilentUnlock(
+                   chosenFor: chosenFor, current: ObjectIdentifier(controller),
+                   hasEpisode: self.profileMappingPauseState?.episode != nil) {
+                await controller.silentUnlockAndResolve()
+            }
+            // A profile arriving late can be the first unlock this process gets, so
+            // this path has to be able to start the settings scheduling too.
+            self?.startPhiSyncIfReady()
+            // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
+            // early-returns once scheduling starts).
+            self?.refreshSpaceSyncGate()
+        }
+    }
+
+    @MainActor
+    private var profileMappingPause: SyncProfileMappingPauseReconciler {
+        if let state = profileMappingPauseState { return state }
+        let state = SyncProfileMappingPauseReconciler(effects: .init(
+            setEngineGate: { [weak self] in self?.phiSyncEngine?.setProfileMappingPause($0) },
+            setKeysWithdrawn: { [weak self] in self?.syncKeyController?.chromiumKeysWithdrawn = $0 },
+            notifyKeysChanged: { ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?() },
+            publishStatus: { [weak self] in self?.syncHelper?.setProfileMappingPause($0) },
+            publishListNotEnumerated: { [weak self] in self?.syncHelper?.setProfileListNotEnumerated(since: $0) },
+            resume: { [weak self] in self?.resumeAfterProfileMappingPause() },
+            runRepairPass: { [weak self] done in
+                guard let controller = self?.syncKeyController else { done(); return }
+                Task { @MainActor in
+                    await controller.runMappingRepairPass()
+                    done()
+                }
+            },
+            // The engine can enter reconfiguration without telling this coordinator, so the
+            // state is read again when a pass falls due, not only at the last reconciliation.
+            canRunRepairPass: { [weak self] in self?.nativeSyncRequiresReconfiguration == false },
+            failureCategory: { [weak self] in self?.syncKeyController?.lastMappingsFailureCategory },
+            refreshProfileList: { _ = ProfileManager.shared.refresh() },
+            reconcileNow: { [weak self] in self?.reconcileProfileMappingPause() },
+            schedule: { delay, fire in
+                let task = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    fire()
+                }
+                return { task.cancel() }
+            },
+            log: { AppLogInfo("[phi-sync] \($0)") }))
+        profileMappingPauseState = state
+        return state
+    }
+
+    /// Step 1 and step 2 of the reconciliation. The predicate is evaluated only with every
+    /// prerequisite present and the list enumerated, on the user-assignable part of `profiles`.
+    @MainActor
+    private func profileMappingPauseInputs(profiles: [PhiBrowserProfile]) -> SyncProfileMappingPauseReconciler.Inputs {
+        let engine = phiSyncEngine
+        let controller = syncKeyController
+        let enumerated = ProfileManager.shared.isProfileListEnumerated
+        var prerequisitesMet = false
+        if engine != nil, let controller {
+            prerequisitesMet = !controller.isRetired
+                && controller.manager.currentARK != nil
+                && ProfilePairingGate.shared.isPaired
+                && phiSyncPairingEnabled
+                // Reset by another device: enrollment and mappings stay until the user sets
+                // sync up again, but nothing may be created in or registered into that account.
+                // The same source as the Profile loader's eligibility.
+                && !nativeSyncRequiresReconfiguration
+        }
+        var pause = SyncProfileMappingPause.notPaused
+        if prerequisitesMet, enumerated, let controller {
+            let syncable = profiles.filter {
+                !PhiPreferences.AgentSpaces.isAgentFallbackProfile(profileId: $0.profileId,
+                                                                    displayName: $0.displayName)
+            }.map(\.profileId)
+            pause = SyncProfileMappingPause.evaluate(
+                syncableProfileIds: syncable,
+                persistedMappings: controller.profileKeys.allMappings(),
+                knownUnmappedProfileIds: controller.knownUnmappedProfileIds,
+                profileIdsBeingCreated: controller.profileIdsBeingCreated,
+                lastPassResult: controller.lastMappingsPassResult)
+        }
+        return .init(engine: engine.map(ObjectIdentifier.init),
+                     controller: controller.map(ObjectIdentifier.init),
+                     prerequisitesMet: prerequisitesMet, isProfileListEnumerated: enumerated,
+                     pause: pause, failureCategory: controller?.lastMappingsFailureCategory,
+                     isAccountKeyUnlocked: controller?.manager.currentARK != nil)
+    }
+
+    /// The gate went from on to off on the current engine: the rounds it turned away are not replayed, so a catch-up (its
+    /// pull is followed by the publication of every native kind) and the retention sweep are
+    /// queued again, and the Profile loader continues. Before `startPhiSyncIfReady()` has
+    /// started the schedule nothing was turned away: that start requests its own catch-up and
+    /// queues its own sweep, so a first enumeration at launch starts no second one.
+    @MainActor
+    private func resumeAfterProfileMappingPause() {
+        guard let engine = phiSyncEngine else { return }
+        if let invalidation = phiInvalidationCoordinator, invalidation.isRunning {
+            invalidation.requestCatchUp()
+            Task { await engine.runRetentionSweep() }
+        }
+        syncProfileLoader?.evaluate()
     }
 }
 

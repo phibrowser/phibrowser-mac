@@ -11,6 +11,8 @@ import Foundation
     var saves = 0
     var canSave = true
     var acceptsRequests = true
+    /// Runs inside a participant's asynchronous read, before it returns.
+    var onRead: ((String) -> Void)?
     func tick(_ time: TimeInterval) { self.time = Date(timeIntervalSince1970: time) }
     func status(_ id: String, _ phase: SyncContextPhase, at time: TimeInterval? = nil) {
         snapshots[id] = SyncContextSnapshot(id: id, phase: phase,
@@ -21,7 +23,7 @@ import Foundation
         for id in ids { status(id, .upToDate, at: time) }
     }
     func participant(_ id: String) -> SyncHelper.Participant {
-        SyncHelper.Participant(id: id, read: { self.snapshots[id] }, requestSync: {
+        SyncHelper.Participant(id: id, read: { self.onRead?(id); return self.snapshots[id] }, requestSync: {
             self.requests[id, default: 0] += 1
             return self.acceptsRequests
         }, isNative: id == "phi")
@@ -68,6 +70,297 @@ import Foundation
         await earlyEndKeepsLateSuccess()
         await syncNowFailsFastWhileNativeOffline()
         await reportCarriesNativeDetail()
+        await profileMappingPauseGrace()
+        await profileMappingPauseCancelsRoundObservation()
+        await profileMappingPauseQueuesSyncNow()
+        await profileMappingPauseCheckedAfterEveryRead()
+        await profileListNotEnumeratedIsReported()
+        statusPresentationOverlaysThePause()
+        statusPresentationPrecedence()
+        statusPresentationGraceAndCancelledSyncNow()
+        statusPresentationProfileListWait()
+        statusPresentationProfileNames()
+        statusPresentationReadsNamesOnlyForThePause()
+        statusPresentationAnnouncesResume()
+    }
+
+    static let overlayNow = Date(timeIntervalSince1970: 10_000)
+    static let overlayNames = ["Profile 1": "Work", "Profile 2": "Home", "Profile 3": "alpha",
+                               "Profile 4": "Travel", "Profile 5": "Kids"]
+
+    static func overlay(_ summary: SyncSummaryPhase, _ pause: SyncProfileMappingPauseStatus = .none,
+                        request: SyncRequestState = .idle, cancelled: Bool = false,
+                        listSince: TimeInterval? = nil, reset: Bool = false,
+                        names: [String: String] = overlayNames) -> SyncStatusPresentation {
+        SyncStatusPresentation.present(summary: summary, request: request, profileMappingPause: pause,
+            syncNowCancelledByPause: cancelled,
+            profileListNotEnumeratedSince: listSince.map { overlayNow.addingTimeInterval(-$0) },
+            resetRequired: reset, profileNames: { names }, now: overlayNow)
+    }
+
+    /// Every value of the helper's pause, each reason and failure category.
+    static func statusPresentationOverlaysThePause() {
+        let idleButton = SyncNowButtonState.reduce(summary: .upToDate, request: .idle)
+        for pause in [SyncProfileMappingPauseStatus.none, .grace] {
+            let shown = overlay(.upToDate, pause)
+            precondition(shown.headline == .phase(.upToDate) && shown.pause == nil && !shown.showsRetry
+                         && shown.syncNow == idleButton && !shown.showsProfileListWait,
+                         "Nothing about the pause is shown outside the shown pause (\(pause))")
+        }
+        let reasons: [SyncProfileMappingPause.Reason] = [.registering, .retrying, .needsAttention]
+        let failures: [SyncProfileMappingFailureCategory?] = [nil, .offline, .signInExpired, .serverError, .other]
+        for reason in reasons {
+            for failure in failures {
+                let shown = overlay(.upToDate, .paused(reason: reason, failureCategory: failure,
+                                                       unmappedProfileIds: ["Profile 2"]))
+                precondition(shown.headline == .paused && shown.showsRetry && !shown.syncNow.isVisible
+                             && shown.pause == .init(reason: reason, failure: failure, profiles: .names(["Home"])),
+                             "The shown pause must carry its reason and category (\(reason), \(String(describing: failure)))")
+            }
+        }
+        print("PASS overlay: none and grace show nothing; the shown pause carries reason, category, Profiles and Retry")
+    }
+
+    /// Reset wins over the pause; the pause wins over Syncing (a leftover from a round queued before the gate included),
+    /// Up to date, Offline and Needs attention; Not started shows nothing of it.
+    static func statusPresentationPrecedence() {
+        let pause = SyncProfileMappingPauseStatus.paused(reason: .retrying, failureCategory: .offline,
+                                                         unmappedProfileIds: ["Profile 1"])
+        for summary in [SyncSummaryPhase.syncing, .upToDate, .offline, .needsAttention, .checking, .initialSync] {
+            let shown = overlay(summary, pause, request: .inFlight(startedAt: overlayNow))
+            precondition(shown.headline == .paused && shown.showsRetry && !shown.syncNow.isVisible,
+                         "The shown pause must win over \(summary)")
+        }
+        let reset = overlay(.needsAttention, pause, reset: true)
+        precondition(reset.headline == .phase(.needsAttention) && reset.pause == nil && !reset.showsRetry
+                     && reset.syncNow == SyncNowButtonState.reduce(summary: .needsAttention, request: .idle),
+                     "Reset required must win over the pause: Retry cannot fix a reset")
+        let resetWaiting = overlay(.checking, listSince: 600, reset: true)
+        precondition(resetWaiting.headline == .phase(.checking) && !resetWaiting.showsProfileListWait,
+                     "Reset required must win over the list wait")
+        let notStarted = overlay(.notStarted, pause)
+        precondition(notStarted.headline == .phase(.notStarted) && notStarted.pause == nil
+                     && !notStarted.showsRetry && !notStarted.syncNow.isVisible, "Not started shows no pause")
+        let both = overlay(.checking, pause, listSince: 600)
+        precondition(both.headline == .paused && !both.showsProfileListWait, "The shown pause wins over the list wait")
+        print("PASS overlay: reset wins over the pause; the pause wins over Syncing, Up to date, Offline and the list wait")
+    }
+
+    /// A Sync now during the grace shows as waiting; a request the pause cancelled
+    /// returns the control to idle without an announcement.
+    static func statusPresentationGraceAndCancelledSyncNow() {
+        let grace = overlay(.syncing, .grace, request: .queued(reason: .busy, notBefore: nil))
+        precondition(grace.headline == .phase(.syncing) && grace.pause == nil && !grace.showsRetry
+                     && grace.syncNow == .init(isVisible: true, isEnabled: false, showsProgress: true,
+                                               hint: .waitingForCurrentSync) && grace.announcesSyncNowOutcome,
+                     "A Sync now during the grace shows as queued Busy")
+        let pause = SyncProfileMappingPauseStatus.paused(reason: .registering, failureCategory: nil,
+                                                         unmappedProfileIds: ["Profile 1"])
+        let cancelled = overlay(.upToDate, pause, cancelled: true)
+        precondition(!cancelled.announcesSyncNowOutcome && cancelled.syncNow.hint == .none
+                     && !cancelled.syncNow.showsProgress, "A cancelled Sync now is neither announced nor failed")
+        let resumed = overlay(.upToDate, .none, cancelled: false)
+        precondition(resumed.announcesSyncNowOutcome && resumed.syncNow == SyncNowButtonState.reduce(summary: .upToDate, request: .idle),
+                     "After the pause the control is idle and outcomes are announced again")
+        print("PASS overlay: a Sync now in the grace shows as waiting; a cancelled one ends silently")
+    }
+
+    /// AM-1 / review R3: the unread Profile list shows a line from 30 s and Needs attention
+    /// from 5 minutes, never Retry.
+    static func statusPresentationProfileListWait() {
+        let early = overlay(.checking, listSince: 29)
+        precondition(early.headline == .phase(.checking) && !early.showsProfileListWait, "Under 30 s shows nothing")
+        let line = overlay(.checking, listSince: 30)
+        precondition(line.headline == .phase(.checking) && line.showsProfileListWait && !line.showsRetry,
+                     "From 30 s the waiting line is shown with the summary")
+        let late = overlay(.checking, listSince: 299)
+        precondition(late.headline == .phase(.checking) && late.showsProfileListWait)
+        let attention = overlay(.checking, listSince: 300)
+        precondition(attention.headline == .phase(.needsAttention) && attention.showsProfileListWait
+                     && !attention.showsRetry && attention.syncNow.isVisible && attention.pause == nil,
+                     "From 5 minutes Needs attention with the line, and no Retry")
+        let read = overlay(.upToDate, listSince: nil)
+        precondition(read.headline == .phase(.upToDate) && !read.showsProfileListWait)
+        print("PASS overlay: the unread Profile list shows a line from 30 s and Needs attention from 5 minutes, no Retry")
+    }
+
+    /// Names for one to three Profiles, a count above that; an id that no longer resolves is left out.
+    static func statusPresentationProfileNames() {
+        func profiles(_ ids: [String]) -> SyncStatusPresentation.PausedProfiles? {
+            overlay(.upToDate, .paused(reason: .registering, failureCategory: nil, unmappedProfileIds: ids)).pause?.profiles
+        }
+        precondition(profiles(["Profile 1", "Profile 3", "Profile 2"]) == .names(["alpha", "Home", "Work"]),
+                     "Up to three names, sorted for display")
+        precondition(profiles(["Profile 1", "Profile 2", "Profile 3", "Profile 4"]) == .count(4), "Four are counted")
+        precondition(profiles(["Profile 1", "Gone"]) == .names(["Work"]), "An id that does not resolve is not listed")
+        precondition(profiles(["Profile 1", "Profile 2", "Profile 3", "Gone", "Also gone"]) == .names(["alpha", "Home", "Work"]),
+                     "Only resolved names are counted")
+        precondition(profiles(["Gone"]) == .unnamed, "No resolved name: the card says a profile without naming it")
+        print("PASS overlay: one to three Profiles by name, more by count; unresolved ids are left out")
+    }
+
+    /// The Profile names are read only for a shown pause, not on every read of the status row.
+    static func statusPresentationReadsNamesOnlyForThePause() {
+        var reads = 0
+        func present(_ summary: SyncSummaryPhase, _ pause: SyncProfileMappingPauseStatus,
+                     reset: Bool = false) -> SyncStatusPresentation {
+            SyncStatusPresentation.present(summary: summary, request: .idle, profileMappingPause: pause,
+                syncNowCancelledByPause: false, profileListNotEnumeratedSince: overlayNow.addingTimeInterval(-600),
+                resetRequired: reset, profileNames: { reads += 1; return overlayNames }, now: overlayNow)
+        }
+        _ = present(.upToDate, .none)
+        _ = present(.syncing, .grace)
+        _ = present(.needsAttention, shownPause, reset: true)
+        _ = present(.notStarted, shownPause)
+        precondition(reads == 0, "The Profile names were read without a shown pause")
+        precondition(present(.upToDate, shownPause).pause?.profiles == .names(["Home"]) && reads == 1,
+                     "A shown pause reads the Profile names once")
+        print("PASS overlay: the Profile names are read only for a shown pause")
+    }
+
+    /// "Sync resumed" only when a shown pause gives way to a normal summary: not to a reset,
+    /// Not started (the account key became unavailable) or another shown pause.
+    static func statusPresentationAnnouncesResume() {
+        func resumes(wasPaused: Bool = true, _ presentation: SyncStatusPresentation, reset: Bool = false) -> Bool {
+            SyncStatusPresentation.announcesResume(wasPaused: wasPaused, now: presentation, resetRequired: reset)
+        }
+        for summary in [SyncSummaryPhase.upToDate, .syncing, .offline, .needsAttention, .checking] {
+            precondition(resumes(overlay(summary)), "A pause that gives way to \(summary) resumed sync")
+        }
+        precondition(resumes(overlay(.checking, listSince: 600)), "The list wait is a normal summary")
+        precondition(!resumes(wasPaused: false, overlay(.upToDate)), "No shown pause, nothing resumed")
+        precondition(!resumes(overlay(.notStarted)), "A pause that gives way to Not started has not resumed sync")
+        precondition(!resumes(overlay(.needsAttention, reset: true), reset: true),
+                     "A pause that gives way to a reset has not resumed sync")
+        precondition(!resumes(overlay(.upToDate, shownPause)), "A pause still shown has not resumed sync")
+        print("PASS overlay: Sync resumed only when a shown pause gives way to a normal summary")
+    }
+
+    /// Review R3: the report says since when the engine gate has been on because the Profile
+    /// list has not been enumerated; membership changes and ineligibility keep it, and it
+    /// changes nothing else.
+    @MainActor static func profileListNotEnumeratedIsReported() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        let since = Date(timeIntervalSince1970: 42)
+        let requests = f.requests
+        helper.setProfileListNotEnumerated(since: since)
+        precondition(helper.report.profileListNotEnumeratedSince == since && helper.report.summary.phase == .upToDate)
+        helper.membershipDidChange()
+        precondition(helper.report.profileListNotEnumeratedSince == since, "A membership change dropped the field")
+        f.paired = false
+        await helper.refresh()
+        precondition(helper.report.profileListNotEnumeratedSince == since, "Ineligibility dropped the field")
+        f.paired = true
+        precondition(f.requests == requests, "The field dispatched a round")
+        helper.setProfileListNotEnumerated(since: nil)
+        precondition(helper.report.profileListNotEnumeratedSince == nil)
+        helper.setProfileListNotEnumerated(since: since)
+        helper.stop()
+        precondition(helper.report.profileListNotEnumeratedSince == nil, "A stopped helper kept the field")
+        print("PASS helper: the report carries since when the Profile list has not been enumerated")
+    }
+
+    static let shownPause = SyncProfileMappingPauseStatus.paused(
+        reason: .retrying, failureCategory: .offline, unmappedProfileIds: ["Profile 2"])
+
+    /// Under 15 seconds the helper dispatches nothing and keeps its last report;
+    /// ending the pause is not a membership change.
+    @MainActor static func profileMappingPauseGrace() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        let before = helper.report.summary
+        let reads = f.enumerations
+        helper.setProfileMappingPause(.grace)
+        for second in stride(from: 110, through: 500, by: 30) {
+            f.tick(Double(second))
+            await helper.refresh(requestSync: true)
+        }
+        precondition(f.requests == ["phi": 1, "profile": 1] && f.enumerations == reads,
+                     "The helper read or dispatched during the grace")
+        precondition(helper.report.summary == before && helper.report.profileMappingPause == .none
+                     && helper.report.request == .idle, "The grace changed the report")
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.summary == before, "Ending the pause reset the report like a membership change")
+        f.succeed(at: 501)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2, "Ending the pause did not ask for a fresh round")
+        f.succeed(at: 505)
+        await helper.refresh()
+        precondition(f.saved == f.time && helper.report.summary.phase == .upToDate)
+        helper.stop()
+        print("PASS helper: a pause under 15 seconds dispatches nothing and keeps the report; its end asks for a fresh round")
+    }
+
+    /// AM-2: a round dispatched just before an episode starts is invalidated; its Sync now
+    /// request stays queued, is cancelled once the pause is shown, and a fresh round runs
+    /// after the episode.
+    @MainActor static func profileMappingPauseCancelsRoundObservation() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170)
+        let state = await helper.requestSyncNow()
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 2)
+        helper.setProfileMappingPause(.grace)
+        precondition(helper.report.request == .queued(reason: .busy, notBefore: nil),
+                     "The Sync now request of an invalidated round must stay queued")
+        f.succeed(at: 172)
+        await helper.refresh()
+        precondition(f.saved == Date(timeIntervalSince1970: 103), "An invalidated round recorded a coordinated success")
+        helper.setProfileMappingPause(shownPause)
+        precondition(helper.report.request == .idle && helper.report.syncNowCancelledByPause
+                     && helper.report.profileMappingPause == shownPause,
+                     "The shown pause must cancel the queued request and report the pause")
+        await helper.refresh()
+        precondition(helper.report.profileMappingPause == shownPause && helper.report.syncNowCancelledByPause)
+        helper.membershipDidChange()
+        precondition(helper.report.profileMappingPause == shownPause, "A membership change dropped the shown pause")
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.profileMappingPause == .none && !helper.report.syncNowCancelledByPause)
+        f.tick(240); f.succeed(at: 240)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 3 && helper.report.request == .idle, "No fresh round after the episode")
+        f.succeed(at: 244)
+        await helper.refresh()
+        precondition(f.saved == f.time)
+        helper.stop()
+        print("PASS helper: an episode invalidates the round in flight, keeps then cancels its Sync now, and a fresh round follows")
+    }
+
+    /// A Sync now during the grace stays queued and is dispatched when the
+    /// episode ends; one during the shown pause is cancelled at once.
+    @MainActor static func profileMappingPauseQueuesSyncNow() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        helper.setProfileMappingPause(.grace)
+        f.tick(170)
+        var state = await helper.requestSyncNow()
+        precondition(state == .queued(reason: .busy, notBefore: nil) && f.requests["phi"] == 1)
+        helper.setProfileMappingPause(.none)
+        precondition(helper.report.request == .queued(reason: .busy, notBefore: nil))
+        f.succeed(at: 171)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 2 && helper.report.request == .inFlight(startedAt: f.time),
+                     "The queued Sync now was not dispatched when the episode ended")
+        helper.setProfileMappingPause(shownPause)
+        f.tick(300)
+        state = await helper.requestSyncNow()
+        precondition(state == .idle && helper.report.syncNowCancelledByPause && f.requests["phi"] == 2,
+                     "A Sync now while the pause is shown must be cancelled, not dispatched")
+        helper.stop()
+        print("PASS helper: Sync now queues through the grace and dispatches at its end; the shown pause cancels it")
+    }
+
+    /// AM-2: the pause is checked again after every asynchronous participant read.
+    @MainActor static func profileMappingPauseCheckedAfterEveryRead() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.succeed(at: 170)
+        var fired = false
+        f.onRead = { id in
+            guard id == "profile", !fired else { return }
+            fired = true
+            helper.setProfileMappingPause(.grace)
+        }
+        await helper.refresh(requestSync: true)
+        precondition(fired && f.requests["phi"] == 1, "A round was dispatched after the pause began mid-observation")
+        helper.stop()
+        print("PASS helper: the pause is checked after every asynchronous participant read")
     }
 
     @MainActor static func waitingStatesRemainObservational() async {

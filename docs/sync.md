@@ -103,6 +103,39 @@ Within the same session, completed Profile writes advance the expected review
 snapshot so a Space-write retry retains its remaining choices. Fresh preflight
 still rejects independent changes to the server candidates or reviewed Space data.
 
+After enrollment the background mapping pass (`SyncKeyController.resolveMappings()`)
+never adopts an account Profile by count: one unmapped local beside one unclaimed
+account Profile stays unmapped. Auto-create's same-name twin
+search still adopts, after a Profile auto-create already made for that uuid. A
+local with no twin is registered as a new account Profile without asking, once no
+account Profile is left that auto-create could still claim. Envelopes that do not
+open under the ARK, and uuids the persisted mapping gives to deleted locals, never
+hold registration. Register and lookup failures are classified: transient
+(transport, 5xx, 408/429, 401/403, locked, a mapping that moved) holds the pass
+(`.held`); definitive (bad envelope, another 4xx, an undecodable body) measures
+and reports `.definitiveFailure`. The controller publishes the Profiles whose
+mapping it knows to be absent on the server (`knownUnmappedProfileIds`), the last
+pass result and the Profiles it is creating, read on
+`.phiProfileMappingsDidResolve`; the pure `SyncProfileMappingPause` turns them into
+a pause decision. The known-unmapped set is evidence, not a per-pass answer: a
+Profile enters when a lookup finds its persisted mapping's envelope gone (404) or
+a measured pass leaves it unmapped, and leaves only when a pass or an adopt
+resolves it or it no longer exists locally. A held pass erases nothing, and
+`clearResolved()` keeps the set while the account key is still available; it
+empties once the key is gone or the controller is retired. So a mapping whose
+envelope is gone keeps pausing even when its replacement registration fails.
+Beside the pass result the controller publishes `lastMappingsFailureCategory`
+(`SyncProfileMappingFailureCategory`: offline, sign-in expired, server error,
+other), for the Sync status only. It names the latest failure the pass met (for
+a measured pass that reports an auto-create failure, that failure's), carries no
+text or identifiers, changes neither the pass result nor the pause's reason, and
+is nil after a pass that succeeds and after `clearResolved()`. `runMappingRepairPass()` runs auto-create and then a mapping pass,
+both single-flight, outside the engine, under the existing gates (enrollment
+complete, unlocked). The coordinator turns these inputs into the pause described
+below. Until `ProfileManager` has enumerated the Profile list once
+(`isProfileListEnumerated`), a pass does not prune the known-unmapped set against
+the empty list it sees.
+
 All native data rounds and Chromium ready-key exposure require enrollment.
 Completing setup replays the shared Phi data type once under the confirmed Space
 mappings, because no round (not even the gate close) runs while unpaired. Completion
@@ -154,6 +187,110 @@ does not resurrect a previous account, and removal alone does not request startu
 Withdrawing eligibility synchronously blocks
 in-flight native writes, stops the invalidation schedule, and notifies Chromium.
 A generation fence also rejects old rounds after rapid re-enrollment.
+
+The pause while a local Profile is unmapped is a separate, softer stop.
+Comments in the sync sources cite identifiers such as AM-1, R2, D20 or 10.2; they
+refer to the implementation plan kept in the company knowledge base under
+`30-projects/phinomenon/sync-service/design/2026-09-29-sync-profile-pause-and-loading-plan.md`.
+The engine keeps an in-memory, lock-protected gate beside the stop signal
+(`PhiSyncEngine.setProfileMappingPause(_:)`, read back through
+`isProfileMappingPaused`), which the coordinator sets and clears synchronously
+on the main actor. It takes effect at round boundaries: `run(_:)` reads it once,
+after the wait for the previous round, and a pull, push, local-change round
+(settings, Spaces, owned kinds) or retention sweep that meets it returns before
+it writes anything or shows Syncing. A round admitted before the gate came on
+finishes with all its landings, cursor saves, acknowledgements and marker
+advance; nothing inside a round reads the gate, it never bumps the generation,
+and it is not the pairing stop (`suspendForPairing()`), which does abort a
+round. Exempt: the read-only preview, the Space gate edge and the local
+deletion intent. A round admitted only through that exemption while the gate
+is on skips the favicon backfill tail, so the pause starts no favicon request.
+While the gate is on, neither `markLocalChangePending()` nor the queue's own
+Syncing update changes the status. Rounds turned away are not replayed:
+clearing the gate admits the next round, and the caller requests a catch-up and
+queues the retention sweep again. An engine whose gate is never set behaves
+exactly as before.
+
+`PhiChromiumCoordinator` owns the pause. Its state
+is an episode (an identifier and the time the predicate first reported an
+unmapped Profile) and the outputs last applied, in memory only, held by a
+`SyncProfileMappingPauseReconciler` (`Sources/Sync/`). Every output is derived by
+one idempotent function, `reconcileProfileMappingPause(profiles:)`, which commits
+the episode and the outputs before it applies any difference:
+
+| Step | Rule |
+| --- | --- |
+| Prerequisites | Engine present, key controller present and not retired, account key unlocked, enrollment complete and activated, and this Mac not requiring reconfiguration (`nativeSyncRequiresReconfiguration`, the same source as the Profile loader's eligibility: an account reset by another device keeps enrollment and the key until setup runs again). Without them there is no episode and every output of the pause is off |
+| Predicate | `SyncProfileMappingPause` over the user-assignable Profiles of the list the trigger passed (the Profile-list sink passes the value it was given; every other caller the current list), the persisted mappings, `knownUnmappedProfileIds`, `profileIdsBeingCreated` and the last pass result. Evaluated only with the prerequisites met and the list enumerated |
+| Episode | Starts when the predicate pauses, runs a repair pass at once and arms one timer for its 15-second mark; ends when the predicate is clear or a prerequisite goes. A second unmapped Profile does not restart it |
+| Engine gate | On while an episode exists, and from engine construction until the Profile list has been enumerated |
+| Chromium keys | `chromiumKeysWithdrawn` set, then `notifyPhiSyncKeysChanged`, once an episode is 15 seconds old; cleared and notified when it ends |
+| Status | The helper gets `SyncProfileMappingPauseStatus`: `.grace` for the first 15 seconds, then `.paused` with the reason, the failure category and the unmapped Profile ids, `.none` otherwise |
+| Resume | When the gate goes from on to off on the current engine: a catch-up from the invalidation coordinator and the retention sweep again (both only once the schedule has started; before that `startPhiSyncIfReady()` requests its own), then the Profile loader re-evaluates |
+
+Triggers: the Profile-list sink, the `.phiProfileMappingsDidResolve` and
+`.phiProfileAutoCreateDidRun` observers, the episode's 15-second mark, the end of
+engine build (before any round is requested), `activatePairedSync()`,
+`startPhiSyncIfReady()` and the unlock observer before they enable work, the
+Profile-list retry after each read, a repair pass skipped because reconfiguration
+is required, and teardown. A pause never aborts a round, never bumps the generation and never
+stops or starts the invalidation coordinator; the invalidation stream stays
+connected and the pulls it requests return at admission. Nothing about it is
+persisted.
+
+Repair: one loop per episode calls `runMappingRepairPass()` (unless reconfiguration is required when the pass falls due: the engine enters that state without telling the coordinator, so the pass is skipped without network work, the delay does not grow, and a reconciliation ends the episode), then waits 5 seconds,
+doubling to 5 minutes, and repeats while its episode is current. While the
+latest mapping failure the pass left is offline (`lastMappingsFailureCategory`),
+a wait is at most 30 seconds, because nothing observes the connection coming
+back; the next delay doubles from the wait used. Foreground,
+wake, an unlock and the pane's Retry (`retryProfileMappingRepair()`) replace the
+pending wait with an immediate pass and restart the delay at 5 seconds; a request
+during a pass runs one more pass after it. During an episode, and with the
+account key unlocked, the Profile-list sink runs this repair instead of
+`silentUnlockAndResolve()`, so a failed device-envelope lookup cannot clear the
+key cache; on a device with no episode the sink is unchanged. The sink's
+choice is made by the reconciliation right after the episode transition for its
+list is committed: a sink that runs inside another reconciliation (the resume
+lets the Profile loader refresh the list) has its inputs queued, and its choice
+waits for them, so an episode they start selects nothing rather than the silent
+unlock. A silent unlock chosen this way runs later, in a task, and only if the
+key controller it was chosen for is still current and no episode exists by then.
+A Profile
+the key layer is creating can start an episode for the moment before its id is
+known (the list publishes before `createProfile` returns); nothing is aborted or
+shown and the episode ends when its adopt does.
+
+Launch: `ProfileManager.isProfileListEnumerated` becomes true on the first
+complete, non-empty bridge read and never goes back. Until then the gate is on,
+no episode starts and no key is withdrawn; while an engine exists and the list is
+still not enumerated, the list is read again after 5 seconds, doubling to 30
+seconds and then every 30 seconds, because no round starts until a read
+succeeds. Reaching the 30-second cap is logged once, and so is the enumeration
+that follows it (elapsed seconds only). The helper's report carries
+`profileListNotEnumeratedSince` (the time the engine was built) while the gate
+is on for this reason, and nil otherwise; membership changes keep it. A first
+enumeration with nothing unmapped only opens the gate.
+
+Timers exist only while they have work: the 15-second mark and the repair wait
+during an episode, the list retry before enumeration. Sign-out, account switch,
+self-removal and engine retirement (`stopPhiSync()`) reconcile without an engine,
+which ends the episode, cancels its timers and forgets the gate and helper
+pause of the engine being dropped. Keys withdrawn from the key controller are
+forgotten too, not restored: `invalidateSyncKeyController()` retires that
+controller right after `stopPhiSync()`, and `retire()` clears the keys and
+notifies the bridge once, so Chromium never gets the old account's keys back
+during sign-out, an account switch or self-removal. A reconciliation for any
+other missing prerequisite (lock, retirement found later, unpairing) still
+restores the flag and notifies. A device on which the predicate stays clear sees no change beyond the
+launch gate: no timer, no repair pass, no withdrawal, no catch-up, no report
+change.
+
+Known limitations: an edit made during a pause is stamped when the next round
+runs; a round admitted before the episode finishes under the partial behaviour
+(the Spaces of the unmapped Profile are left out, the apply loop's checks keep an
+existing row from being created again, and a deletion of such a Space arriving
+from the account is applied); Chromium keeps syncing the mapped Profiles for the
+first 15 seconds; the reason is per pass, not per Profile.
 
 ## Sync status contract
 
@@ -258,6 +395,30 @@ enumeration, unsupported selectors and malformed payloads never prove completion
 Their observed state remains Checking, including after round expiry; they never
 cause automatic catch-up retries. An actual dispatch or persistence failure
 remains distinct from an observation timeout.
+The Profile mapping pause reaches the helper through
+`setProfileMappingPause(_:)`, which the coordinator's reconciliation calls and
+nothing else. It is neither eligibility nor a membership change: it keeps the
+barrier's membership, the common time and the rate limit, and while it holds no
+participant is read or asked for a round. When an episode starts, the
+observations of a round in flight are invalidated (that round could never reach
+its coordinated success; the engine round itself is not cancelled) and a Sync now
+request it carried stays queued. During the first 15 seconds (`.grace`) the report
+is kept as it stood when the episode started and a Sync now request stays queued
+as Busy. What it stood at depends on the trigger. An episode started by a
+mapping announcement, the unlock observer or another trigger that is not a
+Profile-list change keeps the report of before the episode. An episode started
+by a Profile-list change (the usual case: a new Profile appears) follows the
+sink's `membershipDidChange()`, which runs first: the report is already reset
+to Checking and a queued Sync now request is already dropped, so the grace
+keeps Checking and has no Sync now to hold. From 15 seconds
+(`.paused`) `Report.profileMappingPause` carries the pause and a queued Sync now
+request is cancelled, `request` returns to Idle and `syncNowCancelledByPause` is
+set so the pane announces nothing; a new request is cancelled the same way. The
+presentation overlays the pause on the summary when it reads the report, because
+the completion of a round admitted before the pause still writes the phase. The
+pause is checked again after every asynchronous participant read. When it ends,
+the helper asks for a fresh round on its own poll, with a still-queued Sync now
+request; this does not call `membershipDidChange()`.
 Unpaired means Not started. Account retirement fences late callbacks; explicit
 removal/reconfiguration clears the account's common timestamp.
 
@@ -320,7 +481,27 @@ also disables the button with progress and no hint, so any running sync, not onl
 request started, blocks a tap; Checking does not. The pane adds its own unlock and pairing
 check. The view alone
 turns kinds, counts and `SyncProblemCategory` into localized text; the Sync layer produces
-no user-facing strings. Local
+no user-facing strings.
+
+The pane lays the Profile mapping pause and the unread Profile list over the summary with
+`SyncStatusPresentation.present` (`SyncStatusSnapshot.swift`, Foundation only), computed from
+the last report on every 3-second read and never stored, because the completion of a round
+admitted before the pause still writes the phase. Precedence, highest first:
+
+| State in the report and the pane | Pane shows |
+| --- | --- |
+| Reconfiguration required, or the native last problem is Reset required | The summary and Sync now as they are; nothing of the pause or the list wait. Retry cannot fix a reset |
+| Summary Not started | As it is (no control) |
+| `profileMappingPause == .paused` | Headline "Sync paused" over any summary (Syncing, including a Syncing left from a round queued before the gate, Up to date, Offline, Needs attention, Checking), a reason line (setting up / trying again / needs attention), a line for the failure category when there is one (offline wording only for Offline; sign-in expired, server error, other), the Profiles by display name (one to three names; above three a count; ids that no longer resolve are left out; none resolved: "A profile"), the last success time, and Retry in the Sync now slot with the same fixed space. Retry calls `PhiChromiumCoordinator.retryProfileMappingRepair()` |
+| `profileListNotEnumeratedSince` 30 s or more ago | The summary with the line "Waiting for profiles to load"; from 5 minutes the headline is Needs attention. Sync now stays; no Retry, because the list read is retried automatically |
+| Grace (`.none` during the first 15 s of an episode) and no episode | The summary and Sync now as they are; a Sync now during the grace is queued Busy and shows "Waiting for current sync". A Syncing left from a round queued before the gate stays visible for up to those 15 s |
+
+A Sync now request that the pause cancelled (`syncNowCancelledByPause`) returns the control to
+idle and is not announced. The pause row (title and lines) is one accessibility element;
+Retry has its own label; VoiceOver announces "Sync resumed" only when a shown pause gives way
+to a normal summary, not when it gives way to a reset or Not started
+(`SyncStatusPresentation.announcesResume`). The pane shows Profile display names, resolved from
+`ProfileManager` by id, and localized categories, never identifiers or error text. Local
 changes to sync-visible fields invalidate the current result before debounce.
 Local-only activity timestamps and favicon updates do not create pending sync
 work. Every invalidation must have a corresponding debounced round, including
@@ -335,11 +516,23 @@ What the pane shows, as a contract:
 
 - **States.** The status row shows Not started (unpaired), Checking, Initial sync,
   Syncing, Up to date (with the common completion time), Offline or Needs
-  attention. There is no Paused state, and the account email is not shown.
+  attention. The summary has no Paused state, and the account email is not
+  shown. The one pause the pane shows is the Profile mapping pause, laid over
+  the summary as "Sync paused" by the precedence table above.
+- **Reloads.** The pane reloads each time it appears. A pane already unlocked for
+  the same account, with its key still held, stays loaded while it reloads and
+  when that reload fails (for example offline); the status row keeps reporting
+  the helper's state, including the pause row. Only a first load that fails shows
+  the "Couldn't load sync information" card with Retry. While that card shows,
+  the pane watches the network path and reloads once, after 1 second, when the
+  connection comes back; a failure while already online waits for Retry.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round
-  clears it. Held items alone produce no line.
+  clears it. Held items alone produce no line. The pause row omits it; the
+  pause's own failure-category line takes its place. When the headline is Needs
+  attention only because of the Profile list wait, the row keeps the last problem
+  line but not the "Some content needs attention" line, which follows the summary.
 - **Details layout.** Details groups the browser Profiles under a Profiles row,
   with one indented row per Profile showing its status, followed by the Phi data
   row and its indented per-kind rows.
@@ -351,10 +544,12 @@ What the pane shows, as a contract:
   row until those have their own numbers; no unsupported category is shown as available.
 - **Never shown.** Only categorized problems and counts reach the pane. It never
   shows internal error text, HTTP status numbers, identifiers, names, URLs or
-  hosts, or any other user content.
+  hosts, or any other user content. The one exception is the display names of
+  the Profiles a shown mapping pause waits for.
 - **Sync now.** The button appears in the status row's trailing control slot only
   when pairing is complete and the key is unlocked; an unpaired (not set up) or
-  locked Mac shows no button. Offline and Needs attention keep it available. It never bypasses the pairing, key or account
+  locked Mac shows no button. Offline and Needs attention keep it available.
+  While the pane shows the Profile mapping pause, Retry takes its slot. It never bypasses the pairing, key or account
   gates. A tap is coalesced with a round already running and is subject
   to the shared 60-second minimum interval, except that a tap while this Mac's
   native sync is offline starts at once. While any sync runs (Syncing or Initial
@@ -427,6 +622,50 @@ when the Profile UUID and key have not changed.
 Withdrawing a Profile key stops the Chromium engine, including initialization,
 without clearing its metadata. Returning the same UUID/key resumes the existing
 sync state; changing the UUID retains the existing namespace-reset behavior.
+`SyncKeyController.chromiumKeysWithdrawn` withdraws every Profile's key at once:
+`profileSyncInfo` answers nil while it is set and the same UUID/key after it is
+cleared, because the resolved cache is untouched. Only the coordinator's
+Profile mapping pause sets it: once an episode is 15 seconds old, and back when
+the episode ends or its prerequisites go, each time committing its state before
+it sends `notifyPhiSyncKeysChanged` (see "Enrollment and setup").
+
+## Profile loading
+
+Chromium runs a Profile's sync only while the Profile is loaded, and
+`getProfileSyncStatus` reports nothing (Checking) for a Profile that is not, so
+the helper never completes a coordinated round while one is missing. Every
+mapped Profile is therefore loaded in the background.
+`SyncProfileLoader` (`Sources/Sync/`) decides; `PhiChromiumCoordinator` builds
+and retires it with the engine and the helper, and supplies the Profile list,
+the checks, the load call and a timer.
+
+| Point | Rule |
+| --- | --- |
+| Which | User-assignable Profiles that the cached list reports as not loaded and for which `SyncKeyController.profileSyncInfo` would return a key now (enrolled, keys not withdrawn, mapping resolved under the unlocked account key) |
+| Call | `ensureProfileLoaded:`, the existing bridge call: loads without a window, returns at once if already loaded, takes no keep-alive of its own. Completions are handled on the main thread |
+| When | The first load no earlier than 30 seconds after `startPhiSyncIfReady()` starts the schedule (unlocked, enrolled, native sync running; at launch this follows the silent unlock and so the session restore of the first window). One load at a time, 5 seconds after the previous one ended |
+| Unloaded again | A Profile that had a window unloads after its last window closes, and nothing tells the Mac side. The loader re-reads `ProfileManager`'s list every 60 seconds while it runs, through `refreshIfChanged()`: the same bridge read as `refresh()`, assigned and published only when the decoded list differs (`isLoaded` included), with none of `refresh()`'s side effects (chat-archive drain, display-name upserts). It re-evaluates on every published change by anyone else; a Profile shown as not loaded again is loaded again. A Profile it loaded itself waits 60 seconds before a still-stale list can ask for it again |
+| Sync now | `PhiChromiumCoordinator.requestSyncNow()` (the pane's button) first tells the loader to re-read the list (so a Profile unloaded since the last recheck counts) and to load every Profile that needs it at once, without the initial delay, the gap or a pending retry delay, once each, then asks the helper; its request stays queued as Unobservable until the Profiles report |
+| Not while | Disabled by the developer switch, not eligible (signed out or another account, controller retired, not enrolled, account key locked, or the account reset by another device so that this Mac requires reconfiguration), sync paused for an unmapped Profile, or the Profile list not enumerated yet. The coordinator supplies the last two: the engine's `isProfileMappingPaused` (on during an episode and before enumeration) and `ProfileManager.isProfileListEnumerated`; the loader re-evaluates when the gate goes off. A Sync now request made meanwhile is dropped. While it cannot load, a started loader still wakes once per recheck interval (60 seconds) to re-read these conditions, without refreshing the list or loading; before `startPhiSyncIfReady()` has started it, it does nothing at all |
+| Failures | A failed load, or one that has not completed after 60 seconds, is retried after 30 seconds, doubling up to 10 minutes; the other Profiles go on. A Profile seen loaded forgets its failures |
+| Teardown | Sign-out, account switch, self-removal and engine retirement stop the loader with the engine. A load already requested cannot be cancelled; its completion is ignored. There is no unload call: the Profiles it loaded stay in memory until the app quits, and so does a Profile whose load was in flight at teardown (a known limitation until the framework has an explicit hold and release call) |
+| Logs | Counts and durations only, no Profile identifiers |
+
+The helper's `ExplicitRequestPolicy` stays `.waitForAllObservable`.
+
+Developer switch: `phi.sync.debug.profileLoadingDisabled` in
+`UserDefaults.standard`. Absent or false, the loader runs; true turns it off,
+for measuring memory without it. It is read at every decision, so it takes
+effect within one recheck interval. It is not a synced setting and has no UI.
+
+Dependency on upstream Chromium: a Profile loaded this way and never given a
+window stays loaded until the process exits, because Chromium gives every newly
+loaded Profile a "waiting for first browser window" keep-alive that only a
+window clears. That is upstream behaviour, not a Phi contract; a Chromium
+rebase can change it, and the loader would then keep reloading Profiles that
+unload. An explicit hold and release call in the framework is follow-up work.
+A Profile loaded without a window also publishes an empty open-tabs header for
+this device (a known limitation).
 
 ## Pairing and initial catch-up
 
@@ -470,7 +709,14 @@ data: {"namespace":"chromium:phi","data_types":[2000],"source_client_id":"produc
 
 `ready` schedules catch-up for native sync and, through the optional bridge, all
 eligible Chromium Profiles. `chromium:phi` with type 2000 requests a native pull;
-`chromium:<profile-uuid>` forwards the type list to that Profile's engine. Hints
+`chromium:<profile-uuid>` forwards the type list to that Profile's engine. The service
+sends no hint for a Profile registration, but the new account Profile's first Chromium
+commit does: a Profile hint whose UUID has no persisted mapping here and is not known to be
+undecryptable runs one `runMappingRepairPass()` through the pause's reconciler
+(`unmappedAccountProfileHint()`), so another device maps or auto-creates the Profile within
+seconds instead of at its next periodic round. Only on an idle device and at most once per
+30 seconds; a hint during a pause episode, or while the gate waits for the Profile list, is
+dropped, and the episode's own repair loop and closing catch-up cover it. Hints
 carry routing metadata only, not entity content, ciphertext or keys. Unknown
 event types are ignored; supported types and eligibility remain engine concerns.
 Malformed or oversized events close the stream and leave fallback polling in
@@ -741,8 +987,8 @@ early-return guards. The engine marks `pendingDelete` only on a cursor with an
   it in an in-memory being-deleted set; the intent carries that uuid, and the
   engine round records `pendingDelete` under it without resolving the mapping
   again. That round writes the table even while the engine is paused for
-  pairing or reconfiguration (a local write in the engine's round queue, so it
-  never interleaves with a round holding a table copy); the deletion is
+  pairing, reconfiguration or an unmapped Profile (a local write in the
+  engine's round queue, so it never interleaves with a round holding a table copy); the deletion is
   published when sync next runs. Only a retired engine (sign-out, key
   invalidation) skips it. The mark ends when that round has run, or when the
   cascade fails.
@@ -1346,7 +1592,15 @@ The engine must preserve these persistence, retry and account-isolation rules.
 - **A retired `SyncKeyController` writes nothing.** Teardown calls
   `retire()`; a pass parked in a network call when the account went away
   resumes on the next account's token and used to register every unmapped
-  local Profile into it under the old ARK.
+  local Profile into it under the old ARK. `retire()` also cancels the shared
+  auto-create round, and the round, `createLocalProfileAndAdopt` and the repair
+  pass check retirement after every await and before every create, adopt or
+  mapping write. A stopped round returns `.failed` without posting
+  `.phiProfileAutoCreateDidRun`. When the bridge's create completes after
+  retirement, the Profile stays local and unmapped (it is not deleted), never
+  enters `profileIdsBeingCreated`, and only metadata is logged. An adopt whose
+  own lookup is in flight at retirement can still write its mapping, into the
+  retired account's mapping store.
 - **Guest migration ignores soft-deleted rules** on both stores: a Space
   deletion soft-deletes its rules for the sync tombstone, and a Guest store has
   no engine to purge them.

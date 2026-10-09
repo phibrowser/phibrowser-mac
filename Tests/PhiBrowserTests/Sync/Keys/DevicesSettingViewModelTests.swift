@@ -139,4 +139,71 @@ final class DevicesSettingViewModelTests: XCTestCase {
         XCTAssertEqual(vm.unlockState, .notSignedIn)
         XCTAssertNil(vm.actionError)
     }
+
+    func testFailedReloadKeepsTheUnlockedPane() async throws {
+        let (api, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.accountID = { "account-a" }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .unlocked)
+
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .unlocked)
+        await vm.stopPolling()
+    }
+
+    func testFailedFirstLoadShowsTheFailure() async throws {
+        let (api, mgr, svc, _) = try await unlockedStack()
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .failed(DevicesSettingViewModel.requestFailed))
+    }
+
+    func testFailedReloadForAnotherAccountShowsTheFailure() async throws {
+        let (api, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        var account = "account-a"
+        vm.accountID = { account }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .unlocked)
+
+        account = "account-b"
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .failed(DevicesSettingViewModel.requestFailed))
+        await vm.stopPolling()
+    }
+
+    func testFailedPaneReloadsOnceWhenTheConnectionReturns() async throws {
+        let (api, mgr, svc, _) = try await unlockedStack()
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        var loads = 0
+        vm.isSignedIn = { loads += 1; return true } // Read once per `loadAll()`.
+        var onUpdate: (@MainActor (Bool) -> Void)?
+        var observations = 0
+        vm.observeNetworkPath = { handler in observations += 1; onUpdate = handler; return {} }
+        vm.connectivityReloadDelay = 0
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .failed(DevicesSettingViewModel.requestFailed))
+        XCTAssertEqual(observations, 1)
+
+        // The first update reports the path as it is; a satisfied one does not reload.
+        onUpdate?(true)
+        XCTAssertNil(vm.connectivityReload)
+
+        onUpdate?(false)
+        onUpdate?(true)
+        let reload = try XCTUnwrap(vm.connectivityReload)
+        await reload.value
+        XCTAssertEqual(loads, 2)
+        // Still failing: the reload watches again, and its first satisfied update does not loop.
+        XCTAssertEqual(vm.unlockState, .failed(DevicesSettingViewModel.requestFailed))
+        XCTAssertEqual(observations, 2)
+        onUpdate?(true)
+        XCTAssertNil(vm.connectivityReload)
+        XCTAssertEqual(loads, 2)
+    }
 }

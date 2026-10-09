@@ -1,4 +1,5 @@
 import Cocoa
+import Network
 import SwiftUI
 
 final class DevicesSettingHostingViewController: NSViewController {
@@ -120,16 +121,23 @@ final class DevicesSettingHostingViewController: NSViewController {
         let accountID = AccountController.shared.account?.userID
         viewModel.isCurrentAccount = { AccountController.shared.account?.userID == accountID }
         viewModel.isSignedIn = { AccountController.shared.account != nil }
+        viewModel.accountID = { AccountController.shared.account?.userID }
+        viewModel.observeNetworkPath = { onUpdate in
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { path in
+                let satisfied = path.status == .satisfied
+                Task { @MainActor in onUpdate(satisfied) }
+            }
+            monitor.start(queue: .main)
+            return { monitor.cancel() }
+        }
         viewModel.syncReport = { requestSync in
             guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
             await helper.refresh(requestSync: requestSync)
             return helper.report
         }
-        viewModel.syncNowReport = {
-            guard let helper = PhiChromiumCoordinator.shared.syncHelper else { return nil }
-            _ = await helper.requestSyncNow()
-            return helper.report
-        }
+        viewModel.syncNowReport = { await PhiChromiumCoordinator.shared.requestSyncNow() }
+        viewModel.retryProfileMappingRepair = { PhiChromiumCoordinator.shared.retryProfileMappingRepair() }
         viewModel.reconfigurationRequired = { [weak self] in
             self?.syncKeyController?.requiresReconfiguration == true
                 || PhiChromiumCoordinator.shared.nativeSyncRequiresReconfiguration

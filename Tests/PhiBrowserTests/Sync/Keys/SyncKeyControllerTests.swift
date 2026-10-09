@@ -341,4 +341,56 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertEqual(c.resolved.count, 2, "the follow-up pass saw the profile added mid-pass")
         XCTAssertEqual(api.profileEnvelopes.count, 2)
     }
+
+    // MARK: - R4: the registration wait follows the account's Profile entities
+
+    private func controllerWithRemote(view: @escaping @MainActor () -> AccountProfileEntityView?)
+    async throws -> (SyncKeyController, FakeAPI, String) {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let store = MemoryMappingStore()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store)
+        let other = try await pkm.registerLocalProfile(profileId: "temp", displayName: "Work")
+        store.removeMapping(forProfileId: "temp")
+        let controller = SyncKeyController(
+            manager: mgr, approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: pkm, localProfilesProvider: { [(profileId: "Default", displayName: "Default")] },
+            notifyChromium: {}, isPairingComplete: { true }, profileEntityView: view)
+        return (controller, api, other.uuid)
+    }
+
+    /// F2: a deleted account Profile's registry row stays forever. It must neither hold this
+    /// Mac's registration nor keep `needsPairing` true.
+    func testADeletedAccountProfileHoldsNeitherRegistrationNorPairing() async throws {
+        let (c, api, _) = try await controllerWithRemote(view: {
+            AccountProfileEntityView(liveNames: [:], deletedUuids: [])
+        })
+        await c.silentUnlockAndResolve()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"), "registered as a new account Profile")
+        XCTAssertEqual(api.profileEnvelopes.count, 2)
+        XCTAssertFalse(c.needsPairing)
+    }
+
+    func testALiveAccountProfileStillHoldsRegistration() async throws {
+        var liveUuid = ""
+        let (c, api, uuid) = try await controllerWithRemote(view: {
+            AccountProfileEntityView(liveNames: [liveUuid: "Work"], deletedUuids: [])
+        })
+        liveUuid = uuid
+        await c.silentUnlockAndResolve()
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Default"), "auto-create may still claim it")
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
+        XCTAssertTrue(c.needsPairing)
+    }
+
+    /// Before the first full replay auto-create claims nothing, so nothing may wait on it: the
+    /// pause that wait causes would keep the replay from running.
+    func testBeforeTheFirstReplayNothingIsClaimable() async throws {
+        let (c, api, _) = try await controllerWithRemote(view: { nil })
+        await c.silentUnlockAndResolve()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+        XCTAssertEqual(api.profileEnvelopes.count, 2)
+    }
 }

@@ -231,14 +231,14 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     }
 
     /// The account name of every live Profile entity, from its baseline (the landed account value),
-    /// falling back to a parked entity that has not landed yet.
+    /// falling back to a parked entity that has not landed yet, and to "" when neither decodes.
     var liveProfileEntityNames: [String: String] {
         var names: [String: String] = [:]
         for uuid in liveProfileEntityUuids {
-            guard let cursor = profileCursors[uuid],
-                  let bytes = cursor.reconciled ?? cursor.pendingApply,
-                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
-            names[uuid] = entity.name.stringValue
+            let cursor = profileCursors[uuid]
+            let entity = (cursor?.reconciled ?? cursor?.pendingApply)
+                .flatMap { try? Phi_PhiProfileEntity(serializedBytes: $0) }
+            names[uuid] = entity?.name.stringValue ?? ""
         }
         return names
     }
@@ -393,6 +393,17 @@ extension PhiSpaceSyncTable {
     }
 }
 
+/// What the drained account says about its Profile entities, for `SyncKeyController`'s
+/// auto-create and mapping pass (docs/sync.md, "Enrollment and setup"). The key registry still
+/// lists every Profile ever registered; this view is what says which of them still exist.
+struct AccountProfileEntityView: Equatable {
+    /// Account profile uuid -> account name, for every live Profile entity.
+    var liveNames: [String: String]
+    var deletedUuids: Set<String>
+
+    var liveUuids: Set<String> { Set(liveNames.keys) }
+}
+
 protocol PhiSpaceSyncStateStore: AnyObject {
     func load() -> PhiSpaceSyncTable
     /// False means table persistence failed (R-M3-4a-83), matching per-kind JSON stores. Discardable result
@@ -479,6 +490,9 @@ final class PhiSpaceSyncState {
     /// syncUuids with real account entities (§3.5); excluded from changed comparison.
     private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
+    /// nil until the first full replay of the data type has drained: before that, the absence of a
+    /// Profile entity proves nothing.
+    private(set) var accountProfileEntityView: AccountProfileEntityView?
     private var referencedProfileUuids: Set<String> = []
     /// syncUuids whose local deletion has started and is not yet recorded in the table (§9.2: delete beats
     /// a concurrent edit). In memory only: the apply loop must not re-land them while the cascade and the
@@ -499,6 +513,10 @@ final class PhiSpaceSyncState {
         publishedSyncUuids = table.publishedSyncUuids
         referencedProfileUuids = referenced
         hasDrainedFullReplay = table.hasDrainedFullReplay
+        accountProfileEntityView = table.hasDrainedFullReplay
+            ? AccountProfileEntityView(liveNames: table.liveProfileEntityNames,
+                                       deletedUuids: table.deletedProfileUuids)
+            : nil
         if changed {
             NotificationCenter.default.post(name: .phiSpaceHiddenSetDidChange, object: self)
         }

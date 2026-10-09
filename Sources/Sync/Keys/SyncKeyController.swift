@@ -95,6 +95,11 @@ final class SyncKeyController {
     /// empty `localProfilesProvider()` answer says nothing about which Profiles exist, so
     /// the unmapped evidence is not pruned against it (docs/sync.md, "Enrollment and setup").
     private let isProfileListEnumerated: @MainActor () -> Bool
+    /// The drained account's Profile entities (`PhiSpaceSyncState.accountProfileEntityView`).
+    /// Auto-create and the registration wait follow it rather than the key registry, which never
+    /// forgets a deleted Profile (docs/sync.md, "Enrollment and setup"). The closure answers nil
+    /// before the first full replay. A nil closure (tests, unwired construction) applies no gating.
+    private let profileEntityView: (@MainActor () -> AccountProfileEntityView?)?
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
@@ -217,6 +222,7 @@ final class SyncKeyController {
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
          isPairingComplete: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.isPaired },
          isProfileListEnumerated: @escaping @MainActor () -> Bool = { true },
+         profileEntityView: (@MainActor () -> AccountProfileEntityView?)? = nil,
          retirePhiSync: @escaping (Bool) -> Void = { _ in },
          invalidateEnrollment: @escaping () throws -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
@@ -232,6 +238,7 @@ final class SyncKeyController {
          runtimeRemovalPending: @escaping () -> Bool = { false }) {
         self.isPairingComplete = isPairingComplete
         self.isProfileListEnumerated = isProfileListEnumerated
+        self.profileEntityView = profileEntityView
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -637,9 +644,17 @@ final class SyncKeyController {
             // that does not open under this ARK, and a uuid the persisted mapping
             // already gives to a local Profile that no longer exists (auto-create
             // deliberately never grows that one back).
-            let claimable = remoteUuids.subtracting(claimed)
+            var claimable = remoteUuids.subtracting(claimed)
                 .subtracting(undecryptableRemoteUuids)
                 .subtracting(profileKeys.allMappedGlobalUuids())
+            // Auto-create claims only account Profiles with a live Profile entity, so nothing else
+            // may hold registration either: a deleted Profile's registry row would hold it
+            // forever. Before the first full replay auto-create claims nothing at all, and waiting
+            // on it would hold the pause that keeps that replay from running.
+            if let profileEntityView {
+                if let view = profileEntityView() { claimable.formIntersection(view.liveUuids) }
+                else { claimable = [] }
+            }
             // D20: no count-based adopt. One unmapped local beside one unclaimed
             // account Profile is not evidence that they are the same Profile; the
             // twin search matches by name and a new local is registered as new (R4).
@@ -683,7 +698,9 @@ final class SyncKeyController {
         } else {
             let claimedAfter = Set(next.values.map { $0.uuid })
             let stillUnmapped = locals.filter { next[$0.profileId] == nil }
-            let stillUnclaimed = remoteUuids.subtracting(claimedAfter)
+            var stillUnclaimed = remoteUuids.subtracting(claimedAfter)
+            // A registry row with no live Profile entity is not an account Profile this Mac lacks.
+            if let view = profileEntityView?() { stillUnclaimed.formIntersection(view.liveUuids) }
             needsPairing = !stillUnmapped.isEmpty || !stillUnclaimed.isEmpty
             needsPairingActionable = !stillUnmapped.isEmpty
                 || !stillUnclaimed.subtracting(undecryptableRemoteUuids).isEmpty
@@ -880,7 +897,7 @@ final class SyncKeyController {
             // how one network blip becomes a permanent empty duplicate.
             profileId = pending
         } else {
-            let name = uniqueDisplayName(basedOn: displayName)
+            let name = Self.uniqueDisplayName(basedOn: displayName) { profileCreator.displayNameExists($0) }
             let result = await profileCreator.createProfile(displayName: name)
             guard !isRetired else {
                 // R12: metadata only, no profileId or uuid.
@@ -937,14 +954,16 @@ final class SyncKeyController {
     /// `createProfile` returns nil for three different reasons (empty or
     /// duplicate name, no bridge, bridge-side failure), so "nil means duplicate,
     /// try the next suffix" turns a missing bridge into unbounded probing.
-    private func uniqueDisplayName(basedOn raw: String) -> String {
+    /// Shared with the Profile entity's inbound rename (`PhiProfileLocalAccess.applyRemoteName`),
+    /// which passes a `nameExists` that excludes the Profile being renamed.
+    static func uniqueDisplayName(basedOn raw: String, nameExists: (String) -> Bool) -> String {
         let base = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? NSLocalizedString("sync.pairing.unnamedProfileName", value: "Profile", comment: "Sync setup - name given to a local profile created for an account profile that has no name")
             : raw
-        guard profileCreator.displayNameExists(base) else { return base }
+        guard nameExists(base) else { return base }
         for suffix in 2...50 {
             let candidate = "\(base) (\(suffix))"
-            if !profileCreator.displayNameExists(candidate) { return candidate }
+            if !nameExists(candidate) { return candidate }
         }
         return "\(base) (\(UUID().uuidString.prefix(4)))"
     }
@@ -983,6 +1002,12 @@ final class SyncKeyController {
         guard isPairingComplete() else {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
+        // R4: auto-create follows the drained account's Profile entities. Before the first full
+        // replay nothing is known about which Profiles still exist, so nothing is created.
+        let entityView = profileEntityView?()
+        if profileEntityView != nil, entityView == nil {
+            return await finishRefresh(.skipped, created: 0, skipped: 0)
+        }
         lastAutoCreateFailure = nil
         lastAutoCreateFailureCategory = nil
         let accountUuids: Set<String>
@@ -1001,7 +1026,11 @@ final class SyncKeyController {
         // "missing" and never grows back (§3.6). The one exception is §6.2 A0's
         // dead-mapping cleanup, which removes the entry first.
         let mapped = Set(profileKeys.allMappedGlobalUuids())
-        let missing = accountUuids.subtracting(mapped).sorted()   // uuid order: device-independent
+        // Only uuids with a live Profile entity: a deleted Profile's registry row stays forever and
+        // must never grow the Profile back on a device that did not have it.
+        var missingSet = accountUuids.subtracting(mapped)
+        if let entityView { missingSet.formIntersection(entityView.liveUuids) }
+        let missing = missingSet.sorted()   // uuid order: device-independent
         guard !missing.isEmpty else { return await finishRefresh(.unchanged, created: 0, skipped: 0) }
 
         var created = 0
@@ -1020,7 +1049,7 @@ final class SyncKeyController {
                 noteAutoCreateFailure(error)
                 skipped += 1; continue
             }
-            guard let name = remote.name else {
+            guard let registryName = remote.name else {
                 // No per-profile key means a profile that could not sync anything
                 // and a mystery entry in the user's list. Skip, record, retry.
                 noteUndecryptableRemote(uuid)
@@ -1029,6 +1058,10 @@ final class SyncKeyController {
                 continue
             }
             noteDecryptableRemote(uuid)
+            // The Profile entity carries the account's current name; the registry envelope keeps
+            // the name it was registered under and is only the fallback.
+            let entityName = entityView?.liveNames[uuid] ?? ""
+            let name = entityName.isEmpty ? registryName : entityName
 
             // Claim an existing same-named UNMAPPED local first. This covers the
             // plain coincidence of two devices having made the same name, and the

@@ -305,3 +305,43 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
         SpaceManager.shared.clearThemeRecords(forSpaceId: spaceId)
     }
 }
+
+// MARK: - Profile entity (docs/sync.md, "Profile entity")
+
+extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
+    func currentProfiles() -> [PhiLocalProfile] {
+        ProfileManager.shared.userAssignableProfiles.compactMap { profile in
+            guard globalUuid(forProfileId: profile.profileId) != nil else { return nil }
+            return PhiLocalProfile(profileId: profile.profileId, displayName: profile.displayName,
+                                   createdAtMs: profileCreatedAtMs(profile.profileId))
+        }
+    }
+
+    /// Epoch ms of `ProfileModel.createdDate`, 0 when this device never recorded one.
+    private func profileCreatedAtMs(_ profileId: String) -> Int64 {
+        guard let date = (try? account.localStorage.profile(with: profileId, createIfNeeded: false))??.createdDate
+        else { return 0 }
+        return Int64(date.timeIntervalSince1970 * 1000)
+    }
+
+    func allProfileMappings() -> [String: String] {
+        controller?.profileKeys.allMappings() ?? [:]
+    }
+
+    func isProfileListEnumerated() -> Bool {
+        ProfileManager.shared.isProfileListEnumerated
+    }
+
+    func applyRemoteName(profileId: String, name: String) async -> String? {
+        let manager = ProfileManager.shared
+        guard let current = manager.profile(for: profileId)?.displayName else { return nil }
+        let target = SyncKeyController.uniqueDisplayName(basedOn: name) {
+            manager.displayNameExists($0, excluding: profileId)
+        }
+        guard target != current else { return current }
+        let renamed = await withCheckedContinuation { continuation in
+            manager.renameProfile(profileId, to: target) { success, _ in continuation.resume(returning: success) }
+        }
+        return renamed ? manager.profile(for: profileId)?.displayName ?? target : nil
+    }
+}

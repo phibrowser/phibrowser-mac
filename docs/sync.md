@@ -136,6 +136,26 @@ below. Until `ProfileManager` has enumerated the Profile list once
 (`isProfileListEnumerated`), a pass does not prune the known-unmapped set against
 the empty list it sees.
 
+Auto-create follows the account's Profile entities, not the key registry, which
+keeps every Profile ever registered (see "Profile entity"). The facade publishes
+`PhiSpaceSyncState.accountProfileEntityView`: nil until the data type's first full
+replay has drained, then the live Profile entities (uuid and account name) and the
+deleted ones. Auto-create skips its round (`.skipped`) while the view is nil and
+otherwise creates only uuids with a live entity, named from the entity (the
+registry name is the fallback); a registry row without a live entity is never
+grown back. The mapping pass uses the same view: an account Profile counts as
+claimable, and as unclaimed for `needsPairing`, only with a live entity, so a
+deleted account Profile neither holds registration nor keeps the pairing state
+open. Before the first replay nothing is claimable, so registration never waits
+on an auto-create that cannot run yet; the accepted cost is that a same-named
+local created in that window may be registered as a second account Profile. A
+pull that finishes the first replay after a skipped auto-create, or lands a new
+account Profile this device has no local Profile for, queues one follow-up pull
+so the Profile is created and its Spaces land without waiting for the timer.
+Mixed versions: an account Profile that only older clients know (no Profile
+entity published yet) is not auto-created on a new device until an upgraded
+device that has it publishes its entity.
+
 All native data rounds and Chromium ready-key exposure require enrollment.
 Completing setup replays the shared Phi data type once under the confirmed Space
 mappings, because no round (not even the gate close) runs while unpaired. Completion
@@ -1090,7 +1110,44 @@ carries `name` (LWW `PhiSettingValue`) and `created_at_ms` (`min()` of non-zero
 values); fields 4-7 are reserved. `SyncableProfiles.merge` starts from `remote`
 like every other kind, so a newer client's reserved fields survive. Deleting an
 account Profile is the ordinary entity tombstone on its tag; the server is
-unchanged.
+unchanged. The key registry (`/keys/v1/profiles`) still holds every envelope and
+is never deleted; it no longer decides whether a Profile exists.
+
+Only Profiles mapped to an account Profile are published:
+`PhiProfileLocalAccess.currentProfiles()` is `userAssignableProfiles` (which
+already leaves out Phi Chat and the agent fallback) with a mapping, so unmapped
+and local-only Profiles never reach the wire. The entity rides the Space section:
+it is routed, landed and published only while the Space gate is open, lands in the
+same page write as the Spaces, and `pushProfiles` runs after the same pull and
+full-replay guards as `pushSpaces`, immediately before it, so a new Profile's
+entity precedes the Spaces bound to it. Conflicts retry only the conflicting uuids;
+unreadable tags are never committed over. The coordinator triggers a Profile round
+on a debounced change of the (id, mapping, name) set of mapped Profiles.
+
+Local names must be unique and auto-create or an inbound rename may suffix one
+("Work (2)"), so a device's local name can legitimately differ from the account
+name. The cursor records `localNameAtBaseline`, the local name that corresponds to
+its baseline here. The snapshot publishes a local name only when it differs from
+that record (a user rename), stamped like a Space field edit (edit-time
+`pendingProjection`, AM-1); otherwise it echoes the baseline, so a suffixed twin
+never renames the account. A baseline stored before this device had the Profile
+records the current local name at the next stamping or publication. The first
+publication after the drain sends the local name at stamp 0, so a derived name
+never beats a real rename. An inbound entity is merged against the local
+projection; when the winning name differs from what this device presents it is
+applied through `applyRemoteName` (exact name, else the auto-create suffix rule)
+and the resulting local name is recorded with the baseline. A rename that does not
+take parks the entity in `pendingApply`, retried every round; a parked Profile is
+not published over. An entity for a uuid with no local Profile here is stored as
+the baseline only; auto-create reads it.
+
+A remote Profile tombstone sets `deletedAtMs`: the uuid is no longer published or
+auto-created, and the local Profile is left in place. A deleted uuid comes back
+only with a newer version than the tombstone it recorded; the cursor is reset and
+the entity lands wholesale, and a mapping whose local Profile is gone is dropped
+so auto-create recreates the Profile. A replayed older create lands nothing. The
+pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
+preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`).
 
 Cursors are `PhiSpaceSyncTable.profileCursors` (`PhiProfileCursor`), keyed by
 account profile uuid, in the same `sync.phiSpaces` table as the Space cursors:

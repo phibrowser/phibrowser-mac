@@ -36,6 +36,10 @@ protocol PhiProfileLocalAccess: AnyObject {
     /// Whether this device still has that user Profile (`userAssignableProfiles`).
     func isKnownLocalProfile(_ profileId: String) -> Bool
 
+    /// Rereads the Profile list from the bridge. False when the read failed, so the cached list
+    /// may be stale.
+    func refreshProfileList() -> Bool
+
     // MARK: Deletion (docs/sync.md, "Profile deletion and rename")
 
     /// The deletion journal: account profile uuid -> local profile id.
@@ -44,6 +48,8 @@ protocol PhiProfileLocalAccess: AnyObject {
     func finishLocalProfileDeletion(syncUuid: String)
     /// Whether the Chromium deletion for this uuid is in flight right now.
     func isProfileBeingDeletedLocally(syncUuid: String) -> Bool
+    /// Removes the local rows a deleted Profile leaves behind. Idempotent.
+    func removeLocalRows(ofDeletedProfile localProfileId: String) async
 
     /// What on this device stands in the way of applying a remote Profile tombstone.
     func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers

@@ -326,7 +326,7 @@ extension LocalStore {
 
     /// Single implementation shared by both entry points. Only rules branch on `origin`; TabDataModel and
     /// SpaceModel handling remains unchanged.
-    private func deleteSpaceCascadeBody(spaceId: String,
+    func deleteSpaceCascadeBody(spaceId: String,
                                         origin: SpaceCascadeOrigin,
                                         in context: ModelContext) throws {
         // All rule rows in this cascade share one `now` stamp.

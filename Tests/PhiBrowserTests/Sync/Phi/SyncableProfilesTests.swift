@@ -158,9 +158,11 @@ final class SyncableProfilesTests: XCTestCase {
                        "an unpublished Space is a live Space")
         XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["hidden"])), .delete)
         XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["deleting"])), .deferApply)
-        XCTAssertEqual(decide(ProfileDeletionBlockers(hasAgentSpaces: true)), .deferApply)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(hasRunningAgentSpace: true)), .deferApply)
+        XCTAssertEqual(decide(ProfileDeletionBlockers(hasPersistentAgentSpace: true)), .undelete,
+                       "a persistent agent Space blocks deletion like a user Space")
         XCTAssertEqual(decide(ProfileDeletionBlockers(isImporting: true)), .deferApply)
         XCTAssertEqual(decide(ProfileDeletionBlockers(liveUserSpaceSyncUuids: ["deleting", "live"],
-                                                      hasAgentSpaces: true)), .undelete)
+                                                      hasRunningAgentSpace: true)), .undelete)
     }
 }

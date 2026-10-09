@@ -613,6 +613,27 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     /// R-D6-9 changes the third criterion from hidden local Spaces to mapped local
     /// Spaces whose entities have published. Hidden now means remote soft deletion,
     /// and those rows must no longer block Profile deletion.
+    /// A Profile deleted here stops counting as an unclaimed account Profile only once the engine
+    /// has recorded it, so a change of the live or deleted set must rerun the mapping pass.
+    @MainActor
+    func testAChangeOfTheProfileEntitySetsAnnouncesItself() {
+        let state = PhiSpaceSyncState()
+        var calls = 0
+        state.profileEntityViewDidChange = { calls += 1 }
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var cursor = PhiProfileCursor()
+        cursor.entityId = "srv-1"
+        table.profileCursors["pu-1"] = cursor
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 1)
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 1, "an unchanged view announces nothing")
+        table.profileCursors["pu-1"]?.pendingDelete = true
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 2)
+    }
+
     /// A Profile whose only Space rows were soft-deleted by a remote Space deletion is deletable
     /// locally: neither the local predicate (`SpaceManager.isProfileInUse`) nor the account
     /// predicate counts the hidden rows.

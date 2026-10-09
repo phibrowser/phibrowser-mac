@@ -21,8 +21,11 @@ struct ProfileDeletionBlockers: Equatable {
     /// Account sync uuid of every live (not remotely soft-deleted) user Space bound to the
     /// Profile; nil for one with no Space mapping.
     var liveUserSpaceSyncUuids: [String?] = []
-    /// An agent Space is bound to the Profile.
-    var hasAgentSpaces = false
+    /// A persistent agent Space is bound to the Profile: it blocks a local deletion as a user
+    /// Space does.
+    var hasPersistentAgentSpace = false
+    /// A running (non-persistent) agent Space is bound to the Profile: it goes away by itself.
+    var hasRunningAgentSpace = false
     /// An import is writing into one of its Spaces.
     var isImporting = false
 }
@@ -135,12 +138,14 @@ enum SyncableProfiles {
 
     /// Whether a remote Profile tombstone deletes the local Profile here. The Default Profile and a
     /// Profile that still has a live user Space are kept and the entity republished: edit beats
-    /// delete, and Spaces are never rebound elsewhere. A Space whose own deletion is still pending
-    /// here, an agent Space or an import in flight defers the decision to a later round.
+    /// delete, and Spaces are never rebound elsewhere; a persistent agent Space counts as one. A
+    /// Space whose own deletion is still pending here, a running agent Space or an import in
+    /// flight defers the decision to a later round (bounded by the engine).
     static func tombstoneDecision(_ blockers: ProfileDeletionBlockers,
                                   table: PhiSpaceSyncTable) -> ProfileTombstoneDecision {
         if blockers.isDefaultProfile { return .undelete }
-        var deferApply = blockers.hasAgentSpaces || blockers.isImporting
+        if blockers.hasPersistentAgentSpace { return .undelete }
+        var deferApply = blockers.hasRunningAgentSpace || blockers.isImporting
         for uuid in blockers.liveUserSpaceSyncUuids {
             guard let uuid, let cursor = table.cursors[uuid] else { return .undelete }
             if cursor.hidden || cursor.deletedAtMs != nil || cursor.purgedAtMs != nil { continue }

@@ -49,6 +49,11 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
     func profileDeletionIntents() -> [String: String] { intents }
     func finishLocalProfileDeletion(syncUuid: String) { intents.removeValue(forKey: syncUuid) }
     func isProfileBeingDeletedLocally(syncUuid: String) -> Bool { inFlight.contains(syncUuid) }
+    /// What `refreshProfileList()` answers; false models a bridge read that failed.
+    var refreshSucceeds = true
+    private(set) var removedRows: [String] = []
+    func refreshProfileList() -> Bool { refreshSucceeds }
+    func removeLocalRows(ofDeletedProfile localProfileId: String) async { removedRows.append(localProfileId) }
     func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers {
         blockers[localProfileId] ?? ProfileDeletionBlockers()
     }
@@ -571,7 +576,7 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         let store = drainedStore()
         let client = FakePhiSyncClient()
         let engine = try await landedProfile(profiles, client, store: store)
-        profiles.blockers["P1"] = ProfileDeletionBlockers(hasAgentSpaces: true)
+        profiles.blockers["P1"] = ProfileDeletionBlockers(hasRunningAgentSpace: true)
         tombstone(client, version: 9)
 
         await engine.pullOnce()
@@ -640,8 +645,7 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         let store = drainedStore()
         let client = FakePhiSyncClient()
         let engine = try await landedProfile(profiles, client, store: store)
-        profiles.intents["pu-1"] = "P1"
-        profiles.inFlight = ["pu-1"]               // still deleting here when the peer's tombstone lands
+        deleteLocally(profiles)                    // committed here when the peer's tombstone lands
         tombstone(client, version: 9)
 
         await engine.pullOnce()
@@ -649,5 +653,134 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertTrue(profiles.remoteDeletions.isEmpty)
         XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
         XCTAssertTrue(profiles.intents.isEmpty)
+    }
+
+    // MARK: - Review fixes
+
+    func testAProfileDeletedBeforePublicationIsTombstonedWhenAPeerPublishesIt() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.mappings = ["P1": "pu-1"]
+        profiles.intents["pu-1"] = "P1"
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.recordLocalProfileDeletion(syncUuid: "pu-1")
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.deletedBeforePublish, true)
+        XCTAssertTrue(profiles.intents.isEmpty)
+        XCTAssertEqual(profiles.removedRows, ["P1"], "leftover rows are removed again")
+
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 5)
+        await engine.pullOnce()
+
+        let tombstone = try XCTUnwrap(profileCommits(client).last)
+        XCTAssertTrue(tombstone.deleted, "delete beats create")
+        XCTAssertEqual(tombstone.baseVersion, 5)
+        XCTAssertTrue(profiles.droppedMappings.isEmpty, "never resurrected")
+        XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+        XCTAssertTrue(store.table.liveProfileEntityUuids.isEmpty)
+    }
+
+    func testAPeerTombstoneWaitsForAnInFlightLocalDeletionThatThenFails() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.intents["pu-1"] = "P1"
+        profiles.inFlight = ["pu-1"]
+        tombstone(client, version: 9)
+
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true)
+        XCTAssertNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+        XCTAssertEqual(profiles.intents, ["pu-1": "P1"], "the journal entry survives the in-flight deletion")
+
+        // The Chromium deletion fails: the intent is cancelled and P1 stays.
+        profiles.intents = [:]
+        profiles.inFlight = []
+        await engine.pullOnce()
+        XCTAssertEqual(profiles.remoteDeletions, ["P1"], "the follower decides it like any tombstone")
+        XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+    }
+
+    func testADeletedCursorWhoseLocalProfileSurvivedIsDecidedAgain() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        store.table.profileCursors["pu-1"]?.deletedAtMs = 1   // recorded, never applied
+        profiles.blockers["P1"] = ProfileDeletionBlockers(isDefaultProfile: true)
+
+        await engine.pullOnce()
+
+        XCTAssertNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+        XCTAssertEqual(profileCommits(client).last?.deleted, false, "kept and republished")
+    }
+
+    func testAPersistentAgentSpaceUndeletesAtOnce() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.blockers["P1"] = ProfileDeletionBlockers(hasPersistentAgentSpace: true)
+        tombstone(client, version: 9)
+
+        await engine.pullOnce()
+
+        XCTAssertTrue(profiles.remoteDeletions.isEmpty)
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, false)
+        XCTAssertEqual(profileCommits(client).last?.deleted, false)
+    }
+
+    func testARunningAgentSpaceDefersAtMostTenRounds() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.blockers["P1"] = ProfileDeletionBlockers(hasRunningAgentSpace: true)
+        tombstone(client, version: 9)
+
+        for _ in 0..<9 { await engine.pullOnce() }
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(store.table.profileCursors["pu-1"]?.pendingTombstone, false)
+        XCTAssertNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
+        XCTAssertEqual(profileCommits(client).last?.deleted, false)
+        XCTAssertTrue(profiles.remoteDeletions.isEmpty)
+    }
+
+    func testAnIntentIsKeptWhenTheProfileListCouldNotBeReread() async throws {
+        let profiles = FakePhiProfileAccess()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let engine = try await landedProfile(profiles, client, store: store)
+        profiles.intents["pu-1"] = "P1"
+        profiles.refreshSucceeds = false
+
+        await engine.handleLocalProfilesChange()
+
+        XCTAssertEqual(profiles.intents, ["pu-1": "P1"], "a stale list proves nothing")
+        XCTAssertFalse(profileCommits(client).contains { $0.deleted })
+    }
+
+    func testAnUndeleteKeepsANewerClientsReservedFields() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        profiles.blockers["P1"] = ProfileDeletionBlockers(isDefaultProfile: true)
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let withReserved = try Phi_PhiProfileEntity(
+            serializedBytes: try profileEntity("pu-1", "Work").serializedData() + Data([0x20, 0x05]))
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(withReserved), version: 3)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        tombstone(client, version: 9)
+
+        await engine.pullOnce()
+
+        XCTAssertEqual([UInt8](try published(client, "pu-1").unknownFields.data), [0x20, 0x05])
     }
 }

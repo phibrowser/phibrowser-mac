@@ -340,6 +340,14 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         PhiSpaceSyncState.shared.isProfileBeingDeletedLocally(syncUuid: syncUuid)
     }
 
+    func refreshProfileList() -> Bool {
+        ProfileManager.shared.refresh()
+    }
+
+    func removeLocalRows(ofDeletedProfile localProfileId: String) async {
+        await ProfileManager.removeLocalRows(ofDeletedProfile: localProfileId, account: account)
+    }
+
     /// Classifies every Space row bound to the Profile. A remotely soft-deleted (hidden) row does
     /// not count: it is kept for the retention window only. `SpaceManager.isProfileInUse` counts
     /// those rows too, so it cannot answer this question.
@@ -349,11 +357,14 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         for model in account.localStorage.getAllSpaces() where model.profileId == localProfileId {
             guard !SpaceManager.isIncognitoSpaceId(model.spaceId) else { continue }
             if ImportTargetLock.shared.isImporting(into: model.spaceId) { blockers.isImporting = true }
+            if AgentSpaceManager.isPersistentAgentSpaceModel(iconName: model.iconName,
+                                                            colorHex: model.colorHex) {
+                blockers.hasPersistentAgentSpace = true
+                continue
+            }
             if AgentSpaceManager.isAgentSpaceModel(name: model.name, iconName: model.iconName,
-                                                   colorHex: model.colorHex)
-                || AgentSpaceManager.isPersistentAgentSpaceModel(iconName: model.iconName,
-                                                                 colorHex: model.colorHex) {
-                blockers.hasAgentSpaces = true
+                                                   colorHex: model.colorHex) {
+                blockers.hasRunningAgentSpace = true
                 continue
             }
             guard !PhiSpaceSyncState.shared.isHidden(model.spaceId) else { continue }

@@ -1196,9 +1196,12 @@ Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
    deletion (or was already gone), after closing its browsers without
    beforeunload prompts, so success means the deletion is committed.
 4. On success removes the Profile-scoped pinned rows and the `ProfileModel` row
-   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort; rows of remotely
-   soft-deleted Spaces that still name the Profile go later with their Space) and
-   delivers `.recordLocalProfileDeletion`.
+   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort and idempotent; the
+   engine runs it again when it reconciles the journal). Remotely soft-deleted
+   Spaces still bound to the Profile are hard-deleted with it, with their content:
+   they are deleted on the account already, and only the sync table hides them, so
+   a table reset would otherwise show them again bound to a missing Profile. Then
+   it delivers `.recordLocalProfileDeletion`.
    On failure removes the journal entry and gives the key back.
 
 The engine reconciles the journal at the start of every pull, push, Profile round
@@ -1226,7 +1229,8 @@ deletion of the uuid journaled, the cursor is finalized. Otherwise
 | The Default Profile | undelete |
 | A live user Space bound to it (not remotely soft-deleted; its own cursor neither deleted nor pending deletion) | undelete |
 | Only remotely soft-deleted (hidden) Space rows | delete; the rows are purged by Space retention |
-| An agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`) |
+| A persistent agent Space bound to it | undelete |
+| A running agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`); after 10 deferred rounds, undelete |
 | Nothing | delete |
 
 Delete runs `deleteProfile(sync: .remoteTombstone)`: the same Chromium deletion,
@@ -1245,8 +1249,8 @@ re-check in `ProfileDeletionFlow`) and `PhiSpaceSyncState.blocksProfileDeletion`
 ignore Space rows a remote deletion soft-deleted
 (`PhiSpaceSyncState.hasLiveSpaceRow`), so a Profile whose Spaces were all deleted
 on another device can be deleted here at once. Live user Spaces and agent Spaces
-still block it. The hidden rows keep their `profileId` and are purged with their
-Spaces by Space retention.
+still block it. The hidden Spaces are removed together with the Profile (see the
+deleting-device steps above).
 
 Retention follows the Space model: 30 days after `deletedAtMs` the cursor is
 trimmed to a permanent tombstone (`purgedAtMs`) and a mapping whose local Profile

@@ -107,6 +107,11 @@ struct PhiProfileCursor: Codable, Equatable {
     var tombstoneDeferRounds = 0
     /// The account Profile is deleted: a remote tombstone landed or this device's own committed.
     var deletedAtMs: Int64?
+    /// This device deleted the Profile before any entity for it reached the account, so no
+    /// tombstone was owed. A live entity that arrives later (a peer publishing it first) is not an
+    /// undelete: delete beats create, and the entity is tombstoned. Optional so cursors written
+    /// without it decode.
+    var deletedBeforePublish: Bool?
     /// The retention sweep trimmed the baselines; the cursor itself is kept as the tombstone record.
     var purgedAtMs: Int64?
 }
@@ -492,6 +497,10 @@ final class PhiSpaceSyncState {
     var withdrawProfileKey: ((String) -> Void)?
     var restoreProfileKey: ((String) -> Void)?
     var finishProfileKeyWithdrawal: ((String) -> Void)?
+    /// Called when the set of live or deleted Profile entities changes, so the mapping pass reruns
+    /// against it: a Profile deleted here stops counting as an unclaimed account Profile only once
+    /// the engine has recorded the deletion.
+    var profileEntityViewDidChange: (() -> Void)?
 
     /// Local Space IDs for SpaceManager.handleSpacesUpdate filtering (SpaceManager.swift:2691-2692),
     /// preserving its existing semantics.
@@ -526,10 +535,15 @@ final class PhiSpaceSyncState {
         publishedSyncUuids = table.publishedSyncUuids
         referencedProfileUuids = referenced
         hasDrainedFullReplay = table.hasDrainedFullReplay
+        let previousView = accountProfileEntityView
         accountProfileEntityView = table.hasDrainedFullReplay
             ? AccountProfileEntityView(liveNames: table.liveProfileEntityNames,
                                        deletedUuids: table.deletedProfileUuids)
             : nil
+        if previousView?.liveUuids != accountProfileEntityView?.liveUuids
+            || previousView?.deletedUuids != accountProfileEntityView?.deletedUuids {
+            profileEntityViewDidChange?()
+        }
         if changed {
             NotificationCenter.default.post(name: .phiSpaceHiddenSetDidChange, object: self)
         }

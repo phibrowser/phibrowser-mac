@@ -4115,6 +4115,18 @@ actor PhiSyncEngine {
                 table.unreadableTagHashes.removeValue(forKey: tag)
                 continue
             }
+            if cursor.deletedBeforePublish == true {
+                // Delete beats create: this device deleted the Profile before any entity existed,
+                // and a peer has now published one. Tombstone it rather than regrow the Profile.
+                AppLogInfo("[phi-sync] a profile deleted here before publication arrived; tombstoning it tag=\(String(tag.prefix(8)))")
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingDelete = true
+                cursor.pendingApply = nil
+                table.profileCursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
             if cursor.pendingTombstone {
                 // A deferred remote tombstone is overtaken only by a newer live version (a peer's
                 // undelete); the replayed older create it came after is not.
@@ -4224,6 +4236,13 @@ actor PhiSyncEngine {
                 table.profileCursors[item.uuid] = cursor
                 if deletingHere[item.uuid] != nil { finishedIntents.append(item.uuid) }
             }
+            if deletingHere[item.uuid] != nil,
+               await profileAccess.isProfileBeingDeletedLocally(syncUuid: item.uuid) {
+                // Chromium is still deleting it here and may yet fail: decide next round.
+                cursor.pendingTombstone = true
+                table.profileCursors[item.uuid] = cursor
+                continue
+            }
             if cursor.deletedAtMs != nil || deletingHere[item.uuid] != nil { finalize(); continue }
             guard let localId = mappings.first(where: { $0.value == item.uuid })?.key,
                   await profileAccess.isKnownLocalProfile(localId) else {
@@ -4255,6 +4274,13 @@ actor PhiSyncEngine {
                 AppLogInfo("[phi-sync] profile deleted by a remote tombstone")
                 continue
             }
+            if decision == .deferApply {
+                cursor.tombstoneDeferRounds += 1
+                if cursor.tombstoneDeferRounds >= Self.profileTombstoneDeferRounds {
+                    AppLogWarn("[phi-sync] a remote profile tombstone stayed deferred for \(cursor.tombstoneDeferRounds) rounds; keeping the profile")
+                    decision = .undelete
+                }
+            }
             switch decision {
             case .delete:
                 break       // Handled above.
@@ -4272,12 +4298,17 @@ actor PhiSyncEngine {
 
     /// Chromium deletions a remote tombstone may fail before the Profile is kept and republished.
     static let profileTombstoneRetryRounds = 3
+    /// Rounds a remote tombstone may stay deferred (a running agent Space, an import, a bound
+    /// Space's own pending deletion) before the Profile is kept and republished. Shares the
+    /// cursor's `tombstoneDeferRounds` with the failed-deletion count.
+    static let profileTombstoneDeferRounds = 10
 
     /// Edit beats delete for a Profile this device cannot delete: the cursor stays live with the
     /// tombstone's id and version and no `server` bytes, so `profileCommitEntries` republishes
     /// the baseline as an update over the tombstone.
     private func undelete(_ cursor: inout PhiProfileCursor) {
         cursor.server = nil
+        cursor.deletedBeforePublish = nil
         cursor.deletedAtMs = nil
         cursor.purgedAtMs = nil
         cursor.pendingDelete = false
@@ -4289,21 +4320,46 @@ actor PhiSyncEngine {
     /// Moves the deletion journal onto the cursors, at the start of every pull, push, Profile
     /// round and deletion round (docs/sync.md, "Profile deletion and rename"). Per entry:
     /// - Chromium deletion still in flight: leave it.
-    /// - The local Profile still exists after a complete enumeration: the deletion never
-    ///   happened (a crash before Chromium deleted it); drop the entry, no tombstone.
-    /// - Published (an entity id and a version): `pendingDelete`, committed by `pushProfiles`;
-    ///   the entry stays until the tombstone commits.
-    /// - Already deleted, or never published once the full replay has drained: finalize locally.
-    /// - Otherwise (the table does not know the account yet): keep the entry for a later round.
+    /// - A fresh bridge read still lists the local Profile: the deletion never happened (a crash
+    ///   before Chromium deleted it); drop the entry, no tombstone. Without a fresh read nothing
+    ///   is concluded.
+    /// - Otherwise the local rows the deleted Profile left behind are removed again (idempotent,
+    ///   for a crash between Chromium's success and that cleanup), and:
+    ///   - published (an entity id and a version): `pendingDelete`, committed by `pushProfiles`;
+    ///     the entry stays until the tombstone commits;
+    ///   - already deleted, or never published once the full replay has drained: finalized
+    ///     locally (`deletedBeforePublish` for the latter);
+    ///   - otherwise (the table does not know the account yet): kept for a later round.
+    ///
+    /// Also sends every recorded deletion whose mapped local Profile still exists back through the
+    /// follower's decision (`pendingTombstone`): a local deletion that failed after a peer's
+    /// tombstone was recorded, or a tombstone an older build only recorded.
     private func reconcileProfileDeletionIntents() async {
         guard !isStopped, let profileAccess, spaceStore != nil else { return }
+        guard await profileAccess.isProfileListEnumerated() else { return }
         let intents = await profileAccess.profileDeletionIntents()
-        guard !intents.isEmpty, await profileAccess.isProfileListEnumerated() else { return }
+        let mappings = await profileAccess.allProfileMappings()
+        let freshList = intents.isEmpty ? false : await profileAccess.refreshProfileList()
         var present: Set<String> = []
         var inFlight: Set<String> = []
         for (uuid, localId) in intents {
             if await profileAccess.isProfileBeingDeletedLocally(syncUuid: uuid) { inFlight.insert(uuid) }
             else if await profileAccess.isKnownLocalProfile(localId) { present.insert(uuid) }
+        }
+        // Deleted cursors whose mapped local Profile is still here.
+        var surviving: Set<String> = []
+        for (uuid, cursor) in loadSpaceTable().profileCursors
+        where cursor.deletedAtMs != nil && cursor.purgedAtMs == nil && !cursor.pendingTombstone
+            && cursor.deletedBeforePublish != true && intents[uuid] == nil {
+            guard let localId = mappings.first(where: { $0.value == uuid })?.key else { continue }
+            if await profileAccess.isKnownLocalProfile(localId) { surviving.insert(uuid) }
+        }
+        guard !isStopped else { return }
+        var cleaned: [String] = []
+        for (uuid, localId) in intents.sorted(by: { $0.key < $1.key })
+        where !inFlight.contains(uuid) && !present.contains(uuid) {
+            await profileAccess.removeLocalRows(ofDeletedProfile: localId)
+            cleaned.append(uuid)
         }
         guard !isStopped else { return }
         var table = loadSpaceTable()
@@ -4311,6 +4367,8 @@ actor PhiSyncEngine {
         var changed = false
         for uuid in intents.keys.sorted() where !inFlight.contains(uuid) {
             if present.contains(uuid) {
+                // A stale list proves nothing: only a fresh read that still lists it does.
+                guard freshList else { continue }
                 AppLogInfo("[phi-sync] dropping a profile deletion intent: the profile still exists")
                 finished.append(uuid)
                 continue
@@ -4328,10 +4386,20 @@ actor PhiSyncEngine {
                 changed = true
             } else if table.hasDrainedFullReplay {
                 cursor.deletedAtMs = now()
+                cursor.deletedBeforePublish = true
                 table.profileCursors[uuid] = cursor
                 changed = true
                 finished.append(uuid)
             }
+        }
+        for uuid in surviving.sorted() {
+            guard var cursor = table.profileCursors[uuid] else { continue }
+            AppLogInfo("[phi-sync] a deleted account profile still exists here; deciding its tombstone again")
+            cursor.deletedAtMs = nil
+            cursor.pendingTombstone = true
+            cursor.tombstoneDeferRounds = 0
+            table.profileCursors[uuid] = cursor
+            changed = true
         }
         if changed { guard writeSpaceTable(table) else { return } }
         for uuid in finished { await profileAccess.finishLocalProfileDeletion(syncUuid: uuid) }
@@ -4436,6 +4504,11 @@ actor PhiSyncEngine {
             if let bytes = cursor?.server, let server = try? Phi_PhiProfileEntity(serializedBytes: bytes) {
                 toSend = SyncableProfiles.merge(local: snapshot, remote: server)
                 if toSend == server { continue }
+            } else if let bytes = cursor?.reconciled,
+                      let baseline = try? Phi_PhiProfileEntity(serializedBytes: bytes) {
+                // No server copy (an undelete, or an update the server refused): republish over the
+                // baseline so a newer client's reserved fields it holds survive.
+                toSend = SyncableProfiles.merge(local: snapshot, remote: baseline)
             }
             result.append((uuid: uuid,
                            entry: PhiCommitEntry(entityId: cursor?.entityId, clientTagHash: tagHash,
@@ -4557,6 +4630,7 @@ actor PhiSyncEngine {
                 cursor.pendingDelete = false
                 cursor.deleteRejectRounds = 0
                 cursor.pendingProjection = nil
+                cursor.deletedBeforePublish = nil
                 cursor.deletedAtMs = now()
             } else if let outgoing = item.outgoing {
                 cursor.reconciled = try? outgoing.serializedData()

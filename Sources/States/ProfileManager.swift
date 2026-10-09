@@ -339,12 +339,7 @@ final class ProfileManager: ObservableObject {
                 if success, sync != .none {
                     let account = AccountController.shared.localDataAccount
                     Task { @MainActor in
-                        // Best effort: a row left behind only keeps a pinned row nobody can open.
-                        do {
-                            try await account?.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId)
-                        } catch {
-                            AppLogWarn("[ProfileManager] could not remove the deleted profile's local rows")
-                        }
+                        if let account { await Self.removeLocalRows(ofDeletedProfile: profileId, account: account) }
                         if let syncUuid {
                             syncState.recordLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId)
                         } else {
@@ -369,6 +364,25 @@ final class ProfileManager: ObservableObject {
                 }
                 completion(success, success ? nil : .reason(error))
             }
+        }
+    }
+
+    /// Removes what a deleted Profile leaves in the local store (docs/sync.md, "Profile deletion
+    /// and rename"): the Spaces still bound to it that a remote deletion soft-deleted (hidden),
+    /// with their content -- they are account-deleted already, and once the sync table is reset
+    /// nothing would hide them any more -- then its Profile-scoped pinned rows and `ProfileModel`
+    /// row. Best effort and idempotent: the sync engine runs it again after a crash.
+    @MainActor
+    static func removeLocalRows(ofDeletedProfile profileId: String, account: Account) async {
+        let hidden = account.localStorage.getAllSpaces()
+            .filter { $0.profileId == profileId && PhiSpaceSyncState.shared.isHidden($0.spaceId) }
+            .map(\.spaceId)
+        do {
+            try await account.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId,
+                                                                          hiddenSpaceIds: hidden)
+            for spaceId in hidden { SpaceManager.shared.clearThemeRecords(forSpaceId: spaceId) }
+        } catch {
+            AppLogWarn("[ProfileManager] could not remove the deleted profile's local rows")
         }
     }
 

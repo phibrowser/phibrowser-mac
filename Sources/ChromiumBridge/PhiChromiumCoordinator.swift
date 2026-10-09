@@ -431,6 +431,9 @@ import SwiftUI
         PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = { [weak self] profileId in
             self?.syncKeyController?.finishProfileKeyWithdrawal(profileId: profileId)
         }
+        PhiSpaceSyncState.shared.profileEntityViewDidChange = { [weak self] in
+            Task { @MainActor in await self?.syncKeyController?.resolveMappings() }
+        }
         PhiSpaceSyncState.shared.globalUuidLookup = { [weak self] profileId in
             self?.syncKeyController?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
         }
@@ -1376,6 +1379,7 @@ import SwiftUI
         PhiSpaceSyncState.shared.withdrawProfileKey = nil
         PhiSpaceSyncState.shared.restoreProfileKey = nil
         PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = nil
+        PhiSpaceSyncState.shared.profileEntityViewDidChange = nil
         PhiSpaceSyncState.shared.globalUuidLookup = nil
         PhiSpaceSyncState.shared.localSpaceIdLookup = nil
         PhiSpaceSyncState.shared.syncUuidLookup = nil

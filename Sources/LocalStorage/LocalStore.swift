@@ -1186,13 +1186,16 @@ private struct PinnedTabSnapshot: Equatable {
 }
 
 extension LocalStore {
-    /// Removes what a deleted Chromium Profile leaves in this store: its Profile-scoped pinned rows
-    /// (`profileId` set, `spaceId` nil) and its `ProfileModel` row, in one save. Rows of remotely
-    /// soft-deleted Spaces may still name the Profile; they keep their `profileId` (the `profile`
-    /// relationship is nullified) and go with their Space when Space retention purges it. Used by
-    /// Profile deletion (docs/sync.md, "Profile deletion and rename").
-    func deleteProfileRowCascadeThrowing(profileId: String) async throws {
+    /// Removes what a deleted Chromium Profile leaves in this store, in one save: the remotely
+    /// soft-deleted Spaces still bound to it (`hiddenSpaceIds`, already deleted on the account,
+    /// with their content, as a retention purge would), its Profile-scoped pinned rows
+    /// (`profileId` set, `spaceId` nil) and its `ProfileModel` row. Idempotent. Used by Profile
+    /// deletion (docs/sync.md, "Profile deletion and rename").
+    func deleteProfileRowCascadeThrowing(profileId: String, hiddenSpaceIds: [String]) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
+            for spaceId in hiddenSpaceIds {
+                try self.deleteSpaceCascadeBody(spaceId: spaceId, origin: .retentionPurge, in: context)
+            }
             let owner: String? = profileId
             for row in try context.fetch(FetchDescriptor<TabDataModel>(
                 predicate: #Predicate { $0.profileId == owner && $0.spaceId == nil }

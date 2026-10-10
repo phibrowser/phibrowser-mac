@@ -134,7 +134,8 @@ final class SyncKeyController {
         /// controller is the initial `false, false`: never a measurement at all.
         case held
         /// `clearResolved()`: the key layer is gone (locked ARK, sign-out,
-        /// teardown, a startup unlock that threw), both predicates were reset to
+        /// teardown, a startup unlock that threw before the account key was held, a
+        /// 404 for this device), both predicates were reset to
         /// `false`, and they mean UNKNOWN.
         case cleared
     }
@@ -400,30 +401,84 @@ final class SyncKeyController {
     }
 
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.
-    /// `.needsJoin` / `.notSignedIn` leave the cache empty — the Devices pane
-    /// remains the place where joining/bootstrap UI happens.
+    /// The Profile-list follow-up enters here too. `.needsJoin` / `.notSignedIn`
+    /// leave the cache empty — the Devices pane remains the place where
+    /// joining/bootstrap UI happens.
     ///
-    /// Any outcome other than `.unlocked` (including a thrown, possibly
-    /// transient, failure) CLEARS the cache rather than leaving it standing.
-    /// This direction is deliberately the opposite of `resolveMappings()`'s
-    /// transient handling: here the unknown state fails *closed* (Chromium
-    /// pulls nil and the sync gate shuts), which is always safe. In
-    /// `resolveMappings()` the same uncertainty would fail *open* — minting a
-    /// fresh UUID over a live mapping — so there it must be preserved instead.
+    /// While the ARK is NOT held, any outcome other than `.unlocked` (including
+    /// a thrown, possibly transient, failure) CLEARS the cache rather than
+    /// leaving it standing: the unknown state fails *closed* (Chromium pulls nil
+    /// and the sync gate shuts), and the first successful unlock announces
+    /// `.phiAccountKeyDidUnlock`, so a later trigger retries.
+    ///
+    /// Once the ARK is held that retry no longer exists (the notification fires
+    /// only on the nil -> unlocked transition), so a transient failure would
+    /// withdraw the keys until the next Profile-list change. A throw (offline,
+    /// timeout, 5xx, Keychain) or a 401 (`.notSignedIn`: sign-out retires the
+    /// controller, so a live one has a token blip) therefore keeps the cache and
+    /// runs `resolveMappings()`, which holds rather than clears on its own
+    /// transient failures. Only `.needsJoin` still clears: a 404 with no parked
+    /// registration is the definitive answer that this device's envelope is gone
+    /// (remote revocation, server reset).
+    ///
+    /// Single-flight, like `resolveMappings()`: see `silentUnlockTask`.
     func silentUnlockAndResolve() async {
+        guard !isRetired else { return }
+        silentUnlockPending = true
+        if let running = silentUnlockTask {
+            // One more pass after the current one, then return with every other
+            // waiter: the startup caller starts sync after this await, so it must
+            // mean "a pass that saw my state has finished".
+            await running.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            while let self, self.silentUnlockPending {
+                self.silentUnlockPending = false
+                await self.silentUnlockAndResolveOnce()
+            }
+            // No suspension between the loop's last check and this write (see
+            // `resolveMappings()`).
+            self?.silentUnlockTask = nil
+        }
+        silentUnlockTask = task
+        await task.value
+    }
+
+    private func silentUnlockAndResolveOnce() async {
         guard !isRetired else { return }
         let result: UnlockResult
         do {
             result = try await manager.unlockAtStartup()
         } catch {
-            clearResolved()  // transient (offline etc.) — a later trigger retries
+            // The unlock is an `await`; the account may have gone away inside it (review A11).
+            guard !isRetired else { return }
+            guard manager.currentARK != nil else {
+                clearResolved()  // transient (offline etc.) — the first unlock's notification retries
+                return
+            }
+            AppLogWarn("[phi-sync] silent unlock failed with the account key held; keeping resolved keys (\(PhiSyncLog.describe(error)))")
+            await resolveMappings()
             return
         }
-        // The unlock is an `await`; the account may have gone away inside it (review A11).
         guard !isRetired else { return }
-        guard result == .unlocked else {
+        switch result {
+        case .unlocked:
+            break
+        case .needsJoin:
+            // The only branch that withdraws keys while the account key is held, so it
+            // leaves a trace: nothing in `clearResolved()` logs (acceptance 2026-10-10).
+            if manager.currentARK != nil {
+                AppLogWarn("[phi-sync] silent unlock found no envelope for this device; withdrawing resolved keys")
+            }
             clearResolved()
             return
+        case .notSignedIn:
+            guard manager.currentARK != nil else {
+                clearResolved()
+                return
+            }
+            AppLogWarn("[phi-sync] silent unlock got 401 with the account key held; keeping resolved keys")
         }
         await resolveMappings()
     }
@@ -435,7 +490,7 @@ final class SyncKeyController {
     /// It ANNOUNCES, because it is the other writer of both pairing predicates:
     /// a lock or sign-out taken while the app-modal pairing gate is up flips them
     /// false here with no pass to follow (`silentUnlockAndResolve` returns
-    /// straight after), and the gate dismisses only from
+    /// straight after its clearing branches), and the gate dismisses only from
     /// `.phiProfileMappingsDidResolve`. Staying silent would leave the browser
     /// blocked behind a modal with nothing left to pair.
     ///
@@ -475,6 +530,7 @@ final class SyncKeyController {
     func retire() {
         isRetired = true
         resolveTask?.cancel()
+        silentUnlockTask?.cancel()
         autoCreateTask?.cancel()
         clearResolved()
     }
@@ -551,6 +607,16 @@ final class SyncKeyController {
     /// exactly one follow-up pass.
     private var resolveTask: Task<Void, Never>?
     private var resolvePending = false
+
+    /// Single-flight state for `silentUnlockAndResolve()`. It is entered from the
+    /// startup/login unlock and from the Profile-list follow-up, and the two can
+    /// overlap: one pass resolved the keys, then the other's device-envelope
+    /// lookup failed (an offline blip, a 45 s request timeout) and its
+    /// `clearResolved()` wiped what the first had just resolved, so Chromium
+    /// pulled nil and sync silently stopped (BH-52). So: one unlock pass at a
+    /// time, later callers coalesce into exactly one follow-up pass.
+    private var silentUnlockTask: Task<Void, Never>?
+    private var silentUnlockPending = false
 
     private func resolveMappingsOnce() async {
         guard !isRetired else { return }

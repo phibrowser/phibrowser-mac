@@ -121,7 +121,8 @@ final class ProfilePairingGate {
     /// Only a RETIRED controller's `.cleared` takes the window down (sign-out, account
     /// switch, self-revoke). A live controller also announces `.cleared` whenever a
     /// background `silentUnlockAndResolve()` finds this device still unjoined or hits a
-    /// network error -- exactly the state the join steps inside this window exist for.
+    /// network error before the account key is held -- exactly the state the join steps
+    /// inside this window exist for.
     /// Dismissing then would withdraw a pending join request mid-approval and could
     /// drop a recovery code the user has not yet confirmed.
     func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool,

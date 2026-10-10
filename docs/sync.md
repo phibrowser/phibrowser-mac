@@ -247,8 +247,12 @@ wake, an unlock and the pane's Retry (`retryProfileMappingRepair()`) replace the
 pending wait with an immediate pass and restart the delay at 5 seconds; a request
 during a pass runs one more pass after it. During an episode, and with the
 account key unlocked, the Profile-list sink runs this repair instead of
-`silentUnlockAndResolve()`, so a failed device-envelope lookup cannot clear the
-key cache; on a device with no episode the sink is unchanged. The sink's
+`silentUnlockAndResolve()`, so no device-envelope lookup runs during the episode;
+on a device with no episode the sink is unchanged. `silentUnlockAndResolve()` is
+single-flight (callers during a pass coalesce into one follow-up pass) and clears
+the key cache on a failed lookup only while the account key is not held; once it
+is held, a thrown error or a 401 keeps the cache and runs a mapping pass, and only
+a 404 for this device's envelope clears it. The sink's
 choice is made by the reconciliation right after the episode transition for its
 list is committed: a sink that runs inside another reconciliation (the resume
 lets the Profile loader refresh the list) has its inputs queued, and its choice

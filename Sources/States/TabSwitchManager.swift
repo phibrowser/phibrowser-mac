@@ -14,9 +14,9 @@ enum TabSwitchDirection {
 @MainActor
 final class TabSwitchManager {
     private var visitHistoryTabIDs: [Int] = []
-    /// The switcher keeps its existing five-item scope; media uses the same
-    /// owner's complete live history so unrelated visits do not erase its order.
-    var recentTabIDs: [Int] { Array(visitHistoryTabIDs.prefix(TabSwitchMetrics.maxRecentTabs)) }
+    /// Switching priority includes unvisited background tabs and is limited to five items.
+    private(set) var recentTabIDs: [Int] = []
+    /// Media ordering uses actual visits only, retaining every live visited tab.
     var visitedTabIDs: [Int] { visitHistoryTabIDs }
     private weak var browserState: BrowserState?
 
@@ -50,6 +50,9 @@ final class TabSwitchManager {
         pruneHistory()
         visitHistoryTabIDs.removeAll { $0 == tabID }
         visitHistoryTabIDs.insert(tabID, at: 0)
+        recentTabIDs.removeAll { $0 == tabID }
+        recentTabIDs.insert(tabID, at: 0)
+        recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
     }
 
     /// Admit an unvisited background tab as the next forward-switch target.
@@ -59,20 +62,24 @@ final class TabSwitchManager {
               !BrowserState.isAIChatId(tab.guidInLocalDB),
               state.focusingTab?.guid != tab.guid,
               state.tabs.contains(where: { $0.guid == tab.guid }),
-              !recentTabIDs.contains(tab.guid) else { return }
+              !recentTabIDs.contains(tab.guid),
+              !visitHistoryTabIDs.contains(tab.guid) else { return }
 
-        if let currentTab = state.focusingTab {
-            recordActiveTab(currentTab)
+        pruneHistory()
+        if let currentTab = state.focusingTab,
+           !BrowserState.isAIChatId(currentTab.guidInLocalDB),
+           state.tabs.contains(where: { $0.guid == currentTab.guid }) {
+            recentTabIDs.removeAll { $0 == currentTab.guid }
+            recentTabIDs.insert(currentTab.guid, at: 0)
         }
         let insertionIndex = recentTabIDs.first == state.focusingTab?.guid ? 1 : 0
         recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
-        if recentTabIDs.count > TabSwitchMetrics.maxRecentTabs {
-            recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
-        }
+        recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
     }
 
     func removeTab(tabID: Int) {
         visitHistoryTabIDs.removeAll { $0 == tabID }
+        recentTabIDs.removeAll { $0 == tabID }
         snapshotCache.removeValue(forKey: tabID)
         guard var session else { return }
         session.candidateTabIDs.removeAll { $0 == tabID }
@@ -217,6 +224,7 @@ final class TabSwitchManager {
         guard let state = browserState else { return }
         let validIDs = Set(state.tabs.map(\.guid))
         visitHistoryTabIDs.removeAll { !validIDs.contains($0) }
+        recentTabIDs.removeAll { !validIDs.contains($0) }
     }
 
     private func buildCandidates() -> [Int] {

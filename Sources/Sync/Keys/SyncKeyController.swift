@@ -466,6 +466,11 @@ final class SyncKeyController {
         case .unlocked:
             break
         case .needsJoin:
+            // The only branch that withdraws keys while the account key is held, so it
+            // leaves a trace: nothing in `clearResolved()` logs (acceptance 2026-10-10).
+            if manager.currentARK != nil {
+                AppLogWarn("[phi-sync] silent unlock found no envelope for this device; withdrawing resolved keys")
+            }
             clearResolved()
             return
         case .notSignedIn:

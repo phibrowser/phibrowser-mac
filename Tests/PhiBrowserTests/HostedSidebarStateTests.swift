@@ -486,6 +486,35 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertNil(host.view.hitTest(point))
     }
 
+    func testHostedTitlebarGapsReachWindowWithoutDiscardingContentHits() throws {
+        for mode: LayoutMode in [.performance, .balanced, .comfortable] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode)
+            let slot = makeSlot()
+            let session = makeSession(in: slot, spaceId: "first")
+            let split = try XCTUnwrap(slot.shell?.split)
+            session.presentInShell(completing: false, deferringChromium: true)
+            split.view.layoutSubtreeIfNeeded()
+
+            let pageRoot = session.mainSplitViewController.view
+            let point = NSPoint(x: pageRoot.bounds.midX, y: pageRoot.bounds.maxY - 4)
+            let shellPoint = pageRoot.convert(point, to: split.view.superview)
+            XCTAssertGreaterThan(pageRoot.bounds.width, 0)
+            XCTAssertNil(split.view.hitTest(shellPoint), "The \(mode) page gap must reach the window frame")
+
+            // The same path must retain real controls and ordinary page views.
+            let hitFrame = NSRect(x: point.x - 10, y: point.y - 10, width: 20, height: 20)
+            let button = NSButton(frame: hitFrame)
+            pageRoot.addSubview(button)
+            XCTAssertTrue(split.view.hitTest(shellPoint) === button, "The \(mode) control must keep its click")
+            button.removeFromSuperview()
+
+            let content = NSView(frame: hitFrame)
+            pageRoot.addSubview(content)
+            XCTAssertTrue(split.view.hitTest(shellPoint) === content, "The \(mode) page view must keep its click")
+            content.removeFromSuperview()
+        }
+    }
+
     func testFloatingSlideBackdropStaysClearThroughThemeUpdates() async throws {
         guard #available(macOS 26, *) else { return }
         let slot = makeSlot()

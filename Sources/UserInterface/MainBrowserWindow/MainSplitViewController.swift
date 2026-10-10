@@ -89,7 +89,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 
     override func loadView() {
-        self.view = TitlebarTransparentView()
+        // The shell owns titlebar hit testing for hosted sessions. Returning
+        // nil here would let the shell's page backdrop recapture an empty
+        // titlebar hit before it reaches the shell's outer hit-test boundary.
+        self.view = isHosted ? NSView() : TitlebarTransparentView()
     }
 
     private static let splitViewAutosaveName = "phiMainBrowserSplitView"

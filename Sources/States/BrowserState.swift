@@ -3343,6 +3343,11 @@ class BrowserState {
                                      context: context,
                                      hiddenOpenerTabIds: preseededHiddenOpenerTabIds,
                                      visibleNormalTabIds: normalTabs.map(\.guid))
+        if let context, context.creationKind == .linkBackground, !context.isActiveAtCreation {
+            MainActor.assumeIsolated {
+                tabSwitchManager.recordBackgroundTab(tab)
+            }
+        }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
         if let pendingBookmarkGroupCreation {

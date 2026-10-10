@@ -50,6 +50,25 @@ final class TabSwitchManager {
         }
     }
 
+    /// Admit an unvisited background tab as the next forward-switch target.
+    /// Keep the focused tab first; an in-progress session retains its snapshot.
+    func recordBackgroundTab(_ tab: Tab) {
+        guard let state = browserState,
+              !BrowserState.isAIChatId(tab.guidInLocalDB),
+              state.focusingTab?.guid != tab.guid,
+              state.tabs.contains(where: { $0.guid == tab.guid }),
+              !recentTabIDs.contains(tab.guid) else { return }
+
+        if let currentTab = state.focusingTab {
+            recordActiveTab(currentTab)
+        }
+        let insertionIndex = recentTabIDs.first == state.focusingTab?.guid ? 1 : 0
+        recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
+        if recentTabIDs.count > TabSwitchMetrics.maxRecentTabs {
+            recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        }
+    }
+
     func removeTab(tabID: Int) {
         recentTabIDs.removeAll { $0 == tabID }
         snapshotCache.removeValue(forKey: tabID)
@@ -351,11 +370,10 @@ final class TabSwitchManager {
 
         let image: NSImage?
 
-        if tab.isActive, let state = browserState,
-           let live = state.tabDraggingSession.singleTabSnapshotImage(for: tab) {
-            image = live
-        } else if let jpegData = ChromiumLauncher.sharedInstance().bridge?.thumbnail(forTab: Int64(tab.guid)),
-                  let thumb = NSImage(data: jpegData) {
+        // Live AppKit capture can return a blank image for Chromium's remote surface.
+        // Use the cached thumbnail for both foreground and background tabs, as drag previews do.
+        if let jpegData = ChromiumLauncher.sharedInstance().bridge?.thumbnail(forTab: Int64(tab.guid)),
+           let thumb = NSImage(data: jpegData) {
             image = thumb
         } else {
             let favicon = resolveFaviconForSnapshot(for: tab) ?? NSImage()

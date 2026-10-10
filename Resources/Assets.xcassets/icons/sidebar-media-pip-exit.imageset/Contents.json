@@ -1,0 +1,15 @@
+{
+  "images" : [
+    {
+      "filename" : "ic_picture_in_picture_exit.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  },
+  "properties" : {
+    "preserves-vector-representation" : true
+  }
+}

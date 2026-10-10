@@ -47,6 +47,7 @@ struct GeneralSettingView: View {
                 }
                 AppearanceSectionView()
                 BrowsingSectionView()
+                SidebarMediaSectionView()
                 if SaveForLaterService.featureEnabled {
                     SaveForLaterSectionView()
                 }
@@ -498,6 +499,65 @@ private struct LanguageSectionView: View {
             sourceWindow.presentPhiAlert(configuration) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 AppController.relaunchPhiApplication()
+            }
+        }
+    }
+}
+
+private struct SidebarMediaSectionView: View {
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.rawValue)
+    private var playerEnabled = PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.defaultValue
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarMediaPresentationModeKey)
+    private var presentationModeRawValue = SidebarMediaPresentationMode.dynamic.rawValue
+
+    private var presentationMode: Binding<SidebarMediaPresentationMode> {
+        Binding(
+            get: { SidebarMediaPresentationMode(rawValue: presentationModeRawValue) ?? .dynamic },
+            set: { presentationModeRawValue = $0.rawValue }
+        )
+    }
+
+    private var playerLabel: String {
+        NSLocalizedString("settings.general.sidebarMedia.enabledTitle", value: "Show sidebar media player",
+                          comment: "General settings - Toggle for controls for media playing in background tabs")
+    }
+    private var presentationLabel: String {
+        NSLocalizedString("settings.general.sidebarMedia.presentationTitle", value: "Player display",
+                          comment: "General settings - Independent menu for the sidebar media player presentation mode")
+    }
+
+    var body: some View {
+        GeneralSectionView(title: NSLocalizedString("settings.general.sidebarMedia.sectionTitle", value: "Sidebar media",
+                                                    comment: "General settings - Section title for sidebar media player preferences")) {
+            VStack(alignment: .leading, spacing: 8) {
+                GeneralContainerView {
+                    VStack(spacing: 0) {
+                        GeneralRowView(title: playerLabel) {
+                            Toggle("", isOn: $playerEnabled)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .accessibilityLabel(playerLabel)
+                                .accessibilityIdentifier("settings.sidebarMedia.enabled")
+                        }
+                        Divider()
+                        GeneralRowView(title: presentationLabel) {
+                            Picker("", selection: presentationMode) {
+                                ForEach(SidebarMediaPresentationMode.allCases) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .accessibilityLabel(presentationLabel)
+                            .accessibilityIdentifier("settings.sidebarMedia.presentation")
+                        }
+                    }
+                }
+                Text(NSLocalizedString("settings.general.sidebarMedia.hint", value: "Turning the player off leaves media playing. Dynamic expands after a brief hover; keyboard focus and VoiceOver can reveal its details immediately.",
+                                       comment: "General settings - Explanation of independent enable and presentation preferences, including accessible expansion in Dynamic mode"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

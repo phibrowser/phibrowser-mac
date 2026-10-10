@@ -8195,6 +8195,37 @@ final class SpaceManager: ObservableObject {
 /// once.
 final class SpaceWindowSlot: ObservableObject {
 
+    @MainActor private var storedMediaController: SidebarMediaController?
+
+    @MainActor var sidebarMediaController: SidebarMediaController {
+        if let storedMediaController { return storedMediaController }
+        let controller = SidebarMediaController()
+        storedMediaController = controller
+        controller.activateSession = { [weak self] sessionID, completion in
+            guard let self,
+                  let target = self.windowsBySpaceId.values.first(where: {
+                      ObjectIdentifier($0.browserState) == sessionID
+                  }) else { completion(false); return }
+            if self.visibleController === target { completion(true); return }
+            self.activate(spaceId: target.spaceId, userInitiated: true,
+                onActivationFailed: { completion(false) },
+                onSwapSettled: { [weak self, weak target] in
+                    guard let self, let target,
+                          self.windowsBySpaceId[target.spaceId] === target,
+                          self.visibleController === target else { completion(false); return }
+                    completion(true)
+                })
+        }
+        reconcileMediaSessions()
+        return controller
+    }
+
+    @MainActor private func reconcileMediaSessions() {
+        guard let storedMediaController else { return }
+        let states = windowsBySpaceId.keys.sorted().compactMap { windowsBySpaceId[$0]?.browserState }
+        storedMediaController.setSessions(states, presented: visibleController?.browserState)
+    }
+
     @Published private(set) var activeSpaceId: String?
 
     /// The Space pip being drag-reordered in this window's strip, shared by
@@ -8442,7 +8473,9 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// spaceId → controller dedicated to this slot for that Space.
     /// Populated lazily by `activate`'s spawn path and `registerWindow`.
-    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:]
+    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:] {
+        didSet { MainActor.assumeIsolated { reconcileMediaSessions() } }
+    }
 
     /// Hosted mode: sessions built ahead of their Browser, one per user
     /// Space this slot presents but has not visited (see
@@ -8477,6 +8510,7 @@ final class SpaceWindowSlot: ObservableObject {
     private(set) weak var visibleController: SpaceSessionController? {
         didSet {
             guard oldValue !== visibleController else { return }
+            MainActor.assumeIsolated { reconcileMediaSessions() }
             observeFrameChanges(on: visibleController)
             updateWindowsMenuExclusion()
             // The Space→window routing map reports only the visible window per
@@ -11832,6 +11866,9 @@ final class SpaceWindowSlot: ObservableObject {
             pendingCloseOnReplacementBySpaceId[spaceId] = existing
         }
         windowsBySpaceId[spaceId] = controller
+        MainActor.assumeIsolated {
+            controller.mainSplitViewController.useMediaController(sidebarMediaController)
+        }
         manager?.noteSlotWindowsDidChange()
         // Chromium records its "recently closed" stack inside its own close
         // handshake, before AppKit reports the close, so it needs this pairing

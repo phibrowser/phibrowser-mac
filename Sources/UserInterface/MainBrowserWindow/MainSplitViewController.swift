@@ -56,11 +56,23 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
 
-    private lazy var verticalTabListViewController: SidebarViewController = { SidebarViewController(browserState: state) }()
+    private var sidebarMediaController: SidebarMediaController
+
+    /// A prewarmed tree acquires its real window owner before presentation.
+    func useMediaController(_ controller: SidebarMediaController) {
+        guard sidebarMediaController !== controller else { return }
+        sidebarMediaController = controller
+        verticalTabListViewController.useMediaController(controller)
+        floatingSidebarContent.useMediaController(controller)
+    }
+    private lazy var verticalTabListViewController: SidebarViewController = {
+        SidebarViewController(browserState: state, mediaController: sidebarMediaController)
+    }()
 
     /// Per-Space content only; the panel and its visibility belong to the shell.
     /// Retaining this tree makes a return switch as ready as the docked sidebar.
-    private(set) lazy var floatingSidebarContent = FloatingSidebarViewController(browserState: state)
+    private(set) lazy var floatingSidebarContent = FloatingSidebarViewController(
+        browserState: state, mediaController: sidebarMediaController)
 
 
     /// This window's sidebar controller. Exposed so `SpaceManager` can drive
@@ -77,7 +89,8 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var lastUseHorizontalTabs: Bool?
 
     let state: BrowserState
-    init(state: BrowserState, hosted: Bool = false) {
+    init(state: BrowserState, hosted: Bool = false, mediaController: SidebarMediaController? = nil) {
+        self.sidebarMediaController = mediaController ?? SidebarMediaController(browserState: state)
         self.state = state
         self.isHosted = hosted
         self.webContentContainerViewController = WebContentContainerViewController(state: state)

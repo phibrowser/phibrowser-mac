@@ -174,6 +174,95 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
 
+    /// M3-4b: a table written before Profile entities has no `profileCursors` key. It must decode
+    /// with an empty map rather than fail, which would discard the table and reopen pairing.
+    func testATableWrittenBeforeProfileCursorsStillDecodes() throws {
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var cursor = PhiProfileCursor()
+        cursor.entityId = "srv-p"
+        cursor.version = 3
+        cursor.localNameAtBaseline = "Work (2)"
+        table.profileCursors["pu-1"] = cursor
+        let encoded = try JSONEncoder().encode(table)
+        XCTAssertEqual(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded).profileCursors,
+                       ["pu-1": cursor])
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNotNil(object.removeValue(forKey: "profileCursors"))
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+
+        XCTAssertEqual(decoded.profileCursors, [:])
+        XCTAssertTrue(decoded.hasDrainedFullReplay)
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
+    }
+
+    func testProfileDerivedSetsSeparateLiveFromDeletedEntities() throws {
+        var entity = Phi_PhiProfileEntity()
+        entity.profileUuid = "live"
+        entity.name.stringValue = "Work"
+        var table = PhiSpaceSyncTable()
+        var live = PhiProfileCursor()
+        live.entityId = "e-live"
+        live.reconciled = try entity.serializedData()
+        table.profileCursors["live"] = live
+        var deleted = PhiProfileCursor()
+        deleted.entityId = "e-deleted"
+        deleted.deletedAtMs = 1
+        table.profileCursors["deleted"] = deleted
+        var deleting = PhiProfileCursor()
+        deleting.entityId = "e-deleting"
+        deleting.pendingDelete = true
+        table.profileCursors["deleting"] = deleting
+        var purged = PhiProfileCursor()
+        purged.purgedAtMs = 2
+        table.profileCursors["purged"] = purged
+        // A cursor with no entity id never reached the account.
+        table.profileCursors["unpublished"] = PhiProfileCursor()
+
+        XCTAssertEqual(table.liveProfileEntityUuids, ["live"])
+        XCTAssertEqual(table.deletedProfileUuids, ["deleted", "deleting", "purged"])
+        XCTAssertEqual(table.liveProfileEntityNames, ["live": "Work"])
+    }
+
+    func testPurgeExpiredProfilesKeepsATombstoneCursor() {
+        var table = PhiSpaceSyncTable()
+        var expired = PhiProfileCursor()
+        expired.entityId = "e-1"
+        expired.version = 4
+        expired.reconciled = Data([0x01])
+        expired.deletedAtMs = 1_000
+        table.profileCursors["old"] = expired
+        var fresh = PhiProfileCursor()
+        fresh.deletedAtMs = 1_000 + PhiSpaceSyncState.retentionMs
+        table.profileCursors["fresh"] = fresh
+        let now = 2_000 + PhiSpaceSyncState.retentionMs
+
+        var owed = PhiProfileCursor()
+        owed.entityId = "e-2"
+        owed.version = 2
+        owed.deletedAtMs = 1_000
+        owed.pendingDelete = true
+        table.profileCursors["owed"] = owed
+        var unpublished = PhiProfileCursor()
+        unpublished.deletedAtMs = 1_000
+        unpublished.deletedBeforePublish = true
+        table.profileCursors["unpublished"] = unpublished
+
+        XCTAssertEqual(table.purgeExpiredProfiles(nowMs: now), ["old", "unpublished"])
+        XCTAssertEqual(table.profileCursors["owed"], owed, "a tombstone still owed is never trimmed")
+        XCTAssertEqual(table.profileCursors["unpublished"]?.deletedBeforePublish, true)
+
+        let purged = table.profileCursors["old"]
+        XCTAssertEqual(purged?.entityId, "e-1")
+        XCTAssertEqual(purged?.version, 4)
+        XCTAssertNil(purged?.reconciled)
+        XCTAssertEqual(purged?.purgedAtMs, now)
+        XCTAssertEqual(table.profileCursors["fresh"], fresh)
+        XCTAssertTrue(table.deletedProfileUuids.contains("old"))
+    }
+
     // MARK: - formatVersion reset (§3.6)
 
     func testAnOlderFormatIsDiscardedIntoAnEmptyTable() throws {
@@ -537,6 +626,62 @@ final class PhiSpaceSyncStateTests: XCTestCase {
     /// R-D6-9 changes the third criterion from hidden local Spaces to mapped local
     /// Spaces whose entities have published. Hidden now means remote soft deletion,
     /// and those rows must no longer block Profile deletion.
+    /// A Profile deleted here stops counting as an unclaimed account Profile only once the engine
+    /// has recorded it, so a change of the live or deleted set must rerun the mapping pass.
+    @MainActor
+    func testAChangeOfTheProfileEntitySetsAnnouncesItself() {
+        let state = PhiSpaceSyncState()
+        var calls = 0
+        state.profileEntityViewDidChange = { calls += 1 }
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var cursor = PhiProfileCursor()
+        cursor.entityId = "srv-1"
+        table.profileCursors["pu-1"] = cursor
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 1)
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 1, "an unchanged view announces nothing")
+        table.profileCursors["pu-1"]?.pendingDelete = true
+        state.refreshCaches(from: table)
+        XCTAssertEqual(calls, 2)
+        // A reset (or a restarted replay) takes the view away: no pass may run against that, or
+        // with nothing claimable it would register every local Profile as a new account Profile.
+        state.refreshCaches(from: PhiSpaceSyncTable())
+        XCTAssertNil(state.accountProfileEntityView)
+        XCTAssertEqual(calls, 2)
+    }
+
+    /// A Profile whose only Space rows were soft-deleted by a remote Space deletion is deletable
+    /// locally: neither the local predicate (`SpaceManager.isProfileInUse`) nor the account
+    /// predicate counts the hidden rows.
+    @MainActor
+    func testAProfileWithOnlyHiddenSpaceRowsIsDeletableLocally() {
+        let state = PhiSpaceSyncState()
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        var hidden = PhiSpaceCursor()
+        hidden.entityId = "srv-1"
+        hidden.hidden = true
+        hidden.deletedAtMs = 1
+        table.cursors["sync-hidden"] = hidden
+        var live = PhiSpaceCursor()
+        live.entityId = "srv-2"
+        table.cursors["sync-live"] = live
+        state.syncUuidLookup = { ["LOCAL-HIDDEN": "sync-hidden", "LOCAL-LIVE": "sync-live"][$0] }
+        state.localSpaceIdLookup = { ["sync-hidden": "LOCAL-HIDDEN", "sync-live": "LOCAL-LIVE"][$0] }
+        state.globalUuidLookup = { _ in nil }
+        let rows = [(spaceId: "LOCAL-HIDDEN", profileId: "Profile 2"),
+                    (spaceId: "LOCAL-LIVE", profileId: "Profile 3")]
+        state.localSpaceProfileIds = { rows }
+        state.refreshCaches(from: table)
+
+        XCTAssertFalse(state.hasLiveSpaceRow(localProfileId: "Profile 2", rows: rows))
+        XCTAssertFalse(state.blocksProfileDeletion(localProfileId: "Profile 2"))
+        XCTAssertTrue(state.hasLiveSpaceRow(localProfileId: "Profile 3", rows: rows))
+        XCTAssertTrue(state.blocksProfileDeletion(localProfileId: "Profile 3"))
+    }
+
     @MainActor
     func testBlocksProfileDeletionCoversMappedAndPublishedLocalSpaces() {
         let state = PhiSpaceSyncState()

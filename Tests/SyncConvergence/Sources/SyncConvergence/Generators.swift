@@ -122,6 +122,16 @@ struct Generators {
         return maybeUnknown(entity, reserved: 13)
     }
 
+    // MARK: - Profiles
+
+    mutating func profileEntity(uuid: String) -> Phi_PhiProfileEntity {
+        var entity = Phi_PhiProfileEntity()
+        entity.profileUuid = uuid
+        entity.name = maybeWrongCase(text())
+        entity.createdAtMs = rng.pick(Pool.createdAt)
+        return maybeUnknown(entity, reserved: 5)
+    }
+
     // MARK: - Bookmarks
 
     /// Location is one merge unit: `space_uuid` + `parent_uuid` share a stamp

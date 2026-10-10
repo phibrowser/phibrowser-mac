@@ -43,7 +43,8 @@ final class ProfileAutoCreateTests: XCTestCase {
     }
 
     private func stack(creator: FakeProfileCreator,
-                       store: MemoryMappingStore = MemoryMappingStore())
+                       store: MemoryMappingStore = MemoryMappingStore(),
+                       entityView: (@MainActor () -> AccountProfileEntityView?)? = nil)
     async throws -> (FakeAPI, AccountKeyManager, SyncKeyController, MemoryMappingStore) {
         let api = FakeAPI()
         let mgr = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
@@ -54,7 +55,8 @@ final class ProfileAutoCreateTests: XCTestCase {
         let controller = SyncKeyController(
             manager: mgr, approvals: approvals, profileKeys: pkm,
             localProfilesProvider: { creator.userAssignableProfileIds },
-            notifyChromium: {}, profileCreator: creator, isPairingComplete: { true })
+            notifyChromium: {}, profileCreator: creator, isPairingComplete: { true },
+            profileEntityView: entityView)
         return (api, mgr, controller, store)
     }
 
@@ -315,5 +317,45 @@ final class ProfileAutoCreateTests: XCTestCase {
         try seedRemoteProfile(api, mgr, uuid: "uuid-blank", name: "")
         _ = await controller.ensureLocalProfilesForAccount()
         XCTAssertEqual(creator.createCalls, ["Profile"])
+    }
+
+    // MARK: - R4: auto-create follows the account's Profile entities
+
+    func testNothingIsCreatedBeforeTheFirstFullReplay() async throws {
+        let creator = FakeProfileCreator()
+        let (api, mgr, controller, store) = try await stack(creator: creator, entityView: { nil })
+        try seedRemoteProfile(api, mgr, uuid: "uuid-work", name: "Work")
+
+        let outcome = await controller.ensureLocalProfilesForAccount()
+
+        XCTAssertEqual(outcome, .skipped)
+        XCTAssertTrue(creator.createCalls.isEmpty)
+        XCTAssertTrue(store.map.isEmpty)
+    }
+
+    func testARegistryRowWithoutALiveEntityIsNeverGrownBack() async throws {
+        let creator = FakeProfileCreator()
+        let view = AccountProfileEntityView(liveNames: ["uuid-live": "Home"], deletedUuids: ["uuid-deleted"])
+        let (api, mgr, controller, store) = try await stack(creator: creator, entityView: { view })
+        try seedRemoteProfile(api, mgr, uuid: "uuid-deleted", name: "Old")
+        try seedRemoteProfile(api, mgr, uuid: "uuid-unpublished", name: "Unknown")
+        try seedRemoteProfile(api, mgr, uuid: "uuid-live", name: "Home")
+
+        let outcome = await controller.ensureLocalProfilesForAccount()
+
+        XCTAssertEqual(outcome, .changed)
+        XCTAssertEqual(creator.createCalls, ["Home"])
+        XCTAssertEqual(store.map.values.sorted(), ["uuid-live"])
+    }
+
+    func testTheEntityNameWinsOverTheRegisteredName() async throws {
+        let creator = FakeProfileCreator()
+        let view = AccountProfileEntityView(liveNames: ["uuid-work": "Office"], deletedUuids: [])
+        let (api, mgr, controller, _) = try await stack(creator: creator, entityView: { view })
+        try seedRemoteProfile(api, mgr, uuid: "uuid-work", name: "Work")
+
+        _ = await controller.ensureLocalProfilesForAccount()
+
+        XCTAssertEqual(creator.createCalls, ["Office"], "the registry keeps the name it was registered under")
     }
 }

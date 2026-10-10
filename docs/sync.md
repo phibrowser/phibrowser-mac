@@ -136,6 +136,26 @@ below. Until `ProfileManager` has enumerated the Profile list once
 (`isProfileListEnumerated`), a pass does not prune the known-unmapped set against
 the empty list it sees.
 
+Auto-create follows the account's Profile entities, not the key registry, which
+keeps every Profile ever registered (see "Profile entity"). The facade publishes
+`PhiSpaceSyncState.accountProfileEntityView`: nil until the data type's first full
+replay has drained, then the live Profile entities (uuid and account name) and the
+deleted ones. Auto-create skips its round (`.skipped`) while the view is nil and
+otherwise creates only uuids with a live entity, named from the entity (the
+registry name is the fallback); a registry row without a live entity is never
+grown back. The mapping pass uses the same view: an account Profile counts as
+claimable, and as unclaimed for `needsPairing`, only with a live entity, so a
+deleted account Profile neither holds registration nor keeps the pairing state
+open. Before the first replay nothing is claimable, so registration never waits
+on an auto-create that cannot run yet; the accepted cost is that a same-named
+local created in that window may be registered as a second account Profile. A
+pull that finishes the first replay after a skipped auto-create, or lands a new
+account Profile this device has no local Profile for, queues one follow-up pull
+so the Profile is created and its Spaces land without waiting for the timer.
+Mixed versions: an account Profile that only older clients know (no Profile
+entity published yet) is not auto-created on a new device until an upgraded
+device that has it publishes its entity.
+
 All native data rounds and Chromium ready-key exposure require enrollment.
 Completing setup replays the shared Phi data type once under the confirmed Space
 mappings, because no round (not even the gate close) runs while unpaired. Completion
@@ -633,6 +653,14 @@ Profile mapping pause sets it: once an episode is 15 seconds old, and back when
 the episode ends or its prerequisites go, each time committing its state before
 it sends `notifyPhiSyncKeysChanged` (see "Enrollment and setup").
 
+A Profile being deleted has its own key withdrawn
+(`SyncKeyController.withdrawProfileKey`): its resolved entry is dropped,
+Chromium is pinged, and mapping passes skip it entirely (neither resolved,
+registered nor counted as unmapped, and its account Profile does not count as
+unclaimed for `needsPairing`), so a deleted Profile's basename can neither
+keep nor regain a key. A failed deletion restores it and re-resolves; a completed
+one ends the withdrawal once the Profile is gone from the list.
+
 ## Profile loading
 
 Chromium runs a Profile's sync only while the Profile is loaded, and
@@ -1085,6 +1113,167 @@ early-return guards. The engine marks `pendingDelete` only on a cursor with an
   retirement also clears the facade's direct store). Closing this gap would
   need a persisted deletion intent, which is a format change.
 
+## Profile entity
+
+Each account Profile is one Phi entity, `PhiProfileEntity` (kind 6 of data type
+2000), tagged `phi-profile:<profile_uuid>` where `profile_uuid` is the account
+uuid from `sync.profileGlobalUuids`, never the Chromium basename. The payload
+carries `name` (LWW `PhiSettingValue`) and `created_at_ms` (`min()` of non-zero
+values; a Profile row records its creation date when it is created, and rows
+created before that publish 0, "unknown"); fields 4-7 are reserved. `SyncableProfiles.merge` starts from `remote`
+like every other kind, so a newer client's reserved fields survive. Deleting an
+account Profile is the ordinary entity tombstone on its tag; the server is
+unchanged. The key registry (`/keys/v1/profiles`) still holds every envelope and
+is never deleted; it no longer decides whether a Profile exists.
+
+Only Profiles mapped to an account Profile are published:
+`PhiProfileLocalAccess.currentProfiles()` is `userAssignableProfiles` (which
+already leaves out Phi Chat and the agent fallback) with a mapping, so unmapped
+and local-only Profiles never reach the wire. The entity rides the Space section:
+it is routed, landed and published only while the Space gate is open, lands in the
+same page write as the Spaces, and `pushProfiles` runs after the same pull and
+full-replay guards as `pushSpaces`, immediately before it, so a new Profile's
+entity precedes the Spaces bound to it. Conflicts retry only the conflicting uuids;
+unreadable tags are never committed over. The coordinator triggers a Profile round
+on a debounced change of the (id, mapping, name) set of mapped Profiles.
+
+Local names must be unique and auto-create or an inbound rename may suffix one
+("Work (2)"), so a device's local name can legitimately differ from the account
+name. The cursor records `localNameAtBaseline`, the local name that corresponds to
+its baseline here. The snapshot publishes a local name only when it differs from
+that record (a user rename), stamped like a Space field edit (edit-time
+`pendingProjection`, AM-1); otherwise it echoes the baseline, so a suffixed twin
+never renames the account. A baseline stored before this device had the Profile
+records the current local name at the next stamping or publication. The first
+publication after the drain sends the local name at stamp 0, so a derived name
+never beats a real rename. An inbound entity is merged against the local
+projection; when the winning name differs from what this device presents it is
+applied through `applyRemoteName` (exact name, else the auto-create suffix rule)
+and the resulting local name is recorded with the baseline. A rename that does not
+take parks the entity in `pendingApply`, retried every round; a parked Profile is
+not published over. An entity for a uuid with no local Profile here is stored as
+the baseline only; auto-create reads it.
+
+A Profile tombstone is applied as described in "Profile deletion and rename"; once
+recorded (`deletedAtMs`) the uuid is no longer published or auto-created. A deleted uuid comes back
+only with a newer version than the tombstone it recorded; the cursor is reset and
+the entity lands wholesale, and a mapping whose local Profile is gone is dropped
+so auto-create recreates the Profile. A replayed older create lands nothing. The
+pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
+preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`).
+
+Cursors are `PhiSpaceSyncTable.profileCursors` (`PhiProfileCursor`), keyed by
+account profile uuid, in the same `sync.phiSpaces` table as the Space cursors:
+they share the drain state and the atomic table write, and a table written
+before this field decodes with an empty map (no format bump). The table derives
+`liveProfileEntityUuids` (an entity id and not deleted) and `deletedProfileUuids`
+(`pendingDelete`, `deletedAtMs` or `purgedAtMs`).
+
+Mixed versions: an older client that receives a live Profile entity decrypts it,
+finds a kind it does not own and ignores it (`routeSpaceEntity`'s unknown-kind
+step); a Profile tombstone is logged as a tombstone for an unknown tag and
+dropped. The marker advances and no round fails. The one visible effect is in an
+older client's pairing preview, which counts a Profile entity as an unreadable
+entity: `skippedEntityCount > 0` only disables the wizard's empty-account
+auto-finish shortcut. There is no migration.
+
+## Profile deletion and rename
+
+Renames are described in "Profile entity". Deleting a mapped Profile deletes it on
+every synced device where that is possible; an unmapped Profile (and Phi Chat or
+the agent fallback) stays a local deletion. The server is unchanged: the deletion
+is the Profile entity's tombstone, and the key registry row and the Chromium data
+in the uuid's server namespace stay (which is what makes an undelete lossless).
+
+Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
+`ProfileDeletionSync`: `.none` (the user-data backup rollback, and the default),
+`.userAction` and `.remoteTombstone`. A `.userAction` deletion of a mapped Profile:
+
+1. Persists the intent before anything is deleted:
+   `PhiSpaceSyncState.beginLocalProfileDeletion` writes `uuid -> local profile id`
+   to the account journal `sync.profileDeletionIntents`
+   (`AccountProfileDeletionIntentStore`). A failed write fails the deletion with
+   nothing deleted. The journal is the durable record: losing the mapping, the
+   process or the Space table does not lose the deletion.
+2. Withdraws the Profile's key (see "Chromium account and key lifecycle").
+3. Deletes the Profile in Chromium (chat archive journal, memories, as before).
+   Chromium reports success only once the profile directory is marked for
+   deletion (or was already gone), after closing its browsers without
+   beforeunload prompts, so success means the deletion is committed.
+4. On success removes the Profile-scoped pinned rows and the `ProfileModel` row
+   (`LocalStore.deleteProfileRowCascadeThrowing`, best effort and idempotent; the
+   engine runs it again when it reconciles the journal). Remotely soft-deleted
+   Spaces still bound to the Profile are hard-deleted with it, with their content:
+   they are deleted on the account already, and only the sync table hides them, so
+   a table reset would otherwise show them again bound to a missing Profile. Then
+   it delivers `.recordLocalProfileDeletion`.
+   On failure removes the journal entry and gives the key back.
+
+The engine reconciles the journal at the start of every pull, push, Profile round
+and deletion round (`reconcileProfileDeletionIntents`, admitted while the
+unmapped-Profile pause is on): an entry whose Chromium deletion is still in
+flight is left alone, and so is every entry when a fresh bridge read of the
+Profile list fails (`ProfileManager.readProfiles`, which publishes nothing); a
+Profile the fresh read still lists means the deletion never happened, so the entry
+is dropped. Otherwise the leftover local rows are removed again (idempotent) and: a
+uuid whose peer tombstone was parked while the local deletion was in flight is
+finalized without committing; a published entity gets `pendingDelete` and
+`pushProfiles` commits its tombstone; a deleted or (after the full replay)
+never-published uuid is finalized locally, the latter marked
+`deletedBeforePublish` so a peer's later first publication is tombstoned rather
+than taken as an undelete. The entry is removed only when the tombstone commits,
+is given up on after three INVALID_MESSAGE rejections, or a peer's tombstone for
+the same uuid lands. While an entry or
+`pendingDelete` exists, an inbound entity for the uuid lands nothing (delete beats
+rename) but its id and version are learned for the tombstone. The mapping is kept
+until retention; Spaces whose binding names a deleted account Profile park and
+never trigger the dead-mapping repair, and pins owned by it are tombstoned on
+publication and discarded on landing (`deadProfileUuids`, like a deleted Space's).
+
+Other devices (`applyProfileTombstones`, inside the pull page before its table
+write). With no mapped local Profile, or one already gone, or this device's own
+deletion of the uuid journaled, the cursor is finalized. Otherwise
+`SyncableProfiles.tombstoneDecision` weighs `PhiProfileLocalAccess.profileDeletionBlockers`:
+
+| Local state | Result |
+| --- | --- |
+| The Default Profile | undelete |
+| A live user Space bound to it (not remotely soft-deleted; its own cursor neither deleted nor pending deletion) | undelete |
+| Only remotely soft-deleted (hidden) Space rows | delete; the rows are purged by Space retention |
+| A persistent agent Space bound to it | undelete |
+| A running agent Space, an import into one of its Spaces, or a bound Space whose deletion is still pending | defer to the next round (`pendingTombstone`); undelete once it has stayed deferred for 2 hours (`firstDeferredAtMs`, wall clock) |
+| Nothing | delete |
+
+Delete runs `deleteProfile(sync: .remoteTombstone)`: the same Chromium deletion,
+key withdrawal and local row removal, with no journal and nothing published; the
+engine repeats the idempotent row removal, also when it finds the Profile already
+gone. A failed Chromium deletion defers; after three failed rounds (counted apart
+from blocker deferrals) the Profile is undeleted. A crash replays the page, finds the Profile gone and finalizes.
+Undelete keeps the baseline, takes the tombstone's id and version and drops
+`server`, so the next publication republishes the entity over the tombstone; the
+deleting device then sees a newer live version, resurrects the cursor, drops its
+dead mapping and auto-create recreates the Profile from the entity. Spaces are
+never rebound to another Profile.
+
+Local deletion uses the same hidden-row rule: the UI guard
+`SpaceManager.isProfileInUse` (Profiles settings, the menu and the post-modal
+re-check in `ProfileDeletionFlow`) and `PhiSpaceSyncState.blocksProfileDeletion`
+ignore Space rows a remote deletion soft-deleted
+(`PhiSpaceSyncState.hasLiveSpaceRow`), so a Profile whose Spaces were all deleted
+on another device can be deleted here at once. Live user Spaces and agent Spaces
+still block it. The hidden Spaces are removed together with the Profile (see the
+deleting-device steps above).
+
+Retention follows the Space model: 30 days after `deletedAtMs` the cursor is
+trimmed to a permanent tombstone (`purgedAtMs`, keeping `deletedBeforePublish`) and
+a mapping whose local Profile is gone is dropped; the cursor is the durable guard
+from then on. A cursor whose tombstone is still owed (`pendingDelete`) is not
+trimmed. A recorded deletion whose mapped local Profile still exists is decided
+again, unless that Profile was created after the deletion: Chromium numbers
+Profile basenames from a Local State counter that never goes back, so a basename
+is reused only after Local State itself was reset.
+`clearLocalSyncState` empties the journal with the other cursors.
+
 ## Stamps and the hybrid logical clock
 
 Every LWW stamp on the wire is a `PhiSettingValue.updated_at_ms`, an `int64` of
@@ -1354,6 +1543,12 @@ tabs and URL rules alike. The reason is asymmetry of cost, not symmetry of
 mechanism: a delete is easy to redo, an edit is not, and a wrongly kept deletion
 costs more than a wrongly kept item. The predicate below bounds resurrection; `resurrected` counters make repeated
 yielding observable and should settle near zero.
+
+Profiles follow the same rule with one documented exception: a device holding an
+unpublished rename of a Profile still deletes it when a peer's tombstone arrives
+and the Profile is deletable there. A Profile can only be deleted when it has no
+live Space, and a rename carries no data worth keeping. What the rule protects --
+live Spaces -- undeletes instead (see "Profile deletion and rename").
 
 **Say it plainly, because users see it:** an item you deleted can reappear on
 your device when another device had an unpublished edit of it. Deleting it again
@@ -1701,8 +1896,9 @@ written" restart window falls on them.
 The implementation entry points are under [Sources/Sync/Phi](../Sources/Sync/Phi)
 and [Sources/Sync/Keys](../Sources/Sync/Keys). The native bridge is declared in
 [PhiChromiumBridgeHeader.h](../Sources/ChromiumBridge/PhiChromiumBridgeHeader.h).
-`PhiSyncEngine`, `SyncableSettings`, `SyncableSpaces`, `SyncableOwnedItems`,
-`BookmarkKind`, `PinKind`, `URLRuleKind` and `PhiHybridClock` own the rules above.
+`PhiSyncEngine`, `SyncableSettings`, `SyncableSpaces`, `SyncableProfiles`,
+`SyncableOwnedItems`, `BookmarkKind`, `PinKind`, `URLRuleKind` and `PhiHybridClock` own
+the rules above.
 
 Focused suites in [Tests/PhiBrowserTests/Sync](../Tests/PhiBrowserTests/Sync)
 cover pairing, marker persistence, failed/paginated pulls, merges, logical

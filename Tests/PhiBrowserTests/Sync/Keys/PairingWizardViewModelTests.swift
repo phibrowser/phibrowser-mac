@@ -745,4 +745,26 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(wizard.phase, .done)
         XCTAssertNotEqual(store.map["LOCAL-1"], "acct-1", "Add as new mints a new UUID and preserves every local value")
     }
+
+    // MARK: - Profile entity tombstones
+
+    /// An account Profile deleted on another device keeps its registry row; the preview's
+    /// tombstone for its `phi-profile:` tag keeps it out of the choices.
+    func testAnAccountProfileWithATombstoneIsNotOffered() async throws {
+        let deletedHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag("uuid-deleted"))
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [], accountSpaces: [], preview: {
+                .success(.init(spaces: [], skippedEntityCount: 0, deletedProfileTagHashes: [deletedHash]))
+            })
+        let ark = try XCTUnwrap(controller.manager.currentARK)
+        for (uuid, name) in [("uuid-live", "Work"), ("uuid-deleted", "Old")] {
+            api.profileEnvelopes[uuid] = try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 7, count: 32), name: name, ark: ark)
+        }
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(remotes.map(\.uuid), ["uuid-live"])
+    }
 }

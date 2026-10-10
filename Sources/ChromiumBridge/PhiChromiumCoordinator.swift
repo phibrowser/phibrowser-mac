@@ -189,6 +189,8 @@ import SwiftUI
     /// theme/opacity notification, because those two maps live in the account plist where
     /// SwiftData cannot see them.
     private var phiSpacesCancellable: AnyCancellable?
+    /// Mapped Profiles' ids and names, for the Profile entity (docs/sync.md, "Profile entity").
+    private var phiProfilesCancellable: AnyCancellable?
 
     // MARK: - Phi owned-item sync (M3-3)
     //
@@ -350,6 +352,9 @@ import SwiftUI
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
             },
             isProfileListEnumerated: { ProfileManager.shared.isProfileListEnumerated },
+            // R4: auto-create and the registration wait follow the drained account's Profile
+            // entities (docs/sync.md, "Enrollment and setup").
+            profileEntityView: { PhiSpaceSyncState.shared.accountProfileEntityView },
             // A closure, not a direct reference to the singleton — same shape as
             // `notifyChromium` above, and for the same reason: the self-revoke unit tests
             // build their own controller and must not reach the real coordinator.
@@ -413,6 +418,22 @@ import SwiftUI
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
         // account, and the facade is a process-wide singleton.
         PhiSpaceSyncState.shared.directStore = spaceStateStore
+        // Profile deletion (docs/sync.md, "Profile deletion and rename"): the journal and the
+        // per-Profile key withdrawal are account-bound like the store above.
+        PhiSpaceSyncState.shared.profileDeletionIntentStore =
+            AccountProfileDeletionIntentStore(defaults: account.userDefaults)
+        PhiSpaceSyncState.shared.withdrawProfileKey = { [weak self] profileId in
+            self?.syncKeyController?.withdrawProfileKey(profileId: profileId)
+        }
+        PhiSpaceSyncState.shared.restoreProfileKey = { [weak self] profileId in
+            self?.syncKeyController?.restoreProfileKey(profileId: profileId)
+        }
+        PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = { [weak self] profileId in
+            self?.syncKeyController?.finishProfileKeyWithdrawal(profileId: profileId)
+        }
+        PhiSpaceSyncState.shared.profileEntityViewDidChange = { [weak self] in
+            Task { @MainActor in await self?.syncKeyController?.resolveMappings() }
+        }
         PhiSpaceSyncState.shared.globalUuidLookup = { [weak self] profileId in
             self?.syncKeyController?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
         }
@@ -710,6 +731,7 @@ import SwiftUI
                                       pairingComplete: ProfilePairingGate.shared.isPaired,
                                       enrollmentSpaceReplayToken: ProfilePairingGate.shared.spaceReplayToken,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore,
+                                      profileAccess: spaceAccess,
                                       markerStore: markerStore,
                                       ownedKinds: ownedKinds,
                                       faviconBackfill: faviconBackfill)
@@ -867,6 +889,10 @@ import SwiftUI
                     await engine?.recordLocalDeletion(syncUuid: syncUuid)
                     PhiSpaceSyncState.shared.endLocalDeletion(syncUuid: syncUuid)
                 case .runRetentionSweep: await engine?.runRetentionSweep()
+                case .recordLocalProfileDeletion(let syncUuid):
+                    // The journal holds the deletion until its tombstone commits, so a round
+                    // turned away here loses nothing; the next round records it.
+                    await engine?.recordLocalProfileDeletion(syncUuid: syncUuid)
                 }
             }
         }
@@ -1189,6 +1215,20 @@ import SwiftUI
                     Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
                 }
 
+            // Mapped Profiles (docs/sync.md, "Profile entity"): a rename changes the list, a new
+            // registration changes only the mapping, so both signals feed one debounced key of
+            // (id, name) for every mapped Profile; an unchanged key schedules nothing. The key is
+            // read after the debounce because `$profiles` emits before the new list is stored.
+            phiProfilesCancellable = ProfileManager.shared.$profiles.map { _ in () }
+                .merge(with: NotificationCenter.default
+                    .publisher(for: .phiProfileMappingsDidResolve).map { _ in () })
+                .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
+                .map { [weak self] _ in MainActor.assumeIsolated { self?.mappedProfilesKey() ?? [] } }
+                .removeDuplicates()
+                .sink { [weak self] _ in
+                    Task { @MainActor in await self?.phiSyncEngine?.handleLocalProfilesChange() }
+                }
+
             // Local bookmark/pin edits (§5.7): 2 s debounce → one projection → value-snapshot deduplication →
             // one push. Debouncing lives in the two `LocalStore` publishers (`changeSignalDebounce`) before
             // projection, preventing repeated main-actor tree projections during import (§5.7 item 1). A
@@ -1229,6 +1269,16 @@ import SwiftUI
         AppLogInfo("[phi-sync] scheduling started with invalidation and adaptive polling")
         // The 30-day sweep runs once per engine start.
         Task { await engine.runRetentionSweep() }
+    }
+
+    /// The (id, name) of every mapped user Profile, the change key of the Profile entity trigger.
+    @MainActor
+    private func mappedProfilesKey() -> [String] {
+        guard let controller = syncKeyController else { return [] }
+        return ProfileManager.shared.userAssignableProfiles.compactMap { profile in
+            controller.profileKeys.mappedGlobalUuid(forProfileId: profile.profileId)
+                .map { "\(profile.profileId)\u{1F}\($0)\u{1F}\(profile.displayName)" }
+        }.sorted()
     }
 
     /// Pairing step 2's left column (§3.4, final paragraph). Create a stateless `AccountPhiSpaceAccess` (two
@@ -1325,6 +1375,11 @@ import SwiftUI
         // in `stopPhiSync()` instead — that path deliberately keeps the direct-store
         // fallback alive (§5.3's one exception), and only this one owns the account switch.
         PhiSpaceSyncState.shared.directStore = nil
+        PhiSpaceSyncState.shared.profileDeletionIntentStore = nil
+        PhiSpaceSyncState.shared.withdrawProfileKey = nil
+        PhiSpaceSyncState.shared.restoreProfileKey = nil
+        PhiSpaceSyncState.shared.finishProfileKeyWithdrawal = nil
+        PhiSpaceSyncState.shared.profileEntityViewDidChange = nil
         PhiSpaceSyncState.shared.globalUuidLookup = nil
         PhiSpaceSyncState.shared.localSpaceIdLookup = nil
         PhiSpaceSyncState.shared.syncUuidLookup = nil
@@ -1380,6 +1435,8 @@ import SwiftUI
         }
         phiSpacesCancellable?.cancel()
         phiSpacesCancellable = nil
+        phiProfilesCancellable?.cancel()
+        phiProfilesCancellable = nil
         if let observer = phiSpaceGateObserver {
             NotificationCenter.default.removeObserver(observer)
             phiSpaceGateObserver = nil

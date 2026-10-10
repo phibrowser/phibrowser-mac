@@ -212,6 +212,9 @@
 		54A200072FE1000000000007 /* PhiTimeMachineInstaller in Copy Time Machine Helpers */ = {isa = PBXBuildFile; fileRef = 54A200122FE1000000000012 /* PhiTimeMachineInstaller */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		54A200082FE1000000000008 /* TimeMachineCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */; };
 		5539D6819C400743DEF61B8D /* SyncableSpaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C9DFC9858BD91409670173 /* SyncableSpaces.swift */; };
+		B0C6D75A71154ECFEBB97F3A /* PhiProfileDeletionIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946674B49E44296EA26C663C /* PhiProfileDeletionIntents.swift */; };
+		EB33DEC0BD95CE9B1E4676A4 /* PhiProfileLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F87A73A956B5A8B0CD9F91 /* PhiProfileLocalAccess.swift */; };
+		7969451E052AC39389202861 /* SyncableProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06BFC6B4281D3520EA713F93 /* SyncableProfiles.swift */; };
 		5A423BD20CC3D90DAA1ACC1F /* DevicesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF82DF0F474098FBD4C76D0 /* DevicesSettingViewController.swift */; };
 		5A454E000000000000000001 /* KioskBrowserState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000011 /* KioskBrowserState.swift */; };
 		5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000012 /* KioskBrowserContentViewController.swift */; };
@@ -375,6 +378,7 @@
 		A57A00000000000000000004 /* inputting.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000003 /* inputting.json */; };
 		A708002022E87F3806A09FDA /* phi_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
+		A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */; };
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
 		A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
@@ -824,6 +828,9 @@
 		34F236AC381F208106EF9B34 /* BookmarkKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BookmarkKind.swift; sourceTree = "<group>"; };
 		356C43512D010ACB56FE22E3 /* DevicesSettingViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingViewModel.swift; sourceTree = "<group>"; };
 		35C9DFC9858BD91409670173 /* SyncableSpaces.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableSpaces.swift; sourceTree = "<group>"; };
+		946674B49E44296EA26C663C /* PhiProfileDeletionIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiProfileDeletionIntents.swift; sourceTree = "<group>"; };
+		E6F87A73A956B5A8B0CD9F91 /* PhiProfileLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiProfileLocalAccess.swift; sourceTree = "<group>"; };
+		06BFC6B4281D3520EA713F93 /* SyncableProfiles.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableProfiles.swift; sourceTree = "<group>"; };
 		35EE13005B45461A584F7F1C /* SyncKeyController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncKeyController.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProfileMappingPause.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
@@ -1175,6 +1182,7 @@
 		A57A00000000000000000003 /* inputting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = inputting.json; sourceTree = "<group>"; };
 		A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiEntityCodec.swift; sourceTree = "<group>"; };
 		A71E00000000000000000001 /* PhiAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAlert.swift; sourceTree = "<group>"; };
+		A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedDeletionConfirmation.swift; sourceTree = "<group>"; };
 		A71E00000000000000000003 /* CredentialApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialApprovalAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessApprovalAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
@@ -2105,6 +2113,9 @@
 				3DBF9BA56BD068BB2E7DEDBE /* PhiSyncProtocolClient.swift */,
 				4AAB7BA138E072B24EABDF00 /* PhiSyncEngine.swift */,
 				35C9DFC9858BD91409670173 /* SyncableSpaces.swift */,
+				946674B49E44296EA26C663C /* PhiProfileDeletionIntents.swift */,
+				E6F87A73A956B5A8B0CD9F91 /* PhiProfileLocalAccess.swift */,
+				06BFC6B4281D3520EA713F93 /* SyncableProfiles.swift */,
 				14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */,
 				9940A7139B932D02382460E3 /* PhiSpaceLocalAccess.swift */,
 				2E6E71945C1A7791A082C067 /* UI */,
@@ -2939,6 +2950,7 @@
 				A7C021012FFD000000000001 /* ContextMenuEvent.swift */,
 				6A4750013B12345600000001 /* LoginRequiredPresentation.swift */,
 				A71E00000000000000000001 /* PhiAlert.swift */,
+				A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */,
 				A71E00000000000000000003 /* CredentialApprovalAlert.swift */,
 				A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */,
 				D12800000000000000000002 /* PhiSegmentedPicker.swift */,
@@ -3482,6 +3494,7 @@
 				6A4750013B12345600000002 /* LoginRequiredPresentation.swift in Sources */,
 				AB7090710000000000000004 /* SiteMemoryMenuActions.swift in Sources */,
 				A71E00000000000000000002 /* PhiAlert.swift in Sources */,
+				A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */,
 				A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */,
 				A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */,
 				D12800000000000000000001 /* PhiSegmentedPicker.swift in Sources */,
@@ -4042,6 +4055,9 @@
 				7BF37A101EC13E98467C36B0 /* PhiSyncProtocolClient.swift in Sources */,
 				CAFFCD641503577D0DA845BF /* PhiSyncEngine.swift in Sources */,
 				5539D6819C400743DEF61B8D /* SyncableSpaces.swift in Sources */,
+				B0C6D75A71154ECFEBB97F3A /* PhiProfileDeletionIntents.swift in Sources */,
+				EB33DEC0BD95CE9B1E4676A4 /* PhiProfileLocalAccess.swift in Sources */,
+				7969451E052AC39389202861 /* SyncableProfiles.swift in Sources */,
 				2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */,
 				130D33EF1674ABCCC6614434 /* PhiSpaceLocalAccess.swift in Sources */,
 				B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */,

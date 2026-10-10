@@ -76,6 +76,49 @@ struct PhiSpaceCursor: Codable, Equatable {
     var purgedAtMs: Int64?
 }
 
+/// Per-account-Profile sync shadow, keyed by the account profile uuid (a value of
+/// `sync.profileGlobalUuids`). Lives in the same account plist table as the Space cursors, so it
+/// shares the drain state and the atomic `sync.phiSpaces` write (docs/sync.md, "Profile entity").
+/// Every field is optional or defaulted and the table decodes it with `decodeIfPresent`, so a
+/// table written by a build without Profile entities still loads.
+struct PhiProfileCursor: Codable, Equatable {
+    var entityId: String?
+    var version: Int64 = 0
+    /// Serialized `Phi_PhiProfileEntity`: the change-detection baseline.
+    var reconciled: Data?
+    /// Serialized `Phi_PhiProfileEntity`: what the server holds; suppresses a redundant push.
+    var server: Data?
+    /// A decrypted entity whose landing failed (a rename that did not take); retried every round.
+    var pendingApply: Data?
+    /// Serialized `Phi_PhiProfileEntity`: this device's outbound projection, stamped when the
+    /// user renamed the Profile. Same role as `PhiSpaceCursor.pendingProjection`.
+    var pendingProjection: Data?
+    /// The local display name that corresponds to `reconciled` on THIS device. Local names can
+    /// legitimately differ from the account name (auto-create and rename suffix duplicates), so
+    /// "the local name changed" is decided against this, never against the account name.
+    var localNameAtBaseline: String?
+    /// A local deletion whose tombstone has not committed yet.
+    var pendingDelete = false
+    /// Consecutive INVALID_MESSAGE rejections of that tombstone.
+    var deleteRejectRounds = 0
+    /// A remote tombstone whose local application is deferred; retried every round.
+    var pendingTombstone = false
+    /// Consecutive rounds the Chromium deletion for a remote tombstone failed.
+    var tombstoneDeferRounds = 0
+    /// Wall-clock ms when a remote tombstone was first deferred by a local blocker (a running
+    /// agent Space, an import, a bound Space's pending deletion). Optional so older cursors decode.
+    var firstDeferredAtMs: Int64?
+    /// The account Profile is deleted: a remote tombstone landed or this device's own committed.
+    var deletedAtMs: Int64?
+    /// This device deleted the Profile before any entity for it reached the account, so no
+    /// tombstone was owed. A live entity that arrives later (a peer publishing it first) is not an
+    /// undelete: delete beats create, and the entity is tombstoned. Optional so cursors written
+    /// without it decode.
+    var deletedBeforePublish: Bool?
+    /// The retention sweep trimmed the baselines; the cursor itself is kept as the tombstone record.
+    var purgedAtMs: Int64?
+}
+
 /// One cursor per account syncUuid, never local spaceId (M3-2b §3.1 / R-D6-8). Cursors can exist without rows
 /// (refused entities or retained tombstones); tag hashes derive from syncUuid for tombstone identity
 /// resolution; and resurrection guards must survive mapping deletion. Persist in account-scoped sync.phiSpaces
@@ -86,6 +129,8 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var formatVersion: Int = currentFormatVersion
     /// Keyed by account syncUuid.
     var cursors: [String: PhiSpaceCursor] = [:]
+    /// Profile entity cursors, keyed by account profile uuid (docs/sync.md, "Profile entity").
+    var profileCursors: [String: PhiProfileCursor] = [:]
 
     // MARK: - Shared marker-derived state (one copy across kinds)
     //
@@ -176,6 +221,56 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// third predicate (§3.5), whose main-actor caller does not own the table.
     var publishedSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.entityId != nil }.keys)
+    }
+
+    /// Account profile uuids that are deleted, or being deleted, on this device: a local deletion
+    /// queued (`pendingDelete`) or a deletion recorded (`deletedAtMs`, kept by the purged cursor).
+    var deletedProfileUuids: Set<String> {
+        Set(profileCursors.filter {
+            $0.value.pendingDelete || $0.value.deletedAtMs != nil || $0.value.purgedAtMs != nil
+        }.keys)
+    }
+
+    /// Account profile uuids with a live Profile entity on the account: an entity this device landed
+    /// or committed and that is not deleted. Local Profile auto-create requires membership here.
+    var liveProfileEntityUuids: Set<String> {
+        let deleted = deletedProfileUuids
+        return Set(profileCursors.filter { $0.value.entityId != nil && !deleted.contains($0.key) }.keys)
+    }
+
+    /// The account name of every live Profile entity, from its baseline (the landed account value),
+    /// falling back to a parked entity that has not landed yet, and to "" when neither decodes.
+    var liveProfileEntityNames: [String: String] {
+        var names: [String: String] = [:]
+        for uuid in liveProfileEntityUuids {
+            let cursor = profileCursors[uuid]
+            let entity = (cursor?.reconciled ?? cursor?.pendingApply)
+                .flatMap { try? Phi_PhiProfileEntity(serializedBytes: $0) }
+            names[uuid] = entity?.name.stringValue ?? ""
+        }
+        return names
+    }
+
+    /// Profile deletions older than the retention window: trims the cursors to permanent tombstone
+    /// records and returns their uuids. Same model as `purgeExpired` for Spaces.
+    mutating func purgeExpiredProfiles(nowMs: Int64) -> [String] {
+        var purged: [String] = []
+        for (uuid, cursor) in profileCursors {
+            // A tombstone still owed (`pendingDelete`) or a decision still pending stays as is.
+            guard let deletedAtMs = cursor.deletedAtMs, cursor.purgedAtMs == nil, !cursor.pendingTombstone,
+                  !cursor.pendingDelete,
+                  nowMs - deletedAtMs > PhiSpaceSyncState.retentionMs else { continue }
+            var tombstone = PhiProfileCursor()
+            tombstone.entityId = cursor.entityId
+            tombstone.version = cursor.version
+            tombstone.deletedAtMs = deletedAtMs
+            // Kept so a peer's first publication after the purge is still tombstoned, not resurrected.
+            tombstone.deletedBeforePublish = cursor.deletedBeforePublish
+            tombstone.purgedAtMs = nowMs
+            profileCursors[uuid] = tombstone
+            purged.append(uuid)
+        }
+        return purged.sorted()
     }
 
     // MARK: - Mutations (the engine runs these on its round queue; the facade
@@ -304,7 +399,21 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent(Bool.self, forKey: .urlRulesHadRecords) ?? false
         urlRulesReplayedForEmptyTable =
             try container.decodeIfPresent(Bool.self, forKey: .urlRulesReplayedForEmptyTable) ?? false
+        // M3-4b adds the Profile entity cursors; an absent key is a table from before Profile entities.
+        profileCursors =
+            try container.decodeIfPresent([String: PhiProfileCursor].self, forKey: .profileCursors) ?? [:]
     }
+}
+
+/// What the drained account says about its Profile entities, for `SyncKeyController`'s
+/// auto-create and mapping pass (docs/sync.md, "Enrollment and setup"). The key registry still
+/// lists every Profile ever registered; this view is what says which of them still exist.
+struct AccountProfileEntityView: Equatable {
+    /// Account profile uuid -> account name, for every live Profile entity.
+    var liveNames: [String: String]
+    var deletedUuids: Set<String>
+
+    var liveUuids: Set<String> { Set(liveNames.keys) }
 }
 
 protocol PhiSpaceSyncStateStore: AnyObject {
@@ -367,6 +476,8 @@ final class PhiSpaceSyncState {
         /// The local id and the syncUuid `beginLocalDeletion` captured while the mapping still resolved.
         case recordLocalDeletion(spaceId: String, syncUuid: String)
         case runRetentionSweep
+        /// A local Profile deletion finished in Chromium; its intent is already in the journal.
+        case recordLocalProfileDeletion(syncUuid: String)
     }
 
     /// Set by `PhiChromiumCoordinator` while an engine exists; nil means the
@@ -386,6 +497,17 @@ final class PhiSpaceSyncState {
     /// `account.localStorage.getAllSpaces()` in production. Needed for §9.4's
     /// third criterion (hidden local Spaces have no cursor `profile_uuid`).
     var localSpaceProfileIds: (() -> [(spaceId: String, profileId: String)])?
+    /// The account's Profile deletion journal (docs/sync.md, "Profile deletion and rename").
+    var profileDeletionIntentStore: (any PhiProfileDeletionIntentStore)?
+    /// `SyncKeyController`'s per-Profile key withdrawal, restore and its end after a completed
+    /// deletion. Closures so `ProfileManager` reaches the key layer only through this facade.
+    var withdrawProfileKey: ((String) -> Void)?
+    var restoreProfileKey: ((String) -> Void)?
+    var finishProfileKeyWithdrawal: ((String) -> Void)?
+    /// Called when the set of live or deleted Profile entities changes, so the mapping pass reruns
+    /// against it: a Profile deleted here stops counting as an unclaimed account Profile only once
+    /// the engine has recorded the deletion.
+    var profileEntityViewDidChange: (() -> Void)?
 
     /// Local Space IDs for SpaceManager.handleSpacesUpdate filtering (SpaceManager.swift:2691-2692),
     /// preserving its existing semantics.
@@ -393,11 +515,18 @@ final class PhiSpaceSyncState {
     /// syncUuids with real account entities (§3.5); excluded from changed comparison.
     private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
+    /// nil until the first full replay of the data type has drained: before that, the absence of a
+    /// Profile entity proves nothing.
+    private(set) var accountProfileEntityView: AccountProfileEntityView?
     private var referencedProfileUuids: Set<String> = []
     /// syncUuids whose local deletion has started and is not yet recorded in the table (§9.2: delete beats
     /// a concurrent edit). In memory only: the apply loop must not re-land them while the cascade and the
     /// queued deletion round are in flight; from the round on, the cursor's `pendingDelete` protects them.
     private var locallyDeletingSyncUuids: Set<String> = []
+    /// Account profile uuids whose Chromium deletion is in flight. In memory only: the journal is
+    /// the durable record, and this mark only stops the engine from reading a Profile that is still
+    /// present as "the deletion never happened" while Chromium is still deleting it.
+    private var locallyDeletingProfileUuids: Set<String> = []
 
     func isHidden(_ spaceId: String) -> Bool { hiddenSpaceIds.contains(spaceId) }
 
@@ -413,6 +542,17 @@ final class PhiSpaceSyncState {
         publishedSyncUuids = table.publishedSyncUuids
         referencedProfileUuids = referenced
         hasDrainedFullReplay = table.hasDrainedFullReplay
+        let previousView = accountProfileEntityView
+        accountProfileEntityView = table.hasDrainedFullReplay
+            ? AccountProfileEntityView(liveNames: table.liveProfileEntityNames,
+                                       deletedUuids: table.deletedProfileUuids)
+            : nil
+        // Not when the view goes away (a reset or a restarted replay): with no view nothing is
+        // claimable, and a pass then would register every unmapped local Profile as new.
+        if let view = accountProfileEntityView,
+           previousView?.liveUuids != view.liveUuids || previousView?.deletedUuids != view.deletedUuids {
+            profileEntityViewDidChange?()
+        }
         if changed {
             NotificationCenter.default.post(name: .phiSpaceHiddenSetDidChange, object: self)
         }
@@ -438,6 +578,53 @@ final class PhiSpaceSyncState {
 
     func runRetentionSweep() { deliver(.runRetentionSweep) }
 
+    // MARK: - Local Profile deletion (docs/sync.md, "Profile deletion and rename")
+
+    /// First step of a user's Profile deletion, before Chromium deletes anything: resolves the
+    /// account uuid, persists the intent in the journal and withdraws the Profile's sync key.
+    /// nil for an unmapped Profile, which has nothing to propagate. Throws when the intent could
+    /// not be saved; the caller must then not delete.
+    func beginLocalProfileDeletion(localProfileId: String) throws -> String? {
+        guard let uuid = globalUuidLookup?(localProfileId) else { return nil }
+        guard let store = profileDeletionIntentStore else { throw PhiProfileDeletionError.intentNotSaved }
+        var intents = store.load()
+        intents[uuid] = localProfileId
+        guard store.save(intents) else { throw PhiProfileDeletionError.intentNotSaved }
+        locallyDeletingProfileUuids.insert(uuid)
+        withdrawProfileKey?(localProfileId)
+        return uuid
+    }
+
+    /// The Chromium deletion failed: forget the intent and give the Profile its key back.
+    func cancelLocalProfileDeletion(syncUuid: String, localProfileId: String) {
+        locallyDeletingProfileUuids.remove(syncUuid)
+        removeProfileDeletionIntent(syncUuid: syncUuid)
+        restoreProfileKey?(localProfileId)
+    }
+
+    /// The Chromium deletion committed. The journal entry stays until the tombstone commits; the
+    /// engine round records the deletion on the cursor. With no engine the journal alone carries
+    /// it to the next engine start.
+    func recordLocalProfileDeletion(syncUuid: String, localProfileId: String) {
+        locallyDeletingProfileUuids.remove(syncUuid)
+        finishProfileKeyWithdrawal?(localProfileId)
+        deliver(.recordLocalProfileDeletion(syncUuid: syncUuid))
+    }
+
+    func profileDeletionIntents() -> [String: String] { profileDeletionIntentStore?.load() ?? [:] }
+
+    func isProfileBeingDeletedLocally(syncUuid: String) -> Bool {
+        locallyDeletingProfileUuids.contains(syncUuid)
+    }
+
+    /// Removes one journal entry: its tombstone committed, or no tombstone is owed.
+    func removeProfileDeletionIntent(syncUuid: String) {
+        guard let store = profileDeletionIntentStore else { return }
+        var intents = store.load()
+        guard intents.removeValue(forKey: syncUuid) != nil else { return }
+        store.save(intents)
+    }
+
     /// §9.4: "a Profile still referenced by a Space cannot be deleted", widened
     /// from `SpaceManager.spaces` to the account. Fail-OPEN before the first
     /// full drain: a long-offline / long-locked machine must not be stuck with
@@ -452,10 +639,28 @@ final class PhiSpaceSyncState {
         // syncUuidLookup rather than the reverse resolver. Before D6 this checked hidden local Spaces.
         let rows = localSpaceProfileIds?() ?? []
         return rows.contains { row in
-            guard row.profileId == localProfileId,
+            guard row.profileId == localProfileId, !isHidden(row.spaceId),
                   let uuid = syncUuidLookup?(row.spaceId) else { return false }
             return publishedSyncUuids.contains(uuid)
         }
+    }
+
+    /// Whether a local Space row keeps this Profile from being deleted locally: any row bound to it
+    /// except one a remote deletion soft-deleted (hidden), which is only kept for the retention
+    /// window and purged with its Space. The same rule the follower applies to a remote Profile
+    /// tombstone (`profileDeletionBlockers`). `SpaceManager.isProfileInUse` answers through this.
+    /// The local Space ids among `spaceIds` that a remote deletion soft-deleted. Reads the stored
+    /// table as well as the cache, so an answer taken before the engine first refreshed the cache
+    /// is not an empty set.
+    func remotelyDeletedSpaceIds(among spaceIds: [String]) -> Set<String> {
+        let stored = directStore?.load().hiddenSyncUuids ?? []
+        return Set(spaceIds.filter { spaceId in
+            isHidden(spaceId) || syncUuidLookup?(spaceId).map { stored.contains($0) } == true
+        })
+    }
+
+    func hasLiveSpaceRow(localProfileId: String, rows: [(spaceId: String, profileId: String)]) -> Bool {
+        rows.contains { $0.profileId == localProfileId && !isHidden($0.spaceId) }
     }
 
     private func deliver(_ intent: Intent) {
@@ -467,6 +672,8 @@ final class PhiSpaceSyncState {
         defer {
             if case .recordLocalDeletion(_, let syncUuid) = intent { endLocalDeletion(syncUuid: syncUuid) }
         }
+        // The journal already holds a Profile deletion; the next engine round records it.
+        if case .recordLocalProfileDeletion = intent { return }
         guard let directStore else { return }
         var table = directStore.load()
         switch intent {
@@ -474,7 +681,7 @@ final class PhiSpaceSyncState {
             // The syncUuid was captured before the cascade removed the row (§3.4); the mapping is not
             // read again here.
             table.recordLocalDeletion(spaceId: syncUuid)
-        case .runRetentionSweep:
+        case .runRetentionSweep, .recordLocalProfileDeletion:
             // Data cascade needs SpaceManager, which the no-engine path has no
             // business driving; the sweep runs for real at the next engine start.
             return

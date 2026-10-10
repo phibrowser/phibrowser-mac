@@ -23,6 +23,33 @@ struct PhiBrowserProfile: Hashable, Identifiable {
 }
 
 /// One default-search-provider candidate for a profile, projected from
+/// How a Profile deletion takes part in sync (docs/sync.md, "Profile deletion and rename").
+enum ProfileDeletionSync {
+    /// No sync involvement: the user-data backup rollback, and callers not yet migrated.
+    case none
+    /// The user deleted the Profile: record the intent first, delete it on every synced device.
+    case userAction
+    /// A remote tombstone deletes it here: nothing is recorded or published.
+    case remoteTombstone
+}
+
+/// Why `ProfileManager.deleteProfile` failed.
+enum ProfileDeletionFailure: Error {
+    /// A reason from the bridge or the chat-archive journal, shown as-is; nil when none was given.
+    case reason(String?)
+    /// The sync deletion record could not be saved, so nothing was deleted. The caller owns the
+    /// user-facing text.
+    case sync(PhiProfileDeletionError)
+
+    /// The reason text, for callers that only log it.
+    var reasonText: String? {
+        switch self {
+        case .reason(let text): return text
+        case .sync(let error): return String(describing: error)
+        }
+    }
+}
+
 /// Chromium's TemplateURLService. `id` is the engine's stable sync GUID — the
 /// wire identity used to set the default.
 struct SearchEngineInfo: Identifiable, Hashable {
@@ -245,14 +272,48 @@ final class ProfileManager: ObservableObject {
     /// Successful deletion starts best-effort memory cleanup for the original
     /// account. Completion reports Chromium deletion; cleanup failures are logged.
     /// Import rollback disables memory cleanup and conversation archival.
+    ///
+    /// `sync` other than `.none` also stops the Profile's Chromium sync before the deletion and,
+    /// once Chromium has committed it, removes the Profile's rows from the local store. A
+    /// `.userAction` deletion of a mapped Profile first persists its intent in the sync deletion
+    /// journal and fails without deleting anything when that write fails; the engine then
+    /// publishes the tombstone (docs/sync.md, "Profile deletion and rename").
     @MainActor
     func deleteProfile(_ profileId: String,
                        removeMemories: Bool = true,
                        archiveConversations: Bool = true,
-                       completion: @escaping (Bool, String?) -> Void) {
+                       sync: ProfileDeletionSync = .none,
+                       completion: @escaping (Bool, ProfileDeletionFailure?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
-            completion(false, "bridge unavailable")
+            completion(false, .reason("bridge unavailable"))
             return
+        }
+        let syncState = PhiSpaceSyncState.shared
+        let syncUuid: String?
+        switch sync {
+        case .none:
+            syncUuid = nil
+        case .userAction:
+            do {
+                syncUuid = try syncState.beginLocalProfileDeletion(localProfileId: profileId)
+            } catch {
+                AppLogError("[ProfileManager] could not persist the sync deletion intent")
+                completion(false, .sync(error as? PhiProfileDeletionError ?? .intentNotSaved))
+                return
+            }
+        case .remoteTombstone:
+            syncUuid = nil
+            syncState.withdrawProfileKey?(profileId)
+        }
+        /// Undoes the sync preparation above when the deletion does not happen.
+        func cancelSync() {
+            switch sync {
+            case .none: break
+            case .userAction:
+                if let syncUuid { syncState.cancelLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId) }
+            case .remoteTombstone:
+                syncState.restoreProfileKey?(profileId)
+            }
         }
         let memoryService = removeMemories ? try? SiteMemoryService.currentAccount() : nil
         let journal = archiveConversations ? AccountController.shared.account.map(Self.chatArchiveJournal) : nil
@@ -261,10 +322,11 @@ final class ProfileManager: ObservableObject {
             // Persist before the irreversible browser operation, even with AI off.
             pending = try journal?.prepare(profileId: profileId)
         } catch {
+            cancelSync()
             AppLogError("[ProfileChatArchive] could not persist deletion intent")
-            completion(false, NSLocalizedString("profiles.archive.prepareFailed",
+            completion(false, .reason(NSLocalizedString("profiles.archive.prepareFailed",
                 value: "Could not save the conversation recovery record. Please try again.",
-                comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile"))
+                comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile")))
             return
         }
         bridge.deleteProfile(profileId) { [weak self] success, error in
@@ -274,6 +336,19 @@ final class ProfileManager: ObservableObject {
                     catch { AppLogError("[ProfileChatArchive] could not persist deletion result") }
                 }
                 self?.refresh()
+                if success, sync != .none {
+                    let account = AccountController.shared.localDataAccount
+                    Task { @MainActor in
+                        if let account { await Self.removeLocalRows(ofDeletedProfile: profileId, account: account) }
+                        if let syncUuid {
+                            syncState.recordLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId)
+                        } else {
+                            syncState.finishProfileKeyWithdrawal?(profileId)
+                        }
+                    }
+                } else if !success {
+                    cancelSync()
+                }
                 if success, removeMemories {
                     if let memoryService {
                         Task {
@@ -287,8 +362,26 @@ final class ProfileManager: ObservableObject {
                         AppLogWarn("[ProfileManager] Skipped memory cleanup for deleted profile \(profileId): account unavailable")
                     }
                 }
-                completion(success, error)
+                completion(success, success ? nil : .reason(error))
             }
+        }
+    }
+
+    /// Removes what a deleted Profile leaves in the local store (docs/sync.md, "Profile deletion
+    /// and rename"): the Spaces still bound to it that a remote deletion soft-deleted (hidden),
+    /// with their content -- they are account-deleted already, and once the sync table is reset
+    /// nothing would hide them any more -- then its Profile-scoped pinned rows and `ProfileModel`
+    /// row. Best effort and idempotent: the sync engine runs it again after a crash.
+    @MainActor
+    static func removeLocalRows(ofDeletedProfile profileId: String, account: Account) async {
+        let bound = account.localStorage.getAllSpaces().filter { $0.profileId == profileId }.map(\.spaceId)
+        let hidden = PhiSpaceSyncState.shared.remotelyDeletedSpaceIds(among: bound).sorted()
+        do {
+            try await account.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId,
+                                                                          hiddenSpaceIds: hidden)
+            for spaceId in hidden { SpaceManager.shared.clearThemeRecords(forSpaceId: spaceId) }
+        } catch {
+            AppLogWarn("[ProfileManager] could not remove the deleted profile's local rows")
         }
     }
 

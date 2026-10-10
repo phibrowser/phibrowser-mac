@@ -261,9 +261,13 @@ class SpaceSessionController: NSWindowController {
         assert(prewarmedContent == nil || (dormant && prewarmedContent?.state === state))
         self.mainSplitViewController = prewarmedContent ?? MainSplitViewController(
             state: state,
-            hosted: chromiumWindow != nil || (dormant && chromiumWindow == nil))
+            hosted: chromiumWindow != nil || (dormant && chromiumWindow == nil),
+            mediaController: slot?.sidebarMediaController)
         super.init(window: window)
         self.slot = slot
+        if let slot, prewarmedContent != nil {
+            mainSplitViewController.useMediaController(slot.sidebarMediaController)
+        }
         browserState.windowController = self
         if isDormant {
             // The Browser-bound wiring waits for `attachChromiumWindow`.

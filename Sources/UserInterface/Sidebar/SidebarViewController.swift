@@ -292,7 +292,21 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         return controller
     }()
     private var state: BrowserState
-    private let mediaController: SidebarMediaController
+    private var mediaController: SidebarMediaController
+    private var mediaCancellables = Set<AnyCancellable>()
+    private var mediaSurface: SidebarMediaController.Surface { .init(session: state, kind: .docked) }
+
+    func useMediaController(_ controller: SidebarMediaController) {
+        guard mediaController !== controller else { return }
+        mediaController.setActive(false, on: mediaSurface)
+        mediaCancellables.removeAll()
+        mediaController = controller
+        guard isViewLoaded else { return }
+        mediaPlayerView.rootView = AnyView(SidebarMediaPlayerView(controller: controller, surface: mediaSurface))
+        mediaPlayerView.mediaController = controller
+        bindMediaPresentation()
+        updateMediaActivation()
+    }
     // The player's own 3pt bottom inset plus this gap leaves 8pt above the footer.
     private let mediaPlayerFooterGap: CGFloat = 5
     private lazy var mediaPlayerFootprint: NSView = {
@@ -304,11 +318,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }()
     private lazy var mediaPlayerView: SidebarMediaHostingView = {
         let hosting = SidebarMediaHostingView(
-            rootView: SidebarMediaPlayerView(controller: mediaController, surface: .docked),
+            rootView: SidebarMediaPlayerView(controller: mediaController, surface: mediaSurface),
             themeSource: state.themeContext
         )
         hosting.mediaController = mediaController
-        hosting.mediaSurface = .docked
+        hosting.mediaSurface = mediaSurface
         hosting.sizingOptions = []
         hosting.translatesAutoresizingMaskIntoConstraints = false
         return hosting
@@ -596,7 +610,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        mediaController.setActive(false)
+        mediaController.setActive(false, on: mediaSurface)
         // A concealed Space's sidebar keeps its hover state for its next reveal.
         guard view.window == nil else { return }
         setHoverControlsVisible(false, animated: false)
@@ -859,22 +873,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             messageCardHeightConstraint = make.height.equalTo(0).constraint
         }
 
-        mediaController.$item
-            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
-            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
-            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
-            .map { state, activeSurface, volumeExpanded in
-                let (presentation, visibility) = state
-                let (item, expanded, revalidating) = presentation
-                let (sourceVisible, dismissed) = visibility
-                return activeSurface != .docked || item == nil || revalidating
-                    || sourceVisible || dismissed
-                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
-            }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
-            .store(in: &cancellables)
+        bindMediaPresentation()
         
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.snp.makeConstraints { make in
@@ -1181,7 +1180,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             && window?.isVisible == true && window?.isMiniaturized == false
             && window?.occlusionState.contains(.visible) == true
             && !view.isHiddenOrHasHiddenAncestor
-        mediaController.setActive(active)
+        mediaController.setActive(active, on: mediaSurface)
     }
 
     private func observeMediaWindowVisibilityIfNeeded() {
@@ -1271,6 +1270,26 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             context.allowsImplicitAnimation = true
             view.layoutSubtreeIfNeeded()
         }
+    }
+
+    private func bindMediaPresentation() {
+        mediaCancellables.removeAll()
+        mediaController.$item
+            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
+            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
+            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
+            .map { [mediaSurface] state, activeSurface, volumeExpanded in
+                let (presentation, visibility) = state
+                let (item, expanded, revalidating) = presentation
+                let (sourceVisible, dismissed) = visibility
+                return activeSurface != mediaSurface || item == nil || revalidating
+                    || sourceVisible || dismissed
+                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
+            .store(in: &mediaCancellables)
     }
 
     private func updateMediaPlayerHeight(_ height: CGFloat) {

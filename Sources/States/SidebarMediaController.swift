@@ -6,13 +6,45 @@
 import Combine
 import Foundation
 
-/// One window's sidebar player. Native sessions are observed only while the
-/// sidebar is active; the selected progress is refreshed from browser state.
+/// One physical window's player. Native observation spans its live Space sessions;
+/// only the presented sidebar refreshes progress and accepts UI interactions.
 @MainActor
 final class SidebarMediaController: ObservableObject {
-    enum Surface: Hashable { case docked, floating }
+    struct Surface: Hashable {
+        enum Kind: Hashable { case docked, floating }
+        let sessionID: ObjectIdentifier?
+        let kind: Kind
+
+        init(session: BrowserState, kind: Kind) {
+            sessionID = ObjectIdentifier(session)
+            self.kind = kind
+        }
+
+        private init(kind: Kind) { sessionID = nil; self.kind = kind }
+        // Unqualified surfaces are only for standalone, single-session hosts.
+        static let docked = Surface(kind: .docked)
+        static let floating = Surface(kind: .floating)
+    }
+
+    struct SourceKey: Hashable {
+        let sessionID: ObjectIdentifier
+        let tabID: Int
+    }
+
+    @MainActor
+    private final class Session {
+        weak var state: BrowserState?
+        var tabOrder: [Int]
+        init(_ state: BrowserState) {
+            self.state = state
+            let history = state.tabSwitchManager.visitedTabIDs
+            tabOrder = history + state.tabs.map(\.guid).filter { !history.contains($0) }
+        }
+    }
     struct Item: Equatable {
-        let tabId: Int
+        let key: SourceKey
+        var tabId: Int { key.tabID }
+        var sessionID: ObjectIdentifier { key.sessionID }
         let wrapperId: ObjectIdentifier
         let pageURL: String?
         let documentEpoch: Int
@@ -37,14 +69,14 @@ final class SidebarMediaController: ObservableObject {
     @Published private(set) var cycleAnimationGeneration = 0
 
     private struct SourceIdentity: Equatable {
-        let tabId: Int
+        let key: SourceKey
         let wrapperId: ObjectIdentifier
         let pageURL: String?
         let documentEpoch: Int
         let sourceToken: String
 
         init(_ item: Item) {
-            tabId = item.tabId
+            key = item.key
             wrapperId = item.wrapperId
             pageURL = item.pageURL
             documentEpoch = item.documentEpoch
@@ -52,24 +84,80 @@ final class SidebarMediaController: ObservableObject {
         }
     }
 
-    private var dismissedSources: [Int: SourceIdentity] = [:]
-    private var pipRetainedSources: [Int: SourceIdentity] = [:]
-    private var candidates: [Int: Item] = [:]
-    private var manuallySelectedTabId: Int?
-    private var previousFocusedTabId: Int?
-    private var visitsAwaitingPlayback = Set<Int>()
-    private var cyclingTabId: Int?
+    private var dismissedSources: [SourceKey: SourceIdentity] = [:]
+    private var pipRetainedSources: [SourceKey: SourceIdentity] = [:]
+    private var candidates: [SourceKey: Item] = [:]
+    private var manuallySelectedSourceKey: SourceKey?
+    private var previousFocusedSourceKey: SourceKey?
+    private var visitsAwaitingPlayback = Set<SourceKey>()
+    private var cyclingSourceKey: SourceKey?
     private var cycleGeneration = 0
     private var hoveredSurface: Surface?
     private var hoverEntryWorkItem: DispatchWorkItem?
     private var hoverGeneration = 0
 
     private weak var browserState: BrowserState?
+    private var sessions: [ObjectIdentifier: Session] = [:]
+    private var sessionOrder: [ObjectIdentifier] = []
+    private var visitedSources: [SourceKey] = []
+    private var navigationGeneration = 0
+    /// The slot invokes completion only once its target session is presented.
+    var activateSession: ((ObjectIdentifier, @escaping (Bool) -> Void) -> Void)?
+
+    private var liveStates: [BrowserState] {
+        sessionOrder.compactMap { sessions[$0]?.state }
+    }
+
+    private func sourceKey(for tab: Tab) -> SourceKey? {
+        guard let state = liveStates.first(where: { $0.tabs.contains { $0 === tab } }) else { return nil }
+        return SourceKey(sessionID: ObjectIdentifier(state), tabID: tab.guid)
+    }
+
+    private func accepts(_ surface: Surface) -> Bool {
+        guard let browserState else { return false }
+        return surface.sessionID == ObjectIdentifier(browserState)
+            || (surface.sessionID == nil && sessions.count == 1)
+    }
+
+    func setSessions(_ states: [BrowserState], presented: BrowserState?) {
+        let ids = states.map(ObjectIdentifier.init)
+        let membershipChanged = Set(ids) != Set(sessions.keys)
+        let presentationChanged = browserState !== presented
+        let oldPresentedID = browserState.map(ObjectIdentifier.init)
+        sessions = Dictionary(uniqueKeysWithValues: states.map { state in
+            let id = ObjectIdentifier(state)
+            return (id, sessions[id] ?? Session(state))
+        })
+        sessionOrder = ids
+        browserState = presented.flatMap { state in states.contains(where: { $0 === state }) ? state : nil }
+        if presentationChanged {
+            // The expected return switch may complete; unrelated later switches cancel it.
+            if let target = navigationTarget, browserState.map(ObjectIdentifier.init) != target {
+                navigationGeneration += 1
+                navigationTarget = nil
+            }
+            if let oldPresentedID {
+                activeSurfaces = activeSurfaces.filter { $0.sessionID != oldPresentedID && $0.sessionID != nil }
+            }
+            if manuallySelectedSourceKey == nil { manuallySelectedSourceKey = item?.key }
+            previousFocusedSourceKey = browserState?.focusingTab.flatMap { sourceKey(for: $0) }
+            finishTrackChange()
+            cancelCycle()
+            cancelHoverExpansion(clearHover: true)
+            isVolumeExpanded = false
+        }
+        if membershipChanged && isActive { bindState() }
+        updateActivation()
+        if isActive { syncTabs() }
+        if states.isEmpty { clearSelection() }
+    }
+
+    private var navigationTarget: ObjectIdentifier?
     private let defaults: UserDefaults
     private var preferencesSubscription: AnyCancellable?
     private var isActive = false
     private var activeSurfaces = Set<Surface>()
-    private var observedTabs: [Int: (tab: Tab, subscriptions: Set<AnyCancellable>)] = [:]
+    private var observedTabs: [SourceKey: (tab: Tab, subscriptions: Set<AnyCancellable>)] = [:]
     private var stateSubscriptions = Set<AnyCancellable>()
     private var pollTimer: Timer?
     private var pendingTrackChange: Item?
@@ -78,25 +166,26 @@ final class SidebarMediaController: ObservableObject {
     private var trackChangeSettle: DispatchWorkItem?
     private var trackChangeGeneration = 0
     private var trackChangeSettleGeneration = 0
-    private var mediaSubscriptions: [Int: NativeMediaAdapter.Subscription] = [:]
-    private var mediaWrapperIds: [Int: ObjectIdentifier] = [:]
+    private var mediaSubscriptions: [SourceKey: NativeMediaAdapter.Subscription] = [:]
+    private var mediaWrapperIds: [SourceKey: ObjectIdentifier] = [:]
     private var isSyncingTabs = false
-    private var subscriptionGenerations: [Int: UUID] = [:]
-    private var documentEpochs: [Int: Int] = [:]
+    private var subscriptionGenerations: [SourceKey: UUID] = [:]
+    private var documentEpochs: [SourceKey: Int] = [:]
     private var activationGeneration = 0
 
-    init(browserState: BrowserState, defaults: UserDefaults = .standard) {
-        self.browserState = browserState
+    init(browserState: BrowserState? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isEnabled = PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.loadValue(from: defaults)
         presentationMode = PhiPreferences.GeneralSettings.loadSidebarMediaPresentationMode(from: defaults)
         preferencesSubscription = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshPreferences() }
+        if let browserState { setSessions([browserState], presented: browserState) }
     }
 
     func setActive(_ active: Bool, on surface: Surface = .docked) {
         if active {
+            guard accepts(surface) else { return }
             activeSurfaces.insert(surface)
         } else {
             activeSurfaces.remove(surface)
@@ -118,9 +207,10 @@ final class SidebarMediaController: ObservableObject {
     }
 
     private func updateActivation() {
+        let eligible = activeSurfaces.filter { accepts($0) }
         let presented: Surface? = !isEnabled ? nil
-            : activeSurfaces.contains(.floating) ? .floating
-            : activeSurfaces.contains(.docked) ? .docked : nil
+            : eligible.first(where: { $0.kind == .floating })
+                ?? eligible.first(where: { $0.kind == .docked })
         if activeSurface != presented {
             finishTrackChange()
             isVolumeExpanded = false
@@ -129,16 +219,20 @@ final class SidebarMediaController: ObservableObject {
             activeSurface = presented
             applyPresentationMode(resetDynamic: true)
         }
-        let anySurfaceActive = presented != nil
-        guard anySurfaceActive != isActive else { return }
-        isActive = anySurfaceActive
-        if anySurfaceActive {
+        if presented == nil { pollTimer?.invalidate(); pollTimer = nil }
+        let observing = isEnabled && !sessions.isEmpty
+        guard observing != isActive else {
+            if presented != nil && item != nil { startPolling() }
+            return
+        }
+        isActive = observing
+        if observing {
             bindState()
             syncTabs()
             if item != nil { startPolling() }
             probeFocusedTab()
         } else {
-            // Hidden tabs can reload the same URL and wrapper without any of
+            // While disabled, tabs can reload the same URL and wrapper without any of
             // this controller's subscriptions seeing it. Keep the selection
             // for later, but hide and block it until a fresh snapshot arrives.
             isRevalidating = item != nil
@@ -160,54 +254,69 @@ final class SidebarMediaController: ObservableObject {
     }
 
     private func bindState() {
-        guard let browserState else { return }
+        stateSubscriptions.removeAll()
+        for browserState in liveStates {
         browserState.$tabs
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.syncTabs() }
             .store(in: &stateSubscriptions)
         browserState.$focusingTab
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] tab in self?.focusChanged(to: tab) }
+            .dropFirst()
+            .sink { [weak self, weak browserState] tab in
+                guard let self, let browserState, self.browserState === browserState,
+                      browserState.focusingTab === tab else { return }
+                self.focusChanged(to: tab)
+            }
             .store(in: &stateSubscriptions)
         browserState.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshSelection() }
             .store(in: &stateSubscriptions)
+        }
     }
 
     private func syncTabs() {
-        guard isActive, let browserState else { return }
+        guard isActive else { return }
         isSyncingTabs = true
         defer { isSyncingTabs = false; refreshSelection() }
         var newTabs: [Tab] = []
-        let liveTabs = browserState.tabs.filter { $0.isOpenned }
-        for (id, observed) in observedTabs where !liveTabs.contains(where: { $0 === observed.tab }) {
+        let liveTabs = liveStates.flatMap(\.tabs).filter { $0.isOpenned }
+        for state in liveStates {
+            guard let session = sessions[ObjectIdentifier(state)] else { continue }
+            let ids = state.tabs.filter(\.isOpenned).map(\.guid)
+            session.tabOrder = session.tabOrder.filter { ids.contains($0) }
+            session.tabOrder += ids.filter { !session.tabOrder.contains($0) }
+        }
+        for (id, observed) in observedTabs where !liveTabs.contains(where: { $0 === observed.tab && sourceKey(for: $0) == id }) {
             subscriptionGenerations.removeValue(forKey: id)
             mediaSubscriptions.removeValue(forKey: id)?.close()
             mediaWrapperIds.removeValue(forKey: id)
         }
-        let ids = Set(liveTabs.map(\.guid))
+        let ids = Set(liveTabs.compactMap { sourceKey(for: $0) })
         observedTabs = observedTabs.filter { entry in
-            liveTabs.contains { $0.guid == entry.key && $0 === entry.value.tab }
+            liveTabs.contains { sourceKey(for: $0) == entry.key && $0 === entry.value.tab }
         }
         documentEpochs = documentEpochs.filter { ids.contains($0.key) }
         candidates = candidates.filter { ids.contains($0.key) }
         pipRetainedSources = pipRetainedSources.filter { ids.contains($0.key) }
         visitsAwaitingPlayback.formIntersection(ids)
+        visitedSources.removeAll { !ids.contains($0) }
         dismissedSources = dismissedSources.filter { ids.contains($0.key) }
-        if let item, !liveTabs.contains(where: { $0.guid == item.tabId }) {
+        if let item, !liveTabs.contains(where: { sourceKey(for: $0) == item.key }) {
             clearSelection()
         }
 
-        for tab in liveTabs where observedTabs[tab.guid] == nil {
+        for tab in liveTabs {
+            guard let key = sourceKey(for: tab), observedTabs[key] == nil else { continue }
             var subscriptions = Set<AnyCancellable>()
             tab.$webContentWrapper
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] _ in
-                    guard let self, let tab, self.observedTabs[tab.guid]?.tab === tab else { return }
-                    self.candidates.removeValue(forKey: tab.guid)
-                    if self.item?.tabId == tab.guid { self.clearSelection() }
+                    guard let self, let tab, self.sourceKey(for: tab) == key, self.observedTabs[key]?.tab === tab else { return }
+                    self.candidates.removeValue(forKey: key)
+                    if self.item?.key == key { self.clearSelection() }
                     self.subscribe(to: tab)
                 }
                 .store(in: &subscriptions)
@@ -215,10 +324,10 @@ final class SidebarMediaController: ObservableObject {
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] audible in
-                    guard let self, let tab else { return }
+                    guard let self, let tab, self.sourceKey(for: tab) == key else { return }
                     // A known source may pause/end or become silent. Inspect
                     // that transition rather than trusting its last snapshot.
-                    if audible || self.candidates[tab.guid] != nil || self.item?.tabId == tab.guid {
+                    if audible || self.candidates[key] != nil || self.item?.key == key {
                         self.inspect(tab)
                     }
                 }
@@ -228,11 +337,11 @@ final class SidebarMediaController: ObservableObject {
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] _ in
-                    guard let self, let tab else { return }
-                    self.candidates.removeValue(forKey: tab.guid)
-                    self.visitsAwaitingPlayback.remove(tab.guid)
-                    if self.cyclingTabId == tab.guid { self.cancelCycle() }
-                    if self.item?.tabId == tab.guid { self.clearSelection() }
+                    guard let self, let tab, self.sourceKey(for: tab) == key else { return }
+                    self.candidates.removeValue(forKey: key)
+                    self.visitsAwaitingPlayback.remove(key)
+                    if self.cyclingSourceKey == key { self.cancelCycle() }
+                    if self.item?.key == key { self.clearSelection() }
                     self.inspect(tab)
                     self.refreshSelection()
                 }
@@ -241,20 +350,20 @@ final class SidebarMediaController: ObservableObject {
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] loading in
-                    guard let self, let tab else { return }
+                    guard let self, let tab, self.sourceKey(for: tab) == key else { return }
                     if loading {
-                        self.documentEpochs[tab.guid, default: 0] += 1
-                        self.candidates.removeValue(forKey: tab.guid)
-                        self.visitsAwaitingPlayback.remove(tab.guid)
-                        if self.cyclingTabId == tab.guid { self.cancelCycle() }
-                        if self.item?.tabId == tab.guid { self.clearSelection() }
+                        self.documentEpochs[key, default: 0] += 1
+                        self.candidates.removeValue(forKey: key)
+                        self.visitsAwaitingPlayback.remove(key)
+                        if self.cyclingSourceKey == key { self.cancelCycle() }
+                        if self.item?.key == key { self.clearSelection() }
                         self.refreshSelection()
                     } else {
                         self.inspect(tab)
                     }
                 }
                 .store(in: &subscriptions)
-            observedTabs[tab.guid] = (tab, subscriptions)
+            observedTabs[key] = (tab, subscriptions)
             newTabs.append(tab)
         }
         // Register every tab before synchronous initial observer delivery.
@@ -263,19 +372,29 @@ final class SidebarMediaController: ObservableObject {
     }
 
     private func focusChanged(to tab: Tab?) {
-        let oldId = previousFocusedTabId
-        previousFocusedTabId = tab?.guid
-        if oldId != tab?.guid {
+        let oldId = previousFocusedSourceKey
+        if let tab, let key = sourceKey(for: tab) {
+            visitedSources.removeAll { $0 == key }
+            visitedSources.insert(key, at: 0)
+        }
+        let newId = tab.flatMap { sourceKey(for: $0) }
+        previousFocusedSourceKey = newId
+        if oldId != newId {
+            // A user's newer tab choice wins over an unsettled return animation.
+            if navigationTarget != nil {
+                navigationGeneration += 1
+                navigationTarget = nil
+            }
             finishTrackChange()
-            visitsAwaitingPlayback.formUnion([oldId, tab?.guid].compactMap { $0 }.filter {
+            visitsAwaitingPlayback.formUnion([oldId, newId].compactMap { $0 }.filter {
                 candidates[$0]?.playback.isPlaying != true && observedTabs[$0]?.tab.isCurrentlyAudible != true
             })
             cancelCycle()
             // Unrelated visits preserve an explicit card choice. Visiting or
             // leaving a playing media source restores the browser's MRU policy.
-            if [oldId, tab?.guid].compactMap({ $0 }).contains(where: {
+            if [oldId, newId].compactMap({ $0 }).contains(where: {
                 candidates[$0]?.playback.isPlaying == true || observedTabs[$0]?.tab.isCurrentlyAudible == true
-            }) { manuallySelectedTabId = nil }
+            }) { manuallySelectedSourceKey = nil }
             if let oldId, let previous = observedTabs[oldId]?.tab { inspect(previous) }
         }
         refreshSelection()
@@ -284,25 +403,26 @@ final class SidebarMediaController: ObservableObject {
 
     private func probeFocusedTab() {
         guard isActive, let tab = browserState?.focusingTab else { return }
-        if item?.tabId == tab.guid { return }
+        if item?.key == sourceKey(for: tab) { return }
         inspect(tab)
     }
 
     private func subscribe(to tab: Tab) {
-        subscriptionGenerations.removeValue(forKey: tab.guid)
-        mediaSubscriptions.removeValue(forKey: tab.guid)?.close()
-        mediaWrapperIds.removeValue(forKey: tab.guid)
+        guard let key = sourceKey(for: tab) else { return }
+        subscriptionGenerations.removeValue(forKey: key)
+        mediaSubscriptions.removeValue(forKey: key)?.close()
+        mediaWrapperIds.removeValue(forKey: key)
         guard isActive, let wrapper = tab.webContentWrapper else { return }
         let wrapperId = ObjectIdentifier(wrapper)
-        mediaWrapperIds[tab.guid] = wrapperId
+        mediaWrapperIds[key] = wrapperId
         let generation = UUID()
         let activation = activationGeneration
-        subscriptionGenerations[tab.guid] = generation
+        subscriptionGenerations[key] = generation
         let publish: (NativeMediaAdapter.Playback?) -> Void = { [weak self, weak tab] playback in
             guard let self, let tab, self.isActive,
                   self.activationGeneration == activation,
-                  self.subscriptionGenerations[tab.guid] == generation,
-                  self.observedTabs[tab.guid]?.tab === tab,
+                  self.subscriptionGenerations[key] == generation,
+                  self.sourceKey(for: tab) == key, self.observedTabs[key]?.tab === tab,
                   tab.webContentWrapper.map(ObjectIdentifier.init) == wrapperId else { return }
             self.receive(playback, for: tab, wrapperId: wrapperId)
         }
@@ -314,27 +434,29 @@ final class SidebarMediaController: ObservableObject {
         let subscription = NativeMediaAdapter.Subscription(wrapper: wrapper, fallbackTitle: tab.title) { playback in
             if isStarting { initialState = playback } else { publish(playback) }
         }
-        mediaSubscriptions[tab.guid] = subscription
+        mediaSubscriptions[key] = subscription
         isStarting = false
         publish(initialState)
         initialState = nil
     }
 
     private func inspect(_ tab: Tab) {
+        guard let key = sourceKey(for: tab) else { return }
         guard isActive, tab.isOpenned, !tab.isLoading,
-              observedTabs[tab.guid]?.tab === tab,
+              observedTabs[key]?.tab === tab,
               let wrapper = tab.webContentWrapper,
-              mediaWrapperIds[tab.guid] == ObjectIdentifier(wrapper) else { return }
-        receive(mediaSubscriptions[tab.guid]?.snapshot(fallbackTitle: tab.title),
+              mediaWrapperIds[key] == ObjectIdentifier(wrapper) else { return }
+        receive(mediaSubscriptions[key]?.snapshot(fallbackTitle: tab.title),
                 for: tab, wrapperId: ObjectIdentifier(wrapper))
     }
 
     private func receive(_ playback: NativeMediaAdapter.Playback?, for tab: Tab,
                          wrapperId: ObjectIdentifier) {
+        guard let key = sourceKey(for: tab) else { return }
         guard isValid(tab, wrapperId: wrapperId, pageURL: tab.url,
-                      documentEpoch: documentEpochs[tab.guid, default: 0]) else { return }
+                      documentEpoch: documentEpochs[key, default: 0]) else { return }
         var preservePresentation = false
-        if let pending = pendingTrackChange, pending.tabId == tab.guid {
+        if let pending = pendingTrackChange, pending.key == key {
             if !isValid(pending) {
                 finishTrackChange()
             } else if let playback {
@@ -344,7 +466,7 @@ final class SidebarMediaController: ObservableObject {
                     if preservePresentation {
                         isChangingTrack = false
                         settleTrackChange()
-                        manuallySelectedTabId = tab.guid
+                        manuallySelectedSourceKey = key
                     } else {
                         finishTrackChange()
                     }
@@ -359,62 +481,66 @@ final class SidebarMediaController: ObservableObject {
             }
         }
         if let playback {
-            let confirmsPlayingVisit = visitsAwaitingPlayback.remove(tab.guid) != nil && playback.isPlaying
+            let confirmsPlayingVisit = visitsAwaitingPlayback.remove(key) != nil && playback.isPlaying
             remember(tab: tab, wrapperId: wrapperId, pageURL: tab.url,
-                     documentEpoch: documentEpochs[tab.guid, default: 0], playback: playback)
-            if confirmsPlayingVisit { manuallySelectedTabId = nil }
+                     documentEpoch: documentEpochs[key, default: 0], playback: playback)
+            if confirmsPlayingVisit { manuallySelectedSourceKey = nil }
         } else {
-            visitsAwaitingPlayback.remove(tab.guid)
-            candidates.removeValue(forKey: tab.guid)
-            if item?.tabId == tab.guid { clearSelection() }
+            visitsAwaitingPlayback.remove(key)
+            candidates.removeValue(forKey: key)
+            if item?.key == key { clearSelection() }
         }
         refreshSelection(preservePresentation: preservePresentation)
     }
 
     private func remember(tab: Tab, wrapperId: ObjectIdentifier, pageURL: String?,
                           documentEpoch: Int, playback: NativeMediaAdapter.Playback) {
-        let candidate = Item(tabId: tab.guid, wrapperId: wrapperId, pageURL: pageURL,
+        guard let key = sourceKey(for: tab) else { return }
+        let candidate = Item(key: key, wrapperId: wrapperId, pageURL: pageURL,
                              documentEpoch: documentEpoch, playback: playback,
                              faviconData: tab.liveFaviconData ?? tab.cachedFaviconData,
                              isTabMuted: playback.isTabMuted)
-        if let previous = candidates[tab.guid], SourceIdentity(previous) != SourceIdentity(candidate),
-           cyclingTabId == tab.guid { cancelCycle() }
+        if let previous = candidates[key], SourceIdentity(previous) != SourceIdentity(candidate),
+           cyclingSourceKey == key { cancelCycle() }
         let identity = SourceIdentity(candidate)
-        if let retained = pipRetainedSources[tab.guid], retained != identity {
-            pipRetainedSources.removeValue(forKey: tab.guid)
+        if let retained = pipRetainedSources[key], retained != identity {
+            pipRetainedSources.removeValue(forKey: key)
         }
         // PiP temporarily replaces the card; keep its selected paused source
         // eligible even if another playing tab occupies the card meanwhile.
         if playback.isPictureInPicture, item.map(SourceIdentity.init) == identity {
-            pipRetainedSources[tab.guid] = identity
+            pipRetainedSources[key] = identity
         }
-        candidates[tab.guid] = candidate
-        if let dismissed = dismissedSources[tab.guid], dismissed != SourceIdentity(candidate) {
-            dismissedSources.removeValue(forKey: tab.guid)
+        candidates[key] = candidate
+        if let dismissed = dismissedSources[key], dismissed != SourceIdentity(candidate) {
+            dismissedSources.removeValue(forKey: key)
         }
     }
 
-    private func isVisible(_ tabId: Int) -> Bool {
-        guard let state = browserState, let focused = state.focusingTab else { return false }
-        return focused.guid == tabId
-            || state.splitGroup(forTabId: tabId)?.contains(tabId: focused.guid) == true
+    private func isVisible(_ key: SourceKey) -> Bool {
+        guard let state = browserState, ObjectIdentifier(state) == key.sessionID,
+              let focused = state.focusingTab else { return false }
+        return focused.guid == key.tabID
+            || state.splitGroup(forTabId: key.tabID)?.contains(tabId: focused.guid) == true
     }
 
     private func isValid(_ candidate: Item) -> Bool {
-        guard let tab = observedTabs[candidate.tabId]?.tab else { return false }
+        guard let tab = observedTabs[candidate.key]?.tab else { return false }
         return isValid(tab, wrapperId: candidate.wrapperId, pageURL: candidate.pageURL,
                        documentEpoch: candidate.documentEpoch)
     }
 
     private var orderedBackgroundSources: [Item] {
-        guard let state = browserState else { return [] }
-        let history = state.tabSwitchManager.visitedTabIDs
-        let order = history + state.tabs.map(\.guid).filter { !history.contains($0) }
+        let fallback = liveStates.flatMap { state -> [SourceKey] in
+            let ids = sessions[ObjectIdentifier(state)]?.tabOrder ?? []
+            return ids.map { SourceKey(sessionID: ObjectIdentifier(state), tabID: $0) }
+        }
+        let order = visitedSources + fallback.filter { !visitedSources.contains($0) }
         return order.compactMap { id in
             guard let candidate = candidates[id], isValid(candidate), !isVisible(id),
                   !candidate.playback.isPictureInPicture,
                   dismissedSources[id] != SourceIdentity(candidate),
-                  candidate.playback.isPlaying || item?.tabId == id
+                  candidate.playback.isPlaying || item?.key == id
                     || pipRetainedSources[id] == SourceIdentity(candidate) else { return nil }
             return candidate
         }
@@ -425,32 +551,32 @@ final class SidebarMediaController: ObservableObject {
         guard isActive else { backgroundSourceCount = 0; return }
         // Empty activation caches are not selection loss. Keep the retained
         // manual/paused identity concealed until its own fresh result arrives.
-        if isRevalidating, let retained = item, isValid(retained), candidates[retained.tabId] == nil { return }
+        if isRevalidating, let retained = item, isValid(retained), candidates[retained.key] == nil { return }
         let choices = orderedBackgroundSources
         backgroundSourceCount = choices.count
         if let pending = pendingTrackChange {
-            if !preservePresentation, isValid(pending), !isVisible(pending.tabId), !isDismissed {
+            if !preservePresentation, isValid(pending), !isVisible(pending.key), !isDismissed {
                 return
             }
             if !preservePresentation { finishTrackChange() }
         }
         let chosen: Item?
-        if let manual = manuallySelectedTabId, let candidate = choices.first(where: { $0.tabId == manual }) {
+        if let manual = manuallySelectedSourceKey, let candidate = choices.first(where: { $0.key == manual }) {
             chosen = candidate
         } else {
-            manuallySelectedTabId = nil
+            manuallySelectedSourceKey = nil
             chosen = choices.first
         }
-        if let chosen, let tab = observedTabs[chosen.tabId]?.tab {
+        if let chosen, let tab = observedTabs[chosen.key]?.tab {
             select(tab: tab, wrapperId: chosen.wrapperId, pageURL: chosen.pageURL,
                    documentEpoch: chosen.documentEpoch, playback: chosen.playback,
                    preservePresentation: preservePresentation)
         } else if let current = item, isValid(current),
-                  let candidate = candidates[current.tabId], let tab = observedTabs[current.tabId]?.tab {
+                  let candidate = candidates[current.key], let tab = observedTabs[current.key]?.tab {
             select(tab: tab, wrapperId: candidate.wrapperId, pageURL: candidate.pageURL,
                    documentEpoch: candidate.documentEpoch, playback: candidate.playback)
         } else if item == nil, let focused = browserState?.focusingTab,
-                  let candidate = candidates[focused.guid], isValid(candidate) {
+                  let key = sourceKey(for: focused), let candidate = candidates[key], isValid(candidate) {
             select(tab: focused, wrapperId: candidate.wrapperId, pageURL: candidate.pageURL,
                    documentEpoch: candidate.documentEpoch, playback: candidate.playback)
         }
@@ -463,34 +589,34 @@ final class SidebarMediaController: ObservableObject {
         let choices = orderedBackgroundSources
         guard choices.count > 1 else { return }
         finishTrackChange()
-        let anchor = cyclingTabId ?? expectedItem.tabId
-        let index = choices.firstIndex(where: { $0.tabId == anchor }) ?? 0
+        let anchor = cyclingSourceKey ?? expectedItem.key
+        let index = choices.firstIndex(where: { $0.key == anchor }) ?? 0
         let offset = direction == .next ? 1 : choices.count - 1
         let destination = choices[(index + offset) % choices.count]
-        guard let tab = observedTabs[destination.tabId]?.tab else { return }
+        guard let tab = observedTabs[destination.key]?.tab else { return }
         cancelCycle()
-        cyclingTabId = destination.tabId
+        cyclingSourceKey = destination.key
         let generation = cycleGeneration
         let identity = SourceIdentity(destination)
         Task { [weak self, weak tab] in
             guard let self else { return }
-            let playback = self.mediaSubscriptions[destination.tabId]?.snapshot(fallbackTitle: tab?.title ?? "")
+            let playback = self.mediaSubscriptions[destination.key]?.snapshot(fallbackTitle: tab?.title ?? "")
             defer {
-                if self.cycleGeneration == generation { self.cyclingTabId = nil }
+                if self.cycleGeneration == generation { self.cyclingSourceKey = nil }
             }
             guard self.cycleGeneration == generation,
-                  self.cyclingTabId == destination.tabId,
+                  self.cyclingSourceKey == destination.key,
                   self.activeSurface == surface, self.matchesCurrentSource(expectedItem),
-                  let tab, self.isValid(destination), !self.isVisible(destination.tabId),
-                  self.candidates[destination.tabId].map(SourceIdentity.init) == identity else { return }
+                  let tab, self.isValid(destination), !self.isVisible(destination.key),
+                  self.candidates[destination.key].map(SourceIdentity.init) == identity else { return }
             guard let playback else {
                 self.cancelCycle()
-                self.candidates.removeValue(forKey: destination.tabId)
-                if self.item?.tabId == destination.tabId { self.clearSelection() }
+                self.candidates.removeValue(forKey: destination.key)
+                if self.item?.key == destination.key { self.clearSelection() }
                 self.refreshSelection()
                 return
             }
-            let fresh = Item(tabId: destination.tabId, wrapperId: destination.wrapperId,
+            let fresh = Item(key: destination.key, wrapperId: destination.wrapperId,
                              pageURL: destination.pageURL, documentEpoch: destination.documentEpoch,
                              playback: playback, faviconData: tab.liveFaviconData ?? tab.cachedFaviconData,
                              isTabMuted: playback.isTabMuted)
@@ -502,8 +628,8 @@ final class SidebarMediaController: ObservableObject {
                 self.refreshSelection()
                 return
             }
-            self.cyclingTabId = nil
-            self.manuallySelectedTabId = destination.tabId
+            self.cyclingSourceKey = nil
+            self.manuallySelectedSourceKey = destination.key
             self.remember(tab: tab, wrapperId: destination.wrapperId, pageURL: destination.pageURL,
                           documentEpoch: destination.documentEpoch, playback: playback)
             self.cycleDirection = direction
@@ -517,27 +643,32 @@ final class SidebarMediaController: ObservableObject {
 
     private func cancelCycle() {
         cycleGeneration += 1
-        cyclingTabId = nil
+        cyclingSourceKey = nil
     }
 
     private func select(tab: Tab, wrapperId: ObjectIdentifier, pageURL: String?,
                         documentEpoch: Int,
                         playback: NativeMediaAdapter.Playback, preservePresentation: Bool = false) {
+        guard let key = sourceKey(for: tab) else { return }
         let previousSource = item.map(SourceIdentity.init)
-        if item?.tabId != tab.guid || item?.wrapperId != wrapperId { isVolumeExpanded = false }
-        item = Item(tabId: tab.guid, wrapperId: wrapperId, pageURL: pageURL,
+        if item?.key != key || item?.wrapperId != wrapperId { isVolumeExpanded = false }
+        item = Item(key: key, wrapperId: wrapperId, pageURL: pageURL,
                     documentEpoch: documentEpoch,
                     playback: playback,
                     faviconData: tab.liveFaviconData ?? tab.cachedFaviconData,
                     isTabMuted: playback.isTabMuted)
         // Published delivery can synchronously deactivate the surface. Do not
         // resume presentation or a timer after that consumer has torn us down.
-        guard isActive else { isRevalidating = item != nil; return }
+        guard isActive else {
+            if sessions.isEmpty { item = nil }
+            isRevalidating = item != nil
+            return
+        }
         if let item {
-            if !playback.isPictureInPicture { pipRetainedSources.removeValue(forKey: tab.guid) }
+            if !playback.isPictureInPicture { pipRetainedSources.removeValue(forKey: key) }
             // A new track or document starts a new presentation session.
             // Preserve dismissal only across updates of the same source.
-            isDismissed = dismissedSources[item.tabId] == SourceIdentity(item)
+            isDismissed = dismissedSources[item.key] == SourceIdentity(item)
             updateSourceVisibility()
         }
         isRevalidating = false
@@ -553,7 +684,7 @@ final class SidebarMediaController: ObservableObject {
     }
 
     private func startPolling() {
-        guard isActive, pollTimer == nil else { return }
+        guard isActive, activeSurface != nil, pollTimer == nil else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollSelected() }
         }
@@ -561,7 +692,7 @@ final class SidebarMediaController: ObservableObject {
 
     private func pollSelected() {
         guard isActive else { return }
-        guard let item, let tab = observedTabs[item.tabId]?.tab, isValid(item) else {
+        guard let item, let tab = observedTabs[item.key]?.tab, isValid(item) else {
             if item != nil { clearSelection() }
             return
         }
@@ -572,23 +703,24 @@ final class SidebarMediaController: ObservableObject {
 
     private func isValid(_ tab: Tab, wrapperId: ObjectIdentifier, pageURL: String?,
                          documentEpoch: Int) -> Bool {
-        isActive && tab.isOpenned && !tab.isLoading && tab.url == pageURL
-            && documentEpochs[tab.guid, default: 0] == documentEpoch
+        guard let key = sourceKey(for: tab) else { return false }
+        return isActive && tab.isOpenned && !tab.isLoading && tab.url == pageURL
+            && documentEpochs[key, default: 0] == documentEpoch
             && tab.webContentWrapper.map(ObjectIdentifier.init) == wrapperId
-            && observedTabs[tab.guid]?.tab === tab
-            && browserState?.tabs.contains(where: { $0 === tab }) == true
+            && observedTabs[key]?.tab === tab
+
     }
 
     private func clearSelection() {
         finishTrackChange()
         isVolumeExpanded = false
-        let lostTabId = item?.tabId
-        if let lostTabId {
-            candidates.removeValue(forKey: lostTabId)
-            pipRetainedSources.removeValue(forKey: lostTabId)
-            visitsAwaitingPlayback.remove(lostTabId)
+        let lostSourceKey = item?.key
+        if let lostSourceKey {
+            candidates.removeValue(forKey: lostSourceKey)
+            pipRetainedSources.removeValue(forKey: lostSourceKey)
+            visitsAwaitingPlayback.remove(lostSourceKey)
         }
-        manuallySelectedTabId = nil
+        manuallySelectedSourceKey = nil
         cancelCycle()
         cancelHoverExpansion(clearHover: true)
         item = nil
@@ -602,13 +734,9 @@ final class SidebarMediaController: ObservableObject {
     }
 
     private func updateSourceVisibility() {
-        guard let browserState, let item, let focused = browserState.focusingTab else {
-            isSourceVisible = false
-            return
-        }
-        // Media already visible in PiP or either split pane needs no duplicate card.
-        isSourceVisible = item.playback.isPictureInPicture || focused.guid == item.tabId
-            || browserState.splitGroup(forTabId: item.tabId)?.contains(tabId: focused.guid) == true
+        guard let item else { isSourceVisible = false; return }
+        // Only the presented session's page and split panes are visible.
+        isSourceVisible = item.playback.isPictureInPicture || isVisible(item.key)
         if isSourceVisible {
             cancelHoverExpansion(clearHover: true)
             isExpanded = false
@@ -630,7 +758,7 @@ final class SidebarMediaController: ObservableObject {
         cancelCycle()
         finishTrackChange()
         isVolumeExpanded = false
-        dismissedSources[item.tabId] = SourceIdentity(item)
+        dismissedSources[item.key] = SourceIdentity(item)
         isDismissed = true
         isExpanded = false
         refreshSelection()
@@ -696,7 +824,7 @@ final class SidebarMediaController: ObservableObject {
         guard expectedItem.map(matchesCurrentSource) ?? true,
               !isRevalidating, !isDismissed, !isChangingTrack,
               surface == nil || activeSurface == surface,
-              let item, let tab = observedTabs[item.tabId]?.tab,
+              let item, let tab = observedTabs[item.key]?.tab,
               isValid(tab, wrapperId: item.wrapperId, pageURL: item.pageURL,
                       documentEpoch: item.documentEpoch) else { return }
         let displayed = expectedItem ?? item
@@ -706,7 +834,7 @@ final class SidebarMediaController: ObservableObject {
         default: changesTrack = false
         }
         if changesTrack { beginTrackChange(displayed) }
-        let accepted = mediaSubscriptions[item.tabId]?.perform(action, expected: displayed.playback) == true
+        let accepted = mediaSubscriptions[item.key]?.perform(action, expected: displayed.playback) == true
         if changesTrack && !accepted { finishTrackChange() }
         inspect(tab)
     }
@@ -720,7 +848,7 @@ final class SidebarMediaController: ObservableObject {
             guard let self, self.trackChangeGeneration == generation,
                   let pending = self.pendingTrackChange else { return }
             self.finishTrackChange()
-            if let tab = self.observedTabs[pending.tabId]?.tab { self.inspect(tab) }
+            if let tab = self.observedTabs[pending.key]?.tab { self.inspect(tab) }
             self.refreshSelection()
         }
         trackChangeTimeout = work
@@ -766,30 +894,47 @@ final class SidebarMediaController: ObservableObject {
 
     func setVolume(_ volume: Double, for expectedItem: Item, from surface: Surface) {
         guard hasEligibleSource, !isChangingTrack, activeSurface == surface,
-              matchesCurrentSource(expectedItem), let tab = observedTabs[expectedItem.tabId]?.tab,
+              matchesCurrentSource(expectedItem), let tab = observedTabs[expectedItem.key]?.tab,
               isValid(expectedItem) else { return }
-        mediaSubscriptions[expectedItem.tabId]?.setVolume(volume, expected: expectedItem.playback)
+        mediaSubscriptions[expectedItem.key]?.setVolume(volume, expected: expectedItem.playback)
         inspect(tab)
     }
 
     func showTab(for expectedItem: Item? = nil, from surface: Surface? = nil) {
         guard expectedItem.map(matchesCurrentSource) ?? true,
               !isRevalidating, !isDismissed, surface == nil || activeSurface == surface,
-              let item, let tab = observedTabs[item.tabId]?.tab,
+              let item, let tab = observedTabs[item.key]?.tab,
               isValid(tab, wrapperId: item.wrapperId, pageURL: item.pageURL,
                       documentEpoch: item.documentEpoch) else { return }
-        tab.webContentWrapper?.setAsActiveTab()
+        navigationGeneration += 1
+        let generation = navigationGeneration
+        let identity = SourceIdentity(item)
+        navigationTarget = item.sessionID
+        let complete: (Bool) -> Void = { [weak self, weak tab] success in
+            guard let self, self.navigationGeneration == generation,
+                  self.navigationTarget == item.sessionID else { return }
+            self.navigationTarget = nil
+            guard success, let tab, self.isValid(item),
+                  self.candidates[item.key].map(SourceIdentity.init) == identity,
+                  self.browserState.map(ObjectIdentifier.init) == item.sessionID else { return }
+            tab.webContentWrapper?.setAsActiveTab()
+        }
+        if browserState.map(ObjectIdentifier.init) == item.sessionID {
+            complete(true)
+        } else if let activateSession {
+            activateSession(item.sessionID, complete)
+        } else { complete(false) }
     }
 
     func toggleMute(for expectedItem: Item? = nil, from surface: Surface? = nil) {
         guard expectedItem.map(matchesCurrentSource) ?? true,
               !isRevalidating, !isDismissed, surface == nil || activeSurface == surface,
-              let item, let tab = observedTabs[item.tabId]?.tab,
+              let item, let tab = observedTabs[item.key]?.tab,
               isValid(tab, wrapperId: item.wrapperId, pageURL: item.pageURL,
                       documentEpoch: item.documentEpoch) else { return }
         let newMuted = !tab.isAudioMuted
         tab.setAudioMuted(newMuted)
-        self.item = Item(tabId: item.tabId, wrapperId: item.wrapperId,
+        self.item = Item(key: item.key, wrapperId: item.wrapperId,
                          pageURL: item.pageURL, documentEpoch: item.documentEpoch,
                          playback: item.playback, faviconData: item.faviconData,
                          isTabMuted: newMuted)

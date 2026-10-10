@@ -90,12 +90,21 @@ struct FakeSplitGroup {
 struct SidebarMediaHarness {
     @MainActor
     static func main() async {
+        if CommandLine.arguments.contains("--window-source-order") {
+            await backgroundFocusDoesNotReorderSources()
+            print("Window media source-order checks passed")
+            return
+        }
         if CommandLine.arguments.contains("--physical-swipe") {
             await physicalTrackpadDirectionsAndSingleCommit()
             print("Sidebar media physical swipe checks passed")
             return
         }
         if !CommandLine.arguments.contains("--multi-source") {
+            await observationSurvivesPresentationExit()
+            await windowSourcesAndPresentation()
+            await crossSpaceReturnValidation()
+            await backgroundFocusDoesNotReorderSources()
             nativeDecodeAndOldFramework()
             nativeActionIntentAndCapabilities()
             nativeTrackActions()
@@ -106,7 +115,7 @@ struct SidebarMediaHarness {
             await pictureInPictureHidesAndRestoresSource()
             await sourceIdentityAndDismissal()
             await navigationWrapperReplacementAndTeardown()
-            await hiddenObservationResumes()
+            await disabledObservationResumes()
             await immediateRemovedTabActionsAreRejected()
             await reentrantWrapperObservationTeardown()
         }
@@ -118,6 +127,163 @@ struct SidebarMediaHarness {
         await physicalTrackpadDirectionsAndSingleCommit()
         await gestureCancellation()
         print("Sidebar native adapter, controller and gesture checks passed")
+    }
+
+    @MainActor
+    static func observationSurvivesPresentationExit() async {
+        let f = Fixture([190, 191]); defer { f.stop() }
+        await tick()
+        let controls = f.tabs[0].controls
+        let starts = controls.startCount, stops = controls.stopCount
+        f.controller.setActive(false)
+        precondition(controls.stopCount == stops,
+                     "Leaving a Space sidebar must not tear down window-wide media observation")
+        controls.emit(snapshot("Background update"))
+        await tick()
+        f.controller.setActive(true)
+        precondition(controls.startCount == starts && f.controller.item?.playback.title == "Background update")
+    }
+
+    @MainActor
+    static func windowSourcesAndPresentation() async {
+        let f = Fixture([200, 201]); defer { f.stop() }
+        let b = BrowserState(), mediaB = Tab(200), blankB = Tab(202)
+        b.tabs = [mediaB, blankB]; b.focusingTab = blankB
+        mediaB.controls.snapshotValue = snapshot("Space B", token: "b-token", source: "b-source")
+        let c = f.controller
+        let aSurface = SidebarMediaController.Surface(session: f.state, kind: .docked)
+        let bSurface = SidebarMediaController.Surface(session: b, kind: .docked)
+        f.state.focusingTab = f.tabs[0]
+        c.setSessions([f.state, b], presented: b)
+        c.setActive(true, on: bSurface)
+        await tick()
+        precondition(c.backgroundSourceCount == 2 && !c.isSourceVisible,
+                     "An inactive Space's focused media must remain a background source")
+        precondition(c.item?.sessionID == ObjectIdentifier(f.state))
+        let starts = f.tabs[0].controls.startCount
+        c.setActive(false, on: aSurface)
+        c.setHovering(false, on: aSurface)
+        precondition(c.activeSurface == bSurface, "Late outgoing presentation must not deactivate the incoming player")
+        let old = require(c.item), actions = f.tabs[0].controls.actions.count
+        c.perform(.playPause, for: old, from: aSurface)
+        precondition(f.tabs[0].controls.actions.count == actions)
+        c.perform(.playPause, for: old, from: bSurface)
+        precondition(f.tabs[0].controls.actions.count == actions + 1 && mediaB.controls.actions.isEmpty,
+                     "Commands must reach the source session even when tab IDs collide")
+        c.cycleSource(for: require(c.item), from: bSurface)
+        await tick()
+        precondition(c.item?.sessionID == ObjectIdentifier(b))
+        c.setSessions([f.state, b], presented: f.state)
+        c.setActive(true, on: aSurface)
+        c.setActive(false, on: bSurface)
+        await tick()
+        precondition(c.item?.sessionID == ObjectIdentifier(b) && c.backgroundSourceCount == 1)
+        precondition(f.tabs[0].controls.startCount == starts, "Space switching must not restart media subscriptions")
+        var pip = snapshot("Space B", token: "b-pip", source: "b-source")
+        pip["isPictureInPicture"] = true
+        mediaB.controls.emit(pip)
+        await tick()
+        precondition(c.backgroundSourceCount == 0 && c.isSourceVisible)
+        pip["isPictureInPicture"] = false
+        mediaB.controls.emit(pip)
+        await tick()
+        precondition(c.backgroundSourceCount == 1 && !c.isSourceVisible)
+        let replacement = BrowserState(), replacementMedia = Tab(200)
+        replacement.tabs = [replacementMedia]
+        replacementMedia.controls.snapshotValue = snapshot("Replacement", source: "replacement")
+        c.setSessions([f.state, replacement], presented: f.state)
+        await tick()
+        precondition(!mediaB.controls.isObserving && replacementMedia.controls.isObserving)
+        mediaB.controls.emitStopped(snapshot("Stale removed session"))
+        await tick()
+        precondition(c.item?.sessionID == ObjectIdentifier(replacement))
+        let other = Fixture([200, 203]); defer { other.stop() }
+        await tick()
+        precondition(other.controller.backgroundSourceCount == 1 && other.controller.item?.sessionID == ObjectIdentifier(other.state))
+        c.setSessions([f.state], presented: f.state)
+        precondition(!replacementMedia.controls.isObserving)
+    }
+
+    @MainActor
+    static func backgroundFocusDoesNotReorderSources() async {
+        let f = Fixture([220, 221, 222, 223]); defer { f.stop() }
+        let b = BrowserState(), blank = Tab(224)
+        b.tabs = [blank]; b.focusingTab = blank
+        let c = f.controller, surface = SidebarMediaController.Surface(session: b, kind: .docked)
+        c.setSessions([f.state, b], presented: b)
+        c.setActive(true, on: surface)
+        await tick()
+        precondition(c.item?.tabId == 220)
+        f.state.focusingTab = f.tabs[1]
+        await tick()
+        c.cycleSource(for: require(c.item), from: surface)
+        await tick()
+        precondition(c.item?.tabId == 221, "Background focus must not reorder sources without a presented visit")
+    }
+
+    @MainActor
+    static func crossSpaceReturnValidation() async {
+        let f = Fixture([210, 211]); defer { f.stop() }
+        let b = BrowserState(), blank = Tab(212)
+        b.tabs = [blank]; b.focusingTab = blank
+        let c = f.controller
+        let surface = SidebarMediaController.Surface(session: b, kind: .docked)
+        var completions: [(Bool) -> Void] = []
+        c.activateSession = { sessionID, completion in
+            precondition(sessionID == ObjectIdentifier(f.state))
+            completions.append(completion)
+        }
+        func presentB() {
+            c.setSessions([f.state, b], presented: b)
+            c.setActive(true, on: surface)
+        }
+        presentB()
+        await tick()
+        let wrapper = f.tabs[0].fakeWrapper
+        c.showTab(for: require(c.item), from: surface)
+        precondition(completions.count == 1 && wrapper.activationCount == 0)
+        c.setSessions([f.state, b], presented: f.state)
+        let settled = completions.removeFirst()
+        settled(true)
+        settled(true)
+        precondition(wrapper.activationCount == 1, "A successful return completion must activate the tab only once")
+        presentB()
+        c.showTab(for: require(c.item), from: surface)
+        completions.removeFirst()(false)
+        precondition(wrapper.activationCount == 1)
+        c.showTab(for: require(c.item), from: surface)
+        let superseded = completions.removeFirst()
+        c.showTab(for: require(c.item), from: surface)
+        c.setSessions([f.state, b], presented: f.state)
+        superseded(true)
+        precondition(wrapper.activationCount == 1)
+        completions.removeFirst()(true)
+        precondition(wrapper.activationCount == 2)
+        presentB()
+        c.showTab(for: require(c.item), from: surface)
+        let delayed = completions.removeFirst()
+        let third = BrowserState()
+        c.setSessions([f.state, b, third], presented: third)
+        c.setSessions([f.state, b, third], presented: f.state)
+        delayed(true)
+        precondition(wrapper.activationCount == 2, "A newer Space switch cancels delayed return navigation")
+        presentB()
+        c.showTab(for: require(c.item), from: surface)
+        let supersededByTab = completions.removeFirst()
+        c.setSessions([f.state, b], presented: f.state)
+        let newerTab = Tab(214)
+        f.state.tabs.append(newerTab)
+        f.state.focusingTab = newerTab
+        await tick()
+        supersededByTab(true)
+        precondition(wrapper.activationCount == 2, "Return must not override a newer tab choice in the target Space")
+        presentB()
+        c.showTab(for: require(c.item), from: surface)
+        let closed = completions.removeFirst()
+        f.state.tabs.removeAll { $0 === f.tabs[0] }
+        c.setSessions([f.state, b], presented: f.state)
+        closed(true)
+        precondition(wrapper.activationCount == 2, "A closed target must not be activated or reopened")
     }
 
     static func require<T>(_ value: T?, _ message: String = "Missing test value") -> T {
@@ -162,6 +328,7 @@ struct SidebarMediaHarness {
         func stop() {
             controller.setActive(false, on: .docked)
             controller.setActive(false, on: .floating)
+            controller.setSessions([], presented: nil)
             defaults.removePersistentDomain(forName: suite)
         }
         func mode(_ value: SidebarMediaPresentationMode) {
@@ -653,7 +820,7 @@ struct SidebarMediaHarness {
         let observer = f.controller.$item.dropFirst().sink { item in
             guard item?.wrapperId == ObjectIdentifier(replacement), !deactivated else { return }
             deactivated = true
-            f.controller.setActive(false)
+            f.controller.setSessions([], presented: nil)
         }
         defer { observer.cancel() }
         f.tabs[0].setWebContentsWrapper(wrapper: replacement)
@@ -662,8 +829,8 @@ struct SidebarMediaHarness {
                      "Replacement's synchronous initial publication must trigger teardown")
         precondition(controls.startCount == 1 && controls.stopCount == 1 && !controls.isObserving,
                      "Reentrant teardown must close the newly registered native subscription exactly once")
-        precondition(f.controller.isRevalidating,
-                     "A source published during teardown must stay concealed until revalidated")
+        precondition(f.controller.item == nil,
+                     "A removed session must not leave an actionable source")
         let retained = f.controller.item
         controls.emit(snapshot("Unexpected live event", token: "live-late", source: "live-late"))
         controls.emitStopped(snapshot("Late initial observer", token: "stopped-late", source: "stopped-late"))
@@ -673,13 +840,14 @@ struct SidebarMediaHarness {
     }
 
     @MainActor
-    static func hiddenObservationResumes() async {
+    static func disabledObservationResumes() async {
         let f = Fixture([20, 21]); defer { f.stop() }
         await tick()
         let tab = f.tabs[0], controls = tab.controls, controller = f.controller
         let old = require(controller.item)
         let starts = controls.startCount, stops = controls.stopCount
-        controller.setActive(false)
+        f.enabled(false)
+        await tick()
         precondition(controller.isRevalidating && controls.stopCount == stops + 1)
         let actions = controls.actions.count
         controller.perform(.playPause, for: old, from: .docked)
@@ -687,7 +855,8 @@ struct SidebarMediaHarness {
         await tick()
         precondition(controls.actions.count == actions && controller.item?.playback.title == old.playback.title)
         controls.snapshotValue = snapshot("After hidden navigation", token: "after-hidden", source: "after-hidden")
-        controller.setActive(true)
+        f.enabled(true)
+        await tick()
         await tick()
         precondition(controls.startCount == starts + 1 && !controller.isRevalidating)
         precondition(controller.item?.playback.title == "After hidden navigation")

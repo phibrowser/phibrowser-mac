@@ -56,7 +56,15 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
 
-    private lazy var sidebarMediaController = SidebarMediaController(browserState: state)
+    private var sidebarMediaController: SidebarMediaController
+
+    /// A prewarmed tree acquires its real window owner before presentation.
+    func useMediaController(_ controller: SidebarMediaController) {
+        guard sidebarMediaController !== controller else { return }
+        sidebarMediaController = controller
+        verticalTabListViewController.useMediaController(controller)
+        floatingSidebarContent.useMediaController(controller)
+    }
     private lazy var verticalTabListViewController: SidebarViewController = {
         SidebarViewController(browserState: state, mediaController: sidebarMediaController)
     }()
@@ -81,7 +89,8 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var lastUseHorizontalTabs: Bool?
 
     let state: BrowserState
-    init(state: BrowserState, hosted: Bool = false) {
+    init(state: BrowserState, hosted: Bool = false, mediaController: SidebarMediaController? = nil) {
+        self.sidebarMediaController = mediaController ?? SidebarMediaController(browserState: state)
         self.state = state
         self.isHosted = hosted
         self.webContentContainerViewController = WebContentContainerViewController(state: state)

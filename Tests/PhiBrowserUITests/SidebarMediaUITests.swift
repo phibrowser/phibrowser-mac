@@ -295,6 +295,84 @@ final class SidebarMediaUITests: XCTestCase {
     }
 
     @MainActor
+    func testWindowWideMediaAcrossSpaces() throws {
+        guard let fixtureURL = ProcessInfo.processInfo.environment["PHI_MEDIA_UI_FIXTURE_URL"],
+              fixtureURL.hasPrefix("http://127.0.0.1:8766/") else {
+            throw XCTSkip("Set PHI_MEDIA_UI_FIXTURE_URL to the local Range fixture")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-uitest", "1", "-layoutMode", "balanced", "-spacesFeatureEnabled", "YES",
+                                "-sidebarMediaPlayerEnabled", "YES", "-sidebarMediaPresentationMode", "alwaysExpanded",
+                                "--force-renderer-accessibility",
+                                "--user-data-dir=\(NSTemporaryDirectory())PhiWindowMedia-\(ProcessInfo.processInfo.globallyUniqueString)"]
+        app.launch()
+        self.app = app
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 120))
+        app.activate()
+        try ensureSidebarExpanded(in: app)
+        func spaceMenu(_ label: String) {
+            app.menuBars.menuBarItems["Spaces"].click()
+            let entry = app.menuItems[label].firstMatch
+            XCTAssertTrue(entry.waitForExistence(timeout: 5))
+            entry.click()
+        }
+        func createSpace(_ name: String) {
+            spaceMenu("New Space…")
+            let confirm = app.buttons["Create Space"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 15))
+            let field = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Space name")).firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.click(); field.typeText(name); confirm.click()
+            XCTAssertTrue(waitUntil(timeout: 15) { !confirm.exists })
+        }
+        let suffix = String(UUID().uuidString.prefix(6))
+        let spaceA = "Media A \(suffix)", spaceB = "Media B \(suffix)"
+        let urlA = fixtureURL + "?title=Window%20Media%20A"
+        createSpace(spaceA)
+        try navigateToFixture(urlA, in: app)
+        XCTAssertTrue(app.buttons["Start playback"].waitForExistence(timeout: 30))
+        app.buttons["Start playback"].click()
+        createSpace(spaceB)
+        let play = app.buttons["sidebarMedia.playPause"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 20), "Space A's media must remain available in Space B")
+        play.click()
+        XCTAssertTrue(waitUntil(timeout: 5) { play.label == "Play" })
+        play.click()
+        XCTAssertTrue(waitUntil(timeout: 5) { play.label == "Pause" })
+        app.buttons["sidebarMedia.sourceTab"].firstMatch.click()
+        XCTAssertTrue(app.buttons["Start playback"].waitForExistence(timeout: 20),
+                      "Return must activate the original source Space and its tab")
+        app.typeKey("l", modifierFlags: .command)
+        XCTAssertTrue(app.textFields.matching(NSPredicate(format: "value == %@", urlA)).firstMatch.waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        spaceMenu(spaceB)
+        XCTAssertTrue(play.waitForExistence(timeout: 15))
+        try navigateToFixture(fixtureURL + "?title=Window%20Media%20B", in: app)
+        XCTAssertTrue(app.buttons["Start playback"].waitForExistence(timeout: 30))
+        app.buttons["Start playback"].click()
+        app.typeKey("t", modifierFlags: .command)
+        let card = app.descendants(matching: .any).matching(identifier: "sidebarMedia.card").firstMatch
+        let title = app.staticTexts.matching(identifier: "sidebarMedia.title").firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 15))
+        play.hover()
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        let before = elementText(title)
+        XCTAssertTrue(["Window Media A", "Window Media B"].contains(before))
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.15))
+            .click(forDuration: 0.1, thenDragTo: card.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.15)))
+        XCTAssertTrue(waitUntil(timeout: 10) {
+            title.exists && ["Window Media A", "Window Media B"].contains(elementText(title)) && elementText(title) != before
+        }, "Cycling must include both Spaces")
+        let count = app.windows.count
+        app.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(waitUntil(timeout: 20) { app.windows.count > count })
+        let newWindow = app.windows.firstMatch
+        XCTAssertFalse(newWindow.buttons["sidebarMedia.playPause"].exists,
+                       "A second physical window must not inherit the first window's media")
+        attachDiagnostics(app, reason: "window-wide media and source return completed")
+    }
+
+    @MainActor
     func testVisitOrderedMediaCycling() throws {
         guard let fixtureURL = ProcessInfo.processInfo.environment["PHI_MEDIA_UI_FIXTURE_URL"],
               fixtureURL.hasPrefix("http://127.0.0.1:8766/") else {

@@ -28,7 +28,21 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }()
 
     private(set) var state: BrowserState
-    private let mediaController: SidebarMediaController
+    private var mediaController: SidebarMediaController
+    private var mediaCancellables = Set<AnyCancellable>()
+    private var mediaSurface: SidebarMediaController.Surface { .init(session: state, kind: .floating) }
+
+    func useMediaController(_ controller: SidebarMediaController) {
+        guard mediaController !== controller else { return }
+        mediaController.setActive(false, on: mediaSurface)
+        mediaCancellables.removeAll()
+        mediaController = controller
+        guard isViewLoaded else { return }
+        mediaPlayerView.rootView = AnyView(SidebarMediaPlayerView(controller: controller, surface: mediaSurface))
+        mediaPlayerView.mediaController = controller
+        bindMediaPresentation()
+        updateMediaActivation()
+    }
     // The player's own 3pt bottom inset plus this gap leaves 8pt above the footer.
     private let mediaPlayerFooterGap: CGFloat = 5
     private lazy var mediaPlayerFootprint: NSView = {
@@ -40,10 +54,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }()
     private lazy var mediaPlayerView: SidebarMediaHostingView = {
         let hosting = SidebarMediaHostingView(
-            rootView: SidebarMediaPlayerView(controller: mediaController, surface: .floating),
+            rootView: SidebarMediaPlayerView(controller: mediaController, surface: mediaSurface),
             themeSource: state.themeContext)
         hosting.mediaController = mediaController
-        hosting.mediaSurface = .floating
+        hosting.mediaSurface = mediaSurface
         hosting.sizingOptions = []
         hosting.translatesAutoresizingMaskIntoConstraints = false
         return hosting
@@ -349,22 +363,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             messageCardHeightConstraint = make.height.equalTo(0).constraint
         }
 
-        mediaController.$item
-            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
-            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
-            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
-            .map { state, activeSurface, volumeExpanded in
-                let (presentation, visibility) = state
-                let (item, expanded, revalidating) = presentation
-                let (sourceVisible, dismissed) = visibility
-                return activeSurface != .floating || item == nil || revalidating
-                    || sourceVisible || dismissed
-                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
-            }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
-            .store(in: &cancellables)
+        bindMediaPresentation()
 
         // 8. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
@@ -543,6 +542,26 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
     }
 
+    private func bindMediaPresentation() {
+        mediaCancellables.removeAll()
+        mediaController.$item
+            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
+            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
+            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
+            .map { [mediaSurface] state, activeSurface, volumeExpanded in
+                let (presentation, visibility) = state
+                let (item, expanded, revalidating) = presentation
+                let (sourceVisible, dismissed) = visibility
+                return activeSurface != mediaSurface || item == nil || revalidating
+                    || sourceVisible || dismissed
+                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
+            .store(in: &mediaCancellables)
+    }
+
     private func updateMediaPlayerHeight(_ height: CGFloat) {
         if height == 0 {
             mediaPlayerView.cancelHeightAnimation()
@@ -592,7 +611,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             && window?.isVisible == true && window?.isMiniaturized == false
             && window?.occlusionState.contains(.visible) == true
             && !view.isHiddenOrHasHiddenAncestor
-        mediaController.setActive(active, on: .floating)
+        mediaController.setActive(active, on: mediaSurface)
     }
 
     private func observeMediaWindowVisibilityIfNeeded() {

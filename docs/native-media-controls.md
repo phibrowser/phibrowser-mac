@@ -9,13 +9,18 @@ native MediaSession integration. Each `WebContentWrapper` exposes a
 `NativeMediaAdapter.Subscription` manages observation on the main actor,
 converts native dictionary snapshots into typed playback state, and maps UI
 actions to native commands. `SidebarMediaController` owns source selection,
-visibility and interaction state for one browser window. The sidebar views
-render that state and forward user actions.
+visibility and interaction state for one physical browser window. Its
+`SpaceWindowSlot` owns one controller shared by the docked and floating sidebars
+of all its Space sessions. Standalone sessions use the same controller with a
+single state. Sidebar views render the shared selection using the currently
+presented Space's theme and forward actions with a session-qualified surface.
 
-While the player is enabled and a sidebar surface is active, the controller
-observes opened tabs in its own `BrowserState`, including silent native
-sessions. Native callbacks deliver state changes. A one-second timer refreshes
-the selected card's extrapolated playback position through `snapshot`.
+While the player is enabled, the controller observes opened tabs across the
+slot's registered live BrowserStates, including silent native sessions. It does
+not load dormant Spaces or include another window's tabs. Native callbacks
+deliver state changes even when the source Space is hidden. A one-second timer
+refreshes the selected card's extrapolated position only while a sidebar surface
+is presented.
 
 The adapter checks for `mediaControls` before accessing it. A Framework without
 that interface supplies no sidebar media source. State and actions use the
@@ -23,26 +28,43 @@ native interface throughout; there is no CDP or injected-script fallback.
 
 ## Observation lifecycle
 
-Subscriptions stop when the sidebar becomes inactive, the player is disabled,
-a tab is removed, its wrapper is replaced, or the controller is destroyed.
+Subscriptions stop when the player is disabled, its session or tab is removed,
+its wrapper is replaced, or the controller is destroyed. Sidebar hiding and
+Space switching preserve observation.
 Stopping observation does not pause playback or close PiP.
 
 The published wrapper property on `Tab` lets the controller detach from the old
 WebContents and subscribe to its replacement. Initial callbacks are buffered
 until the controller owns the subscription, allowing synchronous teardown to
-close it safely. Activation and subscription generations, tab identity, window
-membership and wrapper identity reject late callbacks and stale commands.
+close it safely. Activation and subscription generations, session and tab
+identity, window membership and wrapper identity reject late callbacks and
+stale commands. Session replacement or eviction reconciles subscriptions
+immediately, independently of delayed window-close notifications.
 
 Same-document URL changes trigger a state refresh because they may not produce
-a MediaSession notification. A selection retained while hidden is revalidated
-before it becomes visible again.
+a MediaSession notification. Re-enabling the player revalidates the retained
+selection using fresh native snapshots.
 
 ## Source selection and PiP priority
 
-Source selection uses the window's tab visit history and supports manual cycling.
-Focused and visible split-view sources are excluded from the background player.
-The floating sidebar takes precedence over the docked surface. Cycling checks
-the destination's current state without changing playback or focusing its tab.
+Source selection follows real tab visits in the presented session, with a
+stable per-session history fallback, and supports cycling across Spaces.
+Ordinary Space switches preserve an eligible selected source. Visiting a playing
+media tab can reset manual selection under the usual visit-order policy.
+
+Only the presented Space's focused tab and visible split panes are excluded as
+visible page content. A hidden Space's remembered focused tab is a background
+source. The floating sidebar takes precedence over the docked surface within
+the presented Space. Outgoing views cannot deactivate or control an incoming
+Space's player. Space changes reset transient hover, volume and gesture state
+without dismissing the media source.
+
+Cycling and playback controls act on the originating session without switching
+Spaces. Clicking the source button first activates its Space in the owning
+slot, then activates the original tab after the switch completes. Source and
+session identity are validated again on completion. Failed or superseded
+switches and removed/replaced sources cancel the action; missing tabs are not
+reopened. Navigation never routes through a different, globally focused window.
 
 A video in PiP is already visible, so it is excluded from the sidebar player and
 source cycling. Observation continues, and other background media can occupy

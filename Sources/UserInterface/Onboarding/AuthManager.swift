@@ -9,6 +9,7 @@ import WebKit
 import JWTDecode
 import PostHog
 import Security
+import SimpleKeychain
 
 struct AccountDeletionCredentialFence {
     private static let markerSuffix = ".phi-account-deletion-credentials.pending"
@@ -266,6 +267,46 @@ final class InMemoryCredentialsStorage: CredentialsStorage {
     }
 }
 
+/// Logs Keychain failures that Auth0's default storage converts to nil or false.
+private struct Auth0KeychainCredentialsStorage: CredentialsStorage {
+    private let keychain = SimpleKeychain()
+
+    func getEntry(forKey key: String) -> Data? {
+        do {
+            return try keychain.data(forKey: key)
+        } catch {
+            if (error as? SimpleKeychainError)?.status != errSecItemNotFound {
+                logError(error, operation: "read", key: key)
+            }
+            return nil
+        }
+    }
+
+    func setEntry(_ data: Data, forKey key: String) -> Bool {
+        do {
+            try keychain.set(data, forKey: key)
+            return true
+        } catch {
+            logError(error, operation: "write", key: key)
+            return false
+        }
+    }
+
+    func deleteEntry(forKey key: String) -> Bool {
+        keychain.deleteEntry(forKey: key)
+    }
+
+    private func logError(_ error: Error, operation: String, key: String) {
+        if let status = (error as? SimpleKeychainError)?.status, status != errSecSuccess {
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+            AppLogError("[Auth] Keychain \(operation) failed: account=\(key), OSStatus=\(status) (\(message))")
+        } else {
+            let nsError = error as NSError
+            AppLogError("[Auth] Keychain \(operation) failed: account=\(key), domain=\(nsError.domain), code=\(nsError.code)")
+        }
+    }
+}
+
 class AuthManager {
     static let shared = AuthManager()
     private(set) var currentCredentials: Credentials?
@@ -354,6 +395,7 @@ class AuthManager {
         return CredentialsManager(
             authentication: authenticationClient,
             storeKey: credentialStoreKey,
+            storage: Auth0KeychainCredentialsStorage(),
             maxRetries: 1
         )
     }()

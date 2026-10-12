@@ -26,6 +26,8 @@ enum Offline: Error { case unavailable }
     var isRetired = false
     var resolutions = 0
     var clears = 0
+    /// The production cache the pane binding consults; empty until a pass resolved a key.
+    var resolved: [String: String] = [:]
     var resolveTask: Task<Void, Never>?
     var autoCreateTask: Task<Void, Never>?
     var silentUnlockTask: Task<Void, Never>?
@@ -95,6 +97,7 @@ enum Offline: Error { case unavailable }
     var reconfigurationRequired = { false }
     var resolveMappingsAfterUnlock: () async -> Void = {}
     var refreshes = 0
+    var requestedSyncs = 0
     var polls = 0
     var onRefresh: () -> Void = {}
     static let requestFailed = "Request failed"
@@ -103,7 +106,7 @@ enum Offline: Error { case unavailable }
     func observeConnectivity() {}
     func doStopPolling() { polls = 0 }
     func startPolling() { polls += 1 }
-    func refresh(requestSync: Bool) async { refreshes += 1; onRefresh() }
+    func refresh(requestSync: Bool) async { refreshes += 1; if requestSync { requestedSyncs += 1 }; onRefresh() }
     /* PANE_LOAD */
     /* PANE_SHOW */
 }
@@ -202,5 +205,18 @@ enum Offline: Error { case unavailable }
         old.retire()
         replacement.retire()
         print("PASS: pane recovery stays bound to its own controller")
+
+        // A Settings window opened again builds a new pane over a controller that already
+        // holds resolved keys: no mapping pass, and no round request either.
+        let healthy = SyncKeyController()
+        healthy.manager.outcome = .unlocked
+        healthy.resolved = ["Default": "uuid"]
+        let reopened = HostFixture(controller: healthy)
+        await reopened.viewModel.loadAll()
+        precondition(healthy.resolutions == 0, "an already resolved controller runs no pass on pane open")
+        precondition(reopened.viewModel.refreshes == 1 && reopened.viewModel.requestedSyncs == 0,
+                     "pane open observes without requesting a round")
+        healthy.retire()
+        print("PASS: reopening the pane over resolved keys runs no pass and requests no round")
     }
 }

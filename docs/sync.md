@@ -558,7 +558,8 @@ What the pane shows, as a contract:
   the pane watches the network path and reloads once, after 1 second, when the
   connection comes back; a failure while already online waits for Retry. A load that
   started locked and unlocks awaits the shared controller's mapping pass before
-  refreshing sync status (a reload of an already unlocked pane runs no pass); a pane
+  refreshing sync status (a reload of an already unlocked pane, or a new Settings
+  window over a controller that already holds resolved keys, runs no pass); a pane
   superseded or rebound during that pass does not publish the old result. Opening or
   reloading the pane never requests a round; only Sync now does.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status

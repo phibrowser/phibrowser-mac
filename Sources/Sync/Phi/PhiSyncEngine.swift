@@ -738,6 +738,8 @@ actor PhiSyncEngine {
     /// including early failures. This read-only diagnostic distinguishes truncation from transport
     /// failure without adding payloads to the existing truncated error case.
     private var lastPreviewStats: (pages: Int, entities: Int) = (0, 0)
+    /// The unmatched-tombstone count the last pull logged; -1 until a pull has run.
+    private var lastLoggedUnmatchedTombstones = -1
 
     /// Kind label to client_tag_hash-to-identity index. Rebuilt from cursors/local identities at
     /// round start, then only grows as ciphertext is decoded, allowing later pages in the same
@@ -2680,9 +2682,16 @@ actor PhiSyncEngine {
                 }
             }
             drained = !more
-            if !carriedTombstones.isEmpty {
-                AppLogInfo("[phi-sync] carrying \(carriedTombstones.count) tombstone(s) for unknown tags to the next pull "
-                           + "first_hash=\(String(carriedTombstones[0].hash.prefix(8)))")
+            // Once per change, not per pull: an account's old tombstones can sit in the list for
+            // good, and a timer round every few minutes would repeat the line forever.
+            if carriedTombstones.count != lastLoggedUnmatchedTombstones {
+                lastLoggedUnmatchedTombstones = carriedTombstones.count
+                if let first = carriedTombstones.first {
+                    AppLogInfo("[phi-sync] carrying \(carriedTombstones.count) tombstone(s) for unknown tags to the next pull "
+                               + "first_hash=\(String(first.hash.prefix(8)))")
+                } else {
+                    AppLogInfo("[phi-sync] no tombstones for unknown tags left to carry")
+                }
             }
             if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }
             // Finalize drain only if no marker suppression or cursor-save failure occurred

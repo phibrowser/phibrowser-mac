@@ -44,6 +44,16 @@ final class SyncedDeletionConfirmationTests: XCTestCase {
             "Space-scoped pinned tabs are named in the body")
     }
 
+    /// After "Remove from sync" the table is empty, so `hasDrainedFullReplay` is false
+    /// forever; the warning must not claim the Mac is still syncing the account's Spaces.
+    func testNotDrainedWarningNeedsThisMacPaired() {
+        XCTAssertTrue(ProfileDeletionFlow.showsNotDrainedWarning(spacesEnabled: true, loggedIn: true, paired: true, drained: false))
+        XCTAssertFalse(ProfileDeletionFlow.showsNotDrainedWarning(spacesEnabled: true, loggedIn: true, paired: false, drained: false))
+        XCTAssertFalse(ProfileDeletionFlow.showsNotDrainedWarning(spacesEnabled: true, loggedIn: false, paired: true, drained: false))
+        XCTAssertFalse(ProfileDeletionFlow.showsNotDrainedWarning(spacesEnabled: false, loggedIn: true, paired: true, drained: false))
+        XCTAssertFalse(ProfileDeletionFlow.showsNotDrainedWarning(spacesEnabled: true, loggedIn: true, paired: true, drained: true))
+    }
+
     func testProfileNoteComesBeforeTheNotDrainedWarning() {
         let base = ProfileDeletionFlow.informativeText(showsSyncedDevicesNote: false, showsNotDrainedWarning: false)
         let noteOnly = ProfileDeletionFlow.informativeText(showsSyncedDevicesNote: true, showsNotDrainedWarning: false)

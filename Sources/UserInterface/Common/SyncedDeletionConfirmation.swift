@@ -90,12 +90,15 @@ enum ProfileDeletionFlow {
         // Gated on account Space sync being live for this Mac as well, and not on
         // the drain flag alone: `hasDrainedFullReplay` is a per-process cache the
         // engine pushes back after every table write, so with no engine at all
-        // (signed out, or the Spaces feature off) it stays false forever and the
-        // warning would mention "the Spaces in your account" on a Mac that has
-        // no account Spaces.
-        let showsNotDrainedWarning = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
-            && LoginController.shared.isLoggedin()
-            && !PhiSpaceSyncState.shared.hasDrainedFullReplay
+        // (signed out, the Spaces feature off, or this Mac removed from sync,
+        // which also empties the table) it stays false forever and the warning
+        // would mention "the Spaces in your account" on a Mac that has no
+        // account Spaces (seen after "Remove from sync", 2026-10-12).
+        let showsNotDrainedWarning = showsNotDrainedWarning(
+            spacesEnabled: PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+            loggedIn: LoginController.shared.isLoggedin(),
+            paired: ProfilePairingGate.shared.isPaired,
+            drained: PhiSpaceSyncState.shared.hasDrainedFullReplay)
         alert.informativeText = informativeText(
             showsSyncedDevicesNote: SyncedDeletionNotice.appliesToProfile(profile.profileId),
             showsNotDrainedWarning: showsNotDrainedWarning
@@ -127,6 +130,14 @@ enum ProfileDeletionFlow {
                 presentFailure(NSLocalizedString("settings.profiles.deleteFailure.unknownError", value: "Unknown error", comment: "Fallback profile-delete error reason"))
             }
         }
+    }
+
+    /// The not-yet-drained warning (§9.4) is about this Mac's view of the account's
+    /// Spaces, so it needs the Mac to be syncing them: the Spaces feature on, an
+    /// account, and this Mac paired. `paired` stays true while the key is merely
+    /// locked or the Mac is offline, so the fail-open warning still shows there.
+    static func showsNotDrainedWarning(spacesEnabled: Bool, loggedIn: Bool, paired: Bool, drained: Bool) -> Bool {
+        spacesEnabled && loggedIn && paired && !drained
     }
 
     static func informativeText(showsSyncedDevicesNote: Bool, showsNotDrainedWarning: Bool) -> String {

@@ -153,6 +153,9 @@ import SwiftUI
     /// helper's request queued, so the loader loads the mapped ones first, at once.
     @MainActor
     func requestSyncNow() async -> SyncHelper.Report? {
+        // The helper rejects locked accounts before enumerating participants. Recover
+        // here even if the native engine (and therefore its helper) has not started.
+        syncKeyController?.kickSilentUnlockIfLocked()
         guard let helper = syncHelper else { return nil }
         syncProfileLoader?.loadNow()
         _ = await helper.requestSyncNow()
@@ -781,10 +784,6 @@ import SwiftUI
                 // fallback timer. A stopped coordinator would drop the request, so refuse it.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
                     requestSync: { [weak self] bySyncNow in
-                        // A refusal for a missing account key is the one the user can do
-                        // something about: a launch whose silent unlock failed stays
-                        // locked until a retry succeeds, so Sync Now runs one now.
-                        self?.syncKeyController?.kickSilentUnlockIfLocked()
                         guard let self, self.phiSyncEngine === engine,
                               AccountController.shared.account === account,
                               self.phiSyncPairingEnabled,

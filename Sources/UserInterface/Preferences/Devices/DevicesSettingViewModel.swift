@@ -25,6 +25,8 @@ final class DevicesSettingViewModel: ObservableObject {
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
+    /// Finishes a successful pane unlock on the shared controller before requesting sync.
+    var resolveMappingsAfterUnlock: () async -> Void = {}
     var syncReport: (_ requestSync: Bool) async -> SyncHelper.Report? = { _ in nil }
     /// Sync now: records an explicit request with the helper and returns its report.
     var syncNowReport: () async -> SyncHelper.Report? = { nil }
@@ -287,6 +289,10 @@ final class DevicesSettingViewModel: ObservableObject {
         stopObservingConnectivity()
         switch result {
         case .unlocked:
+            // Retry and connectivity recovery must publish the Profile keys immediately,
+            // without waiting for the launch-time unlock retry to fire.
+            await resolveMappingsAfterUnlock()
+            guard generation == loadGeneration, isCurrentAccount() else { return }
             unlockedAccountID = account
             await showUnlocked(generation: generation)
         case .needsJoin:    unlockedAccountID = nil; unlockState = .needsJoin

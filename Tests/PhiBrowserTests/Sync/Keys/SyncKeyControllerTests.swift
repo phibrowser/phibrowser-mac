@@ -367,9 +367,9 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertEqual(api.getDeviceEnvelopeCalls, settled)
     }
 
-    /// The Devices pane unlocks through `AccountKeyManager` directly and resolves nothing;
-    /// a pending retry still runs its pass, so the keys reach Chromium.
-    func testUnlockRetryStillResolvesWhenThePaneUnlockedMeanwhile() async throws {
+    /// Another flow can supply the account key before the retry; the pending recovery
+    /// still publishes Profile keys rather than treating the account key as completion.
+    func testUnlockRetryStillResolvesWhenAnotherFlowUnlockedMeanwhile() async throws {
         let api = FakeAPI()
         let provider = FakeDeviceKeyProvider()
         _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
@@ -381,11 +381,49 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertNil(mgr.currentARK)
 
         api.deviceEnvelopeError = nil
-        _ = try await mgr.unlockAtStartup()  // the pane's unlock, before the retry fires
+        _ = try await mgr.unlockAtStartup()  // another unlock, before the retry fires
         XCTAssertNotNil(mgr.currentARK)
         XCTAssertTrue(c.resolved.isEmpty)
         await waitUntil { !c.resolved.isEmpty }
         XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+    }
+
+    /// The visible failure card uses loadAll(), not Sync Now (which is hidden while
+    /// locked). It must restore Chromium's keys before the 60-second retry fires.
+    func testPaneRetryResolvesBeforeThePendingUnlockRetry() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let (c, mgr) = makeController(api: api, provider: provider,
+                                      locals: [("Default", "Default")],
+                                      unlockRetryDelay: { _ in .seconds(60) })
+        defer { c.retire() }
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await c.silentUnlockAndResolve()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: c.approvals)
+        vm.resolveMappingsAfterUnlock = { await c.resolveMappings() }
+        vm.pairingComplete = { true }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .failed(DevicesSettingViewModel.requestFailed))
+        XCTAssertFalse(vm.syncNowButton.isVisible)
+        XCTAssertTrue(c.resolved.isEmpty)
+        let calls = api.getDeviceEnvelopeCalls
+        var refreshed = false
+        vm.syncReport = { requestSync in
+            if requestSync {
+                XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+                refreshed = true
+            }
+            return nil
+        }
+
+        api.deviceEnvelopeError = nil
+        await vm.loadAll() // The failure card's Retry action.
+        XCTAssertEqual(vm.unlockState, .unlocked)
+        XCTAssertEqual(api.getDeviceEnvelopeCalls, calls + 1, "one unlock, no second envelope lookup")
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+        XCTAssertTrue(refreshed)
+        await vm.stopPolling()
     }
 
     /// The retry schedule starts at 5 s and caps at 60 s.

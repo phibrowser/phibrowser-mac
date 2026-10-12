@@ -252,11 +252,15 @@ on a device with no episode the sink is unchanged. `silentUnlockAndResolve()` is
 single-flight (callers during a pass coalesce into one follow-up pass) and clears
 the key cache on a failed lookup only while the account key is not held; a thrown
 failure in that state (the key service unreachable at launch) also arms its own
-retry, 5 seconds doubling to 60, until a pass gets any answer, because the only
-other triggers are the launch-time login refresh and a Profile-list change, and
-Sync Now while the key is missing runs that retry at once. Once the key
-is held, a thrown error or a 401 keeps the cache and runs a mapping pass, and only
-a 404 for this device's envelope clears it. The sink's
+retry, 5 seconds doubling to 60, until a pass gets any answer, so recovery does
+not depend on another login refresh or Profile-list change. A coordinator Sync
+Now request while the key is missing runs that retry at once,
+before the helper checks eligibility (even when no helper exists yet). The locked
+pane exposes Retry on its failed-load card, not Sync Now; a successful pane unlock
+resolves mappings on its bound shared controller before requesting sync, without
+waiting for the pending launch retry. Once the key is held, a thrown error or a
+401 keeps the cache and runs a mapping pass, and only a 404 for this device's
+envelope clears it. The sink's
 choice is made by the reconciliation right after the episode transition for its
 list is committed: a sink that runs inside another reconciliation (the resume
 lets the Profile loader refresh the list) has its inputs queued, and its choice
@@ -552,7 +556,9 @@ What the pane shows, as a contract:
   the helper's state, including the pause row. Only a first load that fails shows
   the "Couldn't load sync information" card with Retry. While that card shows,
   the pane watches the network path and reloads once, after 1 second, when the
-  connection comes back; a failure while already online waits for Retry.
+  connection comes back; a failure while already online waits for Retry. A successful
+  unlock awaits the shared controller's mapping pass before refreshing sync status;
+  a pane superseded or rebound during that pass does not publish the old result.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round

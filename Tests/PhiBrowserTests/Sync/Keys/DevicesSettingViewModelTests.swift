@@ -27,6 +27,39 @@ final class DevicesSettingViewModelTests: XCTestCase {
         await vm.stopPolling()
     }
 
+    func testMappingCompletionDoesNotPublishAfterThePaneStops() async throws {
+        let (_, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        var resolve: CheckedContinuation<Void, Never>?
+        vm.resolveMappingsAfterUnlock = { await withCheckedContinuation { resolve = $0 } }
+        vm.pairingComplete = { true }
+        var refreshes = 0
+        vm.syncReport = { _ in refreshes += 1; return nil }
+        let load = Task { await vm.loadAll() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while resolve == nil, ContinuousClock.now < deadline { await Task.yield() }
+        let completion = try XCTUnwrap(resolve, "Pane never requested mapping recovery")
+        await vm.stopPolling()
+        completion.resume()
+        await load.value
+        XCTAssertEqual(refreshes, 0)
+        XCTAssertFalse(vm.isUnlocked)
+    }
+
+    func testMappingCompletionDoesNotPublishAfterTheAccountChanges() async throws {
+        let (_, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        var current = true
+        vm.isCurrentAccount = { current }
+        vm.resolveMappingsAfterUnlock = { current = false }
+        vm.pairingComplete = { true }
+        var refreshes = 0
+        vm.syncReport = { _ in refreshes += 1; return nil }
+        await vm.loadAll()
+        XCTAssertEqual(refreshes, 0)
+        XCTAssertFalse(vm.isUnlocked)
+    }
+
     func testLoadAllNeedsJoinAndApproveBlocked() async throws {
         let api = FakeAPI()
         _ = try await AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider()).bootstrap()

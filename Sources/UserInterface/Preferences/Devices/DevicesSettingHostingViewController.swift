@@ -136,6 +136,10 @@ final class DevicesSettingHostingViewController: NSViewController {
             await helper.refresh(requestSync: requestSync)
             return helper.report
         }
+        // Bind to the same controller as this pane's manager, never a later account's.
+        viewModel.resolveMappingsAfterUnlock = { [weak controller = syncKeyController] in
+            await controller?.resolveMappings()
+        }
         viewModel.syncNowReport = { await PhiChromiumCoordinator.shared.requestSyncNow() }
         viewModel.retryProfileMappingRepair = { PhiChromiumCoordinator.shared.retryProfileMappingRepair() }
         viewModel.reconfigurationRequired = { [weak self] in

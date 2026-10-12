@@ -342,6 +342,9 @@ final class ProfileManager: ObservableObject {
                 self?.refresh()
                 if success, sync != .none, AccountController.shared.localDataAccount !== account {
                     AppLogWarn("[ProfileManager] account changed during profile deletion; leaving the sync record for the original account to reconcile")
+                    // Otherwise the original account would read the deletion as still in flight
+                    // until a restart and never publish its tombstone.
+                    if let syncUuid { syncState.abandonLocalProfileDeletion(syncUuid: syncUuid) }
                 } else if success, sync != .none {
                     Task { @MainActor in
                         if let account {

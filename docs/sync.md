@@ -1269,7 +1269,8 @@ Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
    a table reset would otherwise show them again bound to a missing Profile. Then
    it delivers `.recordLocalProfileDeletion`. All of this is bound to the account
    captured before the Chromium deletion started: if `localDataAccount` changed
-   meanwhile, nothing is removed or recorded (a warning is logged), and the
+   meanwhile, nothing is removed or recorded (a warning is logged; only the
+   process-wide in-flight mark is ended, `abandonLocalProfileDeletion`), and the
    original account's engine reconciles its journal entry (for `.remoteTombstone`,
    it repeats the row removal when it next finds the Profile gone).
    On failure removes the journal entry and gives the key back.

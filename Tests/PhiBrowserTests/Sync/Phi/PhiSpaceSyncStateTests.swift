@@ -518,6 +518,29 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(table.publishedSyncUuids, ["sync-pub"])
     }
 
+    final class MemoryIntentStore: PhiProfileDeletionIntentStore {
+        var intents: [String: String] = [:]
+        func load() -> [String: String] { intents }
+        func save(_ intents: [String: String]) -> Bool { self.intents = intents; return true }
+    }
+
+    /// An account switch during the Chromium deletion ends the in-flight mark but keeps the journal
+    /// entry, so the original account reconciles the deletion instead of waiting for it forever.
+    @MainActor
+    func testAnAbandonedLocalProfileDeletionIsNoLongerInFlightButStaysJournaled() throws {
+        let state = PhiSpaceSyncState()
+        let store = MemoryIntentStore()
+        state.profileDeletionIntentStore = store
+        state.globalUuidLookup = { $0 == "P1" ? "pu-1" : nil }
+        let uuid = try XCTUnwrap(try state.beginLocalProfileDeletion(localProfileId: "P1"))
+        XCTAssertTrue(state.isProfileBeingDeletedLocally(syncUuid: uuid))
+
+        state.abandonLocalProfileDeletion(syncUuid: uuid)
+
+        XCTAssertFalse(state.isProfileBeingDeletedLocally(syncUuid: uuid))
+        XCTAssertEqual(store.intents, ["pu-1": "P1"])
+    }
+
     @MainActor
     func testHiddenSyncUuidsAreTranslatedBackToLocalIdsAndUnresolvableOnesAreDropped() {
         let state = PhiSpaceSyncState()

@@ -645,6 +645,13 @@ final class PhiSpaceSyncState {
         deliver(.recordLocalProfileDeletion(syncUuid: syncUuid))
     }
 
+    /// The Chromium deletion committed after the account changed: the in-flight mark is process-wide,
+    /// so it is ended here, while the journal entry and the cursor are left to the original account's
+    /// engine, which reconciles the intent normally once that account is active again.
+    func abandonLocalProfileDeletion(syncUuid: String) {
+        locallyDeletingProfileUuids.remove(syncUuid)
+    }
+
     func profileDeletionIntents() -> [String: String] { profileDeletionIntentStore?.load() ?? [:] }
 
     func isProfileBeingDeletedLocally(syncUuid: String) -> Bool {

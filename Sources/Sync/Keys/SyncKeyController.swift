@@ -520,7 +520,10 @@ final class SyncKeyController {
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled, !self.isRetired else { return }
             self.unlockRetryTask = nil
-            guard self.manager.currentARK == nil else { return }
+            // Not skipped when the key arrived meanwhile: the Devices pane's own
+            // `unlockAtStartup()` sets the key without resolving any mapping, so
+            // Chromium would still hold no passphrase (2026-10-12: every Profile
+            // stayed "Checking" after the pane unlocked a locked launch).
             await self.silentUnlockAndResolve()
         }
     }

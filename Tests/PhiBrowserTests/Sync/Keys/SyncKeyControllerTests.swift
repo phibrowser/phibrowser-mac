@@ -367,6 +367,27 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertEqual(api.getDeviceEnvelopeCalls, settled)
     }
 
+    /// The Devices pane unlocks through `AccountKeyManager` directly and resolves nothing;
+    /// a pending retry still runs its pass, so the keys reach Chromium.
+    func testUnlockRetryStillResolvesWhenThePaneUnlockedMeanwhile() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let (c, mgr) = makeController(api: api, provider: provider,
+                                      locals: [("Default", "Default")],
+                                      unlockRetryDelay: { _ in .milliseconds(50) })
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await c.silentUnlockAndResolve()  // arms a retry 50 ms out
+        XCTAssertNil(mgr.currentARK)
+
+        api.deviceEnvelopeError = nil
+        _ = try await mgr.unlockAtStartup()  // the pane's unlock, before the retry fires
+        XCTAssertNotNil(mgr.currentARK)
+        XCTAssertTrue(c.resolved.isEmpty)
+        await waitUntil { !c.resolved.isEmpty }
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+    }
+
     /// The retry schedule starts at 5 s and caps at 60 s.
     func testDefaultUnlockRetryDelayDoublesFromFiveSecondsToAMinute() {
         XCTAssertEqual((0...6).map { SyncKeyController.defaultUnlockRetryDelay(attempt: $0) },

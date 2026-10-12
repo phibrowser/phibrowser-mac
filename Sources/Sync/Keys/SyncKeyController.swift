@@ -279,6 +279,10 @@ final class SyncKeyController {
     /// left `profileIdsBeingDeleted` before the pass resumed.
     private var passSequence: UInt64 = 0
     private var withdrawnAtPass: [String: UInt64] = [:]
+    /// Every account Profile uuid the key registry listed at its last successful read. The registry
+    /// never forgets a uuid, so the sync engine resolves any Profile tombstone's tag from it
+    /// (docs/sync.md, "Profile entity"). Empty until the first read this process.
+    private(set) var lastAccountProfileUuids: Set<String> = []
 
     /// Stops Chromium sync for one Profile before it is deleted.
     func withdrawProfileKey(profileId: String) {
@@ -669,6 +673,7 @@ final class SyncKeyController {
             remoteUuids = try await profileKeys.accountProfileUuids()
             // Review A11: the listing may have answered for the NEXT account; write nothing.
             guard !isRetired else { return }
+            lastAccountProfileUuids = remoteUuids
         } catch {
             guard !isRetired else { return }
             // Unknown remote set (offline / 5xx / 401 / still locked). Hold the
@@ -1077,6 +1082,7 @@ final class SyncKeyController {
             accountUuids = try await profileKeys.accountProfileUuids()
             // The listing may have answered for the next account (review A11).
             guard !isRetired else { return retiredRefresh() }
+            lastAccountProfileUuids = accountUuids
         } catch {
             guard !isRetired else { return retiredRefresh() }
             noteAutoCreateFailure(error)

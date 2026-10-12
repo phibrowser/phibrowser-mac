@@ -328,6 +328,10 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         controller?.profileKeys.allMappings() ?? [:]
     }
 
+    func knownAccountProfileUuids() -> Set<String> {
+        controller?.lastAccountProfileUuids ?? []
+    }
+
     func profileDeletionIntents() -> [String: String] {
         PhiSpaceSyncState.shared.profileDeletionIntents()
     }

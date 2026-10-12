@@ -19,6 +19,9 @@ protocol PhiProfileLocalAccess: AnyObject {
     /// localProfileId -> account profile uuid, every persisted mapping, including those whose
     /// local Profile no longer exists.
     func allProfileMappings() -> [String: String]
+    /// Every account Profile uuid the key registry listed at its last read this process (empty
+    /// before it), so a Profile tombstone resolves even for a Profile this device never mapped.
+    func knownAccountProfileUuids() -> Set<String>
 
     /// Whether `ProfileManager` has read a complete Profile list. Until then an absent local
     /// Profile proves nothing.

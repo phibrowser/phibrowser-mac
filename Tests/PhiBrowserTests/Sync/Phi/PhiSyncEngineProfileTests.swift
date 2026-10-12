@@ -16,6 +16,9 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
 
     func currentProfiles() -> [PhiLocalProfile] { profiles.filter { mappings[$0.profileId] != nil } }
     func allProfileMappings() -> [String: String] { mappings }
+    /// What the key registry listed, for `knownAccountProfileUuids()`.
+    var registryUuids: Set<String> = []
+    func knownAccountProfileUuids() -> Set<String> { registryUuids }
     func isProfileListEnumerated() -> Bool { enumerated }
 
     func applyRemoteName(profileId: String, name: String) async -> String? {
@@ -667,6 +670,25 @@ final class PhiSyncEngineProfileTests: XCTestCase {
 
         XCTAssertTrue(profiles.remoteDeletions.isEmpty)
         XCTAssertEqual(store.table.profileCursors["pu-1"], before, "no cursor write")
+    }
+
+    /// The key registry names every account Profile, so a tombstone for one this device never
+    /// mapped and nothing names resolves on its own page and is never carried.
+    func testAProfileTombstoneKnownOnlyToTheRegistryLandsOnItsOwnPage() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.registryUuids = ["pu-old"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([profileTombstone("pu-old", version: 9)], marker: "10")]
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(store.table.profileCursors["pu-old"]?.deletedAtMs, nowMs)
+        XCTAssertEqual(store.table.profileCursors["pu-old"]?.entityId, "srv-pu-old")
+        XCTAssertTrue(store.table.unmatchedTombstones.isEmpty, "never enters the carried list")
+        XCTAssertTrue(profiles.remoteDeletions.isEmpty, "no local Profile to delete")
     }
 
     func testATombstoneNoOwnedItemNamesIsStillIgnored() async throws {

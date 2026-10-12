@@ -2326,6 +2326,7 @@ actor PhiSyncEngine {
         // from the table, where each page persists them with its marker, so one received before
         // a quit or before the page budget ended a round still meets the item naming its owner.
         var carriedTombstones: [(hash: String, entityId: String, version: Int64)] = []
+        var droppedOverCap = 0
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2623,6 +2624,7 @@ actor PhiSyncEngine {
                     await applyProfileTombstones(batch, table: &spaceTable)
                     await convergeProfileNames(table: &spaceTable)
                     // Persisted with this page's marker; matched ones were removed above.
+                    droppedOverCap += max(0, carriedTombstones.count - PhiSpaceSyncTable.maxUnmatchedTombstones)
                     spaceTable.setUnmatchedTombstones(carriedTombstones.map {
                         PhiUnmatchedTombstone(clientTagHash: $0.hash, entityId: $0.entityId, version: $0.version)
                     })
@@ -2685,6 +2687,10 @@ actor PhiSyncEngine {
                 }
             }
             drained = !more
+            if droppedOverCap > 0 {
+                // An evicted tombstone stays unmatched until the next full replay re-delivers it.
+                AppLogWarn("[phi-sync] unmatched tombstones over cap; dropped=\(droppedOverCap) oldest")
+            }
             // Once per change, not per pull: an account's old tombstones can sit in the list for
             // good, and a timer round every few minutes would repeat the line forever.
             if carriedTombstones.count != lastLoggedUnmatchedTombstones {
@@ -4111,6 +4117,9 @@ actor PhiSyncEngine {
         guard let profileAccess else { return [:] }
         var uuids = Set(table.profileCursors.keys)
         for uuid in await profileAccess.allProfileMappings().values { uuids.insert(uuid) }
+        // The key registry never forgets a uuid: any Profile tombstone resolves on its own page once
+        // it has been read, without waiting for an owned item to name the Profile.
+        uuids.formUnion(await profileAccess.knownAccountProfileUuids())
         // A Profile deleted here before its cursor existed is known only to the journal.
         for uuid in await profileAccess.profileDeletionIntents().keys { uuids.insert(uuid) }
         var index: [String: String] = [:]

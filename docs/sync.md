@@ -1188,7 +1188,11 @@ parking forever on its unknown owner. A tombstone that no index names yet is kep
 in `PhiSpaceSyncTable.unmatchedTombstones` (hash, entity id, version; the newest
 2048, decoded as empty from older tables), written with each page's marker and
 re-routed on every later page and pull until an owner names it, so neither a quit
-nor the 64-page budget between the tombstone and the pin loses it. A pull that
+nor the 64-page budget between the tombstone and the pin loses it. A live entity
+for the same tag on a later page evicts the entry (the entity was recreated), and a
+Profile or Space tombstone whose version is lower than the live cursor's
+(entity id set, not deleted or purged) is ignored without a cursor write, so a
+stale tombstone never deletes a newer entity. A pull that
 starts without a marker does not seed the list (the replay re-delivers every
 tombstone) and its first page replaces it. The
 pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the

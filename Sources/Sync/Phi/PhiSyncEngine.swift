@@ -2583,8 +2583,11 @@ actor PhiSyncEngine {
                     }
                     // Tombstones no index named yet are kept for the rest of this pull: a page
                     // order of tombstone first, owned items later would otherwise drop it.
+                    // A live entity on this page supersedes a carried tombstone for its tag (it was
+                    // recreated with a newer version); the hash is enough, nothing is decrypted.
+                    let liveHashes = Set(response.entities.filter { !$0.deleted }.map(\.clientTagHash))
                     let arrivingHashes = Set(batch.unknownTombstones.map(\.hash))
-                    carriedTombstones.removeAll { arrivingHashes.contains($0.hash) }
+                    carriedTombstones.removeAll { arrivingHashes.contains($0.hash) || liveHashes.contains($0.hash) }
                     carriedTombstones += batch.unknownTombstones
                     batch.unknownTombstones = []
                     carriedTombstones.removeAll { unknown in
@@ -3354,6 +3357,13 @@ actor PhiSyncEngine {
             // suppressions stay on the identity and are unaffected by a delete.
             let isDefaultIdentity = item.uuid == SyncableSpaces.defaultSpaceUuid
             var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
+            // Same rule as a Profile's: a tombstone older than the live entity held here is stale.
+            if cursor.entityId != nil, cursor.deletedAtMs == nil, cursor.purgedAtMs == nil,
+               cursor.version > item.version {
+                AppLogInfo("[phi-sync] stale space tombstone ignored uuid=\(String(item.uuid.prefix(8))) "
+                           + "tombstone_version=\(item.version) cursor_version=\(cursor.version)")
+                continue
+            }
             if let entityId = cursor.entityId, !item.entityId.isEmpty, entityId != item.entityId {
                 // The server never rewrites `client_tag_hash` on an update
                 // (`internal/data/entities_write.go:243-244`), so the hash is the
@@ -4327,6 +4337,14 @@ actor PhiSyncEngine {
         for item in work {
             guard !isStopped else { return }
             var cursor = table.profileCursors[item.uuid] ?? PhiProfileCursor()
+            // A tombstone older than the live entity this device holds (a carried one, after the
+            // Profile was recreated) must not delete it.
+            if cursor.entityId != nil, cursor.deletedAtMs == nil, cursor.purgedAtMs == nil,
+               cursor.version > item.version {
+                AppLogInfo("[phi-sync] stale profile tombstone ignored uuid=\(String(item.uuid.prefix(8))) "
+                           + "tombstone_version=\(item.version) cursor_version=\(cursor.version)")
+                continue
+            }
             let tag = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(item.uuid))
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)

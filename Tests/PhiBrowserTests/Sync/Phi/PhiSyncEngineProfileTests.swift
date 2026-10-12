@@ -504,12 +504,13 @@ final class PhiSyncEngineProfileTests: XCTestCase {
 
     /// Profile-scoped pins on a device whose only Profile is Default (pu-1); pu-gone is unknown here.
     private func makePinEngine(pins: FakePinAccess, pinStore: MemoryOwnedItemStore,
-                               store: MemorySpaceStore, client: FakePhiSyncClient) -> PhiSyncEngine {
+                               store: MemorySpaceStore, client: FakePhiSyncClient,
+                               profiles: FakePhiProfileAccess? = nil) -> PhiSyncEngine {
+        let profiles = profiles ?? FakePhiProfileAccess()
         let spaces = FakePhiSpaceAccess()
         spaces.profileIdByUuid = ["pu-1": "Default"]
         spaces.uuidByProfileId = ["Default": "pu-1"]
         spaces.knownLocalProfileIds = ["Default"]
-        let profiles = FakePhiProfileAccess()
         profiles.profiles = [PhiLocalProfile(profileId: "Default", displayName: "Personal", createdAtMs: 0)]
         profiles.mappings = ["Default": "pu-1"]
         return PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
@@ -607,6 +608,65 @@ final class PhiSyncEngineProfileTests: XCTestCase {
 
         await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
         XCTAssertTrue(store.table.unmatchedTombstones.isEmpty, "a matched tombstone leaves the list")
+    }
+
+    private func liveProfile(_ uuid: String, _ name: String, version: Int64) throws -> PhiRemoteEntity {
+        var wrapper = Phi_PhiEntity()
+        wrapper.profile = profileEntity(uuid, name)
+        return remoteEntity(wrapper, tag: PhiSyncEntity.profileClientTag(uuid), version: version,
+                            entityId: "srv-\(uuid)", key: key)
+    }
+
+    /// A carried tombstone is superseded when its Profile is recreated: the live entity evicts it,
+    /// so a pin naming the Profile later does not delete the recreated Profile.
+    func testARecreatedProfileEvictsItsCarriedTombstone() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let profiles = FakePhiProfileAccess()
+        client.pagesByMarker = [page([profileTombstone("pu-gone", version: 10)], marker: "10")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client, profiles: profiles)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.unmatchedTombstones.map(\.clientTagHash), [hash("pu-gone")])
+
+        client.pagesByMarker.append(page([try liveProfile("pu-gone", "Work", version: 20)], marker: "20"))
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.profileCursors["pu-gone"]?.version, 20)
+        XCTAssertTrue(store.table.unmatchedTombstones.isEmpty, "the live entity evicted the stale tombstone")
+        // Auto-create recreates the local Profile from the entity.
+        profiles.profiles.append(PhiLocalProfile(profileId: "Profile 2", displayName: "Work", createdAtMs: 0))
+        profiles.mappings["Profile 2"] = "pu-gone"
+
+        client.pagesByMarker.append(page([pinEntity("lx", owner: "pu-gone", version: 30)], marker: "30"))
+        await engine.pullOnce()
+
+        XCTAssertTrue(profiles.remoteDeletions.isEmpty)
+        XCTAssertEqual(store.table.profileCursors["pu-gone"]?.version, 20)
+        XCTAssertNil(store.table.profileCursors["pu-gone"]?.deletedAtMs)
+        XCTAssertFalse(store.table.unmatchedTombstones.contains { $0.clientTagHash == hash("pu-gone") })
+    }
+
+    /// A tombstone older than the live cursor (a stale carried one) deletes nothing.
+    func testAProfileTombstoneOlderThanTheLiveCursorIsIgnored() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([try liveProfile("pu-1", "Work", version: 20)], marker: "20")]
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let before = store.table.profileCursors["pu-1"]
+        XCTAssertEqual(before?.version, 20)
+
+        client.pagesByMarker.append(page([profileTombstone("pu-1", version: 10)], marker: "30"))
+        await engine.pullOnce()
+
+        XCTAssertTrue(profiles.remoteDeletions.isEmpty)
+        XCTAssertEqual(store.table.profileCursors["pu-1"], before, "no cursor write")
     }
 
     func testATombstoneNoOwnedItemNamesIsStillIgnored() async throws {

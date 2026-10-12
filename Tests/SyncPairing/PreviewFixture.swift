@@ -28,8 +28,12 @@ struct Phi_PhiSpaceEntity {
     var profileUuid = PreviewField(), themeID = PreviewField()
     var overlayOpacityLight = PreviewField(), overlayOpacityDark = PreviewField()
 }
+struct Phi_PhiProfileEntity {
+    var profileUuid = ""
+    var name = PreviewField()
+}
 struct PreviewDecoded {
-    enum Kind { case space(Phi_PhiSpaceEntity), bookmark }
+    enum Kind { case space(Phi_PhiSpaceEntity), profile(Phi_PhiProfileEntity), bookmark }
     var kind: Kind?
 }
 enum PhiEntityCodec {
@@ -43,6 +47,7 @@ enum PhiSyncEntity {
     static let settingsClientTagHash = "settings"
     static func clientTagHash(for tag: String) -> String { tag }
     static func spaceClientTag(_ uuid: String) -> String { uuid }
+    static func profileClientTag(_ uuid: String) -> String { "phi-profile:" + uuid }
 }
 enum SyncableSpaces {
     static let defaultSpaceUuid = "default"
@@ -82,26 +87,34 @@ func testPreviewCompleteness() async throws {
     var valid = Phi_PhiSpaceEntity(); valid.spaceUuid = "valid"
     var refused = Phi_PhiSpaceEntity(); refused.spaceUuid = "refused"; refused.refused = true
     var defaultSpace = Phi_PhiSpaceEntity(); defaultSpace.spaceUuid = "default"
+    var renamed = Phi_PhiProfileEntity(); renamed.profileUuid = "p1"; renamed.name.stringValue = "Alpha"
+    var older = Phi_PhiProfileEntity(); older.profileUuid = "p1"; older.name.stringValue = "P168-1"
     PhiEntityCodec.decoded = [
         Data([1]): PreviewDecoded(kind: .space(valid)),
         Data([2]): PreviewDecoded(kind: .space(refused)),
         Data([3]): PreviewDecoded(kind: nil),
         Data([4]): PreviewDecoded(kind: .bookmark),
-        Data([5]): PreviewDecoded(kind: .space(defaultSpace))
+        Data([5]): PreviewDecoded(kind: .space(defaultSpace)),
+        Data([6]): PreviewDecoded(kind: .profile(renamed)),
+        Data([7]): PreviewDecoded(kind: .profile(older))
     ]
     defer { PhiEntityCodec.decoded = [:] }
-    func row(_ hash: String, _ data: UInt8, deleted: Bool = false) -> PreviewRemoteEntity {
-        PreviewRemoteEntity(clientTagHash: hash, deleted: deleted, ciphertext: Data([data]), version: 1)
+    func row(_ hash: String, _ data: UInt8, deleted: Bool = false, version: Int64 = 1) -> PreviewRemoteEntity {
+        PreviewRemoteEntity(clientTagHash: hash, deleted: deleted, ciphertext: Data([data]), version: version)
     }
     fixture.client.entities = [row("valid", 1), row("invalid", 9), row("wrong-tag", 1),
         row("refused", 2), row("unknown", 3), row("bookmark", 4), row("default", 5),
-        row("settings", 9), row("deleted", 9, deleted: true)]
+        row("settings", 9), row("deleted", 9, deleted: true),
+        row("phi-profile:p1", 6, version: 3), row("phi-profile:p1", 7, version: 2), row("phi-profile:other", 6)]
     guard case .success(let preview) = await fixture.preview() else {
         preconditionFailure("Readable choices must remain available")
     }
     precondition(preview.spaces.map(\.syncUuid) == ["valid"])
-    precondition(preview.skippedEntityCount == 4,
-                 "Unreadable, wrong-tag, refused and unknown entities must prevent absence claims")
+    precondition(preview.skippedEntityCount == 5,
+                 "Unreadable, wrong-tag, refused, unknown and mis-tagged Profile entities must prevent absence claims")
+    precondition(preview.deletedProfileTagHashes == ["deleted"])
+    precondition(preview.profileNames == ["p1": "Alpha"],
+                 "A Profile is named from its highest-version entity; a payload that does not hash back is not a name")
     precondition(fixture.markerStore.file == PhiSyncMarkerFile(), "Preview must remain read-only")
     print("PASS preview completeness: skipped unknown/unreadable/refused entities retain uncertainty")
 }

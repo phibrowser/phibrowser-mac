@@ -250,7 +250,11 @@ account key unlocked, the Profile-list sink runs this repair instead of
 `silentUnlockAndResolve()`, so no device-envelope lookup runs during the episode;
 on a device with no episode the sink is unchanged. `silentUnlockAndResolve()` is
 single-flight (callers during a pass coalesce into one follow-up pass) and clears
-the key cache on a failed lookup only while the account key is not held; once it
+the key cache on a failed lookup only while the account key is not held; a thrown
+failure in that state (the key service unreachable at launch) also arms its own
+retry, 5 seconds doubling to 60, until a pass gets any answer, because the only
+other triggers are the launch-time login refresh and a Profile-list change, and
+Sync Now while the key is missing runs that retry at once. Once the key
 is held, a thrown error or a 401 keeps the cache and runs a mapping pass, and only
 a 404 for this device's envelope clears it. The sink's
 choice is made by the reconciliation right after the episode transition for its

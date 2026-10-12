@@ -14,22 +14,34 @@ final class SyncKeyControllerTests: XCTestCase {
     private func makeController(api: FakeAPI, provider: FakeDeviceKeyProvider,
                                 localsProvider: @escaping () -> [(profileId: String, displayName: String)],
                                 store: ProfileSyncMappingStore = MemoryMappingStore(),
-                                pinged: @escaping () -> Void = {}) -> (SyncKeyController, AccountKeyManager) {
+                                pinged: @escaping () -> Void = {},
+                                unlockRetryDelay: @escaping (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay) -> (SyncKeyController, AccountKeyManager) {
         let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
         let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store)
         let approvals = DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider)
         let c = SyncKeyController(manager: mgr, approvals: approvals, profileKeys: pkm,
                                   localProfilesProvider: localsProvider,
-                                  notifyChromium: pinged, isPairingComplete: { true })
+                                  notifyChromium: pinged, isPairingComplete: { true },
+                                  unlockRetryDelay: unlockRetryDelay)
         return (c, mgr)
+    }
+
+    /// Polls the main actor until `condition` holds or `timeout` elapses.
+    private func waitUntil(_ timeout: Duration = .seconds(2), _ condition: () -> Bool) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !condition(), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     private func makeController(api: FakeAPI, provider: FakeDeviceKeyProvider,
                                 locals: [(String, String)],
-                                pinged: @escaping () -> Void = {}) -> (SyncKeyController, AccountKeyManager) {
+                                pinged: @escaping () -> Void = {},
+                                unlockRetryDelay: @escaping (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay) -> (SyncKeyController, AccountKeyManager) {
         makeController(api: api, provider: provider,
                        localsProvider: { locals.map { (profileId: $0.0, displayName: $0.1) } },
-                       pinged: pinged)
+                       pinged: pinged, unlockRetryDelay: unlockRetryDelay)
     }
 
     func testFirstDeviceRegistersAllLocalsAndPings() async throws {
@@ -317,6 +329,73 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertTrue(c.resolved.isEmpty)
         XCTAssertNil(c.profileSyncInfo(forProfileId: "Default"))
         XCTAssertEqual(pings, 2)
+    }
+
+    /// A launch with the key service unreachable: the failed unlock fails closed, then
+    /// retries by itself (5 s doubling to 60 s in the app) until the service answers, so
+    /// the keys resolve without a login event or a Profile-list change.
+    func testUnlockFailureWithoutTheAccountKeyRetriesUntilTheServiceAnswers() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        var pings = 0
+        var delaysAsked: [Int] = []
+        let (c, mgr) = makeController(api: api, provider: provider,
+                                      locals: [("Default", "Default")],
+                                      pinged: { pings += 1 },
+                                      unlockRetryDelay: { delaysAsked.append($0); return .milliseconds(1) })
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await c.silentUnlockAndResolve()
+        XCTAssertTrue(c.resolved.isEmpty)
+        XCTAssertNil(mgr.currentARK)
+        let callsAfterFirstFailure = api.getDeviceEnvelopeCalls
+
+        // Still unreachable: the retry fails again and re-arms with a longer wait.
+        await waitUntil { api.getDeviceEnvelopeCalls >= callsAfterFirstFailure + 2 }
+        XCTAssertTrue(c.resolved.isEmpty)
+        XCTAssertEqual(Array(delaysAsked.prefix(3)), [0, 1, 2])
+
+        api.deviceEnvelopeError = nil
+        await waitUntil { !c.resolved.isEmpty }
+        XCTAssertNotNil(mgr.currentARK)
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+        XCTAssertGreaterThanOrEqual(pings, 1)
+
+        // Settled: no further lookups once the key is held.
+        let settled = api.getDeviceEnvelopeCalls
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(api.getDeviceEnvelopeCalls, settled)
+    }
+
+    /// The retry schedule starts at 5 s and caps at 60 s.
+    func testDefaultUnlockRetryDelayDoublesFromFiveSecondsToAMinute() {
+        XCTAssertEqual((0...6).map { SyncKeyController.defaultUnlockRetryDelay(attempt: $0) },
+                       [5, 10, 20, 40, 60, 60, 60].map { Duration.seconds($0) })
+    }
+
+    /// Sync Now while locked runs an unlock at once and replaces the pending retry;
+    /// with the key held it does nothing.
+    func testKickSilentUnlockIfLockedRunsAPassOnlyWithoutTheKey() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let (c, mgr) = makeController(api: api, provider: provider,
+                                      locals: [("Default", "Default")],
+                                      unlockRetryDelay: { _ in .seconds(60) })
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await c.silentUnlockAndResolve()
+        XCTAssertNil(mgr.currentARK)
+        let calls = api.getDeviceEnvelopeCalls
+
+        api.deviceEnvelopeError = nil
+        c.kickSilentUnlockIfLocked()
+        await waitUntil { !c.resolved.isEmpty }
+        XCTAssertEqual(api.getDeviceEnvelopeCalls, calls + 1)
+        XCTAssertNotNil(mgr.currentARK)
+
+        c.kickSilentUnlockIfLocked()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(api.getDeviceEnvelopeCalls, calls + 1)
     }
 
     /// BH-52: with the ARK held nothing would retry a cleared cache (the unlock

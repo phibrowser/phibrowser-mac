@@ -781,6 +781,10 @@ import SwiftUI
                 // fallback timer. A stopped coordinator would drop the request, so refuse it.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
                     requestSync: { [weak self] bySyncNow in
+                        // A refusal for a missing account key is the one the user can do
+                        // something about: a launch whose silent unlock failed stays
+                        // locked until a retry succeeds, so Sync Now runs one now.
+                        self?.syncKeyController?.kickSilentUnlockIfLocked()
                         guard let self, self.phiSyncEngine === engine,
                               AccountController.shared.account === account,
                               self.phiSyncPairingEnabled,

@@ -230,8 +230,10 @@ final class SyncKeyController {
          verifyCursorDeletion: @escaping () throws -> Void = {},
          isCurrentAccount: @escaping () -> Bool = { true },
          runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
-         runtimeRemovalPending: @escaping () -> Bool = { false }) {
+         runtimeRemovalPending: @escaping () -> Bool = { false },
+         unlockRetryDelay: @escaping (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay) {
         self.isPairingComplete = isPairingComplete
+        self.unlockRetryDelay = unlockRetryDelay
         self.isProfileListEnumerated = isProfileListEnumerated
         self.manager = manager
         self.approvals = approvals
@@ -409,7 +411,12 @@ final class SyncKeyController {
     /// a thrown, possibly transient, failure) CLEARS the cache rather than
     /// leaving it standing: the unknown state fails *closed* (Chromium pulls nil
     /// and the sync gate shuts), and the first successful unlock announces
-    /// `.phiAccountKeyDidUnlock`, so a later trigger retries.
+    /// `.phiAccountKeyDidUnlock`, so a later trigger retries. A thrown failure
+    /// in that state also schedules its own retry (`scheduleUnlockRetry`): the
+    /// only other triggers are the launch-time login refresh and a Profile-list
+    /// change, so a launch with the key service unreachable otherwise stayed
+    /// locked after the connection returned (every round `gated`, every Chromium
+    /// Profile `notUnlocked`, Sync Now refused; PR #181 acceptance, 2026-10-12).
     ///
     /// Once the ARK is held that retry no longer exists (the notification fires
     /// only on the nil -> unlocked transition), so a transient failure would
@@ -454,7 +461,8 @@ final class SyncKeyController {
             // The unlock is an `await`; the account may have gone away inside it (review A11).
             guard !isRetired else { return }
             guard manager.currentARK != nil else {
-                clearResolved()  // transient (offline etc.) — the first unlock's notification retries
+                clearResolved()  // transient (offline etc.) — fails closed until the retry below unlocks
+                scheduleUnlockRetry(after: error)
                 return
             }
             AppLogWarn("[phi-sync] silent unlock failed with the account key held; keeping resolved keys (\(PhiSyncLog.describe(error)))")
@@ -462,6 +470,10 @@ final class SyncKeyController {
             return
         }
         guard !isRetired else { return }
+        // Any answer from the key service settles the retry: `.unlocked` is what it waited
+        // for, and `.needsJoin` / `.notSignedIn` are definitive (a join or a sign-in re-enters
+        // here through the pane and the login notifications).
+        cancelUnlockRetry()
         switch result {
         case .unlocked:
             break
@@ -481,6 +493,36 @@ final class SyncKeyController {
             AppLogWarn("[phi-sync] silent unlock got 401 with the account key held; keeping resolved keys")
         }
         await resolveMappings()
+    }
+
+    /// Runs a silent unlock now when the account key is not held: Sync Now on a
+    /// launch whose unlock failed is the user asking for exactly that, and the
+    /// coordinator refuses the request itself while the key is missing. A pending
+    /// retry is replaced, not doubled; with the key held this is a no-op.
+    func kickSilentUnlockIfLocked() {
+        guard !isRetired, manager.currentARK == nil else { return }
+        cancelUnlockRetry()
+        Task { @MainActor [weak self] in await self?.silentUnlockAndResolve() }
+    }
+
+    /// Arms one retry of the silent unlock after a thrown failure without the
+    /// account key. The pass that it runs lands back in `silentUnlockAndResolveOnce`,
+    /// which re-arms on the next throw (with a longer wait) or settles on any
+    /// answer. One timer at a time: a second failure while one is pending (the
+    /// Profile-list follow-up can fail the same way) keeps the earlier, shorter wait.
+    private func scheduleUnlockRetry(after error: Error) {
+        guard unlockRetryTask == nil else { return }
+        let attempt = unlockRetryAttempt
+        unlockRetryAttempt += 1
+        let delay = unlockRetryDelay(attempt)
+        AppLogWarn("[phi-sync] silent unlock failed without the account key; retrying in \(delay.components.seconds)s (\(PhiSyncLog.describe(error)))")
+        unlockRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled, !self.isRetired else { return }
+            self.unlockRetryTask = nil
+            guard self.manager.currentARK == nil else { return }
+            await self.silentUnlockAndResolve()
+        }
     }
 
     /// Drops every cached key and pings Chromium if there was anything to drop,
@@ -531,8 +573,22 @@ final class SyncKeyController {
         isRetired = true
         resolveTask?.cancel()
         silentUnlockTask?.cancel()
+        cancelUnlockRetry()
         autoCreateTask?.cancel()
         clearResolved()
+    }
+
+    /// 5 s doubling to 60 s: the key-service lookup is one GET, and nothing
+    /// observes the connection coming back (the repair loop in
+    /// `SyncProfileMappingPauseReconciler` caps its offline wait the same way).
+    static func defaultUnlockRetryDelay(attempt: Int) -> Duration {
+        .seconds(min(5 << min(attempt, 4), 60))
+    }
+
+    private func cancelUnlockRetry() {
+        unlockRetryTask?.cancel()
+        unlockRetryTask = nil
+        unlockRetryAttempt = 0
     }
 
     /// Re-runs resolution after external events (pairing applied, approval
@@ -617,6 +673,14 @@ final class SyncKeyController {
     /// time, later callers coalesce into exactly one follow-up pass.
     private var silentUnlockTask: Task<Void, Never>?
     private var silentUnlockPending = false
+
+    /// The pending retry of a silent unlock that threw without the account key
+    /// (`scheduleUnlockRetry`), and how many such retries this locked stretch has
+    /// used; both reset when a pass gets any answer. The delay is injected so
+    /// tests do not wait.
+    private var unlockRetryTask: Task<Void, Never>?
+    private var unlockRetryAttempt = 0
+    private var unlockRetryDelay: (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay
 
     private func resolveMappingsOnce() async {
         guard !isRetired else { return }

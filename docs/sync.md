@@ -315,16 +315,16 @@ Observation reads the cached user Profile list once and never calls
 `ProfileManager.refresh()`. The existing Profile-list subscription synchronously
 invalidates outstanding observations when membership changes.
 
-Only startup, membership changes, an explicit pane reload, failed status, or
-known stale success evidence (five minutes) may request a coordinated round.
-All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. A Sync now request skips the interval while the native
+Only startup, membership changes, failed status, or known stale success evidence
+(five minutes) may request a coordinated round; opening or reloading the Sync pane
+only observes (owner ruling 2026-10-12: a round per pane open flipped the status to
+Checking → Syncing every time the pane was shown). All requests share a minimum
+interval of 60 seconds; a request made while a round is active coalesces with it. A Sync now request skips the interval while the native
 participant (`Participant.isNative`) reports Offline and dispatches as soon as the
 participants are settled, so the tap fails within seconds
-instead of waiting behind the interval that the pane-open request and automatic
-retries keep pushing forward. Upgrading an already admitted ordinary round to Sync now
-also skips the interval, as described below. The pane-open request and automatic demand
-never skip it. A queued explicit reload preserves the observed phase and
+instead of waiting behind the interval that automatic retries keep pushing
+forward. Upgrading an already admitted ordinary round to Sync now also skips the
+interval, as described below. Automatic demand never skips it. A queued explicit reload preserves the observed phase and
 last common time until dispatch; it does not invalidate a completed barrier.
 Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
@@ -556,9 +556,11 @@ What the pane shows, as a contract:
   the helper's state, including the pause row. Only a first load that fails shows
   the "Couldn't load sync information" card with Retry. While that card shows,
   the pane watches the network path and reloads once, after 1 second, when the
-  connection comes back; a failure while already online waits for Retry. A successful
-  unlock awaits the shared controller's mapping pass before refreshing sync status;
-  a pane superseded or rebound during that pass does not publish the old result.
+  connection comes back; a failure while already online waits for Retry. A load that
+  started locked and unlocks awaits the shared controller's mapping pass before
+  refreshing sync status (a reload of an already unlocked pane runs no pass); a pane
+  superseded or rebound during that pass does not publish the old result. Opening or
+  reloading the pane never requests a round; only Sync now does.
 - **Last problem.** When this Mac's native sync has recorded a problem, the status
   row adds one line: a localized category (for example No connection, Sign-in
   expired, Server error) and a relative time. The next fully successful round

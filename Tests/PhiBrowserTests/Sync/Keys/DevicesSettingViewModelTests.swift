@@ -173,6 +173,44 @@ final class DevicesSettingViewModelTests: XCTestCase {
         XCTAssertNil(vm.actionError)
     }
 
+    /// Opening the pane observes; it never asks the helper for a round.
+    func testLoadAllOnlyObservesAndDoesNotRequestARound() async throws {
+        let (_, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.pairingComplete = { true }
+        var requests: [Bool] = []
+        vm.syncReport = { requestSync in requests.append(requestSync); return nil }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .unlocked)
+        XCTAssertEqual(requests, [false])
+        await vm.stopPolling()
+    }
+
+    /// The mapping pass belongs to a load that started locked; a reload of an unlocked
+    /// pane does not run one.
+    func testOnlyALoadThatStartedLockedResolvesMappings() async throws {
+        let (api, mgr, svc, _) = try await unlockedStack()
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.accountID = { "account-a" }
+        vm.pairingComplete = { true }
+        var passes = 0
+        vm.resolveMappingsAfterUnlock = { passes += 1 }
+        vm.syncReport = { _ in nil }
+
+        api.deviceEnvelopeError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        await vm.loadAll()
+        XCTAssertEqual(passes, 0, "a failed first load unlocks nothing")
+
+        api.deviceEnvelopeError = nil
+        await vm.loadAll()  // Retry
+        XCTAssertEqual(passes, 1)
+        XCTAssertEqual(vm.unlockState, .unlocked)
+
+        await vm.loadAll()  // the pane shown again
+        XCTAssertEqual(passes, 1)
+        await vm.stopPolling()
+    }
+
     func testFailedReloadKeepsTheUnlockedPane() async throws {
         let (api, mgr, svc, _) = try await unlockedStack()
         let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)

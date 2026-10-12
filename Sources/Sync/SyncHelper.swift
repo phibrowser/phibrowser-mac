@@ -229,8 +229,9 @@ final class SyncHelper {
         }
     }
 
-    /// Ordinary pane/background polls only observe. An explicit pane reload may
-    /// request a round, coalesced with in-flight work and the same minimum interval.
+    /// Ordinary pane/background polls only observe; since 2026-10-12 the pane's own
+    /// open and reload observe too. A caller passing `requestSync` asks for a round,
+    /// coalesced with in-flight work and the same minimum interval.
     func refresh(requestSync: Bool = false) async {
         guard !retired else { return }
         if requestSync && round == nil { explicitRefreshPending = true }

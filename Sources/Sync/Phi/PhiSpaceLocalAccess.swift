@@ -348,8 +348,9 @@ extension AccountPhiSpaceAccess: PhiProfileLocalAccess {
         ProfileManager.readProfiles().map { Set($0.map(\.profileId)) }
     }
 
-    func removeLocalRows(ofDeletedProfile localProfileId: String) async {
-        await ProfileManager.removeLocalRows(ofDeletedProfile: localProfileId, account: account)
+    func removeLocalRows(ofDeletedProfile localProfileId: String, alsoHiddenSyncUuids: Set<String>) async {
+        await ProfileManager.removeLocalRows(ofDeletedProfile: localProfileId, account: account,
+                                             alsoHiddenSyncUuids: alsoHiddenSyncUuids)
     }
 
     /// Classifies every Space row bound to the Profile. A remotely soft-deleted (hidden) row does

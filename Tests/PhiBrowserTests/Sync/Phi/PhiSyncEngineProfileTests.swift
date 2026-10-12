@@ -59,7 +59,12 @@ final class FakePhiProfileAccess: PhiProfileLocalAccess {
     var refreshSucceeds = true
     private(set) var removedRows: [String] = []
     func freshProfileIds() -> Set<String>? { refreshSucceeds ? Set(profiles.map(\.profileId)) : nil }
-    func removeLocalRows(ofDeletedProfile localProfileId: String) async { removedRows.append(localProfileId) }
+    /// The extra hidden Space uuids each `removeLocalRows` call carried, in call order.
+    private(set) var removedRowsAlsoHidden: [Set<String>] = []
+    func removeLocalRows(ofDeletedProfile localProfileId: String, alsoHiddenSyncUuids: Set<String>) async {
+        removedRows.append(localProfileId)
+        removedRowsAlsoHidden.append(alsoHiddenSyncUuids)
+    }
     func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers {
         blockers[localProfileId] ?? ProfileDeletionBlockers()
     }
@@ -809,6 +814,39 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertNotNil(store.table.profileCursors["pu-1"]?.deletedAtMs)
         XCTAssertEqual(profiles.mappings, ["P1": "pu-1"])
         XCTAssertFalse(profileCommits(client).contains { !$0.deleted }, "nothing is republished")
+    }
+
+    /// A Space hidden by a tombstone on the same page as its Profile's tombstone is not in the
+    /// stored table yet; the row removal is told about it, so the hidden row goes with the Profile.
+    func testSpacesHiddenOnTheSamePageAreRemovedWithTheProfile() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        let spaces = FakePhiSpaceAccess()
+        spaces.spaceMappings = ["S1": "su-1"]
+        let store = drainedStore()
+        var spaceCursor = PhiSpaceCursor()
+        spaceCursor.entityId = "srv-su-1"
+        spaceCursor.version = 2
+        store.table.cursors["su-1"] = spaceCursor
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 3)
+        let engine = makeEngine(spaces: spaces, profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertFalse(store.table.hiddenSyncUuids.contains("su-1"))
+
+        // One page: the Space's tombstone, then its Profile's.
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("su-1")),
+                    ciphertext: Data(), version: 10, entityId: "srv-su-1", deleted: true)
+        tombstone(client, version: 11)
+        await engine.pullOnce()
+
+        XCTAssertEqual(profiles.remoteDeletions, ["P1"])
+        XCTAssertTrue(store.table.hiddenSyncUuids.contains("su-1"))
+        let index = try XCTUnwrap(profiles.removedRows.firstIndex(of: "P1"))
+        XCTAssertTrue(profiles.removedRowsAlsoHidden[index].contains("su-1"),
+                      "the page's working table names the Space it just hid")
     }
 
     func testAnAgentSpaceDefersTheTombstoneUntilItIsGone() async throws {

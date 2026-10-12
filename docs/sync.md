@@ -1303,7 +1303,10 @@ deletion of the uuid journaled, the cursor is finalized. Otherwise
 Delete runs `deleteProfile(sync: .remoteTombstone)`: the same Chromium deletion,
 key withdrawal and local row removal, with no journal and nothing published; the
 engine repeats the idempotent row removal, also when it finds the Profile already
-gone. A failed Chromium deletion defers; after three failed rounds (counted apart
+gone. The engine's removal also passes the page's working table's hidden Spaces
+(`removeLocalRows(ofDeletedProfile:alsoHiddenSyncUuids:)`): the table is written
+only after the page, so a Space hidden by a tombstone on the same page would
+otherwise stay as a hidden row bound to the deleted Profile. A failed Chromium deletion defers; after three failed rounds (counted apart
 from blocker deferrals) the Profile is undeleted. A crash replays the page, finds the Profile gone and finalizes.
 Undelete keeps the baseline, takes the tombstone's id and version and drops
 `server`, so the next publication republishes the entity over the tombstone; the

@@ -344,7 +344,10 @@ final class ProfileManager: ObservableObject {
                     AppLogWarn("[ProfileManager] account changed during profile deletion; leaving the sync record for the original account to reconcile")
                 } else if success, sync != .none {
                     Task { @MainActor in
-                        if let account { await Self.removeLocalRows(ofDeletedProfile: profileId, account: account) }
+                        if let account {
+                            await Self.removeLocalRows(ofDeletedProfile: profileId, account: account,
+                                                       alsoHiddenSyncUuids: [])
+                        }
                         if let syncUuid {
                             syncState.recordLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId)
                         } else {
@@ -377,10 +380,14 @@ final class ProfileManager: ObservableObject {
     /// with their content -- they are account-deleted already, and once the sync table is reset
     /// nothing would hide them any more -- then its Profile-scoped pinned rows and `ProfileModel`
     /// row. Best effort and idempotent: the sync engine runs it again after a crash.
+    /// `alsoHiddenSyncUuids`: Spaces hidden in the pull page being landed, whose table is written
+    /// only after this runs (empty for a user's deletion).
     @MainActor
-    static func removeLocalRows(ofDeletedProfile profileId: String, account: Account) async {
+    static func removeLocalRows(ofDeletedProfile profileId: String, account: Account,
+                                alsoHiddenSyncUuids: Set<String>) async {
         let bound = account.localStorage.getAllSpaces().filter { $0.profileId == profileId }.map(\.spaceId)
-        let hidden = PhiSpaceSyncState.shared.remotelyDeletedSpaceIds(among: bound).sorted()
+        let hidden = PhiSpaceSyncState.shared.remotelyDeletedSpaceIds(
+            among: bound, alsoHiddenSyncUuids: alsoHiddenSyncUuids).sorted()
         do {
             try await account.localStorage.deleteProfileRowCascadeThrowing(profileId: profileId,
                                                                           hiddenSpaceIds: hidden)

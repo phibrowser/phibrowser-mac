@@ -665,9 +665,10 @@ final class PhiSpaceSyncState {
     /// tombstone (`profileDeletionBlockers`). `SpaceManager.isProfileInUse` answers through this.
     /// The local Space ids among `spaceIds` that a remote deletion soft-deleted. Reads the stored
     /// table as well as the cache, so an answer taken before the engine first refreshed the cache
-    /// is not an empty set.
-    func remotelyDeletedSpaceIds(among spaceIds: [String]) -> Set<String> {
-        let stored = directStore?.load().hiddenSyncUuids ?? []
+    /// is not an empty set. `alsoHiddenSyncUuids` adds Spaces hidden in a table not yet written.
+    func remotelyDeletedSpaceIds(among spaceIds: [String],
+                                 alsoHiddenSyncUuids: Set<String> = []) -> Set<String> {
+        let stored = (directStore?.load().hiddenSyncUuids ?? []).union(alsoHiddenSyncUuids)
         return Set(spaceIds.filter { spaceId in
             isHidden(spaceId) || syncUuidLookup?(spaceId).map { stored.contains($0) } == true
         })

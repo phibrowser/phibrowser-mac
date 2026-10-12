@@ -4327,7 +4327,10 @@ actor PhiSyncEngine {
             let mappedLocalId = mappings.first(where: { $0.value == item.uuid })?.key
             guard let localId = mappedLocalId, await profileAccess.isKnownLocalProfile(localId) else {
                 // Already gone, possibly by a deletion whose row cleanup a crash cut short.
-                if let mappedLocalId { await profileAccess.removeLocalRows(ofDeletedProfile: mappedLocalId) }
+                if let mappedLocalId {
+                    await profileAccess.removeLocalRows(ofDeletedProfile: mappedLocalId,
+                                                        alsoHiddenSyncUuids: table.hiddenSyncUuids)
+                }
                 finalize()
                 AppLogInfo("[phi-sync] profile deleted by a remote tombstone; no local profile here")
                 continue
@@ -4352,7 +4355,10 @@ actor PhiSyncEngine {
                     continue
                 }
                 guard !isStopped else { return }
-                await profileAccess.removeLocalRows(ofDeletedProfile: localId)
+                // The page's working table, not the stored one: Spaces this page hid are not
+                // written yet (docs/sync.md, "Profile deletion and rename").
+                await profileAccess.removeLocalRows(ofDeletedProfile: localId,
+                                                    alsoHiddenSyncUuids: table.hiddenSyncUuids)
                 finalize()
                 AppLogInfo("[phi-sync] profile deleted by a remote tombstone")
                 continue
@@ -4457,7 +4463,7 @@ actor PhiSyncEngine {
         var cleaned: [String] = []
         for (uuid, localId) in intents.sorted(by: { $0.key < $1.key })
         where !inFlight.contains(uuid) && !present.contains(uuid) {
-            await profileAccess.removeLocalRows(ofDeletedProfile: localId)
+            await profileAccess.removeLocalRows(ofDeletedProfile: localId, alsoHiddenSyncUuids: [])
             cleaned.append(uuid)
         }
         guard !isStopped else { return }

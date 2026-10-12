@@ -51,8 +51,10 @@ protocol PhiProfileLocalAccess: AnyObject {
     func finishLocalProfileDeletion(syncUuid: String)
     /// Whether the Chromium deletion for this uuid is in flight right now.
     func isProfileBeingDeletedLocally(syncUuid: String) -> Bool
-    /// Removes the local rows a deleted Profile leaves behind. Idempotent.
-    func removeLocalRows(ofDeletedProfile localProfileId: String) async
+    /// Removes the local rows a deleted Profile leaves behind. Idempotent. `alsoHiddenSyncUuids`
+    /// names Spaces a remote deletion soft-deleted in a table not yet written (the pull page being
+    /// landed); their rows are removed with the Profile like the persisted hidden ones.
+    func removeLocalRows(ofDeletedProfile localProfileId: String, alsoHiddenSyncUuids: Set<String>) async
 
     /// What on this device stands in the way of applying a remote Profile tombstone.
     func profileDeletionBlockers(localProfileId: String) -> ProfileDeletionBlockers

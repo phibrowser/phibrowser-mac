@@ -1173,7 +1173,10 @@ only with a newer version than the tombstone it recorded; the cursor is reset an
 the entity lands wholesale, and a mapping whose local Profile is gone is dropped
 so auto-create recreates the Profile. A replayed older create lands nothing. The
 pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
-preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`).
+preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`) and
+offers the others under their live entity's name (`profileNames`): the registry
+envelope keeps the name a Profile was registered with, and a rename never
+rewrites it.
 
 Cursors are `PhiSpaceSyncTable.profileCursors` (`PhiProfileCursor`), keyed by
 account profile uuid, in the same `sync.phiSpaces` table as the Space cursors:

@@ -76,6 +76,10 @@ struct PhiAccountSpacePreview: Equatable, Sendable {
     /// cannot be classified by kind; the wizard leaves out an account Profile whose
     /// `phi-profile:<uuid>` hash is in here (docs/sync.md, "Profile entity").
     var deletedProfileTagHashes: Set<String> = []
+    /// Account name of every live Profile entity the preview read, by uuid. The registry
+    /// envelope keeps the name a Profile was registered with, so the wizard shows these
+    /// instead (a Profile renamed on another device is otherwise offered under its old name).
+    var profileNames: [String: String] = [:]
 }
 
 enum PhiSpacePreviewError: Error, Equatable {
@@ -1888,6 +1892,8 @@ actor PhiSyncEngine {
 
         var summaries: [String: (entity: Phi_PhiSpaceEntity, version: Int64)] = [:]
         var tombstoneHashes: Set<String> = []
+        var profileNames: [String: String] = [:]
+        var profileVersions: [String: Int64] = [:]
         var pages = 0
         var entities = 0
         var refused = 0
@@ -1942,6 +1948,16 @@ actor PhiSyncEngine {
                     // An unknown protobuf kind could be a Space from a newer client.
                     // Known other kinds are irrelevant; an unknown kind is not absence.
                     guard let kind = decoded.kind else { unreadable += 1; continue }
+                    if case .profile(let profile) = kind {
+                        // Same hash check as landing; a payload that does not hash back to
+                        // its tag is not evidence of a name.
+                        guard PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(profile.profileUuid))
+                                == entity.clientTagHash else { unreadable += 1; continue }
+                        if let seen = profileVersions[profile.profileUuid], seen >= entity.version { continue }
+                        profileVersions[profile.profileUuid] = entity.version
+                        profileNames[profile.profileUuid] = profile.name.stringValue
+                        continue
+                    }
                     guard case .space(let space) = kind else { continue }
                     let expected = PhiSyncEntity.clientTagHash(
                         for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
@@ -2002,7 +2018,8 @@ actor PhiSyncEngine {
                    + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
                    + "ms=\(now() - startedAt)")
         box.result = .success(PhiAccountSpacePreview(spaces: out, skippedEntityCount: refused + unreadable,
-                                                     deletedProfileTagHashes: tombstoneHashes))
+                                                     deletedProfileTagHashes: tombstoneHashes,
+                                                     profileNames: profileNames))
     }
 
     // MARK: - §11 round counters

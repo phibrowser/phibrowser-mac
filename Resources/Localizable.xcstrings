@@ -55744,6 +55744,54 @@
             "state" : "new",
             "value" : "Reader View"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閱讀模式"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リーダー表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽기 모드"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode Lecture"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesemodus"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reader-weergave"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lector"
+          }
         }
       }
     },
@@ -59907,6 +59955,54 @@
             "state" : "new",
             "value" : "Off"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "끔"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado"
+          }
         }
       }
     },
@@ -59918,6 +60014,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Mini Player"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迷你播放程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迷你播放器"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミニプレーヤー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미니 플레이어"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mini-lecteur"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniPlayer"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minispeler"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minirreproductor"
           }
         }
       }
@@ -60650,6 +60794,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Control media playing in background tabs from the sidebar."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在侧边栏中控制后台标签页正在播放的媒体。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從側邊欄控制背景分頁中播放的媒體。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックグラウンドのタブで再生中のメディアをサイドバーから操作します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "백그라운드 탭에서 재생 중인 미디어를 사이드바에서 제어해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permet de contrôler les médias en cours de lecture dans les onglets en arrière-plan depuis la barre latérale."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steuere Medien, die in Hintergrund-Tabs wiedergegeben werden, über die Seitenleiste."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bedien media die in achtergrondtabbladen wordt afgespeeld vanuit de zijbalk."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controla desde la barra lateral el contenido multimedia que se reproduce en las pestañas en segundo plano."
           }
         }
       }
@@ -73079,7 +73271,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dynamisch (erweitern, wenn der Zeiger darüber liegt)"
+            "value" : "Automatisch"
           }
         },
         "en" : {
@@ -73091,43 +73283,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dinámico (se expande al pasar el puntero)"
+            "value" : "Automático"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dynamique (développer au survol)"
+            "value" : "Auto"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ダイナミック（ポインタを置くと展開）"
+            "value" : "自動"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "동적(포인터를 올리면 확장)"
+            "value" : "자동"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dynamisch (uitklappen bij aanwijzen)"
+            "value" : "Automatisch"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "动态（悬停时展开）"
+            "value" : "自动"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "動態（指標停留時展開）"
+            "value" : "自動"
           }
         }
       }
@@ -73139,7 +73331,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Medienplayer in der Seitenleiste anzeigen"
+            "value" : "MiniPlayer einblenden"
           }
         },
         "en" : {
@@ -73151,43 +73343,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el reproductor multimedia de la barra lateral"
+            "value" : "Mostrar minirreproductor"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher le lecteur multimédia de la barre latérale"
+            "value" : "Afficher le Mini-lecteur"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サイドバーのメディアプレーヤーを表示"
+            "value" : "ミニプレーヤーを表示"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "사이드바 미디어 플레이어 표시"
+            "value" : "미니 플레이어 표시"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toon mediaspeler in zijbalk"
+            "value" : "Toon minispeler"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示侧边栏媒体播放器"
+            "value" : "显示迷你播放程序"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示側邊欄媒體播放器"
+            "value" : "顯示迷你播放器"
           }
         }
       }
@@ -73199,7 +73391,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wenn du den Player ausschaltest, läuft die Medienwiedergabe weiter. „Dynamisch“ erweitert den Player, wenn der Zeiger kurz darüber liegt; per Tastaturfokus und VoiceOver lassen sich die Details sofort einblenden."
+            "value" : "Steuere Medien, die in Hintergrund-Tabs wiedergegeben werden, über die Seitenleiste."
           }
         },
         "en" : {
@@ -73211,43 +73403,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si desactivas el reproductor, el contenido multimedia sigue reproduciéndose. Dinámico se expande tras pasar brevemente el puntero; el foco del teclado y VoiceOver pueden mostrar sus detalles de inmediato."
+            "value" : "Controla desde la barra lateral el contenido multimedia que se reproduce en las pestañas en segundo plano."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Désactiver le lecteur n'interrompt pas la lecture. En mode Dynamique, le lecteur se développe après un bref survol ; le focus clavier et VoiceOver peuvent afficher ses détails immédiatement."
+            "value" : "Permet de contrôler les médias en cours de lecture dans les onglets en arrière-plan depuis la barre latérale."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレーヤーをオフにしてもメディアの再生は続きます。「ダイナミック」ではポインタをしばらく置くと展開します。キーボードフォーカスとVoiceOverでは詳細をすぐに表示できます。"
+            "value" : "バックグラウンドのタブで再生中のメディアをサイドバーから操作します。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "플레이어를 꺼도 미디어는 계속 재생돼요. 동적 모드에서는 포인터를 잠시 올리면 확장되고, 키보드 포커스와 VoiceOver로는 바로 세부사항을 볼 수 있어요."
+            "value" : "백그라운드 탭에서 재생 중인 미디어를 사이드바에서 제어해요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Als je de speler uitschakelt, blijft media gewoon afspelen. Dynamisch klapt uit na kort aanwijzen; met toetsenbordfocus en VoiceOver kun je de details meteen tonen."
+            "value" : "Bedien media die in achtergrondtabbladen wordt afgespeeld vanuit de zijbalk."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭播放器后，媒体仍会继续播放。「动态」模式会在短暂悬停后展开；通过键盘焦点和旁白可立即显示其详细信息。"
+            "value" : "在侧边栏中控制后台标签页正在播放的媒体。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉播放器後，媒體仍會繼續播放。「動態」模式會在指標短暫停留後展開；使用鍵盤焦點或「旁白」則可立即顯示詳細資訊。"
+            "value" : "從側邊欄控制背景分頁中播放的媒體。"
           }
         }
       }
@@ -73259,7 +73451,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Player-Darstellung"
+            "value" : "Anzeigemodus für den MiniPlayer"
           }
         },
         "en" : {
@@ -73271,43 +73463,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Presentación del reproductor"
+            "value" : "Modo de visualización del minirreproductor"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Affichage du lecteur"
+            "value" : "Mode d'affichage du Mini-lecteur"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレーヤーの表示"
+            "value" : "ミニプレーヤーの表示モード"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "플레이어 표시"
+            "value" : "미니 플레이어 표시 모드"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spelerweergave"
+            "value" : "Weergavemodus van minispeler"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放器显示"
+            "value" : "迷你播放程序显示模式"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放器顯示方式"
+            "value" : "迷你播放器顯示模式"
           }
         }
       }
@@ -73319,7 +73511,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Medien in der Seitenleiste"
+            "value" : "MiniPlayer"
           }
         },
         "en" : {
@@ -73331,43 +73523,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Multimedia en la barra lateral"
+            "value" : "Minirreproductor"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Média de la barre latérale"
+            "value" : "Mini-lecteur"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サイドバーのメディア"
+            "value" : "ミニプレーヤー"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "사이드바 미디어"
+            "value" : "미니 플레이어"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Media in zijbalk"
+            "value" : "Minispeler"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "侧边栏媒体"
+            "value" : "迷你播放程序"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "側邊欄媒體"
+            "value" : "迷你播放器"
           }
         }
       }

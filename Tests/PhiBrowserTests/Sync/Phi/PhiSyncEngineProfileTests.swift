@@ -476,6 +476,134 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertTrue(store.table.liveProfileEntityUuids.isEmpty)
     }
 
+    // MARK: - Pins of a Profile this device never mapped
+
+    // A replay (fresh install, or "Remove from sync" + rejoin) can deliver a pin owned by an account
+    // Profile deleted before this device knew it, together with that Profile's tombstone. The pin
+    // names the uuid, so the pull indexes it under its Profile tag; the tombstone records a deleted
+    // Profile cursor and landing discards the pin (dead owner, as R-M3-4a-78 does for Spaces) instead
+    // of parking it every round (PR #181 acceptance 2026-10-12).
+
+    private func pinTag(_ lineage: String, owner: String) -> String {
+        PhiSyncEntity.pinClientTag(lineage, ownerKey: owner)
+    }
+
+    private func pinEntity(_ lineage: String, owner: String, version: Int64) -> PhiRemoteEntity {
+        remoteEntity(envelope(pinPayload(lineage: lineage, ownerKey: owner)),
+                     tag: pinTag(lineage, owner: owner), version: version, entityId: "srv-pin", key: key)
+    }
+
+    private func profileTombstone(_ uuid: String, version: Int64) -> PhiRemoteEntity {
+        remoteTombstone(tag: PhiSyncEntity.profileClientTag(uuid), version: version, entityId: "srv-\(uuid)")
+    }
+
+    /// Profile-scoped pins on a device whose only Profile is Default (pu-1); pu-gone is unknown here.
+    private func makePinEngine(pins: FakePinAccess, pinStore: MemoryOwnedItemStore,
+                               store: MemorySpaceStore, client: FakePhiSyncClient) -> PhiSyncEngine {
+        let spaces = FakePhiSpaceAccess()
+        spaces.profileIdByUuid = ["pu-1": "Default"]
+        spaces.uuidByProfileId = ["Default": "pu-1"]
+        spaces.knownLocalProfileIds = ["Default"]
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "Default", displayName: "Personal", createdAtMs: 0)]
+        profiles.mappings = ["Default": "pu-1"]
+        return PhiSyncEngine(domainKeys: StubDomainKeys(key: key), client: client,
+                             defaults: defaults, deviceKeyId: "devA", pairingComplete: true,
+                             settings: [], spaceAccess: spaces, spaceStore: store,
+                             profileAccess: profiles, ownedKinds: [.pins(access: pins, store: pinStore)],
+                             now: { [unowned self] in self.nowMs })
+    }
+
+    /// The shared outcome: a deleted Profile cursor, never a Space cursor, and the pin discarded.
+    private func assertDeadProfileDiscardedThePin(_ engine: PhiSyncEngine, store: MemorySpaceStore,
+                                                  pins: FakePinAccess,
+                                                  file: StaticString = #filePath, line: UInt = #line) async {
+        let cursor = store.table.profileCursors["pu-gone"]
+        XCTAssertEqual(cursor?.deletedAtMs, nowMs, "① the tombstone records a deleted Profile", file: file, line: line)
+        XCTAssertEqual(cursor?.entityId, "srv-pu-gone", file: file, line: line)
+        XCTAssertTrue(store.table.deletedProfileUuids.contains("pu-gone"), file: file, line: line)
+        XCTAssertNil(store.table.cursors["pu-gone"], "② not routed as a Space tombstone", file: file, line: line)
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertNil(table.cursors["lx:pu-gone"]?.pendingApply, "③ the pin is not parked", file: file, line: line)
+        XCTAssertEqual(counters?.parked, 0, "④ nothing waits for the dead owner", file: file, line: line)
+        XCTAssertTrue(pins.rows.isEmpty, "⑤ no row is created for a dead owner", file: file, line: line)
+    }
+
+    func testAPinAndTheTombstoneOfItsUnknownProfileOnOnePageDiscardThePin() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([pinEntity("lx", owner: "pu-gone", version: 8),
+                                      profileTombstone("pu-gone", version: 9)], marker: "10")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
+    }
+
+    func testATombstoneOnAnEarlierPageIsCarriedUntilAPinNamesItsProfile() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        // Page one: only the tombstone, whose tag no index knows yet. Page two: the pin naming it.
+        client.pagesByMarker = [page([profileTombstone("pu-gone", version: 9)], marker: "10",
+                                     changesRemaining: true),
+                                page([pinEntity("lx", owner: "pu-gone", version: 18)], marker: "20")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertGreaterThanOrEqual(client.getUpdatesCalls.count, 2, "both pages were pulled in one round")
+        await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
+    }
+
+    func testAPinParkedOnAnEarlierPageIsDiscardedWhenItsProfileTombstoneArrives() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        // Page one parks the pin behind its unknown owner; page two brings the owner's tombstone.
+        client.pagesByMarker = [page([pinEntity("lx", owner: "pu-gone", version: 8)], marker: "10",
+                                     changesRemaining: true),
+                                page([profileTombstone("pu-gone", version: 19)], marker: "20")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertGreaterThanOrEqual(client.getUpdatesCalls.count, 2, "both pages were pulled in one round")
+        await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
+    }
+
+    func testATombstoneNoOwnedItemNamesIsStillIgnored() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        // The pin names pu-gone, but the only tombstone is pu-other's, which nothing names.
+        client.pagesByMarker = [page([pinEntity("lx", owner: "pu-gone", version: 8),
+                                      profileTombstone("pu-other", version: 9)], marker: "10")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+
+        XCTAssertNil(store.table.profileCursors["pu-other"], "an unknown tag creates no Profile cursor")
+        XCTAssertNil(store.table.cursors["pu-other"], "nor a Space cursor")
+        XCTAssertNil(store.table.profileCursors["pu-gone"], "indexing an owner alone records nothing")
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertNotNil(table.cursors["lx:pu-gone"]?.pendingApply, "without its owner's tombstone the pin parks")
+        XCTAssertEqual(table.cursors["lx:pu-gone"]?.pendingOwnerUuid, "pu-gone")
+        XCTAssertEqual(counters?.parked, 1)
+    }
+
     // MARK: - Facade view
 
     func testTheEntityViewIsNilUntilTheFirstDrain() {

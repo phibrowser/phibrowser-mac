@@ -1172,6 +1172,14 @@ recorded (`deletedAtMs`) the uuid is no longer published or auto-created. A dele
 only with a newer version than the tombstone it recorded; the cursor is reset and
 the entity lands wholesale, and a mapping whose local Profile is gone is dropped
 so auto-create recreates the Profile. A replayed older create lands nothing. The
+A Profile tombstone carries no payload, so it is resolved only through an index
+of known uuids: the Profile cursors, the persisted mappings, the deletion journal,
+and, for the rest of the pull it arrives in, the owner uuids named by owned-item
+arrivals and by items parked earlier (the same extension that resolves a deleted
+Space's tombstone, R-M3-4a-78). A pin of a Profile this device never mapped (deleted
+on the account before this device joined or replayed) therefore lands as "Profile
+deleted" and is discarded, instead of parking forever on its unknown owner; a
+tombstone that nothing names during the pull is dropped. The
 pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
 preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`) and
 offers the others under their live entity's name (`profileNames`): the registry

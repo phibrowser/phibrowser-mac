@@ -2320,6 +2320,8 @@ actor PhiSyncEngine {
         var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
         let profileLive = spaceLive && profileAccess != nil
         var profileIndex = profileLive ? await profileTagIndex(table: spaceTableAtEntry) : [:]
+        // Tombstones whose tag no index knew when their page landed (see the page loop).
+        var carriedTombstones: [(hash: String, entityId: String, version: Int64)] = []
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2558,17 +2560,33 @@ actor PhiSyncEngine {
                     for uuid in batch.ownedOwnerUuids {
                         let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
                         if tagIndex[hash] == nil { tagIndex[hash] = uuid }
-                    }
-                    for unknown in batch.unknownTombstones {
-                        guard let uuid = tagIndex[unknown.hash] else {
-                            AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag "
-                                       + "hash=\(String(unknown.hash.prefix(8)))")
-                            continue
+                        // A pin's owner can be a Profile this device never mapped (deleted on the
+                        // account before this device joined or replayed): index it under its
+                        // Profile tag as well, so the Profile tombstone records a deleted Profile
+                        // cursor and landing discards the pin instead of parking it forever
+                        // (PR #181 acceptance 2026-10-12: a Google pin of the deleted P168-6).
+                        if profileLive {
+                            let profileHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(uuid))
+                            if profileIndex[profileHash] == nil { profileIndex[profileHash] = uuid }
                         }
-                        batch.tombstones.append((uuid: uuid, entityId: unknown.entityId,
-                                                 version: unknown.version))
                     }
+                    // Tombstones no index named yet are kept for the rest of this pull: a page
+                    // order of tombstone first, owned items later would otherwise drop it.
+                    carriedTombstones += batch.unknownTombstones
                     batch.unknownTombstones = []
+                    carriedTombstones.removeAll { unknown in
+                        if profileLive, let uuid = profileIndex[unknown.hash] {
+                            batch.profileTombstones.append((uuid: uuid, entityId: unknown.entityId,
+                                                            version: unknown.version))
+                            return true
+                        }
+                        if let uuid = tagIndex[unknown.hash] {
+                            batch.tombstones.append((uuid: uuid, entityId: unknown.entityId,
+                                                     version: unknown.version))
+                            return true
+                        }
+                        return false
+                    }
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
                     for arrival in batch.profiles {
@@ -2644,6 +2662,10 @@ actor PhiSyncEngine {
                 }
             }
             drained = !more
+            if !carriedTombstones.isEmpty {
+                AppLogInfo("[phi-sync] ignoring \(carriedTombstones.count) tombstone(s) for unknown tags "
+                           + "first_hash=\(String(carriedTombstones[0].hash.prefix(8)))")
+            }
             if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }
             // Finalize drain only if no marker suppression or cursor-save failure occurred
             // (RR2-11). A round that did not persist its page markers cannot claim a complete
@@ -4043,8 +4065,11 @@ actor PhiSyncEngine {
 
     /// client_tag_hash -> account profile uuid, rebuilt once per pull from the Profile cursor keys
     /// and every persisted Profile mapping. A Profile tombstone carries no payload, so only an
-    /// indexed uuid can be resolved; an unknown one falls through to the Space router and is
-    /// dropped there, which is harmless because auto-create needs a live Profile entity.
+    /// indexed uuid can be resolved; an unknown one falls through to the Space router, where the
+    /// owners named by owned-item arrivals (and by items parked earlier) extend this index for
+    /// the rest of the pull, so a Profile this device never mapped still lands as deleted when
+    /// one of its pins is replayed. A tombstone nothing names is dropped, which is harmless
+    /// because auto-create needs a live Profile entity.
     private func profileTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         guard let profileAccess else { return [:] }
         var uuids = Set(table.profileCursors.keys)
@@ -5450,7 +5475,7 @@ actor PhiSyncEngine {
             discardedForDeadOwner += 1
         }
         if discardedForDeadOwner > 0 {
-            AppLogInfo("[phi-sync] discarded inbound items owned by a deleted Space "
+            AppLogInfo("[phi-sync] discarded inbound items owned by a deleted Space or Profile "
                        + "kind=\(registration.label) discarded=\(discardedForDeadOwner)")
         }
         // After a successful M1 claim, remove the retired locally minted cursor (section 8.4.2(4) /

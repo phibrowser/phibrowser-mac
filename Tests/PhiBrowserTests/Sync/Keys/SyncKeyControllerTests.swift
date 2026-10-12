@@ -421,4 +421,51 @@ final class SyncKeyControllerTests: XCTestCase {
         await c.resolveMappings()
         XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"), "a failed deletion gives it back")
     }
+
+    /// A pass that resolved a Profile before its deletion started must not put the key back when
+    /// it resumes after the deletion finished (`profileIdsBeingDeleted` is empty again by then).
+    func testAPassSuspendedAcrossAWholeDeletionDoesNotRestoreTheKey() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        var locals = [(profileId: "Default", displayName: "Default"), (profileId: "Profile 1", displayName: "Work")]
+        let (c, _) = makeController(api: api, provider: provider, localsProvider: { locals })
+        await c.silentUnlockAndResolve()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"))
+
+        // The pass has resolved "Profile 1" and is suspended on the account listing.
+        api.beforeListProfilesOnce = {
+            await MainActor.run {
+                c.withdrawProfileKey(profileId: "Profile 1")
+                locals.removeAll { $0.profileId == "Profile 1" }
+                c.finishProfileKeyWithdrawal(profileId: "Profile 1")
+            }
+        }
+        await c.resolveMappings()
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Profile 1"), "the resumed pass did not merge it back")
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+
+        await c.resolveMappings()
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Profile 1"), "nor does a later pass")
+    }
+
+    /// A deletion that fails while a pass is suspended gives the key back as before.
+    func testAWithdrawalRestoredDuringAPassResolvesAgain() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let (c, _) = makeController(api: api, provider: provider,
+                                    locals: [("Default", "Default"), ("Profile 1", "Work")])
+        await c.silentUnlockAndResolve()
+
+        api.beforeListProfilesOnce = {
+            await MainActor.run {
+                c.withdrawProfileKey(profileId: "Profile 1")
+                c.restoreProfileKey(profileId: "Profile 1")
+            }
+        }
+        await c.resolveMappings()
+        await c.resolveMappings()
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"))
+    }
 }

@@ -273,20 +273,29 @@ final class SyncKeyController {
     /// is withdrawn and a mapping pass neither resolves nor registers them, so a deleted Profile's
     /// basename cannot keep or regain a key and its absence never reads as "unmapped".
     private(set) var profileIdsBeingDeleted: Set<String> = []
+    /// Mapping pass sequence: incremented as each pass starts. A withdrawal records the current
+    /// value, so a pass that was already running when the key was withdrawn (its start is not
+    /// later than the withdrawal) cannot put the key back, even when the deletion finished and
+    /// left `profileIdsBeingDeleted` before the pass resumed.
+    private var passSequence: UInt64 = 0
+    private var withdrawnAtPass: [String: UInt64] = [:]
 
     /// Stops Chromium sync for one Profile before it is deleted.
     func withdrawProfileKey(profileId: String) {
         profileIdsBeingDeleted.insert(profileId)
+        withdrawnAtPass[profileId] = passSequence
         if resolved.removeValue(forKey: profileId) != nil { notifyChromium() }
     }
 
     /// The deletion failed: the Profile stays, so the next pass resolves its key again.
     func restoreProfileKey(profileId: String) {
         guard profileIdsBeingDeleted.remove(profileId) != nil else { return }
+        withdrawnAtPass[profileId] = nil
         Task { @MainActor [weak self] in await self?.resolveMappings() }
     }
 
-    /// The deletion committed; the Profile is gone from the local list.
+    /// The deletion committed; the Profile is gone from the local list. `withdrawnAtPass` keeps
+    /// the entry until a pass prunes it, so a pass that was suspended meanwhile cannot restore it.
     func finishProfileKeyWithdrawal(profileId: String) {
         profileIdsBeingDeleted.remove(profileId)
     }
@@ -585,10 +594,27 @@ final class SyncKeyController {
     private var resolveTask: Task<Void, Never>?
     private var resolvePending = false
 
+    /// Removes the keys of Profiles being deleted, and of every Profile withdrawn during or after
+    /// the pass that started at `passStartedAt`, from the resolved cache after a pass merged its result.
+    private func dropWithdrawnKeys(passStartedAt: UInt64) {
+        for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
+        for (profileId, seq) in withdrawnAtPass where seq >= passStartedAt { resolved[profileId] = nil }
+    }
+
     private func resolveMappingsOnce() async {
         guard !isRetired else { return }
         var next: [String: (uuid: String, passphrase: String)] = [:]
-        let locals = localProfilesProvider().filter { !profileIdsBeingDeleted.contains($0.profileId) }
+        let previousStart = passSequence
+        passSequence += 1
+        let startedAt = passSequence
+        let allLocals = localProfilesProvider()
+        // A finished withdrawal older than one full pass whose basename no local Profile names any
+        // more is forgotten; a new Profile that reuses the basename then resolves normally.
+        let localIds = Set(allLocals.map(\.profileId))
+        withdrawnAtPass = withdrawnAtPass.filter { id, seq in
+            seq >= previousStart || localIds.contains(id) || profileIdsBeingDeleted.contains(id)
+        }
+        let locals = allLocals.filter { !profileIdsBeingDeleted.contains($0.profileId) }
         var unmappedLocals: [(profileId: String, displayName: String)] = []
         var hasUnknownLocal = false
         // Every failure this pass met, by class (BH-15). Any transient one holds
@@ -655,8 +681,9 @@ final class SyncKeyController {
             lastMappingsPassResult = Self.passResult(failures)
             lastMappingsFailureCategory = Self.mappingFailureCategory(for: error)
             resolved.merge(next) { _, new in new }
-            // A withdrawal that landed while this pass was suspended still holds.
-            for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
+            // A withdrawal that landed while this pass was suspended still holds, also once the
+            // deletion has finished.
+            dropWithdrawnKeys(passStartedAt: startedAt)
             noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
             if !resolved.isEmpty { notifyChromium() }
             announceMappingsResolved(.held)
@@ -719,8 +746,9 @@ final class SyncKeyController {
         // partial pass can never erase a previously-good entry. The cache is
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).
         resolved.merge(next) { _, new in new }
-        // A withdrawal that landed while this pass was suspended still holds.
-        for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
+        // A withdrawal that landed while this pass was suspended still holds, also once the
+        // deletion has finished.
+        dropWithdrawnKeys(passStartedAt: startedAt)
         // Set by the one branch that assigns the predicates, so the announcement's
         // marker follows the assignment itself rather than a re-derived condition.
         var outcome = MappingsOutcome.held

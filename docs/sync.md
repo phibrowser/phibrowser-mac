@@ -655,7 +655,13 @@ Chromium is pinged, and mapping passes skip it entirely (neither resolved,
 registered nor counted as unmapped, and its account Profile does not count as
 unclaimed for `needsPairing`), so a deleted Profile's basename can neither
 keep nor regain a key. A failed deletion restores it and re-resolves; a completed
-one ends the withdrawal once the Profile is gone from the list.
+one ends the withdrawal once the Profile is gone from the list. A withdrawal records
+the current mapping pass sequence (`withdrawnAtPass`), and a pass drops from the
+cache every Profile withdrawn at or after its own start, so a pass that was
+suspended across the whole deletion cannot merge the key back. The record outlives
+the deletion until a later pass finds it older than the previous pass and no local
+Profile with that basename; a new Profile reusing the basename then resolves
+normally.
 
 ## Profile loading
 

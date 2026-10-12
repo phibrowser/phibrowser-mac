@@ -198,6 +198,25 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
 
+    /// The Profile cursor-loss replay latch is a later addition: a table without the key decodes it
+    /// as false (never replayed) rather than failing.
+    func testATableWrittenBeforeTheProfileReplayLatchDecodesItAsFalse() throws {
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        table.profilesReplayedForEmptyTable = true
+        let encoded = try JSONEncoder().encode(table)
+        XCTAssertTrue(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded).profilesReplayedForEmptyTable)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNotNil(object.removeValue(forKey: "profilesReplayedForEmptyTable"))
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+
+        XCTAssertFalse(decoded.profilesReplayedForEmptyTable)
+        XCTAssertTrue(decoded.hasDrainedFullReplay)
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
+    }
+
     func testProfileDerivedSetsSeparateLiveFromDeletedEntities() throws {
         var entity = Phi_PhiProfileEntity()
         entity.profileUuid = "live"

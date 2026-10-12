@@ -2026,6 +2026,15 @@ actor PhiSyncEngine {
         /// explicit that it is NOT a failure. Filled in by Task 11's refresh hook;
         /// until that lands no refresh runs at all, so `skipped` is the true value.
         var profileRefresh = "skipped"
+        /// Profile entity publication outcomes, by entry: `profilesPushed` and `profileTombstones`
+        /// were applied, the rest were not. A scoped conflict retry counts its entries again.
+        var profilesPushed = 0
+        var profileTombstones = 0
+        var profileConflicts = 0
+        var profilesRejected = 0
+        var profilesInvalid = 0
+        /// This round armed the one-shot Profile cursor-loss replay ("Profile cursor loss").
+        var profileReplayArmed = false
     }
     private var spaceCounters = SpaceRoundCounters()
 
@@ -2058,6 +2067,14 @@ actor PhiSyncEngine {
             profiles_created=\(spaceCounters.profilesCreated) \
             profile_refresh=\(spaceCounters.profileRefresh) \
             mapped=\(mapped) unmapped=\(unmapped)
+            """)
+        // A Profile line of its own: CONFLICT on every round with nothing pulled is the cursor-loss
+        // signature, and without these counters it shows only as "Server error".
+        AppLogInfo("""
+            [phi-sync] profiles pushed=\(spaceCounters.profilesPushed) \
+            tombstones=\(spaceCounters.profileTombstones) conflicts=\(spaceCounters.profileConflicts) \
+            rejected=\(spaceCounters.profilesRejected) invalid=\(spaceCounters.profilesInvalid) \
+            replay_armed=\(spaceCounters.profileReplayArmed)
             """)
     }
 
@@ -4085,6 +4102,18 @@ actor PhiSyncEngine {
         all += incoming
         guard !all.isEmpty else { return }
         for item in all { observeStamps([item.entity.name]) }
+        // A pulled entity that restores a missing baseline reopens the cursor-loss replay latch
+        // (`armProfileReplayForLostCursors`), so a later loss can replay again. Checked on every
+        // exit: parking and the deletion paths learn the entity id as well.
+        let unbaselined = Set(incoming.filter {
+            !$0.entityId.isEmpty && table.profileCursors[$0.uuid]?.entityId == nil
+        }.map(\.uuid))
+        defer {
+            if table.profilesReplayedForEmptyTable,
+               unbaselined.contains(where: { table.profileCursors[$0]?.entityId != nil }) {
+                table.profilesReplayedForEmptyTable = false
+            }
+        }
 
         let locals = await profileAccess.currentProfiles()
         let mappings = await profileAccess.allProfileMappings()
@@ -4649,6 +4678,9 @@ actor PhiSyncEngine {
             if let uuid = inputs.mappings[profile.profileId] { localNames[uuid] = profile.displayName }
         }
         var conflicted: Set<String> = []
+        // Creates (no entity id) that CONFLICTed: the server holds a row this device has no baseline
+        // for. See `armProfileReplayForLostCursors`.
+        var conflictedWithoutBaseline: Set<String> = []
         var tombstoned: [String] = []
         while !work.isEmpty {
             let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
@@ -4692,6 +4724,9 @@ actor PhiSyncEngine {
             for (item, outcome) in zip(slice, outcomes) {
                 applyProfileCommitOutcome(outcome, for: item, localName: localNames[item.uuid],
                                           table: &table, conflicted: &conflicted)
+                if case .conflict = outcome, item.entry.entityId == nil, !item.entry.deleted {
+                    conflictedWithoutBaseline.insert(item.uuid)
+                }
                 changed = true
                 if item.entry.deleted, table.profileCursors[item.uuid]?.deletedAtMs != nil {
                     tombstoned.append(item.uuid)
@@ -4706,10 +4741,47 @@ actor PhiSyncEngine {
         }
 
         if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        // Every pass without a retry ahead of it ran right after a drained pull this round (the
+        // scoped retry, or a timer round's push), so that pull had its chance to deliver the row.
+        if !retryOnConflict, !conflictedWithoutBaseline.isEmpty {
+            armProfileReplayForLostCursors(count: conflictedWithoutBaseline.count)
+        }
         if retryOnConflict, !conflicted.isEmpty {
             guard await pull(thenPush: false) else { return }
             await pushProfiles(retryOnConflict: false, onlyUuids: conflicted)
         }
+    }
+
+    /// Profile cursor loss (docs/sync.md). An older build that rewrites `sync.phiSpaces` drops
+    /// `profileCursors` while the shared marker moves past every Profile entity, so each mapped
+    /// Profile is committed as a create, the server refuses a create over its live row with
+    /// CONFLICT, and the retry's pull delivers nothing: the round fails forever. A no-baseline
+    /// CONFLICT that survives a drained pull is the signal, and the cure is the owned kinds' one:
+    /// drop the marker and rearm the full drain, at most once per `profilesReplayedForEmptyTable`
+    /// latch, which `applyProfiles` reopens once the replay restores a baseline. A uuid the replay
+    /// never delivers keeps the latch shut, so it cannot trigger a replay every round.
+    ///
+    /// Same write order and failure handling as `loadOwnedTable`: the nil marker first, then the
+    /// latch with the drain flags; either failure reports cursorSaveFailed and leaves the latch
+    /// open for the next round. Publication stops for the rest of the round with
+    /// `hasDrainedFullReplay` false, and the next pull replays data type 2000.
+    private func armProfileReplayForLostCursors(count: Int) {
+        guard !loadSpaceTable().profilesReplayedForEmptyTable else { return }
+        guard persistStoredMarker(nil) else {
+            roundOutcome = .cursorSaveFailed
+            return
+        }
+        guard mutateSpaceTable({ updated in
+            updated.profilesReplayedForEmptyTable = true
+            updated.hasDrainedFullReplay = false
+            updated.drainInProgress = true
+        }) else {
+            roundOutcome = .cursorSaveFailed
+            return
+        }
+        spaceCounters.profileReplayArmed = true
+        AppLogWarn("[phi-sync] profile cursors lost for \(count) mapped Profiles; "
+                   + "replaying data type \(PhiSyncEntity.dataTypeID) once")
     }
 
     /// `applySpaceCommitOutcome` for Profile entities: both baselines move on an accepted update,
@@ -4730,12 +4802,14 @@ actor PhiSyncEngine {
             cursor.version = version
             storedBirthday = storeBirthday
             if isTombstone {
+                spaceCounters.profileTombstones += 1
                 cursor.pendingDelete = false
                 cursor.deleteRejectRounds = 0
                 cursor.pendingProjection = nil
                 cursor.deletedBeforePublish = nil
                 cursor.deletedAtMs = now()
             } else if let outgoing = item.outgoing {
+                spaceCounters.profilesPushed += 1
                 cursor.reconciled = try? outgoing.serializedData()
                 cursor.server = cursor.reconciled
                 cursor.pendingProjection = nil
@@ -4743,8 +4817,10 @@ actor PhiSyncEngine {
                 if let localName { cursor.localNameAtBaseline = localName }
             }
         case .conflict:
+            spaceCounters.profileConflicts += 1
             conflicted.insert(item.uuid)
         case .invalidMessage:
+            spaceCounters.profilesInvalid += 1
             roundOutboundFailed = true
             guard isTombstone else {
                 cursor.entityId = nil
@@ -4760,6 +4836,7 @@ actor PhiSyncEngine {
                 cursor.deletedAtMs = now()
             }
         case .rejected(let type):
+            spaceCounters.profilesRejected += 1
             roundOutboundFailed = true
             AppLogError("[phi-sync] profile commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
         }

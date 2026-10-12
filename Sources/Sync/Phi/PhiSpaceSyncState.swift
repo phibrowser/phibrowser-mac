@@ -187,6 +187,13 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var bookmarksReplayedForEmptyTable = false
     var pinsReplayedForEmptyTable = false
     var urlRulesReplayedForEmptyTable = false
+    /// Profile cursors' one-time replay gate (docs/sync.md, "Profile cursor loss"). Profile cursors
+    /// live in this table, so an older build that re-encodes it without `profileCursors` drops them
+    /// while the shared marker moves past every Profile entity; there is no file loss to observe. The
+    /// signal is a create that still CONFLICTs right after a drained pull: the server holds a row
+    /// this device has no baseline for and no incremental pull will deliver again. Rearms when a
+    /// pulled entity restores a missing baseline, like the per-kind gates above.
+    var profilesReplayedForEmptyTable = false
 
     // MARK: - Derived sets
 
@@ -407,6 +414,8 @@ extension PhiSpaceSyncTable {
         // M3-4b adds the Profile entity cursors; an absent key is a table from before Profile entities.
         profileCursors =
             try container.decodeIfPresent([String: PhiProfileCursor].self, forKey: .profileCursors) ?? [:]
+        profilesReplayedForEmptyTable =
+            try container.decodeIfPresent(Bool.self, forKey: .profilesReplayedForEmptyTable) ?? false
     }
 }
 

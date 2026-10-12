@@ -114,6 +114,7 @@ previous case's hidden Space or pending edit determine the next result.
 | SYNC-P13 | P1 / Manual | Map B's Default Profile to an account Profile, then delete that account Profile on A. | B keeps its Default Profile and republishes it; A recreates the Profile, empty except for what Chromium sync restores. |
 | SYNC-P14 | P1 / Manual | Quit B. On B the Profile still has a user Space that A never received. Delete the Profile on A, then start B. | B keeps the Profile and its Space (edit beats delete); A recreates the Profile and receives the Space under it. |
 | SYNC-P15 | P1 / Assisted | Delete a synced Profile on A while A's sync is paused for an unmapped Profile, and separately while A's first full replay has not finished. Quit A in between and restart it. | The deletion is published once sync resumes; it is never lost and the Profile is not recreated on A. |
+| SYNC-P16 | P1 / Assisted | Older build rewrote the table (cursor loss): with synced Profiles on B, run an older build without Profile entities on B's data directory for a few minutes while A makes a change, then run this build on B again. | B logs one `profile cursors lost` warning, runs one full replay, then normal rounds: the Sync pane shows no "Server error", the `[phi-sync] profiles` line shows no conflicts, and no Profile is re-created or duplicated on either Mac. |
 
 ## Settings and Spaces
 

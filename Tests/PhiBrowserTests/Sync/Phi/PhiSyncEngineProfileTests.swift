@@ -298,6 +298,112 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertTrue(profileCommits(client).isEmpty)
     }
 
+    // MARK: - Cursor loss
+
+    /// An older build rewrote `sync.phiSpaces` without `profileCursors` and moved the marker past
+    /// every Profile entity: a mapped Profile has no cursor, its create CONFLICTs, and the retry's
+    /// pull delivers nothing. pu-1's row is one even the replay never delivers, so it keeps
+    /// conflicting and must not replay again; pu-9's create succeeds and gives the replay a marker.
+    func testACreateThatStillConflictsAfterThePullReplaysOnce() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0),
+                             PhiLocalProfile(profileId: "P9", displayName: "Home", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1", "P9": "pu-9"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.bareConflictRoundsForTagHashes = [hash("pu-1"): 100]
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pushLocalSettings()
+
+        let creates = profileCommits(client).filter { $0.clientTagHash == hash("pu-1") }
+        XCTAssertEqual(creates.count, 2, "the create and its scoped retry")
+        XCTAssertTrue(creates.allSatisfy { $0.entityId == nil && $0.baseVersion == 0 })
+        XCTAssertTrue(client.getUpdatesCalls.allSatisfy { $0.marker == Data("999".utf8) },
+                      "precondition: the marker is past every row")
+        XCTAssertTrue(store.table.profilesReplayedForEmptyTable)
+        XCTAssertFalse(store.table.hasDrainedFullReplay)
+        XCTAssertTrue(store.table.drainInProgress)
+
+        await engine.pullOnce()
+        XCTAssertNil(client.getUpdatesCalls.last?.marker, "the marker was dropped: a full replay")
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertTrue(store.table.profilesReplayedForEmptyTable, "pu-1 is still without a baseline")
+
+        await engine.pullOnce()
+        XCTAssertNotNil(client.getUpdatesCalls.last?.marker)
+        XCTAssertEqual(client.getUpdatesCalls.filter { $0.marker == nil }.count, 1, "one replay only")
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertGreaterThan(profileCommits(client).filter { $0.clientTagHash == hash("pu-1") }.count, 2,
+                             "pu-1 still conflicts every round")
+    }
+
+    func testTheReplayRestoresTheBaselineAndTheNextPublicationIsAnUpdate() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.conflictsOnLiveCreate = true
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 5,
+                    entityId: "srv-pu-1")
+        defaults.set(Data("999".utf8), forKey: PhiSyncEngine.markerStateKey)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pushLocalSettings()
+        XCTAssertTrue(store.table.profilesReplayedForEmptyTable, "precondition: the replay is armed")
+
+        await engine.pullOnce()
+
+        XCTAssertNil(client.getUpdatesCalls.last?.marker)
+        let cursor = try XCTUnwrap(store.table.profileCursors["pu-1"])
+        XCTAssertEqual(cursor.entityId, "srv-pu-1")
+        XCTAssertEqual(cursor.version, 5)
+        XCTAssertNotNil(cursor.reconciled)
+        XCTAssertNotNil(cursor.server)
+        XCTAssertEqual(cursor.localNameAtBaseline, "Work")
+        XCTAssertFalse(store.table.profilesReplayedForEmptyTable, "a restored baseline rearms the latch")
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+
+        nowMs += 10_000
+        profiles.profiles[0].displayName = "Office"
+        await engine.handleLocalProfilesChange()
+
+        let last = try XCTUnwrap(profileCommits(client).last)
+        XCTAssertEqual(last.entityId, "srv-pu-1", "an update, not another create")
+        XCTAssertEqual(last.baseVersion, 5)
+        XCTAssertEqual(try published(client, "pu-1").name.stringValue, "Office")
+    }
+
+    func testAConflictOnAPublishedProfileDoesNotReplay() async throws {
+        let profiles = FakePhiProfileAccess()
+        profiles.profiles = [PhiLocalProfile(profileId: "P1", displayName: "Work", createdAtMs: 0)]
+        profiles.mappings = ["P1": "pu-1"]
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: hash("pu-1"), ciphertext: try ciphertext(profileEntity("pu-1", "Work")), version: 3)
+        let engine = makeEngine(profiles: profiles, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        nowMs += 10_000
+        profiles.profiles[0].displayName = "Office"
+        client.bareConflictRoundsForTagHashes = [hash("pu-1"): 2]
+        await engine.pushLocalSettings()
+
+        let commits = profileCommits(client)
+        XCTAssertEqual(commits.count, 2, "the update and its scoped retry")
+        XCTAssertTrue(commits.allSatisfy { $0.entityId != nil && $0.baseVersion == 3 })
+        XCTAssertFalse(store.table.profilesReplayedForEmptyTable)
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertFalse(store.table.drainInProgress)
+
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.filter { $0.marker == nil }.count, 1, "only the first pull")
+    }
+
     // MARK: - Tombstones and resurrection
 
     func testARemoteTombstoneIsRecordedAndNeverRepublished() async throws {

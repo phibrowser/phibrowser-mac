@@ -1182,6 +1182,28 @@ before this field decodes with an empty map (no format bump). The table derives
 `liveProfileEntityUuids` (an entity id and not deleted) and `deletedProfileUuids`
 (`pendingDelete`, `deletedAtMs` or `purgedAtMs`).
 
+Profile cursor loss. An older build without Profile entities that runs on the
+same data directory decodes `sync.phiSpaces` with its own keys and re-encodes
+it, so `profileCursors` is dropped while the shared marker keeps advancing past
+every Profile entity. Back on this build, each mapped Profile has no cursor and
+is committed as a create; the server answers CONFLICT for a create over a live
+row whose content differs, and no incremental pull delivers that row again. The
+signal is a create (no entity id, base version 0) that still CONFLICTs in a push
+pass that ran right after a drained pull: the scoped conflict retry, or a timer
+round's push. `pushProfiles` then arms a one-shot replay like an owned kind's
+cursor-table loss (`armProfileReplayForLostCursors`): it persists a nil marker,
+then sets `profilesReplayedForEmptyTable` with `hasDrainedFullReplay = false`
+and `drainInProgress = true` (either write failing reports cursorSaveFailed and
+leaves the latch open), logs `profile cursors lost for N mapped Profiles;
+replaying data type 2000 once`, and the next pull replays the data type. The
+replay lands each entity as a baseline, and the next publication is an update.
+`applyProfiles` clears the latch when a pulled entity restores a cursor that had
+no entity id, so a later loss can replay again; a uuid the replay never delivers
+keeps the latch shut, so it cannot cause a replay every round. A CONFLICT on an
+entry that had a baseline is retried as before and never arms the replay. Each
+round logs `[phi-sync] profiles pushed= tombstones= conflicts= rejected=
+invalid= replay_armed=` next to the Space line, counted per committed entry.
+
 Mixed versions: an older client that receives a live Profile entity decrypts it,
 finds a kind it does not own and ignores it (`routeSpaceEntity`'s unknown-kind
 step); a Profile tombstone is logged as a tombstone for an unknown tag and

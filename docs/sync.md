@@ -310,11 +310,13 @@ invalidates outstanding observations when membership changes.
 Only startup, membership changes, an explicit pane reload, failed status, or
 known stale success evidence (five minutes) may request a coordinated round.
 All requests share a minimum interval of 60 seconds; explicit reloads coalesce
-with an active round. The one exception is a Sync now request while the native
-participant (`Participant.isNative`) reports Offline: it skips the interval and
-dispatches as soon as the participants are settled, so the tap fails within seconds
+with an active round. A Sync now request skips the interval while the native
+participant (`Participant.isNative`) reports Offline and dispatches as soon as the
+participants are settled, so the tap fails within seconds
 instead of waiting behind the interval that the pane-open request and automatic
-retries keep pushing forward. The pane-open request and automatic demand never skip it. A queued explicit reload preserves the observed phase and
+retries keep pushing forward. Upgrading an already admitted ordinary round to Sync now
+also skips the interval, as described below. The pane-open request and automatic demand
+never skip it. A queued explicit reload preserves the observed phase and
 last common time until dispatch; it does not invalidate a completed barrier.
 Ordinary pending work, commit-only cycles, native remote
 applies, and late successful replies never request another round. The engines'
@@ -329,13 +331,13 @@ while a pull is running is served by one follow-up pull. The participant refuses
 (the helper reports Rejected) when the coordinator is absent or stopped, in addition
 to the pairing, key, account and bridge-support gates.
 
-`requestSyncNow()` is the explicit "Sync now" request. It has the pane reload's
-semantics, joins an observation in progress and then observes once more, so a
-request recorded during a poll is never left behind, and returns the report's
+`requestSyncNow()` is the explicit "Sync now" request. It joins an observation in
+progress and then observes once more, so a request recorded during a poll is never
+left behind, and returns the report's
 `SyncRequestState`. `Report.request` describes that request only; the pane-open
 request and automatic demand never appear in it. It is In flight (with the round's
-start) while a round that a Sync now request started, or joined after the tap, is
-active; Queued while a Sync now request waits, with the reason Unobservable (a
+start) while a round dispatched with a Sync now request is active; Queued while a
+Sync now request waits, with the reason Unobservable (a
 participant is missing or Checking), Busy (Initial sync or Syncing) or Rate limited
 (with the earliest dispatch time); Rejected after an adapter refused a dispatch that
 carried a Sync now request, until the next tap or accepted dispatch; otherwise Idle. Membership changes, ineligibility and stop reset it
@@ -345,8 +347,19 @@ passes `bySyncNow` to every participant: the native adapter queues a requested c
 catch-ups) and sends Chromium its account-wide catch-up with `userInitiated: YES`, so each
 Profile's sync scheduler retries at once instead of waiting out exponential backoff from an
 earlier failure (server throttling still holds). A framework without that selector gets the
-plain catch-up; pane reloads and automatic demand never set it. The helper's
-`ExplicitRequestPolicy` decides only explicit requests while a participant is
+plain catch-up; pane reloads and automatic demand never set it.
+
+The first tap on an ordinary active round upgrades it with one user-initiated dispatch,
+even if the minimum interval holds or participants are now busy or unobservable: that
+round was already admitted. Eligibility, membership, mapping-pause and adapter-acceptance
+checks still apply. Acceptance replaces the completion baseline and timeout with those
+of the upgrade, so old failure or success evidence cannot finish the retry; refusal
+retires the old barrier and reports Rejected. Further taps on the user-initiated round
+coalesce without another dispatch. Transport still uses the coordinator's single-flight
+catch-up path.
+
+For new rounds, the helper's `ExplicitRequestPolicy` decides only explicit requests
+while a participant is
 unobservable: `.waitForAllObservable` (the default) keeps them queued;
 `.dispatchToObservable` dispatches once every observable participant is settled,
 still sends the request to every participant and keeps the unobservable one in the
@@ -356,7 +369,7 @@ error. Automatic demand always waits for every participant.
 All required participants remain in the barrier, including lazy Profiles that
 have not been loaded. Missing reads and Checking snapshots are unobservable, not
 stale evidence. While any participant is unobservable or reports Initial sync or
-Syncing, the helper only observes and defers new requests, including queued pane
+Syncing, the helper only observes and defers new rounds, including queued pane
 reloads. Even another context's aging success cannot force a round in that state.
 It never loads Profiles for status. Once every context is observable and settled,
 retained startup/membership/expired-round demand can establish a fresh barrier.

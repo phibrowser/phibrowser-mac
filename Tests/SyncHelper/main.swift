@@ -60,6 +60,8 @@ import Foundation
         await lateSuccessAndBrowsingDoNotRequestRounds()
         await explicitRefreshIsRateLimited()
         await onlySyncNowMarksItsDispatch()
+        await syncNowUpgradesAutomaticRound()
+        await syncNowUpgradeRejectionAndFences()
         await failuresStalenessAndTimeout()
         await rejectedRequestsDoNotCreateRounds()
         await membershipAndUpstream()
@@ -579,6 +581,71 @@ import Foundation
         print("PASS helper: only Sync now marks its dispatch")
     }
 
+    @MainActor static func syncNowUpgradesAutomaticRound() async {
+        let f = Fixture(), helper = await f.completedHelper()
+        f.tick(170); f.status("profile", .needsAttention, at: 103)
+        await helper.refresh(requestSync: true)
+        precondition(f.requests["phi"] == 2 && f.syncNowRequests.isEmpty)
+        f.tick(171); f.status("phi", .upToDate, at: 171)
+        f.status("profile", .needsAttention, at: 103)
+        await helper.refresh() // The ordinary round has already observed a failure.
+        precondition(SyncNowButtonState.reduce(summary: helper.report.summary.phase,
+                                              request: helper.report.request).isEnabled)
+        f.tick(175) // The ordinary failure could end its barrier on this observation.
+        let state = await helper.requestSyncNow()
+        precondition(f.syncNowRequests == ["phi": 1, "profile": 1],
+                     "A tap joining an ordinary round must send the user-initiated retry")
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 3,
+                     "The retry needs its own completion baseline, without waiting for the interval")
+        f.tick(176)
+        _ = await helper.requestSyncNow()
+        f.tick(179)
+        await helper.refresh()
+        precondition(helper.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 175))
+                     && f.requests["phi"] == 3 && f.syncNowRequests["phi"] == 1,
+                     "Repeated taps must coalesce and pre-retry failure evidence must not end the retry")
+        f.succeed(at: 180)
+        await helper.refresh()
+        precondition(helper.report.request == .idle && f.saved == f.time)
+        f.tick(240)
+        await helper.refresh()
+        precondition(f.requests["phi"] == 3, "The upgrade must not leave another round queued")
+        helper.stop()
+        print("PASS helper Sync now: an ordinary round upgrades once and waits for fresh retry evidence")
+    }
+
+    @MainActor static func syncNowUpgradeRejectionAndFences() async {
+        for action in ["reject", "ineligible", "membership", "pause", "stop"] {
+            let f = Fixture(), helper = await f.completedHelper()
+            f.tick(170); f.status("profile", .needsAttention, at: 103)
+            await helper.refresh(requestSync: true)
+            f.tick(172)
+            if action == "reject" { f.acceptsRequests = false }
+            var fired = false
+            f.onRead = { id in
+                guard id == "profile", !fired else { return }
+                fired = true
+                switch action {
+                case "ineligible": f.paired = false
+                case "membership": helper.membershipDidChange()
+                case "pause": helper.setProfileMappingPause(.grace)
+                case "stop": helper.stop()
+                default: break
+                }
+            }
+            let state = await helper.requestSyncNow()
+            if action == "reject" {
+                precondition(state == .rejected && f.requests["phi"] == 3,
+                             "A refused upgrade must not keep the ordinary round in flight")
+            } else {
+                precondition(f.requests["phi"] == 2 && f.syncNowRequests.isEmpty,
+                             "An upgrade escaped a lifecycle fence during observation: \(action)")
+            }
+            helper.stop()
+        }
+        print("PASS helper Sync now: upgrades honor refusal and lifecycle changes during observation")
+    }
+
     @MainActor static func failuresStalenessAndTimeout() async {
         let f = Fixture(), helper = await f.completedHelper()
         f.tick(104); f.status("profile", .offline, at: 103)
@@ -789,6 +856,30 @@ import Foundation
         state = await tap.value
         precondition(state == .inFlight(startedAt: g.time) && g.requests["phi"] == 2,
                      "A request recorded during a poll dispatches without waiting for the next poll")
+
+        // The same overlap while an ordinary round is active must upgrade that round once.
+        g.succeed(at: 173)
+        await raced.refresh()
+        g.tick(240)
+        await raced.refresh(requestSync: true)
+        precondition(g.requests["phi"] == 3 && g.syncNowRequests["phi"] == 1)
+        g.tick(242); hold = true; reply = nil
+        let observing = Task { await raced.refresh() }
+        while reply == nil { await Task.yield() }
+        var upgradeStarted = false
+        let upgrade = Task {
+            upgradeStarted = true
+            return await raced.requestSyncNow()
+        }
+        // On the main actor, the tap records its demand before yielding to the held read.
+        while !upgradeStarted { await Task.yield() }
+        hold = false
+        reply?.resume(returning: g.snapshots["profile"])
+        await observing.value
+        state = await upgrade.value
+        precondition(state == .inFlight(startedAt: g.time) && g.requests["phi"] == 4
+                     && g.syncNowRequests["phi"] == 2,
+                     "A tap during an active round's observation must forward exactly one retry")
         raced.stop()
         helper.stop()
         print("PASS helper Sync now: rate-limited queue with notBefore, auto-dispatch, coalescing, tap during a poll")
@@ -889,8 +980,9 @@ import Foundation
                      "A round the pane-open request started is not the button's round")
         f.tick(162)
         var state = await helper.requestSyncNow()
-        precondition(state == .inFlight(startedAt: Date(timeIntervalSince1970: 160)) && f.requests["phi"] == 2,
-                     "A tap joins the running round and shows it")
+        precondition(state == .inFlight(startedAt: f.time) && f.requests["phi"] == 3
+                     && f.syncNowRequests == ["phi": 1, "profile": 1],
+                     "A tap upgrades the ordinary round with one user-initiated dispatch")
         f.succeed(at: 164)
         await helper.refresh()
         precondition(helper.report.request == .idle)
@@ -911,7 +1003,7 @@ import Foundation
         precondition(g.requests["phi"] == 3 && automatic.report.request == .idle,
                      "An accepted automatic dispatch clears the rejection without showing on the button")
         automatic.stop()
-        print("PASS helper Sync now: pane-open and automatic demand stay off the button; a tap joins a running round")
+        print("PASS helper Sync now: pane-open and automatic demand stay off the button; a tap upgrades an ordinary round")
     }
 
     @MainActor static func failingRoundEndsEarly() async {
@@ -1064,12 +1156,19 @@ import Foundation
         await other.refresh()
         g.tick(166)
         state = await other.requestSyncNow()
-        precondition(state == .inFlight(startedAt: Date(timeIntervalSince1970: 160)) && g.requests["phi"] == 2,
-                     "Native Offline alone does not end a round without a tap; a tap joins it")
+        precondition(state == .inFlight(startedAt: g.time) && g.requests["phi"] == 3
+                     && g.syncNowRequests == ["phi": 1, "profile": 1],
+                     "A tap upgrades the admitted round even while a Profile is still syncing")
         g.tick(169)
         await other.refresh()
+        precondition(other.report.request == .inFlight(startedAt: Date(timeIntervalSince1970: 166)),
+                     "Offline evidence from before the upgrade must not end its retry")
+        g.status("phi", .offline, at: 103)
+        await other.refresh()
+        g.tick(172)
+        await other.refresh()
         precondition(other.report.request == .idle && g.saved == Date(timeIntervalSince1970: 103),
-                     "Once joined, the round ends on native Offline one poll interval later")
+                     "Fresh native Offline evidence ends the upgraded round after one poll interval")
         other.stop()
 
         // Without a native participant nothing changes: the request waits for the interval.

@@ -65,6 +65,12 @@ enum SyncableSpaces {
     static func opacityMilliUnits(_ value: Double?) -> Int64 { value.map { Int64($0 * 1000) } ?? -1 }
 }
 enum PhiSyncEngine { static let previewDeadlineMs = 1_000 }
+/// `liveRemotes` filters preview Profile tombstones by tag hash; the derivation itself is pinned
+/// elsewhere, so an identity hash is enough here.
+enum PhiSyncEntity {
+    static func profileClientTag(_ uuid: String) -> String { "profile:" + uuid }
+    static func clientTagHash(for tag: String) -> String { tag }
+}
 enum SyncPairingPersistenceError: Error { case writeFailed }
 enum SyncReconfigurationStrings { static let returnToSettings = "Return to settings" }
 enum PhiSyncLog { static func describe(_ error: Error) -> String { String(describing: error) } }

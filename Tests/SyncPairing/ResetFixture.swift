@@ -13,8 +13,22 @@ enum SyncableSettings {
 }
 enum PhiDefaultSpaceMirror { static let key = "defaultSpaceMirror" }
 struct PhiSpaceSyncTable: Equatable { var entries = 0 }
+protocol PhiProfileDeletionIntentStore: AnyObject {
+    func load() -> [String: String]
+    @discardableResult func save(_ intents: [String: String]) -> Bool
+}
+/// The cleanup clears the Profile deletion journal with the cursors it describes.
+final class ResetIntentStore: PhiProfileDeletionIntentStore {
+    var intents = ["uuid": "Profile 2"]
+    var failSave = false
+    func load() -> [String: String] { intents }
+    func save(_ value: [String: String]) -> Bool {
+        if failSave { return false }; intents = value; return true
+    }
+}
 final class PhiSpaceSyncState {
     static let shared = PhiSpaceSyncState()
+    var profileDeletionIntentStore: (any PhiProfileDeletionIntentStore)?
     func refreshCaches(from table: PhiSpaceSyncTable) {}
 }
 final class ResetMarkerStore {

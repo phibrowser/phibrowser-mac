@@ -329,6 +329,10 @@ final class ProfileManager: ObservableObject {
                 comment: "Profile deletion - Error when the local recovery record could not be saved before deleting a profile")))
             return
         }
+        // The account whose sync state and local rows this deletion belongs to. The Chromium
+        // deletion is async; if the account changes meanwhile, the bookkeeping below must not land
+        // in the new account (the original account's journal entry reconciles it later).
+        let account = AccountController.shared.localDataAccount
         bridge.deleteProfile(profileId) { [weak self] success, error in
             DispatchQueue.main.async {
                 if let pending, let journal {
@@ -336,8 +340,9 @@ final class ProfileManager: ObservableObject {
                     catch { AppLogError("[ProfileChatArchive] could not persist deletion result") }
                 }
                 self?.refresh()
-                if success, sync != .none {
-                    let account = AccountController.shared.localDataAccount
+                if success, sync != .none, AccountController.shared.localDataAccount !== account {
+                    AppLogWarn("[ProfileManager] account changed during profile deletion; leaving the sync record for the original account to reconcile")
+                } else if success, sync != .none {
                     Task { @MainActor in
                         if let account { await Self.removeLocalRows(ofDeletedProfile: profileId, account: account) }
                         if let syncUuid {

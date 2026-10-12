@@ -1252,7 +1252,11 @@ Deleting device. `ProfileManager.deleteProfile(_:sync:)` takes
    Spaces still bound to the Profile are hard-deleted with it, with their content:
    they are deleted on the account already, and only the sync table hides them, so
    a table reset would otherwise show them again bound to a missing Profile. Then
-   it delivers `.recordLocalProfileDeletion`.
+   it delivers `.recordLocalProfileDeletion`. All of this is bound to the account
+   captured before the Chromium deletion started: if `localDataAccount` changed
+   meanwhile, nothing is removed or recorded (a warning is logged), and the
+   original account's engine reconciles its journal entry (for `.remoteTombstone`,
+   it repeats the row removal when it next finds the Profile gone).
    On failure removes the journal entry and gives the key back.
 
 The engine reconciles the journal at the start of every pull, push, Profile round

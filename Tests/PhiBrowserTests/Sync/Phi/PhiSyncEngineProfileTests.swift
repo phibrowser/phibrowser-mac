@@ -586,6 +586,29 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
     }
 
+    /// The tombstone's page marker is persisted, so the tombstone must be too: the pin naming its
+    /// owner arrives only in the next pull (after a quit, or once the page budget ended the round).
+    func testATombstoneFromAnEarlierPullIsKeptUntilAPinNamesItsProfile() async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([profileTombstone("pu-gone", version: 9)], marker: "10")]
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pullOnce()
+        XCTAssertNil(store.table.profileCursors["pu-gone"])
+        XCTAssertEqual(store.table.unmatchedTombstones.map(\.clientTagHash), [hash("pu-gone")],
+                       "persisted with the page's marker")
+
+        client.pagesByMarker.append(page([pinEntity("lx", owner: "pu-gone", version: 18)], marker: "20"))
+        await engine.pullOnce()
+
+        await assertDeadProfileDiscardedThePin(engine, store: store, pins: pins)
+        XCTAssertTrue(store.table.unmatchedTombstones.isEmpty, "a matched tombstone leaves the list")
+    }
+
     func testATombstoneNoOwnedItemNamesIsStillIgnored() async throws {
         let pins = FakePinAccess(scope: .profile, account: .profile)
         let pinStore = MemoryOwnedItemStore()

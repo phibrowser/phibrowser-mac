@@ -2320,7 +2320,9 @@ actor PhiSyncEngine {
         var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
         let profileLive = spaceLive && profileAccess != nil
         var profileIndex = profileLive ? await profileTagIndex(table: spaceTableAtEntry) : [:]
-        // Tombstones whose tag no index knew when their page landed (see the page loop).
+        // Tombstones whose tag no index knew when their page landed (see the page loop). Seeded
+        // from the table, where each page persists them with its marker, so one received before
+        // a quit or before the page budget ended a round still meets the item naming its owner.
         var carriedTombstones: [(hash: String, entityId: String, version: Int64)] = []
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
@@ -2391,6 +2393,13 @@ actor PhiSyncEngine {
         // was lost.
         if spaceLive, !spaceTableAtEntry.cursors.isEmpty, !spaceTableAtEntry.hadRecords {
             mutateSpaceTable { $0.hadRecords = true }
+        }
+
+        // A full replay re-delivers every tombstone; page 1's write then replaces the stored list.
+        if spaceLive, marker != nil {
+            carriedTombstones = spaceTableAtEntry.unmatchedTombstones.map {
+                (hash: $0.clientTagHash, entityId: $0.entityId, version: $0.version)
+            }
         }
 
         do {
@@ -2572,6 +2581,8 @@ actor PhiSyncEngine {
                     }
                     // Tombstones no index named yet are kept for the rest of this pull: a page
                     // order of tombstone first, owned items later would otherwise drop it.
+                    let arrivingHashes = Set(batch.unknownTombstones.map(\.hash))
+                    carriedTombstones.removeAll { arrivingHashes.contains($0.hash) }
                     carriedTombstones += batch.unknownTombstones
                     batch.unknownTombstones = []
                     carriedTombstones.removeAll { unknown in
@@ -2606,6 +2617,13 @@ actor PhiSyncEngine {
                     await applyProfiles(batch, table: &spaceTable)
                     await applyProfileTombstones(batch, table: &spaceTable)
                     await convergeProfileNames(table: &spaceTable)
+                    // Persisted with this page's marker; matched ones were removed above.
+                    spaceTable.setUnmatchedTombstones(carriedTombstones.map {
+                        PhiUnmatchedTombstone(clientTagHash: $0.hash, entityId: $0.entityId, version: $0.version)
+                    })
+                    carriedTombstones = spaceTable.unmatchedTombstones.map {
+                        (hash: $0.clientTagHash, entityId: $0.entityId, version: $0.version)
+                    }
                     writeSpaceTable(spaceTable)
 
                     // Land settings, Spaces, then registered owned kinds (section 5.2), allowing a
@@ -2663,7 +2681,7 @@ actor PhiSyncEngine {
             }
             drained = !more
             if !carriedTombstones.isEmpty {
-                AppLogInfo("[phi-sync] ignoring \(carriedTombstones.count) tombstone(s) for unknown tags "
+                AppLogInfo("[phi-sync] carrying \(carriedTombstones.count) tombstone(s) for unknown tags to the next pull "
                            + "first_hash=\(String(carriedTombstones[0].hash.prefix(8)))")
             }
             if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }

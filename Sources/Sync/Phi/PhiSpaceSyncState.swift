@@ -124,6 +124,15 @@ struct PhiProfileCursor: Codable, Equatable {
     var purgedAtMs: Int64?
 }
 
+/// A tombstone whose tag no index named when its page landed (docs/sync.md, "Profile entity"). Kept in
+/// the Space table, written with each page's marker, until an owned item names its owner on a later
+/// page or pull.
+struct PhiUnmatchedTombstone: Codable, Equatable {
+    let clientTagHash: String
+    let entityId: String
+    let version: Int64
+}
+
 /// One cursor per account syncUuid, never local spaceId (M3-2b §3.1 / R-D6-8). Cursors can exist without rows
 /// (refused entities or retained tombstones); tag hashes derive from syncUuid for tombstone identity
 /// resolution; and resurrection guards must survive mapping deletion. Persist in account-scoped sync.phiSpaces
@@ -194,6 +203,15 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// this device has no baseline for and no incremental pull will deliver again. Rearms when a
     /// pulled entity restores a missing baseline, like the per-kind gates above.
     var profilesReplayedForEmptyTable = false
+    /// Tombstones for tags no index knew yet, oldest first, at most `maxUnmatchedTombstones`. A
+    /// tombstone can precede, by pages or pulls, the owned item that names its Space or Profile.
+    var unmatchedTombstones: [PhiUnmatchedTombstone] = []
+    static let maxUnmatchedTombstones = 2048
+
+    /// Stores `list`, keeping its newest `maxUnmatchedTombstones` entries.
+    mutating func setUnmatchedTombstones(_ list: [PhiUnmatchedTombstone]) {
+        unmatchedTombstones = Array(list.suffix(Self.maxUnmatchedTombstones))
+    }
 
     // MARK: - Derived sets
 
@@ -416,6 +434,8 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent([String: PhiProfileCursor].self, forKey: .profileCursors) ?? [:]
         profilesReplayedForEmptyTable =
             try container.decodeIfPresent(Bool.self, forKey: .profilesReplayedForEmptyTable) ?? false
+        unmatchedTombstones =
+            try container.decodeIfPresent([PhiUnmatchedTombstone].self, forKey: .unmatchedTombstones) ?? []
     }
 }
 

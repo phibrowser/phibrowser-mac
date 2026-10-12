@@ -2,6 +2,32 @@ import XCTest
 @testable import Phi
 
 final class PhiSpaceSyncStateTests: XCTestCase {
+    /// Unmatched tombstones survive the table's JSON round trip, and a table written before the
+    /// field decodes with an empty list.
+    func testUnmatchedTombstonesRoundTripAndOlderTablesDecodeEmpty() throws {
+        var table = PhiSpaceSyncTable()
+        table.unmatchedTombstones = [PhiUnmatchedTombstone(clientTagHash: "h1", entityId: "srv-1", version: 9),
+                                     PhiUnmatchedTombstone(clientTagHash: "h2", entityId: "srv-2", version: 11)]
+        let encoded = try JSONEncoder().encode(table)
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded)
+        XCTAssertEqual(decoded.unmatchedTombstones, table.unmatchedTombstones)
+        XCTAssertEqual(decoded, table)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "unmatchedTombstones")
+        let legacy = try JSONDecoder().decode(PhiSpaceSyncTable.self,
+                                             from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(legacy.unmatchedTombstones, [])
+    }
+
+    func testUnmatchedTombstonesKeepTheNewest2048() {
+        var table = PhiSpaceSyncTable()
+        let list = (0..<2049).map { PhiUnmatchedTombstone(clientTagHash: "h\($0)", entityId: "e\($0)", version: Int64($0)) }
+        table.setUnmatchedTombstones(list)
+        XCTAssertEqual(table.unmatchedTombstones.count, 2048)
+        XCTAssertEqual(table.unmatchedTombstones.first?.clientTagHash, "h1", "the oldest entry is dropped")
+        XCTAssertEqual(table.unmatchedTombstones.last?.clientTagHash, "h2048")
+    }
+
     func testEnrollmentReplayTokenPreservesOldTables() throws {
         var table = PhiSpaceSyncTable()
         table.lastEnrollmentReplayToken = UUID()

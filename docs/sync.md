@@ -1180,12 +1180,17 @@ the entity lands wholesale, and a mapping whose local Profile is gone is dropped
 so auto-create recreates the Profile. A replayed older create lands nothing. The
 A Profile tombstone carries no payload, so it is resolved only through an index
 of known uuids: the Profile cursors, the persisted mappings, the deletion journal,
-and, for the rest of the pull it arrives in, the owner uuids named by owned-item
-arrivals and by items parked earlier (the same extension that resolves a deleted
-Space's tombstone, R-M3-4a-78). A pin of a Profile this device never mapped (deleted
-on the account before this device joined or replayed) therefore lands as "Profile
-deleted" and is discarded, instead of parking forever on its unknown owner; a
-tombstone that nothing names during the pull is dropped. The
+and the owner uuids named by owned-item arrivals and by items parked earlier (the
+same extension that resolves a deleted Space's tombstone, R-M3-4a-78). A pin of a
+Profile this device never mapped (deleted on the account before this device joined
+or replayed) therefore lands as "Profile deleted" and is discarded, instead of
+parking forever on its unknown owner. A tombstone that no index names yet is kept
+in `PhiSpaceSyncTable.unmatchedTombstones` (hash, entity id, version; the newest
+2048, decoded as empty from older tables), written with each page's marker and
+re-routed on every later page and pull until an owner names it, so neither a quit
+nor the 64-page budget between the tombstone and the pin loses it. A pull that
+starts without a marker does not seed the list (the replay re-delivers every
+tombstone) and its first page replaces it. The
 pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
 preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`) and
 offers the others under their live entity's name (`profileNames`): the registry

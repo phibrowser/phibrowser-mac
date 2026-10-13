@@ -27,7 +27,21 @@ final class AccountKeyManagerTests: XCTestCase {
             if let error = postDeviceErrorOnce { postDeviceErrorOnce = nil; throw error }
             if let arkEnvelope { envelopes[deviceKeyId] = arkEnvelope }
         }
+        /// The next `getDeviceEnvelope` awaits this and clears it, so a test can hold
+        /// an unlock parked inside the lookup (BH-52).
+        var beforeGetDeviceEnvelopeOnce: (() async -> Void)?
+        private(set) var getDeviceEnvelopeCalls = 0
+        private(set) var getDeviceEnvelopeInFlight = 0
+        private(set) var maxGetDeviceEnvelopeInFlight = 0
         func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
+            getDeviceEnvelopeCalls += 1
+            getDeviceEnvelopeInFlight += 1
+            maxGetDeviceEnvelopeInFlight = max(maxGetDeviceEnvelopeInFlight, getDeviceEnvelopeInFlight)
+            defer { getDeviceEnvelopeInFlight -= 1 }
+            if let hook = beforeGetDeviceEnvelopeOnce {
+                beforeGetDeviceEnvelopeOnce = nil
+                await hook()
+            }
             if let deviceEnvelopeError { throw deviceEnvelopeError }
             return envelopes[deviceKeyId]
         }

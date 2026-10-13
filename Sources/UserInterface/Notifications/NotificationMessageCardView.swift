@@ -83,7 +83,9 @@ struct NotificationMessageCardView: View {
                     onPrevious: { manager.showPrevious() },
                     onNext: { manager.showNext() }
                 )
-                .frame(maxWidth: layoutMode == .sidebar ? 275 : .infinity)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("notification.card")
                 .background(
                     Group {
                         if manager.allCards.count > 1 {

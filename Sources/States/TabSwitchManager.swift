@@ -13,7 +13,11 @@ enum TabSwitchDirection {
 
 @MainActor
 final class TabSwitchManager {
+    private var visitHistoryTabIDs: [Int] = []
+    /// Switching priority includes unvisited background tabs and is limited to five items.
     private(set) var recentTabIDs: [Int] = []
+    /// Media ordering uses actual visits only, retaining every live visited tab.
+    var visitedTabIDs: [Int] { visitHistoryTabIDs }
     private weak var browserState: BrowserState?
 
     private var session: Session?
@@ -43,14 +47,38 @@ final class TabSwitchManager {
         guard state.tabs.contains(where: { $0.guid == tab.guid }) else { return }
 
         let tabID = tab.guid
+        pruneHistory()
+        visitHistoryTabIDs.removeAll { $0 == tabID }
+        visitHistoryTabIDs.insert(tabID, at: 0)
         recentTabIDs.removeAll { $0 == tabID }
         recentTabIDs.insert(tabID, at: 0)
-        if recentTabIDs.count > TabSwitchMetrics.maxRecentTabs {
-            recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+    }
+
+    /// Admit an unvisited background tab as the next forward-switch target.
+    /// Keep the focused tab first; an in-progress session retains its snapshot.
+    func recordBackgroundTab(_ tab: Tab) {
+        guard let state = browserState,
+              !BrowserState.isAIChatId(tab.guidInLocalDB),
+              state.focusingTab?.guid != tab.guid,
+              state.tabs.contains(where: { $0.guid == tab.guid }),
+              !recentTabIDs.contains(tab.guid),
+              !visitHistoryTabIDs.contains(tab.guid) else { return }
+
+        pruneHistory()
+        if let currentTab = state.focusingTab,
+           !BrowserState.isAIChatId(currentTab.guidInLocalDB),
+           state.tabs.contains(where: { $0.guid == currentTab.guid }) {
+            recentTabIDs.removeAll { $0 == currentTab.guid }
+            recentTabIDs.insert(currentTab.guid, at: 0)
         }
+        let insertionIndex = recentTabIDs.first == state.focusingTab?.guid ? 1 : 0
+        recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
+        recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
     }
 
     func removeTab(tabID: Int) {
+        visitHistoryTabIDs.removeAll { $0 == tabID }
         recentTabIDs.removeAll { $0 == tabID }
         snapshotCache.removeValue(forKey: tabID)
         guard var session else { return }
@@ -195,6 +223,7 @@ final class TabSwitchManager {
     private func pruneHistory() {
         guard let state = browserState else { return }
         let validIDs = Set(state.tabs.map(\.guid))
+        visitHistoryTabIDs.removeAll { !validIDs.contains($0) }
         recentTabIDs.removeAll { !validIDs.contains($0) }
     }
 
@@ -351,11 +380,10 @@ final class TabSwitchManager {
 
         let image: NSImage?
 
-        if tab.isActive, let state = browserState,
-           let live = state.tabDraggingSession.singleTabSnapshotImage(for: tab) {
-            image = live
-        } else if let jpegData = ChromiumLauncher.sharedInstance().bridge?.thumbnail(forTab: Int64(tab.guid)),
-                  let thumb = NSImage(data: jpegData) {
+        // Live AppKit capture can return a blank image for Chromium's remote surface.
+        // Use the cached thumbnail for both foreground and background tabs, as drag previews do.
+        if let jpegData = ChromiumLauncher.sharedInstance().bridge?.thumbnail(forTab: Int64(tab.guid)),
+           let thumb = NSImage(data: jpegData) {
             image = thumb
         } else {
             let favicon = resolveFaviconForSnapshot(for: tab) ?? NSImage()

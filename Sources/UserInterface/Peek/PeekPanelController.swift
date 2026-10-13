@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import SnapKit
 import SwiftUI
 
@@ -191,7 +192,7 @@ final class PeekPanelController {
     private static let paneInsetRatio: CGFloat = 0.04
     private static let minPaneInset: CGFloat = 24
     private static let paneVerticalInset: CGFloat = 24
-    private static let cornerRadius: CGFloat = 12
+    static let cornerRadius: CGFloat = 12
 
     /// The card carries no chrome of its own (Arc's peek layout): the page
     /// fills it edge to edge and the controls live in a transparent strip the
@@ -240,6 +241,16 @@ final class PeekPanelController {
     private let toastCenter = OverlayToastCenter()
     private let toastViewController: OverlayToastViewController
     private weak var hostedTab: Tab?
+    /// Top-down order of the control column; hidden buttons leave no gap
+    /// (`restackControlButtons`).
+    private var controlButtons: [NSButton] = []
+    /// Shown while the hosted page is readable or already has a reader up
+    /// (so the same button closes it).
+    private weak var readerButton: NSButton?
+    private var controlVisibility: AnyCancellable?
+    /// Fires after every relayout: a reader covering the card has to follow
+    /// it, and a card moved inside the overlay posts no frame change.
+    var onLayout: (() -> Void)?
     private var eventMonitor: Any?
     private var parentResizeObserver: NSObjectProtocol?
     private var anchorFrameObserver: NSObjectProtocol?
@@ -338,8 +349,24 @@ final class PeekPanelController {
         webView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+        PageOverlayDevToolsDock.mount(tab, in: webHostView)
+        bindControlVisibility(to: tab, in: browserState)
 
         reveal(focusContent: true, flyIn: flyIn)
+    }
+
+    /// The page card, for a reader opened over the hosted page to cover.
+    var pageCardView: NSView { containerView }
+
+    func isHosting(_ tab: Tab) -> Bool {
+        hostedTab === tab
+    }
+
+    /// Dock area for `tab`'s DevTools: the page card while this panel hosts
+    /// the tab, nil otherwise (the dock state then waits on the `Tab` until
+    /// `present` mounts it).
+    func devToolsHost(for tab: Tab) -> NSView? {
+        hostedTab === tab ? webHostView : nil
     }
 
     /// Temporarily hides the panel while the opener tab is not focused. The
@@ -375,8 +402,7 @@ final class PeekPanelController {
     private func revealIfStillCurrent() {
         guard let tab = hostedTab,
               let browserState,
-              let focusedTabId = browserState.focusingTab?.guid,
-              browserState.peekState.peek(forOpener: focusedTabId) === tab else {
+              browserState.visiblePeek(focusingTab: browserState.focusingTab)?.tab === tab else {
             return
         }
         reveal(focusContent: true, flyIn: false)
@@ -437,6 +463,59 @@ final class PeekPanelController {
         browserState?.openPeekAsSplitWithOpener(peekTabId: tab.guid)
     }
 
+    @objc private func readerButtonClicked(_ sender: Any?) {
+        guard let tab = hostedTab, let browserState else { return }
+        MainActor.assumeIsolated {
+            browserState.toggleReaderView(for: tab, from: .peekPanel)
+        }
+    }
+
+    private func bindControlVisibility(to tab: Tab, in browserState: BrowserState) {
+        // The id, not the tab: a hidden panel keeps this subscription, and
+        // must not keep a closed peek's Tab alive with it.
+        let tabId = tab.guid
+        controlVisibility = tab.$isReaderOfferable
+            .combineLatest(browserState.readerOverlayState.$readersByOrigin)
+            .map { offerable, readers in offerable || readers[tabId] != nil }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shown in
+                self?.setReaderButtonShown(shown)
+            }
+    }
+
+    private func setReaderButtonShown(_ shown: Bool) {
+        readerButton?.isHidden = !shown
+        restackControlButtons()
+    }
+
+    /// Chains the visible control buttons top-down: a hidden button leaves
+    /// the chain rather than a gap in the column.
+    private func restackControlButtons() {
+        var previous: NSView?
+        for button in controlButtons {
+            guard !button.isHidden else {
+                button.snp.removeConstraints()
+                continue
+            }
+            button.snp.remakeConstraints { make in
+                make.centerX.equalToSuperview()
+                make.width.height.equalTo(Self.controlButtonSize)
+                if let previous {
+                    make.top.equalTo(previous.snp.bottom).offset(Self.controlSpacing)
+                } else {
+                    make.top.equalToSuperview().offset(Self.controlTopInset)
+                }
+            }
+            previous = button
+        }
+        // The column is only as tall as its buttons; the rest of the strip
+        // beside the card stays empty page pane.
+        previous?.snp.makeConstraints { make in
+            make.bottom.equalToSuperview()
+        }
+    }
+
     /// Closes the peek the panel is currently hosting (the focused opener's).
     private func closeHostedPeek() {
         guard let tab = hostedTab else { return }
@@ -456,8 +535,9 @@ final class PeekPanelController {
         if flyIn { armAppearFlight() }
         rootView.isHidden = false
         runAppearFlight()
+        // The page, not `subviews.first` — docked DevTools sits below it.
         if focusContent, !isEclipsedByInWindowOverlay,
-           let webView = webHostView.subviews.first {
+           let webView = hostedTab?.webContentView, webView.superview === webHostView {
             parentWindow.makeKey()
             parentWindow.makeFirstResponder(webView)
             hostedTab?.webContentWrapper?.focus()
@@ -479,6 +559,8 @@ final class PeekPanelController {
         landAppearFlight()
         webHostView.subviews.forEach { $0.removeFromSuperview() }
         hostedTab = nil
+        controlVisibility = nil
+        setReaderButtonShown(false)
     }
 
     // MARK: - Appear flight
@@ -726,26 +808,31 @@ final class PeekPanelController {
             ),
             action: #selector(splitButtonClicked(_:))
         )
-
-        var previous: NSView?
-        for button in [closeButton, expandButton, splitButton] {
-            controlColumn.addSubview(button)
-            button.snp.makeConstraints { make in
-                make.centerX.equalToSuperview()
-                make.width.height.equalTo(Self.controlButtonSize)
-                if let previous {
-                    make.top.equalTo(previous.snp.bottom).offset(Self.controlSpacing)
-                } else {
-                    make.top.equalToSuperview().offset(Self.controlTopInset)
-                }
+        let readerTooltip = NSLocalizedString(
+            "peek.panel.readerButtonTooltip",
+            value: "Reader View",
+            comment: "Peek popup panel - Tooltip of the button that opens or closes Reader View for the page shown in the floating page preview"
+        )
+        let readerButton = makeControlButton(
+            symbolName: "doc.plaintext",
+            tooltip: readerTooltip,
+            action: #selector(readerButtonClicked(_:))
+        )
+        MainActor.assumeIsolated {
+            readerButton.setCustomTooltip {
+                CommandShortcutTooltipContent(
+                    title: readerTooltip,
+                    command: .PHI_TOGGLE_READER
+                )
             }
-            previous = button
         }
-        // The column is only as tall as its buttons; the rest of the strip
-        // beside the card stays empty page pane.
-        previous?.snp.makeConstraints { make in
-            make.bottom.equalToSuperview()
-        }
+        // Hidden until the page is readable.
+        readerButton.isHidden = true
+        self.readerButton = readerButton
+
+        controlButtons = [closeButton, expandButton, splitButton, readerButton]
+        controlButtons.forEach { controlColumn.addSubview($0) }
+        restackControlButtons()
     }
 
     private func makeControlButton(symbolName: String, tooltip: String, action: Selector) -> NSButton {
@@ -807,6 +894,7 @@ final class PeekPanelController {
         // a layer still carrying its pre-frame bounds would shrink about the
         // wrong point and fly out of the wrong place. `setScreenFrame` above
         // also completes that layout before the flight is armed.
+        onLayout?()
     }
 
     /// Screen rect of the card alone: the overlay frame minus the shadow
@@ -894,15 +982,21 @@ final class PeekPanelController {
                 guard event.window === self.parentWindow,
                       self.parentWindow?.isKeyWindow == true,
                       self.rootView.containsFirstResponder else { return event }
-                // Esc closes the peek. Cmd-W must be swallowed here: strip-
-                // active is the bound opener while the peek is up, so letting
-                // it reach Chromium's IDC_CLOSE_TAB would close the opener.
-                if event.keyCode == 53 {
+                // Cmd-W must be swallowed here: strip-active is the bound
+                // opener while the peek is up, so letting it reach Chromium's
+                // IDC_CLOSE_TAB would close the opener.
+                if event.modifierFlags.contains(.command),
+                   event.charactersIgnoringModifiers?.lowercased() == "w" {
                     self.closeHostedPeek()
                     return nil
                 }
-                if event.modifierFlags.contains(.command),
-                   event.charactersIgnoringModifiers?.lowercased() == "w" {
+                // Docked DevTools owns its keys: Esc toggles its console
+                // drawer and Cmd-[ / Cmd-] switch its panels.
+                if PageOverlayDevToolsDock.hasFocus(self.hostedTab) {
+                    return event
+                }
+                // Esc closes the peek.
+                if event.keyCode == 53 {
                     self.closeHostedPeek()
                     return nil
                 }

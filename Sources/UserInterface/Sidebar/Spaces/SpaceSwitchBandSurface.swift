@@ -9,9 +9,9 @@ import AppKit
 /// exist per window — the docked sidebar (`SidebarViewController`) and the
 /// hover floating panel (`FloatingSidebarViewController`) — and
 /// `SpaceWindowSlot` drives whichever one is presenting when the switch
-/// fires (see `SpaceWindowSlot.spaceSwitchSurface(of:)`): band snapshots,
-/// the push-in slide overlay, and the swipe edge bounce all address the
-/// surface, not a concrete controller.
+/// fires (see `SpaceWindowSlot.spaceSwitchSurface(of:)`): the band slide
+/// and the swipe edge bounce address the surface, not a concrete
+/// controller.
 ///
 /// Deliberately NOT annotated `@MainActor`: the nonisolated `SpaceWindowSlot`
 /// drives these members synchronously (always on the main thread in
@@ -22,9 +22,8 @@ import AppKit
 protocol SpaceSwitchBandSurface: NSViewController {
     /// The views forming the contiguous per-Space content band — the
     /// pinned-tab strip and the tab list (which also hosts bookmarks).
-    /// `SpaceManager` snapshots this region from the entering surface and
-    /// slides it in over the leaving surface's matching region during a
-    /// vertical Space switch. The header (address bar) above and the bottom
+    /// `SpaceManager` slides the entering surface's band in over the leaving
+    /// surface's matching region during a vertical Space switch. The header (address bar) above and the bottom
     /// toolbar below are deliberately excluded so they stay put through the
     /// push. Views not currently mounted (incognito never mounts the pinned
     /// band) are skipped by the band-frame union.
@@ -35,9 +34,8 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// collection (`SpaceWindowSlot.HostedBandSlide`).
     var spaceSwitchPinnedStrip: NSView { get }
 
-    /// The stack hosting the band. Snapshots render from it — so the themed
-    /// backdrop painted behind it is NOT captured and shows through the
-    /// slide — and the edge bounce clips to it.
+    /// The stack hosting the band. The slide and the edge bounce clip to it;
+    /// the themed backdrop painted behind it shows through the slide.
     var spaceSwitchBandContainer: NSView { get }
 
     /// Forms the available native rows before a cold Space starts moving.
@@ -54,8 +52,7 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// content. The live band slide (`SpaceWindowSlot.HostedBandSlide`)
     /// sets this on the ENTERING surface while its tree slides in over the
     /// leaving sidebar, so the leaving backdrop (ramping to the entering
-    /// Space's colors) shows through exactly as it did behind the old
-    /// content-only band snapshot; a vibrancy view sliding in with its own
+    /// Space's colors) shows through it; a vibrancy view sliding in with its own
     /// material would instead blur whatever lies behind the window. Cleared
     /// again when the slide lands.
     func setSpaceSwitchBackdropHidden(_ hidden: Bool)
@@ -78,28 +75,6 @@ extension SpaceSwitchBandSurface {
         }
         guard let first = rects.first else { return .zero }
         return rects.dropFirst().reduce(first) { $0.union($1) }
-    }
-
-    /// Content-only snapshot of `spaceSwitchBandFrame`. The themed backdrop
-    /// lives behind `spaceSwitchBandContainer`, so it is NOT captured here —
-    /// the band image carries a transparent background and the ramping
-    /// backdrop shows through during the slide. Renders even while the host
-    /// window is off-screen, since AppKit layout/`cacheDisplay` is
-    /// independent of window visibility.
-    func snapshotSpaceSwitchBand() -> NSImage? {
-        view.layoutSubtreeIfNeeded()
-        let container = spaceSwitchBandContainer
-        let bandInContainer = container.convert(spaceSwitchBandFrame, from: view)
-        guard bandInContainer.width > 0, bandInContainer.height > 0,
-              let rep = container.bitmapImageRepForCachingDisplay(in: bandInContainer) else {
-            return nil
-        }
-        withStaticSpaceSwitchSnapshotRendering {
-            container.cacheDisplay(in: bandInContainer, to: rep)
-        }
-        let image = NSImage(size: bandInContainer.size)
-        image.addRepresentation(rep)
-        return image
     }
 
     /// Flies the strip's glass chip from the source pip to the target pip as
@@ -126,12 +101,10 @@ extension SpaceSwitchBandSurface {
         (spacesStripRowView as? SpacesStripHostingView)?.cancelSpacesChipFlight(toSpaceId: toSpaceId)
     }
 
-    /// Hides/reveals the live band content while the push-in overlay (which
-    /// carries the same content as a transparent snapshot) plays on top.
-    /// Without this the static live content shows through the snapshot's
-    /// transparent areas and reads as a doubled, non-moving copy. Uses alpha
-    /// rather than `isHidden` so the stack layout — and the backdrop painted
-    /// behind it — is unaffected.
+    /// Hides/reveals the live band content (the create-Space overlay hides
+    /// it while the form is up; the band slide restores it when it ends).
+    /// Uses alpha rather than `isHidden` so the stack layout — and the
+    /// backdrop painted behind it — is unaffected.
     func setSwitchBandContentHidden(_ hidden: Bool) {
         let alpha: CGFloat = hidden ? 0 : 1
         for bandView in spaceSwitchBandViews {
@@ -207,78 +180,5 @@ extension SpaceSwitchBandSurface {
             return
         }
         slot.activate(spaceId: spaces[targetIdx].spaceId, userInitiated: true)
-    }
-
-    // MARK: - Snapshot helpers
-
-    /// Animated icons and translucent AppKit labels don't survive
-    /// `cacheDisplay` consistently; use snapshot-safe representations for the
-    /// duration of the render.
-    private func withStaticSpaceSwitchSnapshotRendering(_ body: () -> Void) {
-        withStaticNewTabSnapshotContent {
-            withStaticBookmarkFolderSnapshotIcons(body)
-        }
-    }
-
-    private func withStaticNewTabSnapshotContent(_ body: () -> Void) {
-        let cells = newTabButtonCells(in: spaceSwitchBandContainer)
-        guard !cells.isEmpty else {
-            body()
-            return
-        }
-
-        func apply(at index: Int) {
-            guard index < cells.count else {
-                body()
-                return
-            }
-            cells[index].withStaticSnapshotContent {
-                apply(at: index + 1)
-            }
-        }
-
-        apply(at: 0)
-    }
-
-    private func withStaticBookmarkFolderSnapshotIcons(_ body: () -> Void) {
-        let cells = bookmarkCells(in: spaceSwitchBandContainer)
-        guard !cells.isEmpty else {
-            body()
-            return
-        }
-
-        func apply(at index: Int) {
-            guard index < cells.count else {
-                body()
-                return
-            }
-            cells[index].withStaticFolderSnapshotIcon {
-                apply(at: index + 1)
-            }
-        }
-
-        apply(at: 0)
-    }
-
-    private func newTabButtonCells(in view: NSView) -> [NewTabButtonCellView] {
-        var cells: [NewTabButtonCellView] = []
-        if let cell = view as? NewTabButtonCellView {
-            cells.append(cell)
-        }
-        for subview in view.subviews {
-            cells.append(contentsOf: newTabButtonCells(in: subview))
-        }
-        return cells
-    }
-
-    private func bookmarkCells(in view: NSView) -> [BookmarkCellView] {
-        var cells: [BookmarkCellView] = []
-        if let cell = view as? BookmarkCellView {
-            cells.append(cell)
-        }
-        for subview in view.subviews {
-            cells.append(contentsOf: bookmarkCells(in: subview))
-        }
-        return cells
     }
 }

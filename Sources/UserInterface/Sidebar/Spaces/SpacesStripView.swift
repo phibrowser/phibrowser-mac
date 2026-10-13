@@ -408,8 +408,8 @@ struct SpacesStripView: View {
     private static let horizontalPadding: CGFloat = 10
     /// Tighter horizontal padding for the lone horizontal-layout chip, so the
     /// single Space icon hugs its glyph instead of floating in a wide chip.
-    /// `TabStripBarController.trafficLightInset` is tuned against this value to
-    /// keep the icon centered between the traffic lights and the first tab.
+    /// The horizontal bar keeps the chip's outer edge 10pt after the native
+    /// traffic lights; this padding controls only the content inside the chip.
     private static let compactChipHorizontalPadding: CGFloat = 2
     private static let iconSize: CGFloat = 14
     /// Phi icon canvas and container size in the strip.

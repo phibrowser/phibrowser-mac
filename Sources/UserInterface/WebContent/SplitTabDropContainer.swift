@@ -537,6 +537,16 @@ final class SplitTabDropContainer: NSView {
         hideHighlights()
     }
 
+    /// The hint cards live inside the page area, beneath the Peek and Reader
+    /// page overlays — which would cover them. Announced like any in-window
+    /// overlay, so those panels step aside for the drag and come back after.
+    private func postHintsVisibility(_ visible: Bool) {
+        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
+                                        object: window,
+                                        userInfo: ["visible": visible, "surface": "splitDropHints",
+                                                   "windowId": browserState?.windowId as Any])
+    }
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let result = evaluate(sender)
         defer { hideHighlights() }
@@ -1356,6 +1366,7 @@ final class SplitTabDropContainer: NSView {
         if !hintsVisible {
             hintsVisible = true
             updateDropHintFrames(transition: nil)
+            postHintsVisibility(true)
         }
         // Suppress implicit fade so the cards snap on rather than fade in.
         CATransaction.begin()
@@ -1375,6 +1386,9 @@ final class SplitTabDropContainer: NSView {
     }
 
     private func hideHighlights() {
+        if hintsVisible {
+            postHintsVisibility(false)
+        }
         hintsVisible = false
         setActiveDropZone(nil)
         CATransaction.begin()

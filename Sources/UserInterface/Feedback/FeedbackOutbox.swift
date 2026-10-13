@@ -1278,7 +1278,9 @@ enum FeedbackOutbox {
         )
     }
 
-    private static var channelName: String {
+    /// The release channel this build reports, both in feedback reports and
+    /// to agents asking `agentSpace.app.info`, so the two always agree.
+    static var channelName: String {
         #if NIGHTLY_BUILD
         return browserChannelName(isNightlyBuild: true, isDebugBuild: false)
         #elseif DEBUG

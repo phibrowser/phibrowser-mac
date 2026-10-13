@@ -25,6 +25,12 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.autoPictureInPictureModeKey)
     private var autoPictureInPictureModeRawValue: String = PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.rawValue)
+    private var playerEnabled = PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.defaultValue
+
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarMediaPresentationModeKey)
+    private var presentationModeRawValue = SidebarMediaPresentationMode.dynamic.rawValue
+
     // Backed by Chromium local state through the bridge, not @AppStorage: the
     // cold-start path reads the same pref, so it is the single source of truth.
     @State private var restoreLastSessionEnabled = SessionRestorePreference.isEnabled
@@ -48,11 +54,33 @@ struct AdvancedSettingsView: View {
         )
     }
 
+    private var selectedMiniPlayerMode: Binding<SidebarMediaPresentationMode?> {
+        Binding(
+            get: {
+                playerEnabled ? (SidebarMediaPresentationMode(rawValue: presentationModeRawValue) ?? .dynamic) : nil
+            },
+            set: { mode in
+                if let mode {
+                    presentationModeRawValue = mode.rawValue
+                    playerEnabled = true
+                } else {
+                    playerEnabled = false
+                }
+            }
+        )
+    }
+
+    private var miniPlayerLabel: String {
+        NSLocalizedString("settings.advanced.miniPlayer.title", value: "Mini Player",
+                          comment: "Advanced settings - Menu for turning Mini Player off or choosing its display mode")
+    }
+
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
                 pageCard
                 browsingCard
+                mediaCard
                 DeveloperModeSectionView()
                 additionalSettingsCard
             }
@@ -173,6 +201,39 @@ struct AdvancedSettingsView: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .themedTint(.themeColor)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var mediaCard: some View {
+        SettingsDetailCard {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(miniPlayerLabel)
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.sidebarMedia.hint", value: "Control media playing in background tabs from the sidebar.",
+                                           comment: "Advanced settings - Description of Mini Player controls in the sidebar for media playing in background tabs"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Picker("", selection: selectedMiniPlayerMode) {
+                    Text(NSLocalizedString("settings.advanced.miniPlayer.offOption", value: "Off",
+                                           comment: "Mini Player display option - Hide the player while media continues playing"))
+                        .tag(Optional<SidebarMediaPresentationMode>.none)
+                    ForEach([SidebarMediaPresentationMode.dynamic, .alwaysExpanded, .alwaysCompact]) { mode in
+                        Text(mode.displayName).tag(Optional(mode))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityLabel(miniPlayerLabel)
+                .accessibilityIdentifier("settings.sidebarMedia.presentation")
             }
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)

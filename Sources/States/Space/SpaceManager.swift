@@ -4232,11 +4232,6 @@ final class SpaceManager: ObservableObject {
         // frame change rather than stamping a half-restored group as the
         // layout to come back to. That trade is deliberate.
         flushPendingSlotsSnapshotPersist()
-        for slot in slots {
-            if let visible = slot.visibleController {
-                SpaceWindowSlot.HostedBandSlide.captureBand(of: visible)
-            }
-        }
         isTerminating = true
         discardSpacePrewarm()
     }
@@ -6163,7 +6158,6 @@ final class SpaceManager: ObservableObject {
     /// Called only after every slot has finished presenting its replacement.
     private func finishDeletingSpace(spaceId: String) {
         discardClaimedSpaceContent(spaceId: spaceId)
-        SpaceBandSnapshotCache.shared.remove(spaceId: spaceId)
         let remainingUserSpaces = userSpaces.filter {
             $0.spaceId != spaceId && !pendingDeletionSpaceIds.contains($0.spaceId)
         }
@@ -7910,9 +7904,6 @@ final class SpaceManager: ObservableObject {
         incognitoSpaces.removeAll { $0.spaceId == spaceId }
         claimedSpaceContent.removeValue(forKey: spaceId)
         clearThemeRecords(forSpaceId: spaceId)
-        // Nothing is captured for an Incognito Space; this covers a file an
-        // older build left behind under this id.
-        SpaceBandSnapshotCache.shared.remove(spaceId: spaceId)
         refreshIncognitoSpacePresence()
         pushSpaceStateToChromium()
     }
@@ -8208,6 +8199,37 @@ final class SpaceManager: ObservableObject {
 /// once.
 final class SpaceWindowSlot: ObservableObject {
 
+    @MainActor private var storedMediaController: SidebarMediaController?
+
+    @MainActor var sidebarMediaController: SidebarMediaController {
+        if let storedMediaController { return storedMediaController }
+        let controller = SidebarMediaController()
+        storedMediaController = controller
+        controller.activateSession = { [weak self] sessionID, completion in
+            guard let self,
+                  let target = self.windowsBySpaceId.values.first(where: {
+                      ObjectIdentifier($0.browserState) == sessionID
+                  }) else { completion(false); return }
+            if self.visibleController === target { completion(true); return }
+            self.activate(spaceId: target.spaceId, userInitiated: true,
+                onActivationFailed: { completion(false) },
+                onSwapSettled: { [weak self, weak target] in
+                    guard let self, let target,
+                          self.windowsBySpaceId[target.spaceId] === target,
+                          self.visibleController === target else { completion(false); return }
+                    completion(true)
+                })
+        }
+        reconcileMediaSessions()
+        return controller
+    }
+
+    @MainActor private func reconcileMediaSessions() {
+        guard let storedMediaController else { return }
+        let states = windowsBySpaceId.keys.sorted().compactMap { windowsBySpaceId[$0]?.browserState }
+        storedMediaController.setSessions(states, presented: visibleController?.browserState)
+    }
+
     @Published private(set) var activeSpaceId: String?
 
     /// The Space pip being drag-reordered in this window's strip, shared by
@@ -8455,7 +8477,9 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// spaceId → controller dedicated to this slot for that Space.
     /// Populated lazily by `activate`'s spawn path and `registerWindow`.
-    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:]
+    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:] {
+        didSet { MainActor.assumeIsolated { reconcileMediaSessions() } }
+    }
 
     /// Hosted mode: sessions built ahead of their Browser, one per user
     /// Space this slot presents but has not visited (see
@@ -8490,6 +8514,7 @@ final class SpaceWindowSlot: ObservableObject {
     private(set) weak var visibleController: SpaceSessionController? {
         didSet {
             guard oldValue !== visibleController else { return }
+            MainActor.assumeIsolated { reconcileMediaSessions() }
             observeFrameChanges(on: visibleController)
             updateWindowsMenuExclusion()
             // The Space→window routing map reports only the visible window per
@@ -10296,9 +10321,6 @@ final class SpaceWindowSlot: ObservableObject {
         if windowsBySpaceId.isEmpty { return true }
         guard !isCascadingSlotClose else { return false }
         manager?.flushPendingSlotsSnapshotPersist()
-        if let visibleController {
-            HostedBandSlide.captureBand(of: visibleController)
-        }
         AppLogInfo("[SpaceWindowSlot] shell close requested; cascading \(windowsBySpaceId.count) session(s) via Chromium")
         isCascadingSlotClose = true
         cascadeCloseRemainingWindows()
@@ -10686,18 +10708,11 @@ final class SpaceWindowSlot: ObservableObject {
         private weak var enteringBandContainer: NSView?
         private var enteringContainerMaskedToBounds = false
         private var enteringChromeAlphas: [(view: NSView, alpha: CGFloat)] = []
-        /// The entering band (or its stand-in) kept transparent until
+        /// The entering band kept transparent until
         /// `startMotion`: AppKit can put a view's layer transform back
         /// when it syncs layer geometry, so the start offset alone does not
         /// keep it off the frames that go out before the motion.
         private var enteringHeldViews: [NSView] = []
-        /// A cold Space's band stand-in: the cached snapshot of its band
-        /// (`SpaceBandSnapshotCache`), shown in place of the live rows —
-        /// which a dormant session does not have until its Browser
-        /// materializes, ~100 ms in — and swapped for them when they land.
-        private var enteringStandIn: SpaceBandSnapshotView?
-        private var enteringTabsCancellable: AnyCancellable?
-        private var standInTimeout: Timer?
         /// Band views and container that were not layer-backed before the
         /// slide gave them a layer to translate. They get it back afterwards:
         /// a layer left behind keeps the band's last drawing as its contents,
@@ -10815,7 +10830,7 @@ final class SpaceWindowSlot: ObservableObject {
                 for view in leavingBandViews {
                     holdSwipePosition(of: view, at: leavingEndDx * p)
                 }
-                for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
+                for view in enteringBandViews {
                     holdSwipePosition(of: view, at: enteringStartDx * (1 - p))
                 }
                 updateInteractiveChrome(p)
@@ -10883,20 +10898,12 @@ final class SpaceWindowSlot: ObservableObject {
             swipeTimer = nil
             for observer in swipeObservers { NotificationCenter.default.removeObserver(observer) }
             swipeObservers.removeAll()
-            standInTimeout?.invalidate()
             let slot = slot
             let source = leaving
             let canCommit = commit && source != nil && entering != nil
                 && slot?.visibleController === source
                 && slot?.manager?.acceptsStoreAction() == true
                 && slot?.presentedSpaces.contains(where: { $0.spaceId == enteringSpaceId }) == true
-            let discardStandIn = {
-                self.enteringTabsCancellable = nil
-                self.enteringStandIn?.removeFromSuperview()
-                self.enteringStandIn = nil
-                self.enteringSurface?.setSwitchBandContentHidden(false)
-            }
-            if !canCommit { discardStandIn() }
             let restoreSource = {
                 if self.pageSlide {
                     self.entering?.removeSessionViewFromShell()
@@ -10927,7 +10934,7 @@ final class SpaceWindowSlot: ObservableObject {
             }
             restoreEnteringChrome()
             restoreLeavingBand()
-            if enteringStandIn == nil { enteringSurface?.setSwitchBandContentHidden(false) }
+            enteringSurface?.setSwitchBandContentHidden(false)
             enteringSurface?.setSpaceSwitchBackdropHidden(false)
             restoreLeavingTheme()
             for (view, appearance) in swipeAppearances { view.appearance = appearance }
@@ -10943,19 +10950,11 @@ final class SpaceWindowSlot: ObservableObject {
                     // activation performs the one real hand-over without replaying.
                     slot?.activate(spaceId: enteringSpaceId, animated: false, userInitiated: true)
                     if slot?.activeSpaceId != enteringSpaceId {
-                        discardStandIn()
                         restoreSource()
                     }
                 }
             }
             CATransaction.commit()
-            if enteringStandIn != nil {
-                // Keep the cached rows through a committed cold activation,
-                // just as the timed slide does, until the Browser supplies them.
-                standInTimeout = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
-                    self.revealEnteringLiveBand()
-                }
-            }
         }
 
         /// The horizontal inset a sidebar list keeps around its rows
@@ -11052,45 +11051,12 @@ final class SpaceWindowSlot: ObservableObject {
             guard !finished, entering == nil else { return }
             entering = controller
             timing?.mark("animation.attach.begin")
-            // A Space never shown in this window has no cached band and, as
-            // a dormant session, no tabs until the Browser spawned one turn
-            // after the switch reports its first tab: its band would slide
-            // in empty and fill ~100 ms later. Hold the leaving band still
-            // until that tab lands (bounded, so a Space with none to come
-            // still moves), then slide the formed rows in.
-            if !interactive, controller.browserState.tabs.isEmpty,
-               SpaceBandSnapshotCache.shared.snapshot(
-                   for: controller.spaceId,
-                   appearanceOf: controller.mainSplitViewController.sidebarViewController.view,
-                   width: bandFrame.width) == nil {
-                timing?.mark("animation.first_tab.wait")
-                var proceeded = false
-                let proceed: () -> Void = { [weak self, weak controller] in
-                    guard !proceeded, let self, let controller, !self.finished else { return }
-                    proceeded = true
-                    self.firstTabCancellable = nil
-                    self.firstTabTimeout?.invalidate()
-                    self.firstTabTimeout = nil
-                    self.timing?.mark("animation.first_tab.ready")
-                    self.beginEntering(controller)
-                }
-                firstTabCancellable = controller.browserState.$tabs
-                    .filter { !$0.isEmpty }
-                    .first()
-                    .receive(on: DispatchQueue.main)
-                    .sink { _ in proceed() }
-                firstTabTimeout = Timer.scheduledTimer(withTimeInterval: Self.firstTabWait, repeats: false) { _ in
-                    proceed()
-                }
-                return
-            }
+            // A Space never shown in this window (no cached band, no tabs
+            // until its spawned Browser reports one) slides in at once and
+            // its rows fill in as the first tab lands, rather than holding
+            // the switch on that Chromium round trip.
             beginEntering(controller)
         }
-
-        /// How long an empty entering band waits for its first tab.
-        private static let firstTabWait: TimeInterval = 0.25
-        private var firstTabCancellable: AnyCancellable?
-        private var firstTabTimeout: Timer?
 
         private func beginEntering(_ controller: SpaceSessionController) {
             if interactive {
@@ -11171,23 +11137,16 @@ final class SpaceWindowSlot: ObservableObject {
             // Frames go out before `startMotion` adds the animations: this
             // transaction commits a turn earlier, and installing the page
             // tree below moves Chromium's native view into the window, which
-            // flushes one mid-way. Hold the entering side (band, stand-in,
-            // page) where its motion starts from here on, or those frames
+            // flushes one mid-way. Hold the entering side (band, page)
+            // where its motion starts from here on, or those frames
             // show it at rest over the leaving one.
             for view in enteringBandViews {
                 view.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
             }
-            // A dormant snapshot already contains the visible rows. Do not
-            // build and draw another band underneath it on the click path.
             timing?.mark("sidebar.prepare.begin")
-            installEnteringStandInIfNeeded(controller, surface: surface, container: container)
-            if enteringStandIn == nil {
-                surface.prepareSpaceSwitchBand(timing: timing)
-            } else {
-                timing?.mark("sidebar.cached_pixels.ready")
-            }
+            surface.prepareSpaceSwitchBand(timing: timing)
             timing?.mark("sidebar.prepare.end")
-            enteringHeldViews = enteringStandIn.map { [$0] } ?? enteringBandViews
+            enteringHeldViews = enteringBandViews
             for view in enteringHeldViews { view.alphaValue = 0 }
             if interactive {
                 releaseEnteringHeldViews()
@@ -11203,8 +11162,6 @@ final class SpaceWindowSlot: ObservableObject {
             pageTree.layer?.opacity = 0
             controller.installPageTreeInShell()
             timing?.mark("page.install.end")
-            // No part of the leaving band moves before the target is ready.
-            timing?.mark("snapshot.prepare.end")
             CATransaction.commit()
             // One turn later: the strip's SwiftUI update (the chip and
             // viewport sliding to the new pip in the leaving sidebar's
@@ -11217,11 +11174,11 @@ final class SpaceWindowSlot: ObservableObject {
                 guard let self, let controller, !self.finished else { return }
                 self.startMotion(controller)
             }
-            AppLogDebug("[SpaceWindowSlot] band slide entering attached, standIn=\(enteringStandIn != nil)")
+            AppLogDebug("[SpaceWindowSlot] band slide entering attached")
         }
 
         /// Puts every side of the slide in motion on one clock: the leaving
-        /// band out, the entering band (or its stand-in) in, and the backdrops.
+        /// band out, the entering band in, and the backdrops.
         private func startMotion(_ controller: SpaceSessionController) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -11250,7 +11207,7 @@ final class SpaceWindowSlot: ObservableObject {
                     }
                 }
             }
-            for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
+            for view in enteringBandViews {
                 animate(view, from: enteringStartDx, to: 0)
             }
             releaseEnteringHeldViews()
@@ -11265,93 +11222,6 @@ final class SpaceWindowSlot: ObservableObject {
             finishIfReady()
         }
 
-        /// A dormant (or still tab-less) entering Space shows its cached
-        /// band snapshot over the live band, inside the band container so
-        /// the container's clipping applies, until the live rows exist.
-        private func installEnteringStandInIfNeeded(_ controller: SpaceSessionController,
-                                                    surface: any SpaceSwitchBandSurface,
-                                                    container: NSView) {
-            guard controller.isDormant || controller.browserState.tabs.isEmpty,
-                  let snapshot = SpaceBandSnapshotCache.shared.snapshot(for: controller.spaceId,
-                                                                     appearanceOf: surface.view,
-                                                                     width: bandFrame.width) else { return }
-            let bandInContainer = container.convert(surface.spaceSwitchBandFrame, from: surface.view)
-            guard bandInContainer.width > 0, bandInContainer.height > 0 else { return }
-            // The snapshot holds the whole band; a pinned strip that stays
-            // put is cut off its top so only the moving rows slide in.
-            var frame = bandInContainer
-            var topInset: CGFloat = 0
-            let moving = enteringBandViews.map { container.convert($0.bounds, from: $0) }
-            if moving.count < surface.spaceSwitchBandViews.filter({ $0.superview != nil }).count,
-               let first = moving.first {
-                let movingRect = moving.dropFirst().reduce(first) { $0.union($1) }
-                topInset = container.isFlipped
-                    ? movingRect.minY - bandInContainer.minY
-                    : bandInContainer.maxY - movingRect.maxY
-                frame = NSRect(x: bandInContainer.minX, y: movingRect.minY,
-                               width: bandInContainer.width, height: movingRect.height)
-            }
-            let standIn = SpaceBandSnapshotView(snapshot: snapshot, frame: frame, topInset: topInset)
-            standIn.layer?.transform = CATransform3DMakeTranslation(enteringStartDx, 0, 0)
-            container.addSubview(standIn, positioned: .above, relativeTo: nil)
-            surface.setSwitchBandContentHidden(true)
-            enteringStandIn = standIn
-            // Strong self on purpose: the slide object may be released by
-            // the slot at landing, and the stand-in still has to hand over.
-            enteringTabsCancellable = controller.browserState.$tabs
-                .filter { !$0.isEmpty }
-                .first()
-                .receive(on: DispatchQueue.main)
-                .sink { _ in self.revealEnteringLiveBand() }
-        }
-
-        /// The live rows take over from the stand-in (tabs landed, or the
-        /// wait ran out): rows back to full alpha, stand-in faded off.
-        private func revealEnteringLiveBand() {
-            enteringTabsCancellable = nil
-            standInTimeout?.invalidate()
-            standInTimeout = nil
-            guard let standIn = enteringStandIn else { return }
-            timing?.mark("sidebar.live_rows.reveal")
-            timing?.flush()
-            enteringStandIn = nil
-            // The cached image remains visible until the replacement rows
-            // are reconciled, realized and drawn, including the New Tab row.
-            // A pinned strip held still comes back with the entering chrome.
-            for view in enteringBandViews { view.alphaValue = 1 }
-            enteringSurface?.prepareSpaceSwitchBand(timing: timing)
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.12
-                standIn.animator().alphaValue = 0
-            }, completionHandler: {
-                standIn.removeFromSuperview()
-            })
-        }
-
-        /// Records what `session`'s band looks like, for its next cold
-        /// switch. The view may be hidden (a session just concealed): it is
-        /// shown for the render inside one transaction, so no frame sees it.
-        static func captureBand(of session: SpaceSessionController, timing: SpaceSwitchTiming? = nil) {
-            // An Incognito band would put its tab titles on disk, past the
-            // session's end. The cache refuses the id too; this keeps the
-            // render itself off the switch.
-            guard session.isHosted, !session.browserState.isIncognito,
-                  !SpaceManager.isIncognitoSpaceId(session.spaceId),
-                  session.mainSplitViewController.isViewLoaded else { return }
-            timing?.mark("snapshot.capture.begin")
-            let sidebar = session.mainSplitViewController.sidebarViewController
-            let view = sidebar.view
-            let wasHidden = view.isHidden
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            view.isHidden = false
-            SpaceBandSnapshotCache.shared.capture(sidebar, spaceId: session.spaceId)
-            view.isHidden = wasHidden
-            CATransaction.commit()
-            timing?.mark("snapshot.capture.end")
-            timing?.flush()
-        }
-
         private func releaseEnteringHeldViews() {
             for view in enteringHeldViews { view.alphaValue = 1 }
             enteringHeldViews = []
@@ -11364,7 +11234,7 @@ final class SpaceWindowSlot: ObservableObject {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             releaseEnteringHeldViews()
-            for view in enteringBandViews + [enteringStandIn].compactMap({ $0 }) {
+            for view in enteringBandViews {
                 view.layer?.removeAnimation(forKey: Self.slideAnimationKey)
                 view.layer?.removeAnimation(forKey: Self.swipePositionKey)
                 view.layer?.transform = CATransform3DIdentity
@@ -11424,14 +11294,8 @@ final class SpaceWindowSlot: ObservableObject {
             finished = true
             fallbackTimer?.invalidate()
             fallbackTimer = nil
-            firstTabCancellable = nil
-            firstTabTimeout?.invalidate()
-            firstTabTimeout = nil
             restoreLeavingBand()
-            enteringTabsCancellable = nil
-            enteringStandIn?.removeFromSuperview()
-            enteringStandIn = nil
-            if enteringStandIn == nil { enteringSurface?.setSwitchBandContentHidden(false) }
+            enteringSurface?.setSwitchBandContentHidden(false)
             enteringSurface?.setSpaceSwitchBackdropHidden(false)
             restoreLeavingTheme()
             releaseBackdropAppearance()
@@ -11453,9 +11317,6 @@ final class SpaceWindowSlot: ObservableObject {
             finished = true
             fallbackTimer?.invalidate()
             fallbackTimer = nil
-            firstTabCancellable = nil
-            firstTabTimeout?.invalidate()
-            firstTabTimeout = nil
             // One transaction for the whole hand-over. The slide's completion
             // block runs outside any transaction, so the first nested commit
             // below (the entering header and pinned strip coming back) would
@@ -11484,19 +11345,6 @@ final class SpaceWindowSlot: ObservableObject {
             releaseBackdropAppearance()
             CATransaction.commit()
             timing?.mark("animation.cleanup.end")
-            if enteringStandIn != nil {
-                // Rows still on their way; a Space with none to come gets
-                // its (empty) live band after a grace period.
-                standInTimeout = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
-                    self.revealEnteringLiveBand()
-                }
-            }
-            if let leaving {
-                // Off the landing pass, once its theme is its own again.
-                DispatchQueue.main.async { [timing] in
-                    Self.captureBand(of: leaving, timing: timing)
-                }
-            }
             slot?.hostedBandSlideDidEnd(self)
             onSwapSettled?()
         }
@@ -12022,6 +11870,9 @@ final class SpaceWindowSlot: ObservableObject {
             pendingCloseOnReplacementBySpaceId[spaceId] = existing
         }
         windowsBySpaceId[spaceId] = controller
+        MainActor.assumeIsolated {
+            controller.mainSplitViewController.useMediaController(sidebarMediaController)
+        }
         manager?.noteSlotWindowsDidChange()
         // Chromium records its "recently closed" stack inside its own close
         // handshake, before AppKit reports the close, so it needs this pairing

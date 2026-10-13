@@ -153,6 +153,9 @@ import SwiftUI
     /// helper's request queued, so the loader loads the mapped ones first, at once.
     @MainActor
     func requestSyncNow() async -> SyncHelper.Report? {
+        // The helper rejects locked accounts before enumerating participants. Recover
+        // here even if the native engine (and therefore its helper) has not started.
+        syncKeyController?.kickSilentUnlockIfLocked()
         guard let helper = syncHelper else { return nil }
         syncProfileLoader?.loadNow()
         _ = await helper.requestSyncNow()
@@ -747,10 +750,18 @@ import SwiftUI
                 let bridge = ChromiumLauncher.sharedInstance().bridge
                 var pullPhi = false
                 switch demand {
-                case .catchUp:
+                case .catchUp, .requestedCatchUp:
                     pullPhi = true
-                    bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
-                                                       dataTypeIds: [], excludingClientId: "")
+                    // Sync now also lets Chromium skip its backoff; an older framework without
+                    // the selector gets the plain catch-up.
+                    if demand == .requestedCatchUp, bridge?.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:userInitiated:))) == true {
+                        bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
+                                                           dataTypeIds: [], excludingClientId: "",
+                                                           userInitiated: true)
+                    } else {
+                        bridge?.notifyPhiSyncInvalidation?(forAccount: accountId, profileUUID: "",
+                                                           dataTypeIds: [], excludingClientId: "")
+                    }
                 case .changes(let hints):
                     for hint in hints {
                         if hint.namespace == "chromium:phi", hint.dataTypes.contains(2000),
@@ -794,7 +805,7 @@ import SwiftUI
                 // deliberately a no-op), sharing one single-flight pull with SSE and the
                 // fallback timer. A stopped coordinator would drop the request, so refuse it.
                 var participants = [SyncHelper.Participant(id: "phi", read: { engine.statusSnapshot },
-                    requestSync: { [weak self] in
+                    requestSync: { [weak self] bySyncNow in
                         guard let self, self.phiSyncEngine === engine,
                               AccountController.shared.account === account,
                               self.phiSyncPairingEnabled,
@@ -803,12 +814,12 @@ import SwiftUI
                               let invalidation = self.phiInvalidationCoordinator, invalidation.isRunning,
                               ChromiumLauncher.sharedInstance().bridge?.responds(to: #selector(PhiChromiumBridgeProtocol.notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:))) == true
                         else { return false }
-                        invalidation.requestCatchUp()
+                        invalidation.requestCatchUp(requested: bySyncNow)
                         return true
                     }, currentSnapshot: { engine.statusSnapshot }, isNative: true)]
                 participants += profiles.map { id in
                     SyncHelper.Participant(id: id, read: { await chromiumStatus.read(profileID: id).status },
-                                          requestSync: { true }) // Included in the accepted account-wide request above.
+                                          requestSync: { _ in true }) // Included in the accepted account-wide request above.
                 }
                 return participants
             },
@@ -2767,6 +2778,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         if let groupIdHex {
             tab.groupToken = groupIdHex
         }
+        tab.restoredAIChatPanel = (tabInfo["aiChatPanelRecord"] as? String)
+            .flatMap(AIChatPanelRecord.init(encoded:))
         let creationPayload = (tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo
         let creationContext = NativeTabCreationContext(dictionary: creationPayload)
         return (tab, creationContext)
@@ -2970,8 +2983,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     controller?.peekPanelControllerIfLoaded?
                         .detachContentIfHosting(tabId: tabId.intValue)
                     // Same rule for a closing reader-overlay surface tab.
-                    controller?.readerPanelControllerIfLoaded?
-                        .detachContentIfHosting(tabId: tabId.intValue)
+                    controller?.readerPanelControllersIfLoaded
+                        .forEach { $0.detachContentIfHosting(tabId: tabId.intValue) }
                 }
             }
         } else {
@@ -2980,6 +2993,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         if Thread.isMainThread {
             MainActor.assumeIsolated {
                 AgentUserSpaceDriveRegistry.shared.tabWasRemoved(tabId: tabId.intValue)
+                // Chromium writes a closed tab's recently-closed entry once this
+                // returns, before the EventBus close below runs.
+                SpaceSessionControllersManager.shared.getBrowserState(for: windowId.intValue)?
+                    .splitPaneWillBeRemoved(tabId.intValue)
             }
         }
         EventBus.shared
@@ -3532,8 +3549,8 @@ extension PhiChromiumCoordinator {
     }
 
     func openReaderView(forTabId tabId: Int64, windowId: Int64) {
-        AppLogDebug("[Reader] context menu asked for Reader View: " +
-                    "tab=\(tabId) window=\(windowId)")
+        AppLogInfo("📖 [Reader] context menu asked for Reader View: " +
+                   "tab=\(tabId) window=\(windowId)")
         EventBus.shared.send(TabEvent(
             browserId: windowId.intValue,
             action: .openReaderView(tabId: tabId.intValue)))

@@ -87,7 +87,6 @@ struct HeaderTrailingArea: View {
     let showDownload: Bool
     let showMemory: Bool
     let showFeedback: Bool
-    let feedbackIconOnly: Bool
     let showChat: Bool
     let isInPlaceholderMode: Bool
 
@@ -116,14 +115,9 @@ struct HeaderTrailingArea: View {
         static let downloadSlot = slotPadding + buttonSize
         static let memorySlot = slotPadding + buttonSize
         static let moreButtonSlot = slotPadding + buttonSize
-        static let feedbackButtonWidth: CGFloat = 100
-        static let feedbackIconWidth: CGFloat = 32
+        static let feedbackSlot = slotPadding + buttonSize
         /// ChatButton's localized content width plus its leading spacing.
         static var chatSlot: CGFloat { slotPadding + ChatButton.preferredContentWidth }
-
-        static func feedbackSlot(iconOnly: Bool) -> CGFloat {
-            slotPadding + (iconOnly ? feedbackIconWidth : feedbackButtonWidth)
-        }
     }
 
     private struct LayoutConfig {
@@ -162,7 +156,6 @@ struct HeaderTrailingArea: View {
         showDownload: Bool,
         showMemory: Bool,
         showFeedback: Bool,
-        feedbackIconOnly: Bool,
         showChat: Bool
     ) -> WidthFit {
         var budget = width - Metrics.trailingPadding - Metrics.extensionMenuWidth
@@ -177,7 +170,7 @@ struct HeaderTrailingArea: View {
         func currentCost() -> CGFloat {
             var cost: CGFloat = 0
             if fit.showFeedback {
-                cost += Metrics.feedbackSlot(iconOnly: feedbackIconOnly)
+                cost += Metrics.feedbackSlot
             }
             if fit.showDownload { cost += Metrics.downloadSlot }
             if fit.showMemory { cost += Metrics.memorySlot }
@@ -210,7 +203,6 @@ struct HeaderTrailingArea: View {
             showDownload: showDownload,
             showMemory: showMemory,
             showFeedback: showFeedback,
-            feedbackIconOnly: feedbackIconOnly,
             showChat: showChat
         )
         // Collapsed items go to the More menu in the order they collapsed.
@@ -285,9 +277,7 @@ struct HeaderTrailingArea: View {
             if feedback {
                 FeedbackButtonSwiftUI(
                     action: onFeedbackTap,
-                    isIconOnly: feedbackIconOnly,
-                    contentWidth: feedbackIconOnly ? nil : Metrics.feedbackButtonWidth,
-                    contentHeight: HeaderTrailingLayout.rowHeight
+                    useCircularHoverShape: true
                 )
                 .padding(.leading, 6)
             }

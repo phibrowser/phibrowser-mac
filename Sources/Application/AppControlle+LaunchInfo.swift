@@ -380,6 +380,8 @@ extension AppController {
             "restore_last_session_enabled": SessionRestorePreference.isEnabled,
             "short_highlight_links_enabled": PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue(),
             "auto_picture_in_picture_mode": PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue,
+            "mini_player_enabled": PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.loadValue(),
+            "mini_player_presentation_mode": PhiPreferences.GeneralSettings.loadSidebarMediaPresentationMode().rawValue,
             "developer_mode_enabled": PhiPreferences.AgentSpaces.developerModeEnabled,
             "cdp_agent_access_enabled": PhiPreferences.AgentSpaces.cdpAgentAccessEnabled,
             "bitwarden_enabled": PhiPreferences.PasswordManagerSettings.bitwardenEnabled.loadValue(),

@@ -420,6 +420,9 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         if showInSidebar {
             scheduleSidebarButtonUpdateAfterLayoutChange()
         }
+        if !isFloating {
+            updateSidebarButtonLeftConstraint()
+        }
 
         updateUpgradeAndSidebarVisibility(layoutMode: layoutMode)
     }
@@ -502,6 +505,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             return
         }
         // Keep a small gap after the leading chrome group.
+        if !isFloating && abs(sidebarButtonLeftOffset - (x + 10)) < 0.01 { return }
         AppLogDebug("[SidebarHeader] updateSidebarButtonLeftConstraint update offset=\(x + 10)")
         sidebarButtonLeftOffset = x + 10
         sidebarButtonLeftConstraint?.update(offset: sidebarButtonLeftOffset)
@@ -593,8 +597,13 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         if window != nil {
             NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)
                 .merge(with: NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification))
+                .merge(with: NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification))
                 .filter { [weak self] notification in
-                    guard let window = self?.window else { return false }
+                    guard let self, let window = self.window else { return false }
+                    if notification.name == NSView.frameDidChangeNotification {
+                        return !self.isFloating
+                            && notification.object as? NSView === window.standardWindowButton(.zoomButton)
+                    }
                     return notification.object as? NSWindow === window
                 }
                 .sink { [weak self] _ in self?.updateSidebarButtonLeftConstraint() }

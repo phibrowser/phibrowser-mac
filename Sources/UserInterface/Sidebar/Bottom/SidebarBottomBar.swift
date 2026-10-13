@@ -78,6 +78,8 @@ struct SidebarBottomBarSwiftUI: View {
     var body: some View {
         regularLayout
             .frame(height: SidebarBottomBarState.singleRowHeight)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sidebar.footer")
     }
     
     // MARK: - Regular Layout
@@ -96,11 +98,8 @@ struct SidebarBottomBarSwiftUI: View {
             Spacer(minLength: 0)
 
             if !state.isFeedbackHidden {
-                ViewThatFits(in: .horizontal) {
-                    FeedbackButtonSwiftUI(action: onFeedbackTap)
-                    FeedbackButtonSwiftUI(action: onFeedbackTap, isIconOnly: true)
-                }
-                .layoutPriority(1)
+                FeedbackButtonSwiftUI(action: onFeedbackTap)
+                    .layoutPriority(1)
             }
 
             if !state.isChatHidden {
@@ -159,7 +158,7 @@ struct SidebarBottomBarSwiftUI: View {
             .animation(showCardEntry ? .spring(response: 0.28, dampingFraction: 0.78) : nil, value: showCardEntry)
             
             if !state.isFeedbackHidden {
-                FeedbackButtonSwiftUI(action: onFeedbackTap, isIconOnly: false)
+                FeedbackButtonSwiftUI(action: onFeedbackTap)
                     .padding(.leading, 8)
                     .frame(height: SidebarBottomBarState.singleRowHeight)
             }
@@ -310,58 +309,39 @@ private struct SidebarDownloadsPopoverPresenter: NSViewRepresentable {
 
 struct FeedbackButtonSwiftUI: View {
     let action: () -> Void
-    /// Whether to render the icon-only variant.
-    var isIconOnly: Bool = false
-    var contentWidth: CGFloat? = nil
-    var contentHeight: CGFloat? = nil
-    
-    /// Width for icon-only mode.
-    private let iconOnlyWidth: CGFloat = 32
-    /// Width for the full label mode.
-    private let fullWidth: CGFloat = 90
-    /// Minimum horizontal breathing room for the full label mode.
-    private let fullContentHorizontalPadding: CGFloat = 2
+    var useCircularHoverShape: Bool = false
+
+    private let buttonSize: CGFloat = 24
+    private let cornerRadius: CGFloat = 6
     
     @State private var isHovering = false
     
     var body: some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: 4) {
-                Image(nsImage: NSImage(resource: .sidebarFeedback))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 16, height: 16)
-                    .themedTint(.textPrimary)
-                
-                if !isIconOnly {
-                    Text(NSLocalizedString("sidebar.feedbackButton.title", value: "Feedback", comment: "Feedback - Sidebar feedback button title"))
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.primaryLabel)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: contentWidth == nil, vertical: false)
-                }
-            }
-            .padding(.horizontal, isIconOnly ? 0 : fullContentHorizontalPadding)
-            .frame(width: isIconOnly ? iconOnlyWidth : contentWidth)
-            .frame(minWidth: !isIconOnly && contentWidth == nil ? fullWidth : nil)
-            .padding(.vertical, 3)
-            .frame(height: contentHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 999)
-                    .fill(isHovering ? Color.sidebarTabHovered : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 999)
-                    .stroke(Color.commonBorder, lineWidth: 1)
-            )
+        Button(action: action) {
+            Image(nsImage: NSImage(resource: .sidebarFeedback))
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
+                .themedForeground(.textPrimary)
+                .frame(width: buttonSize, height: buttonSize)
+                .background(
+                    hoverBackground
+                        .fill(isHovering ? Color(nsColor: .sidebarTabHovered) : Color.clear)
+                )
         }
         .buttonStyle(.plain)
         .help(NSLocalizedString("sidebar.feedbackButton.tooltip", value: "Feedback", comment: "Feedback - Tooltip text for feedback button"))
+        .accessibilityLabel(NSLocalizedString("sidebar.feedbackButton.tooltip", value: "Feedback", comment: "Feedback - Tooltip text for feedback button"))
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
         }
+    }
+
+    private var hoverBackground: AnyShape {
+        useCircularHoverShape ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 

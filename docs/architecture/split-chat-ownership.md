@@ -10,9 +10,12 @@ unrelated currently focused pane. Keeping in-flight creation in the resolution
 prevents the other pane from starting a duplicate chat.
 
 When a new split contains two existing chats, reconciliation keeps the foreground
-pane's chat and closes the other. If a closing pane owns the shared chat, the
-binding migrates to the surviving pane. Changing split primary/secondary roles
-does not itself change the tab-keyed binding.
+pane's chat and closes the other, clearing that pane's undo-close record. If a
+closing pane owns the shared chat, the
+binding migrates to the surviving pane, and so does the panel's undo-close
+record, pushed from the tab-removal callback (`ai-chat-panel-undo-close.md`).
+Changing split primary/secondary roles does not itself change the tab-keyed
+binding.
 
 Creation also synchronizes chat collapse state across the panes, preferring
 expanded when either pane had chat open. The historical proposal's exclusion of

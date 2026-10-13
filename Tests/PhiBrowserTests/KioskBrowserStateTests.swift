@@ -1029,6 +1029,7 @@ final class KioskBrowserStateTests: XCTestCase {
 }
 
 private final class KioskTestWebContentWrapper: NSObject, WebContentWrapper {
+    let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!

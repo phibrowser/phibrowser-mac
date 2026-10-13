@@ -6,6 +6,7 @@
 import Combine
 import AppKit
 import SnapKit
+import SwiftUI
 /// Floating sidebar shown when the primary sidebar is collapsed in non-comfortable layouts.
 /// Lightweight mirror of SidebarViewController.
 class FloatingSidebarViewController: NSViewController, BrowserThemeContextProviding {
@@ -27,6 +28,41 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }()
 
     private(set) var state: BrowserState
+    private var mediaController: SidebarMediaController
+    private var mediaCancellables = Set<AnyCancellable>()
+    private var mediaSurface: SidebarMediaController.Surface { .init(session: state, kind: .floating) }
+
+    func useMediaController(_ controller: SidebarMediaController) {
+        guard mediaController !== controller else { return }
+        mediaController.setActive(false, on: mediaSurface)
+        mediaCancellables.removeAll()
+        mediaController = controller
+        guard isViewLoaded else { return }
+        mediaPlayerView.rootView = AnyView(SidebarMediaPlayerView(controller: controller, surface: mediaSurface))
+        mediaPlayerView.mediaController = controller
+        bindMediaPresentation()
+        updateMediaActivation()
+    }
+    // The player's own 3pt bottom inset plus this gap leaves 8pt above the footer.
+    private let mediaPlayerFooterGap: CGFloat = 5
+    private let mediaPlayerTopGap: CGFloat = 5
+    /// Both cards reserve their full height below the scrollable tab list.
+    private let bottomContentContainerView = NSView()
+    private let mediaPlayerContainerView = NSView()
+    private var mediaPlayerContainerHeightConstraint: Constraint?
+    private var bottomContentFooterConstraint: Constraint?
+    private var messageCardTopConstraint: Constraint?
+    private var measuredMessageCardWidth: CGFloat = 0
+    private lazy var mediaPlayerView: SidebarMediaHostingView = {
+        let hosting = SidebarMediaHostingView(
+            rootView: SidebarMediaPlayerView(controller: mediaController, surface: mediaSurface),
+            themeSource: state.themeContext)
+        hosting.mediaController = mediaController
+        hosting.mediaSurface = mediaSurface
+        hosting.sizingOptions = []
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        return hosting
+    }()
     private lazy var headerView = SidebarHeaderView(state: state, isFloating: true)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state)
     private lazy var tabList = SidebarTabListViewController(state: state)
@@ -159,18 +195,23 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
     private var cancellables = Set<AnyCancellable>()
     private var contentCancellables = Set<AnyCancellable>()
+    private var mediaWindowVisibilityCancellables = Set<AnyCancellable>()
+    private weak var mediaObservedWindow: NSWindow?
     private var focusingTabAIChatEnabledCancellable: AnyCancellable?
     private var focusingTabPartnerAIChatEnabledCancellable: AnyCancellable?
     private var headerHeightConstraint: Constraint?
     private var pinnedHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
+    private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
     private var hasSetupObservers = false
     private var hasSetupConfigObserver = false
     private var isContentActive = false
+    private var isMediaPresented = false
 
-    init(browserState: BrowserState) {
+    init(browserState: BrowserState, mediaController: SidebarMediaController) {
         self.state = browserState
+        self.mediaController = mediaController
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -209,6 +250,21 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     override func viewDidAppear() {
         super.viewDidAppear()
         bottomBarSwiftUI.bindDownloadsManager(state.downloadsManager)
+        updateMediaActivation()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let cardWidth = messageCardContainerView.bounds.width
+        if cardWidth > 0, abs(cardWidth - measuredMessageCardWidth) > 0.5 {
+            updateMessageCardHeight()
+        }
+        updateMediaActivation()
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        setMediaPresented(false)
     }
 
     func refreshFloatingTrafficLights() {
@@ -302,15 +358,26 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         mainStackView.addArrangedSubview(createSpacer(height: 3))
 
         // 7. Message card container
+        mainStackView.addArrangedSubview(bottomContentContainerView)
+        bottomContentContainerView.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview()
+        }
         setupMessageCardContainer()
-        mainStackView.addArrangedSubview(messageCardContainerView)
-        messageCardContainerView.setContentHuggingPriority(.defaultLow, for: .vertical)
-        messageCardContainerView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        bottomContentContainerView.addSubview(messageCardContainerView)
         messageCardContainerView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().inset(8)
-            make.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            make.top.equalToSuperview()
+            make.leading.trailing.equalToSuperview().inset(8)
             messageCardHeightConstraint = make.height.equalTo(0).constraint
         }
+        bottomContentContainerView.addSubview(mediaPlayerContainerView)
+        mediaPlayerContainerView.snp.makeConstraints { make in
+            make.top.equalTo(messageCardContainerView.snp.bottom)
+            make.leading.trailing.equalToSuperview()
+            bottomContentFooterConstraint = make.bottom.equalToSuperview().constraint
+            mediaPlayerContainerHeightConstraint = make.height.equalTo(0).constraint
+        }
+
+        bindMediaPresentation()
 
         // 8. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
@@ -328,8 +395,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
     private func setupMessageCardContainer() {
         messageCardContainerView.addSubview(messageCardHostingController.view)
+        messageCardHostingController.view.isHidden = true
         messageCardHostingController.view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+            messageCardTopConstraint = make.top.equalToSuperview().constraint
+            make.leading.trailing.bottom.equalToSuperview()
         }
     }
 
@@ -489,8 +558,111 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
     }
 
+    private func bindMediaPresentation() {
+        mediaCancellables.removeAll()
+        mediaController.$item
+            .combineLatest(mediaController.$isExpanded, mediaController.$isRevalidating)
+            .combineLatest(mediaController.$isSourceVisible.combineLatest(mediaController.$isDismissed))
+            .combineLatest(mediaController.$activeSurface, mediaController.$isVolumeExpanded)
+            .map { [mediaSurface] state, activeSurface, volumeExpanded in
+                let (presentation, visibility) = state
+                let (item, expanded, revalidating) = presentation
+                let (sourceVisible, dismissed) = visibility
+                return activeSurface != mediaSurface || item == nil || revalidating
+                    || sourceVisible || dismissed
+                    ? CGFloat(0) : (expanded ? 124 : 38) + (volumeExpanded ? 34 : 0)
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] height in self?.updateMediaPlayerHeight(height) }
+            .store(in: &mediaCancellables)
+    }
+
+    private func updateBottomContentFooterGap() {
+        // The player already provides 8pt below its visible surface.
+        // Reserve the same gap here when the notification is the last card.
+        let gap: CGFloat = shouldShowMessageCard && mediaPlayerHeightConstraint == nil ? 8 : 0
+        bottomContentFooterConstraint?.update(offset: -gap)
+    }
+
+    private func updateMediaPlayerHeight(_ height: CGFloat) {
+        if height == 0 {
+            mediaPlayerView.cancelHeightAnimation()
+            mediaPlayerHeightConstraint?.deactivate()
+            mediaPlayerView.removeFromSuperview()
+            mediaPlayerHeightConstraint = nil
+            mediaPlayerContainerHeightConstraint?.update(offset: 0)
+            updateBottomContentFooterGap()
+            view.layoutSubtreeIfNeeded()
+            return
+        }
+        if mediaPlayerHeightConstraint == nil {
+            mediaPlayerContainerView.addSubview(mediaPlayerView)
+            mediaPlayerView.snp.makeConstraints { make in
+                make.leading.trailing.equalToSuperview()
+                make.bottom.equalToSuperview().offset(-mediaPlayerFooterGap)
+                mediaPlayerHeightConstraint = make.height.equalTo(height).constraint
+            }
+            mediaPlayerContainerHeightConstraint?.update(offset: height + mediaPlayerTopGap + mediaPlayerFooterGap)
+            updateBottomContentFooterGap()
+            view.layoutSubtreeIfNeeded()
+        } else {
+            view.layoutSubtreeIfNeeded()
+            mediaPlayerView.animateHeight(to: height) { [weak self] currentHeight in
+                guard let self else { return }
+                self.mediaPlayerHeightConstraint?.update(offset: currentHeight)
+                self.mediaPlayerContainerHeightConstraint?.update(offset: currentHeight + self.mediaPlayerTopGap + self.mediaPlayerFooterGap)
+                self.view.layoutSubtreeIfNeeded()
+            }
+        }
+    }
+
+    func setMediaPresented(_ presented: Bool) {
+        let becamePresented = presented && !isMediaPresented
+        isMediaPresented = presented
+        updateMediaActivation()
+        guard becamePresented else { return }
+
+        // Hidden resident content may retain a provisional SwiftUI height.
+        // Remeasure after reveal even when the panel width has not changed.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isMediaPresented,
+                  !self.view.isHiddenOrHasHiddenAncestor else { return }
+            self.view.layoutSubtreeIfNeeded()
+            self.updateMessageCardHeight()
+        }
+    }
+
+    private func updateMediaActivation() {
+        observeMediaWindowVisibilityIfNeeded()
+        let window = view.window
+        let active = isMediaPresented && isContentActive && state.sidebarCollapsed
+            && !isCreateSpaceCoveredContentSuppressed
+            && window?.isVisible == true && window?.isMiniaturized == false
+            && window?.occlusionState.contains(.visible) == true
+            && !view.isHiddenOrHasHiddenAncestor
+        mediaController.setActive(active, on: mediaSurface)
+    }
+
+    private func observeMediaWindowVisibilityIfNeeded() {
+        guard mediaObservedWindow !== view.window else { return }
+        mediaWindowVisibilityCancellables.removeAll()
+        mediaObservedWindow = view.window
+        guard let window = view.window else { return }
+        for name in [NSWindow.didChangeOcclusionStateNotification,
+                     NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification,
+                     NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.publisher(for: name, object: window)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.updateMediaActivation() }
+                .store(in: &mediaWindowVisibilityCancellables)
+        }
+    }
+
     private func updateMessageCardVisibility(shouldShow: Bool, animated: Bool = false) {
         shouldShowMessageCard = shouldShow
+        updateBottomContentFooterGap()
         guard !isCreateSpaceCoveredContentSuppressed else {
             messageCardHostingController.view.isHidden = true
             return
@@ -508,6 +680,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }
 
     private func hideMessageCard(animated: Bool) {
+        messageCardTopConstraint?.update(offset: 0)
         messageCardHeightConstraint?.update(offset: 0)
         if animated {
             NSAnimationContext.runAnimationGroup({ context in
@@ -526,13 +699,19 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func updateMessageCardHeight(animated: Bool = false) {
         guard !messageCardHostingController.view.isHidden else { return }
 
-        let availableWidth = max(view.bounds.width - 16, 200)
+        let availableWidth = messageCardContainerView.bounds.width
+        guard availableWidth > 0 else { return }
+        measuredMessageCardWidth = availableWidth
         let targetSize = NSSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude)
         let fittingSize = messageCardHostingController.sizeThatFits(in: targetSize)
         let fittingHeight = fittingSize.height > 0 ? fittingSize.height : messageCardHostingController.view.fittingSize.height
         let cardHeight = min(fittingHeight, messageCardMaxHeight)
 
-        messageCardHeightConstraint?.update(offset: cardHeight)
+        // The rotated notification backplate extends above the front card.
+        // Reserve that decoration inside the container rather than over tab rows.
+        let topInset: CGFloat = 12
+        messageCardTopConstraint?.update(offset: topInset)
+        messageCardHeightConstraint?.update(offset: cardHeight + topInset)
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -563,8 +742,12 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }
 
     func setContentActive(_ active: Bool) {
-        guard active != isContentActive else { return }
+        guard active != isContentActive else {
+            updateMediaActivation()
+            return
+        }
         isContentActive = active
+        updateMediaActivation()
 
         contentCancellables.removeAll()
         tabList.setActive(active)
@@ -738,6 +921,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func setCreateSpaceCoveredContentSuppressed(_ suppressed: Bool) {
         guard isCreateSpaceCoveredContentSuppressed != suppressed else { return }
         isCreateSpaceCoveredContentSuppressed = suppressed
+        updateMediaActivation()
 
         if suppressed {
             view.window?.customTooltipController.dismissAll()

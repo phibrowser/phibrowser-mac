@@ -22,7 +22,7 @@ final class OverlayToastCenter: ObservableObject {
         }
     }
 
-    private static let defaultDuration: TimeInterval = 3
+    static let defaultDuration: TimeInterval = 3
 
     private let targetResolver: TargetResolver
     private let scheduler: Scheduler

@@ -161,6 +161,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         // A tree deactivated while its column was expanded comes back live.
         content.setContentActive(true)
         mount(content, hidden: !visible)
+        content.setMediaPresented(visible && floatingSidebarContainerView?.isHidden == false)
         // Reorder without detaching the tree that was laid out before start.
         let front = Unmanaged.passUnretained(content.view).toOpaque()
         panelContentView.sortSubviews({ a, b, context in
@@ -460,6 +461,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         guard let panel = floatingSidebarContainerView else { return }
         visibilityGeneration += 1
         guard panel.isHidden else {
+            floatingSidebarViewController?.setMediaPresented(true)
             floatingSidebarLeadingConstraint?.update(offset: 0)
             view.layoutSubtreeIfNeeded()
             return
@@ -469,6 +471,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
         view.layoutSubtreeIfNeeded()
         panel.isHidden = false
+        floatingSidebarViewController?.setMediaPresented(true)
         floatingSidebarLastShownAt = Date()
         floatingSidebarViewController?.refreshFloatingTrafficLights()
 
@@ -491,6 +494,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         cancelFloatingSidebarHide()
         guard let panel = floatingSidebarContainerView else { return }
         guard panel.isHidden == false else { return }
+        floatingSidebarViewController?.setMediaPresented(false)
         // A forced hide (sidebar expanding, window ordering out) takes the
         // create-Space form down with the panel; without this the form's
         // `isCreatingSpace` pin on the slot would outlive the visible form.

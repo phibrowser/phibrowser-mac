@@ -74,13 +74,16 @@ extension BrowserState {
     /// the command ever gains a second entry point.
     @MainActor
     func handleOpenReaderView(tabId: Int) {
-        guard let tab = tabs.first(where: { $0.guid == tabId }) else {
+        // A right-click inside a peek names the peek's own page.
+        guard let tab = tabs.first(where: { $0.guid == tabId })
+                ?? peekState.peekTab(withId: tabId) else {
             AppLogDebug("[Reader] context menu named an unknown tab: \(tabId)")
             return
         }
         guard !tab.extensionReaderActive,
               readerOverlayState.reader(forOrigin: tab.guid) == nil,
               !hasPendingReaderOverlayRequest(forOrigin: tab.guid) else { return }
+        AppLogInfo("📖 [Reader] open requested tab=\(tab.guid) peek=\(peekState.peekTab(withId: tab.guid) != nil) from=contextMenu")
         ReaderViewAnalytics.noteOpenRequested(for: tab, from: .contextMenu)
         noteReaderOverlayRequested(forOrigin: tab.guid)
         ReaderExtensionBridge.open(tab)
@@ -109,6 +112,7 @@ extension BrowserState {
             // Swallow a repeat press while an open is still extracting — a
             // second request would spawn a duplicate surface tab.
             guard !hasPendingReaderOverlayRequest(forOrigin: tab.guid) else { return }
+            AppLogInfo("📖 [Reader] open requested tab=\(tab.guid) peek=\(peekState.peekTab(withId: tab.guid) != nil) from=\(entryPoint.rawValue)")
             ReaderViewAnalytics.noteOpenRequested(for: tab, from: entryPoint)
             noteReaderOverlayRequested(forOrigin: tab.guid)
             ReaderExtensionBridge.open(tab)

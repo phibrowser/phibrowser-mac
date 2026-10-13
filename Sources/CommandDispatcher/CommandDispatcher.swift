@@ -221,7 +221,8 @@ struct CommandDispatcher {
             return true
         case .PHI_TOGGLE_READER:
             let state = windowController.browserState
-            guard let tab = state.focusingTab, !tab.isShowingNativeNTP else {
+            guard let tab = state.readerViewTarget(focusingTab: state.focusingTab),
+                  !tab.isShowingNativeNTP else {
                 return false
             }
             state.toggleReaderView(for: tab, from: .shortcut)

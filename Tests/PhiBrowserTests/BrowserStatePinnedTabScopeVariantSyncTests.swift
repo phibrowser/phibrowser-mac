@@ -535,6 +535,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
 }
 
 private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContentWrapper {
+    let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!

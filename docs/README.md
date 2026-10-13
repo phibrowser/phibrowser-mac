@@ -20,6 +20,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 - [Sidebar selection and refresh](architecture/sidebar-selection-and-refresh.md)
 - [Group overview](architecture/group-overview.md)
 - [Split chat ownership](architecture/split-chat-ownership.md)
+- [AI Chat panel across undo close](architecture/ai-chat-panel-undo-close.md)
 - [Guest mode and migration](architecture/guest-mode.md)
 - [Download profile scope](architecture/download-profile-scope.md)
 - [Tab search](tab-search.md)
@@ -32,6 +33,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 - [Site memory management](site-memory-management.md)
 - [Profile-scoped connectors](profile-scoped-connectors.md)
 - [Service broker extension boundary](service-broker-extension-boundary.md)
+- [Agent app info](agent-app-info.md): which Phi build an agent is talking to
 - [Sidecar scene restoration](sidecar-travel-back.md)
 - [Sentinel lifecycle](sentinel-lifecycle.md) and [Phi Chat hotkey](sentinel-phi-chat-hotkey.md)
 - [Bitwarden integration](bitwarden-password-manager.md)

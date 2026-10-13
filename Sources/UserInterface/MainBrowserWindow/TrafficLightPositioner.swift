@@ -6,7 +6,8 @@
 import Cocoa
 
 /// Holds the native traffic lights at a fixed distance below the top of the
-/// window, without reparenting or redrawing them.
+/// window, with the leading inset matching the top inset, without reparenting
+/// or redrawing them.
 ///
 /// The placement is absolute, not an offset from AppKit's: the titlebar height
 /// Chromium reports is what AppKit centres the discs in, and anything that
@@ -22,12 +23,9 @@ import Cocoa
 /// the moved buttons inside it for hit-testing, and tracking areas are
 /// refreshed so hover keeps working.
 ///
-/// Two lifetimes exist today: the Kiosk window starts one at window setup and
-/// never stops it, and `SpaceSessionController` runs one per layout — each
-/// layout runs a different chrome row beside the lights, so it rebuilds the
-/// positioner with a freshly measured offset whenever the layout changes,
-/// calling `stop(restoringPlacement:)` first so the next measurement reads
-/// AppKit's placement rather than this one.
+/// Hosted windows keep one positioner on their shell; standalone windows keep
+/// it on `SpaceSessionController`. A layout change restores AppKit's placement
+/// before rebuilding the positioner for the new chrome row.
 @MainActor
 final class TrafficLightPositioner: NSObject {
     private static let buttonTypes: [NSWindow.ButtonType] = [
@@ -48,6 +46,7 @@ final class TrafficLightPositioner: NSObject {
     /// exactly as it was found.
     private var originalTopMargin: CGFloat?
     private var originalContainerHeight: CGFloat?
+    private var originalLeadingMargins: [CGFloat] = []
     private var isApplying = false
     /// Set when AppKit moves a light while `apply()` is still writing, so the
     /// move is corrected once the write finishes instead of being dropped.
@@ -163,6 +162,7 @@ final class TrafficLightPositioner: NSObject {
             observedTrafficLightButtons = []
             originalTopMargin = nil
             originalContainerHeight = nil
+            originalLeadingMargins = []
         }
 
         guard restoringPlacement,
@@ -182,14 +182,10 @@ final class TrafficLightPositioner: NSObject {
         titlebarContainer.setFrameOrigin(containerFrame.origin)
         titlebarContainer.setFrameSize(containerFrame.size)
 
-        for button in observedTrafficLightButtons {
+        for (button, originalLeadingMargin) in zip(observedTrafficLightButtons, originalLeadingMargins) {
             guard let buttonSuperview = button.superview else { continue }
-            let frameInContainer = buttonSuperview.convert(
-                button.frame,
-                to: titlebarContainer
-            )
             let targetOriginInContainer = NSPoint(
-                x: frameInContainer.minX,
+                x: titlebarContainer.convert(NSPoint(x: originalLeadingMargin, y: 0), from: nil).x,
                 y: titlebarContainer.bounds.maxY - originalTopMargin
                     - button.frame.height
             )
@@ -256,6 +252,7 @@ final class TrafficLightPositioner: NSObject {
             originalTopMargin = titlebarContainer.bounds.maxY
                 - closeFrameInContainer.maxY
             originalContainerHeight = titlebarContainer.frame.height
+            originalLeadingMargins = buttons.map { $0.convert($0.bounds, to: nil).minX }
         }
         // Derived on every pass instead of remembered. The container is pinned
         // to the top of the frame view just below, so a margin measured from
@@ -271,7 +268,7 @@ final class TrafficLightPositioner: NSObject {
         // other two still on AppKit's line.
         let placementHolds = abs(
             titlebarContainer.frame.height - (buttonHeight + 2 * targetTopMargin)
-        ) < 0.01 && buttons.allSatisfy { button in
+        ) < 0.01 && buttons.enumerated().allSatisfy { index, button in
             guard let superview = button.superview else { return false }
             let frameInContainer = superview.convert(
                 button.frame,
@@ -280,6 +277,9 @@ final class TrafficLightPositioner: NSObject {
             return abs(
                 titlebarContainer.bounds.maxY
                     - frameInContainer.maxY - targetTopMargin
+            ) < 0.01 && abs(
+                button.convert(button.bounds, to: nil).minX
+                    - (targetTopMargin + originalLeadingMargins[index] - originalLeadingMargins[0])
             ) < 0.01
         }
         if placementHolds { return }
@@ -291,14 +291,12 @@ final class TrafficLightPositioner: NSObject {
         titlebarContainer.setFrameOrigin(containerFrame.origin)
         titlebarContainer.setFrameSize(containerFrame.size)
 
-        for button in buttons {
+        for (index, button) in buttons.enumerated() {
             guard let buttonSuperview = button.superview else { continue }
-            let frameInContainer = buttonSuperview.convert(
-                button.frame,
-                to: titlebarContainer
-            )
+            // Move the group together while preserving AppKit's button spacing.
+            let leadingMargin = targetTopMargin + originalLeadingMargins[index] - originalLeadingMargins[0]
             let targetOriginInContainer = NSPoint(
-                x: frameInContainer.minX,
+                x: titlebarContainer.convert(NSPoint(x: leadingMargin, y: 0), from: nil).x,
                 y: titlebarContainer.bounds.minY + targetTopMargin
             )
             button.setFrameOrigin(

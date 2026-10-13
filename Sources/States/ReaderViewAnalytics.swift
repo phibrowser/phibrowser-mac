@@ -24,6 +24,7 @@ enum ReaderViewAnalytics {
         case viewMenu = "view_menu"
         case shortcut
         case contextMenu = "context_menu"
+        case peekPanel = "peek_panel"
         case automation
     }
 

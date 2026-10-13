@@ -64,6 +64,11 @@ class WebContentContainerViewController: NSViewController {
     /// excludes. See `WebContentViewController.pageCardView`.
     var currentPageCardView: NSView? { currentWebContentController?.pageCardView }
 
+    /// `tabId`'s pane card when it is in the mounted split; nil otherwise.
+    func currentSplitPaneCardView(forTabId tabId: Int) -> NSView? {
+        currentWebContentController?.splitPaneCardView(forTabId: tabId)
+    }
+
     /// Owned by this controller while in placeholder mode; released on exit.
     /// Mutually exclusive with the active tab's WCVC (only one is visible
     /// in contentContainer at a time).

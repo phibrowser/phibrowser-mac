@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Phi media UI fixture</title>
+  <style>
+    body { font: 18px system-ui; margin: 3rem; background: #f6f7fa; color: #17191e; }
+    button { font: inherit; padding: .5rem 1rem; }
+    audio { display: block; width: min(100%, 40rem); margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Sidebar media UI fixture</h1>
+  <button id="start">Start playback</button>
+  <button id="replace">Replace source</button>
+  <button id="metadata">Replace metadata</button>
+  <output id="position">Position: 0 seconds</output>
+  <audio id="track" controls preload="metadata" src="long-tone.wav"></audio>
+  <script>
+    const track = document.getElementById('track');
+    const position = document.getElementById('position');
+    const parameters = new URLSearchParams(location.search);
+    const fixtureTitle = (parameters.get('title') || 'UI Test Track').slice(0, 120);
+    if (parameters.has('title')) document.title = fixtureTitle;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: fixtureTitle, artist: 'Local Test Artist', album: 'Phi media fixture'
+    });
+    document.getElementById('start').onclick = () => track.play();
+    document.getElementById('replace').onclick = () => {
+      track.src = 'long-tone.wav?replacement=1';
+      track.play();
+    };
+    document.getElementById('metadata').onclick = () => {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'UI Test Next Track', artist: 'Local Test Artist', album: 'Next local album'
+      });
+    };
+    track.ontimeupdate = () => {
+      position.value = 'Position: ' + Math.floor(track.currentTime) + ' seconds';
+    };
+  </script>
+</body>
+</html>

@@ -80,6 +80,7 @@ extension BrowserState {
         for (_, aiTab) in aiTabsSnapshot {
             aiTab.webContentWrapper?.close()
         }
+        clearAIChatPanelRecords()
 
         let conversationTabs = tabs.filter { tab in
             guard let url = tab.url else { return false }

@@ -139,6 +139,13 @@ private final class SafeAreaIgnoringThemedHostingView: ThemedHostingView, Titleb
 }
 
 final class TabStripBarView: NSView, TitlebarAwareHitTestable {
+    var onWindowChanged: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChanged?()
+    }
+
     /// Swipe-to-switch-Space gesture (see `SpaceSwipeTracker`) — the
     /// traditional-layout counterpart of the sidebar's handler. Gestures
     /// land here when made over the bar itself and when the tab strip
@@ -183,6 +190,8 @@ final class TabStripBarController: NSViewController {
     /// of the tab strip row so it shares a horizontal line with the pinned
     /// tabs and the new-tab button.
     private var spacesPickerHostingView: SafeAreaIgnoringThemedHostingView?
+    private var spacesPickerLeadingConstraint: Constraint?
+    private var spacesPickerLeadingInset: CGFloat = 80
 
     /// Floating hover-card panel for the active-Space chip, owned here (not by
     /// the SwiftUI strip) so the chip's hosting view can dismiss the card
@@ -233,13 +242,24 @@ final class TabStripBarController: NSViewController {
     // MARK: - Lifecycle
     
     override func loadView() {
-        view = TabStripBarView()
+        let barView = TabStripBarView()
+        barView.onWindowChanged = { [weak self] in self?.updateSpacesPickerLeadingInset() }
+        view = barView
         view.wantsLayer = true
+        view.postsFrameChangedNotifications = true
     }
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
+        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification)
+            .filter { [weak self] notification in
+                guard let self, let window = self.view.window else { return false }
+                return notification.object as? NSView === self.view
+                    || notification.object as? NSView === window.standardWindowButton(.zoomButton)
+            }
+            .sink { [weak self] _ in self?.updateSpacesPickerLeadingInset() }
+            .store(in: &cancellables)
     }
 
     func setActive(_ active: Bool) {
@@ -273,14 +293,6 @@ final class TabStripBarController: NSViewController {
     
     /// Horizontal inset that aligns the strip with the surrounding chrome.
     private static let horizontalInset: CGFloat = 78 + 10
-
-    /// Leading inset for the active-Space chip, tuned so the Space icon sits
-    /// between the macOS traffic-light buttons and the first pinned tab. The
-    /// first tab is pinned to the chip's trailing edge, so moving the chip only
-    /// changes the *left* gap (the icon→tab gap moves with it). The chip uses
-    /// tight internal padding (`SpacesStripView.compactChipHorizontalPadding`),
-    /// so the inset carries the left clearance.
-    private static let trafficLightInset: CGFloat = 80
 
     /// Maximum width budget for the leading active-Space chip. Short names hug
     /// their content; long names truncate inside this budget rather than
@@ -372,6 +384,7 @@ final class TabStripBarController: NSViewController {
             themeSource: browserState.themeContext
         )
         spacesHostingView.setContentHuggingPriority(.required, for: .horizontal)
+        spacesHostingView.setAccessibilityIdentifier("tabStrip.spacePicker")
         spacesHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
         spacesPickerHostingView = spacesHostingView
         view.addSubview(spacesHostingView)
@@ -436,7 +449,7 @@ final class TabStripBarController: NSViewController {
 
         spacesView?.isHidden = !enabled
         spacesView?.snp.remakeConstraints { make in
-            make.leading.equalToSuperview().inset(Self.trafficLightInset)
+            spacesPickerLeadingConstraint = make.leading.equalToSuperview().inset(spacesPickerLeadingInset).constraint
             make.centerY.equalToSuperview().offset(-2)
             if enabled {
                 // Hug the icon+name (content hugging is required) but never
@@ -465,6 +478,16 @@ final class TabStripBarController: NSViewController {
                 make.leading.equalToSuperview().inset(Self.horizontalInset)
             }
         }
+        updateSpacesPickerLeadingInset()
+    }
+
+    private func updateSpacesPickerLeadingInset() {
+        guard let button = view.window?.standardWindowButton(.zoomButton) else { return }
+        let frameInWindow = button.convert(button.bounds, to: nil)
+        let inset = view.convert(frameInWindow, from: nil).maxX + 10
+        guard abs(spacesPickerLeadingInset - inset) > 0.01 else { return }
+        spacesPickerLeadingInset = inset
+        spacesPickerLeadingConstraint?.update(inset: inset)
     }
 
     /// Re-applies the picker visibility whenever the master Spaces flag flips

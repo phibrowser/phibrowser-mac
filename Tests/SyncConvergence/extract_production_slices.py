@@ -121,6 +121,7 @@ VERBATIM = [
     ("Sources/Sync/Phi/PhiSpaceSyncState.swift", [
         (r"^struct PhiSpaceCursor\b", True),
         (r"^struct PhiProfileCursor\b", True),
+        (r"^struct PhiUnmatchedTombstone\b", True),
         (r"^struct PhiSpaceSyncTable\b", True),
         (r"^extension PhiSpaceSyncTable \{", True),
     ]),
@@ -217,7 +218,11 @@ HOSTED = [
 # block inside a long engine method, re-hosted as the body of a function the harness calls. The
 # block runs from the start marker up to (not including) the end marker.
 SNIPPETS = [
-    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: inout SpacePullBatch)",
+    # The block reads the page (`response.entities`, live hashes only), the Profile gate and index,
+    # and the pull-level carried-tombstone list; the host passes them in under the same names.
+    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: inout SpacePullBatch,\n"
+     "                        response: PullPage, profileLive: Bool, profileIndex: inout [String: String],\n"
+     "                        carriedTombstones: inout [(hash: String, entityId: String, version: Int64)])",
      "Sources/Sync/Phi/PhiSyncEngine.swift", r"^    private func pull\(",
      "// Same hash the index builder uses", "flushSpaceObservations(batch)"),
 ]

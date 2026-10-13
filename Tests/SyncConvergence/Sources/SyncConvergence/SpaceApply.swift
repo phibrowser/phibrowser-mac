@@ -29,6 +29,11 @@ enum PhiEntityCodec {
     static func decrypt(_ ciphertext: Data, key: SymmetricKey) throws -> Phi_PhiEntity { throw NotHosted() }
 }
 
+/// The part of a getUpdates page the re-hosted tag-index block reads (`response.entities`).
+struct PullPage {
+    var entities: [PhiRemoteEntity] = []
+}
+
 actor SpaceApplyHost {
     let spaceAccess: (any PhiSpaceLocalAccess)?
     var spaceCounters = SpaceRoundCounters()
@@ -438,9 +443,12 @@ extension SpaceApplyHost {
     /// Page 1 introduces a Space no cursor or mapping knows; page 2 carries its tombstone.
     func routeAcrossTwoPages() -> [String] {
         var tagIndex: [String: String] = [:]         // the pull's entry index knew nothing of it
+        var profileIndex: [String: String] = [:]
+        var carried: [(hash: String, entityId: String, version: Int64)] = []
         var page1 = SpacePullBatch()
         page1.decoded = [(uuid: "sync-new", entity: applyEntity("sync-new"), entityId: "srv-n", version: 1)]
-        extendTagIndex(&tagIndex, with: &page1)
+        extendTagIndex(&tagIndex, with: &page1, response: PullPage(), profileLive: false,
+                       profileIndex: &profileIndex, carriedTombstones: &carried)
         var page2 = SpacePullBatch()
         let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("sync-new"))
         routeSpaceEntity(PhiRemoteEntity(entityId: "srv-n", clientTagHash: hash, version: 2,
@@ -455,15 +463,15 @@ extension SpaceApplyHost {
 /// A fresh device knows a deleted Space's uuid only from the items it owns. Its tombstone, whether
 /// it is routed before or after those items on the same page, must still reach the Space tombstone
 /// pass (which records a deleted cursor) instead of being dropped as an unknown tag; a tombstone no
-/// owner names is still dropped.
+/// owner names is carried to the next page (`PhiSpaceSyncTable.unmatchedTombstones`), not dropped.
 func checkATombstoneForANeverSeenSpaceIsRouted(report: Report) {
     let routed = runToCompletion { () async -> ([String], Int) in
         let host = SpaceApplyHost(access: await applyAccess(), nowMs: applyNowMs)
         return await host.routeATombstoneBeforeItsOwnedItems()
     }
     report.check("spaces.pull.a-tombstone-for-a-space-known-only-from-its-items-is-routed",
-                 routed.0 == ["sync-dead"] && routed.1 == 0,
-                 "routed tombstones \(routed.0); still unknown \(routed.1)")
+                 routed.0 == ["sync-dead"] && routed.1 == 1,
+                 "routed tombstones \(routed.0); carried \(routed.1)")
     report.markPassed("spaces.pull.a-tombstone-for-a-space-known-only-from-its-items-is-routed")
 }
 
@@ -479,7 +487,10 @@ extension SpaceApplyHost {
                              key: SymmetricKey(size: .bits256), tagIndex: tagIndex, into: &page)
         }
         page.ownedOwnerUuids = ["sync-dead", "bookmark-folder"]
-        extendTagIndex(&tagIndex, with: &page)
-        return (page.tombstones.map(\.uuid), page.unknownTombstones.count)
+        var profileIndex: [String: String] = [:]
+        var carried: [(hash: String, entityId: String, version: Int64)] = []
+        extendTagIndex(&tagIndex, with: &page, response: PullPage(), profileLive: false,
+                       profileIndex: &profileIndex, carriedTombstones: &carried)
+        return (page.tombstones.map(\.uuid), carried.count)
     }
 }

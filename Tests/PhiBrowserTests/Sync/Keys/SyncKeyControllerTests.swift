@@ -389,7 +389,9 @@ final class SyncKeyControllerTests: XCTestCase {
     }
 
     /// The visible failure card uses loadAll(), not Sync Now (which is hidden while
-    /// locked). It must restore Chromium's keys before the 60-second retry fires.
+    /// locked). It must restore Chromium's keys before the 60-second retry fires, and,
+    /// like every pane open or reload (owner ruling 2026-10-12), only observe: the
+    /// status read after the Retry sees the resolved keys but requests no sync round.
     func testPaneRetryResolvesBeforeThePendingUnlockRetry() async throws {
         let api = FakeAPI()
         let provider = FakeDeviceKeyProvider()
@@ -408,12 +410,9 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertFalse(vm.syncNowButton.isVisible)
         XCTAssertTrue(c.resolved.isEmpty)
         let calls = api.getDeviceEnvelopeCalls
-        var refreshed = false
+        var statusReads: [(requestSync: Bool, resolved: Bool)] = []
         vm.syncReport = { requestSync in
-            if requestSync {
-                XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
-                refreshed = true
-            }
+            statusReads.append((requestSync, c.profileSyncInfo(forProfileId: "Default") != nil))
             return nil
         }
 
@@ -422,7 +421,9 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertEqual(vm.unlockState, .unlocked)
         XCTAssertEqual(api.getDeviceEnvelopeCalls, calls + 1, "one unlock, no second envelope lookup")
         XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
-        XCTAssertTrue(refreshed)
+        XCTAssertFalse(statusReads.isEmpty, "the Retry reads the sync status")
+        XCTAssertFalse(statusReads.contains { $0.requestSync }, "a pane Retry never requests a sync round")
+        XCTAssertTrue(statusReads.allSatisfy { $0.resolved }, "the status read sees the resolved keys")
         await vm.stopPolling()
     }
 

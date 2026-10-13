@@ -2326,7 +2326,6 @@ actor PhiSyncEngine {
         // from the table, where each page persists them with its marker, so one received before
         // a quit or before the page budget ended a round still meets the item naming its owner.
         var carriedTombstones: [(hash: String, entityId: String, version: Int64)] = []
-        var droppedOverCap = 0
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2624,7 +2623,6 @@ actor PhiSyncEngine {
                     await applyProfileTombstones(batch, table: &spaceTable)
                     await convergeProfileNames(table: &spaceTable)
                     // Persisted with this page's marker; matched ones were removed above.
-                    droppedOverCap += max(0, carriedTombstones.count - PhiSpaceSyncTable.maxUnmatchedTombstones)
                     spaceTable.setUnmatchedTombstones(carriedTombstones.map {
                         PhiUnmatchedTombstone(clientTagHash: $0.hash, entityId: $0.entityId, version: $0.version)
                     })
@@ -2687,15 +2685,14 @@ actor PhiSyncEngine {
                 }
             }
             drained = !more
-            if droppedOverCap > 0 {
-                // An evicted tombstone stays unmatched until the next full replay re-delivers it.
-                AppLogWarn("[phi-sync] unmatched tombstones over cap; dropped=\(droppedOverCap) oldest")
-            }
             // Once per change, not per pull: an account's old tombstones can sit in the list for
             // good, and a timer round every few minutes would repeat the line forever.
             if carriedTombstones.count != lastLoggedUnmatchedTombstones {
                 lastLoggedUnmatchedTombstones = carriedTombstones.count
-                if let first = carriedTombstones.first {
+                if carriedTombstones.count > PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold {
+                    AppLogWarn("[phi-sync] unmatched tombstones above warning threshold; retained=\(carriedTombstones.count) "
+                               + "threshold=\(PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold)")
+                } else if let first = carriedTombstones.first {
                     AppLogInfo("[phi-sync] carrying \(carriedTombstones.count) tombstone(s) for unknown tags to the next pull "
                                + "first_hash=\(String(first.hash.prefix(8)))")
                 } else {

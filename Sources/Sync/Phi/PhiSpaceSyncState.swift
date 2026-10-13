@@ -203,14 +203,15 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// this device has no baseline for and no incremental pull will deliver again. Rearms when a
     /// pulled entity restores a missing baseline, like the per-kind gates above.
     var profilesReplayedForEmptyTable = false
-    /// Tombstones for tags no index knew yet, oldest first, at most `maxUnmatchedTombstones`. A
-    /// tombstone can precede, by pages or pulls, the owned item that names its Space or Profile.
+    /// Tombstones for tags no index knew yet, oldest first. A tombstone can precede, by pages
+    /// or pulls, the owned item that names its Space or Profile. Keep every unresolved record:
+    /// the page marker has advanced past it, so dropping it would lose the deletion.
     var unmatchedTombstones: [PhiUnmatchedTombstone] = []
-    static let maxUnmatchedTombstones = 2048
+    static let unmatchedTombstoneWarningThreshold = 2048
 
-    /// Stores `list`, keeping its newest `maxUnmatchedTombstones` entries.
+    /// Stores every unresolved tombstone, including those beyond the diagnostic threshold.
     mutating func setUnmatchedTombstones(_ list: [PhiUnmatchedTombstone]) {
-        unmatchedTombstones = Array(list.suffix(Self.maxUnmatchedTombstones))
+        unmatchedTombstones = list
     }
 
     // MARK: - Derived sets

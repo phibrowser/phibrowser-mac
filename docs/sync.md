@@ -1183,15 +1183,16 @@ of known uuids: the Profile cursors, the persisted mappings, the deletion journa
 every uuid the key registry listed at its last read this process
 (`SyncKeyController.lastAccountProfileUuids`, through
 `PhiProfileLocalAccess.knownAccountProfileUuids()`; the registry never forgets a
-uuid, so once it has been read a Profile tombstone resolves on its own page), and
+uuid, so a Profile listed in that snapshot resolves on its own page), and
 the owner uuids named by owned-item arrivals and by items parked earlier (the
 same extension that resolves a deleted Space's tombstone, R-M3-4a-78). A pin of a
 Profile this device never mapped (deleted on the account before this device joined
 or replayed) therefore lands as "Profile deleted" and is discarded, instead of
 parking forever on its unknown owner. A tombstone that no index names yet is kept
-in `PhiSpaceSyncTable.unmatchedTombstones` (hash, entity id, version; the newest
-2048, decoded as empty from older tables; for Profiles only the fallback before the
-first registry read), written with each page's marker and
+in `PhiSpaceSyncTable.unmatchedTombstones` (hash, entity id, version; decoded as
+empty from older tables), written with each page's marker. Every unresolved entry
+is retained, including when the registry has not been read or its snapshot does
+not yet include the Profile. Each entry is
 re-routed on every later page and pull until an owner names it, so neither a quit
 nor the 64-page budget between the tombstone and the pin loses it. A live entity
 for the same tag on a later page evicts the entry (the entity was recreated), and a
@@ -1199,9 +1200,12 @@ Profile or Space tombstone whose version is lower than the live cursor's
 (entity id set, not deleted or purged) is ignored without a cursor write, so a
 stale tombstone never deletes a newer entity. A pull that
 starts without a marker does not seed the list (the replay re-delivers every
-tombstone) and its first page replaces it. Past the cap the oldest entries are
-dropped (`unmatched tombstones over cap; dropped=N oldest`, once per pull); a
-dropped tombstone stays unmatched until the next full replay. The
+tombstone) and its first page replaces it. 2048 is a diagnostic threshold, not a
+storage limit: above it the engine logs
+`unmatched tombstones above warning threshold; retained=N threshold=2048` once
+when the retained count changes. No entry is evicted to meet the threshold, since
+its page marker has already advanced and an incremental pull cannot recover it.
+The
 pairing wizard leaves out an account Profile whose `phi-profile:` tag hash the
 preview saw tombstoned (`PhiAccountSpacePreview.deletedProfileTagHashes`) and
 offers the others under their live entity's name (`profileNames`): the registry

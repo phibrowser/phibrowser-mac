@@ -19,13 +19,15 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(legacy.unmatchedTombstones, [])
     }
 
-    func testUnmatchedTombstonesKeepTheNewest2048() {
+    func testUnmatchedTombstonesBeyondWarningThresholdSurvivePersistence() throws {
         var table = PhiSpaceSyncTable()
-        let list = (0..<2049).map { PhiUnmatchedTombstone(clientTagHash: "h\($0)", entityId: "e\($0)", version: Int64($0)) }
+        let count = PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold + 1
+        let list = (0..<count).map {
+            PhiUnmatchedTombstone(clientTagHash: "h\($0)", entityId: "e\($0)", version: Int64($0))
+        }
         table.setUnmatchedTombstones(list)
-        XCTAssertEqual(table.unmatchedTombstones.count, 2048)
-        XCTAssertEqual(table.unmatchedTombstones.first?.clientTagHash, "h1", "the oldest entry is dropped")
-        XCTAssertEqual(table.unmatchedTombstones.last?.clientTagHash, "h2048")
+        let restored = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: JSONEncoder().encode(table))
+        XCTAssertEqual(restored.unmatchedTombstones, list, "the warning threshold never evicts unresolved deletions")
     }
 
     func testEnrollmentReplayTokenPreservesOldTables() throws {

@@ -613,6 +613,63 @@ final class PhiSyncEngineProfileTests: XCTestCase {
         XCTAssertTrue(store.table.unmatchedTombstones.isEmpty, "a matched tombstone leaves the list")
     }
 
+    func testTombstonesBeyondWarningThresholdSurviveRestartUntilAPinNamesTheirProfile() async throws {
+        try await assertTombstonesSurviveRestart(registryNamesOwner: false)
+    }
+
+    func testTombstonesBeyondWarningThresholdSurviveRestartUntilTheRegistryNamesTheirProfile() async throws {
+        try await assertTombstonesSurviveRestart(registryNamesOwner: true)
+    }
+
+    /// The registry can be unavailable or stale while the sync API serves deletion history. The
+    /// earliest tombstone must survive both the warning threshold and a restart before its owner
+    /// becomes known, without resetting the already-advanced page marker.
+    private func assertTombstonesSurviveRestart(registryNamesOwner: Bool) async throws {
+        let pins = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let store = drainedStore()
+        let client = FakePhiSyncClient()
+        let profiles = FakePhiProfileAccess()
+        let unrelatedCount = PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold
+        client.pagesByMarker = [page([profileTombstone("pu-gone", version: 9)], marker: "10",
+                                     changesRemaining: true)]
+        for start in stride(from: 0, to: unrelatedCount, by: 256) {
+            let end = min(start + 256, unrelatedCount)
+            let tombstones = (start..<end).map { profileTombstone("pu-unrelated-\($0)", version: Int64($0 + 11)) }
+            client.pagesByMarker.append(page(tombstones, marker: String(end + 10),
+                                              changesRemaining: end < unrelatedCount))
+        }
+        let engine = makePinEngine(pins: pins, pinStore: pinStore, store: store, client: client, profiles: profiles)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.unmatchedTombstones.count, unrelatedCount + 1)
+        XCTAssertEqual(store.table.unmatchedTombstones.first?.clientTagHash, hash("pu-gone"))
+        engine.shutdown()
+
+        let restoredStore = MemorySpaceStore()
+        restoredStore.table = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: JSONEncoder().encode(store.table))
+        if registryNamesOwner { profiles.registryUuids = ["pu-gone"] }
+        let restarted = makePinEngine(pins: pins, pinStore: pinStore, store: restoredStore,
+                                       client: client, profiles: profiles)
+        await restarted.setSpaceSyncEnabled(true)
+        if registryNamesOwner {
+            // No new entity is needed: a refreshed registry resolves the persisted tombstone.
+            await restarted.pullOnce()
+            XCTAssertNotNil(restoredStore.table.profileCursors["pu-gone"]?.deletedAtMs)
+        }
+        client.pagesByMarker.append(page([pinEntity("lx", owner: "pu-gone", version: Int64(unrelatedCount + 11))],
+                                          marker: String(unrelatedCount + 20)))
+        let callsBeforePin = client.getUpdatesCalls.count
+        await restarted.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls[callsBeforePin].marker, Data(String(unrelatedCount + 10).utf8),
+                       "the resumed pull uses the persisted marker, not a full replay")
+        await assertDeadProfileDiscardedThePin(restarted, store: restoredStore, pins: pins)
+        XCTAssertEqual(restoredStore.table.unmatchedTombstones.count, unrelatedCount)
+        XCTAssertFalse(restoredStore.table.unmatchedTombstones.contains { $0.clientTagHash == hash("pu-gone") })
+        restarted.shutdown()
+    }
+
     private func liveProfile(_ uuid: String, _ name: String, version: Int64) throws -> PhiRemoteEntity {
         var wrapper = Phi_PhiEntity()
         wrapper.profile = profileEntity(uuid, name)

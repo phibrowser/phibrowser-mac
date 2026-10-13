@@ -144,6 +144,7 @@ VERBATIM = [
         (r"^extension UserDefaults \{", True),
         (r"^enum LayoutMode\b", True),
         (r"^enum AutoPictureInPictureMode\b", True),
+        (r"^enum SidebarMediaPresentationMode\b", True),
     ]),
 ]
 

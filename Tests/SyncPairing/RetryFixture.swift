@@ -58,7 +58,7 @@ final class RetrySpaceStore: SpaceSyncMappingStore {
     func removeMapping(forSpaceId id: String) { map.removeValue(forKey: id) }
     func removeAllMappings() { map = [:] }
 }
-enum LocalStore { static let defaultSpaceId = "default" }
+enum LocalStore { static let defaultSpaceId = "default"; static let defaultProfileId = "Default" }
 enum SpaceManager { static func isIncognitoSpaceId(_ id: String) -> Bool { false } }
 enum SyncableSpaces {
     static let defaultSpaceUuid = "default-uuid", incognitoSpaceUuid = "incognito-uuid"
@@ -94,7 +94,7 @@ func AppLogError(_ message: String) {}
     func createLocalProfileAndAdopt(uuid: String, displayName: String) async throws -> String {
         let id = "Created-\(profiles.count)"
         profiles.append((id, displayName))
-        _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: id)
+        _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: id, isDefault: false)
         return id
     }
     func syncUuid(forSpaceId id: String) -> String? { spaceKeys.syncUuid(forSpaceId: id) }
@@ -105,7 +105,7 @@ func AppLogError(_ message: String) {}
     func ensureSpaceMapped(spaceId: String) throws -> String { try spaceKeys.ensureMapped(spaceId: spaceId) }
     func resolveMappings() async {}
 }
-struct PairingLocal: Equatable { let profileId: String; let displayName: String }
+struct PairingLocal: Equatable { let profileId: String; let displayName: String; let isDefault: Bool }
 enum KeyLayerPhase { case working, pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile]), error(String) }
 struct PairingLoadTimedOut: Error {}
 @MainActor final class KeyLayerViewModel {
@@ -139,7 +139,7 @@ struct PairingLoadTimedOut: Error {}
         let controller = SyncKeyController(api: api, spaceStore: store)
         api.envelopes["remote-profile"] = try ProfileKeyManager.sealProfilePayload(
             key: Data(count: 32), name: "Personal", ark: controller.manager.currentARK!)
-        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default")
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default", isDefault: true)
         var skipped = initialSkipped
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
             previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: skipped)) },
@@ -259,7 +259,7 @@ struct PairingLoadTimedOut: Error {}
         wizard.backToProfiles()
         wizard.continueToSpaces()
         try require(wizard.spaceSelections == ["LOCAL-1": .addAsNew], "Returning to Spaces must preserve explicit choices, including Choose")
-        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default")
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "remote-profile", forLocalProfile: "Default", isDefault: true)
         store.map = ["LOCAL-1": "old-account-space"]
         await wizard.start(controller: controller)
         try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],

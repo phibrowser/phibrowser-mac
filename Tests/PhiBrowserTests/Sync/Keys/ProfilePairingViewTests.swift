@@ -15,8 +15,8 @@ final class ProfilePairingViewTests: XCTestCase {
     /// decisions() exactly. The seed remains initialSelections; Task 7 only moves it from
     /// init's State(initialValue:) into ProfilePairingSelectionStore.seed.
     func testTheSettingsPathStillSeedsAndDecidesExactlyAsBefore() {
-        let locals = [PairingLocal(profileId: "Default", displayName: "Home"),
-                      PairingLocal(profileId: "P2", displayName: "Nothing matches")]
+        let locals = [PairingLocal(profileId: "Default", displayName: "Home", isDefault: true),
+                      PairingLocal(profileId: "P2", displayName: "Nothing matches", isDefault: false)]
         let remotes = [home, work]
 
         let store = ProfilePairingSelectionStore()

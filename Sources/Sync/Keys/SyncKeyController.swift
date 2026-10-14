@@ -170,6 +170,11 @@ final class SyncKeyController {
     func noteUndecryptableRemote(_ uuid: String) { undecryptableRemoteUuids.insert(uuid) }
     func noteDecryptableRemote(_ uuid: String) { undecryptableRemoteUuids.remove(uuid) }
 
+    /// Extra account defaults §3.6 has already demoted to ordinary profiles and
+    /// logged (docs/sync.md, "Profile pairing and the default profile"), so the
+    /// default-identity conflict is logged once per uuid, not every round.
+    private var loggedDefaultConflictUuids: Set<String> = []
+
     // MARK: - Profile mapping pause inputs (docs/sync.md, "Enrollment and setup")
     //
     // Read the way the two pairing predicates above are read: every write lands
@@ -716,7 +721,8 @@ final class SyncKeyController {
                     guard !isRetired else { return }
                     do {
                         let rec = try await profileKeys.registerLocalProfile(
-                            profileId: local.profileId, displayName: local.displayName)
+                            profileId: local.profileId, displayName: local.displayName,
+                            isDefault: local.profileId == LocalStore.defaultProfileId)
                         next[local.profileId] = (rec.uuid, rec.passphrase)
                         resolvedNow.insert(local.profileId)
                         probeResolve("register", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
@@ -817,7 +823,7 @@ final class SyncKeyController {
         case let error as ProfileKeyManagerError:
             switch error {
             case .notUnlocked, .alreadyMapped: return .heldTransient
-            case .badEnvelope: return .definitiveFailure
+            case .badEnvelope, .defaultMismatch: return .definitiveFailure
             }
         case is PhiKeyCryptoError, is CryptoKitError, is DecodingError:
             return .definitiveFailure
@@ -987,7 +993,10 @@ final class SyncKeyController {
             AppLogInfo("[phi-sync] uuid was claimed while the profile was being created; the new profile stays local and unmapped")
             return profileId
         }
-        _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
+        // A profile this creates is never the Default. Callers never create one
+        // for the authoritative account default; a demoted extra default is an
+        // ordinary profile.
+        _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId, isDefault: false)
         // The adopt writes its mapping right after its lookup returns; a
         // retirement inside that lookup cannot be fenced from here. Record nothing
         // more for the controller that is gone.
@@ -1096,6 +1105,32 @@ final class SyncKeyController {
             }
             noteDecryptableRemote(uuid)
 
+            // A local counts as taken only while its persisted uuid is still in
+            // this round's account listing: a mapping whose envelope is gone
+            // (404) must not stop the local -- the Default above all -- from
+            // claiming a live account profile, or the next pass registers yet
+            // another uuid for it.
+            let mappedIds = Set(profileKeys.allMappings().filter { accountUuids.contains($0.value) }.keys)
+            // The default-profile rule: the local Default is a twin only for an
+            // account default (whatever its name) or a legacy profile. While the
+            // local Default is free, an account default goes to it and nowhere
+            // else. Once the Default is live-mapped, its uuid is the one
+            // authoritative account default and any other is demoted to an
+            // ordinary profile -- twinned by name or created like any other --
+            // so nothing a concurrent pairing registered is left unclaimed.
+            let defaultTwin = profileCreator.userAssignableProfileIds.first(where: {
+                $0.profileId == LocalStore.defaultProfileId && !mappedIds.contains($0.profileId)
+            })
+            let effective: RemoteProfile
+            if remote.isDefault == true, defaultTwin == nil {
+                effective = RemoteProfile(uuid: uuid, name: name, isDefault: false)
+                if loggedDefaultConflictUuids.insert(uuid).inserted {
+                    AppLogWarn("[phi-sync] default-identity conflict: extra account default treated as an ordinary profile uuid=\(String(uuid.prefix(8)))")
+                }
+            } else {
+                effective = remote
+            }
+
             // Claim an existing same-named UNMAPPED local first. This covers the
             // plain coincidence of two devices having made the same name, and the
             // un-suffixed half of "last round created it but the adopt failed".
@@ -1107,15 +1142,18 @@ final class SyncKeyController {
             // match, so the twin search stands down when one exists: going by name
             // first would adopt a different local and orphan the created one for
             // good. `createLocalProfileAndAdopt` picks it up below.
-            let mappedIds = Set(profileKeys.allMappings().keys)
             if reusablePendingProfile(forUuid: uuid) == nil,
-               let twin = profileCreator.userAssignableProfileIds.first(where: {
+               let twin = effective.isDefault == true ? defaultTwin : profileCreator.userAssignableProfileIds.first(where: {
                 !mappedIds.contains($0.profileId)
+                && effective.mayPair(withLocalDefault: $0.profileId == LocalStore.defaultProfileId,
+                                     authoritativeDefaultUuid: nil)
                 && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
             }) {
                 attempts += 1
                 do {
-                    _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: twin.profileId)
+                    _ = try await profileKeys.adoptRemoteProfile(
+                        uuid: uuid, forLocalProfile: twin.profileId,
+                        isDefault: twin.profileId == LocalStore.defaultProfileId)
                     guard !isRetired else { return retiredRefresh() }
                     knownUnmappedProfileIds.remove(twin.profileId)
                     created += 1

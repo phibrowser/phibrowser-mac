@@ -18,6 +18,7 @@ protocol KeyEnvelopeAPI {
 }
 enum AccountKeyError: Error { case randomGenerationFailed(Int32) }
 final class AccountKeyManager { var currentARK: SymmetricKey? = SymmetricKey(size: .bits256) }
+enum LocalStore { static let defaultProfileId = "Default" }
 enum PhiSyncLog { static func describe(_ error: Error) -> String { String(describing: error) } }
 func AppLogInfo(_ message: String) {}
 func AppLogWarn(_ message: String) {}

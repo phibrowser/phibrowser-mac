@@ -31,13 +31,13 @@ final class ProfileKeyManagerTests: XCTestCase {
         let api = FakeAPI()
         let locked = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider()) // currentARK nil
         let pkm = ProfileKeyManager(api: api, keyManager: locked, mappingStore: MemoryMappingStore())
-        do { _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default"); XCTFail() }
+        do { _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default", isDefault: true); XCTFail() }
         catch ProfileKeyManagerError.notUnlocked {}
     }
 
     func testRegisterRoundTrip() async throws {
         let (api, mgr, pkm, store) = try await unlockedStack()
-        let rec = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        let rec = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
         XCTAssertEqual(rec.passphrase.count, 64)
         XCTAssertEqual(store.map["Default"], rec.uuid)
         // Envelope round-trips through the ARK and carries the display name.
@@ -57,14 +57,14 @@ final class ProfileKeyManagerTests: XCTestCase {
         let payload = try JSONSerialization.data(withJSONObject: ["v": 1, "key": winnerKey.base64EncodedString(), "name": "W"])
         let uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
         api.profileEnvelopes[uuid] = try PhiKeyCrypto.sealWithSymmetric(payload, key: mgr.currentARK!)
-        let rec = try await pkm.adoptRemoteProfile(uuid: uuid, forLocalProfile: "Default")
+        let rec = try await pkm.adoptRemoteProfile(uuid: uuid, forLocalProfile: "Default", isDefault: true)
         XCTAssertEqual(rec.passphrase, ProfileKeyManager.passphrase(fromKey: winnerKey))
         XCTAssertEqual(rec.name, "W")
     }
 
     func testResolvedRecordUsesMapping() async throws {
         let (_, _, pkm, store) = try await unlockedStack()
-        let rec = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Home")
+        let rec = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Home", isDefault: false)
         XCTAssertEqual(store.map["Profile 1"], rec.uuid)
         let resolved = try await pkm.resolvedRecord(forLocalProfile: "Profile 1")
         XCTAssertEqual(resolved, rec)
@@ -78,10 +78,10 @@ final class ProfileKeyManagerTests: XCTestCase {
     /// real envelope and diverge the devices for good.
     func testRegisterOnAlreadyMappedProfileThrows() async throws {
         let (api, _, pkm, store) = try await unlockedStack()
-        let first = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        let first = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
         XCTAssertEqual(api.profileEnvelopes.count, 1)
         do {
-            _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+            _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
             XCTFail("expected alreadyMapped")
         } catch ProfileKeyManagerError.alreadyMapped {}
         XCTAssertEqual(store.map["Default"], first.uuid, "mapping must survive the refusal")
@@ -90,7 +90,7 @@ final class ProfileKeyManagerTests: XCTestCase {
 
     func testAccountProfilesDecryptsNames() async throws {
         let (_, _, pkm, _) = try await unlockedStack()
-        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
         let remotes = try await pkm.accountProfiles()
         XCTAssertEqual(remotes.count, 1)
         XCTAssertEqual(remotes[0].name, "Work")
@@ -114,8 +114,8 @@ final class ProfileKeyManagerTests: XCTestCase {
 
     func testAccountProfileUuidsSendsOneListAndNoEnvelopeFetches() async throws {
         let (api, _, pkm, _) = try await unlockedStack()
-        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
-        _ = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Home")
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
+        _ = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Home", isDefault: false)
         let before = api.getProfileKeyCalls
         let uuids = try await pkm.accountProfileUuids()
         XCTAssertEqual(uuids.count, 2)
@@ -136,7 +136,7 @@ final class ProfileKeyManagerTests: XCTestCase {
 
     func testRemoteProfileDecryptsTheRegisteredNameAndReportsUndecryptable() async throws {
         let (api, _, pkm, _) = try await unlockedStack()
-        let rec = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        let rec = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work", isDefault: true)
         let mine = try await pkm.remoteProfile(uuid: rec.uuid)
         XCTAssertEqual(mine.name, "Work")
 
@@ -153,6 +153,71 @@ final class ProfileKeyManagerTests: XCTestCase {
         XCTAssertEqual(store.map, ["Profile 1": "uuid-b"])
         store.removeAllMappings()
         XCTAssertTrue(store.map.isEmpty)
+    }
+
+    // MARK: - Default-profile flag
+
+    /// The flag is tri-state on the wire: true, false, or absent. Absent is an
+    /// envelope sealed before the flag existed and must read back as UNKNOWN,
+    /// never as false -- false would bar every legacy profile from a Default.
+    func testTheEnvelopeRoundTripsTheDefaultFlagAndReadsAnAbsentOneAsUnknown() throws {
+        let ark = SymmetricKey(size: .bits256)
+        let key = Data(repeating: 0x22, count: 32)
+        let flags: [Bool?] = [true, false, nil]
+        for flag in flags {
+            let envelope = try ProfileKeyManager.sealProfilePayload(key: key, name: "Work", isDefault: flag, ark: ark)
+            let opened = try ProfileKeyManager.openProfilePayload(envelope, ark: ark)
+            XCTAssertEqual(opened.key, key)
+            XCTAssertEqual(opened.name, "Work")
+            XCTAssertEqual(opened.isDefault, flag)
+            let json = try JSONSerialization.jsonObject(with: PhiKeyCrypto.openWithSymmetric(envelope, key: ark)) as! [String: Any]
+            XCTAssertEqual(json["default"] == nil, flag == nil, "only an unknown flag omits the key")
+        }
+    }
+
+    /// Every registration states its side of the rule, so another device can
+    /// tell this Mac's Default from its other profiles.
+    func testRegistrationWritesTheDefaultFlagForBothSides() async throws {
+        let (_, _, pkm, _) = try await unlockedStack()
+        let mine = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Your Phi", isDefault: true)
+        let other = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Work", isDefault: false)
+        XCTAssertEqual(mine.isDefault, true)
+        XCTAssertEqual(other.isDefault, false)
+        let remotes = try await pkm.accountProfiles()
+        XCTAssertEqual(remotes.first { $0.uuid == mine.uuid }?.isDefault, true)
+        XCTAssertEqual(remotes.first { $0.uuid == other.uuid }?.isDefault, false)
+        let resolved = try await pkm.resolvedRecord(forLocalProfile: "Profile 1")
+        XCTAssertEqual(resolved, other)
+    }
+
+    /// The write boundary: whatever the UI or the auto-mapping offered, a known
+    /// non-default never lands on the local Default. An account default may land
+    /// on another local -- an extra default is demoted to an ordinary profile,
+    /// and which one is authoritative only the callers know -- and a legacy
+    /// profile lands on either.
+    func testAdoptRefusesAKnownNonDefaultForTheLocalDefaultAndWritesNoMapping() async throws {
+        let (api, mgr, pkm, store) = try await unlockedStack()
+        let ark = mgr.currentARK!
+        let seeds: [(String, Bool?)] = [("uuid-default", true), ("uuid-other", false), ("uuid-legacy", nil)]
+        for (uuid, flag) in seeds {
+            api.profileEnvelopes[uuid] = try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 0x33, count: 32), name: uuid, isDefault: flag, ark: ark)
+        }
+
+        do {
+            _ = try await pkm.adoptRemoteProfile(uuid: "uuid-other", forLocalProfile: "Default", isDefault: true)
+            XCTFail("expected defaultMismatch")
+        } catch ProfileKeyManagerError.defaultMismatch {}
+        XCTAssertTrue(store.map.isEmpty, "a refused adopt must not write a mapping")
+
+        _ = try await pkm.adoptRemoteProfile(uuid: "uuid-legacy", forLocalProfile: "Default", isDefault: true)
+        _ = try await pkm.adoptRemoteProfile(uuid: "uuid-default", forLocalProfile: "Default", isDefault: true)
+        _ = try await pkm.adoptRemoteProfile(uuid: "uuid-other", forLocalProfile: "Profile 1", isDefault: false)
+        _ = try await pkm.adoptRemoteProfile(uuid: "uuid-legacy", forLocalProfile: "Profile 2", isDefault: false)
+        let demoted = try await pkm.adoptRemoteProfile(uuid: "uuid-default", forLocalProfile: "Profile 3", isDefault: false)
+        XCTAssertEqual(demoted.isDefault, true)
+        XCTAssertEqual(store.map, ["Default": "uuid-default", "Profile 1": "uuid-other",
+                                   "Profile 2": "uuid-legacy", "Profile 3": "uuid-default"])
     }
 
     // MARK: - Concurrent envelope fetches (task 20)

@@ -32,7 +32,7 @@ final class PhiDomainKeyManagerTests: XCTestCase {
         XCTAssertEqual(api.putDomainKeyCalls, 1)
 
         // The escrowed envelope is ARK-sealed and carries exactly the minted key.
-        let (escrowed, _) = try ProfileKeyManager.openProfilePayload(
+        let (escrowed, _, _) = try ProfileKeyManager.openProfilePayload(
             api.domainEnvelopes[PhiDomainKeyManager.domain]!, ark: mgr.currentARK!)
         XCTAssertEqual(escrowed, rawBytes(k1))
     }

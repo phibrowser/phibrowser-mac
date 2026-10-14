@@ -7,17 +7,50 @@ import Security
 /// carries a live mapping. Minting there would orphan the account's real envelope
 /// and permanently diverge the two devices, so it is rejected at the lowest
 /// layer regardless of what the caller believed about the mapping state.
-enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped }
+///
+/// `defaultMismatch` is the default-profile rule (docs/sync.md, "Profile
+/// pairing and the default profile"): a device's Default profile never takes a
+/// profile another device registered as non-default. It is refused here, at
+/// the mapping write, whatever the pairing UI or the auto-mapping offered. The
+/// other half of the rule (no non-default local on the authoritative account
+/// default) depends on which default is authoritative, which only the callers
+/// know; an extra account default is an ordinary profile and may be adopted.
+enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped, defaultMismatch }
 
 struct ProfileKeyRecord: Equatable {
     let uuid: String
     let passphrase: String
     let name: String
+    /// The envelope's `"default"` flag; nil for an envelope written before the flag existed.
+    let isDefault: Bool?
 }
 
 struct RemoteProfile: Equatable {
     let uuid: String
     let name: String?   // nil when the envelope cannot be decrypted with the current ARK
+    /// True for the account's default profile, false for any other profile,
+    /// nil when unknown: an envelope written before the flag existed, or one
+    /// that does not open (`name == nil`).
+    let isDefault: Bool?
+
+    init(uuid: String, name: String?, isDefault: Bool? = nil) {
+        self.uuid = uuid
+        self.name = name
+        self.isDefault = isDefault
+    }
+
+    /// The default-profile rule for one pairing. Exactly one account default is
+    /// authoritative on this Mac: the one its Default is live-mapped to, or, while
+    /// the Default is still undecided, the one chosen for it
+    /// (`authoritativeDefaultUuid`). Every other account default is demoted to an
+    /// ordinary profile -- a conflict two concurrently paired devices can create.
+    /// A local Default may take any account default or an unknown (legacy)
+    /// profile, never a known non-default; any other local may take anything but
+    /// the authoritative default.
+    func mayPair(withLocalDefault localIsDefault: Bool, authoritativeDefaultUuid: String?) -> Bool {
+        if localIsDefault { return isDefault != false }
+        return !(isDefault == true && uuid == authoritativeDefaultUuid)
+    }
 }
 
 /// Persists the local-profile-id -> account-global profile UUID mapping.
@@ -56,15 +89,27 @@ final class ProfileKeyManager {
         key.map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: - Envelope codec ({"v":1,"key":base64,"name":string} sealed with the ARK)
+    // MARK: - Envelope codec ({"v":1,"key":base64,"name":string,"default":bool} sealed with the ARK)
 
-    static func sealProfilePayload(key: Data, name: String, ark: SymmetricKey) throws -> Data {
-        let payload = try JSONSerialization.data(withJSONObject: [
-            "v": 1, "key": key.base64EncodedString(), "name": name])
+    /// `"default"` marks the account's default profile (true) or any other
+    /// profile (false). Every profile registration writes it, false included: an
+    /// omitted key means "unknown" to every reader, so omitting false would leave
+    /// each new non-default profile pairable with another device's Default.
+    /// `isDefault == nil` writes no key -- the shape of an envelope sealed before
+    /// the flag existed, and of the Phi domain-key envelope, which is not a
+    /// profile. Additive: the lenient parse in `openProfilePayload` lets older
+    /// clients ignore it.
+    static func sealProfilePayload(key: Data, name: String, isDefault: Bool? = nil, ark: SymmetricKey) throws -> Data {
+        var object: [String: Any] = ["v": 1, "key": key.base64EncodedString(), "name": name]
+        if let isDefault { object["default"] = isDefault }
+        let payload = try JSONSerialization.data(withJSONObject: object)
         return try PhiKeyCrypto.sealWithSymmetric(payload, key: ark)
     }
 
-    static func openProfilePayload(_ envelope: Data, ark: SymmetricKey) throws -> (key: Data, name: String) {
+    /// `isDefault` is tri-state: the `"default"` value when present, nil when the
+    /// key is absent -- an envelope sealed before the flag existed, whose
+    /// default-ness is unknown rather than false.
+    static func openProfilePayload(_ envelope: Data, ark: SymmetricKey) throws -> (key: Data, name: String, isDefault: Bool?) {
         let plain = try PhiKeyCrypto.openWithSymmetric(envelope, key: ark)
         guard let obj = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
               obj["v"] as? Int == 1,
@@ -72,7 +117,7 @@ final class ProfileKeyManager {
               let key = Data(base64Encoded: keyB64) else {
             throw ProfileKeyManagerError.badEnvelope
         }
-        return (key, obj["name"] as? String ?? "")
+        return (key, obj["name"] as? String ?? "", obj["default"] as? Bool)
     }
 
     // MARK: - Flows
@@ -93,7 +138,10 @@ final class ProfileKeyManager {
     /// record. Only a definitive missing record permits replacement after a reset;
     /// transport/auth failures preserve the old mapping and propagate. Keep that
     /// mapping until the replacement PUT succeeds, and reject a concurrent remap.
-    func registerLocalProfile(profileId: String, displayName: String) async throws -> ProfileKeyRecord {
+    ///
+    /// `isDefault` says the local profile is this device's Default; its envelope
+    /// then registers as the account's default profile.
+    func registerLocalProfile(profileId: String, displayName: String, isDefault: Bool) async throws -> ProfileKeyRecord {
         if let priorUuid = mappingStore.globalUuid(forProfileId: profileId) {
             guard try await api.getProfileKey(uuid: priorUuid) == nil else {
                 throw ProfileKeyManagerError.alreadyMapped
@@ -108,27 +156,35 @@ final class ProfileKeyManager {
         let status = key.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
         guard status == errSecSuccess else { throw AccountKeyError.randomGenerationFailed(status) }
         let uuid = UUID().uuidString.lowercased()
-        let envelope = try Self.sealProfilePayload(key: key, name: displayName, ark: ark)
+        let envelope = try Self.sealProfilePayload(key: key, name: displayName, isDefault: isDefault, ark: ark)
         let created = try await api.putProfileKey(uuid: uuid, envelope: envelope)
         if !created {
-            return try await adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
+            return try await adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId, isDefault: isDefault)
         }
         // Profile handling receives the result without throwing, per ProfileSyncMappingStore.setGlobalUuid:
         // throwing would change mintProfileKey failure behavior and SyncKeyController call order, outside
         // M3-4a.
         _ = mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
-        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: displayName)
+        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: displayName,
+                                isDefault: isDefault)
     }
 
     /// Maps a local profile onto an already-registered account profile and
-    /// decrypts its key.
-    func adoptRemoteProfile(uuid: String, forLocalProfile profileId: String) async throws -> ProfileKeyRecord {
+    /// decrypts its key. `isDefault` says the local profile is this device's
+    /// Default; a known non-default envelope is refused for it with
+    /// `defaultMismatch` before any mapping is written. A legacy envelope (no
+    /// flag) is accepted either way.
+    func adoptRemoteProfile(uuid: String, forLocalProfile profileId: String, isDefault: Bool) async throws -> ProfileKeyRecord {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else { throw ProfileKeyManagerError.badEnvelope }
-        let (key, name) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
+        let (key, name, remoteIsDefault) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
+        guard !(isDefault && remoteIsDefault == false) else {
+            throw ProfileKeyManagerError.defaultMismatch
+        }
         // Likewise, adoption receives the result without changing adoptRemoteProfile's failure behavior.
         _ = mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
-        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name)
+        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name,
+                                isDefault: remoteIsDefault)
     }
 
     /// Returns the record for an already-mapped local profile, nil when unmapped.
@@ -136,8 +192,8 @@ final class ProfileKeyManager {
         guard let uuid = mappingStore.globalUuid(forProfileId: profileId) else { return nil }
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else { return nil }
-        let (key, name) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
-        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name)
+        let (key, name, isDefault) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
+        return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name, isDefault: isDefault)
     }
 
     /// All profiles registered on the account, names decrypted where possible
@@ -170,8 +226,8 @@ final class ProfileKeyManager {
                 let uuid = summary.profileUuid
                 group.addTask {
                     if let dto = try await api.getProfileKey(uuid: uuid),
-                       let (_, name) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) {
-                        return (index, RemoteProfile(uuid: uuid, name: name))
+                       let (_, name, isDefault) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) {
+                        return (index, RemoteProfile(uuid: uuid, name: name, isDefault: isDefault))
                     }
                     return (index, RemoteProfile(uuid: uuid, name: nil))
                 }
@@ -218,18 +274,18 @@ final class ProfileKeyManager {
         return Set(try await api.listProfiles().map(\.profileUuid))
     }
 
-    /// One account profile with its registered display name, or `name == nil`
-    /// when the envelope does not open under the current ARK. Same decoding as
+    /// One account profile with its registered display name and default flag, or
+    /// `name == nil` when the envelope does not open under the current ARK. Same decoding as
     /// `accountProfiles()`, for one uuid.
     func remoteProfile(uuid: String) async throws -> RemoteProfile {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else {
             return RemoteProfile(uuid: uuid, name: nil)
         }
-        guard let (_, name) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) else {
+        guard let (_, name, isDefault) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) else {
             return RemoteProfile(uuid: uuid, name: nil)
         }
-        return RemoteProfile(uuid: uuid, name: name)
+        return RemoteProfile(uuid: uuid, name: name, isDefault: isDefault)
     }
 
     func removeMapping(forProfileId profileId: String) {

@@ -6,6 +6,10 @@ import Foundation
 struct PairingLocal: Equatable, Identifiable {
     let profileId: String
     let displayName: String
+    /// This device's Default profile (`LocalStore.defaultProfileId`), which may
+    /// only pair with the account's default profile (docs/sync.md, "Profile
+    /// pairing and the default profile").
+    let isDefault: Bool
     var id: String { profileId }
 }
 
@@ -432,8 +436,17 @@ final class KeyLayerViewModel: ObservableObject {
             let locals = allLocals.filter {
                 guard let uuid = profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) else { return true }
                 return !remoteUuids.contains(uuid)
-            }.map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
+            }.map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName,
+                                 isDefault: $0.profileId == LocalStore.defaultProfileId) }
             let remotes = accountProfiles.filter { !claimedUuids.contains($0.uuid) }
+            // More account defaults than the local Default can take: concurrent
+            // first pairings each registered one. The extras are ordinary
+            // profiles in the sheet (`ProfilePairingModel`). Metadata only (R12).
+            let spareDefaults = remotes.filter { $0.isDefault == true }.count
+                - (locals.contains(where: \.isDefault) ? 1 : 0)
+            if spareDefaults > 0 {
+                AppLogWarn("[phi-sync] default-identity conflict: \(spareDefaults) extra account default profile(s) offered as ordinary profiles")
+            }
             // The modal is the second writer of the undecryptable set (§3.6's
             // per-round refresh is the first): a row whose envelope did not open
             // here is read-only and must not make the gate think there is
@@ -519,10 +532,12 @@ final class KeyLayerViewModel: ObservableObject {
                 switch decision {
                 case .adopt(let localProfileId, let remoteUuid):
                     _ = try await controller.profileKeys.adoptRemoteProfile(
-                        uuid: remoteUuid, forLocalProfile: localProfileId)
+                        uuid: remoteUuid, forLocalProfile: localProfileId,
+                        isDefault: localProfileId == LocalStore.defaultProfileId)
                 case .registerNew(let localProfileId, let displayName):
                     _ = try await controller.profileKeys.registerLocalProfile(
-                        profileId: localProfileId, displayName: displayName)
+                        profileId: localProfileId, displayName: displayName,
+                        isDefault: localProfileId == LocalStore.defaultProfileId)
                 case .createLocal(let remoteUuid, let displayName):
                     // Idempotency (§5.1): an account UUID already mapped locally is done. Retry replays frozen
                     // decisions after Space failure; successful adoption cleared reusablePendingProfile, so
@@ -558,6 +573,14 @@ final class KeyLayerViewModel: ObservableObject {
                 // The sole new catch branch; R12 metadata only, no profileId or UUID.
                 AppLogInfo("[phi-sync] pairing decision already applied; treating as done")
                 continue
+            } catch ProfileKeyManagerError.defaultMismatch {
+                // The model never offers this pairing; the account changed under
+                // the sheet (another device registered a default). The reload below
+                // shows the current options. R12: metadata only.
+                AppLogWarn("[phi-sync] a pairing decision broke the default-profile rule; refused")
+                pairingError = NSLocalizedString("sync.pairing.error.defaultProfileMismatch",
+                    value: "This Mac’s default profile can only be matched with the account’s default profile. Review the matches and try again.",
+                    comment: "Profile matching - error shown when a chosen match would pair a default profile with a non-default one")
             } catch {
                 AppLogWarn("[phi-sync] a pairing decision failed: \(PhiSyncLog.describe(error))")
                 pairingError = PairingWizardStrings.profileDecisionFailed

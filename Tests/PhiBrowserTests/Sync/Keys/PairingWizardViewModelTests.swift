@@ -373,7 +373,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: [account("acct-1", name: "Work")])
         api.profileEnvelopes["uuid-a"] = try ProfileKeyManager.sealProfilePayload(
             key: Data(count: 32), name: "Personal", ark: try XCTUnwrap(controller.manager.currentARK))
-        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "uuid-a", forLocalProfile: "Default")
+        _ = try await controller.profileKeys.adoptRemoteProfile(uuid: "uuid-a", forLocalProfile: "Default", isDefault: true)
         store.map["LOCAL-1"] = "stale-identity"
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
@@ -631,7 +631,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         api.profileEnvelopes["uuid-claimed"] = try ProfileKeyManager.sealProfilePayload(
             key: Data(count: 32), name: "Ignored on the wire", ark: ark)
         _ = try await controller.profileKeys.adoptRemoteProfile(
-            uuid: "uuid-claimed", forLocalProfile: "Default")
+            uuid: "uuid-claimed", forLocalProfile: "Default", isDefault: true)
         // 3) uuid-nowhere exists in neither source.
 
         await wizard.start(controller: controller)

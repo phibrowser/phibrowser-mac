@@ -40,7 +40,8 @@ final class CandidateMappings: ProfileSyncMappingStore {
     func removeMapping(forProfileId id: String) { map.removeValue(forKey: id) }
     func removeAllMappings() { map = [:] }
 }
-struct PairingLocal: Equatable { let profileId: String; let displayName: String }
+struct PairingLocal: Equatable { let profileId: String; let displayName: String; let isDefault: Bool }
+enum LocalStore { static let defaultProfileId = "Default" }
 enum CandidatePhase {
     case working, pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile]), error(String)
 }
@@ -81,7 +82,7 @@ func testCandidatesAfterServerReset() async throws {
                       userInfo: [NSLocalizedDescriptionKey: "Stale mappings hid existing local profiles after server reset"])
     }
     precondition(store.map == original, "Loading must not change mappings")
-    _ = try await keys.adoptRemoteProfile(uuid: "new-default", forLocalProfile: "Default")
+    _ = try await keys.adoptRemoteProfile(uuid: "new-default", forLocalProfile: "Default", isDefault: true)
     precondition(store.map["Default"] == "new-default")
     await fixture.load(controller)
     guard case .pairingProfiles(let remaining, let unclaimed) = fixture.phase else { preconditionFailure() }
@@ -97,26 +98,26 @@ func testRegistrationAfterServerReset() async throws {
     let api = CandidateAPI(), account = AccountKeyManager(), store = CandidateMappings()
     let keys = ProfileKeyManager(api: api, keyManager: account, mappingStore: store)
     store.map["Default"] = "removed"
-    let record = try await keys.registerLocalProfile(profileId: "Default", displayName: "Your Phi")
+    let record = try await keys.registerLocalProfile(profileId: "Default", displayName: "Your Phi", isDefault: true)
     precondition(record.uuid != "removed" && store.map["Default"] == record.uuid)
     let opened = try ProfileKeyManager.openProfilePayload(api.envelopes[record.uuid]!, ark: account.currentARK!)
     precondition(opened.name == "Your Phi")
     do {
-        _ = try await keys.registerLocalProfile(profileId: "Default", displayName: "Your Phi")
+        _ = try await keys.registerLocalProfile(profileId: "Default", displayName: "Your Phi", isDefault: true)
         preconditionFailure("A valid mapping must refuse duplicate registration")
     } catch ProfileKeyManagerError.alreadyMapped {}
     precondition(api.envelopes.count == 1)
     store.map["Profile 1"] = "unknown"
     api.failure = URLError(.notConnectedToInternet)
     do {
-        _ = try await keys.registerLocalProfile(profileId: "Profile 1", displayName: "Test Profile")
+        _ = try await keys.registerLocalProfile(profileId: "Profile 1", displayName: "Test Profile", isDefault: false)
         preconditionFailure("Lookup failure is not proof that an old mapping is gone")
     } catch is URLError {}
     precondition(store.map["Profile 1"] == "unknown" && api.envelopes.count == 1)
     api.failure = nil
     api.beforeGet = { store.map["Profile 1"] = "concurrently-adopted" }
     do {
-        _ = try await keys.registerLocalProfile(profileId: "Profile 1", displayName: "Test Profile")
+        _ = try await keys.registerLocalProfile(profileId: "Profile 1", displayName: "Test Profile", isDefault: false)
         preconditionFailure("A late missing response must not overwrite a changed mapping")
     } catch ProfileKeyManagerError.alreadyMapped {}
     precondition(store.map["Profile 1"] == "concurrently-adopted" && api.envelopes.count == 1)

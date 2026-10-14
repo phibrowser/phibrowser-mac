@@ -296,6 +296,54 @@ existing row from being created again, and a deletion of such a Space arriving
 from the account is applied); Chromium keeps syncing the mapped Profiles for the
 first 15 seconds; the reason is per pass, not per Profile.
 
+### Profile pairing and the default profile
+
+Each account Profile's key travels in an envelope sealed with the ARK:
+`{"v":1,"key":<base64>,"name":<string>,"default":<bool>}`
+(`ProfileKeyManager.sealProfilePayload` / `openProfilePayload`). The server stores
+it opaquely. `"default"` is additive: every registration writes it, `true` only
+for the registering device's Default Profile (`LocalStore.defaultProfileId`),
+`false` for any other. An envelope without the key was written before the flag
+existed and reads as unknown (`RemoteProfile.isDefault == nil`), never as false.
+Older clients ignore the key; no envelope is ever rewritten to add it.
+
+Rule: a device's Default Profile pairs only with the account's default Profile.
+Exactly one account default is authoritative on a Mac: the one its Default is
+mapped to with the uuid still in the account listing, or, while the Default is
+still undecided in the pairing sheet, the one currently chosen for it. Two devices
+that complete first pairing concurrently each register a default; every account
+default other than the authoritative one is demoted to an ordinary Profile on this
+Mac (offered to other locals, creatable, auto-created) and the conflict is logged
+(`AppLogWarn`, metadata only). Nothing is hidden or left unclaimable, so Spaces
+bound to the other default still land.
+
+| Remote | Local Default | Other local |
+| --- | --- | --- |
+| Authoritative account default | Allowed; preselected whatever its name | Never; never created as a new local |
+| Other account default (demoted) | Allowed (choosing it makes it authoritative) | Allowed, like any Profile |
+| `isDefault == false` | Never | Allowed |
+| `nil` (legacy / unknown) | Allowed | Allowed |
+
+`ProfilePairingModel` applies it to every picker, preselection (the local Default
+is decided first and takes the first unclaimed account default, otherwise a name
+match among the remotes it may take), "Assign to" option, "Create on this Mac"
+option and decision; `authoritativeDefaultUuid` follows the local Default's current
+choice, so roles change live in the sheet. Rows for the local Default and the
+authoritative account default carry the Default badge. `adoptRemoteProfile`
+refuses a known non-default for the local Default with
+`ProfileKeyManagerError.defaultMismatch` before writing anything; the pairing sheet
+shows a fixed error and reloads. Which default is authoritative is the callers'
+knowledge, so the write boundary does not police the other half.
+
+Background mapping follows the same rule. A local counts as mapped only while its
+persisted uuid is in the round's account listing, so a mapping whose envelope is
+gone never keeps the local Default from claiming the live account default (and a
+third uuid is never registered for it). While the local Default is free,
+auto-create adopts an account default into it regardless of name (uuid order
+decides between several) and never twins a known non-default onto it. Once the
+Default is live-mapped, any other account default is twinned by name or created
+like an ordinary Profile, and its conflict is logged once per uuid.
+
 ## Sync status contract
 
 `SyncHelper` is the account-scoped macOS owner of the common completion time.

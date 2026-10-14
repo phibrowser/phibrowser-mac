@@ -31,6 +31,14 @@ enum ProfilePairingContext {
 /// - **No local may be claimed twice.** A local is offered by at most one remote
 ///   row at a time, and a choice whose target local has since gone elsewhere
 ///   reads back as UNDECIDED instead of surviving invisibly.
+/// - **Default pairs only with default.** This device's Default profile is
+///   offered every account default and legacy (unflagged) profile, never a
+///   known non-default. The account default it currently takes is
+///   authoritative (`authoritativeDefaultUuid`): no other local is offered it
+///   and it is never created as a new local profile. Every OTHER account
+///   default is demoted to an ordinary profile in the same sheet, so two
+///   devices that each registered a default leave nothing unclaimable
+///   (`RemoteProfile.mayPair(withLocalDefault:authoritativeDefaultUuid:)`).
 struct ProfilePairingModel {
     /// One local row's decision.
     enum Choice: Hashable {
@@ -52,16 +60,27 @@ struct ProfilePairingModel {
     let selections: [String: Choice]
     let remoteChoices: [String: RemoteChoice]
 
-    /// Default preselection: a remote whose decrypted name matches the local's
-    /// display name, each remote claimed at most once. This is only a starting
-    /// point — the user still has to hit Confirm.
+    /// Default preselection: the local Default first, taking the first account
+    /// default when there is one; then each local takes a remote whose
+    /// decrypted name matches its display name, among the remotes the
+    /// default-profile rule allows, each remote claimed at most once. This is
+    /// only a starting point — the user still has to hit Confirm.
     static func initialSelections(locals: [PairingLocal], remotes: [RemoteProfile]) -> [String: Choice] {
         var initial: [String: Choice] = [:]
         var claimed: Set<String> = []
-        for local in locals {
-            if let match = remotes.first(where: { $0.name == local.displayName && !claimed.contains($0.uuid) }) {
+        var authoritative: String?
+        // The Default decides which account default is authoritative before any
+        // other local could name-match it.
+        for local in locals.filter(\.isDefault) + locals.filter({ !$0.isDefault }) {
+            let allowed = remotes.filter {
+                $0.mayPair(withLocalDefault: local.isDefault, authoritativeDefaultUuid: authoritative)
+                    && !claimed.contains($0.uuid)
+            }
+            let accountDefault = local.isDefault ? allowed.first(where: { $0.isDefault == true }) : nil
+            if let match = accountDefault ?? allowed.first(where: { $0.name == local.displayName }) {
                 initial[local.profileId] = .remote(match.uuid)
                 claimed.insert(match.uuid)
+                if local.isDefault, match.isDefault == true { authoritative = match.uuid }
             } else {
                 initial[local.profileId] = .registerNew
             }
@@ -69,8 +88,38 @@ struct ProfilePairingModel {
         return initial
     }
 
+    /// The one account default this sheet treats as the default: the one the
+    /// local Default's own picker selects, or the one a remote row assigns to the
+    /// local Default. nil when the local Default takes none (or is not in the
+    /// sheet because it is already mapped): then every account default here is
+    /// an ordinary profile. Read from the stored state rather than the live
+    /// choices, which are themselves derived from it.
+    var authoritativeDefaultUuid: String? {
+        guard let localDefault = locals.first(where: \.isDefault) else { return nil }
+        if case .remote(let uuid) = selection(for: localDefault) {
+            return remotes.first(where: { $0.uuid == uuid && $0.isDefault == true })?.uuid
+        }
+        return remotes.first(where: { remote in
+            remote.isDefault == true && remoteChoices[remote.uuid] == .adopt(localProfileId: localDefault.profileId)
+        })?.uuid
+    }
+
+    private func mayPair(_ local: PairingLocal, _ remote: RemoteProfile) -> Bool {
+        remote.mayPair(withLocalDefault: local.isDefault,
+                       authoritativeDefaultUuid: local.isDefault ? nil : authoritativeDefaultUuid)
+    }
+
+    /// A stored remote the default-profile rule forbids for this local reads back
+    /// as `.registerNew`, so no state the UI cannot produce reaches `decisions()`.
+    /// (The local Default's rule never depends on the authoritative default, so
+    /// reading its selection here does not recurse.)
     func selection(for local: PairingLocal) -> Choice {
-        selections[local.profileId] ?? .registerNew
+        let stored = selections[local.profileId] ?? .registerNew
+        if case .remote(let uuid) = stored, let remote = remotes.first(where: { $0.uuid == uuid }),
+           !mayPair(local, remote) {
+            return .registerNew
+        }
+        return stored
     }
 
     /// Remote uuids claimed by a local row's own picker.
@@ -81,7 +130,8 @@ struct ProfilePairingModel {
         })
     }
 
-    /// Remotes selectable in `local`'s picker: decryptable, and not already
+    /// Remotes selectable in `local`'s picker: decryptable, allowed by the
+    /// default-profile rule, and not already
     /// claimed by a *different* local's current selection (so `local`'s own
     /// selection always stays in its own list, even in the states the UI cannot
     /// otherwise produce — a Picker whose selected tag is missing renders blank).
@@ -96,7 +146,8 @@ struct ProfilePairingModel {
         })
         return remotes.filter { remote in
             if remote.uuid == own { return true }
-            return remote.name != nil && !claimedByOthers.contains(remote.uuid)
+            return remote.name != nil && mayPair(local, remote)
+                && !claimedByOthers.contains(remote.uuid)
         }
     }
 
@@ -107,7 +158,8 @@ struct ProfilePairingModel {
         return remotes.filter { !claimed.contains($0.uuid) }
     }
 
-    /// Locals `remote`'s row may be assigned to: still `registerNew` in their
+    /// Locals `remote`'s row may be assigned to: allowed by the default-profile
+    /// rule, still `registerNew` in their
     /// own picker, and not already claimed by a DIFFERENT remote row. Without
     /// the second half the same local can be assigned twice, and the second
     /// `adoptRemoteProfile` simply overwrites the first mapping — leaving the
@@ -118,19 +170,30 @@ struct ProfilePairingModel {
             return localProfileId
         })
         return locals.filter { local in
-            guard case .registerNew = selection(for: local) else { return false }
+            guard mayPair(local, remote),
+                  case .registerNew = selection(for: local) else { return false }
             return !claimedByOtherRows.contains(local.profileId)
         }
     }
 
+    /// Whether `remote`'s row offers "Create on this Mac". Not for the
+    /// authoritative default: the local Default always exists, so a new local
+    /// profile for it would be a non-default local on the default. A demoted
+    /// account default is an ordinary profile and may be created.
+    func offersCreateLocal(for remote: RemoteProfile) -> Bool {
+        remote.uuid != authoritativeDefaultUuid
+    }
+
     /// This remote row's LIVE choice. A stored choice reads back as UNDECIDED
     /// when the row no longer offers it — the remote became claimed by a local
-    /// row, its envelope does not open, or its target local left
-    /// `assignableLocals`. Otherwise `allDecided` would report "decided" for a
+    /// row, its envelope does not open, its target local left
+    /// `assignableLocals`, or it is `.createLocal` on the authoritative default.
+    /// Otherwise `allDecided` would report "decided" for a
     /// row whose picker shows blank, and `decisions()` would emit it.
     func choice(for remote: RemoteProfile) -> RemoteChoice? {
         guard remote.name != nil, !claimedByLocalSelections.contains(remote.uuid),
               let choice = remoteChoices[remote.uuid] else { return nil }
+        if choice == .createLocal, !offersCreateLocal(for: remote) { return nil }
         if case .adopt(let localProfileId) = choice,
            !assignableLocals(for: remote).contains(where: { $0.profileId == localProfileId }) {
             return nil
@@ -204,6 +267,12 @@ struct ProfilePairingModel {
         let named = decisions.compactMap(Self.localProfileId(of:))
         assert(Set(named).count == named.count,
                "two decisions for one local profile mint an orphan account profile and pin the gate open")
+        assert(decisions.allSatisfy { decision in
+            guard case .adopt(let localProfileId, let remoteUuid) = decision,
+                  let local = locals.first(where: { $0.profileId == localProfileId }),
+                  let remote = remotes.first(where: { $0.uuid == remoteUuid }) else { return true }
+            return mayPair(local, remote)
+        }, "a default <-> non-default pairing breaks the default-profile rule")
         return decisions
     }
 }
@@ -346,6 +415,8 @@ struct ProfilePairingView: View {
             Text(local.displayName)
                 .font(.body.bold())
                 .themedForeground(.textPrimaryStrong)
+            // The picker below is narrowed by the default-profile rule; the badge says why.
+            if local.isDefault { SettingsDefaultBadge() }
             Spacer()
             Picker("", selection: binding(for: local)) {
                 ForEach(model.remoteOptions(for: local), id: \.uuid) { remote in
@@ -367,6 +438,9 @@ struct ProfilePairingView: View {
             Text(remoteLabel(remote))
                 .font(.body.bold())
                 .themedForeground(.textPrimaryStrong)
+            // Only the authoritative account default is badged; an extra one is
+            // an ordinary profile in this sheet.
+            if remote.uuid == model.authoritativeDefaultUuid { SettingsDefaultBadge() }
             Spacer()
             if remote.name == nil {
                 // Read-only. BOTH of this row's decisions end in
@@ -385,10 +459,12 @@ struct ProfilePairingView: View {
                                            value: "Choose…",
                                            comment: "Sync setup profile matching - picker placeholder before a choice is made"))
                         .tag(RemoteChoice?.none)
-                    Text(NSLocalizedString("sync.pairing.profiles.createOnThisMac",
-                                           value: "Create on this Mac",
-                                           comment: "Sync setup profile matching - option that creates a new profile on this Mac for an account profile"))
-                        .tag(RemoteChoice?.some(.createLocal))
+                    if model.offersCreateLocal(for: remote) {
+                        Text(NSLocalizedString("sync.pairing.profiles.createOnThisMac",
+                                               value: "Create on this Mac",
+                                               comment: "Sync setup profile matching - option that creates a new profile on this Mac for an account profile"))
+                            .tag(RemoteChoice?.some(.createLocal))
+                    }
                     ForEach(model.assignableLocals(for: remote), id: \.profileId) { local in
                         Text(String(format: NSLocalizedString("sync.pairing.profiles.assignTo",
                                     value: "Assign to %@",
@@ -517,9 +593,10 @@ private struct ProfilePairingPreviewHost: View {
 
 #Preview("Profile Pairing") {
     ProfilePairingPreviewHost(
-        locals: [PairingLocal(profileId: "Default", displayName: "Default"),
-                 PairingLocal(profileId: "Profile 1", displayName: "Home")],
-        remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home"),
+        locals: [PairingLocal(profileId: "Default", displayName: "Default", isDefault: true),
+                 PairingLocal(profileId: "Profile 1", displayName: "Home", isDefault: false)],
+        remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home", isDefault: false),
+                  RemoteProfile(uuid: "33333333-3333-3333-3333-333333333333", name: "Your Phi", isDefault: true),
                   RemoteProfile(uuid: "22222222-2222-2222-2222-222222222222", name: nil)],
         context: .settings,
         secondaryButton: nil)

@@ -99945,6 +99945,17 @@
         }
       }
     },
+    "sync.pairing.error.defaultProfileMismatch" : {
+      "comment" : "Profile matching - error shown when a chosen match would pair a default profile with a non-default one",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac’s default profile can only be matched with the account’s default profile. Review the matches and try again."
+          }
+        }
+      }
+    },
     "sync.pairing.error.profileApplyFailed" : {
       "comment" : "Sync setup - error shown when one profile match could not be applied",
       "localizations" : {

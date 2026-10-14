@@ -135,6 +135,100 @@ final class ProfileAutoCreateTests: XCTestCase {
         XCTAssertTrue(controller.undecryptableRemoteUuids.contains("uuid-broken"))
     }
 
+    // MARK: - Default pairs only with default
+
+    private func seedFlaggedRemoteProfile(_ api: FakeAPI, _ mgr: AccountKeyManager,
+                                          uuid: String, name: String, isDefault: Bool) throws {
+        api.profileEnvelopes[uuid] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 7, count: 32), name: name, isDefault: isDefault, ark: mgr.currentARK!)
+    }
+
+    /// The account default goes to an unmapped local Default whatever the names.
+    func testTheAccountDefaultIsAdoptedByTheUnmappedLocalDefault() async throws {
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "Default", displayName: "Personal")]
+        let (api, mgr, controller, store) = try await stack(creator: creator)
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-default", name: "Your Phi", isDefault: true)
+
+        let outcome = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(outcome, .changed)
+        XCTAssertTrue(creator.createCalls.isEmpty)
+        XCTAssertEqual(store.map, ["Default": "uuid-default"])
+    }
+
+    /// Two devices completed first pairing concurrently, so the account holds two
+    /// defaults. This Mac's Default is live-mapped to its own; the other is an
+    /// ordinary profile here: auto-created (never hidden), so the Spaces bound to
+    /// it land, and nothing is left that holds registration.
+    func testAnExtraAccountDefaultIsAutoCreatedAsAnOrdinaryProfile() async throws {
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "Default", displayName: "Personal")]
+        let store = MemoryMappingStore()
+        let (api, mgr, controller, _) = try await stack(creator: creator, store: store)
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-mine", name: "Personal", isDefault: true)
+        store.map = ["Default": "uuid-mine"]
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-theirs", name: "Your Phi", isDefault: true)
+
+        let outcome = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(outcome, .changed)
+        XCTAssertEqual(creator.createCalls, ["Your Phi"])
+        XCTAssertEqual(store.map["Default"], "uuid-mine", "the authoritative default keeps the local Default")
+        XCTAssertEqual(store.map[creator.profiles[1].profileId], "uuid-theirs")
+        XCTAssertNotNil(controller.localProfileId(forGlobalUuid: "uuid-theirs"),
+                        "a Space bound to the other default resolves to a local Profile")
+
+        await controller.resolveMappings()
+        XCTAssertFalse(controller.needsPairing)
+        XCTAssertFalse(controller.needsPairingActionable)
+    }
+
+    /// The same conflict on a Mac whose Default is still free: one default goes
+    /// to the local Default, the other becomes an ordinary local in the same round.
+    func testWithTwoAccountDefaultsTheLocalDefaultAdoptsOneAndTheOtherIsCreated() async throws {
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "Default", displayName: "Personal")]
+        let (api, mgr, controller, store) = try await stack(creator: creator)
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-a", name: "Your Phi", isDefault: true)
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-b", name: "Your Phi", isDefault: true)
+
+        _ = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(store.map["Default"], "uuid-a", "uuid order decides, the same on every device")
+        XCTAssertEqual(creator.createCalls, ["Your Phi"])
+        XCTAssertEqual(Set(store.map.values), ["uuid-a", "uuid-b"])
+    }
+
+    /// A persisted mapping whose envelope is gone (404) does not occupy the local
+    /// Default: the live account default is adopted onto it and no third uuid is
+    /// registered for it.
+    func testADeadDefaultMappingDoesNotBlockAdoptingTheAccountDefault() async throws {
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "Default", displayName: "Personal")]
+        let store = MemoryMappingStore()
+        let (api, mgr, controller, _) = try await stack(creator: creator, store: store)
+        store.map = ["Default": "uuid-old"]   // absent on the server
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-default", name: "Your Phi", isDefault: true)
+
+        await controller.runMappingRepairPass()
+        XCTAssertEqual(store.map["Default"], "uuid-default")
+        XCTAssertTrue(creator.createCalls.isEmpty)
+        XCTAssertEqual(Set(api.profileEnvelopes.keys), ["uuid-default"], "no new registration")
+        XCTAssertNotNil(controller.profileSyncInfo(forProfileId: "Default"))
+    }
+
+    /// A known non-default never lands on the local Default, even by name; it gets
+    /// a local Profile of its own instead.
+    func testAKnownNonDefaultIsNotTwinnedOntoTheLocalDefault() async throws {
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "Default", displayName: "Work")]
+        let (api, mgr, controller, store) = try await stack(creator: creator)
+        try seedFlaggedRemoteProfile(api, mgr, uuid: "uuid-work", name: "Work", isDefault: false)
+
+        _ = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(creator.createCalls, ["Work (2)"])
+        XCTAssertNotEqual(store.map["Default"], "uuid-work")
+        XCTAssertEqual(store.map[creator.profiles[1].profileId], "uuid-work")
+    }
+
     /// The retry path: last round created the profile but `adoptRemoteProfile`
     /// failed, so no mapping was written and a same-named unmapped profile is
     /// sitting there. Adopt it; do NOT create a second one every minute.

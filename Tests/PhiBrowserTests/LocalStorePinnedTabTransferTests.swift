@@ -347,7 +347,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             try await store.applyPinSyncBatchThrowing([
                 .update(guid: "p-a", fields: PinFieldPatch(title: "Renamed")),
                 .delete(guid: "no-such-guid"),
-            ])
+            ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         }
 
         let title = try pinRow("p-a", in: store)?.title
@@ -365,7 +365,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         }
 
         // Deleting the middle row leaves indexes 0 and 2; final normalization must close the gap.
-        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-1")])
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-1")], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         let remaining = store.getAllPinnedTabs(for: "Default")
@@ -389,7 +389,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         await assertThrows(.spaceImporting(spaceId: "space-a")) {
             try await store.applyPinSyncBatchThrowing([
                 .update(guid: "p-a", fields: PinFieldPatch(title: "Renamed")),
-            ])
+            ], expectedGeneration: store.pinScopeGeneration, expectedScope: .space)
         }
 
         let title = try pinRow("p-a", in: store)?.title
@@ -436,7 +436,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         // The patch carries normalized lowercase wire lineage; the local column is uppercase.
         try await store.applyPinSyncBatchThrowing([
             .update(guid: "p-left", fields: PinFieldPatch(splitPartnerLineageId: "l-right")),
-        ])
+        ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         XCTAssertEqual(try pinRow("p-left", in: store)?.splitPartnerGuid, "p-right")
@@ -458,7 +458,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         try await store.applyPinSyncBatchThrowing([
             .update(guid: "p-left", fields: PinFieldPatch(title: "Renamed",
                                                           splitPartnerLineageId: "l-right")),
-        ])
+        ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         XCTAssertNil(try pinRow("p-left", in: store)?.splitPartnerGuid, "The link remains nil")
@@ -474,7 +474,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                                         title: "Right",
                                         url: try XCTUnwrap(URL(string: "https://right.example")))),
             .update(guid: "p-left", fields: PinFieldPatch(splitPartnerLineageId: "l-right")),
-        ])
+        ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         XCTAssertEqual(try pinRow("p-left", in: store)?.splitPartnerGuid, "p-right")
@@ -492,14 +492,14 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         await assertThrows(.noCandidateSurvived) {
             try await store.applyPinSyncBatchThrowing([
                 .update(guid: "p-a", fields: PinFieldPatch()),
-            ])
+            ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         }
 
         // Outer some with inner nil for URL means unchanged; a patch containing only this also changes nothing.
         await assertThrows(.noCandidateSurvived) {
             try await store.applyPinSyncBatchThrowing([
                 .update(guid: "p-a", fields: PinFieldPatch(url: .some(nil))),
-            ])
+            ], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         }
     }
 
@@ -516,7 +516,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                          title: "Right", url: "https://right.example", index: 1,
                          configure: { $0.splitPartnerGuid = "p-left" })
 
-        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")])
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         XCTAssertNil(try pinRow("p-left", in: store))
@@ -540,7 +540,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                          title: "Other", url: "https://other.example", index: 2,
                          configure: { $0.splitPartnerGuid = "p-right" })
 
-        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")])
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")], expectedGeneration: store.pinScopeGeneration, expectedScope: .profile)
         drainMainQueue()
 
         XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-other",

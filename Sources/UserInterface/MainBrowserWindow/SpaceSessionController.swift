@@ -110,10 +110,13 @@ class SpaceSessionController: NSWindowController {
     /// invalidate a recorded press before it funds an unrelated peek.
     private var lastFocusedTabIdForPeek: Int?
 
-    /// Reader View overlay panel, created on first present. Exposed to the
+    /// Reader View overlay panels, one per split pane slot (a single tab
+    /// uses `.primary`), created on first present: each pane of a split can
+    /// show its own reader. Slots follow the split group, so moving focus
+    /// between panes never swaps a panel's content. Exposed to the
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
-    private var readerPanelController: ReaderPanelController?
-    var readerPanelControllerIfLoaded: ReaderPanelController? { readerPanelController }
+    private var readerPanelControllers: [SplitPaneHostView.Pane: ReaderPanelController] = [:]
+    var readerPanelControllersIfLoaded: [ReaderPanelController] { Array(readerPanelControllers.values) }
 
     /// Omnibox child window above the browser's page overlays. It shares the
     /// browser's window level so it follows the app's stacking order, and is
@@ -261,9 +264,13 @@ class SpaceSessionController: NSWindowController {
         assert(prewarmedContent == nil || (dormant && prewarmedContent?.state === state))
         self.mainSplitViewController = prewarmedContent ?? MainSplitViewController(
             state: state,
-            hosted: chromiumWindow != nil || (dormant && chromiumWindow == nil))
+            hosted: chromiumWindow != nil || (dormant && chromiumWindow == nil),
+            mediaController: slot?.sidebarMediaController)
         super.init(window: window)
         self.slot = slot
+        if let slot, prewarmedContent != nil {
+            mainSplitViewController.useMediaController(slot.sidebarMediaController)
+        }
         browserState.windowController = self
         if isDormant {
             // The Browser-bound wiring waits for `attachChromiumWindow`.
@@ -730,17 +737,18 @@ class SpaceSessionController: NSWindowController {
         )
 
         // Peek popup: each peek belongs to its opener tab, so the one panel
-        // always shows the focused tab's peek — switching tabs swaps the
-        // hosted content to the newly focused opener's peek, hides the panel
-        // while the focused tab has none, and dismisses it only when no peek
-        // is left in the window.
+        // always shows the focused tab's peek — or its split partner's, as a
+        // peek covers the whole split. Switching tabs swaps the hosted
+        // content to the newly focused opener's peek, hides the panel while
+        // the focused tab has none, and dismisses it only when no peek is
+        // left in the window.
         $browserState
             .flatMap { state in
                 state.peekState.$peeksByOpener
-                    .combineLatest(state.$focusingTab)
+                    .combineLatest(state.$focusingTab, state.$splits)
             }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] peeksByOpener, focusingTab in
+            .sink { [weak self] peeksByOpener, focusingTab, splits in
                 guard let self else { return }
                 let peekTabIds = peeksByOpener.mapValues { $0.guid }
                 let previousPeekTabIds = self.previousPeekTabIdsByOpener
@@ -758,13 +766,15 @@ class SpaceSessionController: NSWindowController {
                     self.peekPanelController?.dismiss()
                     return
                 }
-                if let focusingTab, let tab = peeksByOpener[focusingTab.guid] {
+                if let visible = BrowserState.visiblePeek(focusingTab: focusingTab,
+                                                          peeksByOpener: peeksByOpener,
+                                                          splits: splits) {
                     self.presentPeekPanel(
-                        for: tab,
+                        for: visible.tab,
                         flyIn: Self.isFreshlyOpenedPeek(
                             previousPeekTabIdsByOpener: previousPeekTabIds,
-                            openerTabId: focusingTab.guid,
-                            peekTabId: tab.guid
+                            openerTabId: visible.openerTabId,
+                            peekTabId: visible.tab.guid
                         )
                     )
                 } else {
@@ -773,28 +783,33 @@ class SpaceSessionController: NSWindowController {
             }
             .store(in: &cancellables)
 
-        // Reader View overlay: each reader belongs to its origin tab, so the
-        // one panel always shows the focused tab's reader — switching tabs
-        // swaps the hosted content to the newly focused origin's reader,
-        // hides the panel while the focused tab has none, and dismisses it
-        // only when no reader is left in the window.
+        // Reader View overlay: each reader belongs to its origin tab — a
+        // strip tab, or the page in a peek — so the one panel always shows
+        // the reader on screen for the focused tab (its own, else its
+        // peek's): switching tabs swaps the hosted content, hides the panel
+        // while the focused tab has none, and dismisses it only when no
+        // reader is left in the window. Peeks are an input because a peek's
+        // reader comes and goes with its peek.
         $browserState
             .flatMap { state in
                 state.readerOverlayState.$readersByOrigin
-                    .combineLatest(state.$focusingTab)
+                    .combineLatest(state.$focusingTab, state.peekState.$peeksByOpener, state.$splits)
+                    .map { readersByOrigin, focusingTab, peeksByOpener, splits in
+                        (readersByOrigin.isEmpty,
+                         BrowserState.visibleReaderOverlays(focusingTab: focusingTab,
+                                                            readersByOrigin: readersByOrigin,
+                                                            peeksByOpener: peeksByOpener,
+                                                            splits: splits))
+                    }
             }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] readersByOrigin, focusingTab in
+            .sink { [weak self] noReaders, visibleReaders in
                 guard let self else { return }
-                guard !readersByOrigin.isEmpty else {
-                    self.readerPanelController?.dismiss()
+                guard !noReaders else {
+                    self.readerPanelControllers.values.forEach { $0.dismiss() }
                     return
                 }
-                if let focusingTab, let tab = readersByOrigin[focusingTab.guid] {
-                    self.presentReaderPanel(for: tab)
-                } else {
-                    self.readerPanelController?.hide()
-                }
+                self.showReaderPanels(visibleReaders)
             }
             .store(in: &cancellables)
     }
@@ -832,13 +847,17 @@ class SpaceSessionController: NSWindowController {
                         self.window?.makeKey()
                     }
                     self.peekPanelController?.setEclipsedByInWindowOverlay(visible)
-                    self.readerPanelController?.setEclipsedByInWindowOverlay(visible)
+                    self.readerPanelControllers.values.forEach {
+                        $0.setEclipsedByInWindowOverlay(visible)
+                    }
                     if !visible {
                         self.retireOmniBoxHostPanelIfIdle()
                     }
                 } else {
                     self.peekPanelController?.setConcealedByInWindowOverlay(visible)
-                    self.readerPanelController?.setConcealedByInWindowOverlay(visible)
+                    self.readerPanelControllers.values.forEach {
+                        $0.setConcealedByInWindowOverlay(visible)
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -866,22 +885,91 @@ class SpaceSessionController: NSWindowController {
                 cardViewProvider: { [weak container] in container?.currentPageCardView },
                 originTracker: peekOriginTracker
             )
+            // A reader over the peek covers the peek card, which moves with
+            // the peek's own layout.
+            peekPanelController?.onLayout = { [weak self] in
+                self?.readerPanelControllers.values.forEach { $0.relayoutIfVisible() }
+            }
         }
         peekPanelController?.present(tab: tab, flyIn: flyIn)
     }
 
-    private func presentReaderPanel(for tab: Tab) {
+    /// The card a reader covers: the peek card when its origin is the page
+    /// the peek panel is showing, its origin's pane card when that tab is in
+    /// the mounted split, else the focused tab's page card.
+    private func readerCard(for readerTab: Tab,
+                            container: WebContentContainerViewController?) -> ReaderPanelController.Card? {
+        let originTabId = browserState.readerOverlayState.originTabId(forReaderTabId: readerTab.guid)
+        if let originTabId,
+           let peekTab = browserState.peekState.peekTab(withId: originTabId),
+           let peekPanel = peekPanelController, peekPanel.isHosting(peekTab) {
+            return .init(view: peekPanel.pageCardView,
+                         cornerRadius: PeekPanelController.cornerRadius)
+        }
+        if let originTabId,
+           let paneCard = container?.currentSplitPaneCardView(forTabId: originTabId) {
+            // Inside the pane's focus ring, so the ring shows which pane is
+            // focused; the corner stays concentric with the pane's.
+            let inset = SplitPaneHostView.focusRingThickness
+            return .init(view: paneCard,
+                         cornerRadius: max(0, LiquidGlassCompatible.webContentInnerComponentsCornerRadius - inset),
+                         inset: inset)
+        }
+        guard let card = container?.currentPageCardView else { return nil }
+        return .init(view: card,
+                     cornerRadius: LiquidGlassCompatible.webContentContainerCornerRadius)
+    }
+
+    /// Shows `visibleReaders` (see `BrowserState.visibleReaderOverlays`),
+    /// each in its pane's slot, and hides the slots left without one.
+    private func showReaderPanels(_ visibleReaders: [Tab]) {
+        var shownSlots = Set<SplitPaneHostView.Pane>()
+        for reader in visibleReaders {
+            let slot = readerPanelSlot(for: reader)
+            shownSlots.insert(slot)
+            presentReaderPanel(for: reader, slot: slot)
+        }
+        for (slot, panel) in readerPanelControllers where !shownSlots.contains(slot) {
+            panel.hide()
+        }
+        // Moving focus between panes remounts the split in the newly focused
+        // tab's controller, possibly after this pass: re-fit to the pane
+        // cards that are live once it has.
+        DispatchQueue.main.async { [weak self] in
+            self?.readerPanelControllers.values.forEach { $0.relayoutIfVisible() }
+        }
+    }
+
+    /// A split's secondary pane's reader takes the `.secondary` panel; every
+    /// other reader (single tab, primary pane, over a peek) `.primary`.
+    private func readerPanelSlot(for readerTab: Tab) -> SplitPaneHostView.Pane {
+        guard let originTabId = browserState.readerOverlayState.originTabId(forReaderTabId: readerTab.guid),
+              browserState.splitGroup(forTabId: originTabId)?.secondaryTabId == originTabId else {
+            return .primary
+        }
+        return .secondary
+    }
+
+    private func presentReaderPanel(for tab: Tab, slot: SplitPaneHostView.Pane) {
         guard let window = self.window, isPresentedOrLegacy else { return }
-        if readerPanelController == nil {
+        if readerPanelControllers[slot] == nil {
             let container = mainSplitViewController.webContentContainerViewController
-            readerPanelController = ReaderPanelController(
+            readerPanelControllers[slot] = ReaderPanelController(
                 browserState: browserState,
                 parentWindow: window,
                 anchorView: container.view,
-                cardViewProvider: { [weak container] in container?.currentPageCardView }
+                cardViewProvider: { [weak self, weak container] readerTab in
+                    self?.readerCard(for: readerTab, container: container)
+                }
             )
         }
-        readerPanelController?.present(tab: tab)
+        // A reader moving to the other slot (panes swapped) leaves its old
+        // panel first: a native view has one superview.
+        for (otherSlot, panel) in readerPanelControllers where otherSlot != slot {
+            panel.detachContentIfHosting(tabId: tab.guid)
+        }
+        readerPanelControllers[slot]?.present(tab: tab,
+                                              focusContent: browserState.readerOverlayTakesFocus(tab))
     }
 
     // MARK: - Hosted window mode
@@ -1088,12 +1176,10 @@ class SpaceSessionController: NSWindowController {
     /// re-entering the shell re-shows the panels its focused tab owns.
     private func reshowOverlayPanelsAfterPresent() {
         guard let focusingTab = browserState.focusingTab else { return }
-        if let peekTab = browserState.peekState.peeksByOpener[focusingTab.guid] {
+        if let peekTab = browserState.visiblePeek(focusingTab: focusingTab)?.tab {
             presentPeekPanel(for: peekTab, flyIn: false)
         }
-        if let readerTab = browserState.readerOverlayState.readersByOrigin[focusingTab.guid] {
-            presentReaderPanel(for: readerTab)
-        }
+        showReaderPanels(browserState.visibleReaderOverlays(focusingTab: focusingTab))
     }
 
     /// Content fullscreen (video, `requestFullscreen`) on one of this
@@ -1171,7 +1257,7 @@ class SpaceSessionController: NSWindowController {
             removeSessionViewFromShell(evictingSidebar: true)
         }
         peekPanelController?.hide()
-        readerPanelController?.hide()
+        readerPanelControllers.values.forEach { $0.hide() }
         // Transient overlays are dismissed, not carried across the switch:
         // `reshowOverlayPanelsAfterPresent` does not bring them back, and a
         // stale `hasShown` would make the next ⌘T/⌘L/⌘W act on an overlay
@@ -1436,7 +1522,7 @@ class SpaceSessionController: NSWindowController {
         peekPanelController?.dismiss()
         // Same for the reader overlay and its surface tab.
         browserState.teardownReaderOverlayForWindowClose()
-        readerPanelController?.dismiss()
+        readerPanelControllers.values.forEach { $0.dismiss() }
     }
 
 
@@ -1541,18 +1627,45 @@ class SpaceSessionController: NSWindowController {
     // =========================================================================
 
     func handleDevToolsDidAttach(tabId: Int, devToolsView: NSView) {
+        if let (tab, host) = pageOverlayDevToolsTarget(tabId: tabId) {
+            PageOverlayDevToolsDock.attach(devToolsView, to: tab, in: host)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handleDevToolsDidAttach(tabId: tabId, devToolsView: devToolsView)
     }
 
     func handleDevToolsDidDetach(tabId: Int) {
+        if let (tab, host) = pageOverlayDevToolsTarget(tabId: tabId) {
+            PageOverlayDevToolsDock.detach(tab, in: host)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handleDevToolsDidDetach(tabId: tabId)
     }
 
     func handleUpdateInspectedPageBounds(tabId: Int, bounds: CGRect, hide: Bool) {
+        if let (tab, host) = pageOverlayDevToolsTarget(tabId: tabId) {
+            PageOverlayDevToolsDock.updateInspectedPageBounds(bounds, hide: hide,
+                                                              for: tab, in: host)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handleUpdateInspectedPageBounds(tabId: tabId, bounds: bounds, hide: hide)
+    }
+
+    /// Peek and Reader overlay tabs have no WebContentViewController; their
+    /// docked DevTools lives in the overlay panel hosting them. `host` is nil
+    /// while that panel isn't showing the tab.
+    private func pageOverlayDevToolsTarget(tabId: Int) -> (tab: Tab, host: NSView?)? {
+        if let tab = browserState.peekState.peekTab(withId: tabId) {
+            return (tab, peekPanelController?.devToolsHost(for: tab))
+        }
+        if let tab = browserState.readerOverlayState.readerTab(withId: tabId) {
+            return (tab, readerPanelControllers.values.lazy
+                        .compactMap { $0.devToolsHost(for: tab) }.first)
+        }
+        return nil
     }
 
 }

@@ -165,7 +165,8 @@ final class PhiSyncPinnedTabSnapshotIdentityTests: XCTestCase {
     }
 
     /// ④ Follower timeline, Mac A, 2026-09-15 16:20–16:24: account scope becomes Space;
-    /// applyAccountPinnedTabScope → changePinnedTabScope rebinds Tabs at 16:20:57. Parked
+    /// the scope migration (then applyAccountPinnedTabScope, now the pin scope follower) →
+    /// changePinnedTabScope rebinds Tabs at 16:20:57. Parked
     /// entities apply at 16:21:56 (applied=5); two minutes later the remote unpin triggers
     /// a sidebar rebuild and crash.
     /// At the identifier level, the retained pre-rebind item must remain findable, while

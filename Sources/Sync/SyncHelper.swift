@@ -11,7 +11,8 @@ final class SyncHelper {
         let read: @MainActor () async -> SyncContextSnapshot?
         /// True only when the owner accepted the request. Transport completion is
         /// observed separately; a bridge that drops an accepted request times out.
-        let requestSync: @MainActor () -> Bool
+        /// `bySyncNow` marks a round the user asked for, which may skip engine backoff.
+        let requestSync: @MainActor (_ bySyncNow: Bool) -> Bool
         // Native state can change while asynchronous bridge observations are outstanding.
         var currentSnapshot: (@MainActor () -> SyncContextSnapshot?)? = nil
         /// The native engine. Its settled Offline lets a Sync now request fail fast: it skips
@@ -37,6 +38,9 @@ final class SyncHelper {
         /// (AM-1), to the time the engine was built: no round starts until the list is read.
         /// Nil otherwise. Presentation is the status pane's (review R3).
         var profileListNotEnumeratedSince: Date?
+        /// The pin scope follower's failures since its last success (B-3 stage 1, design 3.2);
+        /// nil while it has none. Presentation is the status pane's.
+        var pinScopeMigrationFailure: SyncPinScopeMigrationFailure?
     }
 
     /// What an explicit request does while a participant is unobservable (missing or Checking),
@@ -56,7 +60,7 @@ final class SyncHelper {
         let previousRevisions: [String: UInt64]
         /// When an observation first met the early-failure condition, uninterrupted since.
         var failureSince: Date?
-        /// Started by, or joined by, a Sync now request; only such a round is shown on the button.
+        /// Dispatched with a Sync now request; repeated taps join it without another dispatch.
         var syncNow: Bool
     }
 
@@ -96,6 +100,8 @@ final class SyncHelper {
     private var mappingPause: SyncProfileMappingPauseStatus = .none
     /// What the reconciliation last handed over; see `setProfileListNotEnumerated(since:)`.
     private var listNotEnumeratedSince: Date?
+    /// What the pin scope follower last handed over; see `setPinScopeMigrationFailure(_:)`.
+    private var pinScopeFailure: SyncPinScopeMigrationFailure?
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private(set) var report = Report()
@@ -150,6 +156,17 @@ final class SyncHelper {
             phase: coordinationFailure == .persistence ? .needsAttention : .checking, lastSuccess: lastSuccess))
         report.profileMappingPause = shownMappingPause
         report.profileListNotEnumeratedSince = listNotEnumeratedSince
+        report.pinScopeMigrationFailure = pinScopeFailure
+    }
+
+    /// The pin scope follower's failure state (B-3 stage 1, design 3.2 / amendment b), or nil
+    /// once it succeeds or retires. Only the coordinator's follower calls it. Like
+    /// `setProfileListNotEnumerated(since:)` it changes the report and nothing else: the
+    /// follower retries on its own timer, and pin rounds block themselves while row != key.
+    func setPinScopeMigrationFailure(_ failure: SyncPinScopeMigrationFailure?) {
+        guard !retired else { return }
+        pinScopeFailure = failure
+        report.pinScopeMigrationFailure = failure
     }
 
     /// The engine gate is on because the Profile list has not been enumerated, since the
@@ -228,8 +245,9 @@ final class SyncHelper {
         }
     }
 
-    /// Ordinary pane/background polls only observe. An explicit pane reload may
-    /// request a round, coalesced with in-flight work and the same minimum interval.
+    /// Ordinary pane/background polls only observe; since 2026-10-12 the pane's own
+    /// open and reload observe too. A caller passing `requestSync` asks for a round,
+    /// coalesced with in-flight work and the same minimum interval.
     func refresh(requestSync: Bool = false) async {
         guard !retired else { return }
         if requestSync && round == nil { explicitRefreshPending = true }
@@ -243,8 +261,8 @@ final class SyncHelper {
         if generation == expected, refreshTask == pending { refreshTask = nil }
     }
 
-    /// Sync now: an explicit request with the pane reload's semantics (coalesced with an
-    /// active round, same minimum interval). It joins an observation in progress and then
+    /// Sync now upgrades an ordinary active round with one user-initiated dispatch; taps on
+    /// an already requested round coalesce. It joins an observation in progress and then
     /// observes once more, because the joined one may have passed its dispatch point before
     /// this request was recorded. A request that cannot dispatch yet stays queued for the
     /// helper's own poll; the returned state says why.
@@ -252,7 +270,7 @@ final class SyncHelper {
         guard !retired else { return .idle }
         requestRejected = false
         report.syncNowCancelledByPause = false
-        if round == nil { syncNowPending = true } else { round?.syncNow = true }
+        if round?.syncNow != true { syncNowPending = true }
         if let joined = refreshTask {
             await joined.value
             if refreshTask == joined { refreshTask = nil }
@@ -283,6 +301,7 @@ final class SyncHelper {
         report = Report()
         report.profileMappingPause = shownMappingPause
         report.profileListNotEnumeratedSince = listNotEnumeratedSince
+        report.pinScopeMigrationFailure = pinScopeFailure
     }
 
     private func updateTransientFailure(_ failure: CoordinationFailure?) {
@@ -339,7 +358,10 @@ final class SyncHelper {
         let nativeOffline = sources.first(where: \.isNative)
             .flatMap { snapshots[$0.id] }.flatMap { $0.phase == .offline ? $0 : nil }
         let time = now()
-        if let round {
+        // Upgrade before evaluating the old barrier: its success, failure or timeout must
+        // not consume a tap whose user-initiated retry has not reached the participants.
+        let upgradesRound = syncNowPending && round != nil
+        if let round, !upgradesRound {
             if time.timeIntervalSince(round.startedAt) >= roundTimeout {
                 self.round = nil
                 needsRound = true
@@ -404,8 +426,8 @@ final class SyncHelper {
                 && (snapshot.lastSuccess.map { time.timeIntervalSince($0) >= staleInterval } ?? false)
         }
         // A missing/Checking Profile may be deliberately unloaded. Busy engines
-        // already own their work. Neither can benefit from an all-context forced
-        // round; retain demand until every participant is observable and settled.
+        // already own their work. Defer new rounds until every participant is
+        // observable and settled; upgrading an admitted round is handled below.
         let canRequest = ids.allSatisfy { snapshots[$0].map(Self.isSettled) ?? false }
         // Only an explicit request may skip unobservable participants, and only by policy.
         let canRequestExplicitly: Bool
@@ -422,15 +444,19 @@ final class SyncHelper {
         // within seconds instead of waiting out the interval that other demand keeps pushing.
         let explicitAllowed = intervalPassed || (syncNowPending && nativeOffline != nil)
         // `canRequestExplicitly` includes `canRequest` under either policy.
-        if round == nil,
-           (explicit && canRequestExplicitly && explicitAllowed)
-            || (canRequest && (needsRound || failed || stale) && automaticAllowed) {
+        // An already admitted round can be upgraded even while engines are busy or the
+        // interval holds. The adapters still gate acceptance and coalesce transport work.
+        let startsRound = round == nil && (
+            (explicit && canRequestExplicitly && explicitAllowed)
+            || (canRequest && (needsRound || failed || stale) && automaticAllowed))
+        if upgradesRound || startsRound {
             nextRequestAt = time.addingTimeInterval(minimumRoundInterval)
             let bySyncNow = syncNowPending
+            round = nil
             endedRound = nil
             explicitRefreshPending = false
             syncNowPending = false
-            let accepted = sources.allSatisfy { $0.requestSync() }
+            let accepted = sources.allSatisfy { $0.requestSync(bySyncNow) }
             guard !retired, generation == expected else { return }
             guard isEligible() else { resetIneligible(); return }
             if accepted {

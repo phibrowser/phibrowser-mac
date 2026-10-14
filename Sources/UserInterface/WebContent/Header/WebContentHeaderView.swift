@@ -112,7 +112,6 @@ struct WebContentHeaderView: View {
                     showDownload: state.showDownloadButton,
                     showMemory: state.showMemoryButton,
                     showFeedback: state.showFeedbackButton,
-                    feedbackIconOnly: state.isFeedbackIconOnly,
                     showChat: state.showChatButton,
                     isInPlaceholderMode: state.isInPlaceholderMode,
                     extensionManager: browserState?.extensionManager,
@@ -158,7 +157,6 @@ struct WebContentHeaderView: View {
             showDownload: state.showDownloadButton,
             showMemory: state.showMemoryButton,
             showFeedback: state.showFeedbackButton,
-            feedbackIconOnly: state.isFeedbackIconOnly,
             showChat: state.showChatButton
         )
     }

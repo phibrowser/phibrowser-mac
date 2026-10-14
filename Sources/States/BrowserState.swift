@@ -279,6 +279,34 @@ class BrowserState {
     /// multiple chat view controllers (e.g. sidebar + traditional layout)
     /// before `aiChatTabs` is populated.
     private var aiChatTabsBeingCreated: Set<String> = []
+
+    /// Where AI Chat panel tabs are requested and panel records go to Chromium.
+    let aiChatPanelBridge: AIChatPanelBridging
+
+    /// Test seam: stands in for the sign-in and live-window gates of
+    /// `createAIChatTab(for:chromeTabId:)`, which the test process cannot
+    /// meet. nil in production.
+    var aiChatTabCreationGateOverrideForTesting: Bool?
+
+    /// Test seam: stands in for `ApplicationState.shared.isGuest` when a
+    /// restored tab's panel record arrives (`restoreAIChatPanel`), which the
+    /// test process cannot change without rewriting the persisted guest
+    /// choice. nil in production.
+    var guestModeOverrideForTesting: Bool?
+
+    /// Panel records as last handed to Chromium, by page tab id. See
+    /// `BrowserState+AIChatPanelRecord.swift`.
+    var aiChatPanelRecordsPushed: [Int: AIChatPanelRecord] = [:]
+    /// Conversations that came back with a page tab whose panel tab does not
+    /// exist yet, by the tab's identifier; the panel is created on them.
+    var pendingAIChatConversations: [String: String] = [:]
+    /// Split panes Chromium announced it is removing whose `closeTab` has not
+    /// run yet. See `splitPaneWillBeRemoved(_:)`.
+    var splitPaneIdsBeingRemoved: Set<Int> = []
+    var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
+    var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
+    var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()
+
     // Request lifetime only; not a second sidebar ownership registry.
     var travelBackRunning = false
     @Published var travelBackHandoffs: [Int: TravelBackHandoff] = [:]
@@ -510,8 +538,12 @@ class BrowserState {
     }
     
     /// Returns the identifier used to associate AI Chat tabs with a browser tab.
+    /// A Peek opener's one-shot pairing marker is not the tab's identity, so a
+    /// tab carrying one keeps its tab id; the Peek restore binding reads and
+    /// writes `guidInLocalDB` itself.
     func getTabIdentifier(for tab: Tab) -> String {
-        if let guidInDB = tab.guidInLocalDB, !guidInDB.isEmpty {
+        if let guidInDB = tab.guidInLocalDB, !guidInDB.isEmpty,
+           !Self.isPeekOpenerGuid(guidInDB) {
             return guidInDB
         }
         return String(tab.guid)
@@ -565,6 +597,10 @@ class BrowserState {
             aiChatTabs[targetIdentifier] = aiChatTab
             AppLogInfo("🔄 [AIChat] Migrated AI Chat tab from '\(oldIdentifier)' to '\(targetIdentifier)'")
         }
+        // A conversation waiting for the panel tab follows the tab the same way.
+        if let conversationId = pendingAIChatConversations.removeValue(forKey: oldIdentifier) {
+            pendingAIChatConversations[targetIdentifier] = conversationId
+        }
     }
 
     /// Move the shared chat tab from one identifier to another (e.g. when a split
@@ -596,8 +632,10 @@ class BrowserState {
          isIncognito: Bool = false,
          isIncognitoSpace: Bool = false,
          isKioskWindow: Bool = false,
-         isAgentSpace: Bool = false) {
+         isAgentSpace: Bool = false,
+         aiChatPanelBridge: AIChatPanelBridging = LiveAIChatPanelBridge()) {
         self.windowId = windowId
+        self.aiChatPanelBridge = aiChatPanelBridge
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId
@@ -650,6 +688,9 @@ class BrowserState {
                 .store(in: &cancellables)
 
             syncPhiExtensionsIfAIDisabled()
+            if !isIncognito {
+                watchAIChatPanelRecords()
+            }
         }
     }
     
@@ -3123,13 +3164,14 @@ class BrowserState {
     ///   - identifier: The tab identifier to associate with
     ///   - chromeTabId: The Chromium tab ID (used by Chrome extension APIs) of the associated content tab
     func createAIChatTab(for identifier: String, chromeTabId: Int) {
-        guard ApplicationState.shared.isAuthenticated else {
+        guard aiChatTabCreationGateOverrideForTesting ?? ApplicationState.shared.isAuthenticated else {
             return
         }
         // The chat panes of a closed window can outlive it and ask again when
         // sign-in returns. Only a state that still backs a registered window
         // may create; Chromium no longer has the closed one.
-        guard SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self else {
+        guard aiChatTabCreationGateOverrideForTesting
+                ?? (SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self) else {
             AppLogInfo("🤖 [AIChat] skipped AI tab for a window this state no longer backs windowId=\(windowId) identifier=\(identifier)")
             return
         }
@@ -3140,7 +3182,16 @@ class BrowserState {
             return
         }
         let customGuid = Self.aiChatId(for: identifier)
-        createTab("chrome-extension://fenmfiepnpdlhplemgijlimpbebebljo/index.html?is_sidebar=1&tabId=\(chromeTabId)", customGuid: customGuid, focusAfterCreate: false)
+        var url = "chrome-extension://fenmfiepnpdlhplemgijlimpbebebljo/index.html?is_sidebar=1&tabId=\(chromeTabId)"
+        // A tab undo close brought back reopens its panel on the same conversation.
+        if let conversationId = pendingAIChatConversations[identifier] {
+            url += "&conv_id=\(conversationId)"
+        }
+        AppLogDebug("🤖 [AIChat] createAIChatTab windowId=\(windowId) url=\(url) customGuid=\(customGuid)")
+        let windowId = self.windowId
+        performWithBrowser { [aiChatPanelBridge] in
+            aiChatPanelBridge.createAIChatPanelTab(url: url, customGuid: customGuid, windowId: windowId)
+        }
     }
     
     /// Close the AI Chat tab associated with the specified identifier
@@ -3343,6 +3394,12 @@ class BrowserState {
                                      context: context,
                                      hiddenOpenerTabIds: preseededHiddenOpenerTabIds,
                                      visibleNormalTabIds: normalTabs.map(\.guid))
+        if let context, context.creationKind == .linkBackground, !context.isActiveAtCreation {
+            MainActor.assumeIsolated {
+                tabSwitchManager.recordBackgroundTab(tab)
+            }
+        }
+        restoreAIChatPanel(of: tab, isActiveAtCreation: context?.isActiveAtCreation == true)
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
         if let pendingBookmarkGroupCreation {
@@ -3584,15 +3641,18 @@ class BrowserState {
     /// toggle both hide the menu item (Chromium asks via
     /// `isPeekLinkSurfaceEnabled`); the guards here are the skew backstop.
     func openLinkAsPeek(urlString: String, sourceTabId: Int) {
+        // A link inside a peek peeks from that peek's opener: presentPeek's
+        // one-peek-per-opener rule then replaces the current peek with it.
+        // A split pane is an opener too — its peek covers the whole split.
+        let openerTabId = peekState.openerTabId(forPeekTabId: sourceTabId) ?? sourceTabId
         guard !isIncognito, !layoutMode.isTraditional,
               PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
-              tabs.contains(where: { $0.guid == sourceTabId }),
-              splitGroup(forTabId: sourceTabId) == nil else {
+              tabs.contains(where: { $0.guid == openerTabId }) else {
             createTab(urlString)
             return
         }
         pendingExplicitPeek = PendingExplicitPeek(urlString: urlString,
-                                                  openerTabId: sourceTabId,
+                                                  openerTabId: openerTabId,
                                                   requestedAt: Date())
         // Explicit "peek it HERE" intent outranks Space URL routing — use the
         // one-shot routing bypass so a rule-matching link is not re-homed to
@@ -3766,8 +3826,9 @@ class BrowserState {
         ChromiumLauncher.sharedInstance().bridge?
             .markPendingSplitPartner(withTabId: Int64(tab.guid),
                                      windowId: Int64(windowId))
-        // Chromium-side marker: suppresses split/peek link surfaces (context
-        // menu items, Option-click split) inside the peeked page.
+        // Chromium-side marker: page commands (Reload, DevTools, find)
+        // target the peeked page, and its link surfaces route back here
+        // (nested Peek replaces this one; split view adopts it as a tab).
         if let wrapper = tab.webContentWrapper,
            wrapper.responds(to: #selector(WebContentWrapper.updateIsPeekSurface(_:))) {
             wrapper.updateIsPeekSurface(true)
@@ -3784,7 +3845,11 @@ class BrowserState {
                 if !Self.isAIChatId(localGuid) {
                     openerKey = localGuid
                 }
-            } else {
+            } else if splitGroup(forTabId: openerTabId) == nil {
+                // Not for a split pane: split operations read a pane's
+                // guidInLocalDB as a binding and clear it, and a restored
+                // peek is never re-bound to a split pane anyway
+                // (presentRestoredPeek).
                 let pairKey = Self.peekOpenerGuidPrefix + UUID().uuidString
                 opener.guidInLocalDB = pairKey
                 opener.webContentWrapper?.updateTabCustomValue(pairKey)
@@ -3938,6 +4003,9 @@ class BrowserState {
         presentedPeekContexts[tab.guid] = nil
         peekState.removePeek(forOpener: openerTabId)
         clearPeekOpenerMarkerIfNeeded(openerTabId: openerTabId)
+        // A reader over the peek covers a card that is going away.
+        closeReaderOverlay(forOrigin: tab.guid)
+        cancelPendingReaderOverlay(forOrigin: tab.guid)
         // User-initiated AppKit context — safe to close synchronously; same
         // WebContentWrapper.close() rule as presentPeek.
         tab.webContentWrapper?.close()
@@ -3969,8 +4037,7 @@ class BrowserState {
     /// the opener's history invisibly beneath the panel. Returns true when a
     /// peek was closed and the caller must skip the navigation.
     func closePeekForBackForwardNavigation() -> Bool {
-        guard let openerTabId = focusingTab?.guid,
-              peekState.peek(forOpener: openerTabId) != nil else { return false }
+        guard let openerTabId = visiblePeek(focusingTab: focusingTab)?.openerTabId else { return false }
         AppLogInfo("👀 [Peek] back/forward on opener=\(openerTabId) — closing its peek")
         closePeek(forOpener: openerTabId)
         return true
@@ -3997,14 +4064,31 @@ class BrowserState {
     /// Forms a vertical split between a presented peek and its bound
     /// opener (opener left, peek right), mirroring formSplitFromBookmark's
     /// attached-and-distinct path: both tabs are normalized into plain tabs
-    /// first so the split inherits no bookmark/pinned binding. Falls back to
-    /// a plain expansion when the opener is gone or already in a split.
+    /// first so the split inherits no bookmark/pinned binding. An opener
+    /// already in a split is duplicated instead (see below). Falls back to a
+    /// plain expansion when the opener is gone.
     func openPeekAsSplitWithOpener(peekTabId: Int) {
         guard let openerTabId = peekState.openerTabId(forPeekTabId: peekTabId),
               let peekTab = peekState.peek(forOpener: openerTabId) else { return }
-        guard tabs.contains(where: { $0.guid == openerTabId }),
-              splitGroup(forTabId: openerTabId) == nil else {
+        guard let opener = tabs.first(where: { $0.guid == openerTabId }) else {
             expandPeekIntoTab(peekTabId: peekTabId)
+            return
+        }
+        // An opener already in a split stays there: a duplicate of it (a
+        // fresh tab on its URL, as "Duplicate Tab" does) pairs with the peek
+        // page instead, as a new split tab.
+        if splitGroup(forTabId: openerTabId) != nil {
+            var paired = false
+            if let openerURL = opener.url, !openerURL.isEmpty {
+                paired = MainActor.assumeIsolated {
+                    openOverlaySurfaceAsSplit(surfaceTabId: peekTabId,
+                                              partnerURL: openerURL,
+                                              newTabSlot: .left)
+                }
+            }
+            if !paired {
+                expandPeekIntoTab(peekTabId: peekTabId)
+            }
             return
         }
         MainActor.assumeIsolated {
@@ -4018,6 +4102,55 @@ class BrowserState {
         adoptPeekTabIntoStrip(peekTab, context: context, activate: false)
         makeTabNormalOpened(tabId: openerTabId)
         createSplit(leftTabId: openerTabId, rightTabId: peekTab.guid, layout: .vertical)
+    }
+
+    /// Turns a floating surface — a peek, or a reader overlay — into a
+    /// regular tab paired with a new tab on `partnerURL` as a split, through
+    /// the same new-tab-as-split path a strip tab uses. Serves "Open Link in
+    /// Split View" (context menu or Option-click) from inside the surface,
+    /// and the peek's "Open as Split View" when its opener is already in a
+    /// split (the partner is then a duplicate of the opener, on the left).
+    /// Returns false when `surfaceTabId` is no presented surface.
+    @MainActor
+    func openOverlaySurfaceAsSplit(surfaceTabId: Int,
+                                   partnerURL: String,
+                                   newTabSlot: SplitSlot = .right) -> Bool {
+        let surface: Tab
+        let context: NativeTabCreationContext?
+        if let openerTabId = peekState.openerTabId(forPeekTabId: surfaceTabId),
+           let peekTab = peekState.peek(forOpener: openerTabId) {
+            PeekViewAnalytics.ended(peekTabId: peekTab.guid, reason: .openedAsSplit)
+            context = presentedPeekContexts.removeValue(forKey: peekTab.guid)
+            peekState.removePeek(forOpener: openerTabId)  // Panel dismisses via the window-controller sink.
+            clearPeekOpenerMarkerIfNeeded(openerTabId: openerTabId)
+            surface = peekTab
+        } else if let originTabId = readerOverlayState.originTabId(forReaderTabId: surfaceTabId),
+                  let readerTab = readerOverlayState.reader(forOrigin: originTabId) {
+            context = presentedReaderOverlayContexts.removeValue(forKey: readerTab.guid)
+            readerOverlayNavigationWatches[readerTab.guid] = nil
+            readerOverlayState.removeReader(forOrigin: originTabId)
+            surface = readerTab
+        } else {
+            return false
+        }
+        AppLogInfo("👀 [Peek] surface tabId=\(surface.guid) opened as split with \(partnerURL)")
+        // The surface keeps its pending-split-partner mark: it must keep
+        // painting until the split forms, and openNewTabAsSplit re-arms the
+        // mark with its own timeout. Not activated — the link's new tab
+        // takes focus and the split forms around it.
+        adoptPeekTabIntoStrip(surface, context: context, activate: false)
+        if !openNewTabAsSplit(partnerTabId: surface.guid,
+                              newTabSlot: newTabSlot,
+                              partnerNavigateURL: partnerURL) {
+            // No split coming: the adopted tab is plain now — hand its
+            // visibility back to the active-tab path and show it.
+            ChromiumLauncher.sharedInstance().bridge?
+                .clearPendingSplitPartner(withTabId: Int64(surface.guid),
+                                          windowId: Int64(windowId))
+            focuseTab(surface)
+            DispatchQueue.main.async { surface.webContentWrapper?.setAsActiveTab() }
+        }
+        return true
     }
 
     /// Peek exists only in the sidebar layouts: entering the traditional
@@ -4087,21 +4220,116 @@ class BrowserState {
 
     /// Safety net mirroring `installPeekOpenerWatchIfNeeded`: whenever an
     /// origin leaves `tabs` for ANY reason (close, tear-off, cross-Space
-    /// move), its reader overlay must go with it.
+    /// move) — or, for a peek origin, stops being a presented peek — its
+    /// reader overlay must go with it.
     private var readerOverlayOriginWatch: AnyCancellable?
     private func installReaderOverlayOriginWatchIfNeeded() {
         guard readerOverlayOriginWatch == nil else { return }
-        readerOverlayOriginWatch = $tabs
+        // Judged against current state on the main turn, not the emitted
+        // values: "Open as Tab" removes the peek before adopting it into
+        // `tabs`, and the reader must survive that hand-over.
+        readerOverlayOriginWatch = $tabs.map { _ in () }
+            .merge(with: peekState.$peeksByOpener.map { _ in () })
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] tabs in
+            .sink { [weak self] in
                 guard let self, !self.readerOverlayState.readersByOrigin.isEmpty else { return }
-                let liveTabIds = Set(tabs.map(\.guid))
                 for originTabId in self.readerOverlayState.readersByOrigin.keys
-                where !liveTabIds.contains(originTabId) {
+                where !self.isLiveReaderOverlayOrigin(originTabId) {
                     AppLogInfo("📖 [ReaderOverlay] origin \(originTabId) left the tab list — closing its reader")
                     self.closeReaderOverlay(forOrigin: originTabId)
                 }
             }
+    }
+
+    /// A reader overlay's origin is a strip tab, or the page a presented
+    /// peek is showing — the reader then covers the peek card.
+    func isLiveReaderOverlayOrigin(_ originTabId: Int) -> Bool {
+        tabs.contains(where: { $0.guid == originTabId })
+            || peekState.peekTab(withId: originTabId) != nil
+    }
+
+    /// The tab Reader View commands (shortcut, View menu) act on. A peek is
+    /// the page in front of its opener, so it is the target — unless the
+    /// opener's own reader is up, which covers the peek and is what a toggle
+    /// must close.
+    func readerViewTarget(focusingTab: Tab?) -> Tab? {
+        guard let focusingTab else { return nil }
+        if readerOverlayState.reader(forOrigin: focusingTab.guid) != nil {
+            return focusingTab
+        }
+        return visiblePeek(focusingTab: focusingTab)?.tab ?? focusingTab
+    }
+
+    /// The peek on screen for `focusingTab`: its own, else its split
+    /// partner's — a peek covers its opener's whole split, so it stays up
+    /// whichever pane is focused. The focused pane's own peek wins.
+    func visiblePeek(focusingTab: Tab?) -> (openerTabId: Int, tab: Tab)? {
+        Self.visiblePeek(focusingTab: focusingTab,
+                         peeksByOpener: peekState.peeksByOpener,
+                         splits: splits)
+    }
+
+    /// Value form for publisher pipelines (see `visibleReaderOverlays`).
+    static func visiblePeek(focusingTab: Tab?,
+                            peeksByOpener: [Int: Tab],
+                            splits: [SplitGroup]) -> (openerTabId: Int, tab: Tab)? {
+        guard let focusingTab else { return nil }
+        if let tab = peeksByOpener[focusingTab.guid] {
+            return (focusingTab.guid, tab)
+        }
+        guard let group = splits.first(where: { $0.contains(tabId: focusingTab.guid) }) else {
+            return nil
+        }
+        let partnerTabId = group.primaryTabId == focusingTab.guid
+            ? group.secondaryTabId : group.primaryTabId
+        guard let tab = peeksByOpener[partnerTabId] else { return nil }
+        return (partnerTabId, tab)
+    }
+
+    /// The reader overlays on screen for `focusingTab`. A reader covers its
+    /// origin's page: in a split, each pane's reader covers that pane and
+    /// stays up whichever pane is focused. A peek sits in front of the whole
+    /// page card, so while one is up only a reader over the peek shows —
+    /// or, for a single tab, the opener's own reader, which covers the card
+    /// peek included.
+    func visibleReaderOverlays(focusingTab: Tab?) -> [Tab] {
+        Self.visibleReaderOverlays(focusingTab: focusingTab,
+                                   readersByOrigin: readerOverlayState.readersByOrigin,
+                                   peeksByOpener: peekState.peeksByOpener,
+                                   splits: splits)
+    }
+
+    /// Value form for publisher pipelines: `@Published` emits before the new
+    /// value is stored, so a sink must judge the values it was handed, not
+    /// read them back from the state.
+    static func visibleReaderOverlays(focusingTab: Tab?,
+                                      readersByOrigin: [Int: Tab],
+                                      peeksByOpener: [Int: Tab],
+                                      splits: [SplitGroup]) -> [Tab] {
+        guard let focusingTab else { return [] }
+        let group = splits.first(where: { $0.contains(tabId: focusingTab.guid) })
+        if let peek = visiblePeek(focusingTab: focusingTab,
+                                  peeksByOpener: peeksByOpener,
+                                  splits: splits)?.tab {
+            if group == nil, let reader = readersByOrigin[focusingTab.guid] {
+                return [reader]
+            }
+            return readersByOrigin[peek.guid].map { [$0] } ?? []
+        }
+        guard let group else {
+            return readersByOrigin[focusingTab.guid].map { [$0] } ?? []
+        }
+        return [group.primaryTabId, group.secondaryTabId].compactMap { readersByOrigin[$0] }
+    }
+
+    /// Whether `readerTab`'s overlay should take keyboard focus when shown:
+    /// it stands over the focused tab, or over the peek in front of it.
+    func readerOverlayTakesFocus(_ readerTab: Tab) -> Bool {
+        guard let originTabId = readerOverlayState.originTabId(forReaderTabId: readerTab.guid) else {
+            return false
+        }
+        return originTabId == focusingTab?.guid
+            || originTabId == visiblePeek(focusingTab: focusingTab)?.tab.guid
     }
 
     /// Records that a reader-open for `originTabId` is on its way to the
@@ -4116,14 +4344,32 @@ class BrowserState {
         dismissReaderOverlayPreparingToast(forOrigin: originTabId)
         // Lives as long as the request itself: an open the extension never
         // answers expires with the TTL, and the toast with it.
-        let toastId = OverlayToastCenter.shared.show(
+        let toastId = showReaderToast(
             title: NSLocalizedString(
                 "browser.readerView.preparing",
                 value: "Preparing Reader View…",
                 comment: "Reader View - Toast shown while the article is being extracted after the user asked to open Reader View"),
             duration: Self.readerOverlayOpenTTLSeconds,
-            in: .windowId(windowId))
+            forOrigin: originTabId)
         pendingReaderOverlayToasts[originTabId] = toastId
+    }
+
+    /// Shows a Reader View toast about `originTabId`'s page. For a peek's
+    /// page it goes to the peek panel: the window's own toasts sit beneath
+    /// the peek card, out of sight.
+    @discardableResult
+    func showReaderToast(title: String,
+                         duration: TimeInterval = OverlayToastCenter.defaultDuration,
+                         forOrigin originTabId: Int) -> UUID? {
+        let id = UUID()
+        if peekState.peekTab(withId: originTabId) != nil,
+           windowController?.peekPanelControllerIfLoaded?.showToast(
+               id: id, message: title, shareURLs: [], duration: duration,
+               tabId: originTabId) == true {
+            return id
+        }
+        return OverlayToastCenter.shared.show(
+            title: title, duration: duration, in: .windowId(windowId), id: id)
     }
 
     /// The request settled (answered, refused, expired, or its origin
@@ -4131,6 +4377,7 @@ class BrowserState {
     private func dismissReaderOverlayPreparingToast(forOrigin originTabId: Int) {
         guard let toastId = pendingReaderOverlayToasts.removeValue(forKey: originTabId) else { return }
         OverlayToastCenter.shared.dismiss(id: toastId)
+        windowController?.peekPanelControllerIfLoaded?.dismissToast(id: toastId)
     }
 
     /// Whether a reader-open for `originTabId` is still in flight — lets the
@@ -4241,7 +4488,7 @@ class BrowserState {
         dismissReaderOverlayPreparingToast(forOrigin: originTabId)
         guard let requestedAt = pendingReaderOverlayOrigins.removeValue(forKey: originTabId),
               Date().timeIntervalSince(requestedAt) < Self.readerOverlayOpenTTLSeconds,
-              tabs.contains(where: { $0.guid == originTabId }) else {
+              isLiveReaderOverlayOrigin(originTabId) else {
             // A reader surface with no open in flight: a session-restored or
             // reopened surface tab. The surface is transient — its article
             // cache died with the extension's session storage, and the
@@ -4289,8 +4536,9 @@ class BrowserState {
         ChromiumLauncher.sharedInstance().bridge?
             .markPendingSplitPartner(withTabId: Int64(tab.guid),
                                      windowId: Int64(windowId))
-        // Suppress split/peek link surfaces inside the hosted page, exactly
-        // as for a peeked page.
+        // Same Chromium-side marker as a peeked page: page commands target
+        // the reader page, and split view adopts it as a tab. A nested Peek
+        // from here has no strip opener and opens as a new tab instead.
         if let wrapper = tab.webContentWrapper,
            wrapper.responds(to: #selector(WebContentWrapper.updateIsPeekSurface(_:))) {
             wrapper.updateIsPeekSurface(true)
@@ -4299,9 +4547,11 @@ class BrowserState {
         installReaderOverlayNavigationWatch(for: tab)
         readerOverlayState.present(tab, originTabId: originTabId)
         // Chromium foregrounded the new tab on insert; hand strip-active
-        // back to the origin so tab-scoped commands keep targeting it.
-        // Deferred a turn (in-stack discipline).
-        if let origin = tabs.first(where: { $0.guid == originTabId }) {
+        // back to the origin so tab-scoped commands keep targeting it — for
+        // a peek origin, to its opener, which holds strip-active while the
+        // peek is up. Deferred a turn (in-stack discipline).
+        let stripOriginTabId = peekState.openerTabId(forPeekTabId: originTabId) ?? originTabId
+        if let origin = tabs.first(where: { $0.guid == stripOriginTabId }) {
             DispatchQueue.main.async { origin.webContentWrapper?.setAsActiveTab() }
         }
     }
@@ -4900,6 +5150,7 @@ class BrowserState {
     @MainActor
     func closeTab(_ tabId: Int) {
         let t0 = CFAbsoluteTimeGetCurrent()
+        defer { splitPaneIdsBeingRemoved.remove(tabId) }
         // Ensure selection override is computed before the graph is modified.
         // Tab.close() already calls this for sidebar-initiated closes, but
         // Chromium-driven closes (CMD+W, etc.) arrive via tabWillBeRemove
@@ -4927,6 +5178,8 @@ class BrowserState {
             presentedPeekContexts[tabId] = nil
             peekState.removePeek(forOpener: openerTabId)
             clearPeekOpenerMarkerIfNeeded(openerTabId: openerTabId)
+            closeReaderOverlay(forOrigin: tabId)
+            cancelPendingReaderOverlay(forOrigin: tabId)
             return
         }
         if peekCandidate?.tab.guid == tabId {
@@ -4983,6 +5236,9 @@ class BrowserState {
                 BrowserTabCloseInfoKey.localGuid: closedTab.guidInLocalDB as Any,
             ]
         )
+
+        // Usually pushed already from the removal callback; nothing is resent.
+        handOffAIChatPanelRecord(of: closedTab)
 
         // Close the linked AI Chat synchronously. EventBus already hops through a
         // `Task @MainActor`, so we are no longer inside Chromium's tab strip

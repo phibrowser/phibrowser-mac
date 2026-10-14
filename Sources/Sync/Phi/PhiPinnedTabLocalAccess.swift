@@ -90,6 +90,21 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// two APIs; the engine never accesses LocalStore/UserDefaults directly.
     func accountScope() -> PinnedTabScope?
 
+    /// `LocalStore.pinScopeGeneration`: moves with every migration that changed the row scope, including a
+    /// round trip X to Y to X that leaves both scope values as sampled (B-3 stage 1, design 3.3). A pin round
+    /// samples it with the scopes and hands it back to `apply`.
+    func pinScopeGeneration() -> UInt64
+
+    /// Whether the pin scope follower is running or about to run a migration (B-3 stage 1, design 3.4). A
+    /// pin round blocks while it is. The default answers false; the coordinator's follower provides the real
+    /// answer.
+    func scopeFollowerBusy() -> Bool
+
+    /// Start of every pin round (B-3 stage 1, design 3.2): asks the pin scope follower to run if the row
+    /// does not match the key. Called before the round samples `scopeFollowerBusy()`, so a job it starts
+    /// blocks this round. The default does nothing.
+    func requestScopeFollow()
+
     /// All non-dormant rows in current scope, ordered by ownerKey/index/GUID. Never choose just one
     /// representative per lineage: other unpublished variants would silently escape both snapshot and diff.
     /// Throw on read failure (R-exec-3), never return [] or stale data: §4.7 interprets empty as tombstones
@@ -129,8 +144,11 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// nonthrowing absence defaults must not silently trigger mass tombstones.
     func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool
 
-    /// One remote landing round in one transaction. Throw means none landed.
-    func apply(_ batch: PinApplyBatch) async throws
+    /// One remote landing round in one transaction. Throw means none landed. `expectedGeneration` and
+    /// `expectedScope` are the round's sampled `pinScopeGeneration()` and `currentScope()`; a store whose
+    /// generation or row scope differs throws `LocalStoreWriteError.scopeChangedSinceSample` and writes
+    /// nothing.
+    func apply(_ batch: PinApplyBatch, expectedGeneration: UInt64, expectedScope: PinnedTabScope) async throws
 
     /// Scope migration takes both preferred arguments by plan ruling, extending spec §4.8's signature. §7.1
     /// requires matching UI arguments (SpacesSettingsView.swift:501-512): sourceCollections sorts preferred
@@ -139,6 +157,11 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     func changeScope(to scope: PinnedTabScope,
                      preferredProfileId: String?,
                      preferredSpaceId: String?) async throws
+}
+
+extension PhiPinnedTabLocalAccess {
+    func scopeFollowerBusy() -> Bool { false }
+    func requestScopeFollow() {}
 }
 
 /// Main-actor production counterpart of AccountPhiBookmarkAccess, with pure reads and async throwing writes.
@@ -152,6 +175,9 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
 final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     private let store: LocalStore
     private let defaults: UserDefaults
+    /// The coordinator's follower for this account (B-3 stage 1, design 3.2), set at mount. Weak: the
+    /// coordinator owns it and retires it at sign-out or account switch; a retired one starts nothing.
+    weak var scopeFollower: PinScopeFollower?
 
     /// Read-only Task 8 scope mirror: missing/unrecognized values return nil, meaning no published account
     /// scope and no mismatch. PinnedTabScopeMirror owns writes and the shared key constant. Duplicating its
@@ -187,6 +213,18 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     func accountScope() -> PinnedTabScope? {
         guard let raw = defaults.string(forKey: Self.accountScopeKey) else { return nil }
         return PinnedTabScope(rawValue: raw)
+    }
+
+    func pinScopeGeneration() -> UInt64 {
+        store.pinScopeGeneration
+    }
+
+    func scopeFollowerBusy() -> Bool {
+        scopeFollower?.isRunning ?? false
+    }
+
+    func requestScopeFollow() {
+        scopeFollower?.trigger()
     }
 
     /// One profile-prefetched fetch plus one scope read; remaining work is in memory. Throw on failure after
@@ -228,8 +266,9 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     /// LocalStore.applyPinSyncBatchThrowing owns phase execution, in-write import recheck and per-owner
     /// normalization. Private storage helpers are inaccessible here; separate throwing calls would create
     /// partial success across N transactions (R-exec-2).
-    func apply(_ batch: PinApplyBatch) async throws {
-        try await store.applyPinSyncBatchThrowing(batch.ops)
+    func apply(_ batch: PinApplyBatch, expectedGeneration: UInt64, expectedScope: PinnedTabScope) async throws {
+        try await store.applyPinSyncBatchThrowing(batch.ops, expectedGeneration: expectedGeneration,
+                                                  expectedScope: expectedScope)
         // Rebuild after landing, not merely invalidate: §4.5 validates before baseline writes through cached
         // readers. False isKnownLocalPin results would make identities look dead and emit tombstones. A reread
         // error propagates after the batch committed; callers must distinguish landed-but-unreadable from

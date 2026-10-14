@@ -620,7 +620,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.configure(with: tab, in: state)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
-            tab.setAudioMuted(!tab.isAudioMuted)
+            tab.toggleAudioMuted()
         }
     }
 
@@ -1010,7 +1010,7 @@ private struct SidebarBookmarkCellContentView: View {
 
             if !state.isEditing,
                state.primaryTabIsLive,
-               primaryTabViewModel.isCurrentlyAudible || primaryTabViewModel.isAudioMuted {
+               primaryTabViewModel.isCurrentlyAudible || primaryTabViewModel.isMuted {
                 UnifiedTabMuteButton(viewModel: primaryTabViewModel)
             }
 
@@ -1032,7 +1032,7 @@ private struct SidebarBookmarkCellContentView: View {
 
                 if !state.isEditing,
                    state.secondaryTabIsLive,
-                   secondaryTabViewModel.isCurrentlyAudible || secondaryTabViewModel.isAudioMuted {
+                   secondaryTabViewModel.isCurrentlyAudible || secondaryTabViewModel.isMuted {
                     UnifiedTabMuteButton(viewModel: secondaryTabViewModel)
                 }
             }

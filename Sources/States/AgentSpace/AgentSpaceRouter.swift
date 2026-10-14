@@ -102,6 +102,21 @@ enum AgentSpaceRouter {
         return ok()
     }
 
+    /// `agentSpace.app.info` — which Phi build is answering: the version the
+    /// About window shows, the release channel and the build number, the same
+    /// values the browser's own feedback reports carry. CDP's `/json/version`
+    /// names only the Chromium underneath. Read-only and about the app rather
+    /// than the user's data, so no task or permission gate applies.
+    static func handleAppInfo(context: ExtensionMessageContext) -> String? {
+        encode([
+            "ok": true,
+            "name": "Phi Browser",
+            "version": SystemUtils.appVersion,
+            "channel": FeedbackOutbox.channelName,
+            "buildNumber": SystemUtils.buildNumber,
+        ])
+    }
+
     /// `agentSpace.create` — async: spawn the Space, then reply with ids.
     static func handleCreate(context: ExtensionMessageContext) {
         let requestId = context.requestId

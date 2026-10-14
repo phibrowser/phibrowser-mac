@@ -170,6 +170,11 @@ final class PairingWizardViewModel: ObservableObject {
     }
 
     private var previewSkippedEntityCount = 0
+    /// Tombstone tag hashes from the latest preview; account Profiles deleted on another device
+    /// are not offered (docs/sync.md, "Profile entity").
+    private var previewDeletedProfileTagHashes: Set<String> = []
+    /// Account names from the latest preview's live Profile entities, by uuid (see `liveRemotes`).
+    private var previewProfileNames: [String: String] = [:]
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
     private var profileDecisions: [PairingDecision] = []
@@ -227,6 +232,8 @@ final class PairingWizardViewModel: ObservableObject {
         explicitSpaceChoices = []
         profileDecisions = []
         previewSkippedEntityCount = 0
+        previewDeletedProfileTagHashes = []
+        previewProfileNames = [:]
         loadGeneration += 1
         let generation = loadGeneration
         phase = .loading
@@ -248,7 +255,7 @@ final class PairingWizardViewModel: ObservableObject {
         // until preview ends, but Published phase already shows error and callers do not await start's result.
         // Preview cancellation cannot stop its work (see PreviewRace); abandoning it is safe because §4.3
         // forbids persistence.
-        guard case .pairingProfiles(let locals, let remotes) = keyLayer.phase else {
+        guard case .pairingProfiles(let locals, let accountRemotes) = keyLayer.phase else {
             let message: String
             if case .error(let existing) = keyLayer.phase { message = existing }
             else { message = PairingWizardStrings.profileLoadFailed }
@@ -267,6 +274,9 @@ final class PairingWizardViewModel: ObservableObject {
         case .success(let preview):
             let accountSpaces = preview.spaces
             previewSkippedEntityCount = preview.skippedEntityCount
+            previewDeletedProfileTagHashes = preview.deletedProfileTagHashes
+            previewProfileNames = preview.profileNames
+            let remotes = liveRemotes(accountRemotes)
             loadedLocals = locals
             loadedRemotes = remotes
             reseedProfileSelections(locals: locals, remotes: remotes)
@@ -396,7 +406,8 @@ final class PairingWizardViewModel: ObservableObject {
             step = .profiles
             // Use the sole payload source: failed applyPairingDecisions reloads candidates via startPairing
             // into keyLayer.phase. This second phase read still never writes it.
-            if case .pairingProfiles(let locals, let remotes) = keyLayer.phase {
+            if case .pairingProfiles(let locals, let reloaded) = keyLayer.phase {
+                let remotes = liveRemotes(reloaded)
                 loadedLocals = locals
                 loadedRemotes = remotes
                 reseedProfileSelections(locals: locals, remotes: remotes)
@@ -521,11 +532,14 @@ final class PairingWizardViewModel: ObservableObject {
         await profileLoad
         let result = await spaceLoad
         guard generation == loadGeneration, sessionIsCurrent(controller) else { return false }
-        guard case .pairingProfiles(let locals, let remotes) = freshKeys.phase,
+        guard case .pairingProfiles(let locals, let reloaded) = freshKeys.phase,
               case .success(let spaces) = result else {
             phase = .error(message: PairingWizardStrings.previewFailed, resume: .reload)
             return false
         }
+        previewDeletedProfileTagHashes = spaces.deletedProfileTagHashes
+        previewProfileNames = spaces.profileNames
+        let remotes = liveRemotes(reloaded)
         let fresh = makeSpacesInput(accountSpaces: spaces.spaces, remotes: remotes, controller: controller)
         guard locals == loadedLocals, remotes == loadedRemotes, fresh == spacesInput,
               spaces.skippedEntityCount == previewSkippedEntityCount else {
@@ -544,6 +558,19 @@ final class PairingWizardViewModel: ObservableObject {
     }
 
     // MARK: - Loading helpers
+
+    /// The account Profiles minus those whose Profile entity the latest preview saw tombstoned,
+    /// named from their live entity when the preview read one: the registry envelope keeps the
+    /// registration-time name, so a Profile renamed on another device would otherwise be offered
+    /// under its old name (rejoin after "Remove from sync", 2026-10-12).
+    private func liveRemotes(_ remotes: [RemoteProfile]) -> [RemoteProfile] {
+        remotes.compactMap { remote in
+            guard !previewDeletedProfileTagHashes.contains(
+                PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(remote.uuid))) else { return nil }
+            guard let name = previewProfileNames[remote.uuid] else { return remote }
+            return RemoteProfile(uuid: remote.uuid, name: name)
+        }
+    }
 
     private func seedSpaceSelections(controller: SyncKeyController) {
         spaceSelections = [:]

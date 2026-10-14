@@ -264,8 +264,8 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
 
     /// Script a mid-round scope migration (R-exec-12): on the specified accountScope
     /// read, capture the return value before running run in place, then clear the hook.
-    /// Task 8's detached applyAccountPinnedTabScope can migrate between initial sampling
-    /// and application; this reproduces that instant.
+    /// The pin scope follower's migration can run between initial sampling and application;
+    /// this reproduces that instant.
     ///
     /// Hook accountScope, not currentScope: initial sampling reads allPins, currentScope,
     /// then accountScope. Only the last hook preserves both pre-migration scope values.
@@ -331,8 +331,16 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
         }
     }
 
-    func apply(_ batch: PinApplyBatch) async throws {
+    /// Stands in for LocalStore.pinScopeGeneration; changeScope advances it.
+    var generation: UInt64 = 0
+
+    func pinScopeGeneration() -> UInt64 { generation }
+
+    func apply(_ batch: PinApplyBatch, expectedGeneration: UInt64, expectedScope: PinnedTabScope) async throws {
         calls.append(.apply(opCount: batch.ops.count))
+        if expectedGeneration != generation || expectedScope != scope {
+            throw LocalStoreWriteError.scopeChangedSinceSample
+        }
         lastAppliedOps = batch.ops
         if failApplyOnce {
             failApplyOnce = false
@@ -362,6 +370,7 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
                      preferredProfileId: String?,
                      preferredSpaceId: String?) async throws {
         calls.append(.changeScope(scope))
+        if self.scope != scope { generation += 1 }
         self.scope = scope
         // Migration rebuilt all physical rows, invalidating the round snapshot. Production
         // also clears it here without rereading.

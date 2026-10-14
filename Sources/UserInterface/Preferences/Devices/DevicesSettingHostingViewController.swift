@@ -136,6 +136,15 @@ final class DevicesSettingHostingViewController: NSViewController {
             await helper.refresh(requestSync: requestSync)
             return helper.report
         }
+        // Bind to the same controller as this pane's manager, never a later account's.
+        // Every Settings window builds a new view model, so the model's own "started
+        // locked" check cannot see across windows; the controller's cache can: keys it
+        // already resolved need no pass (a pass per window open cost about 3 s of lookups
+        // before the status showed, 2026-10-12).
+        viewModel.resolveMappingsAfterUnlock = { [weak controller = syncKeyController] in
+            guard let controller, controller.resolved.isEmpty else { return }
+            await controller.resolveMappings()
+        }
         viewModel.syncNowReport = { await PhiChromiumCoordinator.shared.requestSyncNow() }
         viewModel.retryProfileMappingRepair = { PhiChromiumCoordinator.shared.retryProfileMappingRepair() }
         viewModel.reconfigurationRequired = { [weak self] in

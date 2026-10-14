@@ -25,8 +25,14 @@ struct PhiSpaceCursor {
     var deletedAtMs: Int64?
     var heldProfileUuid: String?
 }
+/// The Profile cursor fields `finishStatusRound` reads for its pending verdicts.
+struct PhiProfileCursor {
+    var pendingApply: Data?, pendingProjection: Data?
+    var pendingDelete = false, pendingTombstone = false
+}
 struct PhiSpaceSyncTable {
     var cursors: [String: PhiSpaceCursor] = [:]
+    var profileCursors: [String: PhiProfileCursor] = [:]
     var unreadableTagHashes: [String: String] = [:]
     var drainInProgress = false
 }

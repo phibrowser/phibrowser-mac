@@ -85,6 +85,11 @@ final class PassProfileCreator: LocalProfileCreating {
     }
 }
 
+struct AccountProfileEntityView: Equatable {
+    var liveNames: [String: String]
+    var deletedUuids: Set<String>
+    var liveUuids: Set<String> { Set(liveNames.keys) }
+}
 @MainActor
 final class SyncKeyController {
     let manager: AccountKeyManager
@@ -102,6 +107,9 @@ final class SyncKeyController {
         profileCreator = creator
         isPairingComplete = paired
     }
+    /// The drained account's Profile entities; nil keeps the pre-#181 behaviour (every
+    /// registry row claimable), which is what these passes exercise.
+    private let profileEntityView: (@MainActor () -> AccountProfileEntityView?)? = nil
     /// `ProfileManager.isProfileListEnumerated` (AM-1).
     func isCurrentAccount() -> Bool { !isRetired }
     var profileListEnumerated = true

@@ -560,7 +560,7 @@ struct UnifiedTabMuteButton: View {
         Button {
             viewModel.onToggleMute?()
         } label: {
-            Image(viewModel.isAudioMuted ? .speakerMute : .speakerWave)
+            Image(viewModel.isMuted ? .speakerMute : .speakerWave)
                 .renderingMode(.template)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
@@ -571,7 +571,7 @@ struct UnifiedTabMuteButton: View {
                 .themedFill(.hover)
                 .opacity(isHovered ? 1 : 0)
         )
-//        .help(viewModel.isAudioMuted ?
+//        .help(viewModel.isMuted ?
 //                NSLocalizedString("Unmute", comment: "Tab mute button tooltip - unmute") :
 //                NSLocalizedString("Mute", comment: "Tab mute button tooltip - mute")
 //        )

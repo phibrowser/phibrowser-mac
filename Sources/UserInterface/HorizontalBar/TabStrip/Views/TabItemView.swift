@@ -379,7 +379,7 @@ final class TabItemView: NSView {
     private func layoutFaviconAndMedia(mode: LayoutMode) -> CGFloat {
         let metrics = TabStripMetrics.Content.self
         let showRecording = viewModel.isCapturingMedia
-        let showMute = viewModel.isCurrentlyAudible || viewModel.isAudioMuted
+        let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
 
         // Right-pane mute only renders inside split-merged cells; reset to
@@ -412,7 +412,7 @@ final class TabItemView: NSView {
             // cell shows at most one state at a time by design.
             let showSecondaryMute = pinnedSplitPartner != nil
                 && (secondaryFaviconViewModel.isCurrentlyAudible
-                    || secondaryFaviconViewModel.isAudioMuted)
+                    || secondaryFaviconViewModel.isMuted)
             if showRecording {
                 recordingIconHostingView.isHidden = false
                 recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
@@ -520,7 +520,7 @@ final class TabItemView: NSView {
                     )
                 }
                 let showSecondaryMute = secondaryFaviconViewModel.isCurrentlyAudible
-                    || secondaryFaviconViewModel.isAudioMuted
+                    || secondaryFaviconViewModel.isMuted
                 secondaryMuteButtonHostingView.isHidden = !showSecondaryMute
                 if showSecondaryMute {
                     secondaryMuteButtonHostingView.frame = CGRect(
@@ -919,7 +919,7 @@ final class TabItemView: NSView {
             secondaryFaviconViewModel.configure(with: partner, in: browserState)
             secondaryFaviconViewModel.onToggleMute = { [weak partner] in
                 guard let partner else { return }
-                partner.setAudioMuted(!partner.isAudioMuted)
+                partner.toggleAudioMuted()
             }
             secondaryFaviconViewModel.onToolTipUpdated = { [weak self] in
                 self?.updateTitleHostingToolTips()
@@ -940,7 +940,7 @@ final class TabItemView: NSView {
             viewModel.configure(with: tab, in: browserState)
             viewModel.onToggleMute = { [weak tab] in
                 guard let tab else { return }
-                tab.setAudioMuted(!tab.isAudioMuted)
+                tab.toggleAudioMuted()
             }
             
             viewModel.onToolTipUpdated = { [weak self] in
@@ -958,7 +958,7 @@ final class TabItemView: NSView {
                 .store(in: &cancellables)
             
             tab.$isCurrentlyAudible
-                .combineLatest(tab.$isAudioMuted)
+                .combineLatest(tab.audioMutePublisher)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in
                     self?.layoutContent()
@@ -986,7 +986,7 @@ final class TabItemView: NSView {
         // audio state, matching the left pane's behavior above.
         if let partner = data.pinnedSplitPartner {
             partner.$isCurrentlyAudible
-                .combineLatest(partner.$isAudioMuted)
+                .combineLatest(partner.audioMutePublisher)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in
                     self?.layoutContent()

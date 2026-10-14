@@ -5,6 +5,23 @@
 
 import SwiftUI
 import AppKit
+import PostHog
+
+@MainActor
+private enum NotificationCardAnalytics {
+    static func capture(_ action: String) {
+        PostHogSDK.shared.capture("notification_card_action", properties: ["action": action])
+    }
+}
+
+/// Tracks presentation while AppKit keeps the SwiftUI card mounted.
+final class NotificationCardPresentation: ObservableObject {
+    @Published var isPresented: Bool
+
+    init(isPresented: Bool = true) {
+        self.isPresented = isPresented
+    }
+}
 
 // MARK: - Layout Mode
 
@@ -23,6 +40,8 @@ struct NotificationMessageCardView: View {
     
     /// Layout mode determines stacking direction
     let layoutMode: NotificationCardLayoutMode
+
+    @ObservedObject var presentation: NotificationCardPresentation
 
     var onChat: ((NotificationCardManager.Card) -> Void)?
     var onRun: ((NotificationCardManager.Card) -> Void)?
@@ -52,6 +71,7 @@ struct NotificationMessageCardView: View {
     init(
         manager: NotificationCardManager = .shared,
         layoutMode: NotificationCardLayoutMode = .sidebar,
+        presentation: NotificationCardPresentation = NotificationCardPresentation(),
         onChat: ((NotificationCardManager.Card) -> Void)? = nil,
         onRun: ((NotificationCardManager.Card) -> Void)? = nil,
         onDismiss: ((NotificationCardManager.Card) -> Void)? = nil,
@@ -60,6 +80,7 @@ struct NotificationMessageCardView: View {
     ) {
         self.manager = manager
         self.layoutMode = layoutMode
+        self.presentation = presentation
         self.onChat = onChat
         self.onRun = onRun
         self.onDismiss = onDismiss
@@ -76,14 +97,25 @@ struct NotificationMessageCardView: View {
                     currentIndex: manager.currentIndex,
                     isHovered: isHovered,
                     onChat: onChat,
-                    onRun: onRun,
-                    onDismiss: onDismiss,
+                    onRun: { card in
+                        NotificationCardAnalytics.capture("run")
+                        onRun?(card)
+                    },
+                    onDismiss: { card in
+                        NotificationCardAnalytics.capture("dismiss")
+                        onDismiss?(card)
+                    },
                     onMute: onMute,
-                    onDelete: onDelete,
+                    onDelete: { card in
+                        NotificationCardAnalytics.capture("delete")
+                        onDelete?(card)
+                    },
                     onPrevious: { manager.showPrevious() },
                     onNext: { manager.showNext() }
                 )
-                .frame(maxWidth: layoutMode == .sidebar ? 275 : .infinity)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("notification.card")
                 .background(
                     Group {
                         if manager.allCards.count > 1 {
@@ -103,6 +135,11 @@ struct NotificationMessageCardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .onChange(of: presentation.isPresented ? manager.currentCard?.id : nil, initial: true) { _, cardID in
+            if cardID != nil {
+                NotificationCardAnalytics.capture("show")
             }
         }
     }
@@ -329,16 +366,19 @@ struct NotificationMessageCardContent: View {
     }
     
     /// Helper class to handle NSMenu actions (NSMenu requires @objc selectors)
+    @MainActor
     private class NotificationCardMenuHelper: NSObject {
         static let shared = NotificationCardMenuHelper()
         
         @objc func setPopupMode() {
+            NotificationCardAnalytics.capture("popup")
             if let account = AccountController.shared.account {
                 account.userDefaults.setNotificationPopupMode(.popup)
             }
         }
         
         @objc func setMuteMode() {
+            NotificationCardAnalytics.capture("mute")
             if let account = AccountController.shared.account {
                 account.userDefaults.setNotificationPopupMode(.mute)
             }

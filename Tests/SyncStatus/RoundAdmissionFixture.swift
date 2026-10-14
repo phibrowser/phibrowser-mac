@@ -5,7 +5,7 @@ import Foundation
 // that record what ran, so this regression stays independent of the AppKit test host.
 func AppLogInfo(_ message: String) {}
 struct SpaceRoundCounters {}
-struct PhiSpaceSyncTable {
+struct PhiSpaceSyncTable: Equatable {
     var deleted: [String] = []
     mutating func recordLocalDeletion(spaceId: String) -> Bool { deleted.append(spaceId); return true }
 }
@@ -88,6 +88,15 @@ actor RoundAdmissionFixture {
     private func logSpaceRound() async {}
     private func logOwnedRounds() {}
     private func runFaviconBackfill() async { events.append("favicon") }
+    // Profile-round stand-ins `run` reaches (Profile entity, deletion journal). The Space section
+    // stays off, so the name-convergence table write is never entered; none of them record events.
+    private let spaceStore: Int? = nil
+    private var spaceSectionEnabled = false
+    private func reconcileProfileDeletionIntents() async {}
+    private func stampLocalProfileEdits() async {}
+    private func loadSpaceTable() -> PhiSpaceSyncTable { table }
+    private func convergeProfileNames(table: inout PhiSpaceSyncTable) async {}
+    private func writeSpaceTable(_ table: PhiSpaceSyncTable) {}
 
     func pullOnce() async { await serialized(.pull) }
     func pushLocalSettings() async { await serialized(.push) }

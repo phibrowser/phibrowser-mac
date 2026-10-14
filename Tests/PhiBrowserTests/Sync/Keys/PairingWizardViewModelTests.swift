@@ -17,6 +17,9 @@ final class PairingWizardViewModelTests: XCTestCase {
     final class LedgerSpaceMappingStore: SpaceSyncMappingStore {
         var map: [String: String] = [:]
         private(set) var writes: [(spaceId: String, uuid: String, pendingWhenWritten: Bool)] = []
+        /// The gate whose closed state each write records; nil reads `ProfilePairingGate.shared`.
+        let gate: ProfilePairingGate?
+        init(gate: ProfilePairingGate? = nil) { self.gate = gate }
         func syncUuid(forSpaceId spaceId: String) -> String? { map[spaceId] }
         /// Persistence is outside these cases; satisfy the signature with true and no failure control.
         func setSyncUuid(_ uuid: String, forSpaceId spaceId: String) -> Bool {
@@ -24,7 +27,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             // Nested types do not inherit MainActor, while joinPairingPending is main-actor state.
             // SpaceSyncMappingManager's write API already runs there, so assert isolation.
             // Scheduling a hop would record after the write and invalidate the ordering check.
-            let pending = MainActor.assumeIsolated { !ProfilePairingGate.shared.isPaired }
+            let pending = MainActor.assumeIsolated { !(gate ?? .shared).isPaired }
             writes.append((spaceId, uuid, pending))
             return true
         }
@@ -55,10 +58,16 @@ final class PairingWizardViewModelTests: XCTestCase {
 
     private var resolveCount = 0
     private var observer: NSObjectProtocol?
+    /// A gate private to each test. In the hosted test run the app's own coordinator
+    /// configures `ProfilePairingGate.shared` (and so replaces its enrollment generation)
+    /// once the signed-in account restores, at an unpredictable point mid-suite. A wizard
+    /// bound to the shared gate then sees its session invalidated and drops its result.
+    private var gate: ProfilePairingGate!
 
     override func setUp() {
         super.setUp()
-        try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "test-device", recordData: nil, saveRecord: { _ in true })
+        gate = ProfilePairingGate()
+        try? gate.configureEnrollment(deviceKeyID: "test-device", recordData: nil, saveRecord: { _ in true })
         resolveCount = 0
         observer = NotificationCenter.default.addObserver(
             forName: .phiProfileMappingsDidResolve, object: nil, queue: nil
@@ -68,6 +77,7 @@ final class PairingWizardViewModelTests: XCTestCase {
     override func tearDown() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+        gate = nil
         super.tearDown()
     }
 
@@ -140,7 +150,8 @@ final class PairingWizardViewModelTests: XCTestCase {
         _ = try await manager.bootstrap()
         let profileKeys = ProfileKeyManager(api: api, keyManager: manager,
                                             mappingStore: MemoryMappingStore())
-        let spaceStore = LedgerSpaceMappingStore()
+        let gate: ProfilePairingGate = self.gate
+        let spaceStore = LedgerSpaceMappingStore(gate: gate)
         let controller = SyncKeyController(
             manager: manager,
             approvals: DeviceApprovalService(api: api, keyManager: manager,
@@ -148,13 +159,15 @@ final class PairingWizardViewModelTests: XCTestCase {
             profileKeys: profileKeys,
             spaceKeys: SpaceSyncMappingManager(store: spaceStore),
             localProfilesProvider: { [(profileId: "Default", displayName: "Personal")] },
-            notifyChromium: {})
+            notifyChromium: {},
+            isPairingComplete: { gate.isPaired })
         let wizard = PairingWizardViewModel(
             keyLayer: KeyLayerViewModel(manager: manager),
             previewAccountSpaces: preview ?? { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) },
             pairableLocalSpaces: { locals },
             themeDisplayName: { _ in nil },
-            loadDeadline: loadDeadline)
+            loadDeadline: loadDeadline,
+            gate: gate)
         return (wizard, controller, spaceStore, api)
     }
 
@@ -190,7 +203,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         wizard.continueToSpaces()
         XCTAssertTrue(store.map.isEmpty, "No mapping writes")
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "joinPairingPending remains unchanged")
+        XCTAssertTrue(!gate.isPaired, "joinPairingPending remains unchanged")
         XCTAssertEqual(resolveCount, 0, "resolveMappings() is not called")
     }
 
@@ -209,7 +222,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(api.profileEnvelopes.count, 1, "Step 1 applies Profile decisions first")
         XCTAssertEqual(store.writes.map(\.pendingWhenWritten), [true],
                        "Step 3 follows step 2: the gate stays closed until all mappings are written")
-        XCTAssertFalse(!ProfilePairingGate.shared.isPaired)
+        XCTAssertFalse(!gate.isPaired)
         XCTAssertGreaterThan(resolveCount, 0, "Step 4 calls resolveMappings() last")
         XCTAssertEqual(wizard.phase, .done)
     }
@@ -237,7 +250,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         await wizard.finish(controller: controller)
         guard case .error(_, let resume) = wizard.phase else { return XCTFail("expected .error") }
         XCTAssertEqual(resume, .backToSpaces)
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate stays closed on failure")
+        XCTAssertTrue(!gate.isPaired, "The gate stays closed on failure")
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1", "The first mapping has already been written")
 
         store.map.removeValue(forKey: "STALE")
@@ -300,7 +313,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         guard case .profiles = wizard.phase else { return XCTFail("Changed server values require a fresh review") }
         XCTAssertNil(store.map["LOCAL-2"], "No unapplied choice may bypass the fresh-server check")
-        XCTAssertFalse(ProfilePairingGate.shared.isPaired)
+        XCTAssertFalse(gate.isPaired)
     }
 
     // MARK: - 4b. addAsNew idempotence criteria
@@ -335,7 +348,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(store.map["LOCAL-1"], "acct-1", "Neither mint a new identity nor silently reuse the old mapping")
         XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1)
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate must stay closed")
+        XCTAssertTrue(!gate.isPaired, "The gate must stay closed")
     }
 
     /// Conversely, a mapping minted locally earlier has a UUID absent from the account list.
@@ -388,8 +401,10 @@ final class PairingWizardViewModelTests: XCTestCase {
 
     /// Assert a reread, not a fixed value. On failure, applyPairingDecisions calls startPairing
     /// to reload candidates; the wizard must display that new table (§5.5).
-    /// Start with registerNew(Default), the sole local Profile and an empty account. Fail
-    /// its PUT once, then add an account Profile before reload so the candidate table changes.
+    /// Start with registerNew(Default), the sole local Profile and an empty account. Finish
+    /// first revalidates the reviewed candidates (validateCurrentReview), so the account change
+    /// and the one-shot failure are both injected at the PUT itself: injected earlier, that
+    /// revalidation would consume the failure on its own envelope GET and never reach the PUT.
     func testAFailedProfileStepGoesBackToStepOneWithTheReloadedCandidates() async throws {
         let (wizard, controller, store, api) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: [account("acct-1", name: "Work")])
@@ -402,18 +417,23 @@ final class PairingWizardViewModelTests: XCTestCase {
         wizard.continueToSpaces()
         wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
 
-        api.profileEndpointErrorOnce = KeyAPIError.http(500, "boom")
-        api.profileEnvelopes["uuid-remote"] = try ProfileKeyManager.sealProfilePayload(
+        let remoteEnvelope = try ProfileKeyManager.sealProfilePayload(
             key: Data(count: 32), name: "Home",
             ark: try XCTUnwrap(controller.manager.currentARK))
+        api.beforePutProfileKey = { [api] in
+            api.beforePutProfileKey = nil
+            api.profileEnvelopes["uuid-remote"] = remoteEnvelope
+            api.profileEndpointErrorOnce = KeyAPIError.http(500, "boom")
+        }
         await wizard.finish(controller: controller)
 
+        XCTAssertNil(api.profileEndpointErrorOnce, "The registerNew PUT must consume the failure")
         guard case .profiles(_, let reloaded) = wizard.phase else {
             return XCTFail("expected to land back on step 1")
         }
         XCTAssertEqual(reloaded.map(\.uuid), ["uuid-remote"], "Render the reloaded candidate table")
         XCTAssertEqual(wizard.step, .profiles)
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired, "The gate must stay closed")
+        XCTAssertTrue(!gate.isPaired, "The gate must stay closed")
         XCTAssertTrue(store.map.isEmpty, "No Space mapping writes")
     }
 
@@ -432,7 +452,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .error(_, let resume) = wizard.phase else { return XCTFail("expected .error") }
         XCTAssertEqual(resume, .reload)
         XCTAssertTrue(store.map.isEmpty)
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired)
+        XCTAssertTrue(!gate.isPaired)
     }
 
     // MARK: - 5b. Step 2 selections survive Back and failures
@@ -662,7 +682,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(items.map(\.localSpaceId), ["LOCAL-1"])
         XCTAssertEqual(items.first?.changes.map(\.field), [.name])
         XCTAssertTrue(store.map.isEmpty, "No mapping writes")
-        XCTAssertTrue(!ProfilePairingGate.shared.isPaired)
+        XCTAssertTrue(!gate.isPaired)
         XCTAssertEqual(resolveCount, 0)
         XCTAssertEqual(api.profileEnvelopes.count, 0, "applyPairingDecisions is not called")
         XCTAssertEqual(wizard.step, .spaces, "Confirmation is not a third step: step ② remains current")
@@ -704,7 +724,7 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         XCTAssertEqual(api.profileEnvelopes.count, 1)
         XCTAssertEqual(store.writes.map(\.pendingWhenWritten), [true])
-        XCTAssertFalse(!ProfilePairingGate.shared.isPaired)
+        XCTAssertFalse(!gate.isPaired)
         XCTAssertGreaterThan(resolveCount, 0)
         XCTAssertEqual(wizard.phase, .done)
     }
@@ -744,5 +764,47 @@ final class PairingWizardViewModelTests: XCTestCase {
         await wizard.finish(controller: controller)
         XCTAssertEqual(wizard.phase, .done)
         XCTAssertNotEqual(store.map["LOCAL-1"], "acct-1", "Add as new mints a new UUID and preserves every local value")
+    }
+
+    // MARK: - Profile entity tombstones
+
+    /// An account Profile deleted on another device keeps its registry row; the preview's
+    /// tombstone for its `phi-profile:` tag keeps it out of the choices.
+    func testAnAccountProfileWithATombstoneIsNotOffered() async throws {
+        let deletedHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag("uuid-deleted"))
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [], accountSpaces: [], preview: {
+                .success(.init(spaces: [], skippedEntityCount: 0, deletedProfileTagHashes: [deletedHash]))
+            })
+        let ark = try XCTUnwrap(controller.manager.currentARK)
+        for (uuid, name) in [("uuid-live", "Work"), ("uuid-deleted", "Old")] {
+            api.profileEnvelopes[uuid] = try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 7, count: 32), name: name, ark: ark)
+        }
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(remotes.map(\.uuid), ["uuid-live"])
+    }
+
+    /// A rename travels through the Profile entity, never the registry envelope; the wizard
+    /// shows the entity's name and keeps the registry name only where no entity was read.
+    func testAnAccountProfileIsOfferedUnderItsEntityName() async throws {
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [], accountSpaces: [], preview: {
+                .success(.init(spaces: [], skippedEntityCount: 0, profileNames: ["uuid-renamed": "Alpha"]))
+            })
+        let ark = try XCTUnwrap(controller.manager.currentARK)
+        for (uuid, name) in [("uuid-renamed", "P168-1"), ("uuid-plain", "Work")] {
+            api.profileEnvelopes[uuid] = try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 7, count: 32), name: name, ark: ark)
+        }
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: remotes.map { ($0.uuid, $0.name) }),
+                       ["uuid-renamed": "Alpha", "uuid-plain": "Work"])
     }
 }

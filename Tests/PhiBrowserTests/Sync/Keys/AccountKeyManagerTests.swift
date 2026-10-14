@@ -36,6 +36,7 @@ final class AccountKeyManagerTests: XCTestCase {
             var listProfilesError: Error?
             var listProfilesCalls = 0
             var getProfileKeyCalls = 0
+            var beforeListProfilesOnce: (() async -> Void)?
             var beforePutProfileKey: (() async -> Void)?
             var domainEnvelopes: [String: Data] = [:]
             var domainEndpointError: Error?
@@ -218,8 +219,20 @@ final class AccountKeyManagerTests: XCTestCase {
         var listProfilesCalls: Int { locked { $0.listProfilesCalls } }
         var getProfileKeyCalls: Int { locked { $0.getProfileKeyCalls } }
 
+        /// Fired once at the top of the next `listProfiles`, then cleared: a mapping pass is
+        /// suspended there after it resolved its locals, so a test can interleave with it.
+        var beforeListProfilesOnce: (() async -> Void)? {
+            get { locked { $0.beforeListProfilesOnce } }
+            set { locked { $0.beforeListProfilesOnce = newValue } }
+        }
         func listProfiles() async throws -> [ProfileSummaryDTO] {
-            try locked { s in
+            let hook = locked { s -> (() async -> Void)? in
+                let hook = s.beforeListProfilesOnce
+                s.beforeListProfilesOnce = nil
+                return hook
+            }
+            if let hook { await hook() }
+            return try locked { s in
                 s.listProfilesCalls += 1
                 if let error = s.listProfilesError { throw error }
                 return s.profileEnvelopes.keys.sorted().map {

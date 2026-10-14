@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import XCTest
+import struct SwiftUI.Text
 @testable import Phi
 
 @MainActor
@@ -45,6 +46,50 @@ final class HostedSidebarStateTests: XCTestCase {
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         try await super.tearDown()
+    }
+
+    func testMediaVisitHistoryKeepsAllLiveTabsWhileSwitcherStaysLimited() {
+        let state = makeState(spaceId: "media-history")
+        let tabs = (0..<12).map { index in
+            Tab(guid: 100_000 + index, url: "https://example.test/\(index)",
+                isActive: false, index: index, title: "Media \(index)")
+        }
+        state.tabs = tabs
+        for tab in tabs { state.tabSwitchManager.recordActiveTab(tab) }
+        XCTAssertEqual(state.tabSwitchManager.visitedTabIDs, tabs.reversed().map(\.guid),
+                       "Unrelated visits must not erase older live media visit order")
+        XCTAssertEqual(state.tabSwitchManager.recentTabIDs,
+                       Array(tabs.reversed().prefix(TabSwitchMetrics.maxRecentTabs)).map(\.guid),
+                       "The existing tab switcher must keep its five-item scope")
+        state.tabSwitchManager.removeTab(tabID: tabs[4].guid)
+        state.tabs.removeAll { $0.guid == tabs[0].guid || $0.guid == tabs[4].guid }
+        state.tabSwitchManager.recordActiveTab(tabs[2])
+        XCTAssertEqual(state.tabSwitchManager.visitedTabIDs.first, tabs[2].guid)
+        XCTAssertFalse(state.tabSwitchManager.visitedTabIDs.contains(tabs[0].guid))
+        XCTAssertFalse(state.tabSwitchManager.visitedTabIDs.contains(tabs[4].guid))
+        XCTAssertEqual(state.tabSwitchManager.recentTabIDs.count, TabSwitchMetrics.maxRecentTabs)
+    }
+
+    func testMediaSwipeOwnsHorizontalAndMomentumButPassesVertical() {
+        let host = SidebarMediaHostingView(rootView: Text(verbatim: "Media gesture test"))
+        host.frame.size = NSSize(width: 400, height: 124)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 0))
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -45, deltaY: 1, phase: .changed, momentum: [], timestamp: 0.1))
+        host.cancelMediaSwipe()
+        XCTAssertTrue(host.isMediaSwipeCancelled)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -45, deltaY: 0, phase: .changed, momentum: [], timestamp: 0.15),
+                      "A cancelled physical swipe must not fall through to Space navigation")
+        XCTAssertTrue(host.isMediaSwipeCancelled, "Changed events must not adopt a new card after cancellation")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .ended, momentum: [], timestamp: 0.2))
+        XCTAssertFalse(host.isMediaSwipeCancelled)
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: -80, deltaY: 0, phase: [], momentum: .changed, timestamp: 0.3),
+                      "Momentum must remain consumed rather than starting Space navigation")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 1))
+        XCTAssertFalse(host.handleMediaSwipe(deltaX: 1, deltaY: -40, phase: .changed, momentum: [], timestamp: 1.1),
+                       "Vertical card scrolling must pass through")
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 0, deltaY: 0, phase: .began, momentum: [], timestamp: 2))
+        XCTAssertTrue(host.handleMediaSwipe(deltaX: 45, deltaY: 1, phase: .changed, momentum: [], timestamp: 2.1),
+                      "A rightward card gesture must also stay out of Space navigation")
     }
 
     func testColdAndWarmPresentationCannotChangeCollapsedShell() throws {
@@ -484,6 +529,148 @@ final class HostedSidebarStateTests: XCTestCase {
         split.setSidebarCollapsed(true, animated: false)
         host.showFloatingSidebar()
         XCTAssertNil(host.view.hitTest(point))
+    }
+
+    func testPresentedShellMatchesTrafficLightInsetsAcrossLayoutChanges() async throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "traffic-light-layouts")
+        session.presentInShell(deferringChromium: true)
+        let window = try XCTUnwrap(slot.shell?.window)
+        let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
+
+        for (layout, expectedCenter) in [(LayoutMode.performance, CGFloat(20)), (.balanced, 27.5), (.comfortable, 22)] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(layout)
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+            await drainPresentationUpdates()
+            let frame = closeButton.convert(closeButton.bounds, to: nil)
+            XCTAssertEqual(frame.minX, window.frame.height - frame.maxY, accuracy: 0.01, "\(layout)")
+            XCTAssertEqual(window.frame.height - frame.midY, expectedCenter, accuracy: 0.01, "\(layout)")
+        }
+    }
+
+    func testSidebarHeaderClearsTrafficLightsAtMinimumAndUpdateThresholdWidths() async throws {
+        let identifiers = ["sidebarHeader.sidebarButton", "sidebarHeader.searchTabsButton",
+            "sidebarHeader.upgradeButton", "sidebarHeader.backButton", "sidebarHeader.forwardButton",
+            "sidebarHeader.refreshButton", "sidebarHeader.stopButton"]
+
+        for mode in [LayoutMode.performance, .balanced] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode)
+            for width in [CGFloat(193), 225, 226, 260] {
+                let slot = makeSlot()
+                let session = makeSession(in: slot, spaceId: "header-clearance")
+                let shell = try XCTUnwrap(slot.shell)
+                shell.split.setSidebarGeometry(width: width, collapsed: false)
+                session.presentInShell(deferringChromium: true)
+                session.browserState.exitPlaceholderMode()
+                await drainPresentationUpdates()
+                let header = try XCTUnwrap(descendants(of: shell.split.sidebarHost.view)
+                    .compactMap { $0 as? SidebarHeaderView }.first)
+                let controls = try identifiers.map { identifier in
+                    try XCTUnwrap(descendants(of: header).first { $0.accessibilityIdentifier() == identifier })
+                }
+                let green = try XCTUnwrap(shell.window.standardWindowButton(.zoomButton))
+
+                func assertClearance() {
+                    shell.split.view.layoutSubtreeIfNeeded()
+                    XCTAssertEqual(header.bounds.width, width, accuracy: 0.5)
+                    let greenFrame = green.convert(green.bounds, to: nil)
+                    let visibleFrames = controls.filter { !$0.isHiddenOrHasHiddenAncestor }
+                        .map { $0.convert($0.bounds, to: nil) }.sorted { $0.minX < $1.minX }
+                    XCTAssertGreaterThanOrEqual(visibleFrames.count, mode == .performance ? 4 : 2,
+                        "Clearance must be checked with the header actions visible")
+                    for frame in visibleFrames {
+                        XCTAssertGreaterThanOrEqual(frame.minX - greenFrame.maxX, 9.99,
+                            "\(mode), width \(width): header control overlaps native traffic lights")
+                    }
+                    for pair in zip(visibleFrames, visibleFrames.dropFirst()) {
+                        XCTAssertLessThanOrEqual(pair.0.maxX, pair.1.minX + 0.01,
+                            "\(mode), width \(width): adjacent header controls overlap")
+                    }
+                    if mode == .performance {
+                        let leading = controls[2].isHiddenOrHasHiddenAncestor ? controls[0] : controls[2]
+                        let leadingFrame = leading.convert(leading.bounds, to: nil)
+                        let backFrame = controls[3].convert(controls[3].bounds, to: nil)
+                        print("[Header clearance] width=\(width), navigationGap=\(backFrame.minX - leadingFrame.maxX)")
+                    }
+                }
+
+                NotificationCenter.default.post(name: .sparkleDidSkipUpdate, object: nil)
+                await drainPresentationUpdates()
+                assertClearance()
+                NotificationCenter.default.post(name: .sparkleDidDownloadUpdate, object: nil,
+                    userInfo: ["displayVersion": "1.2.3"])
+                await drainPresentationUpdates()
+                assertClearance()
+                let update = controls[2]
+                XCTAssertEqual(update.isHiddenOrHasHiddenAncestor, width <= 225)
+                if mode == .balanced && width > 225 {
+                    let frame = update.convert(update.bounds, to: nil)
+                    XCTAssertEqual(frame.minX - green.convert(green.bounds, to: nil).maxX, 10, accuracy: 0.01)
+                }
+            }
+        }
+        NotificationCenter.default.post(name: .sparkleDidSkipUpdate, object: nil)
+    }
+
+    func testComfortableSpacePickerTracksNativeTrafficLightsWithTenPointGap() throws {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "space-picker-clearance")
+        let window = try XCTUnwrap(slot.shell?.window)
+        let bar = TabStripBarController(browserState: session.browserState)
+        bar.view.frame = NSRect(x: 0, y: window.frame.height - 42, width: 1000, height: 36)
+        let picker = try XCTUnwrap(descendants(of: bar.view)
+            .first { $0.accessibilityIdentifier() == "tabStrip.spacePicker" })
+        window.contentView?.addSubview(bar.view)
+        let green = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+
+        func assertGap() {
+            bar.view.layoutSubtreeIfNeeded()
+            let pickerFrame = picker.convert(picker.bounds, to: nil)
+            let greenFrame = green.convert(green.bounds, to: nil)
+            XCTAssertEqual(pickerFrame.minX - greenFrame.maxX, 10, accuracy: 0.01)
+        }
+
+        assertGap()
+        let positioner = TrafficLightPositioner(window: window, centerFromWindowTop: 22)
+        positioner.start()
+        assertGap()
+        positioner.stop(restoringPlacement: true)
+        assertGap()
+        bar.view.setFrameOrigin(NSPoint(x: 17, y: bar.view.frame.minY))
+        assertGap()
+        green.setFrameOrigin(NSPoint(x: green.frame.minX + 5, y: green.frame.minY))
+        assertGap()
+        bar.view.removeFromSuperview()
+    }
+
+    func testHostedTitlebarGapsReachWindowWithoutDiscardingContentHits() throws {
+        for mode: LayoutMode in [.performance, .balanced, .comfortable] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode)
+            let slot = makeSlot()
+            let session = makeSession(in: slot, spaceId: "first")
+            let split = try XCTUnwrap(slot.shell?.split)
+            session.presentInShell(completing: false, deferringChromium: true)
+            split.view.layoutSubtreeIfNeeded()
+
+            let pageRoot = session.mainSplitViewController.view
+            let point = NSPoint(x: pageRoot.bounds.midX, y: pageRoot.bounds.maxY - 4)
+            let shellPoint = pageRoot.convert(point, to: split.view.superview)
+            XCTAssertGreaterThan(pageRoot.bounds.width, 0)
+            XCTAssertNil(split.view.hitTest(shellPoint), "The \(mode) page gap must reach the window frame")
+
+            // The same path must retain real controls and ordinary page views.
+            let hitFrame = NSRect(x: point.x - 10, y: point.y - 10, width: 20, height: 20)
+            let button = NSButton(frame: hitFrame)
+            pageRoot.addSubview(button)
+            XCTAssertTrue(split.view.hitTest(shellPoint) === button, "The \(mode) control must keep its click")
+            button.removeFromSuperview()
+
+            let content = NSView(frame: hitFrame)
+            pageRoot.addSubview(content)
+            XCTAssertTrue(split.view.hitTest(shellPoint) === content, "The \(mode) page view must keep its click")
+            content.removeFromSuperview()
+        }
     }
 
     func testFloatingSlideBackdropStaysClearThroughThemeUpdates() async throws {

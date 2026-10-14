@@ -535,6 +535,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
 }
 
 private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContentWrapper {
+    let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!
@@ -550,6 +551,7 @@ private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContent
     @objc dynamic var securityInfo: [String: Any]?
     @objc dynamic var isCurrentlyAudible = false
     @objc dynamic var isAudioMuted = false
+    @objc dynamic var isMediaSessionMuted = false
     @objc dynamic var isCapturingAudio = false
     @objc dynamic var isCapturingVideo = false
     @objc dynamic var isCapturingWindow = false
@@ -612,6 +614,7 @@ private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContent
     func restoreFocus() {}
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}
     func updateIsPeekSurface(_ isPeekSurface: Bool) {}
+    func toggleAudioMuted() {}
     func setAudioMuted(_ muted: Bool) {}
     func muteAudio() {}
     func unmuteAudio() {}

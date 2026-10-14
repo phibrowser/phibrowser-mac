@@ -45,6 +45,25 @@ enum SyncProblemCategory: String, CaseIterable, Sendable {
          rejectedByServer, serverError, unreadableRemoteData, waitingForProfilePairing
 }
 
+/// The pin scope follower's consecutive failures (B-3 stage 1, design 3.2 / amendment b). Not an
+/// engine `SyncProblemCategory`: the follower runs on the main actor outside any round, so it
+/// reaches the status pane beside the Profile mapping pause, through
+/// `SyncHelper.setPinScopeMigrationFailure(_:)`. In memory only.
+struct SyncPinScopeMigrationFailure: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        /// A browser migration run holds the pinned-tab scope.
+        case browserMigrationRunning
+        /// The local store is not open or not readable.
+        case storeUnavailable
+        /// The migration transaction threw.
+        case writeFailed
+    }
+
+    /// Consecutive failed attempts; at least 1.
+    let attempts: Int
+    let lastKind: Kind
+}
+
 /// Metadata only (R12): a category, an optional kind and a time. No field can carry text.
 struct SyncErrorSummary: Equatable, Sendable {
     let category: SyncProblemCategory

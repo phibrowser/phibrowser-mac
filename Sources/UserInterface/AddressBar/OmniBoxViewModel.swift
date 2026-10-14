@@ -338,7 +338,21 @@ class OmniBoxViewModel: ObservableObject {
     
     private func handleNavigationAction(for suggeston: OmniBoxSuggestion, commandKeyPressed: Bool = false) {
         if let engine = suggeston.keywordSearchEngine, suggeston.url.isEmpty {
-            acceptKeywordSearch(keyword: engine.keyword)
+            let input = state.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard canUseKeywordSearchSuggestion(suggeston, for: input) else { return }
+            // The bridge requires search terms; use the generated URL only to resolve the engine's site.
+            guard let searchURL = keywordSearchURLBuilder(engine.keyword, input),
+                  var site = URLComponents(string: searchURL),
+                  site.scheme == "https" || site.scheme == "http",
+                  let host = site.host, !host.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            site.path = "/"
+            site.query = nil
+            site.fragment = nil
+            guard let url = site.url else { return }
+            openURL(url.absoluteString, commandKeyPressed: commandKeyPressed)
             return
         }
         AppLogDebug("omni: handleNavigationAction suggeston: \(suggeston)")

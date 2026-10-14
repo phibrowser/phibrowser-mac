@@ -26,6 +26,9 @@ struct SpacesSettingsView: View {
     @State private var selectedSpaceId: String?
     @State private var pinnedTabScope: PinnedTabScope = .profile
     @State private var isChangingPinnedTabScope = false
+    /// The selected scope is saved but this Mac has not finished rearranging its pinned tabs; the
+    /// follower keeps retrying (B-3 stage 1, design 3.1).
+    @State private var pinnedTabScopeCompletesInBackground = false
     /// Resolved theme id and color-component slider position for the selected
     /// Space, loaded on selection and updated optimistically (the persistence
     /// stores do not republish `spaces`, so unlike icon/profile these need
@@ -78,9 +81,7 @@ struct SpacesSettingsView: View {
         }
         .onAppear {
             profileManager.refresh()
-            pinnedTabScope =
-                AccountController.shared.localDataAccount?.localStorage.pinnedTabScope()
-                ?? .profile
+            loadPinnedTabScope()
             orderedIds = listedSpaces.map(\.spaceId)
             if selectedSpaceId == nil { selectInitialSpace() }
         }
@@ -113,9 +114,8 @@ struct SpacesSettingsView: View {
         }
         // The pin-scope picker owns State that remote changes otherwise leave stale, letting a later selection
         // roll every device back. Read the newly landed mirror key, not store.pinnedTabScope(): the
-        // coordinator's observer starts asynchronous migration, so the row may still lag. The mirror is
-        // authoritative now and must not be republished as local intent. On migration failure the old row
-        // remains; onAppear corrects the next panel opening from it. Receive on main because
+        // follower migrates asynchronously, so the row may still lag. The key is the desired scope (B-3
+        // stage 1, design 3.2) and must not be republished as local intent. Receive on main because
         // SyncableSettings.apply runs on the engine thread and State requires main-thread writes.
         .onReceive(
             NotificationCenter.default
@@ -439,6 +439,15 @@ struct SpacesSettingsView: View {
                     .themedForeground(.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if pinnedTabScopeCompletesInBackground {
+                    Text(NSLocalizedString("settings.spaces.pinnedTabScope.completesInBackground", value: "The change will finish in the background.",
+                        comment: "Spaces settings - note under the pinned tab scope picker when the new scope was saved but rearranging the pinned tabs on this Mac has not finished yet; it keeps retrying on its own"
+                    ))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if migrationRunIsInFlight {
                     Text(NSLocalizedString("settings.spaces.pinnedTabScope.migrationInFlight", value: "Can\u{2019}t be changed while a migration from another browser is running.",
                         comment: "Spaces settings - why the pinned-tab scope picker is disabled during a browser migration"
@@ -509,13 +518,15 @@ struct SpacesSettingsView: View {
               !isChangingPinnedTabScope else { return }
 
         let previousScope = pinnedTabScope
-        let isCopy = newScope.hierarchyLevel < previousScope.hierarchyLevel
         pinnedTabScope = newScope
 
         guard let store = AccountController.shared.localDataAccount?.localStorage else {
             pinnedTabScope = previousScope
             return
         }
+        // From the row, the scope being left, not the picker: after a change that finishes in the
+        // background the picker already shows the scope being entered.
+        let isCopy = newScope.hierarchyLevel < store.pinnedTabScope().hierarchyLevel
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -536,31 +547,124 @@ struct SpacesSettingsView: View {
             return
         }
 
-        let preferredSpaceId = spaceManager.activeSpaceId ?? selectedSpaceId
-        let preferredProfileId = preferredSpaceId.flatMap { spaceId in
-            spaceManager.spaces.first(where: { $0.spaceId == spaceId })?.profileId
+        // Checked again after the alert: a run can start while it is up. The store refuses too, but by
+        // then the key would already name the new scope. A synchronous alert that awaits nothing, as
+        // the confirmation above.
+        if migrationRunIsInFlight {
+            pinnedTabScope = previousScope
+            Self.showPinnedTabScopeFailure(LocalStoreWriteError.migrationInFlight.localizedDescription)
+            return
         }
+
+        // Key first (B-3 stage 1, design 3.1): the setting is the desired scope and the row follows it.
+        // An ordinary settings edit: the debounced defaults trigger stamps and publishes it like any
+        // other synced setting. A crash before the row follows leaves the key ahead, and the next
+        // mount's follower completes the change.
+        // The selected Space goes to the follower before the key moves: an attempt a trigger starts
+        // ahead of followPinnedTabScopeNow takes it too.
+        let preferredSpaceId = selectedSpaceId
+        PhiChromiumCoordinator.shared.preparePinnedTabScopeFollow(store: store, preferredSpaceId: preferredSpaceId)
+        let previousKey = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key)
+        UserDefaults.standard.set(newScope.rawValue, forKey: PinnedTabScopeMirror.key)
+        let attemptWasMounted = PhiChromiumCoordinator.shared.hasPinScopeFollower(store: store)
         isChangingPinnedTabScope = true
+        pinnedTabScopeCompletesInBackground = false
         Task { @MainActor in
-            do {
-                try await store.changePinnedTabScope(
-                    to: newScope,
-                    preferredProfileId: preferredProfileId,
-                    preferredSpaceId: preferredSpaceId
-                )
-                pinnedTabScope = newScope
-            } catch {
-                pinnedTabScope = previousScope
-                let errorAlert = NSAlert()
-                errorAlert.alertStyle = .critical
-                errorAlert.messageText = NSLocalizedString("settings.spaces.pinnedTabScopeFailure.title", value: "Pinned Tab Scope Wasn’t Changed",
-                    comment: "Spaces settings - pinned-tab scope migration error title"
-                )
-                errorAlert.informativeText = error.localizedDescription
-                errorAlert.addButton(withTitle: NSLocalizedString("settings.spaces.pinnedTabScopeFailure.dismissButton", value: "OK", comment: "Dismiss button"))
-                errorAlert.runModal()
-            }
+            let result = await PhiChromiumCoordinator.shared.followPinnedTabScopeNow(
+                store: store, preferredSpaceId: preferredSpaceId)
             isChangingPinnedTabScope = false
+            // The data account changed during the attempt: the key is the next account's now (the
+            // switch cleared it, the mount seeded it), and `store` is the previous account's. Whatever
+            // the attempt reports is about a store no longer shown; a restore would publish the
+            // previous account's scope as this account's edit. Show what the current account says.
+            guard AccountController.shared.localDataAccount?.localStorage === store else {
+                pinnedTabScopeCompletesInBackground = false
+                loadPinnedTabScope()
+                return
+            }
+            // The engine mounted for this store during an unmounted attempt. Its account-switch reset
+            // cleared the key and its reseed wrote the row's scope as it was before the attempt (stamp
+            // 0), so the key no longer says what the user chose while the row now does; left alone, the
+            // mounted follower would migrate the row back. The choice is this user's edit: write it
+            // again, which the settings snapshot stamps as such. Only the unmounted path: with a
+            // mounted follower a key that moved during the attempt is a landed account value.
+            if !attemptWasMounted, result == .applied,
+               PhiChromiumCoordinator.shared.hasPinScopeFollower(store: store),
+               UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key) != newScope.rawValue {
+                UserDefaults.standard.set(newScope.rawValue, forKey: PinnedTabScopeMirror.key)
+            }
+            switch result {
+            case .applied:
+                pinnedTabScopeCompletesInBackground = false
+            case .failed:
+                // The mounted follower keeps the new scope and retries, so the picker keeps it too.
+                pinnedTabScopeCompletesInBackground = true
+            case .deferred:
+                // No attempt ran: the follower retired or the key was cleared (account switch). Nothing
+                // failed; show whatever the store and key say now.
+                loadPinnedTabScope()
+            case .failedNoRetry(let kind):
+                // A follower mounted for this store during the attempt owns the change now: the key may
+                // already be an account value, which a restore would republish over. Show its state.
+                if PhiChromiumCoordinator.shared.hasPinScopeFollower(store: store) {
+                    loadPinnedTabScope()
+                    break
+                }
+                // Nothing will finish this change (no mounted follower): take the key write back, unless
+                // the key has moved on since, and report it as before the key-first order.
+                if UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key) == newScope.rawValue {
+                    UserDefaults.standard.set(previousKey, forKey: PinnedTabScopeMirror.key)
+                }
+                pinnedTabScope = previousScope
+                pinnedTabScopeCompletesInBackground = false
+                // A main-actor job: the modal goes to the run loop instead (AGENTS.md).
+                let message = Self.pinnedTabScopeFailureMessage(kind)
+                RunLoop.main.perform(inModes: [.default]) {
+                    MainActor.assumeIsolated { Self.showPinnedTabScopeFailure(message) }
+                }
+            }
+        }
+    }
+
+    private static func pinnedTabScopeFailureMessage(_ kind: SyncPinScopeMigrationFailure.Kind) -> String {
+        switch kind {
+        case .browserMigrationRunning:
+            return LocalStoreWriteError.migrationInFlight.localizedDescription
+        case .storeUnavailable:
+            return LocalStoreWriteError.storeUnavailable.localizedDescription
+        case .writeFailed:
+            return NSLocalizedString("settings.spaces.pinnedTabScopeFailure.saveFailed", value: "Your pinned tabs couldn\u{2019}t be rearranged on this Mac. Try again.",
+                comment: "Spaces settings - pinned-tab scope change error body when saving the rearranged pinned tabs failed"
+            )
+        }
+    }
+
+    private static func showPinnedTabScopeFailure(_ message: String) {
+        let errorAlert = NSAlert()
+        errorAlert.alertStyle = .critical
+        errorAlert.messageText = NSLocalizedString("settings.spaces.pinnedTabScopeFailure.title", value: "Pinned Tab Scope Wasn’t Changed",
+            comment: "Spaces settings - pinned-tab scope migration error title"
+        )
+        errorAlert.informativeText = message
+        errorAlert.addButton(withTitle: NSLocalizedString("settings.spaces.pinnedTabScopeFailure.dismissButton", value: "OK", comment: "Dismiss button"))
+        errorAlert.runModal()
+    }
+
+    /// The scope being applied when the follower still has work, otherwise the row's.
+    private func loadPinnedTabScope() {
+        guard let store = AccountController.shared.localDataAccount?.localStorage else {
+            pinnedTabScope = .profile
+            pinnedTabScopeCompletesInBackground = false
+            return
+        }
+        if PhiChromiumCoordinator.shared.pinScopeFollowerHasWork(store: store),
+           let raw = UserDefaults.standard.string(forKey: PinnedTabScopeMirror.key),
+           let desired = PinnedTabScope(rawValue: raw) {
+            pinnedTabScope = desired
+            pinnedTabScopeCompletesInBackground = true
+        } else {
+            pinnedTabScope = store.pinnedTabScope()
+            pinnedTabScopeCompletesInBackground = false
         }
     }
 
@@ -800,16 +904,7 @@ struct SpacesSettingsView: View {
 
     private func deleteSpace(_ space: Space) {
         guard spaceManager.canDeleteSpace(spaceId: space.spaceId) else { return }
-        let alert = NSAlert()
-        alert.messageText = String(
-            format: NSLocalizedString("settings.spaces.deleteConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
-            space.name
-        )
-        alert.informativeText = deleteSpaceConfirmationBody
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.deleteConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.deleteConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard SpaceDeletionConfirmation.run(space: space) else { return }
         spaceManager.deleteSpace(spaceId: space.spaceId, expectedStoreIdentifier: space.storeIdentifier)
         PostHogSDK.shared.capture("space_deleted")
     }
@@ -829,17 +924,6 @@ struct SpacesSettingsView: View {
                 comment: "Body of the change-Space-profile confirmation with App-scoped pinned tabs"
             )
         }
-    }
-
-    private var deleteSpaceConfirmationBody: String {
-        if pinnedTabScope == .space {
-            return NSLocalizedString("settings.spaces.deleteConfirmation.spaceScopedMessage", value: "Bookmarks and pinned tabs belonging to this Space will also be removed. This action cannot be undone.",
-                comment: "Body of the delete-Space confirmation with Space-scoped pinned tabs"
-            )
-        }
-        return NSLocalizedString("settings.spaces.deleteConfirmation.message", value: "Bookmarks belonging to this Space will also be removed. This action cannot be undone.",
-            comment: "Body of the delete-Space confirmation"
-        )
     }
 }
 

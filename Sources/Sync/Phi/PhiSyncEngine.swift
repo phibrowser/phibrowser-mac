@@ -72,6 +72,14 @@ struct PhiAccountSpaceSummary: Equatable, Sendable {
 struct PhiAccountSpacePreview: Equatable, Sendable {
     let spaces: [PhiAccountSpaceSummary]
     let skippedEntityCount: Int
+    /// Client tag hashes of every tombstone the preview saw. A tombstone carries no payload, so it
+    /// cannot be classified by kind; the wizard leaves out an account Profile whose
+    /// `phi-profile:<uuid>` hash is in here (docs/sync.md, "Profile entity").
+    var deletedProfileTagHashes: Set<String> = []
+    /// Account name of every live Profile entity the preview read, by uuid. The registry
+    /// envelope keeps the name a Profile was registered with, so the wizard shows these
+    /// instead (a Profile renamed on another device is otherwise offered under its old name).
+    var profileNames: [String: String] = [:]
 }
 
 enum PhiSpacePreviewError: Error, Equatable {
@@ -106,6 +114,10 @@ struct OwnedOwnerMaps {
     /// publication tombstones the items they own; bookmark and pin landing discards inbound items
     /// they own instead of parking them (R-M3-4a-78).
     var deadSpaceUuids: Set<String> = []
+    /// Account profile uuids deleted on this device (`PhiSpaceSyncTable.deletedProfileUuids`).
+    /// Pins are the one owned kind a Profile owns: publication tombstones them and landing
+    /// discards inbound ones, exactly as for a deleted Space.
+    var deadProfileUuids: Set<String> = []
     var globalUuidByProfileId: [String: String] = [:]
     var localProfileIdByGlobalUuid: [String: String] = [:]
     /// Local spaceId to the Profile that Space is bound to, from `currentSpaces()` (review A4/A5).
@@ -508,6 +520,11 @@ struct OwnedKindRegistration {
     /// tombstone may already have lost its cursor after three rejected retries or never had an
     /// entityId.
     var purgeSoftDeletedRows: (@MainActor (Date) async -> Int)? = nil
+    /// Pins only (B-3 stage 1, design 3.4): re-probes the round's block predicate and answers
+    /// whether this kind must publish nothing. Nil means the kind never blocks. Publication asks it
+    /// after the deletion diff, before any queued tombstone is selected, and again as the commit
+    /// fence right before each commit.
+    var publicationBlocked: (@MainActor () -> Bool)? = nil
 }
 
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
@@ -690,6 +707,9 @@ actor PhiSyncEngine {
     /// settings path is byte-for-byte what it was.
     private let spaceAccess: (any PhiSpaceLocalAccess)?
     private let spaceStore: (any PhiSpaceSyncStateStore)?
+    /// The Profile entity section (docs/sync.md, "Profile entity"). Lives in the Space table and
+    /// behind the Space gate; `nil` leaves Profile entities to the unknown-kind path, as before.
+    private let profileAccess: (any PhiProfileLocalAccess)?
 
     /// Mirror of the table's `spaceSectionEnabled`, kept in memory so the shut -> open EDGE is
     /// detectable inside one process too.
@@ -723,6 +743,8 @@ actor PhiSyncEngine {
     /// including early failures. This read-only diagnostic distinguishes truncation from transport
     /// failure without adding payloads to the existing truncated error case.
     private var lastPreviewStats: (pages: Int, entities: Int) = (0, 0)
+    /// The unmatched-tombstone count the last pull logged; -1 until a pull has run.
+    private var lastLoggedUnmatchedTombstones = -1
 
     /// Kind label to client_tag_hash-to-identity index. Rebuilt from cursors/local identities at
     /// round start, then only grows as ciphertext is decoded, allowing later pages in the same
@@ -774,6 +796,11 @@ actor PhiSyncEngine {
     /// Follow-up rounds already queued after a page-budget cut, reset by the round that
     /// finally drains. Bounds `maxFollowUpRounds`.
     private var followUpRoundsUsed = 0
+    /// Set by a pull that landed a new account Profile this device has no local Profile for, or
+    /// that finished the first drain after auto-create was skipped for it. Auto-create runs at the
+    /// start of a pull, so one follow-up pull creates the Profile and lands the Spaces parked behind
+    /// it instead of waiting for the timer.
+    private var profileFollowUpWanted = false
 
     /// Set around `SyncableSettings.apply` so a local-change notification raised by the engine's
     /// own write is not mistaken for a user edit. The load-bearing echo suppression is the
@@ -943,6 +970,11 @@ actor PhiSyncEngine {
         case push
         case localChange
         case localSpaceChange
+        /// A mapped Profile was renamed, created or mapped (docs/sync.md, "Profile entity").
+        case localProfileChange
+        /// A local Profile deletion committed in Chromium; carries its account profile uuid. The
+        /// journal is the durable record, so this round only moves it onto the cursor promptly.
+        case recordLocalProfileDeletion(String)
         /// The Space gate's shut <-> open edge. Queued like every other round rather than
         /// applied in place, so it can never land *inside* a round that is parked in
         /// `getUpdates` — see `setSpaceSyncEnabled`.
@@ -1013,6 +1045,7 @@ actor PhiSyncEngine {
          settings: [SyncableSetting] = SyncableSettings.all,
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
+         profileAccess: (any PhiProfileLocalAccess)? = nil,
          markerStore: (any PhiSyncMarkerStore)? = nil,
          ownedKinds: [OwnedKindRegistration] = [],
          faviconBackfill: PhiFaviconBackfillQueue? = nil,
@@ -1027,6 +1060,7 @@ actor PhiSyncEngine {
         self.settings = settings
         self.spaceAccess = spaceAccess
         self.spaceStore = spaceStore
+        self.profileAccess = profileAccess
         self.ownedKinds = ownedKinds
         self.faviconBackfill = faviconBackfill
         self.previewMaxPages = previewMaxPages
@@ -1194,6 +1228,17 @@ actor PhiSyncEngine {
         await serialized(.localSpaceChange)
     }
 
+    /// Entry point for the coordinator's debounced observer of mapped Profiles' ids and names.
+    func handleLocalProfilesChange() async {
+        await serialized(.localProfileChange)
+    }
+
+    /// Delivered by `PhiSpaceSyncState.shared` once a local Profile deletion committed in Chromium.
+    /// Call only from outside a round.
+    func recordLocalProfileDeletion(syncUuid: String) async {
+        await serialized(.recordLocalProfileDeletion(syncUuid))
+    }
+
     /// Entry point for the debounced `bookmarkChangesPublisher()` /
     /// `pinnedTabChangesPublisher()` observers (§5.7). Same shape as
     /// `handleLocalSpacesChange()`, one line down to `serialized`.
@@ -1238,6 +1283,7 @@ actor PhiSyncEngine {
     /// sweep runs as a round AND keeps no stale copy across a suspension.
     private func applyRetentionSweep() async {
         await applySpaceRetentionSweep()
+        await applyProfileRetentionSweep()
         // Drop expired tombstone cursors before the cascade (section 3.6), so the same expired
         // record is not classified by both passes.
         await dropExpiredOwnedTombstones()
@@ -1504,7 +1550,8 @@ actor PhiSyncEngine {
     private func serialized(_ round: Round) async {
         let reportsStatus: Bool
         switch round {
-        case .pull, .push, .localChange, .localSpaceChange, .localOwnedChange: reportsStatus = true
+        case .pull, .push, .localChange, .localSpaceChange, .localProfileChange, .localOwnedChange:
+            reportsStatus = true
         default: reportsStatus = false
         }
         if reportsStatus {
@@ -1548,7 +1595,8 @@ actor PhiSyncEngine {
         let admittedThroughPauseExemption: Bool
         if profileMappingGate.isClosed {
             switch round {
-            case .spaceGate, .recordLocalDeletion: admittedThroughPauseExemption = true
+            case .spaceGate, .recordLocalDeletion, .recordLocalProfileDeletion:
+                admittedThroughPauseExemption = true
             default: return
             }
         } else {
@@ -1557,7 +1605,8 @@ actor PhiSyncEngine {
 
         let reportsStatus: Bool
         switch round {
-        case .pull, .push, .localChange, .localSpaceChange, .localOwnedChange: reportsStatus = true
+        case .pull, .push, .localChange, .localSpaceChange, .localProfileChange, .localOwnedChange:
+            reportsStatus = true
         default: reportsStatus = false
         }
         let statusRevision = reportsStatus
@@ -1596,6 +1645,12 @@ actor PhiSyncEngine {
         // and none of them re-lists the account's profiles.
         didRefreshProfilesThisRound = false
         switch round {
+        case .pull, .push, .localProfileChange, .recordLocalProfileDeletion:
+            await reconcileProfileDeletionIntents()
+        default:
+            break
+        }
+        switch round {
         case .pull:
             _ = await pull(thenPush: true)
         case .push:
@@ -1621,6 +1676,19 @@ actor PhiSyncEngine {
             // otherwise carries the reconnect time and beats a peer's genuinely later edit.
             await stampLocalSpaceEdits()
             await push(retryOnConflict: true)
+        case .localProfileChange:
+            guard !isApplyingRemote else { return }
+            // Same reason as `.localSpaceChange`: a rename carries the time the user made it.
+            await stampLocalProfileEdits()
+            if spaceSectionEnabled, spaceStore != nil {
+                var table = loadSpaceTable()
+                let before = table
+                await convergeProfileNames(table: &table)
+                if table != before { writeSpaceTable(table) }
+            }
+            await push(retryOnConflict: true)
+        case .recordLocalProfileDeletion:
+            break       // The reconciliation above did the work.
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
         case .retentionSweep:
@@ -1656,6 +1724,7 @@ actor PhiSyncEngine {
         guard !isStopped else { return }
         let spaces = loadSpaceTable()
         let pendingInbound = unreadableSettingsRecord != nil || spaces.cursors.values.contains { $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone }
+            || spaces.profileCursors.values.contains { $0.pendingApply != nil || $0.pendingTombstone }
             || !spaces.unreadableTagHashes.isEmpty
             || ownedTables.values.contains { table in
                 table.cursors.values.contains {
@@ -1667,6 +1736,7 @@ actor PhiSyncEngine {
         // lands nor parks. Both recur every round, so counting them would pin the status at
         // Syncing for anyone who owns such a row.
         let pendingOutbound = spaces.cursors.values.contains { $0.pendingProjection != nil || $0.pendingDelete }
+            || spaces.profileCursors.values.contains { $0.pendingProjection != nil || $0.pendingDelete }
             || ownedTables.values.contains { $0.cursors.values.contains { $0.pendingDelete } }
             || ownedCounters.values.contains { $0.pendingPublish > 0 }
         let completion = SyncRoundCompletion(pullDrained: canPublishThisRound && roundOutcome == .ok,
@@ -1828,6 +1898,9 @@ actor PhiSyncEngine {
         guard !stopSignal.isStopped else { box.result = .failure(.retired); return }
 
         var summaries: [String: (entity: Phi_PhiSpaceEntity, version: Int64)] = [:]
+        var tombstoneHashes: Set<String> = []
+        var profileNames: [String: String] = [:]
+        var profileVersions: [String: Int64] = [:]
         var pages = 0
         var entities = 0
         var refused = 0
@@ -1872,9 +1945,9 @@ actor PhiSyncEngine {
                 for entity in response.entities {
                     entities += 1
                     // Ignore settings entities and tombstones; deleted account Spaces must not
-                    // appear as pairing choices.
-                    guard entity.clientTagHash != PhiSyncEntity.settingsClientTagHash,
-                          !entity.deleted else { continue }
+                    // appear as pairing choices, and deleted account Profiles are filtered by hash.
+                    guard entity.clientTagHash != PhiSyncEntity.settingsClientTagHash else { continue }
+                    guard !entity.deleted else { tombstoneHashes.insert(entity.clientTagHash); continue }
                     guard let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key) else {
                         unreadable += 1     // Count only; do not add to `unreadableTagHashes`.
                         continue
@@ -1882,6 +1955,16 @@ actor PhiSyncEngine {
                     // An unknown protobuf kind could be a Space from a newer client.
                     // Known other kinds are irrelevant; an unknown kind is not absence.
                     guard let kind = decoded.kind else { unreadable += 1; continue }
+                    if case .profile(let profile) = kind {
+                        // Same hash check as landing; a payload that does not hash back to
+                        // its tag is not evidence of a name.
+                        guard PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(profile.profileUuid))
+                                == entity.clientTagHash else { unreadable += 1; continue }
+                        if let seen = profileVersions[profile.profileUuid], seen >= entity.version { continue }
+                        profileVersions[profile.profileUuid] = entity.version
+                        profileNames[profile.profileUuid] = profile.name.stringValue
+                        continue
+                    }
                     guard case .space(let space) = kind else { continue }
                     let expected = PhiSyncEntity.clientTagHash(
                         for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
@@ -1941,7 +2024,9 @@ actor PhiSyncEngine {
         AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
                    + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
                    + "ms=\(now() - startedAt)")
-        box.result = .success(PhiAccountSpacePreview(spaces: out, skippedEntityCount: refused + unreadable))
+        box.result = .success(PhiAccountSpacePreview(spaces: out, skippedEntityCount: refused + unreadable,
+                                                     deletedProfileTagHashes: tombstoneHashes,
+                                                     profileNames: profileNames))
     }
 
     // MARK: - §11 round counters
@@ -1965,6 +2050,15 @@ actor PhiSyncEngine {
         /// explicit that it is NOT a failure. Filled in by Task 11's refresh hook;
         /// until that lands no refresh runs at all, so `skipped` is the true value.
         var profileRefresh = "skipped"
+        /// Profile entity publication outcomes, by entry: `profilesPushed` and `profileTombstones`
+        /// were applied, the rest were not. A scoped conflict retry counts its entries again.
+        var profilesPushed = 0
+        var profileTombstones = 0
+        var profileConflicts = 0
+        var profilesRejected = 0
+        var profilesInvalid = 0
+        /// This round armed the one-shot Profile cursor-loss replay ("Profile cursor loss").
+        var profileReplayArmed = false
     }
     private var spaceCounters = SpaceRoundCounters()
 
@@ -1997,6 +2091,14 @@ actor PhiSyncEngine {
             profiles_created=\(spaceCounters.profilesCreated) \
             profile_refresh=\(spaceCounters.profileRefresh) \
             mapped=\(mapped) unmapped=\(unmapped)
+            """)
+        // A Profile line of its own: CONFLICT on every round with nothing pulled is the cursor-loss
+        // signature, and without these counters it shows only as "Server error".
+        AppLogInfo("""
+            [phi-sync] profiles pushed=\(spaceCounters.profilesPushed) \
+            tombstones=\(spaceCounters.profileTombstones) conflicts=\(spaceCounters.profileConflicts) \
+            rejected=\(spaceCounters.profilesRejected) invalid=\(spaceCounters.profilesInvalid) \
+            replay_armed=\(spaceCounters.profileReplayArmed)
             """)
     }
 
@@ -2198,6 +2300,9 @@ actor PhiSyncEngine {
                 // round" would be contradicted by the throttle itself. `.skipped`
                 // does not arm it either -- nothing ran.
                 if outcome != .failed, outcome != .skipped { lastProfileRefreshAtMs = now() }
+                // Auto-create waits for the first full replay (R4); the pull that finishes it
+                // asks for a follow-up so the Profiles it may now create are not delayed.
+                if outcome == .skipped, !spaceTableAtEntry.hasDrainedFullReplay { profileFollowUpWanted = true }
                 // §11's two profile fields. `skipped` is the default the counter
                 // struct starts with, so the branches that never reach here
                 // (gate shut, already refreshed, inside the interval) report it
@@ -2220,6 +2325,12 @@ actor PhiSyncEngine {
         // page then adds its own Space arrivals, so a tombstone on a later page of this pull
         // resolves a Space the pull itself introduced.
         var tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
+        let profileLive = spaceLive && profileAccess != nil
+        var profileIndex = profileLive ? await profileTagIndex(table: spaceTableAtEntry) : [:]
+        // Tombstones whose tag no index knew when their page landed (see the page loop). Seeded
+        // from the table, where each page persists them with its marker, so one received before
+        // a quit or before the page budget ended a round still meets the item naming its owner.
+        var carriedTombstones: [(hash: String, entityId: String, version: Int64)] = []
 
         // Round-level state stays outside the page loop (RR-B11). Only a pull that starts without a
         // marker and drains all pages establishes absence. Capture the marker before guard 2 acts
@@ -2291,6 +2402,13 @@ actor PhiSyncEngine {
             mutateSpaceTable { $0.hadRecords = true }
         }
 
+        // A full replay re-delivers every tombstone; page 1's write then replaces the stored list.
+        if spaceLive, marker != nil {
+            carriedTombstones = spaceTableAtEntry.unmatchedTombstones.map {
+                (hash: $0.clientTagHash, entityId: $0.entityId, version: $0.version)
+            }
+        }
+
         do {
             pageLoop: while more, pages < Self.maxPullPages {
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
@@ -2319,6 +2437,11 @@ actor PhiSyncEngine {
                         // routes by tag-hash indices before decrypting: tombstones contain no
                         // ciphertext and cannot be classified by a decrypt-then-switch path.
                         guard spaceLive else { continue }
+                        if profileLive, profileIndex[entity.clientTagHash] != nil {
+                            routeProfileEntity(entity, key: key, decoded: nil, tagIndex: profileIndex,
+                                               into: &batch)
+                            continue
+                        }
                         if tagIndex[entity.clientTagHash] != nil {
                             routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
                             continue
@@ -2336,14 +2459,19 @@ actor PhiSyncEngine {
                         // unreadable ciphertext and unrecognized payloads to Space routing,
                         // preserving its unknown-tag behavior: log unknown tombstones, quarantine
                         // unreadable payloads and ignore other kinds.
-                        if !entity.deleted, !ownedKinds.isEmpty,
-                           let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key),
-                           let registration = ownedKinds.first(where: {
-                               $0.identity(decoded) != nil
-                           }) {
-                            routeOwnedEntity(registration, entity, key: key,
-                                             decoded: decoded, into: &ownedBatches)
-                            continue
+                        // A Profile entity this device has never indexed is matched the same way.
+                        if !entity.deleted, !ownedKinds.isEmpty || profileLive,
+                           let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key) {
+                            if let registration = ownedKinds.first(where: { $0.identity(decoded) != nil }) {
+                                routeOwnedEntity(registration, entity, key: key,
+                                                 decoded: decoded, into: &ownedBatches)
+                                continue
+                            }
+                            if profileLive, case .profile? = decoded.kind {
+                                routeProfileEntity(entity, key: key, decoded: decoded,
+                                                   tagIndex: profileIndex, into: &batch)
+                                continue
+                            }
                         }
                         routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
                         continue
@@ -2448,19 +2576,44 @@ actor PhiSyncEngine {
                     for uuid in batch.ownedOwnerUuids {
                         let hash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
                         if tagIndex[hash] == nil { tagIndex[hash] = uuid }
-                    }
-                    for unknown in batch.unknownTombstones {
-                        guard let uuid = tagIndex[unknown.hash] else {
-                            AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag "
-                                       + "hash=\(String(unknown.hash.prefix(8)))")
-                            continue
+                        // A pin's owner can be a Profile this device never mapped (deleted on the
+                        // account before this device joined or replayed): index it under its
+                        // Profile tag as well, so the Profile tombstone records a deleted Profile
+                        // cursor and landing discards the pin instead of parking it forever
+                        // (PR #181 acceptance 2026-10-12: a Google pin of the deleted P168-6).
+                        if profileLive {
+                            let profileHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(uuid))
+                            if profileIndex[profileHash] == nil { profileIndex[profileHash] = uuid }
                         }
-                        batch.tombstones.append((uuid: uuid, entityId: unknown.entityId,
-                                                 version: unknown.version))
                     }
+                    // Tombstones no index named yet are kept for the rest of this pull: a page
+                    // order of tombstone first, owned items later would otherwise drop it.
+                    // A live entity on this page supersedes a carried tombstone for its tag (it was
+                    // recreated with a newer version); the hash is enough, nothing is decrypted.
+                    let liveHashes = Set(response.entities.filter { !$0.deleted }.map(\.clientTagHash))
+                    let arrivingHashes = Set(batch.unknownTombstones.map(\.hash))
+                    carriedTombstones.removeAll { arrivingHashes.contains($0.hash) || liveHashes.contains($0.hash) }
+                    carriedTombstones += batch.unknownTombstones
                     batch.unknownTombstones = []
+                    carriedTombstones.removeAll { unknown in
+                        if profileLive, let uuid = profileIndex[unknown.hash] {
+                            batch.profileTombstones.append((uuid: uuid, entityId: unknown.entityId,
+                                                            version: unknown.version))
+                            return true
+                        }
+                        if let uuid = tagIndex[unknown.hash] {
+                            batch.tombstones.append((uuid: uuid, entityId: unknown.entityId,
+                                                     version: unknown.version))
+                            return true
+                        }
+                        return false
+                    }
                     flushSpaceObservations(batch)
                     flushOwnedObservations(ownedBatches)
+                    for arrival in batch.profiles {
+                        profileIndex[PhiSyncEntity.clientTagHash(
+                            for: PhiSyncEntity.profileClientTag(arrival.uuid))] = arrival.uuid
+                    }
                     // One load/apply/write per page is safe only in this serialized path:
                     // applySpaces spans main-actor suspensions, but gate changes and both local
                     // Space intents are queued rounds, so no other writer interleaves. Load after
@@ -2471,6 +2624,16 @@ actor PhiSyncEngine {
                     spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
                     await applySpaces(batch, table: &spaceTable)
                     await applySpaceTombstones(batch, table: &spaceTable)
+                    await applyProfiles(batch, table: &spaceTable)
+                    await applyProfileTombstones(batch, table: &spaceTable)
+                    await convergeProfileNames(table: &spaceTable)
+                    // Persisted with this page's marker; matched ones were removed above.
+                    spaceTable.setUnmatchedTombstones(carriedTombstones.map {
+                        PhiUnmatchedTombstone(clientTagHash: $0.hash, entityId: $0.entityId, version: $0.version)
+                    })
+                    carriedTombstones = spaceTable.unmatchedTombstones.map {
+                        (hash: $0.clientTagHash, entityId: $0.entityId, version: $0.version)
+                    }
                     writeSpaceTable(spaceTable)
 
                     // Land settings, Spaces, then registered owned kinds (section 5.2), allowing a
@@ -2527,6 +2690,20 @@ actor PhiSyncEngine {
                 }
             }
             drained = !more
+            // Once per change, not per pull: an account's old tombstones can sit in the list for
+            // good, and a timer round every few minutes would repeat the line forever.
+            if carriedTombstones.count != lastLoggedUnmatchedTombstones {
+                lastLoggedUnmatchedTombstones = carriedTombstones.count
+                if carriedTombstones.count > PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold {
+                    AppLogWarn("[phi-sync] unmatched tombstones above warning threshold; retained=\(carriedTombstones.count) "
+                               + "threshold=\(PhiSpaceSyncTable.unmatchedTombstoneWarningThreshold)")
+                } else if let first = carriedTombstones.first {
+                    AppLogInfo("[phi-sync] carrying \(carriedTombstones.count) tombstone(s) for unknown tags to the next pull "
+                               + "first_hash=\(String(first.hash.prefix(8)))")
+                } else {
+                    AppLogInfo("[phi-sync] no tombstones for unknown tags left to carry")
+                }
+            }
             if !drained, pages >= Self.maxPullPages { roundOutcome = .pageBudgetExhausted }
             // Finalize drain only if no marker suppression or cursor-save failure occurred
             // (RR2-11). A round that did not persist its page markers cannot claim a complete
@@ -2600,6 +2777,8 @@ actor PhiSyncEngine {
             if maySettingsPublish {
                 await pushSettings(retryOnConflict: false)
             }
+            // Profile entities before Spaces, so a new Profile's entity precedes its Spaces.
+            await pushProfiles(retryOnConflict: false)
             await pushSpaces(retryOnConflict: false)
             // Publish owned kinds after Spaces (section 5.2). Their gate, drain and failed-read
             // guards are internal; an empty registry returns immediately.
@@ -2614,6 +2793,10 @@ actor PhiSyncEngine {
             Task { [weak self] in await self?.pullOnce() }
         } else if drained {
             followUpRoundsUsed = 0
+            if profileFollowUpWanted {
+                profileFollowUpWanted = false
+                Task { [weak self] in await self?.pullOnce() }
+            }
         }
         return canPublishThisRound
     }
@@ -2631,6 +2814,9 @@ actor PhiSyncEngine {
         /// record a deleted Space cursor, so the items it owns are discarded instead of parked
         /// forever (R-M3-4a-78).
         var ownedOwnerUuids: Set<String> = []
+        /// Profile entities and tombstones (docs/sync.md, "Profile entity").
+        var profiles: [(uuid: String, entity: Phi_PhiProfileEntity, entityId: String, version: Int64)] = []
+        var profileTombstones: [(uuid: String, entityId: String, version: Int64)] = []
     }
 
     /// Persists what this round's routing learned about entities the shared marker has
@@ -2900,7 +3086,12 @@ actor PhiSyncEngine {
             if !isDefault {
                 let remoteUuid = item.entity.profileUuid.stringValue
                 profileId = await spaceAccess.localProfileId(forGlobalUuid: remoteUuid)
-                if let resolved = profileId, await !spaceAccess.isKnownLocalProfile(resolved) {
+                if table.deletedProfileUuids.contains(remoteUuid) {
+                    // Bound to an account Profile deleted here: park it (fallback B, or the held
+                    // fallback A below) and never run the dead-mapping repair, which would let
+                    // auto-create grow the deleted Profile back.
+                    profileId = nil
+                } else if let resolved = profileId, await !spaceAccess.isKnownLocalProfile(resolved) {
                     // A reverse mapping whose Chromium Profile was deleted must be dropped (section
                     // 3.6's sole dead-mapping repair). Check userAssignableProfiles, not
                     // globalUuid(forProfileId:), which would merely reread the same stale mapping.
@@ -3174,6 +3365,13 @@ actor PhiSyncEngine {
             // suppressions stay on the identity and are unaffected by a delete.
             let isDefaultIdentity = item.uuid == SyncableSpaces.defaultSpaceUuid
             var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
+            // Same rule as a Profile's: a tombstone older than the live entity held here is stale.
+            if cursor.entityId != nil, cursor.deletedAtMs == nil, cursor.purgedAtMs == nil,
+               cursor.version > item.version {
+                AppLogInfo("[phi-sync] stale space tombstone ignored uuid=\(String(item.uuid.prefix(8))) "
+                           + "tombstone_version=\(item.version) cursor_version=\(cursor.version)")
+                continue
+            }
             if let entityId = cursor.entityId, !item.entityId.isEmpty, entityId != item.entityId {
                 // The server never rewrites `client_tag_hash` on an update
                 // (`internal/data/entities_write.go:243-244`), so the hash is the
@@ -3354,6 +3552,7 @@ actor PhiSyncEngine {
     private func push(retryOnConflict: Bool) async {
         guard await pull(thenPush: false) else { return }
         await pushSettings(retryOnConflict: retryOnConflict)
+        await pushProfiles(retryOnConflict: retryOnConflict)
         await pushSpaces(retryOnConflict: retryOnConflict)
         await pushOwnedItems(retryOnConflict: retryOnConflict)
     }
@@ -3907,6 +4106,847 @@ actor PhiSyncEngine {
         table.cursors[item.uuid] = cursor
     }
 
+    // MARK: - Profile entity (docs/sync.md, "Profile entity")
+
+    /// client_tag_hash -> account profile uuid, rebuilt once per pull from the Profile cursor keys
+    /// and every persisted Profile mapping. A Profile tombstone carries no payload, so only an
+    /// indexed uuid can be resolved; an unknown one falls through to the Space router, where the
+    /// owners named by owned-item arrivals (and by items parked earlier) extend this index for
+    /// the rest of the pull, so a Profile this device never mapped still lands as deleted when
+    /// one of its pins is replayed. A tombstone nothing names is dropped, which is harmless
+    /// because auto-create needs a live Profile entity.
+    private func profileTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
+        guard let profileAccess else { return [:] }
+        var uuids = Set(table.profileCursors.keys)
+        for uuid in await profileAccess.allProfileMappings().values { uuids.insert(uuid) }
+        // The key registry never forgets a uuid: any Profile tombstone resolves on its own page once
+        // it has been read, without waiting for an owned item to name the Profile.
+        uuids.formUnion(await profileAccess.knownAccountProfileUuids())
+        // A Profile deleted here before its cursor existed is known only to the journal.
+        for uuid in await profileAccess.profileDeletionIntents().keys { uuids.insert(uuid) }
+        var index: [String: String] = [:]
+        for uuid in uuids where !uuid.isEmpty {
+            index[PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(uuid))] = uuid
+        }
+        return index
+    }
+
+    /// `routeSpaceEntity`'s steps for a Profile entity: tombstone first, then decrypt, kind check
+    /// and the payload re-hash to its own tag. `decoded` is the envelope the caller already opened.
+    private func routeProfileEntity(_ entity: PhiRemoteEntity,
+                                    key: SymmetricKey,
+                                    decoded: Phi_PhiEntity?,
+                                    tagIndex: [String: String],
+                                    into batch: inout SpacePullBatch) {
+        let shortHash = String(entity.clientTagHash.prefix(8))
+        guard !entity.deleted else {
+            guard let uuid = tagIndex[entity.clientTagHash] else { return }
+            batch.profileTombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))
+            return
+        }
+        let envelope: Phi_PhiEntity
+        if let decoded {
+            envelope = decoded
+        } else {
+            do {
+                envelope = try PhiEntityCodec.decrypt(entity.ciphertext, key: key)
+            } catch {
+                AppLogWarn("[phi-sync] cannot open a profile entity tag=\(shortHash) ciphertext_bytes=\(entity.ciphertext.count) (\(PhiSyncLog.describe(error)))")
+                batch.unreadableHashes.append(entity.clientTagHash)
+                return
+            }
+        }
+        guard case .profile(let profile)? = envelope.kind,
+              PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(profile.profileUuid))
+                == entity.clientTagHash else {
+            AppLogError("[phi-sync] profile payload does not hash back to its tag=\(shortHash)")
+            batch.unreadableHashes.append(entity.clientTagHash)
+            return
+        }
+        batch.profiles.append((uuid: profile.profileUuid, entity: profile,
+                               entityId: entity.entityId, version: entity.version))
+    }
+
+    /// Lands the live Profile entities one page collected, plus every parked one. Never throws: a
+    /// rename that does not take parks the entity in `pendingApply` and the round moves on.
+    ///
+    /// - A cursor with a local deletion pending learns the server's id and version and lands
+    ///   nothing: delete beats rename.
+    /// - A deleted uuid is resurrected only by a NEWER version than the tombstone it recorded (a
+    ///   peer's undelete); a replayed older create lands nothing. A mapping whose local Profile
+    ///   is gone is dropped then, so auto-create recreates the Profile from the live entity.
+    /// - No mapped local Profile: the entity is stored as the baseline only; auto-create reads it.
+    /// - A mapped local Profile: merged against the local projection; a winning name different
+    ///   from what this device presents is applied through `applyRemoteName`, and the resulting
+    ///   local name is recorded with the baseline. Baselines move only after that succeeded.
+    private func applyProfiles(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let profileAccess else { return }
+        var all: [(uuid: String, entity: Phi_PhiProfileEntity, entityId: String, version: Int64)] = []
+        let incoming = batch.profiles.sorted { $0.uuid < $1.uuid }
+        for (uuid, cursor) in table.profileCursors.sorted(by: { $0.key < $1.key })
+        where !incoming.contains(where: { $0.uuid == uuid }) {
+            guard let bytes = cursor.pendingApply,
+                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            all.append((uuid: uuid, entity: entity, entityId: cursor.entityId ?? "", version: cursor.version))
+        }
+        all += incoming
+        guard !all.isEmpty else { return }
+        for item in all { observeStamps([item.entity.name]) }
+        // A pulled entity that restores a missing baseline reopens the cursor-loss replay latch
+        // (`armProfileReplayForLostCursors`), so a later loss can replay again. Checked on every
+        // exit: parking and the deletion paths learn the entity id as well.
+        let unbaselined = Set(incoming.filter {
+            !$0.entityId.isEmpty && table.profileCursors[$0.uuid]?.entityId == nil
+        }.map(\.uuid))
+        defer {
+            if table.profilesReplayedForEmptyTable,
+               unbaselined.contains(where: { table.profileCursors[$0]?.entityId != nil }) {
+                table.profilesReplayedForEmptyTable = false
+            }
+        }
+
+        let locals = await profileAccess.currentProfiles()
+        let mappings = await profileAccess.allProfileMappings()
+        let enumerated = await profileAccess.isProfileListEnumerated()
+        let deletingHere = await profileAccess.profileDeletionIntents()
+        guard !isStopped else { return }
+        var localByUuid: [String: PhiLocalProfile] = [:]
+        for local in locals {
+            if let uuid = mappings[local.profileId] { localByUuid[uuid] = local }
+        }
+        // What this device would publish for each Profile with history, so an unpublished local
+        // rename takes part in the merge instead of being overwritten by the arriving entity.
+        var projectionTable = table
+        for uuid in projectionTable.profileCursors.keys { projectionTable.profileCursors[uuid]?.pendingApply = nil }
+        let projections = SyncableProfiles.snapshot(profiles: locals, table: projectionTable,
+                                                    globalUuid: { mappings[$0] }, now: hlcNow())
+
+        for item in all {
+            guard !isStopped else { return }
+            var cursor = table.profileCursors[item.uuid] ?? PhiProfileCursor()
+            let tag = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(item.uuid))
+            func park() {
+                cursor.pendingApply = try? item.entity.serializedData()
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                table.profileCursors[item.uuid] = cursor
+            }
+            // Delete beats rename: a deletion recorded here, or still only in the journal, learns
+            // the server's id and version for its tombstone and lands nothing.
+            if cursor.pendingDelete || deletingHere[item.uuid] != nil {
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingApply = nil
+                table.profileCursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
+            if cursor.deletedBeforePublish == true {
+                // Delete beats create: this device deleted the Profile before any entity existed,
+                // and a peer has now published one. Tombstone it rather than regrow the Profile.
+                AppLogInfo("[phi-sync] a profile deleted here before publication arrived; tombstoning it tag=\(String(tag.prefix(8)))")
+                if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                cursor.version = max(cursor.version, item.version)
+                cursor.pendingDelete = true
+                cursor.pendingApply = nil
+                table.profileCursors[item.uuid] = cursor
+                table.unreadableTagHashes.removeValue(forKey: tag)
+                continue
+            }
+            if cursor.pendingTombstone {
+                // A deferred remote tombstone is overtaken only by a newer live version (a peer's
+                // undelete); the replayed older create it came after is not.
+                guard item.version > cursor.version else {
+                    cursor.pendingApply = nil
+                    table.profileCursors[item.uuid] = cursor
+                    continue
+                }
+                cursor.pendingTombstone = false
+                cursor.tombstoneDeferRounds = 0
+            }
+            if cursor.deletedAtMs != nil || cursor.purgedAtMs != nil {
+                guard item.version > cursor.version else {
+                    cursor.pendingApply = nil
+                    table.profileCursors[item.uuid] = cursor
+                    continue
+                }
+                AppLogInfo("[phi-sync] a deleted profile came back with a newer version tag=\(String(tag.prefix(8)))")
+                cursor = PhiProfileCursor()
+                if enumerated, localByUuid[item.uuid] == nil,
+                   let dead = mappings.first(where: { $0.value == item.uuid })?.key {
+                    await profileAccess.dropMapping(forProfileId: dead)
+                }
+            }
+            // A list that was never read cannot say whether the local Profile exists.
+            guard enumerated else { park(); continue }
+
+            let baseline = cursor.reconciled.flatMap { try? Phi_PhiProfileEntity(serializedBytes: $0) }
+            let merged = baseline.map {
+                SyncableProfiles.merge(local: projections[item.uuid] ?? $0, remote: item.entity)
+            } ?? item.entity
+            if let local = localByUuid[item.uuid] {
+                let target = merged.name.stringValue
+                let presented = baseline == nil ? local.displayName
+                    : (projections[item.uuid] ?? baseline)?.name.stringValue
+                var localName = local.displayName
+                if !target.isEmpty, target != presented {
+                    guard let renamed = await profileAccess.applyRemoteName(profileId: local.profileId,
+                                                                            name: target) else {
+                        AppLogWarn("[phi-sync] profile rename did not take tag=\(String(tag.prefix(8))); parking the entity")
+                        park()
+                        continue
+                    }
+                    guard !isStopped else { return }
+                    localName = renamed
+                }
+                cursor.localNameAtBaseline = localName
+            } else if baseline == nil {
+                // A new account Profile this device has no local Profile for: auto-create
+                // creates it on a later round, so ask for one now instead of waiting the timer.
+                profileFollowUpWanted = true
+            }
+            cursor.reconciled = try? merged.serializedData()
+            cursor.server = try? item.entity.serializedData()
+            cursor.pendingProjection = nil
+            cursor.convergedLocalName = nil
+            cursor.pendingApply = nil
+            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+            cursor.version = max(cursor.version, item.version)
+            table.profileCursors[item.uuid] = cursor
+            table.unreadableTagHashes.removeValue(forKey: tag)
+        }
+    }
+
+    /// Remote Profile deletions, plus every tombstone deferred by an earlier round (the shared
+    /// marker has moved past those, so they are never delivered again).
+    ///
+    /// - Recorded deleted already, or this device's own deletion of the uuid is journaled:
+    ///   finalize the cursor (the local deletion proceeds on its own; no tombstone is owed).
+    /// - No mapped local Profile, or it is gone: finalize.
+    /// - Otherwise `SyncableProfiles.tombstoneDecision`: delete the local Profile through the same
+    ///   path as a local deletion; defer to the next round; or undelete -- keep the baseline, take
+    ///   the tombstone's id and version, drop `server`, so the next publication republishes the
+    ///   entity over the tombstone and the deleting device recreates the Profile.
+    /// - A Chromium deletion that fails defers; after `profileTombstoneRetryRounds` failed
+    ///   rounds the Profile is undeleted instead.
+    ///
+    /// Runs inside the page, before its table write: a crash replays the page, finds the Profile
+    /// gone and finalizes. The mapping is kept until retention.
+    private func applyProfileTombstones(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let profileAccess else { return }
+        var work = batch.profileTombstones
+        for (uuid, cursor) in table.profileCursors.sorted(by: { $0.key < $1.key })
+        where cursor.pendingTombstone && !work.contains(where: { $0.uuid == uuid }) {
+            work.append((uuid: uuid, entityId: cursor.entityId ?? "", version: cursor.version))
+        }
+        guard !work.isEmpty else { return }
+        let mappings = await profileAccess.allProfileMappings()
+        let deletingHere = await profileAccess.profileDeletionIntents()
+        guard !isStopped else { return }
+        var finishedIntents: [String] = []
+
+        for item in work {
+            guard !isStopped else { return }
+            var cursor = table.profileCursors[item.uuid] ?? PhiProfileCursor()
+            // A tombstone older than the live entity this device holds (a carried one, after the
+            // Profile was recreated) must not delete it.
+            if cursor.entityId != nil, cursor.deletedAtMs == nil, cursor.purgedAtMs == nil,
+               cursor.version > item.version {
+                AppLogInfo("[phi-sync] stale profile tombstone ignored uuid=\(String(item.uuid.prefix(8))) "
+                           + "tombstone_version=\(item.version) cursor_version=\(cursor.version)")
+                continue
+            }
+            let tag = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(item.uuid))
+            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+            cursor.version = max(cursor.version, item.version)
+            cursor.pendingApply = nil
+            table.unreadableTagHashes.removeValue(forKey: tag)
+            func finalize() {
+                if cursor.deletedAtMs == nil { cursor.deletedAtMs = now() }
+                cursor.firstDeferredAtMs = nil
+                cursor.pendingDelete = false
+                cursor.deleteRejectRounds = 0
+                cursor.pendingTombstone = false
+                cursor.tombstoneDeferRounds = 0
+                cursor.pendingProjection = nil
+                table.profileCursors[item.uuid] = cursor
+                if deletingHere[item.uuid] != nil { finishedIntents.append(item.uuid) }
+            }
+            if deletingHere[item.uuid] != nil,
+               await profileAccess.isProfileBeingDeletedLocally(syncUuid: item.uuid) {
+                // Chromium is still deleting it here and may yet fail: decide next round.
+                cursor.pendingTombstone = true
+                table.profileCursors[item.uuid] = cursor
+                continue
+            }
+            if cursor.deletedAtMs != nil || deletingHere[item.uuid] != nil { finalize(); continue }
+            let mappedLocalId = mappings.first(where: { $0.value == item.uuid })?.key
+            guard let localId = mappedLocalId, await profileAccess.isKnownLocalProfile(localId) else {
+                // Already gone, possibly by a deletion whose row cleanup a crash cut short.
+                if let mappedLocalId {
+                    await profileAccess.removeLocalRows(ofDeletedProfile: mappedLocalId,
+                                                        alsoHiddenSyncUuids: table.hiddenSyncUuids)
+                }
+                finalize()
+                AppLogInfo("[phi-sync] profile deleted by a remote tombstone; no local profile here")
+                continue
+            }
+            let blockers = await profileAccess.profileDeletionBlockers(localProfileId: localId)
+            var decision = SyncableProfiles.tombstoneDecision(blockers, table: table)
+            if decision == .delete {
+                guard await profileAccess.deleteForRemoteTombstone(localProfileId: localId) else {
+                    guard !isStopped else { return }
+                    cursor.tombstoneDeferRounds += 1
+                    AppLogWarn("[phi-sync] profile deletion for a remote tombstone failed "
+                               + "rounds=\(cursor.tombstoneDeferRounds) tag=\(String(tag.prefix(8)))")
+                    decision = cursor.tombstoneDeferRounds >= Self.profileTombstoneRetryRounds
+                        ? .undelete : .deferApply
+                    if decision == .deferApply {
+                        cursor.pendingTombstone = true
+                        table.profileCursors[item.uuid] = cursor
+                        continue
+                    }
+                    undelete(&cursor)
+                    table.profileCursors[item.uuid] = cursor
+                    continue
+                }
+                guard !isStopped else { return }
+                // The page's working table, not the stored one: Spaces this page hid are not
+                // written yet (docs/sync.md, "Profile deletion and rename").
+                await profileAccess.removeLocalRows(ofDeletedProfile: localId,
+                                                    alsoHiddenSyncUuids: table.hiddenSyncUuids)
+                finalize()
+                AppLogInfo("[phi-sync] profile deleted by a remote tombstone")
+                continue
+            }
+            if decision == .deferApply {
+                let firstDeferred = cursor.firstDeferredAtMs ?? now()
+                cursor.firstDeferredAtMs = firstDeferred
+                if now() - firstDeferred >= Self.profileTombstoneDeferLimitMs {
+                    AppLogWarn("[phi-sync] a remote profile tombstone stayed deferred too long; keeping the profile")
+                    decision = .undelete
+                }
+            }
+            switch decision {
+            case .delete:
+                break       // Handled above.
+            case .deferApply:
+                cursor.pendingTombstone = true
+                table.profileCursors[item.uuid] = cursor
+            case .undelete:
+                AppLogInfo("[phi-sync] keeping a profile a remote tombstone deleted; republishing it tag=\(String(tag.prefix(8)))")
+                undelete(&cursor)
+                table.profileCursors[item.uuid] = cursor
+            }
+        }
+        for uuid in finishedIntents { await profileAccess.finishLocalProfileDeletion(syncUuid: uuid) }
+    }
+
+    /// Chromium deletions a remote tombstone may fail before the Profile is kept and republished.
+    static let profileTombstoneRetryRounds = 3
+    /// How long a remote tombstone may stay deferred (a running agent Space, an import, a bound
+    /// Space's own pending deletion) before the Profile is kept and republished: well above a
+    /// running agent Space's lifetime. Measured from `firstDeferredAtMs` on the wall clock.
+    static let profileTombstoneDeferLimitMs: Int64 = 2 * 60 * 60 * 1000
+
+    /// Edit beats delete for a Profile this device cannot delete: the cursor stays live with the
+    /// tombstone's id and version and no `server` bytes, so `profileCommitEntries` republishes
+    /// the baseline as an update over the tombstone.
+    private func undelete(_ cursor: inout PhiProfileCursor) {
+        cursor.firstDeferredAtMs = nil
+        cursor.server = nil
+        cursor.deletedBeforePublish = nil
+        cursor.deletedAtMs = nil
+        cursor.purgedAtMs = nil
+        cursor.pendingDelete = false
+        cursor.deleteRejectRounds = 0
+        cursor.pendingTombstone = false
+        cursor.tombstoneDeferRounds = 0
+    }
+
+    /// Moves the deletion journal onto the cursors, at the start of every pull, push, Profile
+    /// round and deletion round (docs/sync.md, "Profile deletion and rename"). Per entry:
+    /// - Chromium deletion still in flight: leave it.
+    /// - A fresh bridge read still lists the local Profile: the deletion never happened (a crash
+    ///   before Chromium deleted it); drop the entry, no tombstone. Without a fresh read nothing
+    ///   is concluded.
+    /// - Otherwise the local rows the deleted Profile left behind are removed again (idempotent,
+    ///   for a crash between Chromium's success and that cleanup), and:
+    ///   - published (an entity id and a version): `pendingDelete`, committed by `pushProfiles`;
+    ///     the entry stays until the tombstone commits;
+    ///   - already deleted, or never published once the full replay has drained: finalized
+    ///     locally (`deletedBeforePublish` for the latter);
+    ///   - otherwise (the table does not know the account yet): kept for a later round.
+    ///
+    /// Also sends every recorded deletion whose mapped local Profile still exists back through the
+    /// follower's decision (`pendingTombstone`): a local deletion that failed after a peer's
+    /// tombstone was recorded, or a tombstone an older build only recorded.
+    private func reconcileProfileDeletionIntents() async {
+        guard !isStopped, let profileAccess, spaceStore != nil else { return }
+        guard await profileAccess.isProfileListEnumerated() else { return }
+        let intents = await profileAccess.profileDeletionIntents()
+        let mappings = await profileAccess.allProfileMappings()
+        // Whether a journaled Profile still exists is decided only on a fresh bridge read: a
+        // stale list proves neither that the deletion happened nor that it did not.
+        let freshIds = intents.isEmpty ? nil : await profileAccess.freshProfileIds()
+        var present: Set<String> = []
+        var inFlight: Set<String> = []
+        for (uuid, localId) in intents {
+            if await profileAccess.isProfileBeingDeletedLocally(syncUuid: uuid) || freshIds == nil {
+                inFlight.insert(uuid)
+            } else if freshIds?.contains(localId) == true {
+                present.insert(uuid)
+            }
+        }
+        let createdAtMs = Dictionary(
+            (await profileAccess.currentProfiles()).map { ($0.profileId, $0.createdAtMs) },
+            uniquingKeysWith: { first, _ in first })
+        // Deleted cursors whose mapped local Profile is still here.
+        var surviving: Set<String> = []
+        for (uuid, cursor) in loadSpaceTable().profileCursors
+        where cursor.deletedAtMs != nil && cursor.purgedAtMs == nil && !cursor.pendingTombstone
+            && cursor.deletedBeforePublish != true && intents[uuid] == nil {
+            guard let localId = mappings.first(where: { $0.value == uuid })?.key,
+                  await profileAccess.isKnownLocalProfile(localId) else { continue }
+            // Only the same Profile: one created after the deletion under a reused basename is not.
+            // Chromium numbers basenames from a Local State counter that never goes back, so reuse
+            // takes a reset Local State; `createdAtMs` is 0 when this device never recorded it.
+            if let created = createdAtMs[localId], created > 0, let deleted = cursor.deletedAtMs,
+               created >= deleted { continue }
+            surviving.insert(uuid)
+        }
+        guard !isStopped else { return }
+        var cleaned: [String] = []
+        for (uuid, localId) in intents.sorted(by: { $0.key < $1.key })
+        where !inFlight.contains(uuid) && !present.contains(uuid) {
+            await profileAccess.removeLocalRows(ofDeletedProfile: localId, alsoHiddenSyncUuids: [])
+            cleaned.append(uuid)
+        }
+        guard !isStopped else { return }
+        var table = loadSpaceTable()
+        var finished: [String] = []
+        var changed = false
+        for uuid in intents.keys.sorted() where !inFlight.contains(uuid) {
+            if present.contains(uuid) {
+                AppLogInfo("[phi-sync] dropping a profile deletion intent: the profile still exists")
+                finished.append(uuid)
+                continue
+            }
+            var cursor = table.profileCursors[uuid] ?? PhiProfileCursor()
+            if cursor.deletedAtMs != nil || cursor.purgedAtMs != nil {
+                finished.append(uuid)
+            } else if cursor.pendingTombstone {
+                // A peer's tombstone was parked while this device's own deletion was in flight;
+                // the account already holds the deletion, so nothing is committed over it.
+                cursor.pendingTombstone = false
+                cursor.firstDeferredAtMs = nil
+                cursor.deletedAtMs = now()
+                table.profileCursors[uuid] = cursor
+                changed = true
+                finished.append(uuid)
+            } else if cursor.entityId != nil, cursor.version > 0 {
+                guard !cursor.pendingDelete else { continue }
+                cursor.pendingDelete = true
+                cursor.pendingApply = nil
+                cursor.pendingProjection = nil
+                cursor.pendingTombstone = false
+                table.profileCursors[uuid] = cursor
+                changed = true
+            } else if table.hasDrainedFullReplay {
+                cursor.deletedAtMs = now()
+                cursor.deletedBeforePublish = true
+                table.profileCursors[uuid] = cursor
+                changed = true
+                finished.append(uuid)
+            }
+        }
+        for uuid in surviving.sorted() {
+            guard var cursor = table.profileCursors[uuid] else { continue }
+            AppLogInfo("[phi-sync] a deleted account profile still exists here; deciding its tombstone again")
+            cursor.deletedAtMs = nil
+            cursor.pendingTombstone = true
+            cursor.tombstoneDeferRounds = 0
+            cursor.firstDeferredAtMs = nil
+            table.profileCursors[uuid] = cursor
+            changed = true
+        }
+        if changed { guard writeSpaceTable(table) else { return } }
+        for uuid in finished { await profileAccess.finishLocalProfileDeletion(syncUuid: uuid) }
+    }
+
+    /// Profile-side retention: trims deletions older than the window to tombstone cursors and
+    /// drops their mappings, the cursor being the durable guard from then on. Persisted before
+    /// any main-actor hop, like `applySpaceRetentionSweep`.
+    private func applyProfileRetentionSweep() async {
+        guard let profileAccess, spaceStore != nil else { return }
+        var table = loadSpaceTable()
+        let expired = table.purgeExpiredProfiles(nowMs: now())
+        guard !expired.isEmpty else { return }
+        guard writeSpaceTable(table) else { return }
+        let mappings = await profileAccess.allProfileMappings()
+        for (localId, uuid) in mappings where expired.contains(uuid) {
+            guard !isStopped else { return }
+            if await !profileAccess.isKnownLocalProfile(localId) {
+                await profileAccess.dropMapping(forProfileId: localId)
+            }
+        }
+        AppLogInfo("[phi-sync] purged deleted profiles count=\(expired.count)")
+    }
+
+    /// Account-wide duplicate-name convergence, then the local reclaim (docs/sync.md, "Profile
+    /// entity"). Runs after every landed page and before a Profile round's push.
+    ///
+    /// Convergence: for each loser `SyncableProfiles.convergedNames` names whose Profile is mapped
+    /// here, rename it locally through the inbound-rename path (a taken name falls back to a local
+    /// suffix) and record the account name as a pending edit stamped now, so it publishes like a
+    /// user rename. A loser with a user rename of its own still pending, or already converging, is
+    /// left alone; one with no local Profile here is left to the device that has it.
+    ///
+    /// Reclaim: a mapped Profile whose local name differs from its account name takes the account
+    /// name once no other local Profile uses it. This releases a local suffix after the Profile
+    /// that held the name moved away. A name held by a local-only Profile stays a local suffix.
+    private func convergeProfileNames(table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let profileAccess else { return }
+        let renames = SyncableProfiles.convergedNames(table: table)
+        let candidates = table.profileCursors.contains { _, cursor in
+            cursor.reconciled != nil && cursor.localNameAtBaseline != nil
+        }
+        guard !renames.isEmpty || candidates else { return }
+        let locals = await profileAccess.currentProfiles()
+        let mappings = await profileAccess.allProfileMappings()
+        guard !isStopped else { return }
+        var localByUuid: [String: PhiLocalProfile] = [:]
+        for local in locals {
+            if let uuid = mappings[local.profileId] { localByUuid[uuid] = local }
+        }
+
+        for (uuid, newName) in renames.sorted(by: { $0.key < $1.key }) {
+            guard var cursor = table.profileCursors[uuid], let local = localByUuid[uuid],
+                  cursor.pendingProjection == nil, cursor.convergedLocalName == nil, cursor.pendingApply == nil,
+                  let bytes = cursor.reconciled,
+                  let baseline = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            guard let localName = await profileAccess.applyRemoteName(profileId: local.profileId,
+                                                                      name: newName) else { continue }
+            guard !isStopped else { return }
+            var pending = baseline
+            pending.name.stringValue = newName
+            pending.name.updatedAtMs = PhiHybridClock.editStamp(
+                editWallMs: hlcNow(), overwrittenStampMs: baseline.name.updatedAtMs)
+            cursor.pendingProjection = try? pending.serializedData()
+            cursor.convergedLocalName = localName
+            table.profileCursors[uuid] = cursor
+            localByUuid[uuid]?.displayName = localName
+            AppLogInfo("[phi-sync] renaming a profile whose name another account profile holds")
+        }
+
+        for (uuid, local) in localByUuid.sorted(by: { $0.key < $1.key }) {
+            guard var cursor = table.profileCursors[uuid], renames[uuid] == nil,
+                  cursor.pendingProjection == nil, cursor.convergedLocalName == nil,
+                  cursor.pendingApply == nil, cursor.deletedAtMs == nil, !cursor.pendingDelete,
+                  let bytes = cursor.reconciled,
+                  let entity = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            let accountName = entity.name.stringValue
+            // Only a local name that is the known counterpart of the baseline: a different one is
+            // the user's own rename, not yet stamped.
+            guard local.displayName == cursor.localNameAtBaseline,
+                  !accountName.isEmpty, accountName != local.displayName,
+                  await !profileAccess.isDisplayNameTaken(accountName, excluding: local.profileId),
+                  let renamed = await profileAccess.applyRemoteName(profileId: local.profileId,
+                                                                    name: accountName),
+                  renamed == accountName else { continue }
+            guard !isStopped else { return }
+            cursor.localNameAtBaseline = renamed
+            table.profileCursors[uuid] = cursor
+        }
+    }
+
+    /// The local Profiles and mappings a Profile snapshot needs, read in two main-actor hops.
+    private func localProfileSnapshotInputs() async -> (profiles: [PhiLocalProfile], mappings: [String: String])? {
+        guard let profileAccess else { return nil }
+        let profiles = await profileAccess.currentProfiles()
+        let mappings = await profileAccess.allProfileMappings()
+        guard !isStopped else { return nil }
+        return (profiles, mappings)
+    }
+
+    /// Records the local name of every mapped Profile whose baseline has none yet (a baseline
+    /// stored before this device had the Profile). From then on a change of the local name is a
+    /// rename; until then it is not.
+    private static func recordLocalNamesAtBaseline(_ profiles: [PhiLocalProfile], mappings: [String: String],
+                                                   table: inout PhiSpaceSyncTable) -> Bool {
+        var changed = false
+        for profile in profiles {
+            guard let uuid = mappings[profile.profileId],
+                  var cursor = table.profileCursors[uuid],
+                  cursor.reconciled != nil, cursor.localNameAtBaseline == nil,
+                  cursor.pendingApply == nil, cursor.deletedAtMs == nil else { continue }
+            cursor.localNameAtBaseline = profile.displayName
+            table.profileCursors[uuid] = cursor
+            changed = true
+        }
+        return changed
+    }
+
+    /// The Profile analogue of `stampLocalSpaceEdits`: record a local rename with the time the user
+    /// made it, before `push`'s pull gate.
+    private func stampLocalProfileEdits() async {
+        guard !isStopped, spaceSectionEnabled, profileAccess != nil, spaceStore != nil else { return }
+        guard loadSpaceTable().profileCursors.values.contains(where: { $0.reconciled != nil }) else { return }
+        guard let inputs = await localProfileSnapshotInputs() else { return }
+        var table = loadSpaceTable()
+        var changed = Self.recordLocalNamesAtBaseline(inputs.profiles, mappings: inputs.mappings, table: &table)
+        let projections = SyncableProfiles.snapshot(profiles: inputs.profiles, table: table,
+                                                    globalUuid: { inputs.mappings[$0] }, now: hlcNow())
+        for (uuid, projection) in projections {
+            guard let bytes = table.profileCursors[uuid]?.reconciled,
+                  let baseline = try? Phi_PhiProfileEntity(serializedBytes: bytes) else { continue }
+            let pending = SyncableProfiles.merge(local: projection, remote: baseline) == baseline
+                ? nil : try? projection.serializedData()
+            guard table.profileCursors[uuid]?.pendingProjection != pending else { continue }
+            table.profileCursors[uuid]?.pendingProjection = pending
+            changed = true
+        }
+        guard changed else { return }
+        writeSpaceTable(table)
+    }
+
+    /// `spaceCommitEntries` for Profile entities: same guards (unreadable tag, tombstone needs an
+    /// entity id and a version) and the same merge against what the server holds.
+    private func profileCommitEntries(
+        from table: PhiSpaceSyncTable,
+        outgoing: [String: Phi_PhiProfileEntity]
+    ) -> [(uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiProfileEntity?)] {
+        var result: [(uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiProfileEntity?)] = []
+        let deleting = table.profileCursors.filter { $0.value.pendingDelete }.keys
+        for uuid in Set(outgoing.keys).union(deleting).sorted() {
+            let cursor = table.profileCursors[uuid]
+            let tagHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.profileClientTag(uuid))
+            guard table.unreadableTagHashes[tagHash] == nil else {
+                AppLogWarn("[phi-sync] refusing to commit over an unreadable row tag=\(String(tagHash.prefix(8)))")
+                continue
+            }
+            if let cursor, cursor.pendingDelete {
+                guard let entityId = cursor.entityId, cursor.version > 0 else { continue }
+                result.append((uuid: uuid,
+                               entry: PhiCommitEntry(entityId: entityId, clientTagHash: tagHash,
+                                                     name: PhiSyncEntity.profileEntityName,
+                                                     ciphertext: nil, deleted: true,
+                                                     baseVersion: cursor.version),
+                               outgoing: nil))
+                continue
+            }
+            guard let snapshot = outgoing[uuid] else { continue }
+            var toSend = snapshot
+            if let bytes = cursor?.server, let server = try? Phi_PhiProfileEntity(serializedBytes: bytes) {
+                toSend = SyncableProfiles.merge(local: snapshot, remote: server)
+                if toSend == server { continue }
+            } else if let bytes = cursor?.reconciled,
+                      let baseline = try? Phi_PhiProfileEntity(serializedBytes: bytes) {
+                // No server copy (an undelete, or an update the server refused): republish over the
+                // baseline so a newer client's reserved fields it holds survive.
+                toSend = SyncableProfiles.merge(local: snapshot, remote: baseline)
+            }
+            result.append((uuid: uuid,
+                           entry: PhiCommitEntry(entityId: cursor?.entityId, clientTagHash: tagHash,
+                                                 name: PhiSyncEntity.profileEntityName,
+                                                 ciphertext: nil, deleted: false,
+                                                 baseVersion: cursor?.version ?? 0),
+                           outgoing: toSend))
+        }
+        return result
+    }
+
+    /// Publishes Profile entities. Runs before `pushSpaces`, so a new account Profile's entity
+    /// precedes the Spaces bound to it. Same guards as `pushSpaces`: a completed pull this round,
+    /// the Space gate open, and a finished full replay. `onlyUuids` is the CONFLICT retry's scope.
+    private func pushProfiles(retryOnConflict: Bool, onlyUuids: Set<String>? = nil) async {
+        guard !isStopped, canPublishThisRound, spaceSectionEnabled, profileAccess != nil,
+              spaceStore != nil else { return }
+        guard loadSpaceTable().hasDrainedFullReplay else { return }
+        guard let inputs = await localProfileSnapshotInputs() else { return }
+        // Loaded after the last main-actor hop, like `pushSpaces`; every writer is a round.
+        var table = loadSpaceTable()
+        var changed = Self.recordLocalNamesAtBaseline(inputs.profiles, mappings: inputs.mappings, table: &table)
+        let outgoing = SyncableProfiles.snapshot(profiles: inputs.profiles, table: table,
+                                                 globalUuid: { inputs.mappings[$0] }, now: hlcNow())
+        var work = profileCommitEntries(from: table, outgoing: outgoing)
+        if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
+        guard !work.isEmpty else {
+            if changed { writeSpaceTable(table) }
+            return
+        }
+
+        // The local name each published entity corresponds to, recorded with its baseline.
+        var localNames: [String: String] = [:]
+        for profile in inputs.profiles {
+            if let uuid = inputs.mappings[profile.profileId] { localNames[uuid] = profile.displayName }
+        }
+        var conflicted: Set<String> = []
+        // Creates (no entity id) that CONFLICTed: the server holds a row this device has no baseline
+        // for. See `armProfileReplayForLostCursors`.
+        var conflictedWithoutBaseline: Set<String> = []
+        var tombstoned: [String] = []
+        while !work.isEmpty {
+            let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
+            work.removeFirst(slice.count)
+            var entries: [PhiCommitEntry] = []
+            var encryptionFailed = false
+            for item in slice {
+                guard let payload = item.outgoing else { entries.append(item.entry); continue }
+                var wrapper = Phi_PhiEntity()
+                wrapper.profile = payload
+                guard let key = try? await domainKeys.domainKey(),
+                      let ciphertext = try? PhiEntityCodec.encrypt(wrapper, key: key) else {
+                    encryptionFailed = true
+                    break
+                }
+                entries.append(PhiCommitEntry(entityId: item.entry.entityId,
+                                              clientTagHash: item.entry.clientTagHash,
+                                              name: item.entry.name, ciphertext: ciphertext,
+                                              deleted: false, baseVersion: item.entry.baseVersion))
+            }
+            if encryptionFailed {
+                roundOutboundFailed = true
+                AppLogError("[phi-sync] profile commit aborted: the domain key or the seal failed")
+                break
+            }
+            guard !isStopped, canPublishThisRound else { break }
+            let outcomes: [PhiCommitOutcome]
+            do {
+                outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
+            } catch PhiSyncProtocolError.notMyBirthday {
+                requireReconfiguration()
+                return
+            } catch {
+                noteStatusError(error)
+                AppLogError("[phi-sync] profile commit failed (\(PhiSyncLog.describe(error)))")
+                break
+            }
+            observeServerDate()
+            guard !isStopped else { return }
+            if outcomes.count != entries.count { roundOutboundFailed = true }
+            for (item, outcome) in zip(slice, outcomes) {
+                applyProfileCommitOutcome(outcome, for: item, localName: localNames[item.uuid],
+                                          table: &table, conflicted: &conflicted)
+                if case .conflict = outcome, item.entry.entityId == nil, !item.entry.deleted {
+                    conflictedWithoutBaseline.insert(item.uuid)
+                }
+                changed = true
+                if item.entry.deleted, table.profileCursors[item.uuid]?.deletedAtMs != nil {
+                    tombstoned.append(item.uuid)
+                }
+            }
+        }
+        if changed { writeSpaceTable(table) }
+        // The tombstone committed (or was given up on): the journal entry has done its job. After
+        // the table write, so a failed write keeps the entry and the next round re-derives it.
+        if !tombstoned.isEmpty, let profileAccess {
+            for uuid in tombstoned { await profileAccess.finishLocalProfileDeletion(syncUuid: uuid) }
+        }
+
+        if !retryOnConflict, !conflicted.isEmpty { roundOutboundFailed = true }
+        // Every pass without a retry ahead of it ran right after a drained pull this round (the
+        // scoped retry, or a timer round's push), so that pull had its chance to deliver the row.
+        if !retryOnConflict, !conflictedWithoutBaseline.isEmpty {
+            armProfileReplayForLostCursors(count: conflictedWithoutBaseline.count)
+        }
+        if retryOnConflict, !conflicted.isEmpty {
+            guard await pull(thenPush: false) else { return }
+            await pushProfiles(retryOnConflict: false, onlyUuids: conflicted)
+        }
+    }
+
+    /// Profile cursor loss (docs/sync.md). An older build that rewrites `sync.phiSpaces` drops
+    /// `profileCursors` while the shared marker moves past every Profile entity, so each mapped
+    /// Profile is committed as a create, the server refuses a create over its live row with
+    /// CONFLICT, and the retry's pull delivers nothing: the round fails forever. A no-baseline
+    /// CONFLICT that survives a drained pull is the signal, and the cure is the owned kinds' one:
+    /// drop the marker and rearm the full drain, at most once per `profilesReplayedForEmptyTable`
+    /// latch, which `applyProfiles` reopens once the replay restores a baseline. A uuid the replay
+    /// never delivers keeps the latch shut, so it cannot trigger a replay every round.
+    ///
+    /// Same write order and failure handling as `loadOwnedTable`: the nil marker first, then the
+    /// latch with the drain flags; either failure reports cursorSaveFailed and leaves the latch
+    /// open for the next round. Publication stops for the rest of the round with
+    /// `hasDrainedFullReplay` false, and the next pull replays data type 2000.
+    private func armProfileReplayForLostCursors(count: Int) {
+        guard !loadSpaceTable().profilesReplayedForEmptyTable else { return }
+        guard persistStoredMarker(nil) else {
+            roundOutcome = .cursorSaveFailed
+            return
+        }
+        guard mutateSpaceTable({ updated in
+            updated.profilesReplayedForEmptyTable = true
+            updated.hasDrainedFullReplay = false
+            updated.drainInProgress = true
+        }) else {
+            roundOutcome = .cursorSaveFailed
+            return
+        }
+        spaceCounters.profileReplayArmed = true
+        AppLogWarn("[phi-sync] profile cursors lost for \(count) mapped Profiles; "
+                   + "replaying data type \(PhiSyncEntity.dataTypeID) once")
+    }
+
+    /// `applySpaceCommitOutcome` for Profile entities: both baselines move on an accepted update,
+    /// a CONFLICT is retried once for its uuid, INVALID_MESSAGE drops the server triple of an
+    /// update and gives a tombstone up after `tombstoneRejectGiveUpRounds` rejections.
+    private func applyProfileCommitOutcome(
+        _ outcome: PhiCommitOutcome,
+        for item: (uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiProfileEntity?),
+        localName: String?,
+        table: inout PhiSpaceSyncTable,
+        conflicted: inout Set<String>
+    ) {
+        var cursor = table.profileCursors[item.uuid] ?? PhiProfileCursor()
+        let isTombstone = item.entry.deleted
+        switch outcome {
+        case .applied(let entityId, let version, let storeBirthday):
+            if !entityId.isEmpty { cursor.entityId = entityId }
+            cursor.version = version
+            storedBirthday = storeBirthday
+            if isTombstone {
+                spaceCounters.profileTombstones += 1
+                cursor.pendingDelete = false
+                cursor.deleteRejectRounds = 0
+                cursor.pendingProjection = nil
+                cursor.deletedBeforePublish = nil
+                cursor.deletedAtMs = now()
+            } else if let outgoing = item.outgoing {
+                spaceCounters.profilesPushed += 1
+                cursor.reconciled = try? outgoing.serializedData()
+                cursor.server = cursor.reconciled
+                cursor.pendingProjection = nil
+                cursor.convergedLocalName = nil
+                if let localName { cursor.localNameAtBaseline = localName }
+            }
+        case .conflict:
+            spaceCounters.profileConflicts += 1
+            conflicted.insert(item.uuid)
+        case .invalidMessage:
+            spaceCounters.profilesInvalid += 1
+            roundOutboundFailed = true
+            guard isTombstone else {
+                cursor.entityId = nil
+                cursor.version = 0
+                cursor.server = nil
+                break
+            }
+            cursor.deleteRejectRounds += 1
+            if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
+                AppLogError("[phi-sync] giving up on a profile tombstone after \(cursor.deleteRejectRounds) rejections tag=\(String(item.entry.clientTagHash.prefix(8)))")
+                cursor.pendingDelete = false
+                cursor.pendingProjection = nil
+                cursor.deletedAtMs = now()
+            }
+        case .rejected(let type):
+            spaceCounters.profilesRejected += 1
+            roundOutboundFailed = true
+            AppLogError("[phi-sync] profile commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
+        }
+        table.profileCursors[item.uuid] = cursor
+    }
+
     // MARK: - Owned items: round initialization, routing, landing and publication (M3-3 section 5)
 
     /// At most 250 publications per kind per round: ten batches of 25 (section 5.3). Reuse
@@ -3937,6 +4977,7 @@ actor PhiSyncEngine {
         maps.syncUuidBySpaceId[LocalStore.defaultSpaceId] = SyncableSpaces.defaultSpaceUuid
         maps.localSpaceIdBySyncUuid[SyncableSpaces.defaultSpaceUuid] = LocalStore.defaultSpaceId
         maps.deadSpaceUuids = table.deletedSyncUuids
+        maps.deadProfileUuids = table.deletedProfileUuids
         let spaces = await spaceAccess.currentSpaces()
         for space in spaces {
             // The Space's own Profile binding, for rows landed into it (review A4/A5).
@@ -4496,7 +5537,7 @@ actor PhiSyncEngine {
             discardedForDeadOwner += 1
         }
         if discardedForDeadOwner > 0 {
-            AppLogInfo("[phi-sync] discarded inbound items owned by a deleted Space "
+            AppLogInfo("[phi-sync] discarded inbound items owned by a deleted Space or Profile "
                        + "kind=\(registration.label) discarded=\(discardedForDeadOwner)")
         }
         // After a successful M1 claim, remove the retired locally minted cursor (section 8.4.2(4) /
@@ -4741,6 +5782,18 @@ actor PhiSyncEngine {
                        + "kind=\(registration.label) items=\(deadOwnerTombstones)")
         }
         for (identity, cursor) in diff.cursorUpdates { table.cursors[identity] = cursor }
+
+        // A blocked pin round publishes nothing (B-3 stage 1, design 3.4; tightens R-M3-3-12 /
+        // section 7.3): besides the empty snapshot and diff, no tombstone queued by an earlier round
+        // (pendingDelete, including #176 dead-owner deletions) and no repair or republish. Those are
+        // all read from durable cursor state below, so a later unblocked round selects them again;
+        // skipping delays them and loses nothing. The table is left unwritten: a blocked snapshot
+        // and diff produced no cursor change worth keeping.
+        if let publicationBlocked = registration.publicationBlocked, await publicationBlocked() {
+            counters.scopeMismatch = true
+            ownedCounters[registration.label] = counters
+            return
+        }
 
         // Finalize an unsendable pendingDelete lacking entityId/version locally and stamp
         // deletedAtMs, rather than repeatedly submitting an entry the server must reject (section
@@ -5020,6 +6073,16 @@ actor PhiSyncEngine {
                 roundOutboundFailed = true
                 AppLogError("[phi-sync] owned-item commit aborted kind=\(registration.label): "
                             + "the domain key or the seal failed")
+                break
+            }
+            guard !isStopped, canPublishThisRound else { break }
+            // Commit fence (B-3 stage 1, design 3.4): the domain-key read above suspends, and a
+            // scope migration or a follower start can land meanwhile. Re-probe against the
+            // round's sample; if the pin round is now blocked, drop this and every later slice
+            // unsent. Nothing is marked published, earlier slices keep their outcomes, and a
+            // later round recomputes the rest from cursor state. Pins only; nil for other kinds.
+            if let publicationBlocked = registration.publicationBlocked, await publicationBlocked() {
+                counters.scopeMismatch = true
                 break
             }
             guard !isStopped, canPublishThisRound else { break }
@@ -5644,6 +6707,8 @@ actor PhiSyncEngine {
             observeStamps(of: entity)
         case .setting(let entity):
             observeStamps(of: entity)
+        case .profile(let entity):
+            observeStamps([entity.name])
         case .none:
             break
         }
@@ -6694,6 +7759,9 @@ final class PinSyncRoundState {
     /// published and does not count as a mismatch.
     private(set) var localScope: PinnedTabScope = .profile
     private(set) var accountScope: PinnedTabScope?
+    /// `pinScopeGeneration()` sampled with the scopes (B-3 stage 1, design 3.3). Landing hands it back to
+    /// the store, which refuses the batch if a migration ran since.
+    private(set) var generation: UInt64 = 0
 
     /// If both scopes are known and differ, skip all pin publication and park all incoming pins
     /// this round (section 7.3).
@@ -6702,23 +7770,32 @@ final class PinSyncRoundState {
         return localScope != accountScope
     }
 
-    /// Whether either scope changed after the initial sample (R-exec-12); see rescanScopes.
+    /// Whether either scope or the generation changed after the initial sample (R-exec-12 / B-3
+    /// stage 1, design 3.3); see rescanScopes.
     private(set) var scopeMovedMidRound = false
 
-    /// Block when scopes initially mismatched or changed mid-round. All publication guards and
-    /// landing share this predicate (section 7.3).
-    var scopeBlocked: Bool { scopeMismatch || scopeMovedMidRound }
+    /// Whether the pin scope follower was busy at any probe this round (B-3 stage 1, design 3.4).
+    /// Sticky for the round like scopeMovedMidRound: a migration it starts replaces the rows this
+    /// round planned against.
+    private(set) var followerBusy = false
+
+    /// Block when scopes initially mismatched (row != key), changed mid-round (value or generation),
+    /// or the follower is busy (B-3 stage 1, design 3.4). All publication guards, the commit fence
+    /// and landing share this predicate (section 7.3).
+    var scopeBlocked: Bool { scopeMismatch || scopeMovedMidRound || followerBusy }
 
     func reload(_ rows: [PhiLocalPin], localScope: PinnedTabScope,
-                accountScope: PinnedTabScope?) {
+                accountScope: PinnedTabScope?, generation: UInt64, followerBusy: Bool) {
         locals = rows
         rowByGuid = [:]
         for row in rows { rowByGuid[row.guid] = row }
         self.localScope = localScope
         self.accountScope = accountScope
-        // Reset the flag at each round start; this registration-owned state is reused, so a sticky
+        self.generation = generation
+        // Reset the flags at each round start; this registration-owned state is reused, so a sticky
         // cross-round flag would disable pin sync forever after one migration.
         scopeMovedMidRound = false
+        self.followerBusy = followerBusy
     }
 
     /// Resample both scopes after round start (R-exec-12 / D-A). Incoming settings can trigger
@@ -6728,9 +7805,22 @@ final class PinSyncRoundState {
     /// Set a sticky round flag without replacing the original scope values: those values still
     /// interpret the cached rows. Even a change back leaves the cache suspect. Skip this round; the
     /// next beginRound reads consistent new rows and scopes.
-    func rescanScopes(localScope: PinnedTabScope, accountScope: PinnedTabScope?) {
-        guard localScope != self.localScope || accountScope != self.accountScope else { return }
+    ///
+    /// The generation is compared too (B-3 stage 1, design 3.3): a round trip X to Y to X between
+    /// two probes replaces every row while both scope values still match the sample.
+    func rescanScopes(localScope: PinnedTabScope, accountScope: PinnedTabScope?,
+                      generation: UInt64, followerBusy: Bool) {
+        if followerBusy { self.followerBusy = true }
+        guard localScope != self.localScope || accountScope != self.accountScope
+                || generation != self.generation else { return }
         scopeMovedMidRound = true
+    }
+
+    /// One probe through the access boundary; every pin publication and landing step calls it.
+    func rescan(_ access: any PhiPinnedTabLocalAccess) {
+        rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope(),
+                     generation: access.pinScopeGeneration(),
+                     followerBusy: access.scopeFollowerBusy())
     }
 
     /// Refresh from access's post-landing cache without a second fetch, matching
@@ -6874,9 +7964,19 @@ extension OwnedKindRegistration {
                 clearedPinSplitPartners(baselines, now: now, maps: maps, state: state)
             },
             beginRound: {
+                // Trigger the follower first (B-3 stage 1, design 3.2): a job it starts shows as busy
+                // in the sample below, so this round blocks instead of planning against rows the
+                // job is about to replace.
+                access.requestScopeFollow()
+                // Read the generation before the rows (B-3 stage 1, design 3.3): a migration that
+                // commits between the two reads then shows as a moved generation at the next probe
+                // instead of being folded into the sample.
+                let generation = access.pinScopeGeneration()
                 state.reload(try access.allPins(),
                              localScope: access.currentScope(),
-                             accountScope: access.accountScope())
+                             accountScope: access.accountScope(),
+                             generation: generation,
+                             followerBusy: access.scopeFollowerBusy())
             },
             // Pin tag indices seed from cursor keys only (section 5.1). This callback lacks round
             // owner mappings and the throwing allPinRows read; raw lineage cannot construct valid
@@ -6962,6 +8062,10 @@ extension OwnedKindRegistration {
                     out.claimed.insert(identity)
                 }
                 return out
+            },
+            publicationBlocked: {
+                state.rescan(access)
+                return state.scopeBlocked
             })
     }
 }
@@ -6976,7 +8080,7 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
     var out = OwnedSnapshotBytes()
     // Resample scopes before publication (R-exec-12). A pure push has no plan or landing path, so
     // this is its only recheck.
-    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
+    state.rescan(access)
     // On blocked scopes, skip all pin snapshot/publication work and return an empty snapshot; plan
     // parks the incoming half (section 7.3). Carry scope_mismatch diagnostics from here too,
     // because a pure push never runs plan (section 11.2).
@@ -7014,8 +8118,10 @@ private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: 
     // Resample before allPinRows (R-exec-12). Mid-round migration invalidates access's cache
     // without rereading it, and this round should be skipped rather than throw while reading that
     // stale cache.
-    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
+    state.rescan(access)
     // Deletion diff is part of the publication half suppressed by scope mismatch (section 7.3).
+    // This also withholds this round's #176 dead-owner deletions (R-M3-4a-78); they are derived
+    // from cursor state by deadOwnerDeletions, so a later unblocked round recomputes them.
     guard !state.scopeBlocked else {
         return OwnedItemTombstoneResult(identities: [], cursorUpdates: [:])
     }
@@ -7042,7 +8148,8 @@ private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: 
                                          resolve: resolve, scope: scope, nowMs: now,
                                          pendingClaims: [],
                                          explicitDeletions: SyncableOwnedItems.deadOwnerDeletions(
-                                             table: table, deadOwners: maps.deadSpaceUuids))
+                                             table: table,
+                                             deadOwners: maps.deadSpaceUuids.union(maps.deadProfileUuids)))
 }
 
 /// Incoming pin planning (section 4.4), without section 6 adoption: initial sync unions pins from
@@ -7053,7 +8160,7 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     var out = OwnedPlanOutput()
     // Resample before building plan context (R-exec-12). If scopes changed, park every incoming
     // entity until next round captures consistent rows and scopes.
-    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
+    state.rescan(access)
     var arrivals: [OwnedItemArrival<Phi_PhiPinTabEntity>] = []
     for item in input.arrivals {
         guard let envelope = try? Phi_PhiEntity(serializedBytes: item.payload),
@@ -7092,9 +8199,12 @@ private func pinPlan(_ input: OwnedPlanInput, access: any PhiPinnedTabLocalAcces
     // conditions are vacuous.
     context.localScope = state.localScope
     context.accountScope = state.accountScope
-    context.scopeMovedMidRound = state.scopeMovedMidRound
-    // R-M3-4a-78, inbound half: discard pins owned by a deleted Space instead of parking them.
-    context.deadOwners = input.maps.deadSpaceUuids
+    // The planner's one non-value block flag also carries a busy follower (B-3 stage 1, design
+    // 3.4): either way the rows behind this plan are about to be, or were, replaced.
+    context.scopeMovedMidRound = state.scopeMovedMidRound || state.followerBusy
+    // R-M3-4a-78, inbound half: discard pins owned by a deleted Space or Profile instead of
+    // parking them.
+    context.deadOwners = input.maps.deadSpaceUuids.union(input.maps.deadProfileUuids)
     context.liveLocalIdentities = liveIdentities
     out.plan = SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: input.parked,
                                        table: input.table, resolve: input.maps.resolver,
@@ -7155,7 +8265,7 @@ private func landPins(_ input: OwnedLandingInput,
     // physical rows behind the cached identities/GUIDs, so both creates and A11 reminting would be
     // unsafe. Park all input instead. pendingApply retains consumed payloads; next round's
     // consistent projection can update existing migrated rows without duplication.
-    state.rescanScopes(localScope: access.currentScope(), accountScope: access.accountScope())
+    state.rescan(access)
     guard !state.scopeBlocked else {
         for step in input.steps { outcome.parked.insert(step.identity) }
         return outcome
@@ -7468,7 +8578,19 @@ private func landPins(_ input: OwnedLandingInput,
         .subtracting(outcome.parked)
         .subtracting(outcome.landed)
     do {
-        try await access.apply(PinApplyBatch(unordered: ops))
+        try await access.apply(PinApplyBatch(unordered: ops), expectedGeneration: state.generation,
+                               expectedScope: state.localScope)
+    } catch LocalStoreWriteError.scopeChangedSinceSample {
+        // A migration committed after this round's sample, or the sample read rows the main context
+        // had not merged yet (B-3 stage 1, design 3.3): the store wrote nothing. Park every step that
+        // went into the batch, so payloads, tombstones and server identities are retained for the
+        // next round's consistent projection. Unlike the blocked-landing path above, phase-3 deletes
+        // of identities with no local row were already finalized in `outcome.landed` and stay so: a
+        // remote tombstone holds whatever the rows look like. Named here rather than left to the
+        // generic branch below, because refusing it would drop remote changes this device never saw.
+        outcome.parked.formUnion(identities)
+        outcome.pendingPartnerLineages = [:]
+        return outcome
     } catch LocalStoreWriteError.rowAlreadyMapped, LocalStoreWriteError.rowNotFound,
             LocalStoreWriteError.rowNotInActiveScope, LocalStoreWriteError.noCandidateSurvived {
         // Refuse an invalid batch rather than parking it for endless identical retries.

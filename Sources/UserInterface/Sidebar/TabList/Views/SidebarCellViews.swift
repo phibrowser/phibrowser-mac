@@ -456,7 +456,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.setActiveSuppressed(activeSuppressed, activeValue: tab.isActive)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
-            tab.setAudioMuted(!tab.isAudioMuted)
+            tab.toggleAudioMuted()
         }
 
         if let state {
@@ -1007,10 +1007,10 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         updateHoverChrome()
         updateMute(isLeft: true,
                    audible: pair.leftTab.isCurrentlyAudible,
-                   muted: pair.leftTab.isAudioMuted)
+                   muted: pair.leftTab.isMuted)
         updateMute(isLeft: false,
                    audible: pair.rightTab.isCurrentlyAudible,
-                   muted: pair.rightTab.isAudioMuted)
+                   muted: pair.rightTab.isMuted)
         updateRecording(isLeft: true, capturing: pair.leftTab.isCapturingMedia)
         updateRecording(isLeft: false, capturing: pair.rightTab.isCapturingMedia)
 
@@ -1020,7 +1020,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         // these subscriptions. Same pattern as the title binding above.
         for tab in [pair.leftTab, pair.rightTab] {
             tab.$isCurrentlyAudible
-                .combineLatest(tab.$isAudioMuted)
+                .combineLatest(tab.audioMutePublisher)
                 .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] audible, muted in
@@ -1186,7 +1186,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                 guard let self else { return }
                 let tab = isLeft ? self.configuredLeftTab : self.configuredRightTab
                 guard let tab else { return }
-                tab.setAudioMuted(!tab.isAudioMuted)
+                tab.toggleAudioMuted()
             }
             .phiThemeObserver(themeObserver)
         )
@@ -1270,10 +1270,10 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             updateSelected()
             updateMute(isLeft: true,
                        audible: pair.leftTab.isCurrentlyAudible,
-                       muted: pair.leftTab.isAudioMuted)
+                       muted: pair.leftTab.isMuted)
             updateMute(isLeft: false,
                        audible: pair.rightTab.isCurrentlyAudible,
-                       muted: pair.rightTab.isAudioMuted)
+                       muted: pair.rightTab.isMuted)
             updateRecording(isLeft: true, capturing: pair.leftTab.isCapturingMedia)
             updateRecording(isLeft: false, capturing: pair.rightTab.isCapturingMedia)
         }

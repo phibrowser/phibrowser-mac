@@ -1187,7 +1187,7 @@ final class SpaceManager: ObservableObject {
     }
 
     /// Local → mirror (C1 step 2): record the new role holder's ACCOUNT
-    /// identity, the way `LocalStore.changePinnedTabScope` records the scope.
+    /// identity, the way the pinned-tab scope setting records the scope.
     /// The key is an ordinary synced setting, so the debounced defaults
     /// trigger stamps and pushes it; nothing here talks to the engine.
     /// A Space with no account identity yet publishes nothing — a local id
@@ -1223,13 +1223,17 @@ final class SpaceManager: ObservableObject {
     /// mutations, and a stale "not in use" answer would offer deleting a
     /// profile whose Spaces exist — stranding them on a nonexistent
     /// profile. With no account bound the answer is "in use": a transition
-    /// window should disable profile deletion, not arm it.
+    /// window should disable profile deletion, not arm it. A Space row a remote
+    /// deletion soft-deleted (hidden for the retention window) does not count:
+    /// it is purged with its Space and keeps no user data reachable
+    /// (docs/sync.md, "Profile deletion and rename").
     func isProfileInUse(_ profileId: String) -> Bool {
         guard let account = boundAccount else { return true }
-        let storeSpaces = MainActor.assumeIsolated {
-            account.localStorage.getAllSpaces()
+        return MainActor.assumeIsolated {
+            PhiSpaceSyncState.shared.hasLiveSpaceRow(
+                localProfileId: profileId,
+                rows: account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) })
         }
-        return storeSpaces.contains { $0.profileId == profileId }
     }
 
     /// Currently-active Space of the key slot, derived from `activeSpaceId`.
@@ -8195,6 +8199,45 @@ final class SpaceManager: ObservableObject {
 /// once.
 final class SpaceWindowSlot: ObservableObject {
 
+    @MainActor private var storedMediaController: SidebarMediaController?
+
+    @MainActor var sidebarMediaController: SidebarMediaController {
+        if let storedMediaController { return storedMediaController }
+        let controller = SidebarMediaController()
+        storedMediaController = controller
+        controller.activateSession = { [weak self] sessionID, completion in
+            guard let self,
+                  let target = self.windowsBySpaceId.values.first(where: {
+                      ObjectIdentifier($0.browserState) == sessionID
+                  }) else { completion(false); return }
+            if self.visibleController === target { completion(true); return }
+            self.activate(spaceId: target.spaceId, userInitiated: true,
+                onActivationFailed: { completion(false) },
+                onSwapSettled: { [weak self, weak target] in
+                    guard let self, let target,
+                          self.windowsBySpaceId[target.spaceId] === target,
+                          self.visibleController === target else { completion(false); return }
+                    completion(true)
+                })
+        }
+        reconcileMediaSessions()
+        return controller
+    }
+
+    @MainActor private func reconcileMediaSessions() {
+        guard let storedMediaController else { return }
+        let states = windowsBySpaceId.keys.sorted().compactMap { windowsBySpaceId[$0]?.browserState }
+        storedMediaController.setSessions(states, presented: visibleController?.browserState)
+        // Swipe previews can finish layout before the presented session changes.
+        guard let split = visibleController?.mainSplitViewController else { return }
+        if split.sidebarViewController.isViewLoaded {
+            split.sidebarViewController.updateMediaActivation()
+        }
+        if split.floatingSidebarContent.isViewLoaded {
+            split.floatingSidebarContent.updateMediaActivation()
+        }
+    }
+
     @Published private(set) var activeSpaceId: String?
 
     /// The Space pip being drag-reordered in this window's strip, shared by
@@ -8442,7 +8485,9 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// spaceId → controller dedicated to this slot for that Space.
     /// Populated lazily by `activate`'s spawn path and `registerWindow`.
-    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:]
+    private(set) var windowsBySpaceId: [String: SpaceSessionController] = [:] {
+        didSet { MainActor.assumeIsolated { reconcileMediaSessions() } }
+    }
 
     /// Hosted mode: sessions built ahead of their Browser, one per user
     /// Space this slot presents but has not visited (see
@@ -8477,6 +8522,7 @@ final class SpaceWindowSlot: ObservableObject {
     private(set) weak var visibleController: SpaceSessionController? {
         didSet {
             guard oldValue !== visibleController else { return }
+            MainActor.assumeIsolated { reconcileMediaSessions() }
             observeFrameChanges(on: visibleController)
             updateWindowsMenuExclusion()
             // The Space→window routing map reports only the visible window per
@@ -11832,6 +11878,9 @@ final class SpaceWindowSlot: ObservableObject {
             pendingCloseOnReplacementBySpaceId[spaceId] = existing
         }
         windowsBySpaceId[spaceId] = controller
+        MainActor.assumeIsolated {
+            controller.mainSplitViewController.useMediaController(sidebarMediaController)
+        }
         manager?.noteSlotWindowsDidChange()
         // Chromium records its "recently closed" stack inside its own close
         // handshake, before AppKit reports the close, so it needs this pairing

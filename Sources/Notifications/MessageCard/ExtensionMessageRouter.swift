@@ -337,6 +337,9 @@ final class ExtensionMessageRouter {
         register(type: "agentSpace.ping") { context in
             return AgentSpaceRouter.handlePing(context: context)
         }
+        register(type: "agentSpace.app.info") { context in
+            return AgentSpaceRouter.handleAppInfo(context: context)
+        }
         register(type: "agentSpace.handoff") { context in
             return AgentSpaceRouter.handleHandoff(context: context)
         }

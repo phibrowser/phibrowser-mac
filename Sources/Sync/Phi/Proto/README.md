@@ -190,6 +190,7 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiEntity` | `kind.bookmark` | 3 | `PhiBookmarkEntity` (oneof `kind`, M3-3) |
 | `PhiEntity` | `kind.pin_tab` | 4 | `PhiPinTabEntity` (oneof `kind`, M3-3) |
 | `PhiEntity` | `kind.url_rule` | 5 | `PhiURLRuleEntity` (oneof `kind`, M3-4a) |
+| `PhiEntity` | `kind.profile` | 6 | `PhiProfileEntity` (oneof `kind`, M3-4b) |
 | `PhiSpaceEntity` | `space_uuid` | 1 | `string` (account-level sync uuid, M3-2b) |
 | `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
 | `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
@@ -233,6 +234,9 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiURLRuleEntity` | `rank` | 6 | `PhiSettingValue` (fractional index, own timestamp) |
 | `PhiURLRuleEntity` | `created_at_ms` | 7 | `int64` (merged with `min()`, not LWW) |
 | `PhiURLRuleEntity` | `source` | 8 | `int32` (written once, merged deterministically) |
+| `PhiProfileEntity` | `profile_uuid` | 1 | `string` (account profile uuid from `sync.profileGlobalUuids`; never the Chromium basename) |
+| `PhiProfileEntity` | `name` | 2 | `PhiSettingValue` (string, LWW; the account name of the Profile) |
+| `PhiProfileEntity` | `created_at_ms` | 3 | `int64` (merged with `min()` of non-zero values, not LWW) |
 
 Since M3-2b, `space_uuid` is the **account-level** sync uuid resolved through the device's
 `sync.spaceGlobalUuids` mapping table, not the local `SpaceModel.spaceId`. Nothing else about
@@ -240,7 +244,8 @@ the wire format changed.
 
 Reserved ranges are **declared in the proto**, not just described here: `PhiSpaceEntity`
 reserves 11-14, `PhiBookmarkEntity` 12-15, `PhiPinTabEntity` 10-13 and `PhiURLRuleEntity` 9-12,
-all for M3-4b / M4 (the 5 slot on `PhiEntity.kind` is spoken for as of this commit).
+all for M3-4b / M4, and `PhiProfileEntity` 4-7 for M4+ (slots 5 and 6 on `PhiEntity.kind` are
+spoken for).
 Until M3-3 these were comments only, which protoc does not enforce; with the declarations in
 place, reusing one of those numbers is a compile failure rather than a code-review catch. The
 declarations are wire-neutral (a reserved range emits no field), and
@@ -259,7 +264,7 @@ reserved field must still hand it back untouched, or two clients of different ve
 each other's content on every round. `SwiftProtobuf` parks them in `unknownFields`, so the rule
 for any code that rebuilds one of these payload messages is: start from the message that
 carries the authoritative bytes and overwrite the known fields, never from a fresh
-`Phi_Phi…Entity()`. All three merge implementations start from `remote` for exactly this
+`Phi_Phi…Entity()`. Every merge implementation below starts from `remote` for exactly this
 reason, each pinned by its own test:
 
 | Message | Merge | Pinned by |
@@ -267,6 +272,7 @@ reason, each pinned by its own test:
 | `PhiSpaceEntity` | `SyncableSpaces.merge(local:remote:)` | `SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` |
 | `PhiBookmarkEntity` | `BookmarkKind.merge(local:remote:)` | `SyncableOwnedItemsTests.testUnknownFieldsSurviveAMerge` |
 | `PhiPinTabEntity` | `PinKind.merge(local:remote:)` | (shares the rule; no dedicated probe) |
+| `PhiProfileEntity` | `SyncableProfiles.merge(local:remote:)` | `SyncableProfilesTests.testMergeKeepsTheRemoteUnknownFields` |
 
 ## Client tags
 
@@ -283,6 +289,7 @@ per DATA TYPE (2000), so every kind shares it. The tags themselves live in
 | `bookmark` | `phi-bookmark:<bookmark_uuid>` | `phi-bookmark` |
 | `pin_tab` | `phi-pin:<lineage>:<ownerKey>` | `phi-pin` |
 | `url_rule` | `phi-urlrule:<rule_uuid>` | `phi-urlrule` |
+| `profile` | `phi-profile:<profile_uuid>` | `phi-profile` |
 
 `ownerKey` is the `space_uuid`, the `profile_uuid`, or the literal `app`; a pin's identity is
 the PAIR (lineage, owner), so one lineage living in N Spaces is N entities. The `<lineage>` put
@@ -290,6 +297,9 @@ into the tag **must already be normalized to lowercase** by the same helper the 
 the landing matcher use -- an un-normalized lineage produces a self-consistent hash that no
 other device will ever compute. `url_rule`'s identity, by contrast, is `rule_uuid` **alone**
 (D13): the target Space is not part of it, so retargeting a rule never re-mints its tag.
+`profile`'s `<profile_uuid>` is the account profile uuid; deleting an account Profile is the
+ordinary tombstone on this tag (no payload field), and only Profiles mapped to an account Profile
+are ever published.
 
 `name` is the only part of an entity the server stores in plaintext, so it is **a constant per
 kind**: never a title, a URL, or a tag carrying a uuid. The constant is also what makes the

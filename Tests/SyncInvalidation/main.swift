@@ -310,6 +310,14 @@ struct InvalidationTests {
         try expect(state.demands.count == 4 && state.demands.last == .catchUp,
                    "Manual catch-ups during a pull did not collapse into one follow-up")
 
+        // Sync now survives coalescing with automatic catch-ups and marks only its own pull.
+        coordinator.requestCatchUp(); coordinator.requestCatchUp(requested: true); coordinator.requestCatchUp()
+        try await eventually("Requested catch-up missing") { state.demands.count == 5 }
+        try expect(state.demands.last == .requestedCatchUp, "Sync now was dispatched as an automatic catch-up")
+        coordinator.requestCatchUp()
+        try await eventually("Automatic catch-up after Sync now missing") { state.demands.count == 6 }
+        try expect(state.demands.last == .catchUp, "The Sync now mark leaked into a later catch-up")
+
         coordinator.stop()
         try expect(!coordinator.isRunning, "Stopped coordinator still reports running")
         print("PASS manual catch-up: joins a pending SSE catch-up and a pull in flight; stopped coordinator refuses")

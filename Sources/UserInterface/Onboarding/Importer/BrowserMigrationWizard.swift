@@ -307,7 +307,7 @@ final class BrowserMigrationWizardModel: ObservableObject {
     /// card that failed — which is the only way back when that card is the only
     /// source, and the notice tells the user to go and fix it and try again.
     @Published var pickedSource: BrowserMigrationSourceKind? {
-        didSet { sourceUnreadable = false }
+        didSet { sourceUnreadable = false; startRefusal = nil }
     }
     @Published private(set) var plan: BrowserMigrationPlan?
     @Published private(set) var rows: [BrowserMigrationPreviewProfileRow] = []
@@ -318,6 +318,29 @@ final class BrowserMigrationWizardModel: ObservableObject {
     /// creates, so a second run leaves the first one's Profiles and Spaces
     /// where they are and makes a fresh set beside them.
     @Published var isConfirmingRerun = false
+
+    /// Why the runner turned the last Start down, when it did.
+    enum StartRefusal: Equatable {
+        /// Another run is in flight.
+        case migrationRunning
+        /// A pinned-tab scope change is being applied (B-3 stage 1, design 3.6).
+        case pinnedTabScopeChanging
+    }
+    /// Set when Start reached the runner and it refused; cleared by a pick, and
+    /// re-evaluated on the next Start and whenever the preview appears, so it
+    /// does not outlive the job it names.
+    @Published private(set) var startRefusal: StartRefusal?
+
+    /// Drops a refusal whose cause has ended.
+    func refreshStartRefusal() {
+        switch startRefusal {
+        case .migrationRunning? where !BrowserMigrationRunner.shared.isRunning,
+             .pinnedTabScopeChanging? where !BrowserDataActivity.pinScopeMigrationIsPending:
+            startRefusal = nil
+        default:
+            break
+        }
+    }
 
     private var source: BrowserMigrationSource?
     private var selection = BrowserMigrationSelection()
@@ -409,6 +432,7 @@ final class BrowserMigrationWizardModel: ObservableObject {
     /// Starts the previewed run, asking first when a second Migration would
     /// leave the account with two copies of the same thing.
     func start() {
+        refreshStartRefusal()
         if warnsAboutRerun {
             isConfirmingRerun = true
             return
@@ -451,8 +475,14 @@ final class BrowserMigrationWizardModel: ObservableObject {
         if let plan, plan.pinnedTabScope != currentPinnedTabScope { rebuild() }
         guard canStart, let plan, let pickedSource else { return }
         guard BrowserMigrationRunner.shared.start(plan: plan, source: pickedSource) else {
+            if BrowserMigrationRunner.shared.isRunning {
+                startRefusal = .migrationRunning
+            } else if BrowserDataActivity.pinScopeMigrationIsPending {
+                startRefusal = .pinnedTabScopeChanging
+            }
             return
         }
+        startRefusal = nil
         step = .run
     }
 
@@ -719,6 +749,7 @@ struct BrowserMigrationWizardView: View {
             pickBody
         case .preview:
             previewBody
+                .onAppear { model.refreshStartRefusal() }
         case .run:
             runBody
         }
@@ -1039,6 +1070,8 @@ struct BrowserMigrationWizardView: View {
             // stacking underneath it.
             if let blocker = startBlocker {
                 fieldWell(blocker)
+            } else if let refusal = model.startRefusal {
+                fieldWell(Self.startRefusalText(refusal))
             } else if let hint = model.pickedSource?.preflightHint {
                 // Said before anything starts rather than when it would
                 // matter: Arc's Keychain prompt is asked again for every
@@ -1101,6 +1134,19 @@ struct BrowserMigrationWizardView: View {
                 comment: "Browser migration wizard - why Start is disabled when the user has unticked everything")
         }
         return nil
+    }
+
+    private static func startRefusalText(_ refusal: BrowserMigrationWizardModel.StartRefusal) -> String {
+        switch refusal {
+        case .migrationRunning:
+            return NSLocalizedString("app.browserMigration.preview.refusedRunning",
+                value: "A migration is already running. Try again when it has finished.",
+                comment: "Browser migration wizard - shown after Start when another migration run is still in progress")
+        case .pinnedTabScopeChanging:
+            return NSLocalizedString("app.browserMigration.preview.refusedPinnedTabScope",
+                value: "Pinned tabs are being rearranged for a new pinned tab scope. Try again in a moment.",
+                comment: "Browser migration wizard - shown after Start when a pinned tab scope change is still being applied on this Mac")
+        }
     }
 
     private var treeRows: some View {

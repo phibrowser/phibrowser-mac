@@ -35,21 +35,31 @@ final class WebContentHeaderStateTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    func testComfortableLayoutUsesIconOnlyFeedback() {
-        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+    func testFeedbackIconFitsBesideDownloadAtNinetyPoints() {
+        let fit = HeaderTrailingArea.widthFit(
+            availableWidth: 90,
+            pinnedCount: 0,
+            showDownload: true,
+            showMemory: false,
+            showFeedback: true,
+            showChat: false
+        )
 
-        XCTAssertTrue(WebContentHeaderState().isFeedbackIconOnly)
+        XCTAssertTrue(fit.showFeedback)
+        XCTAssertTrue(fit.showDownload)
     }
 
-    func testOtherLayoutsKeepFeedbackTitle() {
-        for layoutMode in [LayoutMode.performance, .balanced] {
-            PhiPreferences.GeneralSettings.saveLayoutMode(layoutMode)
+    func testFeedbackIconCollapsesWhenItsSlotDoesNotFit() {
+        let fit = HeaderTrailingArea.widthFit(
+            availableWidth: 59,
+            pinnedCount: 0,
+            showDownload: false,
+            showMemory: false,
+            showFeedback: true,
+            showChat: false
+        )
 
-            XCTAssertFalse(
-                WebContentHeaderState().isFeedbackIconOnly,
-                "Expected Feedback title in \(layoutMode.rawValue) layout"
-            )
-        }
+        XCTAssertFalse(fit.showFeedback)
     }
 
     func testBalancedLayoutAllowsWindowDrag() {

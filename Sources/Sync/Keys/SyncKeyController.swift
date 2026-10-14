@@ -95,6 +95,11 @@ final class SyncKeyController {
     /// empty `localProfilesProvider()` answer says nothing about which Profiles exist, so
     /// the unmapped evidence is not pruned against it (docs/sync.md, "Enrollment and setup").
     private let isProfileListEnumerated: @MainActor () -> Bool
+    /// The drained account's Profile entities (`PhiSpaceSyncState.accountProfileEntityView`).
+    /// Auto-create and the registration wait follow it rather than the key registry, which never
+    /// forgets a deleted Profile (docs/sync.md, "Enrollment and setup"). The closure answers nil
+    /// before the first full replay. A nil closure (tests, unwired construction) applies no gating.
+    private let profileEntityView: (@MainActor () -> AccountProfileEntityView?)?
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
@@ -233,6 +238,7 @@ final class SyncKeyController {
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
          isPairingComplete: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.isPaired },
          isProfileListEnumerated: @escaping @MainActor () -> Bool = { true },
+         profileEntityView: (@MainActor () -> AccountProfileEntityView?)? = nil,
          retirePhiSync: @escaping (Bool) -> Void = { _ in },
          invalidateEnrollment: @escaping () throws -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
@@ -245,9 +251,12 @@ final class SyncKeyController {
          verifyCursorDeletion: @escaping () throws -> Void = {},
          isCurrentAccount: @escaping () -> Bool = { true },
          runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
-         runtimeRemovalPending: @escaping () -> Bool = { false }) {
+         runtimeRemovalPending: @escaping () -> Bool = { false },
+         unlockRetryDelay: @escaping (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay) {
         self.isPairingComplete = isPairingComplete
+        self.unlockRetryDelay = unlockRetryDelay
         self.isProfileListEnumerated = isProfileListEnumerated
+        self.profileEntityView = profileEntityView
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -277,6 +286,41 @@ final class SyncKeyController {
     /// lifecycle"). Plain state: its owner decides when to set it and pings
     /// Chromium itself.
     var chromiumKeysWithdrawn = false
+
+    /// Local Profiles being deleted (docs/sync.md, "Chromium account and key lifecycle"). Their key
+    /// is withdrawn and a mapping pass neither resolves nor registers them, so a deleted Profile's
+    /// basename cannot keep or regain a key and its absence never reads as "unmapped".
+    private(set) var profileIdsBeingDeleted: Set<String> = []
+    /// Mapping pass sequence: incremented as each pass starts. A withdrawal records the current
+    /// value, so a pass that was already running when the key was withdrawn (its start is not
+    /// later than the withdrawal) cannot put the key back, even when the deletion finished and
+    /// left `profileIdsBeingDeleted` before the pass resumed.
+    private var passSequence: UInt64 = 0
+    private var withdrawnAtPass: [String: UInt64] = [:]
+    /// Every account Profile uuid the key registry listed at its last successful read. The registry
+    /// never forgets a uuid, so the sync engine resolves any Profile tombstone's tag from it
+    /// (docs/sync.md, "Profile entity"). Empty until the first read this process.
+    private(set) var lastAccountProfileUuids: Set<String> = []
+
+    /// Stops Chromium sync for one Profile before it is deleted.
+    func withdrawProfileKey(profileId: String) {
+        profileIdsBeingDeleted.insert(profileId)
+        withdrawnAtPass[profileId] = passSequence
+        if resolved.removeValue(forKey: profileId) != nil { notifyChromium() }
+    }
+
+    /// The deletion failed: the Profile stays, so the next pass resolves its key again.
+    func restoreProfileKey(profileId: String) {
+        guard profileIdsBeingDeleted.remove(profileId) != nil else { return }
+        withdrawnAtPass[profileId] = nil
+        Task { @MainActor [weak self] in await self?.resolveMappings() }
+    }
+
+    /// The deletion committed; the Profile is gone from the local list. `withdrawnAtPass` keeps
+    /// the entry until a pass prunes it, so a pass that was suspended meanwhile cannot restore it.
+    func finishProfileKeyWithdrawal(profileId: String) {
+        profileIdsBeingDeleted.remove(profileId)
+    }
 
     /// Hot path: the bridge delegate calls this on every Chromium pull.
     /// Dictionary read only — no I/O, no crypto.
@@ -407,6 +451,10 @@ final class SyncKeyController {
             throw NativeSyncResetError.cleanupFailed
         }
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
+        // The Profile deletion journal describes the cursors just cleared.
+        if let intents = PhiSpaceSyncState.shared.profileDeletionIntentStore, !intents.save([:]) {
+            throw NativeSyncResetError.cleanupFailed
+        }
         markerStore?.deleteFile()
         guard markerStore?.load().requiresReconfiguration != true else {
             throw NativeSyncResetError.cleanupFailed
@@ -424,7 +472,12 @@ final class SyncKeyController {
     /// a thrown, possibly transient, failure) CLEARS the cache rather than
     /// leaving it standing: the unknown state fails *closed* (Chromium pulls nil
     /// and the sync gate shuts), and the first successful unlock announces
-    /// `.phiAccountKeyDidUnlock`, so a later trigger retries.
+    /// `.phiAccountKeyDidUnlock`, so a later trigger retries. A thrown failure
+    /// in that state also schedules its own retry (`scheduleUnlockRetry`): the
+    /// only other triggers are the launch-time login refresh and a Profile-list
+    /// change, so a launch with the key service unreachable otherwise stayed
+    /// locked after the connection returned (every round `gated`, every Chromium
+    /// Profile `notUnlocked`, Sync Now refused; PR #181 acceptance, 2026-10-12).
     ///
     /// Once the ARK is held that retry no longer exists (the notification fires
     /// only on the nil -> unlocked transition), so a transient failure would
@@ -469,7 +522,8 @@ final class SyncKeyController {
             // The unlock is an `await`; the account may have gone away inside it (review A11).
             guard !isRetired else { return }
             guard manager.currentARK != nil else {
-                clearResolved()  // transient (offline etc.) — the first unlock's notification retries
+                clearResolved()  // transient (offline etc.) — fails closed until the retry below unlocks
+                scheduleUnlockRetry(after: error)
                 return
             }
             AppLogWarn("[phi-sync] silent unlock failed with the account key held; keeping resolved keys (\(PhiSyncLog.describe(error)))")
@@ -477,6 +531,10 @@ final class SyncKeyController {
             return
         }
         guard !isRetired else { return }
+        // Any answer from the key service settles the retry: `.unlocked` is what it waited
+        // for, and `.needsJoin` / `.notSignedIn` are definitive (a join or a sign-in re-enters
+        // here through the pane and the login notifications).
+        cancelUnlockRetry()
         switch result {
         case .unlocked:
             break
@@ -496,6 +554,37 @@ final class SyncKeyController {
             AppLogWarn("[phi-sync] silent unlock got 401 with the account key held; keeping resolved keys")
         }
         await resolveMappings()
+    }
+
+    /// Runs a silent unlock now when the account key is not held: Sync Now on a
+    /// launch whose unlock failed is the user asking for exactly that, and the
+    /// coordinator refuses the request itself while the key is missing. A pending
+    /// retry is replaced, not doubled; with the key held this is a no-op.
+    func kickSilentUnlockIfLocked() {
+        guard !isRetired, manager.currentARK == nil else { return }
+        cancelUnlockRetry()
+        Task { @MainActor [weak self] in await self?.silentUnlockAndResolve() }
+    }
+
+    /// Arms one retry of the silent unlock after a thrown failure without the
+    /// account key. The pass that it runs lands back in `silentUnlockAndResolveOnce`,
+    /// which re-arms on the next throw (with a longer wait) or settles on any
+    /// answer. One timer at a time: a second failure while one is pending (the
+    /// Profile-list follow-up can fail the same way) keeps the earlier, shorter wait.
+    private func scheduleUnlockRetry(after error: Error) {
+        guard unlockRetryTask == nil else { return }
+        let attempt = unlockRetryAttempt
+        unlockRetryAttempt += 1
+        let delay = unlockRetryDelay(attempt)
+        AppLogWarn("[phi-sync] silent unlock failed without the account key; retrying in \(delay.components.seconds)s (\(PhiSyncLog.describe(error)))")
+        unlockRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled, !self.isRetired else { return }
+            self.unlockRetryTask = nil
+            // Another flow may have supplied the key meanwhile. Still complete this
+            // recovery pass: holding the account key alone does not publish Profile keys.
+            await self.silentUnlockAndResolve()
+        }
     }
 
     /// Drops every cached key and pings Chromium if there was anything to drop,
@@ -546,9 +635,23 @@ final class SyncKeyController {
         isRetired = true
         resolveTask?.cancel()
         silentUnlockTask?.cancel()
+        cancelUnlockRetry()
         autoCreateTask?.cancel()
         defaultFlagBackfillTask?.cancel()
         clearResolved()
+    }
+
+    /// 5 s doubling to 60 s: the key-service lookup is one GET, and nothing
+    /// observes the connection coming back (the repair loop in
+    /// `SyncProfileMappingPauseReconciler` caps its offline wait the same way).
+    static func defaultUnlockRetryDelay(attempt: Int) -> Duration {
+        .seconds(min(5 << min(attempt, 4), 60))
+    }
+
+    private func cancelUnlockRetry() {
+        unlockRetryTask?.cancel()
+        unlockRetryTask = nil
+        unlockRetryAttempt = 0
     }
 
     /// Re-runs resolution after external events (pairing applied, approval
@@ -624,6 +727,13 @@ final class SyncKeyController {
     private var resolveTask: Task<Void, Never>?
     private var resolvePending = false
 
+    /// Removes the keys of Profiles being deleted, and of every Profile withdrawn during or after
+    /// the pass that started at `passStartedAt`, from the resolved cache after a pass merged its result.
+    private func dropWithdrawnKeys(passStartedAt: UInt64) {
+        for profileId in profileIdsBeingDeleted { resolved[profileId] = nil }
+        for (profileId, seq) in withdrawnAtPass where seq >= passStartedAt { resolved[profileId] = nil }
+    }
+
     /// Single-flight state for `silentUnlockAndResolve()`. It is entered from the
     /// startup/login unlock and from the Profile-list follow-up, and the two can
     /// overlap: one pass resolved the keys, then the other's device-envelope
@@ -634,10 +744,28 @@ final class SyncKeyController {
     private var silentUnlockTask: Task<Void, Never>?
     private var silentUnlockPending = false
 
+    /// The pending retry of a silent unlock that threw without the account key
+    /// (`scheduleUnlockRetry`), and how many such retries this locked stretch has
+    /// used; both reset when a pass gets any answer. The delay is injected so
+    /// tests do not wait.
+    private var unlockRetryTask: Task<Void, Never>?
+    private var unlockRetryAttempt = 0
+    private var unlockRetryDelay: (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay
+
     private func resolveMappingsOnce() async {
         guard !isRetired else { return }
         var next: [String: (uuid: String, passphrase: String)] = [:]
-        let locals = localProfilesProvider()
+        let previousStart = passSequence
+        passSequence += 1
+        let startedAt = passSequence
+        let allLocals = localProfilesProvider()
+        // A finished withdrawal older than one full pass whose basename no local Profile names any
+        // more is forgotten; a new Profile that reuses the basename then resolves normally.
+        let localIds = Set(allLocals.map(\.profileId))
+        withdrawnAtPass = withdrawnAtPass.filter { id, seq in
+            seq >= previousStart || localIds.contains(id) || profileIdsBeingDeleted.contains(id)
+        }
+        let locals = allLocals.filter { !profileIdsBeingDeleted.contains($0.profileId) }
         var unmappedLocals: [(profileId: String, displayName: String)] = []
         var hasUnknownLocal = false
         // Every failure this pass met, by class (BH-15). Any transient one holds
@@ -692,6 +820,7 @@ final class SyncKeyController {
             remoteUuids = try await profileKeys.accountProfileUuids()
             // Review A11: the listing may have answered for the NEXT account; write nothing.
             guard !isRetired else { return }
+            lastAccountProfileUuids = remoteUuids
         } catch {
             guard !isRetired else { return }
             // Unknown remote set (offline / 5xx / 401 / still locked). Hold the
@@ -704,12 +833,18 @@ final class SyncKeyController {
             lastMappingsPassResult = Self.passResult(failures)
             lastMappingsFailureCategory = Self.mappingFailureCategory(for: error)
             resolved.merge(next) { _, new in new }
+            // A withdrawal that landed while this pass was suspended still holds, also once the
+            // deletion has finished.
+            dropWithdrawnKeys(passStartedAt: startedAt)
             noteUnmappedEvidence(locals: locals, resolved: resolvedNow, absent: provenAbsent)
             if !resolved.isEmpty { notifyChromium() }
             announceMappingsResolved(.held)
             return
         }
 
+        let uuidsBeingDeleted = Set(profileIdsBeingDeleted.compactMap {
+            profileKeys.mappedGlobalUuid(forProfileId: $0)
+        })
         if !hasUnknownLocal, isPairingComplete() {
             let claimed = Set(next.values.map { $0.uuid })
             // Registration waits only for an account Profile that §3.6's twin search
@@ -719,9 +854,17 @@ final class SyncKeyController {
             // that does not open under this ARK, and a uuid the persisted mapping
             // already gives to a local Profile that no longer exists (auto-create
             // deliberately never grows that one back).
-            let claimable = remoteUuids.subtracting(claimed)
+            var claimable = remoteUuids.subtracting(claimed)
                 .subtracting(undecryptableRemoteUuids)
                 .subtracting(profileKeys.allMappedGlobalUuids())
+            // Auto-create claims only account Profiles with a live Profile entity, so nothing else
+            // may hold registration either: a deleted Profile's registry row would hold it
+            // forever. Before the first full replay auto-create claims nothing at all, and waiting
+            // on it would hold the pause that keeps that replay from running.
+            if let profileEntityView {
+                if let view = profileEntityView() { claimable.formIntersection(view.liveUuids) }
+                else { claimable = [] }
+            }
             // D20: no count-based adopt. One unmapped local beside one unclaimed
             // account Profile is not evidence that they are the same Profile; the
             // twin search matches by name and a new local is registered as new (R4).
@@ -756,6 +899,9 @@ final class SyncKeyController {
         // partial pass can never erase a previously-good entry. The cache is
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).
         resolved.merge(next) { _, new in new }
+        // A withdrawal that landed while this pass was suspended still holds, also once the
+        // deletion has finished.
+        dropWithdrawnKeys(passStartedAt: startedAt)
         // Set by the one branch that assigns the predicates, so the announcement's
         // marker follows the assignment itself rather than a re-derived condition.
         var outcome = MappingsOutcome.held
@@ -766,7 +912,10 @@ final class SyncKeyController {
         } else {
             let claimedAfter = Set(next.values.map { $0.uuid })
             let stillUnmapped = locals.filter { next[$0.profileId] == nil }
-            let stillUnclaimed = remoteUuids.subtracting(claimedAfter)
+            // The account Profile of a Profile being deleted here is neither unclaimed nor owed.
+            var stillUnclaimed = remoteUuids.subtracting(claimedAfter).subtracting(uuidsBeingDeleted)
+            // A registry row with no live Profile entity is not an account Profile this Mac lacks.
+            if let view = profileEntityView?() { stillUnclaimed.formIntersection(view.liveUuids) }
             needsPairing = !stillUnmapped.isEmpty || !stillUnclaimed.isEmpty
             needsPairingActionable = !stillUnmapped.isEmpty
                 || !stillUnclaimed.subtracting(undecryptableRemoteUuids).isEmpty
@@ -1015,7 +1164,7 @@ final class SyncKeyController {
             // how one network blip becomes a permanent empty duplicate.
             profileId = pending
         } else {
-            let name = uniqueDisplayName(basedOn: displayName)
+            let name = Self.uniqueDisplayName(basedOn: displayName) { profileCreator.displayNameExists($0) }
             let result = await profileCreator.createProfile(displayName: name)
             guard !isRetired else {
                 // R12: metadata only, no profileId or uuid.
@@ -1075,14 +1224,16 @@ final class SyncKeyController {
     /// `createProfile` returns nil for three different reasons (empty or
     /// duplicate name, no bridge, bridge-side failure), so "nil means duplicate,
     /// try the next suffix" turns a missing bridge into unbounded probing.
-    private func uniqueDisplayName(basedOn raw: String) -> String {
+    /// Shared with the Profile entity's inbound rename (`PhiProfileLocalAccess.applyRemoteName`),
+    /// which passes a `nameExists` that excludes the Profile being renamed.
+    static func uniqueDisplayName(basedOn raw: String, nameExists: (String) -> Bool) -> String {
         let base = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? NSLocalizedString("sync.pairing.unnamedProfileName", value: "Profile", comment: "Sync setup - name given to a local profile created for an account profile that has no name")
             : raw
-        guard profileCreator.displayNameExists(base) else { return base }
+        guard nameExists(base) else { return base }
         for suffix in 2...50 {
             let candidate = "\(base) (\(suffix))"
-            if !profileCreator.displayNameExists(candidate) { return candidate }
+            if !nameExists(candidate) { return candidate }
         }
         return "\(base) (\(UUID().uuidString.prefix(4)))"
     }
@@ -1121,6 +1272,12 @@ final class SyncKeyController {
         guard isPairingComplete() else {
             return await finishRefresh(.skipped, created: 0, skipped: 0)
         }
+        // R4: auto-create follows the drained account's Profile entities. Before the first full
+        // replay nothing is known about which Profiles still exist, so nothing is created.
+        let entityView = profileEntityView?()
+        if profileEntityView != nil, entityView == nil {
+            return await finishRefresh(.skipped, created: 0, skipped: 0)
+        }
         lastAutoCreateFailure = nil
         lastAutoCreateFailureCategory = nil
         let accountUuids: Set<String>
@@ -1128,6 +1285,7 @@ final class SyncKeyController {
             accountUuids = try await profileKeys.accountProfileUuids()
             // The listing may have answered for the next account (review A11).
             guard !isRetired else { return retiredRefresh() }
+            lastAccountProfileUuids = accountUuids
         } catch {
             guard !isRetired else { return retiredRefresh() }
             noteAutoCreateFailure(error)
@@ -1139,8 +1297,18 @@ final class SyncKeyController {
         // "missing" and never grows back (§3.6). The one exception is §6.2 A0's
         // dead-mapping cleanup, which removes the entry first.
         let mapped = Set(profileKeys.allMappedGlobalUuids())
-        let missing = accountUuids.subtracting(mapped).sorted()   // uuid order: device-independent
+        // Only uuids with a live Profile entity: a deleted Profile's registry row stays forever and
+        // must never grow the Profile back on a device that did not have it.
+        var missingSet = accountUuids.subtracting(mapped)
+        if let entityView { missingSet.formIntersection(entityView.liveUuids) }
+        let missing = missingSet.sorted()   // uuid order: device-independent
         guard !missing.isEmpty else { return await finishRefreshAndBackfill(.unchanged, created: 0, skipped: 0) }
+        // The Profile entity carries the account's current name; the registry envelope keeps
+        // the name it was registered under and is only the fallback.
+        let displayName: (String, String) -> String = { uuid, registryName in
+            let entityName = entityView?.liveNames[uuid] ?? ""
+            return entityName.isEmpty ? registryName : entityName
+        }
 
         var created = 0
         var skipped = 0
@@ -1180,7 +1348,7 @@ final class SyncKeyController {
                 }
                 noteDecryptableRemote(uuid)
                 attempts += 1
-                switch await claimMissingProfile(remote, name: name, accountUuids: accountUuids,
+                switch await claimMissingProfile(remote, name: displayName(uuid, name), accountUuids: accountUuids,
                                                  defaultClosedToUnflagged: false) {
                 case .claimed: created += 1
                 case .failed: skipped += 1
@@ -1207,7 +1375,7 @@ final class SyncKeyController {
             for (remote, name) in candidates {
                 guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
                 attempts += 1
-                switch await claimMissingProfile(remote, name: name, accountUuids: accountUuids,
+                switch await claimMissingProfile(remote, name: displayName(remote.uuid, name), accountUuids: accountUuids,
                                                  defaultClosedToUnflagged: defaultClosedToUnflagged) {
                 case .claimed: created += 1
                 case .failed: skipped += 1

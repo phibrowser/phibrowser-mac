@@ -124,6 +124,7 @@ enum ReaderExtensionBridge {
                 ReaderViewAnalytics.surfaceMounted(tabId: payload.tabId)
             }
             guard !payload.active, let error = payload.error else { return }
+            AppLogInfo("📖 [Reader] open refused tab=\(payload.tabId) reason=\(error)")
             // A refused open never creates a surface tab — disarm the
             // overlay divert armed when the request went out.
             state.cancelPendingReaderOverlay(forOrigin: payload.tabId)
@@ -141,7 +142,7 @@ enum ReaderExtensionBridge {
                     value: "Reader View is unavailable on this page",
                     comment: "Reader View - Toast shown when reader extraction could not run at all")
             }
-            OverlayToastCenter.shared.show(title: title, in: state)
+            state.showReaderToast(title: title, forOrigin: payload.tabId)
         }
     }
 
@@ -342,12 +343,14 @@ enum ReaderExtensionBridge {
     }
 
     /// The extension speaks in Chromium tab ids, which is what `Tab.guid`
-    /// holds; the tab can be in any window.
+    /// holds; the tab can be in any window, and can be a peek's page (an
+    /// off-strip tab Reader View can open over).
     @MainActor
     private static func findTab(_ tabId: Int) -> (tab: Tab, state: BrowserState)? {
         for controller in SpaceSessionControllersManager.shared.getAllWindows() {
             let state = controller.browserState
-            if let tab = state.tabs.first(where: { $0.guid == tabId }) {
+            if let tab = state.tabs.first(where: { $0.guid == tabId })
+                ?? state.peekState.peekTab(withId: tabId) {
                 return (tab, state)
             }
         }

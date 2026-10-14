@@ -230,6 +230,9 @@ struct DevicesSettingView: View {
                     if presentation.showsProfileListWait {
                         hintText(NSLocalizedString("sync.status.waitingForProfileList", value: "Waiting for profiles to load", comment: "Sync settings - problem line under the sync status while this Mac has not yet read its list of browser profiles; sync starts once it has, and it keeps trying on its own"))
                     }
+                    if let failure = viewModel.pinScopeMigrationFailure {
+                        hintText(String(format: NSLocalizedString("sync.status.pinnedTabScopeFailing", value: "Pinned tab scope change not applied yet (%1$lld attempts; %2$@)", comment: "Sync settings - problem line under the sync status while this Mac keeps failing to apply a pinned tab scope change and keeps retrying on its own; %1$lld is the number of failed attempts in a row, %2$@ is the most recent reason, such as A browser migration is running"), failure.attempts, pinScopeFailureReason(failure.lastKind)))
+                    }
                     if let problem = viewModel.nativeDetail?.lastProblem {
                         hintText(String(format: NSLocalizedString("sync.status.lastProblem", value: "Last problem: %1$@ (%2$@)", comment: "Sync settings - the most recent sync problem on this Mac; %1$@ is the kind of problem, such as No connection, %2$@ is how long ago it happened, such as 5 minutes ago"), problemTitle(problem.category), problem.at.formatted(.relative(presentation: .named))))
                     }
@@ -493,6 +496,14 @@ struct DevicesSettingView: View {
         case .unreadableRemoteData: return NSLocalizedString("sync.status.problem.unreadable", value: "Some synced data couldn’t be read", comment: "Sync settings - last sync problem: some data from the account could not be read on this Mac")
         case .resetRequired: return NSLocalizedString("sync.status.problem.resetRequired", value: "Sync needs to be reset", comment: "Sync settings - last sync problem: sync must be set up again before it can continue")
         case .waitingForProfilePairing: return NSLocalizedString("sync.status.problem.waitingForProfilePairing", value: "Waiting for a profile to be paired", comment: "Sync settings - last sync problem: some synced items wait until a browser profile on this Mac is paired with the account")
+        }
+    }
+
+    private func pinScopeFailureReason(_ kind: SyncPinScopeMigrationFailure.Kind) -> String {
+        switch kind {
+        case .browserMigrationRunning: return NSLocalizedString("sync.status.pinnedTabScopeFailing.browserMigration", value: "A browser migration is running", comment: "Sync settings - reason a pinned tab scope change is not applied yet: a migration from another browser is in progress")
+        case .storeUnavailable: return NSLocalizedString("sync.status.pinnedTabScopeFailing.dataUnavailable", value: "Local browser data is unavailable", comment: "Sync settings - reason a pinned tab scope change is not applied yet: this Mac could not open its local browser data")
+        case .writeFailed: return NSLocalizedString("sync.status.pinnedTabScopeFailing.saveFailed", value: "Couldn’t save pinned tabs on this Mac", comment: "Sync settings - reason a pinned tab scope change is not applied yet: saving the rearranged pinned tabs on this Mac failed")
         }
     }
 

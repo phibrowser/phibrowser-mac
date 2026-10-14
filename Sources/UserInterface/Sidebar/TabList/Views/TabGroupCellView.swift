@@ -1187,7 +1187,7 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
             ) as? TabPreviewInteractionCancelling)?.cancelTabPreviewForInteraction()
             groupCellDelegate?.tabGroupCell(self, tabDidRequestClose: tab)
         case .mute:
-            tab.setAudioMuted(!tab.isAudioMuted)
+            tab.toggleAudioMuted()
         }
     }
 }

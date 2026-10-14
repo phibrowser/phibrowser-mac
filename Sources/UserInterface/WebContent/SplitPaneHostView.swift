@@ -31,6 +31,10 @@ final class SplitPaneHostView: NSView {
     /// cards. Comfortable and Balanced omit it at the top so split content
     /// matches the normal WebContent distance below the address bar.
     static let paneInset: CGFloat = 4
+    /// Width of the focused pane's ring, drawn just inside the pane card's
+    /// edge. A page overlay covering one pane (Reader View) insets by it so
+    /// the ring stays visible around the overlay.
+    static let focusRingThickness: CGFloat = 2
     private let minPaneFraction: CGFloat = 0.1
 
     /// Ratios the divider magnetically snaps to while dragging: an even split
@@ -473,6 +477,12 @@ final class SplitPaneHostView: NSView {
         pane == .primary ? primaryPaneContainer : secondaryPaneContainer
     }
 
+    /// The pane's rounded card — what a page overlay scoped to one pane
+    /// (Reader View) covers. Its frame follows divider drags.
+    func paneCardView(for pane: Pane) -> NSView {
+        paneContainer(for: pane)
+    }
+
     private func nativePane(for pane: Pane) -> NSView? {
         pane == .primary ? primaryPane : secondaryPane
     }
@@ -760,7 +770,7 @@ private final class DividerHandle: NSView {
 /// Uses `CALayer.cornerCurve = .continuous` so the rounded corners exactly
 /// match the pane container's squircle clip.
 private final class FocusRingView: NSView {
-    private let borderThickness: CGFloat = 2
+    private let borderThickness = SplitPaneHostView.focusRingThickness
     private var themeObservation: AnyObject?
 
     override init(frame frameRect: NSRect) {

@@ -183,6 +183,7 @@ enum AlwaysEmitted {
     static let bookmark: Set<Int> = [2, 3, 4, 6, 7, 8, 9]
     static let pin: Set<Int> = [4, 5, 6, 7]                  // 2/3 are the owner oneof
     static let rule: Set<Int> = [2, 3, 4, 5, 6]
+    static let profile: Set<Int> = [2]
 }
 
 // The two malformed shapes that used to be REPORTED here -- a merge unit whose
@@ -259,6 +260,21 @@ func runLayer1(iterations: Int, generators: inout Generators, report: Report) {
     checkUnknownFieldPreservation(name: "spaces",
                                   merge: { SyncableSpaces.merge(local: $0, remote: $1) },
                                   trio: spacesTrio, iterations: iterations,
+                                  generators: &generators, report: report)
+
+    // Profiles -----------------------------------------------------------------
+    let profilesTrio: (inout Generators) -> (Phi_PhiProfileEntity, Phi_PhiProfileEntity,
+                                             Phi_PhiProfileEntity) = { gen in
+        let uuid = gen.rng.pick(Pool.uuids)
+        return (gen.profileEntity(uuid: uuid), gen.profileEntity(uuid: uuid),
+                gen.profileEntity(uuid: uuid))
+    }
+    AlgebraSuite(name: "profiles", merge: { SyncableProfiles.merge(local: $0, remote: $1) },
+                 trio: profilesTrio, alwaysEmitted: AlwaysEmitted.profile)
+        .run(iterations: iterations, generators: &generators, report: report)
+    checkUnknownFieldPreservation(name: "profiles",
+                                  merge: { SyncableProfiles.merge(local: $0, remote: $1) },
+                                  trio: profilesTrio, iterations: iterations,
                                   generators: &generators, report: report)
 
     // Bookmarks ----------------------------------------------------------------
@@ -358,6 +374,9 @@ func runLayer1(iterations: Int, generators: inout Generators, report: Report) {
     }
     checkCreatedAt("spaces", { SyncableSpaces.merge(local: $0, remote: $1) },
                    { value in var e = Phi_PhiSpaceEntity(); e.createdAtMs = value; return e },
+                   { $0.createdAtMs })
+    checkCreatedAt("profiles", { SyncableProfiles.merge(local: $0, remote: $1) },
+                   { value in var e = Phi_PhiProfileEntity(); e.createdAtMs = value; return e },
                    { $0.createdAtMs })
     checkCreatedAt("bookmarks", { BookmarkKind.merge(local: $0, remote: $1) },
                    { value in var e = Phi_PhiBookmarkEntity(); e.createdAtMs = value; return e },

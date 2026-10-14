@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Extract the production declarations the hostless merge harness needs.
 
-The merge core (SyncableSettings / SyncableSpaces / BookmarkKind / PinKind /
-URLRuleKind / SyncableOwnedItems) is pure, but it names a handful of value
+The merge core (SyncableSettings / SyncableSpaces / SyncableProfiles / BookmarkKind /
+PinKind / URLRuleKind / SyncableOwnedItems) is pure, but it names a handful of value
 types, protocols and constants that live in files whose *other* half drags in
 the app (LocalStore, AccountUserDefaults, SwiftData, AppKit, ThemedColor, the
 logger). Those files cannot be compiled whole outside the Xcode target.
@@ -120,6 +120,8 @@ VERBATIM = [
     ]),
     ("Sources/Sync/Phi/PhiSpaceSyncState.swift", [
         (r"^struct PhiSpaceCursor\b", True),
+        (r"^struct PhiProfileCursor\b", True),
+        (r"^struct PhiUnmatchedTombstone\b", True),
         (r"^struct PhiSpaceSyncTable\b", True),
         (r"^extension PhiSpaceSyncTable \{", True),
     ]),
@@ -142,6 +144,7 @@ VERBATIM = [
         (r"^extension UserDefaults \{", True),
         (r"^enum LayoutMode\b", True),
         (r"^enum AutoPictureInPictureMode\b", True),
+        (r"^enum SidebarMediaPresentationMode\b", True),
     ]),
 ]
 
@@ -216,7 +219,11 @@ HOSTED = [
 # block inside a long engine method, re-hosted as the body of a function the harness calls. The
 # block runs from the start marker up to (not including) the end marker.
 SNIPPETS = [
-    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: inout SpacePullBatch)",
+    # The block reads the page (`response.entities`, live hashes only), the Profile gate and index,
+    # and the pull-level carried-tombstone list; the host passes them in under the same names.
+    ("    func extendTagIndex(_ tagIndex: inout [String: String], with batch: inout SpacePullBatch,\n"
+     "                        response: PullPage, profileLive: Bool, profileIndex: inout [String: String],\n"
+     "                        carriedTombstones: inout [(hash: String, entityId: String, version: Int64)])",
      "Sources/Sync/Phi/PhiSyncEngine.swift", r"^    private func pull\(",
      "// Same hash the index builder uses", "flushSpaceObservations(batch)"),
 ]

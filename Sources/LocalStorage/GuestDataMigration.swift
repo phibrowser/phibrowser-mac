@@ -1681,6 +1681,7 @@ extension LocalStore {
                     profileId: profileID,
                     displayName: source?.displayName
                 )
+                profile.createdDate = Date()
                 context.insert(profile)
                 targetProfilesByID[profileID] = profile
             }
@@ -1721,6 +1722,7 @@ extension LocalStore {
                     profile = existing
                 } else {
                     let created = ProfileModel(profileId: targetProfileID)
+                    created.createdDate = Date()
                     context.insert(created)
                     targetProfilesByID[targetProfileID] = created
                     profile = created

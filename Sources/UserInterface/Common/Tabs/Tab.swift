@@ -74,6 +74,12 @@ class Tab: WebContentRepresentable {
     @Published private(set) var canGoForward: Bool = false
     @Published private(set) var isCurrentlyAudible: Bool = false
     @Published private(set) var isAudioMuted: Bool = false
+    @Published private(set) var isMediaSessionMuted: Bool = false
+    var isMuted: Bool { isAudioMuted || isMediaSessionMuted }
+    var audioMutePublisher: AnyPublisher<Bool, Never> {
+        $isAudioMuted.combineLatest($isMediaSessionMuted)
+            .map { $0 || $1 }.removeDuplicates().eraseToAnyPublisher()
+    }
     @Published private(set) var isCapturingAudio: Bool = false
     @Published private(set) var isCapturingVideo: Bool = false
     @Published private(set) var isCapturingWindow: Bool = false
@@ -98,6 +104,9 @@ class Tab: WebContentRepresentable {
     /// Per-tab AI Chat sidebar collapsed state.
     @Published var aiChatCollapsed: Bool = true
     @Published var aiChatEnabled: Bool = false
+    /// The AI Chat panel this tab had when it was closed, handed back with the
+    /// tab undo close restored; consumed when the tab arrives.
+    var restoredAIChatPanel: AIChatPanelRecord?
 
     /// Whether Sidecar has completed at least one response for this tab.
     @Published var hasPairedChat: Bool = false
@@ -212,7 +221,7 @@ class Tab: WebContentRepresentable {
     /// Called when the tab's web content becomes focused.
     var onFocusGained: (() -> Void)?
     
-    private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
+    @Published private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
     let parent: Tab? = nil
     let subTabs: [Tab] = []
     var guid: Int
@@ -346,6 +355,9 @@ class Tab: WebContentRepresentable {
         liveFaviconData = nil
         liveFaviconRevision = 0
         pageColor = nil
+        isCurrentlyAudible = false
+        isAudioMuted = false
+        isMediaSessionMuted = false
         hasWebContent = wrapper != nil
         isDiscarded = wrapper?.isDiscarded ?? false
         if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {
@@ -444,6 +456,12 @@ class Tab: WebContentRepresentable {
         wrapper.publisher(for: \.isCurrentlyAudible)
             .assign(to: \.isCurrentlyAudible, on: self)
             .store(in: &cancellables)
+
+        if wrapper.responds(to: NSSelectorFromString("isMediaSessionMuted")) {
+            wrapper.publisher(for: \.isMediaSessionMuted)
+                .assign(to: \.isMediaSessionMuted, on: self)
+                .store(in: &cancellables)
+        }
 
         wrapper.publisher(for: \.isAudioMuted)
             .assign(to: \.isAudioMuted, on: self)
@@ -783,6 +801,15 @@ class Tab: WebContentRepresentable {
     
     func stopLoading() {
         webContentWrapper?.stopLoading()
+    }
+
+    func toggleAudioMuted() {
+        guard let wrapper = webContentWrapper else { return }
+        if wrapper.responds(to: NSSelectorFromString("toggleAudioMuted")) {
+            wrapper.toggleAudioMuted()
+        } else {
+            wrapper.setAudioMuted(!isAudioMuted)
+        }
     }
 
     func setAudioMuted(_ muted: Bool) {

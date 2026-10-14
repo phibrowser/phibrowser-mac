@@ -16,6 +16,9 @@ final class ReaderPanelController {
     /// full-pane cover reads as the pane itself switching to the reader
     /// rather than a card floating over it.
     private final class ReaderContainerView: PageOverlayView {
+        /// Above Peek: a reader can cover a peek's card.
+        override var stackingRank: Int { 1 }
+
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             wantsLayer = true
@@ -43,15 +46,25 @@ final class ReaderPanelController {
         }
     }
 
+    /// The rounded card a reader covers: edge to edge, or `inset` inside
+    /// it to leave room for what the card draws at its edge (a split pane's
+    /// focus ring).
+    struct Card {
+        let view: NSView
+        let cornerRadius: CGFloat
+        var inset: CGFloat = 0
+    }
+
     private weak var browserState: BrowserState?
     private weak var parentWindow: NSWindow?
     /// The web-content container view; geometry-observation anchor and the
     /// sizing fallback while no tab content is mounted.
     private weak var anchorView: NSView?
-    /// Resolves the focused tab's rounded page card — the region the panel
-    /// covers. A closure because the card view belongs to whichever
-    /// `WebContentViewController` is currently displayed.
-    private let cardViewProvider: () -> NSView?
+    /// Resolves the card the hosted reader covers: its origin's rounded page
+    /// card, or the peek card when the origin is a peek's page. A closure
+    /// because those views belong to whichever `WebContentViewController` is
+    /// displayed, or to the peek panel.
+    private let cardViewProvider: (Tab) -> Card?
     private let containerView = ReaderContainerView()
     private weak var hostedTab: Tab?
     private var eventMonitor: Any?
@@ -69,7 +82,7 @@ final class ReaderPanelController {
     init(browserState: BrowserState,
          parentWindow: NSWindow,
          anchorView: NSView,
-         cardViewProvider: @escaping () -> NSView?) {
+         cardViewProvider: @escaping (Tab) -> Card?) {
         self.browserState = browserState
         self.parentWindow = parentWindow
         self.anchorView = anchorView
@@ -85,13 +98,16 @@ final class ReaderPanelController {
 
     // MARK: - Presentation
 
-    func present(tab: Tab) {
+    /// - Parameter focusContent: whether the reader takes keyboard focus —
+    ///   true for the reader over the focused page, false for a split
+    ///   partner's reader re-shown beside it.
+    func present(tab: Tab, focusContent: Bool = true) {
         guard let browserState else { return }
 
         // Re-focus of the origin tab with the same reader still mounted:
         // just reveal — the panel is coming back from a tab switch.
         if hostedTab === tab, !containerView.subviews.isEmpty {
-            reveal()
+            reveal(focusContent: focusContent)
             return
         }
 
@@ -110,8 +126,16 @@ final class ReaderPanelController {
         webView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+        PageOverlayDevToolsDock.mount(tab, in: containerView)
 
-        reveal()
+        reveal(focusContent: focusContent)
+    }
+
+    /// Dock area for `tab`'s DevTools: the panel while it hosts the tab, nil
+    /// otherwise (the dock state then waits on the `Tab` until `present`
+    /// mounts it).
+    func devToolsHost(for tab: Tab) -> NSView? {
+        hostedTab === tab ? containerView : nil
     }
 
     /// Temporarily hides the panel while the origin tab is not focused. The
@@ -145,11 +169,11 @@ final class ReaderPanelController {
     private func revealIfStillCurrent() {
         guard let tab = hostedTab,
               let browserState,
-              let focusedTabId = browserState.focusingTab?.guid,
-              browserState.readerOverlayState.reader(forOrigin: focusedTabId) === tab else {
+              browserState.visibleReaderOverlays(focusingTab: browserState.focusingTab)
+                .contains(where: { $0 === tab }) else {
             return
         }
-        reveal()
+        reveal(focusContent: browserState.readerOverlayTakesFocus(tab))
     }
 
     /// Idempotent teardown of the panel. Never closes the tab itself — that
@@ -161,10 +185,15 @@ final class ReaderPanelController {
         removeGeometryObservers()
         containerView.removeFromSuperview()
         detachHostedContent()
-        if restoreFocus, let page = browserState?.focusingTab?.webContentView,
+        // Back to the page the reader stood over: the focused tab's, or the
+        // peek in front of it.
+        let pageTab = browserState?.focusingTab.map {
+            browserState?.visiblePeek(focusingTab: $0)?.tab ?? $0
+        }
+        if restoreFocus, let page = pageTab?.webContentView,
            page.window === parentWindow {
             parentWindow?.makeFirstResponder(page)
-            browserState?.focusingTab?.webContentWrapper?.focus()
+            pageTab?.webContentWrapper?.focus()
         }
     }
 
@@ -184,7 +213,7 @@ final class ReaderPanelController {
         browserState?.closeReaderOverlay(readerTabId: tab.guid)
     }
 
-    private func reveal() {
+    private func reveal(focusContent: Bool) {
         guard !isConcealedByInWindowOverlay,
               let parentWindow, anchorView?.window === parentWindow,
               let content = browserState?.windowController?.mainSplitViewController
@@ -192,7 +221,9 @@ final class ReaderPanelController {
         content.installPageOverlay(containerView)
         layoutOnAnchor()
         containerView.isHidden = false
-        if !isEclipsedByInWindowOverlay, let webView = containerView.subviews.first {
+        // The page, not `subviews.first` — docked DevTools sits below it.
+        if focusContent, !isEclipsedByInWindowOverlay,
+           let webView = hostedTab?.webContentView, webView.superview === containerView {
             parentWindow.makeKey()
             parentWindow.makeFirstResponder(webView)
             hostedTab?.webContentWrapper?.focus()
@@ -211,11 +242,15 @@ final class ReaderPanelController {
     /// degraded fallback (the card excludes the window margins and the tab
     /// strip, which the panel must leave visible).
     private func paneScreenRect() -> NSRect? {
-        let target = cardViewProvider() ?? anchorView
+        let card = hostedTab.flatMap(cardViewProvider)
+        containerView.layer?.cornerRadius = card?.cornerRadius
+            ?? LiquidGlassCompatible.webContentContainerCornerRadius
+        let target = card?.view ?? anchorView
         guard let target, let window = target.window else { return nil }
         refreshCardFrameObserverIfNeeded(for: target)
         let inWindow = target.convert(target.bounds, to: nil)
-        return window.convertToScreen(inWindow)
+        let inset = card?.inset ?? 0
+        return window.convertToScreen(inWindow).insetBy(dx: inset, dy: inset)
     }
 
     private func layoutOnAnchor() {
@@ -266,7 +301,10 @@ final class ReaderPanelController {
         }
     }
 
-    private func relayoutIfVisible() {
+    /// Re-fits the panel to its card; the window controller calls this when
+    /// a card moves without any frame change the panel observes (a peek card
+    /// relaid inside its own overlay).
+    func relayoutIfVisible() {
         guard containerView.isPresented else { return }
         layoutOnAnchor()
     }
@@ -287,25 +325,52 @@ final class ReaderPanelController {
         observedCardView = nil
     }
 
+    /// A click on a split pane's reader focuses that pane, as a click on the
+    /// pane itself does (`SplitPaneHostView.onPaneInteraction`) — the reader
+    /// sits above the split host, which so never sees it. The address bar
+    /// and the focus ring follow the focused tab.
+    private func activateOriginPaneIfClicked(_ event: NSEvent) {
+        guard containerView.isPresented,
+              let window = parentWindow, event.window === window,
+              let hitView = window.contentView?.hitTest(event.locationInWindow),
+              hitView.isDescendant(of: containerView),
+              let readerTab = hostedTab, let browserState,
+              let originTabId = browserState.readerOverlayState.originTabId(forReaderTabId: readerTab.guid),
+              let origin = browserState.tabs.first(where: { $0.guid == originTabId }),
+              !origin.isActive else { return }
+        origin.makeSelfActive()
+    }
+
     private func installEventMonitorIfNeeded() {
         guard eventMonitor == nil else { return }
         eventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.keyDown]
+            matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { [weak self] event in
-            guard let self, self.containerView.isPresented,
+            guard let self else { return event }
+            if event.type != .keyDown {
+                self.activateOriginPaneIfClicked(event)
+                return event
+            }
+            guard self.containerView.isPresented,
                   !self.isEclipsedByInWindowOverlay,
                   event.window === self.parentWindow,
                   self.parentWindow?.isKeyWindow == true,
                   self.containerView.containsFirstResponder else { return event }
-            // Esc closes the reader. Cmd-W must be swallowed here: strip-
-            // active is the origin while the overlay is up, so letting it
-            // reach Chromium's IDC_CLOSE_TAB would close the origin.
-            if event.keyCode == 53 {
+            // Cmd-W must be swallowed here: strip-active is the origin while
+            // the overlay is up, so letting it reach Chromium's
+            // IDC_CLOSE_TAB would close the origin.
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "w" {
                 self.closeHostedReader()
                 return nil
             }
-            if event.modifierFlags.contains(.command),
-               event.charactersIgnoringModifiers?.lowercased() == "w" {
+            // Docked DevTools owns its keys: Esc toggles its console drawer
+            // and Cmd-[ / Cmd-] switch its panels.
+            if PageOverlayDevToolsDock.hasFocus(self.hostedTab) {
+                return event
+            }
+            // Esc closes the reader.
+            if event.keyCode == 53 {
                 self.closeHostedReader()
                 return nil
             }

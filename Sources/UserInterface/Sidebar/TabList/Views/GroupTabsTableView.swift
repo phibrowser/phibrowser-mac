@@ -202,7 +202,7 @@ final class GroupTabsTableView: NSTableView {
             return .close
         }
 
-        guard tab.isCurrentlyAudible || tab.isAudioMuted else {
+        guard tab.isCurrentlyAudible || tab.isMuted else {
             return nil
         }
 

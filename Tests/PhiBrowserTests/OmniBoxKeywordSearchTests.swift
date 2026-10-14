@@ -380,17 +380,60 @@ final class OmniBoxKeywordSearchTests: XCTestCase {
         XCTAssertEqual(model.selectedSearchEngine?.keyword, "bing.com")
     }
 
-    func testEngineRowClickAndEnterSelectTheEngine() throws {
+    func testEngineRowClickAndEnterOpenTheSiteWithoutEnteringSearchScope() throws {
+        var submitted: (String, String)?
+        let (model, state) = try makeModel { keyword, query in
+            submitted = (keyword, query)
+            return "https://www.baidu.com/s?wd=baidu#results"
+        }
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://initial.example")
+        let tab = Tab(guid: 101, url: wrapper.urlString, isActive: true, index: 0, webContentView: wrapper)
+        for click in [false, true] {
+            model.reset()
+            model.setCurrentTab(tab)
+            wrapper.urlString = "https://initial.example"
+            suggestBaidu(model, state)
+            if click {
+                model.clickSuggestionAtIndex(0)
+            } else {
+                model.state.selectSuggestion(at: 0)
+                model.handleEnterPressed()
+            }
+            XCTAssertEqual(submitted?.0, "baidu")
+            XCTAssertEqual(submitted?.1, "baidu")
+            XCTAssertEqual(wrapper.urlString, "https://www.baidu.com/")
+            XCTAssertNil(model.selectedSearchEngine)
+        }
+    }
+
+    func testEngineRowEnterResolvesTheFullSiteFromAPrefixMatch() throws {
+        let (model, state) = try makeModel { keyword, query in
+            XCTAssertEqual(keyword, "bing.com")
+            XCTAssertEqual(query, "bing")
+            return "https://www.bing.com/search?q=bing"
+        }
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://initial.example")
+        let tab = Tab(guid: 101, url: wrapper.urlString, isActive: true, index: 0, webContentView: wrapper)
+        model.setCurrentTab(tab)
+        model.updateInputText("bing")
+        deliver([engineResult(keyword: "bing.com", name: "Bing", line: 0)], query: "bing", to: state)
+        model.state.selectSuggestion(at: 0)
+        model.handleEnterPressed()
+        XCTAssertEqual(wrapper.urlString, "https://www.bing.com/")
+        XCTAssertNil(model.selectedSearchEngine)
+    }
+
+    func testEngineRowCannotEnterSearchScopeWhenSiteResolutionFails() throws {
         let (model, state) = try makeModel()
-        suggestBaidu(model, state)
-        model.clickSuggestionAtIndex(0)
-        XCTAssertEqual(model.selectedSearchEngine?.keyword, "baidu")
-        XCTAssertEqual(model.state.inputText, "")
-        model.reset()
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://initial.example")
+        let tab = Tab(guid: 101, url: wrapper.urlString, isActive: true, index: 0, webContentView: wrapper)
+        model.setCurrentTab(tab)
         suggestBaidu(model, state)
         model.state.selectSuggestion(at: 0)
         model.handleEnterPressed()
-        XCTAssertEqual(model.selectedSearchEngine?.keyword, "baidu")
+        XCTAssertEqual(wrapper.urlString, "https://initial.example")
+        XCTAssertNil(model.selectedSearchEngine)
+        XCTAssertEqual(model.state.inputText, "baidu")
     }
 
     func testEditingInvalidatesHintAndRejectsStaleResponsesIncludingEmptyInput() throws {

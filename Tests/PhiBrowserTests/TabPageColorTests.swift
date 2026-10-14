@@ -72,6 +72,90 @@ final class TabPageColorTests: XCTestCase {
 }
 
 @MainActor
+final class TabAudioStateTests: XCTestCase {
+    func testSessionMuteRemainsVisibleAfterAudibilityExpires() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://media.example")
+        wrapper.isCurrentlyAudible = true
+        let tab = makeTab(wrapper)
+        var states: [Bool] = []
+        let observation = tab.audioMutePublisher.sink { states.append($0) }
+        wrapper.isMediaSessionMuted = true
+        wrapper.isCurrentlyAudible = false
+        XCTAssertFalse(tab.isCurrentlyAudible)
+        XCTAssertFalse(tab.isAudioMuted)
+        XCTAssertTrue(tab.isMediaSessionMuted)
+        XCTAssertTrue(tab.isMuted)
+        XCTAssertEqual(states, [false, true])
+        wrapper.isMediaSessionMuted = false
+        XCTAssertFalse(tab.isMuted)
+        XCTAssertEqual(states, [false, true, false])
+        withExtendedLifetime(observation) {}
+    }
+
+    func testEitherMuteSourceKeepsTheMutedIndicator() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://media.example")
+        wrapper.isAudioMuted = true
+        wrapper.isMediaSessionMuted = true
+        let tab = makeTab(wrapper)
+        wrapper.isAudioMuted = false
+        XCTAssertTrue(tab.isMuted)
+        wrapper.isAudioMuted = true
+        wrapper.isMediaSessionMuted = false
+        XCTAssertTrue(tab.isMuted)
+        wrapper.isAudioMuted = false
+        XCTAssertFalse(tab.isMuted)
+    }
+
+    func testReplacementAndRemovalClearSessionStateAndRejectOldUpdates() {
+        let old = PageColorTestWebContentWrapper(urlString: "https://old.example")
+        old.isMediaSessionMuted = true
+        let tab = makeTab(old)
+        let replacement = PageColorTestWebContentWrapper(urlString: "https://new.example")
+        tab.setWebContentsWrapper(wrapper: replacement)
+        XCTAssertFalse(tab.isMuted)
+        old.isMediaSessionMuted = false
+        old.isMediaSessionMuted = true
+        XCTAssertFalse(tab.isMuted)
+        replacement.isMediaSessionMuted = true
+        XCTAssertTrue(tab.isMuted)
+        tab.setWebContentsWrapper(wrapper: nil)
+        XCTAssertFalse(tab.isMuted)
+        replacement.isAudioMuted = true
+        XCTAssertFalse(tab.isMuted)
+    }
+
+    func testClickUsesNativeToggleWithoutOptimisticStateChanges() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://media.example")
+        wrapper.isMediaSessionMuted = true
+        let tab = makeTab(wrapper)
+        tab.toggleAudioMuted()
+        XCTAssertEqual(wrapper.toggleAudioMutedCallCount, 1)
+        XCTAssertTrue(wrapper.audioMuteRequests.isEmpty)
+        XCTAssertTrue(tab.isMuted)
+        wrapper.isMediaSessionMuted = false
+        XCTAssertFalse(tab.isMuted)
+    }
+
+    func testLegacyFrameworkKeepsTabMuteBehavior() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://media.example")
+        wrapper.supportsSessionMute = false
+        wrapper.isMediaSessionMuted = true
+        let tab = makeTab(wrapper)
+        XCTAssertFalse(tab.isMediaSessionMuted)
+        tab.toggleAudioMuted()
+        XCTAssertEqual(wrapper.audioMuteRequests, [true])
+        wrapper.isAudioMuted = true
+        tab.toggleAudioMuted()
+        XCTAssertEqual(wrapper.audioMuteRequests, [true, false])
+        XCTAssertEqual(wrapper.toggleAudioMutedCallCount, 0)
+    }
+
+    private func makeTab(_ wrapper: PageColorTestWebContentWrapper) -> Tab {
+        Tab(url: wrapper.urlString, isActive: true, index: 0, webContentView: wrapper)
+    }
+}
+
+@MainActor
 func drainPageColorUpdates() {
     let drained = XCTestExpectation(description: "Tab and header main-queue updates completed")
     DispatchQueue.main.async {
@@ -83,6 +167,7 @@ func drainPageColorUpdates() {
 }
 
 final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
+    let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!
@@ -98,6 +183,7 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     @objc dynamic var securityInfo: [String: Any]?
     @objc dynamic var isCurrentlyAudible = false
     @objc dynamic var isAudioMuted = false
+    @objc dynamic var isMediaSessionMuted = false
     @objc dynamic var isCapturingAudio = false
     @objc dynamic var isCapturingVideo = false
     @objc dynamic var isCapturingWindow = false
@@ -109,6 +195,9 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     @objc dynamic var isDiscarded = false
     @objc dynamic var isUnloaded = false
     @objc dynamic var isDistillable = false
+    var supportsSessionMute = true
+    var toggleAudioMutedCallCount = 0
+    var audioMuteRequests: [Bool] = []
     var supportsPageColor = true
     private var storedPageColor: NSColor?
     private(set) var pageColorReadCount = 0
@@ -123,6 +212,9 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
 
     override func responds(to selector: Selector!) -> Bool {
         if selector == NSSelectorFromString("pageColor"), !supportsPageColor { return false }
+        if !supportsSessionMute,
+           selector == NSSelectorFromString("isMediaSessionMuted")
+            || selector == NSSelectorFromString("toggleAudioMuted") { return false }
         return super.responds(to: selector)
     }
 
@@ -174,7 +266,8 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     func restoreFocus() {}
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}
     func updateIsPeekSurface(_ isPeekSurface: Bool) {}
-    func setAudioMuted(_ muted: Bool) {}
+    func toggleAudioMuted() { toggleAudioMutedCallCount += 1 }
+    func setAudioMuted(_ muted: Bool) { audioMuteRequests.append(muted) }
     func muteAudio() {}
     func unmuteAudio() {}
 }

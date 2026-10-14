@@ -25,6 +25,8 @@ final class DevicesSettingViewModel: ObservableObject {
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
     private var refreshInFlight = false
+    /// Finishes a successful pane unlock on the shared controller before requesting sync.
+    var resolveMappingsAfterUnlock: () async -> Void = {}
     var syncReport: (_ requestSync: Bool) async -> SyncHelper.Report? = { _ in nil }
     /// Sync now: records an explicit request with the helper and returns its report.
     var syncNowReport: () async -> SyncHelper.Report? = { nil }
@@ -36,6 +38,9 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published private(set) var profileMappingPause: SyncProfileMappingPauseStatus = .none
     @Published private(set) var syncNowCancelledByPause = false
     @Published private(set) var profileListNotEnumeratedSince: Date?
+    /// The pin scope follower's failures as last read (B-3 stage 1, design 3.2); shown as a
+    /// problem line under the status, beside the pause fields above.
+    @Published private(set) var pinScopeMigrationFailure: SyncPinScopeMigrationFailure?
     /// When the report was last read; the unread Profile list's age is measured against it.
     @Published private(set) var statusReadAt = Date()
     /// Bumped when a shown pause ends, so the view announces that sync resumed.
@@ -166,6 +171,7 @@ final class DevicesSettingViewModel: ObservableObject {
         profileMappingPause = report?.profileMappingPause ?? .none
         syncNowCancelledByPause = report?.syncNowCancelledByPause ?? false
         profileListNotEnumeratedSince = report?.profileListNotEnumeratedSince
+        pinScopeMigrationFailure = report?.pinScopeMigrationFailure
         statusReadAt = Date()
         // The pause ended in the report; one that gives way to a reset or Not started has not resumed sync.
         if report != nil, profileMappingPause == .none,
@@ -202,6 +208,7 @@ final class DevicesSettingViewModel: ObservableObject {
         profileMappingPause = .none
         syncNowCancelledByPause = false
         profileListNotEnumeratedSince = nil
+        pinScopeMigrationFailure = nil
         awaitingSyncNow = false
     }
 
@@ -287,6 +294,13 @@ final class DevicesSettingViewModel: ObservableObject {
         stopObservingConnectivity()
         switch result {
         case .unlocked:
+            // A load that started locked (Retry, connectivity recovery, a launch whose
+            // silent unlock failed) must publish the Profile keys now rather than wait for
+            // the launch-time unlock retry. An ordinary reload of an unlocked pane resolves
+            // nothing: the controller already holds the keys, and a mapping pass per pane
+            // open would cost a network round trip before the status shows.
+            if !wasUnlocked { await resolveMappingsAfterUnlock() }
+            guard generation == loadGeneration, isCurrentAccount() else { return }
             unlockedAccountID = account
             await showUnlocked(generation: generation)
         case .needsJoin:    unlockedAccountID = nil; unlockState = .needsJoin
@@ -294,9 +308,13 @@ final class DevicesSettingViewModel: ObservableObject {
         }
     }
 
+    /// Opening or reloading the pane only observes (owner ruling 2026-10-12): a round per
+    /// pane open flipped Up to date to Checking → Syncing every time the pane was shown.
+    /// Sync now is the user's request; the helper's own stale-evidence rule still requests a
+    /// round when the last success is old.
     private func showUnlocked(generation: UInt64) async {
         unlockState = .unlocked
-        await refresh(requestSync: true)
+        await refresh(requestSync: false)
         guard generation == loadGeneration, isCurrentAccount() else { return }
         startPolling()
     }

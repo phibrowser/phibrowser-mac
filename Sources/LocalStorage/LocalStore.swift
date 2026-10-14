@@ -73,6 +73,8 @@ class LocalStore {
     /// caller already assumes.
     private var writeJobContinuation: AsyncStream<() async -> Void>.Continuation?
     private(set) var compatibilityStatus: LocalStoreCompatibilityStatus = .notChecked
+    /// In-memory count of pin scope migrations that changed the row scope; see `pinScopeGeneration`.
+    let pinScopeGenerationCounter = PinScopeGenerationCounter()
 
     @MainActor var mainContext: ModelContext? {
         container?.mainContext
@@ -643,6 +645,30 @@ extension LocalStore {
         }
     }
 
+    /// `performBackgroundWriteAndWaitThrowing(_:)` with a main-actor `precondition` that runs inside
+    /// the same FIFO job: after every write queued before it, immediately before the transaction. A
+    /// throw skips the transaction and reaches the caller. For a refusal that must hold when the
+    /// write runs, not only when it was queued.
+    func performBackgroundWriteAndWaitThrowing<Result: Sendable>(
+        precondition: @escaping @MainActor () throws -> Void,
+        _ block: @escaping (ModelContext) throws -> Result
+    ) async throws -> Result {
+        guard let writeActor, let writeJobContinuation else {
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            writeJobContinuation.yield {
+                do {
+                    try await precondition()
+                    let result = try await writeActor.performThrowing(block)
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Runs one final FIFO-ordered store operation and then makes this
     /// LocalStore terminal before returning its result.
     ///
@@ -1186,6 +1212,30 @@ private struct PinnedTabSnapshot: Equatable {
 }
 
 extension LocalStore {
+    /// Removes what a deleted Chromium Profile leaves in this store, in one save: the remotely
+    /// soft-deleted Spaces still bound to it (`hiddenSpaceIds`, already deleted on the account,
+    /// with their content, as a retention purge would), its Profile-scoped pinned rows
+    /// (`profileId` set, `spaceId` nil) and its `ProfileModel` row. Idempotent. Used by Profile
+    /// deletion (docs/sync.md, "Profile deletion and rename").
+    func deleteProfileRowCascadeThrowing(profileId: String, hiddenSpaceIds: [String]) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            for spaceId in hiddenSpaceIds {
+                try self.deleteSpaceCascadeBody(spaceId: spaceId, origin: .retentionPurge, in: context)
+            }
+            let owner: String? = profileId
+            for row in try context.fetch(FetchDescriptor<TabDataModel>(
+                predicate: #Predicate { $0.profileId == owner && $0.spaceId == nil }
+            )) {
+                context.delete(row)
+            }
+            for profile in try context.fetch(FetchDescriptor<ProfileModel>(
+                predicate: #Predicate { $0.profileId == profileId }
+            )) {
+                context.delete(profile)
+            }
+        }
+    }
+
     @MainActor
     func profile(with profileId: String, createIfNeeded: Bool = true) throws -> ProfileModel? {
         guard let context = mainContext else { return nil }
@@ -1342,6 +1392,9 @@ extension LocalStore {
             return nil
         }
         let profile = ProfileModel(profileId: profileId)
+        // The Profile entity's `created_at_ms` (docs/sync.md, "Profile entity"). Rows created
+        // before this was recorded keep nil, which publishes 0, "unknown".
+        profile.createdDate = Date()
         context.insert(profile)
         return profile
     }

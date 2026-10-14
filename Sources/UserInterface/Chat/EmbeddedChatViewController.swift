@@ -160,7 +160,12 @@ class EmbeddedChatViewController: NSViewController {
     
     // MARK: - Private Methods
     
-    private func setupIfNeeded() {
+    /// Also called by the hosting page controller when it expands this pane:
+    /// a page controller created for a tab whose panel is already expanded
+    /// uncollapses the pane while it is itself still appearing, and AppKit
+    /// then skips this controller's own appearance callbacks. Does nothing
+    /// once set up.
+    func setupIfNeeded() {
         guard canLoadAIChat else {
             updateLoginRequiredPresentation()
             return

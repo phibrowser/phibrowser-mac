@@ -215,6 +215,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // tab service
 - (void)newTabCreatedWithInfo:(NSDictionary *)tabInfo windowId:(int64_t)windowId;
+/// Called synchronously, as is the `context:` variant, before Chromium writes a
+/// closed tab's recently-closed entry. Until it returns, `tabId` still resolves
+/// for calls such as `setAIChatPanelRecord:forTabId:`.
 - (void)tabWillBeRemove:(int64_t)tabId windowId:(int64_t)windowId;
 - (void)tabTitleUpdated:(int64_t)tabId title:(NSString *)title windowId:(int64_t)windowId;
 - (void)activeTabChanged:(int64_t)tabId index:(int)index windowId:(int64_t)windowId;
@@ -1066,6 +1069,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                             tabId:(int64_t)tabId;
 - (void)moveTabsToNewWindowWithWindowId:(int64_t)windowId
                                  tabIds:(NSArray<NSNumber *> *)tabIds;
+
+/// Keeps the AI Chat panel record of the page tab `tabId` for undo close
+/// (chromium ADR 0017). Chromium never reads it: it writes it into the tab's
+/// recently-closed entry and hands it back as `aiChatPanelRecord` in the
+/// newTabCreatedWithInfo payload of the tab undo close restores. nil or empty
+/// clears it. Unknown tabs are ignored. Callers must guard with
+/// respondsToSelector: (framework/client version skew).
+- (void)setAIChatPanelRecord:(nullable NSString *)record
+                    forTabId:(int64_t)tabId;
 
 // ==========================================================================
 // Space URL routing (Mac → Chromium)
@@ -2189,9 +2201,56 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                         excludingClientId:(NSString *)excludingClientId
     NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:));
 
+// Same as above. userInitiated (Sync Now) also retries Chromium sync right
+// away instead of waiting out exponential backoff from an earlier failure.
+// Optional for compatibility with frameworks that only have the 4-arg form.
+- (void)notifyPhiSyncInvalidationForAccount:(NSString *)accountId
+                              profileUUID:(NSString *)profileUUID
+                              dataTypeIds:(NSArray<NSNumber *> *)dataTypeIds
+                        excludingClientId:(NSString *)excludingClientId
+                            userInitiated:(BOOL)userInitiated
+    NS_SWIFT_NAME(notifyPhiSyncInvalidation(forAccount:profileUUID:dataTypeIds:excludingClientId:userInitiated:));
+
+@end
+
+typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
+  PhiMediaControlActionPlay,
+  PhiMediaControlActionPause,
+  PhiMediaControlActionSeekTo,
+  PhiMediaControlActionEnterPictureInPicture,
+  PhiMediaControlActionExitPictureInPicture,
+  PhiMediaControlActionPreviousTrack,
+  PhiMediaControlActionNextTrack,
+};
+
+/// All access is on Chromium's UI/main thread. One observer per controller.
+/// Snapshot schema and migration notes: docs/adr/phi-native-media-controls.md.
+@protocol PhiMediaControls <NSObject>
+/// Replaces the observer and immediately sends the current state (possibly nil).
+/// Capture the consumer weakly; this controller retains the block until stopped.
+- (void)startObserving:(void (^)(NSDictionary<NSString*, id>* _Nullable))observer;
+/// Detaches the MediaSession observer and invalidates outstanding tokens.
+/// Does not change playback or close picture-in-picture.
+- (void)stopObserving;
+/// Fresh position/state while observing; nil without a controllable session.
+- (nullable NSDictionary<NSString*, id>*)snapshot;
+/// YES means dispatched, not that the page accepted or completed the action.
+/// seconds is used only for SeekTo. Unsupported and stale actions return NO.
+- (BOOL)performAction:(PhiMediaControlAction)action
+       expectedToken:(NSString*)expectedToken
+             seconds:(double)seconds;
+/// Sets this tab's native user gain, independent of page volume and ducking.
+/// Finite values clamp to [0, 1]; invalid/stale requests return NO.
+- (BOOL)setVolume:(double)volume expectedToken:(NSString*)expectedToken;
+/// Mutes the session's single player without changing tab mute or user gain.
+/// Unsupported and stale requests return NO.
+- (BOOL)setMuted:(BOOL)muted expectedToken:(NSString*)expectedToken;
 @end
 
 @protocol WebContentWrapper <NSObject>
+
+/// Lazily created, scoped exclusively to this wrapper's WebContents.
+@property(nonatomic, strong, readonly) id<PhiMediaControls> mediaControls;
 
 @property(nonatomic, weak, readonly, nullable) NSView *nativeView;
 @property(nonatomic, assign, readonly) BOOL isLoading;
@@ -2209,6 +2268,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
     NSDictionary<NSString*, id>* securityInfo;
 @property(nonatomic, assign, readonly) BOOL isCurrentlyAudible;
 @property(nonatomic, assign, readonly) BOOL isAudioMuted;
+@property(nonatomic, assign, readonly) BOOL isMediaSessionMuted;
 @property(nonatomic, assign, readonly) BOOL isCapturingAudio;
 @property(nonatomic, assign, readonly) BOOL isCapturingVideo;
 @property(nonatomic, assign, readonly) BOOL isCapturingWindow;
@@ -2326,6 +2386,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)restoreFocus;
 - (void)updateSecurityState:(NSDictionary *)securityState;
 - (void)setAudioMuted:(BOOL)muted;
+- (void)toggleAudioMuted;
 - (void)muteAudio;
 - (void)unmuteAudio;
 @end

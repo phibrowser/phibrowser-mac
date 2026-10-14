@@ -58,7 +58,7 @@ struct SideTabView: View {
             UnifiedTabFaviconView(viewModel: model)
                 .frame(width: 16, height: 16)
 
-            if model.isCurrentlyAudible || model.isAudioMuted {
+            if model.isCurrentlyAudible || model.isMuted {
                 UnifiedTabMuteButton(viewModel: model)
             }
 

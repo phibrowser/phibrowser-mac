@@ -508,9 +508,6 @@ extension OmniBoxViewController: OmniBoxTextFieldDelegate {
 extension OmniBoxViewController: OmniBoxSuggestionViewDelegate {
     func suggestionView(_ suggestionView: OmniBoxSuggestionView, didClickSuggestion suggestion: OmniBoxSuggestion, at index: Int) {
         viewModel.clickSuggestionAtIndex(index)
-        if suggestion.keywordSearchEngine != nil, viewModel.selectedSearchEngine != nil {
-            focusTextField()
-        }
     }
     
     func suggestionView(_ suggestionView: OmniBoxSuggestionView, didDeleteSuggestion suggestion: OmniBoxSuggestion, at index: Int) {

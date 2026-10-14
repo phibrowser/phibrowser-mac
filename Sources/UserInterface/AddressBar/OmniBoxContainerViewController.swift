@@ -49,6 +49,9 @@ final class OmniBoxContainerViewController: NSViewController {
     private var animationOn = false
     private weak var browserState: BrowserState?
     private var focusingTabObserver: AnyCancellable?
+    private var keyboardMonitor: Any?
+    private weak var escapeDismissalPanel: NSWindow?
+    private weak var escapeDismissalWindow: NSWindow?
 
     var isAnchoredToAddressBarForTesting: Bool {
         showFromAddressBar && addressView != nil
@@ -112,12 +115,35 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     private func setupKeyboardMonitoring() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.omniBoxController?.handleKeywordSearchSpaceKeyDown(event) == true {
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKeyboardEvent(event)
+        }
+    }
+
+    func handleKeyboardEvent(_ event: NSEvent) -> NSEvent? {
+        if event.keyCode == 53, let dismissalWindow = escapeDismissalWindow {
+            let belongsToDismissalWindow = event.window === escapeDismissalPanel
+                || event.window === dismissalWindow
+                || event.window?.parent === dismissalWindow
+            if event.type == .keyUp {
+                escapeDismissalPanel = nil
+                escapeDismissalWindow = nil
+                return belongsToDismissalWindow ? nil : event
+            }
+            // Keep the rest of the held Escape press out of the restored responder chain.
+            if event.type == .keyDown, event.isARepeat, belongsToDismissalWindow {
                 return nil
             }
-            return self?.handleKeyDown(event: event) ?? event
+            escapeDismissalPanel = nil
+            escapeDismissalWindow = nil
         }
+        guard event.type == .keyDown, hasShown,
+              let window = view.window, event.window === window else { return event }
+        if omniBoxController?.handleKeywordSearchSpaceKeyDown(event) == true {
+            return nil
+        }
+        return handleKeyDown(event: event)
     }
     
     private func observeFocusingTabChange() {
@@ -654,6 +680,8 @@ final class OmniBoxContainerViewController: NSViewController {
     
     private func handleKeyDown(event: NSEvent) -> NSEvent? {
         if event.keyCode == 53 {
+            escapeDismissalPanel = view.window
+            escapeDismissalWindow = view.window?.parent ?? view.window
             hideOmniBox()
             return nil
         }
@@ -676,6 +704,9 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     deinit {
+        if let keyboardMonitor {
+            NSEvent.removeMonitor(keyboardMonitor)
+        }
         NotificationCenter.default.removeObserver(self)
     }
 }

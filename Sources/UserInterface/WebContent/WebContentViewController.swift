@@ -2501,6 +2501,13 @@ class WebContentViewController: NSViewController {
 
     // MARK: - DevTools (split-pane scoped)
 
+    /// The rounded card of `tabId`'s pane when that tab is in the split this
+    /// controller has mounted; nil otherwise.
+    func splitPaneCardView(forTabId tabId: Int) -> NSView? {
+        guard let host = currentSplitHost, let pane = splitPane(forTabId: tabId) else { return nil }
+        return host.paneCardView(for: pane)
+    }
+
     /// Returns the pane (`.primary` / `.secondary`) the given tab currently
     /// occupies in this controller's split host, or `nil` when the tab isn't
     /// part of a split mounted in this controller. Routing helper for the
@@ -2948,6 +2955,10 @@ class WebContentViewController: NSViewController {
             if expanding {
                 self.pendingAIChatWidthRestore = nil
                 AppLogDebug("[AIChatSidebarCache] expand animation completed, cleared pendingAIChatWidthRestore")
+                // The chat controller misses its appearance callbacks when this
+                // controller expands the pane while it is still appearing
+                // itself (a tab that comes with its panel expanded).
+                self.embeddedChatViewController?.setupIfNeeded()
             }
         })
     }

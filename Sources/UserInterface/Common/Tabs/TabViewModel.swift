@@ -213,7 +213,7 @@ final class TabViewModel {
     var isLoading: Bool = false
     var loadingProgress: Double = 1.0
     var isCurrentlyAudible: Bool = false
-    var isAudioMuted: Bool = false
+    var isMuted: Bool = false
     var isCapturingMedia: Bool = false
     var isHorizontalCompactMode: Bool = false
     /// Color of the tab group this tab belongs to, if any. Drives the
@@ -283,7 +283,7 @@ final class TabViewModel {
         isLoading = false
         loadingProgress = 1.0
         isCurrentlyAudible = false
-        isAudioMuted = false
+        isMuted = false
         isCapturingMedia = false
         groupColor = nil
         status.prepareForReuse()
@@ -344,7 +344,7 @@ final class TabViewModel {
         self.loadingProgress = Double(tab.loadingProgress)
         updateVisualLoading()
         self.isCurrentlyAudible = tab.isCurrentlyAudible
-        self.isAudioMuted = tab.isAudioMuted
+        self.isMuted = tab.isMuted
         self.isCapturingMedia = tab.isCapturingAudio || tab.isCapturingVideo || tab.isSharingScreen
         self.isHovered = false
         self.isHoverSuppressed = false
@@ -464,13 +464,13 @@ final class TabViewModel {
             .store(in: &cancellables)
 
         tab.$isCurrentlyAudible
-            .combineLatest(tab.$isAudioMuted)
+            .combineLatest(tab.audioMutePublisher)
             .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isCurrentlyAudible, isAudioMuted in
+            .sink { [weak self] isCurrentlyAudible, isMuted in
                 guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
                 self.isCurrentlyAudible = isCurrentlyAudible
-                self.isAudioMuted = isAudioMuted
+                self.isMuted = isMuted
             }
             .store(in: &cancellables)
 

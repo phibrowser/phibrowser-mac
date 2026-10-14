@@ -13,9 +13,11 @@ import Foundation
 /// asynchronously.
 /// Use a preference mirror and a landing observer to bridge them without changing the M3-1 settings channel:
 /// 1. Add this ordinary pinnedTabScope SyncableSetting to SyncableSettings.all.
-/// 2. Local to mirror: write the mirror key at the end of a successful changePinnedTabScope.
+/// 2. Local to mirror: the settings UI writes the key first; the migration never writes it (B-3 stage 1,
+///    design 3.1 / principle 3). The row follows the key.
 /// 3. Reseed via reseed(rowValue:into:) on every account mount (R-M3-3-8).
-/// 4. Mirror to local: the coordinator's phiSyncedSettingsDidApply observer runs the existing local migration.
+/// 4. Mirror to local: PinScopeFollower moves the row to the key; the coordinator triggers it on
+///    phiSyncedSettingsDidApply, on mount and at every pin round (B-3 stage 1, design 3.2).
 /// The engine reads through PhiPinnedTabLocalAccess.accountScope(), the sole §7.3 scope-mismatch interface,
 /// rather than this key directly.
 /// Keep this separate from SyncableSettings.swift so tests can call reseed directly.

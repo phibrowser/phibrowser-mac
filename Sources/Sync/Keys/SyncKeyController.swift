@@ -175,6 +175,16 @@ final class SyncKeyController {
     /// default-identity conflict is logged once per uuid, not every round.
     private var loggedDefaultConflictUuids: Set<String> = []
 
+    /// Best-effort `"default"` flag backfill (docs/sync.md, "Profile pairing and
+    /// the default profile"). Single-flight like the passes below. A uuid enters
+    /// `confirmedDefaultFlagUuids` once its envelope is known to carry this Mac's
+    /// flag, so later passes do not GET it every 60 s; the entry is keyed by
+    /// profileId -> uuid, so a changed mapping re-checks. Failures are logged once
+    /// per uuid and retried by the next pass.
+    private(set) var defaultFlagBackfillTask: Task<Void, Never>?
+    private var confirmedDefaultFlagUuids: [String: String] = [:]
+    private var loggedDefaultFlagFailureUuids: Set<String> = []
+
     // MARK: - Profile mapping pause inputs (docs/sync.md, "Enrollment and setup")
     //
     // Read the way the two pairing predicates above are read: every write lands
@@ -537,6 +547,7 @@ final class SyncKeyController {
         resolveTask?.cancel()
         silentUnlockTask?.cancel()
         autoCreateTask?.cancel()
+        defaultFlagBackfillTask?.cancel()
         clearResolved()
     }
 
@@ -772,6 +783,49 @@ final class SyncKeyController {
         AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing) actionable=\(needsPairingActionable) outcome=\(outcome.rawValue) result=\(result.rawValue)")
         if !resolved.isEmpty { notifyChromium() }
         announceMappingsResolved(outcome)
+        // After the announcement: the backfill reads nothing this pass decides
+        // and must never delay or hold it.
+        backfillProfileDefaultFlagsBestEffort()
+    }
+
+    /// Writes the `"default"` flag into this Mac's mapped legacy envelopes so
+    /// OTHER devices' pairing can tell its Default from its other Profiles. Only
+    /// they read it: this Mac's rounds, Chromium keys and Space landing never
+    /// do, so this is strictly best effort. It never sets the pass result or
+    /// failure category, never holds an announcement and never withholds keys.
+    /// Single-flight: a pass ending while one runs leaves the work to the next
+    /// pass. Each failure is logged once per uuid and retried by later passes.
+    private func backfillProfileDefaultFlagsBestEffort() {
+        guard !isRetired, isCurrentAccount(), manager.currentARK != nil,
+              defaultFlagBackfillTask == nil else { return }
+        let mappings = profileKeys.allMappings()
+        let pending = localProfilesProvider().compactMap { local -> (profileId: String, uuid: String)? in
+            guard let uuid = mappings[local.profileId],
+                  confirmedDefaultFlagUuids[local.profileId] != uuid else { return nil }
+            return (local.profileId, uuid)
+        }
+        guard !pending.isEmpty else { return }
+        defaultFlagBackfillTask = Task { @MainActor [weak self] in
+            defer { self?.defaultFlagBackfillTask = nil }
+            for local in pending {
+                guard let self, !Task.isCancelled, !self.isRetired, self.isCurrentAccount() else { return }
+                do {
+                    let confirmed = try await self.profileKeys.backfillDefaultFlag(
+                        profileId: local.profileId, isDefault: local.profileId == LocalStore.defaultProfileId,
+                        isCurrent: { [weak self] in
+                            guard let self else { return false }
+                            return !self.isRetired && self.isCurrentAccount()
+                        })
+                    if confirmed { self.confirmedDefaultFlagUuids[local.profileId] = local.uuid }
+                } catch {
+                    guard !self.isRetired, !(error is CancellationError) else { continue }
+                    if self.loggedDefaultFlagFailureUuids.insert(local.uuid).inserted {
+                        // R12: 8 characters of the account-global uuid only.
+                        AppLogWarn("[phi-sync] profile default-flag backfill failed uuid=\(String(local.uuid.prefix(8))); retried next pass (\(PhiSyncLog.describe(error)))")
+                    }
+                }
+            }
+        }
     }
 
     /// Updates `knownUnmappedProfileIds` from one pass: Profiles that no longer
@@ -822,7 +876,7 @@ final class SyncKeyController {
             }
         case let error as ProfileKeyManagerError:
             switch error {
-            case .notUnlocked, .alreadyMapped: return .heldTransient
+            case .notUnlocked, .alreadyMapped, .metadataConflict: return .heldTransient
             case .badEnvelope, .defaultMismatch: return .definitiveFailure
             }
         case is PhiKeyCryptoError, is CryptoKitError, is DecodingError:

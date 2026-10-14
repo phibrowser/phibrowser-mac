@@ -374,6 +374,9 @@ final class KeyLayerViewModelTests: XCTestCase {
         func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
             try await inner.getProfileKey(uuid: uuid)
         }
+        func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+            try await inner.replaceProfileKeyEnvelope(uuid: uuid, expected: expected, envelope: envelope)
+        }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
             withLock { $0._putStarts += 1 }
             while putsHeld { try await Task.sleep(for: .milliseconds(5)) }

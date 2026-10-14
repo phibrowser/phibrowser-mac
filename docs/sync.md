@@ -305,7 +305,34 @@ it opaquely. `"default"` is additive: every registration writes it, `true` only
 for the registering device's Default Profile (`LocalStore.defaultProfileId`),
 `false` for any other. An envelope without the key was written before the flag
 existed and reads as unknown (`RemoteProfile.isDefault == nil`), never as false.
-Older clients ignore the key; no envelope is ever rewritten to add it.
+Older clients ignore the key.
+
+Legacy envelopes of this Mac's own mappings are backfilled best effort. After
+every mapping pass that reaches its announcement, `SyncKeyController` starts one
+single-flight backfill over the local Profiles that have a persisted mapping
+(`ProfileKeyManager.backfillDefaultFlag`). A local Default provides evidence for
+`true`; ordinary locals fill a missing flag with `false`. True wins across devices:
+`false` may be promoted to `true`, never the reverse. Unmapped account Profiles
+stay unknown; this Mac cannot infer their role from a name. Only other devices'
+pairing reads the flag: this Mac's rounds, Chromium key delivery and Space landing
+never read its own mappings' flag, so the backfill never blocks startup or sync,
+never withholds Chromium keys, never holds or delays the pass announcement and
+never changes the pass result or failure category. A failure is logged once per
+uuid per session (8-character prefix) and the next pass retries. A uuid confirmed
+to carry the flag is not fetched again in the same session; a changed mapping for
+that Profile re-checks it.
+
+`PATCH /keys/v1/profiles/{uuid}` conditionally replaces an envelope using the
+exact old ciphertext in `expected_profile_key_envelope`; PUT stays create-only.
+The client preserves the Profile UUID, key, name and unknown payload fields; 409
+means re-read and merge again, at most three attempts per backfill
+(`metadataConflict`, transient). A 404 on GET leaves the missing identity to the
+existing mapping repair; no key or UUID is minted. Account retirement,
+cancellation and a changed mapping fence each write. Deploy the service endpoint
+first; a client talking to a service without it only leaves its legacy envelopes
+unknown (failures are logged and retried), and sync is otherwise unaffected. The
+backfill upgrades known mappings; envelopes owned only by devices that have not
+upgraded stay unknown.
 
 Rule: a device's Default Profile pairs only with the account's default Profile.
 Exactly one account default is authoritative on a Mac: the one its Default is

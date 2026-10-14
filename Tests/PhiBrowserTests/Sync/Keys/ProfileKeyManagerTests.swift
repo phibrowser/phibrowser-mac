@@ -288,6 +288,9 @@ final class ProfileKeyManagerTests: XCTestCase {
                                  createdAt: FakeAPI.profileCreatedAt)
         }
 
+        func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+            throw URLError(.unsupportedURL)
+        }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
             storeEnvelope(uuid: uuid, envelope: envelope)
         }

@@ -6,6 +6,7 @@ struct ProfileKeyDTO { let profileKeyEnvelope: Data }
 struct ProfileSummaryDTO { let profileUuid: String }
 protocol KeyEnvelopeAPI {
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
     func listProfiles() async throws -> [ProfileSummaryDTO]
     func revokeDevice(deviceKeyId: String) async throws
@@ -16,6 +17,11 @@ final class CandidateAPI: KeyEnvelopeAPI {
     var envelopes: [String: Data] = [:]
     var failure: Error?
     var beforeGet: (() -> Void)?
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+        guard envelopes[uuid] == expected else { return false }
+        envelopes[uuid] = envelope
+        return true
+    }
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
         if let failure { throw failure }
         envelopes[uuid] = envelope

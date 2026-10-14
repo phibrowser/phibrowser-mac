@@ -12,6 +12,7 @@ struct ProfileKeyDTO { let profileKeyEnvelope: Data }
 struct ProfileSummaryDTO { let profileUuid: String }
 protocol KeyEnvelopeAPI {
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
     func listProfiles() async throws -> [ProfileSummaryDTO]
     func revokeDevice(deviceKeyId: String) async throws
@@ -25,11 +26,22 @@ func AppLogWarn(_ message: String) {}
 
 final class PassAPI: KeyEnvelopeAPI {
     var envelopes: [String: Data] = [:]
+    var replaceError: Error?
+    var beforeReplace: ((String) -> Void)?
+    var replacements = 0
     var putError: Error?
     var puts: [String] = []
     var onGet: ((String) async -> Void)?
     var getErrors: [String: Error] = [:]
     var listError: Error?
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+        if let replaceError { throw replaceError }
+        beforeReplace?(uuid)
+        guard envelopes[uuid] == expected else { return false }
+        envelopes[uuid] = envelope
+        replacements += 1
+        return true
+    }
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
         if let putError { throw putError }
         puts.append(uuid)
@@ -91,6 +103,7 @@ final class SyncKeyController {
         isPairingComplete = paired
     }
     /// `ProfileManager.isProfileListEnumerated` (AM-1).
+    func isCurrentAccount() -> Bool { !isRetired }
     var profileListEnumerated = true
     func isProfileListEnumerated() -> Bool { profileListEnumerated }
     /* PRODUCTION_PASS_STATE */
@@ -146,6 +159,9 @@ struct MappingPassTests {
     }
 
     @MainActor static func main() async throws {
+        try await defaultFlagBackfill()
+        try await defaultFlagBackfillConflict()
+        try await defaultFlagBackfillFailureAndRetirement()
         try await noCountBasedAdopt()
         try await twinAdopted()
         try await transientRegisterFailureHolds()
@@ -164,6 +180,96 @@ struct MappingPassTests {
         try await failureCategory()
         try await unenumeratedListKeepsEvidence()
         print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category, no evidence pruning before the list is enumerated")
+    }
+
+    /// One mapping pass, then the best-effort backfill it started.
+    @MainActor static func passAndBackfill(_ s: Stack) async {
+        await s.controller.resolveMappings()
+        await s.controller.defaultFlagBackfillTask?.value
+    }
+
+    @MainActor static func defaultFlagBackfill() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "default")
+        try s.seedMappedLocal("Work", uuid: "work")
+        try s.seedRemote("unmapped", name: "Unknown")
+        let key = Data(repeating: 8, count: 32)
+        let payload: [String: Any] = ["v": 1, "key": key.base64EncodedString(), "name": "Original",
+                                     "future": ["values": [1, 2, 3]]]
+        s.api.envelopes["default"] = try PhiKeyCrypto.sealWithSymmetric(
+            JSONSerialization.data(withJSONObject: payload), key: s.manager.currentARK!)
+        let unknownBefore = s.api.envelopes["unmapped"]
+        await passAndBackfill(s)
+        precondition(s.api.replacements == 2)
+        let plain = try PhiKeyCrypto.openWithSymmetric(s.api.envelopes["default"]!, key: s.manager.currentARK!)
+        let upgraded = try JSONSerialization.jsonObject(with: plain) as! [String: Any]
+        precondition(upgraded["default"] as? Bool == true && upgraded["name"] as? String == "Original")
+        precondition(upgraded["key"] as? String == key.base64EncodedString())
+        precondition((upgraded["future"] as? [String: [Int]])?["values"] == [1, 2, 3])
+        let ordinary = try ProfileKeyManager.openProfilePayload(s.api.envelopes["work"]!, ark: s.manager.currentARK!)
+        precondition(ordinary.isDefault == false && s.api.envelopes["unmapped"] == unknownBefore)
+
+        // Confirmed uuids are not fetched again: a later pass pays only its own lookups.
+        var gets: [String] = []
+        s.api.onGet = { gets.append($0) }
+        await passAndBackfill(s)
+        precondition(gets.sorted() == ["default", "work"] && s.api.replacements == 2 && s.api.puts.isEmpty,
+                     "a confirmed flag must not be re-read every pass")
+
+        // A changed mapping re-checks that local.
+        try s.seedRemote("replacement", name: "Replacement")
+        s.store.map["Default"] = "replacement"
+        await passAndBackfill(s)
+        let replaced = try ProfileKeyManager.openProfilePayload(s.api.envelopes["replacement"]!, ark: s.manager.currentARK!)
+        precondition(replaced.isDefault == true && s.api.replacements == 3)
+        print("PASS default backfill: flags, unchanged keys and unknown fields, unmapped remotes, confirmed uuids not re-fetched, changed mapping re-checked")
+    }
+
+    @MainActor static func defaultFlagBackfillConflict() async throws {
+        for localIsDefault in [true, false] {
+            let s = Stack(); defer { s.close() }
+            let id = localIsDefault ? "Default" : "Work"
+            try s.seedMappedLocal(id, uuid: "shared")
+            let competitor = try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 7, count: 32), name: "shared",
+                isDefault: !localIsDefault, ark: s.manager.currentARK!)
+            s.api.beforeReplace = { uuid in
+                s.api.beforeReplace = nil
+                s.api.envelopes[uuid] = competitor
+            }
+            await passAndBackfill(s)
+            let value = try ProfileKeyManager.openProfilePayload(s.api.envelopes["shared"]!, ark: s.manager.currentARK!)
+            precondition(value.isDefault == true, "true wins both write orders; false never demotes")
+            precondition(value.key == Data(repeating: 7, count: 32))
+        }
+        print("PASS default backfill: concurrent false then true and true then false converge to true")
+    }
+
+    @MainActor static func defaultFlagBackfillFailureAndRetirement() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "shared")
+        s.api.replaceError = URLError(.notConnectedToInternet)
+        await passAndBackfill(s)
+        precondition(s.api.replacements == 0)
+        precondition(s.controller.profileSyncInfo(forProfileId: "Default") != nil, "a failed backfill must not withhold keys")
+        precondition(s.controller.lastMappingsPassResult == .measured && s.outcomes.last == "measured",
+                     "a failed backfill must not hold the pass")
+        s.api.replaceError = nil
+        await passAndBackfill(s)
+        precondition(s.api.replacements == 1, "the next pass retries")
+
+        // Retirement while the backfill's GET is in flight writes nothing. The
+        // pass's own lookup is the first GET of the round, the backfill's the second.
+        let retired = Stack(); defer { retired.close() }
+        try retired.seedMappedLocal("Default", uuid: "shared")
+        var gets = 0
+        retired.api.onGet = { _ in
+            gets += 1
+            if gets == 2 { retired.controller.retire() }
+        }
+        await passAndBackfill(retired)
+        precondition(gets == 2 && retired.api.replacements == 0)
+        print("PASS default backfill: failed writes keep keys and the pass, a later pass retries, retirement during GET prevents writes")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither

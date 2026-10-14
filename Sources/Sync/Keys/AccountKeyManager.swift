@@ -17,6 +17,7 @@ protocol KeyEnvelopeAPI {
     func listProfiles() async throws -> [ProfileSummaryDTO]
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool
     func getDomainKey(domain: String) async throws -> Data?
     func putDomainKey(domain: String, envelope: Data) async throws -> Bool
 }

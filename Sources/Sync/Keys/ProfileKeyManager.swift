@@ -15,7 +15,7 @@ import Security
 /// other half of the rule (no non-default local on the authoritative account
 /// default) depends on which default is authoritative, which only the callers
 /// know; an extra account default is an ordinary profile and may be adopted.
-enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped, defaultMismatch }
+enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped, defaultMismatch, metadataConflict }
 
 struct ProfileKeyRecord: Equatable {
     let uuid: String
@@ -121,6 +121,47 @@ final class ProfileKeyManager {
     }
 
     // MARK: - Flows
+
+    /// Best-effort upgrade of an existing local mapping's envelope with the
+    /// `"default"` flag. True is monotonic: a device that uses this identity as
+    /// Default can promote false to true, but an ordinary local can never demote
+    /// another device's Default. Keep the complete payload, including its key,
+    /// name and unknown fields. Cancellation/account identity and the mapping are
+    /// checked after each GET, immediately before writing. The API's token
+    /// remains account-bound.
+    ///
+    /// Returns true once the envelope is known to carry a flag this Mac agrees
+    /// with (already there, or written now); false when there is nothing to do
+    /// (no mapping, or the envelope is gone -- that belongs to mapping repair).
+    @discardableResult
+    func backfillDefaultFlag(profileId: String, isDefault: Bool,
+                             isCurrent: () -> Bool) async throws -> Bool {
+        guard let uuid = mappingStore.globalUuid(forProfileId: profileId) else { return false }
+        guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
+        for _ in 0..<3 {
+            try Task.checkCancellation()
+            guard isCurrent() else { throw CancellationError() }
+            let dto = try await api.getProfileKey(uuid: uuid)
+            try Task.checkCancellation()
+            guard isCurrent(), keyManager.currentARK != nil,
+                  mappingStore.globalUuid(forProfileId: profileId) == uuid else { throw CancellationError() }
+            // A deleted envelope belongs to mapping repair, never recreate its key.
+            guard let dto else { return false }
+            let opened = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
+            if opened.isDefault == true || opened.isDefault == isDefault { return true }
+            let plain = try PhiKeyCrypto.openWithSymmetric(dto.profileKeyEnvelope, key: ark)
+            guard var payload = try JSONSerialization.jsonObject(with: plain) as? [String: Any] else {
+                throw ProfileKeyManagerError.badEnvelope
+            }
+            payload["default"] = isDefault
+            let envelope = try PhiKeyCrypto.sealWithSymmetric(
+                JSONSerialization.data(withJSONObject: payload), key: ark)
+            if try await api.replaceProfileKeyEnvelope(uuid: uuid, expected: dto.profileKeyEnvelope,
+                                                       envelope: envelope) { return true }
+        }
+        // Bounded contention retry; the next mapping pass tries again.
+        throw ProfileKeyManagerError.metadataConflict
+    }
 
     /// The global UUID this local profile is already mapped to, nil when it has
     /// never been registered or adopted on this device. Exposed so callers (the

@@ -124,6 +124,11 @@ final class AccountKeyManagerTests: XCTestCase {
         /// test can suspend here so a second `resolveMappings()` pass gets to
         /// interleave inside the first one's registration.
         var beforePutProfileKey: (() async -> Void)?
+        func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+            guard profileEnvelopes[uuid] == expected else { return false }
+            profileEnvelopes[uuid] = envelope
+            return true
+        }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
             if let hook = beforePutProfileKey { await hook() }
             if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }

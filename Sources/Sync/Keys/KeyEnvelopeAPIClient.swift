@@ -384,6 +384,19 @@ final class KeyEnvelopeAPIClient {
         }
     }
 
+    /// Compare-and-swap for metadata backfill. A conflict requires a fresh GET
+    /// and client-side merge; PUT retains its original create-only contract.
+    func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
+        let (status, data) = try await request("PATCH", "/keys/v1/profiles/\(uuid)", body: [
+            "expected_profile_key_envelope": expected.base64EncodedString(),
+            "profile_key_envelope": envelope.base64EncodedString()])
+        switch status {
+        case 204: return true
+        case 409: return false
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
     /// Returns `nil` if the account has no key for this domain yet (404).
     func getDomainKey(domain: String) async throws -> Data? {
         let (status, data) = try await request("GET", "/keys/v1/domains/\(domain)")

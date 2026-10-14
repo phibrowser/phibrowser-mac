@@ -164,6 +164,9 @@ struct MappingPassTests {
         try await defaultFlagBackfillFailureAndRetirement()
         try await defaultFlagBackfillRetriedByRefreshRounds()
         try await flaggedDefaultClaimsTheLocalDefaultFirst()
+        try await unreadFlaggedDefaultKeepsTheLocalDefaultFree()
+        try await mappedDefaultStreamsUnderTheCap()
+        try await freeDefaultScanIsBoundedByItsDeadline()
         try await noCountBasedAdopt()
         try await twinAdopted()
         try await transientRegisterFailureHolds()
@@ -307,6 +310,77 @@ struct MappingPassTests {
         let created = s.creator.profiles.first { $0.displayName == "Your Phi (2)" }!.profileId
         precondition(s.store.map[created] == "uuid-a-legacy")
         print("PASS auto-create: a flagged account default claims the free local Default before a same-named legacy profile")
+    }
+
+    /// The flagged account default answers 503 while a legacy profile named like
+    /// the free local Default reads fine. The scan is incomplete, so the legacy
+    /// one may not take the Default: it is created as an ordinary local and the
+    /// Default stays free until the account default can be read.
+    @MainActor static func unreadFlaggedDefaultKeepsTheLocalDefaultFree() async throws {
+        let s = Stack(); defer { s.close() }
+        s.creator.profiles = [(profileId: "Default", displayName: "Your Phi")]
+        try s.seedRemote("uuid-a-legacy", name: "Your Phi")
+        s.api.envelopes["uuid-b-default"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 9, count: 32), name: "Personal", isDefault: true, ark: s.manager.currentARK!)
+        s.api.getErrors["uuid-b-default"] = KeyAPIError.http(503, "")
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        precondition(s.store.map["Default"] == nil, "an unread account default must keep the local Default free")
+        precondition(s.creator.createCalls == ["Your Phi (2)"], "\(s.creator.createCalls)")
+        let created = s.creator.profiles.first { $0.displayName == "Your Phi (2)" }!.profileId
+        precondition(s.store.map[created] == "uuid-a-legacy")
+
+        s.api.getErrors = [:]
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        precondition(s.store.map["Default"] == "uuid-b-default", "the recovered account default takes the Default")
+        print("PASS auto-create: an unreadable account default keeps the local Default free; the next round claims it")
+    }
+
+    final class GetLog: @unchecked Sendable { var uuids: [String] = [] }
+
+    /// With the local Default mapped, the round streams as it always did: the
+    /// cap is checked before each read, so the 4th envelope is never requested
+    /// and a request that would hang cannot stall the round.
+    @MainActor static func mappedDefaultStreamsUnderTheCap() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        for index in 1...4 { try s.seedRemote("uuid-\(index)", name: "P\(index)") }
+        let log = GetLog()
+        s.api.onGet = { uuid in
+            guard uuid == "uuid-4" else { return }
+            log.uuids.append(uuid)
+            try? await Task.sleep(for: .seconds(30))
+        }
+        let clock = ContinuousClock()
+        let started = clock.now
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        precondition(clock.now - started < .seconds(5), "the round waited on a read past the cap")
+        precondition(log.uuids.isEmpty && s.creator.createCalls == ["P1", "P2", "P3"], "\(s.creator.createCalls)")
+        print("PASS auto-create: a mapped local Default keeps the streaming read with the cap before each GET")
+    }
+
+    /// With the local Default free, a read that hangs past the scan deadline
+    /// ends the scan within its budget. The scan is incomplete, so the same-named
+    /// legacy profile does not take the Default; the others are claimed under
+    /// the cap.
+    @MainActor static func freeDefaultScanIsBoundedByItsDeadline() async throws {
+        let s = Stack(); defer { s.close() }
+        s.creator.profiles = [(profileId: "Default", displayName: "Personal")]
+        try s.seedRemote("uuid-1", name: "P1")
+        try s.seedRemote("uuid-2", name: "P2")
+        try s.seedRemote("uuid-3", name: "Personal")
+        try s.seedRemote("uuid-4", name: "P4")
+        s.controller.candidateScanDeadline = .milliseconds(300)
+        s.api.onGet = { uuid in
+            guard uuid == "uuid-2" else { return }
+            try? await Task.sleep(for: .seconds(30))
+        }
+        let clock = ContinuousClock()
+        let started = clock.now
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        precondition(clock.now - started < .seconds(5), "the scan outlived its deadline")
+        precondition(s.store.map["Default"] == nil, "an incomplete scan must keep the local Default free")
+        precondition(s.creator.createCalls == ["P1", "Personal (2)", "P4"], "\(s.creator.createCalls)")
+        print("PASS auto-create: a free local Default's scan is bounded by its deadline and stays closed to unflagged remotes")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither

@@ -938,6 +938,15 @@ final class SyncKeyController {
 
     static let maxAutoCreatesPerRound = 3
 
+    /// The candidate scan of a round whose local Default is free: at most this
+    /// many envelope reads in flight, and the whole scan bounded by
+    /// `candidateScanDeadline`, so one slow request cannot hold the sync round
+    /// (the engine awaits this refresh before it pulls pages).
+    static let candidateScanWidth = 3
+    /// An instance property, not a constant, only so the hostless fixture can
+    /// shorten it; production never changes it.
+    var candidateScanDeadline: Duration = .seconds(10)
+
     /// Profiles created by the most recent refresh, for §11's `profiles_created`
     /// counter. Read through `PhiSpaceLocalAccess.profilesCreatedInLastRefresh()`.
     private(set) var lastRefreshCreatedCount = 0
@@ -1135,121 +1144,229 @@ final class SyncKeyController {
 
         var created = 0
         var skipped = 0
-        // Every missing envelope is read BEFORE any claim, because the order of
-        // claims depends on the flags: a legacy profile that merely shares the
-        // local Default's name must not take the Default ahead of the account
-        // default that sorts after it. The round paid this one GET per missing
-        // uuid anyway; the cap below still bounds the writes.
+        // BH-16: the cap counts attempts, not successes, so a round whose creates
+        // keep failing still stops after `maxAutoCreatesPerRound` of them.
+        var attempts = 0
+        // A local counts as taken only while its persisted uuid is still in this
+        // round's account listing (see `claimMissingProfile`).
+        let liveMappedIds = Set(profileKeys.allMappings().filter { accountUuids.contains($0.value) }.keys)
+        let localDefaultFree = profileCreator.userAssignableProfileIds.contains {
+            $0.profileId == LocalStore.defaultProfileId && !liveMappedIds.contains($0.profileId)
+        }
+
+        if !localDefaultFree {
+            // The local Default cannot be claimed this round, so the order of
+            // claims does not matter (any flagged default is demoted): stream,
+            // with the cap checked BEFORE each read, so a round reads at most
+            // `maxAutoCreatesPerRound` envelopes it then acts on.
+            for uuid in missing {
+                guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
+                let remote: RemoteProfile
+                do {
+                    remote = try await profileKeys.remoteProfile(uuid: uuid)
+                    guard !isRetired else { return retiredRefresh() }
+                } catch {
+                    guard !isRetired else { return retiredRefresh() }
+                    noteAutoCreateFailure(error)
+                    skipped += 1; continue
+                }
+                guard let name = remote.name else {
+                    // No per-profile key means a profile that could not sync anything
+                    // and a mystery entry in the user's list. Skip, record, retry.
+                    noteUndecryptableRemote(uuid)
+                    AppLogInfo("[phi-sync] account profile envelope will not open uuid=\(String(uuid.prefix(8)))")
+                    skipped += 1
+                    continue
+                }
+                noteDecryptableRemote(uuid)
+                attempts += 1
+                switch await claimMissingProfile(remote, name: name, accountUuids: accountUuids,
+                                                 defaultClosedToUnflagged: false) {
+                case .claimed: created += 1
+                case .failed: skipped += 1
+                case .retired: return retiredRefresh()
+                }
+            }
+        } else {
+            // The local Default is free, and which remote takes it depends on the
+            // flags: a legacy profile that merely shares the Default's name must
+            // not take it ahead of the account default that sorts after it. Read
+            // the candidates first -- bounded in width and time -- then claim the
+            // flagged account defaults first, everything else after, uuid order
+            // within each group.
+            let scan = await scanMissingProfiles(missing)
+            guard !scan.retired, !isRetired else { return retiredRefresh() }
+            skipped += missing.count - scan.candidates.count
+            let candidates = scan.candidates.filter { $0.remote.isDefault == true }
+                + scan.candidates.filter { $0.remote.isDefault != true }
+            // An unread remote may be the account default (a 503, a timeout), so
+            // an incomplete scan closes the Default to unflagged remotes exactly
+            // as a flagged one among the candidates does -- even when that one's
+            // own adopt fails. The Default stays free and the next round retries.
+            let defaultClosedToUnflagged = scan.incomplete || candidates.contains { $0.remote.isDefault == true }
+            for (remote, name) in candidates {
+                guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
+                attempts += 1
+                switch await claimMissingProfile(remote, name: name, accountUuids: accountUuids,
+                                                 defaultClosedToUnflagged: defaultClosedToUnflagged) {
+                case .claimed: created += 1
+                case .failed: skipped += 1
+                case .retired: return retiredRefresh()
+                }
+            }
+        }
+        return await finishRefreshAndBackfill(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+    }
+
+    private enum MissingProfileClaim { case claimed, failed, retired }
+
+    /// One decrypted account profile this Mac has no mapping for: twin it onto a
+    /// same-named unmapped local, or create a local for it. The caller has
+    /// already counted the attempt. `defaultClosedToUnflagged` keeps a free local
+    /// Default away from every remote that is not a flagged account default.
+    private func claimMissingProfile(_ remote: RemoteProfile, name: String, accountUuids: Set<String>,
+                                     defaultClosedToUnflagged: Bool) async -> MissingProfileClaim {
+        let uuid = remote.uuid
+        // A local counts as taken only while its persisted uuid is still in
+        // this round's account listing: a mapping whose envelope is gone
+        // (404) must not stop the local -- the Default above all -- from
+        // claiming a live account profile, or the next pass registers yet
+        // another uuid for it.
+        let mappedIds = Set(profileKeys.allMappings().filter { accountUuids.contains($0.value) }.keys)
+        // The default-profile rule: the local Default is a twin only for an
+        // account default (whatever its name) or a legacy profile. While the
+        // local Default is free, an account default goes to it and nowhere
+        // else. Once the Default is live-mapped, its uuid is the one
+        // authoritative account default and any other is demoted to an
+        // ordinary profile -- twinned by name or created like any other --
+        // so nothing a concurrent pairing registered is left unclaimed.
+        let defaultTwin = profileCreator.userAssignableProfileIds.first(where: {
+            $0.profileId == LocalStore.defaultProfileId && !mappedIds.contains($0.profileId)
+        })
+        let effective: RemoteProfile
+        if remote.isDefault == true, defaultTwin == nil {
+            effective = RemoteProfile(uuid: uuid, name: name, isDefault: false)
+            if loggedDefaultConflictUuids.insert(uuid).inserted {
+                AppLogWarn("[phi-sync] default-identity conflict: extra account default treated as an ordinary profile uuid=\(String(uuid.prefix(8)))")
+            }
+        } else {
+            effective = remote
+        }
+
+        // Claim an existing same-named UNMAPPED local first. This covers the
+        // plain coincidence of two devices having made the same name, and the
+        // un-suffixed half of "last round created it but the adopt failed".
+        // The enumeration source is `userAssignableProfileIds`, never the
+        // whole `ProfileManager.profiles`: the agent fallback profile is in
+        // the latter and must never be handed to the account.
+        //
+        // A profile THIS controller created for THIS uuid outranks any name
+        // match, so the twin search stands down when one exists: going by name
+        // first would adopt a different local and orphan the created one for
+        // good. `createLocalProfileAndAdopt` picks it up below.
+        if reusablePendingProfile(forUuid: uuid) == nil,
+           let twin = effective.isDefault == true ? defaultTwin : profileCreator.userAssignableProfileIds.first(where: {
+            !mappedIds.contains($0.profileId)
+            && !(defaultClosedToUnflagged && $0.profileId == LocalStore.defaultProfileId)
+            && effective.mayPair(withLocalDefault: $0.profileId == LocalStore.defaultProfileId,
+                                 authoritativeDefaultUuid: nil)
+            && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+        }) {
+            do {
+                _ = try await profileKeys.adoptRemoteProfile(
+                    uuid: uuid, forLocalProfile: twin.profileId,
+                    isDefault: twin.profileId == LocalStore.defaultProfileId)
+                guard !isRetired else { return .retired }
+                knownUnmappedProfileIds.remove(twin.profileId)
+                return .claimed
+            } catch {
+                guard !isRetired else { return .retired }
+                noteAutoCreateFailure(error)
+                AppLogInfo("[phi-sync] twin adopt failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                return .failed
+            }
+        }
+        do {
+            _ = try await createLocalProfileAndAdopt(uuid: uuid, displayName: name)
+            guard !isRetired else { return .retired }
+            return .claimed
+        } catch {
+            guard !isRetired else { return .retired }
+            noteAutoCreateFailure(error)
+            AppLogInfo("[phi-sync] auto-create failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
+            return .failed
+        }
+    }
+
+    private enum CandidateRead: Sendable {
+        case read(RemoteProfile)
+        case failed(any Error)
+        case deadline
+    }
+
+    /// Reads the envelopes of `missing` with at most `candidateScanWidth` in
+    /// flight, until `candidateScanDeadline`. `incomplete` is set by any read
+    /// error and by the deadline (an envelope that does not open is a known
+    /// non-candidate, not incomplete). Undecryptable and failure bookkeeping is
+    /// done here for what was read; reads still in flight at the deadline are
+    /// cancelled and counted by the caller as skipped. Candidates come back in
+    /// uuid order.
+    private func scanMissingProfiles(
+        _ missing: [String]
+    ) async -> (candidates: [(remote: RemoteProfile, name: String)], incomplete: Bool, retired: Bool) {
+        var read: [String: RemoteProfile] = [:]
+        var incomplete = false
+        var retired = false
+        let deadline = candidateScanDeadline
+        await withTaskGroup(of: CandidateRead.self) { group in
+            group.addTask {
+                try? await Task.sleep(for: deadline)
+                return .deadline
+            }
+            var pending = missing[...]
+            var inFlight = 0
+            func start(_ uuid: String) {
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return .failed(CancellationError()) }
+                    do { return .read(try await self.profileKeys.remoteProfile(uuid: uuid)) }
+                    catch { return .failed(error) }
+                }
+                inFlight += 1
+            }
+            while inFlight < Self.candidateScanWidth, let uuid = pending.popFirst() { start(uuid) }
+            scan: while inFlight > 0, let result = await group.next() {
+                switch result {
+                case .deadline:
+                    incomplete = true
+                    AppLogInfo("[phi-sync] account profile scan hit its \(deadline) deadline; \(inFlight + pending.count) unread")
+                    break scan
+                case .read(let remote):
+                    inFlight -= 1
+                    read[remote.uuid] = remote
+                case .failed(let error):
+                    inFlight -= 1
+                    incomplete = true
+                    if !isRetired { noteAutoCreateFailure(error) }
+                }
+                if isRetired { retired = true; break scan }
+                if let uuid = pending.popFirst() { start(uuid) }
+            }
+            // The deadline sleeper, and whatever is still in flight.
+            group.cancelAll()
+        }
+        guard !retired, !isRetired else { return ([], incomplete, true) }
         var candidates: [(remote: RemoteProfile, name: String)] = []
         for uuid in missing {
-            let remote: RemoteProfile
-            do {
-                remote = try await profileKeys.remoteProfile(uuid: uuid)
-                guard !isRetired else { return retiredRefresh() }
-            } catch {
-                guard !isRetired else { return retiredRefresh() }
-                noteAutoCreateFailure(error)
-                skipped += 1; continue
-            }
+            guard let remote = read[uuid] else { continue }
             guard let name = remote.name else {
-                // No per-profile key means a profile that could not sync anything
-                // and a mystery entry in the user's list. Skip, record, retry.
                 noteUndecryptableRemote(uuid)
                 AppLogInfo("[phi-sync] account profile envelope will not open uuid=\(String(uuid.prefix(8)))")
-                skipped += 1
                 continue
             }
             noteDecryptableRemote(uuid)
             candidates.append((remote, name))
         }
-        // Flagged account defaults first, then everything else; uuid order within
-        // each group (stable sort over the uuid-sorted list).
-        candidates = candidates.filter { $0.remote.isDefault == true } + candidates.filter { $0.remote.isDefault != true }
-        // While one is among them, only a flagged account default may take a free
-        // local Default this round -- even when its own adopt fails.
-        let flaggedDefaultMissing = candidates.contains { $0.remote.isDefault == true }
-
-        // BH-16: the cap counts attempts, not successes, so a round whose creates
-        // keep failing still stops after `maxAutoCreatesPerRound` of them.
-        var attempts = 0
-        for (remote, name) in candidates {
-            guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
-            let uuid = remote.uuid
-
-            // A local counts as taken only while its persisted uuid is still in
-            // this round's account listing: a mapping whose envelope is gone
-            // (404) must not stop the local -- the Default above all -- from
-            // claiming a live account profile, or the next pass registers yet
-            // another uuid for it.
-            let mappedIds = Set(profileKeys.allMappings().filter { accountUuids.contains($0.value) }.keys)
-            // The default-profile rule: the local Default is a twin only for an
-            // account default (whatever its name) or a legacy profile. While the
-            // local Default is free, an account default goes to it and nowhere
-            // else. Once the Default is live-mapped, its uuid is the one
-            // authoritative account default and any other is demoted to an
-            // ordinary profile -- twinned by name or created like any other --
-            // so nothing a concurrent pairing registered is left unclaimed.
-            let defaultTwin = profileCreator.userAssignableProfileIds.first(where: {
-                $0.profileId == LocalStore.defaultProfileId && !mappedIds.contains($0.profileId)
-            })
-            let effective: RemoteProfile
-            if remote.isDefault == true, defaultTwin == nil {
-                effective = RemoteProfile(uuid: uuid, name: name, isDefault: false)
-                if loggedDefaultConflictUuids.insert(uuid).inserted {
-                    AppLogWarn("[phi-sync] default-identity conflict: extra account default treated as an ordinary profile uuid=\(String(uuid.prefix(8)))")
-                }
-            } else {
-                effective = remote
-            }
-
-            // Claim an existing same-named UNMAPPED local first. This covers the
-            // plain coincidence of two devices having made the same name, and the
-            // un-suffixed half of "last round created it but the adopt failed".
-            // The enumeration source is `userAssignableProfileIds`, never the
-            // whole `ProfileManager.profiles`: the agent fallback profile is in
-            // the latter and must never be handed to the account.
-            //
-            // A profile THIS controller created for THIS uuid outranks any name
-            // match, so the twin search stands down when one exists: going by name
-            // first would adopt a different local and orphan the created one for
-            // good. `createLocalProfileAndAdopt` picks it up below.
-            if reusablePendingProfile(forUuid: uuid) == nil,
-               let twin = effective.isDefault == true ? defaultTwin : profileCreator.userAssignableProfileIds.first(where: {
-                !mappedIds.contains($0.profileId)
-                && !(flaggedDefaultMissing && $0.profileId == LocalStore.defaultProfileId)
-                && effective.mayPair(withLocalDefault: $0.profileId == LocalStore.defaultProfileId,
-                                     authoritativeDefaultUuid: nil)
-                && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
-            }) {
-                attempts += 1
-                do {
-                    _ = try await profileKeys.adoptRemoteProfile(
-                        uuid: uuid, forLocalProfile: twin.profileId,
-                        isDefault: twin.profileId == LocalStore.defaultProfileId)
-                    guard !isRetired else { return retiredRefresh() }
-                    knownUnmappedProfileIds.remove(twin.profileId)
-                    created += 1
-                } catch {
-                    guard !isRetired else { return retiredRefresh() }
-                    noteAutoCreateFailure(error)
-                    AppLogInfo("[phi-sync] twin adopt failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
-                    skipped += 1
-                }
-                continue
-            }
-            attempts += 1
-            do {
-                _ = try await createLocalProfileAndAdopt(uuid: uuid, displayName: name)
-                guard !isRetired else { return retiredRefresh() }
-                created += 1
-            } catch {
-                guard !isRetired else { return retiredRefresh() }
-                noteAutoCreateFailure(error)
-                AppLogInfo("[phi-sync] auto-create failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
-                skipped += 1
-            }
-        }
-        return await finishRefreshAndBackfill(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+        return (candidates, incomplete, false)
     }
 
     /// The periodic sync round reaches the key layer through this refresh, not

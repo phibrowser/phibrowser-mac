@@ -368,13 +368,22 @@ knowledge, so the write boundary does not police the other half.
 Background mapping follows the same rule. A local counts as mapped only while its
 persisted uuid is in the round's account listing, so a mapping whose envelope is
 gone never keeps the local Default from claiming the live account default (and a
-third uuid is never registered for it). Auto-create reads every missing
-envelope before claiming anything, then handles flagged account defaults first
-and everything else after, uuid order within each group; the per-round cap still
-bounds claims and creates. While the local Default is free, it adopts an account
-default regardless of name (the first by uuid among several), a legacy or
-non-default Profile never takes it while a flagged account default is missing
-from this Mac in the same round, and a known non-default never does. Once the
+third uuid is never registered for it). How auto-create reads the missing
+envelopes depends on whether the local Default is free (user-assignable and
+without a live mapping). When it is not, the round streams in uuid order with
+the per-round cap checked before each read, so it reads at most
+`maxAutoCreatesPerRound` envelopes it then acts on; claim order is irrelevant
+because any flagged default is demoted. When it is free, the round first scans
+the missing envelopes with at most `candidateScanWidth` (3) reads in flight and an
+overall `candidateScanDeadline` (10 seconds), then claims flagged account
+defaults first and everything else after, uuid order within each group, under
+the same cap. A read error or the deadline makes the scan incomplete (an
+envelope that does not open is a known non-candidate, not incomplete). While the
+scan is incomplete or a flagged account default is among the candidates, no
+unflagged Profile may take the local Default that round, even if the flagged
+default's own adopt fails; the Default stays free and the next round retries.
+Otherwise a free local Default adopts an account default regardless of name (the
+first by uuid among several), and a known non-default never takes it. Once the
 Default is live-mapped, any other account default is twinned by name or created
 like an ordinary Profile, and its conflict is logged once per uuid.
 

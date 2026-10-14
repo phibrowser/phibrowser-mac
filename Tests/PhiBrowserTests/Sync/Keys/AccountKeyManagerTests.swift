@@ -4,74 +4,172 @@ import CryptoKit
 
 final class AccountKeyManagerTests: XCTestCase {
     // In-memory fake: one account key state plus a set of per-device envelopes.
+    //
+    // Every mutable field lives in `State` behind `lock`: the auto-create
+    // candidate scan reads Profile envelopes concurrently, off the main actor.
+    // The properties keep their names and meaning; hooks are read under the lock
+    // and always invoked outside it, since they may touch this fake again.
     final class FakeAPI: KeyEnvelopeAPI {
-    func listDevices() async throws -> [AccountDeviceDTO] { [] }
-        var account: AccountKeyStateDTO?
-        var envelopes: [String: Data] = [:]
-        var initialized = false
-        var deviceEnvelopeError: Error?
+        private struct State {
+            var account: AccountKeyStateDTO?
+            var envelopes: [String: Data] = [:]
+            var initialized = false
+            var deviceEnvelopeError: Error?
+            var postDeviceErrorOnce: Error?
+            var postDeviceCalls = 0
+            var beforeGetDeviceEnvelopeOnce: (() async -> Void)?
+            var getDeviceEnvelopeCalls = 0
+            var getDeviceEnvelopeInFlight = 0
+            var maxGetDeviceEnvelopeInFlight = 0
+            var revokedDeviceKeyIds: [String] = []
+            var revokeError: Error?
+            var joinRequests: [String: JoinRequestDTO] = [:]
+            var pendingSummaries: [JoinRequestSummaryDTO] = []
+            var postJoinError: Error?
+            var lastPostedPublicKey: Data?
+            var approveCalls: [(id: String, envelope: Data, resolvedBy: String)] = []
+            var denyCalls: [String] = []
+            var joinIdCounter = 0
+            var profileEnvelopes: [String: Data] = [:]
+            var profileEndpointError: Error?
+            var profileEndpointErrorOnce: Error?
+            var listProfilesError: Error?
+            var listProfilesCalls = 0
+            var getProfileKeyCalls = 0
+            var beforePutProfileKey: (() async -> Void)?
+            var domainEnvelopes: [String: Data] = [:]
+            var domainEndpointError: Error?
+            var getDomainKeyCalls = 0
+            var putDomainKeyCalls = 0
+            var beforePutDomainKey: ((String) -> Void)?
+        }
+
+        private let lock = NSLock()
+        private var state = State()
+
+        private func locked<T>(_ body: (inout State) throws -> T) rethrows -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            return try body(&state)
+        }
+
+        func listDevices() async throws -> [AccountDeviceDTO] { [] }
+        var account: AccountKeyStateDTO? {
+            get { locked { $0.account } }
+            set { locked { $0.account = newValue } }
+        }
+        var envelopes: [String: Data] {
+            get { locked { $0.envelopes } }
+            set { locked { $0.envelopes = newValue } }
+        }
+        var initialized: Bool {
+            get { locked { $0.initialized } }
+            set { locked { $0.initialized = newValue } }
+        }
+        var deviceEnvelopeError: Error? {
+            get { locked { $0.deviceEnvelopeError } }
+            set { locked { $0.deviceEnvelopeError = newValue } }
+        }
 
         func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
-            if initialized { return false }
-            initialized = true
-            account = AccountKeyStateDTO(recoverySalt: salt, kdfVersion: kdfVersion,
-                kdfParams: kdfParams, recoveryArkEnvelope: recoveryEnvelope, arkGeneration: 1)
-            return true
+            locked { s in
+                if s.initialized { return false }
+                s.initialized = true
+                s.account = AccountKeyStateDTO(recoverySalt: salt, kdfVersion: kdfVersion,
+                    kdfParams: kdfParams, recoveryArkEnvelope: recoveryEnvelope, arkGeneration: 1)
+                return true
+            }
         }
         func getAccount() async throws -> AccountKeyStateDTO? { account }
         /// The next `postDevice` throws this and clears it (review A8 / A10).
-        var postDeviceErrorOnce: Error?
-        private(set) var postDeviceCalls = 0
+        var postDeviceErrorOnce: Error? {
+            get { locked { $0.postDeviceErrorOnce } }
+            set { locked { $0.postDeviceErrorOnce = newValue } }
+        }
+        var postDeviceCalls: Int { locked { $0.postDeviceCalls } }
         func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {
-            postDeviceCalls += 1
-            if let error = postDeviceErrorOnce { postDeviceErrorOnce = nil; throw error }
-            if let arkEnvelope { envelopes[deviceKeyId] = arkEnvelope }
+            try locked { s in
+                s.postDeviceCalls += 1
+                if let error = s.postDeviceErrorOnce { s.postDeviceErrorOnce = nil; throw error }
+                if let arkEnvelope { s.envelopes[deviceKeyId] = arkEnvelope }
+            }
         }
         /// The next `getDeviceEnvelope` awaits this and clears it, so a test can hold
         /// an unlock parked inside the lookup (BH-52).
-        var beforeGetDeviceEnvelopeOnce: (() async -> Void)?
-        private(set) var getDeviceEnvelopeCalls = 0
-        private(set) var getDeviceEnvelopeInFlight = 0
-        private(set) var maxGetDeviceEnvelopeInFlight = 0
+        var beforeGetDeviceEnvelopeOnce: (() async -> Void)? {
+            get { locked { $0.beforeGetDeviceEnvelopeOnce } }
+            set { locked { $0.beforeGetDeviceEnvelopeOnce = newValue } }
+        }
+        var getDeviceEnvelopeCalls: Int { locked { $0.getDeviceEnvelopeCalls } }
+        var getDeviceEnvelopeInFlight: Int { locked { $0.getDeviceEnvelopeInFlight } }
+        var maxGetDeviceEnvelopeInFlight: Int { locked { $0.maxGetDeviceEnvelopeInFlight } }
         func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
-            getDeviceEnvelopeCalls += 1
-            getDeviceEnvelopeInFlight += 1
-            maxGetDeviceEnvelopeInFlight = max(maxGetDeviceEnvelopeInFlight, getDeviceEnvelopeInFlight)
-            defer { getDeviceEnvelopeInFlight -= 1 }
-            if let hook = beforeGetDeviceEnvelopeOnce {
-                beforeGetDeviceEnvelopeOnce = nil
-                await hook()
+            let hook = locked { s -> (() async -> Void)? in
+                s.getDeviceEnvelopeCalls += 1
+                s.getDeviceEnvelopeInFlight += 1
+                s.maxGetDeviceEnvelopeInFlight = max(s.maxGetDeviceEnvelopeInFlight, s.getDeviceEnvelopeInFlight)
+                let hook = s.beforeGetDeviceEnvelopeOnce
+                s.beforeGetDeviceEnvelopeOnce = nil
+                return hook
             }
-            if let deviceEnvelopeError { throw deviceEnvelopeError }
-            return envelopes[deviceKeyId]
+            defer { locked { $0.getDeviceEnvelopeInFlight -= 1 } }
+            if let hook { await hook() }
+            return try locked { s in
+                if let error = s.deviceEnvelopeError { throw error }
+                return s.envelopes[deviceKeyId]
+            }
         }
 
-        private(set) var revokedDeviceKeyIds: [String] = []
-        var revokeError: Error?
+        var revokedDeviceKeyIds: [String] { locked { $0.revokedDeviceKeyIds } }
+        var revokeError: Error? {
+            get { locked { $0.revokeError } }
+            set { locked { $0.revokeError = newValue } }
+        }
         func revokeDevice(deviceKeyId: String) async throws {
-            if let revokeError { throw revokeError }
-            revokedDeviceKeyIds.append(deviceKeyId)
+            try locked { s in
+                if let error = s.revokeError { throw error }
+                s.revokedDeviceKeyIds.append(deviceKeyId)
+            }
         }
 
         // join queue
-        var joinRequests: [String: JoinRequestDTO] = [:]
-        var pendingSummaries: [JoinRequestSummaryDTO] = []
-        var postJoinError: Error?
-        var lastPostedPublicKey: Data?
-        var approveCalls: [(id: String, envelope: Data, resolvedBy: String)] = []
-        var denyCalls: [String] = []
-        private var joinIdCounter = 0
+        var joinRequests: [String: JoinRequestDTO] {
+            get { locked { $0.joinRequests } }
+            set { locked { $0.joinRequests = newValue } }
+        }
+        var pendingSummaries: [JoinRequestSummaryDTO] {
+            get { locked { $0.pendingSummaries } }
+            set { locked { $0.pendingSummaries = newValue } }
+        }
+        var postJoinError: Error? {
+            get { locked { $0.postJoinError } }
+            set { locked { $0.postJoinError = newValue } }
+        }
+        var lastPostedPublicKey: Data? {
+            get { locked { $0.lastPostedPublicKey } }
+            set { locked { $0.lastPostedPublicKey = newValue } }
+        }
+        var approveCalls: [(id: String, envelope: Data, resolvedBy: String)] {
+            get { locked { $0.approveCalls } }
+            set { locked { $0.approveCalls = newValue } }
+        }
+        var denyCalls: [String] {
+            get { locked { $0.denyCalls } }
+            set { locked { $0.denyCalls = newValue } }
+        }
         static let fixedCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
         func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
-            if let postJoinError { throw postJoinError }
-            lastPostedPublicKey = publicKey
-            joinIdCounter += 1
-            let id = "join-\(joinIdCounter)"
-            joinRequests[id] = JoinRequestDTO(requestId: id, requestingPublicKey: publicKey, name: name,
-                platform: platform, status: "pending", grantedArkEnvelope: Data(),
-                createdAt: Self.fixedCreatedAt, resolvedByDeviceKeyId: nil)
-            return id
+            try locked { s in
+                if let error = s.postJoinError { throw error }
+                s.lastPostedPublicKey = publicKey
+                s.joinIdCounter += 1
+                let id = "join-\(s.joinIdCounter)"
+                s.joinRequests[id] = JoinRequestDTO(requestId: id, requestingPublicKey: publicKey, name: name,
+                    platform: platform, status: "pending", grantedArkEnvelope: Data(),
+                    createdAt: Self.fixedCreatedAt, resolvedByDeviceKeyId: nil)
+                return id
+            }
         }
         func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] { pendingSummaries }
         func getJoinRequest(id: String) async throws -> JoinRequestDTO {
@@ -79,17 +177,22 @@ final class AccountKeyManagerTests: XCTestCase {
             return dto
         }
         func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {
-            approveCalls.append((id, grantedArkEnvelope, resolvedByDeviceKeyId))
-            if let dto = joinRequests[id] {
-                joinRequests[id] = JoinRequestDTO(requestId: dto.requestId, requestingPublicKey: dto.requestingPublicKey,
-                    name: dto.name, platform: dto.platform, status: "approved", grantedArkEnvelope: grantedArkEnvelope,
-                    createdAt: dto.createdAt, resolvedByDeviceKeyId: resolvedByDeviceKeyId)
+            locked { s in
+                s.approveCalls.append((id, grantedArkEnvelope, resolvedByDeviceKeyId))
+                if let dto = s.joinRequests[id] {
+                    s.joinRequests[id] = JoinRequestDTO(requestId: dto.requestId, requestingPublicKey: dto.requestingPublicKey,
+                        name: dto.name, platform: dto.platform, status: "approved", grantedArkEnvelope: grantedArkEnvelope,
+                        createdAt: dto.createdAt, resolvedByDeviceKeyId: resolvedByDeviceKeyId)
+                }
             }
         }
-        func denyJoinRequest(id: String) async throws { denyCalls.append(id) }
+        func denyJoinRequest(id: String) async throws { locked { $0.denyCalls.append(id) } }
 
         // profile keys
-        var profileEnvelopes: [String: Data] = [:]
+        var profileEnvelopes: [String: Data] {
+            get { locked { $0.profileEnvelopes } }
+            set { locked { $0.profileEnvelopes = newValue } }
+        }
         static let profileCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
         /// Error injection for the per-profile endpoints. Kept separate from
@@ -97,68 +200,104 @@ final class AccountKeyManagerTests: XCTestCase {
         /// transiently while the account-wide listing still succeeds (and vice
         /// versa) — the two failures take different paths through
         /// `SyncKeyController.resolveMappings()`.
-        var profileEndpointError: Error?
+        var profileEndpointError: Error? {
+            get { locked { $0.profileEndpointError } }
+            set { locked { $0.profileEndpointError = newValue } }
+        }
         /// Applies only to the next per-profile call, then clears. Persistent profileEndpointError
         /// cannot model failure followed by recovery, which applyPairingDecisions needs when
         /// reloading candidates after failure.
-        var profileEndpointErrorOnce: Error?
-        var listProfilesError: Error?
-        private(set) var listProfilesCalls = 0
-        private(set) var getProfileKeyCalls = 0
+        var profileEndpointErrorOnce: Error? {
+            get { locked { $0.profileEndpointErrorOnce } }
+            set { locked { $0.profileEndpointErrorOnce = newValue } }
+        }
+        var listProfilesError: Error? {
+            get { locked { $0.listProfilesError } }
+            set { locked { $0.listProfilesError = newValue } }
+        }
+        var listProfilesCalls: Int { locked { $0.listProfilesCalls } }
+        var getProfileKeyCalls: Int { locked { $0.getProfileKeyCalls } }
 
         func listProfiles() async throws -> [ProfileSummaryDTO] {
-            listProfilesCalls += 1
-            if let listProfilesError { throw listProfilesError }
-            return profileEnvelopes.keys.sorted().map {
-                ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: Self.profileCreatedAt)
+            try locked { s in
+                s.listProfilesCalls += 1
+                if let error = s.listProfilesError { throw error }
+                return s.profileEnvelopes.keys.sorted().map {
+                    ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: Self.profileCreatedAt)
+                }
             }
         }
         func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
-            getProfileKeyCalls += 1
-            if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }
-            if let profileEndpointError { throw profileEndpointError }
-            guard let e = profileEnvelopes[uuid] else { return nil }
-            return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
+            try locked { s in
+                s.getProfileKeyCalls += 1
+                if let error = s.profileEndpointErrorOnce { s.profileEndpointErrorOnce = nil; throw error }
+                if let error = s.profileEndpointError { throw error }
+                guard let e = s.profileEnvelopes[uuid] else { return nil }
+                return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
+            }
         }
         /// Fired at the top of `putProfileKey`, before the store is touched: a
         /// test can suspend here so a second `resolveMappings()` pass gets to
         /// interleave inside the first one's registration.
-        var beforePutProfileKey: (() async -> Void)?
+        var beforePutProfileKey: (() async -> Void)? {
+            get { locked { $0.beforePutProfileKey } }
+            set { locked { $0.beforePutProfileKey = newValue } }
+        }
         func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool {
-            guard profileEnvelopes[uuid] == expected else { return false }
-            profileEnvelopes[uuid] = envelope
-            return true
+            locked { s in
+                guard s.profileEnvelopes[uuid] == expected else { return false }
+                s.profileEnvelopes[uuid] = envelope
+                return true
+            }
         }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
             if let hook = beforePutProfileKey { await hook() }
-            if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }
-            if let profileEndpointError { throw profileEndpointError }
-            if profileEnvelopes[uuid] != nil { return false }
-            profileEnvelopes[uuid] = envelope
-            return true
+            return try locked { s in
+                if let error = s.profileEndpointErrorOnce { s.profileEndpointErrorOnce = nil; throw error }
+                if let error = s.profileEndpointError { throw error }
+                if s.profileEnvelopes[uuid] != nil { return false }
+                s.profileEnvelopes[uuid] = envelope
+                return true
+            }
         }
 
         // domain keys (account-level, one per domain — e.g. "phi")
-        var domainEnvelopes: [String: Data] = [:]
-        var domainEndpointError: Error?
-        private(set) var getDomainKeyCalls = 0
-        private(set) var putDomainKeyCalls = 0
+        var domainEnvelopes: [String: Data] {
+            get { locked { $0.domainEnvelopes } }
+            set { locked { $0.domainEnvelopes = newValue } }
+        }
+        var domainEndpointError: Error? {
+            get { locked { $0.domainEndpointError } }
+            set { locked { $0.domainEndpointError = newValue } }
+        }
+        var getDomainKeyCalls: Int { locked { $0.getDomainKeyCalls } }
+        var putDomainKeyCalls: Int { locked { $0.putDomainKeyCalls } }
         /// Hook fired at the top of `putDomainKey`, so a test can simulate another
         /// device winning the first-use race between this device's GET and PUT.
-        var beforePutDomainKey: ((String) -> Void)?
+        var beforePutDomainKey: ((String) -> Void)? {
+            get { locked { $0.beforePutDomainKey } }
+            set { locked { $0.beforePutDomainKey = newValue } }
+        }
 
         func getDomainKey(domain: String) async throws -> Data? {
-            getDomainKeyCalls += 1
-            if let domainEndpointError { throw domainEndpointError }
-            return domainEnvelopes[domain]
+            try locked { s in
+                s.getDomainKeyCalls += 1
+                if let error = s.domainEndpointError { throw error }
+                return s.domainEnvelopes[domain]
+            }
         }
         func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
-            putDomainKeyCalls += 1
-            beforePutDomainKey?(domain)
-            if let domainEndpointError { throw domainEndpointError }
-            if domainEnvelopes[domain] != nil { return false }  // 409: first writer wins
-            domainEnvelopes[domain] = envelope
-            return true
+            let hook = locked { s -> ((String) -> Void)? in
+                s.putDomainKeyCalls += 1
+                return s.beforePutDomainKey
+            }
+            hook?(domain)
+            return try locked { s in
+                if let error = s.domainEndpointError { throw error }
+                if s.domainEnvelopes[domain] != nil { return false }  // 409: first writer wins
+                s.domainEnvelopes[domain] = envelope
+                return true
+            }
         }
     }
 

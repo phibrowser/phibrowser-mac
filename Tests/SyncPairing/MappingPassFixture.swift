@@ -162,6 +162,8 @@ struct MappingPassTests {
         try await defaultFlagBackfill()
         try await defaultFlagBackfillConflict()
         try await defaultFlagBackfillFailureAndRetirement()
+        try await defaultFlagBackfillRetriedByRefreshRounds()
+        try await flaggedDefaultClaimsTheLocalDefaultFirst()
         try await noCountBasedAdopt()
         try await twinAdopted()
         try await transientRegisterFailureHolds()
@@ -270,6 +272,41 @@ struct MappingPassTests {
         await passAndBackfill(retired)
         precondition(gets == 2 && retired.api.replacements == 0)
         print("PASS default backfill: failed writes keep keys and the pass, a later pass retries, retirement during GET prevents writes")
+    }
+
+    /// The periodic round calls only the auto-create refresh; with nothing
+    /// missing it still retries a backfill an earlier pass failed.
+    @MainActor static func defaultFlagBackfillRetriedByRefreshRounds() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "shared")
+        s.api.replaceError = URLError(.notConnectedToInternet)
+        await passAndBackfill(s)
+        precondition(s.api.replacements == 0)
+        s.api.replaceError = nil
+        s.events = []
+        let outcome = await s.controller.ensureLocalProfilesForAccount()
+        await s.controller.defaultFlagBackfillTask?.value
+        precondition(outcome == .unchanged && !s.events.contains("resolve"), "only a refresh round ran: \(s.events)")
+        let flagged = try ProfileKeyManager.openProfilePayload(s.api.envelopes["shared"]!, ark: s.manager.currentARK!)
+        precondition(s.api.replacements == 1 && flagged.isDefault == true)
+        print("PASS default backfill: a failed backfill is retried by refresh rounds alone")
+    }
+
+    /// A legacy profile named like the free local Default sorts before the
+    /// flagged account default; the flagged one still takes the Default and the
+    /// legacy one becomes an ordinary local.
+    @MainActor static func flaggedDefaultClaimsTheLocalDefaultFirst() async throws {
+        let s = Stack(); defer { s.close() }
+        s.creator.profiles = [(profileId: "Default", displayName: "Your Phi")]
+        try s.seedRemote("uuid-a-legacy", name: "Your Phi")
+        s.api.envelopes["uuid-b-default"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 9, count: 32), name: "Personal", isDefault: true, ark: s.manager.currentARK!)
+        _ = await s.controller.ensureLocalProfilesForAccount()
+        precondition(s.store.map["Default"] == "uuid-b-default", "the legacy name match beat the account default")
+        precondition(s.creator.createCalls == ["Your Phi (2)"], "\(s.creator.createCalls)")
+        let created = s.creator.profiles.first { $0.displayName == "Your Phi (2)" }!.profileId
+        precondition(s.store.map[created] == "uuid-a-legacy")
+        print("PASS auto-create: a flagged account default claims the free local Default before a same-named legacy profile")
     }
 
     /// D20: one new local beside one new account Profile is not a match. Neither

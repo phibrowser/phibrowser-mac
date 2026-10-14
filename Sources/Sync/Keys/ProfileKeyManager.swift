@@ -133,9 +133,13 @@ final class ProfileKeyManager {
     /// Returns true once the envelope is known to carry a flag this Mac agrees
     /// with (already there, or written now); false when there is nothing to do
     /// (no mapping, or the envelope is gone -- that belongs to mapping repair).
+    ///
+    /// Main-actor isolated: `isCurrent` reads the main-actor controller's
+    /// retirement and account state, and must not run on the generic executor.
+    @MainActor
     @discardableResult
     func backfillDefaultFlag(profileId: String, isDefault: Bool,
-                             isCurrent: () -> Bool) async throws -> Bool {
+                             isCurrent: @MainActor () -> Bool) async throws -> Bool {
         guard let uuid = mappingStore.globalUuid(forProfileId: profileId) else { return false }
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         for _ in 0..<3 {

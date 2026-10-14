@@ -1131,15 +1131,17 @@ final class SyncKeyController {
         // dead-mapping cleanup, which removes the entry first.
         let mapped = Set(profileKeys.allMappedGlobalUuids())
         let missing = accountUuids.subtracting(mapped).sorted()   // uuid order: device-independent
-        guard !missing.isEmpty else { return await finishRefresh(.unchanged, created: 0, skipped: 0) }
+        guard !missing.isEmpty else { return await finishRefreshAndBackfill(.unchanged, created: 0, skipped: 0) }
 
         var created = 0
         var skipped = 0
-        // BH-16: the cap counts attempts, not successes, so a round whose creates
-        // keep failing still stops after `maxAutoCreatesPerRound` of them.
-        var attempts = 0
+        // Every missing envelope is read BEFORE any claim, because the order of
+        // claims depends on the flags: a legacy profile that merely shares the
+        // local Default's name must not take the Default ahead of the account
+        // default that sorts after it. The round paid this one GET per missing
+        // uuid anyway; the cap below still bounds the writes.
+        var candidates: [(remote: RemoteProfile, name: String)] = []
         for uuid in missing {
-            guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
             let remote: RemoteProfile
             do {
                 remote = try await profileKeys.remoteProfile(uuid: uuid)
@@ -1158,6 +1160,21 @@ final class SyncKeyController {
                 continue
             }
             noteDecryptableRemote(uuid)
+            candidates.append((remote, name))
+        }
+        // Flagged account defaults first, then everything else; uuid order within
+        // each group (stable sort over the uuid-sorted list).
+        candidates = candidates.filter { $0.remote.isDefault == true } + candidates.filter { $0.remote.isDefault != true }
+        // While one is among them, only a flagged account default may take a free
+        // local Default this round -- even when its own adopt fails.
+        let flaggedDefaultMissing = candidates.contains { $0.remote.isDefault == true }
+
+        // BH-16: the cap counts attempts, not successes, so a round whose creates
+        // keep failing still stops after `maxAutoCreatesPerRound` of them.
+        var attempts = 0
+        for (remote, name) in candidates {
+            guard attempts < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
+            let uuid = remote.uuid
 
             // A local counts as taken only while its persisted uuid is still in
             // this round's account listing: a mapping whose envelope is gone
@@ -1199,6 +1216,7 @@ final class SyncKeyController {
             if reusablePendingProfile(forUuid: uuid) == nil,
                let twin = effective.isDefault == true ? defaultTwin : profileCreator.userAssignableProfileIds.first(where: {
                 !mappedIds.contains($0.profileId)
+                && !(flaggedDefaultMissing && $0.profileId == LocalStore.defaultProfileId)
                 && effective.mayPair(withLocalDefault: $0.profileId == LocalStore.defaultProfileId,
                                      authoritativeDefaultUuid: nil)
                 && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
@@ -1231,7 +1249,18 @@ final class SyncKeyController {
                 skipped += 1
             }
         }
-        return await finishRefresh(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+        return await finishRefreshAndBackfill(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+    }
+
+    /// The periodic sync round reaches the key layer through this refresh, not
+    /// through `resolveMappings()`, so a round that read the account listing
+    /// also retries the best-effort default-flag backfill. Confirmed uuids are
+    /// cached, so once the flags are written this costs nothing.
+    private func finishRefreshAndBackfill(_ outcome: ProfileRefreshOutcome,
+                                          created: Int, skipped: Int) async -> ProfileRefreshOutcome {
+        let result = await finishRefresh(outcome, created: created, skipped: skipped)
+        backfillProfileDefaultFlagsBestEffort()
+        return result
     }
 
     /// A round stopped by `retire()`: `.failed`, as `PhiSpaceLocalAccess` answers

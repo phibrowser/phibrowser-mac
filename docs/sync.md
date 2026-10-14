@@ -308,9 +308,12 @@ existed and reads as unknown (`RemoteProfile.isDefault == nil`), never as false.
 Older clients ignore the key.
 
 Legacy envelopes of this Mac's own mappings are backfilled best effort. After
-every mapping pass that reaches its announcement, `SyncKeyController` starts one
-single-flight backfill over the local Profiles that have a persisted mapping
-(`ProfileKeyManager.backfillDefaultFlag`). A local Default provides evidence for
+every mapping pass that reaches its announcement, and after every auto-create
+refresh that read the account listing (the periodic sync round reaches the key
+layer only through that refresh, including when nothing is missing),
+`SyncKeyController` starts one single-flight backfill over the local Profiles
+that have a persisted mapping (`ProfileKeyManager.backfillDefaultFlag`, main-actor
+isolated because its fence reads controller state). A local Default provides evidence for
 `true`; ordinary locals fill a missing flag with `false`. True wins across devices:
 `false` may be promoted to `true`, never the reverse. Unmapped account Profiles
 stay unknown; this Mac cannot infer their role from a name. Only other devices'
@@ -365,9 +368,13 @@ knowledge, so the write boundary does not police the other half.
 Background mapping follows the same rule. A local counts as mapped only while its
 persisted uuid is in the round's account listing, so a mapping whose envelope is
 gone never keeps the local Default from claiming the live account default (and a
-third uuid is never registered for it). While the local Default is free,
-auto-create adopts an account default into it regardless of name (uuid order
-decides between several) and never twins a known non-default onto it. Once the
+third uuid is never registered for it). Auto-create reads every missing
+envelope before claiming anything, then handles flagged account defaults first
+and everything else after, uuid order within each group; the per-round cap still
+bounds claims and creates. While the local Default is free, it adopts an account
+default regardless of name (the first by uuid among several), a legacy or
+non-default Profile never takes it while a flagged account default is missing
+from this Mac in the same round, and a known non-default never does. Once the
 Default is live-mapped, any other account default is twinned by name or created
 like an ordinary Profile, and its conflict is logged once per uuid.
 

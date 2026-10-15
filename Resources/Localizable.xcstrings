@@ -12,6 +12,54 @@
             "state" : "translated",
             "value" : "Pinned tabs are being rearranged for a new pinned tab scope. Try again in a moment."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在按新的固定标签页范围重新整理固定标签页。请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在依新的釘選分頁範圍重新排列釘選分頁。請稍候再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい固定タブの適用範囲に合わせて固定タブを再配置しています。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "새 고정 탭 범위에 맞춰 고정된 탭을 다시 정리하는 중이에요. 잠시 후 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les onglets épinglés sont en cours de réorganisation pour appliquer leur nouvelle portée. Réessayez dans un instant."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Tabs werden gerade für einen neuen Geltungsbereich neu angeordnet. Versuche es in Kürze erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vastgezette tabbladen worden herschikt voor een nieuw bereik van vastgezette tabbladen. Probeer het over een ogenblik opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las pestañas fijadas se están reorganizando para un nuevo ámbito de pestañas fijadas. Inténtalo de nuevo dentro de un momento."
+          }
         }
       }
     },
@@ -22,6 +70,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A migration is already running. Try again when it has finished."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有一个迁移正在进行。请等它完成后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有一項移轉正在進行。請在移轉完成後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行がすでに実行中です。移行が完了してから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션이 이미 진행 중이에요. 마이그레이션이 끝난 후 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une migration est déjà en cours. Réessayez une fois celle-ci terminée."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es läuft bereits eine Migration. Versuche es erneut, sobald sie abgeschlossen ist."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er is al een migratie bezig. Probeer het opnieuw wanneer die is voltooid."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay una migración en curso. Inténtalo de nuevo cuando haya terminado."
           }
         }
       }
@@ -34,6 +130,54 @@
             "state" : "translated",
             "value" : "Your pinned tabs couldn’t be rearranged on this Mac. Try again."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在这台 Mac 上重新整理你的固定标签页。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在這部 Mac 上重新排列你的釘選分頁。請再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで固定タブを再配置できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Mac에서 고정된 탭을 다시 정리하지 못했어요. 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos onglets épinglés n'ont pas pu être réorganisés sur ce Mac. Réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine angehefteten Tabs konnten auf diesem Mac nicht neu angeordnet werden. Versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je vastgezette tabbladen konden op deze Mac niet worden herschikt. Probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron reorganizar tus pestañas fijadas en este Mac. Vuelve a intentarlo."
+          }
         }
       }
     },
@@ -44,6 +188,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The change will finish in the background."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更改将在后台完成。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "變更會在背景完成。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更はバックグラウンドで完了します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경 사항은 백그라운드에서 완료돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La modification se terminera en arrière-plan."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Änderung wird im Hintergrund abgeschlossen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De wijziging wordt op de achtergrond voltooid."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El cambio se completará en segundo plano."
           }
         }
       }
@@ -56,6 +248,54 @@
             "state" : "translated",
             "value" : "Pinned tab scope change not applied yet (%1$lld attempts; %2$@)"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定标签页范围更改尚未应用（已尝试 %1$lld 次；%2$@）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釘選分頁範圍的變更尚未套用（已嘗試 %1$lld 次；%2$@）"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブの適用範囲の変更はまだ反映されていません（%1$lld回試行、%2$@）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정 탭 범위 변경이 아직 적용되지 않았어요 (%1$lld회 시도, %2$@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modification de la portée des onglets épinglés non encore appliquée (tentatives : %1$lld ; %2$@)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderung des Geltungsbereichs angehefteter Tabs noch nicht angewendet (Versuche: %1$lld; %2$@)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijziging van het bereik van vastgezette tabbladen nog niet toegepast (%1$lld keer geprobeerd; %2$@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El cambio de ámbito de las pestañas fijadas aún no se ha aplicado (intentos: %1$lld; %2$@)"
+          }
         }
       }
     },
@@ -66,6 +306,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A browser migration is running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在从其他浏览器迁移"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在從其他瀏覽器移轉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザからの移行を実行中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 마이그레이션이 진행 중이에요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une migration depuis un autre navigateur est en cours"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Migration aus einem anderen Browser läuft"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er is een migratie uit een andere browser bezig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una migración desde otro navegador en curso"
           }
         }
       }
@@ -78,6 +366,54 @@
             "state" : "translated",
             "value" : "Local browser data is unavailable"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法访问本地浏览器数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法使用本機瀏覽器資料"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルのブラウザデータを利用できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 브라우저 데이터를 사용할 수 없어요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données locales du navigateur sont indisponibles"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokale Browserdaten sind nicht verfügbar"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokale browsergegevens zijn niet beschikbaar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos locales del navegador no están disponibles"
+          }
         }
       }
     },
@@ -88,6 +424,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t save pinned tabs on this Mac"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在这台 Mac 上保存固定标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在這部 Mac 上儲存釘選分頁"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacに固定タブを保存できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Mac에 고정된 탭을 저장하지 못했어요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'enregistrer les onglets épinglés sur ce Mac"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Tabs konnten auf diesem Mac nicht gespeichert werden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan vastgezette tabbladen op deze Mac niet bewaren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar las pestañas fijadas en este Mac"
           }
         }
       }
@@ -56047,6 +56431,54 @@
             "state" : "new",
             "value" : "Could not save the sync deletion record. Please try again."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存同步删除记录。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存同步刪除記錄，請再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同期用の削除記録を保存できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동기화 삭제 기록을 저장하지 못했어요. 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de sauvegarder l'enregistrement de suppression pour la synchronisation. Veuillez réessayer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Löschdatensatz für die Synchronisierung konnte nicht gespeichert werden. Bitte versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan het verwijderrecord voor synchronisatie niet opslaan. Probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar el registro de eliminación de la sincronización. Inténtalo de nuevo."
+          }
         }
       }
     },
@@ -82072,6 +82504,54 @@
             "state" : "new",
             "value" : "This profile will also be deleted from your other synced devices."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此个人资料也将从你其他已同步的设备上删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此設定檔也會從你的其他同步裝置上刪除。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイルは、同期しているほかのデバイスからも削除されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 프로필은 동기화된 다른 기기에서도 삭제돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce profil sera également supprimé de vos autres appareils synchronisés."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Profil wird auch auf deinen anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit profiel wordt ook verwijderd van je andere gesynchroniseerde apparaten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este perfil también se eliminará de tus otros dispositivos sincronizados."
+          }
         }
       }
     },
@@ -88743,6 +89223,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "This Space will also be deleted from your other synced devices."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此空间也将从你其他已同步的设备上删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此空間也會從你的其他同步裝置上刪除。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このスペースは、同期しているほかのデバイスからも削除されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 스페이스는 동기화된 다른 기기에서도 삭제돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet Espace sera également supprimé de vos autres appareils synchronisés."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Space wird auch auf deinen anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze Space wordt ook verwijderd van je andere gesynchroniseerde apparaten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Espacio también se eliminará de tus otros dispositivos sincronizados."
           }
         }
       }
@@ -101679,6 +102207,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This Mac’s default profile can only be matched with the account’s default profile. Review the matches and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 的默认个人资料只能与账户的默认个人资料匹配。请检查匹配项后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部 Mac 的預設設定檔只能與帳號的預設設定檔配對。請檢視配對內容後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacのデフォルトのプロファイルは、アカウントのデフォルトのプロファイルとのみ対応付けできます。対応付けを確認して、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Mac의 기본 프로필은 계정의 기본 프로필과만 연결할 수 있어요. 연결 항목을 확인하고 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil par défaut de ce Mac ne peut être associé qu'au profil par défaut du compte. Vérifiez les associations, puis réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Standardprofil dieses Mac kann nur dem Standardprofil des Accounts zugeordnet werden. Überprüfe die Zuordnungen und versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het standaardprofiel van deze Mac kan alleen worden gekoppeld aan het standaardprofiel van het account. Controleer de koppelingen en probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Perfil predeterminado de este Mac solo se puede emparejar con el Perfil predeterminado de la cuenta. Revisa los emparejamientos y vuelve a intentarlo."
           }
         }
       }

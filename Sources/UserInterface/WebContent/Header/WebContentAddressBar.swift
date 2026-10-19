@@ -556,6 +556,9 @@ final class WebContentAddressBarDragView: NSView {
     /// this surface, which moves the window only explicitly.
     override var mouseDownCanMoveWindow: Bool { false }
 
+    // Keep the activation click so mouseUp can open the omnibox.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard super.hitTest(point) != nil,
               Self.claimsEvent(ofType: NSApp.currentEvent?.type) else {

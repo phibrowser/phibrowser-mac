@@ -64,8 +64,80 @@ final class WebContentAddressBarDragViewTests: XCTestCase {
         ))
     }
 
-    // The gesture tests leave `allowsWindowDrag` off: the real window drag
-    // cannot run in a hosted test, and the click decision does not depend on it.
+    func testBalancedAddressBarAcceptsFirstClickInInactiveWindow() throws {
+        try assertAcceptsFirstClick(allowsWindowDrag: true)
+    }
+
+    func testComfortableAddressBarAcceptsFirstClickInInactiveWindow() throws {
+        try assertAcceptsFirstClick(allowsWindowDrag: false)
+    }
+
+    private func assertAcceptsFirstClick(allowsWindowDrag: Bool) throws {
+        let (view, window) = makeDragView()
+        view.allowsWindowDrag = allowsWindowDrag
+        let event = try mouseEvent(.leftMouseDown, at: NSPoint(x: 50, y: 13), in: window)
+
+        XCTAssertFalse(window.isKeyWindow)
+        XCTAssertTrue(view.acceptsFirstMouse(for: event))
+        XCTAssertFalse(view.mouseDownCanMoveWindow)
+    }
+
+    func testClickOpensOnlyOnReleaseInBothLayouts() throws {
+        for allowsWindowDrag in [true, false] {
+            let (view, window) = makeDragView()
+            view.allowsWindowDrag = allowsWindowDrag
+            var clicks = 0
+            view.onClick = { clicks += 1 }
+
+            view.mouseDown(with: try mouseEvent(.leftMouseDown, at: NSPoint(x: 50, y: 13), in: window))
+            XCTAssertEqual(clicks, 0)
+            view.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 50, y: 13), in: window))
+            XCTAssertEqual(clicks, 1)
+            view.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 50, y: 13), in: window))
+            XCTAssertEqual(clicks, 1, "A release without a new press must not reopen the omnibox")
+        }
+    }
+
+    func testDoubleClickKeepsClickBehaviorWithoutDraggingInBothLayouts() throws {
+        for allowsWindowDrag in [true, false] {
+            let (view, window) = makeDragView()
+            view.allowsWindowDrag = allowsWindowDrag
+            var clicks = 0
+            view.onClick = { clicks += 1 }
+
+            for count in 1...2 {
+                view.mouseDown(with: try mouseEvent(.leftMouseDown, at: NSPoint(x: 50, y: 13), in: window, clickCount: count))
+                view.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 50, y: 13), in: window, clickCount: count))
+            }
+            XCTAssertEqual(clicks, 2)
+            XCTAssertEqual(window.dragCount, 0)
+        }
+    }
+
+    func testDragConsumesClickAndMovesOnlyBalancedWindow() throws {
+        for allowsWindowDrag in [true, false] {
+            let (view, window) = makeDragView()
+            view.allowsWindowDrag = allowsWindowDrag
+            var clicks = 0
+            view.onClick = { clicks += 1 }
+
+            view.mouseDown(with: try mouseEvent(.leftMouseDown, at: NSPoint(x: 50, y: 13), in: window))
+            view.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: NSPoint(x: 80, y: 13), in: window))
+            view.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: NSPoint(x: 50, y: 13), in: window))
+            view.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 50, y: 13), in: window))
+
+            XCTAssertEqual(clicks, 0)
+            XCTAssertEqual(window.dragCount, allowsWindowDrag ? 1 : 0)
+        }
+    }
+
+    private final class DragRecordingWindow: NSWindow {
+        var dragCount = 0
+
+        override func performDrag(with event: NSEvent) {
+            dragCount += 1
+        }
+    }
 
     func testStillPressAndReleaseOpensTheOmnibox() throws {
         let (view, window) = makeDragView()
@@ -90,8 +162,8 @@ final class WebContentAddressBarDragViewTests: XCTestCase {
         XCTAssertEqual(clicks, 0)
     }
 
-    private func makeDragView() -> (WebContentAddressBarDragView, NSWindow) {
-        let window = NSWindow(
+    private func makeDragView() -> (WebContentAddressBarDragView, DragRecordingWindow) {
+        let window = DragRecordingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 26),
             styleMask: [.titled],
             backing: .buffered,
@@ -105,7 +177,8 @@ final class WebContentAddressBarDragViewTests: XCTestCase {
     private func mouseEvent(
         _ type: NSEvent.EventType,
         at location: NSPoint,
-        in window: NSWindow
+        in window: NSWindow,
+        clickCount: Int = 1
     ) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(
             with: type,
@@ -115,7 +188,7 @@ final class WebContentAddressBarDragViewTests: XCTestCase {
             windowNumber: window.windowNumber,
             context: nil,
             eventNumber: 0,
-            clickCount: 1,
+            clickCount: clickCount,
             pressure: 1
         ))
     }

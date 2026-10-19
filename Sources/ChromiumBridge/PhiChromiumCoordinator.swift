@@ -309,13 +309,19 @@ import SwiftUI
     private func buildSyncKeyControllerIfNeeded() -> SyncKeyController? {
         guard !nativeSyncCleanupInProgress, let account = AccountController.shared.account else { return nil }
         let stack = SyncKeyStack.make(accountId: account.userID)
+        // The pairing-reset resume marker (docs/sync.md, "Replacing this Mac's data at pairing"):
+        // account-scoped, cleared when enrollment completes and by the confirmed local cleanup.
+        let localResetMarker = SyncPairingLocalResetMarkerStore(
+            readData: { account.userDefaults.object(forKey: SyncPairingLocalResetMarkerStore.defaultsKey) as? Data },
+            writeData: { account.userDefaults.set($0, forKey: SyncPairingLocalResetMarkerStore.defaultsKey) })
         // Bind the fail-closed prerequisite before any unlock callback can start sync.
         do {
             let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
             try ProfilePairingGate.shared.configureEnrollment(
                 deviceKeyID: deviceID,
                 recordData: account.userDefaults.object(forKey: ProfilePairingGate.enrollmentDefaultsKey).map { ($0 as? Data) ?? Data() },
-                saveRecord: { account.userDefaults.set($0, forKey: ProfilePairingGate.enrollmentDefaultsKey) })
+                saveRecord: { account.userDefaults.set($0, forKey: ProfilePairingGate.enrollmentDefaultsKey) },
+                clearLocalResetMarker: { localResetMarker.clear() })
         } catch {
             try? ProfilePairingGate.shared.configureEnrollment(deviceKeyID: "", recordData: nil, saveRecord: { _ in false })
             AppLogWarn("[phi-sync] pairing enrollment unavailable; sync remains stopped")
@@ -432,7 +438,9 @@ import SwiftUI
             runtimeRemovalPending: { [weak self] in
                 self?.pendingNativeCleanup?.accountID == account.userID
                     && self?.pendingNativeCleanup?.removingDevice == true
-            })
+            },
+            localResetMarker: localResetMarker,
+            localResetAccess: Self.pairingResetLocalAccess(account: account))
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
@@ -556,7 +564,8 @@ import SwiftUI
                         legacyEvidence: SyncPairingLegacyEvidence(authorizedDeviceVerified: true,
                             freshAccountMappingsVerified: true, explicitlyPending: false,
                             spaceSectionEnabled: true, hasDrainedFullReplay: true,
-                            profileMappingsValid: validProfiles, spaceMappingsValid: validSpaces))
+                            profileMappingsValid: validProfiles, spaceMappingsValid: validSpaces),
+                        clearLocalResetMarker: { localResetMarker.clear() })
                     self.activatePairedSync()
                     return .verified
                 } catch {
@@ -567,6 +576,66 @@ import SwiftUI
             scheduleLegacyEnrollmentRetries()
         }
         return syncKeyController
+    }
+
+    /// Local data access for the pairing reset (docs/sync.md, "Replacing this Mac's data at
+    /// pairing"): the account's store, `SpaceManager` and `ProfileManager`, bound to `account`.
+    /// The reset itself re-checks the account before every destructive step.
+    @MainActor
+    private static func pairingResetLocalAccess(account: Account) -> PhiLocalDataReset.LocalAccess {
+        func rows(agent: Bool) -> [PhiLocalDataReset.SpaceRow] {
+            account.localStorage.getAllSpaces().filter { $0.isAnyAgentSpace == agent }
+                .map { PhiLocalDataReset.SpaceRow(spaceId: $0.spaceId, profileId: $0.profileId) }
+        }
+        /// A failed bridge read must never look like "no Profiles": that would turn the requested
+        /// deletions into a silent no-op.
+        func refreshedProfiles() throws -> [PhiBrowserProfile] {
+            guard ProfileManager.shared.refresh() else { throw LocalStoreWriteError.storeUnavailable }
+            return ProfileManager.shared.profiles
+        }
+        return PhiLocalDataReset.LocalAccess(
+            counts: {
+                try account.localStorage.phiDataCounts { name, iconName, colorHex in
+                    AgentSpaceManager.isAgentSpaceModel(name: name, iconName: iconName, colorHex: colorHex)
+                        || AgentSpaceManager.isPersistentAgentSpaceModel(iconName: iconName, colorHex: colorHex)
+                }
+            },
+            userSpaces: { rows(agent: false) },
+            agentSpaces: { rows(agent: true) },
+            chromiumProfileIds: { Set(try refreshedProfiles().map(\.profileId)) },
+            userAssignableProfileIds: {
+                _ = try refreshedProfiles()
+                return Set(ProfileManager.shared.userAssignableProfiles.map(\.profileId))
+            },
+            storedProfileIds: { try account.localStorage.profileRowIds() },
+            isImporting: { ImportTargetLock.shared.isImporting(into: $0) },
+            hasRunningAgentTask: { spaceIds, profileIds in
+                let bindings = Dictionary(account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) },
+                                          uniquingKeysWith: { first, _ in first })
+                return AgentSpaceManager.shared.tasksBySpaceId.keys.contains { spaceId in
+                    spaceIds.contains(spaceId) || bindings[spaceId].map(profileIds.contains) == true
+                }
+            },
+            setDefaultSpaceRole: { SpaceManager.shared.setDefaultSpaceRoleForPairingReset(LocalStore.defaultSpaceId) },
+            recreateDefaultSpace: { try await account.localStorage.recreateDefaultSpaceForPairingResetThrowing(profileId: $0) },
+            rebindDefaultSpace: { await SpaceManager.shared.rebindDefaultSpaceForPairingReset(toProfileId: $0) },
+            wipeOwnedItems: {
+                try await account.localStorage.wipePhiOwnedItemsForPairingReset()
+                // Hard-deleted rules must leave Chromium's routing table too.
+                SpaceManager.shared.reloadURLRulesFromStore()
+            },
+            deleteSpace: { await SpaceManager.shared.deleteSpaceForPairingReset(spaceId: $0) },
+            profilesWithLiveWindows: { await SpaceManager.shared.profilesWithLiveWindowsForPairingReset($0) },
+            isProfileInUse: { SpaceManager.shared.isProfileInUse($0) },
+            deleteProfile: { profileId in
+                let failure: ProfileDeletionFailure? = await withCheckedContinuation { continuation in
+                    ProfileManager.shared.deleteProfile(profileId, sync: .pairingReset) { success, failure in
+                        continuation.resume(returning: success ? nil : (failure ?? .reason(nil)))
+                    }
+                }
+                if let failure { throw failure }
+            },
+            removeProfileRows: { try await account.localStorage.deleteProfileRowsForPairingResetThrowing(profileId: $0) })
     }
 
     /// Runs one legacy enrollment attempt, sharing an attempt already in flight so the

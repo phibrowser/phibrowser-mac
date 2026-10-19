@@ -213,8 +213,9 @@ extension LocalStore {
     /// Single implementation shared by both entry points; the existing body,
     /// unchanged.
     private func changeSpaceProfileBody(spaceId: String, toProfileId newProfileId: String,
+                                        allowingDefaultSpace: Bool = false,
                                         in context: ModelContext) throws {
-        guard spaceId != Self.defaultSpaceId else { return }
+        guard allowingDefaultSpace || spaceId != Self.defaultSpaceId else { return }
         let descriptor = FetchDescriptor<SpaceModel>(
             predicate: #Predicate { $0.spaceId == spaceId }
         )
@@ -282,6 +283,125 @@ extension LocalStore {
                 AppLogError("[LocalStore] deleteTaggedRows failed: \(error)")
             }
         }
+    }
+}
+
+/// What the pairing reset would remove, and what it verifies is gone afterwards
+/// (docs/sync.md, "Replacing this Mac's data at pairing"). Every field counts exactly the rows the
+/// reset deletes, so a fresh install (default Space, Default Profile, empty bookmark roots) is all zero.
+struct PhiDataCounts: Equatable, Sendable {
+    /// User Spaces other than `default-space`. Agent Spaces are excluded by the caller's predicate;
+    /// Incognito Spaces have no rows.
+    var nonDefaultUserSpaces = 0
+    /// Bookmark nodes.
+    var bookmarks = 0
+    /// Folders other than the canonical per-Space roots.
+    var bookmarkFolders = 0
+    /// Every pinned-tab row in every scope, dormant copies included.
+    var pinnedTabs = 0
+    /// Live URL rules.
+    var urlRules = 0
+    /// Soft-deleted URL rule rows, which the reset hard-deletes too.
+    var softDeletedURLRules = 0
+
+    /// Rows the owned-item wipe removes.
+    var ownedItemRows: Int { bookmarks + bookmarkFolders + pinnedTabs + urlRules + softDeletedURLRules }
+}
+
+extension LocalStore {
+    // MARK: - Pairing reset (docs/sync.md, "Replacing this Mac's data at pairing")
+
+    /// Creates the `default-space` row when it is missing, even while other Spaces exist, bound to
+    /// `profileId` and with its bookmark root. `ensureDefaultSpace` refuses that case on purpose: a
+    /// deleted default Space must not come back by itself. The pairing reset needs the row because
+    /// it deletes every other user Space and the store must keep one. An existing row is left as it
+    /// is. Returns whether a row was created.
+    @discardableResult
+    func recreateDefaultSpaceForPairingResetThrowing(profileId: String) async throws -> Bool {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            let defaultSpaceId = Self.defaultSpaceId
+            guard try context.fetchCount(FetchDescriptor<SpaceModel>(
+                predicate: #Predicate { $0.spaceId == defaultSpaceId })) == 0 else { return false }
+            let lowestOrder = try context.fetch(FetchDescriptor<SpaceModel>()).map(\.sortOrder).min()
+            context.insert(SpaceModel(spaceId: defaultSpaceId, profileId: profileId,
+                                      name: Self.defaultSpaceName, colorHex: Self.defaultSpaceColorHex,
+                                      iconName: Self.defaultSpaceIconName,
+                                      sortOrder: (lowestOrder ?? 1) - 1))
+            // The same root resolution as a first launch: the Profile's legacy root when it has
+            // one, otherwise a new empty root linked on both the Space and the Profile.
+            _ = try self.bookmarkRoot(profileId: profileId, spaceId: defaultSpaceId,
+                                      in: context, createIfNeeded: true)
+            return true
+        }
+    }
+
+    /// Re-binds `default-space` to `profileId`, re-stamping its tagged rows like any Space rebind.
+    /// Ordinary rebinds refuse the default Space because its bookmark root is shared with the old
+    /// Profile's legacy root pointer. The pairing reset rebinds it only away from a Profile it is
+    /// about to delete, after which nothing else reads that pointer. Only `SpaceManager` calls this,
+    /// from its pairing-reset entry, which also replaces the Space's windows.
+    func rebindDefaultSpaceForPairingResetThrowing(toProfileId profileId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.changeSpaceProfileBody(spaceId: Self.defaultSpaceId, toProfileId: profileId,
+                                            allowingDefaultSpace: true, in: context)
+        }
+    }
+
+    /// One transaction: delete every pinned-tab row (dormant included), every bookmark and folder
+    /// row except the canonical roots, and HARD-delete every URL rule. Run only while the device is
+    /// unpaired, so no tombstone is published for any of it. Idempotent.
+    func wipePhiOwnedItemsForPairingReset() async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.deleteAllPinnedTabRowsBody(in: context)
+            try self.deleteBookmarksExceptRootsBody(in: context)
+            try self.hardDeleteAllURLRulesBody(in: context)
+        }
+    }
+
+    /// Removes what a Profile deleted by the pairing reset leaves in the store: its `ProfileModel`
+    /// row and every tab or bookmark row still stamped with it that no Space links as its root
+    /// (the Profile's legacy bookmark root, Profile-scoped pins). Runs after the Profile's Spaces are
+    /// gone, so nothing reachable is removed; a root `default-space` still links stays. Throws on
+    /// failure and is idempotent, so a rerun converges after a crash between the Chromium deletion
+    /// and this cleanup.
+    func deleteProfileRowsForPairingResetThrowing(profileId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            let linkedRoots = Set(try context.fetch(FetchDescriptor<SpaceModel>()).compactMap { $0.bookmarkRoot?.guid })
+            let owner: String? = profileId
+            for row in try context.fetch(FetchDescriptor<TabDataModel>(
+                predicate: #Predicate { $0.profileId == owner }
+            )) where !linkedRoots.contains(row.guid) {
+                context.delete(row)
+            }
+            for profile in try context.fetch(FetchDescriptor<ProfileModel>(
+                predicate: #Predicate { $0.profileId == profileId }
+            )) {
+                context.delete(profile)
+            }
+        }
+    }
+
+    /// Profile ids that still have a `ProfileModel` row. Throws instead of answering empty.
+    @MainActor
+    func profileRowIds() throws -> Set<String> {
+        guard let context = mainContext else { throw LocalStoreWriteError.storeUnavailable }
+        return Set(try context.fetch(FetchDescriptor<ProfileModel>()).map(\.profileId))
+    }
+
+    /// Counts for the pairing reset. `isExcludedSpace` names Spaces that are not user Spaces (the
+    /// agent signatures, which this layer does not know about). Throws instead of answering zero:
+    /// a failed read must never look like an empty store.
+    @MainActor
+    func phiDataCounts(isExcludedSpace: (_ name: String, _ iconName: String, _ colorHex: String) -> Bool) throws -> PhiDataCounts {
+        guard let context = mainContext else { throw LocalStoreWriteError.storeUnavailable }
+        var counts = PhiDataCounts()
+        counts.nonDefaultUserSpaces = try context.fetch(FetchDescriptor<SpaceModel>()).filter {
+            $0.spaceId != Self.defaultSpaceId && !isExcludedSpace($0.name, $0.iconName, $0.colorHex)
+        }.count
+        (counts.bookmarks, counts.bookmarkFolders) = try bookmarkCountsExcludingRoots(in: context)
+        counts.pinnedTabs = try pinnedTabRowCount(in: context)
+        (counts.urlRules, counts.softDeletedURLRules) = try urlRuleRowCounts(in: context)
+        return counts
     }
 }
 

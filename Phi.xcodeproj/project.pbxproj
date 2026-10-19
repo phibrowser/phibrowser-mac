@@ -650,6 +650,8 @@
 		DAE6C75EA01EF14F3B7A68E2 /* DevicesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500D8A44ACCDE44A010C744F /* DevicesSettingHostingViewController.swift */; };
 		DB3B811377A5EF1C83D51CA0 /* PhiFaviconBackfillQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */; };
 		DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121101 /* SyncPairingState.swift */; };
+		C1D7A5E0B3F24E6A9C0D1F12 /* SyncPairingLocalResetMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */; };
+		C1D7A5E0B3F24E6A9C0D1F22 /* PhiLocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */; };
 		DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */; };
 		DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */; };
 		DB90EAB144A61C14E0121402 /* SyncProfileMappingPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */; };
@@ -1486,6 +1488,8 @@
 		D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsConnectorViewModel.swift; sourceTree = "<group>"; };
 		D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpacePairingModel.swift; path = UI/SpacePairingModel.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121101 /* SyncPairingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingState.swift; sourceTree = "<group>"; };
+		C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingLocalResetMarker.swift; sourceTree = "<group>"; };
+		C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiLocalDataReset.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncStatusSnapshot.swift; path = ../SyncStatusSnapshot.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChromiumSyncStatus.swift; path = ../../ChromiumBridge/ChromiumSyncStatus.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProfileMappingPause.swift; sourceTree = "<group>"; };
@@ -1627,6 +1631,7 @@
 				DB90EAB144A61C14E0121601 /* SyncProfileMappingPauseReconciler.swift */,
 				DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */,
 				DB90EAB144A61C14E0121101 /* SyncPairingState.swift */,
+				C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */,
 				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
 				6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */,
 				3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */,
@@ -2214,6 +2219,7 @@
 				0AD0F4246CFD7B71017E76C5 /* PhiFaviconBackfillQueue.swift */,
 				A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */,
 				38B4BC3A8362D0949084AC79 /* PhiSyncMarkerFile.swift */,
+				C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */,
 				0749CDB5BD32A8DC759F2C88 /* PhiURLRuleLocalAccess.swift */,
 				2A224E00416E12C6EEE8F7EF /* URLRuleKind.swift */,
 			);
@@ -4179,6 +4185,8 @@
 				DB90EAB144A61C14E0121602 /* SyncProfileMappingPauseReconciler.swift in Sources */,
 				DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */,
 				DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */,
+				C1D7A5E0B3F24E6A9C0D1F12 /* SyncPairingLocalResetMarker.swift in Sources */,
+				C1D7A5E0B3F24E6A9C0D1F22 /* PhiLocalDataReset.swift in Sources */,
 				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,
 				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,
 				2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */,

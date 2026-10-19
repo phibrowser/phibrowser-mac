@@ -1770,6 +1770,37 @@ extension LocalStore {
         }
         return guids
     }
+
+    // MARK: Pairing reset (docs/sync.md, "Replacing this Mac's data at pairing")
+
+    /// Bookmark nodes, and folders other than the canonical roots: exactly the rows
+    /// `deleteBookmarksExceptRootsBody` removes. A fresh install has only empty roots, so both
+    /// counts are zero there.
+    func bookmarkCountsExcludingRoots(in context: ModelContext) throws -> (bookmarks: Int, folders: Int) {
+        let bookmarkRaw = TabDataType.bookmark.rawValue
+        let folderRaw = TabDataType.bookmarkFolder.rawValue
+        let bookmarks = try context.fetchCount(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == bookmarkRaw }))
+        let roots = try canonicalRootGuids(in: context)
+        let folders = try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == folderRaw }))
+            .filter { !roots.contains($0.guid) }.count
+        return (bookmarks, folders)
+    }
+
+    /// Deletes every bookmark and folder row except the canonical roots, which stay as the empty
+    /// per-Space trees the account's bookmarks land under. Only the pairing reset calls this, and only
+    /// while the device is unpaired, so no tombstone can follow from it.
+    func deleteBookmarksExceptRootsBody(in context: ModelContext) throws {
+        let bookmarkRaw = TabDataType.bookmark.rawValue
+        let folderRaw = TabDataType.bookmarkFolder.rawValue
+        let roots = try canonicalRootGuids(in: context)
+        for row in try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == bookmarkRaw || $0.type == folderRaw }
+        )) where !roots.contains(row.guid) {
+            context.delete(row)
+        }
+    }
 }
 
 // MARK: - Helpers

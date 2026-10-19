@@ -1152,6 +1152,25 @@ extension LocalStore {
         while s.count > 1 && s.hasSuffix("/") { s.removeLast() }                  // 5
         return s                                                                  // 6
     }
+
+    // MARK: Pairing reset (docs/sync.md, "Replacing this Mac's data at pairing")
+
+    /// Live and soft-deleted rule rows. The pairing reset removes both.
+    func urlRuleRowCounts(in context: ModelContext) throws -> (live: Int, softDeleted: Int) {
+        let live = try context.fetchCount(FetchDescriptor<SpaceURLRule>(
+            predicate: #Predicate<SpaceURLRule> { $0.deletedDate == nil }))
+        let all = try context.fetchCount(FetchDescriptor<SpaceURLRule>())
+        return (live, all - live)
+    }
+
+    /// HARD-deletes every rule row, soft-deleted ones included. A Space deletion only soft-deletes
+    /// its rules, and a soft row whose id equals an account rule would be revived on landing; the
+    /// pairing reset leaves no row behind instead. Only called while unpaired, so nothing is published.
+    func hardDeleteAllURLRulesBody(in context: ModelContext) throws {
+        for rule in try context.fetch(FetchDescriptor<SpaceURLRule>()) {
+            context.delete(rule)
+        }
+    }
 }
 
 extension LocalStore.URLRuleDraft {

@@ -63,6 +63,14 @@ final class ResetManager {
     func discardARK() { hasKey = false }
     /* PRODUCTION_DISCARD_REGISTRATION */
 }
+/// The pairing-reset resume marker, cleared with the enrollment it belongs to.
+final class ResetLocalResetMarker {
+    var present = true
+    var failClear = false
+    func clear() -> Bool {
+        if failClear { return false }; present = false; return true
+    }
+}
 final class ResetRotator {
     var count = 0
     func rotateForCurrentAccount() throws { count += 1 }
@@ -80,6 +88,7 @@ final class ResetFixture {
     var cleaningLocalState = false
     var requiresReconfiguration: Bool { markerStore?.load().requiresReconfiguration == true }
     var markerStore: ResetMarkerStore? = ResetMarkerStore()
+    var localResetMarker: ResetLocalResetMarker? = ResetLocalResetMarker()
     let manager = ResetManager()
     let profileKeys = ResetMappings()
     var spaceKeys: ResetMappings? = ResetMappings()
@@ -136,6 +145,7 @@ final class ResetFixture {
         precondition(defaults.string(forKey: "browser.setting") == "retained")
         precondition(defaults.object(forKey: "browser.setting.phiSyncTs") == nil)
         precondition(defaults.object(forKey: "phi.sync.entityId") == nil)
+        precondition(fixture.localResetMarker?.present == false)
         let switched = ResetFixture(defaults)
         defaults.set("next-account", forKey: "phi.sync.entityId")
         switched.clearAllSyncIds = { switched.isCurrentAccount = { false } }
@@ -148,6 +158,11 @@ final class ResetFixture {
         do { try await failed.reconfigureSync(); fatalError("Expected failed journal") }
         catch NativeSyncResetError.cleanupFailed {}
         precondition(!failed.profileKeys.mappings.isEmpty && failed.manager.hasKey)
-        print("PASS native reset: remote refusal, cleanup journal, retry, account fence, retained browsing preferences")
+        let stuckMarker = ResetFixture(defaults)
+        stuckMarker.localResetMarker!.failClear = true
+        do { try await stuckMarker.reconfigureSync(); fatalError("Expected failed marker removal") }
+        catch NativeSyncResetError.cleanupFailed {}
+        precondition(stuckMarker.requiresReconfiguration && stuckMarker.localResetMarker!.present)
+        print("PASS native reset: remote refusal, cleanup journal, retry, account fence, retained browsing preferences, pairing-reset marker")
     }
 }

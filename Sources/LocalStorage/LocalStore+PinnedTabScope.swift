@@ -1586,3 +1586,25 @@ extension LocalStore {
         return try context.fetch(descriptor).first
     }
 }
+
+// MARK: - Pairing reset (docs/sync.md, "Replacing this Mac's data at pairing")
+
+extension LocalStore {
+    /// Every pinned-tab row, dormant copies included: the rows `deleteAllPinnedTabRowsBody` removes.
+    func pinnedTabRowCount(in context: ModelContext) throws -> Int {
+        let pinnedRaw = TabDataType.pinnedTab.rawValue
+        return try context.fetchCount(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }))
+    }
+
+    /// Deletes every pinned-tab row in every scope, dormant copies included, so no pin lineage
+    /// survives to rematch an account pin. Only the pairing reset calls this, while unpaired.
+    func deleteAllPinnedTabRowsBody(in context: ModelContext) throws {
+        let pinnedRaw = TabDataType.pinnedTab.rawValue
+        for row in try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
+        )) {
+            context.delete(row)
+        }
+    }
+}

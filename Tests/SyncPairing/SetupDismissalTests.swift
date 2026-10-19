@@ -1,4 +1,5 @@
 import Foundation
+func AppLogInfo(_ message: String) {}
 
 @main
 struct SetupDismissalTests {

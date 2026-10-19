@@ -2013,6 +2013,35 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNotNil(store.table.cursors[SyncableSpaces.defaultSpaceUuid]?.reconciled)
     }
 
+    /// Replacing this Mac's data at pairing (docs/sync.md): the reset leaves an emptied `default-space`
+    /// row and an empty table. The first replay adopts the account's default identity wholesale (no
+    /// baseline, so the local row's fields do not merge in), lands the account's other Spaces, and
+    /// publishes no tombstone.
+    func testTheFirstReplayIntoAnEmptiedStoreLandsTheDefaultSpaceWholesaleWithoutTombstones() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid),
+                    ciphertext: try ciphertext(spaceEntity(SyncableSpaces.defaultSpaceUuid, name: "Home")),
+                    version: 3)
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(spaceEntity("u1", name: "Reading")),
+                    version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        let defaultRow = try XCTUnwrap(access.spaces.first { $0.spaceId == LocalStore.defaultSpaceId })
+        XCTAssertEqual(defaultRow.name, "Home", "no baseline: the account's entity is adopted wholesale")
+        XCTAssertEqual(defaultRow.profileId, "Default")
+        XCTAssertTrue(access.spaces.contains { $0.name == "Reading" })
+        XCTAssertNotNil(store.table.cursors[SyncableSpaces.defaultSpaceUuid]?.reconciled)
+        XCTAssertTrue(client.commits.filter(\.deleted).isEmpty, "nothing is tombstoned")
+    }
+
     func testAnImportLockDefersTheTombstoneAndPersistsTheIntent() async throws {
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]

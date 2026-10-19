@@ -1691,6 +1691,37 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(pinCounters?.pulled, 1)
     }
 
+    /// Replacing this Mac's data at pairing (docs/sync.md): the reset leaves no bookmark, pin or rule
+    /// rows and empty cursor tables. The first replay into that store lands the account's items and
+    /// tombstones nothing: a tombstone needs a cursor baseline, and there is none.
+    func testTheFirstReplayIntoAnEmptiedStoreEmitsNoTombstones() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let bookmarkAccess = FakeBookmarkAccess()
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(bookmarkPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                         version: 11, entityId: "srv-b1", key: key),
+            remoteEntity(envelope(pinPayload(lineage: "lx")), tag: pinTag("lx"),
+                         version: 12, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(drained: false),
+                                ownedKinds: [bookmarkKind(bookmarkAccess, bookmarkStore),
+                                             pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        let bookmarkTable = await engine.ownedTableForTesting("bookmarks")
+        let pinTable = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(Set(bookmarkTable.cursors.keys), ["b1"])
+        XCTAssertEqual(Set(pinTable.cursors.keys), ["lx:pu-1"])
+        XCTAssertTrue(client.commits.filter(\.deleted).isEmpty, "no tombstone of any kind")
+    }
+
     /// CASE 5b.3 / CASE 6.4–6.5: pin tag validation includes owner because owner is half the identity
     /// (R-M3-3-15). Owner mismatch is malformed identity, not rebind; rebind is old-tag tombstone plus new-tag
     /// create.

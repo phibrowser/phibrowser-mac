@@ -44,13 +44,28 @@ final class ProfilePairingGate {
     private(set) var enrollmentGeneration = UUID()
     var isPaired: Bool { enrollment.isPaired }
     var spaceReplayToken: UUID? { enrollment.spaceReplayToken }
+    /// Clears the account's `sync.pairingLocalReset` marker once enrollment is paired
+    /// (docs/sync.md, "Replacing this Mac's data at pairing"); answers whether the removal
+    /// persisted. Bound with the enrollment record.
+    private var clearLocalResetMarker: (() -> Bool)?
 
     func configureEnrollment(deviceKeyID: String, recordData: Data?,
                              saveRecord: @escaping (Data) -> Bool,
-                             legacyEvidence: SyncPairingLegacyEvidence? = nil) throws {
+                             legacyEvidence: SyncPairingLegacyEvidence? = nil,
+                             clearLocalResetMarker: (() -> Bool)? = nil) throws {
         enrollmentGeneration = UUID()
+        self.clearLocalResetMarker = clearLocalResetMarker
         try enrollment.configure(deviceKeyID: deviceKeyID, recordData: recordData,
                                  saveRecord: saveRecord, legacyEvidence: legacyEvidence)
+        // Every path to a persisted paired record clears the marker: the legacy verification
+        // above, and a launch after a crash between completion and the clear below.
+        if isPaired { clearLocalResetMarkerAfterPairing() }
+    }
+
+    private func clearLocalResetMarkerAfterPairing() {
+        guard let clearLocalResetMarker else { return }
+        let cleared = clearLocalResetMarker()
+        AppLogInfo("[phi-sync] pairing reset marker cleared after pairing: \(cleared)")
     }
 
     var requiresRecoveryConfirmation: Bool { enrollment.requiresRecoveryConfirmation }
@@ -67,6 +82,8 @@ final class ProfilePairingGate {
 
     func completeEnrollment(verifiedDeviceKeyID: String? = nil) throws {
         try enrollment.setPaired(true, verifiedDeviceKeyID: verifiedDeviceKeyID, replaySpaces: true)
+        // Only after the paired record persisted: a failed completion keeps the reset resumable.
+        clearLocalResetMarkerAfterPairing()
         NotificationCenter.default.post(name: .phiSyncPairingStateDidChange, object: self)
     }
 
@@ -110,6 +127,7 @@ final class ProfilePairingGate {
     func stop() {
         enrollmentGeneration = UUID()
         enrollment = SyncPairingEnrollment()
+        clearLocalResetMarker = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         if isPresented { modalHost?.dismiss(); isPresented = false }

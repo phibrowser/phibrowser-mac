@@ -31,6 +31,13 @@ enum ProfileDeletionSync {
     case userAction
     /// A remote tombstone deletes it here: nothing is recorded or published.
     case remoteTombstone
+    /// The pairing reset deletes a Profile the user chose to remove while replacing this Mac's data
+    /// (docs/sync.md, "Replacing this Mac's data at pairing"). The device is unpaired and the Profile
+    /// has no mapping, so nothing is journaled or published; the deletion fails when it is mapped.
+    /// It removes the Profile's local rows (`deleteProfileRowsForPairingResetThrowing`) and reports
+    /// completion only after they are gone; a failed cleanup is a failed deletion. Callers delete the
+    /// Profile's Spaces first.
+    case pairingReset
 }
 
 /// Why `ProfileManager.deleteProfile` failed.
@@ -304,6 +311,14 @@ final class ProfileManager: ObservableObject {
         case .remoteTombstone:
             syncUuid = nil
             syncState.withdrawProfileKey?(profileId)
+        case .pairingReset:
+            // Fail closed: without the mapping lookup this cannot prove the Profile is unmapped.
+            guard let lookup = syncState.globalUuidLookup, lookup(profileId) == nil else {
+                AppLogError("[ProfileManager] refusing a pairing-reset deletion of a mapped profile")
+                completion(false, .reason("The profile is linked to an account profile."))
+                return
+            }
+            syncUuid = nil
         }
         /// Undoes the sync preparation above when the deletion does not happen.
         func cancelSync() {
@@ -313,6 +328,7 @@ final class ProfileManager: ObservableObject {
                 if let syncUuid { syncState.cancelLocalProfileDeletion(syncUuid: syncUuid, localProfileId: profileId) }
             case .remoteTombstone:
                 syncState.restoreProfileKey?(profileId)
+            case .pairingReset: break
             }
         }
         let memoryService = removeMemories ? try? SiteMemoryService.currentAccount() : nil
@@ -345,6 +361,25 @@ final class ProfileManager: ObservableObject {
                     // Otherwise the original account would read the deletion as still in flight
                     // until a restart and never publish its tombstone.
                     if let syncUuid { syncState.abandonLocalProfileDeletion(syncUuid: syncUuid) }
+                } else if success, sync == .pairingReset {
+                    // No journal and no key withdrawal to finish: the Profile was never mapped.
+                    // Completion waits for the row cleanup, and a failed cleanup fails the deletion,
+                    // so the reset can rerun it (the Chromium Profile is already gone by then).
+                    Task { @MainActor in
+                        if removeMemories { Self.removeProfileMemories(profileId, using: memoryService) }
+                        guard let account else {
+                            completion(false, .reason("The account changed during the profile deletion."))
+                            return
+                        }
+                        do {
+                            try await account.localStorage.deleteProfileRowsForPairingResetThrowing(profileId: profileId)
+                            completion(true, nil)
+                        } catch {
+                            AppLogError("[ProfileManager] could not remove the deleted profile's local rows")
+                            completion(false, .reason("The profile's local data could not be removed."))
+                        }
+                    }
+                    return
                 } else if success, sync != .none {
                     Task { @MainActor in
                         if let account {
@@ -360,20 +395,23 @@ final class ProfileManager: ObservableObject {
                 } else if !success {
                     cancelSync()
                 }
-                if success, removeMemories {
-                    if let memoryService {
-                        Task {
-                            do {
-                                _ = try await memoryService.removeProfileMemories(profileID: profileId)
-                            } catch {
-                                AppLogWarn("[ProfileManager] Failed to remove memory for deleted profile \(profileId): \(error)")
-                            }
-                        }
-                    } else {
-                        AppLogWarn("[ProfileManager] Skipped memory cleanup for deleted profile \(profileId): account unavailable")
-                    }
-                }
+                if success, removeMemories { Self.removeProfileMemories(profileId, using: memoryService) }
                 completion(success, success ? nil : .reason(error))
+            }
+        }
+    }
+
+    /// Best-effort memory cleanup after a successful deletion.
+    private static func removeProfileMemories(_ profileId: String, using memoryService: SiteMemoryService?) {
+        guard let memoryService else {
+            AppLogWarn("[ProfileManager] Skipped memory cleanup for deleted profile \(profileId): account unavailable")
+            return
+        }
+        Task {
+            do {
+                _ = try await memoryService.removeProfileMemories(profileID: profileId)
+            } catch {
+                AppLogWarn("[ProfileManager] Failed to remove memory for deleted profile \(profileId): \(error)")
             }
         }
     }

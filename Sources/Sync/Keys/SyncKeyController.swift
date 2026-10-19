@@ -115,6 +115,15 @@ final class SyncKeyController {
     /// notifyChromium keeps the controller independent of Account/LocalStore and lets self-revocation tests
     /// avoid the real database.
     private let clearAllSyncIds: (@Sendable () async throws -> Void)?
+    /// The account's `sync.pairingLocalReset` marker (docs/sync.md, "Replacing this Mac's data at
+    /// pairing"). Nil means unwired/test construction.
+    private let localResetMarker: SyncPairingLocalResetMarkerStore?
+    /// Local data access for the pairing reset, wired by the coordinator. Nil means unwired/test
+    /// construction, and `localDataReset()` then answers nil.
+    private let localResetAccess: PhiLocalDataReset.LocalAccess?
+    /// The Profile deletion journal the reset's no-history check reads. Defaults to the facade's
+    /// account-bound store; nil from it means the journal cannot be read.
+    private let profileDeletionIntents: @MainActor () -> (any PhiProfileDeletionIntentStore)?
 
     /// What an announcement says about the two pairing predicates it arrives
     /// with. `false, false` is produced by all three cases and means something
@@ -252,6 +261,11 @@ final class SyncKeyController {
          isCurrentAccount: @escaping () -> Bool = { true },
          runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
          runtimeRemovalPending: @escaping () -> Bool = { false },
+         localResetMarker: SyncPairingLocalResetMarkerStore? = nil,
+         localResetAccess: PhiLocalDataReset.LocalAccess? = nil,
+         profileDeletionIntents: @escaping @MainActor () -> (any PhiProfileDeletionIntentStore)? = {
+             PhiSpaceSyncState.shared.profileDeletionIntentStore
+         },
          unlockRetryDelay: @escaping (Int) -> Duration = SyncKeyController.defaultUnlockRetryDelay) {
         self.isPairingComplete = isPairingComplete
         self.unlockRetryDelay = unlockRetryDelay
@@ -277,6 +291,9 @@ final class SyncKeyController {
         self.ownedItemStores = ownedItemStores
         self.markerStore = markerStore
         self.clearAllSyncIds = clearAllSyncIds
+        self.localResetMarker = localResetMarker
+        self.localResetAccess = localResetAccess
+        self.profileDeletionIntents = profileDeletionIntents
     }
 
     /// While true, `profileSyncInfo` answers nil for every Profile; setting it
@@ -383,6 +400,70 @@ final class SyncKeyController {
         spaceKeys?.allMappings() ?? [:]
     }
 
+    // MARK: - Replacing this Mac's data at pairing (docs/sync.md, "Enrollment and setup")
+
+    /// The resume marker for this device key, or nil.
+    func pairingLocalResetMarker() -> SyncPairingLocalResetMarker? {
+        guard let deviceKeyId = try? manager.deviceKeyProviderForTesting.deviceKeyId() else { return nil }
+        return localResetMarker?.load(deviceKeyID: deviceKeyId)
+    }
+
+    /// Records that the reset is starting, before anything local is removed.
+    func savePairingLocalResetMarker(deleteProfileIds: Set<String>,
+                                     startedAt: Date = Date()) throws {
+        guard let localResetMarker else { throw SyncPairingLocalResetMarkerError.writeFailed }
+        let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
+        try localResetMarker.save(SyncPairingLocalResetMarker(
+            deviceKeyID: deviceKeyId, deleteProfileIds: deleteProfileIds,
+            startedAtMs: Int64((startedAt.timeIntervalSince1970 * 1000).rounded())))
+    }
+
+    /// The local data reset bound to this controller's sync state, or nil when this controller was
+    /// built without the stores the preconditions read (tests, unwired construction): without them
+    /// the reset could not prove that nothing it deletes reaches the account.
+    func localDataReset() -> PhiLocalDataReset? {
+        guard let localResetAccess, let spaceStateStore, let markerStore else { return nil }
+        let ownedItemStores = ownedItemStores
+        let profileDeletionIntents = profileDeletionIntents
+        return PhiLocalDataReset(sync: PhiLocalDataReset.SyncAccess(
+            isPaired: { [weak self] in self?.isPairingComplete() ?? true },
+            isSessionUsable: { [weak self] in
+                guard let self else { return false }
+                return !self.isRetired && self.manager.currentARK != nil
+                    && !self.requiresReconfiguration && self.isCurrentAccount()
+            },
+            syncHistory: {
+                var history: [PhiLocalDataReset.SyncHistory] = []
+                let table = spaceStateStore.load()
+                if table.cursors.values.contains(where: { $0.entityId?.isEmpty == false }) {
+                    history.append(.spaceCursor)
+                }
+                if table.profileCursors.values.contains(where: { $0.entityId?.isEmpty == false }) {
+                    history.append(.profileCursor)
+                }
+                let marker = markerStore.load()
+                if marker.marker != nil || !marker.storeBirthday.isEmpty { history.append(.marker) }
+                if ownedItemStores.contains(where: { store in
+                    store.load(hadRecords: table.hadRecords).table.cursors.values
+                        .contains { !$0.entityId.isEmpty || $0.reconciled != nil }
+                }) {
+                    history.append(.ownedItemCursor)
+                }
+                // No journal store means the journal cannot be read: fail closed.
+                if profileDeletionIntents()?.load().isEmpty != true {
+                    history.append(.profileDeletionJournal)
+                }
+                return history
+            },
+            isProfileMapped: { [weak self] in self?.profileKeys.mappedGlobalUuid(forProfileId: $0) != nil },
+            spaceMappings: { [weak self] in self?.allSpaceMappings() ?? [:] },
+            removeSpaceMapping: { [weak self] in self?.removeSpaceMapping(forSpaceId: $0) },
+            clearSettingsAdoption: { [weak self] in
+                guard let self, self.isCurrentAccount() else { return }
+                Self.clearSettingsAdoptionState(self.engineDefaults)
+            }), local: localResetAccess)
+    }
+
     /// User-confirmed removal revokes remotely before touching local sync metadata.
     /// Last-device and transport errors leave local data and enrollment unchanged.
     func removeThisDeviceFromSync() async throws {
@@ -421,6 +502,8 @@ final class SyncKeyController {
             guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
         }
         try invalidateEnrollment()
+        // A pairing reset in progress belongs to the enrollment just invalidated.
+        guard localResetMarker?.clear() != false else { throw NativeSyncResetError.cleanupFailed }
         try manager.discardLocalRegistration()
         clearResolved()
         if removingDevice { try deviceKeyRotator?.rotateForCurrentAccount() }
@@ -438,13 +521,8 @@ final class SyncKeyController {
         // The async storage write belongs to the captured account. Never clear the
         // next account's global engine defaults or facade after an account switch.
         guard isCurrentAccount() else { throw CancellationError() }
-        for key in PhiSyncEngine.stateKeys + PhiSyncEngine.legacyMarkerStateKeys + ["phi.sync.requiresReconfiguration"] {
-            engineDefaults.removeObject(forKey: key)
-        }
-        for key in engineDefaults.dictionaryRepresentation().keys
-            where key.hasSuffix(SyncableSettings.timestampSuffix) || key.hasSuffix(SyncableSettings.valueSuffix) {
-            engineDefaults.removeObject(forKey: key)
-        }
+        Self.clearSettingsAdoptionState(engineDefaults, alsoRemoving: PhiSyncEngine.legacyMarkerStateKeys
+                                            + ["phi.sync.requiresReconfiguration"])
         // This mirrored value is a sync UUID, not the user's local default Space.
         engineDefaults.removeObject(forKey: PhiDefaultSpaceMirror.key)
         if let spaceStateStore, !spaceStateStore.save(PhiSpaceSyncTable()) {
@@ -461,6 +539,20 @@ final class SyncKeyController {
         }
         completed = true
         AppLogInfo("[phi-sync] confirmed local sync cleanup completed")
+    }
+
+    /// Drops the settings engine's account cursor (`stateKeys`, `hasAdopted` included) and every
+    /// per-key timestamp/value sidecar, keeping the settings' values. The next pull then adopts
+    /// the account's settings wholesale. Shared by the confirmed cleanup above and the pairing
+    /// reset (docs/sync.md, "Replacing this Mac's data at pairing"). Idempotent.
+    static func clearSettingsAdoptionState(_ defaults: UserDefaults, alsoRemoving extraKeys: [String] = []) {
+        for key in PhiSyncEngine.stateKeys + extraKeys {
+            defaults.removeObject(forKey: key)
+        }
+        for key in defaults.dictionaryRepresentation().keys
+            where key.hasSuffix(SyncableSettings.timestampSuffix) || key.hasSuffix(SyncableSettings.valueSuffix) {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.

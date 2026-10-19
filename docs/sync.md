@@ -361,6 +361,87 @@ A page shows only when it asks the user something:
   but disabled; while disabled the plan never shows it and the wizard enters no
   method page.
 
+### Replacing this Mac's data at pairing (groundwork)
+
+"Use the account's data" empties this Mac's Phi data before enrollment completes,
+so the first replay lands the account without merging. The data side exists
+(`PhiLocalDataReset`, reached through `SyncKeyController.localDataReset()`); no
+setup page calls it yet.
+
+The reset runs only while the device is unpaired, which is what makes it safe:
+no data round runs before enrollment completes, so none of its deletions is
+published. It fails closed, with a typed error and before changing anything, unless
+all of these hold:
+
+| Precondition | Meaning |
+| --- | --- |
+| Unpaired, usable session | The enrollment is not paired; the controller is unlocked, not retired, on the current account, and no reconfiguration is pending |
+| No sync history | No Space or Profile cursor with an account entity, no progress marker or store birthday, no bookmark, pin or rule cursor with an entity or baseline, a readable and empty Profile deletion journal |
+| Nothing running | No import into any Space; no agent task in a Space the reset deletes or in any Space of a Profile it deletes |
+| Profiles | The Profile list is readable; the Default Profile and non-assignable Profiles (the agent fallback) are never deletable; every Profile chosen for deletion is unmapped |
+
+The unpaired/session and import checks are repeated before every destructive step.
+
+The steps, in order:
+
+1. The default role is written to `default-space` directly, so no hand-off runs
+   when the other Spaces go.
+2. If the `default-space` row is missing, it is recreated on the Default Profile
+   with its bookmark root. The store must keep one user Space, and the ordinary
+   first-launch bootstrap refuses to resurrect the row while other Spaces exist.
+3. If `default-space` is bound to a Profile chosen for deletion, it is re-bound to
+   the Default Profile and its windows are settled before anything else happens:
+   a parked ghost of it is dropped, a slot showing it replaces its window in place
+   on the Default Profile without animation, a background window of it is closed,
+   and the reset waits (bounded) until no window of it remains on the old Profile.
+4. In one transaction: every pinned-tab row in every scope (dormant copies
+   included), every bookmark and folder except the canonical per-Space roots, and
+   every URL rule row are deleted. Rules are hard-deleted, soft-deleted ones
+   included: a Space deletion only soft-deletes its rules, and a soft row could be
+   revived by landing.
+5. Every other user Space is deleted with its windows and tabs, through
+   `SpaceManager.deleteSpaceForPairingReset`. It reports a result instead of
+   refusing silently, never shows an alert (an import is a refusal), retreats
+   without animation and always to `default-space`, and gives up after 30
+   seconds with a typed failure. A Profile chosen for deletion loses its agent
+   Spaces with it (they are device-local and its Chromium data goes anyway); the
+   agent Spaces of kept Profiles and Incognito Spaces are untouched. The default
+   Space is emptied, never removed; its open tabs stay.
+6. Only after that, each Profile the user chose is deleted with
+   `ProfileDeletionSync.pairingReset`: no journal, no tombstone, its local rows
+   removed (a failed cleanup fails the deletion), its Chromium profile directory
+   deleted. The reset first waits (bounded) for the deleted Spaces' windows to
+   close and fails closed if a window is still bound to the Profile; a mapped
+   Profile, or one a Space row still binds, is refused. A Profile Chromium no
+   longer lists was deleted by an earlier attempt: only its leftover store rows
+   are swept, so a crash between the two converges on the next run.
+   Kept Profiles end with zero Spaces, which is a valid state; no placeholder
+   Space is created, because one would be published as a new account Space.
+7. Space mappings for rows that no longer exist are removed, and the settings
+   adoption state is cleared: the cursor keys (`hasAdopted` included) and the
+   per-key sidecars, never the values. The first pull then adopts the account's
+   settings wholesale; keys the account lacks keep their local value.
+
+The reset then verifies its postconditions: nothing left to count, `default-space`
+is the only user Space and is not bound to a deleted Profile, no agent Space of a
+deleted Profile remains, the chosen Profiles are gone from Chromium and from the
+store, no Space mapping other than `default-space` remains, and the device is
+still unpaired without sync history. Every step re-reads state and skips work
+already done, so a rerun after a crash or a failed step converges. The counts
+(`LocalStore.phiDataCounts`, surfaced as `LocalPhiInventory`) cover exactly the
+rows the reset deletes, so a fresh install (default Space, Default Profile, empty
+bookmark roots) counts as empty. A failed count read is an error, never zero.
+
+The account-scoped defaults key `sync.pairingLocalReset` records a started reset:
+`{v: 1, deviceKeyID, deleteProfileIds, startedAtMs}`. It is separate from
+`sync.pairingEnrollment`, which is rebuilt on every write. A marker from another
+device key is ignored. It is cleared whenever a paired enrollment record is
+persisted or loaded (completion, legacy verification, the launch after a crash
+between the two writes) and by the confirmed local cleanup (device removal and reconfiguration), which fails and
+keeps its journal if the marker cannot be removed. Deferring setup never clears
+it. An account switch needs no clearing: the key lives in that account's own
+defaults.
+
 ### Profile pairing and the default profile
 
 Each account Profile's key travels in an envelope sealed with the ARK:
@@ -876,6 +957,11 @@ this device (a known limitation).
 The Space pairing page lists unmatched account Spaces even when this Mac has
 only its default Space. Those account Spaces are added automatically after
 pairing; they do not require placeholder local Spaces or manual mappings.
+
+A first replay into a store emptied by the pairing reset (see "Replacing this
+Mac's data at pairing") emits no tombstones: with empty cursor tables there is no
+baseline for any deletion to be derived from. The account's default identity is
+adopted wholesale onto the emptied `default-space`.
 
 When the Space gate opens, the coordinator waits for the engine's queued gate
 transition before requesting catch-up through the invalidation scheduler. A
@@ -2271,7 +2357,12 @@ the rules above.
 Focused suites in [Tests/PhiBrowserTests/Sync](../Tests/PhiBrowserTests/Sync)
 cover pairing, marker persistence, failed/paginated pulls, merges, logical
 clocks, status and account retirement. Store-level suites cover throwing writes,
-rollback and migration. Use the [testing guide](testing.md) for hosted execution;
+rollback and migration. The pairing reset is covered by `PhiLocalDataResetTests`
+(preconditions, order, reruns, postconditions), `LocalStorePairingResetTests` (the
+store wipe, forced `default-space`, counts), `SyncPairingLocalResetMarkerTests`
+(the marker and its clearing hooks), `SelfRevokeTests` (cleanup clears the marker;
+the controller's no-history check) and the first-replay cases in
+`PhiSyncEngineSpaceTests` and `PhiSyncEngineOwnedItemsTests`. Use the [testing guide](testing.md) for hosted execution;
 compiling an XCTest bundle does not execute it.
 
 The [convergence harness](../Tests/SyncConvergence/README.md) exercises production

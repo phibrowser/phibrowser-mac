@@ -7,6 +7,7 @@ struct PairingTests {
         try await testRegistrationAfterServerReset()
         try await testPreviewAfterServerReset()
         try await testPreviewCompleteness()
+        try await testPreviewItemCounts()
         let lifetime = EngineStopSignal(paired: true)
         let oldRound = lifetime.revision
         precondition(!lifetime.blocksData(revision: oldRound))

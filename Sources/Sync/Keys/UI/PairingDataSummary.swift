@@ -7,8 +7,8 @@ import Foundation
 
 /// What each side holds, for the sync method step's comparison strip (docs/sync.md, "Sync method and
 /// replacing this Mac's data"). This Mac's bookmark, pinned tab and URL rule counts come from the local
-/// reset's inventory, so they match exactly what "use your account's data" removes. The account side has
-/// no such counts yet: those kinds are listed by name only.
+/// reset's inventory, so they match exactly what "use your account's data" removes. The account side's come
+/// from the Space preview; a kind it could not count is listed by name only.
 struct PairingDataSummary: Equatable {
     /// One side's counts. A nil count means the kind cannot be counted on that side.
     struct Counts: Equatable {

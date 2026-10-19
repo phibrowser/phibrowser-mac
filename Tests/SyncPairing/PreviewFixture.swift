@@ -32,8 +32,21 @@ struct Phi_PhiProfileEntity {
     var profileUuid = ""
     var name = PreviewField()
 }
+struct Phi_PhiBookmarkEntity {
+    var bookmarkUuid = ""
+    var parentUuid = PreviewField(), spaceUuid = PreviewField()
+    var isFolder = false
+}
+struct Phi_PhiPinTabEntity {
+    enum OneOf_Owner { case spaceUuid(String), profileUuid(String) }
+    var owner: OneOf_Owner?
+}
+struct Phi_PhiURLRuleEntity { var targetSpaceUuid = PreviewField() }
 struct PreviewDecoded {
-    enum Kind { case space(Phi_PhiSpaceEntity), profile(Phi_PhiProfileEntity), bookmark }
+    enum Kind {
+        case space(Phi_PhiSpaceEntity), profile(Phi_PhiProfileEntity)
+        case bookmark(Phi_PhiBookmarkEntity), pinTab(Phi_PhiPinTabEntity), urlRule(Phi_PhiURLRuleEntity)
+    }
     var kind: Kind?
 }
 enum PhiEntityCodec {
@@ -48,6 +61,7 @@ enum PhiSyncEntity {
     static func clientTagHash(for tag: String) -> String { tag }
     static func spaceClientTag(_ uuid: String) -> String { uuid }
     static func profileClientTag(_ uuid: String) -> String { "phi-profile:" + uuid }
+    static func bookmarkClientTag(_ uuid: String) -> String { "phi-bookmark:" + uuid }
 }
 enum SyncableSpaces {
     static let defaultSpaceUuid = "default"
@@ -93,7 +107,7 @@ func testPreviewCompleteness() async throws {
         Data([1]): PreviewDecoded(kind: .space(valid)),
         Data([2]): PreviewDecoded(kind: .space(refused)),
         Data([3]): PreviewDecoded(kind: nil),
-        Data([4]): PreviewDecoded(kind: .bookmark),
+        Data([4]): PreviewDecoded(kind: .bookmark(Phi_PhiBookmarkEntity())),
         Data([5]): PreviewDecoded(kind: .space(defaultSpace)),
         Data([6]): PreviewDecoded(kind: .profile(renamed)),
         Data([7]): PreviewDecoded(kind: .profile(older))
@@ -115,8 +129,70 @@ func testPreviewCompleteness() async throws {
     precondition(preview.deletedProfileTagHashes == ["deleted"])
     precondition(preview.profileNames == ["p1": "Alpha"],
                  "A Profile is named from its highest-version entity; a payload that does not hash back is not a name")
+    precondition(preview.bookmarkCount == nil && preview.pinnedTabCount == nil && preview.urlRuleCount == nil,
+                 "An undecryptable entity could be of any counted kind")
     precondition(fixture.markerStore.file == PhiSyncMarkerFile(), "Preview must remain read-only")
     print("PASS preview completeness: skipped unknown/unreadable/refused entities retain uncertainty")
+}
+func testPreviewItemCounts() async throws {
+    let fixture = PreviewFixture()
+    fixture.markerState = PhiSyncMarkerFile()
+    func bookmark(_ uuid: String, parent: String = "", space: String = "live",
+                  folder: Bool = false) -> PreviewDecoded {
+        var entity = Phi_PhiBookmarkEntity(); entity.bookmarkUuid = uuid; entity.isFolder = folder
+        entity.parentUuid.stringValue = parent; entity.spaceUuid.stringValue = space
+        return PreviewDecoded(kind: .bookmark(entity))
+    }
+    func pin(_ owner: Phi_PhiPinTabEntity.OneOf_Owner?) -> PreviewDecoded {
+        var entity = Phi_PhiPinTabEntity(); entity.owner = owner
+        return PreviewDecoded(kind: .pinTab(entity))
+    }
+    func rule(_ target: String) -> PreviewDecoded {
+        var entity = Phi_PhiURLRuleEntity(); entity.targetSpaceUuid.stringValue = target
+        return PreviewDecoded(kind: .urlRule(entity))
+    }
+    var liveSpace = Phi_PhiSpaceEntity(); liveSpace.spaceUuid = "live"
+    var agent = Phi_PhiSpaceEntity(); agent.spaceUuid = "agent"; agent.refused = true
+    PhiEntityCodec.decoded = [
+        Data([1]): bookmark("b1"), Data([2]): bookmark("b2"), Data([3]): bookmark("f1", folder: true),
+        Data([4]): bookmark("b3"), Data([5]): bookmark("b4"), Data([6]): bookmark("b5"),
+        Data([7]): bookmark("child", parent: "f1", space: "dead"),     // Root Space decides
+        Data([8]): bookmark("deadRoot", space: "dead"),
+        Data([9]): bookmark("fDead", space: "dead", folder: true),
+        Data([10]): bookmark("deadChild", parent: "fDead", space: "live"),
+        Data([11]): bookmark("lifted", parent: "gone", space: "live"),  // Deleted parent: lifted
+        Data([12]): bookmark("orphan", parent: "missing", space: "live"), // Absent parent: parked
+        Data([13]): bookmark("agentRoot", space: "agent"),
+        Data([20]): pin(.spaceUuid("live")), Data([21]): pin(.spaceUuid("dead")),
+        Data([22]): pin(.profileUuid("p-live")), Data([23]): pin(.profileUuid("p-dead")), Data([24]): pin(nil),
+        Data([30]): rule("live"), Data([31]): rule("dead"), Data([32]): rule("agent"), Data([33]): rule(""),
+        Data([40]): PreviewDecoded(kind: nil),
+        Data([50]): PreviewDecoded(kind: .space(liveSpace)), Data([51]): PreviewDecoded(kind: .space(agent))
+    ]
+    defer { PhiEntityCodec.decoded = [:] }
+    func row(_ hash: String, _ data: UInt8, deleted: Bool = false, version: Int64 = 1) -> PreviewRemoteEntity {
+        PreviewRemoteEntity(clientTagHash: hash, deleted: deleted, ciphertext: Data([data]), version: version)
+    }
+    fixture.client.entities = [
+        row("live", 50), row("agent", 51),
+        row("b1", 1), row("b1", 1, version: 2), row("b2", 2), row("f1", 3), row("child", 7),
+        row("b3", 4), row("b3", 99, deleted: true, version: 2),
+        // A higher-version tombstone delivered before an older live version stays the latest.
+        row("b4", 99, deleted: true, version: 3), row("b4", 5, version: 1),
+        row("b5", 99, deleted: true, version: 1), row("b5", 6, version: 3),
+        row("deadRoot", 8), row("fDead", 9), row("deadChild", 10), row("lifted", 11),
+        row("phi-bookmark:gone", 99, deleted: true), row("orphan", 12), row("agentRoot", 13),
+        row("p1", 20), row("p2", 20), row("p2", 20), row("p3", 21), row("p4", 22), row("p5", 23), row("p6", 24),
+        row("r1", 30), row("r2", 31), row("r3", 32), row("r4", 33), row("unknown", 40),
+        row("stale", 99, version: 1), row("stale", 30, version: 2),
+        // Owner tombstones on the last page: the filter is a post-pass.
+        row("dead", 99, deleted: true), row("phi-profile:p-dead", 99, deleted: true)]
+    guard case .success(let preview) = await fixture.preview() else { preconditionFailure("Expected success") }
+    precondition(preview.bookmarkCount == 5, "b1, b2, child, b5 and lifted; got \(String(describing: preview.bookmarkCount))")
+    precondition(preview.pinnedTabCount == 4, "Live Space twice, live Profile, App scope; got \(String(describing: preview.pinnedTabCount))")
+    precondition(preview.urlRuleCount == 2, "Live targets only; got \(String(describing: preview.urlRuleCount))")
+    precondition(fixture.markerStore.file == PhiSyncMarkerFile(), "Preview must remain read-only")
+    print("PASS preview counts: per kind, deduped by client tag hash, tombstones, folders and items of deleted or refused owners excluded")
 }
 final class PreviewKeys {
     func domainKey() async throws -> SymmetricKey { SymmetricKey(size: .bits256) }

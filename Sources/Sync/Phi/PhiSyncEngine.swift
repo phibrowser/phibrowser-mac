@@ -80,6 +80,15 @@ struct PhiAccountSpacePreview: Equatable, Sendable {
     /// envelope keeps the name a Profile was registered with, so the wizard shows these
     /// instead (a Profile renamed on another device is otherwise offered under its old name).
     var profileNames: [String: String] = [:]
+    /// The account's live bookmarks (folders excluded), pinned tabs and URL rules, for the sync
+    /// method step (docs/sync.md, "Enrollment and setup"). Each client tag hash counts once, at its highest
+    /// version, and a tombstone counts as gone. Items whose owner Space is deleted or refused, or
+    /// whose owner Profile is deleted, do not count: they would not land. All three are nil when the
+    /// latest version of any entity could not be decrypted: its kind is unknown, so any of them
+    /// could be short.
+    var bookmarkCount: Int?
+    var pinnedTabCount: Int?
+    var urlRuleCount: Int?
 }
 
 enum PhiSpacePreviewError: Error, Equatable {
@@ -1908,6 +1917,21 @@ actor PhiSyncEngine {
         var tombstoneHashes: Set<String> = []
         var profileNames: [String: String] = [:]
         var profileVersions: [String: Int64] = [:]
+        // The latest version of every client tag hash, classified for the per-kind counts. A full
+        // scan may deliver an entity more than once; the highest version wins. Items keep their
+        // owner references so the post-pass can leave out what would not land.
+        enum CountedItem: Equatable {
+            case bookmark(uuid: String, parent: String, space: String, isFolder: Bool)
+            case pinnedTab(space: String?, profile: String?)    // Both nil: App scope
+            case urlRule(target: String)
+            case deleted, uncounted, unreadable
+        }
+        var refusedSpaceUuids: Set<String> = []
+        var countedItems: [String: (version: Int64, item: CountedItem)] = [:]
+        func note(_ hash: String, _ version: Int64, _ item: CountedItem) {
+            if let seen = countedItems[hash], seen.version >= version { return }
+            countedItems[hash] = (version, item)
+        }
         var pages = 0
         var entities = 0
         var refused = 0
@@ -1954,10 +1978,36 @@ actor PhiSyncEngine {
                     // Ignore settings entities and tombstones; deleted account Spaces must not
                     // appear as pairing choices, and deleted account Profiles are filtered by hash.
                     guard entity.clientTagHash != PhiSyncEntity.settingsClientTagHash else { continue }
-                    guard !entity.deleted else { tombstoneHashes.insert(entity.clientTagHash); continue }
+                    guard !entity.deleted else {
+                        tombstoneHashes.insert(entity.clientTagHash)
+                        note(entity.clientTagHash, entity.version, .deleted)
+                        continue
+                    }
                     guard let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key) else {
                         unreadable += 1     // Count only; do not add to `unreadableTagHashes`.
+                        note(entity.clientTagHash, entity.version, .unreadable)
                         continue
+                    }
+                    // An unknown kind is newer than this build, so it is none of the counted kinds.
+                    switch decoded.kind {
+                    case .bookmark(let bookmark):
+                        note(entity.clientTagHash, entity.version,
+                             .bookmark(uuid: bookmark.bookmarkUuid, parent: bookmark.parentUuid.stringValue,
+                                       space: bookmark.spaceUuid.stringValue, isFolder: bookmark.isFolder))
+                    case .pinTab(let pin):
+                        switch pin.owner {
+                        case .spaceUuid(let uuid):
+                            note(entity.clientTagHash, entity.version, .pinnedTab(space: uuid, profile: nil))
+                        case .profileUuid(let uuid):
+                            note(entity.clientTagHash, entity.version, .pinnedTab(space: nil, profile: uuid))
+                        case nil:
+                            note(entity.clientTagHash, entity.version, .pinnedTab(space: nil, profile: nil))
+                        }
+                    case .urlRule(let rule):
+                        note(entity.clientTagHash, entity.version,
+                             .urlRule(target: rule.targetSpaceUuid.stringValue))
+                    default:
+                        note(entity.clientTagHash, entity.version, .uncounted)
                     }
                     // An unknown protobuf kind could be a Space from a newer client.
                     // Known other kinds are irrelevant; an unknown kind is not absence.
@@ -1978,7 +2028,11 @@ actor PhiSyncEngine {
                     guard expected == entity.clientTagHash else { unreadable += 1; continue }
                     // Reject both agent-pattern payload variants. D1 fixes the default Space
                     // identity, which must never be selectable for pairing.
-                    guard !SyncableSpaces.refuses(space) else { refused += 1; continue }
+                    guard !SyncableSpaces.refuses(space) else {
+                        refused += 1
+                        refusedSpaceUuids.insert(space.spaceUuid)
+                        continue
+                    }
                     guard space.spaceUuid != SyncableSpaces.defaultSpaceUuid else { continue }
                     // Full replay normally delivers each entity once; defensively retain the
                     // highest version when duplicates occur.
@@ -2026,6 +2080,55 @@ actor PhiSyncEngine {
                 overlayOpacityLightMilli: entity.overlayOpacityLight.intValue,
                 overlayOpacityDarkMilli: entity.overlayOpacityDark.intValue)
         }.sorted { $0.syncUuid < $1.syncUuid }   // Deterministic order for tests and two-device comparisons.
+        // Nil on any unreadable entity, so the wizard names a kind rather than show a short count.
+        // Otherwise count only what would land: an owner Space that is deleted or refused, or an
+        // owner Profile that is deleted, discards or parks its items (docs/sync.md, R-M3-4a-78).
+        // A post-pass, because an owner's tombstone may arrive on a later page than its items.
+        let latestItems = countedItems.values.map(\.item)
+        let countsKnown = !latestItems.contains(.unreadable)
+        func isDeleted(_ tag: String) -> Bool {
+            countedItems[PhiSyncEntity.clientTagHash(for: tag)]?.item == .deleted
+        }
+        func spaceLands(_ uuid: String) -> Bool {
+            !uuid.isEmpty && !refusedSpaceUuids.contains(uuid) && !isDeleted(PhiSyncEntity.spaceClientTag(uuid))
+        }
+        var bookmarkNodes: [String: (parent: String, space: String)] = [:]
+        for case .bookmark(let uuid, let parent, let space, _) in latestItems {
+            bookmarkNodes[uuid] = (parent, space)
+        }
+        // A descendant's Space is its root's (space_uuid on a descendant is diagnostic only). A
+        // deleted parent lifts the child to its Space root; a parent the account does not hold
+        // parks it. A cycle is broken at landing, so the item's own Space decides.
+        func bookmarkLands(_ uuid: String) -> Bool {
+            var current = uuid
+            var visited: Set<String> = []
+            while let node = bookmarkNodes[current], visited.insert(current).inserted {
+                if node.parent.isEmpty { return spaceLands(node.space) }
+                guard bookmarkNodes[node.parent] != nil else {
+                    return isDeleted(PhiSyncEntity.bookmarkClientTag(node.parent)) && spaceLands(node.space)
+                }
+                current = node.parent
+            }
+            return bookmarkNodes[uuid].map { spaceLands($0.space) } ?? false
+        }
+        func count(_ lands: (CountedItem) -> Bool) -> Int? {
+            countsKnown ? latestItems.filter(lands).count : nil
+        }
+        let bookmarkCount = count {
+            guard case .bookmark(let uuid, _, _, false) = $0 else { return false }
+            return bookmarkLands(uuid)
+        }
+        let pinnedTabCount = count {
+            guard case .pinnedTab(let space, let profile) = $0 else { return false }
+            if let space { return spaceLands(space) }
+            if let profile { return !isDeleted(PhiSyncEntity.profileClientTag(profile)) }
+            return true
+        }
+        // A rule whose target Space is deleted or refused never resolves and stays parked.
+        let urlRuleCount = count {
+            guard case .urlRule(let target) = $0 else { return false }
+            return spaceLands(target)
+        }
         lastPreviewStats = (pages, entities)
         // Section 9.1(1); R12 allows counts only.
         AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
@@ -2033,7 +2136,10 @@ actor PhiSyncEngine {
                    + "ms=\(now() - startedAt)")
         box.result = .success(PhiAccountSpacePreview(spaces: out, skippedEntityCount: refused + unreadable,
                                                      deletedProfileTagHashes: tombstoneHashes,
-                                                     profileNames: profileNames))
+                                                     profileNames: profileNames,
+                                                     bookmarkCount: bookmarkCount,
+                                                     pinnedTabCount: pinnedTabCount,
+                                                     urlRuleCount: urlRuleCount))
     }
 
     // MARK: - §11 round counters

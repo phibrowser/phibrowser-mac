@@ -2974,6 +2974,121 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(store.table.unreadableTagHashes.isEmpty, "Preview writes no persistent state")
     }
 
+    /// PHI-1716 PR-4: the sync method step's account counts come from the same full scan. Each
+    /// client tag hash counts once at its highest version, tombstones and folders do not count,
+    /// items of a deleted or refused owner do not count, and counting still persists nothing.
+    func testThePreviewCountsLiveBookmarksPinnedTabsAndURLRulesOncePerTag() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        func item(_ envelope: Phi_PhiEntity, _ tag: String, version: Int64 = 1,
+                  deleted: Bool = false) throws -> PhiRemoteEntity {
+            let hash = PhiSyncEntity.clientTagHash(for: tag)
+            return PhiRemoteEntity(entityId: "srv-" + tag, clientTagHash: hash, version: version,
+                                   ciphertext: deleted ? Data() : try PhiEntityCodec.encrypt(envelope, key: key),
+                                   deleted: deleted)
+        }
+        func value(_ string: String) -> Phi_PhiSettingValue {
+            var out = Phi_PhiSettingValue(); out.updatedAtMs = 100; out.stringValue = string; return out
+        }
+        func bookmark(_ uuid: String, parent: String = "", space: String = SyncableSpaces.defaultSpaceUuid,
+                      folder: Bool = false, version: Int64 = 1) throws -> PhiRemoteEntity {
+            var entity = Phi_PhiBookmarkEntity()
+            entity.bookmarkUuid = uuid
+            entity.parentUuid = value(parent)
+            entity.spaceUuid = value(space)
+            entity.isFolder = folder
+            return try item(envelope(entity), PhiSyncEntity.bookmarkClientTag(uuid), version: version)
+        }
+        func bookmarkTombstone(_ uuid: String, version: Int64) throws -> PhiRemoteEntity {
+            try item(Phi_PhiEntity(), PhiSyncEntity.bookmarkClientTag(uuid), version: version, deleted: true)
+        }
+        func pin(_ tag: String, space: String? = nil, profile: String? = nil) throws -> PhiRemoteEntity {
+            var entity = Phi_PhiPinTabEntity()
+            if let space { entity.spaceUuid = space }
+            if let profile { entity.profileUuid = profile }
+            return try item(envelope(entity), tag)
+        }
+        func rule(_ tag: String, target: String) throws -> PhiRemoteEntity {
+            var entity = Phi_PhiURLRuleEntity()
+            entity.targetSpaceUuid = value(target)
+            return try item(envelope(entity), tag)
+        }
+        let live = SyncableSpaces.defaultSpaceUuid
+        client.scriptedPages = [
+            page([try bookmark("b1"), try bookmark("b2"), try bookmark("f1", folder: true),
+                  try bookmark("child", parent: "f1", space: "sync-dead"),   // Its root's Space decides
+                  try bookmark("b3"),
+                  // A higher-version tombstone delivered before an older live version stays the latest.
+                  try bookmarkTombstone("b4", version: 3), try bookmark("b4", version: 1),
+                  try bookmark("deadRoot", space: "sync-dead"),
+                  try bookmark("fDead", space: "sync-dead", folder: true),
+                  try bookmark("deadChild", parent: "fDead", space: live),
+                  try pin("pin-1", space: live), try pin("pin-dead", space: "sync-dead"),
+                  try pin("pin-profile", profile: "uuid-gone"), try pin("pin-app"),
+                  try rule("rule-1", target: live), try rule("rule-dead", target: "sync-dead")],
+                 marker: "m1", changesRemaining: true),
+            // The second page re-delivers b1 and pin-1, deletes b3, and only now deletes the
+            // owners: the filter runs after the scan.
+            page([try bookmark("b1", version: 2), try pin("pin-1", space: live),
+                  try bookmarkTombstone("b3", version: 2), try item(Phi_PhiEntity(), "unknown-kind"),
+                  try item(Phi_PhiEntity(), PhiSyncEntity.spaceClientTag("sync-dead"), version: 2, deleted: true),
+                  try item(Phi_PhiEntity(), PhiSyncEntity.profileClientTag("uuid-gone"), version: 2,
+                           deleted: true)], marker: "m2")
+        ]
+        let engine = makeEngine(access: access, store: store, client: client)
+        defaults.set(Data([0xAB]), forKey: PhiSyncEngine.markerStateKey)
+        let tableBefore = store.table
+
+        guard case .success(let preview) = await engine.previewAccountSpaces() else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(preview.bookmarkCount, 3,
+                       "b1 once, b2 and child; not the folders, the deleted b3/b4 or the dead Space's items")
+        XCTAssertEqual(preview.pinnedTabCount, 2, "pin-1 once and the App-scope pin")
+        XCTAssertEqual(preview.urlRuleCount, 1, "A rule targeting a deleted Space stays parked")
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data([0xAB]))
+        XCTAssertEqual(store.table, tableBefore)
+        XCTAssertTrue(access.calls.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    /// An entity that cannot be decrypted could be of any counted kind, so the counts are unknown
+    /// rather than short. A readable newer version of the same tag supersedes an unreadable one.
+    func testAnUnreadableEntityLeavesThePreviewItemCountsUnknown() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let pin = try PhiEntityCodec.encrypt(envelope(Phi_PhiPinTabEntity()), key: key)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: "p1", ciphertext: pin, version: 1)
+        client.seed(tagHash: "garbage-hash", ciphertext: Data([0x09]), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        guard case .success(let unknown) = await engine.previewAccountSpaces() else {
+            return XCTFail("expected success")
+        }
+        XCTAssertNil(unknown.bookmarkCount)
+        XCTAssertNil(unknown.pinnedTabCount)
+        XCTAssertNil(unknown.urlRuleCount)
+
+        let superseded = FakePhiSyncClient()
+        superseded.scriptedPages = [
+            page([PhiRemoteEntity(entityId: "srv-x", clientTagHash: "p2", version: 1,
+                                  ciphertext: Data([0x09]), deleted: false)],
+                 marker: "m1", changesRemaining: true),
+            page([PhiRemoteEntity(entityId: "srv-x", clientTagHash: "p2", version: 2,
+                                  ciphertext: pin, deleted: false)], marker: "m2")
+        ]
+        let second = makeEngine(access: access, store: store, client: superseded)
+        guard case .success(let known) = await second.previewAccountSpaces() else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(known.pinnedTabCount, 1)
+        XCTAssertEqual(known.bookmarkCount, 0)
+        XCTAssertEqual(known.urlRuleCount, 0)
+    }
+
     /// 15. Copy D7's three fields exactly without normalization. Incorrect normalization
     /// can silently hide every difference in the UI.
     func testThePreviewCarriesTheThemeAndOpacityEncodingsVerbatim() async throws {

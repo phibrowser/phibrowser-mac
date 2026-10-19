@@ -178,6 +178,27 @@ Ordinary previews never
 repair persisted sync metadata or depend on background sync to repair it while
 enrollment is incomplete.
 
+The same scan (`previewAccountSpaces()`) also counts the account's live
+bookmarks, pinned tabs and URL rules for the sync method step
+(`PhiAccountSpacePreview.bookmarkCount`, `pinnedTabCount`, `urlRuleCount`), with
+no extra request. Each client tag hash counts once, at its highest version, since
+a full scan may deliver an entity more than once. A tombstone at that version
+removes it, and a bookmark folder never counts. The counts are what will land on
+this Mac, so items whose owner Space or Profile is tombstoned or refused are left
+out (older clients left a deleted Space's items live, R-M3-4a-78):
+- A bookmark's Space is its root ancestor's `space_uuid`. A deleted parent folder
+  lifts the child to its own Space's root; a parent the account does not hold
+  parks it, so it does not count.
+- A pin's owner is its Space or Profile; an App-scope pin always counts.
+- A URL rule counts only when its target Space is not deleted or refused (a rule
+  with an empty or dead target stays parked); reserved targets count.
+The filter runs after the scan, because an owner's tombstone may arrive on a
+later page than its items. Other landing validation is not applied. When the
+latest version of any entity cannot be decrypted, all three counts are nil: its
+kind is unknown, so any of them could be short, and the wizard names those kinds
+instead of showing a wrong number. An entity of a kind newer than this build is
+none of the three and does not clear them.
+
 Native `not_my_birthday` handling preserves cursors, baselines, mappings, and
 local browsing data. It records `requiresReconfiguration` in the account's
 `sync/marker.json` and stops native data rounds, including after restart. Retry,
@@ -383,11 +404,13 @@ data never sees the step; the merge path then decides everything automatically.
 
 **The page.** A comparison card shows one line per side, for example "This Mac ·
 2 profiles · 4 Spaces · 130 bookmarks · 8 pinned tabs · 3 URL rules" and "Your
-account · 1 profile · 6 Spaces · Bookmarks · Pinned tabs · URL rules". This Mac's
+account · 1 profile · 6 Spaces · 120 bookmarks · 8 pinned tabs · 3 URL rules". This Mac's
 Spaces include the default Space; the account's Profiles are its unclaimed
 Profiles plus this Mac's Profiles already mapped to it, and its Spaces include
 the default Space the preview leaves out. The account's bookmarks, pinned tabs and
-URL rules are not counted yet, so they are listed by name. Below are the two
+URL rules are the pairing preview's counts (see "Enrollment and setup"); a kind the
+preview could not count is listed by name ("Bookmarks"), never as zero. The
+confirmation's "Downloaded from your account" card uses the same counts. Below are the two
 radio cards; the arrow keys move the selection, and Return is the footer's
 primary button.
 

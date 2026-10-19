@@ -1293,7 +1293,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(summary.local, PairingDataSummary.Counts(profiles: 1, spaces: 2, bookmarks: 0,
                                                                 pinnedTabs: 0, urlRules: 0))
         XCTAssertEqual(summary.account.spaces, 2, "The account's Spaces plus its default Space")
-        XCTAssertNil(summary.account.bookmarks, "The account's bookmarks are named, not counted")
+        XCTAssertNil(summary.account.bookmarks, "A preview without counts names the account's bookmarks")
         XCTAssertEqual(wizard.visibleSteps, [.method, .spaces])
         XCTAssertFalse(wizard.methodStepFinishes)
         wizard.selectedMethod = .useAccount
@@ -1306,6 +1306,43 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertFalse(wizard.canGoBackToProfiles)
         wizard.backToProfiles()
         guard case .method = wizard.phase else { return XCTFail("Back from Spaces returns to the method step") }
+        XCTAssertFalse(gate.isPaired)
+    }
+
+    /// PHI-1716 PR-4: the preview's bookmark, pinned tab and URL rule counts reach the account row of the
+    /// method step and the confirmation's "Downloaded from your account" card; a nil count stays a name.
+    func testTheAccountRowShowsThePreviewCountsAndNamesWhatItCannotCount() async throws {
+        let accountSpaces = [account("acct-1", name: "Work")]
+        var preview = PhiAccountSpacePreview(spaces: accountSpaces, skippedEntityCount: 0)
+        preview.bookmarkCount = 12
+        preview.pinnedTabCount = 0
+        preview.urlRuleCount = nil
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Work")],
+            accountSpaces: accountSpaces, preview: { .success(preview) })
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+
+        guard case .method(let summary) = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        XCTAssertEqual(summary.account.bookmarks, 12)
+        XCTAssertEqual(summary.account.pinnedTabs, 0)
+        XCTAssertNil(summary.account.urlRules)
+        let line = PairingDataSummary.stripLine(label: "Account", counts: summary.account)
+        XCTAssertTrue(line.contains(PairingDataSummary.phrase(.bookmarks, count: 12)), line)
+        XCTAssertTrue(line.contains(PairingDataSummary.phrase(.pinnedTabs, count: 0)), line)
+        XCTAssertTrue(line.contains(PairingDataSummary.phrase(.urlRules, count: nil)), line)
+        XCTAssertNotEqual(PairingDataSummary.phrase(.bookmarks, count: 12),
+                          PairingDataSummary.phrase(.bookmarks, count: nil), "A count is not the kind's name")
+
+        wizard.selectedMethod = .useAccount
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .confirmReplaceLocal(let review) = wizard.phase else {
+            return XCTFail("expected .confirmReplaceLocal, got \(wizard.phase)")
+        }
+        XCTAssertEqual(review.downloaded, summary.account)
+        XCTAssertEqual(review.downloaded.listedKinds([.bookmarks, .pinnedTabs, .urlRules]), [.bookmarks, .urlRules],
+                       "A zero count is hidden and an uncounted kind is listed by name")
         XCTAssertFalse(gate.isPaired)
     }
 

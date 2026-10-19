@@ -250,6 +250,9 @@ final class PairingWizardViewModel: ObservableObject {
     private var previewDeletedProfileTagHashes: Set<String> = []
     /// Account names from the latest preview's live Profile entities, by uuid (see `liveRemotes`).
     private var previewProfileNames: [String: String] = [:]
+    /// The account's bookmark, pinned tab and URL rule counts from the latest preview; nil when the
+    /// preview could not count a kind.
+    private var previewItemCounts: (bookmarks: Int?, pinnedTabs: Int?, urlRules: Int?) = (nil, nil, nil)
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
     private var profileDecisions: [PairingDecision] = []
@@ -322,6 +325,7 @@ final class PairingWizardViewModel: ObservableObject {
         previewSkippedEntityCount = 0
         previewDeletedProfileTagHashes = []
         previewProfileNames = [:]
+        previewItemCounts = (nil, nil, nil)
         plan = nil
         resetMethodState()
         loadGeneration += 1
@@ -366,6 +370,7 @@ final class PairingWizardViewModel: ObservableObject {
             previewSkippedEntityCount = preview.skippedEntityCount
             previewDeletedProfileTagHashes = preview.deletedProfileTagHashes
             previewProfileNames = preview.profileNames
+            previewItemCounts = (preview.bookmarkCount, preview.pinnedTabCount, preview.urlRuleCount)
             let remotes = liveRemotes(accountRemotes)
             loadedLocals = locals
             loadedRemotes = remotes
@@ -824,8 +829,8 @@ final class PairingWizardViewModel: ObservableObject {
 
     /// Both sides' counts for the method step. This Mac: every local Profile, every pairable Space (the
     /// default included) and the reset's inventory. The account: its unclaimed Profiles plus the local ones
-    /// already mapped to it, and its Spaces plus the default Space the preview leaves out. The account's
-    /// bookmarks, pinned tabs and URL rules are not counted yet.
+    /// already mapped to it, its Spaces plus the default Space the preview leaves out, and the preview's
+    /// bookmark, pinned tab and URL rule counts (nil, so named only, when the preview could not count them).
     private func makeSummary(controller: SyncKeyController) -> PairingDataSummary {
         let localProfileCount = controller.localProfiles().count
         let inventory = localInventory
@@ -837,7 +842,8 @@ final class PairingWizardViewModel: ObservableObject {
             account: PairingDataSummary.Counts(
                 profiles: loadedRemotes.count + max(0, localProfileCount - loadedLocals.count),
                 spaces: spacesInput.accountSpaces.count + 1,
-                bookmarks: nil, pinnedTabs: nil, urlRules: nil))
+                bookmarks: previewItemCounts.bookmarks, pinnedTabs: previewItemCounts.pinnedTabs,
+                urlRules: previewItemCounts.urlRules))
     }
 
     /// The reset's inventory, or nil when the reset is unavailable or its counts cannot be read.
@@ -933,6 +939,8 @@ final class PairingWizardViewModel: ObservableObject {
         }
         previewDeletedProfileTagHashes = spaces.deletedProfileTagHashes
         previewProfileNames = spaces.profileNames
+        // Informational only: deliberately not part of the account-side comparison below.
+        previewItemCounts = (spaces.bookmarkCount, spaces.pinnedTabCount, spaces.urlRuleCount)
         let remotes = liveRemotes(reloaded)
         let fresh = makeSpacesInput(accountSpaces: spaces.spaces, remotes: remotes, controller: controller)
         if method == .useAccount {
